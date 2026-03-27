@@ -19,9 +19,13 @@ const mocks = vi.hoisted(() => ({
     loading: false,
     error: null as string | null,
     fetchList: vi.fn(),
+    deleteDatastore: vi.fn(),
   },
   router: {
     push: vi.fn(),
+  },
+  uiStore: {
+    showToast: vi.fn(),
   },
 }))
 
@@ -36,6 +40,10 @@ vi.mock('vue-router', async () => {
     useRouter: () => mocks.router,
   }
 })
+
+vi.mock('@/stores/ui', () => ({
+  useUiStore: () => mocks.uiStore,
+}))
 
 function mountView() {
   return shallowMount(DatastoreView, {
@@ -55,6 +63,14 @@ function mountView() {
           props: ['modelValue'],
           template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
         },
+        ConfirmDialog: {
+          props: ['show', 'message'],
+          template: `
+            <div data-test="confirm-dialog" :data-show="String(show)" :data-message="message">
+              <button data-test="confirm-delete" @click="$emit('confirm')">confirm</button>
+            </div>
+          `,
+        },
         Skeleton: { template: '<div />' },
       },
     },
@@ -66,6 +82,7 @@ beforeEach(() => {
   mocks.router.push.mockReset()
   mocks.datastoreStore.loading = false
   mocks.datastoreStore.error = null
+  mocks.datastoreStore.deleteDatastore.mockReset()
   mocks.datastoreStore.list = [
     {
       id: 'ds-1',
@@ -100,5 +117,19 @@ describe('DatastoreView', () => {
       name: 'datastoreDetail',
       params: { id: 'ds-1' },
     })
+  })
+
+  it('支持打开删除确认框并删除 Datastore', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-test="delete-datastore-button"]').trigger('click')
+
+    expect(mocks.router.push).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="confirm-dialog"]').attributes('data-show')).toBe('true')
+    expect(wrapper.get('[data-test="confirm-dialog"]').attributes('data-message')).toContain('novel-workspace')
+
+    await wrapper.get('[data-test="confirm-delete"]').trigger('click')
+
+    expect(mocks.datastoreStore.deleteDatastore).toHaveBeenCalledWith('ds-1')
   })
 })

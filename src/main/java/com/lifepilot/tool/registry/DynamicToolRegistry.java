@@ -137,17 +137,19 @@ public class DynamicToolRegistry {
      * @return 是否成功注销
      */
     public boolean unregisterBuiltinTool(String toolId) {
-        ToolContract removed = tools.remove(toolId);
-        if (removed != null) {
-            toolLayers.remove(toolId);
-            removeCategoryIndex(removed.category(), toolId);
-            invalidateSnapshot();
-            eventPublisher.publishEvent(new ToolsUnregistered(
-                    List.of(toolId), "builtin"));
-            log.info("BuiltinTool 注销完成: id={}", toolId);
-            return true;
-        }
-        return false;
+        return unregisterToolInternal(toolId, "builtin", "BuiltinTool 注销完成");
+    }
+
+    /**
+     * 注销任意层级的工具。
+     *
+     * <p>用于评测或临时覆盖场景下的工具替换，不区分 Builtin / MCP。</p>
+     *
+     * @param toolId 工具 ID
+     * @return 是否成功注销
+     */
+    public boolean unregisterTool(String toolId) {
+        return unregisterToolInternal(toolId, "dynamic", "工具注销完成");
     }
 
     /**
@@ -261,6 +263,28 @@ public class DynamicToolRegistry {
         if (ids != null) {
             ids.remove(toolId);
         }
+    }
+
+    private boolean unregisterToolInternal(String toolId, String source, String logPrefix) {
+        ToolContract removed = tools.remove(toolId);
+        if (removed == null) {
+            return false;
+        }
+        toolLayers.remove(toolId);
+        removeCategoryIndex(removed.category(), toolId);
+        removeFromServerToolIndex(toolId);
+        invalidateSnapshot();
+        eventPublisher.publishEvent(new ToolsUnregistered(
+                List.of(toolId), source));
+        log.info("{}: id={}", logPrefix, toolId);
+        return true;
+    }
+
+    private void removeFromServerToolIndex(String toolId) {
+        serverToolIndex.replaceAll((server, ids) -> ids.stream()
+                .filter(id -> !Objects.equals(id, toolId))
+                .toList());
+        serverToolIndex.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     /** 使快照缓存失效。 */

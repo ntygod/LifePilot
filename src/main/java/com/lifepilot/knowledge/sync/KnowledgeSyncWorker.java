@@ -110,6 +110,8 @@ public class KnowledgeSyncWorker {
                 content,
                 extractSourceRef(job.payload())
         );
+        log.info("Datastore 文档同步完成: jobId={}, datastoreId={}, knowledgeBaseId={}, sourceKey={}",
+                job.id(), job.datastoreId(), job.knowledgeBaseId(), sourceKey);
     }
 
     private void handleDeleteJob(KnowledgeSyncJob job) {
@@ -133,6 +135,8 @@ public class KnowledgeSyncWorker {
             return;
         }
         knowledgeBaseManager.removeDocument(existing.id());
+        log.info("Datastore 同步文档删除完成: jobId={}, datastoreId={}, knowledgeBaseId={}, sourceKey={}",
+                job.id(), job.datastoreId(), job.knowledgeBaseId(), job.sourceKey());
     }
 
     private void handleResyncJob(KnowledgeSyncJob job) {
@@ -174,6 +178,8 @@ public class KnowledgeSyncWorker {
                 knowledgeBaseManager.removeDocument(syncedDocument.id());
             }
         }
+        log.info("Datastore 重同步完成: jobId={}, datastoreId={}, knowledgeBaseId={}, activeSourceCount={}",
+                job.id(), job.datastoreId(), job.knowledgeBaseId(), activeSourceKeys.size());
     }
 
     private void handlePurgeJob(KnowledgeSyncJob job) {
@@ -186,6 +192,8 @@ public class KnowledgeSyncWorker {
         for (com.lifepilot.knowledge.model.Document syncedDocument : syncedDocuments) {
             knowledgeBaseManager.removeDocument(syncedDocument.id());
         }
+        log.info("Datastore 清理完成: jobId={}, datastoreId={}, knowledgeBaseId={}, removedCount={}",
+                job.id(), job.datastoreId(), job.knowledgeBaseId(), syncedDocuments.size());
     }
 
     private void upsertProjectedDocument(String knowledgeBaseId,
@@ -240,6 +248,8 @@ public class KnowledgeSyncWorker {
         );
         knowledgeDocumentRepository.save(doc);
         documentIngester.ingestProjectedDocument(doc, content);
+        log.info("Datastore 投影文档已写入知识库: datastoreId={}, knowledgeBaseId={}, documentId={}, chunkSource={}",
+                datastoreId, knowledgeBaseId, doc.id(), sourceKey);
     }
 
     private boolean isMounted(String knowledgeBaseId, String datastoreId) {

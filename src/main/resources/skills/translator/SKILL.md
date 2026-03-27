@@ -7,7 +7,7 @@ suggested-tools:
   - builtin.file.read
   - builtin.file.write
   - builtin.web.search
-  - builtin.memory.search-docs
+  - builtin.knowledge.search
   - builtin.memory.search
 triggers:
   - "翻译"

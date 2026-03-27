@@ -37,7 +37,7 @@ import java.util.*;
  * 记忆管理工具提供者。
  *
  * <p>注册 9 个记忆管理工具到 DynamicToolRegistry：
- * search / recall / search-docs / create / update / delete / tag / query-at-time / search-experience。</p>
+ * search / recall / knowledge.search / create / update / delete / tag / query-at-time / search-experience。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -87,14 +87,14 @@ public class MemoryToolProvider {
             count++;
         }
         if (documentRetriever != null && (sessionKnowledgeScopeResolver != null || sessionKbRepo != null)) {
-            toolRegistry.registerBuiltinTool(buildSearchDocsTool());
+            toolRegistry.registerBuiltinTool(buildKnowledgeSearchTool());
             count++;
         }
         toolRegistry.registerBuiltinTool(buildQueryAtTimeTool());
         count++;
         toolRegistry.registerBuiltinTool(buildSearchExperienceTool());
         count++;
-        log.info("记忆 Skill 工具注册完成: count={}", count);
+        log.info("记忆/资料检索工具注册完成: count={}", count);
     }
 
     // ---- 工具构建方法 ----
@@ -108,7 +108,7 @@ public class MemoryToolProvider {
                 .name("搜索记忆")
                 .description("搜索知识实体（人物、地点、事件、偏好、习惯、目标等）。" +
                         "当用户提到具体的人名、地名、事件名，或询问你记住的偏好/习惯时使用。" +
-                        "不要用于搜索历史对话内容（用 recall）或知识库文档（用 search-docs）。")
+                        "不要用于搜索历史对话内容（用 recall）或资料文档（用 builtin.knowledge.search）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -152,7 +152,7 @@ public class MemoryToolProvider {
                 .name("回忆对话")
                 .description("回忆历史对话片段（跨会话）。" +
                         "当用户说'我之前说过...'、'上次我们聊到...'、'你还记得我说的...'时使用。" +
-                        "不要用于搜索知识实体（用 search）或知识库文档（用 search-docs）。")
+                        "不要用于搜索知识实体（用 search）或资料文档（用 builtin.knowledge.search）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -185,21 +185,22 @@ public class MemoryToolProvider {
                 .build();
     }
 
-    /** 构建知识库文档搜索工具。 */
-    private BuiltinTool buildSearchDocsTool() {
+    /** 构建统一资料搜索工具。 */
+    private BuiltinTool buildKnowledgeSearchTool() {
         int defaultTopK = memoryProperties != null
                 ? memoryProperties.getAgenticTool().getDocsDefaultTopK() : 5;
         return BuiltinTool.builder()
-                .id("builtin.memory.search-docs")
-                .name("搜索知识库")
-                .description("搜索知识库文档。" +
-                        "当用户的问题可能涉及已上传的文档、资料、手册内容时使用。" +
-                        "不要用于搜索知识实体（用 search）或历史对话（用 recall）。")
+                .id("builtin.knowledge.search")
+                .name("检索资料")
+                .description("搜索当前会话绑定的资料内容。" +
+                        "当当前会话绑定了 Datastore 或 Knowledge Base，且用户是在问某个主题、资料内容、推荐、说明、设定、架构、总结、比较、步骤、文档结论时，优先使用本工具先检索资料；即使用户只给出简短主题词也适用。" +
+                        "当前会话如果绑定了 datastore，会自动搜索该 datastore 关联的领域文档和结构化投影内容。" +
+                        "不要用于精确字段过滤（用 builtin.datastore.query_documents）、搜索知识实体（用 search）或历史对话（用 recall）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
                         "properties", Map.of(
-                                "query", Map.of("type", "string", "description", "搜索关键词"),
+                                "query", Map.of("type", "string", "description", "搜索关键词或自然语言问题"),
                                 "top_k", Map.of("type", "integer", "description", "返回数量，默认 " + defaultTopK)
                         )
                 )))
@@ -225,8 +226,8 @@ public class MemoryToolProvider {
                                 .toList();
                         return ToolResult.success(Map.of("results", items, "count", items.size()));
                     } catch (Exception e) {
-                        log.error("搜索知识库失败: {}", e.getMessage(), e);
-                        return ToolResult.error("搜索知识库失败: " + e.getMessage());
+                        log.error("检索资料失败: {}", e.getMessage(), e);
+                        return ToolResult.error("检索资料失败: " + e.getMessage());
                     }
                 })
                 .build();

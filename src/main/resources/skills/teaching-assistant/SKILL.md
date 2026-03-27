@@ -8,7 +8,7 @@ suggested-tools:
   - builtin.code.execute
   - builtin.file.write
   - builtin.file.read
-  - builtin.memory.search-docs
+  - builtin.knowledge.search
   - builtin.memory.create
 triggers:
   - "教学"

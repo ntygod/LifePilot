@@ -25,7 +25,7 @@
 
 **Document Store（结构化列表管理）**：书单、影单、购物清单、旅行计划、食谱、联系人、记账。CRUD + 过滤 + 排序。最高频需求。
 
-**Note Store（非结构化笔记）**：日记、会议记录、灵感、梦境记录。写入 + 全文/语义搜索。与 L2 情景记忆有部分重叠，但用户期望显式的「笔记本」概念。
+**Note Store（非结构化笔记）**：日记、会议记录、灵感、梦境记录。写入 + 资料沉淀。与 L2 情景记忆有部分重叠，但用户期望显式的「笔记本」概念；在当前实现中，资料检索统一通过内部 Knowledge Base + `builtin.knowledge.search` 完成。
 
 **Metric Store（时序指标追踪）**：体重、运动量、睡眠、饮水、学习时长。追加 + 时间范围查询 + 聚合（均值、趋势、极值）。
 
@@ -93,6 +93,7 @@ public record Collection(
     String propertiesJson,  // 属性定义 JSON（可选）
     String projectionConfigJson, // 向量投影配置 JSON（集合级）
     String metadataJson,    // 扩展元数据
+    String defaultKnowledgeBaseId, // 当前 Datastore 的内部 Knowledge Base
     String createdBy,       // 创建来源（skill:todo / agent:researcher / workflow:daily-report）
     String createdAt,
     String updatedAt
@@ -165,6 +166,7 @@ CREATE TABLE ds_collections (
     properties_json TEXT,                    -- 属性定义 JSON 数组
     projection_config_json TEXT NOT NULL DEFAULT '{}', -- 向量投影配置
     metadata_json TEXT,
+    default_knowledge_base_id TEXT,          -- 内部知识库指针
     created_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -184,7 +186,7 @@ CREATE TABLE ds_documents (
 CREATE INDEX idx_ds_documents_collection ON ds_documents(collection_id);
 CREATE INDEX idx_ds_documents_recorded_at ON ds_documents(collection_id, recorded_at);
 
--- FTS5 全文索引（NOTE 类型文档的全文搜索）
+-- FTS5 全文索引（Datastore 同步到内部 Knowledge Base 后的全文检索基础）
 CREATE VIRTUAL TABLE ds_documents_fts USING fts5(
     document_id,
     content,
@@ -214,6 +216,7 @@ CREATE INDEX idx_ds_doc_rating ON ds_documents(_idx_rating)
 - 集合操作：创建、查询（按名称/类型）、更新、删除（级联删除文档）
 - 文档操作：创建、查询（按集合 + 过滤条件）、更新、删除
 - 创建集合时如果声明了属性定义，自动创建 Generated Column 索引
+- 创建集合时会自动确保一个系统托管的内部 Knowledge Base，并回填 `defaultKnowledgeBaseId`
 - 创建/更新集合时会将缺省的 `projectionConfigJson` 归一化为 `{}`，避免运行时写入 `NULL`
 - 集合级投影配置会被后续 datastore → knowledge base 同步链路复用
 - 写操作标注 `@Transactional`
@@ -277,19 +280,28 @@ public record AggregationResult(
 
 - 基于 JdbcTemplate 的 SQLite 存储层
 - CollectionRepository：集合表 CRUD + 按名称/类型查询
-- DocumentRepository：文档表 CRUD + 动态 SQL 查询 + FTS5 全文搜索 + 时序聚合
+- DocumentRepository：文档表 CRUD + 动态 SQL 查询 + 时序聚合
 - Generated Column 管理：创建/删除集合时动态添加/清理虚拟列和索引
 
-### 4.5 DataStoreTool（Agent 工具集）
+### 4.5 Datastore → Knowledge 检索链路
 
-注册为 BuiltinTool，提供 7 个操作供 Agent 调用：
+- 每个 Datastore 默认对应一个内部 Knowledge Base
+- 结构化数据先经过 `projection_config_json` 投影为检索文本
+- 投影后的文本进入分块、向量索引和 FTS 索引
+- 会话绑定 Datastore 后，资料型问题统一通过 `builtin.knowledge.search` 命中对应作用域
+- `builtin.datastore.query_documents` 只负责结构化过滤、排序、分页，不承担语义检索职责
+
+### 4.6 DataStoreTool（Agent 工具集）
+
+注册为 BuiltinTool，提供 8 个操作供 Agent 调用：
 
 | 工具 ID | 操作 | 说明 |
 |---------|------|------|
 | `builtin.datastore.create_collection` | 创建集合 | 指定名称、类型、可选属性定义、可选 `projectionConfig` |
 | `builtin.datastore.list_collections` | 列出集合 | 返回所有集合及其属性定义 |
+| `builtin.datastore.delete_collection` | 删除集合 | 删除整个集合及其文档 |
 | `builtin.datastore.add_document` | 添加文档 | 向指定集合写入 JSON 文档 |
-| `builtin.datastore.query_documents` | 查询文档 | 按过滤条件查询，支持排序分页 |
+| `builtin.datastore.query_documents` | 查询文档 | 按过滤条件查询，支持排序分页，仅用于结构化查询 |
 | `builtin.datastore.update_document` | 更新文档 | 按 ID 更新文档数据 |
 | `builtin.datastore.delete_document` | 删除文档 | 按 ID 删除文档 |
 | `builtin.datastore.aggregate` | 聚合查询 | METRIC 类型集合的时序聚合 |
@@ -302,7 +314,7 @@ Agent 使用示例：
 
 `create_collection` 的 `projectionConfig` 参数为可选项；如果未提供，系统会自动保存 `{}`，表示启用默认通用投影策略。
 
-### 4.6 DataStoreSkillProvider（内置 Skill 提供者）
+### 4.7 DataStoreSkillProvider（内置 Skill 提供者）
 
 - 实现 `BuiltinSkillProvider` 接口，注册 DataStore 相关工具
 - 提供 Skill 定义蓝图，包含数据存储操作的指令模板

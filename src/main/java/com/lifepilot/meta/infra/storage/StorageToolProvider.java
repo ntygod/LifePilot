@@ -1,17 +1,10 @@
 package com.lifepilot.meta.infra.storage;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.datastore.DataStoreManager;
-import com.lifepilot.datastore.model.AggregateFunction;
-import com.lifepilot.datastore.model.AggregationRequest;
-import com.lifepilot.datastore.model.AggregationResult;
-import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
-import com.lifepilot.datastore.model.Document;
-import com.lifepilot.datastore.model.FilterOp;
-import com.lifepilot.datastore.model.QueryFilter;
-import com.lifepilot.datastore.model.QueryRequest;
-import com.lifepilot.datastore.model.SortDirection;
-import com.lifepilot.datastore.model.TimeGranularity;
+import com.lifepilot.datastore.model.*;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -22,8 +15,6 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 存储工具提供者 — 注册 7 个数据存储 CRUD 工具到 DynamicToolRegistry。
+ * 存储工具提供者 — 注册 8 个数据存储 CRUD 工具到 DynamicToolRegistry。
  *
  * <p>所有工具归类为 {@link ToolCategory#STORAGE}，提供数据存储 Skill 定义蓝图。</p>
  *
@@ -59,12 +50,13 @@ public class StorageToolProvider {
     public void registerTools(DynamicToolRegistry toolRegistry) {
         toolRegistry.registerBuiltinTool(buildCreateCollectionTool());
         toolRegistry.registerBuiltinTool(buildListCollectionsTool());
+        toolRegistry.registerBuiltinTool(buildDeleteCollectionTool());
         toolRegistry.registerBuiltinTool(buildAddDocumentTool());
         toolRegistry.registerBuiltinTool(buildQueryDocumentsTool());
         toolRegistry.registerBuiltinTool(buildUpdateDocumentTool());
         toolRegistry.registerBuiltinTool(buildDeleteDocumentTool());
         toolRegistry.registerBuiltinTool(buildAggregateTool());
-        log.info("数据存储 Skill 工具注册完成: count=7");
+        log.info("数据存储 Skill 工具注册完成: count=8");
     }
 
     // ---- 工具构建方法 ----
@@ -82,7 +74,10 @@ public class StorageToolProvider {
                         "properties", Map.of(
                                 "name", Map.of("type", "string", "description", "集合名称（唯一）"),
                                 "type", Map.of("type", "string", "description", "集合类型: DOCUMENT/NOTE/METRIC"),
-                                "properties", Map.of("type", "string", "description", "属性定义 JSON 数组，如 [{\"name\":\"title\",\"type\":\"TEXT\",\"required\":true}]"),
+                                "properties", Map.of(
+                                        "type", "string",
+                                        "description", "属性定义 JSON 数组，如 [{\"name\":\"title\",\"type\":\"TEXT\",\"required\":true}]；type 推荐使用 TEXT/NUMBER/BOOLEAN/DATE/DATETIME/SELECT/MULTI_SELECT/URL/JSON"
+                                ),
                                 "description", Map.of("type", "string", "description", "集合描述"),
                                 "projectionConfig", Map.of("type", "string", "description", "向量投影配置 JSON，可选")
                         )
@@ -99,21 +94,22 @@ public class StorageToolProvider {
                         String name = input.getParam("name", String.class);
                         String typeStr = input.getParam("type", String.class);
                         CollectionType type = CollectionType.valueOf(typeStr.toUpperCase());
-                        String propsJson = input.getOptionalParam("properties", String.class).orElse(null);
+                        Object rawProperties = input.parameters().get("properties");
                         String description = input.getOptionalParam("description", String.class).orElse(null);
                         String projectionConfig = input.getOptionalParam("projectionConfig", String.class).orElse(null);
 
-                        var propDefs = propsJson != null
-                                ? OBJECT_MAPPER.readValue(propsJson, new TypeReference<List<com.lifepilot.datastore.model.PropertyDefinition>>() {})
-                                : null;
+                        var propDefs = parsePropertyDefinitions(rawProperties);
 
                         Collection created = dataStoreManager.createCollection(
                                 name, type, propDefs, description, null, projectionConfig);
-                        return ToolResult.success(Map.of(
-                                "id", created.id(),
-                                "name", created.name(),
-                                "type", created.type().name()
-                        ));
+                        var result = new HashMap<String, Object>();
+                        result.put("id", created.id());
+                        result.put("name", created.name());
+                        result.put("type", created.type().name());
+                        if (created.defaultKnowledgeBaseId() != null && !created.defaultKnowledgeBaseId().isBlank()) {
+                            result.put("defaultKnowledgeBaseId", created.defaultKnowledgeBaseId());
+                        }
+                        return ToolResult.success(Map.copyOf(result));
                     } catch (Exception e) {
                         log.error("创建集合失败: {}", e.getMessage(), e);
                         return ToolResult.error("创建集合失败: " + e.getMessage());
@@ -156,11 +152,53 @@ public class StorageToolProvider {
                 .build();
     }
 
+    /** 构建删除集合工具。 */
+    private BuiltinTool buildDeleteCollectionTool() {
+        return BuiltinTool.builder()
+                .id("builtin.datastore.delete_collection")
+                .name("删除集合")
+                .description("按集合名称删除整个数据集合及其全部文档")
+                .category(ToolCategory.STORAGE)
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("collectionName"),
+                        "properties", Map.of(
+                                "collectionName", Map.of("type", "string", "description", "目标集合名称")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.MODIFY_DATASTORE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.exactValues("collections", "collectionName")
+                ))
+                .executor(input -> {
+                    try {
+                        String collectionName = input.getParam("collectionName", String.class);
+                        Collection collection = dataStoreManager.findCollection(collectionName)
+                                .orElseThrow(() -> new IllegalArgumentException("集合不存在: " + collectionName));
+                        boolean success = dataStoreManager.deleteCollection(collection.id());
+                        return success
+                                ? ToolResult.success(Map.of(
+                                        "deleted", true,
+                                        "id", collection.id(),
+                                        "name", collection.name()
+                                ))
+                                : ToolResult.error("集合不存在: " + collectionName);
+                    } catch (Exception e) {
+                        log.error("删除集合失败: {}", e.getMessage(), e);
+                        return ToolResult.error("删除集合失败: " + e.getMessage());
+                    }
+                })
+                .build();
+    }
+
     /** 构建添加文档工具。 */
     private BuiltinTool buildAddDocumentTool() {
         return BuiltinTool.builder()
                 .id("builtin.datastore.add_document")
-                .name("添加文档")
+                .name("添加集合文档")
                 .description("向指定集合添加 JSON 文档，通过集合名称定位")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
@@ -205,8 +243,9 @@ public class StorageToolProvider {
     private BuiltinTool buildQueryDocumentsTool() {
         return BuiltinTool.builder()
                 .id("builtin.datastore.query_documents")
-                .name("查询文档")
-                .description("按条件查询集合中的文档，支持过滤、排序和分页")
+                .name("查询集合文档")
+                .description("按条件查询集合中的文档，支持过滤、排序和分页。" +
+                        "用于精确结构化条件查询，例如字段过滤、排序、分页、按 ID/状态/分类精确查找。")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -277,7 +316,7 @@ public class StorageToolProvider {
     private BuiltinTool buildUpdateDocumentTool() {
         return BuiltinTool.builder()
                 .id("builtin.datastore.update_document")
-                .name("更新文档")
+                .name("更新集合文档")
                 .description("根据文档 ID 更新文档数据")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
@@ -416,9 +455,26 @@ public class StorageToolProvider {
         if (col.description() != null) map.put("description", col.description());
         if (col.propertiesJson() != null) map.put("propertiesJson", col.propertiesJson());
         if (col.projectionConfigJson() != null) map.put("projectionConfigJson", col.projectionConfigJson());
+        if (col.defaultKnowledgeBaseId() != null) map.put("defaultKnowledgeBaseId", col.defaultKnowledgeBaseId());
         map.put("createdAt", col.createdAt());
         map.put("updatedAt", col.updatedAt());
         return Map.copyOf(map);
+    }
+
+    private List<PropertyDefinition> parsePropertyDefinitions(Object rawProperties)
+            throws JsonProcessingException {
+        return switch (rawProperties) {
+            case null -> null;
+            case String propsJson -> OBJECT_MAPPER.readValue(
+                    propsJson,
+                    new TypeReference<>() {
+                    });
+            case List<?> rawList -> OBJECT_MAPPER.convertValue(
+                    rawList,
+                    new TypeReference<>() {
+                    });
+            default -> throw new IllegalArgumentException("properties 参数类型不匹配: 期望数组或 JSON 字符串");
+        };
     }
 
     /** 将 Document 转换为 Map 用于 ToolResult。 */

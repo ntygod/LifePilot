@@ -6,6 +6,7 @@ import com.lifepilot.datastore.engine.QueryEngine;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
 import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
+import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.datastore.validation.PropertyValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,11 +78,12 @@ public class DataStoreAutoConfiguration {
                                               AggregationEngine aggregationEngine,
                                               PropertyValidator propertyValidator,
                                               DataStoreProperties properties,
-                                              @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher) {
+                                              @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher,
+                                              @Nullable DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner) {
         log.info("数据存储: 注册 DataStoreManager");
         return new DataStoreManager(collectionRepository, documentRepository,
                 queryEngine, aggregationEngine, propertyValidator, properties,
-                knowledgeSyncPublisher);
+                knowledgeSyncPublisher, datastoreKnowledgeBaseProvisioner);
     }
 
 }

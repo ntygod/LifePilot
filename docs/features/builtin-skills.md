@@ -11,7 +11,7 @@
 当前预置的记忆能力由两部分组成：
 
 - 资源内置的 Memory Skill 说明文件
-- `MemoryToolProvider` 注册的 `builtin.memory.*` 工具
+- `MemoryToolProvider` 注册的记忆与资料检索工具
 
 Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，底层工具负责真正执行检索、创建和更新。
 
@@ -31,7 +31,7 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 
 ### 2.3 知识库文档搜索
 
-`builtin.memory.search-docs` 用于搜索当前会话绑定的知识库文档，适合“文档里怎么说”的场景。
+`builtin.knowledge.search` 用于搜索当前会话绑定的资料文档，适合“文档里怎么说”的场景。
 
 ### 2.4 语义记忆管理
 
@@ -57,7 +57,7 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 |------|------|
 | `builtin.memory.search` | 搜索长期记忆实体 |
 | `builtin.memory.recall` | 回忆跨会话历史对话片段 |
-| `builtin.memory.search-docs` | 搜索知识库文档 |
+| `builtin.knowledge.search` | 搜索资料文档 |
 | `builtin.memory.create` | 创建记忆实体 |
 | `builtin.memory.update` | 更新记忆实体 |
 | `builtin.memory.delete` | 归档记忆实体 |
@@ -77,7 +77,7 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 
 ### 4.3 查文档资料
 
-用户问“部署文档里关于回滚怎么写的”，Agent 应调用 `builtin.memory.search-docs`。
+用户问“部署文档里关于回滚怎么写的”，Agent 应调用 `builtin.knowledge.search`。
 
 ### 4.4 复用执行经验
 
@@ -86,5 +86,5 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 ## 5. 当前限制
 
 - Memory Skill 只负责给出使用说明，真正能力边界由底层工具实现决定
-- `search-docs` 依赖会话绑定知识库，没有绑定时会返回空结果
+- `builtin.knowledge.search` 依赖会话绑定知识库或 datastore，没有绑定时会返回空结果
 - `recall` 只检索跨 session 片段，不负责当前 session 连续性

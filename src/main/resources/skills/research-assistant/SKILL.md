@@ -6,7 +6,7 @@ version: "1.0.0"
 suggested-tools:
   - builtin.web.search
   - builtin.web.fetch
-  - builtin.memory.search-docs
+  - builtin.knowledge.search
   - builtin.memory.search
   - builtin.file.write
 triggers:
@@ -53,7 +53,7 @@ builtin.web.search(query="核心关键词")
 builtin.web.search(query="具体子问题")
 
 # 检查已有知识库
-builtin.memory.search-docs(query="相关主题")
+builtin.knowledge.search(query="相关主题")
 ```
 
 ### 3. 深度抓取

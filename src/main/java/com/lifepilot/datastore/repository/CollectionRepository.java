@@ -48,13 +48,17 @@ public class CollectionRepository {
         String now = Instant.now().toString();
 
         jdbcTemplate.update("""
-                INSERT INTO ds_collections (id, name, description, type, properties_json, projection_config_json, metadata_json, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ds_collections (
+                    id, name, description, type, properties_json,
+                    projection_config_json, metadata_json, default_knowledge_base_id,
+                    created_by, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id, collection.name(), collection.description(),
                 collection.type().name(), collection.propertiesJson(),
                 normalizeProjectionConfigJson(collection.projectionConfigJson()), collection.metadataJson(),
-                collection.createdBy(), now, now);
+                collection.defaultKnowledgeBaseId(), collection.createdBy(), now, now);
 
         log.info("集合创建成功: id={}, name={}", id, collection.name());
         return id;
@@ -129,6 +133,27 @@ public class CollectionRepository {
 
         if (rows > 0) {
             log.info("集合更新成功: id={}", id);
+        }
+        return rows > 0;
+    }
+
+    /**
+     * 更新集合的默认知识库 ID。
+     *
+     * @param id                     集合 ID
+     * @param defaultKnowledgeBaseId 默认知识库 ID
+     * @return 是否更新成功
+     */
+    public boolean updateDefaultKnowledgeBaseId(String id, @Nullable String defaultKnowledgeBaseId) {
+        String now = Instant.now().toString();
+        int rows = jdbcTemplate.update("""
+                UPDATE ds_collections
+                SET default_knowledge_base_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                defaultKnowledgeBaseId, now, id);
+        if (rows > 0) {
+            log.info("集合默认知识库已更新: id={}, knowledgeBaseId={}", id, defaultKnowledgeBaseId);
         }
         return rows > 0;
     }
@@ -223,6 +248,7 @@ public class CollectionRepository {
                 rs.getString("properties_json"),
                 normalizeProjectionConfigJson(rs.getString("projection_config_json")),
                 rs.getString("metadata_json"),
+                rs.getString("default_knowledge_base_id"),
                 rs.getString("created_by"),
                 rs.getString("created_at"),
                 rs.getString("updated_at")

@@ -16,9 +16,11 @@ import com.lifepilot.conversation.artifact.SessionArtifactRepository;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
@@ -173,7 +175,11 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) EffectivenessTracker effectivenessTracker,
             @Autowired(required = false) SkillRegistry skillRegistry,
             @Autowired(required = false) GenerationRouter generationRouter,
-            @Autowired(required = false) ContextEngine contextEngine) {
+            @Autowired(required = false) ContextEngine contextEngine,
+            @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+            @Autowired(required = false) SessionDatastoreRepository sessionDatastoreRepository,
+            @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
+            @Autowired(required = false) CollectionRepository collectionRepository) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -188,7 +194,11 @@ public class AgentAutoConfiguration {
                 effectivenessTracker,
                 skillRegistry,
                 generationRouter,
-                contextEngine);
+                contextEngine,
+                sessionKnowledgeBaseRepository,
+                sessionDatastoreRepository,
+                knowledgeBaseRepository,
+                collectionRepository);
     }
 
     @Bean

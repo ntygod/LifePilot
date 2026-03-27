@@ -176,6 +176,8 @@ public class DocumentIngester {
             throw new IllegalArgumentException("投影内容不能为空");
         }
         try {
+            log.info("Datastore 投影文档开始索引: documentId={}, knowledgeBaseId={}, sourceDatastoreId={}, sourceKey={}, contentLength={}",
+                    doc.id(), doc.knowledgeBaseId(), doc.sourceDatastoreId(), doc.sourceKey(), content.length());
             publishProgress(doc, DocumentStatus.CHUNKING, 40, "同步 datastore 文档分块中");
             updateStage(doc.id(), DocumentStatus.CHUNKING);
             var parseResult = new ParseResult(
@@ -199,6 +201,8 @@ public class DocumentIngester {
             docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
             docRepository.updateLastProcessedStage(doc.id(), DocumentStatus.READY.name());
             refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
+            log.info("Datastore 投影文档索引完成: documentId={}, knowledgeBaseId={}, sourceDatastoreId={}, chunkCount={}",
+                    doc.id(), doc.knowledgeBaseId(), doc.sourceDatastoreId(), chunks.size());
             return docRepository.findById(doc.id()).orElse(doc);
         } catch (Exception e) {
             docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, e.getMessage());

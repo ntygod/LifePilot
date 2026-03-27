@@ -8,7 +8,7 @@ suggested-tools:
   - builtin.web.fetch
   - builtin.file.read
   - builtin.file.write
-  - builtin.memory.search-docs
+  - builtin.knowledge.search
   - builtin.memory.search
 triggers:
   - "写文章"
@@ -56,7 +56,7 @@ triggers:
 builtin.web.search(query="主题关键词")
 
 # 检查已有知识库
-builtin.memory.search-docs(query="相关主题")
+builtin.knowledge.search(query="相关主题")
 
 # 读取用户提供的参考文件
 builtin.file.read(path="参考文件路径")

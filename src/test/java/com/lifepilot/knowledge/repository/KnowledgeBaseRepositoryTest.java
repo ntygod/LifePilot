@@ -87,6 +87,25 @@ class KnowledgeBaseRepositoryTest {
     }
 
     @Test
+    void save_空EmbeddingModel_持久化为默认值且读出为null() {
+        var kb = KnowledgeBase.create("默认模型知识库", "描述", null,
+                null, null, null, null);
+
+        repository.save(kb);
+
+        var found = repository.findById(kb.id());
+        assertThat(found).isPresent();
+        assertThat(found.get().embeddingModel()).isNull();
+
+        String rawValue = jdbcTemplate.queryForObject(
+                "SELECT embedding_model FROM knowledge_bases WHERE id = ?",
+                String.class,
+                kb.id()
+        );
+        assertThat(rawValue).isEqualTo("default");
+    }
+
+    @Test
     void save_upsert_更新已有记录() {
         var kb = KnowledgeBase.create("原始名称", "原始描述", "model-v1",
                 null, null, null, null);

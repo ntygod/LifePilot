@@ -6,7 +6,7 @@ version: "1.0.0"
 suggested-tools:
   - builtin.memory.search
   - builtin.memory.recall
-  - builtin.memory.search-docs
+  - builtin.knowledge.search
   - builtin.memory.create
   - builtin.memory.update
   - builtin.memory.delete
@@ -53,7 +53,7 @@ triggers:
 |------|---------|------|
 | `builtin.memory.search` | 搜索知识实体（人物、地点、事件、偏好） | "我喜欢什么颜色？" |
 | `builtin.memory.recall` | 回忆跨会话的历史对话片段 | "我之前说过什么关于旅行的？" |
-| `builtin.memory.search-docs` | 搜索已上传的知识库文档 | "文档里关于部署流程怎么说的？" |
+| `builtin.knowledge.search` | 搜索已上传的资料文档 | "文档里关于部署流程怎么说的？" |
 
 ### 创建与更新
 
@@ -103,4 +103,4 @@ triggers:
 - **实体不存在**：`update` 和 `delete` 返回"实体不存在"时，先用 `search` 确认正确的 ID
 - **无效实体类型**：`entityType` 必须是预定义枚举值（PERSON/ORGANIZATION/PLACE/EVENT/PROJECT/TOPIC/PREFERENCE/HABIT/GOAL/SKILL/CUSTOM）
 - **无效时间格式**：`query-at-time` 的 `timestamp` 必须是 ISO 8601 格式
-- **无法获取会话 ID**：`recall` 和 `search-docs` 依赖会话上下文，确保在有效会话中调用
+- **无法获取会话 ID**：`recall` 和 `builtin.knowledge.search` 依赖会话上下文，确保在有效会话中调用

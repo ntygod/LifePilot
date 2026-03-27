@@ -23,6 +23,8 @@ import com.lifepilot.eval.scenario.MockToolSpec;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.McpTool;
+import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -82,6 +84,8 @@ public class EvalEngine {
 
     private record GitInfo(@Nullable String commitHash, @Nullable String branch) {}
 
+    private record MockToolRegistration(String toolId, @Nullable ToolContract previousTool) {}
+
     public EvalEngine(ScenarioLoader scenarioLoader,
                       AgentOrchestrator agentOrchestrator,
                       TraceQuery traceQuery,
@@ -127,7 +131,7 @@ public class EvalEngine {
 
         try {
             // 0. 注册 Mock 工具（如果场景定义了 mockToolResponses）
-            List<String> mockToolIds = registerMockTools(scenario);
+            List<MockToolRegistration> mockToolIds = registerMockTools(scenario);
 
             try {
                 // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
@@ -364,27 +368,35 @@ public class EvalEngine {
      * @param scenario 场景定义
      * @return 已注册的 Mock 工具 ID 列表（用于后续注销）
      */
-    private List<String> registerMockTools(BenchmarkScenario scenario) {
-        List<String> registeredIds = new ArrayList<>();
+    private List<MockToolRegistration> registerMockTools(BenchmarkScenario scenario) {
+        List<MockToolRegistration> registeredIds = new ArrayList<>();
 
         // 优先使用智能 Mock（MockToolSpec）
         var mockTools = scenario.mockTools();
         if (mockTools != null && !mockTools.isEmpty()) {
             for (MockToolSpec spec : mockTools) {
-                String namespacedId = "eval-mock-" + scenario.id() + "-" + spec.toolId();
+                String targetToolId = spec.toolId();
+                ToolContract previousTool = toolRegistry.resolve(targetToolId).orElse(null);
+                if (previousTool != null) {
+                    toolRegistry.unregisterTool(targetToolId);
+                }
                 try {
                     var mockTool = BuiltinTool.builder()
-                            .id(namespacedId)
+                            .id(targetToolId)
                             .name("mock-" + spec.toolId())
                             .description("Mock 工具: " + spec.toolId())
                             .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                             .executor(input -> executeMockBehavior(spec, input))
                             .build();
                     toolRegistry.registerBuiltinTool(mockTool);
-                    registeredIds.add(namespacedId);
-                    log.debug("智能 Mock 工具注册成功: toolId={}", namespacedId);
+                    registeredIds.add(new MockToolRegistration(targetToolId, previousTool));
+                    log.debug("智能 Mock 工具注册成功: toolId={}, 覆盖原工具={}",
+                            targetToolId, previousTool != null);
                 } catch (Exception e) {
-                    log.warn("智能 Mock 工具注册失败: toolId={}, error={}", namespacedId, e.getMessage());
+                    if (previousTool != null) {
+                        restoreTool(previousTool);
+                    }
+                    log.warn("智能 Mock 工具注册失败: toolId={}, error={}", targetToolId, e.getMessage());
                 }
             }
             if (!registeredIds.isEmpty()) {
@@ -402,20 +414,26 @@ public class EvalEngine {
         for (var entry : mockResponses.entrySet()) {
             String toolId = entry.getKey();
             String responseJson = entry.getValue();
-            String namespacedId = "eval-mock-" + scenario.id() + "-" + toolId;
+            ToolContract previousTool = toolRegistry.resolve(toolId).orElse(null);
+            if (previousTool != null) {
+                toolRegistry.unregisterTool(toolId);
+            }
             try {
                 var mockTool = BuiltinTool.builder()
-                        .id(namespacedId)
+                        .id(toolId)
                         .name("mock-" + toolId)
                         .description("Mock 工具: " + toolId)
                         .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                         .executor(input -> ToolResult.success(Map.of("response", responseJson)))
                         .build();
                 toolRegistry.registerBuiltinTool(mockTool);
-                registeredIds.add(namespacedId);
-                log.debug("静态 Mock 工具注册成功: toolId={}", namespacedId);
+                registeredIds.add(new MockToolRegistration(toolId, previousTool));
+                log.debug("静态 Mock 工具注册成功: toolId={}, 覆盖原工具={}", toolId, previousTool != null);
             } catch (Exception e) {
-                log.warn("Mock 工具注册失败，跳过: toolId={}, error={}", namespacedId, e.getMessage());
+                if (previousTool != null) {
+                    restoreTool(previousTool);
+                }
+                log.warn("Mock 工具注册失败，跳过: toolId={}, error={}", toolId, e.getMessage());
             }
         }
 
@@ -467,14 +485,29 @@ public class EvalEngine {
      *
      * @param mockToolIds 需要注销的工具 ID 列表
      */
-    private void unregisterMockTools(List<String> mockToolIds) {
-        for (String toolId : mockToolIds) {
+    private void unregisterMockTools(List<MockToolRegistration> mockToolIds) {
+        for (MockToolRegistration registration : mockToolIds) {
             try {
-                toolRegistry.unregisterBuiltinTool(toolId);
+                toolRegistry.unregisterTool(registration.toolId());
+                if (registration.previousTool() != null) {
+                    restoreTool(registration.previousTool());
+                }
             } catch (Exception e) {
-                log.warn("Mock 工具注销失败: toolId={}, error={}", toolId, e.getMessage());
+                log.warn("Mock 工具注销失败: toolId={}, error={}", registration.toolId(), e.getMessage());
             }
         }
+    }
+
+    private void restoreTool(ToolContract tool) {
+        if (tool instanceof BuiltinTool builtinTool) {
+            toolRegistry.registerBuiltinTool(builtinTool);
+            return;
+        }
+        if (tool instanceof McpTool mcpTool) {
+            toolRegistry.registerMcpTools(mcpTool.serverName(), List.of(mcpTool));
+            return;
+        }
+        log.warn("未知工具类型，无法恢复: id={}, type={}", tool.id(), tool.getClass().getName());
     }
 
     /**

@@ -1,0 +1,34 @@
+id: "datastore-domain-isolation-b"
+name: "Datastore 领域隔离 B"
+description: "验证切换到领域 B 后，Agent 回答应整体切换为 B 领域事实，不延续 A 领域设定。"
+category: "domain-isolation"
+difficulty: "medium"
+userInput: "主角金手指是什么"
+expectedToolCalls:
+  - "builtin.knowledge.search"
+expectedOutputPattern: ".*情绪感知.*"
+dimensionWeights:
+  toolSelection: 0.35
+  parameterValidity: 0.15
+  stepEfficiency: 0.15
+  policyCompliance: 0.15
+  tokenEfficiency: 0.20
+timeoutSeconds: 45
+mockTools:
+  - toolId: "builtin.knowledge.search"
+    behaviors:
+      - parameterPattern: "主角金手指"
+        response: '{"results":[{"chunkId":"chunk-b-1","documentId":"doc-b","content":"主角金手指设定：情绪感知，能够读取附近人物的情绪波动。","score":0.96,"sourceType":"DATASTORE_DOCUMENT","sourceDatastoreId":"novel-b"}],"count":1}'
+        simulateError: false
+        delayMs: 0
+    defaultResponse: '{"results":[],"count":0}'
+initialContext:
+  boundDatastore: "novel-b"
+  note: "当前会话已绑定 Datastore：novel-b。该领域资料存在与其他领域冲突的同名设定。"
+tags:
+  - "datastore"
+  - "domain-isolation"
+  - "smoke"
+llmJudgeCriteria: "Agent 应优先调用 builtin.knowledge.search，并基于检索结果回答“情绪感知”。回答中不得混入其他领域的冲突设定，例如“时间回溯”。"
+expectedTokenBudget: 18000
+expectedStepCount: 3

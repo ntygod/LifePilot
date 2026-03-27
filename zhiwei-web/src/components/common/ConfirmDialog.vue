@@ -1,8 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -33,19 +32,41 @@ const emit = defineEmits<{
   'update:show': [value: boolean]
 }>()
 
+const closingReason = ref<'confirm' | 'cancel' | null>(null)
+
 function handleConfirm() {
+  closingReason.value = 'confirm'
   emit('confirm')
   emit('update:show', false)
+  queueMicrotask(() => {
+    closingReason.value = null
+  })
 }
 
 function handleCancel() {
+  closingReason.value = 'cancel'
+  emit('cancel')
+  emit('update:show', false)
+  queueMicrotask(() => {
+    closingReason.value = null
+  })
+}
+
+function handleOpenChange(value: boolean) {
+  if (value) {
+    emit('update:show', true)
+    return
+  }
+  if (closingReason.value) {
+    return
+  }
   emit('cancel')
   emit('update:show', false)
 }
 </script>
 
 <template>
-  <AlertDialog :open="show" @update:open="$emit('update:show', $event)">
+  <AlertDialog :open="show" @update:open="handleOpenChange">
     <AlertDialogContent class="sm:max-w-[440px]">
       <AlertDialogHeader>
         <AlertDialogTitle class="text-left text-lg font-semibold tracking-tight">
@@ -56,20 +77,22 @@ function handleCancel() {
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter class="gap-2">
-        <AlertDialogCancel as-child>
-          <Button type="button" variant="outline" @click="handleCancel">
-            {{ cancelLabel }}
-          </Button>
-        </AlertDialogCancel>
-        <AlertDialogAction as-child>
-          <Button
-            type="button"
-            :variant="confirmVariant === 'destructive' ? 'destructive' : 'default'"
-            @click="handleConfirm"
-          >
-            {{ confirmLabel }}
-          </Button>
-        </AlertDialogAction>
+        <Button
+          type="button"
+          variant="outline"
+          data-test="confirm-cancel"
+          @click="handleCancel"
+        >
+          {{ cancelLabel }}
+        </Button>
+        <Button
+          type="button"
+          data-test="confirm-action"
+          :variant="confirmVariant === 'destructive' ? 'destructive' : 'default'"
+          @click="handleConfirm"
+        >
+          {{ confirmLabel }}
+        </Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

@@ -13,7 +13,7 @@
 - **预置 Skill 定义**：`src/main/resources/skills/memory/SKILL.md`
 - **底层记忆工具注册**：`com.lifepilot.meta.infra.memory.MemoryToolProvider`
 
-也就是说，Memory Skill 的“指令和建议工具列表”由资源文件提供，而真正可执行的 `builtin.memory.*` 工具由 `MemoryToolProvider` 注册到 `DynamicToolRegistry`。
+也就是说，Memory Skill 的“指令和建议工具列表”由资源文件提供，而真正可执行的记忆/资料检索工具由 `MemoryToolProvider` 注册到 `DynamicToolRegistry`。
 
 ## 2. 架构图
 
@@ -56,7 +56,7 @@ graph TB
 - 当前列出的关键工具包括：
   - `builtin.memory.search`
   - `builtin.memory.recall`
-  - `builtin.memory.search-docs`
+  - `builtin.knowledge.search`
   - `builtin.memory.create`
   - `builtin.memory.update`
   - `builtin.memory.delete`
@@ -71,7 +71,7 @@ graph TB
 - 工具职责分层如下：
   - `search`：搜索 L3/L4 实体
   - `recall`：跨 session 回忆对话片段
-  - `search-docs`：搜索知识库文档
+  - `builtin.knowledge.search`：搜索资料文档
   - `create / update / delete / tag`：管理语义记忆实体和关系
   - `query-at-time`：查询指定时间点有效的实体
   - `search-experience`：搜索历史执行经验
@@ -88,7 +88,7 @@ graph TB
 |------|------|------|
 | Skill 与工具分层 | 指令在 `SKILL.md`，执行能力在 `MemoryToolProvider` | 让提示词和实现解耦 |
 | recall 返回形式 | snippet 而不是单条 message | 更适合模型直接使用 |
-| docs 检索入口 | `search-docs` 单独拆出 | 区分会话回忆、知识实体检索和文档检索 |
+| 资料检索入口 | `builtin.knowledge.search` 单独拆出 | 区分会话回忆、知识实体检索和资料文档检索 |
 | 工具注册位置 | Meta 模块统一注册 | 便于与其他内置元能力工具共用启动流程 |
 
 ## 5. 集成点
@@ -96,6 +96,6 @@ graph TB
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
 | Skill 系统 | Skill → Tool | `memory/SKILL.md` 暴露记忆相关建议工具 |
-| 元能力模块 | Meta → Tool | `MemoryToolProvider` 注册 `builtin.memory.*` |
+| 元能力模块 | Meta → Tool | `MemoryToolProvider` 注册记忆与资料检索工具 |
 | 记忆系统 | Tool → Memory | 工具调用 `HybridRetriever`、`SemanticMemory`、`EpisodicMemory` |
-| 知识库 | Tool → Knowledge | `search-docs` 走知识库检索链路 |
+| 知识库 | Tool → Knowledge | `builtin.knowledge.search` 走知识库检索链路 |

@@ -98,10 +98,13 @@ public class ToolAutoConfiguration {
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
-            MetaProperties metaProperties) {
+            @Nullable MetaProperties metaProperties) {
         log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider");
+        int maxToolOutputChars = metaProperties != null
+                ? metaProperties.getInfra().getMaxToolOutputChars()
+                : new MetaProperties().getInfra().getMaxToolOutputChars();
         return new ToolBridgeAgentToolProvider(
-                toolRegistry, pipeline, objectMapper, metaProperties);
+                toolRegistry, pipeline, objectMapper, maxToolOutputChars);
     }
 
     /**

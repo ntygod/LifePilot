@@ -44,6 +44,8 @@ public class DataStoreKnowledgeSyncJobPublisher implements DataStoreKnowledgeSyn
     public void publishDocumentUpsert(Collection collection, Document document) {
         List<String> knowledgeBaseIds = knowledgeBaseDatastoreRepository.findKnowledgeBaseIdsByDatastoreId(collection.id());
         if (knowledgeBaseIds.isEmpty()) {
+            log.info("Datastore 文档变更未触发知识同步: datastoreId={}, documentId={}, reason=未挂载知识库",
+                    collection.id(), document.id());
             return;
         }
 
@@ -64,12 +66,16 @@ public class DataStoreKnowledgeSyncJobPublisher implements DataStoreKnowledgeSyn
                 document.updatedAt(),
                 payload
         );
+        log.info("Datastore 文档已发布同步任务: datastoreId={}, documentId={}, knowledgeBaseCount={}",
+                collection.id(), document.id(), knowledgeBaseIds.size());
     }
 
     @Override
     public void publishDocumentDelete(String datastoreId, String documentId, @Nullable String sourceVersion) {
         List<String> knowledgeBaseIds = knowledgeBaseDatastoreRepository.findKnowledgeBaseIdsByDatastoreId(datastoreId);
         if (knowledgeBaseIds.isEmpty()) {
+            log.info("Datastore 文档删除未触发知识同步: datastoreId={}, documentId={}, reason=未挂载知识库",
+                    datastoreId, documentId);
             return;
         }
         enqueueForKnowledgeBases(
@@ -80,6 +86,8 @@ public class DataStoreKnowledgeSyncJobPublisher implements DataStoreKnowledgeSyn
                 sourceVersion,
                 Map.of("documentId", documentId)
         );
+        log.info("Datastore 文档删除已发布同步任务: datastoreId={}, documentId={}, knowledgeBaseCount={}",
+                datastoreId, documentId, knowledgeBaseIds.size());
     }
 
     @Override
@@ -96,12 +104,15 @@ public class DataStoreKnowledgeSyncJobPublisher implements DataStoreKnowledgeSyn
                 null,
                 Map.of()
         );
+        log.info("Datastore 重同步已发布任务: datastoreId={}, knowledgeBaseCount={}",
+                datastoreId, knowledgeBaseIds.size());
     }
 
     @Override
     public void publishDatastorePurge(String datastoreId) {
         List<String> knowledgeBaseIds = knowledgeBaseDatastoreRepository.findKnowledgeBaseIdsByDatastoreId(datastoreId);
         if (knowledgeBaseIds.isEmpty()) {
+            log.info("Datastore 清理未触发知识同步: datastoreId={}, reason=未挂载知识库", datastoreId);
             return;
         }
         enqueueForKnowledgeBases(
@@ -112,6 +123,8 @@ public class DataStoreKnowledgeSyncJobPublisher implements DataStoreKnowledgeSyn
                 null,
                 Map.of()
         );
+        log.info("Datastore 清理已发布任务: datastoreId={}, knowledgeBaseCount={}",
+                datastoreId, knowledgeBaseIds.size());
     }
 
     private void enqueueForKnowledgeBases(KnowledgeSyncJobType jobType,

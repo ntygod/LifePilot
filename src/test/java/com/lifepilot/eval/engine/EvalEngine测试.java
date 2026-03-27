@@ -10,12 +10,20 @@ import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.EvalReport;
 import com.lifepilot.eval.report.ReportSummary;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
+import com.lifepilot.eval.scenario.MockToolSpec;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.observability.evaluation.EvaluationConfig;
 import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.evaluation.EvaluationResult;
 import com.lifepilot.observability.trace.TraceQuery;
+import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +35,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -178,6 +187,83 @@ class EvalEngine测试 {
         assertThat(summary).isNotNull();
         assertThat(summary.totalScenarios()).isEqualTo(2);
         verify(evalReport).generateSummary(argThat(list -> list.size() == 2), anyString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void registerMockTools_应覆盖同ID真实工具并在清理后恢复() throws Exception {
+        DynamicToolRegistry realRegistry = new DynamicToolRegistry(mock(org.springframework.context.ApplicationEventPublisher.class));
+        BuiltinTool originalTool = BuiltinTool.builder()
+                .id("builtin.knowledge.search")
+                .name("原始检索资料")
+                .description("原始工具")
+                .inputSchema(JsonSchema.empty())
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .executor(input -> ToolResult.success(Map.of("results", List.of(), "count", 0)))
+                .build();
+        realRegistry.registerBuiltinTool(originalTool);
+
+        evalEngine = new EvalEngine(
+                scenarioLoader, agentOrchestrator, traceQuery,
+                evaluationCore, llmJudge, evalStore,
+                evalReport, realRegistry, config,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                new DiagnosticEnricher(), new ObjectMapper(), null
+        );
+
+        var scenario = BenchmarkScenario.builder()
+                .id("domain-isolation-a")
+                .name("领域隔离 A")
+                .userInput("主角金手指是什么")
+                .expectedToolCalls(List.of("builtin.knowledge.search"))
+                .dimensionWeights(Map.of(
+                        "toolSelection", 0.2,
+                        "parameterValidity", 0.2,
+                        "stepEfficiency", 0.2,
+                        "policyCompliance", 0.2,
+                        "tokenEfficiency", 0.2
+                ))
+                .timeoutSeconds(30)
+                .mockTools(List.of(new MockToolSpec(
+                        "builtin.knowledge.search",
+                        List.of(new MockToolSpec.MockBehavior(
+                                "主角金手指",
+                                "{\"results\":[{\"content\":\"主角金手指设定：时间回溯。\"}],\"count\":1}",
+                                false,
+                                0
+                        )),
+                        "{\"results\":[],\"count\":0}"
+                )))
+                .tags(List.of("domain-isolation"))
+                .expectedTokenBudget(500)
+                .expectedStepCount(2)
+                .build();
+
+        Method registerMethod = EvalEngine.class.getDeclaredMethod("registerMockTools", BenchmarkScenario.class);
+        registerMethod.setAccessible(true);
+        List<Object> registrations = (List<Object>) registerMethod.invoke(evalEngine, scenario);
+
+        var overridden = realRegistry.resolve("builtin.knowledge.search").orElseThrow();
+        assertThat(overridden.name()).isEqualTo("mock-builtin.knowledge.search");
+        var toolResult = overridden.execute(new ToolInput(
+                overridden.id(),
+                Map.of("query", "主角金手指"),
+                JsonSchema.empty(),
+                null,
+                null
+        ));
+        assertThat(toolResult.ok()).isTrue();
+        assertThat(toolResult.<String>getData("response")).contains("时间回溯");
+
+        Method unregisterMethod = EvalEngine.class.getDeclaredMethod("unregisterMockTools", List.class);
+        unregisterMethod.setAccessible(true);
+        unregisterMethod.invoke(evalEngine, registrations);
+
+        ToolContract restored = realRegistry.resolve("builtin.knowledge.search").orElseThrow();
+        assertThat(restored.name()).isEqualTo("原始检索资料");
     }
 
     // ── 辅助方法 ──

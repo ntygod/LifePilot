@@ -1,7 +1,6 @@
 package com.lifepilot.tool.bridge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -53,7 +52,7 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                new MetaProperties()
+                30000
         );
 
         var hint = provider.resolveSchedulingHint(
@@ -93,7 +92,7 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                new MetaProperties()
+                30000
         );
 
         var hint = provider.resolveSchedulingHint("builtin.file.write", "{not-json");

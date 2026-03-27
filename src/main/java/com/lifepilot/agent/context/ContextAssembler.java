@@ -2,7 +2,11 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.procedural.PreferenceRule;
@@ -48,6 +52,10 @@ public class ContextAssembler {
     @Nullable private final SkillRegistry skillRegistry;
     @Nullable private final GenerationRouter generationRouter;
     @Nullable private final ContextEngine contextEngine;
+    @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    @Nullable private final SessionDatastoreRepository sessionDatastoreRepository;
+    @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
+    @Nullable private final CollectionRepository collectionRepository;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -59,7 +67,8 @@ public class ContextAssembler {
                             @Nullable SkillRegistry skillRegistry) {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry, null, null);
+                proceduralMemory, effectivenessTracker, skillRegistry,
+                null, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -73,7 +82,8 @@ public class ContextAssembler {
                             @Nullable GenerationRouter generationRouter) {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry, generationRouter, null);
+                proceduralMemory, effectivenessTracker, skillRegistry,
+                generationRouter, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -86,6 +96,26 @@ public class ContextAssembler {
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable GenerationRouter generationRouter,
                             @Nullable ContextEngine contextEngine) {
+        this(config, promptRegistry,
+                dataRedactor, semanticMemory, memoryProperties,
+                proceduralMemory, effectivenessTracker, skillRegistry,
+                generationRouter, contextEngine, null, null, null, null);
+    }
+
+    public ContextAssembler(AgentConfigProperties config,
+                            PromptRegistry promptRegistry,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable SemanticMemory semanticMemory,
+                            @Nullable MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
+                            @Nullable EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry,
+                            @Nullable GenerationRouter generationRouter,
+                            @Nullable ContextEngine contextEngine,
+                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+                            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                            @Nullable CollectionRepository collectionRepository) {
         this.config = config;
         this.promptRegistry = promptRegistry;
         this.dataRedactor = dataRedactor;
@@ -96,6 +126,10 @@ public class ContextAssembler {
         this.skillRegistry = skillRegistry;
         this.generationRouter = generationRouter;
         this.contextEngine = contextEngine;
+        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+        this.sessionDatastoreRepository = sessionDatastoreRepository;
+        this.knowledgeBaseRepository = knowledgeBaseRepository;
+        this.collectionRepository = collectionRepository;
     }
     /**
      * 运行时传入的模型上下文窗口，0 表示使用配置值和 Provider 默认值。
@@ -337,6 +371,10 @@ public class ContextAssembler {
                 "channel", state.channel() != null ? state.channel() : "unknown",
                 "userGoal", state.goal() != null ? state.goal() : ""
         ));
+        String knowledgeBindingPrompt = buildKnowledgeBindingPrompt(state.sessionId());
+        if (!knowledgeBindingPrompt.isBlank()) {
+            userPrompt = userPrompt + "\n\n" + knowledgeBindingPrompt;
+        }
         if (state.goal() != null && state.goal().contains("<resume_user_input>")) {
             userPrompt = userPrompt + """
 
@@ -347,6 +385,60 @@ public class ContextAssembler {
                 """;
         }
         return userPrompt;
+    }
+
+    private String buildKnowledgeBindingPrompt(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return "";
+        }
+
+        List<String> knowledgeBaseLines = new ArrayList<>();
+        if (sessionKnowledgeBaseRepository != null) {
+            for (String knowledgeBaseId : sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)) {
+                knowledgeBaseLines.add(formatKnowledgeBaseBinding(knowledgeBaseId));
+            }
+        }
+
+        List<String> datastoreLines = new ArrayList<>();
+        if (sessionDatastoreRepository != null) {
+            for (String datastoreId : sessionDatastoreRepository.findDatastoreIdsBySessionId(sessionId)) {
+                datastoreLines.add(formatDatastoreBinding(datastoreId));
+            }
+        }
+
+        if (knowledgeBaseLines.isEmpty() && datastoreLines.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder("<active_knowledge_bindings>\n");
+        if (!datastoreLines.isEmpty()) {
+            sb.append("- 当前会话已绑定 Datastore：\n");
+            datastoreLines.forEach(line -> sb.append("  · ").append(line).append('\n'));
+        }
+        if (!knowledgeBaseLines.isEmpty()) {
+            sb.append("- 当前会话已绑定 Knowledge Base：\n");
+            knowledgeBaseLines.forEach(line -> sb.append("  · ").append(line).append('\n'));
+        }
+        sb.append("</active_knowledge_bindings>");
+        return sb.toString();
+    }
+
+    private String formatKnowledgeBaseBinding(String knowledgeBaseId) {
+        if (knowledgeBaseRepository == null) {
+            return knowledgeBaseId;
+        }
+        return knowledgeBaseRepository.findById(knowledgeBaseId)
+                .map(knowledgeBase -> "%s (%s)".formatted(knowledgeBase.name(), knowledgeBase.id()))
+                .orElse(knowledgeBaseId);
+    }
+
+    private String formatDatastoreBinding(String datastoreId) {
+        if (collectionRepository == null) {
+            return datastoreId;
+        }
+        return collectionRepository.findById(datastoreId)
+                .map(collection -> "%s (%s)".formatted(collection.name(), collection.id()))
+                .orElse(datastoreId);
     }
 
 
@@ -436,18 +528,17 @@ public class ContextAssembler {
                 <execution_completion_contract>
                 - 你需要根据当前请求自行判断这是普通问答，还是需要持续执行的多步任务
                 - 普通问答、解释、分析、总结类请求：可以直接正常回答并结束，不需要任何特殊前缀
-                - 多步执行类请求：如果还有必要步骤未完成，不要用阶段性总结、计划说明或“接下来继续执行”之类的话结束本轮，应该继续调用工具
+                - 多步执行类请求：如果还有必要步骤未完成，不要用阶段性总结结束本轮，应该继续调用工具
                 - 如果只是缺少用户补充的信息、确认结果或外部回传结果，不要把这种可恢复阻塞包装成已经失败或已经完成
                 - 在 Web 对话中，需要用户补充信息时，直接把整段面向用户的追问包在 <await_user_input>...</await_user_input> 中
-                - <await_user_input> 标签内的文本会直接显示给用户，所以要明确说明缺什么、为什么缺，以及补充后会继续做什么
+                - <await_user_input> 标签内的文本要明确说明缺什么、为什么缺，以及补充后会继续做什么
                 - 如果这轮没有调用工具、但你已经能够给出终态文本，请在自然语言正文后追加一个隐藏控制标签：
                   1. `<completion_control>done</completion_control>` 表示任务已完成
                   2. `<completion_control>blocked</completion_control>` 表示任务明确阻塞
                   3. `<completion_control>continue</completion_control>` 表示这段文字只是阶段说明，不是终态
                 - `completion_control` 只给系统判断使用，不会展示给用户；用户看到的仍应是自然语言正文
-                - 如果用户明确要求“就到这里”“输出一个 OK 即可”“这样结束吧”，且当前目标已经满足，可以直接自然收尾，不必为了格式再解释系统状态
-                - 不要再额外输出“我先挂起”“等待恢复”之类的系统说明，直接向用户追问即可
-                - “创建了目录”“了解了流程”“下一步将继续执行”“现在让我继续处理”都不算完成
+                - 如果用户明确要求结束对话，且当前目标已经满足，可以直接自然收尾
+                - 需要补充信息直接追问即可
                 """);
         if (state.earlyStopRejectCount() > 0) {
             sb.append("- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n");
