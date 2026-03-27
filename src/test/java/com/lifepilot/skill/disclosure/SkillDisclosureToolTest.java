@@ -63,10 +63,46 @@ class SkillDisclosureToolTest {
         when(skillActivator.activate("todo-manager")).thenReturn(activation);
 
         ToolResult result = invokeLoadSkill("todo-manager");
+        Integer loadedCount = result.getData("loaded_count");
+        List<String> missingSkills = result.getData("missing_skills");
+        List<String> suggestedTools = result.getData("all_suggested_tools");
+        List<Map<String, Object>> skills = result.getData("skills");
 
         assertThat(result.ok()).isTrue();
-        assertThat((String) result.getData("skill_id")).isEqualTo("todo-manager");
-        assertThat((String) result.getData("instructions")).isEqualTo("请按以下步骤操作...");
+        assertThat(loadedCount).isEqualTo(1);
+        assertThat(missingSkills).isEqualTo(List.of());
+        assertThat(suggestedTools).isEqualTo(List.of("builtin.datastore.query"));
+        assertThat(skills)
+                .singleElement()
+                .satisfies(skill -> {
+                    assertThat(skill.get("skill_id")).isEqualTo("todo-manager");
+                    assertThat(skill.get("instructions")).isEqualTo("请按以下步骤操作...");
+                    assertThat(skill.get("suggested_tools")).isEqualTo(List.of("builtin.datastore.query"));
+                });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void loadSkill_部分不存在_返回部分成功和缺失列表() {
+        var activation = new SkillActivation("todo-manager", "请按以下步骤操作...",
+                List.of("builtin.datastore.query"));
+        when(skillActivator.activate("todo-manager")).thenReturn(activation);
+        when(skillActivator.activate("missing-skill"))
+                .thenThrow(new SkillActivationException("Skill 不存在: missing-skill"));
+
+        ToolResult result = invokeLoadSkill("todo-manager", "missing-skill");
+        Integer loadedCount = result.getData("loaded_count");
+        List<String> missingSkills = result.getData("missing_skills");
+        List<Map<String, Object>> skills = result.getData("skills");
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.status().name()).isEqualTo("PARTIAL_SUCCESS");
+        assertThat(result.error()).contains("missing-skill");
+        assertThat(loadedCount).isEqualTo(1);
+        assertThat(missingSkills).isEqualTo(List.of("missing-skill"));
+        assertThat(skills)
+                .extracting(skill -> skill.get("skill_id"))
+                .containsExactly("todo-manager");
     }
 
     // ─────────────────────────────────────────────
@@ -90,7 +126,7 @@ class SkillDisclosureToolTest {
     // ─────────────────────────────────────────────
 
     /** 创建工具并通过 executor 调用 load_skill。 */
-    private ToolResult invokeLoadSkill(String skillId) {
+    private ToolResult invokeLoadSkill(String... skillIds) {
         var tool = new SkillDisclosureTool(toolRegistry, skillActivator);
         tool.registerTools();
 
@@ -99,7 +135,7 @@ class SkillDisclosureToolTest {
         BuiltinTool registered = captor.getValue();
 
         var input = new ToolInput("load_skill",
-                Map.of("skill_id", skillId),
+                Map.of("skill_ids", List.of(skillIds)),
                 JsonSchema.empty(), null, null);
         return registered.execute(input);
     }

@@ -16,7 +16,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.ArrayList;
 
 /**
  * Skill 渐进式披露工具 — 注册 load_skill 工具到 DynamicToolRegistry。
@@ -32,6 +34,7 @@ import java.util.Map;
 public class SkillDisclosureTool {
 
     private static final Logger log = LoggerFactory.getLogger(SkillDisclosureTool.class);
+    private static final int MAX_SKILLS_PER_CALL = 3;
 
     private final DynamicToolRegistry toolRegistry;
     private final SkillActivator skillActivator;
@@ -48,11 +51,15 @@ public class SkillDisclosureTool {
     public void registerTools() {
         var inputSchema = JsonSchema.of(Map.of(
                 "type", "object",
-                "required", List.of("skill_id"),
+                "required", List.of("skill_ids"),
                 "properties", Map.of(
-                        "skill_id", Map.of(
-                                "type", "string",
-                                "description", "要加载的 Skill ID，从 system prompt 中的能力清单获取"
+                        "skill_ids", Map.of(
+                                "type", "array",
+                                "description", "要加载的 Skill ID 列表，从 system prompt 中的能力清单获取，最多 3 个",
+                                "items", Map.of(
+                                        "type", "string",
+                                        "description", "Skill ID"
+                                )
                         )
                 )
         ));
@@ -60,8 +67,8 @@ public class SkillDisclosureTool {
         BuiltinTool loadSkillTool = BuiltinTool.builder()
                 .id("load_skill")
                 .name("加载 Skill 指南")
-                .description("根据 Skill ID 加载完整操作指南和建议工具。"
-                        + "从 system prompt 的能力清单中选择 skill_id 调用。")
+                .description("根据 Skill ID 列表加载完整操作指南和建议工具。"
+                        + "从 system prompt 的能力清单中选择 skill_ids 调用。")
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -82,19 +89,61 @@ public class SkillDisclosureTool {
      * Skill 不存在时尝试被动自扩展。</p>
      */
     private ToolResult handleLoadSkill(ToolInput input) {
-        String skillId = input.getParam("skill_id", String.class);
-
-        try {
-            SkillActivation activation = skillActivator.activate(skillId);
-            return ToolResult.success(Map.of(
-                    "skill_id", activation.skillId(),
-                    "instructions", activation.instructions(),
-                    "suggested_tools", activation.suggestedTools()
-            ));
-        } catch (SkillActivationException e) {
-            // Skill 不存在 → 尝试被动自扩展
-            return handleSkillNotFound(skillId);
+        List<String> skillIds = normalizeSkillIds(input);
+        if (skillIds.isEmpty()) {
+            return ToolResult.error("skill_ids 不能为空");
         }
+        if (skillIds.size() > MAX_SKILLS_PER_CALL) {
+            return ToolResult.error("一次最多只能加载 %d 个 Skill".formatted(MAX_SKILLS_PER_CALL));
+        }
+
+        var loadedSkills = new ArrayList<Map<String, Object>>();
+        var missingSkills = new ArrayList<String>();
+        var suggestedTools = new LinkedHashSet<String>();
+
+        for (String skillId : skillIds) {
+            try {
+                SkillActivation activation = skillActivator.activate(skillId);
+                loadedSkills.add(Map.of(
+                        "skill_id", activation.skillId(),
+                        "instructions", activation.instructions(),
+                        "suggested_tools", activation.suggestedTools()
+                ));
+                suggestedTools.addAll(activation.suggestedTools());
+            } catch (SkillActivationException e) {
+                missingSkills.add(skillId);
+            }
+        }
+
+        if (loadedSkills.isEmpty()) {
+            return handleSkillNotFound(String.join(", ", missingSkills));
+        }
+
+        var data = Map.of(
+                "skills", List.copyOf(loadedSkills),
+                "loaded_count", loadedSkills.size(),
+                "missing_skills", List.copyOf(missingSkills),
+                "all_suggested_tools", List.copyOf(suggestedTools)
+        );
+        if (!missingSkills.isEmpty()) {
+            return ToolResult.partialSuccess(data,
+                    "部分 Skill 不存在: " + String.join(", ", missingSkills));
+        }
+        return ToolResult.success(data);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> normalizeSkillIds(ToolInput input) {
+        Object rawSkillIds = input.parameters().get("skill_ids");
+        if (rawSkillIds instanceof List<?> list) {
+            return list.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .map(String::trim)
+                    .filter(skillId -> !skillId.isBlank())
+                    .toList();
+        }
+        return List.of();
     }
 
     /**

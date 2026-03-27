@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.util.List;
+
 /**
  * Skill 激活器 — 将 Skill 从注册表中激活为上下文注入包。
  *
@@ -66,6 +68,21 @@ public class SkillActivator {
 
         // 5. 返回激活结果
         return new SkillActivation(definition.id(), definition.instructions(), definition.suggestedTools());
+    }
+
+    /**
+     * 按顺序批量激活多个 Skill。
+     *
+     * @param skillIds Skill ID 列表
+     * @return 激活结果列表，顺序与输入保持一致
+     */
+    public List<SkillActivation> activateMany(List<String> skillIds) {
+        if (skillIds == null || skillIds.isEmpty()) {
+            return List.of();
+        }
+        return skillIds.stream()
+                .map(this::activate)
+                .toList();
     }
 
     /**
