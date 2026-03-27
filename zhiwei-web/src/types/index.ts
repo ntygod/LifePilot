@@ -1530,12 +1530,43 @@ export interface EntityProvenance {
   createdAt: string
 }
 
+/** 记忆来源摘要 */
+export interface MemoryProvenanceSummary {
+  entityId: string
+  entityName: string
+  entityType: string
+  entityTypeLabel: string
+  entityMemoryScope: string | null
+  entityRealityType: string | null
+  originType: string
+  sourceReference: string | null
+  sourceConversationId: string | null
+  sourceSessionId: string | null
+  sourceTurnId: string | null
+  sourceEntryId: string | null
+  sourceDocumentId: string | null
+  sourceDocumentName: string | null
+  sourceKnowledgeBaseId: string | null
+  sourceKnowledgeBaseName: string | null
+  sourceDatastoreId: string | null
+  sourceDatastoreName: string | null
+  sourceCollectionId: string | null
+  sourceCollectionName: string | null
+  confidence: number
+  createdAt: string
+}
+
 /** 实体来源筛选参数 */
 export interface EntityProvenanceParams {
   originType?: string
   sourceKnowledgeBaseId?: string
   sourceDatastoreId?: string
   sourceDocumentId?: string
+}
+
+/** 最近来源筛选参数 */
+export interface MemoryProvenanceListParams extends EntityProvenanceParams {
+  limit?: number
 }
 
 /** 实体创建请求 */

@@ -6,11 +6,12 @@ import {
   ArrowUpRight,
   Database,
   FileJson2,
+  MessageSquare,
   RefreshCw,
   Settings2,
 } from 'lucide-vue-next'
 import { datastoreApi, knowledgeBaseApi, memoryApi } from '@/api/client'
-import type { Datastore, EntitySummary, KnowledgeBase } from '@/types'
+import type { Datastore, EntitySummary, KnowledgeBase, MemoryProvenanceSummary } from '@/types'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -35,11 +36,14 @@ const datastoreId = computed(() => route.params.id as string)
 const datastore = ref<Datastore | null>(null)
 const relatedKnowledgeBases = ref<KnowledgeBase[]>([])
 const relatedMemoryEntities = ref<EntitySummary[]>([])
+const recentProvenanceItems = ref<MemoryProvenanceSummary[]>([])
 const relatedMemoryTotal = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const relatedMemoryLoading = ref(false)
 const relatedMemoryError = ref<string | null>(null)
+const recentProvenanceLoading = ref(false)
+const recentProvenanceError = ref<string | null>(null)
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: 'Datastore', to: { name: 'datastores' } },
@@ -75,6 +79,16 @@ const REALITY_TYPE_LABELS: Record<string, string> = {
   UNKNOWN: '未标注',
 }
 
+const ORIGIN_TYPE_LABELS: Record<string, string> = {
+  CHAT: '对话抽取',
+  KNOWLEDGE_BASE_DOCUMENT: '知识库文档',
+  DATASTORE_DOCUMENT: 'Datastore 文档',
+  MANUAL: '手动维护',
+  TOOL: '工具写入',
+  CONSOLIDATION: '记忆巩固',
+  UNKNOWN: '未标注',
+}
+
 async function loadDatastore() {
   if (!datastoreId.value) return
   loading.value = true
@@ -88,7 +102,10 @@ async function loadDatastore() {
     relatedKnowledgeBases.value = knowledgeBases.filter(knowledgeBase =>
       (knowledgeBase.datastoreIds ?? []).includes(datastoreId.value),
     )
-    await loadRelatedMemories()
+    await Promise.all([
+      loadRelatedMemories(),
+      loadRecentProvenances(),
+    ])
   } catch (requestError: any) {
     error.value = requestError?.message ?? '加载 Datastore 详情失败。'
     datastore.value = null
@@ -96,6 +113,8 @@ async function loadDatastore() {
     relatedMemoryEntities.value = []
     relatedMemoryTotal.value = 0
     relatedMemoryError.value = null
+    recentProvenanceItems.value = []
+    recentProvenanceError.value = null
   } finally {
     loading.value = false
   }
@@ -124,6 +143,23 @@ async function loadRelatedMemories() {
   }
 }
 
+async function loadRecentProvenances() {
+  if (!datastoreId.value) return
+  recentProvenanceLoading.value = true
+  recentProvenanceError.value = null
+  try {
+    recentProvenanceItems.value = await memoryApi.listRecentProvenances({
+      sourceDatastoreId: datastoreId.value,
+      limit: 6,
+    })
+  } catch (requestError: any) {
+    recentProvenanceItems.value = []
+    recentProvenanceError.value = requestError?.message ?? '加载最近来源失败。'
+  } finally {
+    recentProvenanceLoading.value = false
+  }
+}
+
 function formatJson(raw?: string | null) {
   if (!raw || !raw.trim()) {
     return null
@@ -144,6 +180,20 @@ function openKnowledgeBase(knowledgeBaseId: string) {
   void router.push({
     name: 'knowledgeBaseDetail',
     params: { id: knowledgeBaseId },
+  })
+}
+
+function openKnowledgeBaseDocument(knowledgeBaseId: string, documentId: string) {
+  void router.push({
+    name: 'knowledgeBaseDocumentDetail',
+    params: { id: knowledgeBaseId, docId: documentId },
+  })
+}
+
+function openConversation(sessionId: string) {
+  void router.push({
+    name: 'conversationDetail',
+    params: { sessionId },
   })
 }
 
@@ -178,6 +228,30 @@ function formatMemoryScope(value?: string | null) {
 function formatRealityType(value?: string | null) {
   if (!value) return '未标注'
   return REALITY_TYPE_LABELS[value] || value
+}
+
+function formatOriginType(value?: string | null) {
+  if (!value) return '未知来源'
+  return ORIGIN_TYPE_LABELS[value] || value
+}
+
+function buildRecentProvenanceSummary(item: MemoryProvenanceSummary) {
+  if (item.sourceDocumentName) {
+    if (item.sourceKnowledgeBaseName) {
+      return `来自文档 ${item.sourceDocumentName} / ${item.sourceKnowledgeBaseName}`
+    }
+    return `来自文档 ${item.sourceDocumentName}`
+  }
+  if (item.sourceKnowledgeBaseName) {
+    return `来自知识库 ${item.sourceKnowledgeBaseName}`
+  }
+  if (item.sourceSessionId) {
+    return `来自会话 ${item.sourceSessionId}`
+  }
+  if (item.sourceReference) {
+    return item.sourceReference
+  }
+  return '来源信息未标注'
 }
 
 watch(
@@ -387,6 +461,108 @@ watch(
                   </div>
                   <div class="mt-3 text-xs text-muted-foreground">
                     更新时间 {{ formatDate(entity.updatedAt) }}
+                  </div>
+                </article>
+              </div>
+            </div>
+          </PageSection>
+
+          <PageSection title="最近来源" description="最近有哪些知识库文档或会话 turn 正在把内容写入这批领域记忆。">
+            <div class="space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm text-muted-foreground">
+                  按写入时间倒序展示最近 6 条来源记录，方便快速排查数据从哪里进入了当前 Datastore 的记忆空间。
+                </div>
+                <Button type="button" variant="outline" size="sm" data-test="refresh-recent-provenances" @click="loadRecentProvenances">
+                  <RefreshCw class="size-4" />
+                  刷新来源
+                </Button>
+              </div>
+
+              <div v-if="recentProvenanceLoading" class="space-y-3">
+                <Skeleton v-for="index in 4" :key="index" class="h-28 rounded-[calc(var(--radius)+6px)]" />
+              </div>
+              <div v-else-if="recentProvenanceError" class="detail-card p-5 text-sm text-muted-foreground">
+                {{ recentProvenanceError }}
+              </div>
+              <div v-else-if="recentProvenanceItems.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+                当前还没有关联到这个 Datastore 的来源写入记录。
+              </div>
+              <div v-else class="space-y-3">
+                <article
+                  v-for="item in recentProvenanceItems"
+                  :key="`${item.entityId}-${item.createdAt}-${item.sourceTurnId || item.sourceDocumentId || item.sourceSessionId || item.originType}`"
+                  class="detail-card p-5"
+                  data-test="recent-provenance-card"
+                >
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0 space-y-3">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="truncate text-base font-semibold text-foreground">{{ item.entityName }}</h3>
+                        <Badge variant="outline">{{ item.entityTypeLabel }}</Badge>
+                        <Badge variant="secondary">{{ formatOriginType(item.originType) }}</Badge>
+                      </div>
+                      <p class="text-sm leading-6 text-muted-foreground">
+                        {{ buildRecentProvenanceSummary(item) }}
+                      </p>
+                      <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <Badge variant="outline">{{ formatMemoryScope(item.entityMemoryScope) }}</Badge>
+                        <Badge variant="secondary">{{ formatRealityType(item.entityRealityType) }}</Badge>
+                        <span class="text-muted-foreground">置信度 {{ (item.confidence * 100).toFixed(0) }}%</span>
+                        <span class="text-muted-foreground">写入于 {{ formatDate(item.createdAt) }}</span>
+                      </div>
+                      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span v-if="item.sourceTurnId">Turn {{ item.sourceTurnId }}</span>
+                        <span v-if="item.sourceEntryId">消息 {{ item.sourceEntryId }}</span>
+                        <span v-if="item.sourceCollectionName">Collection {{ item.sourceCollectionName }}</span>
+                      </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-test="open-recent-provenance-entity"
+                        @click="openMemoryEntity(item.entityId)"
+                      >
+                        <ArrowUpRight class="size-4" />
+                        查看实体
+                      </Button>
+                      <Button
+                        v-if="item.sourceSessionId"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-test="open-recent-provenance-session"
+                        @click="openConversation(item.sourceSessionId)"
+                      >
+                        <MessageSquare class="size-4" />
+                        打开会话
+                      </Button>
+                      <Button
+                        v-if="item.sourceKnowledgeBaseId && item.sourceDocumentId"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-test="open-recent-provenance-document"
+                        @click="openKnowledgeBaseDocument(item.sourceKnowledgeBaseId, item.sourceDocumentId)"
+                      >
+                        <ArrowUpRight class="size-4" />
+                        查看文档
+                      </Button>
+                      <Button
+                        v-else-if="item.sourceKnowledgeBaseId"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-test="open-recent-provenance-kb"
+                        @click="openKnowledgeBase(item.sourceKnowledgeBaseId)"
+                      >
+                        <ArrowUpRight class="size-4" />
+                        查看知识库
+                      </Button>
+                    </div>
                   </div>
                 </article>
               </div>

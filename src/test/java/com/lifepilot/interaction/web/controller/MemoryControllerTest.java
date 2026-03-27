@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.MemoryProvenanceSummaryDto;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
@@ -502,6 +503,97 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$[0].sourceKnowledgeBaseId").value("kb-1"))
                     .andExpect(jsonPath("$[0].sourceDatastoreId").value("ds-1"))
                     .andExpect(jsonPath("$[0].sourceDocumentId").value("doc-1"));
+        }
+
+        @Test
+        void 最近来源摘要_支持按Datastore过滤并返回友好名称() throws Exception {
+            when(jdbcTemplate.query(
+                    contains("FROM memory_entity_provenances p"),
+                    any(RowMapper.class),
+                    eq("ds-1"),
+                    eq("ds-1"),
+                    eq(5)))
+                    .thenReturn(List.of(new MemoryProvenanceSummaryDto(
+                            "e1",
+                            "林夜",
+                            "PERSON",
+                            "人物",
+                            "DOMAIN_MEMORY",
+                            "FICTIONAL",
+                            "KNOWLEDGE_BASE_DOCUMENT",
+                            "人物设定手册",
+                            null,
+                            "session-1",
+                            "turn-1",
+                            "entry-1",
+                            "doc-1",
+                            null,
+                            "kb-1",
+                            null,
+                            "ds-1",
+                            null,
+                            "collection-1",
+                            null,
+                            0.97f,
+                            NOW
+                    )));
+            doAnswer(invocation -> {
+                RowCallbackHandler handler = invocation.getArgument(1);
+                ResultSet rs = mock(ResultSet.class);
+                when(rs.getString("item_id")).thenReturn("kb-1");
+                when(rs.getString("item_name")).thenReturn("世界观资料库");
+                handler.processRow(rs);
+                return null;
+            }).when(jdbcTemplate).query(
+                    contains("FROM knowledge_bases"),
+                    any(RowCallbackHandler.class),
+                    eq("kb-1")
+            );
+            doAnswer(invocation -> {
+                RowCallbackHandler handler = invocation.getArgument(1);
+                ResultSet datastore = mock(ResultSet.class);
+                when(datastore.getString("item_id")).thenReturn("ds-1");
+                when(datastore.getString("item_name")).thenReturn("小说素材库");
+                handler.processRow(datastore);
+
+                ResultSet collection = mock(ResultSet.class);
+                when(collection.getString("item_id")).thenReturn("collection-1");
+                when(collection.getString("item_name")).thenReturn("人物设定集合");
+                handler.processRow(collection);
+                return null;
+            }).when(jdbcTemplate).query(
+                    contains("FROM ds_collections"),
+                    any(RowCallbackHandler.class),
+                    eq("ds-1"),
+                    eq("collection-1")
+            );
+            doAnswer(invocation -> {
+                RowCallbackHandler handler = invocation.getArgument(1);
+                ResultSet rs = mock(ResultSet.class);
+                when(rs.getString("item_id")).thenReturn("doc-1");
+                when(rs.getString("item_name")).thenReturn("人物设定.md");
+                handler.processRow(rs);
+                return null;
+            }).when(jdbcTemplate).query(
+                    contains("FROM documents"),
+                    any(RowCallbackHandler.class),
+                    eq("doc-1")
+            );
+
+            mockMvc.perform(get("/api/memories/provenances/recent")
+                            .param("sourceDatastoreId", "ds-1")
+                            .param("limit", "5"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$", hasSize(1)))
+                    .andExpect(jsonPath("$[0].entityId").value("e1"))
+                    .andExpect(jsonPath("$[0].entityName").value("林夜"))
+                    .andExpect(jsonPath("$[0].entityTypeLabel").value("人物"))
+                    .andExpect(jsonPath("$[0].entityMemoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$[0].sourceSessionId").value("session-1"))
+                    .andExpect(jsonPath("$[0].sourceKnowledgeBaseName").value("世界观资料库"))
+                    .andExpect(jsonPath("$[0].sourceDatastoreName").value("小说素材库"))
+                    .andExpect(jsonPath("$[0].sourceCollectionName").value("人物设定集合"))
+                    .andExpect(jsonPath("$[0].sourceDocumentName").value("人物设定.md"));
         }
     }
 

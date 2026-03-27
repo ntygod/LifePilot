@@ -77,6 +77,8 @@
   // 记忆管理类型
   MemoryStats,
   MemorySearchResult,
+  MemoryProvenanceListParams,
+  MemoryProvenanceSummary,
   EntitySummary,
   EntityDetail,
   EntityProvenance,
@@ -1460,6 +1462,10 @@ export const memoryApi = {
   getEntityProvenances: (id: string, params?: EntityProvenanceParams) => {
     const query = params ? toQueryString(params as unknown as Record<string, unknown>) : ''
     return request<EntityProvenance[]>(`/memories/entities/${id}/provenances${query ? `?${query}` : ''}`)
+  },
+  listRecentProvenances: (params?: MemoryProvenanceListParams) => {
+    const query = params ? toQueryString(params as unknown as Record<string, unknown>) : ''
+    return request<MemoryProvenanceSummary[]>(`/memories/provenances/recent${query ? `?${query}` : ''}`)
   },
   getRelatedEntities: (id: string, maxDepth = 2) =>
     request<EntitySummary[]>(`/memories/entities/${id}/related?maxDepth=${maxDepth}`),

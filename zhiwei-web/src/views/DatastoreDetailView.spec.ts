@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   memoryApi: {
     listEntities: vi.fn(),
+    listRecentProvenances: vi.fn(),
   },
   route: {
     params: { id: 'ds-1' as string },
@@ -63,6 +64,7 @@ beforeEach(() => {
   mocks.datastoreApi.get.mockReset()
   mocks.knowledgeBaseApi.list.mockReset()
   mocks.memoryApi.listEntities.mockReset()
+  mocks.memoryApi.listRecentProvenances.mockReset()
   mocks.router.push.mockReset()
   mocks.route.params.id = 'ds-1'
   mocks.datastoreApi.get.mockResolvedValue({
@@ -132,6 +134,32 @@ beforeEach(() => {
     size: 6,
     total: 1,
   })
+  mocks.memoryApi.listRecentProvenances.mockResolvedValue([
+    {
+      entityId: 'entity-1',
+      entityName: '林夜',
+      entityType: 'PERSON',
+      entityTypeLabel: '人物',
+      entityMemoryScope: 'DOMAIN_MEMORY',
+      entityRealityType: 'FICTIONAL',
+      originType: 'KNOWLEDGE_BASE_DOCUMENT',
+      sourceReference: '人物设定手册',
+      sourceConversationId: null,
+      sourceSessionId: 'session-1',
+      sourceTurnId: 'turn-1',
+      sourceEntryId: 'entry-1',
+      sourceDocumentId: 'doc-1',
+      sourceDocumentName: '人物设定.md',
+      sourceKnowledgeBaseId: 'kb-1',
+      sourceKnowledgeBaseName: '世界观资料库',
+      sourceDatastoreId: 'ds-1',
+      sourceDatastoreName: 'novel-workspace',
+      sourceCollectionId: 'collection-1',
+      sourceCollectionName: '角色设定集合',
+      confidence: 0.97,
+      createdAt: '2026-03-27T03:00:00Z',
+    },
+  ])
 })
 
 describe('DatastoreDetailView', () => {
@@ -147,6 +175,10 @@ describe('DatastoreDetailView', () => {
       sourceDatastoreId: 'ds-1',
       sortBy: 'importanceScore',
       order: 'desc',
+    })
+    expect(mocks.memoryApi.listRecentProvenances).toHaveBeenCalledWith({
+      sourceDatastoreId: 'ds-1',
+      limit: 6,
     })
     expect(wrapper.text()).toContain('novel-workspace')
     expect(wrapper.text()).toContain('DOCUMENT')
@@ -165,6 +197,8 @@ describe('DatastoreDetailView', () => {
     })
     expect(wrapper.text()).toContain('林夜')
     expect(wrapper.text()).toContain('领域记忆')
+    expect(wrapper.text()).toContain('人物设定.md')
+    expect(wrapper.text()).toContain('世界观资料库')
   })
 
   it('支持跳转到按 Datastore 来源筛选的记忆列表', async () => {
@@ -195,6 +229,42 @@ describe('DatastoreDetailView', () => {
         sourceDatastoreId: 'ds-1',
         entityId: 'entity-1',
       },
+    })
+  })
+
+  it('支持从最近来源直接打开会话、文档和实体详情', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const buttons = wrapper.findAll('button')
+    const openEntityButton = buttons.find(button => button.attributes('data-test') === 'open-recent-provenance-entity')
+    const openSessionButton = buttons.find(button => button.attributes('data-test') === 'open-recent-provenance-session')
+    const openDocumentButton = buttons.find(button => button.attributes('data-test') === 'open-recent-provenance-document')
+
+    expect(openEntityButton).toBeTruthy()
+    expect(openSessionButton).toBeTruthy()
+    expect(openDocumentButton).toBeTruthy()
+
+    await openEntityButton!.trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'memories',
+      query: {
+        tab: 'entities',
+        sourceDatastoreId: 'ds-1',
+        entityId: 'entity-1',
+      },
+    })
+
+    await openSessionButton!.trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'conversationDetail',
+      params: { sessionId: 'session-1' },
+    })
+
+    await openDocumentButton!.trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'knowledgeBaseDocumentDetail',
+      params: { id: 'kb-1', docId: 'doc-1' },
     })
   })
 })
