@@ -13,12 +13,14 @@ import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -245,25 +247,71 @@ public class ChatTurnService {
                 ? sessionDatastoreRepository.findDatastoreIdsBySessionId(sessionId)
                 : List.of();
         boolean knowledgeBound = !knowledgeBaseIds.isEmpty() || !datastoreIds.isEmpty();
+        List<String> domainReadSpaceIds = resolveDomainReadSpaceIds(knowledgeBaseIds, datastoreIds);
+        String domainWriteSpaceId = resolveDomainWriteSpaceId(knowledgeBaseIds, datastoreIds);
+        List<String> readSpaceIds = new ArrayList<>();
+        readSpaceIds.add(personalSpace.id());
+        readSpaceIds.add(experienceSpace.id());
+        readSpaceIds.addAll(domainReadSpaceIds);
+        Map<String, Object> resolutionSource = new java.util.LinkedHashMap<>();
+        resolutionSource.put("source", "session_config");
+        resolutionSource.put("knowledgeBound", knowledgeBound);
+        resolutionSource.put("resolvedDomainReadSpaces", domainReadSpaceIds);
+        if (domainWriteSpaceId != null && !domainWriteSpaceId.isBlank()) {
+            resolutionSource.put("resolvedDomainWriteSpaceId", domainWriteSpaceId);
+        }
         ChatTurnMemorySnapshot snapshot = new ChatTurnMemorySnapshot(
                 turnId,
                 sessionId,
                 personalSpace.id(),
                 experienceSpace.id(),
-                null,
-                List.of(personalSpace.id(), experienceSpace.id()),
+                domainWriteSpaceId,
+                readSpaceIds,
                 knowledgeBaseIds,
                 datastoreIds,
                 !knowledgeBound,
                 false,
                 true,
-                Map.of(
-                        "source", "session_config",
-                        "knowledgeBound", knowledgeBound
-                ),
+                resolutionSource,
                 now
         );
         chatTurnMemorySnapshotRepository.save(snapshot);
+    }
+
+    private List<String> resolveDomainReadSpaceIds(List<String> knowledgeBaseIds, List<String> datastoreIds) {
+        if (memorySpaceRepository == null) {
+            return List.of();
+        }
+        List<String> readSpaceIds = new ArrayList<>();
+        if (datastoreIds != null) {
+            for (String datastoreId : datastoreIds) {
+                MemorySpace space = memorySpaceRepository.ensureDatastoreDomainSpace(datastoreId);
+                readSpaceIds.add(space.id());
+            }
+        }
+        if ((datastoreIds == null || datastoreIds.isEmpty()) && knowledgeBaseIds != null) {
+            for (String knowledgeBaseId : knowledgeBaseIds) {
+                MemorySpace space = memorySpaceRepository.ensureKnowledgeBaseDomainSpace(knowledgeBaseId);
+                readSpaceIds.add(space.id());
+            }
+        }
+        return readSpaceIds.stream().distinct().toList();
+    }
+
+    @Nullable
+    private String resolveDomainWriteSpaceId(List<String> knowledgeBaseIds, List<String> datastoreIds) {
+        if (memorySpaceRepository == null) {
+            return null;
+        }
+        if (datastoreIds != null && datastoreIds.size() == 1) {
+            return memorySpaceRepository.ensureDatastoreDomainSpace(datastoreIds.getFirst()).id();
+        }
+        if ((datastoreIds == null || datastoreIds.isEmpty())
+                && knowledgeBaseIds != null
+                && knowledgeBaseIds.size() == 1) {
+            return memorySpaceRepository.ensureKnowledgeBaseDomainSpace(knowledgeBaseIds.getFirst()).id();
+        }
+        return null;
     }
 
     private record TurnRequestSnapshot(

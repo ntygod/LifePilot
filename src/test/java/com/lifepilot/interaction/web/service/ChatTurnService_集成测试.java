@@ -326,9 +326,12 @@ class ChatTurnService_集成测试 {
         assertThat(snapshot.personalLearningEnabled()).isFalse();
         assertThat(snapshot.domainLearningEnabled()).isFalse();
         assertThat(snapshot.experienceLearningEnabled()).isTrue();
-        assertThat(snapshot.readSpaceIds()).hasSize(2);
+        assertThat(snapshot.domainWriteSpaceId()).isNotBlank();
+        assertThat(snapshot.readSpaceIds()).hasSize(3);
         assertThat(snapshot.resolutionSource()).containsEntry("source", "session_config");
         assertThat(snapshot.resolutionSource()).containsEntry("knowledgeBound", true);
+        assertThat(snapshot.resolutionSource()).containsKey("resolvedDomainReadSpaces");
+        assertThat(snapshot.resolutionSource()).containsEntry("resolvedDomainWriteSpaceId", snapshot.domainWriteSpaceId());
     }
 
     @Test

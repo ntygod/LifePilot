@@ -38,13 +38,35 @@ public class MemorySpaceRepository {
     }
 
     public MemorySpace ensureDefaultPersonalSpace() {
-        return ensureSpace("personal:default", MemorySpaceType.PERSONAL, "个人记忆",
+        return ensureSpace(MemorySpaceKeys.defaultPersonal(), MemorySpaceType.PERSONAL, "个人记忆",
                 "SYSTEM", "default", Map.of());
     }
 
     public MemorySpace ensureDefaultExperienceSpace() {
-        return ensureSpace("agent:default", MemorySpaceType.EXPERIENCE, "Agent经验",
+        return ensureSpace(MemorySpaceKeys.defaultExperience(), MemorySpaceType.EXPERIENCE, "Agent经验",
                 "SYSTEM", "default", Map.of());
+    }
+
+    public MemorySpace ensureDatastoreDomainSpace(String datastoreId) {
+        return ensureSpace(
+                MemorySpaceKeys.datastoreDomain(datastoreId),
+                MemorySpaceType.DOMAIN,
+                "Datastore领域记忆",
+                "DATASTORE",
+                datastoreId,
+                Map.of("datastoreId", datastoreId)
+        );
+    }
+
+    public MemorySpace ensureKnowledgeBaseDomainSpace(String knowledgeBaseId) {
+        return ensureSpace(
+                MemorySpaceKeys.knowledgeBaseDomain(knowledgeBaseId),
+                MemorySpaceType.DOMAIN,
+                "知识库领域记忆",
+                "KNOWLEDGE_BASE",
+                knowledgeBaseId,
+                Map.of("knowledgeBaseId", knowledgeBaseId)
+        );
     }
 
     public MemorySpace ensureSpace(String spaceKey,

@@ -11,7 +11,6 @@ import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryRealityType;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
-import com.lifepilot.memory.scope.MemorySpaceType;
 import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -244,14 +243,7 @@ public class KnowledgeExtractionPipeline {
             return null;
         }
         if (doc.sourceDatastoreId() != null && !doc.sourceDatastoreId().isBlank()) {
-            var domainSpace = memorySpaceRepository.ensureSpace(
-                    "domain:datastore:" + doc.sourceDatastoreId(),
-                    MemorySpaceType.DOMAIN,
-                    "Datastore领域记忆",
-                    "DATASTORE",
-                    doc.sourceDatastoreId(),
-                    Map.of("datastoreId", doc.sourceDatastoreId())
-            );
+            var domainSpace = memorySpaceRepository.ensureDatastoreDomainSpace(doc.sourceDatastoreId());
             return new MemoryWriteContext(
                     domainSpace.id(),
                     MemoryScope.DOMAIN_MEMORY,
@@ -271,14 +263,7 @@ public class KnowledgeExtractionPipeline {
             );
         }
         if (doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT) {
-            var domainSpace = memorySpaceRepository.ensureSpace(
-                    "domain:knowledge-base:" + doc.knowledgeBaseId(),
-                    MemorySpaceType.DOMAIN,
-                    "知识库领域记忆",
-                    "KNOWLEDGE_BASE",
-                    doc.knowledgeBaseId(),
-                    Map.of("knowledgeBaseId", doc.knowledgeBaseId())
-            );
+            var domainSpace = memorySpaceRepository.ensureKnowledgeBaseDomainSpace(doc.knowledgeBaseId());
             return new MemoryWriteContext(
                     domainSpace.id(),
                     MemoryScope.DOMAIN_MEMORY,
