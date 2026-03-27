@@ -136,16 +136,20 @@ beforeEach(() => {
   })
   mocks.getEntityProvenances.mockResolvedValue([
     {
-      originType: 'KNOWLEDGE_BASE',
+      originType: 'KNOWLEDGE_BASE_DOCUMENT',
       sourceReference: '章节设定手册',
       sourceConversationId: null,
       sourceSessionId: null,
       sourceTurnId: null,
       sourceEntryId: null,
       sourceDocumentId: 'doc-1',
+      sourceDocumentName: '人物设定.md',
       sourceKnowledgeBaseId: 'kb-1',
+      sourceKnowledgeBaseName: '世界观资料库',
       sourceDatastoreId: 'ds-1',
+      sourceDatastoreName: 'novel-workspace',
       sourceCollectionId: 'collection-1',
+      sourceCollectionName: '角色设定集合',
       confidence: 0.93,
       createdAt: '2026-03-27T00:00:00Z',
     },
@@ -168,9 +172,10 @@ describe('EntityPanel 记忆元数据展示', () => {
     expect(wrapper.text()).toContain('领域记忆')
     expect(wrapper.text()).toContain('虚构')
     expect(wrapper.text()).toContain('datastore:novel-workspace')
-    expect(wrapper.text()).toContain('知识库导入')
+    expect(wrapper.text()).toContain('知识库文档')
     expect(wrapper.text()).toContain('章节设定手册')
-    expect(wrapper.text()).toContain('kb-1')
+    expect(wrapper.text()).toContain('世界观资料库')
+    expect(wrapper.text()).toContain('人物设定.md')
   })
 
   it('接收到跨面板详情请求后会自动拉起实体详情', async () => {

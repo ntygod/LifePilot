@@ -65,18 +65,21 @@ const REALITY_TYPE_LABELS: Record<string, string> = {
 
 const ORIGIN_TYPE_LABELS: Record<string, string> = {
   CHAT: '对话抽取',
-  KNOWLEDGE_BASE: '知识库导入',
-  DATASTORE: 'Datastore 同步',
+  KNOWLEDGE_BASE_DOCUMENT: '知识库文档',
+  DATASTORE_DOCUMENT: 'Datastore 文档',
   MANUAL: '手动维护',
   TOOL: '工具写入',
+  CONSOLIDATION: '记忆巩固',
+  UNKNOWN: '未标注',
 }
 
 const ORIGIN_TYPE_OPTIONS = [
   { value: 'CHAT', label: '对话抽取' },
-  { value: 'KNOWLEDGE_BASE', label: '知识库导入' },
-  { value: 'DATASTORE', label: 'Datastore 同步' },
+  { value: 'KNOWLEDGE_BASE_DOCUMENT', label: '知识库文档' },
+  { value: 'DATASTORE_DOCUMENT', label: 'Datastore 文档' },
   { value: 'MANUAL', label: '手动维护' },
   { value: 'TOOL', label: '工具写入' },
+  { value: 'CONSOLIDATION', label: '记忆巩固' },
 ] as const
 
 // ── 筛选状态 ──
@@ -473,18 +476,38 @@ function resetProvenanceFilters() {
   void fetchProvenances(true)
 }
 
+function buildNamedReference(name?: string | null, id?: string | null) {
+  const normalizedName = name?.trim()
+  const normalizedId = id?.trim()
+  if (normalizedName && normalizedId && normalizedName !== normalizedId) {
+    return `${normalizedName} (${normalizedId})`
+  }
+  return normalizedName || normalizedId || null
+}
+
 function buildProvenanceDetails(item: EntityProvenance) {
-  return [
-    { label: '来源引用', value: item.sourceReference },
+  const details: Array<{ label: string; value: string | null }> = [
+    {
+      label: '来源引用',
+      value: item.sourceReference && item.sourceReference !== item.sourceDocumentId
+        ? item.sourceReference
+        : null,
+    },
     { label: '对话 ID', value: item.sourceConversationId },
     { label: '会话 ID', value: item.sourceSessionId },
     { label: 'Turn ID', value: item.sourceTurnId },
     { label: '消息 ID', value: item.sourceEntryId },
-    { label: '知识库 ID', value: item.sourceKnowledgeBaseId },
-    { label: 'Datastore ID', value: item.sourceDatastoreId },
-    { label: 'Collection ID', value: item.sourceCollectionId },
-    { label: '文档 ID', value: item.sourceDocumentId },
-  ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
+    { label: '知识库', value: buildNamedReference(item.sourceKnowledgeBaseName, item.sourceKnowledgeBaseId) },
+    { label: 'Datastore', value: buildNamedReference(item.sourceDatastoreName, item.sourceDatastoreId) },
+    {
+      label: 'Collection',
+      value: item.sourceCollectionId && item.sourceCollectionId !== item.sourceDatastoreId
+        ? buildNamedReference(item.sourceCollectionName, item.sourceCollectionId)
+        : null,
+    },
+    { label: '文档', value: buildNamedReference(item.sourceDocumentName, item.sourceDocumentId) },
+  ]
+  return details.filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
 }
 </script>
 

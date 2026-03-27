@@ -352,7 +352,7 @@ public class MemoryController {
                 WHERE %s
                 ORDER BY created_at DESC
                 """.formatted(String.join(" AND ", conditions));
-        return jdbcTemplate.query(sql, (rs, rowNum) -> new EntityProvenanceDto(
+        List<EntityProvenanceDto> rawItems = jdbcTemplate.query(sql, (rs, rowNum) -> new EntityProvenanceDto(
                 rs.getString("origin_type"),
                 rs.getString("source_reference"),
                 rs.getString("source_conversation_id"),
@@ -360,12 +360,17 @@ public class MemoryController {
                 rs.getString("source_turn_id"),
                 rs.getString("source_entry_id"),
                 rs.getString("source_document_id"),
+                null,
                 rs.getString("source_knowledge_base_id"),
+                null,
                 rs.getString("source_datastore_id"),
+                null,
                 rs.getString("source_collection_id"),
+                null,
                 rs.getFloat("confidence"),
                 Instant.parse(rs.getString("created_at"))
         ), params.toArray());
+        return enrichProvenances(rawItems);
     }
 
     /**
@@ -846,6 +851,95 @@ public class MemoryController {
             metadataById.putIfAbsent(row.entityId(), row);
         }
         return metadataById;
+    }
+
+    private List<EntityProvenanceDto> enrichProvenances(List<EntityProvenanceDto> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        Map<String, String> knowledgeBaseNames = loadNameMap(
+                "knowledge_bases",
+                "id",
+                "name",
+                items.stream().map(EntityProvenanceDto::sourceKnowledgeBaseId).toList()
+        );
+        List<String> datastoreIds = items.stream()
+                .flatMap(item -> java.util.stream.Stream.of(item.sourceDatastoreId(), item.sourceCollectionId()))
+                .filter(Objects::nonNull)
+                .toList();
+        Map<String, String> datastoreNames = loadNameMap(
+                "ds_collections",
+                "id",
+                "name",
+                datastoreIds
+        );
+        Map<String, String> documentNames = loadNameMap(
+                "documents",
+                "id",
+                "file_name",
+                items.stream().map(EntityProvenanceDto::sourceDocumentId).toList()
+        );
+        return items.stream()
+                .map(item -> new EntityProvenanceDto(
+                        item.originType(),
+                        item.sourceReference(),
+                        item.sourceConversationId(),
+                        item.sourceSessionId(),
+                        item.sourceTurnId(),
+                        item.sourceEntryId(),
+                        item.sourceDocumentId(),
+                        lookupName(documentNames, item.sourceDocumentId()),
+                        item.sourceKnowledgeBaseId(),
+                        lookupName(knowledgeBaseNames, item.sourceKnowledgeBaseId()),
+                        item.sourceDatastoreId(),
+                        lookupName(datastoreNames, item.sourceDatastoreId()),
+                        item.sourceCollectionId(),
+                        lookupName(datastoreNames, item.sourceCollectionId()),
+                        item.confidence(),
+                        item.createdAt()
+                ))
+                .toList();
+    }
+
+    private Map<String, String> loadNameMap(String tableName,
+                                            String idColumn,
+                                            String nameColumn,
+                                            Collection<String> rawIds) {
+        if (rawIds == null || rawIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = rawIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> !id.isBlank())
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+        String sql = """
+                SELECT %s AS item_id, %s AS item_name
+                FROM %s
+                WHERE %s IN (%s)
+                """.formatted(idColumn, nameColumn, tableName, idColumn, placeholders);
+        Map<String, String> names = new LinkedHashMap<>();
+        jdbcTemplate.query(sql, rs -> {
+            String itemId = rs.getString("item_id");
+            String itemName = rs.getString("item_name");
+            if (itemId != null && !itemId.isBlank() && itemName != null && !itemName.isBlank()) {
+                names.put(itemId, itemName);
+            }
+        }, ids.toArray());
+        return names;
+    }
+
+    @Nullable
+    private String lookupName(Map<String, String> names, @Nullable String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        return names.get(id);
     }
 
     private ConversationSummaryDto toConversationSummary(ConversationRecord c) {

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -332,6 +333,10 @@ class MemoryControllerTest {
                             null,
                             null,
                             null,
+                            null,
+                            null,
+                            null,
+                            null,
                             0.9f,
                             NOW
                     )));
@@ -343,6 +348,85 @@ class MemoryControllerTest {
         }
 
         @Test
+        @SuppressWarnings("unchecked")
+        void 实体来源明细_返回友好名称() throws Exception {
+            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
+                    testEntity("e1", "林夜", EntityType.PERSON)));
+            when(jdbcTemplate.query(
+                    contains("FROM memory_entity_provenances"),
+                    any(RowMapper.class),
+                    eq("e1")))
+                    .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
+                            "KNOWLEDGE_BASE_DOCUMENT",
+                            "doc-1",
+                            null,
+                            null,
+                            null,
+                            null,
+                            "doc-1",
+                            null,
+                            "kb-1",
+                            null,
+                            "ds-1",
+                            null,
+                            "collection-1",
+                            null,
+                            0.93f,
+                            NOW
+                    )));
+            doAnswer(invocation -> {
+                RowCallbackHandler handler = invocation.getArgument(1);
+                ResultSet rs = mock(ResultSet.class);
+                when(rs.getString("item_id")).thenReturn("kb-1");
+                when(rs.getString("item_name")).thenReturn("世界观资料库");
+                handler.processRow(rs);
+                return null;
+            }).when(jdbcTemplate).query(
+                    contains("FROM knowledge_bases"),
+                    any(RowCallbackHandler.class),
+                    eq("kb-1")
+            );
+            doAnswer(invocation -> {
+                RowCallbackHandler handler = invocation.getArgument(1);
+                ResultSet datastore = mock(ResultSet.class);
+                when(datastore.getString("item_id")).thenReturn("ds-1");
+                when(datastore.getString("item_name")).thenReturn("小说素材库");
+                handler.processRow(datastore);
+
+                ResultSet collection = mock(ResultSet.class);
+                when(collection.getString("item_id")).thenReturn("collection-1");
+                when(collection.getString("item_name")).thenReturn("人物设定集合");
+                handler.processRow(collection);
+                return null;
+            }).when(jdbcTemplate).query(
+                    contains("FROM ds_collections"),
+                    any(RowCallbackHandler.class),
+                    eq("ds-1"),
+                    eq("collection-1")
+            );
+            doAnswer(invocation -> {
+                RowCallbackHandler handler = invocation.getArgument(1);
+                ResultSet rs = mock(ResultSet.class);
+                when(rs.getString("item_id")).thenReturn("doc-1");
+                when(rs.getString("item_name")).thenReturn("人物设定.md");
+                handler.processRow(rs);
+                return null;
+            }).when(jdbcTemplate).query(
+                    contains("FROM documents"),
+                    any(RowCallbackHandler.class),
+                    eq("doc-1")
+            );
+
+            mockMvc.perform(get("/api/memories/entities/e1/provenances"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
+                    .andExpect(jsonPath("$[0].sourceKnowledgeBaseName").value("世界观资料库"))
+                    .andExpect(jsonPath("$[0].sourceDatastoreName").value("小说素材库"))
+                    .andExpect(jsonPath("$[0].sourceCollectionName").value("人物设定集合"))
+                    .andExpect(jsonPath("$[0].sourceDocumentName").value("人物设定.md"));
+        }
+
+        @Test
         void 实体来源明细_按来源字段过滤() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "张三", EntityType.PERSON)));
@@ -350,32 +434,51 @@ class MemoryControllerTest {
                     contains("origin_type = ?"),
                     any(RowMapper.class),
                     eq("e1"),
-                    eq("KNOWLEDGE_BASE"),
+                    eq("KNOWLEDGE_BASE_DOCUMENT"),
                     eq("kb-1"),
                     eq("ds-1"),
                     eq("doc-1")))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
-                            "KNOWLEDGE_BASE",
+                            "KNOWLEDGE_BASE_DOCUMENT",
                             "人物设定集",
                             null,
                             null,
                             null,
                             null,
                             "doc-1",
+                            null,
                             "kb-1",
+                            null,
                             "ds-1",
+                            null,
+                            null,
                             null,
                             0.95f,
                             NOW
                     )));
+            doAnswer(invocation -> null).when(jdbcTemplate).query(
+                    contains("FROM knowledge_bases"),
+                    any(RowCallbackHandler.class),
+                    eq("kb-1")
+            );
+            doAnswer(invocation -> null).when(jdbcTemplate).query(
+                    contains("FROM ds_collections"),
+                    any(RowCallbackHandler.class),
+                    eq("ds-1")
+            );
+            doAnswer(invocation -> null).when(jdbcTemplate).query(
+                    contains("FROM documents"),
+                    any(RowCallbackHandler.class),
+                    eq("doc-1")
+            );
 
             mockMvc.perform(get("/api/memories/entities/e1/provenances")
-                            .param("originType", "KNOWLEDGE_BASE")
+                            .param("originType", "KNOWLEDGE_BASE_DOCUMENT")
                             .param("sourceKnowledgeBaseId", "kb-1")
                             .param("sourceDatastoreId", "ds-1")
                             .param("sourceDocumentId", "doc-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].originType").value("KNOWLEDGE_BASE"))
+                    .andExpect(jsonPath("$[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
                     .andExpect(jsonPath("$[0].sourceKnowledgeBaseId").value("kb-1"))
                     .andExpect(jsonPath("$[0].sourceDatastoreId").value("ds-1"))
                     .andExpect(jsonPath("$[0].sourceDocumentId").value("doc-1"));

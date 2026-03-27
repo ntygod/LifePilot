@@ -1519,9 +1519,13 @@ export interface EntityProvenance {
   sourceTurnId: string | null
   sourceEntryId: string | null
   sourceDocumentId: string | null
+  sourceDocumentName: string | null
   sourceKnowledgeBaseId: string | null
+  sourceKnowledgeBaseName: string | null
   sourceDatastoreId: string | null
+  sourceDatastoreName: string | null
   sourceCollectionId: string | null
+  sourceCollectionName: string | null
   confidence: number
   createdAt: string
 }
