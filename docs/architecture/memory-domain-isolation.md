@@ -3,7 +3,7 @@
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
 > **最后更新**：2026-03-27
-> **状态**：最终态方案，尚未完整实现
+> **状态**：最终态方案已落地核心链路，持续完善中
 
 ## 1. 设计目标
 
@@ -22,6 +22,23 @@
 - `memory_scope` 作为记忆类型
 - `provenance` 作为来源追踪
 - `turn snapshot` 作为真实作用域快照
+
+## 1.1 当前实现收敛状态
+
+截至 2026-03-27，以下核心能力已经在代码中落地：
+
+- `memory_spaces`、`memory_entities`、`memory_entity_versions`、`memory_entity_provenances`
+- `memory_relations`、`memory_relation_versions`、`memory_relation_provenances`
+- `chat_turn_memory_snapshots`
+- `ConflictDetector`、版本合并、关系建立均限制在同一 `space_id`
+- Datastore / Knowledge Base 文档写入 `DOMAIN_MEMORY`
+- `RealtimeExtractor`、`KnowledgeExtractionPipeline`、`HybridRetriever` 默认按 `memory_scope` / `space_id` 收口
+- `MemoryController` 已暴露 `spaceId / memoryScope / realityType / provenance` 观察接口
+
+当前仍在持续完善的部分主要有两类：
+
+- 是否以及如何向用户开放“显式读取某个 DOMAIN space”的产品入口
+- 更完整的删除回收策略，例如“按 provenance 级联归档实体 / 关系”
 
 ## 2. 五个核心原则
 
