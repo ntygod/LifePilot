@@ -5,13 +5,20 @@ import DatastoreDetailView from './DatastoreDetailView.vue'
 const mocks = vi.hoisted(() => ({
   datastoreApi: {
     get: vi.fn(),
+    listKnowledgeBases: vi.fn(),
+    listRecords: vi.fn(),
+    listDocuments: vi.fn(),
+    uploadDocument: vi.fn(),
   },
-  knowledgeBaseApi: {
-    list: vi.fn(),
+  datastoreStore: {
+    deleteDatastore: vi.fn(),
   },
   memoryApi: {
     listEntities: vi.fn(),
     listRecentProvenances: vi.fn(),
+  },
+  uiStore: {
+    showToast: vi.fn(),
   },
   route: {
     params: { id: 'ds-1' as string },
@@ -23,8 +30,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/api/client', () => ({
   datastoreApi: mocks.datastoreApi,
-  knowledgeBaseApi: mocks.knowledgeBaseApi,
   memoryApi: mocks.memoryApi,
+}))
+
+vi.mock('@/stores/datastore', () => ({
+  useDatastoreStore: () => mocks.datastoreStore,
+}))
+
+vi.mock('@/stores/ui', () => ({
+  useUiStore: () => mocks.uiStore,
 }))
 
 vi.mock('vue-router', async () => {
@@ -54,6 +68,14 @@ function mountView() {
         Button: {
           template: '<button v-bind="$attrs" @click="$emit(\'click\', $event)"><slot /></button>',
         },
+        ConfirmDialog: {
+          props: ['show', 'message'],
+          template: `
+            <div data-test="confirm-dialog" :data-show="String(show)" :data-message="message">
+              <button data-test="confirm-delete" @click="$emit('confirm')">confirm</button>
+            </div>
+          `,
+        },
         Skeleton: { template: '<div />' },
       },
     },
@@ -62,9 +84,14 @@ function mountView() {
 
 beforeEach(() => {
   mocks.datastoreApi.get.mockReset()
-  mocks.knowledgeBaseApi.list.mockReset()
+  mocks.datastoreApi.listKnowledgeBases.mockReset()
+  mocks.datastoreApi.listRecords.mockReset()
+  mocks.datastoreApi.listDocuments.mockReset()
+  mocks.datastoreApi.uploadDocument.mockReset()
+  mocks.datastoreStore.deleteDatastore.mockReset()
   mocks.memoryApi.listEntities.mockReset()
   mocks.memoryApi.listRecentProvenances.mockReset()
+  mocks.uiStore.showToast.mockReset()
   mocks.router.push.mockReset()
   mocks.route.params.id = 'ds-1'
   mocks.datastoreApi.get.mockResolvedValue({
@@ -78,11 +105,12 @@ beforeEach(() => {
     ]),
     projectionConfigJson: '{"scalarPaths":["title"],"bodyPaths":["content"]}',
     metadataJson: '{"owner":"writer"}',
+    defaultKnowledgeBaseId: 'kb-internal',
     createdBy: 'tester',
     createdAt: '2026-03-27T00:00:00Z',
     updatedAt: '2026-03-27T01:00:00Z',
   })
-  mocks.knowledgeBaseApi.list.mockResolvedValue([
+  mocks.datastoreApi.listKnowledgeBases.mockResolvedValue([
     {
       id: 'kb-1',
       name: '世界观资料库',
@@ -97,19 +125,38 @@ beforeEach(() => {
       updatedAt: '2026-03-27T02:00:00Z',
       datastoreIds: ['ds-1'],
     },
+  ])
+  mocks.datastoreApi.listRecords.mockResolvedValue([
     {
-      id: 'kb-2',
-      name: '无关知识库',
-      description: '不应出现在当前详情页',
-      embeddingModel: 'bge-m3',
-      rerankerModel: null,
-      chunkingStrategy: 'smart',
-      tags: [],
-      documentCount: 1,
-      totalChunks: 10,
-      createdAt: '2026-03-27T00:00:00Z',
-      updatedAt: '2026-03-27T02:00:00Z',
-      datastoreIds: ['ds-other'],
+      id: 'record-1',
+      collectionId: 'ds-1',
+      dataJson: '{"title":"人物设定","content":"林夜是主角"}',
+      recordedAt: null,
+      createdAt: '2026-03-27T02:00:00Z',
+      updatedAt: '2026-03-27T02:30:00Z',
+    },
+  ])
+  mocks.datastoreApi.listDocuments.mockResolvedValue([
+    {
+      id: 'doc-1',
+      knowledgeBaseId: 'kb-1',
+      fileName: '人物设定.md',
+      filePath: '/docs/人物设定.md',
+      fileSize: 2048,
+      mimeType: 'text/markdown',
+      checksum: 'hash-1',
+      status: 'READY',
+      chunkCount: 8,
+      processingDurationMs: 10,
+      errorMessage: null,
+      metadataJson: '{}',
+      createdAt: '2026-03-27T02:00:00Z',
+      updatedAt: '2026-03-27T02:30:00Z',
+      sourceType: 'FILE',
+      sourceKey: 'FILE:doc-1',
+      sourceDatastoreId: 'ds-1',
+      sourceCollectionId: null,
+      sourceRefJson: '{}',
     },
   ])
   mocks.memoryApi.listEntities.mockResolvedValue({
@@ -168,7 +215,9 @@ describe('DatastoreDetailView', () => {
     await flushPromises()
 
     expect(mocks.datastoreApi.get).toHaveBeenCalledWith('ds-1')
-    expect(mocks.knowledgeBaseApi.list).toHaveBeenCalled()
+    expect(mocks.datastoreApi.listKnowledgeBases).toHaveBeenCalledWith('ds-1')
+    expect(mocks.datastoreApi.listRecords).toHaveBeenCalledWith('ds-1')
+    expect(mocks.datastoreApi.listDocuments).toHaveBeenCalledWith('ds-1')
     expect(mocks.memoryApi.listEntities).toHaveBeenCalledWith({
       page: 0,
       size: 6,
@@ -185,10 +234,12 @@ describe('DatastoreDetailView', () => {
     expect(wrapper.text()).toContain('title')
     expect(wrapper.text()).toContain('chapter')
     expect(wrapper.text()).toContain('tester')
+    expect(wrapper.text()).toContain('kb-internal')
     expect(wrapper.text()).toContain('scalarPaths')
     expect(wrapper.text()).toContain('owner')
     expect(wrapper.text()).toContain('世界观资料库')
-    expect(wrapper.text()).not.toContain('无关知识库')
+    expect(wrapper.text()).toContain('人物设定.md')
+    expect(wrapper.text()).toContain('人物设定')
 
     await wrapper.get('[data-test="related-kb-card"]').trigger('click')
     expect(mocks.router.push).toHaveBeenCalledWith({
@@ -266,5 +317,21 @@ describe('DatastoreDetailView', () => {
       name: 'knowledgeBaseDocumentDetail',
       params: { id: 'kb-1', docId: 'doc-1' },
     })
+  })
+
+  it('支持删除当前 Datastore 并返回列表页', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-delete-datastore"]').trigger('click')
+
+    expect(wrapper.get('[data-test="confirm-dialog"]').attributes('data-show')).toBe('true')
+    expect(wrapper.get('[data-test="confirm-dialog"]').attributes('data-message')).toContain('novel-workspace')
+
+    await wrapper.get('[data-test="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.datastoreStore.deleteDatastore).toHaveBeenCalledWith('ds-1')
+    expect(mocks.router.push).toHaveBeenCalledWith({ name: 'datastores' })
   })
 })

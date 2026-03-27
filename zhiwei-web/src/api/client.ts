@@ -7,6 +7,7 @@
   ChatSessionDetail,
   CreateKbRequest,
   Datastore,
+  DatastoreRecord,
   UpdateKbRequest,
   DocumentChunk,
   ErrorResponse,
@@ -859,6 +860,31 @@ export const datastoreApi = {
   },
   get(id: string): Promise<Datastore> {
     return request(`/datastores/${id}`)
+  },
+  listKnowledgeBases(id: string): Promise<KnowledgeBase[]> {
+    return request(`/datastores/${id}/knowledge-bases`)
+  },
+  listRecords(id: string): Promise<DatastoreRecord[]> {
+    return request(`/datastores/${id}/records`)
+  },
+  listDocuments(id: string): Promise<KbDocument[]> {
+    return request(`/datastores/${id}/documents`)
+  },
+  async uploadDocument(id: string, file: File): Promise<{ message: string; fileName: string; datastoreId: string; knowledgeBaseId: string }> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${BASE}/datastores/${id}/documents`, {
+      method: 'POST',
+      body: form
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw data ?? { code: res.status, message: '上传失败', timestamp: new Date().toISOString() }
+    }
+    return res.json()
+  },
+  delete(id: string): Promise<void> {
+    return request(`/datastores/${id}`, { method: 'DELETE' })
   },
 }
 

@@ -5,15 +5,22 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Database,
+  FileText,
   FileJson2,
+  Files,
   MessageSquare,
   RefreshCw,
   Settings2,
+  Trash2,
+  Upload,
 } from 'lucide-vue-next'
-import { datastoreApi, knowledgeBaseApi, memoryApi } from '@/api/client'
-import type { Datastore, EntitySummary, KnowledgeBase, MemoryProvenanceSummary } from '@/types'
+import { datastoreApi, memoryApi } from '@/api/client'
+import type { Datastore, DatastoreRecord, EntitySummary, KbDocument, KnowledgeBase, MemoryProvenanceSummary } from '@/types'
+import { useDatastoreStore } from '@/stores/datastore'
+import { useUiStore } from '@/stores/ui'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -31,19 +38,31 @@ type PropertyDefinition = {
 
 const route = useRoute()
 const router = useRouter()
+const datastoreStore = useDatastoreStore()
+const uiStore = useUiStore()
 
 const datastoreId = computed(() => route.params.id as string)
 const datastore = ref<Datastore | null>(null)
 const relatedKnowledgeBases = ref<KnowledgeBase[]>([])
+const datastoreRecords = ref<DatastoreRecord[]>([])
+const datastoreDomainDocuments = ref<KbDocument[]>([])
 const relatedMemoryEntities = ref<EntitySummary[]>([])
 const recentProvenanceItems = ref<MemoryProvenanceSummary[]>([])
 const relatedMemoryTotal = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const recordsLoading = ref(false)
+const recordsError = ref<string | null>(null)
+const domainDocumentsLoading = ref(false)
+const domainDocumentsError = ref<string | null>(null)
 const relatedMemoryLoading = ref(false)
 const relatedMemoryError = ref<string | null>(null)
 const recentProvenanceLoading = ref(false)
 const recentProvenanceError = ref<string | null>(null)
+const deleteDialogOpen = ref(false)
+const deletingDatastore = ref(false)
+const uploadInput = ref<HTMLInputElement | null>(null)
+const uploadingDocument = ref(false)
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: 'Datastore', to: { name: 'datastores' } },
@@ -96,13 +115,13 @@ async function loadDatastore() {
   try {
     const [datastoreDetail, knowledgeBases] = await Promise.all([
       datastoreApi.get(datastoreId.value),
-      knowledgeBaseApi.list(),
+      datastoreApi.listKnowledgeBases(datastoreId.value),
     ])
     datastore.value = datastoreDetail
-    relatedKnowledgeBases.value = knowledgeBases.filter(knowledgeBase =>
-      (knowledgeBase.datastoreIds ?? []).includes(datastoreId.value),
-    )
+    relatedKnowledgeBases.value = knowledgeBases
     await Promise.all([
+      loadDatastoreRecords(),
+      loadDatastoreDomainDocuments(),
       loadRelatedMemories(),
       loadRecentProvenances(),
     ])
@@ -110,6 +129,10 @@ async function loadDatastore() {
     error.value = requestError?.message ?? '加载 Datastore 详情失败。'
     datastore.value = null
     relatedKnowledgeBases.value = []
+    datastoreRecords.value = []
+    datastoreDomainDocuments.value = []
+    recordsError.value = null
+    domainDocumentsError.value = null
     relatedMemoryEntities.value = []
     relatedMemoryTotal.value = 0
     relatedMemoryError.value = null
@@ -117,6 +140,34 @@ async function loadDatastore() {
     recentProvenanceError.value = null
   } finally {
     loading.value = false
+  }
+}
+
+async function loadDatastoreRecords() {
+  if (!datastoreId.value) return
+  recordsLoading.value = true
+  recordsError.value = null
+  try {
+    datastoreRecords.value = await datastoreApi.listRecords(datastoreId.value)
+  } catch (requestError: any) {
+    datastoreRecords.value = []
+    recordsError.value = requestError?.message ?? '加载结构化数据失败。'
+  } finally {
+    recordsLoading.value = false
+  }
+}
+
+async function loadDatastoreDomainDocuments() {
+  if (!datastoreId.value) return
+  domainDocumentsLoading.value = true
+  domainDocumentsError.value = null
+  try {
+    datastoreDomainDocuments.value = await datastoreApi.listDocuments(datastoreId.value)
+  } catch (requestError: any) {
+    datastoreDomainDocuments.value = []
+    domainDocumentsError.value = requestError?.message ?? '加载领域文档失败。'
+  } finally {
+    domainDocumentsLoading.value = false
   }
 }
 
@@ -176,6 +227,17 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleString('zh-CN')
 }
 
+function formatRecordPreview(dataJson: string) {
+  if (!dataJson?.trim()) {
+    return '空数据'
+  }
+  try {
+    return JSON.stringify(JSON.parse(dataJson), null, 2)
+  } catch {
+    return dataJson
+  }
+}
+
 function openKnowledgeBase(knowledgeBaseId: string) {
   void router.push({
     name: 'knowledgeBaseDetail',
@@ -187,6 +249,13 @@ function openKnowledgeBaseDocument(knowledgeBaseId: string, documentId: string) 
   void router.push({
     name: 'knowledgeBaseDocumentDetail',
     params: { id: knowledgeBaseId, docId: documentId },
+  })
+}
+
+function openDatastoreDocument(document: KbDocument) {
+  void router.push({
+    name: 'knowledgeBaseDocumentDetail',
+    params: { id: document.knowledgeBaseId, docId: document.id },
   })
 }
 
@@ -254,6 +323,52 @@ function buildRecentProvenanceSummary(item: MemoryProvenanceSummary) {
   return '来源信息未标注'
 }
 
+function openDeleteDialog() {
+  deleteDialogOpen.value = true
+}
+
+function triggerDocumentUpload() {
+  uploadInput.value?.click()
+}
+
+async function handleDocumentSelected(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  const file = target?.files?.[0]
+  if (!file || !datastoreId.value || uploadingDocument.value) {
+    if (target) target.value = ''
+    return
+  }
+  uploadingDocument.value = true
+  try {
+    await datastoreApi.uploadDocument(datastoreId.value, file)
+    uiStore.showToast('success', `文档「${file.name}」已提交处理`)
+    await loadDatastoreDomainDocuments()
+  } catch (requestError: any) {
+    uiStore.showToast('error', requestError?.message ?? 'Datastore 文档上传失败')
+  } finally {
+    uploadingDocument.value = false
+    if (target) target.value = ''
+  }
+}
+
+async function handleDeleteDatastore() {
+  const target = datastore.value
+  if (!target || deletingDatastore.value) {
+    return
+  }
+  deletingDatastore.value = true
+  try {
+    await datastoreStore.deleteDatastore(target.id)
+    uiStore.showToast('success', `Datastore「${target.name}」已删除`)
+    await router.push({ name: 'datastores' })
+  } catch (event: any) {
+    uiStore.showToast('error', event?.message ?? '删除 Datastore 失败')
+  } finally {
+    deletingDatastore.value = false
+    deleteDialogOpen.value = false
+  }
+}
+
 watch(
   () => datastoreId.value,
   () => {
@@ -273,6 +388,15 @@ watch(
             <Button type="button" variant="outline" data-test="open-datastore-memories" @click="openDatastoreMemories">
               <ArrowUpRight class="size-4" />
               查看关联记忆
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              data-test="open-delete-datastore"
+              @click="openDeleteDialog"
+            >
+              <Trash2 class="size-4" />
+              删除 Datastore
             </Button>
             <Button type="button" variant="outline" @click="loadDatastore">
               <RefreshCw class="size-4" />
@@ -337,6 +461,14 @@ watch(
         </StatePanel>
 
         <template v-else-if="datastore">
+          <input
+            ref="uploadInput"
+            type="file"
+            class="hidden"
+            accept=".pdf,.docx,.md,.txt"
+            @change="handleDocumentSelected"
+          >
+
           <PageSection title="基础信息" description="确认 Datastore 的类型、创建者和更新时间。">
             <div class="detail-card p-5">
               <div class="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
@@ -355,6 +487,10 @@ watch(
                 <div>
                   <div class="text-muted-foreground">创建时间</div>
                   <div class="mt-1 font-medium text-foreground">{{ formatDate(datastore.createdAt) }}</div>
+                </div>
+                <div>
+                  <div class="text-muted-foreground">内部知识库</div>
+                  <div class="mt-1 break-all font-medium text-foreground">{{ datastore.defaultKnowledgeBaseId || '系统待创建' }}</div>
                 </div>
               </div>
             </div>
@@ -408,6 +544,106 @@ watch(
               >{{ formattedMetadata }}</pre>
               <div v-else class="text-sm text-muted-foreground">
                 当前没有元数据。
+              </div>
+            </div>
+          </PageSection>
+
+          <PageSection title="领域文档" description="这里直接管理当前 Datastore 的资料文件，系统会自动写入内部知识库并参与检索。">
+            <div class="space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm text-muted-foreground">
+                  当前共 {{ datastoreDomainDocuments.length }} 个领域文档，上传入口已经固定绑定到这个 Datastore。
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" :disabled="uploadingDocument" @click="loadDatastoreDomainDocuments">
+                    <RefreshCw class="size-4" />
+                    刷新文档
+                  </Button>
+                  <Button type="button" size="sm" :disabled="uploadingDocument" @click="triggerDocumentUpload">
+                    <Upload class="size-4" />
+                    {{ uploadingDocument ? '上传中...' : '上传文档' }}
+                  </Button>
+                </div>
+              </div>
+
+              <div v-if="domainDocumentsLoading" class="space-y-3">
+                <Skeleton v-for="index in 3" :key="`domain-doc-${index}`" class="h-24 rounded-[calc(var(--radius)+6px)]" />
+              </div>
+              <div v-else-if="domainDocumentsError" class="detail-card p-5 text-sm text-muted-foreground">
+                {{ domainDocumentsError }}
+              </div>
+              <div v-else-if="datastoreDomainDocuments.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+                当前还没有上传到这个 Datastore 的领域文档。
+              </div>
+              <div v-else class="space-y-3">
+                <article
+                  v-for="document in datastoreDomainDocuments"
+                  :key="document.id"
+                  class="detail-card cursor-pointer p-5 transition-colors hover:border-primary/35 hover:bg-muted/20"
+                  @click="openDatastoreDocument(document)"
+                >
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="truncate text-base font-semibold text-foreground">{{ document.fileName }}</h3>
+                        <Badge variant="outline">{{ document.status }}</Badge>
+                      </div>
+                      <div class="mt-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
+                        <span>分块 {{ document.chunkCount }}</span>
+                        <span>大小 {{ Math.max(1, Math.round(document.fileSize / 1024)) }} KB</span>
+                        <span>上传于 {{ formatDate(document.createdAt) }}</span>
+                      </div>
+                      <p v-if="document.errorMessage" class="mt-2 text-sm text-destructive">
+                        {{ document.errorMessage }}
+                      </p>
+                    </div>
+                    <ArrowUpRight class="mt-1 size-4 shrink-0 text-muted-foreground" />
+                  </div>
+                </article>
+              </div>
+            </div>
+          </PageSection>
+
+          <PageSection title="结构化数据" description="这里展示 Datastore 原始结构化记录，便于确认数据已经入库并等待同步投影。">
+            <div class="space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm text-muted-foreground">
+                  当前共 {{ datastoreRecords.length }} 条结构化记录，语义检索会基于这些记录的投影结果执行。
+                </div>
+                <Button type="button" variant="outline" size="sm" @click="loadDatastoreRecords">
+                  <RefreshCw class="size-4" />
+                  刷新数据
+                </Button>
+              </div>
+
+              <div v-if="recordsLoading" class="space-y-3">
+                <Skeleton v-for="index in 3" :key="`record-${index}`" class="h-32 rounded-[calc(var(--radius)+6px)]" />
+              </div>
+              <div v-else-if="recordsError" class="detail-card p-5 text-sm text-muted-foreground">
+                {{ recordsError }}
+              </div>
+              <div v-else-if="datastoreRecords.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+                当前还没有结构化记录。
+              </div>
+              <div v-else class="space-y-3">
+                <article
+                  v-for="record in datastoreRecords"
+                  :key="record.id"
+                  class="detail-card p-5"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="text-sm font-medium text-foreground">{{ record.id }}</div>
+                    <div class="text-xs text-muted-foreground">
+                      {{ formatDate(record.updatedAt) }}
+                    </div>
+                  </div>
+                  <div class="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                    <span>集合 {{ record.collectionId }}</span>
+                    <span v-if="record.recordedAt">记录时间 {{ formatDate(record.recordedAt) }}</span>
+                    <span>创建于 {{ formatDate(record.createdAt) }}</span>
+                  </div>
+                  <pre class="mt-4 overflow-x-auto rounded-[calc(var(--radius)-2px)] border border-border/60 bg-background/70 p-4 text-xs leading-6 text-foreground">{{ formatRecordPreview(record.dataJson) }}</pre>
+                </article>
               </div>
             </div>
           </PageSection>
@@ -569,7 +805,7 @@ watch(
             </div>
           </PageSection>
 
-          <PageSection title="关联知识库" description="这些知识库当前挂载了该 Datastore，可直接跳转查看领域资料与文档。">
+          <PageSection title="关联知识库" description="这里会展示服务当前 Datastore 的全部知识库，包含系统自动维护的内部知识库。">
             <div v-if="relatedKnowledgeBases.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
               当前还没有知识库挂载这个 Datastore。
             </div>
@@ -614,5 +850,15 @@ watch(
         </template>
       </div>
     </PageContainer>
+
+    <ConfirmDialog
+      v-model:show="deleteDialogOpen"
+      title="确认删除 Datastore"
+      :message="datastore ? `确定要删除 Datastore「${datastore.name}」吗？集合内文档也会一并删除。` : ''"
+      :confirm-label="deletingDatastore ? '删除中...' : '删除'"
+      confirm-variant="destructive"
+      @confirm="handleDeleteDatastore"
+      @cancel="deleteDialogOpen = false"
+    />
   </div>
 </template>

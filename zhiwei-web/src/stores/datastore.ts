@@ -20,10 +20,16 @@ export const useDatastoreStore = defineStore('datastore', () => {
     }
   }
 
+  async function deleteDatastore(id: string) {
+    await datastoreApi.delete(id)
+    list.value = list.value.filter(item => item.id !== id)
+  }
+
   return {
     list,
     loading,
     error,
     fetchList,
+    deleteDatastore,
   }
 })

@@ -487,7 +487,18 @@ export interface Datastore {
   propertiesJson?: string | null
   projectionConfigJson?: string | null
   metadataJson?: string | null
+  defaultKnowledgeBaseId?: string | null
   createdBy?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Datastore 原始结构化文档 */
+export interface DatastoreRecord {
+  id: string
+  collectionId: string
+  dataJson: string
+  recordedAt?: string | null
   createdAt: string
   updatedAt: string
 }

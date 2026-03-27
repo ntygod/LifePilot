@@ -8,12 +8,15 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Trash2,
 } from 'lucide-vue-next'
 import type { Datastore } from '@/types'
 import { useDatastoreStore } from '@/stores/datastore'
+import { useUiStore } from '@/stores/ui'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Badge } from '@/components/ui/badge'
@@ -28,11 +31,14 @@ type PropertyDefinition = {
 }
 
 const datastoreStore = useDatastoreStore()
+const uiStore = useUiStore()
 const router = useRouter()
 
 const searchQuery = ref('')
 const typeFilter = ref('all')
 const showFilters = ref(false)
+const deleteTarget = ref<Datastore | null>(null)
+const deletingDatastoreId = ref<string | null>(null)
 
 onMounted(() => {
   void datastoreStore.fetchList()
@@ -72,6 +78,15 @@ const hasFilters = computed(() => (
   Boolean(searchQuery.value.trim()) || typeFilter.value !== 'all'
 ))
 
+const showDeleteConfirm = computed({
+  get: () => deleteTarget.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      deleteTarget.value = null
+    }
+  },
+})
+
 function openDatastore(datastore: Datastore) {
   void router.push({
     name: 'datastoreDetail',
@@ -86,6 +101,31 @@ function refreshDatastores() {
 function clearFilters() {
   searchQuery.value = ''
   typeFilter.value = 'all'
+}
+
+function openDeleteDialog(datastore: Datastore, event?: Event) {
+  event?.stopPropagation()
+  deleteTarget.value = datastore
+}
+
+async function handleDeleteDatastore() {
+  if (deletingDatastoreId.value) {
+    return
+  }
+  const target = deleteTarget.value
+  if (!target) {
+    return
+  }
+  deletingDatastoreId.value = target.id
+  try {
+    await datastoreStore.deleteDatastore(target.id)
+    uiStore.showToast('success', `Datastore「${target.name}」已删除`)
+  } catch (event: any) {
+    uiStore.showToast('error', event?.message ?? '删除 Datastore 失败')
+  } finally {
+    deletingDatastoreId.value = null
+    deleteTarget.value = null
+  }
 }
 
 function formatDate(value?: string | null) {
@@ -131,7 +171,7 @@ function summarizeProperties(datastore: Datastore) {
         <PageHeader
           eyebrow="Datastore"
           title="Datastore"
-          description="查看领域数据容器的结构、投影配置和更新时间，方便从知识库与记忆来源反查领域上下文。"
+          description="查看领域数据容器的结构、投影配置和更新时间。每个 Datastore 都会自动维护内部知识库，用来承载文档和语义检索。"
         >
           <template #actions>
             <Button type="button" variant="outline" @click="showFilters = !showFilters">
@@ -247,7 +287,19 @@ function summarizeProperties(datastore: Datastore) {
                   {{ datastore.description || '暂无描述。' }}
                 </p>
               </div>
-              <ArrowUpRight class="mt-1 size-4 shrink-0 text-muted-foreground" />
+              <div class="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="删除 Datastore"
+                  data-test="delete-datastore-button"
+                  @click.stop="openDeleteDialog(datastore, $event)"
+                >
+                  <Trash2 class="size-4" />
+                </Button>
+                <ArrowUpRight class="size-4 shrink-0 text-muted-foreground" />
+              </div>
             </div>
 
             <div class="mt-4 grid gap-3 text-sm">
@@ -270,5 +322,15 @@ function summarizeProperties(datastore: Datastore) {
         </div>
       </div>
     </PageContainer>
+
+    <ConfirmDialog
+      v-model:show="showDeleteConfirm"
+      title="确认删除 Datastore"
+      :message="deleteTarget ? `确定要删除 Datastore「${deleteTarget.name}」吗？集合内文档也会一并删除。` : ''"
+      :confirm-label="deletingDatastoreId ? '删除中...' : '删除'"
+      confirm-variant="destructive"
+      @confirm="handleDeleteDatastore"
+      @cancel="deleteTarget = null"
+    />
   </div>
 </template>
