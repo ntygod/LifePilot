@@ -8,12 +8,19 @@ import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnRecord;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.repository.ChatTurnRepository;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -28,13 +35,36 @@ public class ChatTurnService {
     private final ChatTurnRepository chatTurnRepository;
     private final SessionTranscriptRepository transcriptRepository;
     private final ObjectMapper objectMapper;
+    @Nullable
+    private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    @Nullable
+    private final SessionDatastoreRepository sessionDatastoreRepository;
+    @Nullable
+    private final ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository;
+    @Nullable
+    private final MemorySpaceRepository memorySpaceRepository;
+
+    @Autowired
+    public ChatTurnService(ChatTurnRepository chatTurnRepository,
+                           SessionTranscriptRepository transcriptRepository,
+                           ObjectMapper objectMapper,
+                           @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                           @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+                           @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
+                           @Nullable MemorySpaceRepository memorySpaceRepository) {
+        this.chatTurnRepository = chatTurnRepository;
+        this.transcriptRepository = transcriptRepository;
+        this.objectMapper = objectMapper;
+        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+        this.sessionDatastoreRepository = sessionDatastoreRepository;
+        this.chatTurnMemorySnapshotRepository = chatTurnMemorySnapshotRepository;
+        this.memorySpaceRepository = memorySpaceRepository;
+    }
 
     public ChatTurnService(ChatTurnRepository chatTurnRepository,
                            SessionTranscriptRepository transcriptRepository,
                            ObjectMapper objectMapper) {
-        this.chatTurnRepository = chatTurnRepository;
-        this.transcriptRepository = transcriptRepository;
-        this.objectMapper = objectMapper;
+        this(chatTurnRepository, transcriptRepository, objectMapper, null, null, null, null);
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -103,6 +133,7 @@ public class ChatTurnService {
                 request.preferredProvider()
         ));
         chatTurnRepository.create(turnId, sessionId, ChatTurnAction.SEND, ChatTurnStatus.PENDING, payloadJson, now);
+        persistTurnMemorySnapshot(sessionId, turnId, now);
         return new ResolvedTurnRequest(
                 turnId,
                 ChatTurnAction.SEND,
@@ -192,6 +223,47 @@ public class ChatTurnService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("反序列化 turn 请求快照失败", e);
         }
+    }
+
+    public Optional<ChatTurnMemorySnapshot> findMemorySnapshot(String turnId) {
+        if (chatTurnMemorySnapshotRepository == null) {
+            return Optional.empty();
+        }
+        return chatTurnMemorySnapshotRepository.findByTurnId(turnId);
+    }
+
+    private void persistTurnMemorySnapshot(String sessionId, String turnId, Instant now) {
+        if (chatTurnMemorySnapshotRepository == null || memorySpaceRepository == null) {
+            return;
+        }
+        var personalSpace = memorySpaceRepository.ensureDefaultPersonalSpace();
+        var experienceSpace = memorySpaceRepository.ensureDefaultExperienceSpace();
+        List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository != null
+                ? sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)
+                : List.of();
+        List<String> datastoreIds = sessionDatastoreRepository != null
+                ? sessionDatastoreRepository.findDatastoreIdsBySessionId(sessionId)
+                : List.of();
+        boolean knowledgeBound = !knowledgeBaseIds.isEmpty() || !datastoreIds.isEmpty();
+        ChatTurnMemorySnapshot snapshot = new ChatTurnMemorySnapshot(
+                turnId,
+                sessionId,
+                personalSpace.id(),
+                experienceSpace.id(),
+                null,
+                List.of(personalSpace.id(), experienceSpace.id()),
+                knowledgeBaseIds,
+                datastoreIds,
+                !knowledgeBound,
+                false,
+                true,
+                Map.of(
+                        "source", "session_config",
+                        "knowledgeBound", knowledgeBound
+                ),
+                now
+        );
+        chatTurnMemorySnapshotRepository.save(snapshot);
     }
 
     private record TurnRequestSnapshot(
