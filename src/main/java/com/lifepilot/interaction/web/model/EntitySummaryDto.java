@@ -18,6 +18,9 @@ public record EntitySummaryDto(
         float importanceScore,
         int accessCount,
         int version,
+        @Nullable String spaceId,
+        @Nullable String memoryScope,
+        @Nullable String realityType,
         Instant createdAt,
         Instant updatedAt
 ) {}

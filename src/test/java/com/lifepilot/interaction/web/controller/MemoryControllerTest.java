@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -28,8 +29,10 @@ import java.util.Optional;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -60,6 +63,11 @@ class MemoryControllerTest {
                 semanticMemory, episodicMemory, proceduralMemory,
                 hybridRetriever, consolidationPipeline, jdbcTemplate);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        lenient().when(jdbcTemplate.query(
+                        contains("FROM temporal_entities"),
+                        any(RowMapper.class),
+                        any(Object[].class)))
+                .thenReturn(List.of());
     }
 
     // ── 辅助方法 ──────────────────────────────────────────
@@ -165,7 +173,7 @@ class MemoryControllerTest {
                     "e1", "PERSON", "张三", "描述", 0.85f,
                     new RetrievalResult.ScoreBreakdown(0.5f, 0.3f, 0.3f, 0.2f, 0.2f, 0.1f, 0.05f, 0.05f),
                     "vector+fts", NOW, 0.5f, null);
-            when(hybridRetriever.retrieve(eq("张三"), eq(10), any(RetrievalWeights.class)))
+            when(hybridRetriever.retrieve(eq("张三"), eq(10), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of(result));
 
             mockMvc.perform(get("/api/memories/search").param("q", "张三"))
@@ -248,6 +256,35 @@ class MemoryControllerTest {
 
             mockMvc.perform(delete("/api/memories/entities/not-exist"))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void 实体来源明细_返回provenance列表() throws Exception {
+            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
+                    testEntity("e1", "张三", EntityType.PERSON)));
+            when(jdbcTemplate.query(
+                    contains("FROM memory_entity_provenances"),
+                    any(RowMapper.class),
+                    eq("e1")))
+                    .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
+                            "CHAT",
+                            "session-1",
+                            "conv-1",
+                            "session-1",
+                            "turn-1",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            0.9f,
+                            NOW
+                    )));
+
+            mockMvc.perform(get("/api/memories/entities/e1/provenances"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].originType").value("CHAT"))
+                    .andExpect(jsonPath("$[0].sourceSessionId").value("session-1"));
         }
     }
 
