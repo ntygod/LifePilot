@@ -102,6 +102,17 @@ function openKnowledgeBase(knowledgeBaseId: string) {
   })
 }
 
+function openDatastoreMemories() {
+  if (!datastoreId.value) return
+  void router.push({
+    name: 'memories',
+    query: {
+      tab: 'entities',
+      sourceDatastoreId: datastoreId.value,
+    },
+  })
+}
+
 watch(
   () => datastoreId.value,
   () => {
@@ -118,6 +129,10 @@ watch(
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
           <div class="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" data-test="open-datastore-memories" @click="openDatastoreMemories">
+              <ArrowUpRight class="size-4" />
+              查看关联记忆
+            </Button>
             <Button type="button" variant="outline" @click="loadDatastore">
               <RefreshCw class="size-4" />
               刷新

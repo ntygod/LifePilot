@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   Brain,
   GitFork,
@@ -42,6 +43,8 @@ const REALITY_TYPE_LABELS: Record<string, string> = {
 }
 
 const store = useMemoryStore()
+const route = useRoute()
+const VALID_TABS = new Set(['entities', 'relations', 'conversations', 'templates', 'preferences', 'forgetting-logs'])
 
 // 搜索状态
 const searchQuery = ref('')
@@ -51,6 +54,17 @@ const searching = ref(false)
 onMounted(() => {
   store.loadStats()
 })
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    const nextTab = Array.isArray(tab) ? tab[0] : tab
+    if (typeof nextTab === 'string' && VALID_TABS.has(nextTab)) {
+      store.activeTab = nextTab
+    }
+  },
+  { immediate: true }
+)
 
 async function handleSearch() {
   const q = searchQuery.value.trim()

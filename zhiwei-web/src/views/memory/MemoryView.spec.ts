@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   loadStats: vi.fn(),
   search: vi.fn(),
   triggerConsolidation: vi.fn(),
+  route: {
+    query: {} as Record<string, unknown>,
+  },
   store: {
     stats: null as unknown,
     statsLoading: false,
@@ -36,6 +39,14 @@ mocks.store.clearEntityDetailRequest = () => {
 vi.mock('@/stores/memory', () => ({
   useMemoryStore: () => mocks.store,
 }))
+
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return {
+    ...actual,
+    useRoute: () => mocks.route,
+  }
+})
 
 function mountView() {
   return shallowMount(MemoryView, {
@@ -78,6 +89,7 @@ beforeEach(() => {
   mocks.store.memoryDisabled = false
   mocks.store.activeTab = 'entities'
   mocks.store.entityDetailRequest = null
+  mocks.route.query = {}
   mocks.search.mockResolvedValue([
     {
       entityId: 'entity-1',
@@ -93,6 +105,15 @@ beforeEach(() => {
 })
 
 describe('MemoryView 搜索结果展示', () => {
+  it('会根据路由 query 切换到指定页签', async () => {
+    mocks.route.query = { tab: 'relations' }
+
+    mountView()
+    await flushPromises()
+
+    expect(mocks.store.activeTab).toBe('relations')
+  })
+
   it('会展示结果的记忆范围、现实性与空间标识，并支持直达实体详情', async () => {
     const wrapper = mountView()
     const input = wrapper.get('input')

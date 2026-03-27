@@ -15,6 +15,9 @@ const mocks = vi.hoisted(() => ({
     entityDetailRequest: null as { id: string; requestedAt: number } | null,
     clearEntityDetailRequest: vi.fn(),
   },
+  route: {
+    query: {} as Record<string, unknown>,
+  },
   router: {
     push: vi.fn(),
   },
@@ -41,6 +44,7 @@ vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
   return {
     ...actual,
+    useRoute: () => mocks.route,
     useRouter: () => mocks.router,
   }
 })
@@ -101,6 +105,7 @@ beforeEach(() => {
   mocks.router.push.mockReset()
   mocks.memoryStore.entityDetailRequest = null
   mocks.memoryStore.clearEntityDetailRequest.mockReset()
+  mocks.route.query = {}
 
   mocks.listEntities.mockResolvedValue({
     items: [
@@ -171,6 +176,22 @@ beforeEach(() => {
 })
 
 describe('EntityPanel 记忆元数据展示', () => {
+  it('会根据路由 query 应用实体来源筛选', async () => {
+    mocks.route.query = {
+      sourceDatastoreId: 'ds-7',
+      memoryScope: 'DOMAIN_MEMORY',
+    }
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(mocks.listEntities).toHaveBeenCalledWith(expect.objectContaining({
+      sourceDatastoreId: 'ds-7',
+      memoryScope: 'DOMAIN_MEMORY',
+    }))
+    expect(wrapper.get('[data-test="list-source-datastore-id"]').element).toHaveProperty('value', 'ds-7')
+  })
+
   it('打开实体详情后会展示记忆归属与来源明细', async () => {
     const wrapper = mountPanel()
     await flushPromises()

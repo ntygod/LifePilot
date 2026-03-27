@@ -1563,6 +1563,10 @@ export interface EntityListParams {
   spaceId?: string
   memoryScope?: string
   realityType?: string
+  originType?: string
+  sourceKnowledgeBaseId?: string
+  sourceDatastoreId?: string
+  sourceDocumentId?: string
   timeFrom?: string
   timeTo?: string
   sortBy?: string

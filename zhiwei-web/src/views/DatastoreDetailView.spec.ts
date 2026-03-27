@@ -130,4 +130,19 @@ describe('DatastoreDetailView', () => {
       params: { id: 'kb-1' },
     })
   })
+
+  it('支持跳转到按 Datastore 来源筛选的记忆列表', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-datastore-memories"]').trigger('click')
+
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'memories',
+      query: {
+        tab: 'entities',
+        sourceDatastoreId: 'ds-1',
+      },
+    })
+  })
 })

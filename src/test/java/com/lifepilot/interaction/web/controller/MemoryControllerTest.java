@@ -277,6 +277,25 @@ class MemoryControllerTest {
         }
 
         @Test
+        void 实体列表_按来源字段过滤() throws Exception {
+            when(semanticMemory.findAllCurrent()).thenReturn(List.of(
+                    testEntity("e1", "林夜", EntityType.PERSON),
+                    testEntity("e2", "项目A", EntityType.PROJECT)));
+            when(jdbcTemplate.queryForList(
+                    contains("FROM memory_entity_provenances"),
+                    eq(String.class),
+                    eq("ds-1"),
+                    eq("ds-1")))
+                    .thenReturn(List.of("e1"));
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("sourceDatastoreId", "ds-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items", hasSize(1)))
+                    .andExpect(jsonPath("$.items[0].id").value("e1"));
+        }
+
+        @Test
         void 实体详情_存在() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "张三", EntityType.PERSON)));
@@ -436,6 +455,7 @@ class MemoryControllerTest {
                     eq("e1"),
                     eq("KNOWLEDGE_BASE_DOCUMENT"),
                     eq("kb-1"),
+                    eq("ds-1"),
                     eq("ds-1"),
                     eq("doc-1")))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(

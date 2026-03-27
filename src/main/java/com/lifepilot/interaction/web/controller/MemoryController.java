@@ -168,6 +168,10 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String spaceId,
             @RequestParam(required = false) @Nullable String memoryScope,
             @RequestParam(required = false) @Nullable String realityType,
+            @RequestParam(required = false) @Nullable String originType,
+            @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
+            @RequestParam(required = false) @Nullable String sourceDatastoreId,
+            @RequestParam(required = false) @Nullable String sourceDocumentId,
             @RequestParam(required = false) @Nullable String timeFrom,
             @RequestParam(required = false) @Nullable String timeTo,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -237,6 +241,17 @@ public class MemoryController {
                         var metadata = filteredMetadataById.get(entity.id());
                         return metadata != null && normalizedRealityType.equalsIgnoreCase(metadata.realityType());
                     })
+                    .toList();
+        }
+        Set<String> filteredEntityIdsByProvenance = loadEntityIdsByProvenanceFilters(
+                originType,
+                sourceKnowledgeBaseId,
+                sourceDatastoreId,
+                sourceDocumentId
+        );
+        if (filteredEntityIdsByProvenance != null) {
+            entities = entities.stream()
+                    .filter(entity -> filteredEntityIdsByProvenance.contains(entity.id()))
                     .toList();
         }
 
@@ -337,7 +352,8 @@ public class MemoryController {
             params.add(sourceKnowledgeBaseId.trim());
         }
         if (sourceDatastoreId != null && !sourceDatastoreId.isBlank()) {
-            conditions.add("source_datastore_id = ?");
+            conditions.add("(source_datastore_id = ? OR source_collection_id = ?)");
+            params.add(sourceDatastoreId.trim());
             params.add(sourceDatastoreId.trim());
         }
         if (sourceDocumentId != null && !sourceDocumentId.isBlank()) {
@@ -851,6 +867,41 @@ public class MemoryController {
             metadataById.putIfAbsent(row.entityId(), row);
         }
         return metadataById;
+    }
+
+    @Nullable
+    private Set<String> loadEntityIdsByProvenanceFilters(@Nullable String originType,
+                                                         @Nullable String sourceKnowledgeBaseId,
+                                                         @Nullable String sourceDatastoreId,
+                                                         @Nullable String sourceDocumentId) {
+        var conditions = new ArrayList<String>();
+        var params = new ArrayList<Object>();
+        if (originType != null && !originType.isBlank()) {
+            conditions.add("origin_type = ?");
+            params.add(originType.trim());
+        }
+        if (sourceKnowledgeBaseId != null && !sourceKnowledgeBaseId.isBlank()) {
+            conditions.add("source_knowledge_base_id = ?");
+            params.add(sourceKnowledgeBaseId.trim());
+        }
+        if (sourceDatastoreId != null && !sourceDatastoreId.isBlank()) {
+            conditions.add("(source_datastore_id = ? OR source_collection_id = ?)");
+            params.add(sourceDatastoreId.trim());
+            params.add(sourceDatastoreId.trim());
+        }
+        if (sourceDocumentId != null && !sourceDocumentId.isBlank()) {
+            conditions.add("source_document_id = ?");
+            params.add(sourceDocumentId.trim());
+        }
+        if (conditions.isEmpty()) {
+            return null;
+        }
+        String sql = """
+                SELECT DISTINCT entity_id
+                FROM memory_entity_provenances
+                WHERE %s
+                """.formatted(String.join(" AND ", conditions));
+        return new LinkedHashSet<>(jdbcTemplate.queryForList(sql, String.class, params.toArray()));
     }
 
     private List<EntityProvenanceDto> enrichProvenances(List<EntityProvenanceDto> items) {
