@@ -16,5 +16,6 @@ public record SessionConfigRequest(
         Integer maxTokens,
         Integer maxSteps,
         Integer maxDurationSeconds,
-        List<String> knowledgeBaseIds
+        List<String> knowledgeBaseIds,
+        List<String> datastoreIds
 ) {}

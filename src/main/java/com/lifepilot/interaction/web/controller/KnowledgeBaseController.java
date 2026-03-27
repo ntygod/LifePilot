@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
 import com.lifepilot.knowledge.ingest.DocumentIngester;
@@ -53,12 +54,15 @@ public class KnowledgeBaseController {
     private final DocumentRetriever documentRetriever;
     @Nullable
     private final DocumentRepository documentRepository;
+    private final KnowledgeBaseProperties knowledgeBaseProperties;
 
     public KnowledgeBaseController(KnowledgeBaseManager kbManager,
+                                   KnowledgeBaseProperties knowledgeBaseProperties,
                                    @Nullable DocumentIngester documentIngester,
                                    @Nullable DocumentRetriever documentRetriever,
                                    @Nullable DocumentRepository documentRepository) {
         this.kbManager = kbManager;
+        this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.documentIngester = documentIngester;
         this.documentRetriever = documentRetriever;
         this.documentRepository = documentRepository;
@@ -97,7 +101,8 @@ public class KnowledgeBaseController {
                 request.rerankerModel(),
                 request.chunkingStrategy(),
                 request.chunkingConfig(),
-                request.tags());
+                request.tags(),
+                request.datastoreIds());
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
         return ResponseEntity.status(HttpStatus.CREATED).body(kb);
     }
@@ -124,7 +129,8 @@ public class KnowledgeBaseController {
                     request.rerankerModel(),
                     request.chunkingStrategy(),
                     request.chunkingConfig(),
-                    request.tags()
+                    request.tags(),
+                    request.datastoreIds()
             );
             log.info("知识库更新成功: id={}", id);
             return ResponseEntity.ok(updated);
@@ -185,7 +191,8 @@ public class KnowledgeBaseController {
     /** 上传文档到知识库。 */
     @PostMapping("/{id}/documents")
     public ResponseEntity<?> uploadDocument(@PathVariable String id,
-                                            @RequestParam("file") MultipartFile file) {
+                                            @RequestParam("file") MultipartFile file,
+                                            @RequestParam(value = "datastoreId", required = false) String datastoreId) {
         var ingester = this.documentIngester;
         if (ingester == null) {
             log.error("文档上传失败: DocumentIngester 未初始化，请检查知识库和向量索引配置");
@@ -199,19 +206,34 @@ public class KnowledgeBaseController {
             return ResponseEntity.badRequest().body(
                     new ErrorResponse(400, "不支持的文件格式，仅支持 PDF/Word/Markdown/TXT", Instant.now()));
         }
+        long maxFileSize = knowledgeBaseProperties.maxFileSize();
+        if (file.getSize() > maxFileSize) {
+            log.warn("文档上传失败: 文件大小超过限制: kbId={}, fileName={}, size={}, max={}",
+                    id, originalName, file.getSize(), maxFileSize);
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, buildFileSizeExceededMessage(maxFileSize), Instant.now()));
+        }
 
         try {
             // 保存到临时文件
             String suffix = originalName.substring(originalName.lastIndexOf('.'));
             Path tempFile = Files.createTempFile("lifepilot-upload-", suffix);
             file.transferTo(Objects.requireNonNull(tempFile.toFile()));
+            String normalizedDatastoreId = normalizeNullableId(datastoreId);
+            kbManager.ensureDatastoreAssociation(id, normalizedDatastoreId);
 
             // 异步处理文档，传递原始文件名
-            ingester.ingest(id, tempFile, originalName);
-            log.info("文档上传已提交异步处理: kbId={}, fileName={}", id, originalName);
+            ingester.ingest(id, tempFile, originalName, normalizedDatastoreId);
+            log.info("文档上传已提交异步处理: kbId={}, fileName={}, datastoreId={}",
+                    id, originalName, normalizedDatastoreId);
 
-            return ResponseEntity.accepted().body(
-                    Map.of("message", "文档已提交处理", "fileName", originalName));
+            var response = new LinkedHashMap<String, Object>();
+            response.put("message", "文档已提交处理");
+            response.put("fileName", originalName);
+            if (normalizedDatastoreId != null) {
+                response.put("datastoreId", normalizedDatastoreId);
+            }
+            return ResponseEntity.accepted().body(response);
         } catch (IOException e) {
             log.error("文档上传失败: kbId={}, fileName={}, error={}", id, originalName, e.getMessage());
             return ResponseEntity.internalServerError().body(
@@ -226,6 +248,28 @@ public class KnowledgeBaseController {
         kbManager.removeDocument(docId);
         log.info("文档删除: docId={}", docId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** 更新文档的 datastore 归属。 */
+    @PatchMapping("/{id}/documents/{docId}")
+    public ResponseEntity<?> updateDocumentDatastore(@PathVariable String id,
+                                                     @PathVariable String docId,
+                                                     @RequestBody UpdateDocumentDatastoreRequest request) {
+        try {
+            String normalizedDatastoreId = normalizeNullableId(request.datastoreId());
+            Document updated = kbManager.updateDocumentDatastore(id, docId, normalizedDatastoreId);
+            log.info("文档 Datastore 归属更新成功: kbId={}, docId={}, datastoreId={}",
+                    id, docId, normalizedDatastoreId);
+            return ResponseEntity.ok(updated);
+        } catch (KnowledgeBaseNotFoundException | DocumentNotFoundException e) {
+            log.warn("文档 Datastore 归属更新失败: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, e.getMessage(), Instant.now()));
+        } catch (IllegalArgumentException e) {
+            log.warn("文档 Datastore 归属更新失败: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, e.getMessage(), Instant.now()));
+        }
     }
 
     /** 获取知识库统计信息。 */
@@ -364,7 +408,10 @@ public class KnowledgeBaseController {
                                 documentName,
                                 result.content(),
                                 result.score(),
-                                result.metadata()
+                                result.metadata(),
+                                result.sourceType().name(),
+                                result.sourceDatastoreId().orElse(null),
+                                result.sourceCollectionId().orElse(null)
                         );
                     })
                     .collect(Collectors.toList());
@@ -519,5 +566,18 @@ public class KnowledgeBaseController {
     private boolean hasAllowedExtension(String fileName) {
         String lower = fileName.toLowerCase();
         return ALLOWED_EXTENSIONS.stream().anyMatch(lower::endsWith);
+    }
+
+    @Nullable
+    private String normalizeNullableId(@Nullable String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        return rawValue.strip();
+    }
+
+    private String buildFileSizeExceededMessage(long maxFileSize) {
+        long maxFileSizeMb = Math.max(1, (maxFileSize + 1024 * 1024 - 1) / (1024 * 1024));
+        return "文件大小超过限制（最大 " + maxFileSizeMb + "MB）";
     }
 }

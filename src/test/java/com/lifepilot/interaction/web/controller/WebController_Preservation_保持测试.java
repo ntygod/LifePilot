@@ -75,7 +75,7 @@ class WebController_Preservation_保持测试 {
                 messageFeedbackRepository, attachmentRepository, knowledgeBaseProperties,
                 null, null, null, mediaProperties);
         var kbController = new KnowledgeBaseController(
-                knowledgeBaseManager, null, null, null);
+                knowledgeBaseManager, knowledgeBaseProperties, null, null, null);
 
         mockMvc = MockMvcBuilders.standaloneSetup(chatController, kbController).build();
     }

@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -98,6 +99,27 @@ public class WebExceptionHandler {
                 Instant.now()
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    /**
+     * 处理上传文件超限异常，返回 413 Payload Too Large。
+         *
+     * @param ex 异常
+     * @return 标准化错误响应
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        long maxUploadSize = ex.getMaxUploadSize();
+        String message = maxUploadSize > 0
+                ? "文件大小超过限制（最大 " + Math.max(1, (maxUploadSize + 1024 * 1024 - 1) / (1024 * 1024)) + "MB）"
+                : "文件大小超过限制";
+        log.warn("文件上传超出限制: message={}, maxUploadSize={}", ex.getMessage(), maxUploadSize);
+        var error = new ErrorResponse(
+                HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                message,
+                Instant.now()
+        );
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(error);
     }
 
     /**

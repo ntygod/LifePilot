@@ -15,6 +15,7 @@ import org.springframework.lang.Nullable;
  * @param description    集合描述（可选）
  * @param type           集合类型
  * @param propertiesJson 属性定义 JSON（可选，List&lt;PropertyDefinition&gt; 序列化）
+ * @param projectionConfigJson 向量投影配置 JSON（可选）
  * @param metadataJson   元数据 JSON（可选）
  * @param createdBy      创建者（可选）
  * @param createdAt      创建时间（ISO 8601）
@@ -29,6 +30,7 @@ public record Collection(
         @Nullable String description,
         CollectionType type,
         @Nullable String propertiesJson,
+        @Nullable String projectionConfigJson,
         @Nullable String metadataJson,
         @Nullable String createdBy,
         String createdAt,

@@ -11,7 +11,11 @@ import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.ChatTurnRepository;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.memory.event.MemoryEventBus;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +42,9 @@ class ChatTurnService_集成测试 {
     private JdbcTranscriptStore transcriptStore;
     private ChatSessionRepository chatSessionRepository;
     private JdbcTemplate jdbcTemplate;
+    private ChatTurnMemorySnapshotRepository snapshotRepository;
+    private SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    private SessionDatastoreRepository sessionDatastoreRepository;
 
     @BeforeEach
     void setUp() {
@@ -166,6 +173,50 @@ class ChatTurnService_集成测试 {
                     updated_at TEXT NOT NULL
                 )
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE session_knowledge_bases (
+                    session_id TEXT NOT NULL,
+                    knowledge_base_id TEXT NOT NULL,
+                    PRIMARY KEY (session_id, knowledge_base_id)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE session_datastores (
+                    session_id TEXT NOT NULL,
+                    datastore_id TEXT NOT NULL,
+                    PRIMARY KEY (session_id, datastore_id)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_spaces (
+                    id TEXT PRIMARY KEY,
+                    space_key TEXT NOT NULL UNIQUE,
+                    space_type TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    owner_type TEXT,
+                    owner_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE chat_turn_memory_snapshots (
+                    turn_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    personal_space_id TEXT,
+                    experience_space_id TEXT,
+                    domain_write_space_id TEXT,
+                    read_space_ids_json TEXT NOT NULL,
+                    effective_knowledge_base_ids_json TEXT NOT NULL,
+                    effective_datastore_ids_json TEXT NOT NULL,
+                    personal_learning_enabled INTEGER NOT NULL,
+                    domain_learning_enabled INTEGER NOT NULL,
+                    experience_learning_enabled INTEGER NOT NULL,
+                    resolution_source_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """);
 
         var objectMapper = new ObjectMapper();
         var eventBus = new MemoryEventBus() {
@@ -178,7 +229,19 @@ class ChatTurnService_集成测试 {
         chatSessionRepository = new ChatSessionRepository(sessionStoreRepository);
         transcriptStore = new JdbcTranscriptStore(sessionStoreRepository, transcriptRepository, chatSessionRepository);
         chatTurnRepository = new ChatTurnRepository(jdbcTemplate);
-        chatTurnService = new ChatTurnService(chatTurnRepository, transcriptRepository, objectMapper);
+        sessionKnowledgeBaseRepository = new SessionKnowledgeBaseRepository(jdbcTemplate);
+        sessionDatastoreRepository = new SessionDatastoreRepository(jdbcTemplate);
+        snapshotRepository = new ChatTurnMemorySnapshotRepository(jdbcTemplate, objectMapper);
+        var memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, objectMapper);
+        chatTurnService = new ChatTurnService(
+                chatTurnRepository,
+                transcriptRepository,
+                objectMapper,
+                sessionKnowledgeBaseRepository,
+                sessionDatastoreRepository,
+                snapshotRepository,
+                memorySpaceRepository
+        );
 
         chatSessionRepository.save(ChatSession.createWithId("session-turn-retry", "turn 测试"));
     }
@@ -244,6 +307,31 @@ class ChatTurnService_集成测试 {
                 assistantEntryId
         );
         assertThat(ftsCount).isZero();
+    }
+
+    @Test
+    void send准备应固化当前知识域记忆快照() {
+        sessionKnowledgeBaseRepository.addAssociation("session-turn-retry", "kb-001");
+        sessionDatastoreRepository.addAssociation("session-turn-retry", "ds-001");
+
+        chatTurnService.prepare(
+                "session-turn-retry",
+                new ChatRequest("turn-scope", ChatTurnAction.SEND, "请继续写这一章", "session-turn-retry", null, null)
+        );
+
+        var snapshot = snapshotRepository.findByTurnId("turn-scope").orElseThrow();
+        assertThat(snapshot.sessionId()).isEqualTo("session-turn-retry");
+        assertThat(snapshot.effectiveKnowledgeBaseIds()).containsExactly("kb-001");
+        assertThat(snapshot.effectiveDatastoreIds()).containsExactly("ds-001");
+        assertThat(snapshot.personalLearningEnabled()).isFalse();
+        assertThat(snapshot.domainLearningEnabled()).isFalse();
+        assertThat(snapshot.experienceLearningEnabled()).isTrue();
+        assertThat(snapshot.domainWriteSpaceId()).isNotBlank();
+        assertThat(snapshot.readSpaceIds()).hasSize(3);
+        assertThat(snapshot.resolutionSource()).containsEntry("source", "session_config");
+        assertThat(snapshot.resolutionSource()).containsEntry("knowledgeBound", true);
+        assertThat(snapshot.resolutionSource()).containsKey("resolvedDomainReadSpaces");
+        assertThat(snapshot.resolutionSource()).containsEntry("resolvedDomainWriteSpaceId", snapshot.domainWriteSpaceId());
     }
 
     @Test

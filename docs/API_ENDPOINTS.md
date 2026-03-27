@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-03
+> **最后更新**：2026-03-27
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -17,6 +17,7 @@
 - [Skills（技能管理）](#skills技能管理)
 - [MCP Servers（MCP 客户端管理）](#mcp-servers)
 - [Knowledge Bases（知识库）](#knowledge-bases知识库)
+- [Datastores（领域数据集）](#datastores领域数据集)
 - [Workflows（工作流）](#workflows工作流)
 - [Traces（轨迹）](#traces轨迹)
 - [LLM Providers（模型提供商）](#llm-providers模型提供商)
@@ -55,7 +56,7 @@
 | GET | `/api/chat/sessions/{id}` | `getSession` | 会话详情（含关联知识库） |
 | GET | `/api/chat/sessions/{id}/messages` | `getSessionMessages` | 会话历史消息 |
 | PATCH | `/api/chat/sessions/{id}` | `updateSession` | 更新会话（标题/置顶等） |
-| PATCH | `/api/chat/sessions/{id}/config` | `updateSessionConfig` | 更新会话配置（knowledgeBaseIds 绑定） |
+| PATCH | `/api/chat/sessions/{id}/config` | `updateSessionConfig` | 更新会话配置（knowledgeBaseIds / datastoreIds 绑定） |
 | DELETE | `/api/chat/sessions/{id}` | `deleteSession` | 删除会话（204） |
 | POST | `/api/chat/sessions/batch` | `batchUpdateSessions` | 批量操作（pin/archive/delete） |
 | POST | `/api/chat/sessions/{id}/fork` | `forkSession` | 分叉会话（从指定消息复制上下文） |
@@ -73,16 +74,17 @@
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | GET | `/api/memories/stats` | `getStats` | 记忆统计概览（L2/L3/L4 各层计数） |
-| GET | `/api/memories/search` | `search` | 统一记忆搜索（q/topK 参数，调用 HybridRetriever） |
+| GET | `/api/memories/search` | `search` | 统一记忆搜索（q/topK 参数，默认仅检索个人记忆，不包含 DOMAIN_MEMORY） |
 
 ### L3 语义记忆（实体 + 关系）
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
-| GET | `/api/memories/entities` | `listEntities` | 实体分页列表（type/q/timeFrom/timeTo/sortBy/order 过滤排序） |
-| GET | `/api/memories/entities/{id}` | `getEntity` | 实体详情 |
+| GET | `/api/memories/entities` | `listEntities` | 实体分页列表（type/q/timeFrom/timeTo/sortBy/order 过滤排序，返回 `spaceId/memoryScope/realityType`） |
+| GET | `/api/memories/entities/{id}` | `getEntity` | 实体详情（返回 `spaceId/memoryScope/realityType`） |
 | GET | `/api/memories/entities/{id}/history` | `getEntityHistory` | 实体版本历史 |
 | GET | `/api/memories/entities/{id}/related` | `getRelatedEntities` | 关联实体列表 |
+| GET | `/api/memories/entities/{id}/provenances` | `getEntityProvenances` | 实体来源明细（origin/sourceSessionId/sourceDocumentId/sourceDatastoreId 等） |
 | DELETE | `/api/memories/entities/{id}` | `archiveEntity` | 归档实体（软删除，204） |
 | GET | `/api/memories/relations` | `listRelations` | 关系分页列表（entityId/relationType 过滤，附带实体名称） |
 
@@ -225,13 +227,25 @@
 | PATCH | `/api/knowledge-bases/{id}` | `updateKnowledgeBase` | 更新配置 |
 | DELETE | `/api/knowledge-bases/{id}` | `deleteKnowledgeBase` | 删除（204） |
 | GET | `/api/knowledge-bases/{id}/documents` | `listDocuments` | 文档列表 |
-| POST | `/api/knowledge-bases/{id}/documents` | `uploadDocument` | 上传文档（multipart） |
+| POST | `/api/knowledge-bases/{id}/documents` | `uploadDocument` | 上传文档（multipart，可带 `datastoreId`） |
+| PATCH | `/api/knowledge-bases/{id}/documents/{docId}` | `updateDocumentDatastore` | 更新文件文档的 datastore 归属（可设为无归属） |
 | DELETE | `/api/knowledge-bases/{id}/documents/{docId}` | `removeDocument` | 删除文档（204） |
 | GET | `/api/knowledge-bases/{id}/documents/{docId}/logs` | `getDocumentLogs` | 文档处理日志 |
 | POST | `/api/knowledge-bases/{id}/documents/{docId}/retry` | `retryDocument` | 重试导入（202） |
 | POST | `/api/knowledge-bases/{id}/documents/{docId}/rechunk` | `rechunkDocument` | 重新分块（202） |
 | GET | `/api/knowledge-bases/{id}/stats` | `getStats` | 统计信息 |
 | POST | `/api/knowledge-bases/{id}/test-retrieval` | `testRetrieval` | 测试检索 |
+
+---
+
+## Datastores（领域数据集）
+
+来源：`DatastoreController`，Base Path: `/api/datastores`
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/datastores` | `listDatastores` | datastore 列表（支持 `q` 关键字过滤） |
+| GET | `/api/datastores/{id}` | `getDatastore` | 单个 datastore 详情 |
 
 ---
 

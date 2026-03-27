@@ -4,6 +4,12 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.memory.scope.MemoryOriginType;
+import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryRealityType;
+import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -44,13 +50,16 @@ public class RealtimeExtractor {
     private final int existingEntitySummaryLimit;
     private final JdbcTemplate jdbcTemplate;
     private final PromptRegistry promptRegistry;
+    @Nullable
+    private final ChatTurnMemorySnapshotRepository snapshotRepository;
 
     public RealtimeExtractor(GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
                              MemoryProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
-                             PromptRegistry promptRegistry) {
+                             PromptRegistry promptRegistry,
+                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
@@ -58,6 +67,7 @@ public class RealtimeExtractor {
         this.existingEntitySummaryLimit = properties.getExtraction().getExistingEntitySummaryLimit();
         this.jdbcTemplate = jdbcTemplate;
         this.promptRegistry = promptRegistry;
+        this.snapshotRepository = snapshotRepository;
     }
 
     /**
@@ -68,9 +78,13 @@ public class RealtimeExtractor {
      * @param aiResponse  AI 响应
      */
     public void extractAsync(String sessionId, String userMessage, String aiResponse) {
+        extractAsync(sessionId, null, userMessage, aiResponse);
+    }
+
+    public void extractAsync(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
         Thread.startVirtualThread(() -> {
             try {
-                extract(sessionId, userMessage, aiResponse);
+                extract(sessionId, turnId, userMessage, aiResponse);
             } catch (Exception e) {
                 log.warn("实时实体提取失败，静默跳过: sessionId={}, error={}",
                         sessionId, e.getMessage());
@@ -86,13 +100,23 @@ public class RealtimeExtractor {
      * @param aiResponse  AI 响应
      */
     void extract(String sessionId, String userMessage, String aiResponse) {
+        extract(sessionId, null, userMessage, aiResponse);
+    }
+
+    void extract(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
         if (userMessage == null || userMessage.isBlank()) return;
+        MemoryWriteContext writeContext = resolveWriteContext(sessionId, turnId);
+        if (writeContext == null) {
+            log.debug("实时实体提取: 当前轮次已禁止自动学习, sessionId={}, turnId={}", sessionId, turnId);
+            return;
+        }
 
         // 1. 拼接对话文本
         String conversationText = buildConversationText(userMessage, aiResponse);
 
         // 2. 调用 LLM 获取 AUDN 决策列表
-        var decisions = callLlmForAudnDecisions(conversationText);
+        MemoryReadFilter summaryReadFilter = buildSummaryReadFilter(writeContext);
+        var decisions = callLlmForAudnDecisions(conversationText, summaryReadFilter);
         if (decisions == null || decisions.isEmpty()) {
             log.debug("实时实体提取: 无需操作, sessionId={}", sessionId);
             return;
@@ -109,7 +133,7 @@ public class RealtimeExtractor {
         int successCount = 0;
         for (var decision : validDecisions) {
             try {
-                executeDecision(decision, sessionId);
+                executeDecision(decision, sessionId, writeContext);
                 successCount++;
             } catch (Exception e) {
                 log.warn("AUDN 单条决策执行失败，跳过: operation={}, entityName={}, error={}",
@@ -131,8 +155,8 @@ public class RealtimeExtractor {
     }
 
     /** 调用 LLM 获取 AUDN 决策列表（带独立超时控制）。 */
-    private List<AudnDecision> callLlmForAudnDecisions(String conversationText) {
-        String prompt = buildAudnPrompt(conversationText);
+    private List<AudnDecision> callLlmForAudnDecisions(String conversationText, MemoryReadFilter readFilter) {
+        String prompt = buildAudnPrompt(conversationText, readFilter);
         try {
             // 使用 Virtual Thread 执行器避免阻塞 ForkJoinPool.commonPool()
             var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
@@ -163,17 +187,17 @@ public class RealtimeExtractor {
     }
 
     /** 构建增强版 AUDN 提示词：注入已有实体上下文 + 提取标准 + 评分要求。 */
-    private String buildAudnPrompt(String conversationText) {
-        String existingSummary = buildExistingEntitySummary();
+    private String buildAudnPrompt(String conversationText, MemoryReadFilter readFilter) {
+        String existingSummary = buildExistingEntitySummary(readFilter);
         return promptRegistry.render("semantic/entity-extraction", Map.of(
                 "existingSummary", existingSummary,
                 "conversationText", conversationText));
     }
 
     /** 构建已有实体摘要，按 importanceScore 降序截取前 N 条。 */
-    private String buildExistingEntitySummary() {
+    private String buildExistingEntitySummary(MemoryReadFilter readFilter) {
         try {
-            var allCurrent = semanticMemory.findAllCurrent();
+            var allCurrent = semanticMemory.findAllCurrent(readFilter);
             if (allCurrent.isEmpty()) {
                 return "（暂无已有实体）";
             }
@@ -198,11 +222,11 @@ public class RealtimeExtractor {
     }
 
     /** 执行单条 AUDN 决策。 */
-    private void executeDecision(AudnDecision decision, String sessionId) {
+    private void executeDecision(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
         switch (decision.operation()) {
             case ADD -> {
                 try {
-                    executeAdd(decision, sessionId);
+                    executeAdd(decision, sessionId, writeContext);
                     logExtractionEvent(sessionId, decision, true, null);
                 } catch (Exception e) {
                     logExtractionEvent(sessionId, decision, false, e.getMessage());
@@ -211,7 +235,7 @@ public class RealtimeExtractor {
             }
             case UPDATE -> {
                 try {
-                    executeUpdate(decision, sessionId);
+                    executeUpdate(decision, sessionId, writeContext);
                     logExtractionEvent(sessionId, decision, true, null);
                 } catch (Exception e) {
                     logExtractionEvent(sessionId, decision, false, e.getMessage());
@@ -220,7 +244,7 @@ public class RealtimeExtractor {
             }
             case DELETE -> {
                 try {
-                    executeDelete(decision);
+                    executeDelete(decision, writeContext);
                     logExtractionEvent(sessionId, decision, true, null);
                 } catch (Exception e) {
                     logExtractionEvent(sessionId, decision, false, e.getMessage());
@@ -232,35 +256,33 @@ public class RealtimeExtractor {
     }
 
     /** 执行 ADD 操作：创建新实体。 */
-    private void executeAdd(AudnDecision decision, String sessionId) {
+    private void executeAdd(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
         var now = Instant.now();
         float confidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float importance = safeFloat(decision.importanceScore(), 0.5f);
-        // source_conversation_id 传 null：实时提取在每轮对话后立即执行，
-        // 此时 conversations 记录尚未创建（L1→L2 flush 在会话结束时才触发），
-        // 传 sessionId 会违反 FK 约束。该列允许 NULL。
         var entity = new TemporalEntity(
                 UUID.randomUUID().toString(),
                 decision.entityType(),
                 decision.entityName(),
                 decision.description(),
                 decision.properties() != null ? decision.properties() : Map.of(),
-                1, true, now, null, null,
+                1, true, now, null, sessionId,
                 confidence,
                 importance,
                 0, null, now, now);
-        semanticMemory.upsertWithConflictDetection(entity, null);
+        semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext);
         log.debug("AUDN ADD: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
     /** 执行 UPDATE 操作：查找已有实体并更新。 */
-    private void executeUpdate(AudnDecision decision, String sessionId) {
+    private void executeUpdate(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
+        MemoryReadFilter readFilter = buildEntityReadFilter(writeContext, decision.entityType());
         var existing = semanticMemory.findCurrentByNameAndType(
-                decision.entityName(), decision.entityType());
+                decision.entityName(), decision.entityType(), readFilter);
         if (existing.isEmpty()) {
             // 找不到已有实体，降级为 ADD
             log.debug("AUDN UPDATE 降级为 ADD: 未找到已有实体, name={}", decision.entityName());
-            executeAdd(decision, sessionId);
+            executeAdd(decision, sessionId, writeContext);
             return;
         }
         // 构建更新后的实体，通过 upsertWithConflictDetection 版本化更新
@@ -277,19 +299,20 @@ public class RealtimeExtractor {
                 null, decision.entityType(), decision.entityName(),
                 decision.description() != null ? decision.description() : old.description(),
                 mergedProps,
-                old.version(), true, old.validFrom(), null, null,
+                old.version(), true, old.validFrom(), null, sessionId,
                 newConfidence,
                 Math.max(old.importanceScore(), newImportance),
                 old.accessCount(), old.lastAccessedAt(),
                 old.createdAt(), Instant.now());
-        semanticMemory.upsertWithConflictDetection(updated, null);
+        semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext);
         log.debug("AUDN UPDATE: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
     /** 执行 DELETE 操作：将匹配实体标记为非当前。 */
-    private void executeDelete(AudnDecision decision) {
+    private void executeDelete(AudnDecision decision, MemoryWriteContext writeContext) {
+        MemoryReadFilter readFilter = buildEntityReadFilter(writeContext, decision.entityType());
         var existing = semanticMemory.findCurrentByNameAndType(
-                decision.entityName(), decision.entityType());
+                decision.entityName(), decision.entityType(), readFilter);
         if (existing.isEmpty()) {
             log.debug("AUDN DELETE 跳过: 未找到匹配实体, name={}", decision.entityName());
             return;
@@ -322,6 +345,85 @@ public class RealtimeExtractor {
     /** @Nullable Float 安全拆箱，null 时返回默认值。 */
     private static float safeFloat(@Nullable Float value, float defaultValue) {
         return value != null ? value : defaultValue;
+    }
+
+    @Nullable
+    private MemoryWriteContext resolveWriteContext(String sessionId, @Nullable String turnId) {
+        if (snapshotRepository == null || turnId == null || turnId.isBlank()) {
+            return personalWriteContext(sessionId, turnId);
+        }
+        var snapshot = snapshotRepository.findByTurnId(turnId);
+        if (snapshot.isEmpty()) {
+            return personalWriteContext(sessionId, turnId);
+        }
+        var record = snapshot.get();
+        if (record.personalLearningEnabled()) {
+            return personalWriteContext(sessionId, turnId);
+        }
+        if (record.domainLearningEnabled() && record.domainWriteSpaceId() != null && !record.domainWriteSpaceId().isBlank()) {
+            return new MemoryWriteContext(
+                    record.domainWriteSpaceId(),
+                    MemoryScope.DOMAIN_MEMORY,
+                    MemoryOriginType.CHAT,
+                    MemoryRealityType.UNKNOWN,
+                    sessionId,
+                    sessionId,
+                    sessionId,
+                    turnId,
+                    null,
+                    null,
+                    null,
+                    record.effectiveDatastoreIds().isEmpty() ? null : record.effectiveDatastoreIds().getFirst(),
+                    null
+            );
+        }
+        return null;
+    }
+
+    private MemoryWriteContext personalWriteContext(String sessionId, @Nullable String turnId) {
+        return new MemoryWriteContext(
+                null,
+                null,
+                MemoryOriginType.CHAT,
+                MemoryRealityType.UNKNOWN,
+                sessionId,
+                sessionId,
+                sessionId,
+                turnId,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private MemoryReadFilter buildSummaryReadFilter(MemoryWriteContext writeContext) {
+        if (writeContext.memoryScope() != null) {
+            return MemoryReadFilter.of(
+                    writeContext.spaceId() != null ? List.of(writeContext.spaceId()) : List.of(),
+                    List.of(writeContext.memoryScope())
+            );
+        }
+        return MemoryReadFilter.userMemory();
+    }
+
+    private MemoryReadFilter buildEntityReadFilter(MemoryWriteContext writeContext, EntityType entityType) {
+        MemoryScope scope = writeContext.memoryScope() != null
+                ? writeContext.memoryScope()
+                : defaultScopeFor(entityType);
+        return MemoryReadFilter.of(
+                writeContext.spaceId() != null ? List.of(writeContext.spaceId()) : List.of(),
+                List.of(scope)
+        );
+    }
+
+    private MemoryScope defaultScopeFor(EntityType entityType) {
+        return switch (entityType) {
+            case EXPERIENCE -> MemoryScope.AGENT_EXPERIENCE;
+            case PREFERENCE, HABIT, GOAL, SKILL -> MemoryScope.USER_PROFILE;
+            default -> MemoryScope.USER_FACT;
+        };
     }
 
     /**

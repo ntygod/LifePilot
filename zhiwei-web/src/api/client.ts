@@ -6,6 +6,7 @@
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
+  Datastore,
   UpdateKbRequest,
   DocumentChunk,
   ErrorResponse,
@@ -269,6 +270,7 @@ export const chatApi = {
       maxSteps?: number
       maxDurationSeconds?: number
       knowledgeBaseIds?: string[]
+      datastoreIds?: string[]
     }
   ): Promise<void> {
     return request(`/chat/sessions/${sessionId}/config`, {
@@ -770,9 +772,12 @@ export const knowledgeBaseApi = {
     return request(`/knowledge-bases/${kbId}/documents`)
   },
   // 文件上传使用 FormData，不设置 Content-Type
-  async uploadDocument(kbId: string, file: File): Promise<KbDocument> {
+  async uploadDocument(kbId: string, file: File, datastoreId?: string): Promise<KbDocument> {
     const formData = new FormData()
     formData.append('file', file)
+    if (datastoreId) {
+      formData.append('datastoreId', datastoreId)
+    }
     const res = await fetch(`${BASE}/knowledge-bases/${kbId}/documents`, {
       method: 'POST',
       body: formData
@@ -790,6 +795,12 @@ export const knowledgeBaseApi = {
   },
   deleteDocument(kbId: string, docId: string): Promise<void> {
     return request(`/knowledge-bases/${kbId}/documents/${docId}`, { method: 'DELETE' })
+  },
+  updateDocumentDatastore(kbId: string, docId: string, datastoreId: string | null): Promise<KbDocument> {
+    return request(`/knowledge-bases/${kbId}/documents/${docId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ datastoreId })
+    })
   },
   async getDocumentChunks(kbId: string, docId: string, offset = 0, limit = 100): Promise<DocumentChunk[]> {
     const res = await request<{ chunks: DocumentChunk[]; total: number }>(
@@ -834,6 +845,17 @@ export const knowledgeBaseApi = {
       body: JSON.stringify({ query })
     })
   }
+}
+
+/** Datastore 管理 API */
+export const datastoreApi = {
+  list(q?: string): Promise<Datastore[]> {
+    const query = q ? `?q=${encodeURIComponent(q)}` : ''
+    return request(`/datastores${query}`)
+  },
+  get(id: string): Promise<Datastore> {
+    return request(`/datastores/${id}`)
+  },
 }
 
 /** Skill 管理 API */

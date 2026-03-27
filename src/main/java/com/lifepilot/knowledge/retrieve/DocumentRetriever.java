@@ -5,6 +5,7 @@ import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
@@ -82,7 +83,19 @@ public class DocumentRetriever {
      * @return 检索结果列表（按相关性降序）
      */
     public List<DocumentSearchResult> retrieve(String query, List<String> kbIds, int topK) {
-        if (query == null || query.isBlank() || kbIds.isEmpty()) {
+        if (kbIds == null || kbIds.isEmpty()) {
+            return List.of();
+        }
+        return retrieveByScopes(query, kbIds.stream()
+                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .toList(), topK);
+    }
+
+    /**
+     * 混合检索文档分块，并按知识域范围过滤。
+     */
+    public List<DocumentSearchResult> retrieveByScopes(String query, List<KnowledgeSearchScope> scopes, int topK) {
+        if (query == null || query.isBlank() || scopes == null || scopes.isEmpty()) {
             return List.of();
         }
 
@@ -91,8 +104,8 @@ public class DocumentRetriever {
         int candidateK = effectiveTopK * 3;
 
         // 0. 解析 per-KB 模型配置
-        String embeddingModel = resolveEmbeddingModel(kbIds);
-        String rerankerModel = resolveRerankerModel(kbIds);
+        String embeddingModel = resolveEmbeddingModel(scopes);
+        String rerankerModel = resolveRerankerModel(scopes);
 
         // 1. 查询增强
         QueryEnhancer.EnhancedQuery enhanced = enhanceQuery(query);
@@ -104,9 +117,9 @@ public class DocumentRetriever {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             // HyDE 模式使用假设文档 Embedding 进行向量搜索
             var vectorFuture = CompletableFuture.supplyAsync(
-                    () -> safeVectorSearch(enhanced, kbIds, candidateK, embeddingModel), executor);
+                    () -> safeVectorSearch(enhanced, scopes, candidateK, embeddingModel), executor);
             var ftsFuture = CompletableFuture.supplyAsync(
-                    () -> safeFtsSearch(enhanced, kbIds, candidateK), executor);
+                    () -> safeFtsSearch(enhanced, scopes, candidateK), executor);
 
             vectorResults = vectorFuture.join();
             ftsResults = ftsFuture.join();
@@ -150,8 +163,8 @@ public class DocumentRetriever {
      * 解析跨知识库的 embeddingModel。
      * 所有 KB 的 embeddingModel 一致时返回该模型，否则返回 null（回退到默认）。
      */
-    private @Nullable String resolveEmbeddingModel(List<String> kbIds) {
-        var models = kbIds.stream()
+    private @Nullable String resolveEmbeddingModel(List<KnowledgeSearchScope> scopes) {
+        var models = extractKnowledgeBaseIds(scopes).stream()
                 .map(id -> kbRepository.findById(id).map(KnowledgeBase::embeddingModel).orElse(null))
                 .filter(m -> m != null && !m.isBlank() && !"default".equals(m))
                 .distinct()
@@ -167,8 +180,8 @@ public class DocumentRetriever {
      * 解析跨知识库的 rerankerModel。
      * 所有 KB 的 rerankerModel 一致时返回该模型，否则返回 null（回退到默认）。
      */
-    private @Nullable String resolveRerankerModel(List<String> kbIds) {
-        var models = kbIds.stream()
+    private @Nullable String resolveRerankerModel(List<KnowledgeSearchScope> scopes) {
+        var models = extractKnowledgeBaseIds(scopes).stream()
                 .map(id -> kbRepository.findById(id).map(KnowledgeBase::rerankerModel).orElse(null))
                 .filter(m -> m != null && !m.isBlank())
                 .distinct()
@@ -260,7 +273,10 @@ public class DocumentRetriever {
                             "fused",
                             original.metadata(),
                             Optional.of(breakdown),
-                            Optional.empty()
+                            Optional.empty(),
+                            original.sourceType(),
+                            original.sourceDatastoreId(),
+                            original.sourceCollectionId()
                     );
                 })
                 .toList();
@@ -318,7 +334,10 @@ public class DocumentRetriever {
                         result.sourcePath(),
                         result.metadata(),
                         result.scoreBreakdown(),
-                        Optional.of(sb.toString().trim())
+                        Optional.of(sb.toString().trim()),
+                        result.sourceType(),
+                        result.sourceDatastoreId(),
+                        result.sourceCollectionId()
                 ));
             } catch (Exception e) {
                 log.warn("上下文窗口扩展失败，返回原始分块: chunkId={}, error={}",
@@ -333,7 +352,7 @@ public class DocumentRetriever {
      * 安全执行向量搜索，支持 HyDE 和 Rewrite 模式。
      */
     private List<DocumentSearchResult> safeVectorSearch(QueryEnhancer.EnhancedQuery enhanced,
-                                                         List<String> kbIds, int topK,
+                                                         List<KnowledgeSearchScope> scopes, int topK,
                                                          @Nullable String embeddingModel) {
         if (vectorIndexer == null) {
             return List.of();
@@ -341,26 +360,26 @@ public class DocumentRetriever {
         try {
             // HyDE 模式：使用假设文档 Embedding
             if (enhanced.hydeEmbedding().isPresent()) {
-                return vectorIndexer.searchByEmbedding(enhanced.hydeEmbedding().get(), kbIds, topK);
+                return vectorIndexer.searchByEmbeddingByScopes(enhanced.hydeEmbedding().get(), scopes, topK);
             }
 
             // Rewrite 模式：对每个改写查询分别检索，合并去重
             if (!enhanced.rewrittenQueries().isEmpty()) {
                 var allResults = new LinkedHashMap<String, DocumentSearchResult>();
                 // 先检索原始查询
-                for (var r : vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK, embeddingModel)) {
+                for (var r : vectorIndexer.searchSimilarByScopes(enhanced.primaryQuery(), scopes, topK, embeddingModel)) {
                     allResults.putIfAbsent(r.chunkId(), r);
                 }
                 // 再检索改写查询
                 for (var rewrite : enhanced.rewrittenQueries()) {
-                    for (var r : vectorIndexer.searchSimilar(rewrite, kbIds, topK, embeddingModel)) {
+                    for (var r : vectorIndexer.searchSimilarByScopes(rewrite, scopes, topK, embeddingModel)) {
                         allResults.putIfAbsent(r.chunkId(), r);
                     }
                 }
                 return new ArrayList<>(allResults.values());
             }
 
-            return vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK, embeddingModel);
+            return vectorIndexer.searchSimilarByScopes(enhanced.primaryQuery(), scopes, topK, embeddingModel);
         } catch (Exception e) {
             log.warn("向量搜索失败，降级跳过: {}", e.getMessage());
             return List.of();
@@ -371,24 +390,32 @@ public class DocumentRetriever {
      * 安全执行 FTS5 搜索，支持 Rewrite 模式。
      */
     private List<DocumentSearchResult> safeFtsSearch(QueryEnhancer.EnhancedQuery enhanced,
-                                                      List<String> kbIds, int topK) {
+                                                      List<KnowledgeSearchScope> scopes, int topK) {
         try {
             if (!enhanced.rewrittenQueries().isEmpty()) {
                 var allResults = new LinkedHashMap<String, DocumentSearchResult>();
-                for (var r : ftsIndexer.search(enhanced.primaryQuery(), kbIds, topK)) {
+                for (var r : ftsIndexer.searchByScopes(enhanced.primaryQuery(), scopes, topK)) {
                     allResults.putIfAbsent(r.chunkId(), r);
                 }
                 for (var rewrite : enhanced.rewrittenQueries()) {
-                    for (var r : ftsIndexer.search(rewrite, kbIds, topK)) {
+                    for (var r : ftsIndexer.searchByScopes(rewrite, scopes, topK)) {
                         allResults.putIfAbsent(r.chunkId(), r);
                     }
                 }
                 return new ArrayList<>(allResults.values());
             }
-            return ftsIndexer.search(enhanced.primaryQuery(), kbIds, topK);
+            return ftsIndexer.searchByScopes(enhanced.primaryQuery(), scopes, topK);
         } catch (Exception e) {
             log.warn("FTS5 搜索失败，降级跳过: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    private List<String> extractKnowledgeBaseIds(List<KnowledgeSearchScope> scopes) {
+        return scopes.stream()
+                .map(KnowledgeSearchScope::knowledgeBaseId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 }

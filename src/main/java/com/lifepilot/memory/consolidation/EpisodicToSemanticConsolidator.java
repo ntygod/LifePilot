@@ -1,7 +1,5 @@
 package com.lifepilot.memory.consolidation;
 
-import com.lifepilot.knowledge.chunking.DocumentChunk;
-import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
@@ -10,7 +8,6 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
@@ -26,7 +23,7 @@ import java.util.stream.Collectors;
  *   <li>获取增量窗口内的对话（通过 memory_consolidation_log 记录上次巩固时间戳）</li>
  *   <li>统计已有 L3 实体在对话文本中的提及频率</li>
  *   <li>高频实体（≥ 阈值）提升 importanceScore（步长可配置，上限 1.0）</li>
- *   <li>长对话（&gt; 200 字符）触发 KnowledgeExtractionPipeline（LLM 不可用时跳过）</li>
+ *   <li>长对话不再触发新增知识提取，避免把对话内容误当作文档知识写入长期记忆</li>
  *   <li>记录巩固日志到 memory_consolidation_log</li>
  * </ol>
  *
@@ -37,12 +34,8 @@ public class EpisodicToSemanticConsolidator {
 
     private static final Logger log = LoggerFactory.getLogger(EpisodicToSemanticConsolidator.class);
     private static final String CONSOLIDATION_TYPE = "EPISODIC_TO_SEMANTIC";
-    /** 长对话触发知识提取的最小字符数。 */
-    private static final int MIN_EXTRACTION_LENGTH = 200;
-
     private final EpisodicMemory episodicMemory;
     private final SemanticMemory semanticMemory;
-    private final ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider;
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
 
@@ -51,18 +44,15 @@ public class EpisodicToSemanticConsolidator {
      *
      * @param episodicMemory     L2 情景记忆
      * @param semanticMemory     L3 语义记忆
-     * @param extractionPipeline 知识提取管线（可选，LLM 不可用时为 null）
      * @param jdbcTemplate       JDBC 模板
      * @param properties         记忆配置
      */
     public EpisodicToSemanticConsolidator(EpisodicMemory episodicMemory,
                                           SemanticMemory semanticMemory,
-                                          ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider,
                                           JdbcTemplate jdbcTemplate,
                                           MemoryProperties properties) {
         this.episodicMemory = episodicMemory;
         this.semanticMemory = semanticMemory;
-        this.extractionPipelineProvider = extractionPipelineProvider;
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
         log.info("EpisodicToSemanticConsolidator 初始化完成（知识提取管线按需获取）");
@@ -107,8 +97,8 @@ public class EpisodicToSemanticConsolidator {
         // 5. 高频实体提升 importanceScore
         int entitiesBoosted = boostHighFrequencyEntities(currentEntities, mentionCounts, config);
 
-        // 6. 长对话触发知识提取
-        int extractionsTriggered = triggerKnowledgeExtraction(conversations);
+        // 6. 长对话不再触发新增知识提取，巩固阶段只强化已有实体
+        int extractionsTriggered = 0;
 
         // 7. 记录巩固日志
         long elapsed = System.currentTimeMillis() - startMs;
@@ -218,52 +208,6 @@ public class EpisodicToSemanticConsolidator {
             }
         }
         return boosted;
-    }
-
-    /**
-     * 对长对话触发知识提取。LLM 不可用时跳过。
-     *
-     * @return 触发提取的对话数量
-     */
-    private int triggerKnowledgeExtraction(List<ConversationRecord> conversations) {
-        var extractionPipeline = extractionPipelineProvider.getIfAvailable();
-        if (extractionPipeline == null) {
-            log.debug("语义巩固: KnowledgeExtractionPipeline 不可用, 跳过知识提取");
-            return 0;
-        }
-
-        int triggered = 0;
-        for (var conv : conversations) {
-            String convText = conv.messages().stream()
-                    .map(MessageRecord::content)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.joining(" "));
-
-            if (convText.length() > MIN_EXTRACTION_LENGTH) {
-                try {
-                    var chunk = new DocumentChunk(
-                            UUID.randomUUID().toString(),
-                            conv.id(),
-                            "consolidation",
-                            convText,
-                            Optional.empty(),
-                            0,
-                            0,
-                            convText.length(),
-                            0,
-                            "",
-                            List.of(),
-                            0,
-                            Map.of());
-                    extractionPipeline.extract(List.of(chunk), conv.id());
-                    triggered++;
-                } catch (Exception e) {
-                    log.warn("语义巩固: 知识提取失败, conversationId={}, error={}",
-                            conv.id(), e.getMessage());
-                }
-            }
-        }
-        return triggered;
     }
 
     /**

@@ -64,6 +64,7 @@ class DataStoreManager集成测试 {
                     description     TEXT,
                     type            TEXT NOT NULL DEFAULT 'DOCUMENT',
                     properties_json TEXT,
+                    projection_config_json TEXT NOT NULL DEFAULT '{}',
                     metadata_json   TEXT,
                     created_by      TEXT,
                     created_at      TEXT NOT NULL,

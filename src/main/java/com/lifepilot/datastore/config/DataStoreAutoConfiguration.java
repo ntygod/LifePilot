@@ -5,6 +5,7 @@ import com.lifepilot.datastore.engine.AggregationEngine;
 import com.lifepilot.datastore.engine.QueryEngine;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
+import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
 import com.lifepilot.datastore.validation.PropertyValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +15,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 /**
  * 通用数据存储模块自动配置。
@@ -74,10 +76,12 @@ public class DataStoreAutoConfiguration {
                                               QueryEngine queryEngine,
                                               AggregationEngine aggregationEngine,
                                               PropertyValidator propertyValidator,
-                                              DataStoreProperties properties) {
+                                              DataStoreProperties properties,
+                                              @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher) {
         log.info("数据存储: 注册 DataStoreManager");
         return new DataStoreManager(collectionRepository, documentRepository,
-                queryEngine, aggregationEngine, propertyValidator, properties);
+                queryEngine, aggregationEngine, propertyValidator, properties,
+                knowledgeSyncPublisher);
     }
 
 }

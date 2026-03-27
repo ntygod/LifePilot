@@ -1,6 +1,7 @@
 package com.lifepilot.knowledge.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
@@ -24,9 +25,18 @@ import com.lifepilot.knowledge.parser.PlainTextParser;
 import com.lifepilot.knowledge.parser.WordParser;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.knowledge.repository.KnowledgeSyncJobRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.QueryEnhancer;
+import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.knowledge.sync.DataStoreKnowledgeSyncJobPublisher;
+import com.lifepilot.knowledge.sync.DatastoreDocumentProjector;
+import com.lifepilot.knowledge.sync.KnowledgeSyncWorker;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.rerank.router.RerankRouter;
@@ -174,6 +184,12 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository(JdbcTemplate jdbcTemplate) {
+        return new KnowledgeBaseDatastoreRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public DocumentRepository documentRepository(JdbcTemplate jdbcTemplate,
                                                  ObjectMapper objectMapper) {
         return new DocumentRepository(jdbcTemplate, objectMapper);
@@ -184,6 +200,19 @@ public class KnowledgeAutoConfiguration {
     public DocumentChunkRepository documentChunkRepository(JdbcTemplate jdbcTemplate,
                                                            ObjectMapper objectMapper) {
         return new DocumentChunkRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public KnowledgeSyncJobRepository knowledgeSyncJobRepository(JdbcTemplate jdbcTemplate,
+                                                                 ObjectMapper objectMapper) {
+        return new KnowledgeSyncJobRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DatastoreDocumentProjector datastoreDocumentProjector(ObjectMapper objectMapper) {
+        return new DatastoreDocumentProjector(objectMapper);
     }
 
     // ---- 索引服务 ----
@@ -223,18 +252,6 @@ public class KnowledgeAutoConfiguration {
         return new ChunkContextEnricher(generationRouter, props.contextEnricher(), promptRegistry);
     }
 
-    // ---- 知识提取 ----
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean(value = {GenerationRouter.class, SemanticMemory.class, PromptRegistry.class})
-    public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,
-                                                                   SemanticMemory semanticMemory,
-                                                                   KnowledgeBaseProperties props,
-                                                                   PromptRegistry promptRegistry) {
-        return new KnowledgeExtractionPipeline(generationRouter, semanticMemory, props.extraction(), promptRegistry);
-    }
-
     // ---- 查询增强 ----
 
     @Bean
@@ -271,6 +288,53 @@ public class KnowledgeAutoConfiguration {
                 chunkRepository,
                 kbRepository,
                 props.retrieval()
+        );
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver(
+            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+            @Nullable KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository) {
+        return new SessionKnowledgeScopeResolver(
+                sessionKnowledgeBaseRepository,
+                sessionDatastoreRepository,
+                knowledgeBaseDatastoreRepository
+        );
+    }
+
+    // ---- 知识提取 ----
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(value = {GenerationRouter.class, SemanticMemory.class, PromptRegistry.class})
+    public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,
+                                                                   SemanticMemory semanticMemory,
+                                                                   KnowledgeBaseProperties props,
+                                                                   PromptRegistry promptRegistry,
+                                                                   MemorySpaceRepository memorySpaceRepository) {
+        return new KnowledgeExtractionPipeline(generationRouter, semanticMemory, props.extraction(), promptRegistry, memorySpaceRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(DataStoreKnowledgeSyncPublisher.class)
+    @ConditionalOnBean({
+            KnowledgeBaseDatastoreRepository.class,
+            KnowledgeSyncJobRepository.class,
+            com.lifepilot.datastore.repository.CollectionRepository.class,
+            com.lifepilot.datastore.repository.DocumentRepository.class
+    })
+    public DataStoreKnowledgeSyncPublisher dataStoreKnowledgeSyncPublisher(
+            KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
+            KnowledgeSyncJobRepository knowledgeSyncJobRepository,
+            com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository,
+            DatastoreDocumentProjector datastoreDocumentProjector) {
+        return new DataStoreKnowledgeSyncJobPublisher(
+                knowledgeBaseDatastoreRepository,
+                knowledgeSyncJobRepository,
+                datastoreCollectionRepository,
+                datastoreDocumentProjector
         );
     }
 
@@ -329,15 +393,47 @@ public class KnowledgeAutoConfiguration {
     public KnowledgeBaseManager knowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                                      DocumentRepository documentRepository,
                                                      DocumentChunkRepository chunkRepository,
-                                                     @Nullable VectorIndexer vectorIndexer,
-                                                     FtsIndexer ftsIndexer) {
+                                                     KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
+                                                     @Nullable VectorIndexer vectorIndexer) {
         log.info("知识库模块初始化完成");
         return new KnowledgeBaseManager(
                 kbRepository,
                 documentRepository,
                 chunkRepository,
-                vectorIndexer,
-                ftsIndexer
+                knowledgeBaseDatastoreRepository,
+                vectorIndexer
+        );
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            KnowledgeSyncJobRepository.class,
+            KnowledgeBaseDatastoreRepository.class,
+            com.lifepilot.datastore.repository.CollectionRepository.class,
+            com.lifepilot.datastore.repository.DocumentRepository.class,
+            DocumentRepository.class,
+            KnowledgeBaseManager.class,
+            DocumentIngester.class
+    })
+    public KnowledgeSyncWorker knowledgeSyncWorker(
+            KnowledgeSyncJobRepository knowledgeSyncJobRepository,
+            KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
+            com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository,
+            com.lifepilot.datastore.repository.DocumentRepository datastoreDocumentRepository,
+            DocumentRepository knowledgeDocumentRepository,
+            KnowledgeBaseManager knowledgeBaseManager,
+            DocumentIngester documentIngester,
+            DatastoreDocumentProjector datastoreDocumentProjector) {
+        return new KnowledgeSyncWorker(
+                knowledgeSyncJobRepository,
+                knowledgeBaseDatastoreRepository,
+                datastoreCollectionRepository,
+                datastoreDocumentRepository,
+                knowledgeDocumentRepository,
+                knowledgeBaseManager,
+                documentIngester,
+                datastoreDocumentProjector
         );
     }
 }

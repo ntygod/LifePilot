@@ -51,6 +51,7 @@ triggers:
 
 - 使用 `builtin.datastore.create_collection` 创建集合时，选择合适的类型
 - 可通过 `properties` 参数定义集合的属性结构（JSON 数组格式）
+- 可通过 `projectionConfig` 参数声明集合级向量投影规则；省略时系统会自动保存 `{}` 并使用默认通用投影
 - 使用 `builtin.datastore.list_collections` 查看所有集合，支持按类型过滤
 
 ### 文档 CRUD
@@ -96,3 +97,4 @@ triggers:
 - **无效集合类型**：`type` 必须是 DOCUMENT、NOTE 或 METRIC
 - **聚合类型不匹配**：`aggregate` 仅支持 METRIC 类型集合
 - **属性定义格式错误**：`properties` 参数需为 JSON 数组，每项包含 `name`、`type`、`required` 字段
+- **projectionConfig 省略**：这是合法情况，系统会自动回退到默认投影配置 `{}`，不需要手工补空对象

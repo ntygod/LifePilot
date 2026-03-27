@@ -3,8 +3,10 @@ package com.lifepilot.knowledge.index;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.exception.IndexingException;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.IndexingResult;
+import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import org.slf4j.Logger;
@@ -190,6 +192,17 @@ public class VectorIndexer {
     }
 
     /**
+     * 向量相似度搜索，并按知识域范围过滤。
+     */
+    public List<DocumentSearchResult> searchSimilarByScopes(String query,
+                                                            List<KnowledgeSearchScope> scopes,
+                                                            int topK,
+                                                            @Nullable String embeddingModel) {
+        float[] queryVector = embeddingRouter.embed(query, EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
+        return searchByEmbeddingByScopes(queryVector, scopes, topK);
+    }
+
+    /**
      * 基于预计算 Embedding 向量的相似度搜索（用于 HyDE 模式）。
      *
      * <p>两步查询：先在 vectors.db 中做 KNN 搜索拿到 chunk_id + distance，
@@ -201,6 +214,23 @@ public class VectorIndexer {
      * @return 搜索结果列表（按相似度降序）
      */
     public List<DocumentSearchResult> searchByEmbedding(float[] embedding, List<String> kbIds, int topK) {
+        if (kbIds == null || kbIds.isEmpty()) {
+            return List.of();
+        }
+        return searchByEmbeddingByScopes(embedding, kbIds.stream()
+                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .toList(), topK);
+    }
+
+    /**
+     * 基于预计算 Embedding 向量的相似度搜索，并按知识域范围过滤。
+     */
+    public List<DocumentSearchResult> searchByEmbeddingByScopes(float[] embedding,
+                                                                List<KnowledgeSearchScope> scopes,
+                                                                int topK) {
+        if (scopes == null || scopes.isEmpty()) {
+            return List.of();
+        }
         String vectorParam = vectorToString(embedding);
 
         // 第一步：在 vectors.db 中做 KNN 搜索，多取一些候选（因为后续要按知识库过滤）
@@ -225,17 +255,18 @@ public class VectorIndexer {
         }
 
         var chunkPlaceholders = chunkIds.stream().map(id -> "?").collect(Collectors.joining(","));
-        var kbPlaceholders = kbIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        ScopeSql scopeSql = buildScopeSql("knowledge_base_id", "source_datastore_id", scopes);
         var sql = """
                 SELECT id, document_id, knowledge_base_id, content, context_prefix,
-                       heading_hierarchy_json, metadata_json
+                       heading_hierarchy_json, metadata_json,
+                       source_type, source_datastore_id, source_collection_id
                 FROM document_chunks
                 WHERE id IN (%s)
-                  AND knowledge_base_id IN (%s)""".formatted(chunkPlaceholders, kbPlaceholders);
+                  AND (%s)""".formatted(chunkPlaceholders, scopeSql.sql());
 
         var params = new ArrayList<Object>();
         params.addAll(chunkIds);
-        params.addAll(kbIds);
+        params.addAll(scopeSql.params());
 
         var results = mainJdbcTemplate.query(sql, (rs, rowNum) -> {
             String chunkId = rs.getString("id");
@@ -252,7 +283,12 @@ public class VectorIndexer {
                     headings,
                     1.0 - distance, // 距离转相似度
                     "vector",
-                    Map.of()
+                    Map.of(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    parseSourceType(rs.getString("source_type")),
+                    Optional.ofNullable(rs.getString("source_datastore_id")),
+                    Optional.ofNullable(rs.getString("source_collection_id"))
             );
         }, params.toArray());
 
@@ -336,4 +372,37 @@ public class VectorIndexer {
             Thread.currentThread().interrupt();
         }
     }
+
+    private ScopeSql buildScopeSql(String kbColumn, String datastoreColumn, List<KnowledgeSearchScope> scopes) {
+        var sqlParts = new ArrayList<String>();
+        var params = new ArrayList<Object>();
+        for (KnowledgeSearchScope scope : scopes) {
+            if (scope == null || scope.knowledgeBaseId() == null || scope.knowledgeBaseId().isBlank()) {
+                continue;
+            }
+            if (scope.datastoreId() == null || scope.datastoreId().isBlank()) {
+                sqlParts.add(kbColumn + " = ?");
+                params.add(scope.knowledgeBaseId());
+            } else {
+                sqlParts.add("(" + kbColumn + " = ? AND " + datastoreColumn + " = ?)");
+                params.add(scope.knowledgeBaseId());
+                params.add(scope.datastoreId());
+            }
+        }
+        return new ScopeSql(String.join(" OR ", sqlParts), params);
+    }
+
+    private DocumentSourceType parseSourceType(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return DocumentSourceType.FILE;
+        }
+        try {
+            return DocumentSourceType.valueOf(rawValue);
+        } catch (IllegalArgumentException e) {
+            log.warn("未知向量检索来源类型，回退 FILE: value={}", rawValue);
+            return DocumentSourceType.FILE;
+        }
+    }
+
+    private record ScopeSql(String sql, List<Object> params) {}
 }

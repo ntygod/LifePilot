@@ -61,8 +61,12 @@ public class ConflictDetector {
      * @return 冲突的已有实体，无冲突时返回 Optional.empty()
      */
     public Optional<TemporalEntity> detectConflict(TemporalEntity newEntity) {
+        return detectConflict(newEntity, null);
+    }
+
+    public Optional<TemporalEntity> detectConflict(TemporalEntity newEntity, @Nullable String spaceId) {
         // 第一级：精确匹配（name + type）
-        var exactMatch = findExactMatch(newEntity.name(), newEntity.type());
+        var exactMatch = findExactMatch(newEntity.name(), newEntity.type(), spaceId);
         if (exactMatch.isPresent()) {
             log.debug("冲突检测: 精确匹配命中, name={}, type={}", newEntity.name(), newEntity.type());
             return exactMatch;
@@ -71,10 +75,9 @@ public class ConflictDetector {
         // 第二级：语义匹配
         try {
             var vectorResults = vectorSearcher.searchEntities(
-                    newEntity.textRepresentation(), 1, semanticMatchThreshold);
-            if (!vectorResults.isEmpty()) {
-                var topResult = vectorResults.getFirst();
-                var candidate = findEntityById(topResult.entityId());
+                    newEntity.textRepresentation(), 10, semanticMatchThreshold);
+            for (var topResult : vectorResults) {
+                var candidate = findEntityById(topResult.entityId(), spaceId);
                 if (candidate.isPresent()) {
                     // 第三级：LLM 消歧义
                     if (generationRouter != null) {
@@ -105,20 +108,28 @@ public class ConflictDetector {
     }
 
     /** 精确匹配：name + type + is_current=1。 */
-    private Optional<TemporalEntity> findExactMatch(String name, EntityType type) {
+    private Optional<TemporalEntity> findExactMatch(String name, EntityType type, @Nullable String spaceId) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1",
+                """
+                SELECT * FROM temporal_entities
+                WHERE name = ? AND type = ? AND is_current = 1
+                  AND (? IS NULL OR space_id = ?)
+                """,
                 (rs, rowNum) -> mapRowToEntity(rs),
-                name, type.name());
+                name, type.name(), spaceId, spaceId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     /** 按 ID 查找当前版本实体。 */
-    private Optional<TemporalEntity> findEntityById(String entityId) {
+    private Optional<TemporalEntity> findEntityById(String entityId, @Nullable String spaceId) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM temporal_entities WHERE id = ? AND is_current = 1",
+                """
+                SELECT * FROM temporal_entities
+                WHERE id = ? AND is_current = 1
+                  AND (? IS NULL OR space_id = ?)
+                """,
                 (rs, rowNum) -> mapRowToEntity(rs),
-                entityId);
+                entityId, spaceId, spaceId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 

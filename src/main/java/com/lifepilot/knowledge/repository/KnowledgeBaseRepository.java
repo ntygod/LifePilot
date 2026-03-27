@@ -196,7 +196,8 @@ public class KnowledgeBaseRepository {
                 rs.getInt("total_chunks"),
                 deserializeStringList(rs.getString("tags")),
                 Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at"))
+                Instant.parse(rs.getString("updated_at")),
+                List.of()
         );
     }
 

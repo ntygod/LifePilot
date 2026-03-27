@@ -2,11 +2,20 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.knowledge`
-> **最后更新**：2026-03
+> **最后更新**：2026-03-27
 
 ## 1. 模块概述
 
 知识库管理模块为知微提供文档级知识管理能力，支持多格式文档导入（PDF / Word / Markdown / TXT）、智能分块、向量索引、混合检索和可选精排。用户可创建多个独立知识库，每个知识库独立配置 Embedding 模型和分块策略。模块通过 `DocumentIngester` 实现完整的文档摄入管线，通过 `DocumentRetriever` 实现双路检索 + RRF 融合，为 Agent 的上下文增强提供知识库片段。
+
+在当前实现中，知识库还承担 datastore 领域知识容器的角色：
+
+- 知识库可显式挂载多个 datastore
+- 文件文档可按“文档级”归属到某个 datastore，也可保持无归属共享文档
+- datastore 结构化数据会异步同步为 `DATASTORE_DOCUMENT` 写入关联知识库
+- 会话按 datastore 加载知识时，检索会按 `source_datastore_id` 收口，不会把同库其他领域内容混入
+
+这意味着知识库既是通用文档容器，也是领域检索的承载层；真正决定领域边界的是文档级来源字段，而不是仅靠知识库挂载关系。
 
 ## 2. 架构图
 
@@ -139,6 +148,20 @@ graph TB
 - 可选启用，在文档摄入管线的最后阶段执行
 - 为记忆系统的巩固管线提供知识提取能力
 
+### 3.10 Datastore 领域扩展
+
+- `KnowledgeBaseDatastoreRepository`：维护知识库与 datastore 的显式挂载关系
+- `KnowledgeSyncWorker`：消费 `knowledge_sync_jobs`，把 datastore 文档同步成 `DATASTORE_DOCUMENT`
+- `SessionKnowledgeScopeResolver`：当会话加载 datastore 时，将其关联知识库转换为 `(knowledgeBaseId, datastoreId)` 检索范围
+- `DocumentRepository` / `DocumentChunkRepository`：在文档与分块上持久化 `sourceType / sourceDatastoreId / sourceCollectionId`
+
+文档来源模型的关键语义如下：
+
+- `sourceType = FILE`：用户上传的文件文档，可选关联某个 datastore，也可保持共享
+- `sourceType = DATASTORE_DOCUMENT`：由 datastore 同步生成，只读，不应在知识库侧直接改归属
+- `sourceDatastoreId`：文档真实领域归属，检索收口按它执行
+- `sourceCollectionId`：来源 datastore 集合 ID，主要用于结果溯源
+
 ## 4. 核心流程
 
 ### 4.1 文档摄入管线
@@ -216,6 +239,33 @@ sequenceDiagram
 
     DR-->>CA: List<DocumentSearchResult>
 ```
+
+### 4.3 Datastore 范围检索流程
+
+```mermaid
+sequenceDiagram
+    participant S as SessionKnowledgeScopeResolver
+    participant SDR as SessionDatastoreRepository
+    participant KDR as KnowledgeBaseDatastoreRepository
+    participant DR as DocumentRetriever
+    participant VI as VectorIndexer
+    participant FI as FtsIndexer
+
+    S->>SDR: findDatastoreIdsBySessionId(sessionId)
+    SDR-->>S: [datastoreId...]
+    S->>KDR: findKnowledgeBaseIdsByDatastoreId(datastoreId)
+    KDR-->>S: [knowledgeBaseId...]
+    S-->>DR: [(knowledgeBaseId, datastoreId)...]
+    DR->>VI: search(scopes)
+    DR->>FI: search(scopes)
+    Note over VI,FI: SQL 同时按 knowledge_base_id 和 source_datastore_id 过滤
+```
+
+补充语义：
+
+- 通过 datastore 自动带出的知识库，只检索该 datastore 归属的文档和同步文档
+- 用户显式加载某个知识库时，不附带 datastore scope，检索该知识库全部文档
+- 用户上传文件后可调整文档级 datastore 归属；同步生成的 `DATASTORE_DOCUMENT` 保持只读
 
 ## 5. 设计决策
 

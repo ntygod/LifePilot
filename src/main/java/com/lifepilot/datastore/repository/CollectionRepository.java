@@ -27,6 +27,7 @@ import java.util.UUID;
 public class CollectionRepository {
 
     private static final Logger log = LoggerFactory.getLogger(CollectionRepository.class);
+    private static final String DEFAULT_PROJECTION_CONFIG_JSON = "{}";
 
     private final JdbcTemplate jdbcTemplate;
     private final RowMapper<Collection> rowMapper;
@@ -47,12 +48,13 @@ public class CollectionRepository {
         String now = Instant.now().toString();
 
         jdbcTemplate.update("""
-                INSERT INTO ds_collections (id, name, description, type, properties_json, metadata_json, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ds_collections (id, name, description, type, properties_json, projection_config_json, metadata_json, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id, collection.name(), collection.description(),
                 collection.type().name(), collection.propertiesJson(),
-                collection.metadataJson(), collection.createdBy(), now, now);
+                normalizeProjectionConfigJson(collection.projectionConfigJson()), collection.metadataJson(),
+                collection.createdBy(), now, now);
 
         log.info("集合创建成功: id={}, name={}", id, collection.name());
         return id;
@@ -109,16 +111,21 @@ public class CollectionRepository {
      *
      * @param id           集合 ID
      * @param description  新描述
+     * @param projectionConfigJson 新投影配置 JSON
      * @param metadataJson 新元数据 JSON
      * @return 是否更新成功
      */
-    public boolean update(String id, @Nullable String description, @Nullable String metadataJson) {
+    public boolean update(String id,
+                          @Nullable String description,
+                          @Nullable String projectionConfigJson,
+                          @Nullable String metadataJson) {
         String now = Instant.now().toString();
         int rows = jdbcTemplate.update("""
-                UPDATE ds_collections SET description = ?, metadata_json = ?, updated_at = ?
+                UPDATE ds_collections
+                SET description = ?, projection_config_json = ?, metadata_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                description, metadataJson, now, id);
+                description, normalizeProjectionConfigJson(projectionConfigJson), metadataJson, now, id);
 
         if (rows > 0) {
             log.info("集合更新成功: id={}", id);
@@ -214,10 +221,15 @@ public class CollectionRepository {
                 rs.getString("description"),
                 CollectionType.valueOf(rs.getString("type")),
                 rs.getString("properties_json"),
+                normalizeProjectionConfigJson(rs.getString("projection_config_json")),
                 rs.getString("metadata_json"),
                 rs.getString("created_by"),
                 rs.getString("created_at"),
                 rs.getString("updated_at")
         );
+    }
+
+    private String normalizeProjectionConfigJson(@Nullable String projectionConfigJson) {
+        return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
     }
 }

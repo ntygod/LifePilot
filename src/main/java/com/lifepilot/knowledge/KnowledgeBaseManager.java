@@ -2,12 +2,13 @@ package com.lifepilot.knowledge;
 
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
-import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.model.Document;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,8 @@ import org.springframework.lang.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,19 +37,19 @@ public class KnowledgeBaseManager {
     private final KnowledgeBaseRepository kbRepository;
     private final DocumentRepository docRepository;
     private final DocumentChunkRepository chunkRepository;
+    private final KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository;
     private final @Nullable VectorIndexer vectorIndexer;
-    private final FtsIndexer ftsIndexer;
 
     public KnowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                 DocumentRepository docRepository,
                                 DocumentChunkRepository chunkRepository,
-                                @Nullable VectorIndexer vectorIndexer,
-                                FtsIndexer ftsIndexer) {
+                                KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
+                                @Nullable VectorIndexer vectorIndexer) {
         this.kbRepository = kbRepository;
         this.docRepository = docRepository;
         this.chunkRepository = chunkRepository;
+        this.knowledgeBaseDatastoreRepository = knowledgeBaseDatastoreRepository;
         this.vectorIndexer = vectorIndexer;
-        this.ftsIndexer = ftsIndexer;
     }
 
     /**
@@ -64,12 +67,14 @@ public class KnowledgeBaseManager {
     @Transactional
     public KnowledgeBase createKnowledgeBase(String name, String description, @Nullable String embeddingModel,
                                              String rerankerModel, String chunkingStrategy,
-                                             Map<String, Object> chunkingConfig, List<String> tags) {
+                                             Map<String, Object> chunkingConfig, List<String> tags,
+                                             @Nullable List<String> datastoreIds) {
         KnowledgeBase kb = KnowledgeBase.create(name, description, embeddingModel,
                 rerankerModel, chunkingStrategy, chunkingConfig, tags);
         kbRepository.save(kb);
+        knowledgeBaseDatastoreRepository.setAssociations(kb.id(), normalizeDatastoreIds(datastoreIds));
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
-        return kb;
+        return enrichWithDatastoreIds(kb);
     }
 
     /**
@@ -79,7 +84,7 @@ public class KnowledgeBaseManager {
      * @return 知识库 Optional
      */
     public Optional<KnowledgeBase> getKnowledgeBase(String id) {
-        return kbRepository.findById(id);
+        return kbRepository.findById(id).map(this::enrichWithDatastoreIds);
     }
 
     /**
@@ -88,7 +93,9 @@ public class KnowledgeBaseManager {
      * @return 知识库列表
      */
     public List<KnowledgeBase> listKnowledgeBases() {
-        return kbRepository.findAll();
+        return kbRepository.findAll().stream()
+                .map(this::enrichWithDatastoreIds)
+                .toList();
     }
 
     /**
@@ -100,7 +107,9 @@ public class KnowledgeBaseManager {
      * @return 知识库列表
      */
     public List<KnowledgeBase> listKnowledgeBases(String q, String tags, String timeRange) {
-        return kbRepository.findByConditions(q, tags, timeRange);
+        return kbRepository.findByConditions(q, tags, timeRange).stream()
+                .map(this::enrichWithDatastoreIds)
+                .toList();
     }
 
     /**
@@ -121,9 +130,11 @@ public class KnowledgeBaseManager {
     public KnowledgeBase updateKnowledgeBase(String id, String name, String description,
                                              String embeddingModel, String rerankerModel,
                                              String chunkingStrategy, Map<String, Object> chunkingConfig,
-                                             List<String> tags) {
+                                             List<String> tags,
+                                             @Nullable List<String> datastoreIds) {
         KnowledgeBase existing = kbRepository.findById(id)
                 .orElseThrow(() -> new KnowledgeBaseNotFoundException("知识库不存在: id=" + id));
+        KnowledgeBase hydratedExisting = enrichWithDatastoreIds(existing);
 
         KnowledgeBase updated = new KnowledgeBase(
                 existing.id(),
@@ -135,20 +146,25 @@ public class KnowledgeBaseManager {
                 chunkingConfig != null ? chunkingConfig : existing.chunkingConfig(),
                 existing.documentCount(),
                 existing.totalChunks(),
-                tags != null ? tags : existing.tags(),
+                tags != null ? tags : hydratedExisting.tags(),
                 existing.createdAt(),
-                Instant.now()
+                Instant.now(),
+                datastoreIds != null ? List.copyOf(normalizeDatastoreIds(datastoreIds)) : hydratedExisting.datastoreIds()
         );
         kbRepository.save(updated);
+        if (datastoreIds != null) {
+            knowledgeBaseDatastoreRepository.setAssociations(id, normalizeDatastoreIds(datastoreIds));
+        }
         log.info("知识库更新成功: id={}", id);
-        return updated;
+        return enrichWithDatastoreIds(updated);
     }
 
     /**
-     * 删除知识库及其所有关联数据（文档、分块、向量索引、FTS5 索引）。
+     * 删除知识库及其所有关联数据（文档、分块、向量索引）。
      *
-     * <p>删除顺序：逐文档清理向量索引 → 逐文档清理 FTS5 索引 → 删除知识库（CASCADE 删除文档和分块）。
-     * 显式清理索引而非依赖 CASCADE，因为 vec0 虚拟表不支持 FK/触发器联动。
+     * <p>删除顺序：逐文档清理向量索引 → 删除知识库（CASCADE 删除文档和分块）。
+     * vec0 虚拟表不支持 FK/触发器联动，因此向量索引仍需显式清理；
+     * FTS5 由 {@code document_chunks} 的删除触发器自动维护，不再重复手工删除。
      *
      * @param id 知识库 id
      */
@@ -164,9 +180,7 @@ public class KnowledgeBaseManager {
             }
         }
 
-        // 3. 逐文档清理 FTS5 索引（显式清理，不依赖 CASCADE 触发器的可靠性）
-
-        // 4. 删除知识库（CASCADE 自动删除 documents 和 document_chunks）
+        // 3. 删除知识库（CASCADE 自动删除 documents 和 document_chunks，并由触发器清理 FTS5）
         kbRepository.deleteById(id);
         log.info("知识库删除成功: id={}", id);
     }
@@ -239,5 +253,125 @@ public class KnowledgeBaseManager {
         kbRepository.updateDocumentCount(kbId, docCount, totalChunks);
 
         log.info("文档删除成功: id={}, 知识库统计已更新: kbId={}", documentId, kbId);
+    }
+
+    /**
+     * 确保知识库已挂载指定 datastore。
+     */
+    @Transactional
+    public void ensureDatastoreAssociation(String knowledgeBaseId, @Nullable String datastoreId) {
+        if (datastoreId == null || datastoreId.isBlank()) {
+            return;
+        }
+        kbRepository.findById(knowledgeBaseId)
+                .orElseThrow(() -> new KnowledgeBaseNotFoundException("知识库不存在: id=" + knowledgeBaseId));
+        knowledgeBaseDatastoreRepository.addAssociation(knowledgeBaseId, datastoreId.strip());
+    }
+
+    /**
+     * 更新用户上传文档的 datastore 归属。
+     *
+     * <p>该操作会同时更新 documents 和 document_chunks 上的领域字段，
+     * 让后续向量检索与 FTS 检索都按新的领域边界生效。</p>
+     *
+     * @param knowledgeBaseId 知识库 id
+     * @param documentId      文档 id
+     * @param datastoreId     新的 datastore 归属，可为空表示共享文档
+     * @return 更新后的文档
+     */
+    @Transactional
+    public Document updateDocumentDatastore(String knowledgeBaseId,
+                                            String documentId,
+                                            @Nullable String datastoreId) {
+        kbRepository.findById(knowledgeBaseId)
+                .orElseThrow(() -> new KnowledgeBaseNotFoundException("知识库不存在: id=" + knowledgeBaseId));
+
+        Document existing = docRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException("文档不存在: id=" + documentId));
+
+        if (!knowledgeBaseId.equals(existing.knowledgeBaseId())) {
+            throw new DocumentNotFoundException("文档不属于指定知识库: docId=" + documentId);
+        }
+        if (!existing.status().isTerminal()) {
+            throw new IllegalArgumentException("文档处理中，暂不支持修改 Datastore 归属");
+        }
+        if (existing.sourceType() != DocumentSourceType.FILE) {
+            throw new IllegalArgumentException("只有用户上传的文件文档支持修改 Datastore 归属");
+        }
+
+        String normalizedDatastoreId = datastoreId != null && !datastoreId.isBlank()
+                ? datastoreId.strip()
+                : null;
+
+        if (normalizedDatastoreId != null) {
+            ensureDatastoreAssociation(knowledgeBaseId, normalizedDatastoreId);
+        }
+
+        var sourceRef = new LinkedHashMap<String, Object>(existing.sourceRef());
+        if (normalizedDatastoreId == null) {
+            sourceRef.remove("datastoreId");
+        } else {
+            sourceRef.put("datastoreId", normalizedDatastoreId);
+        }
+
+        var updated = new Document(
+                existing.id(),
+                existing.knowledgeBaseId(),
+                existing.fileName(),
+                existing.filePath(),
+                existing.fileSize(),
+                existing.mimeType(),
+                existing.contentHash(),
+                existing.status(),
+                existing.chunkCount(),
+                existing.entityCount(),
+                existing.errorMessage(),
+                existing.lastProcessedStage(),
+                existing.metadata(),
+                existing.createdAt(),
+                Instant.now(),
+                existing.sourceType(),
+                existing.sourceKey(),
+                normalizedDatastoreId,
+                existing.sourceCollectionId(),
+                sourceRef
+        );
+        docRepository.save(updated);
+        chunkRepository.updateSourceDatastoreIdByDocumentId(documentId, normalizedDatastoreId);
+        log.info("文档 Datastore 归属已更新: kbId={}, docId={}, datastoreId={}",
+                knowledgeBaseId, documentId, normalizedDatastoreId);
+        return updated;
+    }
+
+    private KnowledgeBase enrichWithDatastoreIds(KnowledgeBase kb) {
+        var datastoreIds = knowledgeBaseDatastoreRepository.findDatastoreIdsByKnowledgeBaseId(kb.id());
+        return new KnowledgeBase(
+                kb.id(),
+                kb.name(),
+                kb.description(),
+                kb.embeddingModel(),
+                kb.rerankerModel(),
+                kb.chunkingStrategy(),
+                kb.chunkingConfig(),
+                kb.documentCount(),
+                kb.totalChunks(),
+                kb.tags(),
+                kb.createdAt(),
+                kb.updatedAt(),
+                datastoreIds
+        );
+    }
+
+    private LinkedHashSet<String> normalizeDatastoreIds(@Nullable List<String> datastoreIds) {
+        var normalized = new LinkedHashSet<String>();
+        if (datastoreIds == null) {
+            return normalized;
+        }
+        for (String datastoreId : datastoreIds) {
+            if (datastoreId != null && !datastoreId.isBlank()) {
+                normalized.add(datastoreId.strip());
+            }
+        }
+        return normalized;
     }
 }

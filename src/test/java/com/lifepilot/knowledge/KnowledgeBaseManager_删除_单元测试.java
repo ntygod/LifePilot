@@ -1,11 +1,11 @@
 package com.lifepilot.knowledge;
 
-import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,8 +37,8 @@ class KnowledgeBaseManager_删除_单元测试 {
     @Mock KnowledgeBaseRepository kbRepository;
     @Mock DocumentRepository docRepository;
     @Mock DocumentChunkRepository chunkRepository;
+    @Mock KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository;
     @Mock VectorIndexer vectorIndexer;
-    @Mock FtsIndexer ftsIndexer;
 
     KnowledgeBaseManager manager;
     private static final String KB_ID = "kb-001";
@@ -48,7 +48,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     @BeforeEach
     void setUp() {
         manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                vectorIndexer, ftsIndexer);
+                knowledgeBaseDatastoreRepository, vectorIndexer);
     }
 
     // ---- 辅助方法 ----
@@ -81,7 +81,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     void removeDocument_VectorIndexer为null时正常执行() {
         // 构造 VectorIndexer 为 null 的 manager
         var managerNoVec = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                null, ftsIndexer);
+                knowledgeBaseDatastoreRepository, null);
         var doc = 创建测试文档(DOC_ID_1, KB_ID);
         when(docRepository.findById(DOC_ID_1)).thenReturn(Optional.of(doc));
         when(docRepository.findByKnowledgeBaseId(KB_ID)).thenReturn(List.of());
@@ -100,7 +100,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     // ---- deleteKnowledgeBase 测试 ----
 
     @Test
-    void deleteKnowledgeBase_逐文档清理向量索引和FTS5索引() {
+    void deleteKnowledgeBase_逐文档清理向量索引后删除知识库() {
         // 准备：知识库下有两个文档
         var doc1 = 创建测试文档(DOC_ID_1, KB_ID);
         var doc2 = 创建测试文档(DOC_ID_2, KB_ID);
@@ -109,11 +109,9 @@ class KnowledgeBaseManager_删除_单元测试 {
         // 执行
         manager.deleteKnowledgeBase(KB_ID);
 
-        // 验证每个文档都调用了向量索引和 FTS5 索引清理
+        // 验证每个文档都调用了向量索引清理
         verify(vectorIndexer).removeByDocumentId(DOC_ID_1);
         verify(vectorIndexer).removeByDocumentId(DOC_ID_2);
-        verify(ftsIndexer).removeByDocumentId(DOC_ID_1);
-        verify(ftsIndexer).removeByDocumentId(DOC_ID_2);
         verify(kbRepository).deleteById(KB_ID);
     }
 
@@ -127,9 +125,8 @@ class KnowledgeBaseManager_删除_单元测试 {
         manager.deleteKnowledgeBase(KB_ID);
 
         // 验证时序：索引清理 → kbRepository.deleteById
-        InOrder inOrder = inOrder(vectorIndexer, ftsIndexer, kbRepository);
+        InOrder inOrder = inOrder(vectorIndexer, kbRepository);
         inOrder.verify(vectorIndexer).removeByDocumentId(DOC_ID_1);
-        inOrder.verify(ftsIndexer).removeByDocumentId(DOC_ID_1);
         inOrder.verify(kbRepository).deleteById(KB_ID);
     }
 
@@ -137,7 +134,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     void deleteKnowledgeBase_VectorIndexer为null时正常执行() {
         // 构造 VectorIndexer 为 null 的 manager
         var managerNoVec = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                null, ftsIndexer);
+                knowledgeBaseDatastoreRepository, null);
         var doc1 = 创建测试文档(DOC_ID_1, KB_ID);
         when(docRepository.findByKnowledgeBaseId(KB_ID)).thenReturn(List.of(doc1));
 
@@ -145,8 +142,7 @@ class KnowledgeBaseManager_删除_单元测试 {
         assertThatCode(() -> managerNoVec.deleteKnowledgeBase(KB_ID))
                 .doesNotThrowAnyException();
 
-        // 验证 FTS5 索引仍然被清理，知识库仍然被删除
-        verify(ftsIndexer).removeByDocumentId(DOC_ID_1);
+        // 验证知识库仍然被删除
         verify(kbRepository).deleteById(KB_ID);
         verifyNoInteractions(vectorIndexer);
     }
@@ -164,6 +160,5 @@ class KnowledgeBaseManager_删除_单元测试 {
         verify(kbRepository).deleteById(KB_ID);
         // 无文档，不应调用索引清理
         verifyNoInteractions(vectorIndexer);
-        verifyNoInteractions(ftsIndexer);
     }
 }

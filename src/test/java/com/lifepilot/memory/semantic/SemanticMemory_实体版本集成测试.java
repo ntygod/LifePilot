@@ -1,0 +1,221 @@
+package com.lifepilot.memory.semantic;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * SemanticMemory 实体版本集成测试。
+ *
+ * @author zsg
+ * @since 2026-03-27
+ */
+@DisplayName("SemanticMemory 实体版本集成测试")
+class SemanticMemory_实体版本集成测试 {
+
+    private JdbcTemplate jdbcTemplate;
+    private ConflictDetector conflictDetector;
+    private VectorSearcher vectorSearcher;
+    private SemanticMemory semanticMemory;
+
+    @BeforeEach
+    void setUp() {
+        var dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
+        jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.execute("PRAGMA foreign_keys = ON");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_spaces (
+                    id TEXT PRIMARY KEY,
+                    space_key TEXT NOT NULL UNIQUE,
+                    space_type TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    owner_type TEXT,
+                    owner_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_entities (
+                    id TEXT PRIMARY KEY,
+                    space_id TEXT NOT NULL,
+                    memory_scope TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    canonical_name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL,
+                    reality_type TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    access_count INTEGER NOT NULL DEFAULT 0,
+                    last_accessed_at TEXT,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_entity_versions (
+                    id TEXT PRIMARY KEY,
+                    entity_id TEXT NOT NULL,
+                    version_no INTEGER NOT NULL,
+                    description TEXT,
+                    properties_json TEXT,
+                    extraction_confidence REAL NOT NULL DEFAULT 0.0,
+                    importance_score REAL NOT NULL DEFAULT 0.5,
+                    is_current INTEGER NOT NULL DEFAULT 1,
+                    valid_from TEXT NOT NULL,
+                    valid_to TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_entity_provenances (
+                    id TEXT PRIMARY KEY,
+                    entity_id TEXT NOT NULL,
+                    version_id TEXT,
+                    origin_type TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    source_reference TEXT,
+                    source_conversation_id TEXT,
+                    source_session_id TEXT,
+                    source_turn_id TEXT,
+                    source_entry_id TEXT,
+                    source_document_id TEXT,
+                    source_knowledge_base_id TEXT,
+                    source_datastore_id TEXT,
+                    source_collection_id TEXT,
+                    evidence_excerpt TEXT,
+                    evidence_hash TEXT,
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    created_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE VIEW temporal_entities AS
+                SELECT
+                    me.id AS id,
+                    me.entity_type AS type,
+                    me.canonical_name AS name,
+                    mev.description AS description,
+                    mev.properties_json AS properties_json,
+                    mev.version_no AS version,
+                    mev.is_current AS is_current,
+                    mev.valid_from AS valid_from,
+                    mev.valid_to AS valid_to,
+                    p.source_conversation_id AS source_conversation_id,
+                    mev.extraction_confidence AS extraction_confidence,
+                    mev.importance_score AS importance_score,
+                    me.access_count AS access_count,
+                    me.last_accessed_at AS last_accessed_at,
+                    me.created_at AS created_at,
+                    mev.updated_at AS updated_at
+                FROM memory_entities me
+                JOIN memory_entity_versions mev ON mev.entity_id = me.id
+                LEFT JOIN memory_entity_provenances p ON p.version_id = mev.id
+                """);
+
+        var objectMapper = new ObjectMapper();
+        var memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, objectMapper);
+        conflictDetector = mock(ConflictDetector.class);
+        vectorSearcher = mock(VectorSearcher.class);
+        semanticMemory = new SemanticMemory(
+                jdbcTemplate,
+                conflictDetector,
+                new VersionMerger(),
+                vectorSearcher,
+                memorySpaceRepository
+        );
+    }
+
+    @Test
+    void 同一逻辑实体更新时应保持稳定实体Id并写入版本与来源() {
+        Instant now = Instant.parse("2026-03-27T03:00:00Z");
+        var created = new TemporalEntity(
+                "entity-hero",
+                EntityType.PERSON,
+                "林玄",
+                "主角初始设定",
+                Map.of("identity", "主角"),
+                1,
+                true,
+                now,
+                null,
+                "session-1",
+                0.8f,
+                0.7f,
+                0,
+                null,
+                now,
+                now
+        );
+        when(conflictDetector.detectConflict(any(), nullable(String.class)))
+                .thenReturn(Optional.empty(), Optional.of(created));
+
+        var persisted = semanticMemory.upsertWithConflictDetection(created, "session-1");
+        var updated = semanticMemory.upsertWithConflictDetection(
+                new TemporalEntity(
+                        null,
+                        EntityType.PERSON,
+                        "林玄",
+                        "主角，来自青岚城",
+                        Map.of("identity", "主角", "city", "青岚城"),
+                        1,
+                        true,
+                        now,
+                        null,
+                        "session-2",
+                        0.9f,
+                        0.85f,
+                        0,
+                        null,
+                        now,
+                        now
+                ),
+                "session-2"
+        );
+
+        assertThat(persisted.id()).isEqualTo("entity-hero");
+        assertThat(updated.id()).isEqualTo("entity-hero");
+        assertThat(updated.version()).isEqualTo(2);
+        assertThat(updated.description()).isEqualTo("主角，来自青岚城");
+        assertThat(updated.properties()).containsEntry("city", "青岚城");
+
+        Integer entityCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_entities", Integer.class);
+        Integer versionCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_entity_versions WHERE entity_id = 'entity-hero'", Integer.class);
+        Integer currentVersionCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_entity_versions WHERE entity_id = 'entity-hero' AND is_current = 1", Integer.class);
+        Integer provenanceCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_entity_provenances WHERE entity_id = 'entity-hero'", Integer.class);
+
+        assertThat(entityCount).isEqualTo(1);
+        assertThat(versionCount).isEqualTo(2);
+        assertThat(currentVersionCount).isEqualTo(1);
+        assertThat(provenanceCount).isEqualTo(2);
+
+        String latestDescription = jdbcTemplate.queryForObject("""
+                SELECT description
+                FROM memory_entity_versions
+                WHERE entity_id = 'entity-hero' AND is_current = 1
+                """, String.class);
+        assertThat(latestDescription).isEqualTo("主角，来自青岚城");
+
+        verify(vectorSearcher).upsertEntityVector("entity-hero", persisted.textRepresentation());
+        verify(vectorSearcher).upsertEntityVector("entity-hero", updated.textRepresentation());
+    }
+}

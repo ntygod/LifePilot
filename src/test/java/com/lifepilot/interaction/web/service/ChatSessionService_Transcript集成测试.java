@@ -13,6 +13,7 @@ import com.lifepilot.interaction.web.model.SessionInfo;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.ChatTurnRepository;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.memory.event.MemoryEvent;
 import com.lifepilot.memory.event.MemoryEventBus;
@@ -133,6 +134,14 @@ class ChatSessionService_Transcript集成测试 {
                     updated_at TEXT NOT NULL
                 )
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE session_datastores (
+                    session_id TEXT NOT NULL,
+                    datastore_id TEXT NOT NULL,
+                    PRIMARY KEY (session_id, datastore_id),
+                    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
+                )
+                """);
 
         var objectMapper = new ObjectMapper();
         var eventBus = new NoopMemoryEventBus();
@@ -151,10 +160,12 @@ class ChatSessionService_Transcript集成测试 {
         SessionKnowledgeBaseRepository knowledgeBaseRepository = mock(SessionKnowledgeBaseRepository.class);
         when(knowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(List.of());
+        SessionDatastoreRepository datastoreRepository = new SessionDatastoreRepository(jdbcTemplate);
 
         chatSessionService = new ChatSessionService(
                 chatSessionRepository,
                 knowledgeBaseRepository,
+                datastoreRepository,
                 attachmentRepository,
                 objectMapper,
                 transcriptRepository,

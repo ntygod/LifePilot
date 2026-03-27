@@ -15,6 +15,10 @@ spring:
     # 当找不到处理器时抛出异常，而不是尝试静态资源处理器
     # 这样可以在 WebExceptionHandler 中统一处理，返回标准的 404 响应
     throw-exception-if-no-handler-found: true
+  servlet:
+    multipart:
+      max-file-size: ${lifepilot.knowledge.max-file-size}B
+      max-request-size: 105MB
 
 server:
   port: 8080

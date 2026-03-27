@@ -4,11 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
-import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.model.Document;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +65,7 @@ class KnowledgeBaseManagerTest {
     KnowledgeBaseRepository kbRepository;
     DocumentRepository docRepository;
     DocumentChunkRepository chunkRepository;
+    KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository;
     KnowledgeBaseManager manager;
 
     @BeforeEach
@@ -71,18 +73,20 @@ class KnowledgeBaseManagerTest {
         kbRepository = new KnowledgeBaseRepository(jdbcTemplate, objectMapper);
         docRepository = new DocumentRepository(jdbcTemplate, objectMapper);
         chunkRepository = new DocumentChunkRepository(jdbcTemplate, objectMapper);
+        knowledgeBaseDatastoreRepository = new KnowledgeBaseDatastoreRepository(jdbcTemplate);
         manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                null, new FtsIndexer(jdbcTemplate));
+                knowledgeBaseDatastoreRepository, null);
         // 清理测试数据
         jdbcTemplate.execute("DELETE FROM document_chunks");
         jdbcTemplate.execute("DELETE FROM documents");
+        jdbcTemplate.execute("DELETE FROM knowledge_base_datastores");
         jdbcTemplate.execute("DELETE FROM knowledge_bases");
     }
 
     @Test
     void createKnowledgeBase_getKnowledgeBase_roundTrip() {
         var kb = manager.createKnowledgeBase("测试知识库", "测试描述", "text-embedding-3-small",
-                null, null, null, null);
+                null, null, null, null, null);
 
         var found = manager.getKnowledgeBase(kb.id());
 
@@ -100,7 +104,7 @@ class KnowledgeBaseManagerTest {
     @Test
     void createKnowledgeBase_出现在listKnowledgeBases中() {
         var kb = manager.createKnowledgeBase("列表测试", "描述", "model",
-                null, null, null, null);
+                null, null, null, null, null);
 
         var list = manager.listKnowledgeBases();
 
@@ -110,10 +114,10 @@ class KnowledgeBaseManagerTest {
     @Test
     void updateKnowledgeBase_更新名称和描述() {
         var kb = manager.createKnowledgeBase("原始名称", "原始描述", "model",
-                null, null, null, null);
+                null, null, null, null, null);
 
         var updated = manager.updateKnowledgeBase(kb.id(), "新名称", "新描述",
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         assertThat(updated.name()).isEqualTo("新名称");
         assertThat(updated.description()).isEqualTo("新描述");
@@ -127,17 +131,17 @@ class KnowledgeBaseManagerTest {
     @Test
     void updateKnowledgeBase_null参数不更新对应字段() {
         var kb = manager.createKnowledgeBase("保持名称", "保持描述", "model",
-                null, null, null, null);
+                null, null, null, null, null);
 
         // null name 不更新名称
         var updated1 = manager.updateKnowledgeBase(kb.id(), null, "新描述",
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         assertThat(updated1.name()).isEqualTo("保持名称");
         assertThat(updated1.description()).isEqualTo("新描述");
 
         // null description 不更新描述
         var updated2 = manager.updateKnowledgeBase(kb.id(), "新名称", null,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         assertThat(updated2.name()).isEqualTo("新名称");
         assertThat(updated2.description()).isEqualTo("新描述");
     }
@@ -145,7 +149,7 @@ class KnowledgeBaseManagerTest {
     @Test
     void updateKnowledgeBase_不存在的id_抛出KnowledgeBaseNotFoundException() {
         assertThatThrownBy(() -> manager.updateKnowledgeBase("non-existent-id", "名称", "描述",
-                null, null, null, null, null))
+                null, null, null, null, null, null))
                 .isInstanceOf(KnowledgeBaseNotFoundException.class);
     }
 
@@ -153,7 +157,7 @@ class KnowledgeBaseManagerTest {
     void deleteKnowledgeBase_级联删除文档和分块() {
         // 创建知识库
         var kb = manager.createKnowledgeBase("待删除知识库", "描述", "model",
-                null, null, null, null);
+                null, null, null, null, null);
 
         // 手动插入文档
         var docId = UUID.randomUUID().toString();
@@ -194,7 +198,7 @@ class KnowledgeBaseManagerTest {
     @Test
     void listDocuments_返回指定知识库的文档() {
         var kb = manager.createKnowledgeBase("文档列表测试", "描述", "model",
-                null, null, null, null);
+                null, null, null, null, null);
 
         var doc1 = new Document(
                 UUID.randomUUID().toString(), kb.id(), "doc1.md", "/path/doc1.md", 512,
@@ -220,7 +224,7 @@ class KnowledgeBaseManagerTest {
     @Test
     void removeDocument_删除文档和关联分块() {
         var kb = manager.createKnowledgeBase("删除文档测试", "描述", "model",
-                null, null, null, null);
+                null, null, null, null, null);
 
         var docId = UUID.randomUUID().toString();
         var doc = new Document(
@@ -254,5 +258,63 @@ class KnowledgeBaseManagerTest {
     void removeDocument_不存在的id_抛出DocumentNotFoundException() {
         assertThatThrownBy(() -> manager.removeDocument("non-existent-id"))
                 .isInstanceOf(DocumentNotFoundException.class);
+    }
+
+    @Test
+    void updateDocumentDatastore_同步更新文档与分块归属() {
+        var kb = manager.createKnowledgeBase("文档归属测试", "描述", "model",
+                null, null, null, null, null);
+        jdbcTemplate.update("""
+                INSERT INTO ds_collections (
+                    id, name, description, type, properties_json, projection_config_json,
+                    metadata_json, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                "ds-novel",
+                "novel-workspace",
+                "小说领域",
+                "DOCUMENT",
+                "{}",
+                "{}",
+                "{}",
+                "tester",
+                Instant.now().toString(),
+                Instant.now().toString()
+        );
+
+        var docId = UUID.randomUUID().toString();
+        var doc = new Document(
+                docId, kb.id(), "notes.md", "/path/notes.md", 256,
+                "text/markdown", "hash", DocumentStatus.READY, 1, 0,
+                null, null, Map.of(),
+                Instant.now(), Instant.now(),
+                DocumentSourceType.FILE, "FILE:" + docId, null, null, Map.of()
+        );
+        docRepository.save(doc);
+
+        var chunk = new DocumentChunk(
+                UUID.randomUUID().toString(), docId, kb.id(),
+                "content", null, 0, 0, 100, 10, "hash",
+                List.of(), 0, Map.of(), DocumentSourceType.FILE, null, null
+        );
+        chunkRepository.saveAll(List.of(chunk));
+
+        Document updated = manager.updateDocumentDatastore(kb.id(), docId, " ds-novel ");
+
+        assertThat(updated.sourceDatastoreId()).isEqualTo("ds-novel");
+        assertThat(manager.getKnowledgeBase(kb.id())).isPresent();
+        assertThat(manager.getKnowledgeBase(kb.id()).get().datastoreIds()).contains("ds-novel");
+
+        var persistedDoc = docRepository.findById(docId).orElseThrow();
+        assertThat(persistedDoc.sourceDatastoreId()).isEqualTo("ds-novel");
+
+        var persistedChunks = chunkRepository.findByDocumentId(docId);
+        assertThat(persistedChunks).hasSize(1);
+        assertThat(persistedChunks.getFirst().sourceDatastoreId()).isEqualTo("ds-novel");
+
+        Document cleared = manager.updateDocumentDatastore(kb.id(), docId, null);
+        assertThat(cleared.sourceDatastoreId()).isNull();
+        assertThat(docRepository.findById(docId).orElseThrow().sourceDatastoreId()).isNull();
+        assertThat(chunkRepository.findByDocumentId(docId).getFirst().sourceDatastoreId()).isNull();
     }
 }

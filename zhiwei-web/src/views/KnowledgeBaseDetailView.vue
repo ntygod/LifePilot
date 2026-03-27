@@ -29,7 +29,6 @@ import type {
   ProcessingLog,
   TestRetrievalResult,
   UploadFileItem,
-  UpdateKbRequest,
 } from '@/types'
 import { SUPPORTED_TYPES } from '@/utils/fileUtils'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -55,6 +54,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -63,11 +67,13 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
 const router = useRouter()
+const datastoreStore = useDatastoreStore()
 const store = useKnowledgeBaseStore()
 const uiStore = useUiStore()
 
@@ -81,6 +87,7 @@ const kb = ref<{
   rerankerModel?: string
   chunkingStrategy?: string
   updatedAt?: string
+  datastoreIds?: string[]
 } | null>(null)
 const stats = ref<KbStats | null>(null)
 const documents = ref<KbDocument[]>([])
@@ -106,6 +113,8 @@ const testing = ref(false)
 
 const uploadQueue = ref<UploadFileItem[]>([])
 const isUploading = ref(false)
+const uploadDatastoreId = ref('__none__')
+const updatingDocumentDatastoreIds = ref<Record<string, boolean>>({})
 
 const selectedDocIds = ref<Set<string>>(new Set())
 const showBatchDeleteConfirm = ref(false)
@@ -123,6 +132,7 @@ const editForm = ref({
   embeddingModel: '',
   rerankerModel: '',
   chunkingStrategy: 'smart',
+  datastoreIds: [] as string[],
 })
 
 // Provider 列表（用于模型下拉选择）
@@ -257,6 +267,7 @@ watch(() => route.params.id, async () => {
   selectedDocIds.value = new Set()
   testResult.value = null
   uploadQueue.value = []
+  uploadDatastoreId.value = '__none__'
   await loadData()
 })
 
@@ -271,6 +282,7 @@ async function loadData() {
       knowledgeBaseApi.getStats(kbId.value),
       knowledgeBaseApi.listDocuments(kbId.value),
       modelServiceApi.listEnabledServices().catch(() => [] as ModelService[]),
+      datastoreStore.fetchList(),
     ])
     kb.value = kbResponse
     stats.value = statsResponse
@@ -281,6 +293,10 @@ async function loadData() {
   } finally {
     loading.value = false
   }
+}
+
+function refreshDatastores() {
+  void datastoreStore.fetchList()
 }
 
 function formatSize(bytes: number): string {
@@ -329,7 +345,7 @@ async function handleBatchUpload(files: File[]) {
   for (const item of items) {
     item.status = 'uploading'
     try {
-      await knowledgeBaseApi.uploadDocument(kbId.value, item.file)
+      await knowledgeBaseApi.uploadDocument(kbId.value, item.file, normalizedUploadDatastoreId())
       item.status = 'success'
     } catch (event: any) {
       item.status = 'error'
@@ -349,7 +365,7 @@ async function handleRetryUpload(fileId: string) {
   item.errorMessage = undefined
 
   try {
-    await knowledgeBaseApi.uploadDocument(kbId.value, item.file)
+    await knowledgeBaseApi.uploadDocument(kbId.value, item.file, normalizedUploadDatastoreId())
     item.status = 'success'
     await loadData()
   } catch (event: any) {
@@ -486,6 +502,7 @@ function startEditing() {
     embeddingModel: kb.value.embeddingModel || '',
     rerankerModel: kb.value.rerankerModel || '__none__',
     chunkingStrategy: kb.value.chunkingStrategy || 'smart',
+    datastoreIds: [...(kb.value.datastoreIds ?? [])],
   }
   editing.value = true
 }
@@ -509,6 +526,7 @@ async function saveEdit() {
       embeddingModel: editForm.value.embeddingModel || undefined,
       rerankerModel: editForm.value.rerankerModel === '__none__' ? null : (editForm.value.rerankerModel || null),
       chunkingStrategy: editForm.value.chunkingStrategy || undefined,
+      datastoreIds: editForm.value.datastoreIds,
     })
     kb.value = {
       ...kb.value!,
@@ -518,6 +536,7 @@ async function saveEdit() {
       embeddingModel: updated.embeddingModel,
       rerankerModel: updated.rerankerModel,
       chunkingStrategy: updated.chunkingStrategy,
+      datastoreIds: updated.datastoreIds,
     }
     editing.value = false
     uiStore.showToast('success', '知识库配置已更新')
@@ -533,6 +552,97 @@ function clearDocumentFilters() {
   filterType.value = 'all'
   filterStatus.value = 'all'
   filterTimeRange.value = 'all'
+}
+
+function normalizedUploadDatastoreId() {
+  return uploadDatastoreId.value === '__none__' ? undefined : uploadDatastoreId.value
+}
+
+function toggleEditDatastore(id: string, checked: boolean | 'indeterminate') {
+  if (checked === true) {
+    if (!editForm.value.datastoreIds.includes(id)) editForm.value.datastoreIds.push(id)
+    return
+  }
+  editForm.value.datastoreIds = editForm.value.datastoreIds.filter(datastoreId => datastoreId !== id)
+}
+
+function resolveDatastoreName(datastoreId?: string | null) {
+  if (!datastoreId) {
+    return '未归属'
+  }
+  return datastoreStore.list.find(datastore => datastore.id === datastoreId)?.name ?? datastoreId
+}
+
+function resolveDatastoreNames(datastoreIds?: string[]) {
+  if (!datastoreIds || datastoreIds.length === 0) {
+    return []
+  }
+  return datastoreIds.map(resolveDatastoreName)
+}
+
+function formatDatastoreSummary(datastoreIds?: string[]) {
+  const names = resolveDatastoreNames(datastoreIds)
+  if (names.length === 0) {
+    return '当前未绑定 Datastore，知识库保持共享内容行为。'
+  }
+  const preview = names.slice(0, 2).join('、')
+  return names.length > 2
+    ? `${preview} 等 ${names.length} 个 Datastore`
+    : preview
+}
+
+function documentDatastoreValue(doc: KbDocument) {
+  return doc.sourceDatastoreId ?? '__none__'
+}
+
+function isDocumentDatastoreMutable(doc: KbDocument) {
+  return doc.sourceType !== 'DATASTORE_DOCUMENT' && (doc.status === 'READY' || doc.status === 'ERROR')
+}
+
+function isDocumentDatastoreUpdating(docId: string) {
+  return updatingDocumentDatastoreIds.value[docId] === true
+}
+
+function patchDocumentInList(updated: KbDocument) {
+  documents.value = documents.value.map(doc => (
+    doc.id === updated.id ? { ...doc, ...updated } : doc
+  ))
+  if (selectedDoc.value?.id === updated.id) {
+    selectedDoc.value = { ...selectedDoc.value, ...updated }
+  }
+}
+
+async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
+  if (!isDocumentDatastoreMutable(doc)) {
+    return
+  }
+  const normalizedDatastoreId = rawValue === '__none__' ? null : rawValue
+  if ((doc.sourceDatastoreId ?? null) === normalizedDatastoreId) {
+    return
+  }
+
+  updatingDocumentDatastoreIds.value = {
+    ...updatingDocumentDatastoreIds.value,
+    [doc.id]: true,
+  }
+
+  try {
+    const updated = await knowledgeBaseApi.updateDocumentDatastore(kbId.value, doc.id, normalizedDatastoreId)
+    patchDocumentInList(updated)
+    if (normalizedDatastoreId && kb.value && !(kb.value.datastoreIds ?? []).includes(normalizedDatastoreId)) {
+      kb.value = {
+        ...kb.value,
+        datastoreIds: [...(kb.value.datastoreIds ?? []), normalizedDatastoreId],
+      }
+    }
+    uiStore.showToast('success', '文档归属已更新')
+  } catch (event: any) {
+    uiStore.showToast('error', event?.message || '更新文档归属失败')
+  } finally {
+    const nextState = { ...updatingDocumentDatastoreIds.value }
+    delete nextState[doc.id]
+    updatingDocumentDatastoreIds.value = nextState
+  }
 }
 </script>
 
@@ -690,76 +800,161 @@ function clearDocumentFilters() {
                 <!-- 编辑模式 -->
                 <div v-if="editing" class="detail-card p-5">
                   <form class="space-y-5" @submit.prevent="saveEdit">
-                    <div class="grid gap-5 lg:grid-cols-2">
-                      <div class="space-y-2">
-                        <Label class="text-xs text-muted-foreground">知识库名称</Label>
-                        <Input v-model="editForm.name" placeholder="输入知识库名称" />
-                      </div>
-                      <div class="space-y-2">
-                        <Label class="text-xs text-muted-foreground">标签（逗号分隔）</Label>
-                        <Input v-model="editForm.tags" placeholder="标签1, 标签2" />
-                      </div>
-                    </div>
-
-                    <div class="space-y-2">
-                      <Label class="text-xs text-muted-foreground">描述</Label>
-                      <Textarea v-model="editForm.description" :rows="3" class="resize-none" placeholder="知识库用途说明" />
-                    </div>
-
-                    <div class="grid gap-5 lg:grid-cols-3">
-                      <div class="space-y-2">
-                        <Label class="text-xs text-muted-foreground">向量模型</Label>
-                        <Select v-model="editForm.embeddingModel">
-                          <SelectTrigger class="w-full">
-                            <SelectValue placeholder="选择向量模型" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem
-                              v-for="p in embeddingProviders"
-                              :key="p.id"
-                              :value="p.modelName"
-                            >
-                              {{ p.displayName || p.modelName }}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                    <section class="rounded-[calc(var(--radius)+6px)] border border-border/65 bg-background/60 p-4 sm:p-5">
+                      <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div class="surface-label mb-2 text-[0.68rem]">基础信息</div>
+                          <p class="text-sm text-muted-foreground">名称、标签和描述用于区分知识库的用途和内容范围。</p>
+                        </div>
+                        <span class="surface-chip">名称必填</span>
                       </div>
 
-                      <div class="space-y-2">
-                        <Label class="text-xs text-muted-foreground">精排模型</Label>
-                        <Select v-model="editForm.rerankerModel">
-                          <SelectTrigger class="w-full">
-                            <SelectValue placeholder="使用全局配置" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">使用全局配置</SelectItem>
-                            <SelectItem
-                              v-for="p in rerankerProviders"
-                              :key="p.id"
-                              :value="p.modelName"
-                            >
-                              {{ p.displayName || p.modelName }}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div class="grid gap-4 lg:grid-cols-2">
+                        <div class="space-y-2">
+                          <Label class="text-xs text-muted-foreground">知识库名称</Label>
+                          <Input v-model="editForm.name" placeholder="输入知识库名称" />
+                        </div>
+                        <div class="space-y-2">
+                          <Label class="text-xs text-muted-foreground">标签（逗号分隔）</Label>
+                          <Input v-model="editForm.tags" placeholder="标签1, 标签2" />
+                        </div>
                       </div>
 
-                      <div class="space-y-2">
-                        <Label class="text-xs text-muted-foreground">分块策略</Label>
-                        <Select v-model="editForm.chunkingStrategy">
-                          <SelectTrigger class="w-full">
-                            <SelectValue placeholder="选择策略" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="smart">Smart（自动选择）</SelectItem>
-                            <SelectItem value="fixed">Fixed（固定大小）</SelectItem>
-                            <SelectItem value="recursive">Recursive（递归）</SelectItem>
-                            <SelectItem value="heading">Heading（按标题）</SelectItem>
-                            <SelectItem value="semantic">Semantic（语义）</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div class="mt-4 space-y-2">
+                        <Label class="text-xs text-muted-foreground">描述</Label>
+                        <Textarea
+                          v-model="editForm.description"
+                          :rows="4"
+                          class="resize-none"
+                          placeholder="知识库用途说明"
+                        />
                       </div>
-                    </div>
+                    </section>
+
+                    <section class="rounded-[calc(var(--radius)+6px)] border border-border/65 bg-background/60 p-4 sm:p-5">
+                      <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div class="surface-label mb-2 text-[0.68rem]">检索配置</div>
+                          <p class="text-sm text-muted-foreground">把核心检索选项压在同一行里，便于一次完成模型、分块和领域绑定调整。</p>
+                        </div>
+                        <span class="surface-chip">4 项联动</span>
+                      </div>
+
+                      <div class="grid gap-4 lg:grid-cols-4">
+                        <div class="space-y-2">
+                          <Label class="text-xs text-muted-foreground">向量模型</Label>
+                          <p class="text-xs leading-5 text-muted-foreground">决定文档嵌入质量和语义召回表现。</p>
+                          <Select v-model="editForm.embeddingModel">
+                            <SelectTrigger class="w-full">
+                              <SelectValue placeholder="选择向量模型" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem
+                                v-for="p in embeddingProviders"
+                                :key="p.id"
+                                :value="p.modelName"
+                              >
+                                {{ p.displayName || p.modelName }}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div class="space-y-2">
+                          <Label class="text-xs text-muted-foreground">精排模型</Label>
+                          <p class="text-xs leading-5 text-muted-foreground">用于二次排序，提升高相关片段的前排稳定性。</p>
+                          <Select v-model="editForm.rerankerModel">
+                            <SelectTrigger class="w-full">
+                              <SelectValue placeholder="使用全局配置" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">使用全局配置</SelectItem>
+                              <SelectItem
+                                v-for="p in rerankerProviders"
+                                :key="p.id"
+                                :value="p.modelName"
+                              >
+                                {{ p.displayName || p.modelName }}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div class="space-y-2">
+                          <Label class="text-xs text-muted-foreground">分块策略</Label>
+                          <p class="text-xs leading-5 text-muted-foreground">控制切分粒度，影响召回密度和上下文拼接方式。</p>
+                          <Select v-model="editForm.chunkingStrategy">
+                            <SelectTrigger class="w-full">
+                              <SelectValue placeholder="选择策略" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="smart">Smart（自动选择）</SelectItem>
+                              <SelectItem value="fixed">Fixed（固定大小）</SelectItem>
+                              <SelectItem value="recursive">Recursive（递归）</SelectItem>
+                              <SelectItem value="heading">Heading（按标题）</SelectItem>
+                              <SelectItem value="semantic">Semantic（语义）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div class="space-y-2">
+                          <div class="flex items-center justify-between gap-2">
+                            <Label class="text-xs text-muted-foreground">关联 Datastore</Label>
+                            <Button type="button" variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="refreshDatastores()">
+                              刷新
+                            </Button>
+                          </div>
+                          <p class="text-xs leading-5 text-muted-foreground">决定知识库服务哪些领域，不影响单篇文档的归属覆盖。</p>
+                          <Popover>
+                            <PopoverTrigger as-child>
+                              <Button type="button" variant="outline" class="w-full justify-between">
+                                <span class="truncate">
+                                  {{ editForm.datastoreIds.length > 0 ? `已选 ${editForm.datastoreIds.length} 个 Datastore` : '选择 Datastore' }}
+                                </span>
+                                <Database class="size-4 text-muted-foreground" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" class="w-[22rem] max-w-[calc(100vw-2rem)] p-0">
+                              <div class="border-b border-border/60 px-3 py-3">
+                                <div class="text-sm font-medium text-foreground">知识库绑定 Datastore</div>
+                                <div class="mt-1 text-xs leading-5 text-muted-foreground">可多选，绑定后会自动用于领域检索与同步。</div>
+                              </div>
+
+                              <div v-if="datastoreStore.loading" class="px-3 py-4 text-sm text-muted-foreground">
+                                正在加载 Datastore 列表...
+                              </div>
+                              <div v-else-if="datastoreStore.error" class="px-3 py-4 text-sm text-destructive">
+                                Datastore 列表加载失败：{{ datastoreStore.error }}
+                              </div>
+                              <div v-else-if="datastoreStore.list.length > 0" class="max-h-72 space-y-1 overflow-y-auto p-2">
+                                <label
+                                  v-for="datastore in datastoreStore.list"
+                                  :key="datastore.id"
+                                  class="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent/35"
+                                >
+                                  <Checkbox
+                                    :model-value="editForm.datastoreIds.includes(datastore.id)"
+                                    @update:model-value="toggleEditDatastore(datastore.id, $event)"
+                                  />
+                                  <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-medium text-foreground">{{ datastore.name }}</div>
+                                    <div v-if="datastore.description" class="mt-1 text-xs leading-5 text-muted-foreground">
+                                      {{ datastore.description }}
+                                    </div>
+                                  </div>
+                                </label>
+                              </div>
+                              <div v-else class="px-3 py-4 text-sm text-muted-foreground">
+                                当前没有可关联的 Datastore。
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <p class="min-h-10 text-xs leading-5 text-muted-foreground">
+                            {{ formatDatastoreSummary(editForm.datastoreIds) }}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
 
                     <div class="flex items-center justify-end gap-3 border-t border-border/60 pt-4">
                       <Button type="button" variant="ghost" :disabled="savingEdit" @click="cancelEditing">
@@ -794,6 +989,22 @@ function clearDocumentFilters() {
                           </Badge>
                         </div>
                       </div>
+
+                      <div
+                        v-if="(kb.datastoreIds?.length ?? 0) > 0"
+                        class="border-t border-border/60 pt-4"
+                      >
+                        <div class="surface-label mb-3 text-[0.68rem]">关联 Datastore</div>
+                        <div class="flex flex-wrap gap-2">
+                          <Badge
+                            v-for="name in resolveDatastoreNames(kb.datastoreIds)"
+                            :key="`${kb.id}-${name}`"
+                            variant="outline"
+                          >
+                            {{ name }}
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -807,6 +1018,7 @@ function clearDocumentFilters() {
                         <span class="surface-chip">向量模型：{{ kb.embeddingModel || '未配置' }}</span>
                         <span class="surface-chip">精排模型：{{ kb.rerankerModel || '使用全局配置' }}</span>
                         <span class="surface-chip">分块策略：{{ kb.chunkingStrategy || 'smart' }}</span>
+                        <span class="surface-chip">Datastore：{{ kb.datastoreIds?.length ?? 0 }}</span>
                         <span class="surface-chip">更新于 {{ kb.updatedAt ? formatDate(kb.updatedAt) : '暂无' }}</span>
                       </div>
 
@@ -851,9 +1063,53 @@ function clearDocumentFilters() {
                   <div class="detail-card overflow-hidden">
                     <div class="border-b border-border/70 px-5 py-5">
                       <div class="flex flex-col gap-4">
+                        <div class="rounded-[calc(var(--radius)+6px)] border border-border/65 bg-background/58 p-4">
+                          <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                            <div class="space-y-2">
+                              <div class="surface-label mb-1 text-[0.68rem]">上传归属</div>
+                              <p class="text-sm text-muted-foreground">上传前可指定文档归属的 Datastore，不指定则作为共享文档。</p>
+                              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                <span class="surface-chip">当前上传归属：{{ resolveDatastoreName(normalizedUploadDatastoreId()) }}</span>
+                                <span class="surface-chip">未选择时会作为共享文档上传</span>
+                              </div>
+                            </div>
+
+                            <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center xl:w-auto">
+                              <div v-if="datastoreStore.loading" class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-2.5 text-sm text-muted-foreground">
+                                正在加载 Datastore 列表...
+                              </div>
+                              <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+                                Datastore 列表加载失败：{{ datastoreStore.error }}
+                              </div>
+                              <Select v-else-if="datastoreStore.list.length > 0" v-model="uploadDatastoreId">
+                                <SelectTrigger class="w-full sm:w-[280px]">
+                                  <SelectValue placeholder="文档归属" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">上传为共享文档</SelectItem>
+                                  <SelectItem
+                                    v-for="datastore in datastoreStore.list"
+                                    :key="datastore.id"
+                                    :value="datastore.id"
+                                  >
+                                    {{ datastore.name }}
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <div v-else class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-2.5 text-sm text-muted-foreground">
+                                当前没有可选的 Datastore。
+                              </div>
+
+                              <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
+                                刷新
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
                         <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                           <div class="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-                <div class="relative min-w-[220px] flex-1 xl:max-w-[36rem]">
+                            <div class="relative min-w-[220px] flex-1 xl:max-w-[36rem]">
                               <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                               <Input
                                 v-model="searchQuery"
@@ -992,6 +1248,7 @@ function clearDocumentFilters() {
                             </th>
                             <th class="px-2 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">文档</th>
                             <th class="px-2 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">类型</th>
+                            <th class="px-2 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">领域</th>
                             <th class="px-2 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">大小</th>
                             <th class="px-2 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">上传时间</th>
                             <th class="px-2 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">状态</th>
@@ -1028,6 +1285,44 @@ function clearDocumentFilters() {
                             </td>
                             <td class="px-2 py-4 align-top text-sm text-muted-foreground">
                               {{ fileTypeMap[doc.mimeType] || '其他' }}
+                            </td>
+                            <td class="w-[220px] px-2 py-4 align-top">
+                              <div v-if="doc.sourceType === 'DATASTORE_DOCUMENT'" class="space-y-1">
+                                <Badge variant="outline" class="w-fit">同步文档</Badge>
+                                <div class="text-sm text-muted-foreground">
+                                  {{ resolveDatastoreName(doc.sourceDatastoreId) }}
+                                </div>
+                              </div>
+                              <div v-else class="space-y-1">
+                                <Select
+                                  :model-value="documentDatastoreValue(doc)"
+                                  :disabled="datastoreStore.loading || !!datastoreStore.error || isDocumentDatastoreUpdating(doc.id) || !isDocumentDatastoreMutable(doc)"
+                                  @update:model-value="value => updateDocumentDatastore(doc, String(value))"
+                                >
+                                  <SelectTrigger class="h-9 w-[200px] bg-background/70">
+                                    <SelectValue placeholder="选择归属" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">无归属</SelectItem>
+                                    <SelectItem
+                                      v-for="datastore in datastoreStore.list"
+                                      :key="`${doc.id}-${datastore.id}`"
+                                      :value="datastore.id"
+                                    >
+                                      {{ datastore.name }}
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <div v-if="isDocumentDatastoreUpdating(doc.id)" class="text-xs text-muted-foreground">
+                                  正在更新归属...
+                                </div>
+                                <div v-else-if="!isDocumentDatastoreMutable(doc)" class="text-xs text-muted-foreground">
+                                  {{ doc.status === 'READY' || doc.status === 'ERROR' ? '仅文件文档支持修改' : '文档处理中，暂不可修改' }}
+                                </div>
+                                <div v-else-if="datastoreStore.error" class="text-xs text-destructive">
+                                  Datastore 列表加载失败
+                                </div>
+                              </div>
                             </td>
                             <td class="px-2 py-4 align-top text-sm text-muted-foreground">
                               {{ formatSize(doc.fileSize) }}

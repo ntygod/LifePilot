@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.datastore`
-> **最后更新**：2026-03-10
+> **最后更新**：2026-03-27
 > **实现状态**：✅ 已完成
 
 ## 1. 模块概述
@@ -91,6 +91,7 @@ public record Collection(
     String description,     // 集合描述
     CollectionType type,    // DOCUMENT / NOTE / METRIC
     String propertiesJson,  // 属性定义 JSON（可选）
+    String projectionConfigJson, // 向量投影配置 JSON（集合级）
     String metadataJson,    // 扩展元数据
     String createdBy,       // 创建来源（skill:todo / agent:researcher / workflow:daily-report）
     String createdAt,
@@ -103,6 +104,14 @@ public enum CollectionType {
     METRIC     // 时序指标（体重、睡眠、运动量）
 }
 ```
+
+### 3.1.1 projectionConfigJson（集合级向量投影配置）
+
+`projection_config_json` 挂在 Collection 级，而不是知识库挂载级。它用于描述当 datastore 文档被同步到知识库时，结构化 JSON 应如何投影成可检索文本。
+
+- 省略该配置时，系统会持久化为 `{}`，表示使用默认的通用投影规则
+- 显式配置时，可覆盖默认规则，适配更复杂的结构化数据形态
+- 该字段是 datastore 进入知识库向量检索链路的入口配置，不应再依赖硬编码字段名推断
 
 ### 3.2 Document（JSON 文档）
 
@@ -154,6 +163,7 @@ CREATE TABLE ds_collections (
     description TEXT,
     type TEXT NOT NULL DEFAULT 'DOCUMENT',  -- DOCUMENT / NOTE / METRIC
     properties_json TEXT,                    -- 属性定义 JSON 数组
+    projection_config_json TEXT NOT NULL DEFAULT '{}', -- 向量投影配置
     metadata_json TEXT,
     created_by TEXT,
     created_at TEXT NOT NULL,
@@ -204,6 +214,8 @@ CREATE INDEX idx_ds_doc_rating ON ds_documents(_idx_rating)
 - 集合操作：创建、查询（按名称/类型）、更新、删除（级联删除文档）
 - 文档操作：创建、查询（按集合 + 过滤条件）、更新、删除
 - 创建集合时如果声明了属性定义，自动创建 Generated Column 索引
+- 创建/更新集合时会将缺省的 `projectionConfigJson` 归一化为 `{}`，避免运行时写入 `NULL`
+- 集合级投影配置会被后续 datastore → knowledge base 同步链路复用
 - 写操作标注 `@Transactional`
 
 ### 4.2 QueryEngine（动态查询引擎）
@@ -274,7 +286,7 @@ public record AggregationResult(
 
 | 工具 ID | 操作 | 说明 |
 |---------|------|------|
-| `builtin.datastore.create_collection` | 创建集合 | 指定名称、类型、可选属性定义 |
+| `builtin.datastore.create_collection` | 创建集合 | 指定名称、类型、可选属性定义、可选 `projectionConfig` |
 | `builtin.datastore.list_collections` | 列出集合 | 返回所有集合及其属性定义 |
 | `builtin.datastore.add_document` | 添加文档 | 向指定集合写入 JSON 文档 |
 | `builtin.datastore.query_documents` | 查询文档 | 按过滤条件查询，支持排序分页 |
@@ -287,6 +299,8 @@ Agent 使用示例：
 - Agent 调用 `list_collections` 查找是否有「书单」集合
 - 如果没有，调用 `create_collection` 创建，属性定义包含 title(TEXT)、author(TEXT)、rating(NUMBER)
 - 调用 `add_document` 写入 `{"title":"三体","author":"刘慈欣","rating":5}`
+
+`create_collection` 的 `projectionConfig` 参数为可选项；如果未提供，系统会自动保存 `{}`，表示启用默认通用投影策略。
 
 ### 4.6 DataStoreSkillProvider（内置 Skill 提供者）
 

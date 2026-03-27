@@ -73,6 +73,19 @@ public class DocumentRepository {
     }
 
     /**
+     * 查询指定集合下的所有文档。
+     *
+     * @param collectionId 集合 ID
+     * @return 文档列表
+     */
+    public List<Document> findByCollectionId(String collectionId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM ds_documents WHERE collection_id = ? ORDER BY created_at ASC",
+                documentRowMapper,
+                collectionId);
+    }
+
+    /**
      * 更新文档数据。
      *
      * @param id       文档 ID

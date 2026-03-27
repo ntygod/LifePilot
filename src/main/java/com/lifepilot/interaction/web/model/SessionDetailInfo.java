@@ -22,6 +22,7 @@ public record SessionDetailInfo(
         Integer maxSteps,
         Integer maxDurationSeconds,
         List<String> knowledgeBaseIds,
+        List<String> datastoreIds,
         Integer messageCount,
         Long totalTokens,
         String lastMessagePreview

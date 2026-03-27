@@ -83,7 +83,8 @@ public class StorageToolProvider {
                                 "name", Map.of("type", "string", "description", "集合名称（唯一）"),
                                 "type", Map.of("type", "string", "description", "集合类型: DOCUMENT/NOTE/METRIC"),
                                 "properties", Map.of("type", "string", "description", "属性定义 JSON 数组，如 [{\"name\":\"title\",\"type\":\"TEXT\",\"required\":true}]"),
-                                "description", Map.of("type", "string", "description", "集合描述")
+                                "description", Map.of("type", "string", "description", "集合描述"),
+                                "projectionConfig", Map.of("type", "string", "description", "向量投影配置 JSON，可选")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -100,12 +101,14 @@ public class StorageToolProvider {
                         CollectionType type = CollectionType.valueOf(typeStr.toUpperCase());
                         String propsJson = input.getOptionalParam("properties", String.class).orElse(null);
                         String description = input.getOptionalParam("description", String.class).orElse(null);
+                        String projectionConfig = input.getOptionalParam("projectionConfig", String.class).orElse(null);
 
                         var propDefs = propsJson != null
                                 ? OBJECT_MAPPER.readValue(propsJson, new TypeReference<List<com.lifepilot.datastore.model.PropertyDefinition>>() {})
                                 : null;
 
-                        Collection created = dataStoreManager.createCollection(name, type, propDefs, description, null);
+                        Collection created = dataStoreManager.createCollection(
+                                name, type, propDefs, description, null, projectionConfig);
                         return ToolResult.success(Map.of(
                                 "id", created.id(),
                                 "name", created.name(),
@@ -412,6 +415,7 @@ public class StorageToolProvider {
         map.put("type", col.type().name());
         if (col.description() != null) map.put("description", col.description());
         if (col.propertiesJson() != null) map.put("propertiesJson", col.propertiesJson());
+        if (col.projectionConfigJson() != null) map.put("projectionConfigJson", col.projectionConfigJson());
         map.put("createdAt", col.createdAt());
         map.put("updatedAt", col.updatedAt());
         return Map.copyOf(map);

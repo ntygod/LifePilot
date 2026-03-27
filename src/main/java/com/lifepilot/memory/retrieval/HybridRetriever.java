@@ -3,6 +3,7 @@ package com.lifepilot.memory.retrieval;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.IntentMatcher;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.rerank.router.RerankRouter;
@@ -94,6 +95,22 @@ public class HybridRetriever {
      * @return 融合排序后的检索结果列表（fusedScore 降序）
      */
     public List<RetrievalResult> retrieve(String query, int topK, RetrievalWeights weights) {
+        return retrieve(query, topK, weights, null);
+    }
+
+    /**
+     * 带读取过滤的三路混合检索。
+     *
+     * @param query    查询文本
+     * @param topK     返回前 K 个结果
+     * @param weights  检索权重配置
+     * @param filter   读取过滤条件
+     * @return 融合排序后的检索结果列表
+     */
+    public List<RetrievalResult> retrieve(String query,
+                                          int topK,
+                                          RetrievalWeights weights,
+                                          @Nullable MemoryReadFilter filter) {
         // 重置 L4 匹配结果
 
         // 空数据短路：已知三路检索全部为空时直接返回
@@ -142,8 +159,8 @@ public class HybridRetriever {
 
         // 收集结果，任一路失败时使用空列表
         List<VectorSearchResult> vectorResults = safeGet(vectorFuture, "向量检索");
-        List<RankedItem> ftsResults = safeGet(ftsFuture, "全文搜索");
-        List<RankedItem> graphResults = safeGet(graphFuture, "图遍历");
+        List<RankedItem> ftsResults = filterRankedItems(safeGet(ftsFuture, "全文搜索"), filter);
+        List<RankedItem> graphResults = filterRankedItems(safeGet(graphFuture, "图遍历"), filter);
 
         // 三路检索全部返回空时，设置 knownEmpty 短路标记
         if (vectorResults.isEmpty() && ftsResults.isEmpty() && graphResults.isEmpty()) {
@@ -153,7 +170,7 @@ public class HybridRetriever {
         }
 
         // 2. 向量结果转换为 RankedItem
-        List<RankedItem> vectorItems = convertVectorResults(vectorResults);
+        List<RankedItem> vectorItems = convertVectorResults(vectorResults, filter);
 
         // 3. 自适应权重调整
         float topVectorScore = vectorItems.isEmpty() ? 0.0f : vectorItems.getFirst().score();
@@ -325,7 +342,8 @@ public class HybridRetriever {
     }
 
     /** 向量检索结果转换为 RankedItem（批量查询实体详情补全元数据）。 */
-    private List<RankedItem> convertVectorResults(List<VectorSearchResult> vectorResults) {
+    private List<RankedItem> convertVectorResults(List<VectorSearchResult> vectorResults,
+                                                  @Nullable MemoryReadFilter filter) {
         if (vectorResults.isEmpty()) {
             return List.of();
         }
@@ -338,7 +356,9 @@ public class HybridRetriever {
                     ids.add(vr.entityId());
                 }
             }
-            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids);
+            Map<String, TemporalEntity> entityMap = filter != null
+                    ? semanticMemory.findByIds(ids, filter)
+                    : semanticMemory.findByIds(ids);
 
             for (var vr : vectorResults) {
                 TemporalEntity entity = entityMap.get(vr.entityId());
@@ -353,7 +373,7 @@ public class HybridRetriever {
                             entity.importanceScore(),
                             entity.validTo(),
                             entity.updatedAt()));
-                } else {
+                } else if (filter == null || filter.isUnrestricted()) {
                     // 实体可能已归档，仅用 entityId 和 similarity 构建
                     items.add(new RankedItem(
                             vr.entityId(),
@@ -371,6 +391,23 @@ public class HybridRetriever {
             log.warn("混合检索: 向量结果批量转换失败, error={}", e.getMessage());
         }
         return items;
+    }
+
+    private List<RankedItem> filterRankedItems(List<RankedItem> items, @Nullable MemoryReadFilter filter) {
+        if (items.isEmpty() || filter == null || filter.isUnrestricted()) {
+            return items;
+        }
+        Set<String> ids = items.stream()
+                .map(RankedItem::entityId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Set<String> readableIds = semanticMemory.findByIds(ids, filter).keySet();
+        return items.stream()
+                .filter(item -> readableIds.contains(item.entityId()))
+                .toList();
     }
 
     /** 对单路排名列表应用加权 RRF，累加到 accumulators。 */

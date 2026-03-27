@@ -5,6 +5,7 @@ import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.semantic.EntityType;
@@ -132,7 +133,7 @@ public class MemoryController {
         if (hybridRetriever == null) {
             return List.of();
         }
-        var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT);
+        var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
         return results.stream()
                 .map(r -> new MemorySearchResultDto(
                         r.entityId(), r.entityType(), r.name(), r.description(), r.fusedScore()))
@@ -203,11 +204,12 @@ public class MemoryController {
         long total = entities.size();
         int fromIndex = Math.min(page * size, entities.size());
         int toIndex = Math.min(fromIndex + size, entities.size());
-        var pageItems = entities.subList(fromIndex, toIndex).stream()
-                .map(e -> new EntitySummaryDto(
-                        e.id(), e.type().name(), e.type().label(), e.name(), e.description(),
-                        e.importanceScore(), e.accessCount(), e.version(),
-                        e.createdAt(), e.updatedAt()))
+        var pageEntities = entities.subList(fromIndex, toIndex);
+        Map<String, EntityMetadata> metadataById = loadEntityMetadata(
+                pageEntities.stream().map(TemporalEntity::id).toList()
+        );
+        var pageItems = pageEntities.stream()
+                .map(e -> toEntitySummary(e, metadataById.get(e.id())))
                 .toList();
 
         return new PageResult<>(pageItems, page, size, total);
@@ -221,7 +223,7 @@ public class MemoryController {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        return toEntityDetail(entity);
+        return toEntityDetail(entity, loadEntityMetadata(id));
     }
 
     /**
@@ -232,8 +234,9 @@ public class MemoryController {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+        EntityMetadata metadata = loadEntityMetadata(id);
         return semanticMemory.getChangeHistory(entity.name(), entity.type()).stream()
-                .map(this::toEntityDetail)
+                .map(history -> toEntityDetail(history, metadata))
                 .toList();
     }
 
@@ -247,12 +250,44 @@ public class MemoryController {
         requireMemoryEnabled();
         semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        return semanticMemory.findRelated(id, maxDepth).stream()
-                .map(e -> new EntitySummaryDto(
-                        e.id(), e.type().name(), e.type().label(), e.name(), e.description(),
-                        e.importanceScore(), e.accessCount(), e.version(),
-                        e.createdAt(), e.updatedAt()))
+        var relatedEntities = semanticMemory.findRelated(id, maxDepth);
+        Map<String, EntityMetadata> metadataById = loadEntityMetadata(
+                relatedEntities.stream().map(TemporalEntity::id).toList()
+        );
+        return relatedEntities.stream()
+                .map(e -> toEntitySummary(e, metadataById.get(e.id())))
                 .toList();
+    }
+
+    /**
+     * 实体来源明细。
+     */
+    @GetMapping("/entities/{id}/provenances")
+    public List<EntityProvenanceDto> getEntityProvenances(@PathVariable String id) {
+        requireMemoryEnabled();
+        semanticMemory.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+        return jdbcTemplate.query("""
+                SELECT origin_type, source_reference, source_conversation_id, source_session_id,
+                       source_turn_id, source_entry_id, source_document_id, source_knowledge_base_id,
+                       source_datastore_id, source_collection_id, confidence, created_at
+                FROM memory_entity_provenances
+                WHERE entity_id = ?
+                ORDER BY created_at DESC
+                """, (rs, rowNum) -> new EntityProvenanceDto(
+                rs.getString("origin_type"),
+                rs.getString("source_reference"),
+                rs.getString("source_conversation_id"),
+                rs.getString("source_session_id"),
+                rs.getString("source_turn_id"),
+                rs.getString("source_entry_id"),
+                rs.getString("source_document_id"),
+                rs.getString("source_knowledge_base_id"),
+                rs.getString("source_datastore_id"),
+                rs.getString("source_collection_id"),
+                rs.getFloat("confidence"),
+                Instant.parse(rs.getString("created_at"))
+        ), id);
     }
 
     /**
@@ -312,7 +347,7 @@ public class MemoryController {
 
         semanticMemory.upsertWithConflictDetection(entity, null);
         log.info("手动创建实体: id={}, name={}, type={}", entity.id(), entity.name(), entity.type());
-        return ResponseEntity.status(HttpStatus.CREATED).body(toEntityDetail(entity));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toEntityDetail(entity, loadEntityMetadata(entity.id())));
     }
 
     /**
@@ -358,7 +393,7 @@ public class MemoryController {
 
         semanticMemory.upsertWithConflictDetection(updated, null);
         log.info("更新实体: id={}, name={}", updated.id(), updated.name());
-        return toEntityDetail(updated);
+        return toEntityDetail(updated, loadEntityMetadata(updated.id()));
     }
 
     // ========== Req 3: L3 关系查询 ==========
@@ -673,13 +708,66 @@ public class MemoryController {
 
     // ========== 内部辅助方法 ==========
 
-    private EntityDetailDto toEntityDetail(TemporalEntity e) {
+    private EntityDetailDto toEntityDetail(TemporalEntity e, @Nullable EntityMetadata metadata) {
         return new EntityDetailDto(
                 e.id(), e.type().name(), e.type().label(), e.name(), e.description(),
+                metadata != null ? metadata.spaceId() : null,
+                metadata != null ? metadata.memoryScope() : null,
+                metadata != null ? metadata.realityType() : null,
                 e.properties(), e.version(), e.isCurrent(),
                 e.validFrom(), e.validTo(), e.sourceConversationId(),
                 e.extractionConfidence(), e.importanceScore(), e.accessCount(),
                 e.lastAccessedAt(), e.createdAt(), e.updatedAt());
+    }
+
+    private EntitySummaryDto toEntitySummary(TemporalEntity e, @Nullable EntityMetadata metadata) {
+        return new EntitySummaryDto(
+                e.id(),
+                e.type().name(),
+                e.type().label(),
+                e.name(),
+                e.description(),
+                e.importanceScore(),
+                e.accessCount(),
+                e.version(),
+                metadata != null ? metadata.spaceId() : null,
+                metadata != null ? metadata.memoryScope() : null,
+                metadata != null ? metadata.realityType() : null,
+                e.createdAt(),
+                e.updatedAt()
+        );
+    }
+
+    @Nullable
+    private EntityMetadata loadEntityMetadata(String entityId) {
+        return loadEntityMetadata(List.of(entityId)).get(entityId);
+    }
+
+    private Map<String, EntityMetadata> loadEntityMetadata(Collection<String> entityIds) {
+        if (entityIds == null || entityIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(entityIds.size(), "?"));
+        var rows = jdbcTemplate.query(
+                """
+                SELECT id, space_id, memory_scope, reality_type, is_current, version
+                FROM temporal_entities
+                WHERE id IN (%s)
+                ORDER BY id ASC, is_current DESC, version DESC
+                """.formatted(placeholders),
+                (rs, rowNum) -> new EntityMetadata(
+                        rs.getString("id"),
+                        rs.getString("space_id"),
+                        rs.getString("memory_scope"),
+                        rs.getString("reality_type")
+                ),
+                entityIds.toArray()
+        );
+        Map<String, EntityMetadata> metadataById = new LinkedHashMap<>();
+        for (var row : rows) {
+            metadataById.putIfAbsent(row.entityId(), row);
+        }
+        return metadataById;
     }
 
     private ConversationSummaryDto toConversationSummary(ConversationRecord c) {
@@ -702,4 +790,11 @@ public class MemoryController {
         }
         return result;
     }
+
+    private record EntityMetadata(
+            String entityId,
+            @Nullable String spaceId,
+            @Nullable String memoryScope,
+            @Nullable String realityType
+    ) {}
 }

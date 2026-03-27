@@ -2,11 +2,14 @@ package com.lifepilot.meta.infra.memory;
 
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
+import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
@@ -48,6 +51,7 @@ public class MemoryToolProvider {
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
+    @Nullable private final SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver;
     @Nullable private final MemoryProperties memoryProperties;
 
     public MemoryToolProvider(HybridRetriever hybridRetriever,
@@ -55,12 +59,14 @@ public class MemoryToolProvider {
                               @Nullable EpisodicMemory episodicMemory,
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
+                              @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
                               @Nullable MemoryProperties memoryProperties) {
         this.hybridRetriever = hybridRetriever;
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.documentRetriever = documentRetriever;
         this.sessionKbRepo = sessionKbRepo;
+        this.sessionKnowledgeScopeResolver = sessionKnowledgeScopeResolver;
         this.memoryProperties = memoryProperties;
     }
 
@@ -80,7 +86,7 @@ public class MemoryToolProvider {
             toolRegistry.registerBuiltinTool(buildRecallTool());
             count++;
         }
-        if (documentRetriever != null && sessionKbRepo != null) {
+        if (documentRetriever != null && (sessionKnowledgeScopeResolver != null || sessionKbRepo != null)) {
             toolRegistry.registerBuiltinTool(buildSearchDocsTool());
             count++;
         }
@@ -117,7 +123,11 @@ public class MemoryToolProvider {
                     try {
                         String query = input.getParam("query", String.class);
                         int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
-                        List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT);
+                        List<RetrievalResult> results = hybridRetriever.retrieve(
+                                query,
+                                topK,
+                                RetrievalWeights.DEFAULT,
+                                MemoryReadFilter.userMemory());
                         if (!results.isEmpty()) {
                             hybridRetriever.updateAccessCounts(results);
                         }
@@ -204,12 +214,12 @@ public class MemoryToolProvider {
                             return ToolResult.success(Map.of(
                                     "message", "无法获取当前会话 ID", "results", List.of(), "count", 0));
                         }
-                        List<String> kbIds = sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId);
-                        if (kbIds.isEmpty()) {
+                        List<KnowledgeSearchScope> scopes = resolveKnowledgeScopes(sessionId);
+                        if (scopes.isEmpty()) {
                             return ToolResult.success(Map.of(
-                                    "message", "当前会话未绑定知识库", "results", List.of(), "count", 0));
+                                    "message", "当前会话未绑定知识库或 datastore", "results", List.of(), "count", 0));
                         }
-                        List<DocumentSearchResult> results = documentRetriever.retrieve(query, kbIds, topK);
+                        List<DocumentSearchResult> results = documentRetriever.retrieveByScopes(query, scopes, topK);
                         List<Map<String, Object>> items = results.stream()
                                 .map(this::docSearchResultToMap)
                                 .toList();
@@ -521,7 +531,9 @@ public class MemoryToolProvider {
                             return ToolResult.error("query 参数不能为空");
                         }
 
-                        var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+                        var experiences = semanticMemory.findCurrentByType(
+                                EntityType.EXPERIENCE,
+                                MemoryReadFilter.agentExperience());
 
                         boolean crossContext = memoryProperties != null
                                 && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
@@ -619,6 +631,21 @@ public class MemoryToolProvider {
         if (!doc.headingHierarchy().isEmpty()) {
             map.put("headingHierarchy", doc.headingHierarchy());
         }
+        map.put("sourceType", doc.sourceType().name());
+        doc.sourceDatastoreId().ifPresent(value -> map.put("sourceDatastoreId", value));
+        doc.sourceCollectionId().ifPresent(value -> map.put("sourceCollectionId", value));
         return Map.copyOf(map);
+    }
+
+    private List<KnowledgeSearchScope> resolveKnowledgeScopes(String sessionId) {
+        if (sessionKnowledgeScopeResolver != null) {
+            return sessionKnowledgeScopeResolver.resolveScopes(sessionId);
+        }
+        if (sessionKbRepo == null) {
+            return List.of();
+        }
+        return sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId).stream()
+                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .toList();
     }
 }

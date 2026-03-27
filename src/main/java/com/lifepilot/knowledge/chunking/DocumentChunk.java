@@ -1,5 +1,7 @@
 package com.lifepilot.knowledge.chunking;
 
+import com.lifepilot.knowledge.model.DocumentSourceType;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,13 +27,37 @@ public record DocumentChunk(
         String contentHash,                 // SHA-256
         List<String> headingHierarchy,
         int pageNumber,
-        Map<String, String> metadata
+        Map<String, String> metadata,
+        DocumentSourceType sourceType,
+        String sourceDatastoreId,
+        String sourceCollectionId
 ) {
 
     public DocumentChunk {
         contextPrefix = contextPrefix != null ? contextPrefix : Optional.empty();
         headingHierarchy = headingHierarchy != null ? List.copyOf(headingHierarchy) : List.of();
         metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+        sourceType = sourceType != null ? sourceType : DocumentSourceType.FILE;
+    }
+
+    public DocumentChunk(
+            String id,
+            String documentId,
+            String knowledgeBaseId,
+            String content,
+            Optional<String> contextPrefix,
+            int chunkIndex,
+            int startOffset,
+            int endOffset,
+            int tokenCount,
+            String contentHash,
+            List<String> headingHierarchy,
+            int pageNumber,
+            Map<String, String> metadata
+    ) {
+        this(id, documentId, knowledgeBaseId, content, contextPrefix, chunkIndex, startOffset,
+                endOffset, tokenCount, contentHash, headingHierarchy, pageNumber, metadata,
+                DocumentSourceType.FILE, null, null);
     }
 
     /**

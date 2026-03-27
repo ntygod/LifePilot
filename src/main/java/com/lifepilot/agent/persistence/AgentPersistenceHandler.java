@@ -344,6 +344,7 @@ public class AgentPersistenceHandler {
                 if (realtimeExtractor != null && finalState.finalOutput() != null) {
                     realtimeExtractor.extractAsync(
                             finalState.sessionId(),
+                            finalState.turnId(),
                             finalState.goal(),
                             finalState.finalOutput());
                 }

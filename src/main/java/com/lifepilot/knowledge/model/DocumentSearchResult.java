@@ -32,12 +32,18 @@ public record DocumentSearchResult(
         String sourcePath,
         Map<String, String> metadata,
         Optional<ScoreBreakdown> scoreBreakdown,
-        Optional<String> expandedContent
+        Optional<String> expandedContent,
+        DocumentSourceType sourceType,
+        Optional<String> sourceDatastoreId,
+        Optional<String> sourceCollectionId
 ) {
 
     public DocumentSearchResult {
         if (scoreBreakdown == null) scoreBreakdown = Optional.empty();
         if (expandedContent == null) expandedContent = Optional.empty();
+        if (sourceType == null) sourceType = DocumentSourceType.FILE;
+        if (sourceDatastoreId == null) sourceDatastoreId = Optional.empty();
+        if (sourceCollectionId == null) sourceCollectionId = Optional.empty();
     }
 
     /**
@@ -49,6 +55,18 @@ public record DocumentSearchResult(
                                  String sourcePath, Map<String, String> metadata) {
         this(chunkId, documentId, knowledgeBaseId, content, contextPrefix,
              headingHierarchy, score, sourcePath, metadata,
+             Optional.empty(), Optional.empty(), DocumentSourceType.FILE,
              Optional.empty(), Optional.empty());
+    }
+
+    public DocumentSearchResult(String chunkId, String documentId, String knowledgeBaseId,
+                                 String content, Optional<String> contextPrefix,
+                                 List<String> headingHierarchy, double score,
+                                 String sourcePath, Map<String, String> metadata,
+                                 Optional<ScoreBreakdown> scoreBreakdown,
+                                 Optional<String> expandedContent) {
+        this(chunkId, documentId, knowledgeBaseId, content, contextPrefix,
+                headingHierarchy, score, sourcePath, metadata, scoreBreakdown,
+                expandedContent, DocumentSourceType.FILE, Optional.empty(), Optional.empty());
     }
 }

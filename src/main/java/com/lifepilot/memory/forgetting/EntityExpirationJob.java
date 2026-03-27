@@ -35,10 +35,28 @@ public class EntityExpirationJob {
     public void archiveExpiredEntities() {
         try {
             var now = Instant.now().toString();
-            int archived = jdbcTemplate.update(
-                    "UPDATE temporal_entities SET is_current = 0, updated_at = ? " +
-                    "WHERE valid_to IS NOT NULL AND valid_to < datetime('now') AND is_current = 1",
-                    now);
+            int archived = jdbcTemplate.update("""
+                    UPDATE memory_entity_versions
+                    SET is_current = 0,
+                        updated_at = ?
+                    WHERE valid_to IS NOT NULL
+                      AND valid_to < datetime('now')
+                      AND is_current = 1
+                    """, now);
+            if (archived > 0) {
+                jdbcTemplate.update("""
+                        UPDATE memory_entities
+                        SET status = 'ARCHIVED',
+                            updated_at = ?
+                        WHERE id IN (
+                            SELECT entity_id
+                            FROM memory_entity_versions
+                            WHERE valid_to IS NOT NULL
+                              AND valid_to < datetime('now')
+                              AND is_current = 0
+                        )
+                        """, now);
+            }
             if (archived > 0) {
                 log.info("过期实体归档: count={}", archived);
             } else {

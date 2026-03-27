@@ -28,8 +28,31 @@ public record KnowledgeBase(
         int totalChunks,
         List<String> tags,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        List<String> datastoreIds
 ) {
+
+    public KnowledgeBase {
+        datastoreIds = datastoreIds != null ? List.copyOf(datastoreIds) : List.of();
+    }
+
+    public KnowledgeBase(
+            String id,
+            String name,
+            String description,
+            @Nullable String embeddingModel,
+            @Nullable String rerankerModel,
+            String chunkingStrategy,
+            Map<String, Object> chunkingConfig,
+            int documentCount,
+            int totalChunks,
+            List<String> tags,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, name, description, embeddingModel, rerankerModel, chunkingStrategy,
+                chunkingConfig, documentCount, totalChunks, tags, createdAt, updatedAt, List.of());
+    }
 
     /**
      * 创建新知识库的工厂方法。
@@ -61,6 +84,6 @@ public record KnowledgeBase(
                 chunkingConfig != null ? chunkingConfig : Map.of(),
                 0, 0,
                 tags != null ? tags : List.of(),
-                now, now);
+                now, now, List.of());
     }
 }
