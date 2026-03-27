@@ -59,7 +59,7 @@ class StorageToolProviderTest {
                 eq(null)
         )).thenReturn(created);
 
-        var tool = registry.resolve("builtin.datastore.create_collection").orElseThrow();
+        var tool = registry.resolve("datastore.create_collection").orElseThrow();
         var result = tool.execute(new ToolInput(
                 tool.id(),
                 Map.of(
@@ -118,7 +118,7 @@ class StorageToolProviderTest {
         when(dataStoreManager.findCollection("dev-workspace")).thenReturn(Optional.of(collection));
         when(dataStoreManager.deleteCollection("ds-1")).thenReturn(true);
 
-        var tool = registry.resolve("builtin.datastore.delete_collection").orElseThrow();
+        var tool = registry.resolve("datastore.delete_collection").orElseThrow();
         var result = tool.execute(new ToolInput(
                 tool.id(),
                 Map.of("collectionName", "dev-workspace"),

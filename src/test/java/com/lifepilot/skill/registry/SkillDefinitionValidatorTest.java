@@ -52,7 +52,7 @@ class SkillDefinitionValidatorTest {
                 .version("1.0.0")
                 .source(new SkillSource.UserDefined("/test", null))
                 .instructions("你是待办管理助手，帮助用户管理日常待办事项。")
-                .suggestedTools(List.of("builtin.todo.create"))
+                .suggestedTools(List.of("todo.create"))
                 .metadata(Map.of())
                 .build();
     }

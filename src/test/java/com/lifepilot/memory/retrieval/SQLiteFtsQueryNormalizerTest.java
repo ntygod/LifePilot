@@ -15,13 +15,12 @@ class SQLiteFtsQueryNormalizerTest {
     @Test
     void normalize_应移除MarkdownJson和路径噪声() {
         String raw = """
-                builtin.file.write {"content":"# AI 资讯汇总\\n`D:\\\\WorkSpace\\\\Project\\\\News`","path":"D:\\\\WorkSpace\\\\Project\\\\News\\\\AI_News_2026-03-24.md"}
+                file.write {"content":"# AI 资讯汇总\\n`D:\\\\WorkSpace\\\\Project\\\\News`","path":"D:\\\\WorkSpace\\\\Project\\\\News\\\\AI_News_2026-03-24.md"}
                 """;
 
         String normalized = SQLiteFtsQueryNormalizer.normalize(raw);
 
         assertThat(normalized)
-                .contains("\"builtin\"")
                 .contains("\"file\"")
                 .contains("\"write\"")
                 .contains("\"WorkSpace\"")
@@ -34,10 +33,9 @@ class SQLiteFtsQueryNormalizerTest {
 
     @Test
     void normalize_应过滤保留字和单字符噪声() {
-        String normalized = SQLiteFtsQueryNormalizer.normalize("AND OR NOT D builtin.code.execute python");
+        String normalized = SQLiteFtsQueryNormalizer.normalize("AND OR NOT D code.execute python");
 
         assertThat(normalized)
-                .contains("\"builtin\"")
                 .contains("\"code\"")
                 .contains("\"execute\"")
                 .contains("\"python\"")

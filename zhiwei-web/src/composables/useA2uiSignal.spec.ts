@@ -69,7 +69,7 @@ describe('mapBackendMessage', () => {
       role: 'permission-approval',
       content: JSON.stringify({
         requestId: 'req-1',
-        toolId: 'builtin.shell.exec',
+        toolId: 'shell.exec',
         toolName: '执行 Shell 命令',
         actionType: 'EXECUTE_SHELL',
         riskLevel: 'HIGH',

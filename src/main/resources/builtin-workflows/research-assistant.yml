@@ -21,7 +21,7 @@ steps:
   - id: search-web
     name: 网络搜索
     type: tool
-    toolId: builtin.web.search
+    toolId: web.search
     params:
       query: "${inputs.topic}"
       maxResults: "10"

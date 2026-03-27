@@ -47,7 +47,7 @@ class PermissionScopeMatcherTest {
     @Test
     void 文件资源解析器应同时产出路径与工作区路径() {
         var resolution = ToolScopeResolvers.paths("source", "destination").resolve(new ToolInput(
-                "builtin.file.copy",
+                "file.copy",
                 Map.of(
                         "source", "D:/WorkSpace/Project/work/a.txt",
                         "destination", "D:/WorkSpace/Project/work/out/b.txt"

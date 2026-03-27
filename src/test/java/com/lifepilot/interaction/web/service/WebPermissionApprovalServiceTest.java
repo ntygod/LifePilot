@@ -70,7 +70,7 @@ class WebPermissionApprovalServiceTest {
         when(permissionService.saveGrant(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var tool = BuiltinTool.builder()
-                .id("builtin.cron.create")
+                .id("cron.create")
                 .name("创建定时任务")
                 .description("创建 Cron 定时任务")
                 .inputSchema(JsonSchema.empty())
@@ -84,7 +84,7 @@ class WebPermissionApprovalServiceTest {
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build();
         var request = new PermissionRequest(
-                "builtin.cron.create",
+                "cron.create",
                 PermissionActionType.CREATE_SCHEDULE,
                 RiskLevel.LOW,
                 "web",

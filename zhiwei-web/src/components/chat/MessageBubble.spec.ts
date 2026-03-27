@@ -79,7 +79,7 @@ describe('MessageBubble 权限审批状态展示', () => {
         streamingPermissionApprovals: {
           'req-1': {
             requestId: 'req-1',
-            toolId: 'builtin.code.execute',
+            toolId: 'code.execute',
             toolName: '执行代码',
             actionType: 'EXECUTE_SHELL',
             riskLevel: 'HIGH',

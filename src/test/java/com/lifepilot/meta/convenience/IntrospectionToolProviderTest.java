@@ -148,7 +148,7 @@ class IntrospectionToolProviderTest {
     @Test
     void explain_查找Tool_返回详细信息() {
         var tool = BuiltinTool.builder()
-                .id("builtin.env.datetime")
+                .id("env.datetime")
                 .name("获取日期时间")
                 .description("获取当前日期时间")
                 .riskLevel(RiskLevel.LOW)
@@ -157,13 +157,13 @@ class IntrospectionToolProviderTest {
                         com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
-        when(toolRegistry.resolve("builtin.env.datetime")).thenReturn(Optional.of(tool));
+        when(toolRegistry.resolve("env.datetime")).thenReturn(Optional.of(tool));
 
         var result = executeToolByProvider("system.explain",
-                Map.of("id", "builtin.env.datetime"));
+                Map.of("id", "env.datetime"));
 
         assertThat(result.ok()).isTrue();
-        assertThat((String) result.getData("id")).isEqualTo("builtin.env.datetime");
+        assertThat((String) result.getData("id")).isEqualTo("env.datetime");
         assertThat((String) result.getData("type")).isEqualTo("tool");
         assertThat((String) result.getData("riskLevel")).isEqualTo("LOW");
     }

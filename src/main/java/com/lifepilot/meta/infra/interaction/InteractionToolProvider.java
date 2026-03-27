@@ -53,7 +53,7 @@ public class InteractionToolProvider {
     /** 构建选择工具 — 阻塞等待用户从选项列表中选择，LOW 风险。 */
     private BuiltinTool buildChooseTool(ChooseToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.interact.choose")
+                .id("interact.choose")
                 .category(ToolCategory.INTERACTION)
                 .name("请求用户选择")
                 .description("向用户展示选项列表并请求选择，阻塞等待用户响应")
@@ -80,7 +80,7 @@ public class InteractionToolProvider {
     /** 构建输入工具 — 阻塞等待用户自由文本输入，LOW 风险。 */
     private BuiltinTool buildInputTool(InputToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.interact.input")
+                .id("interact.input")
                 .category(ToolCategory.INTERACTION)
                 .name("请求用户输入")
                 .description("向用户展示输入提示并请求自由文本输入，阻塞等待用户响应")
@@ -104,7 +104,7 @@ public class InteractionToolProvider {
     /** 构建通知工具 — 非阻塞推送通知消息，LOW 风险。默认定向到当前会话渠道。 */
     private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.interact.notify")
+                .id("interact.notify")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
                 .description("向用户推送通知消息，非阻塞（不等待用户响应）。默认定向到当前会话渠道，也可显式指定 channel")

@@ -192,7 +192,7 @@ class JdbcTranscriptStore_集成测试 {
                 "web:tool-store-session",
                 "turn-1",
                 "trace-2",
-                "builtin.todo.create",
+                "todo.create",
                 "call-1",
                 "创建待办",
                 "{\"title\":\"收拾工位\"}",
@@ -202,7 +202,7 @@ class JdbcTranscriptStore_集成测试 {
                 "web:tool-store-session",
                 "turn-1",
                 "trace-2",
-                "builtin.todo.create",
+                "todo.create",
                 "call-1",
                 true,
                 "{\"id\":\"todo-1\"}",
@@ -241,7 +241,7 @@ class JdbcTranscriptStore_集成测试 {
                 "web:permission-session",
                 "turn-permission-1",
                 "permission-approval",
-                "{\"requestId\":\"req-1\",\"toolId\":\"builtin.shell.exec\"}",
+                "{\"requestId\":\"req-1\",\"toolId\":\"shell.exec\"}",
                 "trace-permission",
                 false,
                 true,
@@ -260,7 +260,7 @@ class JdbcTranscriptStore_集成测试 {
                 .containsExactly(
                         "permission-approval",
                         "turn-permission-1",
-                        "{\"requestId\":\"req-1\",\"toolId\":\"builtin.shell.exec\"}"
+                        "{\"requestId\":\"req-1\",\"toolId\":\"shell.exec\"}"
                 );
     }
 

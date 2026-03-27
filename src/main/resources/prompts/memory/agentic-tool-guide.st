@@ -18,6 +18,6 @@
 - 不确定信息存储在哪里时：先用 search 查知识实体，无结果再用 recall 查历史对话
 - 用户问"我之前说过什么"：用 recall，不用 search
 - 用户问"我的偏好/习惯是什么"：用 search，不用 recall
-- 当前会话若已绑定 Datastore 或 Knowledge Base，且用户只给出简短主题词或在问资料内容：优先用 `builtin.knowledge.search`
-- 用户问文档/资料相关问题：用 `builtin.knowledge.search`
+- 当前会话若已绑定 Datastore 或 Knowledge Base，且用户只给出简短主题词或在问资料内容：优先用 `knowledge.search`
+- 用户问文档/资料相关问题：用 `knowledge.search`
 </memory-tools>

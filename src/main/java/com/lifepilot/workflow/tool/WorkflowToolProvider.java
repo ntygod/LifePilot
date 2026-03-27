@@ -60,7 +60,7 @@ public class WorkflowToolProvider {
     /** 构建列出可用工作流工具。 */
     private BuiltinTool buildListTool() {
         return BuiltinTool.builder()
-                .id("builtin.workflow.list")
+                .id("workflow.list")
                 .name("列出可用工作流")
                 .description("列出所有可用工作流。如需创建新工作流，请使用 workflow-creator skill")
                 .category(ToolCategory.PERCEPTION)
@@ -85,7 +85,7 @@ public class WorkflowToolProvider {
     /** 构建启动工作流工具 — 异步返回 instanceId，不阻塞等待完成。 */
     private BuiltinTool buildStartTool() {
         return BuiltinTool.builder()
-                .id("builtin.workflow.start")
+                .id("workflow.start")
                 .name("启动工作流")
                 .description("启动工作流实例，适用于多步骤自动化任务。简单提醒或单条待办请使用 todo")
                 .category(ToolCategory.ACTION)
@@ -125,7 +125,7 @@ public class WorkflowToolProvider {
     /** 构建查询工作流实例状态工具。 */
     private BuiltinTool buildStatusTool() {
         return BuiltinTool.builder()
-                .id("builtin.workflow.status")
+                .id("workflow.status")
                 .name("查询工作流状态")
                 .description("查询工作流实例执行状态")
                 .category(ToolCategory.PERCEPTION)
@@ -160,7 +160,7 @@ public class WorkflowToolProvider {
     /** 构建取消工作流实例工具。 */
     private BuiltinTool buildCancelTool() {
         return BuiltinTool.builder()
-                .id("builtin.workflow.cancel")
+                .id("workflow.cancel")
                 .name("取消工作流")
                 .description("取消正在执行的工作流实例")
                 .category(ToolCategory.ACTION)
@@ -195,7 +195,7 @@ public class WorkflowToolProvider {
     /** 构建恢复暂停工作流实例工具。 */
     private BuiltinTool buildResumeTool() {
         return BuiltinTool.builder()
-                .id("builtin.workflow.resume")
+                .id("workflow.resume")
                 .name("恢复工作流")
                 .description("恢复暂停中的工作流实例（如等待审批、等待外部数据的工作流）")
                 .category(ToolCategory.ACTION)

@@ -58,7 +58,7 @@ ApprovalStep 暂停工作流等待审批决策。支持配置审批人列表、�
 
 ### 2.8 NotifyStep 通知步骤
 
-NotifyStep 是工作流内置的通知步骤，通过 NotificationService 发送通知。与旧的 `builtin.interact.notify` 工具相比，NotifyStep 更适合工作流里的“有结果就通知”场景。
+NotifyStep 是工作流内置的通知步骤，通过 NotificationService 发送通知。与旧的 `interact.notify` 工具相比，NotifyStep 更适合工作流里的“有结果就通知”场景。
 
 ```yaml
 - id: send-notification

@@ -1,6 +1,9 @@
 package com.lifepilot.tool.bridge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.Budget;
+import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -16,9 +19,14 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * ToolBridgeAgentToolProvider 单元测试。
@@ -29,10 +37,62 @@ import static org.mockito.Mockito.mock;
 class ToolBridgeAgentToolProviderTest {
 
     @Test
+    void OpenAI兼容工具名应转换为合法别名并可反查原始ID() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("datastore.query_documents")
+                .name("查询集合文档")
+                .description("查询集合文档")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+
+        ToolExecutionPipeline pipeline = mock(ToolExecutionPipeline.class);
+        when(pipeline.execute(anyString(), anyMap(), anyString(), any(), any(), anyMap()))
+                .thenReturn(ToolResult.success(Map.of("ok", true)));
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                pipeline,
+                new ObjectMapper(),
+                30000
+        );
+
+        var callbacks = provider.getToolCallbacks(baseState(), null);
+        String modelToolName = callbacks.getFirst().getToolDefinition().name();
+
+        assertThat(modelToolName).isEqualTo("datastore_query_documents");
+        assertThat(provider.resolveCanonicalToolId(modelToolName))
+                .isEqualTo("datastore.query_documents");
+        assertThat(provider.resolveToolDisplayName(modelToolName)).isEqualTo("查询集合文档");
+        assertThat(callbacks.getFirst().call("{}")).contains("\"ok\":true");
+    }
+
+    private ReactAgentState baseState() {
+        var budget = Budget.builder()
+                .maxTokens(4096)
+                .tokensUsed(0)
+                .tokensReserved(0)
+                .maxSteps(20)
+                .stepsUsed(0)
+                .maxDuration(Duration.ofMinutes(5))
+                .elapsed(Duration.ZERO)
+                .build();
+        var request = new AgentRequest("测试工具别名", "session-1", "web", null, null,
+                budget, null, 0, null, null, null, null);
+        return ReactAgentState.init(request, budget);
+    }
+
+    @Test
     void ResourceSerialized文件工具应生成稳定资源集合() {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("builtin.file.copy")
+                .id("file.copy")
                 .name("复制文件")
                 .description("复制文件")
                 .inputSchema(JsonSchema.of(Map.of("type", "object")))
@@ -56,7 +116,7 @@ class ToolBridgeAgentToolProviderTest {
         );
 
         var hint = provider.resolveSchedulingHint(
-                "builtin.file.copy",
+                "file.copy",
                 "{\"source\":\"D:\\\\WorkSpace\\\\a.txt\",\"destination\":\"D:\\\\WorkSpace\\\\b.txt\"}"
         );
 
@@ -72,7 +132,7 @@ class ToolBridgeAgentToolProviderTest {
     void ResourceSerialized工具输入解析失败时应回退串行() {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("builtin.file.write")
+                .id("file.write")
                 .name("写入文件")
                 .description("写入文件")
                 .inputSchema(JsonSchema.of(Map.of("type", "object")))
@@ -95,7 +155,7 @@ class ToolBridgeAgentToolProviderTest {
                 30000
         );
 
-        var hint = provider.resolveSchedulingHint("builtin.file.write", "{not-json");
+        var hint = provider.resolveSchedulingHint("file.write", "{not-json");
 
         assertThat(hint.mode()).isEqualTo(ToolSchedulingMode.SEQUENTIAL);
         assertThat(hint.resourceKeys()).isEmpty();

@@ -4,10 +4,10 @@ name: "API 调试"
 description: "API 接口调试：REST/GraphQL 请求测试、响应分析、Mock 数据生成、接口文档验证。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.code.execute
-  - builtin.file.read
-  - builtin.file.write
+  - shell.exec
+  - code.execute
+  - file.read
+  - file.write
 triggers:
   - "API调试"
   - "接口测试"
@@ -42,22 +42,22 @@ triggers:
 
 ```bash
 # GET 请求
-builtin.shell.exec(command="curl -s -w '\\nHTTP_CODE:%{http_code}' 'https://api.example.com/users'")
+shell.exec(command="curl -s -w '\\nHTTP_CODE:%{http_code}' 'https://api.example.com/users'")
 
 # POST 请求（JSON）
-builtin.shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"test\"}' 'https://api.example.com/users'")
+shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"test\"}' 'https://api.example.com/users'")
 
 # 带认证
-builtin.shell.exec(command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.example.com/protected'")
+shell.exec(command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.example.com/protected'")
 
 # 格式化输出
-builtin.shell.exec(command="curl -s 'https://api.example.com/users' | python -m json.tool")
+shell.exec(command="curl -s 'https://api.example.com/users' | python -m json.tool")
 ```
 
 ### GraphQL
 
 ```bash
-builtin.shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"query\":\"{ users { id name } }\"}' 'https://api.example.com/graphql'")
+shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"query\":\"{ users { id name } }\"}' 'https://api.example.com/graphql'")
 ```
 
 ## 响应分析
@@ -91,7 +91,7 @@ print(json.dumps(mock_data, indent=2))
 1. 读取接口文档或 OpenAPI spec
 
 ```
-builtin.file.read(path="openapi.yaml")
+file.read(path="openapi.yaml")
 ```
 
 2. 逐个端点测试
@@ -99,7 +99,7 @@ builtin.file.read(path="openapi.yaml")
 4. 生成测试报告
 
 ```
-builtin.file.write(path="api-test-report.md", content="测试报告内容")
+file.write(path="api-test-report.md", content="测试报告内容")
 ```
 
 ## 常见错误处理

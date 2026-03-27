@@ -4,8 +4,8 @@ name: "飞书集成"
 description: "飞书操作：发送消息、创建任务、管理文档、查询日程。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.http.request
-  - builtin.shell.exec
+  - http.request
+  - shell.exec
 triggers:
   - "飞书"
   - "发飞书消息"
@@ -37,7 +37,7 @@ triggers:
 
 ### 获取 Access Token
 ```
-builtin.http.request(
+http.request(
   url="https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -49,7 +49,7 @@ builtin.http.request(
 
 ### 发送消息
 ```
-builtin.http.request(
+http.request(
   url="https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
   method="POST",
   headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
@@ -59,7 +59,7 @@ builtin.http.request(
 
 ### 创建任务
 ```
-builtin.http.request(
+http.request(
   url="https://open.feishu.cn/open-apis/task/v2/tasks",
   method="POST",
   headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
@@ -69,7 +69,7 @@ builtin.http.request(
 
 ### 创建文档
 ```
-builtin.http.request(
+http.request(
   url="https://open.feishu.cn/open-apis/docx/v1/documents",
   method="POST",
   headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},

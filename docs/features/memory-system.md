@@ -35,7 +35,7 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 ### 2.3 跨会话回忆改为 snippet recall
 
-- `builtin.memory.recall` 不再返回零散单条消息
+- `memory.recall` 不再返回零散单条消息
 - 检索会先命中 `chat_messages_fts`
 - 再回到 `chat_messages` 取命中前后完整轮次
 - 最终返回片段级结果，天然更适合模型使用
@@ -55,12 +55,12 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 当前记忆相关工具包括：
 
-- `builtin.memory.search`：搜索知识实体
-- `builtin.memory.recall`：回忆别的会话里的对话片段
-- `builtin.knowledge.search`：搜索资料文档
-- `builtin.memory.create` / `update` / `delete` / `tag`
-- `builtin.memory.query-at-time`
-- `builtin.memory.search-experience`
+- `memory.search`：搜索知识实体
+- `memory.recall`：回忆别的会话里的对话片段
+- `knowledge.search`：搜索资料文档
+- `memory.create` / `update` / `delete` / `tag`
+- `memory.query-at-time`
+- `memory.search-experience`
 
 主上下文负责“当前会话连续性”，工具负责“按需回忆和检索”，职责比旧方案更清楚。
 
@@ -82,11 +82,11 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 ### 3.3 回忆别的会话
 
-如果用户说“我之前提过旅游计划吗”，Agent 应调用 `builtin.memory.recall`，检索别的 session 里的相关片段，而不是自动在主上下文中混入跨会话历史。
+如果用户说“我之前提过旅游计划吗”，Agent 应调用 `memory.recall`，检索别的 session 里的相关片段，而不是自动在主上下文中混入跨会话历史。
 
 ### 3.4 复用历史经验
 
-当任务与过去成功案例相似时，系统会自动注入少量经验实体；如果还需要更主动地查找历史策略，Agent 还可以调用 `builtin.memory.search-experience`。
+当任务与过去成功案例相似时，系统会自动注入少量经验实体；如果还需要更主动地查找历史策略，Agent 还可以调用 `memory.search-experience`。
 
 ## 4. 配置项
 

@@ -4,11 +4,11 @@ name: "数据分析"
 description: "数据分析助手：数据加载、探索性分析（EDA）、清洗转换、统计分析、可视化图表生成。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.code.execute
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.file.list
-  - builtin.shell.exec
+  - code.execute
+  - file.read
+  - file.write
+  - file.list
+  - shell.exec
 triggers:
   - "数据分析"
   - "统计"

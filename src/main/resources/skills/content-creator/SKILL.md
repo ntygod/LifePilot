@@ -4,12 +4,12 @@ name: "内容创作"
 description: "内容创作助手：文章撰写、报告生成、邮件起草、文案优化。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.web.search
-  - builtin.web.fetch
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.knowledge.search
-  - builtin.memory.search
+  - web.search
+  - web.fetch
+  - file.read
+  - file.write
+  - knowledge.search
+  - memory.search
 triggers:
   - "写文章"
   - "写文案"
@@ -53,13 +53,13 @@ triggers:
 
 ```
 # 搜索相关资料
-builtin.web.search(query="主题关键词")
+web.search(query="主题关键词")
 
 # 检查已有知识库
-builtin.knowledge.search(query="相关主题")
+knowledge.search(query="相关主题")
 
 # 读取用户提供的参考文件
-builtin.file.read(path="参考文件路径")
+file.read(path="参考文件路径")
 ```
 
 ### 3. 大纲构建
@@ -88,7 +88,7 @@ builtin.file.read(path="参考文件路径")
 
 ```
 # 保存到文件
-builtin.file.write(path="output/文章标题.md", content="最终内容")
+file.write(path="output/文章标题.md", content="最终内容")
 ```
 
 ## 内容类型模板

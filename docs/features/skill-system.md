@@ -83,7 +83,7 @@ Skill 搜索支持双模式：
 
 **场景一：Agent 按需激活专业 Skill**
 
-用户请求"帮我创建一个每天早上 8 点的提醒任务"，Agent 调用 `skills` 工具发现 `task` Skill，随后调用 `activate_skill` 激活它，获取任务管理的专业指令和 `builtin.task.create`、`builtin.task.list` 等工具，从而精准完成任务创建。
+用户请求"帮我创建一个每天早上 8 点的提醒任务"，Agent 调用 `skills` 工具发现 `task` Skill，随后调用 `activate_skill` 激活它，获取任务管理的专业指令和 `task.create`、`task.list` 等工具，从而精准完成任务创建。
 
 **场景二：用户自定义领域 Skill**
 

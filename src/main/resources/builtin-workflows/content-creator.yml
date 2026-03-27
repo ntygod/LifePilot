@@ -31,7 +31,7 @@ steps:
   - id: gather-material
     name: 搜索素材
     type: tool
-    toolId: builtin.web.search
+    toolId: web.search
     params:
       query: "${inputs.topic}"
       maxResults: "8"

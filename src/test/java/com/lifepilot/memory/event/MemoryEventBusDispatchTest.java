@@ -154,7 +154,7 @@ class MemoryEventBusDispatchTest {
                 true,
                 false,
                 Map.of(
-                        "toolId", "builtin.todo.create",
+                        "toolId", "todo.create",
                         "callId", "call-1",
                         "success", true,
                         "outputJson", "{\"id\":\"todo-1\"}",
@@ -175,7 +175,7 @@ class MemoryEventBusDispatchTest {
                 .filteredOn(MemoryEvent.ToolResultCommitted.class::isInstance)
                 .singleElement()
                 .isInstanceOfSatisfying(MemoryEvent.ToolResultCommitted.class, event -> {
-                    assertThat(event.toolId()).isEqualTo("builtin.todo.create");
+                    assertThat(event.toolId()).isEqualTo("todo.create");
                     assertThat(event.callId()).isEqualTo("call-1");
                     assertThat(event.success()).isTrue();
                     assertThat(event.artifactId()).isEqualTo("artifact-1");

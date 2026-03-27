@@ -4,11 +4,11 @@ name: "翻译助手"
 description: "多语言翻译：文本翻译、文档本地化、术语一致性管理、国际化支持。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.web.search
-  - builtin.knowledge.search
-  - builtin.memory.search
+  - file.read
+  - file.write
+  - web.search
+  - knowledge.search
+  - memory.search
 triggers:
   - "翻译"
   - "中译英"
@@ -49,10 +49,10 @@ triggers:
 
 ```
 # 检查已有术语记忆
-builtin.memory.search(query="术语表 翻译")
+memory.search(query="术语表 翻译")
 
 # 搜索领域术语标准
-builtin.web.search(query="XX领域 术语 中英对照")
+web.search(query="XX领域 术语 中英对照")
 ```
 
 ### 3. 执行翻译
@@ -75,7 +75,7 @@ builtin.web.search(query="XX领域 术语 中英对照")
 
 ```
 # 保存翻译结果
-builtin.file.write(path="translated/output.md", content="翻译内容")
+file.write(path="translated/output.md", content="翻译内容")
 ```
 
 ## 文档本地化
@@ -84,12 +84,12 @@ builtin.file.write(path="translated/output.md", content="翻译内容")
 
 ```
 # 1. 读取源文件
-builtin.file.read(path="docs/en/guide.md")
+file.read(path="docs/en/guide.md")
 
 # 2. 翻译内容（保留 Markdown 格式）
 
 # 3. 保存到对应语言目录
-builtin.file.write(path="docs/zh/guide.md", content="翻译后内容")
+file.write(path="docs/zh/guide.md", content="翻译后内容")
 ```
 
 ### i18n 资源文件

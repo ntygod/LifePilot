@@ -4,10 +4,10 @@ name: "项目脚手架"
 description: "新项目初始化：模板生成、目录结构搭建、依赖配置、开发环境设置。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.file.write
-  - builtin.file.list
-  - builtin.file.read
+  - shell.exec
+  - file.write
+  - file.list
+  - file.read
 triggers:
   - "项目脚手架"
   - "创建项目"
@@ -48,38 +48,38 @@ triggers:
 
 ```bash
 # Java + Spring Boot
-builtin.shell.exec(command="curl https://start.spring.io/starter.zip -d dependencies=web,actuator -d type=maven-project -d language=java -d javaVersion=22 -o project.zip", workingDirectory="/target")
+shell.exec(command="curl https://start.spring.io/starter.zip -d dependencies=web,actuator -d type=maven-project -d language=java -d javaVersion=22 -o project.zip", workingDirectory="/target")
 
 # Node.js
-builtin.shell.exec(command="npm init -y", workingDirectory="/target/project")
+shell.exec(command="npm init -y", workingDirectory="/target/project")
 
 # Python
-builtin.shell.exec(command="python -m venv venv", workingDirectory="/target/project")
+shell.exec(command="python -m venv venv", workingDirectory="/target/project")
 
 # Go
-builtin.shell.exec(command="go mod init github.com/user/project", workingDirectory="/target/project")
+shell.exec(command="go mod init github.com/user/project", workingDirectory="/target/project")
 
 # Rust
-builtin.shell.exec(command="cargo init project-name", workingDirectory="/target")
+shell.exec(command="cargo init project-name", workingDirectory="/target")
 ```
 
 ### 3. 补充项目文件
 
 ```
 # .gitignore
-builtin.file.write(path="project/.gitignore", content="...")
+file.write(path="project/.gitignore", content="...")
 
 # README.md
-builtin.file.write(path="project/README.md", content="# 项目名\n\n## 简介\n...")
+file.write(path="project/README.md", content="# 项目名\n\n## 简介\n...")
 
 # Dockerfile（如需要）
-builtin.file.write(path="project/Dockerfile", content="...")
+file.write(path="project/Dockerfile", content="...")
 ```
 
 ### 4. 验证项目结构
 
 ```
-builtin.file.list(path="project", recursive=true)
+file.list(path="project", recursive=true)
 ```
 
 ## 技术栈模板

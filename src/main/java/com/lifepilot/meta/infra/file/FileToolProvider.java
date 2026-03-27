@@ -62,7 +62,7 @@ public class FileToolProvider {
     /** 构建文件读取工具。 */
     private BuiltinTool buildFileReadTool(FileReadToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.read")
+                .id("file.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
                 .description("读取指定路径的文件内容，支持行范围读取、maxChars 截断和编码指定。返回 totalLines 字段")
@@ -96,7 +96,7 @@ public class FileToolProvider {
     /** 构建文件写入工具（支持 write/append 两种模式）。 */
     private BuiltinTool buildFileWriteTool(FileWriteToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.write")
+                .id("file.write")
                 .category(ToolCategory.ACTION)
                 .name("写入文件")
                 .description("写入文件内容。mode=write（默认）原子覆写，mode=append 追加到末尾。支持自动创建父目录")
@@ -129,7 +129,7 @@ public class FileToolProvider {
     /** 构建文件列表工具。 */
     private BuiltinTool buildFileListTool(FileListToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.list")
+                .id("file.list")
                 .category(ToolCategory.PERCEPTION)
                 .name("列出目录")
                 .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序")
@@ -161,7 +161,7 @@ public class FileToolProvider {
     /** 构建文件搜索工具。 */
     private BuiltinTool buildFileSearchTool(FileSearchToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.search")
+                .id("file.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("搜索文件内容")
                 .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过")
@@ -215,7 +215,7 @@ public class FileToolProvider {
         itemSchema.put("properties", itemProperties);
 
         return BuiltinTool.builder()
-                .id("builtin.file.patch")
+                .id("file.patch")
                 .category(ToolCategory.ACTION)
                 .name("补丁文件")
                 .description("对文件执行行级 insert/replace/delete 操作，原子写入。MEDIUM 风险")
@@ -245,7 +245,7 @@ public class FileToolProvider {
     /** 构建文件信息工具。 */
     private BuiltinTool buildFileInfoTool(FileInfoToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.info")
+                .id("file.info")
                 .category(ToolCategory.PERCEPTION)
                 .name("文件信息")
                 .description("查询文件或目录的元数据，包括大小、修改时间、权限和 MIME 类型")
@@ -272,7 +272,7 @@ public class FileToolProvider {
     /** 构建文件移动工具。 */
     private BuiltinTool buildFileMoveTool(FileMoveToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.move")
+                .id("file.move")
                 .category(ToolCategory.ACTION)
                 .name("移动文件")
                 .description("原子移动文件到目标路径，支持覆盖控制。HIGH 风险，每次执行需用户确认")
@@ -303,7 +303,7 @@ public class FileToolProvider {
     /** 构建文件复制工具。 */
     private BuiltinTool buildFileCopyTool(FileCopyToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.copy")
+                .id("file.copy")
                 .category(ToolCategory.ACTION)
                 .name("复制文件")
                 .description("复制文件到目标路径，支持覆盖控制。MEDIUM 风险")
@@ -334,7 +334,7 @@ public class FileToolProvider {
     /** 构建文件删除工具。 */
     private BuiltinTool buildFileDeleteTool(FileDeleteToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.delete")
+                .id("file.delete")
                 .category(ToolCategory.ACTION)
                 .name("删除文件")
                 .description("删除文件或目录，支持递归删除非空目录。HIGH 风险，每次执行需用户确认")
@@ -363,7 +363,7 @@ public class FileToolProvider {
     /** 构建文件内容搜索工具（grep 别名，对标 OpenClaw grep）。 */
     private BuiltinTool buildFileGrepTool(FileSearchToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.grep")
+                .id("file.grep")
                 .category(ToolCategory.PERCEPTION)
                 .name("搜索文件内容（grep）")
                 .description("递归搜索目录下文件内容，支持正则表达式。等同于 file.search，对标 Unix grep")
@@ -397,7 +397,7 @@ public class FileToolProvider {
     /** 构建文件查找工具（对标 OpenClaw find）。 */
     private BuiltinTool buildFileFindTool(FileListToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.find")
+                .id("file.find")
                 .category(ToolCategory.PERCEPTION)
                 .name("查找文件（find）")
                 .description("按名称 glob 模式递归查找文件，对标 Unix find。比 file.list 更适合按条件搜索文件")

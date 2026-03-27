@@ -28,7 +28,7 @@ public class AutonomousTaskApprovalAdvisor {
     private static final Pattern LATIN_TOKEN_PATTERN = Pattern.compile("[a-z][a-z0-9_-]{1,}");
     private static final Pattern HAN_SEQUENCE_PATTERN = Pattern.compile("[\\p{IsHan}]{2,}");
     private static final Set<String> STOP_TOKENS = Set.of(
-            "builtin", "tool", "high", "risk", "medium", "low", "critical",
+            "tool", "high", "risk", "medium", "low", "critical",
             "支持", "用户", "当前", "每次", "工具", "操作", "系统", "功能",
             "能力", "任务", "定时", "创建", "更新", "执行", "处理", "自动",
             "文件", "目录", "路径", "内容"
@@ -58,7 +58,7 @@ public class AutonomousTaskApprovalAdvisor {
         if (tool.riskLevel() == null || tool.riskLevel().ordinal() < RiskLevel.HIGH.ordinal()) {
             return false;
         }
-        return !tool.id().startsWith("builtin.cron.");
+        return !tool.id().startsWith("cron.");
     }
 
     private Set<String> buildToolTokenSet(ToolContract tool) {

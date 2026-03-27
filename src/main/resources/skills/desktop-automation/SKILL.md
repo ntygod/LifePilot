@@ -4,11 +4,11 @@ name: "桌面自动化"
 description: "Windows 桌面自动化：UI 元素操作、窗口管理、对话框处理、键鼠模拟、屏幕截图分析。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.code.execute
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.env.system-info
+  - shell.exec
+  - code.execute
+  - file.read
+  - file.write
+  - env.system-info
 triggers:
   - "桌面自动化"
   - "鼠标操作"
@@ -25,7 +25,7 @@ triggers:
 仅支持 Windows。执行前先确认：
 
 ```
-builtin.env.system-info()
+env.system-info()
 → 确认操作系统为 Windows
 ```
 
@@ -49,7 +49,7 @@ builtin.env.system-info()
 
 ```bash
 # 安装 Python 自动化库
-builtin.shell.exec(command="pip install pyautogui pywinauto pillow")
+shell.exec(command="pip install pyautogui pywinauto pillow")
 ```
 
 | 库 | 用途 |
@@ -63,7 +63,7 @@ builtin.shell.exec(command="pip install pyautogui pywinauto pillow")
 ### 1. 截图分析当前状态
 
 ```python
-builtin.code.execute(language="python", code="
+code.execute(language="python", code="
 import pyautogui
 screenshot = pyautogui.screenshot()
 screenshot.save('current_screen.png')
@@ -75,7 +75,7 @@ print(f'屏幕分辨率: {pyautogui.size()}')
 ### 2. 窗口管理
 
 ```python
-builtin.code.execute(language="python", code="
+code.execute(language="python", code="
 from pywinauto import Desktop
 
 # 列出所有窗口
@@ -89,7 +89,7 @@ for w in windows:
 ### 3. 应用控制
 
 ```python
-builtin.code.execute(language="python", code="
+code.execute(language="python", code="
 from pywinauto.application import Application
 
 # 连接到已运行的应用
@@ -104,7 +104,7 @@ dlg.Edit.type_keys('Hello World', with_spaces=True)
 ### 4. 键鼠模拟
 
 ```python
-builtin.code.execute(language="python", code="
+code.execute(language="python", code="
 import pyautogui
 import time
 

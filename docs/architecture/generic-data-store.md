@@ -25,7 +25,7 @@
 
 **Document Store（结构化列表管理）**：书单、影单、购物清单、旅行计划、食谱、联系人、记账。CRUD + 过滤 + 排序。最高频需求。
 
-**Note Store（非结构化笔记）**：日记、会议记录、灵感、梦境记录。写入 + 资料沉淀。与 L2 情景记忆有部分重叠，但用户期望显式的「笔记本」概念；在当前实现中，资料检索统一通过内部 Knowledge Base + `builtin.knowledge.search` 完成。
+**Note Store（非结构化笔记）**：日记、会议记录、灵感、梦境记录。写入 + 资料沉淀。与 L2 情景记忆有部分重叠，但用户期望显式的「笔记本」概念；在当前实现中，资料检索统一通过内部 Knowledge Base + `knowledge.search` 完成。
 
 **Metric Store（时序指标追踪）**：体重、运动量、睡眠、饮水、学习时长。追加 + 时间范围查询 + 聚合（均值、趋势、极值）。
 
@@ -288,8 +288,8 @@ public record AggregationResult(
 - 每个 Datastore 默认对应一个内部 Knowledge Base
 - 结构化数据先经过 `projection_config_json` 投影为检索文本
 - 投影后的文本进入分块、向量索引和 FTS 索引
-- 会话绑定 Datastore 后，资料型问题统一通过 `builtin.knowledge.search` 命中对应作用域
-- `builtin.datastore.query_documents` 只负责结构化过滤、排序、分页，不承担语义检索职责
+- 会话绑定 Datastore 后，资料型问题统一通过 `knowledge.search` 命中对应作用域
+- `datastore.query_documents` 只负责结构化过滤、排序、分页，不承担语义检索职责
 
 ### 4.6 DataStoreTool（Agent 工具集）
 
@@ -297,14 +297,14 @@ public record AggregationResult(
 
 | 工具 ID | 操作 | 说明 |
 |---------|------|------|
-| `builtin.datastore.create_collection` | 创建集合 | 指定名称、类型、可选属性定义、可选 `projectionConfig` |
-| `builtin.datastore.list_collections` | 列出集合 | 返回所有集合及其属性定义 |
-| `builtin.datastore.delete_collection` | 删除集合 | 删除整个集合及其文档 |
-| `builtin.datastore.add_document` | 添加文档 | 向指定集合写入 JSON 文档 |
-| `builtin.datastore.query_documents` | 查询文档 | 按过滤条件查询，支持排序分页，仅用于结构化查询 |
-| `builtin.datastore.update_document` | 更新文档 | 按 ID 更新文档数据 |
-| `builtin.datastore.delete_document` | 删除文档 | 按 ID 删除文档 |
-| `builtin.datastore.aggregate` | 聚合查询 | METRIC 类型集合的时序聚合 |
+| `datastore.create_collection` | 创建集合 | 指定名称、类型、可选属性定义、可选 `projectionConfig` |
+| `datastore.list_collections` | 列出集合 | 返回所有集合及其属性定义 |
+| `datastore.delete_collection` | 删除集合 | 删除整个集合及其文档 |
+| `datastore.add_document` | 添加文档 | 向指定集合写入 JSON 文档 |
+| `datastore.query_documents` | 查询文档 | 按过滤条件查询，支持排序分页，仅用于结构化查询 |
+| `datastore.update_document` | 更新文档 | 按 ID 更新文档数据 |
+| `datastore.delete_document` | 删除文档 | 按 ID 删除文档 |
+| `datastore.aggregate` | 聚合查询 | METRIC 类型集合的时序聚合 |
 
 Agent 使用示例：
 - 用户说「帮我记一下这本书：三体，刘慈欣，评分 5 分」

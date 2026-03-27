@@ -4,11 +4,11 @@ name: "信息调研"
 description: "多源信息调研：Web 搜索、网页抓取、交叉验证、结构化输出。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.web.search
-  - builtin.web.fetch
-  - builtin.knowledge.search
-  - builtin.memory.search
-  - builtin.file.write
+  - web.search
+  - web.fetch
+  - knowledge.search
+  - memory.search
+  - file.write
 triggers:
   - "调研"
   - "研究"
@@ -41,26 +41,26 @@ triggers:
 ### 1. 明确调研目标
 
 - 确认用户的核心问题和关注维度
-- 如果问题模糊，用 `builtin.interact.ask` 澄清范围
+- 如果问题模糊，用 `interact.ask` 澄清范围
 
 ### 2. 多源搜索
 
 ```
 # 第一轮：广泛搜索，获取概览
-builtin.web.search(query="核心关键词")
+web.search(query="核心关键词")
 
 # 第二轮：针对性搜索，深入细节
-builtin.web.search(query="具体子问题")
+web.search(query="具体子问题")
 
 # 检查已有知识库
-builtin.knowledge.search(query="相关主题")
+knowledge.search(query="相关主题")
 ```
 
 ### 3. 深度抓取
 
 ```
 # 对搜索结果中的高质量来源进行深度抓取
-builtin.web.fetch(url="目标URL", selector="正文区域CSS选择器")
+web.fetch(url="目标URL", selector="正文区域CSS选择器")
 ```
 
 优先抓取：

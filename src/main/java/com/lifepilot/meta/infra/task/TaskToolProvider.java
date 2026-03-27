@@ -73,7 +73,7 @@ public class TaskToolProvider {
     /** 构建创建定时任务工具。 */
     private BuiltinTool buildCronCreateTool() {
         return BuiltinTool.builder()
-                .id("builtin.cron.create")
+                .id("cron.create")
                 .category(ToolCategory.ACTION)
                 .name("创建定时任务")
                 .description("创建 Cron 定时任务，写入数据库后立即注册精确定时器。schedule 使用 Spring 6 位 Cron 格式（秒 分 时 日 月 周）")
@@ -138,7 +138,7 @@ public class TaskToolProvider {
     /** 构建查询定时任务列表工具。 */
     private BuiltinTool buildCronListTool() {
         return BuiltinTool.builder()
-                .id("builtin.cron.list")
+                .id("cron.list")
                 .category(ToolCategory.PERCEPTION)
                 .name("查询定时任务列表")
                 .description("查询所有定时任务，可按状态过滤（active / paused / completed）")
@@ -181,7 +181,7 @@ public class TaskToolProvider {
     /** 构建更新定时任务工具。 */
     private BuiltinTool buildCronUpdateTool() {
         return BuiltinTool.builder()
-                .id("builtin.cron.update")
+                .id("cron.update")
                 .category(ToolCategory.ACTION)
                 .name("更新定时任务")
                 .description("更新定时任务的名称、Cron 表达式、指令或状态。修改 status 或 schedule 时自动重新注册定时器")
@@ -264,7 +264,7 @@ public class TaskToolProvider {
     /** 构建删除定时任务工具。 */
     private BuiltinTool buildCronRemoveTool() {
         return BuiltinTool.builder()
-                .id("builtin.cron.remove")
+                .id("cron.remove")
                 .category(ToolCategory.ACTION)
                 .name("删除定时任务")
                 .description("删除定时任务，取消定时器并删除数据库记录（级联删除执行日志）")
@@ -318,7 +318,7 @@ public class TaskToolProvider {
     /** 构建读取心跳 Checklist 工具。 */
     private BuiltinTool buildHeartbeatReadTool() {
         return BuiltinTool.builder()
-                .id("builtin.heartbeat.read")
+                .id("heartbeat.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取心跳 Checklist")
                 .description("读取 HEARTBEAT.md 文件内容，返回当前的心跳巡检 checklist")
@@ -357,7 +357,7 @@ public class TaskToolProvider {
     /** 构建写入心跳 Checklist 工具。 */
     private BuiltinTool buildHeartbeatWriteTool() {
         return BuiltinTool.builder()
-                .id("builtin.heartbeat.write")
+                .id("heartbeat.write")
                 .category(ToolCategory.ACTION)
                 .name("写入心跳 Checklist")
                 .description("覆写 HEARTBEAT.md 文件内容，更新心跳巡检 checklist。文件不存在时自动创建")
@@ -416,7 +416,7 @@ public class TaskToolProvider {
             return ToolScopeResolution.EMPTY;
         }
         return ToolScopeResolvers.paths("path").resolve(new com.lifepilot.tool.model.ToolInput(
-                "builtin.heartbeat",
+                "heartbeat",
                 Map.of("path", normalizedPath),
                 JsonSchema.empty(),
                 null,

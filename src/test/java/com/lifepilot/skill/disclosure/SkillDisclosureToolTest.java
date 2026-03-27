@@ -59,7 +59,7 @@ class SkillDisclosureToolTest {
     @Test
     void loadSkill_正常加载_返回指令和建议工具() {
         var activation = new SkillActivation("todo-manager", "请按以下步骤操作...",
-                List.of("builtin.datastore.query"));
+                List.of("datastore.query"));
         when(skillActivator.activate("todo-manager")).thenReturn(activation);
 
         ToolResult result = invokeLoadSkill("todo-manager");
@@ -71,13 +71,13 @@ class SkillDisclosureToolTest {
         assertThat(result.ok()).isTrue();
         assertThat(loadedCount).isEqualTo(1);
         assertThat(missingSkills).isEqualTo(List.of());
-        assertThat(suggestedTools).isEqualTo(List.of("builtin.datastore.query"));
+        assertThat(suggestedTools).isEqualTo(List.of("datastore.query"));
         assertThat(skills)
                 .singleElement()
                 .satisfies(skill -> {
                     assertThat(skill.get("skill_id")).isEqualTo("todo-manager");
                     assertThat(skill.get("instructions")).isEqualTo("请按以下步骤操作...");
-                    assertThat(skill.get("suggested_tools")).isEqualTo(List.of("builtin.datastore.query"));
+                    assertThat(skill.get("suggested_tools")).isEqualTo(List.of("datastore.query"));
                 });
     }
 
@@ -85,7 +85,7 @@ class SkillDisclosureToolTest {
     @SuppressWarnings("unchecked")
     void loadSkill_部分不存在_返回部分成功和缺失列表() {
         var activation = new SkillActivation("todo-manager", "请按以下步骤操作...",
-                List.of("builtin.datastore.query"));
+                List.of("datastore.query"));
         when(skillActivator.activate("todo-manager")).thenReturn(activation);
         when(skillActivator.activate("missing-skill"))
                 .thenThrow(new SkillActivationException("Skill 不存在: missing-skill"));

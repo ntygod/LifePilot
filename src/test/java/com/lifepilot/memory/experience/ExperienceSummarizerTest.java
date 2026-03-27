@@ -99,8 +99,8 @@ class ExperienceSummarizerTest {
                 .goal("整理一次复杂执行经验")
                 .channel("web")
                 .steps(List.of(
-                        new ReactStep.ToolCall("builtin.shell.exec", "执行 Shell 命令", "{\"command\":\"echo hi\"}", 10),
-                        new ReactStep.Observation("builtin.shell.exec", "执行 Shell 命令", true, "hi", 0)
+                        new ReactStep.ToolCall("shell.exec", "执行 Shell 命令", "{\"command\":\"echo hi\"}", 10),
+                        new ReactStep.Observation("shell.exec", "执行 Shell 命令", true, "hi", 0)
                 ))
                 .stepCount(2)
                 .shortTermMemory(List.of())

@@ -43,7 +43,7 @@ class OnboardingGuideAgentTest {
                 "system.explain",
                 "system.suggest",
                 "system.status",
-                "builtin.interact.choose"
+                "interact.choose"
         );
         assertThat(def.systemPrompt()).isNotBlank();
         assertThat(def.systemPrompt()).contains("引导专家");

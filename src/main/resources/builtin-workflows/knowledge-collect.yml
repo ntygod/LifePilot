@@ -51,7 +51,7 @@ steps:
       - id: search-topic
         name: 搜索主题
         type: tool
-        toolId: builtin.web.search
+        toolId: web.search
         params:
           query: "${currentTopic} 最新"
           maxResults: "${inputs.maxResultsPerTopic}"

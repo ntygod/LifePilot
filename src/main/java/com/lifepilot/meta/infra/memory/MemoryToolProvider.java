@@ -104,11 +104,11 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null
                 ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         return BuiltinTool.builder()
-                .id("builtin.memory.search")
+                .id("memory.search")
                 .name("搜索记忆")
                 .description("搜索知识实体（人物、地点、事件、偏好、习惯、目标等）。" +
                         "当用户提到具体的人名、地名、事件名，或询问你记住的偏好/习惯时使用。" +
-                        "不要用于搜索历史对话内容（用 recall）或资料文档（用 builtin.knowledge.search）。")
+                        "不要用于搜索历史对话内容（用 recall）或资料文档（用 knowledge.search）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -148,11 +148,11 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null
                 ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         return BuiltinTool.builder()
-                .id("builtin.memory.recall")
+                .id("memory.recall")
                 .name("回忆对话")
                 .description("回忆历史对话片段（跨会话）。" +
                         "当用户说'我之前说过...'、'上次我们聊到...'、'你还记得我说的...'时使用。" +
-                        "不要用于搜索知识实体（用 search）或资料文档（用 builtin.knowledge.search）。")
+                        "不要用于搜索知识实体（用 search）或资料文档（用 knowledge.search）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -190,12 +190,12 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null
                 ? memoryProperties.getAgenticTool().getDocsDefaultTopK() : 5;
         return BuiltinTool.builder()
-                .id("builtin.knowledge.search")
+                .id("knowledge.search")
                 .name("检索资料")
                 .description("搜索当前会话绑定的资料内容。" +
                         "当当前会话绑定了 Datastore 或 Knowledge Base，且用户是在问某个主题、资料内容、推荐、说明、设定、架构、总结、比较、步骤、文档结论时，优先使用本工具先检索资料；即使用户只给出简短主题词也适用。" +
                         "当前会话如果绑定了 datastore，会自动搜索该 datastore 关联的领域文档和结构化投影内容。" +
-                        "不要用于精确字段过滤（用 builtin.datastore.query_documents）、搜索知识实体（用 search）或历史对话（用 recall）。")
+                        "不要用于精确字段过滤（用 datastore.query_documents）、搜索知识实体（用 search）或历史对话（用 recall）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -236,7 +236,7 @@ public class MemoryToolProvider {
     /** 构建创建记忆工具。 */
     private BuiltinTool buildCreateTool() {
         return BuiltinTool.builder()
-                .id("builtin.memory.create")
+                .id("memory.create")
                 .name("创建记忆")
                 .description("创建新的记忆实体（人物、地点、事件、偏好、习惯、目标等）。" +
                         "当对话中出现值得长期记住的新信息时使用。如果实体已存在，会自动版本化合并。")
@@ -290,7 +290,7 @@ public class MemoryToolProvider {
     /** 构建更新记忆工具。 */
     private BuiltinTool buildUpdateTool() {
         return BuiltinTool.builder()
-                .id("builtin.memory.update")
+                .id("memory.update")
                 .name("更新记忆")
                 .description("更新已有记忆实体的描述或类型。当用户纠正或补充之前记住的信息时使用。")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -348,7 +348,7 @@ public class MemoryToolProvider {
     /** 构建删除（归档）记忆工具。 */
     private BuiltinTool buildDeleteTool() {
         return BuiltinTool.builder()
-                .id("builtin.memory.delete")
+                .id("memory.delete")
                 .name("删除记忆")
                 .description("删除（归档）记忆实体。当用户明确要求忘记某条记忆时使用。" +
                         "实体不会被物理删除，而是标记为归档。")
@@ -389,7 +389,7 @@ public class MemoryToolProvider {
     /** 构建标签关系工具。 */
     private BuiltinTool buildTagTool() {
         return BuiltinTool.builder()
-                .id("builtin.memory.tag")
+                .id("memory.tag")
                 .name("添加记忆标签")
                 .description("为记忆实体添加关系标签，建立实体间的关联（如 RELATED_TO, BELONGS_TO, CAUSED_BY）。" +
                         "当需要记录两个实体之间的关系时使用。")
@@ -441,7 +441,7 @@ public class MemoryToolProvider {
     /** 构建时间点查询工具 — 查询指定时间点有效的记忆实体。 */
     private BuiltinTool buildQueryAtTimeTool() {
         return BuiltinTool.builder()
-                .id("builtin.memory.query-at-time")
+                .id("memory.query-at-time")
                 .name("时间点查询")
                 .description("查询指定时间点有效的记忆实体。" +
                         "当用户问'那时候我的偏好是什么'、'某个时间点的状态'时使用。" +
@@ -502,7 +502,7 @@ public class MemoryToolProvider {
     /** 构建经验检索工具。 */
     private BuiltinTool buildSearchExperienceTool() {
         return BuiltinTool.builder()
-                .id("builtin.memory.search-experience")
+                .id("memory.search-experience")
                 .name("搜索经验")
                 .description("搜索历史执行经验。当遇到以下场景时使用：" +
                         "1) 之前处理过的类似任务；" +

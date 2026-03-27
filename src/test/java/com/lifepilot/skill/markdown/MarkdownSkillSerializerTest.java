@@ -33,7 +33,7 @@ class MarkdownSkillSerializerTest {
                 .version("2.0.0")
                 .source(new SkillSource.UserDefined("/skills/writing-assistant"))
                 .instructions("你是一个专业的写作助手。")
-                .suggestedTools(List.of("builtin.todo.create", "builtin.memory.search"))
+                .suggestedTools(List.of("todo.create", "memory.search"))
                 .metadata(Map.of())
                 .build();
     }
@@ -52,8 +52,8 @@ class MarkdownSkillSerializerTest {
         assertThat(result).contains("description: 帮助用户撰写高质量文章");
         assertThat(result).contains("version: 2.0.0");
         assertThat(result).contains("suggested-tools:");
-        assertThat(result).contains("- builtin.todo.create");
-        assertThat(result).contains("- builtin.memory.search");
+        assertThat(result).contains("- todo.create");
+        assertThat(result).contains("- memory.search");
         assertThat(result).contains("你是一个专业的写作助手。");
     }
 

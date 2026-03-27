@@ -1,18 +1,18 @@
 ---
 id: datastore
 name: "数据存储"
-description: "通用数据存储管理：创建/删除集合、添加/查询/更新/删除文档、聚合统计；资料语义检索统一走 builtin.knowledge.search。"
+description: "通用数据存储管理：创建/删除集合、添加/查询/更新/删除文档、聚合统计；资料语义检索统一走 knowledge.search。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.datastore.create_collection
-  - builtin.datastore.list_collections
-  - builtin.datastore.delete_collection
-  - builtin.datastore.add_document
-  - builtin.datastore.query_documents
-  - builtin.datastore.update_document
-  - builtin.datastore.delete_document
-  - builtin.datastore.aggregate
-  - builtin.knowledge.search
+  - datastore.create_collection
+  - datastore.list_collections
+  - datastore.delete_collection
+  - datastore.add_document
+  - datastore.query_documents
+  - datastore.update_document
+  - datastore.delete_document
+  - datastore.aggregate
+  - knowledge.search
 triggers:
   - "数据存储"
   - "记录数据"
@@ -53,36 +53,36 @@ triggers:
 
 | 目标 | 优先工具 | 适用问题 |
 |------|----------|----------|
-| 精确结构化查询 | `builtin.datastore.query_documents` | 按字段过滤、排序、分页、按状态/分类/ID 精确查找 |
-| 时序统计分析 | `builtin.datastore.aggregate` | 趋势、求和、平均值、按天/周/月统计 |
-| 资料语义检索 | `builtin.knowledge.search` | 主题检索、资料问答、推荐、说明、设定、架构、总结、比较、步骤 |
+| 精确结构化查询 | `datastore.query_documents` | 按字段过滤、排序、分页、按状态/分类/ID 精确查找 |
+| 时序统计分析 | `datastore.aggregate` | 趋势、求和、平均值、按天/周/月统计 |
+| 资料语义检索 | `knowledge.search` | 主题检索、资料问答、推荐、说明、设定、架构、总结、比较、步骤 |
 
 ### 集合管理
 
-- 使用 `builtin.datastore.create_collection` 创建集合时，选择合适的类型
+- 使用 `datastore.create_collection` 创建集合时，选择合适的类型
 - 可通过 `properties` 参数定义集合的属性结构（JSON 数组格式）
 - 可通过 `projectionConfig` 参数声明集合级向量投影规则；省略时系统会自动保存 `{}` 并使用默认通用投影
-- 使用 `builtin.datastore.list_collections` 查看所有集合，支持按类型过滤
-- 使用 `builtin.datastore.delete_collection` 删除整个集合前，先确认目标名称无误；该操作会同时删除集合内全部文档
+- 使用 `datastore.list_collections` 查看所有集合，支持按类型过滤
+- 使用 `datastore.delete_collection` 删除整个集合前，先确认目标名称无误；该操作会同时删除集合内全部文档
 
 ### 文档 CRUD
 
-- **添加**：`builtin.datastore.add_document` 通过集合名称定位，数据为 JSON 格式
+- **添加**：`datastore.add_document` 通过集合名称定位，数据为 JSON 格式
   - METRIC 类型集合必须提供 `recordedAt` 时间戳
-- **查询**：`builtin.datastore.query_documents` 支持过滤、排序和分页
+- **查询**：`datastore.query_documents` 支持过滤、排序和分页
   - 只适合精确结构化条件查询，例如字段过滤、排序、分页、按 ID/状态/分类精确查找
   - 过滤条件格式：`[{"field":"status","op":"EQ","value":"active"}]`
   - 支持的操作符：EQ、NE、GT、GTE、LT、LTE、CONTAINS、IN
   - 排序方向：ASC（升序）、DESC（降序）
 - **重要**：`query_documents` 不适合主题检索、资料问答、推荐、总结、架构/设定/说明类问题
-- 如果当前会话绑定了目标 Datastore，用户是在问“这个数据空间里的资料怎么说”“春季旅游”“架构是什么”“设定里提到什么”，即使只给出简短主题词，也应优先使用 `builtin.knowledge.search`
-- `builtin.knowledge.search` 会自动检索该 Datastore 关联的领域文档，以及 Datastore 结构化数据投影后的内容
-- **更新**：`builtin.datastore.update_document` 通过文档 ID 更新
-- **删除**：`builtin.datastore.delete_document` 通过文档 ID 删除
+- 如果当前会话绑定了目标 Datastore，用户是在问“这个数据空间里的资料怎么说”“春季旅游”“架构是什么”“设定里提到什么”，即使只给出简短主题词，也应优先使用 `knowledge.search`
+- `knowledge.search` 会自动检索该 Datastore 关联的领域文档，以及 Datastore 结构化数据投影后的内容
+- **更新**：`datastore.update_document` 通过文档 ID 更新
+- **删除**：`datastore.delete_document` 通过文档 ID 删除
 
 ### 聚合查询
 
-- `builtin.datastore.aggregate` 仅适用于 METRIC 类型集合
+- `datastore.aggregate` 仅适用于 METRIC 类型集合
 - 支持聚合函数：SUM、AVG、MIN、MAX、COUNT
 - 支持时间分组粒度：DAY、WEEK、MONTH
 - 可指定时间范围（`startTime`、`endTime`，ISO 8601 格式）
@@ -91,21 +91,21 @@ triggers:
 
 ### 创建并填充数据集合
 
-1. 用 `builtin.datastore.create_collection` 创建集合，定义属性结构
-2. 用 `builtin.datastore.add_document` 逐条添加文档
+1. 用 `datastore.create_collection` 创建集合，定义属性结构
+2. 用 `datastore.add_document` 逐条添加文档
 
 ### 查询与分析数据
 
-1. 用 `builtin.datastore.list_collections` 确认目标集合存在
-2. 如果是字段过滤、排序、分页，使用 `builtin.datastore.query_documents`
-3. 如果是主题、资料、说明、推荐类问题，使用 `builtin.knowledge.search`
-4. 对 METRIC 集合，用 `builtin.datastore.aggregate` 进行统计分析
+1. 用 `datastore.list_collections` 确认目标集合存在
+2. 如果是字段过滤、排序、分页，使用 `datastore.query_documents`
+3. 如果是主题、资料、说明、推荐类问题，使用 `knowledge.search`
+4. 对 METRIC 集合，用 `datastore.aggregate` 进行统计分析
 
 ### 数据维护
 
-1. 用 `builtin.datastore.query_documents` 找到目标文档
-2. 用 `builtin.datastore.update_document` 更新或 `builtin.datastore.delete_document` 删除
-3. 如需清空整个数据空间，用 `builtin.datastore.delete_collection` 删除集合本身
+1. 用 `datastore.query_documents` 找到目标文档
+2. 用 `datastore.update_document` 更新或 `datastore.delete_document` 删除
+3. 如需清空整个数据空间，用 `datastore.delete_collection` 删除集合本身
 
 ## 常见错误处理
 
@@ -116,4 +116,4 @@ triggers:
 - **聚合类型不匹配**：`aggregate` 仅支持 METRIC 类型集合
 - **属性定义格式错误**：`properties` 参数需为 JSON 数组，每项包含 `name`、`type`、`required` 字段
 - **projectionConfig 省略**：这是合法情况，系统会自动回退到默认投影配置 `{}`，不需要手工补空对象
-- **资料问题选错工具**：主题词、资料问答、架构/设定/说明类问题不要用 `query_documents`，改用 `builtin.knowledge.search`
+- **资料问题选错工具**：主题词、资料问答、架构/设定/说明类问题不要用 `query_documents`，改用 `knowledge.search`

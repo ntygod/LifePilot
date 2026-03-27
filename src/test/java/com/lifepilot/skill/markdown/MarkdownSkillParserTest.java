@@ -35,8 +35,8 @@ class MarkdownSkillParserTest {
             description: 帮助用户撰写高质量文章
             version: 2.0.0
             suggested-tools:
-              - builtin.todo.create
-              - builtin.memory.search
+              - todo.create
+              - memory.search
             ---
             
             你是一个专业的写作助手，帮助用户撰写高质量文章。
@@ -60,7 +60,7 @@ class MarkdownSkillParserTest {
         assertThat(def.name()).isEqualTo("写作助手");
         assertThat(def.description()).isEqualTo("帮助用户撰写高质量文章");
         assertThat(def.version()).isEqualTo("2.0.0");
-        assertThat(def.suggestedTools()).containsExactly("builtin.todo.create", "builtin.memory.search");
+        assertThat(def.suggestedTools()).containsExactly("todo.create", "memory.search");
         assertThat(def.instructions()).contains("专业的写作助手");
         assertThat(def.instructions()).contains("## 写作流程");
     }

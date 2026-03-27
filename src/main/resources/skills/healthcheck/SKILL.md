@@ -4,10 +4,10 @@ name: "系统健康检查"
 description: "检查系统运行状态、资源使用、服务健康度，生成诊断报告和修复建议"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.env.system-info
-  - builtin.env.datetime
-  - builtin.file.read
+  - shell.exec
+  - env.system-info
+  - env.datetime
+  - file.read
 triggers:
   - "系统检查"
   - "健康检查"
@@ -35,7 +35,7 @@ triggers:
 
 ### 1. 系统概览
 ```
-builtin.env.system-info()
+env.system-info()
 ```
 
 ### 2. 资源使用检查

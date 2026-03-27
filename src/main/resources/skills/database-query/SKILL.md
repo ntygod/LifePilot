@@ -4,9 +4,9 @@ name: "数据库查询"
 description: "连接数据库执行 SQL 查询、生成 SQL、导出数据。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.file.write
-  - builtin.file.read
+  - shell.exec
+  - file.write
+  - file.read
 triggers:
   - "数据库"
   - "SQL"

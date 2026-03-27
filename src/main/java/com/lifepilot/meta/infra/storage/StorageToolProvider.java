@@ -64,7 +64,7 @@ public class StorageToolProvider {
     /** 构建创建集合工具。 */
     private BuiltinTool buildCreateCollectionTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.create_collection")
+                .id("datastore.create_collection")
                 .name("创建集合")
                 .description("创建新的数据集合，支持 DOCUMENT（结构化列表）、NOTE（笔记）、METRIC（时序指标）三种类型")
                 .category(ToolCategory.STORAGE)
@@ -121,7 +121,7 @@ public class StorageToolProvider {
     /** 构建查询集合列表工具。 */
     private BuiltinTool buildListCollectionsTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.list_collections")
+                .id("datastore.list_collections")
                 .name("查询集合列表")
                 .description("查询所有数据集合，可按类型过滤")
                 .category(ToolCategory.STORAGE)
@@ -155,7 +155,7 @@ public class StorageToolProvider {
     /** 构建删除集合工具。 */
     private BuiltinTool buildDeleteCollectionTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.delete_collection")
+                .id("datastore.delete_collection")
                 .name("删除集合")
                 .description("按集合名称删除整个数据集合及其全部文档")
                 .category(ToolCategory.STORAGE)
@@ -197,7 +197,7 @@ public class StorageToolProvider {
     /** 构建添加文档工具。 */
     private BuiltinTool buildAddDocumentTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.add_document")
+                .id("datastore.add_document")
                 .name("添加集合文档")
                 .description("向指定集合添加 JSON 文档，通过集合名称定位")
                 .category(ToolCategory.STORAGE)
@@ -242,7 +242,7 @@ public class StorageToolProvider {
     /** 构建查询文档工具。 */
     private BuiltinTool buildQueryDocumentsTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.query_documents")
+                .id("datastore.query_documents")
                 .name("查询集合文档")
                 .description("按条件查询集合中的文档，支持过滤、排序和分页。" +
                         "用于精确结构化条件查询，例如字段过滤、排序、分页、按 ID/状态/分类精确查找。")
@@ -315,7 +315,7 @@ public class StorageToolProvider {
     /** 构建更新文档工具。 */
     private BuiltinTool buildUpdateDocumentTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.update_document")
+                .id("datastore.update_document")
                 .name("更新集合文档")
                 .description("根据文档 ID 更新文档数据")
                 .category(ToolCategory.STORAGE)
@@ -352,7 +352,7 @@ public class StorageToolProvider {
     /** 构建删除文档工具。 */
     private BuiltinTool buildDeleteDocumentTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.delete_document")
+                .id("datastore.delete_document")
                 .name("删除文档")
                 .description("根据文档 ID 删除文档")
                 .category(ToolCategory.STORAGE)
@@ -387,7 +387,7 @@ public class StorageToolProvider {
     /** 构建聚合查询工具。 */
     private BuiltinTool buildAggregateTool() {
         return BuiltinTool.builder()
-                .id("builtin.datastore.aggregate")
+                .id("datastore.aggregate")
                 .name("聚合查询")
                 .description("对 METRIC 类型集合执行时序聚合查询，支持 SUM/AVG/MIN/MAX/COUNT 函数和按天/周/月分组")
                 .category(ToolCategory.STORAGE)

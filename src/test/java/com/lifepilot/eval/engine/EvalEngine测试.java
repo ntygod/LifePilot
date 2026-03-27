@@ -194,7 +194,7 @@ class EvalEngine测试 {
     void registerMockTools_应覆盖同ID真实工具并在清理后恢复() throws Exception {
         DynamicToolRegistry realRegistry = new DynamicToolRegistry(mock(org.springframework.context.ApplicationEventPublisher.class));
         BuiltinTool originalTool = BuiltinTool.builder()
-                .id("builtin.knowledge.search")
+                .id("knowledge.search")
                 .name("原始检索资料")
                 .description("原始工具")
                 .inputSchema(JsonSchema.empty())
@@ -218,7 +218,7 @@ class EvalEngine测试 {
                 .id("domain-isolation-a")
                 .name("领域隔离 A")
                 .userInput("主角金手指是什么")
-                .expectedToolCalls(List.of("builtin.knowledge.search"))
+                .expectedToolCalls(List.of("knowledge.search"))
                 .dimensionWeights(Map.of(
                         "toolSelection", 0.2,
                         "parameterValidity", 0.2,
@@ -228,7 +228,7 @@ class EvalEngine测试 {
                 ))
                 .timeoutSeconds(30)
                 .mockTools(List.of(new MockToolSpec(
-                        "builtin.knowledge.search",
+                        "knowledge.search",
                         List.of(new MockToolSpec.MockBehavior(
                                 "主角金手指",
                                 "{\"results\":[{\"content\":\"主角金手指设定：时间回溯。\"}],\"count\":1}",
@@ -246,8 +246,8 @@ class EvalEngine测试 {
         registerMethod.setAccessible(true);
         List<Object> registrations = (List<Object>) registerMethod.invoke(evalEngine, scenario);
 
-        var overridden = realRegistry.resolve("builtin.knowledge.search").orElseThrow();
-        assertThat(overridden.name()).isEqualTo("mock-builtin.knowledge.search");
+        var overridden = realRegistry.resolve("knowledge.search").orElseThrow();
+        assertThat(overridden.name()).isEqualTo("mock-knowledge.search");
         var toolResult = overridden.execute(new ToolInput(
                 overridden.id(),
                 Map.of("query", "主角金手指"),
@@ -262,7 +262,7 @@ class EvalEngine测试 {
         unregisterMethod.setAccessible(true);
         unregisterMethod.invoke(evalEngine, registrations);
 
-        ToolContract restored = realRegistry.resolve("builtin.knowledge.search").orElseThrow();
+        ToolContract restored = realRegistry.resolve("knowledge.search").orElseThrow();
         assertThat(restored.name()).isEqualTo("原始检索资料");
     }
 

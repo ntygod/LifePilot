@@ -31,7 +31,7 @@ class UserProfileToolExecutorTest {
 
     @Test
     void execute_返回用户偏好信息() {
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
+        ToolInput input = new ToolInput("env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -42,7 +42,7 @@ class UserProfileToolExecutorTest {
     @Test
     void execute_时区为空时使用系统时区() {
         properties.getInfra().getUserProfile().setTimezone("");
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
+        ToolInput input = new ToolInput("env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -53,7 +53,7 @@ class UserProfileToolExecutorTest {
     @Test
     void execute_返回配置的时区() {
         properties.getInfra().getUserProfile().setTimezone("Europe/London");
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
+        ToolInput input = new ToolInput("env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -64,7 +64,7 @@ class UserProfileToolExecutorTest {
     @Test
     void execute_返回正确的cacheTtl() {
         properties.getInfra().getUserProfile().setCacheTtlSeconds(600);
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
+        ToolInput input = new ToolInput("env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 

@@ -14,7 +14,7 @@
 - **L3 语义记忆**：维护时序知识图谱，存放稳定事实、画像和经验实体
 - **L4 程序记忆**：存放偏好规则、操作模板和策略模式
 
-这套设计明确取消了“L1 作为对话缓存并 flush 到 L2”的旧链路。当前会话连续性直接来自会话层，跨会话对话检索通过 `builtin.memory.recall` 显式触发，L1 不再承载原始对话。
+这套设计明确取消了“L1 作为对话缓存并 flush 到 L2”的旧链路。当前会话连续性直接来自会话层，跨会话对话检索通过 `memory.recall` 显式触发，L1 不再承载原始对话。
 
 ## 2. 架构图
 
@@ -131,15 +131,15 @@ graph TB
 
 - `HybridRetriever` 继续负责 L3/L4 的混合检索，包含向量、FTS 和图遍历三路融合
 - `MemoryToolProvider` 当前注册 9 个记忆工具：
-  - `builtin.memory.search`
-  - `builtin.memory.recall`
-  - `builtin.knowledge.search`
-  - `builtin.memory.create`
-  - `builtin.memory.update`
-  - `builtin.memory.delete`
-  - `builtin.memory.tag`
-  - `builtin.memory.query-at-time`
-  - `builtin.memory.search-experience`
+  - `memory.search`
+  - `memory.recall`
+  - `knowledge.search`
+  - `memory.create`
+  - `memory.update`
+  - `memory.delete`
+  - `memory.tag`
+  - `memory.query-at-time`
+  - `memory.search-experience`
 - 其中 `recall` 只在工具调用时显式触发，不会自动把别的 session 对话塞进主 prompt
 
 ### 3.7 ConsolidationPipeline 与 ForgettingEngine
@@ -153,7 +153,7 @@ graph TB
 - `ExperienceSummarizer`、`EffectivenessTracker`、`ContrastiveLearner`、`SubtaskReflector` 继续保留
 - 经验写入 L3 的 `EXPERIENCE` 实体
 - `ContextAssembler` 会按重要度和适用条件自动注入少量经验
-- `builtin.memory.search-experience` 允许 Agent 主动检索经验
+- `memory.search-experience` 允许 Agent 主动检索经验
 
 ## 4. 核心流程
 
@@ -192,7 +192,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Agent as Agent
-    participant Tool as builtin.memory.recall
+    participant Tool as memory.recall
     participant EM as EpisodicMemory
     participant FTS as chat_messages_fts
     participant DB as chat_messages
@@ -240,7 +240,7 @@ sequenceDiagram
 | Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 读取最近轮次、工作区、用户画像和经验 |
 | 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
 | 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
-| 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `builtin.knowledge.search` 工具通过知识库检索补充外部文档片段 |
+| 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `knowledge.search` 工具通过知识库检索补充外部文档片段 |
 
 ## 7. 配置参考
 

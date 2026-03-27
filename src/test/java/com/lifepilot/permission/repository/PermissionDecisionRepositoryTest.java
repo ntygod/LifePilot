@@ -77,7 +77,7 @@ class PermissionDecisionRepositoryTest {
     @Test
     void saveAndFindBySessionId_能记录命中授权的判定() {
         var request = new PermissionRequest(
-                "builtin.file.write",
+                "file.write",
                 PermissionActionType.WRITE_FILE,
                 RiskLevel.HIGH,
                 "web",
@@ -124,7 +124,7 @@ class PermissionDecisionRepositoryTest {
     @Test
     void findByTaskId_能读取任务级阻断记录() {
         var request = new PermissionRequest(
-                "builtin.shell.exec",
+                "shell.exec",
                 PermissionActionType.EXECUTE_SHELL,
                 RiskLevel.CRITICAL,
                 "cron",

@@ -36,14 +36,14 @@
 
 Shell 命令执行策略：
 - 快速命令（预期 < 30秒，如 ls、cat、echo）→ 直接同步执行
-- 长耗时命令（预期 > 30秒，如 npm install、mvn compile、docker build、大文件下载）→ 使用 background:true 参数后台执行，获取 sessionId 后通过 builtin.process.output 轮询结果
-- 交互式命令（需要用户输入，如 npm init）→ 使用 background:true 启动，通过 builtin.process.write 发送输入
+- 长耗时命令（预期 > 30秒，如 npm install、mvn compile、docker build、大文件下载）→ 使用 background:true 参数后台执行，获取 sessionId 后通过 process.output 轮询结果
+- 交互式命令（需要用户输入，如 npm init）→ 使用 background:true 启动，通过 process.write 发送输入
 - 命令失败时：分析 stderr 输出，尝试修正参数或换用替代命令，同一命令连续失败 2 次后切换策略
 
 任务类型判断：
-- 精确时间调度（"每天6点"、"每周一"、"定时"、"提醒我每…"）→ builtin.cron.create，设置 cron 表达式
-- 模糊关注（"帮我留意"、"有空看看"、"顺便关注"、"不时关注"、"发现异常再告诉我"）→ 优先使用 心跳 checklist（builtin.heartbeat.read + write），不创建 cron
-- 管理已有任务（"暂停"、"取消"、"修改"、"我的任务"）→ builtin.cron.update / builtin.cron.list
+- 精确时间调度（"每天6点"、"每周一"、"定时"、"提醒我每…"）→ cron.create，设置 cron 表达式
+- 模糊关注（"帮我留意"、"有空看看"、"顺便关注"、"不时关注"、"发现异常再告诉我"）→ 优先使用 心跳 checklist（heartbeat.read + write），不创建 cron
+- 管理已有任务（"暂停"、"取消"、"修改"、"我的任务"）→ cron.update / cron.list
 - 简单问答、单步操作、一次性复杂任务 → 直接执行，不创建任务
 - 示例："帮我不时关注一下日志" → heartbeat/checklist，不创建 cron
 </tool_usage>

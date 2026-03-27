@@ -4,15 +4,15 @@ name: "网文写作"
 description: "网文创作助手：选题立项、书名简介、世界观与角色设定、主线/卷纲/章纲设计、单章正文、续写、改稿、爽点与悬念优化、连载节奏维护。适用于玄幻、都市、言情、悬疑、历史等网络小说创作，以及已绑定 Datastore/Knowledge Base 时的设定检索与一致性校对。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.knowledge.search
-  - builtin.datastore.create_collection
-  - builtin.datastore.add_document
-  - builtin.datastore.query_documents
-  - builtin.datastore.update_document
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.web.search
-  - builtin.memory.search
+  - knowledge.search
+  - datastore.create_collection
+  - datastore.add_document
+  - datastore.query_documents
+  - datastore.update_document
+  - file.read
+  - file.write
+  - web.search
+  - memory.search
 triggers:
   - "写网文"
   - "网文"
@@ -72,7 +72,7 @@ triggers:
 - 卷纲/章纲
 - 术语和地名
 
-优先使用 `builtin.knowledge.search` 检索资料，再继续写作或判断。
+优先使用 `knowledge.search` 检索资料，再继续写作或判断。
 
 ### 网文优先连载感
 
@@ -98,13 +98,13 @@ triggers:
 
 ### 资料检索
 
-- `builtin.knowledge.search`
+- `knowledge.search`
   用于检索已绑定资料中的角色、设定、前文、伏笔、卷纲、术语
 - 用户只说简短主题词，例如“春季旅游”属于资料型主题检索；网文场景里类似“林砚的人设”“第三卷主线”“金手指规则”也优先走这类检索
 
 ### 结构化查询
 
-- `builtin.datastore.query_documents`
+- `datastore.query_documents`
   只用于精确结构化查询，例如：
   - 查某个角色卡
   - 查某条伏笔
@@ -115,14 +115,14 @@ triggers:
 ### 资料沉淀
 
 - 用户要求“记住这套设定”“把人物表存起来”“维护伏笔台账”时，再使用：
-  - `builtin.datastore.create_collection`
-  - `builtin.datastore.add_document`
-  - `builtin.datastore.update_document`
+  - `datastore.create_collection`
+  - `datastore.add_document`
+  - `datastore.update_document`
 - 如果用户说“帮我创建网文数据空间”“搭一个小说工作台”“先把设定库建起来”，默认按下方“单集合工作台”方案建库，不要一上来拆成多个集合
 
 ### 外部参考
 
-- `builtin.web.search`
+- `web.search`
   只在这些情况使用：
   - 用户明确要求查平台趋势、题材热点、投稿方向
   - 用户要现实背景资料、历史细节、职业细节

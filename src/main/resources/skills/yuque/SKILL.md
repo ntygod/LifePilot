@@ -4,9 +4,9 @@ name: "语雀知识库"
 description: "语雀操作：创建文档、管理知识库、搜索内容。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.http.request
-  - builtin.file.read
-  - builtin.file.write
+  - http.request
+  - file.read
+  - file.write
 triggers:
   - "语雀"
   - "语雀文档"
@@ -39,7 +39,7 @@ triggers:
 
 ### 获取知识库列表
 ```
-builtin.http.request(
+http.request(
   url="https://www.yuque.com/api/v2/users/${user}/repos",
   method="GET",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}"}
@@ -48,7 +48,7 @@ builtin.http.request(
 
 ### 创建文档
 ```
-builtin.http.request(
+http.request(
   url="https://www.yuque.com/api/v2/repos/${namespace}/docs",
   method="POST",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}", "Content-Type": "application/json"},
@@ -58,7 +58,7 @@ builtin.http.request(
 
 ### 搜索文档
 ```
-builtin.http.request(
+http.request(
   url="https://www.yuque.com/api/v2/search?q=${关键词}&type=doc",
   method="GET",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}"}
@@ -67,7 +67,7 @@ builtin.http.request(
 
 ### 更新文档
 ```
-builtin.http.request(
+http.request(
   url="https://www.yuque.com/api/v2/repos/${namespace}/docs/${slug}",
   method="PUT",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}", "Content-Type": "application/json"},
