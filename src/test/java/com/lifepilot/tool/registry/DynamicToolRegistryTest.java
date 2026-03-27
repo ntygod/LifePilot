@@ -87,6 +87,29 @@ class DynamicToolRegistryTest {
     }
 
     @Test
+    void 通用注销可移除单个Builtin工具() {
+        BuiltinTool tool = createBuiltinTool("builtin.echo", "Echo");
+        registry.registerBuiltinTool(tool);
+
+        assertTrue(registry.unregisterTool("builtin.echo"));
+        assertTrue(registry.resolve("builtin.echo").isEmpty());
+        assertEquals(0, registry.getAllTools().size());
+    }
+
+    @Test
+    void 通用注销可移除单个Mcp工具且更新Server索引() {
+        McpTool tool1 = createMcpTool("mcp.tool1", "Tool1");
+        McpTool tool2 = createMcpTool("mcp.tool2", "Tool2");
+        registry.registerMcpTools("server1", List.of(tool1, tool2));
+
+        assertTrue(registry.unregisterTool("mcp.tool1"));
+        assertTrue(registry.resolve("mcp.tool1").isEmpty());
+        assertTrue(registry.resolve("mcp.tool2").isPresent());
+        assertEquals(List.of("mcp.tool2"),
+                registry.getToolsByServer("server1").stream().map(ToolContract::id).toList());
+    }
+
+    @Test
     void 快照不可变性() {
         BuiltinTool tool = createBuiltinTool("test.echo", "Echo");
         registry.registerBuiltinTool(tool);
