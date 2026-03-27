@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统：procedural / consolidation / forgetting）
-> **最后更新**：2026-03-18
+> **最后更新**：2026-03-27
 
 ## 1. 模块概述
 
