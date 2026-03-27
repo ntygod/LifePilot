@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Search,
   Plus,
   Pencil,
   Archive,
   RotateCcw,
+  ArrowUpRight,
 } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
 import type {
@@ -181,6 +183,7 @@ const REALITY_TYPE_OPTIONS = [
 ] as const
 
 const store = useMemoryStore()
+const router = useRouter()
 
 // ── 数据加载 ──
 async function loadEntities() {
@@ -508,6 +511,33 @@ function buildProvenanceDetails(item: EntityProvenance) {
     { label: '文档', value: buildNamedReference(item.sourceDocumentName, item.sourceDocumentId) },
   ]
   return details.filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
+}
+
+function canOpenKnowledgeBase(item: EntityProvenance) {
+  return Boolean(item.sourceKnowledgeBaseId)
+}
+
+function canOpenDocument(item: EntityProvenance) {
+  return Boolean(item.sourceKnowledgeBaseId && item.sourceDocumentId)
+}
+
+function openKnowledgeBase(item: EntityProvenance) {
+  if (!item.sourceKnowledgeBaseId) return
+  void router.push({
+    name: 'knowledgeBaseDetail',
+    params: { id: item.sourceKnowledgeBaseId },
+  })
+}
+
+function openDocument(item: EntityProvenance) {
+  if (!item.sourceKnowledgeBaseId || !item.sourceDocumentId) return
+  void router.push({
+    name: 'knowledgeBaseDocumentDetail',
+    params: {
+      id: item.sourceKnowledgeBaseId,
+      docId: item.sourceDocumentId,
+    },
+  })
 }
 </script>
 
@@ -904,7 +934,31 @@ function buildProvenanceDetails(item: EntityProvenance) {
                         置信度 {{ (item.confidence * 100).toFixed(0) }}%
                       </span>
                     </div>
-                    <span class="text-xs text-muted-foreground">{{ formatDate(item.createdAt) }}</span>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Button
+                        v-if="canOpenKnowledgeBase(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-kb"
+                        @click="openKnowledgeBase(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看知识库
+                      </Button>
+                      <Button
+                        v-if="canOpenDocument(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-doc"
+                        @click="openDocument(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看文档
+                      </Button>
+                      <span class="text-xs text-muted-foreground">{{ formatDate(item.createdAt) }}</span>
+                    </div>
                   </div>
                   <div class="mt-3 grid gap-2 text-sm">
                     <div

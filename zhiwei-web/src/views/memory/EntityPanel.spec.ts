@@ -15,6 +15,9 @@ const mocks = vi.hoisted(() => ({
     entityDetailRequest: null as { id: string; requestedAt: number } | null,
     clearEntityDetailRequest: vi.fn(),
   },
+  router: {
+    push: vi.fn(),
+  },
 }))
 
 vi.mock('@/api/client', () => ({
@@ -33,6 +36,14 @@ vi.mock('@/api/client', () => ({
 vi.mock('@/stores/memory', () => ({
   useMemoryStore: () => mocks.memoryStore,
 }))
+
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return {
+    ...actual,
+    useRouter: () => mocks.router,
+  }
+})
 
 function mountPanel() {
   return shallowMount(EntityPanel, {
@@ -87,6 +98,7 @@ beforeEach(() => {
   mocks.createEntity.mockReset()
   mocks.updateEntity.mockReset()
   mocks.deleteEntity.mockReset()
+  mocks.router.push.mockReset()
   mocks.memoryStore.entityDetailRequest = null
   mocks.memoryStore.clearEntityDetailRequest.mockReset()
 
@@ -210,6 +222,33 @@ describe('EntityPanel 记忆元数据展示', () => {
       sourceKnowledgeBaseId: 'kb-42',
       sourceDatastoreId: 'ds-42',
       sourceDocumentId: 'doc-42',
+    })
+  })
+
+  it('来源明细支持跳转到知识库和文档详情', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('tbody tr').trigger('click')
+    await flushPromises()
+
+    const buttons = wrapper.findAll('button')
+    const openKbButton = buttons.find(button => button.text().includes('查看知识库'))
+    const openDocButton = buttons.find(button => button.text().includes('查看文档'))
+
+    expect(openKbButton).toBeTruthy()
+    expect(openDocButton).toBeTruthy()
+
+    await openKbButton!.trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'knowledgeBaseDetail',
+      params: { id: 'kb-1' },
+    })
+
+    await openDocButton!.trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'knowledgeBaseDocumentDetail',
+      params: { id: 'kb-1', docId: 'doc-1' },
     })
   })
 })
