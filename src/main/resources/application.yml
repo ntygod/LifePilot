@@ -387,7 +387,7 @@ lifepilot:
         code-block-density-threshold: 0.3
         semantic-chunking-threshold: 5000
       semantic-chunking:
-        enabled: false
+        enabled: true
         breakpoint-threshold: 0.5
         buffer-size: 1
         min-chunk-size: 100
@@ -425,7 +425,7 @@ lifepilot:
       api-endpoint: ""
       api-timeout-ms: 5000
     query-enhancer:
-      mode: none
+      mode: rewrite
       timeout-ms: 3000
       max-rewrites: 3
   datasource:

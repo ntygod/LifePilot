@@ -32,8 +32,25 @@ public record Collection(
         @Nullable String propertiesJson,
         @Nullable String projectionConfigJson,
         @Nullable String metadataJson,
+        @Nullable String defaultKnowledgeBaseId,
         @Nullable String createdBy,
         String createdAt,
         String updatedAt
 ) {
+
+    public Collection(
+            String id,
+            String name,
+            @Nullable String description,
+            CollectionType type,
+            @Nullable String propertiesJson,
+            @Nullable String projectionConfigJson,
+            @Nullable String metadataJson,
+            @Nullable String createdBy,
+            String createdAt,
+            String updatedAt
+    ) {
+        this(id, name, description, type, propertiesJson, projectionConfigJson, metadataJson,
+                null, createdBy, createdAt, updatedAt);
+    }
 }

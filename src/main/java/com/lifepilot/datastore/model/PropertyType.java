@@ -1,5 +1,7 @@
 package com.lifepilot.datastore.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+
 /**
  * 属性类型枚举。
  *
@@ -37,6 +39,26 @@ public enum PropertyType {
 
     /** JSON 对象或数组。 */
     JSON;
+
+    /**
+     * 兼容常见别名输入，减少工具调用时的枚举误用。
+     *
+     * @param value 枚举字面量或别名
+     * @return 归一化后的属性类型
+     */
+    @JsonCreator
+    public static PropertyType fromValue(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("PropertyType 不能为空");
+        }
+        String normalized = value.strip().toUpperCase();
+        return switch (normalized) {
+            case "INT", "INTEGER", "REAL", "FLOAT", "DOUBLE", "DECIMAL", "LONG" -> NUMBER;
+            case "STRING", "STR" -> TEXT;
+            case "BOOL" -> BOOLEAN;
+            default -> PropertyType.valueOf(normalized);
+        };
+    }
 
     /**
      * 判断该类型是否支持 Generated Column 索引。

@@ -188,7 +188,7 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册存储工具提供者 — 注册 7 个数据存储 CRUD 工具。
+     * 注册存储工具提供者 — 注册 8 个数据存储 CRUD 工具。
      *
      * <p>依赖 DataStoreManager（来自 datastore 模块）。</p>
      */

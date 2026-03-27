@@ -8,7 +8,7 @@ suggested-tools:
   - builtin.web.search
   - builtin.file.read
   - builtin.file.write
-  - builtin.memory.search-docs
+  - builtin.knowledge.search
 triggers:
   - "总结"
   - "摘要"

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -50,8 +51,9 @@ public class KnowledgeBaseRepository {
                 INSERT INTO knowledge_bases (
                     id, name, description, embedding_model, reranker_model,
                     chunking_strategy, chunking_config_json,
-                    document_count, total_chunks, tags, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    document_count, total_chunks, tags, created_at, updated_at,
+                    system_managed, owner_datastore_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
@@ -62,12 +64,14 @@ public class KnowledgeBaseRepository {
                     document_count = excluded.document_count,
                     total_chunks = excluded.total_chunks,
                     tags = excluded.tags,
+                    system_managed = excluded.system_managed,
+                    owner_datastore_id = excluded.owner_datastore_id,
                     updated_at = excluded.updated_at
                 """,
                 kb.id(),
                 kb.name(),
                 kb.description(),
-                kb.embeddingModel(),
+                normalizeEmbeddingModelForPersistence(kb.embeddingModel()),
                 kb.rerankerModel(),
                 kb.chunkingStrategy(),
                 serializeMap(kb.chunkingConfig()),
@@ -75,7 +79,9 @@ public class KnowledgeBaseRepository {
                 kb.totalChunks(),
                 serializeList(kb.tags()),
                 kb.createdAt().toString(),
-                kb.updatedAt().toString());
+                kb.updatedAt().toString(),
+                kb.systemManaged() ? 1 : 0,
+                kb.ownerDatastoreId());
     }
 
     /**
@@ -98,7 +104,7 @@ public class KnowledgeBaseRepository {
      */
     public List<KnowledgeBase> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM knowledge_bases ORDER BY created_at DESC",
+                "SELECT * FROM knowledge_bases WHERE system_managed = 0 ORDER BY created_at DESC",
                 rowMapper);
     }
 
@@ -111,7 +117,7 @@ public class KnowledgeBaseRepository {
      * @return 知识库列表
      */
     public List<KnowledgeBase> findByConditions(String q, String tags, String timeRange) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM knowledge_bases WHERE 1=1");
+        StringBuilder sql = new StringBuilder("SELECT * FROM knowledge_bases WHERE system_managed = 0");
         List<Object> params = new java.util.ArrayList<>();
 
         // 关键词搜索
@@ -169,6 +175,25 @@ public class KnowledgeBaseRepository {
     }
 
     /**
+     * 根据 owner_datastore_id 查询系统管理的内部知识库。
+     *
+     * @param datastoreId Datastore ID
+     * @return 内部知识库 Optional
+     */
+    public Optional<KnowledgeBase> findSystemManagedByOwnerDatastoreId(String datastoreId) {
+        List<KnowledgeBase> results = jdbcTemplate.query(
+                """
+                SELECT * FROM knowledge_bases
+                WHERE owner_datastore_id = ?
+                  AND system_managed = 1
+                ORDER BY created_at ASC
+                """,
+                rowMapper,
+                datastoreId);
+        return results.stream().findFirst();
+    }
+
+    /**
      * 更新知识库的文档数和分块数。
      *
      * @param id          知识库 id
@@ -188,7 +213,7 @@ public class KnowledgeBaseRepository {
                 rs.getString("id"),
                 rs.getString("name"),
                 rs.getString("description"),
-                rs.getString("embedding_model"),
+                normalizeEmbeddingModelForDomain(rs.getString("embedding_model")),
                 rs.getString("reranker_model"),
                 rs.getString("chunking_strategy"),
                 deserializeMap(rs.getString("chunking_config_json")),
@@ -197,8 +222,29 @@ public class KnowledgeBaseRepository {
                 deserializeStringList(rs.getString("tags")),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at")),
+                rs.getInt("system_managed") == 1,
+                rs.getString("owner_datastore_id"),
                 List.of()
         );
+    }
+
+    private String normalizeEmbeddingModelForPersistence(@Nullable String embeddingModel) {
+        if (embeddingModel == null || embeddingModel.isBlank()) {
+            return "default";
+        }
+        return embeddingModel.strip();
+    }
+
+    @Nullable
+    private String normalizeEmbeddingModelForDomain(@Nullable String embeddingModel) {
+        if (embeddingModel == null) {
+            return null;
+        }
+        String normalized = embeddingModel.strip();
+        if (normalized.isBlank() || "default".equalsIgnoreCase(normalized)) {
+            return null;
+        }
+        return normalized;
     }
 
     /** Map 序列化为 JSON 字符串。 */

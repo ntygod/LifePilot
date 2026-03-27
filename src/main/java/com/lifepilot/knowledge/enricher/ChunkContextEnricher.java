@@ -352,7 +352,10 @@ public class ChunkContextEnricher {
                 chunk.contentHash(),
                 chunk.headingHierarchy(),
                 chunk.pageNumber(),
-                chunk.metadata()
+                chunk.metadata(),
+                chunk.sourceType(),
+                chunk.sourceDatastoreId(),
+                chunk.sourceCollectionId()
         );
     }
 }

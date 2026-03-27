@@ -9,6 +9,8 @@ com.lifepilot.agent.task.config.TaskAutoConfiguration
 com.lifepilot.agent.suspend.config.SuspendAutoConfiguration
 com.lifepilot.mcp.config.McpAutoConfiguration
 com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
+com.lifepilot.knowledge.config.KnowledgeEnhancementAutoConfiguration
+com.lifepilot.knowledge.config.KnowledgeRuntimeAutoConfiguration
 com.lifepilot.skill.config.SkillAutoConfiguration
 com.lifepilot.interaction.config.GatewayAutoConfiguration
 com.lifepilot.interaction.config.GatewayMiddlewareAutoConfiguration

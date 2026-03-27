@@ -13,6 +13,7 @@ import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
 import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
+import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.datastore.validation.PropertyValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,8 @@ public class DataStoreManager {
     private final DataStoreProperties properties;
     @Nullable
     private final DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher;
+    @Nullable
+    private final DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner;
 
     public DataStoreManager(CollectionRepository collectionRepository,
                             DocumentRepository documentRepository,
@@ -64,7 +67,7 @@ public class DataStoreManager {
                             PropertyValidator propertyValidator,
                             DataStoreProperties properties) {
         this(collectionRepository, documentRepository, queryEngine, aggregationEngine,
-                propertyValidator, properties, null);
+                propertyValidator, properties, null, null);
     }
 
     public DataStoreManager(CollectionRepository collectionRepository,
@@ -74,6 +77,18 @@ public class DataStoreManager {
                             PropertyValidator propertyValidator,
                             DataStoreProperties properties,
                             @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher) {
+        this(collectionRepository, documentRepository, queryEngine, aggregationEngine,
+                propertyValidator, properties, knowledgeSyncPublisher, null);
+    }
+
+    public DataStoreManager(CollectionRepository collectionRepository,
+                            DocumentRepository documentRepository,
+                            QueryEngine queryEngine,
+                            AggregationEngine aggregationEngine,
+                            PropertyValidator propertyValidator,
+                            DataStoreProperties properties,
+                            @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher,
+                            @Nullable DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner) {
         this.collectionRepository = collectionRepository;
         this.documentRepository = documentRepository;
         this.queryEngine = queryEngine;
@@ -81,6 +96,7 @@ public class DataStoreManager {
         this.propertyValidator = propertyValidator;
         this.properties = properties;
         this.knowledgeSyncPublisher = knowledgeSyncPublisher;
+        this.datastoreKnowledgeBaseProvisioner = datastoreKnowledgeBaseProvisioner;
     }
 
     // ---- 集合操作 ----
@@ -124,7 +140,8 @@ public class DataStoreManager {
         }
 
         // 2. 名称唯一性检查
-        if (collectionRepository.findByName(name).isPresent()) {
+        var existingCollection = collectionRepository.findByName(name);
+        if (existingCollection.isPresent()) {
             throw new IllegalArgumentException("集合名称已存在: " + name);
         }
 
@@ -142,23 +159,43 @@ public class DataStoreManager {
                 .build();
 
         String collectionId = collectionRepository.insert(collection);
+        try {
+            collection = collectionRepository.findById(collectionId).orElseThrow(
+                    () -> new IllegalStateException("集合创建后查询失败: id=" + collectionId));
 
-        // 5. 为可索引属性创建 Generated Column
-        if (propDefs != null && !propDefs.isEmpty()) {
-            for (var prop : propDefs) {
-                if (prop.type().isIndexable()) {
-                    String affinity = prop.type().toSqliteAffinity();
-                    collectionRepository.addGeneratedColumn(prop.name(), affinity, collectionId);
+            // 5. 为可索引属性创建 Generated Column
+            if (propDefs != null && !propDefs.isEmpty()) {
+                for (var prop : propDefs) {
+                    if (prop.type().isIndexable()) {
+                        String affinity = prop.type().toSqliteAffinity();
+                        collectionRepository.addGeneratedColumn(prop.name(), affinity, collectionId);
+                    }
                 }
             }
+
+            log.info("集合创建完成: id={}, name={}, type={}, 属性数={}", collectionId, name, type,
+                    propDefs != null ? propDefs.size() : 0);
+
+            // 6. 自动确保内部知识库
+            if (datastoreKnowledgeBaseProvisioner != null) {
+                String defaultKnowledgeBaseId = datastoreKnowledgeBaseProvisioner.ensureDefaultKnowledgeBase(collection);
+                if (defaultKnowledgeBaseId == null || defaultKnowledgeBaseId.isBlank()) {
+                    throw new IllegalStateException("Datastore 默认知识库创建失败: 未返回知识库 ID");
+                }
+                boolean updated = collectionRepository.updateDefaultKnowledgeBaseId(collectionId, defaultKnowledgeBaseId);
+                if (!updated) {
+                    throw new IllegalStateException("Datastore 默认知识库回填失败: datastoreId=" + collectionId);
+                }
+                log.info("Datastore 已绑定内部知识库: datastoreId={}, knowledgeBaseId={}", collectionId, defaultKnowledgeBaseId);
+            }
+
+            // 7. 返回完整集合
+            return collectionRepository.findById(collectionId).orElseThrow(
+                    () -> new IllegalStateException("集合创建后查询失败: id=" + collectionId));
+        } catch (RuntimeException e) {
+            cleanupFailedCollectionCreation(collection, e);
+            throw e;
         }
-
-        log.info("集合创建完成: id={}, name={}, type={}, 属性数={}", collectionId, name, type,
-                propDefs != null ? propDefs.size() : 0);
-
-        // 6. 返回完整集合
-        return collectionRepository.findById(collectionId).orElseThrow(
-                () -> new IllegalStateException("集合创建后查询失败: id=" + collectionId));
     }
 
     /**
@@ -273,6 +310,11 @@ public class DataStoreManager {
         if (knowledgeSyncPublisher != null) {
             knowledgeSyncPublisher.publishDatastorePurge(id);
         }
+        if (datastoreKnowledgeBaseProvisioner != null) {
+            datastoreKnowledgeBaseProvisioner.deleteDefaultKnowledgeBase(collection);
+            log.info("Datastore 内部知识库删除已提交: datastoreId={}, knowledgeBaseId={}",
+                    collection.id(), collection.defaultKnowledgeBaseId());
+        }
         boolean deleted = collectionRepository.delete(id);
         if (deleted) {
             log.info("集合删除完成: id={}, name={}", id, collection.name());
@@ -377,6 +419,18 @@ public class DataStoreManager {
      */
     public Optional<Document> getDocument(String id) {
         return documentRepository.findById(id);
+    }
+
+    /**
+     * 列出集合下的所有原始结构化文档。
+     *
+     * @param collectionId 集合 ID
+     * @return 文档列表
+     */
+    public List<Document> listDocuments(String collectionId) {
+        collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
+        return List.copyOf(documentRepository.findByCollectionId(collectionId));
     }
 
     /**
@@ -613,6 +667,24 @@ public class DataStoreManager {
 
     private String normalizeProjectionConfigJson(@Nullable String projectionConfigJson) {
         return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
+    }
+
+    private void cleanupFailedCollectionCreation(Collection collection, RuntimeException cause) {
+        log.warn("集合创建失败，开始清理半成品: id={}, name={}", collection.id(), collection.name(), cause);
+        if (datastoreKnowledgeBaseProvisioner != null) {
+            try {
+                datastoreKnowledgeBaseProvisioner.deleteDefaultKnowledgeBase(collection);
+            } catch (Exception cleanupEx) {
+                log.error("清理 Datastore 默认知识库失败: datastoreId={}", collection.id(), cleanupEx);
+                cause.addSuppressed(cleanupEx);
+            }
+        }
+        try {
+            collectionRepository.delete(collection.id());
+        } catch (Exception cleanupEx) {
+            log.error("清理半成品集合失败: datastoreId={}", collection.id(), cleanupEx);
+            cause.addSuppressed(cleanupEx);
+        }
     }
 
     /**

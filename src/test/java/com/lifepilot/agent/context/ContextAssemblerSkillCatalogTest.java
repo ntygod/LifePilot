@@ -3,12 +3,20 @@ package com.lifepilot.agent.context;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.datastore.model.Collection;
+import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.repository.CollectionRepository;
+import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -189,6 +197,63 @@ class ContextAssemblerSkillCatalogTest {
                 .contains("当前时区")
                 .contains("当前操作系统")
                 .contains("analyze logs after 2026-03-21 00:00");
+    }
+
+    @Test
+    void buildUserPrompt_whenSessionBoundToDatastoreAndKnowledgeBase_appendsBindingHints() {
+        var config = buildConfig();
+        var promptRegistry = mock(PromptRegistry.class);
+        var sessionKnowledgeBaseRepository = mock(SessionKnowledgeBaseRepository.class);
+        var sessionDatastoreRepository = mock(SessionDatastoreRepository.class);
+        var knowledgeBaseRepository = mock(KnowledgeBaseRepository.class);
+        var collectionRepository = mock(CollectionRepository.class);
+
+        when(promptRegistry.render(eq("agent/react-user-prompt"), anyMap())).thenReturn("""
+                <runtime_context>
+                - 当前时间: 2026-03-27T16:55:12+08:00
+                - 当前时区: Asia/Shanghai
+                - 当前操作系统: Windows 11 10.0
+                - 当前通道: web
+                </runtime_context>
+
+                <current_request>
+                春季旅游
+                </current_request>
+                """.trim());
+        when(sessionDatastoreRepository.findDatastoreIdsBySessionId("session-1"))
+                .thenReturn(List.of("ds-xhs"));
+        when(sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId("session-1"))
+                .thenReturn(List.of("kb-xhs"));
+        when(collectionRepository.findById("ds-xhs"))
+                .thenReturn(java.util.Optional.of(new Collection(
+                        "ds-xhs", "小红书集合", "春季旅游素材", CollectionType.DOCUMENT,
+                        null, "{}", null, null, null, Instant.now().toString(), Instant.now().toString()
+                )));
+        when(knowledgeBaseRepository.findById("kb-xhs"))
+                .thenReturn(java.util.Optional.of(new KnowledgeBase(
+                        "kb-xhs", "小红书资料库", "", null, null, "smart", Map.of(),
+                        0, 0, List.of(), Instant.now(), Instant.now(), false, null, List.of()
+                )));
+
+        var assembler = new ContextAssembler(
+                config,
+                promptRegistry,
+                null, null, null, null, null, null,
+                null, null,
+                sessionKnowledgeBaseRepository,
+                sessionDatastoreRepository,
+                knowledgeBaseRepository,
+                collectionRepository
+        );
+
+        String result = assembler.buildUserPrompt(buildState("web", "春季旅游"));
+
+        assertThat(result)
+                .contains("<active_knowledge_bindings>")
+                .contains("小红书集合 (ds-xhs)")
+                .contains("小红书资料库 (kb-xhs)")
+                .contains("当前会话可访问的资料范围")
+                .doesNotContain("builtin.knowledge.search");
     }
 
     @Test

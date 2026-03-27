@@ -121,14 +121,14 @@ public class FtsIndexer {
             return List.of();
         }
 
-        ScopeSql scopeSql = buildScopeSql("fts.knowledge_base_id", "dc.source_datastore_id", scopes);
+        ScopeSql scopeSql = buildScopeSql("dc.knowledge_base_id", "dc.source_datastore_id", scopes);
         var sql = """
-                SELECT fts.chunk_id, fts.document_id, fts.knowledge_base_id, fts.content,
+                SELECT dc.id AS chunk_id, dc.document_id, dc.knowledge_base_id, dc.content,
                        dc.context_prefix, dc.heading_hierarchy_json, dc.metadata_json,
                        dc.source_type, dc.source_datastore_id, dc.source_collection_id,
                        rank AS score
                 FROM document_chunks_fts fts
-                JOIN document_chunks dc ON fts.chunk_id = dc.id
+                JOIN document_chunks dc ON fts.rowid = dc.rowid
                 WHERE document_chunks_fts MATCH ?
                   AND (%s)
                 ORDER BY rank

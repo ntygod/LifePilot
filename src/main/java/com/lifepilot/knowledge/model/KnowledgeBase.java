@@ -29,6 +29,8 @@ public record KnowledgeBase(
         List<String> tags,
         Instant createdAt,
         Instant updatedAt,
+        boolean systemManaged,
+        @Nullable String ownerDatastoreId,
         List<String> datastoreIds
 ) {
 
@@ -51,7 +53,8 @@ public record KnowledgeBase(
             Instant updatedAt
     ) {
         this(id, name, description, embeddingModel, rerankerModel, chunkingStrategy,
-                chunkingConfig, documentCount, totalChunks, tags, createdAt, updatedAt, List.of());
+                chunkingConfig, documentCount, totalChunks, tags, createdAt, updatedAt,
+                false, null, List.of());
     }
 
     /**
@@ -84,6 +87,30 @@ public record KnowledgeBase(
                 chunkingConfig != null ? chunkingConfig : Map.of(),
                 0, 0,
                 tags != null ? tags : List.of(),
-                now, now, List.of());
+                now, now, false, null, List.of());
+    }
+
+    public static KnowledgeBase createSystemManagedForDatastore(String datastoreId,
+                                                                String datastoreName,
+                                                                @Nullable String embeddingModel,
+                                                                @Nullable String rerankerModel) {
+        Instant now = Instant.now();
+        return new KnowledgeBase(
+                UUID.randomUUID().toString(),
+                datastoreName + " · 内部资料库",
+                "系统为 Datastore「" + datastoreName + "」自动维护的内部知识库",
+                embeddingModel,
+                rerankerModel,
+                "smart",
+                Map.of(),
+                0,
+                0,
+                List.of("system", "datastore"),
+                now,
+                now,
+                true,
+                datastoreId,
+                List.of(datastoreId)
+        );
     }
 }

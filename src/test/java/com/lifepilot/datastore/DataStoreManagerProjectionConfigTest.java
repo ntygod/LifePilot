@@ -163,6 +163,7 @@ class DataStoreManagerProjectionConfigTest {
                     properties_json        TEXT,
                     projection_config_json TEXT NOT NULL DEFAULT '{}',
                     metadata_json          TEXT,
+                    default_knowledge_base_id TEXT,
                     created_by             TEXT,
                     created_at             TEXT NOT NULL,
                     updated_at             TEXT NOT NULL

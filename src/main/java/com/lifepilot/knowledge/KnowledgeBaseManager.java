@@ -71,9 +71,46 @@ public class KnowledgeBaseManager {
                                              @Nullable List<String> datastoreIds) {
         KnowledgeBase kb = KnowledgeBase.create(name, description, embeddingModel,
                 rerankerModel, chunkingStrategy, chunkingConfig, tags);
+        kb = new KnowledgeBase(
+                kb.id(),
+                kb.name(),
+                kb.description(),
+                kb.embeddingModel(),
+                kb.rerankerModel(),
+                kb.chunkingStrategy(),
+                kb.chunkingConfig(),
+                kb.documentCount(),
+                kb.totalChunks(),
+                kb.tags(),
+                kb.createdAt(),
+                kb.updatedAt(),
+                false,
+                null,
+                kb.datastoreIds()
+        );
         kbRepository.save(kb);
         knowledgeBaseDatastoreRepository.setAssociations(kb.id(), normalizeDatastoreIds(datastoreIds));
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
+        return enrichWithDatastoreIds(kb);
+    }
+
+    /**
+     * 创建 Datastore 默认内部知识库。
+     */
+    @Transactional
+    public KnowledgeBase createSystemManagedKnowledgeBase(String datastoreId,
+                                                         String datastoreName,
+                                                         @Nullable String embeddingModel,
+                                                         @Nullable String rerankerModel) {
+        KnowledgeBase kb = KnowledgeBase.createSystemManagedForDatastore(
+                datastoreId,
+                datastoreName,
+                embeddingModel,
+                rerankerModel
+        );
+        kbRepository.save(kb);
+        knowledgeBaseDatastoreRepository.addAssociation(kb.id(), datastoreId);
+        log.info("Datastore 默认知识库创建成功: datastoreId={}, knowledgeBaseId={}", datastoreId, kb.id());
         return enrichWithDatastoreIds(kb);
     }
 
@@ -149,6 +186,8 @@ public class KnowledgeBaseManager {
                 tags != null ? tags : hydratedExisting.tags(),
                 existing.createdAt(),
                 Instant.now(),
+                hydratedExisting.systemManaged(),
+                hydratedExisting.ownerDatastoreId(),
                 datastoreIds != null ? List.copyOf(normalizeDatastoreIds(datastoreIds)) : hydratedExisting.datastoreIds()
         );
         kbRepository.save(updated);
@@ -358,6 +397,8 @@ public class KnowledgeBaseManager {
                 kb.tags(),
                 kb.createdAt(),
                 kb.updatedAt(),
+                kb.systemManaged(),
+                kb.ownerDatastoreId(),
                 datastoreIds
         );
     }
