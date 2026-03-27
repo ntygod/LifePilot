@@ -8,6 +8,7 @@ import com.lifepilot.knowledge.model.ExtractionResult;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.scope.MemoryOriginType;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryRealityType;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
@@ -163,8 +164,8 @@ public class KnowledgeExtractionPipeline {
         if (response.relations() != null) {
             for (var relationInfo : response.relations()) {
                 try {
-                    var sourceId = resolveEntityId(relationInfo.sourceEntity(), entityNameToId);
-                    var targetId = resolveEntityId(relationInfo.targetEntity(), entityNameToId);
+                    var sourceId = resolveEntityId(relationInfo.sourceEntity(), entityNameToId, writeContext);
+                    var targetId = resolveEntityId(relationInfo.targetEntity(), entityNameToId, writeContext);
                     if (sourceId == null || targetId == null) {
                         log.debug("关系跳过: 无法解析实体ID, source={}, target={}",
                                 relationInfo.sourceEntity(), relationInfo.targetEntity());
@@ -212,21 +213,31 @@ public class KnowledgeExtractionPipeline {
      * 将实体名称解析为数据库中的实际 ID。
      * 优先从当前批次的映射中查找，找不到则从数据库按名称查找。
      */
-    private String resolveEntityId(String entityName, Map<String, String> nameToId) {
+    private String resolveEntityId(String entityName,
+                                   Map<String, String> nameToId,
+                                   MemoryWriteContext writeContext) {
         // 优先从当前批次映射查找
         var id = nameToId.get(entityName);
         if (id != null) {
             return id;
         }
+        MemoryReadFilter readFilter = buildReadFilter(writeContext);
         // 回退：从数据库按名称查找（遍历所有类型）
         for (var type : EntityType.values()) {
-            var found = semanticMemory.findCurrentByNameAndType(entityName, type);
+            var found = semanticMemory.findCurrentByNameAndType(entityName, type, readFilter);
             if (found.isPresent()) {
                 nameToId.put(entityName, found.get().id());
                 return found.get().id();
             }
         }
         return null;
+    }
+
+    private MemoryReadFilter buildReadFilter(MemoryWriteContext writeContext) {
+        return MemoryReadFilter.of(
+                writeContext.spaceId() != null ? List.of(writeContext.spaceId()) : List.of(),
+                writeContext.memoryScope() != null ? List.of(writeContext.memoryScope()) : List.of()
+        );
     }
 
     private EntityType parseEntityType(String type) {

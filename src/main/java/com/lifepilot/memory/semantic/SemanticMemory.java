@@ -196,10 +196,30 @@ public class SemanticMemory {
 
     /** 查找当前版本实体。 */
     public Optional<TemporalEntity> findCurrentByNameAndType(String name, EntityType type) {
+        return findCurrentByNameAndType(name, type, null);
+    }
+
+    /**
+     * 查找当前版本实体，并应用读取过滤。
+     *
+     * @param name   实体名称
+     * @param type   实体类型
+     * @param filter 读取过滤条件
+     * @return 当前版本实体
+     */
+    public Optional<TemporalEntity> findCurrentByNameAndType(String name,
+                                                             EntityType type,
+                                                             @Nullable MemoryReadFilter filter) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT * FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1");
+        List<Object> params = new ArrayList<>();
+        params.add(name);
+        params.add(type.name());
+        appendEntityReadFilter(sql, params, filter);
         var results = jdbcTemplate.query(
-                "SELECT * FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1",
+                sql.toString(),
                 (rs, rowNum) -> mapRowToEntity(rs),
-                name, type.name());
+                params.toArray());
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
