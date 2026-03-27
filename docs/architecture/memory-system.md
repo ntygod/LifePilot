@@ -133,7 +133,7 @@ graph TB
 - `MemoryToolProvider` 当前注册 9 个记忆工具：
   - `builtin.memory.search`
   - `builtin.memory.recall`
-  - `builtin.memory.search-docs`
+  - `builtin.knowledge.search`
   - `builtin.memory.create`
   - `builtin.memory.update`
   - `builtin.memory.delete`
@@ -239,8 +239,8 @@ sequenceDiagram
 |---------|------|------|
 | Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 读取最近轮次、工作区、用户画像和经验 |
 | 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
-| 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露 recall/search/create/update 等工具 |
-| 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `search-docs` 工具通过知识库检索补充外部文档片段 |
+| 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
+| 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `builtin.knowledge.search` 工具通过知识库检索补充外部文档片段 |
 
 ## 7. 配置参考
 

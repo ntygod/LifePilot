@@ -57,7 +57,7 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 - `builtin.memory.search`：搜索知识实体
 - `builtin.memory.recall`：回忆别的会话里的对话片段
-- `builtin.memory.search-docs`：搜索知识库文档
+- `builtin.knowledge.search`：搜索资料文档
 - `builtin.memory.create` / `update` / `delete` / `tag`
 - `builtin.memory.query-at-time`
 - `builtin.memory.search-experience`
