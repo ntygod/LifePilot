@@ -1621,9 +1621,15 @@ export interface RelationItem {
   sourceEntityId: string
   sourceEntityName: string
   sourceEntityType: string
+  sourceEntitySpaceId: string | null
+  sourceEntityMemoryScope: string | null
+  sourceEntityRealityType: string | null
   targetEntityId: string
   targetEntityName: string
   targetEntityType: string
+  targetEntitySpaceId: string | null
+  targetEntityMemoryScope: string | null
+  targetEntityRealityType: string | null
   relationType: string
   strength: number
   validFrom: string

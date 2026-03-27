@@ -594,6 +594,7 @@ public class MemoryController {
             entityIds.add(r.targetEntityId());
         }
         Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(entityIds);
+        Map<String, EntityMetadata> entityMetadataMap = loadEntityMetadata(entityIds);
 
         // 分页
         long total = relations.size();
@@ -602,15 +603,23 @@ public class MemoryController {
         var pageItems = relations.subList(fromIndex, toIndex).stream()
                 .map(r -> {
                     var source = entityMap.get(r.sourceEntityId());
+                    var sourceMetadata = entityMetadataMap.get(r.sourceEntityId());
                     var target = entityMap.get(r.targetEntityId());
+                    var targetMetadata = entityMetadataMap.get(r.targetEntityId());
                     return new RelationDto(
                             r.id(),
                             r.sourceEntityId(),
                             source != null ? source.name() : r.sourceEntityId(),
                             source != null ? source.type().name() : "UNKNOWN",
+                            sourceMetadata != null ? sourceMetadata.spaceId() : null,
+                            sourceMetadata != null ? sourceMetadata.memoryScope() : null,
+                            sourceMetadata != null ? sourceMetadata.realityType() : null,
                             r.targetEntityId(),
                             target != null ? target.name() : r.targetEntityId(),
                             target != null ? target.type().name() : "UNKNOWN",
+                            targetMetadata != null ? targetMetadata.spaceId() : null,
+                            targetMetadata != null ? targetMetadata.memoryScope() : null,
+                            targetMetadata != null ? targetMetadata.realityType() : null,
                             r.relationType(),
                             r.strength(),
                             r.validFrom(),

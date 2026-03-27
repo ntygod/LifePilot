@@ -672,12 +672,38 @@ class MemoryControllerTest {
             when(semanticMemory.findByIds(any())).thenReturn(Map.of(
                     "e1", testEntity("e1", "张三", EntityType.PERSON),
                     "e2", testEntity("e2", "项目A", EntityType.PROJECT)));
+            when(jdbcTemplate.query(
+                    contains("SELECT id, space_id, memory_scope, reality_type, is_current, version"),
+                    any(RowMapper.class),
+                    any(Object[].class)))
+                    .thenAnswer(invocation -> {
+                        RowMapper<Object> mapper = invocation.getArgument(1);
+                        ResultSet source = mock(ResultSet.class);
+                        when(source.getString("id")).thenReturn("e1");
+                        when(source.getString("space_id")).thenReturn("domain:datastore:novel");
+                        when(source.getString("memory_scope")).thenReturn("DOMAIN_MEMORY");
+                        when(source.getString("reality_type")).thenReturn("FICTIONAL");
+
+                        ResultSet target = mock(ResultSet.class);
+                        when(target.getString("id")).thenReturn("e2");
+                        when(target.getString("space_id")).thenReturn("domain:datastore:novel");
+                        when(target.getString("memory_scope")).thenReturn("DOMAIN_MEMORY");
+                        when(target.getString("reality_type")).thenReturn("FICTIONAL");
+
+                        return List.of(mapper.mapRow(source, 0), mapper.mapRow(target, 1));
+                    });
 
             mockMvc.perform(get("/api/memories/relations"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.items", hasSize(1)))
                     .andExpect(jsonPath("$.items[0].sourceEntityName").value("张三"))
-                    .andExpect(jsonPath("$.items[0].targetEntityName").value("项目A"));
+                    .andExpect(jsonPath("$.items[0].sourceEntitySpaceId").value("domain:datastore:novel"))
+                    .andExpect(jsonPath("$.items[0].sourceEntityMemoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.items[0].sourceEntityRealityType").value("FICTIONAL"))
+                    .andExpect(jsonPath("$.items[0].targetEntityName").value("项目A"))
+                    .andExpect(jsonPath("$.items[0].targetEntitySpaceId").value("domain:datastore:novel"))
+                    .andExpect(jsonPath("$.items[0].targetEntityMemoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.items[0].targetEntityRealityType").value("FICTIONAL"));
         }
     }
 }
