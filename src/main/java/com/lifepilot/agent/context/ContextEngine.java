@@ -147,6 +147,8 @@ public class ContextEngine {
         if (compactionBoundary != null) {
             payload.put("compactionBoundaryEntryId", compactionBoundary.summaryEntryId());
             payload.put("compactionFirstKeptEntryId", compactionBoundary.firstKeptEntryId());
+            payload.put("compactionKeyPointCount", compactionBoundary.keyPoints().size());
+            payload.put("checkpointApplied", compactionBoundary.checkpoint().hasContent());
         }
 
         return new ContextSnapshot(
@@ -298,6 +300,12 @@ public class ContextEngine {
         int includedToolResultCount = 0;
         Set<String> selectedToolResultEntryIds = toolResults.selectedEntryIds();
 
+        Message checkpointMessage = buildCheckpointMessage(compactionBoundary);
+        if (checkpointMessage != null) {
+            messages.add(checkpointMessage);
+            historyTokens += estimateMessageTokens(checkpointMessage);
+        }
+
         Message compactionMessage = buildCompactionSummaryMessage(compactionBoundary);
         if (compactionMessage != null) {
             messages.add(compactionMessage);
@@ -435,6 +443,20 @@ public class ContextEngine {
     }
 
     @Nullable
+    private Message buildCheckpointMessage(
+            @Nullable TranscriptCompactionBoundaryResolver.CompactionBoundary boundary
+    ) {
+        if (boundary == null || !boundary.checkpoint().hasContent()) {
+            return null;
+        }
+        String section = renderCheckpoint(boundary.checkpoint(), boundary.keyPoints());
+        if (section.isBlank()) {
+            return null;
+        }
+        return new AssistantMessage(section);
+    }
+
+    @Nullable
     private Message buildCompactionSummaryMessage(
             @Nullable TranscriptCompactionBoundaryResolver.CompactionBoundary boundary
     ) {
@@ -447,6 +469,83 @@ public class ContextEngine {
                 %s
                 </history_summary>
                 """.formatted(boundary.summary().trim()).strip());
+    }
+
+    private String renderCheckpoint(TaskCheckpoint checkpoint, List<String> keyPoints) {
+        StringBuilder buffer = new StringBuilder();
+        buffer.append("<task_checkpoint>\n")
+                .append("任务检查点:\n");
+        appendCheckpointLine(buffer, "目标", checkpoint.goal());
+        appendCheckpointLine(buffer, "阶段", checkpoint.currentPhase());
+        appendCheckpointItems(buffer, "已完成", checkpoint.completedItems(), 4);
+        appendCheckpointItems(buffer, "未决事项", checkpoint.openItems(), 4);
+        appendCheckpointItems(buffer, "关键决策", checkpoint.decisions(), 4);
+        appendCheckpointItems(buffer, "约束", checkpoint.constraints(), 3);
+        appendCheckpointItems(buffer, "风险", checkpoint.risks(), 3);
+        appendCheckpointItems(buffer, "恢复计划", checkpoint.resumePlan(), 3);
+        appendCheckpointItems(buffer, "关键要点", keyPoints, 5);
+        if (!checkpoint.artifacts().isEmpty()) {
+            List<String> artifactLines = checkpoint.artifacts().stream()
+                    .limit(3)
+                    .map(this::formatArtifactRef)
+                    .filter(line -> !line.isBlank())
+                    .toList();
+            appendCheckpointItems(buffer, "关联产物", artifactLines, 3);
+        }
+        if (!checkpoint.neededContextRefs().isEmpty()) {
+            appendCheckpointItems(buffer, "上下文引用", checkpoint.neededContextRefs(), 4);
+        }
+        buffer.append("</task_checkpoint>");
+        return buffer.toString();
+    }
+
+    private void appendCheckpointLine(StringBuilder buffer, String label, @Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        buffer.append("- ").append(label).append(": ").append(value.trim()).append('\n');
+    }
+
+    private void appendCheckpointItems(StringBuilder buffer, String label, List<String> items, int limit) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        String joined = items.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .limit(Math.max(1, limit))
+                .map(String::trim)
+                .reduce((left, right) -> left + "；" + right)
+                .orElse("");
+        if (joined.isBlank()) {
+            return;
+        }
+        buffer.append("- ").append(label).append(": ").append(joined).append('\n');
+    }
+
+    private String formatArtifactRef(TaskCheckpoint.ArtifactRef artifact) {
+        if (artifact == null) {
+            return "";
+        }
+        StringBuilder buffer = new StringBuilder();
+        if (artifact.type() != null && !artifact.type().isBlank()) {
+            buffer.append('[').append(artifact.type().trim()).append("] ");
+        }
+        if (artifact.title() != null && !artifact.title().isBlank()) {
+            buffer.append(artifact.title().trim());
+        }
+        if (artifact.summary() != null && !artifact.summary().isBlank()) {
+            if (buffer.length() > 0) {
+                buffer.append(": ");
+            }
+            buffer.append(artifact.summary().trim());
+        }
+        if (artifact.refId() != null && !artifact.refId().isBlank()) {
+            if (buffer.length() > 0) {
+                buffer.append(" ");
+            }
+            buffer.append("(ref=").append(artifact.refId().trim()).append(')');
+        }
+        return buffer.toString().trim();
     }
 
     private Message buildHistoryMarkerMessage() {

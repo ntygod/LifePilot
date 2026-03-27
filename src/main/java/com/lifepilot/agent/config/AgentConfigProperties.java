@@ -140,6 +140,7 @@ public class AgentConfigProperties {
             private boolean enabled = true;
             private String toolResultMode = "recent_only";
             private int recentToolResultLimit = 4;
+            private int failedToolResultLimit = 2;
             private int toolResultPreviewChars = 240;
         }
 

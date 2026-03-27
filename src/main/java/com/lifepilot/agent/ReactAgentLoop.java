@@ -82,6 +82,7 @@ public class ReactAgentLoop implements CallbackHelper {
     private final ObjectMapper objectMapper;
     private final ExecutionCompletionPolicy completionPolicy;
     private final ToolExecutionCoordinator toolExecutionCoordinator;
+    @Nullable private final CompactionEngine compactionEngine;
     @Nullable private final TraceRecorder traceRecorder;
     @Nullable private final A2uiProperties a2uiProperties;
 
@@ -111,6 +112,41 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
             SharedScheduler sharedScheduler) {
+        this(
+                contextAssembler,
+                providerMessageBuilder,
+                agentToolProvider,
+                config,
+                objectMapper,
+                traceRecorder,
+                a2uiProperties,
+                transcriptStore,
+                multimodalRouter,
+                mediaDataExtractor,
+                eventPublisher,
+                proceduralMemory,
+                intentMatcher,
+                null,
+                sharedScheduler
+        );
+    }
+
+    public ReactAgentLoop(
+            ContextAssembler contextAssembler,
+            ProviderMessageBuilder providerMessageBuilder,
+            AgentToolProvider agentToolProvider,
+            AgentConfigProperties config,
+            ObjectMapper objectMapper,
+            @Nullable TraceRecorder traceRecorder,
+            @Nullable A2uiProperties a2uiProperties,
+            @Nullable TranscriptStore transcriptStore,
+            @Nullable MultimodalRouter multimodalRouter,
+            @Nullable MediaDataExtractor mediaDataExtractor,
+            @Nullable ApplicationEventPublisher eventPublisher,
+            @Nullable ProceduralMemory proceduralMemory,
+            @Nullable IntentMatcher intentMatcher,
+            @Nullable CompactionEngine compactionEngine,
+            SharedScheduler sharedScheduler) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -127,6 +163,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 intentMatcher,
                 config.getLoop().getMaxParallelToolCalls()
         );
+        this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
         this.a2uiProperties = a2uiProperties;
         this.multimodalRouter = multimodalRouter;
@@ -444,6 +481,14 @@ public class ReactAgentLoop implements CallbackHelper {
             // 8. 迭代完成后更新步数，并在进入下一轮前再次执行预算检查
             state = refreshBudgetElapsed(advanceBudgetStep(state), loopStart);
             if (!state.isDone()) {
+                if (maybeCompactMidLoop(state, iteration, cachedContext != null)) {
+                    state = appendAndPublishStep(
+                            state,
+                            new ReactStep.Progress("上下文较长，已压缩历史并重建执行状态…"),
+                            loopContext
+                    );
+                    cachedContext = null;
+                }
                 var endBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
                 state = endBudgetCheck.state();
                 if (endBudgetCheck.invalidateCachedContext()) {
@@ -484,6 +529,29 @@ public class ReactAgentLoop implements CallbackHelper {
             state = DegradedResponseBuilder.terminateWithReason(state, state.budget().exceedReason());
         }
         return new BudgetCheckResult(state, invalidateCachedContext);
+    }
+
+    private boolean maybeCompactMidLoop(ReactAgentState state, int iteration, boolean hasCachedContext) {
+        if (!hasCachedContext || compactionEngine == null || state.sessionId() == null || state.sessionId().isBlank()) {
+            return false;
+        }
+        if (state.suspended() || state.isDone()) {
+            return false;
+        }
+        if (iteration <= 0 && state.budget().degradationLevel() == com.lifepilot.agent.model.Budget.DegradationLevel.NORMAL) {
+            return false;
+        }
+        try {
+            boolean compacted = compactionEngine.compactIfNeeded(state.sessionId(), state.traceId());
+            if (compacted) {
+                log.info("ReAct 循环中途压缩生效: traceId={}, iteration={}", state.traceId(), iteration);
+            }
+            return compacted;
+        } catch (Exception e) {
+            log.warn("ReAct 循环中途压缩失败: traceId={}, iteration={}, error={}",
+                    state.traceId(), iteration, e.getMessage());
+            return false;
+        }
     }
 
     /** 在每轮迭代结束后推进一步预算计数。 */

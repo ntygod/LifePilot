@@ -5,6 +5,7 @@ import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.context.AssembledContext;
+import com.lifepilot.agent.context.CompactionEngine;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.ProviderMessageBuilder;
 import com.lifepilot.agent.context.TokenBudget;
@@ -68,6 +69,9 @@ class ReactAgentLoop_预算控制测试 {
     @Mock
     private TranscriptStore transcriptStore;
 
+    @Mock
+    private CompactionEngine compactionEngine;
+
     private ReactAgentLoop reactAgentLoop;
 
     @BeforeEach
@@ -116,8 +120,7 @@ class ReactAgentLoop_预算控制测试 {
         assertThat(result.terminationReason()).contains("时间预算耗尽");
         assertThat(result.finalOutput())
                 .contains("本轮处理已中断")
-                .contains("我已保留当前进度")
-                .doesNotContain("builtin.");
+                .contains("我已保留当前进度");
         verifyNoInteractions(callback);
     }
 
@@ -163,10 +166,10 @@ class ReactAgentLoop_预算控制测试 {
     @Test
     void 工具调用执行后应写入Transcript的ToolCall与ToolResult() {
         when(contextAssembler.assemble(any())).thenReturn(baseContext("请执行测试任务"));
-        when(agentToolProvider.resolveToolDisplayName("builtin.todo.create")).thenReturn("创建待办");
+        when(agentToolProvider.resolveToolDisplayName("todo.create")).thenReturn("创建待办");
         when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(new ToolCallback() {
             private final ToolDefinition definition = DefaultToolDefinition.builder()
-                    .name("builtin.todo.create")
+                    .name("todo.create")
                     .description("创建待办")
                     .inputSchema("{}")
                     .build();
@@ -193,7 +196,7 @@ class ReactAgentLoop_预算控制测试 {
         IterationCallback callback = (agentRequest, messages, toolCallbacks, traceContext) -> {
             if (llmCallCount.getAndIncrement() == 0) {
                 var toolCall = new AssistantMessage.ToolCall("call-1", "function",
-                        "builtin.todo.create", "{\"title\":\"收拾工位\"}");
+                        "todo.create", "{\"title\":\"收拾工位\"}");
                 var assistantMessage = AssistantMessage.builder()
                         .content("")
                         .toolCalls(List.of(toolCall))
@@ -218,7 +221,7 @@ class ReactAgentLoop_预算控制测试 {
                 eq("session-transcript-tool"),
                 eq(result.traceId()),
                 eq(result.traceId()),
-                eq("builtin.todo.create"),
+                eq("todo.create"),
                 eq("call-1"),
                 eq("创建待办"),
                 eq("{\"title\":\"收拾工位\"}"),
@@ -228,7 +231,7 @@ class ReactAgentLoop_预算控制测试 {
                 eq("session-transcript-tool"),
                 eq(result.traceId()),
                 eq(result.traceId()),
-                eq("builtin.todo.create"),
+                eq("todo.create"),
                 eq("call-1"),
                 eq(true),
                 eq("{\"id\":\"todo-1\",\"title\":\"收拾工位\"}"),
@@ -237,6 +240,88 @@ class ReactAgentLoop_预算控制测试 {
                 eq(false),
                 any()
         );
+    }
+
+    @Test
+    void 中途压缩命中后应重建上下文而不是复用旧缓存() {
+        ScheduledExecutorService scheduledExecutor = mock(ScheduledExecutorService.class);
+        when(sharedScheduler.cleanup()).thenReturn(scheduledExecutor);
+        reactAgentLoop = new ReactAgentLoop(
+                contextAssembler,
+                new ProviderMessageBuilder(new TranscriptHygieneEngine(new AgentConfigProperties())),
+                agentToolProvider,
+                new AgentConfigProperties(),
+                new ObjectMapper(),
+                null,
+                null,
+                transcriptStore,
+                null,
+                null,
+                null,
+                null,
+                null,
+                compactionEngine,
+                sharedScheduler
+        );
+
+        when(contextAssembler.assemble(any())).thenReturn(baseContext("请执行测试任务"));
+        when(agentToolProvider.resolveToolDisplayName("todo.create")).thenReturn("创建待办");
+        when(compactionEngine.compactIfNeeded(any(), any())).thenReturn(true);
+        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(new ToolCallback() {
+            private final ToolDefinition definition = DefaultToolDefinition.builder()
+                    .name("todo.create")
+                    .description("创建待办")
+                    .inputSchema("{}")
+                    .build();
+
+            @Override
+            @NonNull
+            public ToolDefinition getToolDefinition() {
+                return definition;
+            }
+
+            @Override
+            @NonNull
+            public String call(@NonNull String toolInput) {
+                return "{\"id\":\"todo-2\",\"title\":\"继续执行\"}";
+            }
+        }));
+
+        var budget = baseBudget().toBuilder()
+                .maxTokens(100)
+                .tokensUsed(85)
+                .build();
+        var request = new AgentRequest("继续执行并在需要时压缩上下文", "session-mid-compact", "web",
+                null, null, budget, null, 0, null, null, null, null);
+        var initialState = ReactAgentState.init(request, budget);
+
+        var llmCallCount = new AtomicInteger();
+        IterationCallback callback = (agentRequest, messages, toolCallbacks, traceContext) -> {
+            if (llmCallCount.getAndIncrement() == 0) {
+                var toolCall = new AssistantMessage.ToolCall("call-2", "function",
+                        "todo.create", "{\"title\":\"继续执行\"}");
+                var assistantMessage = AssistantMessage.builder()
+                        .content("")
+                        .toolCalls(List.of(toolCall))
+                        .build();
+                return new ChatResponse(List.of(new Generation(assistantMessage)));
+            }
+            return new ChatResponse(List.of(new Generation(new AssistantMessage("已继续执行完毕"))));
+        };
+
+        var result = reactAgentLoop.coreLoop(
+                initialState,
+                request,
+                null,
+                Instant.now(),
+                callback,
+                new CancellationToken(),
+                new AgentLoopContext()
+        );
+
+        assertThat(result.finalOutput()).isEqualTo("已继续执行完毕");
+        verify(contextAssembler, org.mockito.Mockito.times(2)).assemble(any());
+        verify(compactionEngine).compactIfNeeded(eq("session-mid-compact"), eq(result.traceId()));
     }
 
     @Test

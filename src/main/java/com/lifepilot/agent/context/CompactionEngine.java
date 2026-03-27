@@ -19,6 +19,7 @@ import org.springframework.lang.Nullable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +42,9 @@ public class CompactionEngine {
     private static final int DEFAULT_MAX_SOURCE_ENTRIES = 80;
     private static final int DEFAULT_SUMMARY_MAX_CHARS = 500;
     private static final int DEFAULT_PAYLOAD_PREVIEW_CHARS = 400;
+    private static final int DEFAULT_KEYPOINT_LIMIT = 8;
+    private static final int DEFAULT_ARTIFACT_REF_LIMIT = 5;
+    private static final int DEFAULT_RESUME_PLAN_LIMIT = 3;
 
     private final AgentConfigProperties config;
     private final SessionTranscriptRepository transcriptRepository;
@@ -152,6 +156,13 @@ public class CompactionEngine {
             if (summary.isBlank()) {
                 return false;
             }
+            List<String> keyPoints = extractKeyPoints(summary);
+            TaskCheckpoint checkpoint = buildCheckpoint(
+                    summary,
+                    keyPoints,
+                    compactableRows,
+                    flushedDocumentIds
+            );
 
             Instant now = Instant.now();
             Map<String, Object> payload = new LinkedHashMap<>();
@@ -162,6 +173,12 @@ public class CompactionEngine {
             payload.put("sourceEndEntryId", compactableRows.getLast().id());
             if (boundary != null && boundary.summaryEntryId() != null) {
                 payload.put("previousSummaryEntryId", boundary.summaryEntryId());
+            }
+            if (!keyPoints.isEmpty()) {
+                payload.put("keyPoints", keyPoints);
+            }
+            if (checkpoint.hasContent()) {
+                payload.put("checkpoint", checkpoint.toPayload());
             }
             if (!flushedDocumentIds.isEmpty()) {
                 payload.put("memoryDocumentIds", flushedDocumentIds);
@@ -492,5 +509,319 @@ public class CompactionEngine {
     @Nullable
     private String normalizeBlank(@Nullable String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private List<String> extractKeyPoints(String summary) {
+        if (summary.isBlank()) {
+            return List.of();
+        }
+        try {
+            String prompt = promptRegistry.render("memory/compression-keypoints", Map.of(
+                    "summary", summary
+            ));
+            if (prompt == null || prompt.isBlank()) {
+                return fallbackKeyPoints(summary);
+            }
+            LlmResponse response = generationRouter.call(
+                    LlmScene.MEMORY_COMPRESSION,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null
+            );
+            List<String> keyPoints = parseKeyPoints(response.content());
+            return keyPoints.isEmpty() ? fallbackKeyPoints(summary) : keyPoints;
+        } catch (Exception e) {
+            log.debug("提取压缩关键要点失败，回退到启发式摘要切分: error={}", e.getMessage());
+            return fallbackKeyPoints(summary);
+        }
+    }
+
+    private List<String> parseKeyPoints(@Nullable String content) {
+        if (content == null || content.isBlank()) {
+            return List.of();
+        }
+        return content.lines()
+                .map(String::trim)
+                .filter(line -> !line.isEmpty())
+                .map(line -> {
+                    if (line.startsWith("-")) {
+                        return line.substring(1).trim();
+                    }
+                    if (line.startsWith("•")) {
+                        return line.substring(1).trim();
+                    }
+                    return line;
+                })
+                .filter(line -> !line.isEmpty())
+                .limit(DEFAULT_KEYPOINT_LIMIT)
+                .distinct()
+                .toList();
+    }
+
+    private List<String> fallbackKeyPoints(String summary) {
+        return splitSentences(summary).stream()
+                .limit(DEFAULT_KEYPOINT_LIMIT)
+                .toList();
+    }
+
+    private TaskCheckpoint buildCheckpoint(
+            @Nullable String summary,
+            List<String> keyPoints,
+            List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows,
+            List<String> memoryDocumentIds
+    ) {
+        if ((summary == null || summary.isBlank()) && keyPoints.isEmpty() && rows.isEmpty()) {
+            return TaskCheckpoint.empty();
+        }
+
+        LinkedHashSet<String> decisions = new LinkedHashSet<>();
+        LinkedHashSet<String> openItems = new LinkedHashSet<>();
+        LinkedHashSet<String> completedItems = new LinkedHashSet<>();
+        LinkedHashSet<String> risks = new LinkedHashSet<>();
+        for (String keyPoint : keyPoints) {
+            classifyKeyPoint(keyPoint, decisions, openItems, completedItems, risks);
+        }
+        if (completedItems.isEmpty() && summary != null && !summary.isBlank()) {
+            completedItems.add(summary);
+        }
+
+        LinkedHashSet<String> constraints = extractConstraintHints(rows);
+        LinkedHashSet<TaskCheckpoint.ArtifactRef> artifacts = extractArtifactRefs(rows, memoryDocumentIds);
+        LinkedHashSet<String> neededContextRefs = new LinkedHashSet<>();
+        memoryDocumentIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> !id.isEmpty())
+                .map(id -> "memory:" + id)
+                .forEach(neededContextRefs::add);
+        artifacts.stream()
+                .map(TaskCheckpoint.ArtifactRef::refId)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> !id.isEmpty())
+                .map(id -> "artifact:" + id)
+                .forEach(neededContextRefs::add);
+
+        LinkedHashSet<String> resumePlan = buildResumePlan(openItems, decisions, artifacts);
+        return new TaskCheckpoint(
+                inferGoal(rows),
+                inferPhase(rows),
+                List.copyOf(completedItems),
+                List.copyOf(openItems),
+                List.copyOf(decisions),
+                List.copyOf(constraints),
+                List.copyOf(artifacts),
+                List.copyOf(resumePlan),
+                List.copyOf(risks),
+                List.copyOf(neededContextRefs),
+                buildDomainState(rows)
+        );
+    }
+
+    private void classifyKeyPoint(
+            String keyPoint,
+            LinkedHashSet<String> decisions,
+            LinkedHashSet<String> openItems,
+            LinkedHashSet<String> completedItems,
+            LinkedHashSet<String> risks
+    ) {
+        if (keyPoint == null || keyPoint.isBlank()) {
+            return;
+        }
+        if (containsAny(keyPoint, "风险", "失败", "异常", "冲突", "问题", "注意")) {
+            risks.add(keyPoint);
+            return;
+        }
+        if (containsAny(keyPoint, "待", "未", "剩余", "后续", "下一步", "需要", "阻塞", "TODO")) {
+            openItems.add(keyPoint);
+            return;
+        }
+        if (containsAny(keyPoint, "决定", "采用", "改为", "选择", "确认", "统一", "约定")) {
+            decisions.add(keyPoint);
+            completedItems.add(keyPoint);
+            return;
+        }
+        completedItems.add(keyPoint);
+    }
+
+    private LinkedHashSet<String> extractConstraintHints(
+            List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows
+    ) {
+        LinkedHashSet<String> constraints = new LinkedHashSet<>();
+        for (SessionTranscriptRepository.SessionTranscriptEntryRow row : rows) {
+            TranscriptEntryType type = TranscriptEntryType.fromValue(row.entryType());
+            if (type != TranscriptEntryType.USER_MESSAGE && type != TranscriptEntryType.ASSISTANT_MESSAGE) {
+                continue;
+            }
+            String content = stringValue(readPayload(row.payloadJson()).get("content"));
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            for (String sentence : splitSentences(content)) {
+                if (containsAny(sentence, "必须", "不能", "不要", "仅", "限制", "约束", "优先", "避免")) {
+                    constraints.add(sentence);
+                }
+                if (constraints.size() >= 4) {
+                    return constraints;
+                }
+            }
+        }
+        return constraints;
+    }
+
+    private LinkedHashSet<TaskCheckpoint.ArtifactRef> extractArtifactRefs(
+            List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows,
+            List<String> memoryDocumentIds
+    ) {
+        LinkedHashSet<TaskCheckpoint.ArtifactRef> artifacts = new LinkedHashSet<>();
+        for (SessionTranscriptRepository.SessionTranscriptEntryRow row : rows) {
+            if (artifacts.size() >= DEFAULT_ARTIFACT_REF_LIMIT) {
+                break;
+            }
+            Map<String, Object> payload = readPayload(row.payloadJson());
+            TranscriptEntryType type = TranscriptEntryType.fromValue(row.entryType());
+            if (type == TranscriptEntryType.ARTIFACT_REF) {
+                artifacts.add(new TaskCheckpoint.ArtifactRef(
+                        stringValue(payload.get("artifactType")),
+                        stringValue(payload.get("title")),
+                        stringValue(payload.get("summary")),
+                        stringValue(payload.get("artifactId"))
+                ));
+                continue;
+            }
+            String artifactId = stringValue(payload.get("artifactId"));
+            if (artifactId != null) {
+                artifacts.add(new TaskCheckpoint.ArtifactRef(
+                        "artifact",
+                        stringValue(payload.get("toolId")),
+                        abbreviate(formatToolResultRow(payload), 120),
+                        artifactId
+                ));
+            }
+        }
+        for (String memoryDocumentId : memoryDocumentIds) {
+            if (artifacts.size() >= DEFAULT_ARTIFACT_REF_LIMIT) {
+                break;
+            }
+            if (memoryDocumentId == null || memoryDocumentId.isBlank()) {
+                continue;
+            }
+            artifacts.add(new TaskCheckpoint.ArtifactRef(
+                    "memory_document",
+                    "压缩前会话片段",
+                    "如需完整细节，可回看预刷新的 transcript 片段文档。",
+                    memoryDocumentId
+            ));
+        }
+        return artifacts;
+    }
+
+    private LinkedHashSet<String> buildResumePlan(
+            LinkedHashSet<String> openItems,
+            LinkedHashSet<String> decisions,
+            LinkedHashSet<TaskCheckpoint.ArtifactRef> artifacts
+    ) {
+        LinkedHashSet<String> resumePlan = new LinkedHashSet<>();
+        openItems.stream()
+                .limit(DEFAULT_RESUME_PLAN_LIMIT)
+                .map(item -> item.startsWith("继续") ? item : "继续跟进: " + item)
+                .forEach(resumePlan::add);
+        if (resumePlan.isEmpty() && !decisions.isEmpty()) {
+            String latestDecision = decisions.stream().reduce((first, second) -> second).orElse(null);
+            if (latestDecision != null) {
+                resumePlan.add("沿用已确认决策继续执行: " + latestDecision);
+            }
+        }
+        if (!artifacts.isEmpty()) {
+            resumePlan.add("需要细节时优先回看关联产物或记忆引用，而不是重放整段历史。");
+        }
+        return resumePlan;
+    }
+
+    private Map<String, Object> buildDomainState(List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows) {
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> domainState = new LinkedHashMap<>();
+        SessionTranscriptRepository.SessionTranscriptEntryRow first = rows.getFirst();
+        SessionTranscriptRepository.SessionTranscriptEntryRow last = rows.getLast();
+        domainState.put("sourceEntryCount", rows.size());
+        domainState.put("sourceStartEntryId", first.id());
+        domainState.put("sourceEndEntryId", last.id());
+        domainState.put("lastEntryType", last.entryType());
+        if (last.turnId() != null && !last.turnId().isBlank()) {
+            domainState.put("lastTurnId", last.turnId());
+        }
+        List<String> toolIds = rows.stream()
+                .map(row -> stringValue(readPayload(row.payloadJson()).get("toolId")))
+                .filter(Objects::nonNull)
+                .distinct()
+                .limit(5)
+                .toList();
+        if (!toolIds.isEmpty()) {
+            domainState.put("toolIds", toolIds);
+        }
+        return Map.copyOf(domainState);
+    }
+
+    @Nullable
+    private String inferGoal(List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows) {
+        for (SessionTranscriptRepository.SessionTranscriptEntryRow row : rows) {
+            if (TranscriptEntryType.fromValue(row.entryType()) != TranscriptEntryType.USER_MESSAGE) {
+                continue;
+            }
+            String content = stringValue(readPayload(row.payloadJson()).get("content"));
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            return abbreviate(normalizeWhitespace(content), 160);
+        }
+        return null;
+    }
+
+    @Nullable
+    private String inferPhase(List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows) {
+        if (rows.isEmpty()) {
+            return null;
+        }
+        TranscriptEntryType lastType = TranscriptEntryType.fromValue(rows.getLast().entryType());
+        return switch (lastType) {
+            case USER_MESSAGE -> "user_input";
+            case ASSISTANT_MESSAGE -> "assistant_response";
+            case TOOL_CALL -> "tool_call";
+            case TOOL_RESULT -> "tool_result";
+            case ARTIFACT_REF -> "artifact_sync";
+            default -> "conversation";
+        };
+    }
+
+    private List<String> splitSentences(@Nullable String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        String[] parts = normalizeWhitespace(text).split("[。；;\\n]");
+        List<String> sentences = new ArrayList<>();
+        for (String part : parts) {
+            String sentence = part.trim();
+            if (!sentence.isEmpty()) {
+                sentences.add(sentence);
+            }
+        }
+        return List.copyOf(sentences);
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
