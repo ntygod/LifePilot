@@ -29,5 +29,39 @@ public record Document(
         @Nullable String lastProcessedStage,
         Map<String, String> metadata,
         Instant createdAt,
-        Instant updatedAt
-) {}
+        Instant updatedAt,
+        DocumentSourceType sourceType,
+        String sourceKey,
+        @Nullable String sourceDatastoreId,
+        @Nullable String sourceCollectionId,
+        Map<String, Object> sourceRef
+) {
+
+    public Document {
+        sourceType = sourceType != null ? sourceType : DocumentSourceType.FILE;
+        sourceKey = sourceKey != null && !sourceKey.isBlank() ? sourceKey : "FILE:" + id;
+        sourceRef = sourceRef != null ? Map.copyOf(sourceRef) : Map.of();
+    }
+
+    public Document(
+            String id,
+            String knowledgeBaseId,
+            String fileName,
+            String filePath,
+            long fileSize,
+            String mimeType,
+            String contentHash,
+            DocumentStatus status,
+            int chunkCount,
+            int entityCount,
+            @Nullable String errorMessage,
+            @Nullable String lastProcessedStage,
+            Map<String, String> metadata,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, knowledgeBaseId, fileName, filePath, fileSize, mimeType, contentHash, status,
+                chunkCount, entityCount, errorMessage, lastProcessedStage, metadata, createdAt,
+                updatedAt, DocumentSourceType.FILE, "FILE:" + id, null, null, Map.of());
+    }
+}

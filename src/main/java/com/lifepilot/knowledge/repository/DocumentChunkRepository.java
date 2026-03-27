@@ -35,8 +35,9 @@ public class DocumentChunkRepository {
             INSERT INTO document_chunks (
                 id, document_id, knowledge_base_id, content, context_prefix,
                 chunk_index, start_offset, end_offset, token_count, content_hash,
-                heading_hierarchy_json, page_number, metadata_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                heading_hierarchy_json, page_number, metadata_json,
+                source_type, source_datastore_id, source_collection_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -79,7 +80,10 @@ public class DocumentChunkRepository {
                 ps.setString(11, serializeList(chunk.headingHierarchy()));
                 ps.setInt(12, chunk.pageNumber());
                 ps.setString(13, serializeMap(chunk.metadata()));
-                ps.setString(14, now.toString());
+                ps.setString(14, chunk.sourceType().name());
+                ps.setString(15, chunk.sourceDatastoreId());
+                ps.setString(16, chunk.sourceCollectionId());
+                ps.setString(17, now.toString());
             }
 
             @Override
@@ -108,6 +112,20 @@ public class DocumentChunkRepository {
      */
     public void deleteByDocumentId(String documentId) {
         jdbcTemplate.update("DELETE FROM document_chunks WHERE document_id = ?", documentId);
+    }
+
+    /**
+     * 按文档更新所有分块的领域归属。
+     *
+     * @param documentId  文档 id
+     * @param datastoreId 新的 datastore 归属，可为空表示共享文档
+     */
+    public void updateSourceDatastoreIdByDocumentId(String documentId, String datastoreId) {
+        jdbcTemplate.update(
+                "UPDATE document_chunks SET source_datastore_id = ? WHERE document_id = ?",
+                datastoreId,
+                documentId
+        );
     }
 
     /**
@@ -156,7 +174,10 @@ public class DocumentChunkRepository {
                 rs.getString("content_hash"),
                 deserializeList(rs.getString("heading_hierarchy_json")),
                 rs.getInt("page_number"),
-                deserializeMetadata(rs.getString("metadata_json"))
+                deserializeMetadata(rs.getString("metadata_json")),
+                parseSourceType(rs.getString("source_type")),
+                rs.getString("source_datastore_id"),
+                rs.getString("source_collection_id")
         );
     }
 
@@ -211,6 +232,18 @@ public class DocumentChunkRepository {
         } catch (JsonProcessingException e) {
             log.warn("JSON 反序列化失败，返回空 Map: json={}, error={}", json, e.getMessage());
             return Map.of();
+        }
+    }
+
+    private com.lifepilot.knowledge.model.DocumentSourceType parseSourceType(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return com.lifepilot.knowledge.model.DocumentSourceType.FILE;
+        }
+        try {
+            return com.lifepilot.knowledge.model.DocumentSourceType.valueOf(rawValue);
+        } catch (IllegalArgumentException e) {
+            log.warn("未知分块来源类型，回退 FILE: value={}", rawValue);
+            return com.lifepilot.knowledge.model.DocumentSourceType.FILE;
         }
     }
 }

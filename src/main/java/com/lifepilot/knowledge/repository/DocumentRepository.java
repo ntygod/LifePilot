@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.model.Document;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,8 +55,9 @@ public class DocumentRepository {
                     id, knowledge_base_id, file_name, file_path, file_size,
                     mime_type, content_hash, status, chunk_count, entity_count,
                     error_message, last_processed_stage, metadata_json,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, updated_at, source_type, source_key,
+                    source_datastore_id, source_collection_id, source_ref_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     knowledge_base_id = excluded.knowledge_base_id,
                     file_name = excluded.file_name,
@@ -69,6 +71,11 @@ public class DocumentRepository {
                     error_message = excluded.error_message,
                     last_processed_stage = excluded.last_processed_stage,
                     metadata_json = excluded.metadata_json,
+                    source_type = excluded.source_type,
+                    source_key = excluded.source_key,
+                    source_datastore_id = excluded.source_datastore_id,
+                    source_collection_id = excluded.source_collection_id,
+                    source_ref_json = excluded.source_ref_json,
                     updated_at = excluded.updated_at
                 """,
                 doc.id(),
@@ -85,7 +92,12 @@ public class DocumentRepository {
                 doc.lastProcessedStage(),
                 serializeMap(doc.metadata()),
                 doc.createdAt().toString(),
-                doc.updatedAt().toString());
+                doc.updatedAt().toString(),
+                doc.sourceType().name(),
+                doc.sourceKey(),
+                doc.sourceDatastoreId(),
+                doc.sourceCollectionId(),
+                serializeObjectMap(doc.sourceRef()));
     }
 
     /**
@@ -111,6 +123,35 @@ public class DocumentRepository {
         return jdbcTemplate.query(
                 "SELECT * FROM documents WHERE knowledge_base_id = ?",
                 rowMapper, knowledgeBaseId);
+    }
+
+    /**
+     * 根据来源键查找文档。
+     */
+    public Optional<Document> findByKnowledgeBaseIdAndSourceKey(String knowledgeBaseId, String sourceKey) {
+        List<Document> results = jdbcTemplate.query(
+                "SELECT * FROM documents WHERE knowledge_base_id = ? AND source_key = ?",
+                rowMapper, knowledgeBaseId, sourceKey);
+        return results.stream().findFirst();
+    }
+
+    /**
+     * 查询指定领域下的同步文档。
+     */
+    public List<Document> findByKnowledgeBaseIdAndSourceDatastoreIdAndSourceType(String knowledgeBaseId,
+                                                                                  String datastoreId,
+                                                                                  DocumentSourceType sourceType) {
+        return jdbcTemplate.query(
+                """
+                SELECT * FROM documents
+                WHERE knowledge_base_id = ?
+                  AND source_datastore_id = ?
+                  AND source_type = ?
+                """,
+                rowMapper,
+                knowledgeBaseId,
+                datastoreId,
+                sourceType.name());
     }
 
     /**
@@ -190,12 +231,30 @@ public class DocumentRepository {
                 rs.getString("last_processed_stage"),
                 deserializeMetadata(rs.getString("metadata_json")),
                 Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at"))
+                Instant.parse(rs.getString("updated_at")),
+                parseSourceType(rs.getString("source_type")),
+                rs.getString("source_key"),
+                rs.getString("source_datastore_id"),
+                rs.getString("source_collection_id"),
+                deserializeObjectMap(rs.getString("source_ref_json"))
         );
     }
 
     /** Map 序列化为 JSON 字符串。 */
     private String serializeMap(Map<String, String> map) {
+        if (map == null || map.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 序列化失败，使用空对象: error={}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    /** Map 序列化为 JSON 字符串。 */
+    private String serializeObjectMap(Map<String, Object> map) {
         if (map == null || map.isEmpty()) {
             return "{}";
         }
@@ -218,6 +277,31 @@ public class DocumentRepository {
         } catch (JsonProcessingException e) {
             log.warn("JSON 反序列化失败，返回空 Map: json={}, error={}", json, e.getMessage());
             return Map.of();
+        }
+    }
+
+    private Map<String, Object> deserializeObjectMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, Object> result = objectMapper.readValue(json, new TypeReference<>() {});
+            return result != null ? result : Map.of();
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 反序列化失败，返回空 Map: json={}, error={}", json, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private DocumentSourceType parseSourceType(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return DocumentSourceType.FILE;
+        }
+        try {
+            return DocumentSourceType.valueOf(rawValue);
+        } catch (IllegalArgumentException e) {
+            log.warn("未知文档来源类型，回退 FILE: value={}", rawValue);
+            return DocumentSourceType.FILE;
         }
     }
 }

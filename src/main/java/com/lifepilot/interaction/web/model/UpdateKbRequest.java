@@ -25,6 +25,7 @@ public record UpdateKbRequest(
         @Nullable String rerankerModel,
         @Nullable String chunkingStrategy,
         @Nullable Map<String, Object> chunkingConfig,
-        @Nullable List<String> tags
+        @Nullable List<String> tags,
+        @Nullable List<String> datastoreIds
 ) {
 }

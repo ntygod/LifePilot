@@ -12,6 +12,7 @@ import com.lifepilot.datastore.model.Document;
 import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
+import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
 import com.lifepilot.datastore.validation.PropertyValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,7 @@ public class DataStoreManager {
 
     private static final Logger log = LoggerFactory.getLogger(DataStoreManager.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String DEFAULT_PROJECTION_CONFIG_JSON = "{}";
     private static final TypeReference<List<PropertyDefinition>> PROP_LIST_TYPE =
             new TypeReference<>() {};
 
@@ -52,6 +54,8 @@ public class DataStoreManager {
     private final AggregationEngine aggregationEngine;
     private final PropertyValidator propertyValidator;
     private final DataStoreProperties properties;
+    @Nullable
+    private final DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher;
 
     public DataStoreManager(CollectionRepository collectionRepository,
                             DocumentRepository documentRepository,
@@ -59,12 +63,24 @@ public class DataStoreManager {
                             AggregationEngine aggregationEngine,
                             PropertyValidator propertyValidator,
                             DataStoreProperties properties) {
+        this(collectionRepository, documentRepository, queryEngine, aggregationEngine,
+                propertyValidator, properties, null);
+    }
+
+    public DataStoreManager(CollectionRepository collectionRepository,
+                            DocumentRepository documentRepository,
+                            QueryEngine queryEngine,
+                            AggregationEngine aggregationEngine,
+                            PropertyValidator propertyValidator,
+                            DataStoreProperties properties,
+                            @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher) {
         this.collectionRepository = collectionRepository;
         this.documentRepository = documentRepository;
         this.queryEngine = queryEngine;
         this.aggregationEngine = aggregationEngine;
         this.propertyValidator = propertyValidator;
         this.properties = properties;
+        this.knowledgeSyncPublisher = knowledgeSyncPublisher;
     }
 
     // ---- 集合操作 ----
@@ -89,6 +105,18 @@ public class DataStoreManager {
                                        @Nullable List<PropertyDefinition> propDefs,
                                        @Nullable String description,
                                        @Nullable String createdBy) {
+        return createCollection(name, type, propDefs, description, createdBy, null);
+    }
+
+    /**
+     * 创建新集合（支持显式向量投影配置）。
+     */
+    @Transactional
+    public Collection createCollection(String name, CollectionType type,
+                                       @Nullable List<PropertyDefinition> propDefs,
+                                       @Nullable String description,
+                                       @Nullable String createdBy,
+                                       @Nullable String projectionConfigJson) {
         // 1. 限额检查
         int currentCount = collectionRepository.count();
         if (currentCount >= properties.getMaxCollections()) {
@@ -109,6 +137,7 @@ public class DataStoreManager {
                 .type(type)
                 .description(description)
                 .propertiesJson(propertiesJson)
+                .projectionConfigJson(normalizeProjectionConfigJson(projectionConfigJson))
                 .createdBy(createdBy)
                 .build();
 
@@ -162,6 +191,16 @@ public class DataStoreManager {
     }
 
     /**
+     * 按 ID 查找集合。
+     *
+     * @param id 集合 ID
+     * @return 集合 Optional
+     */
+    public Optional<Collection> getCollection(String id) {
+        return collectionRepository.findById(id);
+    }
+
+    /**
      * 更新集合的描述和元数据。
      *
      * @param id           集合 ID
@@ -171,9 +210,32 @@ public class DataStoreManager {
      */
     public boolean updateCollection(String id, @Nullable String description,
                                     @Nullable String metadataJson) {
-        boolean updated = collectionRepository.update(id, description, metadataJson);
+        return updateCollection(id, description, metadataJson, null);
+    }
+
+    /**
+     * 更新集合的描述、元数据和投影配置。
+     */
+    @Transactional
+    public boolean updateCollection(String id, @Nullable String description,
+                                    @Nullable String metadataJson,
+                                    @Nullable String projectionConfigJson) {
+        var existing = collectionRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + id));
+        boolean updated = collectionRepository.update(
+                id,
+                description != null ? description : existing.description(),
+                normalizeProjectionConfigJson(
+                        projectionConfigJson != null ? projectionConfigJson : existing.projectionConfigJson()),
+                metadataJson != null ? metadataJson : existing.metadataJson());
         if (updated) {
             log.info("集合更新完成: id={}", id);
+            if (projectionConfigJson != null
+                    && !normalizeProjectionConfigJson(projectionConfigJson)
+                    .equals(normalizeProjectionConfigJson(existing.projectionConfigJson()))
+                    && knowledgeSyncPublisher != null) {
+                knowledgeSyncPublisher.publishDatastoreResync(id);
+            }
         }
         return updated;
     }
@@ -208,6 +270,9 @@ public class DataStoreManager {
         cleanupFtsEntries(id);
 
         // 4. 删除集合（CASCADE 自动删除文档）
+        if (knowledgeSyncPublisher != null) {
+            knowledgeSyncPublisher.publishDatastorePurge(id);
+        }
         boolean deleted = collectionRepository.delete(id);
         if (deleted) {
             log.info("集合删除完成: id={}, name={}", id, collection.name());
@@ -230,6 +295,7 @@ public class DataStoreManager {
      * @throws IllegalArgumentException 集合不存在、JSON 无效、属性校验失败、recordedAt 格式非法
      * @throws IllegalStateException    文档数量已达上限
      */
+    @Transactional
     public Document addDocument(String collectionId, String dataJson,
                                 @Nullable String recordedAt) {
         // 1. 集合存在性检查
@@ -295,8 +361,12 @@ public class DataStoreManager {
         log.info("文档添加完成: id={}, collectionId={}", documentId, collectionId);
 
         // 9. 返回创建的文档
-        return documentRepository.findById(documentId).orElseThrow(
+        var created = documentRepository.findById(documentId).orElseThrow(
                 () -> new IllegalStateException("文档创建后查询失败: id=" + documentId));
+        if (knowledgeSyncPublisher != null) {
+            knowledgeSyncPublisher.publishDocumentUpsert(collection, created);
+        }
+        return created;
     }
 
     /**
@@ -320,6 +390,7 @@ public class DataStoreManager {
      * @return 是否更新成功
      * @throws IllegalArgumentException 文档不存在、JSON 无效、属性校验失败
      */
+    @Transactional
     public boolean updateDocument(String id, String dataJson) {
         // 1. 文档存在性检查
         var existingDoc = documentRepository.findById(id)
@@ -360,6 +431,11 @@ public class DataStoreManager {
         }
 
         log.info("文档更新完成: id={}", id);
+        if (knowledgeSyncPublisher != null) {
+            var updatedDoc = documentRepository.findById(id)
+                    .orElseThrow(() -> new IllegalStateException("文档更新后查询失败: id=" + id));
+            knowledgeSyncPublisher.publishDocumentUpsert(collection, updatedDoc);
+        }
         return true;
     }
 
@@ -372,6 +448,7 @@ public class DataStoreManager {
      * @return 是否删除成功
      * @throws IllegalArgumentException 文档不存在
      */
+    @Transactional
     public boolean deleteDocument(String id) {
         // 1. 文档存在性检查
         var existingDoc = documentRepository.findById(id)
@@ -389,6 +466,9 @@ public class DataStoreManager {
         documentRepository.delete(id);
 
         log.info("文档删除完成: id={}", id);
+        if (knowledgeSyncPublisher != null) {
+            knowledgeSyncPublisher.publishDocumentDelete(existingDoc.collectionId(), id, existingDoc.updatedAt());
+        }
         return true;
     }
 
@@ -529,6 +609,10 @@ public class DataStoreManager {
             log.warn("属性定义反序列化失败: json={}, error={}", propertiesJson, e.getMessage());
             return List.of();
         }
+    }
+
+    private String normalizeProjectionConfigJson(@Nullable String projectionConfigJson) {
+        return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
     }
 
     /**

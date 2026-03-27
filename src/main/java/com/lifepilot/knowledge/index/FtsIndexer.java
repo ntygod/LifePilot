@@ -1,8 +1,10 @@
 package com.lifepilot.knowledge.index;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.IndexingResult;
+import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -103,25 +105,38 @@ public class FtsIndexer {
      * @return 搜索结果列表（按 BM25 相关性降序）
      */
     public List<DocumentSearchResult> search(String query, List<String> kbIds, int topK) {
-        if (query == null || query.isBlank() || kbIds.isEmpty()) {
+        if (kbIds == null || kbIds.isEmpty()) {
+            return List.of();
+        }
+        return searchByScopes(query, kbIds.stream()
+                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .toList(), topK);
+    }
+
+    /**
+     * FTS5 全文搜索，并按知识域范围过滤。
+     */
+    public List<DocumentSearchResult> searchByScopes(String query, List<KnowledgeSearchScope> scopes, int topK) {
+        if (query == null || query.isBlank() || scopes == null || scopes.isEmpty()) {
             return List.of();
         }
 
-        var kbPlaceholders = kbIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        ScopeSql scopeSql = buildScopeSql("fts.knowledge_base_id", "dc.source_datastore_id", scopes);
         var sql = """
                 SELECT fts.chunk_id, fts.document_id, fts.knowledge_base_id, fts.content,
                        dc.context_prefix, dc.heading_hierarchy_json, dc.metadata_json,
+                       dc.source_type, dc.source_datastore_id, dc.source_collection_id,
                        rank AS score
                 FROM document_chunks_fts fts
                 JOIN document_chunks dc ON fts.chunk_id = dc.id
                 WHERE document_chunks_fts MATCH ?
-                  AND fts.knowledge_base_id IN (%s)
+                  AND (%s)
                 ORDER BY rank
-                LIMIT ?""".formatted(kbPlaceholders);
+                LIMIT ?""".formatted(scopeSql.sql());
 
         var params = new ArrayList<Object>();
         params.add(escapeFtsQuery(query));
-        params.addAll(kbIds);
+        params.addAll(scopeSql.params());
         params.add(topK);
 
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
@@ -137,7 +152,12 @@ public class FtsIndexer {
                     headings,
                     Math.abs(rs.getDouble("score")), // FTS5 rank 为负数，取绝对值
                     "fts",
-                    Map.of()
+                    Map.of(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    parseSourceType(rs.getString("source_type")),
+                    Optional.ofNullable(rs.getString("source_datastore_id")),
+                    Optional.ofNullable(rs.getString("source_collection_id"))
             );
         }, params.toArray());
     }
@@ -163,4 +183,37 @@ public class FtsIndexer {
                 .map(s -> s.trim().replaceAll("^\"|\"$", ""))
                 .toList();
     }
+
+    private ScopeSql buildScopeSql(String kbColumn, String datastoreColumn, List<KnowledgeSearchScope> scopes) {
+        var sqlParts = new ArrayList<String>();
+        var params = new ArrayList<Object>();
+        for (KnowledgeSearchScope scope : scopes) {
+            if (scope == null || scope.knowledgeBaseId() == null || scope.knowledgeBaseId().isBlank()) {
+                continue;
+            }
+            if (scope.datastoreId() == null || scope.datastoreId().isBlank()) {
+                sqlParts.add(kbColumn + " = ?");
+                params.add(scope.knowledgeBaseId());
+            } else {
+                sqlParts.add("(" + kbColumn + " = ? AND " + datastoreColumn + " = ?)");
+                params.add(scope.knowledgeBaseId());
+                params.add(scope.datastoreId());
+            }
+        }
+        return new ScopeSql(String.join(" OR ", sqlParts), params);
+    }
+
+    private DocumentSourceType parseSourceType(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return DocumentSourceType.FILE;
+        }
+        try {
+            return DocumentSourceType.valueOf(rawValue);
+        } catch (IllegalArgumentException e) {
+            log.warn("未知检索来源类型，回退 FILE: value={}", rawValue);
+            return DocumentSourceType.FILE;
+        }
+    }
+
+    private record ScopeSql(String sql, List<Object> params) {}
 }
