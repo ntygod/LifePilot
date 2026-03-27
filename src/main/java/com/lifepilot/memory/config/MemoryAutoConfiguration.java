@@ -393,12 +393,10 @@ public class MemoryAutoConfiguration {
     public EpisodicToSemanticConsolidator episodicToSemanticConsolidator(
             EpisodicMemory episodicMemory,
             SemanticMemory semanticMemory,
-            ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider,
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties) {
         log.info("记忆模块: 注册 EpisodicToSemanticConsolidator");
-        return new EpisodicToSemanticConsolidator(episodicMemory, semanticMemory,
-                extractionPipelineProvider, jdbcTemplate, properties);
+        return new EpisodicToSemanticConsolidator(episodicMemory, semanticMemory, jdbcTemplate, properties);
     }
 
     @Bean
