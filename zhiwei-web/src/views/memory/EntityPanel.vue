@@ -11,11 +11,13 @@ import { memoryApi } from '@/api/client'
 import type {
   EntitySummary,
   EntityDetail,
+  EntityProvenance,
   EntityListParams,
   EntityCreateRequest,
   EntityUpdateRequest,
 } from '@/types'
 import { ENTITY_TYPES } from '@/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -45,6 +47,28 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { DatePicker } from '@/components/ui/date-picker'
 import Pagination from '@/components/common/Pagination.vue'
 
+const MEMORY_SCOPE_LABELS: Record<string, string> = {
+  USER_PROFILE: '用户画像',
+  USER_FACT: '用户事实',
+  AGENT_EXPERIENCE: '执行经验',
+  DOMAIN_MEMORY: '领域记忆',
+}
+
+const REALITY_TYPE_LABELS: Record<string, string> = {
+  REAL: '真实',
+  FICTIONAL: '虚构',
+  SIMULATED: '模拟',
+  UNKNOWN: '未标注',
+}
+
+const ORIGIN_TYPE_LABELS: Record<string, string> = {
+  CHAT: '对话抽取',
+  KNOWLEDGE_BASE: '知识库导入',
+  DATASTORE: 'Datastore 同步',
+  MANUAL: '手动维护',
+  TOOL: '工具写入',
+}
+
 // ── 筛选状态 ──
 const filterQ = ref('')
 const filterType = ref<string>('')
@@ -68,6 +92,8 @@ const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailEntity = ref<EntityDetail | null>(null)
 const detailTab = ref('info')
+const provenanceItems = ref<EntityProvenance[]>([])
+const provenanceLoading = ref(false)
 
 // 版本历史
 const historyItems = ref<EntityDetail[]>([])
@@ -172,9 +198,11 @@ async function openDetail(entity: EntitySummary) {
   detailEntity.value = null
   historyItems.value = []
   relatedItems.value = []
+  provenanceItems.value = []
 
   try {
     detailEntity.value = await memoryApi.getEntity(entity.id)
+    void loadProvenances()
   } catch (e: any) {
     console.error('加载实体详情失败:', e)
   } finally {
@@ -206,11 +234,24 @@ async function loadRelated() {
   }
 }
 
+async function loadProvenances() {
+  if (!detailEntity.value || provenanceItems.value.length > 0) return
+  provenanceLoading.value = true
+  try {
+    provenanceItems.value = await memoryApi.getEntityProvenances(detailEntity.value.id)
+  } catch (e: any) {
+    console.error('加载来源明细失败:', e)
+  } finally {
+    provenanceLoading.value = false
+  }
+}
+
 function handleDetailTabChange(tab: string | number) {
   const nextTab = String(tab)
   detailTab.value = nextTab
   if (nextTab === 'history') loadHistory()
   if (nextTab === 'related') loadRelated()
+  if (nextTab === 'provenance') loadProvenances()
 }
 
 // ── 新建实体 ──
@@ -318,6 +359,40 @@ function formatDate(iso: string) {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function formatMemoryScope(scope?: string | null) {
+  if (!scope) return '未分配'
+  return MEMORY_SCOPE_LABELS[scope] || scope
+}
+
+function formatRealityType(realityType?: string | null) {
+  if (!realityType) return '未标注'
+  return REALITY_TYPE_LABELS[realityType] || realityType
+}
+
+function formatOriginType(originType?: string | null) {
+  if (!originType) return '未知来源'
+  return ORIGIN_TYPE_LABELS[originType] || originType
+}
+
+function formatSpaceId(spaceId?: string | null) {
+  if (!spaceId) return '默认空间'
+  return spaceId
+}
+
+function buildProvenanceDetails(item: EntityProvenance) {
+  return [
+    { label: '来源引用', value: item.sourceReference },
+    { label: '对话 ID', value: item.sourceConversationId },
+    { label: '会话 ID', value: item.sourceSessionId },
+    { label: 'Turn ID', value: item.sourceTurnId },
+    { label: '消息 ID', value: item.sourceEntryId },
+    { label: '知识库 ID', value: item.sourceKnowledgeBaseId },
+    { label: 'Datastore ID', value: item.sourceDatastoreId },
+    { label: 'Collection ID', value: item.sourceCollectionId },
+    { label: '文档 ID', value: item.sourceDocumentId },
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
 }
 </script>
 
@@ -435,8 +510,8 @@ function formatDate(iso: string) {
           <tr class="border-b border-border/60">
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">名称</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">类型</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">归属</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">重要性</th>
-            <th class="px-4 py-3 text-right font-medium text-muted-foreground">访问次数</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">版本</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">创建时间</th>
           </tr>
@@ -454,8 +529,16 @@ function formatDate(iso: string) {
                 {{ entity.typeLabel }}
               </span>
             </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline">{{ formatMemoryScope(entity.memoryScope) }}</Badge>
+                <Badge variant="secondary">{{ formatRealityType(entity.realityType) }}</Badge>
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground" :title="formatSpaceId(entity.spaceId)">
+                {{ formatSpaceId(entity.spaceId) }}
+              </p>
+            </td>
             <td class="px-4 py-3 text-right tabular-nums">{{ entity.importanceScore.toFixed(2) }}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{{ entity.accessCount }}</td>
             <td class="px-4 py-3 text-right tabular-nums">v{{ entity.version }}</td>
             <td class="px-4 py-3 text-muted-foreground">{{ formatDate(entity.createdAt) }}</td>
           </tr>
@@ -516,6 +599,7 @@ function formatDate(iso: string) {
           <Tabs :model-value="detailTab" @update:model-value="handleDetailTabChange">
             <TabsList class="w-full justify-start">
               <TabsTrigger value="info">基本信息</TabsTrigger>
+              <TabsTrigger value="provenance">来源明细</TabsTrigger>
               <TabsTrigger value="history">版本历史</TabsTrigger>
               <TabsTrigger value="related">关联实体</TabsTrigger>
             </TabsList>
@@ -526,6 +610,18 @@ function formatDate(iso: string) {
                 <div>
                   <span class="text-muted-foreground">类型</span>
                   <p class="font-medium">{{ detailEntity.typeLabel }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">记忆范围</span>
+                  <p class="font-medium">{{ formatMemoryScope(detailEntity.memoryScope) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">现实性</span>
+                  <p class="font-medium">{{ formatRealityType(detailEntity.realityType) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">记忆空间</span>
+                  <p class="font-medium break-all">{{ formatSpaceId(detailEntity.spaceId) }}</p>
                 </div>
                 <div>
                   <span class="text-muted-foreground">重要性分数</span>
@@ -567,6 +663,43 @@ function formatDate(iso: string) {
               <div class="text-sm">
                 <span class="text-muted-foreground">属性</span>
                 <pre class="mt-1 rounded-md bg-muted/50 p-3 text-xs overflow-x-auto">{{ JSON.stringify(detailEntity.properties, null, 2) }}</pre>
+              </div>
+            </TabsContent>
+
+            <!-- 来源明细 -->
+            <TabsContent value="provenance" class="mt-4">
+              <div v-if="provenanceLoading" class="space-y-2">
+                <Skeleton v-for="i in 3" :key="i" class="h-20 w-full" />
+              </div>
+              <div v-else-if="provenanceItems.length === 0" class="py-6 text-center text-sm text-muted-foreground">
+                暂无来源明细
+              </div>
+              <div v-else class="space-y-3">
+                <div
+                  v-for="(item, idx) in provenanceItems"
+                  :key="`${item.originType}-${item.createdAt}-${idx}`"
+                  class="rounded-md border border-border/60 p-3"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{{ formatOriginType(item.originType) }}</Badge>
+                      <span class="text-xs text-muted-foreground">
+                        置信度 {{ (item.confidence * 100).toFixed(0) }}%
+                      </span>
+                    </div>
+                    <span class="text-xs text-muted-foreground">{{ formatDate(item.createdAt) }}</span>
+                  </div>
+                  <div class="mt-3 grid gap-2 text-sm">
+                    <div
+                      v-for="entry in buildProvenanceDetails(item)"
+                      :key="`${item.createdAt}-${entry.label}`"
+                      class="grid gap-1 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start"
+                    >
+                      <span class="text-muted-foreground">{{ entry.label }}</span>
+                      <span class="break-all font-medium">{{ entry.value }}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 

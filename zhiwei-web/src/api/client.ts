@@ -79,6 +79,7 @@
   MemorySearchResult,
   EntitySummary,
   EntityDetail,
+  EntityProvenance,
   EntityCreateRequest,
   EntityUpdateRequest,
   EntityListParams,
@@ -1455,6 +1456,7 @@ export const memoryApi = {
     request<PageResult<EntitySummary>>(`/memories/entities?${toQueryString(params as unknown as Record<string, unknown>)}`),
   getEntity: (id: string) => request<EntityDetail>(`/memories/entities/${id}`),
   getEntityHistory: (id: string) => request<EntityDetail[]>(`/memories/entities/${id}/history`),
+  getEntityProvenances: (id: string) => request<EntityProvenance[]>(`/memories/entities/${id}/provenances`),
   getRelatedEntities: (id: string, maxDepth = 2) =>
     request<EntitySummary[]>(`/memories/entities/${id}/related?maxDepth=${maxDepth}`),
   createEntity: (req: EntityCreateRequest) =>
