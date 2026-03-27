@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bot,
   Brain,
+  Database,
   FlaskConical,
   GitBranch,
   MessageSquare,
@@ -48,10 +49,11 @@ export const primaryNavigationItems: PrimaryNavItem[] = [
     path: '/knowledge-bases',
     icon: BookOpen,
     description: '管理资料、文档和检索入口。',
-    matchPrefixes: ['/knowledge-bases'],
+    matchPrefixes: ['/knowledge-bases', '/datastores'],
     mode: 'links',
     children: [
       { label: '知识库', path: '/knowledge-bases', icon: BookOpen },
+      { label: 'Datastore', path: '/datastores', icon: Database },
     ],
   },
   {

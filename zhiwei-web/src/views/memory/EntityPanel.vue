@@ -521,6 +521,14 @@ function canOpenDocument(item: EntityProvenance) {
   return Boolean(item.sourceKnowledgeBaseId && item.sourceDocumentId)
 }
 
+function resolveDatastoreTargetId(item: EntityProvenance) {
+  return item.sourceDatastoreId || item.sourceCollectionId || null
+}
+
+function canOpenDatastore(item: EntityProvenance) {
+  return Boolean(resolveDatastoreTargetId(item))
+}
+
 function openKnowledgeBase(item: EntityProvenance) {
   if (!item.sourceKnowledgeBaseId) return
   void router.push({
@@ -537,6 +545,15 @@ function openDocument(item: EntityProvenance) {
       id: item.sourceKnowledgeBaseId,
       docId: item.sourceDocumentId,
     },
+  })
+}
+
+function openDatastore(item: EntityProvenance) {
+  const targetId = resolveDatastoreTargetId(item)
+  if (!targetId) return
+  void router.push({
+    name: 'datastoreDetail',
+    params: { id: targetId },
   })
 }
 </script>
@@ -935,6 +952,17 @@ function openDocument(item: EntityProvenance) {
                       </span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                      <Button
+                        v-if="canOpenDatastore(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-datastore"
+                        @click="openDatastore(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看 Datastore
+                      </Button>
                       <Button
                         v-if="canOpenKnowledgeBase(item)"
                         size="sm"

@@ -225,7 +225,7 @@ describe('EntityPanel 记忆元数据展示', () => {
     })
   })
 
-  it('来源明细支持跳转到知识库和文档详情', async () => {
+  it('来源明细支持跳转到 Datastore、知识库和文档详情', async () => {
     const wrapper = mountPanel()
     await flushPromises()
 
@@ -233,11 +233,19 @@ describe('EntityPanel 记忆元数据展示', () => {
     await flushPromises()
 
     const buttons = wrapper.findAll('button')
+    const openDatastoreButton = buttons.find(button => button.text().includes('查看 Datastore'))
     const openKbButton = buttons.find(button => button.text().includes('查看知识库'))
     const openDocButton = buttons.find(button => button.text().includes('查看文档'))
 
+    expect(openDatastoreButton).toBeTruthy()
     expect(openKbButton).toBeTruthy()
     expect(openDocButton).toBeTruthy()
+
+    await openDatastoreButton!.trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'datastoreDetail',
+      params: { id: 'ds-1' },
+    })
 
     await openKbButton!.trigger('click')
     expect(mocks.router.push).toHaveBeenCalledWith({
