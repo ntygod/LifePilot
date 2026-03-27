@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Search,
   Plus,
   Pencil,
   Archive,
   RotateCcw,
+  ArrowUpRight,
 } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
 import type {
   EntitySummary,
   EntityDetail,
+  EntityProvenance,
+  EntityProvenanceParams,
   EntityListParams,
   EntityCreateRequest,
   EntityUpdateRequest,
 } from '@/types'
 import { ENTITY_TYPES } from '@/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -44,14 +49,56 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { DatePicker } from '@/components/ui/date-picker'
 import Pagination from '@/components/common/Pagination.vue'
+import { useMemoryStore } from '@/stores/memory'
+
+const MEMORY_SCOPE_LABELS: Record<string, string> = {
+  USER_PROFILE: '用户画像',
+  USER_FACT: '用户事实',
+  AGENT_EXPERIENCE: '执行经验',
+  DOMAIN_MEMORY: '领域记忆',
+}
+
+const REALITY_TYPE_LABELS: Record<string, string> = {
+  REAL: '真实',
+  FICTIONAL: '虚构',
+  SIMULATED: '模拟',
+  UNKNOWN: '未标注',
+}
+
+const ORIGIN_TYPE_LABELS: Record<string, string> = {
+  CHAT: '对话抽取',
+  KNOWLEDGE_BASE_DOCUMENT: '知识库文档',
+  DATASTORE_DOCUMENT: 'Datastore 文档',
+  MANUAL: '手动维护',
+  TOOL: '工具写入',
+  CONSOLIDATION: '记忆巩固',
+  UNKNOWN: '未标注',
+}
+
+const ORIGIN_TYPE_OPTIONS = [
+  { value: 'CHAT', label: '对话抽取' },
+  { value: 'KNOWLEDGE_BASE_DOCUMENT', label: '知识库文档' },
+  { value: 'DATASTORE_DOCUMENT', label: 'Datastore 文档' },
+  { value: 'MANUAL', label: '手动维护' },
+  { value: 'TOOL', label: '工具写入' },
+  { value: 'CONSOLIDATION', label: '记忆巩固' },
+] as const
 
 // ── 筛选状态 ──
 const filterQ = ref('')
 const filterType = ref<string>('')
+const filterSpaceId = ref('')
+const filterMemoryScope = ref<string>('')
+const filterRealityType = ref<string>('')
+const filterOriginType = ref<string>('')
+const filterSourceKnowledgeBaseId = ref('')
+const filterSourceDatastoreId = ref('')
+const filterSourceDocumentId = ref('')
 const filterTimeFrom = ref('')
 const filterTimeTo = ref('')
 const filterSortBy = ref('createdAt')
 const filterOrder = ref('desc')
+const syncingRouteFilters = ref(false)
 
 // ── 列表状态 ──
 const PAGE_SIZE = 20
@@ -68,6 +115,13 @@ const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailEntity = ref<EntityDetail | null>(null)
 const detailTab = ref('info')
+const provenanceItems = ref<EntityProvenance[]>([])
+const provenanceLoading = ref(false)
+const provenanceOriginType = ref<string>('')
+const provenanceKnowledgeBaseId = ref('')
+const provenanceDatastoreId = ref('')
+const provenanceDocumentId = ref('')
+const loadedProvenanceKey = ref('')
 
 // 版本历史
 const historyItems = ref<EntityDetail[]>([])
@@ -119,6 +173,30 @@ const ORDER_OPTIONS = [
   { value: 'asc', label: '升序' },
 ] as const
 
+const MEMORY_SCOPE_OPTIONS = [
+  { value: 'USER_PROFILE', label: '用户画像' },
+  { value: 'USER_FACT', label: '用户事实' },
+  { value: 'AGENT_EXPERIENCE', label: '执行经验' },
+  { value: 'DOMAIN_MEMORY', label: '领域记忆' },
+] as const
+
+const REALITY_TYPE_OPTIONS = [
+  { value: 'REAL', label: '真实' },
+  { value: 'FICTIONAL', label: '虚构' },
+  { value: 'SIMULATED', label: '模拟' },
+  { value: 'UNKNOWN', label: '未标注' },
+] as const
+
+const store = useMemoryStore()
+const route = useRoute()
+const router = useRouter()
+const activeListSourceFilters = computed(() => [
+  filterOriginType.value ? `来源类型: ${formatOriginType(filterOriginType.value)}` : null,
+  filterSourceKnowledgeBaseId.value.trim() ? `知识库: ${filterSourceKnowledgeBaseId.value.trim()}` : null,
+  filterSourceDatastoreId.value.trim() ? `Datastore: ${filterSourceDatastoreId.value.trim()}` : null,
+  filterSourceDocumentId.value.trim() ? `文档: ${filterSourceDocumentId.value.trim()}` : null,
+].filter((item): item is string => Boolean(item)))
+
 // ── 数据加载 ──
 async function loadEntities() {
   loading.value = true
@@ -132,6 +210,13 @@ async function loadEntities() {
     }
     if (filterQ.value.trim()) params.q = filterQ.value.trim()
     if (filterType.value) params.type = filterType.value
+    if (filterSpaceId.value.trim()) params.spaceId = filterSpaceId.value.trim()
+    if (filterMemoryScope.value) params.memoryScope = filterMemoryScope.value
+    if (filterRealityType.value) params.realityType = filterRealityType.value
+    if (filterOriginType.value) params.originType = filterOriginType.value
+    if (filterSourceKnowledgeBaseId.value.trim()) params.sourceKnowledgeBaseId = filterSourceKnowledgeBaseId.value.trim()
+    if (filterSourceDatastoreId.value.trim()) params.sourceDatastoreId = filterSourceDatastoreId.value.trim()
+    if (filterSourceDocumentId.value.trim()) params.sourceDocumentId = filterSourceDocumentId.value.trim()
     if (filterTimeFrom.value) params.timeFrom = filterTimeFrom.value
     if (filterTimeTo.value) params.timeTo = filterTimeTo.value
 
@@ -156,25 +241,77 @@ function handlePageChange(page: number) {
   loadEntities()
 }
 
+function normalizeQueryValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0].trim() : ''
+  }
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function syncListFiltersFromRoute() {
+  syncingRouteFilters.value = true
+  filterQ.value = normalizeQueryValue(route.query.q)
+  filterType.value = normalizeQueryValue(route.query.type)
+  filterSpaceId.value = normalizeQueryValue(route.query.spaceId)
+  filterMemoryScope.value = normalizeQueryValue(route.query.memoryScope)
+  filterRealityType.value = normalizeQueryValue(route.query.realityType)
+  filterOriginType.value = normalizeQueryValue(route.query.originType)
+  filterSourceKnowledgeBaseId.value = normalizeQueryValue(route.query.sourceKnowledgeBaseId)
+  filterSourceDatastoreId.value = normalizeQueryValue(route.query.sourceDatastoreId)
+  filterSourceDocumentId.value = normalizeQueryValue(route.query.sourceDocumentId)
+  currentPage.value = 0
+  syncingRouteFilters.value = false
+  void loadEntities()
+}
+
 // 筛选条件变化时重新加载
-watch([filterType, filterSortBy, filterOrder, filterTimeFrom, filterTimeTo], () => {
+watch([filterType, filterMemoryScope, filterRealityType, filterOriginType, filterSortBy, filterOrder, filterTimeFrom, filterTimeTo], () => {
+  if (syncingRouteFilters.value) return
   currentPage.value = 0
   loadEntities()
 })
 
-onMounted(() => loadEntities())
+watch(
+  () => route.query,
+  () => {
+    syncListFiltersFromRoute()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => store.entityDetailRequest,
+  (request) => {
+    if (!request?.id) return
+    void openDetailById(request.id).finally(() => {
+      store.clearEntityDetailRequest()
+    })
+  },
+  { immediate: true }
+)
 
 // ── 详情面板 ──
 async function openDetail(entity: EntitySummary) {
+  await openDetailById(entity.id)
+}
+
+async function openDetailById(entityId: string) {
   detailOpen.value = true
   detailLoading.value = true
   detailTab.value = 'info'
   detailEntity.value = null
   historyItems.value = []
   relatedItems.value = []
+  provenanceItems.value = []
+  provenanceOriginType.value = ''
+  provenanceKnowledgeBaseId.value = ''
+  provenanceDatastoreId.value = ''
+  provenanceDocumentId.value = ''
+  loadedProvenanceKey.value = ''
 
   try {
-    detailEntity.value = await memoryApi.getEntity(entity.id)
+    detailEntity.value = await memoryApi.getEntity(entityId)
+    void fetchProvenances(true)
   } catch (e: any) {
     console.error('加载实体详情失败:', e)
   } finally {
@@ -206,11 +343,31 @@ async function loadRelated() {
   }
 }
 
+async function loadProvenances() {
+  return fetchProvenances(false)
+}
+
+async function fetchProvenances(force: boolean) {
+  if (!detailEntity.value) return
+  const currentFilterKey = buildProvenanceFilterKey()
+  if (!force && loadedProvenanceKey.value === currentFilterKey) return
+  provenanceLoading.value = true
+  try {
+    provenanceItems.value = await memoryApi.getEntityProvenances(detailEntity.value.id, buildProvenanceParams())
+    loadedProvenanceKey.value = currentFilterKey
+  } catch (e: any) {
+    console.error('加载来源明细失败:', e)
+  } finally {
+    provenanceLoading.value = false
+  }
+}
+
 function handleDetailTabChange(tab: string | number) {
   const nextTab = String(tab)
   detailTab.value = nextTab
   if (nextTab === 'history') loadHistory()
   if (nextTab === 'related') loadRelated()
+  if (nextTab === 'provenance') fetchProvenances(false)
 }
 
 // ── 新建实体 ──
@@ -319,91 +476,333 @@ function formatDate(iso: string) {
     hour: '2-digit', minute: '2-digit',
   })
 }
+
+function formatMemoryScope(scope?: string | null) {
+  if (!scope) return '未分配'
+  return MEMORY_SCOPE_LABELS[scope] || scope
+}
+
+function formatRealityType(realityType?: string | null) {
+  if (!realityType) return '未标注'
+  return REALITY_TYPE_LABELS[realityType] || realityType
+}
+
+function formatOriginType(originType?: string | null) {
+  if (!originType) return '未知来源'
+  return ORIGIN_TYPE_LABELS[originType] || originType
+}
+
+function formatSpaceId(spaceId?: string | null) {
+  if (!spaceId) return '默认空间'
+  return spaceId
+}
+
+function buildProvenanceParams(): EntityProvenanceParams {
+  const params: EntityProvenanceParams = {}
+  if (provenanceOriginType.value) params.originType = provenanceOriginType.value
+  if (provenanceKnowledgeBaseId.value.trim()) params.sourceKnowledgeBaseId = provenanceKnowledgeBaseId.value.trim()
+  if (provenanceDatastoreId.value.trim()) params.sourceDatastoreId = provenanceDatastoreId.value.trim()
+  if (provenanceDocumentId.value.trim()) params.sourceDocumentId = provenanceDocumentId.value.trim()
+  return params
+}
+
+function buildProvenanceFilterKey() {
+  const params = buildProvenanceParams()
+  return JSON.stringify(params)
+}
+
+function applyProvenanceFilters() {
+  loadedProvenanceKey.value = ''
+  void fetchProvenances(true)
+}
+
+function resetProvenanceFilters() {
+  provenanceOriginType.value = ''
+  provenanceKnowledgeBaseId.value = ''
+  provenanceDatastoreId.value = ''
+  provenanceDocumentId.value = ''
+  loadedProvenanceKey.value = ''
+  void fetchProvenances(true)
+}
+
+function buildNamedReference(name?: string | null, id?: string | null) {
+  const normalizedName = name?.trim()
+  const normalizedId = id?.trim()
+  if (normalizedName && normalizedId && normalizedName !== normalizedId) {
+    return `${normalizedName} (${normalizedId})`
+  }
+  return normalizedName || normalizedId || null
+}
+
+function buildProvenanceDetails(item: EntityProvenance) {
+  const details: Array<{ label: string; value: string | null }> = [
+    {
+      label: '来源引用',
+      value: item.sourceReference && item.sourceReference !== item.sourceDocumentId
+        ? item.sourceReference
+        : null,
+    },
+    { label: '对话 ID', value: item.sourceConversationId },
+    { label: '会话 ID', value: item.sourceSessionId },
+    { label: 'Turn ID', value: item.sourceTurnId },
+    { label: '消息 ID', value: item.sourceEntryId },
+    { label: '知识库', value: buildNamedReference(item.sourceKnowledgeBaseName, item.sourceKnowledgeBaseId) },
+    { label: 'Datastore', value: buildNamedReference(item.sourceDatastoreName, item.sourceDatastoreId) },
+    {
+      label: 'Collection',
+      value: item.sourceCollectionId && item.sourceCollectionId !== item.sourceDatastoreId
+        ? buildNamedReference(item.sourceCollectionName, item.sourceCollectionId)
+        : null,
+    },
+    { label: '文档', value: buildNamedReference(item.sourceDocumentName, item.sourceDocumentId) },
+  ]
+  return details.filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
+}
+
+function canOpenKnowledgeBase(item: EntityProvenance) {
+  return Boolean(item.sourceKnowledgeBaseId)
+}
+
+function canOpenDocument(item: EntityProvenance) {
+  return Boolean(item.sourceKnowledgeBaseId && item.sourceDocumentId)
+}
+
+function resolveDatastoreTargetId(item: EntityProvenance) {
+  return item.sourceDatastoreId || item.sourceCollectionId || null
+}
+
+function canOpenDatastore(item: EntityProvenance) {
+  return Boolean(resolveDatastoreTargetId(item))
+}
+
+function openKnowledgeBase(item: EntityProvenance) {
+  if (!item.sourceKnowledgeBaseId) return
+  void router.push({
+    name: 'knowledgeBaseDetail',
+    params: { id: item.sourceKnowledgeBaseId },
+  })
+}
+
+function openDocument(item: EntityProvenance) {
+  if (!item.sourceKnowledgeBaseId || !item.sourceDocumentId) return
+  void router.push({
+    name: 'knowledgeBaseDocumentDetail',
+    params: {
+      id: item.sourceKnowledgeBaseId,
+      docId: item.sourceDocumentId,
+    },
+  })
+}
+
+function openDatastore(item: EntityProvenance) {
+  const targetId = resolveDatastoreTargetId(item)
+  if (!targetId) return
+  void router.push({
+    name: 'datastoreDetail',
+    params: { id: targetId },
+  })
+}
 </script>
 
 <template>
   <div class="space-y-4">
     <!-- 筛选栏 -->
     <div class="detail-card p-4">
-      <div class="flex flex-wrap items-end gap-3">
-        <!-- 关键词搜索 -->
-        <div class="flex-1 min-w-[200px]">
-          <label class="text-xs text-muted-foreground mb-1 block">关键词搜索</label>
-          <div class="relative">
-            <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <div class="space-y-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <!-- 关键词搜索 -->
+          <div class="flex-1 min-w-[200px]">
+            <label class="text-xs text-muted-foreground mb-1 block">关键词搜索</label>
+            <div class="relative">
+              <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                v-model="filterQ"
+                placeholder="按名称或描述搜索..."
+                class="pl-9"
+                @keydown.enter="handleSearch"
+              />
+            </div>
+          </div>
+
+          <!-- 空间标识 -->
+          <div class="min-w-[220px] flex-1">
+            <label class="text-xs text-muted-foreground mb-1 block">空间标识</label>
             <Input
-              v-model="filterQ"
-              placeholder="按名称或描述搜索..."
-              class="pl-9"
+              v-model="filterSpaceId"
+              placeholder="如 datastore:novel-workspace"
               @keydown.enter="handleSearch"
             />
           </div>
+
+          <!-- 实体类型 -->
+          <div class="w-36">
+            <label class="text-xs text-muted-foreground mb-1 block">实体类型</label>
+            <Select
+              :model-value="filterType || '__all__'"
+              @update:model-value="(value) => filterType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="全部类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">全部类型</SelectItem>
+                <SelectItem v-for="t in ENTITY_TYPES" :key="t.value" :value="t.value">
+                  {{ t.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <!-- 记忆范围 -->
+          <div class="w-36">
+            <label class="text-xs text-muted-foreground mb-1 block">记忆范围</label>
+            <Select
+              :model-value="filterMemoryScope || '__all__'"
+              @update:model-value="(value) => filterMemoryScope = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="全部范围" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">全部范围</SelectItem>
+                <SelectItem v-for="scope in MEMORY_SCOPE_OPTIONS" :key="scope.value" :value="scope.value">
+                  {{ scope.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <!-- 现实性 -->
+          <div class="w-36">
+            <label class="text-xs text-muted-foreground mb-1 block">现实性</label>
+            <Select
+              :model-value="filterRealityType || '__all__'"
+              @update:model-value="(value) => filterRealityType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="全部现实性" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">全部现实性</SelectItem>
+                <SelectItem v-for="reality in REALITY_TYPE_OPTIONS" :key="reality.value" :value="reality.value">
+                  {{ reality.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <!-- 时间范围 -->
+          <div class="w-36">
+            <label class="text-xs text-muted-foreground mb-1 block">开始时间</label>
+            <DatePicker v-model="filterTimeFrom" placeholder="开始日期" class="w-full" />
+          </div>
+          <div class="w-36">
+            <label class="text-xs text-muted-foreground mb-1 block">结束时间</label>
+            <DatePicker v-model="filterTimeTo" placeholder="结束日期" class="w-full" />
+          </div>
+
+          <!-- 排序 -->
+          <div class="w-36">
+            <label class="text-xs text-muted-foreground mb-1 block">排序字段</label>
+            <Select v-model="filterSortBy">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="s in SORT_OPTIONS" :key="s.value" :value="s.value">
+                  {{ s.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="w-28">
+            <label class="text-xs text-muted-foreground mb-1 block">排序方向</label>
+            <Select v-model="filterOrder">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in ORDER_OPTIONS" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <!-- 搜索 + 新建按钮 -->
+          <div class="flex items-end gap-2">
+            <Button @click="handleSearch">搜索</Button>
+            <Button variant="outline" @click="openCreate">
+              <Plus class="mr-1.5 size-4" />
+              新建实体
+            </Button>
+          </div>
         </div>
 
-        <!-- 实体类型 -->
-        <div class="w-36">
-          <label class="text-xs text-muted-foreground mb-1 block">实体类型</label>
-          <Select
-            :model-value="filterType || '__all__'"
-            @update:model-value="(value) => filterType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="全部类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">全部类型</SelectItem>
-              <SelectItem v-for="t in ENTITY_TYPES" :key="t.value" :value="t.value">
-                {{ t.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <div class="rounded-md border border-border/60 p-3">
+          <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="text-xs font-medium text-foreground">来源筛选</div>
+              <p class="text-xs text-muted-foreground">按写入来源收窄实体列表，适合从 Datastore 或知识库反查被引用的记忆。</p>
+            </div>
+            <div v-if="activeListSourceFilters.length > 0" class="flex flex-wrap gap-2">
+              <Badge
+                v-for="item in activeListSourceFilters"
+                :key="item"
+                variant="outline"
+                class="text-[0.72rem]"
+              >
+                {{ item }}
+              </Badge>
+            </div>
+          </div>
 
-        <!-- 时间范围 -->
-        <div class="w-36">
-          <label class="text-xs text-muted-foreground mb-1 block">开始时间</label>
-          <DatePicker v-model="filterTimeFrom" placeholder="开始日期" class="w-full" />
-        </div>
-        <div class="w-36">
-          <label class="text-xs text-muted-foreground mb-1 block">结束时间</label>
-          <DatePicker v-model="filterTimeTo" placeholder="结束日期" class="w-full" />
-        </div>
-
-        <!-- 排序 -->
-        <div class="w-36">
-          <label class="text-xs text-muted-foreground mb-1 block">排序字段</label>
-          <Select v-model="filterSortBy">
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="s in SORT_OPTIONS" :key="s.value" :value="s.value">
-                {{ s.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div class="w-28">
-          <label class="text-xs text-muted-foreground mb-1 block">排序方向</label>
-          <Select v-model="filterOrder">
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="o in ORDER_OPTIONS" :key="o.value" :value="o.value">
-                {{ o.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <!-- 搜索 + 新建按钮 -->
-        <div class="flex items-end gap-2">
-          <Button @click="handleSearch">搜索</Button>
-          <Button variant="outline" @click="openCreate">
-            <Plus class="mr-1.5 size-4" />
-            新建实体
-          </Button>
+          <div class="grid gap-3 xl:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <div>
+              <label class="mb-1 block text-xs text-muted-foreground">来源类型</label>
+              <Select
+                :model-value="filterOriginType || '__all__'"
+                @update:model-value="(value) => filterOriginType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="全部来源" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">全部来源</SelectItem>
+                  <SelectItem v-for="origin in ORIGIN_TYPE_OPTIONS" :key="origin.value" :value="origin.value">
+                    {{ origin.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-muted-foreground">知识库 ID</label>
+              <Input
+                v-model="filterSourceKnowledgeBaseId"
+                data-test="list-source-kb-id"
+                placeholder="可选"
+                @keydown.enter="handleSearch"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-muted-foreground">Datastore ID</label>
+              <Input
+                v-model="filterSourceDatastoreId"
+                data-test="list-source-datastore-id"
+                placeholder="可选"
+                @keydown.enter="handleSearch"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-muted-foreground">文档 ID</label>
+              <Input
+                v-model="filterSourceDocumentId"
+                data-test="list-source-document-id"
+                placeholder="可选"
+                @keydown.enter="handleSearch"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -435,8 +834,8 @@ function formatDate(iso: string) {
           <tr class="border-b border-border/60">
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">名称</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">类型</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">归属</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">重要性</th>
-            <th class="px-4 py-3 text-right font-medium text-muted-foreground">访问次数</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">版本</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">创建时间</th>
           </tr>
@@ -454,8 +853,16 @@ function formatDate(iso: string) {
                 {{ entity.typeLabel }}
               </span>
             </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline">{{ formatMemoryScope(entity.memoryScope) }}</Badge>
+                <Badge variant="secondary">{{ formatRealityType(entity.realityType) }}</Badge>
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground" :title="formatSpaceId(entity.spaceId)">
+                {{ formatSpaceId(entity.spaceId) }}
+              </p>
+            </td>
             <td class="px-4 py-3 text-right tabular-nums">{{ entity.importanceScore.toFixed(2) }}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{{ entity.accessCount }}</td>
             <td class="px-4 py-3 text-right tabular-nums">v{{ entity.version }}</td>
             <td class="px-4 py-3 text-muted-foreground">{{ formatDate(entity.createdAt) }}</td>
           </tr>
@@ -516,6 +923,7 @@ function formatDate(iso: string) {
           <Tabs :model-value="detailTab" @update:model-value="handleDetailTabChange">
             <TabsList class="w-full justify-start">
               <TabsTrigger value="info">基本信息</TabsTrigger>
+              <TabsTrigger value="provenance">来源明细</TabsTrigger>
               <TabsTrigger value="history">版本历史</TabsTrigger>
               <TabsTrigger value="related">关联实体</TabsTrigger>
             </TabsList>
@@ -526,6 +934,18 @@ function formatDate(iso: string) {
                 <div>
                   <span class="text-muted-foreground">类型</span>
                   <p class="font-medium">{{ detailEntity.typeLabel }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">记忆范围</span>
+                  <p class="font-medium">{{ formatMemoryScope(detailEntity.memoryScope) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">现实性</span>
+                  <p class="font-medium">{{ formatRealityType(detailEntity.realityType) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">记忆空间</span>
+                  <p class="font-medium break-all">{{ formatSpaceId(detailEntity.spaceId) }}</p>
                 </div>
                 <div>
                   <span class="text-muted-foreground">重要性分数</span>
@@ -567,6 +987,132 @@ function formatDate(iso: string) {
               <div class="text-sm">
                 <span class="text-muted-foreground">属性</span>
                 <pre class="mt-1 rounded-md bg-muted/50 p-3 text-xs overflow-x-auto">{{ JSON.stringify(detailEntity.properties, null, 2) }}</pre>
+              </div>
+            </TabsContent>
+
+            <!-- 来源明细 -->
+            <TabsContent value="provenance" class="mt-4">
+              <div class="mb-4 rounded-md border border-border/60 p-3">
+                <div class="grid gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">来源类型</label>
+                    <Select
+                      :model-value="provenanceOriginType || '__all__'"
+                      @update:model-value="(value) => provenanceOriginType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="全部来源" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">全部来源</SelectItem>
+                        <SelectItem v-for="origin in ORIGIN_TYPE_OPTIONS" :key="origin.value" :value="origin.value">
+                          {{ origin.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">知识库 ID</label>
+                    <Input
+                      v-model="provenanceKnowledgeBaseId"
+                      data-test="provenance-kb-id"
+                      placeholder="可选"
+                      @keydown.enter="applyProvenanceFilters"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">Datastore ID</label>
+                    <Input
+                      v-model="provenanceDatastoreId"
+                      data-test="provenance-datastore-id"
+                      placeholder="可选"
+                      @keydown.enter="applyProvenanceFilters"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">文档 ID</label>
+                    <Input
+                      v-model="provenanceDocumentId"
+                      data-test="provenance-document-id"
+                      placeholder="可选"
+                      @keydown.enter="applyProvenanceFilters"
+                    />
+                  </div>
+                  <div class="flex items-end">
+                    <Button data-test="apply-provenance-filters" size="sm" @click="applyProvenanceFilters">筛选</Button>
+                  </div>
+                  <div class="flex items-end">
+                    <Button data-test="reset-provenance-filters" size="sm" variant="outline" @click="resetProvenanceFilters">重置</Button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="provenanceLoading" class="space-y-2">
+                <Skeleton v-for="i in 3" :key="i" class="h-20 w-full" />
+              </div>
+              <div v-else-if="provenanceItems.length === 0" class="py-6 text-center text-sm text-muted-foreground">
+                暂无来源明细
+              </div>
+              <div v-else class="space-y-3">
+                <div
+                  v-for="(item, idx) in provenanceItems"
+                  :key="`${item.originType}-${item.createdAt}-${idx}`"
+                  class="rounded-md border border-border/60 p-3"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{{ formatOriginType(item.originType) }}</Badge>
+                      <span class="text-xs text-muted-foreground">
+                        置信度 {{ (item.confidence * 100).toFixed(0) }}%
+                      </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Button
+                        v-if="canOpenDatastore(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-datastore"
+                        @click="openDatastore(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看 Datastore
+                      </Button>
+                      <Button
+                        v-if="canOpenKnowledgeBase(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-kb"
+                        @click="openKnowledgeBase(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看知识库
+                      </Button>
+                      <Button
+                        v-if="canOpenDocument(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-doc"
+                        @click="openDocument(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看文档
+                      </Button>
+                      <span class="text-xs text-muted-foreground">{{ formatDate(item.createdAt) }}</span>
+                    </div>
+                  </div>
+                  <div class="mt-3 grid gap-2 text-sm">
+                    <div
+                      v-for="entry in buildProvenanceDetails(item)"
+                      :key="`${item.createdAt}-${entry.label}`"
+                      class="grid gap-1 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start"
+                    >
+                      <span class="text-muted-foreground">{{ entry.label }}</span>
+                      <span class="break-all font-medium">{{ entry.value }}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 

@@ -1464,6 +1464,9 @@ export interface MemorySearchResult {
   name: string
   description: string | null
   relevanceScore: number
+  spaceId: string | null
+  memoryScope: string | null
+  realityType: string | null
 }
 
 /** 实体摘要 */
@@ -1476,6 +1479,9 @@ export interface EntitySummary {
   importanceScore: number
   accessCount: number
   version: number
+  spaceId: string | null
+  memoryScope: string | null
+  realityType: string | null
   createdAt: string
   updatedAt: string
 }
@@ -1487,6 +1493,9 @@ export interface EntityDetail {
   typeLabel: string
   name: string
   description: string | null
+  spaceId: string | null
+  memoryScope: string | null
+  realityType: string | null
   properties: Record<string, unknown>
   version: number
   isCurrent: boolean
@@ -1499,6 +1508,65 @@ export interface EntityDetail {
   lastAccessedAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** 实体来源明细 */
+export interface EntityProvenance {
+  originType: string
+  sourceReference: string | null
+  sourceConversationId: string | null
+  sourceSessionId: string | null
+  sourceTurnId: string | null
+  sourceEntryId: string | null
+  sourceDocumentId: string | null
+  sourceDocumentName: string | null
+  sourceKnowledgeBaseId: string | null
+  sourceKnowledgeBaseName: string | null
+  sourceDatastoreId: string | null
+  sourceDatastoreName: string | null
+  sourceCollectionId: string | null
+  sourceCollectionName: string | null
+  confidence: number
+  createdAt: string
+}
+
+/** 记忆来源摘要 */
+export interface MemoryProvenanceSummary {
+  entityId: string
+  entityName: string
+  entityType: string
+  entityTypeLabel: string
+  entityMemoryScope: string | null
+  entityRealityType: string | null
+  originType: string
+  sourceReference: string | null
+  sourceConversationId: string | null
+  sourceSessionId: string | null
+  sourceTurnId: string | null
+  sourceEntryId: string | null
+  sourceDocumentId: string | null
+  sourceDocumentName: string | null
+  sourceKnowledgeBaseId: string | null
+  sourceKnowledgeBaseName: string | null
+  sourceDatastoreId: string | null
+  sourceDatastoreName: string | null
+  sourceCollectionId: string | null
+  sourceCollectionName: string | null
+  confidence: number
+  createdAt: string
+}
+
+/** 实体来源筛选参数 */
+export interface EntityProvenanceParams {
+  originType?: string
+  sourceKnowledgeBaseId?: string
+  sourceDatastoreId?: string
+  sourceDocumentId?: string
+}
+
+/** 最近来源筛选参数 */
+export interface MemoryProvenanceListParams extends EntityProvenanceParams {
+  limit?: number
 }
 
 /** 实体创建请求 */
@@ -1523,6 +1591,13 @@ export interface EntityListParams {
   size?: number
   type?: string
   q?: string
+  spaceId?: string
+  memoryScope?: string
+  realityType?: string
+  originType?: string
+  sourceKnowledgeBaseId?: string
+  sourceDatastoreId?: string
+  sourceDocumentId?: string
   timeFrom?: string
   timeTo?: string
   sortBy?: string

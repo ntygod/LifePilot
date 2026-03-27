@@ -5,12 +5,18 @@ import jakarta.annotation.Nullable;
 import java.time.Instant;
 
 /**
- * 实体来源明细 DTO。
+ * 记忆来源摘要 DTO。
  *
  * @author zsg
  * @since 2026-03-27
  */
-public record EntityProvenanceDto(
+public record MemoryProvenanceSummaryDto(
+        String entityId,
+        String entityName,
+        String entityType,
+        String entityTypeLabel,
+        @Nullable String entityMemoryScope,
+        @Nullable String entityRealityType,
         String originType,
         @Nullable String sourceReference,
         @Nullable String sourceConversationId,

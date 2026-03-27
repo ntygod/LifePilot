@@ -44,6 +44,16 @@ const router = createRouter({
       name: 'knowledgeBaseDocumentDetail',
       component: () => import('@/views/KnowledgeBaseDocumentView.vue')
     },
+    {
+      path: '/datastores',
+      name: 'datastores',
+      component: () => import('@/views/DatastoreView.vue')
+    },
+    {
+      path: '/datastores/:id',
+      name: 'datastoreDetail',
+      component: () => import('@/views/DatastoreDetailView.vue')
+    },
 
     /**
      * 记忆管理

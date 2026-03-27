@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   Brain,
   GitFork,
@@ -13,6 +14,7 @@ import {
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -26,7 +28,23 @@ import TemplatePanel from './TemplatePanel.vue'
 import PreferencePanel from './PreferencePanel.vue'
 import ForgettingLogPanel from './ForgettingLogPanel.vue'
 
+const MEMORY_SCOPE_LABELS: Record<string, string> = {
+  USER_PROFILE: '用户画像',
+  USER_FACT: '用户事实',
+  AGENT_EXPERIENCE: '执行经验',
+  DOMAIN_MEMORY: '领域记忆',
+}
+
+const REALITY_TYPE_LABELS: Record<string, string> = {
+  REAL: '真实',
+  FICTIONAL: '虚构',
+  SIMULATED: '模拟',
+  UNKNOWN: '未标注',
+}
+
 const store = useMemoryStore()
+const route = useRoute()
+const VALID_TABS = new Set(['entities', 'relations', 'conversations', 'templates', 'preferences', 'forgetting-logs'])
 
 // 搜索状态
 const searchQuery = ref('')
@@ -36,6 +54,28 @@ const searching = ref(false)
 onMounted(() => {
   store.loadStats()
 })
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    const nextTab = Array.isArray(tab) ? tab[0] : tab
+    if (typeof nextTab === 'string' && VALID_TABS.has(nextTab)) {
+      store.activeTab = nextTab
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => route.query.entityId,
+  (entityId) => {
+    const nextEntityId = Array.isArray(entityId) ? entityId[0] : entityId
+    if (typeof nextEntityId === 'string' && nextEntityId.trim()) {
+      store.requestEntityDetail(nextEntityId.trim())
+    }
+  },
+  { immediate: true }
+)
 
 async function handleSearch() {
   const q = searchQuery.value.trim()
@@ -54,6 +94,25 @@ async function handleSearch() {
 function clearSearch() {
   searchQuery.value = ''
   searchResults.value = []
+}
+
+function openSearchResult(item: MemorySearchResult) {
+  store.requestEntityDetail(item.entityId)
+}
+
+function formatMemoryScope(scope?: string | null) {
+  if (!scope) return '未分配'
+  return MEMORY_SCOPE_LABELS[scope] || scope
+}
+
+function formatRealityType(realityType?: string | null) {
+  if (!realityType) return '未标注'
+  return REALITY_TYPE_LABELS[realityType] || realityType
+}
+
+function formatSpaceId(spaceId?: string | null) {
+  if (!spaceId) return '默认空间'
+  return spaceId
 }
 </script>
 
@@ -164,7 +223,8 @@ function clearSearch() {
               <div
                 v-for="item in searchResults"
                 :key="item.entityId"
-                class="list-card px-4 py-3"
+                class="list-card cursor-pointer px-4 py-3 transition-colors hover:bg-muted/50"
+                @click="openSearchResult(item)"
               >
                 <div class="flex items-start justify-between gap-4">
                   <div class="min-w-0 flex-1">
@@ -172,6 +232,13 @@ function clearSearch() {
                       <span class="text-sm font-medium text-foreground">{{ item.name }}</span>
                       <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                         {{ item.entityType }}
+                      </span>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline">{{ formatMemoryScope(item.memoryScope) }}</Badge>
+                      <Badge variant="secondary">{{ formatRealityType(item.realityType) }}</Badge>
+                      <span class="text-xs text-muted-foreground break-all">
+                        {{ formatSpaceId(item.spaceId) }}
                       </span>
                     </div>
                     <p v-if="item.description" class="mt-1 text-sm text-muted-foreground line-clamp-2">

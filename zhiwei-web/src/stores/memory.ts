@@ -10,6 +10,11 @@ import { memoryApi } from '@/api/client'
  * 各子面板的列表数据、分页、筛选状态由面板组件内部 ref 管理。
  */
 export const useMemoryStore = defineStore('memory', () => {
+  type EntityDetailRequest = {
+    id: string
+    requestedAt: number
+  }
+
   /** 统计概览数据 */
   const stats = ref<MemoryStats | null>(null)
 
@@ -27,6 +32,9 @@ export const useMemoryStore = defineStore('memory', () => {
 
   /** 记忆系统是否未启用（503 时标记） */
   const memoryDisabled = ref(false)
+
+  /** 待打开的实体详情请求 */
+  const entityDetailRequest = ref<EntityDetailRequest | null>(null)
 
   /**
    * 加载统计概览数据。
@@ -85,6 +93,24 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /**
+   * 请求打开实体详情。
+   *
+   * 用于跨面板联动，例如全局搜索结果跳转到实体详情。
+   */
+  function requestEntityDetail(id: string) {
+    activeTab.value = 'entities'
+    entityDetailRequest.value = {
+      id,
+      requestedAt: Date.now(),
+    }
+  }
+
+  /** 清除待处理的实体详情请求。 */
+  function clearEntityDetailRequest() {
+    entityDetailRequest.value = null
+  }
+
   return {
     stats,
     statsLoading,
@@ -92,8 +118,11 @@ export const useMemoryStore = defineStore('memory', () => {
     activeTab,
     consolidating,
     memoryDisabled,
+    entityDetailRequest,
     loadStats,
     search,
     triggerConsolidation,
+    requestEntityDetail,
+    clearEntityDetailRequest,
   }
 })
