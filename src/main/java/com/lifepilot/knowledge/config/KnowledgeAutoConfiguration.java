@@ -36,6 +36,7 @@ import com.lifepilot.knowledge.sync.DatastoreDocumentProjector;
 import com.lifepilot.knowledge.sync.KnowledgeSyncWorker;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.rerank.router.RerankRouter;
@@ -311,8 +312,9 @@ public class KnowledgeAutoConfiguration {
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,
                                                                    SemanticMemory semanticMemory,
                                                                    KnowledgeBaseProperties props,
-                                                                   PromptRegistry promptRegistry) {
-        return new KnowledgeExtractionPipeline(generationRouter, semanticMemory, props.extraction(), promptRegistry);
+                                                                   PromptRegistry promptRegistry,
+                                                                   MemorySpaceRepository memorySpaceRepository) {
+        return new KnowledgeExtractionPipeline(generationRouter, semanticMemory, props.extraction(), promptRegistry, memorySpaceRepository);
     }
 
     @Bean

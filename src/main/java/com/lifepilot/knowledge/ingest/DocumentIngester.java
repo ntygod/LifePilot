@@ -194,7 +194,7 @@ public class DocumentIngester {
 
             publishProgress(doc, DocumentStatus.EXTRACTING, 85, "同步 datastore 文档知识提取中");
             updateStage(doc.id(), DocumentStatus.EXTRACTING);
-            doExtract(doc.id(), chunks);
+            doExtract(doc, chunks);
 
             docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
             docRepository.updateLastProcessedStage(doc.id(), DocumentStatus.READY.name());
@@ -255,7 +255,7 @@ public class DocumentIngester {
             // 6. EXTRACTING（异步，可降级）
             publishProgress(doc, DocumentStatus.EXTRACTING, 80, "知识提取中");
             updateStage(doc.id(), DocumentStatus.EXTRACTING);
-            doExtract(doc.id(), chunks);
+            doExtract(doc, chunks);
 
             // 7. READY
             publishProgress(doc, DocumentStatus.READY, 100, "导入完成");
@@ -292,7 +292,7 @@ public class DocumentIngester {
                     chunkRepository.saveAll(chunks);
                     docRepository.updateChunkCount(doc.id(), chunks.size());
                     doIndex(chunks, doc.knowledgeBaseId());
-                    doExtract(doc.id(), chunks);
+                    doExtract(doc, chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
@@ -301,7 +301,7 @@ public class DocumentIngester {
                     // 分块已保存，从索引开始
                     var chunks = chunkRepository.findByDocumentId(doc.id());
                     doIndex(chunks, doc.knowledgeBaseId());
-                    doExtract(doc.id(), chunks);
+                    doExtract(doc, chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
@@ -309,7 +309,7 @@ public class DocumentIngester {
                 case "INDEXING" -> {
                     // 索引可能部分完成，从提取开始
                     var chunks = chunkRepository.findByDocumentId(doc.id());
-                    doExtract(doc.id(), chunks);
+                    doExtract(doc, chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
@@ -317,7 +317,7 @@ public class DocumentIngester {
                 case "EXTRACTING" -> {
                     // 提取可能部分完成，重新执行提取后收尾
                     var chunks = chunkRepository.findByDocumentId(doc.id());
-                    doExtract(doc.id(), chunks);
+                    doExtract(doc, chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
@@ -494,20 +494,20 @@ public class DocumentIngester {
         CompletableFuture.allOf(vectorFuture, ftsFuture).join();
     }
 
-    private void doExtract(String docId, List<DocumentChunk> chunks) {
+    private void doExtract(Document doc, List<DocumentChunk> chunks) {
         if (!props.extraction().enabled()) {
             log.debug("知识提取已禁用，跳过");
             return;
         }
         if (extractionPipeline == null) {
-            log.warn("知识提取已启用但 KnowledgeExtractionPipeline 不可用，已降级跳过: docId={}", docId);
+            log.warn("知识提取已启用但 KnowledgeExtractionPipeline 不可用，已降级跳过: docId={}", doc.id());
             return;
         }
         try {
-            extractionPipeline.extract(chunks, docId);
+            extractionPipeline.extract(doc, chunks);
         } catch (Exception e) {
             // 提取失败不影响文档状态，降级跳过
-            log.warn("知识提取失败，降级跳过: docId={}, error={}", docId, e.getMessage());
+            log.warn("知识提取失败，降级跳过: docId={}, error={}", doc.id(), e.getMessage());
         }
     }
 

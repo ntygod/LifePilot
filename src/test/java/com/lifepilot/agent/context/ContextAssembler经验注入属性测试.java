@@ -3,6 +3,7 @@ package com.lifepilot.agent.context;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -56,7 +57,7 @@ class ContextAssembler经验注入属性测试 {
             experiences.add(buildExperience(id, "经验" + i, 0.8f - i * 0.01f));
         }
 
-        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE))
+        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE, MemoryReadFilter.agentExperience()))
                 .thenReturn(List.copyOf(experiences));
 
         var assembler = new ContextAssembler(

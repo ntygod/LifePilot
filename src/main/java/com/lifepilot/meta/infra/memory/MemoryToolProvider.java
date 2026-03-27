@@ -9,6 +9,7 @@ import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
@@ -122,7 +123,11 @@ public class MemoryToolProvider {
                     try {
                         String query = input.getParam("query", String.class);
                         int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
-                        List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT);
+                        List<RetrievalResult> results = hybridRetriever.retrieve(
+                                query,
+                                topK,
+                                RetrievalWeights.DEFAULT,
+                                MemoryReadFilter.userMemory());
                         if (!results.isEmpty()) {
                             hybridRetriever.updateAccessCounts(results);
                         }
@@ -526,7 +531,9 @@ public class MemoryToolProvider {
                             return ToolResult.error("query 参数不能为空");
                         }
 
-                        var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+                        var experiences = semanticMemory.findCurrentByType(
+                                EntityType.EXPERIENCE,
+                                MemoryReadFilter.agentExperience());
 
                         boolean crossContext = memoryProperties != null
                                 && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();

@@ -29,6 +29,8 @@ import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.retrieval.QueryRewriter;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.ExtractionValidator;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
@@ -294,9 +296,10 @@ public class MemoryAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             ConflictDetector conflictDetector,
             VersionMerger versionMerger,
-            VectorSearcher vectorSearcher) {
+            VectorSearcher vectorSearcher,
+            MemorySpaceRepository memorySpaceRepository) {
         log.info("记忆模块: 注册 SemanticMemory");
-        return new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
+        return new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
     }
 
     @Bean
@@ -313,9 +316,10 @@ public class MemoryAutoConfiguration {
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
-                                               PromptRegistry promptRegistry) {
+                                               PromptRegistry promptRegistry,
+                                               @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
         log.info("记忆模块: 注册 RealtimeExtractor");
-        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry);
+        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry, snapshotRepository);
     }
 
     // 检索

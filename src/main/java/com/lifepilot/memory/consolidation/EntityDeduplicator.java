@@ -188,14 +188,14 @@ public class EntityDeduplicator {
     }
 
     /**
-     * 迁移关系：将 temporal_relations 中引用从实体 ID 的记录更新为主实体 ID。
+     * 迁移关系：将活动关系的实体引用更新为主实体 ID。
      */
     private void migrateRelations(String secondaryId, String primaryId) {
         int sourceUpdated = jdbcTemplate.update(
-                "UPDATE temporal_relations SET source_entity_id = ? WHERE source_entity_id = ? AND valid_to IS NULL",
+                "UPDATE memory_relations SET source_entity_id = ? WHERE source_entity_id = ? AND status = 'ACTIVE'",
                 primaryId, secondaryId);
         int targetUpdated = jdbcTemplate.update(
-                "UPDATE temporal_relations SET target_entity_id = ? WHERE target_entity_id = ? AND valid_to IS NULL",
+                "UPDATE memory_relations SET target_entity_id = ? WHERE target_entity_id = ? AND status = 'ACTIVE'",
                 primaryId, secondaryId);
         if (sourceUpdated + targetUpdated > 0) {
             log.debug("实体去重: 关系迁移完成, secondaryId={}, sourceUpdated={}, targetUpdated={}",

@@ -2,9 +2,17 @@ package com.lifepilot.knowledge.extract;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.model.Document;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.ExtractionResult;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.memory.scope.MemoryOriginType;
+import com.lifepilot.memory.scope.MemoryRealityType;
+import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.scope.MemorySpaceType;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -34,6 +42,7 @@ public class KnowledgeExtractionPipeline {
     private final SemanticMemory semanticMemory;
     private final KnowledgeBaseProperties.Extraction config;
     private final PromptRegistry promptRegistry;
+    private final MemorySpaceRepository memorySpaceRepository;
 
     /**
      * 构造知识提取管线。
@@ -46,11 +55,13 @@ public class KnowledgeExtractionPipeline {
     public KnowledgeExtractionPipeline(GenerationRouter generationRouter,
                                         SemanticMemory semanticMemory,
                                         KnowledgeBaseProperties.Extraction config,
-                                        PromptRegistry promptRegistry) {
+                                        PromptRegistry promptRegistry,
+                                        MemorySpaceRepository memorySpaceRepository) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.config = config;
         this.promptRegistry = promptRegistry;
+        this.memorySpaceRepository = memorySpaceRepository;
         log.info("KnowledgeExtractionPipeline 初始化完成: enabled={}, batchSize={}",
                 config.enabled(), config.batchSize());
     }
@@ -66,8 +77,18 @@ public class KnowledgeExtractionPipeline {
      * @return 提取结果
      */
     public ExtractionResult extract(List<DocumentChunk> chunks, String documentId) {
+        throw new IllegalStateException("请使用 extract(Document, List<DocumentChunk>) 传入完整文档上下文");
+    }
+
+    public ExtractionResult extract(Document doc, List<DocumentChunk> chunks) {
         if (!config.enabled() || chunks.isEmpty()) {
             return new ExtractionResult(0, 0, List.of());
+        }
+        MemoryWriteContext writeContext = resolveWriteContext(doc);
+        if (writeContext == null) {
+            log.debug("知识提取跳过: docId={}, sourceType={}, sourceDatastoreId={}",
+                    doc.id(), doc.sourceType(), doc.sourceDatastoreId());
+            return new ExtractionResult(0, 0, List.of("当前文档默认不写入长期记忆"));
         }
 
         int totalEntities = 0;
@@ -79,7 +100,7 @@ public class KnowledgeExtractionPipeline {
             var batch = chunks.subList(i, end);
 
             try {
-                var batchResult = extractBatch(batch, documentId);
+                var batchResult = extractBatch(doc, batch, writeContext);
                 totalEntities += batchResult.entityCount();
                 totalRelations += batchResult.relationCount();
                 warnings.addAll(batchResult.warnings());
@@ -101,7 +122,9 @@ public class KnowledgeExtractionPipeline {
     /**
      * 提取单批次分块中的实体和关系。
      */
-    private ExtractionResult extractBatch(List<DocumentChunk> batch, String documentId) {
+    private ExtractionResult extractBatch(Document doc,
+                                          List<DocumentChunk> batch,
+                                          MemoryWriteContext writeContext) {
         // 拼接批次内容
         var contentBuilder = new StringBuilder();
         for (var chunk : batch) {
@@ -128,7 +151,7 @@ public class KnowledgeExtractionPipeline {
             for (var entityInfo : response.entities()) {
                 try {
                     var entity = toTemporalEntity(entityInfo);
-                    var persisted = semanticMemory.upsertWithConflictDetection(entity, documentId);
+                    var persisted = semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext);
                     entityNameToId.put(entityInfo.name(), persisted.id());
                     entityCount++;
                 } catch (Exception e) {
@@ -148,8 +171,8 @@ public class KnowledgeExtractionPipeline {
                                 relationInfo.sourceEntity(), relationInfo.targetEntity());
                         continue;
                     }
-                    var relation = toTemporalRelation(relationInfo, sourceId, targetId, documentId);
-                    semanticMemory.addRelation(relation);
+                    var relation = toTemporalRelation(relationInfo, sourceId, targetId, doc.id());
+                    semanticMemory.addRelation(relation, writeContext);
                     relationCount++;
                 } catch (Exception e) {
                     log.warn("关系写入失败: type={}, error={}", relationInfo.relationType(), e.getMessage());
@@ -213,6 +236,66 @@ public class KnowledgeExtractionPipeline {
         } catch (IllegalArgumentException e) {
             return EntityType.CUSTOM;
         }
+    }
+
+    private MemoryWriteContext resolveWriteContext(Document doc) {
+        if (doc.sourceType() == DocumentSourceType.FILE
+                && (doc.sourceDatastoreId() == null || doc.sourceDatastoreId().isBlank())) {
+            return null;
+        }
+        if (doc.sourceDatastoreId() != null && !doc.sourceDatastoreId().isBlank()) {
+            var domainSpace = memorySpaceRepository.ensureSpace(
+                    "domain:datastore:" + doc.sourceDatastoreId(),
+                    MemorySpaceType.DOMAIN,
+                    "Datastore领域记忆",
+                    "DATASTORE",
+                    doc.sourceDatastoreId(),
+                    Map.of("datastoreId", doc.sourceDatastoreId())
+            );
+            return new MemoryWriteContext(
+                    domainSpace.id(),
+                    MemoryScope.DOMAIN_MEMORY,
+                    doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT
+                            ? MemoryOriginType.DATASTORE_DOCUMENT
+                            : MemoryOriginType.KNOWLEDGE_BASE_DOCUMENT,
+                    MemoryRealityType.UNKNOWN,
+                    doc.id(),
+                    doc.id(),
+                    null,
+                    null,
+                    null,
+                    doc.id(),
+                    doc.knowledgeBaseId(),
+                    doc.sourceDatastoreId(),
+                    doc.sourceCollectionId()
+            );
+        }
+        if (doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT) {
+            var domainSpace = memorySpaceRepository.ensureSpace(
+                    "domain:knowledge-base:" + doc.knowledgeBaseId(),
+                    MemorySpaceType.DOMAIN,
+                    "知识库领域记忆",
+                    "KNOWLEDGE_BASE",
+                    doc.knowledgeBaseId(),
+                    Map.of("knowledgeBaseId", doc.knowledgeBaseId())
+            );
+            return new MemoryWriteContext(
+                    domainSpace.id(),
+                    MemoryScope.DOMAIN_MEMORY,
+                    MemoryOriginType.DATASTORE_DOCUMENT,
+                    MemoryRealityType.UNKNOWN,
+                    doc.id(),
+                    doc.id(),
+                    null,
+                    null,
+                    null,
+                    doc.id(),
+                    doc.knowledgeBaseId(),
+                    null,
+                    doc.sourceCollectionId()
+            );
+        }
+        return null;
     }
 
     /**

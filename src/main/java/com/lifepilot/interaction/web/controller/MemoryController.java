@@ -5,6 +5,7 @@ import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.semantic.EntityType;
@@ -132,7 +133,7 @@ public class MemoryController {
         if (hybridRetriever == null) {
             return List.of();
         }
-        var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT);
+        var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
         return results.stream()
                 .map(r -> new MemorySearchResultDto(
                         r.entityId(), r.entityType(), r.name(), r.description(), r.fusedScore()))

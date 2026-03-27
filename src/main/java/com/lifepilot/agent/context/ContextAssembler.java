@@ -7,6 +7,7 @@ import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -209,7 +210,9 @@ public class ContextAssembler {
                 return List.of();
             }
 
-            List<TemporalEntity> experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+            List<TemporalEntity> experiences = semanticMemory.findCurrentByType(
+                    EntityType.EXPERIENCE,
+                    MemoryReadFilter.agentExperience());
             if (experiences.isEmpty()) {
                 return List.of();
             }
@@ -488,8 +491,9 @@ public class ContextAssembler {
         }
         try {
             List<TemporalEntity> candidates = new ArrayList<>();
+            MemoryReadFilter profileFilter = MemoryReadFilter.userProfile();
             for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
-                candidates.addAll(semanticMemory.findCurrentByType(type));
+                candidates.addAll(semanticMemory.findCurrentByType(type, profileFilter));
             }
             if (candidates.isEmpty()) {
                 return "";
