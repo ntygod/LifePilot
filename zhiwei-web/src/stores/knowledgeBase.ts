@@ -59,10 +59,10 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     }
   }
 
-  async function uploadDocument(kbId: string, file: File) {
+  async function uploadDocument(kbId: string, file: File, datastoreId?: string) {
     error.value = null
     try {
-      const doc = await knowledgeBaseApi.uploadDocument(kbId, file)
+      const doc = await knowledgeBaseApi.uploadDocument(kbId, file, datastoreId)
       documents.value.push(doc)
       return doc
     } catch (e: any) {

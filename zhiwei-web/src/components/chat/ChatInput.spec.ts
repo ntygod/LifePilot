@@ -96,6 +96,66 @@ describe('ChatInput 附件交互', () => {
   })
 })
 
+describe('ChatInput 上下文选择', () => {
+  it('通过 @ 选择上下文后发送，会携带单轮临时配置和恢复配置', async () => {
+    const wrapper = mount(ChatInput, {
+      props: {
+        disabled: false,
+        datastores: [
+          { id: 'ds-default', name: '默认设定库', type: 'DOCUMENT', createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' },
+          { id: 'ds-story', name: '故事设定', description: '世界观与人物素材', type: 'DOCUMENT', createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' }
+        ],
+        knowledgeBases: [
+          { id: 'kb-default', name: '默认知识库', description: '', embeddingModel: '', datastoreIds: [], documentCount: 0, totalChunks: 0, createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' },
+          { id: 'kb-lore', name: '背景资料库', description: '', embeddingModel: '', datastoreIds: ['ds-story'], documentCount: 0, totalChunks: 0, createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' }
+        ],
+        baseSessionConfig: {
+          preferredProviderId: 'provider-1',
+          temperature: 0.7,
+          maxTokens: 4096,
+          maxSteps: 12,
+          maxDurationSeconds: 90,
+          knowledgeBaseIds: ['kb-default'],
+          datastoreIds: ['ds-default']
+        }
+      },
+      global: {
+        plugins: [createPinia()]
+      }
+    })
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('请参考 @故事')
+    await nextTick()
+
+    const datastoreOption = wrapper.findAll('button').find(button => button.text().includes('故事设定'))
+    expect(datastoreOption).toBeTruthy()
+    await datastoreOption!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('故事设定')
+
+    const sendButton = wrapper.findAll('button').at(-1)
+    await sendButton!.trigger('click')
+
+    const sendEvent = wrapper.emitted('send')
+    expect(sendEvent).toBeTruthy()
+    expect(sendEvent?.[0]?.[0]).toMatchObject({
+      content: '请参考',
+      sessionConfig: {
+        preferredProviderId: 'provider-1',
+        knowledgeBaseIds: ['kb-default'],
+        datastoreIds: ['ds-default', 'ds-story']
+      },
+      restoreSessionConfig: {
+        preferredProviderId: 'provider-1',
+        knowledgeBaseIds: ['kb-default'],
+        datastoreIds: ['ds-default']
+      }
+    })
+  })
+})
+
 // Feature: multimodal-completion, Property 15: 上传进行中禁用发送
 describe('ChatInput 上传进行中禁用发送（Property 15）', () => {
   it('当 isUploading 为 true 时，禁用条件恒为 true', () => {

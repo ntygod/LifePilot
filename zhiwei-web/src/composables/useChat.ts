@@ -18,22 +18,15 @@ import type {
   SseTokenEvent,
   TokenUsage,
   PermissionApprovalRequest,
+  SessionConfig,
 } from '@/types'
-
-type SessionConfig = {
-  preferredProviderId?: string
-  temperature?: number
-  maxTokens?: number
-  maxSteps?: number
-  maxDurationSeconds?: number
-  knowledgeBaseIds?: string[]
-}
 
 type ExecuteTurnOptions = {
   content?: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
   sessionConfig?: SessionConfig
+  restoreSessionConfig?: SessionConfig
   userMessageId?: string | null
 }
 
@@ -66,6 +59,7 @@ export function useChat() {
     attachmentIds?: string[],
     attachments?: ChatAttachment[],
     sessionConfig?: SessionConfig,
+    restoreSessionConfig?: SessionConfig,
   ) {
     if (activeInteraction.value) {
       if ((attachmentIds?.length ?? 0) > 0 || (attachments?.length ?? 0) > 0) {
@@ -111,6 +105,7 @@ export function useChat() {
         attachmentIds,
         attachments,
         sessionConfig,
+        restoreSessionConfig,
       })
       return
     }
@@ -121,6 +116,7 @@ export function useChat() {
       attachmentIds,
       attachments,
       sessionConfig,
+      restoreSessionConfig,
     })
   }
 
@@ -133,6 +129,7 @@ export function useChat() {
     const content = options.content ?? ''
     const hasContent = content.trim().length > 0
     const hasAttachments = (options.attachmentIds?.length ?? 0) > 0
+    const restoreSessionConfig = options.restoreSessionConfig
 
     if (action === 'SEND' && !hasContent && !hasAttachments) {
       return
@@ -179,6 +176,13 @@ export function useChat() {
       chatStore.resetStreaming()
       a2uiStore.clearComponents()
     } finally {
+      if (restoreSessionConfig && chatStore.activeSessionId) {
+        try {
+          await chatApi.updateSessionConfig(chatStore.activeSessionId, restoreSessionConfig)
+        } catch (restoreError) {
+          console.warn('恢复会话配置失败', restoreError)
+        }
+      }
       if (currentExecutionSeq === executionSeq) {
         isStreaming.value = false
         chatStore.isStreaming = false

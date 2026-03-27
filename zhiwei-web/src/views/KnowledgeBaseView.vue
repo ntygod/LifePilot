@@ -39,14 +39,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { knowledgeBaseApi, modelServiceApi } from '@/api/client'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import { modelServiceApi } from '@/api/client'
+import { useDatastoreStore } from '@/stores/datastore'
 import type { ModelService } from '@/api/client'
-import type { KnowledgeBase } from '@/types'
+import type { CreateKbRequest, KnowledgeBase } from '@/types'
 
 const store = useKnowledgeBaseStore()
+const datastoreStore = useDatastoreStore()
 const router = useRouter()
 
 const showCreate = ref(false)
@@ -55,6 +58,7 @@ const createForm = ref({
   description: '',
   embeddingModel: '' as string | undefined,
   tags: [] as string[],
+  datastoreIds: [] as string[],
 })
 
 // Provider 列表（用于向量模型下拉选择）
@@ -67,6 +71,7 @@ const editingKb = ref<KnowledgeBase | null>(null)
 const editForm = ref({
   description: '',
   tags: [] as string[],
+  datastoreIds: [] as string[],
 })
 
 const deleteTarget = ref<{ type: 'kb' | 'doc'; id: string; kbId?: string; name: string } | null>(null)
@@ -78,10 +83,8 @@ const showFilters = ref(false)
 
 const allTags = computed(() => {
   const tags = new Set<string>()
-  store.list.forEach(() => {
-    // The backend has not exposed knowledge base tags yet.
-  })
-  return Array.from(tags)
+  store.list.forEach(kb => (kb.tags ?? []).forEach(tag => tags.add(tag)))
+  return Array.from(tags).sort()
 })
 
 const filteredKbs = computed(() => {
@@ -97,7 +100,7 @@ const filteredKbs = computed(() => {
   }
 
   if (selectedTags.value.length > 0) {
-    // The backend has not exposed knowledge base tags yet.
+    result = result.filter(kb => selectedTags.value.every(tag => (kb.tags ?? []).includes(tag)))
   }
 
   if (timeRange.value !== 'all') {
@@ -148,6 +151,7 @@ const showDeleteConfirm = computed({
 
 onMounted(() => {
   void store.fetchList()
+  refreshDatastores()
   modelServiceApi.listEnabledServices('EMBEDDING').then(list => { providers.value = list }).catch(() => {})
 })
 
@@ -163,20 +167,23 @@ function selectKb(kb: KnowledgeBase) {
   router.push(`/knowledge-bases/${kb.id}`)
 }
 
+function refreshDatastores() {
+  void datastoreStore.fetchList()
+}
+
 async function handleCreate() {
   if (!createForm.value.name.trim()) return
-  const req: any = {
+  const req: CreateKbRequest = {
     name: createForm.value.name,
     description: createForm.value.description,
+    embeddingModel: createForm.value.embeddingModel || undefined,
     tags: createForm.value.tags,
-  }
-  if (createForm.value.embeddingModel) {
-    req.embeddingModel = createForm.value.embeddingModel
+    datastoreIds: createForm.value.datastoreIds,
   }
   const kb = await store.create(req)
   if (kb) {
     showCreate.value = false
-    createForm.value = { name: '', description: '', embeddingModel: '', tags: [] }
+    createForm.value = { name: '', description: '', embeddingModel: '', tags: [], datastoreIds: [] }
   }
 }
 
@@ -184,13 +191,27 @@ function startEdit(kb: KnowledgeBase) {
   editingKb.value = kb
   editForm.value = {
     description: kb.description || '',
-    tags: [],
+    tags: [...(kb.tags ?? [])],
+    datastoreIds: [...(kb.datastoreIds ?? [])],
   }
+}
+
+function closeEditDialog() {
+  editingKb.value = null
+}
+
+function openDeleteDialog(kb: KnowledgeBase) {
+  deleteTarget.value = { type: 'kb', id: kb.id, name: kb.name }
 }
 
 async function handleUpdate() {
   if (!editingKb.value) return
   try {
+    await knowledgeBaseApi.update(editingKb.value.id, {
+      description: editForm.value.description || undefined,
+      tags: editForm.value.tags,
+      datastoreIds: editForm.value.datastoreIds,
+    })
     await store.fetchList()
     editingKb.value = null
   } catch (error) {
@@ -223,6 +244,30 @@ function clearFilters() {
   searchQuery.value = ''
   selectedTags.value = []
   timeRange.value = 'all'
+}
+
+function toggleCreateDatastore(id: string, checked: boolean | 'indeterminate') {
+  if (checked === true) {
+    if (!createForm.value.datastoreIds.includes(id)) createForm.value.datastoreIds.push(id)
+    return
+  }
+  createForm.value.datastoreIds = createForm.value.datastoreIds.filter(datastoreId => datastoreId !== id)
+}
+
+function toggleEditDatastore(id: string, checked: boolean | 'indeterminate') {
+  if (checked === true) {
+    if (!editForm.value.datastoreIds.includes(id)) editForm.value.datastoreIds.push(id)
+    return
+  }
+  editForm.value.datastoreIds = editForm.value.datastoreIds.filter(datastoreId => datastoreId !== id)
+}
+
+function resolveDatastoreNames(datastoreIds: string[] | undefined) {
+  if (!datastoreIds || datastoreIds.length === 0) {
+    return []
+  }
+  const nameMap = new Map(datastoreStore.list.map(datastore => [datastore.id, datastore.name]))
+  return datastoreIds.map(id => nameMap.get(id) ?? id)
 }
 </script>
 
@@ -504,6 +549,7 @@ function clearFilters() {
                     <div class="flex flex-wrap gap-2 text-xs">
                       <span class="surface-chip">向量模型 {{ kb.embeddingModel || '未配置' }}</span>
                       <span class="surface-chip">分块 {{ kb.totalChunks }}</span>
+                      <span class="surface-chip">Datastore {{ kb.datastoreIds?.length ?? 0 }}</span>
                     </div>
                   </div>
                 </div>
@@ -525,7 +571,7 @@ function clearFilters() {
                     size="icon-sm"
                     class="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     title="删除"
-                    @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
+                    @click.stop="openDeleteDialog(kb)"
                   >
                     <Trash2 class="size-4" />
                   </Button>
@@ -535,6 +581,24 @@ function clearFilters() {
               <p class="mt-4 line-clamp-3 text-sm leading-6 text-muted-foreground">
                 {{ kb.description || '这个知识库还没有描述信息。' }}
               </p>
+
+              <div v-if="(kb.datastoreIds?.length ?? 0) > 0" class="mt-4 flex flex-wrap gap-2">
+                <Badge
+                  v-for="name in resolveDatastoreNames(kb.datastoreIds).slice(0, 3)"
+                  :key="`${kb.id}-${name}`"
+                  variant="outline"
+                  class="text-xs"
+                >
+                  {{ name }}
+                </Badge>
+                <Badge
+                  v-if="resolveDatastoreNames(kb.datastoreIds).length > 3"
+                  variant="outline"
+                  class="text-xs"
+                >
+                  +{{ resolveDatastoreNames(kb.datastoreIds).length - 3 }}
+                </Badge>
+              </div>
 
               <div class="mt-5 grid gap-3 sm:grid-cols-2">
                 <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
@@ -616,6 +680,43 @@ function clearFilters() {
             <p class="text-xs text-muted-foreground">不选择则使用系统默认的 Embedding 模型</p>
           </div>
 
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <Label>关联 Datastore</Label>
+              <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
+                刷新
+              </Button>
+            </div>
+            <div v-if="datastoreStore.loading" class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+              正在加载 Datastore 列表...
+            </div>
+            <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+              Datastore 列表加载失败：{{ datastoreStore.error }}
+            </div>
+            <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
+              <label
+                v-for="datastore in datastoreStore.list"
+                :key="datastore.id"
+                class="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+              >
+                <Checkbox
+                  :model-value="createForm.datastoreIds.includes(datastore.id)"
+                  @update:model-value="toggleCreateDatastore(datastore.id, $event)"
+                />
+                <div class="min-w-0">
+                  <div class="text-sm text-foreground">{{ datastore.name }}</div>
+                  <div v-if="datastore.description" class="text-xs text-muted-foreground">
+                    {{ datastore.description }}
+                  </div>
+                </div>
+              </label>
+            </div>
+            <div v-else class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+              当前没有可关联的 Datastore。知识库可以先创建，后续再补充关联。
+            </div>
+            <p class="text-xs text-muted-foreground">绑定后，datastore 结构化数据会同步到该知识库。</p>
+          </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" @click="showCreate = false">
               取消
@@ -628,7 +729,7 @@ function clearFilters() {
       </DialogContent>
     </Dialog>
 
-    <Dialog :open="!!editingKb" @update:open="(value: boolean) => { if (!value) editingKb = null }">
+    <Dialog :open="!!editingKb" @update:open="(value: boolean) => { if (!value) closeEditDialog() }">
       <DialogContent class="shell-card border-border/70 sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>编辑知识库</DialogTitle>
@@ -655,13 +756,46 @@ function clearFilters() {
               placeholder="输入标签，使用逗号分隔"
               @update:model-value="editForm.tags = ($event as string).split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag)"
             />
-            <p class="text-xs text-muted-foreground">
-              标签暂不可用，后续版本会开放。
-            </p>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <Label>关联 Datastore</Label>
+              <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
+                刷新
+              </Button>
+            </div>
+            <div v-if="datastoreStore.loading" class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+              正在加载 Datastore 列表...
+            </div>
+            <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+              Datastore 列表加载失败：{{ datastoreStore.error }}
+            </div>
+            <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
+              <label
+                v-for="datastore in datastoreStore.list"
+                :key="datastore.id"
+                class="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+              >
+                <Checkbox
+                  :model-value="editForm.datastoreIds.includes(datastore.id)"
+                  @update:model-value="toggleEditDatastore(datastore.id, $event)"
+                />
+                <div class="min-w-0">
+                  <div class="text-sm text-foreground">{{ datastore.name }}</div>
+                  <div v-if="datastore.description" class="text-xs text-muted-foreground">
+                    {{ datastore.description }}
+                  </div>
+                </div>
+              </label>
+            </div>
+            <div v-else class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+              当前没有可关联的 Datastore。
+            </div>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" @click="editingKb = null">
+            <Button type="button" variant="outline" @click="closeEditDialog()">
               取消
             </Button>
             <Button type="submit">

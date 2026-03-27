@@ -18,6 +18,7 @@ export interface ChatSession {
 
 export interface ChatSessionDetail extends ChatSession {
   knowledgeBaseIds: string[]
+  datastoreIds: string[]
   preferredProviderId?: string
   temperature?: number
   maxTokens?: number
@@ -472,9 +473,24 @@ export interface SessionConfig {
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
+  datastoreIds?: string[]
 }
 
 // ========== 第一部分 19: Web UI 相关类型定义 ==========
+
+/** Datastore */
+export interface Datastore {
+  id: string
+  name: string
+  description?: string | null
+  type: string
+  propertiesJson?: string | null
+  projectionConfigJson?: string | null
+  metadataJson?: string | null
+  createdBy?: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 /** 知识库 */
 export interface KnowledgeBase {
@@ -489,6 +505,7 @@ export interface KnowledgeBase {
   totalChunks: number
   createdAt: string
   updatedAt: string
+  datastoreIds: string[]
 }
 
 /** 创建知识库请求 */
@@ -496,6 +513,11 @@ export interface CreateKbRequest {
   name: string
   description: string
   embeddingModel?: string
+  rerankerModel?: string | null
+  chunkingStrategy?: string
+  chunkingConfig?: Record<string, unknown>
+  tags?: string[]
+  datastoreIds?: string[]
 }
 
 /** 更新知识库请求 */
@@ -507,6 +529,7 @@ export interface UpdateKbRequest {
   chunkingStrategy?: string
   chunkingConfig?: Record<string, unknown>
   tags?: string[]
+  datastoreIds?: string[]
 }
 
 /** 知识库文档 */
@@ -521,6 +544,9 @@ export interface KbDocument {
   errorMessage?: string | null
   createdAt: string
   updatedAt: string
+  sourceType?: 'FILE' | 'DATASTORE_DOCUMENT'
+  sourceDatastoreId?: string | null
+  sourceCollectionId?: string | null
 }
 
 /** 文档分块 */

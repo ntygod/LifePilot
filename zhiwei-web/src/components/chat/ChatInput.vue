@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowUp, CornerDownLeft, FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
+import { ArrowUp, AtSign, CornerDownLeft, FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
 import { useChatStore } from '@/stores/chat'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useVoice } from '@/composables/useVoice'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
-import type { ChatAttachment } from '@/types'
+import type { ChatAttachment, Datastore, KnowledgeBase, SessionConfig } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
   placeholder?: string
   continuationTitle?: string | null
   continuationDetail?: string | null
+  knowledgeBases?: KnowledgeBase[]
+  datastores?: Datastore[]
+  baseSessionConfig?: SessionConfig
 }>()
 
 const emit = defineEmits<{
@@ -20,6 +25,8 @@ const emit = defineEmits<{
     content: string
     attachmentIds?: string[]
     attachments?: ChatAttachment[]
+    sessionConfig?: SessionConfig
+    restoreSessionConfig?: SessionConfig
   }]
 }>()
 
@@ -38,6 +45,14 @@ const dragActive = computed(() => dragDepth.value > 0)
 const showTemplates = ref(false)
 const voiceSending = ref(false)
 const voiceError = ref<string | null>(null)
+const manualContextPickerOpen = ref(false)
+const manualContextQuery = ref('')
+const selectedContexts = ref<Array<{
+  id: string
+  name: string
+  description?: string | null
+  kind: 'datastore' | 'knowledge-base'
+}>>([])
 
 // 语音录音
 const {
@@ -54,9 +69,57 @@ const promptTemplates = [
 ] as const
 
 const sendDisabled = computed(() => props.disabled || isUploading.value || (!input.value.trim() && attachments.value.length === 0))
+const mentionQuery = computed(() => {
+  const match = input.value.match(/(?:^|\s)@([^\s@]*)$/)
+  return match ? match[1] ?? '' : null
+})
+const contextQuery = computed(() => (
+  manualContextPickerOpen.value ? manualContextQuery.value.trim() : (mentionQuery.value ?? '').trim()
+))
+const showContextPicker = computed(() => manualContextPickerOpen.value || mentionQuery.value !== null)
+const allContextOptions = computed(() => [
+  ...(props.datastores ?? []).map(datastore => ({
+    id: datastore.id,
+    name: datastore.name,
+    description: datastore.description,
+    kind: 'datastore' as const,
+  })),
+  ...(props.knowledgeBases ?? []).map(knowledgeBase => ({
+    id: knowledgeBase.id,
+    name: knowledgeBase.name,
+    description: knowledgeBase.description,
+    kind: 'knowledge-base' as const,
+  })),
+])
+const filteredContextOptions = computed(() => {
+  const query = contextQuery.value.toLowerCase()
+  return allContextOptions.value.filter(option => {
+    if (selectedContexts.value.some(selected => selected.kind === option.kind && selected.id === option.id)) {
+      return false
+    }
+    if (!query) {
+      return true
+    }
+    return option.name.toLowerCase().includes(query)
+      || option.id.toLowerCase().includes(query)
+      || (option.description?.toLowerCase().includes(query) ?? false)
+  })
+})
+const filteredDatastores = computed(() => filteredContextOptions.value.filter(option => option.kind === 'datastore'))
+const filteredKnowledgeBases = computed(() => filteredContextOptions.value.filter(option => option.kind === 'knowledge-base'))
+const pickerTitle = computed(() => (
+  manualContextPickerOpen.value
+    ? '@ 上下文选择'
+    : `@ ${mentionQuery.value ?? ''}`.trim()
+))
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
+    if (mentionQuery.value !== null && filteredContextOptions.value.length > 0) {
+      event.preventDefault()
+      selectContext(filteredContextOptions.value[0])
+      return
+    }
     event.preventDefault()
     void submit()
   }
@@ -123,16 +186,22 @@ async function submit() {
     }
   }
 
+  const sessionConfig = buildTemporarySessionConfig()
+  const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
+
   emit('send', {
     content,
     attachmentIds,
     attachments: uploadedAttachments,
+    sessionConfig,
+    restoreSessionConfig,
   })
 
   input.value = ''
   attachments.value = []
   uploadError.value = null
   showTemplates.value = false
+  resetTemporaryContextSelection()
 }
 
 function handleFileSelect() {
@@ -180,6 +249,91 @@ function insertTemplate(template: (typeof promptTemplates)[number]) {
   showTemplates.value = false
 }
 
+function toggleManualContextPicker() {
+  manualContextPickerOpen.value = !manualContextPickerOpen.value
+  if (!manualContextPickerOpen.value) {
+    manualContextQuery.value = ''
+  }
+}
+
+function selectContext(option: {
+  id: string
+  name: string
+  description?: string | null
+  kind: 'datastore' | 'knowledge-base'
+}) {
+  if (!selectedContexts.value.some(selected => selected.kind === option.kind && selected.id === option.id)) {
+    selectedContexts.value.push(option)
+  }
+  if (mentionQuery.value !== null) {
+    removeTrailingMention()
+  }
+  manualContextPickerOpen.value = false
+  manualContextQuery.value = ''
+}
+
+function removeContext(kind: 'datastore' | 'knowledge-base', id: string) {
+  selectedContexts.value = selectedContexts.value.filter(option => !(option.kind === kind && option.id === id))
+}
+
+function removeTrailingMention() {
+  input.value = input.value.replace(/(?:^|\s)@[^\s@]*$/, matched => matched.startsWith(' ') ? ' ' : '')
+  input.value = input.value.replace(/\s{2,}$/g, ' ')
+  if (input.value === ' ') {
+    input.value = ''
+  }
+}
+
+function buildTemporarySessionConfig(): SessionConfig | undefined {
+  if (selectedContexts.value.length === 0 || !props.baseSessionConfig) {
+    return undefined
+  }
+
+  const knowledgeBaseIds = mergeIds(
+    props.baseSessionConfig.knowledgeBaseIds ?? [],
+    selectedContexts.value.filter(option => option.kind === 'knowledge-base').map(option => option.id),
+  )
+  const datastoreIds = mergeIds(
+    props.baseSessionConfig.datastoreIds ?? [],
+    selectedContexts.value.filter(option => option.kind === 'datastore').map(option => option.id),
+  )
+
+  return {
+    preferredProviderId: props.baseSessionConfig.preferredProviderId,
+    temperature: props.baseSessionConfig.temperature,
+    maxTokens: props.baseSessionConfig.maxTokens,
+    maxSteps: props.baseSessionConfig.maxSteps,
+    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
+    knowledgeBaseIds,
+    datastoreIds,
+  }
+}
+
+function buildRestoreSessionConfig(): SessionConfig | undefined {
+  if (!props.baseSessionConfig) {
+    return undefined
+  }
+  return {
+    preferredProviderId: props.baseSessionConfig.preferredProviderId,
+    temperature: props.baseSessionConfig.temperature,
+    maxTokens: props.baseSessionConfig.maxTokens,
+    maxSteps: props.baseSessionConfig.maxSteps,
+    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
+    knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
+    datastoreIds: props.baseSessionConfig.datastoreIds ?? [],
+  }
+}
+
+function mergeIds(baseIds: string[], extraIds: string[]) {
+  return Array.from(new Set([...baseIds, ...extraIds]))
+}
+
+function resetTemporaryContextSelection() {
+  manualContextPickerOpen.value = false
+  manualContextQuery.value = ''
+  selectedContexts.value = []
+}
+
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -212,12 +366,17 @@ watch(audioBlob, async (blob) => {
     const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type })
     const sessionId = chatStore.activeSessionId ?? undefined
     const uploaded = await chatApi.uploadAttachment(file, sessionId)
+    const sessionConfig = buildTemporarySessionConfig()
+    const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
 
     emit('send', {
       content: '[语音消息]',
       attachmentIds: [uploaded.fileId],
       attachments: [uploaded],
+      sessionConfig,
+      restoreSessionConfig,
     })
+    resetTemporaryContextSelection()
   } catch (error) {
     console.error('语音消息上传失败:', error)
     voiceError.value = error instanceof Error ? error.message : '语音消息上传失败，请重试'
@@ -236,6 +395,26 @@ defineExpose({
 <template>
   <div class="bg-transparent px-4 py-3 sm:px-5">
     <div class="mx-auto max-w-4xl space-y-3">
+      <div v-if="selectedContexts.length > 0" class="flex flex-wrap gap-2">
+        <div
+          v-for="context in selectedContexts"
+          :key="`${context.kind}:${context.id}`"
+          class="list-card inline-flex items-center gap-2 px-3 py-2 text-xs"
+        >
+          <Badge variant="outline" class="px-1.5 py-0 text-[10px]">
+            {{ context.kind === 'datastore' ? 'Datastore' : '知识库' }}
+          </Badge>
+          <span class="max-w-[220px] truncate text-foreground">{{ context.name }}</span>
+          <button
+            type="button"
+            class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-destructive"
+            @click="removeContext(context.kind, context.id)"
+          >
+            <X class="size-3" />
+          </button>
+        </div>
+      </div>
+
       <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
         <div
           v-for="(file, index) in attachments"
@@ -254,6 +433,99 @@ defineExpose({
           </button>
         </div>
       </div>
+
+      <Transition
+        enter-active-class="transition-all duration-150 ease-out"
+        enter-from-class="translate-y-1 opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition-all duration-100 ease-in"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="translate-y-1 opacity-0"
+      >
+        <div
+          v-if="showContextPicker"
+          class="rounded-2xl border border-border/60 bg-card/88 p-3 shadow-[0_10px_24px_-14px_hsl(var(--shadow-color)/0.42)] backdrop-blur-sm"
+        >
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div class="text-xs font-medium text-foreground">{{ pickerTitle }}</div>
+              <div class="text-[11px] text-muted-foreground">
+                选择的上下文仅对本条消息生效，发送完成后会恢复会话默认绑定。
+              </div>
+            </div>
+            <button
+              v-if="manualContextPickerOpen"
+              type="button"
+              class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+              @click="toggleManualContextPicker"
+            >
+              <X class="size-3.5" />
+            </button>
+          </div>
+
+          <div v-if="manualContextPickerOpen" class="mb-3">
+            <Input
+              v-model="manualContextQuery"
+              placeholder="搜索 datastore 或知识库"
+              class="h-8 bg-background/70 text-sm"
+            />
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <section class="space-y-2">
+              <div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Datastore
+              </div>
+              <div v-if="filteredDatastores.length > 0" class="space-y-1.5">
+                <button
+                  v-for="option in filteredDatastores"
+                  :key="`${option.kind}:${option.id}`"
+                  type="button"
+                  class="flex w-full items-start justify-between gap-3 rounded-xl border border-border/50 bg-background/55 px-3 py-2 text-left transition-colors hover:bg-accent/55"
+                  @click="selectContext(option)"
+                >
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
+                    <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {{ option.description }}
+                    </div>
+                  </div>
+                  <span class="shrink-0 text-[10px] text-muted-foreground">{{ option.id }}</span>
+                </button>
+              </div>
+              <div v-else class="rounded-xl border border-dashed border-border/60 px-3 py-4 text-xs text-muted-foreground">
+                没有匹配的 datastore。
+              </div>
+            </section>
+
+            <section class="space-y-2">
+              <div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Knowledge Base
+              </div>
+              <div v-if="filteredKnowledgeBases.length > 0" class="space-y-1.5">
+                <button
+                  v-for="option in filteredKnowledgeBases"
+                  :key="`${option.kind}:${option.id}`"
+                  type="button"
+                  class="flex w-full items-start justify-between gap-3 rounded-xl border border-border/50 bg-background/55 px-3 py-2 text-left transition-colors hover:bg-accent/55"
+                  @click="selectContext(option)"
+                >
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
+                    <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {{ option.description }}
+                    </div>
+                  </div>
+                  <span class="shrink-0 text-[10px] text-muted-foreground">{{ option.id }}</span>
+                </button>
+              </div>
+              <div v-else class="rounded-xl border border-dashed border-border/60 px-3 py-4 text-xs text-muted-foreground">
+                没有匹配的知识库。
+              </div>
+            </section>
+          </div>
+        </div>
+      </Transition>
 
       <div
         class="overflow-hidden rounded-2xl border border-border/50 bg-card/60 shadow-[0_2px_12px_-4px_hsl(var(--shadow-color)/0.18)] backdrop-blur-sm transition-all duration-200"
@@ -353,6 +625,19 @@ defineExpose({
                 </div>
               </Transition>
             </div>
+
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+              :disabled="disabled"
+              @click="toggleManualContextPicker"
+            >
+              <AtSign class="size-3.5" />
+              上下文
+              <span v-if="selectedContexts.length > 0" class="ml-0.5 rounded-full bg-primary/15 px-1.5 text-[10px] font-medium text-primary">
+                {{ selectedContexts.length }}
+              </span>
+            </button>
 
             <!-- 附件 -->
             <button

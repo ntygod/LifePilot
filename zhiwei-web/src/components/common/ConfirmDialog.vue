@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   title: string
@@ -55,14 +56,19 @@ function handleCancel() {
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter class="gap-2">
-        <AlertDialogCancel @click="handleCancel">
-          {{ cancelLabel }}
+        <AlertDialogCancel as-child>
+          <Button type="button" variant="outline" @click="handleCancel">
+            {{ cancelLabel }}
+          </Button>
         </AlertDialogCancel>
-        <AlertDialogAction
-          :class="confirmVariant === 'destructive' ? 'bg-destructive text-white hover:bg-destructive/90' : ''"
-          @click="handleConfirm"
-        >
-          {{ confirmLabel }}
+        <AlertDialogAction as-child>
+          <Button
+            type="button"
+            :variant="confirmVariant === 'destructive' ? 'destructive' : 'default'"
+            @click="handleConfirm"
+          >
+            {{ confirmLabel }}
+          </Button>
         </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>

@@ -21,6 +21,7 @@ import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
 import { useChat } from '@/composables/useChat'
+import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
 import { useSkillStore } from '@/stores/skill'
@@ -30,6 +31,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+const datastoreStore = useDatastoreStore()
 const kbStore = useKnowledgeBaseStore()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
@@ -71,6 +73,7 @@ const activeSessionConfig = ref<SessionConfig>({
   maxSteps: DEFAULT_SESSION_MAX_STEPS,
   maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
   knowledgeBaseIds: [],
+  datastoreIds: [],
 })
 
 const CHAT_SCENES = new Set([
@@ -104,6 +107,7 @@ function resetActiveSessionConfig() {
     maxSteps: DEFAULT_SESSION_MAX_STEPS,
     maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
     knowledgeBaseIds: [],
+    datastoreIds: [],
   }
 }
 
@@ -124,6 +128,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
       maxSteps: detail.maxSteps ?? DEFAULT_SESSION_MAX_STEPS,
       maxDurationSeconds: detail.maxDurationSeconds ?? DEFAULT_SESSION_MAX_DURATION_SECONDS,
       knowledgeBaseIds: detail.knowledgeBaseIds ?? [],
+      datastoreIds: detail.datastoreIds ?? [],
     }
   } catch (event) {
     console.warn('加载会话配置失败:', event)
@@ -241,6 +246,7 @@ onMounted(async () => {
   }
 
   void kbStore.fetchList()
+  void datastoreStore.fetchList()
   void skillStore.fetchSkills()
 
   try {
@@ -293,8 +299,15 @@ async function handleSend(payload: {
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
   sessionConfig?: SessionConfig
+  restoreSessionConfig?: SessionConfig
 }) {
-  await sendMessage(payload.content, payload.attachmentIds, payload.attachments, payload.sessionConfig)
+  await sendMessage(
+    payload.content,
+    payload.attachmentIds,
+    payload.attachments,
+    payload.sessionConfig,
+    payload.restoreSessionConfig,
+  )
 }
 
 function handleEmptyStateSend(content: string) {
@@ -403,6 +416,7 @@ async function handleConfigUpdate(config: SessionConfig) {
       maxSteps: config.maxSteps ?? activeSessionConfig.value.maxSteps,
       maxDurationSeconds: config.maxDurationSeconds ?? activeSessionConfig.value.maxDurationSeconds,
       knowledgeBaseIds: config.knowledgeBaseIds ?? [],
+      datastoreIds: config.datastoreIds ?? [],
     }
     uiStore.showToast('success', '配置已更新')
   } catch {
@@ -584,8 +598,10 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
               :max-steps="activeSessionConfig.maxSteps"
               :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
               :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
+              :datastore-ids="activeSessionConfig.datastoreIds"
               :providers="chatProviders"
               :knowledge-bases="kbStore.list"
+              :datastores="datastoreStore.list"
               @close="showConfigPanel = false"
               @update="handleConfigUpdate"
             />
@@ -633,6 +649,9 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
           :placeholder="inputPlaceholder"
           :continuation-title="continuationTitle"
           :continuation-detail="continuationDetail"
+          :knowledge-bases="kbStore.list"
+          :datastores="datastoreStore.list"
+          :base-session-config="activeSessionConfig"
           @send="handleSend"
         />
       </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
-import type { SessionConfig, KnowledgeBase } from '@/types'
+import type { Datastore, SessionConfig, KnowledgeBase } from '@/types'
 import type { ModelService } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -17,8 +17,10 @@ const props = defineProps<{
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
+  datastoreIds?: string[]
   providers: ModelService[]
   knowledgeBases: KnowledgeBase[]
+  datastores: Datastore[]
 }>()
 
 const emit = defineEmits<{
@@ -36,6 +38,7 @@ const localMaxTokens = ref(props.maxTokens ?? DEFAULT_MAX_TOKENS)
 const localMaxSteps = ref(props.maxSteps ?? DEFAULT_MAX_STEPS)
 const localMaxDurationSeconds = ref(props.maxDurationSeconds ?? DEFAULT_MAX_DURATION_SECONDS)
 const localKbIds = ref<string[]>(props.knowledgeBaseIds ?? [])
+const localDatastoreIds = ref<string[]>(props.datastoreIds ?? [])
 
 watch(() => props.preferredProviderId, v => { localPreferredProviderId.value = v ?? '' })
 watch(() => props.temperature, v => { localTemperature.value = v ?? 0.7 })
@@ -43,6 +46,7 @@ watch(() => props.maxTokens, v => { localMaxTokens.value = v ?? DEFAULT_MAX_TOKE
 watch(() => props.maxSteps, v => { localMaxSteps.value = v ?? DEFAULT_MAX_STEPS })
 watch(() => props.maxDurationSeconds, v => { localMaxDurationSeconds.value = v ?? DEFAULT_MAX_DURATION_SECONDS })
 watch(() => props.knowledgeBaseIds, v => { localKbIds.value = v ?? [] })
+watch(() => props.datastoreIds, v => { localDatastoreIds.value = v ?? [] })
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number(value)
@@ -58,6 +62,7 @@ function emitUpdate() {
     maxSteps: clampInteger(localMaxSteps.value, DEFAULT_MAX_STEPS, 1, 500),
     maxDurationSeconds: clampInteger(localMaxDurationSeconds.value, DEFAULT_MAX_DURATION_SECONDS, 5, 86400),
     knowledgeBaseIds: localKbIds.value.length > 0 ? localKbIds.value : undefined,
+    datastoreIds: localDatastoreIds.value.length > 0 ? localDatastoreIds.value : undefined,
   })
 }
 
@@ -93,6 +98,16 @@ function toggleKb(id: string, checked: boolean | 'indeterminate') {
   } else {
     const i = localKbIds.value.indexOf(id)
     if (i >= 0) localKbIds.value.splice(i, 1)
+  }
+  emitUpdate()
+}
+
+function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
+  if (checked === true) {
+    if (!localDatastoreIds.value.includes(id)) localDatastoreIds.value.push(id)
+  } else {
+    const i = localDatastoreIds.value.indexOf(id)
+    if (i >= 0) localDatastoreIds.value.splice(i, 1)
   }
   emitUpdate()
 }
@@ -177,6 +192,33 @@ function toggleKb(id: string, checked: boolean | 'indeterminate') {
       />
     </section>
 
+    <section v-if="datastores.length > 0" class="space-y-2">
+      <div class="flex items-center justify-between">
+        <Label class="text-xs text-muted-foreground">Datastore</Label>
+        <span class="text-[10px] text-muted-foreground">{{ localDatastoreIds.length }} / {{ datastores.length }}</span>
+      </div>
+      <div class="max-h-40 space-y-1 overflow-y-auto pr-1 scrollbar-thin">
+        <label
+          v-for="datastore in datastores" :key="datastore.id"
+          class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50"
+        >
+          <Checkbox
+            :model-value="localDatastoreIds.includes(datastore.id)"
+            @update:model-value="toggleDatastore(datastore.id, $event)"
+          />
+          <div class="min-w-0">
+            <div class="truncate text-xs text-foreground">{{ datastore.name }}</div>
+            <div v-if="datastore.description" class="truncate text-[10px] text-muted-foreground">
+              {{ datastore.description }}
+            </div>
+          </div>
+        </label>
+      </div>
+      <p class="text-[10px] leading-4 text-muted-foreground">
+        加载 datastore 时，会自动带上它挂载的知识库，但检索仍按 datastore 领域收口。
+      </p>
+    </section>
+
     <!-- 知识库 -->
     <section v-if="knowledgeBases.length > 0" class="space-y-2">
       <div class="flex items-center justify-between">
@@ -190,7 +232,7 @@ function toggleKb(id: string, checked: boolean | 'indeterminate') {
         >
           <Checkbox
             :model-value="localKbIds.includes(kb.id)"
-            @update:model-value="checked => toggleKb(kb.id, checked)"
+            @update:model-value="toggleKb(kb.id, $event)"
           />
           <span class="truncate text-xs text-foreground">{{ kb.name }}</span>
         </label>
