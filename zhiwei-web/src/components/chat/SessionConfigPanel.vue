@@ -110,7 +110,10 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
   <div class="detail-card space-y-4 p-4 text-sm">
     <!-- 标题栏 -->
     <div class="flex items-center justify-between">
-      <span class="text-sm font-medium text-foreground">会话配置</span>
+      <div class="space-y-1">
+        <div class="surface-label text-[0.68rem]">配置</div>
+        <span class="text-sm font-medium text-foreground">会话配置</span>
+      </div>
       <Button v-if="props.showClose" variant="ghost" size="icon-sm" @click="emit('close')">
         <X :size="14" />
       </Button>
@@ -176,12 +179,12 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
     <section v-if="datastores.length > 0" class="space-y-2">
       <div class="flex items-center justify-between">
         <Label class="text-xs text-muted-foreground">Datastore</Label>
-        <span class="text-[10px] text-muted-foreground">{{ localDatastoreIds.length }} / {{ datastores.length }}</span>
+        <span class="surface-chip">{{ localDatastoreIds.length }} / {{ datastores.length }}</span>
       </div>
       <div class="max-h-40 space-y-1 overflow-y-auto pr-1 scrollbar-thin">
         <label
           v-for="datastore in datastores" :key="datastore.id"
-          class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50"
+          class="config-choice-row"
         >
           <Checkbox
             :model-value="localDatastoreIds.includes(datastore.id)"
@@ -204,12 +207,12 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
     <section v-if="knowledgeBases.length > 0" class="space-y-2">
       <div class="flex items-center justify-between">
         <Label class="text-xs text-muted-foreground">知识库</Label>
-        <span class="text-[10px] text-muted-foreground">{{ localKbIds.length }} / {{ knowledgeBases.length }}</span>
+        <span class="surface-chip">{{ localKbIds.length }} / {{ knowledgeBases.length }}</span>
       </div>
       <div class="max-h-40 space-y-1 overflow-y-auto pr-1 scrollbar-thin">
         <label
           v-for="kb in knowledgeBases" :key="kb.id"
-          class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50"
+          class="config-choice-row"
         >
           <Checkbox
             :model-value="localKbIds.includes(kb.id)"
@@ -221,3 +224,26 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
     </section>
   </div>
 </template>
+
+<style scoped>
+.config-choice-row {
+  display: flex;
+  cursor: pointer;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.42);
+  border-radius: calc(var(--radius) + 2px);
+  background: hsl(from var(--background) h s l / 0.54);
+  padding: 0.5rem 0.6rem;
+  transition:
+    border-color 180ms var(--ease-fluid),
+    background-color 180ms var(--ease-fluid),
+    transform 180ms var(--ease-fluid);
+}
+
+.config-choice-row:hover {
+  transform: translateY(-1px);
+  border-color: hsl(from var(--primary) h s l / 0.18);
+  background: hsl(from var(--card) h s l / 0.74);
+}
+</style>

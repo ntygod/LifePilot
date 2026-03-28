@@ -151,7 +151,7 @@ function formatNumber(value?: number | null) {
       </section>
 
       <section class="grid grid-cols-2 gap-3">
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+        <div class="inspector-stat-card">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <Sparkles class="size-4 text-primary" />
             状态
@@ -159,7 +159,7 @@ function formatNumber(value?: number | null) {
           <p class="text-sm text-muted-foreground">{{ statusText }}</p>
         </div>
 
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+        <div class="inspector-stat-card">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <MessageSquareText class="size-4 text-primary" />
             消息
@@ -167,7 +167,7 @@ function formatNumber(value?: number | null) {
           <p class="text-sm text-muted-foreground">共 {{ messageCount }} 条</p>
         </div>
 
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+        <div class="inspector-stat-card">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <Database class="size-4 text-primary" />
             资料
@@ -175,7 +175,7 @@ function formatNumber(value?: number | null) {
           <p class="text-sm text-muted-foreground">{{ contextCount }} 项</p>
         </div>
 
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+        <div class="inspector-stat-card">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <Search class="size-4 text-primary" />
             命中
@@ -201,7 +201,7 @@ function formatNumber(value?: number | null) {
         </div>
       </section>
       <section class="grid gap-3">
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+        <div class="inspector-stat-card">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <Clock3 class="size-4 text-primary" />
             创建时间
@@ -211,7 +211,7 @@ function formatNumber(value?: number | null) {
           </p>
         </div>
 
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+        <div class="inspector-stat-card">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <Clock3 class="size-4 text-primary" />
             最近更新
@@ -264,7 +264,7 @@ function formatNumber(value?: number | null) {
         </div>
 
         <div class="mt-4 grid grid-cols-2 gap-3">
-          <div class="rounded-[calc(var(--radius)+6px)] border border-border/60 bg-muted/20 px-3 py-2.5">
+          <div class="inspector-meta-card">
             <p class="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">历史估算</p>
             <p class="mt-1 text-sm font-medium text-foreground">
               {{ formatNumber(compactionStatus?.activeTranscriptTokens) }}
@@ -274,7 +274,7 @@ function formatNumber(value?: number | null) {
             </p>
           </div>
 
-          <div class="rounded-[calc(var(--radius)+6px)] border border-border/60 bg-muted/20 px-3 py-2.5">
+          <div class="inspector-meta-card">
             <p class="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">完整轮次</p>
             <p class="mt-1 text-sm font-medium text-foreground">
               {{ formatNumber(compactionStatus?.activeTurnCount) }}
@@ -284,14 +284,14 @@ function formatNumber(value?: number | null) {
             </p>
           </div>
 
-          <div class="rounded-[calc(var(--radius)+6px)] border border-border/60 bg-muted/20 px-3 py-2.5">
+          <div class="inspector-meta-card">
             <p class="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">已压缩</p>
             <p class="mt-1 text-sm font-medium text-foreground">
               {{ formatNumber(compactionStatus?.compactionCount) }} 次
             </p>
           </div>
 
-          <div class="rounded-[calc(var(--radius)+6px)] border border-border/60 bg-muted/20 px-3 py-2.5">
+          <div class="inspector-meta-card">
             <p class="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">最近一次</p>
             <p class="mt-1 text-sm font-medium text-foreground">
               {{ formatDate(compactionStatus?.lastCompactedAt) }}
@@ -345,3 +345,32 @@ function formatNumber(value?: number | null) {
     </template>
   </InspectorRail>
 </template>
+
+<style scoped>
+.inspector-stat-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid hsl(from var(--border) h s l / 0.54);
+  border-radius: calc(var(--radius) + 6px);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.9), hsl(from var(--background) h s l / 0.78));
+  padding: 0.85rem 1rem;
+  box-shadow:
+    0 8px 14px -22px hsl(var(--shadow-color) / 0.06),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.66);
+}
+
+.inspector-stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.66), hsl(from var(--primary) h s l / 0.08));
+}
+
+.inspector-meta-card {
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px solid hsl(from var(--border) h s l / 0.56);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.78), hsl(from var(--background) h s l / 0.68));
+  padding: 0.7rem 0.85rem;
+}
+</style>

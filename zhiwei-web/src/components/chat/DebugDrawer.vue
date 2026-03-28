@@ -78,7 +78,7 @@ function toggle(key: keyof typeof sections.value) {
         </button>
         <div v-if="sections.token" class="mt-3 space-y-2 text-sm text-muted-foreground">
           <template v-if="tokenUsage">
-            <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-3 py-3">
+            <div class="debug-stat-card">
               <p>模型：{{ modelId || '未知模型' }}</p>
               <p>总token：{{ tokenUsage.totalTokens }}</p>
               <p>提示 {{ tokenUsage.promptTokens }} / 回答 {{ tokenUsage.completionTokens }}</p>
@@ -102,7 +102,7 @@ function toggle(key: keyof typeof sections.value) {
           <span class="surface-chip">{{ prompt ? '已记录' : '暂无内容' }}</span>
         </button>
         <div v-if="sections.prompt" class="mt-3 text-sm leading-6 text-muted-foreground">
-          <p v-if="prompt" class="whitespace-pre-wrap break-words">{{ prompt }}</p>
+          <p v-if="prompt" class="debug-stat-card whitespace-pre-wrap break-words">{{ prompt }}</p>
           <p v-else>暂未记录本轮提示词摘要。</p>
         </div>
       </section>
@@ -225,3 +225,13 @@ function toggle(key: keyof typeof sections.value) {
     </template>
   </InspectorRail>
 </template>
+
+<style scoped>
+.debug-stat-card {
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px solid hsl(from var(--border) h s l / 0.56);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.84), hsl(from var(--background) h s l / 0.7));
+  padding: 0.8rem 0.9rem;
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.62);
+}
+</style>

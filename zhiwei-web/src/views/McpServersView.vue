@@ -163,35 +163,31 @@ onMounted(() => {
         <PageSection
           eyebrow="筛选"
           title="查找连接"
-          description="按服务名称快速找到需要查看的连接。"
         >
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-            <div class="min-w-0">
-              <SearchBar
-                v-model="searchQuery"
-                placeholder="搜索服务器名称..."
-              />
-            </div>
+          <div class="toolbar-strip">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div class="min-w-0 flex-1 xl:max-w-[32rem]">
+                <SearchBar
+                  v-model="searchQuery"
+                  placeholder="搜索服务器名称..."
+                />
+              </div>
 
-            <div class="rounded-[calc(var(--radius)+2px)] border border-dashed border-border/60 bg-background/48 px-4 py-4">
-              <div class="space-y-3">
-                <div>
-                  <div class="surface-label text-[0.68rem]">当前视图</div>
-                  <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                    查看服务详情。
-                  </p>
+              <div class="flex items-center gap-3">
+                <div class="toolbar-counter">
+                  <div class="surface-label text-[0.68rem]">结果</div>
+                  <div class="toolbar-counter-value">{{ filteredServers.length }}</div>
                 </div>
-
-                <div class="flex flex-wrap gap-2 text-xs">
-                  <span class="filter-pill">结果：{{ filteredServers.length }} / {{ skillStore.mcpServers.length }}</span>
-                  <span class="filter-pill">已连接：{{ connectedCount }}</span>
-                  <span v-if="searchQuery" class="filter-pill">关键词：{{ searchQuery }}</span>
-                </div>
-
-                <Button v-if="searchQuery" variant="ghost" class="px-0" @click="clearSearch">
+                <Button v-if="searchQuery" variant="ghost" @click="clearSearch">
                   清空搜索
                 </Button>
               </div>
+            </div>
+
+            <div class="toolbar-meta text-xs">
+              <span class="surface-chip">已连接 {{ connectedCount }}</span>
+              <span class="surface-chip">工具 {{ totalToolCount }}</span>
+              <span v-if="searchQuery" class="surface-chip">关键词 {{ searchQuery }}</span>
             </div>
           </div>
         </PageSection>
@@ -199,7 +195,6 @@ onMounted(() => {
         <PageSection
           eyebrow="服务器"
           title="已注册的 MCP 连接"
-          :description="`当前显示 ${filteredServers.length} / ${skillStore.mcpServers.length} 个已知服务器。`"
         >
           <div v-if="skillStore.loading" class="grid gap-4">
             <div

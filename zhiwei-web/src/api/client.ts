@@ -52,7 +52,6 @@
   TokenConsumptionStats,
   ContextPreviewResponse,
   TokenBudgetData,
-  DependencyGraphResponse,
   ToolCallStats,
   ToolDailyTrend,
   ToolAnalyticsResponse,
@@ -1420,14 +1419,6 @@ export const analyticsApi = {
     query.append('from', timeRange.from)
     query.append('to', timeRange.to)
     return request(`/analytics/error-trend?${query.toString()}`)
-  }
-}
-
-/** 依赖关系图 API */
-export const dependencyApi = {
-  /** 获取依赖关系图 */
-  getGraph(): Promise<DependencyGraphResponse> {
-    return request('/dependencies/graph')
   }
 }
 

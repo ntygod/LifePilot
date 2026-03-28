@@ -24,14 +24,14 @@ const slots = useSlots()
 </script>
 
 <template>
-  <aside :class="cn('shell-card flex h-full min-h-0 w-full max-w-[320px] shrink-0 flex-col overflow-hidden', props.class)">
+  <aside :class="cn('inspector-rail shell-card flex h-full min-h-0 w-full max-w-[320px] shrink-0 flex-col overflow-hidden', props.class)">
     <div class="border-b border-border/55 px-4 py-4">
       <div class="flex items-start justify-between gap-3">
         <div class="space-y-1">
           <div class="surface-label text-[0.68rem]">
             <slot name="eyebrow">Inspector</slot>
           </div>
-          <div class="text-sm font-semibold tracking-tight text-foreground">
+          <div class="text-[0.95rem] font-semibold tracking-tight text-foreground">
             {{ props.title }}
           </div>
           <p v-if="props.description" class="text-xs leading-5 text-muted-foreground">
@@ -62,3 +62,9 @@ const slots = useSlots()
     </div>
   </aside>
 </template>
+
+<style scoped>
+.inspector-rail {
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.97), hsl(from var(--background) h s l / 0.9));
+}
+</style>

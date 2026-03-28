@@ -142,10 +142,10 @@ async function handleDelete(sessionId: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="border-b border-sidebar-border/45 px-4 py-4">
-      <div class="shell-card px-4 py-4">
-        <div class="space-y-3.5">
-          <div class="space-y-1.5">
+    <div class="border-b border-sidebar-border/45 px-3 py-3">
+      <div class="conversation-hero shell-card px-3.5 py-3">
+        <div class="space-y-3">
+          <div class="space-y-1">
             <div class="surface-label">对话</div>
             <div class="text-base font-semibold tracking-tight text-foreground">最近对话</div>
             <p class="text-xs leading-4 text-muted-foreground">
@@ -159,11 +159,11 @@ async function handleDelete(sessionId: string) {
           </div>
 
           <div class="grid grid-cols-2 gap-2">
-            <Button type="button" class="justify-center rounded-[0.9rem] shadow-none" @click="handleNewConversation">
+            <Button type="button" class="h-9 justify-center rounded-[0.9rem] shadow-none" @click="handleNewConversation">
               <Plus class="size-4" />
               新对话
             </Button>
-            <Button type="button" variant="outline" class="justify-center rounded-[0.9rem] shadow-none" @click="openConversationWorkspace">
+            <Button type="button" variant="outline" class="h-9 justify-center rounded-[0.9rem] shadow-none" @click="openConversationWorkspace">
               全部对话
             </Button>
           </div>
@@ -174,7 +174,7 @@ async function handleDelete(sessionId: string) {
               v-model="searchQuery"
               type="search"
               placeholder="搜索会话"
-              class="h-10 rounded-[0.9rem] border-border/50 bg-background/78 pl-9 text-sm shadow-none"
+              class="h-9 rounded-[0.9rem] border-border/50 bg-background/78 pl-9 text-sm shadow-none"
             />
           </div>
         </div>
@@ -197,13 +197,17 @@ async function handleDelete(sessionId: string) {
 
         <div v-else class="space-y-2">
           <article
-            v-for="session in activeSessions"
+            v-for="(session, index) in activeSessions"
             :key="session.id"
             class="session-item group"
             :class="{ 'session-item-active': isCurrentSession(session.id) }"
             @click="selectSession(session.id)"
           >
             <div class="flex items-start gap-2.5">
+              <div class="conversation-index shrink-0">
+                {{ String(index + 1).padStart(2, '0') }}
+              </div>
+
               <div class="min-w-0 flex-1">
                 <Input
                   v-if="renamingId === session.id"
@@ -269,12 +273,15 @@ async function handleDelete(sessionId: string) {
 
         <div v-if="showArchived" class="space-y-2">
           <article
-            v-for="session in archivedSessions"
+            v-for="(session, index) in archivedSessions"
             :key="session.id"
             class="session-item opacity-80"
             @click="selectSession(session.id)"
           >
             <div class="flex items-center gap-2">
+              <div class="conversation-index shrink-0 opacity-70">
+                {{ String(index + 1).padStart(2, '0') }}
+              </div>
               <span class="truncate text-sm font-medium text-foreground">
                 {{ session.title || '新对话' }}
               </span>
@@ -290,3 +297,32 @@ async function handleDelete(sessionId: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.conversation-hero {
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.96), hsl(from var(--background) h s l / 0.9));
+}
+
+.conversation-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.45rem;
+  margin-top: 0.1rem;
+  padding: 0 0.38rem;
+  border-radius: 0.72rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.48);
+  background: hsl(from var(--card) h s l / 0.74);
+  color: hsl(from var(--muted-foreground) h s l / 0.78);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.session-item-active .conversation-index {
+  border-color: hsl(from var(--primary) h s l / 0.16);
+  background: hsl(from var(--primary) h s l / 0.08);
+  color: hsl(from var(--primary) h s l / 0.88);
+}
+</style>

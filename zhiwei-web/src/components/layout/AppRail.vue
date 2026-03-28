@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router'
+import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import NotificationBell from '@/components/notification/NotificationBell.vue'
 import ThemeToggle from '@/components/global/ThemeToggle.vue'
 import { useChatStore } from '@/stores/chat'
@@ -45,10 +46,7 @@ function isActive(id: string) {
         title="知微"
         @click="emitNavigate"
       >
-        <div class="flex flex-col items-center">
-          <span class="text-[11px] font-semibold tracking-[0.2em]">ZW</span>
-          <span class="mt-1 h-1.5 w-1.5 rounded-full bg-primary/90 shadow-[0_0_8px_hsl(var(--primary)/0.28)] transition-transform duration-200 group-hover:scale-110" />
-        </div>
+        <ZhiweiMark class="size-[1.3rem]" />
       </RouterLink>
 
       <div class="soft-divider opacity-70" />

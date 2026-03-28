@@ -24,18 +24,18 @@ const toneClass = computed(() => {
 </script>
 
 <template>
-  <div :class="cn('state-panel rounded-[calc(var(--radius)+1px)] border px-5 py-5 sm:px-6', toneClass, props.class)">
-    <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-      <div class="flex min-w-0 flex-1 items-start gap-4">
+  <div :class="cn('state-panel rounded-[calc(var(--radius)+1px)] border px-4 py-4 sm:px-5', toneClass, props.class)">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+      <div class="flex min-w-0 flex-1 items-start gap-3.5">
         <div
           v-if="slots.icon"
-          class="flex size-11 shrink-0 items-center justify-center rounded-[1rem] border border-border/62 bg-background/84 text-primary"
+          class="flex size-10 shrink-0 items-center justify-center rounded-[0.95rem] border border-border/62 bg-background/84 text-primary"
         >
           <slot name="icon" />
         </div>
 
-        <div class="min-w-0 flex-1 space-y-2">
-          <h3 class="text-lg font-semibold tracking-tight text-foreground">
+        <div class="min-w-0 flex-1 space-y-1.5">
+          <h3 class="text-base font-semibold tracking-tight text-foreground">
             {{ props.title }}
           </h3>
           <p v-if="props.description" class="max-w-[42rem] text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
@@ -49,7 +49,7 @@ const toneClass = computed(() => {
       </div>
     </div>
 
-    <div v-if="slots.default" class="mt-5 border-t border-border/60 pt-4">
+    <div v-if="slots.default" class="mt-4 border-t border-border/60 pt-3">
       <slot />
     </div>
   </div>

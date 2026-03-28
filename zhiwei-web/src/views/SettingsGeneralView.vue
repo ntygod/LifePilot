@@ -98,9 +98,11 @@ const fontSizeOptions = [
 
 <template>
   <div class="space-y-8">
-    <section class="border-b border-border/55 pb-5">
+    <section class="detail-card px-5 py-5 sm:px-6">
       <div class="space-y-2">
+        <div class="surface-label text-[0.68rem]">通用</div>
         <h2 class="text-xl font-semibold text-foreground">界面与显示</h2>
+        <p class="max-w-[42rem] text-sm leading-6 text-muted-foreground">这部分控制当前设备上的显示方式和基础交互习惯。</p>
       </div>
       <p v-if="saveError" class="text-sm text-destructive">{{ saveError }}</p>
     </section>

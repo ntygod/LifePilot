@@ -489,7 +489,7 @@ defineExpose({
       >
         <div
           v-if="showContextPicker"
-          class="context-picker-panel rounded-[1.15rem] border border-border/58 bg-card/94 p-3 shadow-[0_16px_28px_-20px_hsl(var(--shadow-color)/0.16)]"
+          class="chat-context-panel context-picker-panel rounded-[1.05rem] border border-border/58 bg-card/92 p-3 shadow-[0_14px_24px_-22px_hsl(var(--shadow-color)/0.12)]"
         >
           <div class="mb-3 flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
@@ -620,10 +620,10 @@ defineExpose({
       </Transition>
 
       <div
-        class="overflow-hidden rounded-[1.35rem] border border-border/52 bg-card/82 shadow-[0_16px_28px_-24px_hsl(var(--shadow-color)/0.14)] transition-all duration-200"
+        class="chat-composer-shell overflow-hidden rounded-[1.35rem] border border-border/52 bg-card/82 transition-all duration-200"
         :class="[
-          sendDisabled ? '' : 'focus-within:border-primary/24 focus-within:shadow-[0_18px_30px_-24px_hsl(var(--shadow-color)/0.16)]',
-          dragActive ? 'border-primary/60 bg-primary/4 shadow-[0_14px_24px_-18px_hsl(var(--primary)/0.14)]' : '',
+          sendDisabled ? '' : 'focus-within:border-primary/24 focus-within:shadow-[0_16px_26px_-22px_hsl(var(--shadow-color)/0.12)]',
+          dragActive ? 'border-primary/60 bg-primary/[0.04] shadow-[0_14px_24px_-18px_hsl(var(--primary)/0.14)]' : '',
         ]"
         @dragenter="handleDragEnter"
         @dragover.prevent
@@ -632,7 +632,7 @@ defineExpose({
       >
         <div
           v-if="continuationTitle"
-          class="flex items-start gap-3 border-b border-border/60 bg-primary/[0.05] px-4 py-3"
+          class="chat-composer-continuation flex items-start gap-3 border-b border-border/60 px-4 py-3"
         >
           <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-background/92 text-primary">
             <CornerDownLeft class="size-3.5" />
@@ -828,12 +828,20 @@ defineExpose({
 .context-chip-card {
   position: relative;
   overflow: hidden;
-  border: 1px solid hsl(from var(--primary) h s l / 0.16);
+  border: 1px solid hsl(from var(--border) h s l / 0.58);
   border-radius: 1rem;
-  background: hsl(from var(--card) h s l / 0.94);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.92), hsl(from var(--background) h s l / 0.8));
   box-shadow:
-    0 10px 18px -22px hsl(var(--shadow-color) / 0.12),
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.4);
+    0 8px 14px -20px hsl(var(--shadow-color) / 0.08),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.68);
+}
+
+.context-chip-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.72), hsl(from var(--primary) h s l / 0.08));
 }
 
 .context-chip-icon {
@@ -844,6 +852,8 @@ defineExpose({
   align-items: center;
   justify-content: center;
   border-radius: 0.9rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.42);
+  background: hsl(from var(--card) h s l / 0.78);
 }
 
 .context-picker-panel {
@@ -851,15 +861,17 @@ defineExpose({
   overflow: hidden;
 }
 
+.chat-context-panel {
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--card) h s l / 0.9));
+}
+
 .context-picker-panel::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    linear-gradient(135deg, hsl(from var(--primary) h s l / 0.05), transparent 32%),
-    linear-gradient(180deg, hsl(from var(--card) h s l / 0.12), transparent 18%);
-  opacity: 0.6;
+  background: linear-gradient(90deg, hsl(from var(--primary) h s l / 0.16), transparent 24%);
+  opacity: 0.7;
 }
 
 .context-option-card {
@@ -872,7 +884,7 @@ defineExpose({
   overflow: hidden;
   border: 1px solid hsl(from var(--border) h s l / 0.46);
   border-radius: 1rem;
-  background: hsl(from var(--background) h s l / 0.58);
+  background: linear-gradient(180deg, hsl(from var(--background) h s l / 0.72), hsl(from var(--background) h s l / 0.58));
   padding: 0.75rem;
   text-align: left;
   transition:
@@ -885,8 +897,8 @@ defineExpose({
 .context-option-card:hover {
   transform: translateY(-1px);
   border-color: hsl(from var(--primary) h s l / 0.24);
-  background: hsl(from var(--card) h s l / 0.92);
-  box-shadow: 0 12px 20px -24px hsl(var(--shadow-color) / 0.12);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--background) h s l / 0.84));
+  box-shadow: 0 10px 16px -20px hsl(var(--shadow-color) / 0.08);
 }
 
 .context-option-icon {
@@ -901,6 +913,26 @@ defineExpose({
 
 .chat-send-ready {
   animation: send-button-breathe 1.7s var(--ease-fluid) infinite;
+}
+
+.chat-composer-shell {
+  position: relative;
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--card) h s l / 0.88));
+  box-shadow:
+    0 12px 22px -24px hsl(var(--shadow-color) / 0.1),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.72);
+}
+
+.chat-composer-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(from var(--primary) h s l / 0.18) 18%, transparent 72%);
+}
+
+.chat-composer-continuation {
+  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.05), transparent);
 }
 
 .context-chip-enter-active,

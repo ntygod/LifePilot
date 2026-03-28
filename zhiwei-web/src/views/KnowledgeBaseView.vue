@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
-  Clock3,
   Database,
   Edit2,
   Files,
@@ -16,7 +15,6 @@ import {
   X,
 } from 'lucide-vue-next'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageSection from '@/components/layout/PageSection.vue'
@@ -120,13 +118,6 @@ const totalDocuments = computed(() => (
 const totalChunks = computed(() => (
   store.list.reduce((sum, kb) => sum + kb.totalChunks, 0)
 ))
-
-const latestUpdate = computed(() => {
-  if (store.list.length === 0) return '暂无更新'
-  const latest = [...store.list]
-    .sort((first, second) => new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime())[0]
-  return formatDate(latest.updatedAt)
-})
 
 const hasFilters = computed(() => (
   Boolean(searchQuery.value.trim())
@@ -275,8 +266,8 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
   <div class="h-full overflow-y-auto">
     <PageContainer size="wide" class="py-6 sm:py-8">
       <div class="page-stack">
-        <header class="space-y-5 border-b border-border/70 pb-6">
-          <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <header class="space-y-4 border-b border-border/70 pb-5">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div class="space-y-3">
               <div class="surface-label">知识库</div>
               <div class="space-y-2">
@@ -294,27 +285,19 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
             </div>
           </div>
 
-          <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="知识库总数" :value="store.list.length" hint="当前已经接入、可以继续维护的知识库数量。">
-              <template #icon>
-                <Database class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="文档总量" :value="totalDocuments" hint="所有知识库累计收录的文档数量。">
-              <template #icon>
-                <Files class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="分块总量" :value="totalChunks" hint="已经完成切分、可参与检索的文本分段。">
-              <template #icon>
-                <Layers3 class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="最近更新" :value="latestUpdate" hint="方便快速定位最近活跃的知识资产。">
-              <template #icon>
-                <Clock3 class="size-5" />
-              </template>
-            </MetricCard>
+          <section class="kb-overview">
+            <div class="kb-overview-item">
+              <div class="surface-label text-[0.68rem]">知识库</div>
+              <div class="kb-overview-value">{{ store.list.length }}</div>
+            </div>
+            <div class="kb-overview-item">
+              <div class="surface-label text-[0.68rem]">文档</div>
+              <div class="kb-overview-value">{{ totalDocuments }}</div>
+            </div>
+            <div class="kb-overview-item">
+              <div class="surface-label text-[0.68rem]">分块</div>
+              <div class="kb-overview-value">{{ totalChunks }}</div>
+            </div>
           </section>
         </header>
 
@@ -342,7 +325,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
           eyebrow="筛选"
           title="查找知识库"
         >
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
             <div class="space-y-4">
               <div class="flex flex-wrap gap-2 text-xs">
                 <span class="filter-pill">关键字：{{ filterKeywordLabel }}</span>
@@ -387,7 +370,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
 
               <div
                 v-if="showFilters"
-                class="grid gap-4 rounded-[calc(var(--radius)+4px)] border border-border/70 bg-background/55 p-4 lg:grid-cols-[minmax(0,1fr)_220px]"
+                class="kb-filter-panel grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_220px]"
               >
                 <div class="space-y-3">
                   <div class="surface-label text-[0.68rem]">标签</div>
@@ -427,20 +410,17 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
               </div>
             </div>
 
-            <div class="grid gap-3 text-sm text-muted-foreground">
-              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-                <div class="mb-1 text-sm font-medium text-foreground">当前结果</div>
-                <p>{{ filteredKbs.length }} / {{ store.list.length }}</p>
+            <div class="kb-results-summary">
+              <div class="surface-label text-[0.68rem]">结果</div>
+              <div class="text-2xl font-semibold tracking-tight text-foreground">
+                {{ filteredKbs.length }}
               </div>
-              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-                <div class="mb-1 text-sm font-medium text-foreground">继续管理</div>
-                <p>进入详情后可上传文档、重建分块和测试检索。</p>
+              <div class="text-xs text-muted-foreground">
+                共 {{ store.list.length }}
               </div>
-              <div v-if="hasFilters" class="flex justify-start">
-                <Button type="button" variant="ghost" class="px-0" @click="clearFilters">
-                  清空筛选
-                </Button>
-              </div>
+              <Button v-if="hasFilters" type="button" variant="ghost" class="mt-1 h-8 justify-start px-0" @click="clearFilters">
+                清空筛选
+              </Button>
             </div>
           </div>
         </PageSection>
@@ -526,13 +506,16 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
 
           <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <article
-              v-for="kb in filteredKbs"
+              v-for="(kb, index) in filteredKbs"
               :key="kb.id"
-              class="list-card group relative cursor-pointer p-5"
+              class="kb-card list-card group relative cursor-pointer p-5"
               @click="selectKb(kb)"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="flex min-w-0 items-start gap-3">
+                  <div class="kb-card-index">
+                    {{ String(index + 1).padStart(2, '0') }}
+                  </div>
                   <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/75 text-primary transition-transform duration-200 group-hover:-translate-y-0.5">
                     <Database class="size-5" />
                   </div>
@@ -601,7 +584,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
               </div>
 
               <div class="mt-5 grid gap-3 sm:grid-cols-2">
-                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                <div class="kb-mini-stat">
                   <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
                     <Files class="size-4 text-primary" />
                     文档数
@@ -609,7 +592,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                   <p class="text-sm text-muted-foreground">{{ kb.documentCount }} 篇</p>
                 </div>
 
-                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                <div class="kb-mini-stat">
                   <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
                     <Layers3 class="size-4 text-primary" />
                     分块数
@@ -687,7 +670,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                 刷新
               </Button>
             </div>
-            <div v-if="datastoreStore.loading" class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+            <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
               正在加载 Datastore 列表...
             </div>
             <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
@@ -697,7 +680,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
               <label
                 v-for="datastore in datastoreStore.list"
                 :key="datastore.id"
-                class="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+                class="kb-dialog-option"
               >
                 <Checkbox
                   :model-value="createForm.datastoreIds.includes(datastore.id)"
@@ -711,7 +694,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                 </div>
               </label>
             </div>
-            <div v-else class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+            <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
               当前没有可关联的 Datastore。知识库可以先创建，后续再补充关联。
             </div>
             <p class="text-xs text-muted-foreground">绑定后，datastore 结构化数据会同步到该知识库。</p>
@@ -765,7 +748,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                 刷新
               </Button>
             </div>
-            <div v-if="datastoreStore.loading" class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+            <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
               正在加载 Datastore 列表...
             </div>
             <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
@@ -775,7 +758,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
               <label
                 v-for="datastore in datastoreStore.list"
                 :key="datastore.id"
-                class="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+                class="kb-dialog-option"
               >
                 <Checkbox
                   :model-value="editForm.datastoreIds.includes(datastore.id)"
@@ -789,7 +772,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                 </div>
               </label>
             </div>
-            <div v-else class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-3 text-sm text-muted-foreground">
+            <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
               当前没有可关联的 Datastore。
             </div>
           </div>
@@ -817,3 +800,105 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
     />
   </div>
 </template>
+
+<style scoped>
+.kb-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  padding-top: 0.25rem;
+}
+
+.kb-overview-item {
+  min-width: 0;
+  border-left: 1px solid hsl(from var(--border) h s l / 0.66);
+  padding-left: 0.95rem;
+}
+
+.kb-overview-value {
+  margin-top: 0.32rem;
+  font-size: clamp(1.75rem, 3vw, 2.1rem);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: var(--foreground);
+}
+
+.kb-filter-panel {
+  border-radius: calc(var(--radius) + 4px);
+  border: 1px solid hsl(from var(--border) h s l / 0.64);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.84), hsl(from var(--background) h s l / 0.72));
+}
+
+.kb-results-summary {
+  border-left: 1px solid hsl(from var(--border) h s l / 0.58);
+  padding-left: 1rem;
+}
+
+.kb-card {
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.95), hsl(from var(--background) h s l / 0.86));
+}
+
+.kb-card-index {
+  display: inline-flex;
+  min-width: 1.9rem;
+  height: 1.55rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+  border-radius: 0.78rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.48);
+  background: hsl(from var(--card) h s l / 0.8);
+  color: hsl(from var(--muted-foreground) h s l / 0.78);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.kb-mini-stat {
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px solid hsl(from var(--border) h s l / 0.54);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.8), hsl(from var(--background) h s l / 0.68));
+  padding: 0.8rem 1rem;
+}
+
+.kb-dialog-option {
+  display: flex;
+  cursor: pointer;
+  align-items: flex-start;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+  transition:
+    border-color 180ms var(--ease-fluid),
+    background-color 180ms var(--ease-fluid),
+    transform 180ms var(--ease-fluid);
+}
+
+.kb-dialog-option:hover {
+  transform: translateY(-1px);
+  border-color: hsl(from var(--primary) h s l / 0.16);
+  background: hsl(from var(--accent) h s l / 0.32);
+}
+
+.kb-dialog-note {
+  border: 1px dashed hsl(from var(--border) h s l / 0.62);
+  background: hsl(from var(--background) h s l / 0.62);
+}
+
+@media (max-width: 1279px) {
+  .kb-results-summary {
+    border-left: none;
+    border-top: 1px solid hsl(from var(--border) h s l / 0.58);
+    padding-top: 0.9rem;
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .kb-overview {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+}
+</style>

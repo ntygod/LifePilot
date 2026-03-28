@@ -710,7 +710,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
           </template>
         </PageHeader>
 
-        <div class="flex flex-wrap gap-2">
+        <div class="kb-status-strip flex flex-wrap gap-2">
           <Badge variant="outline" :class="indexStatusClass">
             {{ indexStatusLabel }}
           </Badge>
@@ -800,7 +800,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                 <!-- 编辑模式 -->
                 <div v-if="editing" class="detail-card p-5">
                   <form class="space-y-5" @submit.prevent="saveEdit">
-                    <section class="rounded-[calc(var(--radius)+6px)] border border-border/65 bg-background/60 p-4 sm:p-5">
+                    <section class="kb-detail-block p-4 sm:p-5">
                       <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div class="surface-label mb-2 text-[0.68rem]">基础信息</div>
@@ -831,7 +831,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                       </div>
                     </section>
 
-                    <section class="rounded-[calc(var(--radius)+6px)] border border-border/65 bg-background/60 p-4 sm:p-5">
+                    <section class="kb-detail-block p-4 sm:p-5">
                       <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div class="surface-label mb-2 text-[0.68rem]">检索配置</div>
@@ -1063,7 +1063,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                   <div class="detail-card overflow-hidden">
                     <div class="border-b border-border/70 px-5 py-5">
                       <div class="flex flex-col gap-4">
-                        <div class="rounded-[calc(var(--radius)+6px)] border border-border/65 bg-background/58 p-4">
+                        <div class="kb-detail-block kb-detail-block-compact p-4">
                           <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                             <div class="space-y-2">
                               <div class="surface-label mb-1 text-[0.68rem]">上传归属</div>
@@ -1075,7 +1075,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                             </div>
 
                             <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center xl:w-auto">
-                              <div v-if="datastoreStore.loading" class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-2.5 text-sm text-muted-foreground">
+                              <div v-if="datastoreStore.loading" class="kb-inline-note rounded-md px-3 py-2.5 text-sm text-muted-foreground">
                                 正在加载 Datastore 列表...
                               </div>
                               <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
@@ -1096,7 +1096,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                                   </SelectItem>
                                 </SelectContent>
                               </Select>
-                              <div v-else class="rounded-md border border-dashed border-border/60 bg-background/55 px-3 py-2.5 text-sm text-muted-foreground">
+                              <div v-else class="kb-inline-note rounded-md px-3 py-2.5 text-sm text-muted-foreground">
                                 当前没有可选的 Datastore。
                               </div>
 
@@ -1142,7 +1142,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
 
                         <div
                           v-if="showFilters"
-                          class="grid gap-4 rounded-[calc(var(--radius)+4px)] border border-border/70 bg-background/55 p-4 lg:grid-cols-3"
+                          class="kb-detail-block kb-detail-block-compact grid gap-4 p-4 lg:grid-cols-3"
                         >
                           <div class="space-y-2">
                             <Label class="text-xs text-muted-foreground">文件类型</Label>
@@ -1260,7 +1260,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                           <tr
                             v-for="doc in filteredDocuments"
                             :key="doc.id"
-                            class="group border-t border-border/60 transition-colors hover:bg-muted/25"
+                            class="kb-doc-row group border-t border-border/60 transition-colors hover:bg-muted/25"
                           >
                             <td class="px-5 py-4 align-top">
                               <Checkbox
@@ -1416,7 +1416,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                         <article
                           v-for="chunk in testResult.chunks"
                           :key="chunk.chunkId"
-                          class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-4"
+                          class="kb-detail-block kb-detail-block-compact p-4"
                         >
                           <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div class="text-sm font-medium text-foreground">{{ chunk.documentName }}</div>
@@ -1431,7 +1431,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                       </div>
                     </div>
 
-                    <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-primary/6 p-5">
+                    <div class="kb-answer-card p-5">
                       <div class="surface-label mb-3 text-[0.68rem]">检索回答</div>
                       <p class="whitespace-pre-wrap text-sm leading-7 text-foreground">
                         {{ testResult.answer || '这次检索没有生成回答，可先查看命中的分块内容。' }}
@@ -1468,7 +1468,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
             <article
               v-for="log in processingLogs"
               :key="log.id"
-              class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 p-4"
+              class="kb-detail-block kb-detail-block-compact p-4"
               :class="log.stage === 'ERROR' ? 'border-destructive/20 bg-destructive/6' : ''"
             >
               <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -1504,3 +1504,40 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
     />
   </div>
 </template>
+
+<style scoped>
+.kb-status-strip :deep(.badge) {
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.58);
+}
+
+.kb-detail-block {
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px solid hsl(from var(--border) h s l / 0.62);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.84), hsl(from var(--background) h s l / 0.72));
+  box-shadow:
+    0 8px 14px -22px hsl(var(--shadow-color) / 0.06),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.64);
+}
+
+.kb-detail-block-compact {
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.8), hsl(from var(--background) h s l / 0.68));
+}
+
+.kb-inline-note {
+  border: 1px dashed hsl(from var(--border) h s l / 0.62);
+  background: hsl(from var(--background) h s l / 0.62);
+}
+
+.kb-doc-row:hover td {
+  background: transparent;
+}
+
+.kb-answer-card {
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px solid hsl(from var(--primary) h s l / 0.14);
+  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.08), hsl(from var(--card) h s l / 0.84));
+  box-shadow:
+    0 10px 18px -24px hsl(var(--shadow-color) / 0.08),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.7);
+}
+</style>

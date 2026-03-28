@@ -7,8 +7,8 @@ defineProps<{
 </script>
 
 <template>
-  <section class="text-card-foreground">
-    <div class="flex items-start justify-between gap-4 border-b border-border/70 pb-3">
+  <section class="setting-section detail-card p-4 text-card-foreground sm:p-5">
+    <div class="flex items-start justify-between gap-3 border-b border-border/70 pb-3">
       <div class="min-w-0 space-y-1">
         <div class="flex items-center gap-2">
           <span v-if="icon" class="text-base text-muted-foreground">{{ icon }}</span>
@@ -22,7 +22,7 @@ defineProps<{
         <slot name="header-actions" />
       </div>
     </div>
-    <div class="divide-y divide-border/60">
+    <div class="mt-1.5 divide-y divide-border/60">
       <slot />
     </div>
   </section>

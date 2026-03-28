@@ -200,79 +200,66 @@ function formatDate(dateStr: string) {
           </div>
         </header>
 
-        <section class="detail-card p-5">
-          <div class="space-y-4">
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-              <div class="space-y-1">
-                <div class="surface-label">筛选与排查</div>
-                <p class="text-sm leading-6 text-muted-foreground">
-                  按名称、类型或状态筛选。
-                </p>
+        <section class="toolbar-strip">
+          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
+              <div class="relative min-w-[240px] flex-1 xl:max-w-[28rem]">
+                <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  v-model="searchQuery"
+                  type="search"
+                  placeholder="搜索智能体名称或描述"
+                  class="pl-9"
+                />
               </div>
 
-              <div class="flex flex-wrap gap-2 text-xs">
-                <span class="filter-pill">类型：{{ typeFilterLabel }}</span>
-                <span class="filter-pill">状态：{{ statusFilterLabel }}</span>
-                <span class="filter-pill">当前结果：{{ filteredAgents.length }}</span>
-              </div>
-            </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
+                <Select v-model="typeFilter">
+                  <SelectTrigger class="w-full lg:w-[150px]">
+                    <SelectValue placeholder="全部类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部类型</SelectItem>
+                    <SelectItem value="default">默认</SelectItem>
+                    <SelectItem value="custom">自定义</SelectItem>
+                    <SelectItem value="workflow">工作流</SelectItem>
+                  </SelectContent>
+                </Select>
 
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
-                <div class="relative min-w-[240px] flex-1 xl:max-w-[28rem]">
-                  <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    v-model="searchQuery"
-                    type="search"
-                    placeholder="搜索智能体名称或描述"
-                    class="pl-9"
-                  />
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
-                  <Select v-model="typeFilter">
-                    <SelectTrigger class="w-full lg:w-[150px]">
-                      <SelectValue placeholder="全部类型" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部类型</SelectItem>
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="custom">自定义</SelectItem>
-                      <SelectItem value="workflow">工作流</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select v-model="statusFilter">
-                    <SelectTrigger class="w-full lg:w-[150px]">
-                      <SelectValue placeholder="全部状态" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部状态</SelectItem>
-                      <SelectItem value="enabled">已启用</SelectItem>
-                      <SelectItem value="disabled">已禁用</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-3 text-sm text-muted-foreground">
-                <span>结果 {{ filteredAgents.length }}</span>
-                <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
-                  清空筛选
-                </Button>
+                <Select v-model="statusFilter">
+                  <SelectTrigger class="w-full lg:w-[150px]">
+                    <SelectValue placeholder="全部状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="enabled">已启用</SelectItem>
+                    <SelectItem value="disabled">已禁用</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+
+            <div class="flex items-center gap-3">
+              <div class="toolbar-counter">
+                <div class="surface-label text-[0.68rem]">结果</div>
+                <div class="toolbar-counter-value">{{ filteredAgents.length }}</div>
+              </div>
+              <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
+                清空筛选
+              </Button>
+            </div>
+          </div>
+
+          <div v-if="hasFilters" class="toolbar-meta text-xs">
+            <span v-if="typeFilter !== 'all'" class="surface-chip">类型 {{ typeFilterLabel }}</span>
+            <span v-if="statusFilter !== 'all'" class="surface-chip">状态 {{ statusFilterLabel }}</span>
+            <span v-if="searchQuery.trim()" class="surface-chip">关键词 {{ searchQuery.trim() }}</span>
           </div>
         </section>
 
         <section class="space-y-4">
           <div class="flex items-center justify-between gap-3">
-            <div>
-              <h2 class="text-lg font-semibold text-foreground">全部智能体</h2>
-              <p class="text-sm text-muted-foreground">
-                {{ hasFilters ? '已按名称、类型和状态筛选。' : '先从目录里判断谁在工作、谁需要继续配置。' }}
-              </p>
-            </div>
+            <h2 class="text-lg font-semibold text-foreground">全部智能体</h2>
             <div class="text-sm text-muted-foreground">{{ filteredAgents.length }} 个结果</div>
           </div>
 
@@ -372,22 +359,15 @@ function formatDate(dateStr: string) {
                 {{ agent.description || '这个智能体还没有描述信息。' }}
               </p>
 
-              <div class="mt-5 grid gap-3 sm:grid-cols-2">
-                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Cpu class="size-4 text-primary" />
-                    模型
-                  </div>
-                  <p class="truncate text-sm text-muted-foreground">{{ agent.preferredProviderId || '未设置' }}</p>
-                </div>
-
-                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Database class="size-4 text-primary" />
-                    知识库
-                  </div>
-                  <p class="text-sm text-muted-foreground">{{ agent.knowledgeBaseCount }} 个已连接</p>
-                </div>
+              <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                <span class="surface-chip">
+                  <Cpu class="size-3.5 text-primary" />
+                  {{ agent.preferredProviderId || '未设置模型' }}
+                </span>
+                <span class="surface-chip">
+                  <Database class="size-3.5 text-primary" />
+                  知识库 {{ agent.knowledgeBaseCount }}
+                </span>
               </div>
 
               <div v-if="agent.tags && agent.tags.length > 0" class="mt-4 flex flex-wrap gap-2">
@@ -401,9 +381,8 @@ function formatDate(dateStr: string) {
                 </Badge>
               </div>
 
-              <div class="mt-5 flex items-center justify-between gap-3 text-sm text-muted-foreground">
-                <span>点击查看详情和配置</span>
-                <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
+              <div class="mt-5 flex justify-end">
+                <span class="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors group-hover:text-primary/80">
                   查看详情
                   <ArrowUpRight class="size-4" />
                 </span>

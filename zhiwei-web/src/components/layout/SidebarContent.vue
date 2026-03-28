@@ -9,7 +9,6 @@ import {
   Brain,
   ChevronRight,
   FlaskConical,
-  GitBranch,
   MessageSquare,
   Pencil,
   Pin,
@@ -22,6 +21,7 @@ import {
   Workflow,
   Wrench,
 } from 'lucide-vue-next'
+import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import ThemeToggle from '@/components/global/ThemeToggle.vue'
 import NotificationBell from '@/components/notification/NotificationBell.vue'
 import { Button } from '@/components/ui/button'
@@ -94,7 +94,6 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
           { label: '市场', path: '/marketplace', icon: ShoppingBag },
           { label: '工具', path: '/tools', icon: Wrench },
           { label: 'MCP 服务器', path: '/mcp-servers', icon: Server },
-          { label: '依赖关系', path: '/dependencies', icon: GitBranch },
         ],
       },
     ],
@@ -148,7 +147,6 @@ function syncExpandedGroups() {
     || route.path.startsWith('/tools')
     || route.path.startsWith('/mcp-servers')
     || route.path.startsWith('/marketplace')
-    || route.path.startsWith('/dependencies')
   ) {
     expandedGroups.value.add('workspace')
   }
@@ -265,11 +263,18 @@ const pinnedSessionCount = computed(() => chatStore.sessions.filter(session => s
             <div class="surface-label">工作台</div>
             <NotificationBell />
           </div>
-          <div class="space-y-1">
-            <div class="text-sm font-semibold text-foreground">知微</div>
-            <p class="text-xs leading-5 text-muted-foreground">
-              见微知著，知微知所。
-            </p>
+          <div class="flex items-center gap-3">
+            <div
+              class="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-card text-foreground shadow-[inset_0_1px_0_hsl(from_var(--card)_h_s_l_/_0.82)]"
+            >
+              <ZhiweiMark class="size-5" />
+            </div>
+            <div class="space-y-1">
+              <div class="text-sm font-semibold text-foreground">知微</div>
+              <p class="text-xs leading-5 text-muted-foreground">
+                见微知著，谋定后动。
+              </p>
+            </div>
           </div>
           <div class="flex flex-wrap gap-2 text-[11px]">
             <span class="surface-chip">本地优先</span>

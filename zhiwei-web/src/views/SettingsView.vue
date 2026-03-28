@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useRoute } from 'vue-router'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
@@ -60,9 +61,32 @@ const currentNavigationItem = computed(() => (
   <div class="h-full overflow-y-auto">
     <PageContainer size="wide" class="py-6 sm:py-8">
       <div class="mx-auto max-w-[1080px] space-y-4">
+        <section class="settings-header">
+          <div class="flex flex-col gap-4">
+            <div class="space-y-2">
+              <div class="surface-label">设置</div>
+              <div class="flex flex-wrap items-center gap-3">
+                <h1 class="text-2xl font-semibold text-foreground">{{ currentNavigationItem.label }}</h1>
+              </div>
+            </div>
+
+            <nav class="flex flex-wrap gap-2">
+              <RouterLink
+                v-for="item in navigationItems"
+                :key="item.path"
+                :to="item.path"
+                class="settings-nav-pill"
+                :class="currentPath === item.path ? 'settings-nav-pill-active' : ''"
+              >
+                <span class="text-sm font-medium">{{ item.label }}</span>
+                <span class="text-[11px] text-muted-foreground">{{ item.description }}</span>
+              </RouterLink>
+            </nav>
+          </div>
+        </section>
+
         <div class="space-y-1 px-1">
-          <div class="surface-label">设置</div>
-          <h1 class="text-2xl font-semibold text-foreground">{{ currentNavigationItem.label }}</h1>
+          <div class="surface-label text-[0.7rem]">当前分组</div>
           <p class="text-sm leading-6 text-muted-foreground">
             {{ currentNavigationItem.description }}
           </p>
@@ -73,3 +97,32 @@ const currentNavigationItem = computed(() => (
     </PageContainer>
   </div>
 </template>
+
+<style scoped>
+.settings-header {
+  border-bottom: 1px solid hsl(from var(--border) h s l / 0.64);
+  padding-bottom: 1rem;
+}
+
+.settings-nav-pill {
+  display: flex;
+  min-width: 10.75rem;
+  flex: 1 1 10.75rem;
+  flex-direction: column;
+  gap: 0.28rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.5);
+  border-radius: calc(var(--radius) + 3px);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.74), hsl(from var(--background) h s l / 0.64));
+  padding: 0.72rem 0.82rem;
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.66);
+}
+
+.settings-nav-pill-active {
+  border-color: hsl(from var(--primary) h s l / 0.2);
+  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.08), hsl(from var(--card) h s l / 0.74));
+}
+
+.settings-nav-pill-active span:first-child {
+  color: hsl(from var(--primary) h s l / 0.92);
+}
+</style>

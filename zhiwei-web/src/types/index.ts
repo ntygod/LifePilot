@@ -1344,27 +1344,6 @@ export interface TokenBudgetData {
   toolResultUsed: number
 }
 
-/** 依赖节点 */
-export interface DependencyNode {
-  id: string
-  name: string
-  type: 'AGENT' | 'SKILL' | 'TOOL'
-  enabled: boolean
-}
-
-/** 依赖边 */
-export interface DependencyEdge {
-  source: string
-  target: string
-  relation: string
-}
-
-/** 依赖图响应 */
-export interface DependencyGraphResponse {
-  nodes: DependencyNode[]
-  edges: DependencyEdge[]
-}
-
 /** Tool 调用统计 */
 export interface ToolCallStats {
   toolId: string

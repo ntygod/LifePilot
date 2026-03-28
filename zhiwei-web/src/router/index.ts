@@ -124,15 +124,6 @@ const router = createRouter({
     },
 
     /**
-     * 依赖关系图
-     */
-    {
-      path: '/dependencies',
-      name: 'dependencies',
-      component: () => import('@/views/DependencyView.vue')
-    },
-
-    /**
      * Analytics / 用量
      */
     {

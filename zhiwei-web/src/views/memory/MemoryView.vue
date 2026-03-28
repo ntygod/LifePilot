@@ -196,23 +196,32 @@ function formatSpaceId(spaceId?: string | null) {
           </PageHeader>
 
           <!-- 全局搜索 -->
-          <section class="detail-card p-5">
-            <div class="flex items-center gap-3">
-              <div class="relative flex-1">
-                <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  v-model="searchQuery"
-                  placeholder="跨层搜索记忆数据..."
-                  class="pl-9"
-                  @keydown.enter="handleSearch"
-                />
+          <section class="toolbar-strip">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div class="flex flex-1 items-center gap-3">
+                <div class="relative flex-1">
+                  <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    v-model="searchQuery"
+                    placeholder="跨层搜索记忆数据..."
+                    class="pl-9"
+                    @keydown.enter="handleSearch"
+                  />
+                </div>
+                <Button @click="handleSearch" :disabled="searching">
+                  {{ searching ? '搜索中...' : '搜索' }}
+                </Button>
               </div>
-              <Button @click="handleSearch" :disabled="searching">
-                {{ searching ? '搜索中...' : '搜索' }}
-              </Button>
-              <Button v-if="searchResults.length > 0" variant="ghost" @click="clearSearch">
-                清除
-              </Button>
+
+              <div class="flex items-center gap-3">
+                <div class="toolbar-counter">
+                  <div class="surface-label text-[0.68rem]">结果</div>
+                  <div class="toolbar-counter-value">{{ searchResults.length }}</div>
+                </div>
+                <Button v-if="searchResults.length > 0 || searchQuery.trim()" variant="ghost" @click="clearSearch">
+                  清除
+                </Button>
+              </div>
             </div>
 
             <!-- 搜索结果列表 -->

@@ -74,7 +74,7 @@ export const primaryNavigationItems: PrimaryNavItem[] = [
     path: '/agents',
     icon: Bot,
     description: '技能、工具和工作流。',
-    matchPrefixes: ['/agents', '/workflows', '/skills', '/marketplace', '/tools', '/mcp-servers', '/dependencies'],
+    matchPrefixes: ['/agents', '/workflows', '/skills', '/marketplace', '/tools', '/mcp-servers'],
     mode: 'links',
     children: [
       { label: '智能体', path: '/agents', icon: Bot },
@@ -83,7 +83,6 @@ export const primaryNavigationItems: PrimaryNavItem[] = [
       { label: '扩展市场', path: '/marketplace', icon: ShoppingBag },
       { label: '工具', path: '/tools', icon: Wrench },
       { label: 'MCP 服务', path: '/mcp-servers', icon: Server },
-      { label: '能力关系', path: '/dependencies', icon: GitBranch },
     ],
   },
   {

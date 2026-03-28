@@ -15,7 +15,6 @@ import { useDatastoreStore } from '@/stores/datastore'
 import { useUiStore } from '@/stores/ui'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import PageSection from '@/components/layout/PageSection.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
@@ -203,11 +202,10 @@ function summarizeProperties(datastore: Datastore) {
           </template>
         </PageHeader>
 
-        <PageSection v-if="showFilters || hasFilters" title="筛选" description="按名称、描述和类型快速收口目标 Datastore。">
-          <div class="detail-card p-4">
-            <div class="flex flex-wrap items-end gap-3">
+        <section v-if="showFilters || hasFilters" class="toolbar-strip">
+          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
               <div class="min-w-[240px] flex-1">
-                <label class="mb-1 block text-xs text-muted-foreground">搜索</label>
                 <div class="relative">
                   <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -218,8 +216,7 @@ function summarizeProperties(datastore: Datastore) {
                 </div>
               </div>
 
-              <div class="w-40">
-                <label class="mb-1 block text-xs text-muted-foreground">类型</label>
+              <div class="w-full md:w-40">
                 <select
                   v-model="typeFilter"
                   class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -228,13 +225,17 @@ function summarizeProperties(datastore: Datastore) {
                   <option v-for="type in allTypes" :key="type" :value="type">{{ type }}</option>
                 </select>
               </div>
+            </div>
 
-              <div class="flex items-end gap-2">
-                <Button type="button" variant="outline" @click="clearFilters">重置</Button>
+            <div class="flex items-center gap-3">
+              <div class="toolbar-counter">
+                <div class="surface-label text-[0.68rem]">结果</div>
+                <div class="toolbar-counter-value">{{ filteredDatastores.length }}</div>
               </div>
+              <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">清空</Button>
             </div>
           </div>
-        </PageSection>
+        </section>
 
         <div v-if="datastoreStore.loading && datastoreStore.list.length === 0" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div

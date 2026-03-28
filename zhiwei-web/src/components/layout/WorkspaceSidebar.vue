@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import ConversationListPane from '@/components/chat/ConversationListPane.vue'
-import { useChatStore } from '@/stores/chat'
 import { isPathActive, resolvePrimaryNavigation } from './appNavigation'
 
 interface Props {
@@ -18,11 +17,8 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
-const chatStore = useChatStore()
 
 const currentSection = computed(() => resolvePrimaryNavigation(route.path))
-const childCountLabel = computed(() => `${currentSection.value.children?.length ?? 0} 项`)
-const sessionCountLabel = computed(() => `${chatStore.sessions.length} 段`)
 </script>
 
 <template>
@@ -30,38 +26,11 @@ const sessionCountLabel = computed(() => `${chatStore.sessions.length} 段`)
     <ConversationListPane v-if="currentSection.mode === 'conversation-list'" @close="emit('close')" />
 
     <template v-else>
-      <div class="border-b border-sidebar-border/45 px-4 py-4">
-        <div class="shell-card px-4 py-4">
-          <div class="space-y-3.5">
-            <div class="flex items-start justify-between gap-3">
-              <div class="space-y-1">
-                <div class="surface-label">当前分类</div>
-                <h2 class="text-lg font-semibold tracking-tight text-foreground">{{ currentSection.label }}</h2>
-                <p class="text-sm leading-5 text-muted-foreground">
-                  {{ currentSection.description }}
-                </p>
-              </div>
-              <div class="flex size-10 shrink-0 items-center justify-center rounded-[1rem] border border-border/50 bg-background/84 text-primary shadow-[0_10px_18px_-20px_hsl(var(--shadow-color)/0.12)]">
-                <component :is="currentSection.icon" class="size-5" />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-              <div class="stat-block px-3 py-3">
-                <div class="text-[11px] text-muted-foreground">功能</div>
-                <div class="mt-1 text-sm font-semibold text-foreground">{{ childCountLabel }}</div>
-              </div>
-              <div class="stat-block px-3 py-3">
-                <div class="text-[11px] text-muted-foreground">对话</div>
-                <div class="mt-1 text-sm font-semibold text-foreground">{{ sessionCountLabel }}</div>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-1.5 text-[11px]">
-              <span class="surface-chip surface-chip-strong">个人助手</span>
-              <span class="surface-chip">会记住</span>
-              <span class="surface-chip">会用工具</span>
-            </div>
+      <div class="border-b border-sidebar-border/45 px-4 py-3">
+        <div class="workspace-section-header">
+          <h2 class="text-lg font-semibold tracking-tight text-foreground">{{ currentSection.label }}</h2>
+          <div class="workspace-section-icon">
+            <component :is="currentSection.icon" class="size-5" />
           </div>
         </div>
       </div>
@@ -89,3 +58,29 @@ const sessionCountLabel = computed(() => `${chatStore.sessions.length} 段`)
     </template>
   </div>
 </template>
+
+<style scoped>
+.workspace-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.1rem 0;
+}
+
+.workspace-section-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border-radius: 1rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.46);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.9), hsl(from var(--background) h s l / 0.84));
+  color: hsl(from var(--primary) h s l / 0.92);
+  box-shadow:
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.66),
+    0 10px 18px -24px hsl(var(--shadow-color) / 0.08);
+}
+</style>
