@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   preferredProviderId?: string
   temperature?: number
   maxSteps?: number
@@ -20,7 +20,10 @@ const props = defineProps<{
   providers: ModelService[]
   knowledgeBases: KnowledgeBase[]
   datastores: Datastore[]
-}>()
+  showClose?: boolean
+}>(), {
+  showClose: true,
+})
 
 const emit = defineEmits<{
   (e: 'update', config: SessionConfig): void
@@ -108,7 +111,7 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
     <!-- 标题栏 -->
     <div class="flex items-center justify-between">
       <span class="text-sm font-medium text-foreground">会话配置</span>
-      <Button variant="ghost" size="icon-sm" @click="emit('close')">
+      <Button v-if="props.showClose" variant="ghost" size="icon-sm" @click="emit('close')">
         <X :size="14" />
       </Button>
     </div>

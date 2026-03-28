@@ -2,20 +2,34 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { ChatSessionDetail, KnowledgeBase } from '@/types'
-import { Clock3, Database, Gauge, MessageSquareText, PencilLine } from 'lucide-vue-next'
+import { Clock3, Database, Gauge, MessageSquareText, PencilLine, Search, Sparkles, Trash2 } from 'lucide-vue-next'
 import InspectorRail from '@/components/layout/InspectorRail.vue'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   session: ChatSessionDetail | null
   knowledgeBases: KnowledgeBase[]
   messageCount: number
-}>()
+  searchQuery?: string
+  statusText?: string
+  contextCount?: number
+  matchedMessageCount?: number
+  showClose?: boolean
+}>(), {
+  searchQuery: '',
+  statusText: '就绪',
+  contextCount: 0,
+  matchedMessageCount: 0,
+  showClose: true,
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'updateTitle', title: string): void
+  (e: 'update:searchQuery', value: string): void
+  (e: 'clear'): void
 }>()
 
 const editTitle = ref(props.session?.title ?? '')
@@ -26,6 +40,8 @@ const ringCircumference = 2 * Math.PI * ringRadius
 watch(() => props.session?.title, value => {
   editTitle.value = value ?? ''
 })
+
+const hasMessageSearch = computed(() => props.searchQuery.trim().length > 0)
 
 const linkedKnowledgeBases = computed(() => {
   const boundIds = props.session?.knowledgeBaseIds ?? []
@@ -92,6 +108,10 @@ function handleBlur() {
   }
 }
 
+function handleSearchInput(value: string | number) {
+  emit('update:searchQuery', String(value))
+}
+
 function formatDate(value?: string | null) {
   if (!value) return '-'
   return new Date(value).toLocaleString()
@@ -105,7 +125,7 @@ function formatNumber(value?: number | null) {
 <template>
   <InspectorRail
     title="会话信息"
-    description="编辑当前对话标题，并查看时间、消息量、上下文压缩进度和已绑定知识库。"
+    :show-close="showClose"
     @close="emit('close')"
   >
     <template #eyebrow>
@@ -113,6 +133,59 @@ function formatNumber(value?: number | null) {
     </template>
 
     <div class="space-y-4">
+      <section class="detail-card p-4">
+        <div class="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+          <Search class="size-4 text-primary" />
+          搜索消息
+        </div>
+        <div class="relative">
+          <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            :model-value="searchQuery"
+            type="search"
+            placeholder="搜当前对话"
+            class="h-9 rounded-full border-border/60 bg-background/70 pl-9 text-sm focus-visible:ring-1"
+            @update:model-value="handleSearchInput"
+          />
+        </div>
+      </section>
+
+      <section class="grid grid-cols-2 gap-3">
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Sparkles class="size-4 text-primary" />
+            状态
+          </div>
+          <p class="text-sm text-muted-foreground">{{ statusText }}</p>
+        </div>
+
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <MessageSquareText class="size-4 text-primary" />
+            消息
+          </div>
+          <p class="text-sm text-muted-foreground">共 {{ messageCount }} 条</p>
+        </div>
+
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Database class="size-4 text-primary" />
+            资料
+          </div>
+          <p class="text-sm text-muted-foreground">{{ contextCount }} 项</p>
+        </div>
+
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Search class="size-4 text-primary" />
+            命中
+          </div>
+          <p class="text-sm text-muted-foreground">
+            {{ hasMessageSearch ? `${matchedMessageCount} 条` : '未搜索' }}
+          </p>
+        </div>
+      </section>
+
       <section class="detail-card p-4">
         <div class="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
           <PencilLine class="size-4 text-primary" />
@@ -127,7 +200,6 @@ function formatNumber(value?: number | null) {
           />
         </div>
       </section>
-
       <section class="grid gap-3">
         <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
@@ -147,14 +219,6 @@ function formatNumber(value?: number | null) {
           <p class="text-sm text-muted-foreground">
             {{ session?.updatedAt ? new Date(session.updatedAt).toLocaleString() : '-' }}
           </p>
-        </div>
-
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3">
-          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-            <MessageSquareText class="size-4 text-primary" />
-            消息统计
-          </div>
-          <p class="text-sm text-muted-foreground">共 {{ messageCount }} 条消息</p>
         </div>
       </section>
 
@@ -265,5 +329,19 @@ function formatNumber(value?: number | null) {
         <p v-else class="text-sm text-muted-foreground">当前没有绑定知识库。</p>
       </section>
     </div>
+
+    <template #footer>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="w-full justify-center rounded-full"
+        :disabled="messageCount === 0"
+        @click="emit('clear')"
+      >
+        <Trash2 class="size-4" />
+        清空对话
+      </Button>
+    </template>
   </InspectorRail>
 </template>

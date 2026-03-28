@@ -50,12 +50,12 @@ function preventDismiss(event: Event) {
 <template>
   <Dialog :open="props.open" @update:open="handleOpenChange">
     <DialogScrollContent
-      :class="cn('max-h-[90vh] p-0 sm:max-w-[42rem]', props.contentClass)"
+      :class="cn('max-h-[90vh] overflow-hidden p-0 sm:max-w-[42rem]', props.contentClass)"
       @pointer-down-outside="preventDismiss"
       @escape-key-down="preventDismiss"
     >
       <div class="flex max-h-[90vh] flex-col">
-        <DialogHeader class="border-b border-border/70 px-6 py-5">
+        <DialogHeader class="border-b border-border/58 bg-background/72 px-6 py-5">
           <DialogTitle class="text-xl font-semibold tracking-tight text-foreground">
             {{ props.title }}
           </DialogTitle>
@@ -64,11 +64,11 @@ function preventDismiss(event: Event) {
           </DialogDescription>
         </DialogHeader>
 
-        <div :class="cn('flex-1 overflow-y-auto px-6 py-5', props.bodyClass)">
+        <div :class="cn('flex-1 overflow-y-auto bg-card/72 px-6 py-5', props.bodyClass)">
           <slot />
         </div>
 
-        <div v-if="slots.footer" :class="cn('border-t border-border/70 px-6 py-4', props.footerClass)">
+        <div v-if="slots.footer" :class="cn('border-t border-border/58 bg-background/68 px-6 py-4', props.footerClass)">
           <slot name="footer" />
         </div>
       </div>

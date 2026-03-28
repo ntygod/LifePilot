@@ -78,43 +78,59 @@ async function submitDislikeFeedback() {
 </script>
 
 <template>
-  <div class="space-y-2">
-    <div class="flex items-center gap-md">
+  <div class="message-feedback space-y-2">
+    <div class="flex items-center gap-2">
       <button
         type="button"
-        class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
-        :class="feedbackStatus === 'liked' ? 'text-primary' : ''"
+        class="feedback-chip"
+        :class="feedbackStatus === 'liked' ? 'feedback-chip-liked' : 'feedback-chip-idle'"
         :disabled="isSubmitting"
         @click="handleLike"
       >
-        <ThumbsUp :size="14" />
+        <span class="feedback-chip-icon">
+          <ThumbsUp :size="14" />
+        </span>
         <span>有帮助</span>
       </button>
       <button
         type="button"
-        class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
-        :class="feedbackStatus === 'disliked' ? 'text-destructive' : ''"
+        class="feedback-chip"
+        :class="feedbackStatus === 'disliked' ? 'feedback-chip-disliked' : 'feedback-chip-idle'"
         :disabled="isSubmitting"
         @click="handleDislike"
       >
-        <ThumbsDown :size="14" />
+        <span class="feedback-chip-icon">
+          <ThumbsDown :size="14" />
+        </span>
         <span>无帮助</span>
       </button>
     </div>
 
-    <!-- 点踩反馈输入框 -->
-    <div v-if="showFeedbackInput">
+    <Transition
+      enter-active-class="transition-all duration-220 ease-out"
+      enter-from-class="translate-y-2 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition-all duration-160 ease-in"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-2 opacity-0"
+    >
+      <div v-if="showFeedbackInput" class="feedback-panel rounded-[1rem] border border-border/48 bg-background/62 p-3">
+        <div class="mb-2 text-[11px] font-medium text-foreground/86">
+          哪里不对？
+        </div>
+        <div class="mb-2 text-[10px] text-muted-foreground/82">
+          选填，越简短越好。
+        </div>
       <Textarea
         v-model="feedbackText"
-        placeholder="请描述问题或建议（可选）"
+        placeholder="例如：引用不准、回答太泛、漏了重点"
         rows="2"
-        class="resize-none"
+        class="feedback-textarea resize-none"
       />
-      <div class="mt-2 flex justify-end gap-2">
+      <div class="mt-2.5 flex justify-end gap-2">
         <button
           type="button"
-          class="px-4 py-2 rounded-lg text-sm font-medium border border-input
-                 hover:bg-accent transition-all duration-200"
+          class="feedback-action-btn feedback-action-btn-idle"
           :disabled="isSubmitting"
           @click="showFeedbackInput = false; feedbackText = ''; feedbackStatus = null"
         >
@@ -122,14 +138,119 @@ async function submitDislikeFeedback() {
         </button>
         <button
           type="button"
-          class="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground
-                 hover:bg-primary/90 transition-all duration-200"
+          class="feedback-action-btn feedback-action-btn-primary"
           :disabled="isSubmitting"
           @click="submitDislikeFeedback"
         >
           提交反馈
         </button>
       </div>
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.feedback-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--border) h s l / 0.42);
+  background: hsl(from var(--card) h s l / 0.76);
+  padding: 0.34rem 0.78rem;
+  font-size: 11px;
+  line-height: 1.1;
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.28);
+  transition:
+    transform 180ms var(--ease-fluid),
+    border-color 180ms var(--ease-fluid),
+    background-color 180ms var(--ease-fluid),
+    box-shadow 180ms var(--ease-fluid),
+    color 180ms var(--ease-fluid);
+}
+
+.feedback-chip:hover {
+  transform: translateY(-1px);
+}
+
+.feedback-chip-idle {
+  color: hsl(from var(--muted-foreground) h s l / 0.92);
+}
+
+.feedback-chip-idle:hover {
+  border-color: hsl(from var(--border) h s l / 0.62);
+  background: hsl(from var(--card) h s l / 0.88);
+  color: var(--foreground);
+}
+
+.feedback-chip-liked {
+  border-color: hsl(from var(--primary) h s l / 0.2);
+  background: hsl(from var(--primary) h s l / 0.1);
+  color: hsl(from var(--primary) h s l / 0.92);
+  box-shadow:
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.28),
+    0 10px 18px -22px hsl(var(--shadow-color) / 0.12);
+}
+
+.feedback-chip-disliked {
+  border-color: hsl(from var(--destructive) h s l / 0.18);
+  background: hsl(from var(--destructive) h s l / 0.08);
+  color: hsl(from var(--destructive) h s l / 0.86);
+  box-shadow:
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.28),
+    0 10px 18px -22px hsl(var(--shadow-color) / 0.12);
+}
+
+.feedback-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.1rem;
+  width: 1.1rem;
+  flex-shrink: 0;
+}
+
+.feedback-panel {
+  box-shadow:
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.28),
+    0 12px 20px -26px hsl(var(--shadow-color) / 0.12);
+}
+
+.feedback-textarea {
+  border-color: hsl(from var(--border) h s l / 0.52);
+  background: hsl(from var(--card) h s l / 0.84);
+}
+
+.feedback-action-btn {
+  min-height: 2rem;
+  border-radius: 0.9rem;
+  padding: 0.42rem 0.86rem;
+  font-size: 11px;
+  font-weight: 500;
+  transition:
+    transform 180ms var(--ease-fluid),
+    border-color 180ms var(--ease-fluid),
+    background-color 180ms var(--ease-fluid),
+    box-shadow 180ms var(--ease-fluid),
+    color 180ms var(--ease-fluid);
+}
+
+.feedback-action-btn:hover {
+  transform: translateY(-1px);
+}
+
+.feedback-action-btn-idle {
+  border: 1px solid hsl(from var(--border) h s l / 0.46);
+  background: hsl(from var(--background) h s l / 0.7);
+  color: hsl(from var(--muted-foreground) h s l / 0.9);
+}
+
+.feedback-action-btn-primary {
+  border: 1px solid hsl(from var(--primary) h s l / 0.12);
+  background: hsl(from var(--primary) h s l / 0.92);
+  color: hsl(from var(--primary-foreground) h s l / 0.98);
+  box-shadow: 0 12px 20px -18px hsl(var(--shadow-color) / 0.16);
+}
+</style>

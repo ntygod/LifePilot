@@ -34,11 +34,11 @@ function colorFor(type: 'success' | 'error' | 'info') {
 function surfaceFor(type: 'success' | 'error' | 'info') {
   switch (type) {
     case 'success':
-      return 'border-emerald-500/20 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(255,255,255,0))]'
+      return 'border-emerald-500/20 bg-emerald-500/5'
     case 'error':
-      return 'border-red-500/20 bg-[linear-gradient(135deg,rgba(239,68,68,0.12),rgba(255,255,255,0))]'
+      return 'border-red-500/20 bg-red-500/5'
     case 'info':
-      return 'border-sky-500/20 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(255,255,255,0))]'
+      return 'border-sky-500/20 bg-sky-500/5'
   }
 }
 </script>
@@ -57,7 +57,7 @@ function surfaceFor(type: 'success' | 'error' | 'info') {
       >
         <div
           :class="surfaceFor(toast.type)"
-          class="flex items-start gap-3 rounded-2xl border bg-background/95 px-4 py-3 shadow-[0_24px_55px_-28px_hsl(var(--shadow-color)/0.85)] backdrop-blur-xl"
+          class="flex items-start gap-3 rounded-[1rem] border bg-background/96 px-4 py-3 shadow-[0_16px_28px_-20px_hsl(var(--shadow-color)/0.18)] backdrop-blur-lg"
         >
           <component :is="iconFor(toast.type)" :size="18" :class="colorFor(toast.type)" class="mt-0.5 shrink-0" />
           <span class="flex-1 break-words text-sm text-foreground">{{ toast.message }}</span>

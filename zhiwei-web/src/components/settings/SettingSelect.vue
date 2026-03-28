@@ -129,14 +129,13 @@ onUnmounted(() => {
       type="button"
       :disabled="disabled"
       :class="[
-        'group flex h-9 w-full items-center justify-between rounded-lg border bg-background px-3 py-1.5 text-sm',
+        'group flex h-9 w-full items-center justify-between rounded-[0.85rem] border bg-background/88 px-3 py-1.5 text-sm',
         'transition-all duration-200 ease-out',
-        'shadow-sm hover:shadow-md',
-        'border-input/80 hover:border-ring/60',
-        'bg-gradient-to-b from-background to-background/95',
+        'shadow-[inset_0_1px_0_rgba(255,255,255,0.34)]',
+        'border-input/72 hover:border-ring/42',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1',
-        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-input/80 disabled:hover:shadow-sm',
-        isOpen && 'border-ring shadow-md ring-2 ring-ring/20 ring-offset-1',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-input/72',
+        isOpen && 'border-ring ring-2 ring-ring/20 ring-offset-1',
         !selectedOption && 'text-muted-foreground'
       ]"
       @click="toggleDropdown"
@@ -166,9 +165,8 @@ onUnmounted(() => {
       <div
         v-if="isOpen"
         ref="dropdownRef"
-        class="absolute z-50 mt-1.5 w-full rounded-lg border border-border/80 bg-popover/95 backdrop-blur-sm shadow-xl ring-1 ring-black/5"
+        class="absolute z-50 mt-1.5 w-full rounded-[0.95rem] border border-border/60 bg-popover/98 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)]"
         role="listbox"
-        style="box-shadow: 0 10px 38px -10px rgba(0, 0, 0, 0.15), 0 10px 20px -15px rgba(0, 0, 0, 0.1);"
       >
         <div class="max-h-[300px] overflow-auto p-1.5 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
           <div
@@ -176,11 +174,11 @@ onUnmounted(() => {
             :key="option.value"
             :data-selected="option.value === modelValue"
             :class="[
-              'group relative flex cursor-pointer select-none items-center rounded-md px-3 py-2 text-sm',
+              'group relative flex cursor-pointer select-none items-center rounded-[0.75rem] px-3 py-2 text-sm',
               'transition-all duration-150 ease-out',
-              'hover:bg-accent/80 hover:text-accent-foreground hover:shadow-sm',
+              'hover:bg-accent/66 hover:text-accent-foreground',
               'focus:bg-accent focus:text-accent-foreground focus:outline-none',
-              option.value === modelValue && 'bg-primary/10 text-primary font-semibold shadow-sm',
+              option.value === modelValue && 'bg-primary/8 text-primary font-semibold',
               selectedIndex === index && selectedIndex !== props.options.findIndex(opt => opt.value === modelValue) && 'bg-accent/60'
             ]"
             role="option"

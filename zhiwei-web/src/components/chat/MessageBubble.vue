@@ -196,8 +196,18 @@ const assistantBubbleClass = computed(() => {
     return 'w-fit max-w-full rounded-none border-none bg-transparent px-0 py-0 text-foreground shadow-none'
   }
 
-  return 'assistant-bubble rounded-tl-sm border border-border bg-card p-md text-foreground group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_36px_-28px_hsl(var(--shadow-color)/0.38)]'
+  return [
+    'assistant-bubble rounded-tl-sm border border-border bg-card p-md text-foreground',
+    props.streaming
+      ? 'assistant-bubble-streaming'
+      : 'assistant-bubble-idle group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_36px_-28px_hsl(var(--shadow-color)/0.24)]',
+  ].join(' ')
 })
+
+const userBubbleClass = computed(() => [
+  'user-bubble rounded-tr-sm bg-primary p-md text-primary-foreground shadow-md',
+  props.message.status === 'pending' ? 'user-bubble-pending' : 'group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_30px_-22px_hsl(var(--shadow-color)/0.34)]',
+].join(' '))
 
 function approvalLogTone(log: PermissionApprovalLog) {
   if (log.resolution === 'approved') {
@@ -218,6 +228,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
     <div
       v-if="message.role === 'assistant'"
       class="mt-xs flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+      :class="streaming && 'assistant-avatar-streaming'"
       aria-label="知微回复"
     >
       <span class="text-xs font-semibold">知微</span>
@@ -250,14 +261,22 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </div>
 
       <div
-        class="relative max-w-full rounded-2xl shadow-sm transition-all duration-200 md:max-w-[85%]"
+        v-if="streaming && message.role === 'assistant'"
+        class="streaming-status-pill inline-flex w-fit items-center gap-2 rounded-full border border-primary/16 bg-primary/8 px-2.5 py-1 text-[11px] font-medium text-primary"
+      >
+        <span class="streaming-status-dot" />
+        正在生成
+      </div>
+
+      <div
+        class="relative max-w-full overflow-hidden rounded-2xl shadow-sm transition-all duration-200 md:max-w-[85%]"
         :class="message.role === 'user'
-          ? 'rounded-tr-sm bg-primary p-md text-primary-foreground shadow-md group-hover/message:-translate-y-0.5 group-hover/message:shadow-lg'
+          ? userBubbleClass
           : assistantBubbleClass"
       >
         <div
           v-if="streaming && message.role === 'assistant'"
-          class="pointer-events-none absolute inset-0 rounded-2xl rounded-tl-sm border-2 border-primary/60"
+          class="pointer-events-none absolute inset-0 rounded-2xl rounded-tl-sm border border-primary/26"
         />
 
         <div class="relative z-[1]">
@@ -438,7 +457,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </div>
 
       <template v-if="message.role === 'assistant' && !streaming">
-        <div class="space-y-2 pl-xs md:pointer-events-none md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100">
+        <div class="message-toolbar space-y-2 pl-xs md:pointer-events-none md:opacity-0 md:transition-all md:duration-200 md:group-hover/message:pointer-events-auto md:group-hover/message:translate-y-0 md:group-hover/message:opacity-100">
           <MessageActions
             :message="message"
             :is-last-assistant="isLastAssistant ?? false"
@@ -484,6 +503,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
     <div
       v-if="message.role === 'user'"
       class="mt-xs flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground shadow-md"
+      :class="message.status === 'pending' && 'user-avatar-pending'"
       aria-label="你的消息"
     >
       你
@@ -493,7 +513,156 @@ function approvalLogTone(log: PermissionApprovalLog) {
 
 <style scoped>
 .assistant-bubble {
-  border-left: 1.5px solid transparent;
-  border-image: linear-gradient(to bottom, hsl(var(--primary) / 0.22), transparent 70%) 1;
+  position: relative;
+  border: 1px solid hsl(from var(--border) h s l / 0.52);
+  background: hsl(from var(--card) h s l / 0.94);
+  box-shadow: 0 14px 24px -30px hsl(var(--shadow-color) / 0.12);
+}
+
+.assistant-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.48);
+  opacity: 1;
+}
+
+.assistant-bubble-idle {
+  border-color: hsl(from var(--border) h s l / 0.6);
+}
+
+.assistant-bubble-streaming {
+  border-color: hsl(from var(--primary) h s l / 0.24);
+  background: hsl(from var(--card) h s l / 0.96);
+  box-shadow:
+    0 18px 30px -32px hsl(var(--shadow-color) / 0.14),
+    0 0 0 1px hsl(from var(--primary) h s l / 0.05);
+}
+
+.streaming-status-pill {
+  box-shadow: 0 10px 20px -22px hsl(var(--shadow-color) / 0.12);
+}
+
+.assistant-bubble-streaming::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, hsl(from var(--primary) h s l / 0.46), transparent);
+  filter: blur(0.4px);
+  transform: none;
+  animation: assistant-stream-sheen 2.3s linear infinite;
+}
+
+.assistant-avatar-streaming {
+  box-shadow:
+    0 0 0 1px hsl(from var(--primary) h s l / 0.14),
+    0 0 0.75rem hsl(from var(--primary) h s l / 0.12);
+  animation: assistant-avatar-breathe 1.8s var(--ease-fluid) infinite;
+}
+
+.streaming-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: hsl(from var(--primary) h s l / 0.96);
+  box-shadow: 0 0 0.45rem hsl(from var(--primary) h s l / 0.22);
+  animation: streaming-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.user-bubble {
+  position: relative;
+  transform-origin: right bottom;
+  border: 1px solid hsl(from var(--primary) h s l / 0.12);
+  background: hsl(from var(--primary) h s l / 0.94);
+}
+
+.user-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 hsl(from var(--primary-foreground) h s l / 0.14);
+  opacity: 1;
+}
+
+.user-bubble-pending {
+  animation: user-bubble-pulse 1.7s var(--ease-fluid) infinite;
+}
+
+.user-avatar-pending {
+  animation: user-avatar-pulse 1.7s var(--ease-fluid) infinite;
+}
+
+.message-toolbar {
+  transform: translateY(4px);
+}
+
+@keyframes assistant-stream-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-12%) rotate(10deg);
+  }
+
+  18% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(260%) rotate(10deg);
+  }
+}
+
+@keyframes assistant-avatar-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-1px) scale(1.04);
+  }
+}
+
+@keyframes streaming-dot-pulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes user-bubble-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 14px 24px -22px hsl(var(--shadow-color) / 0.24);
+  }
+
+  50% {
+    transform: translateY(-1px) scale(1.01);
+    box-shadow: 0 22px 30px -20px hsl(var(--shadow-color) / 0.28);
+  }
+}
+
+@keyframes user-avatar-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
 }
 </style>

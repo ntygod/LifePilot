@@ -1,9 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowUp, AtSign, CornerDownLeft, FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
+import {
+  ArrowUp,
+  AtSign,
+  CornerDownLeft,
+  Database,
+  FileAudio2,
+  FileText,
+  FileVideo,
+  Image,
+  LibraryBig,
+  Mic,
+  Paperclip,
+  Search,
+  Sparkles,
+  Square,
+  X,
+} from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
 import { useChatStore } from '@/stores/chat'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useVoice } from '@/composables/useVoice'
@@ -109,8 +124,14 @@ const filteredDatastores = computed(() => filteredContextOptions.value.filter(op
 const filteredKnowledgeBases = computed(() => filteredContextOptions.value.filter(option => option.kind === 'knowledge-base'))
 const pickerTitle = computed(() => (
   manualContextPickerOpen.value
-    ? '@ 上下文选择'
+    ? '引用上下文'
     : `@ ${mentionQuery.value ?? ''}`.trim()
+))
+const selectedContextCount = computed(() => selectedContexts.value.length)
+const contextPickerDescription = computed(() => (
+  selectedContextCount.value > 0
+    ? `已选 ${selectedContextCount.value} 项，仅对当前消息生效。`
+    : '仅对当前消息生效。'
 ))
 
 function handleKeydown(event: KeyboardEvent) {
@@ -298,12 +319,12 @@ function buildTemporarySessionConfig(): SessionConfig | undefined {
     selectedContexts.value.filter(option => option.kind === 'datastore').map(option => option.id),
   )
 
-    return {
-      preferredProviderId: props.baseSessionConfig.preferredProviderId,
-      temperature: props.baseSessionConfig.temperature,
-      maxSteps: props.baseSessionConfig.maxSteps,
-      maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-      knowledgeBaseIds,
+  return {
+    preferredProviderId: props.baseSessionConfig.preferredProviderId,
+    temperature: props.baseSessionConfig.temperature,
+    maxSteps: props.baseSessionConfig.maxSteps,
+    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
+    knowledgeBaseIds,
     datastoreIds,
   }
 }
@@ -312,12 +333,13 @@ function buildRestoreSessionConfig(): SessionConfig | undefined {
   if (!props.baseSessionConfig) {
     return undefined
   }
-    return {
-      preferredProviderId: props.baseSessionConfig.preferredProviderId,
-      temperature: props.baseSessionConfig.temperature,
-      maxSteps: props.baseSessionConfig.maxSteps,
-      maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-      knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
+
+  return {
+    preferredProviderId: props.baseSessionConfig.preferredProviderId,
+    temperature: props.baseSessionConfig.temperature,
+    maxSteps: props.baseSessionConfig.maxSteps,
+    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
+    knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
     datastoreIds: props.baseSessionConfig.datastoreIds ?? [],
   }
 }
@@ -336,6 +358,14 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getContextIcon(kind: 'datastore' | 'knowledge-base') {
+  return kind === 'datastore' ? Database : LibraryBig
+}
+
+function getContextKindLabel(kind: 'datastore' | 'knowledge-base') {
+  return kind === 'datastore' ? 'Datastore' : '知识库'
 }
 
 function getFileIcon(file: File) {
@@ -391,18 +421,35 @@ defineExpose({
 </script>
 
 <template>
-  <div class="bg-transparent px-4 py-3 sm:px-5">
-    <div class="mx-auto max-w-4xl space-y-3">
-      <div v-if="selectedContexts.length > 0" class="flex flex-wrap gap-2">
+  <div class="bg-transparent">
+    <div class="mx-auto max-w-[1180px] space-y-3">
+      <TransitionGroup
+        v-if="selectedContexts.length > 0"
+        name="context-chip"
+        tag="div"
+        class="flex flex-wrap gap-2"
+      >
         <div
           v-for="context in selectedContexts"
           :key="`${context.kind}:${context.id}`"
-          class="list-card inline-flex items-center gap-2 px-3 py-2 text-xs"
+          class="context-chip-card inline-flex items-center gap-2.5 px-3 py-2 text-xs"
         >
-          <Badge variant="outline" class="px-1.5 py-0 text-[10px]">
-            {{ context.kind === 'datastore' ? 'Datastore' : '知识库' }}
-          </Badge>
-          <span class="max-w-[220px] truncate text-foreground">{{ context.name }}</span>
+          <span
+            class="context-chip-icon"
+            :class="context.kind === 'datastore'
+              ? 'bg-sky-500/12 text-sky-600'
+              : 'bg-primary/12 text-primary'"
+          >
+            <component :is="getContextIcon(context.kind)" class="size-3.5" />
+          </span>
+          <div class="min-w-0">
+            <div class="text-[10px] font-semibold text-muted-foreground">
+              {{ getContextKindLabel(context.kind) }}
+            </div>
+            <div class="max-w-[220px] truncate text-xs font-medium text-foreground">
+              {{ context.name }}
+            </div>
+          </div>
           <button
             type="button"
             class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-destructive"
@@ -411,7 +458,7 @@ defineExpose({
             <X class="size-3" />
           </button>
         </div>
-      </div>
+      </TransitionGroup>
 
       <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
         <div
@@ -442,31 +489,48 @@ defineExpose({
       >
         <div
           v-if="showContextPicker"
-          class="rounded-2xl border border-border/60 bg-card/88 p-3 shadow-[0_10px_24px_-14px_hsl(var(--shadow-color)/0.42)] backdrop-blur-sm"
+          class="context-picker-panel rounded-[1.15rem] border border-border/58 bg-card/94 p-3 shadow-[0_16px_28px_-20px_hsl(var(--shadow-color)/0.16)]"
         >
           <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div class="text-xs font-medium text-foreground">{{ pickerTitle }}</div>
-              <div class="text-[11px] text-muted-foreground">
-                选择的上下文仅对本条消息生效，发送完成后会恢复会话默认绑定。
+            <div class="flex min-w-0 items-center gap-3">
+              <div class="flex size-8 shrink-0 items-center justify-center rounded-[0.9rem] bg-primary/8 text-primary">
+                <AtSign class="size-4" />
+              </div>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-foreground">{{ pickerTitle }}</div>
+                <div class="text-[11px] text-muted-foreground">
+                  {{ contextPickerDescription }}
+                </div>
               </div>
             </div>
-            <button
-              v-if="manualContextPickerOpen"
-              type="button"
-              class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-              @click="toggleManualContextPicker"
-            >
-              <X class="size-3.5" />
-            </button>
+            <div class="flex items-center gap-2">
+              <span
+                v-if="selectedContextCount > 0"
+                class="inline-flex items-center gap-1 rounded-full bg-primary/8 px-2 py-1 text-[10px] font-semibold text-primary"
+              >
+                <Sparkles class="size-3" />
+                {{ selectedContextCount }}
+              </span>
+              <button
+                v-if="manualContextPickerOpen"
+                type="button"
+                class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                @click="toggleManualContextPicker"
+              >
+                <X class="size-3.5" />
+              </button>
+            </div>
           </div>
 
           <div v-if="manualContextPickerOpen" class="mb-3">
-            <Input
-              v-model="manualContextQuery"
-              placeholder="搜索 datastore 或知识库"
-              class="h-8 bg-background/70 text-sm"
-            />
+            <div class="relative">
+              <Search class="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                v-model="manualContextQuery"
+                placeholder="搜索资料"
+                class="h-9 rounded-full bg-background/70 pl-9 text-sm"
+              />
+            </div>
           </div>
 
           <div class="grid gap-3 md:grid-cols-2">
@@ -474,25 +538,38 @@ defineExpose({
               <div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 Datastore
               </div>
-              <div v-if="filteredDatastores.length > 0" class="space-y-1.5">
+              <TransitionGroup
+                v-if="filteredDatastores.length > 0"
+                name="context-option"
+                tag="div"
+                class="space-y-1.5"
+              >
                 <button
                   v-for="option in filteredDatastores"
                   :key="`${option.kind}:${option.id}`"
                   type="button"
-                  class="flex w-full items-start justify-between gap-3 rounded-xl border border-border/50 bg-background/55 px-3 py-2 text-left transition-colors hover:bg-accent/55"
+                  class="context-option-card"
                   @click="selectContext(option)"
                 >
-                  <div class="min-w-0">
-                    <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
-                    <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                      {{ option.description }}
+                  <div class="flex min-w-0 items-start gap-3">
+                    <span class="context-option-icon bg-sky-500/12 text-sky-600">
+                      <Database class="size-4" />
+                    </span>
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
+                      <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                        {{ option.description }}
+                      </div>
                     </div>
                   </div>
-                  <span class="shrink-0 text-[10px] text-muted-foreground">{{ option.id }}</span>
+                  <div class="shrink-0 text-right">
+                    <div class="text-[10px] font-semibold text-sky-600">Datastore</div>
+                    <div class="text-[10px] text-muted-foreground">{{ option.id }}</div>
+                  </div>
                 </button>
-              </div>
+              </TransitionGroup>
               <div v-else class="rounded-xl border border-dashed border-border/60 px-3 py-4 text-xs text-muted-foreground">
-                没有匹配的 datastore。
+                没有结果。
               </div>
             </section>
 
@@ -500,36 +577,53 @@ defineExpose({
               <div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 Knowledge Base
               </div>
-              <div v-if="filteredKnowledgeBases.length > 0" class="space-y-1.5">
+              <TransitionGroup
+                v-if="filteredKnowledgeBases.length > 0"
+                name="context-option"
+                tag="div"
+                class="space-y-1.5"
+              >
                 <button
                   v-for="option in filteredKnowledgeBases"
                   :key="`${option.kind}:${option.id}`"
                   type="button"
-                  class="flex w-full items-start justify-between gap-3 rounded-xl border border-border/50 bg-background/55 px-3 py-2 text-left transition-colors hover:bg-accent/55"
+                  class="context-option-card"
                   @click="selectContext(option)"
                 >
-                  <div class="min-w-0">
-                    <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
-                    <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                      {{ option.description }}
+                  <div class="flex min-w-0 items-start gap-3">
+                    <span class="context-option-icon bg-primary/12 text-primary">
+                      <LibraryBig class="size-4" />
+                    </span>
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
+                      <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                        {{ option.description }}
+                      </div>
                     </div>
                   </div>
-                  <span class="shrink-0 text-[10px] text-muted-foreground">{{ option.id }}</span>
+                  <div class="shrink-0 text-right">
+                    <div class="text-[10px] font-semibold text-primary">知识库</div>
+                    <div class="text-[10px] text-muted-foreground">{{ option.id }}</div>
+                  </div>
                 </button>
-              </div>
+              </TransitionGroup>
               <div v-else class="rounded-xl border border-dashed border-border/60 px-3 py-4 text-xs text-muted-foreground">
-                没有匹配的知识库。
+                没有结果。
               </div>
             </section>
+          </div>
+
+          <div v-if="!manualContextPickerOpen" class="mt-3 rounded-[0.95rem] bg-background/74 px-3 py-2 text-[11px] text-muted-foreground">
+            输入 <span class="font-semibold text-foreground">@</span> 可快速引用资料，也可以直接点下面的“上下文”按钮选择。
           </div>
         </div>
       </Transition>
 
       <div
-        class="overflow-hidden rounded-2xl border border-border/50 bg-card/60 shadow-[0_2px_12px_-4px_hsl(var(--shadow-color)/0.18)] backdrop-blur-sm transition-all duration-200"
+        class="overflow-hidden rounded-[1.35rem] border border-border/52 bg-card/82 shadow-[0_16px_28px_-24px_hsl(var(--shadow-color)/0.14)] transition-all duration-200"
         :class="[
-          sendDisabled ? '' : 'focus-within:border-primary/30 focus-within:shadow-[0_4px_20px_-6px_hsl(var(--shadow-color)/0.28)]',
-          dragActive ? 'border-primary/60 bg-primary/5 shadow-[0_8px_24px_-8px_hsl(var(--primary)/0.25)]' : '',
+          sendDisabled ? '' : 'focus-within:border-primary/24 focus-within:shadow-[0_18px_30px_-24px_hsl(var(--shadow-color)/0.16)]',
+          dragActive ? 'border-primary/60 bg-primary/4 shadow-[0_14px_24px_-18px_hsl(var(--primary)/0.14)]' : '',
         ]"
         @dragenter="handleDragEnter"
         @dragover.prevent
@@ -538,14 +632,14 @@ defineExpose({
       >
         <div
           v-if="continuationTitle"
-          class="flex items-start gap-3 border-b border-border/60 bg-gradient-to-r from-primary/[0.07] via-primary/[0.04] to-transparent px-4 py-3"
+          class="flex items-start gap-3 border-b border-border/60 bg-primary/[0.05] px-4 py-3"
         >
-          <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-background/95 text-primary shadow-sm">
+          <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-background/92 text-primary">
             <CornerDownLeft class="size-3.5" />
           </div>
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <span class="rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-primary">
+              <span class="rounded-full bg-background/92 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-primary">
                 接续中
               </span>
               <span class="text-sm font-medium text-foreground">{{ continuationTitle }}</span>
@@ -560,14 +654,14 @@ defineExpose({
         </div>
 
         <!-- 输入区 -->
-        <div class="relative px-4 pt-3 pb-1">
+        <div class="relative px-4 pb-1 pt-4">
           <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            :placeholder="placeholder || '输入问题，或粘贴资料继续往下处理…'"
+            :placeholder="placeholder || '输入问题或贴资料…'"
             rows="1"
-            class="min-h-[88px] max-h-[200px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
+            class="min-h-[104px] max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
             @keydown="handleKeydown"
             @click="showTemplates = false"
             @paste="handlePaste"
@@ -582,13 +676,13 @@ defineExpose({
         </div>
 
         <!-- 工具栏 -->
-        <div class="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
-          <div class="flex items-center gap-1.5">
+        <div class="flex items-center justify-between gap-2 border-t border-border/45 px-3 pb-3 pt-3">
+          <div class="flex flex-wrap items-center gap-1.5">
             <!-- 模板 -->
             <div class="relative">
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+                class="inline-flex items-center gap-1.5 rounded-full border border-border/55 bg-background/68 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
                 :disabled="disabled"
                 @click="showTemplates = !showTemplates"
               >
@@ -606,10 +700,10 @@ defineExpose({
               >
                 <div
                   v-if="showTemplates"
-                  class="absolute bottom-full left-0 z-10 mb-2 w-48 rounded-xl border border-border/60 bg-card p-1.5 shadow-lg"
+                  class="absolute bottom-full left-0 z-10 mb-2 w-48 rounded-[0.95rem] border border-border/58 bg-card/96 p-1.5 shadow-[0_16px_28px_-20px_hsl(var(--shadow-color)/0.16)]"
                 >
                   <div class="mb-1 px-2 pt-1 text-[10px] font-medium tracking-wider text-muted-foreground/70">
-                    常用模板
+                    模板
                   </div>
                   <button
                     v-for="template in promptTemplates"
@@ -626,13 +720,16 @@ defineExpose({
 
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+              class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors disabled:opacity-40"
+              :class="selectedContextCount > 0 || showContextPicker
+                ? 'border-primary/22 bg-primary/8 text-primary hover:bg-primary/10'
+                : 'border-border/55 bg-background/72 text-muted-foreground hover:bg-accent/56 hover:text-foreground'"
               :disabled="disabled"
               @click="toggleManualContextPicker"
             >
               <AtSign class="size-3.5" />
               上下文
-              <span v-if="selectedContexts.length > 0" class="ml-0.5 rounded-full bg-primary/15 px-1.5 text-[10px] font-medium text-primary">
+              <span v-if="selectedContexts.length > 0" class="ml-0.5 rounded-full bg-primary/12 px-1.5 text-[10px] font-medium text-primary">
                 {{ selectedContexts.length }}
               </span>
             </button>
@@ -640,13 +737,13 @@ defineExpose({
             <!-- 附件 -->
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+              class="inline-flex items-center gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/56 hover:text-foreground disabled:opacity-40"
               :disabled="disabled"
               @click="handleFileSelect"
             >
               <Paperclip class="size-3.5" />
               附件
-              <span v-if="attachments.length > 0" class="ml-0.5 rounded-full bg-primary/15 px-1.5 text-[10px] font-medium text-primary">
+              <span v-if="attachments.length > 0" class="ml-0.5 rounded-full bg-primary/12 px-1.5 text-[10px] font-medium text-primary">
                 {{ attachments.length }}
               </span>
             </button>
@@ -681,7 +778,7 @@ defineExpose({
                 v-if="voiceSupported"
                 type="button"
                 :disabled="disabled || isUploading || voiceSending"
-                class="flex size-8 items-center justify-center rounded-full text-muted-foreground/60 transition-all duration-150 hover:bg-accent/50 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                class="flex size-9 items-center justify-center rounded-[1rem] border border-border/55 bg-background/76 text-muted-foreground/70 transition-all duration-150 hover:bg-accent/48 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
                 @click="startRecording"
               >
                 <Mic class="size-4" />
@@ -691,10 +788,10 @@ defineExpose({
               <button
                 type="button"
                 :disabled="sendDisabled"
-                class="flex size-8 items-center justify-center rounded-lg transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-30"
+                class="flex size-10 items-center justify-center rounded-[1rem] transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-30"
                 :class="sendDisabled
-                  ? 'bg-muted/60 text-muted-foreground/40'
-                  : 'bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95'"
+                  ? 'border border-border/55 bg-muted/60 text-muted-foreground/40'
+                  : 'chat-send-ready bg-primary text-primary-foreground shadow-[0_12px_22px_-14px_hsl(var(--shadow-color)/0.2)] hover:brightness-105 active:scale-95'"
                 @click="submit"
               >
                 <ArrowUp class="size-4" :stroke-width="2.5" />
@@ -726,3 +823,126 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+.context-chip-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid hsl(from var(--primary) h s l / 0.16);
+  border-radius: 1rem;
+  background: hsl(from var(--card) h s l / 0.94);
+  box-shadow:
+    0 10px 18px -22px hsl(var(--shadow-color) / 0.12),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.4);
+}
+
+.context-chip-icon {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+}
+
+.context-picker-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.context-picker-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, hsl(from var(--primary) h s l / 0.05), transparent 32%),
+    linear-gradient(180deg, hsl(from var(--card) h s l / 0.12), transparent 18%);
+  opacity: 0.6;
+}
+
+.context-option-card {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  overflow: hidden;
+  border: 1px solid hsl(from var(--border) h s l / 0.46);
+  border-radius: 1rem;
+  background: hsl(from var(--background) h s l / 0.58);
+  padding: 0.75rem;
+  text-align: left;
+  transition:
+    transform 180ms var(--ease-fluid),
+    border-color 180ms var(--ease-fluid),
+    background-color 180ms var(--ease-fluid),
+    box-shadow 180ms var(--ease-fluid);
+}
+
+.context-option-card:hover {
+  transform: translateY(-1px);
+  border-color: hsl(from var(--primary) h s l / 0.24);
+  background: hsl(from var(--card) h s l / 0.92);
+  box-shadow: 0 12px 20px -24px hsl(var(--shadow-color) / 0.12);
+}
+
+.context-option-icon {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+}
+
+.chat-send-ready {
+  animation: send-button-breathe 1.7s var(--ease-fluid) infinite;
+}
+
+.context-chip-enter-active,
+.context-chip-leave-active {
+  transition:
+    transform 220ms var(--ease-fluid),
+    opacity 180ms var(--ease-fluid);
+}
+
+.context-chip-enter-from,
+.context-chip-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+}
+
+.context-chip-move {
+  transition: transform 220ms var(--ease-fluid);
+}
+
+.context-option-enter-active,
+.context-option-leave-active {
+  transition:
+    transform 180ms var(--ease-fluid),
+    opacity 160ms var(--ease-fluid);
+}
+
+.context-option-enter-from,
+.context-option-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@keyframes send-button-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 12px 22px -14px hsl(var(--shadow-color) / 0.2);
+  }
+
+  50% {
+    transform: translateY(-1px) scale(1.01);
+    box-shadow: 0 14px 24px -14px hsl(var(--shadow-color) / 0.24);
+  }
+}
+</style>

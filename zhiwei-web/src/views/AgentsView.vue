@@ -280,7 +280,7 @@ function formatDate(dateStr: string) {
             <div
               v-for="index in 6"
               :key="index"
-              class="rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92 p-5"
+              class="rounded-[calc(var(--radius)+1px)] border border-border/64 bg-card/90 p-5"
             >
               <div class="flex items-center justify-between gap-3">
                 <div class="space-y-2">
@@ -363,7 +363,7 @@ function formatDate(dateStr: string) {
                   </div>
                 </div>
 
-                <div class="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-primary transition-transform duration-200 group-hover:-translate-y-0.5">
+                <div class="flex size-11 shrink-0 items-center justify-center rounded-[1rem] border border-border/62 bg-background/84 text-primary transition-colors duration-200 group-hover:bg-background">
                   <Bot class="size-4" />
                 </div>
               </div>

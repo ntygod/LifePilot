@@ -41,11 +41,14 @@ function isActive(id: string) {
     <div class="flex h-full flex-col items-center gap-4 px-3 py-4">
       <RouterLink
         :to="resolvePrimaryTarget('/conversations', 'conversations')"
-        class="app-rail-brand"
+        class="app-rail-brand group"
         title="知微"
         @click="emitNavigate"
       >
-        <span class="text-sm font-semibold tracking-[0.12em]">ZW</span>
+        <div class="flex flex-col items-center">
+          <span class="text-[11px] font-semibold tracking-[0.2em]">ZW</span>
+          <span class="mt-1 h-1.5 w-1.5 rounded-full bg-primary/90 shadow-[0_0_8px_hsl(var(--primary)/0.28)] transition-transform duration-200 group-hover:scale-110" />
+        </div>
       </RouterLink>
 
       <div class="soft-divider opacity-70" />

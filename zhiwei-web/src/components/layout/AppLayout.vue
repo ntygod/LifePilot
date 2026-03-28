@@ -52,6 +52,10 @@ function closeSidebar() {
 
 <template>
   <div class="app-shell">
+    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+      <div class="absolute inset-x-[28%] top-[-13rem] h-[20rem] rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.08),transparent_72%)] blur-3xl" />
+    </div>
+
     <GlobalLoadingBar />
 
     <Button
@@ -59,7 +63,7 @@ function closeSidebar() {
       type="button"
       variant="outline"
       size="icon"
-      class="fixed top-4 left-4 z-40 border border-border/60 bg-background/88 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.5)] backdrop-blur-md md:hidden"
+      class="fixed left-4 top-4 z-40 rounded-[1rem] border border-border/56 bg-background/88 shadow-[0_12px_22px_-18px_hsl(var(--shadow-color)/0.16)] backdrop-blur-xl md:hidden"
       @click="toggleSidebar"
     >
       <Menu class="size-5" />

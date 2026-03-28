@@ -3,8 +3,8 @@ import { computed, ref } from 'vue'
 import type { ReactStepDto, ToolCallStep, ObservationStep } from '@/types'
 import {
   Lightbulb, Wrench, Eye, PenLine, Pause, Play,
-  ChevronDown, ChevronRight, Loader2, Clock,
-  CheckCircle2, XCircle, CircleDot
+  ChevronDown, ChevronRight, Loader2,
+  CircleDot
 } from 'lucide-vue-next'
 import WorkerResultCard from './WorkerResultCard.vue'
 
@@ -23,9 +23,11 @@ const expanded = ref(false)
 const hasSteps = computed(() => props.steps.length > 0)
 
 // 统计信息
+const stepCount = computed(() => props.steps.length)
 const toolCallCount = computed(() =>
   props.steps.filter(s => s.type === 'TOOL_CALL').length
 )
+const latestStep = computed(() => props.steps[props.steps.length - 1] ?? null)
 
 // ToolCall + Observation 配对归组
 interface StepGroup {
@@ -201,50 +203,60 @@ function getToolPairPreview(tc: ToolCallStep, obs: ObservationStep): string | nu
   if (firstLine.length > 80) return firstLine.substring(0, 80) + '…'
   return firstLine
 }
+
+function getGroupKey(group: StepGroup): string {
+  const first = group.steps[0]
+  return `${group.type}-${first.index}-${first.type}`
+}
 </script>
 
 <template>
   <div
     v-if="summary || hasSteps"
-    class="mt-2 rounded-lg border border-border/60 bg-gradient-to-b from-muted/30 to-background/80 text-xs overflow-hidden transition-all duration-300"
-    :class="streaming ? 'border-primary/40' : ''"
+    class="react-panel mt-3 overflow-hidden rounded-[1.15rem] border text-xs transition-all duration-300"
+    :class="streaming ? 'react-panel-streaming' : 'react-panel-idle'"
   >
-    <!-- 触发器按钮 -->
     <button
       type="button"
-      class="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left
-             hover:bg-muted/40 transition-all duration-200
-             focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+      class="react-trigger flex w-full items-center justify-between gap-3 px-3 py-3 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       @click="expanded = !expanded"
     >
-      <div class="flex items-center gap-2 min-w-0 flex-1">
-        <div class="relative shrink-0">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <div
+          class="react-icon-shell relative shrink-0"
+          :class="streaming ? 'react-icon-shell-streaming' : ''"
+        >
           <component
-            :is="hasSteps ? getStepIcon(steps[steps.length - 1].type) : CircleDot"
+            :is="latestStep ? getStepIcon(latestStep.type) : CircleDot"
             :size="14"
             class="transition-colors duration-300"
             :class="streaming
               ? 'text-primary'
-              : hasSteps ? getStepColor(steps[steps.length - 1].type) : 'text-muted-foreground'"
+              : latestStep ? getStepColor(latestStep.type) : 'text-muted-foreground'"
           />
         </div>
-        <span
-          class="text-[11px] font-medium truncate"
-          :class="streaming ? 'text-primary' : 'text-foreground/80'"
-        >
-          {{ triggerLabel }}
-        </span>
-        <!-- 工具调用统计标签 -->
-        <span
-          v-if="!streaming && toolCallCount > 0"
-          class="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] shrink-0"
-        >
-          <Wrench :size="10" />
-          {{ toolCallCount }}
-        </span>
+        <div class="min-w-0 space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">执行轨迹</span>
+            <span v-if="toolCallCount > 0" class="react-chip">
+              <Wrench :size="10" />
+              {{ toolCallCount }}
+            </span>
+          </div>
+          <p
+            class="truncate text-[11px] font-medium"
+            :class="streaming ? 'text-primary' : 'text-foreground/84'"
+          >
+            {{ triggerLabel }}
+          </p>
+        </div>
       </div>
-      <div class="flex items-center gap-1.5 shrink-0">
-        <Loader2 v-if="streaming" :size="12" class="text-primary animate-spin" />
+      <div class="flex shrink-0 items-center gap-2">
+        <span v-if="streaming" class="react-chip react-chip-streaming">
+          <Loader2 :size="10" class="animate-spin" />
+          进行中
+        </span>
+        <span class="react-chip">{{ stepCount }} 步</span>
         <component
           :is="expanded ? ChevronDown : ChevronRight"
           :size="12"
@@ -253,7 +265,6 @@ function getToolPairPreview(tc: ToolCallStep, obs: ObservationStep): string | nu
       </div>
     </button>
 
-    <!-- 展开内容区 -->
     <Transition
       enter-active-class="transition-all duration-300 ease-out"
       enter-from-class="max-h-0 opacity-0"
@@ -263,120 +274,138 @@ function getToolPairPreview(tc: ToolCallStep, obs: ObservationStep): string | nu
       leave-to-class="max-h-0 opacity-0"
     >
       <div v-if="expanded" class="overflow-hidden">
-        <div class="border-t border-border/50 px-3 py-2.5">
-          <!-- 步骤时间线 -->
-          <div v-if="hasSteps" class="space-y-0">
-            <template v-for="(group, gi) in stepGroups" :key="gi">
-              <!-- 工具配对组 -->
-              <div v-if="group.type === 'tool-pair'" class="flex items-start gap-2.5 group/step">
-                <div class="flex flex-col items-center shrink-0 w-5">
-                  <div class="w-5 h-5 rounded-full flex items-center justify-center bg-background border border-border group-hover/step:border-primary/50">
-                    <Wrench :size="11" class="text-amber-500" />
-                  </div>
-                  <div v-if="gi < stepGroups.length - 1" class="w-px flex-1 min-h-[16px] bg-border" />
+        <div class="border-t border-border/55 px-3 pb-3 pt-2.5">
+          <TransitionGroup
+            v-if="hasSteps"
+            name="react-step"
+            tag="div"
+            class="space-y-2"
+          >
+            <div
+              v-for="(group, gi) in stepGroups"
+              :key="getGroupKey(group)"
+              class="flex items-start gap-2.5"
+            >
+              <div class="flex w-6 shrink-0 flex-col items-center">
+                <div
+                  class="react-node flex h-6 w-6 items-center justify-center rounded-2xl"
+                  :class="streaming && gi === stepGroups.length - 1 ? 'react-node-active' : ''"
+                >
+                  <Wrench v-if="group.type === 'tool-pair'" :size="12" class="text-amber-500" />
+                  <component
+                    v-else
+                    :is="getStepIcon(group.steps[0].type)"
+                    :size="12"
+                    :class="getStepColor(group.steps[0].type)"
+                  />
                 </div>
-                <div class="flex-1 min-w-0 pb-2.5" :class="gi === stepGroups.length - 1 ? 'pb-0' : ''">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      type="button"
-                      class="flex items-center gap-1.5 text-[11px] font-medium text-foreground/90 leading-5 hover:text-primary transition-colors"
-                      @click="toggleStep((group.steps[0] as ToolCallStep).index)"
-                    >
-                      <component
-                        :is="(group.steps[1] as ObservationStep).success ? CheckCircle2 : XCircle"
-                        :size="10"
-                        :class="(group.steps[1] as ObservationStep).success ? 'text-emerald-500' : 'text-destructive'"
-                      />
-                      {{ getToolPairTitle(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
-                    </button>
+                <div v-if="gi < stepGroups.length - 1" class="react-line w-px flex-1 min-h-[18px] bg-border" />
+              </div>
+
+              <div
+                class="react-card flex-1 min-w-0"
+                :class="streaming && gi === stepGroups.length - 1 ? 'react-card-active' : ''"
+              >
+                <template v-if="group.type === 'tool-pair'">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          class="text-left text-[11px] font-medium leading-5 text-foreground/92 transition-colors hover:text-primary"
+                          @click="toggleStep((group.steps[0] as ToolCallStep).index)"
+                        >
+                          {{ getToolPairTitle(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
+                        </button>
+                        <span
+                          class="react-meta-chip"
+                          :class="(group.steps[1] as ObservationStep).success ? 'react-meta-chip-success' : 'react-meta-chip-failure'"
+                        >
+                          {{ (group.steps[1] as ObservationStep).success ? '成功' : '失败' }}
+                        </span>
+                      </div>
+                    </div>
                     <span
                       v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
-                      class="text-[10px] text-muted-foreground/60"
+                      class="react-meta-chip shrink-0"
                     >
                       {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
                     </span>
                   </div>
-                  <!-- 内联输出预览（始终可见） -->
                   <p
                     v-if="getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep)"
-                    class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 truncate"
+                    class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/82"
                   >
                     {{ getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
                   </p>
-                  <!-- 展开：完整输入 + 输出 -->
                   <div
                     v-if="expandedSteps.has((group.steps[0] as ToolCallStep).index)"
-                    class="mt-1 space-y-1 text-[10px] text-muted-foreground/80 leading-relaxed"
+                    class="mt-2 space-y-2"
                   >
-                    <!-- spawn_workers 专用卡片 -->
                     <WorkerResultCard
                       v-if="(group.steps[0] as ToolCallStep).toolId === 'spawn_workers'"
                       :output="(group.steps[1] as ObservationStep).outputSummary"
                     />
-                    <!-- 其他工具保持原样 -->
                     <template v-else>
-                      <p v-if="(group.steps[0] as ToolCallStep).inputSummary">
-                        <span class="text-muted-foreground font-medium">输入：</span>
-                        {{ (group.steps[0] as ToolCallStep).inputSummary }}
-                      </p>
-                      <p v-if="(group.steps[1] as ObservationStep).outputSummary">
-                        <span class="text-muted-foreground font-medium">输出：</span>
-                        {{ (group.steps[1] as ObservationStep).outputSummary }}
-                      </p>
+                      <div v-if="(group.steps[0] as ToolCallStep).inputSummary" class="react-detail-block">
+                        <div class="react-detail-label">输入</div>
+                        <p class="text-[10px] leading-relaxed text-foreground/84">
+                          {{ (group.steps[0] as ToolCallStep).inputSummary }}
+                        </p>
+                      </div>
+                      <div v-if="(group.steps[1] as ObservationStep).outputSummary" class="react-detail-block">
+                        <div class="react-detail-label">输出</div>
+                        <p class="text-[10px] leading-relaxed text-foreground/84">
+                          {{ (group.steps[1] as ObservationStep).outputSummary }}
+                        </p>
+                      </div>
                     </template>
                   </div>
-                </div>
-              </div>
+                </template>
 
-              <!-- 单步骤 -->
-              <div v-else class="flex items-start gap-2.5 group/step">
-                <div class="flex flex-col items-center shrink-0 w-5">
-                  <div
-                    class="w-5 h-5 rounded-full flex items-center justify-center bg-background border border-border group-hover/step:border-primary/50"
-                  >
-                    <component
-                      :is="getStepIcon(group.steps[0].type)"
-                      :size="11"
-                      :class="getStepColor(group.steps[0].type)"
-                    />
-                  </div>
-                  <div v-if="gi < stepGroups.length - 1" class="w-px flex-1 min-h-[16px] bg-border" />
-                </div>
-                <div class="flex-1 min-w-0 pb-2.5" :class="gi === stepGroups.length - 1 ? 'pb-0' : ''">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      v-if="hasExpandableContent(group.steps[0])"
-                      type="button"
-                      class="text-[11px] font-medium text-foreground/90 leading-5 hover:text-primary transition-colors"
-                      @click="toggleStep(group.steps[0].index)"
+                <template v-else>
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <button
+                        v-if="hasExpandableContent(group.steps[0])"
+                        type="button"
+                        class="text-left text-[11px] font-medium leading-5 text-foreground/92 transition-colors hover:text-primary"
+                        @click="toggleStep(group.steps[0].index)"
+                      >
+                        {{ getStepTitle(group.steps[0]) }}
+                      </button>
+                      <span v-else class="text-[11px] font-medium leading-5 text-foreground/92">
+                        {{ getStepTitle(group.steps[0]) }}
+                      </span>
+                    </div>
+                    <span
+                      v-if="group.steps[0].type === 'OBSERVATION'"
+                      class="react-meta-chip shrink-0"
+                      :class="(group.steps[0] as ObservationStep).success ? 'react-meta-chip-success' : 'react-meta-chip-failure'"
                     >
-                      {{ getStepTitle(group.steps[0]) }}
-                    </button>
-                    <span v-else class="text-[11px] font-medium text-foreground/90 leading-5">
-                      {{ getStepTitle(group.steps[0]) }}
+                      {{ (group.steps[0] as ObservationStep).success ? '成功' : '失败' }}
                     </span>
                   </div>
-                  <!-- 内联预览（始终可见） -->
                   <p
                     v-if="getStepPreview(group.steps[0]) && !expandedSteps.has(group.steps[0].index)"
-                    class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 truncate"
+                    class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/82"
                   >
                     {{ getStepPreview(group.steps[0]) }}
                   </p>
-                  <!-- 展开后显示完整内容 -->
-                  <p
+                  <div
                     v-if="expandedSteps.has(group.steps[0].index) && getStepContent(group.steps[0])"
-                    class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 whitespace-pre-wrap"
+                    class="mt-2 react-detail-block"
                   >
-                    {{ getStepContent(group.steps[0]) }}
-                  </p>
-                </div>
+                    <p class="text-[10px] whitespace-pre-wrap leading-relaxed text-foreground/84">
+                      {{ getStepContent(group.steps[0]) }}
+                    </p>
+                  </div>
+                </template>
               </div>
-            </template>
-          </div>
+            </div>
+          </TransitionGroup>
 
-          <!-- 无步骤时回退到纯文本摘要 -->
-          <p v-else-if="summary" class="text-[11px] text-muted-foreground leading-relaxed">
+          <p v-else-if="summary" class="rounded-2xl border border-border/45 bg-background/62 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
             {{ summary }}
           </p>
         </div>
@@ -384,3 +413,152 @@ function getToolPairPreview(tc: ToolCallStep, obs: ObservationStep): string | nu
     </Transition>
   </div>
 </template>
+
+<style scoped>
+.react-panel {
+  position: relative;
+  background: hsl(from var(--card) h s l / 0.92);
+  box-shadow:
+    0 14px 24px -30px hsl(var(--shadow-color) / 0.12),
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.44);
+}
+
+.react-panel-idle {
+  border-color: hsl(from var(--border) h s l / 0.5);
+}
+
+.react-panel-streaming {
+  border-color: hsl(from var(--primary) h s l / 0.24);
+}
+
+.react-trigger {
+  transition: background-color 180ms var(--ease-fluid);
+}
+
+.react-trigger:hover {
+  background: hsl(from var(--accent) h s l / 0.32);
+}
+
+.react-icon-shell {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.46);
+  background: hsl(from var(--background) h s l / 0.8);
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.32);
+}
+
+.react-icon-shell-streaming {
+  box-shadow:
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.32),
+    0 0 0 1px hsl(from var(--primary) h s l / 0.08);
+}
+
+.react-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--border) h s l / 0.42);
+  background: hsl(from var(--background) h s l / 0.72);
+  padding: 0.22rem 0.5rem;
+  font-size: 10px;
+  line-height: 1.1;
+  color: hsl(from var(--muted-foreground) h s l / 0.88);
+}
+
+.react-chip-streaming {
+  border-color: hsl(from var(--primary) h s l / 0.18);
+  background: hsl(from var(--primary) h s l / 0.1);
+  color: hsl(from var(--primary) h s l / 0.92);
+}
+
+.react-node {
+  border: 1px solid hsl(from var(--border) h s l / 0.46);
+  background: hsl(from var(--background) h s l / 0.82);
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.3);
+}
+
+.react-node-active {
+  border-color: hsl(from var(--primary) h s l / 0.24);
+  box-shadow:
+    inset 0 1px 0 hsl(from var(--card) h s l / 0.3),
+    0 0 0 1px hsl(from var(--primary) h s l / 0.08);
+}
+
+.react-line {
+  opacity: 0.75;
+}
+
+.react-card {
+  border-radius: 1rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.42);
+  background: hsl(from var(--background) h s l / 0.7);
+  padding: 0.8rem 0.9rem;
+  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.24);
+}
+
+.react-card-active {
+  border-color: hsl(from var(--primary) h s l / 0.2);
+  background: hsl(from var(--primary) h s l / 0.08);
+}
+
+.react-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  background: hsl(from var(--card) h s l / 0.72);
+  padding: 0.14rem 0.45rem;
+  font-size: 10px;
+  line-height: 1.1;
+  color: hsl(from var(--muted-foreground) h s l / 0.84);
+}
+
+.react-meta-chip-success {
+  border-color: hsl(160 56% 78% / 0.9);
+  background: hsl(160 56% 92% / 0.86);
+  color: hsl(160 58% 30%);
+}
+
+.react-meta-chip-failure {
+  border-color: hsl(from var(--destructive) h s l / 0.2);
+  background: hsl(from var(--destructive) h s l / 0.08);
+  color: hsl(from var(--destructive) h s l / 0.86);
+}
+
+.react-detail-block {
+  border-radius: 0.9rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.42);
+  background: hsl(from var(--background) h s l / 0.62);
+  padding: 0.7rem 0.8rem;
+}
+
+.react-detail-label {
+  margin-bottom: 0.32rem;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: hsl(from var(--muted-foreground) h s l / 0.84);
+}
+
+.react-step-enter-active,
+.react-step-leave-active {
+  transition:
+    transform 220ms var(--ease-fluid),
+    opacity 180ms var(--ease-fluid);
+}
+
+.react-step-enter-from,
+.react-step-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.react-step-move {
+  transition: transform 220ms var(--ease-fluid);
+}
+</style>

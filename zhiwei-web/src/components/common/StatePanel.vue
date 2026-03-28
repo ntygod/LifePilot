@@ -17,19 +17,19 @@ const props = withDefaults(defineProps<Props>(), {
 const slots = useSlots()
 
 const toneClass = computed(() => {
-  if (props.tone === 'warning') return 'border-amber-300/75 bg-amber-50/72 dark:border-amber-500/28 dark:bg-amber-500/10'
-  if (props.tone === 'danger') return 'border-destructive/28 bg-destructive/6'
-  return 'border-border/70 bg-card/92'
+  if (props.tone === 'warning') return 'border-amber-300/60 bg-amber-50/56 dark:border-amber-500/24 dark:bg-amber-500/8'
+  if (props.tone === 'danger') return 'border-destructive/22 bg-destructive/5'
+  return 'border-border/64 bg-card/90'
 })
 </script>
 
 <template>
-  <div :class="cn('state-panel rounded-[calc(var(--radius)+2px)] border px-5 py-5 sm:px-6', toneClass, props.class)">
+  <div :class="cn('state-panel rounded-[calc(var(--radius)+1px)] border px-5 py-5 sm:px-6', toneClass, props.class)">
     <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <div class="flex min-w-0 flex-1 items-start gap-4">
         <div
           v-if="slots.icon"
-          class="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/82 text-primary"
+          class="flex size-11 shrink-0 items-center justify-center rounded-[1rem] border border-border/62 bg-background/84 text-primary"
         >
           <slot name="icon" />
         </div>

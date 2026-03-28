@@ -9,44 +9,79 @@ const examples = [
   {
     label: '判断方向',
     title: '评估项目可行性',
-    description: '评估项目边界、风险和优先级。',
+    description: '先判断方向。',
     prompt: '帮我快速判断这个项目现在适合做什么、不适合做什么',
   },
   {
     label: '搭知识库',
     title: '整理知识库',
-    description: '整理实施步骤和分工。',
+    description: '先列步骤。',
     prompt: '我想把一批内部文档接成知识库，先帮我列出实施步骤',
   },
   {
     label: '同步进展',
     title: '整理摘要',
-    description: '整理阶段结论和待办事项。',
+    description: '快速出一版摘要。',
     prompt: '结合最近几条对话，整理一份能直接发给同事的进展摘要',
   },
 ]
+
+const signals = [
+  {
+    icon: LibraryBig,
+    title: '可加资料',
+    description: '需要时再加。',
+  },
+  {
+    icon: Puzzle,
+    title: '可用技能',
+    description: '常用能力都在。',
+  },
+  {
+    icon: Workflow,
+    title: '可继续聊',
+    description: '上下文会接上。',
+  },
+] as const
 </script>
 
 <template>
-  <div class="h-full flex items-center justify-center px-md md:px-lg">
-    <div class="text-center max-w-[560px] mx-auto space-y-8">
-      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary/10 to-primary/5">
-        <MessageSquare :size="32" class="text-primary" />
-      </div>
+  <div class="h-full px-md md:px-lg">
+    <div class="mx-auto grid max-w-[1040px] gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center">
+      <div class="space-y-6 text-left">
+        <div class="flex size-16 items-center justify-center rounded-[1.15rem] border border-border/56 bg-background/86 text-primary shadow-[0_12px_20px_-18px_hsl(var(--shadow-color)/0.14)]">
+          <MessageSquare :size="30" />
+        </div>
 
-      <div class="space-y-3">
-        <div class="surface-label">从这里开始</div>
-        <p class="text-xl font-semibold leading-tight text-foreground">先把问题、片段或待办放进来</p>
-        <p class="text-sm leading-7 text-muted-foreground">
-          直接贴需求、文档摘录、排障记录都可以。
-          后面就在这段会话里继续追问、整理、回看，不用反复重讲背景。
-        </p>
+        <div class="space-y-3">
+          <div class="surface-label">新对话</div>
+          <p class="max-w-[16ch] text-3xl font-semibold leading-tight tracking-tight text-foreground">
+            想聊什么？
+          </p>
+          <p class="max-w-[32rem] text-sm leading-7 text-muted-foreground">
+            直接输入问题，或贴一段资料。
+          </p>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-3">
+          <article
+            v-for="signal in signals"
+            :key="signal.title"
+            class="section-panel px-4 py-4"
+          >
+            <component :is="signal.icon" class="size-4 text-primary" />
+            <div class="mt-4 text-sm font-semibold text-foreground">{{ signal.title }}</div>
+            <p class="mt-2 text-xs leading-6 text-muted-foreground">
+              {{ signal.description }}
+            </p>
+          </article>
+        </div>
       </div>
 
       <div class="space-y-3 text-left">
         <div class="flex items-center justify-between gap-3">
           <div class="surface-label">常见起手</div>
-          <span class="text-xs text-muted-foreground">点一下就能继续写</span>
+          <span class="text-xs text-muted-foreground">点一下发送</span>
         </div>
 
         <button
@@ -59,7 +94,7 @@ const examples = [
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 space-y-2">
               <span class="surface-chip">{{ example.label }}</span>
-              <div class="text-sm font-semibold text-foreground sm:text-[0.96rem]">
+              <div class="text-sm font-semibold text-foreground sm:text-[0.98rem]">
                 {{ example.title }}
               </div>
               <p class="text-sm leading-6 text-muted-foreground">
@@ -73,21 +108,6 @@ const examples = [
             </div>
           </div>
         </button>
-      </div>
-
-      <div class="flex items-center justify-center gap-5 text-xs text-muted-foreground">
-        <div class="flex items-center gap-1.5">
-          <LibraryBig :size="14" />
-          <span>知识库可接入</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <Puzzle :size="14" />
-          <span>技能可复用</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <Workflow :size="14" />
-          <span>流程可沉淀</span>
-        </div>
       </div>
     </div>
   </div>

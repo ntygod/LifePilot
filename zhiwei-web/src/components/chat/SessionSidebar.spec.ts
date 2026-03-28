@@ -57,6 +57,10 @@ function mountSidebar() {
         },
       ],
       messageCount: 12,
+      searchQuery: '',
+      statusText: '就绪',
+      contextCount: 1,
+      matchedMessageCount: 12,
     },
     global: {
       stubs: {
@@ -90,7 +94,7 @@ describe('SessionSidebar', () => {
 
   it('标题失焦时会提交更新事件', async () => {
     const wrapper = mountSidebar()
-    const input = wrapper.get('input')
+    const input = wrapper.findAll('input')[1]
 
     await input.setValue('新的会话标题')
     await input.trigger('blur')

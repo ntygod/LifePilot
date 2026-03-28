@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   LibraryBig,
-  Search,
   Settings2,
   SlidersHorizontal,
   Square,
@@ -13,7 +12,6 @@ import type { ModelService } from '@/api/client'
 import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import DebugDrawer from '@/components/chat/DebugDrawer.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
@@ -55,11 +53,13 @@ const {
   resolvePermissionApproval,
 } = useChat()
 
+type SidebarPanel = 'session' | 'config' | 'debug'
+
 const scrollContainer = ref<HTMLElement | null>(null)
 const searchQuery = ref('')
-const showDebugDrawer = ref(false)
-const showSessionSidebar = ref(false)
-const showConfigPanel = ref(false)
+const activeSidebarPanel = ref<SidebarPanel>('session')
+const showDesktopSidebar = ref(false)
+const showMobileSidebar = ref(false)
 const providers = ref<ModelService[]>([])
 
 const DEFAULT_SESSION_TEMPERATURE = 0.7
@@ -138,8 +138,6 @@ async function loadActiveSessionConfig(sessionId: string | null) {
   }
 }
 
-const hasMessageSearch = computed(() => searchQuery.value.trim().length > 0)
-
 const matchedMessageCount = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return chatStore.messages.length
@@ -169,12 +167,12 @@ function resolveContinuationDetail(message: Message | null) {
   }
 
   if (message.suspendReasonSourceId === '__await_user_input__') {
-    return '你这次回复会直接接到刚才那轮任务上，我会沿着当前进度继续处理。'
+    return '这条回复会接着刚才继续。'
   }
 
   const detail = message.errorMessage?.trim()
   if (!detail || detail === message.suspendReasonSourceId || detail === 'await_user_input' || detail === 'suspended' || detail.startsWith('__')) {
-    return '你这次回复会直接接到刚才那轮任务上，我会沿着当前进度继续处理。'
+    return '这条回复会接着刚才继续。'
   }
 
   return `当前卡住点：${detail}`
@@ -184,7 +182,7 @@ const continuationTitle = computed(() => {
   if (!latestSuspendedAssistant.value || isStreaming.value) {
     return null
   }
-  return '正在继续上一轮任务'
+  return '继续上一轮'
 })
 
 const continuationDetail = computed(() => {
@@ -196,16 +194,9 @@ const continuationDetail = computed(() => {
 
 const inputPlaceholder = computed(() => {
   if (continuationTitle.value) {
-    return '回复补充信息，继续刚才的任务…'
+    return '继续说…'
   }
-  return '输入问题，或粘贴资料继续往下处理…'
-})
-
-const latestTraceMessage = computed(() => {
-  for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
-    if (chatStore.messages[index].traceId) return chatStore.messages[index]
-  }
-  return null
+  return '输入问题或贴资料…'
 })
 
 const latestUserErrorMessage = computed(() => {
@@ -224,14 +215,24 @@ const showGlobalErrorPanel = computed(() => (
 const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
 const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
 const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
-const lastTraceTarget = computed(() => (
-  latestTraceMessage.value?.traceId
-    ? { name: 'traces', query: { id: latestTraceMessage.value.traceId } }
-    : { name: 'traces' }
-))
 
 const headerTitle = computed(() => currentSessionDetail.value?.title?.trim() || currentSession.value?.title?.trim() || '新对话')
-const contextLabel = computed(() => lastModelId.value || '默认模型')
+const activeContextCount = computed(() => (
+  (activeSessionConfig.value.knowledgeBaseIds?.length ?? 0)
+  + (activeSessionConfig.value.datastoreIds?.length ?? 0)
+))
+const sessionStatusText = computed(() => {
+  if (isStreaming.value) {
+    return reasoningStatusText.value || '处理中'
+  }
+  if (continuationTitle.value) {
+    return '可继续'
+  }
+  if (chatStore.messages.length === 0) {
+    return '待开始'
+  }
+  return '就绪'
+})
 
 onMounted(async () => {
   const sessionId = route.params.sessionId as string | undefined
@@ -441,144 +442,273 @@ async function handleUpdateSessionTitle(title: string) {
 }
 
 function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
-  if (panel === 'config') {
-    showConfigPanel.value = !showConfigPanel.value
-    showSessionSidebar.value = false
-    showDebugDrawer.value = false
-  } else if (panel === 'sidebar') {
-    showSessionSidebar.value = !showSessionSidebar.value
-    showConfigPanel.value = false
-    showDebugDrawer.value = false
-  } else {
-    showDebugDrawer.value = !showDebugDrawer.value
-    showConfigPanel.value = false
-    showSessionSidebar.value = false
+  activeSidebarPanel.value = panel === 'sidebar' ? 'session' : panel
+  showMobileSidebar.value = true
+}
+
+function toggleDesktopSidebar(panel: SidebarPanel) {
+  if (showDesktopSidebar.value && activeSidebarPanel.value === panel) {
+    showDesktopSidebar.value = false
+    return
   }
+  activeSidebarPanel.value = panel
+  showDesktopSidebar.value = true
+}
+
+function closeDesktopSidebar() {
+  showDesktopSidebar.value = false
+}
+
+function closeMobileSidebar() {
+  showMobileSidebar.value = false
+}
+
+function selectSidebarPanel(panel: SidebarPanel) {
+  activeSidebarPanel.value = panel
 }
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <header class="shrink-0 border-b border-border/60 bg-background px-4 py-3 sm:px-6">
-      <div class="mx-auto max-w-[1460px]">
-        <div class="flex items-center justify-between gap-4">
+  <div class="relative flex h-full flex-col overflow-hidden">
+    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+      <div class="absolute inset-x-[14%] top-[-10rem] h-[20rem] rounded-full bg-[radial-gradient(circle,rgba(13,148,136,0.12),transparent_70%)] blur-3xl" />
+      <div class="absolute right-[-8rem] top-[22%] h-[18rem] w-[18rem] rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.12),transparent_70%)] blur-3xl" />
+      <div class="absolute left-[-10rem] bottom-[-8rem] h-[20rem] w-[20rem] rounded-full bg-[radial-gradient(circle,rgba(15,23,42,0.08),transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(148,163,184,0.1),transparent_72%)]" />
+    </div>
+
+    <header class="relative shrink-0 px-4 pt-3 sm:px-6">
+      <div class="mx-auto max-w-[1180px]">
+        <div class="flex min-w-0 items-start justify-between gap-3 px-1 py-1">
           <div class="min-w-0">
-            <h1 class="truncate text-lg font-semibold text-foreground">{{ headerTitle }}</h1>
-            <div class="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{{ chatStore.messages.length }} 条消息</span>
-              <span class="text-border">·</span>
-              <span>{{ contextLabel }}</span>
-              <span v-if="isStreaming" class="text-primary">{{ reasoningStatusText || '生成中' }}</span>
-            </div>
+            <div class="surface-label">当前对话</div>
+            <h1 class="mt-1 truncate text-xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
+              {{ headerTitle }}
+            </h1>
           </div>
+
           <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 xl:hidden">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="rounded-full"
+                @click="togglePanel('config')"
+              >
+                <Settings2 class="size-4" />
+                配置
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="rounded-full"
+                @click="togglePanel('sidebar')"
+              >
+                <LibraryBig class="size-4" />
+                信息
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="rounded-full"
+                @click="togglePanel('debug')"
+              >
+                <SlidersHorizontal class="size-4" />
+                调试
+              </Button>
+            </div>
+
             <Button
+              v-if="isStreaming"
               type="button"
-              variant="outline"
+              variant="destructive"
               size="sm"
-              :class="showConfigPanel && 'status-btn-active'"
-              @click="togglePanel('config')"
+              class="rounded-full"
+              @click="abort"
             >
-              <Settings2 class="size-4" />
-              配置
-            </Button>
-            <Button
-              v-if="chatStore.activeSessionId"
-              type="button"
-              variant="outline"
-              size="sm"
-              :class="showSessionSidebar && 'status-btn-active'"
-              @click="togglePanel('sidebar')"
-            >
-              <LibraryBig class="size-4" />
-              详情
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              :class="showDebugDrawer && 'status-btn-active'"
-              @click="togglePanel('debug')"
-            >
-              <SlidersHorizontal class="size-4" />
-              调试
-            </Button>
-            <Button v-if="isStreaming" type="button" variant="destructive" size="sm" @click="abort">
               <Square class="size-4" />
               停止
-            </Button>
-          </div>
-        </div>
-
-        <div class="mt-2 flex items-center gap-2 border-t border-border/30 pt-2">
-          <div class="relative w-48 shrink-0">
-            <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              v-model="searchQuery"
-              type="search"
-              placeholder="搜索消息…"
-              class="h-7 pl-8 text-xs focus-visible:ring-1"
-            />
-          </div>
-          <span class="surface-chip px-2 py-0.5 text-xs">工具 {{ lastToolsSummary.length }}</span>
-          <span class="surface-chip px-2 py-0.5 text-xs">知识库 {{ lastKbSources.length }}</span>
-          <span
-            v-if="hasMessageSearch"
-            class="surface-chip surface-chip-strong px-2 py-0.5 text-xs"
-          >
-            命中 {{ matchedMessageCount }}
-          </span>
-          <div class="ml-auto flex items-center gap-1.5">
-            <RouterLink
-              :to="lastTraceTarget"
-              class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-            >
-              轨迹
-            </RouterLink>
-            <Button
-              v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="h-7 text-xs"
-              @click="handleClearSession"
-            >
-              清空
             </Button>
           </div>
         </div>
       </div>
     </header>
 
-    <div class="relative min-h-0 flex-1 overflow-hidden">
-      <div
-        ref="scrollContainer"
-        class="h-full overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
-      >
-        <div v-if="chatStore.messages.length === 0 && !isStreaming" class="flex h-full items-center justify-center p-6">
-          <EmptyState @send="handleEmptyStateSend" />
+    <div class="relative min-h-0 flex-1 overflow-hidden pt-3">
+      <section class="relative min-h-0 flex h-full min-w-0 flex-col overflow-hidden">
+        <div
+          ref="scrollContainer"
+          class="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+        >
+          <div
+            v-if="chatStore.messages.length === 0 && !isStreaming"
+            class="mx-auto flex h-full w-full max-w-[1180px] items-center justify-center px-4 py-4 sm:px-6"
+          >
+            <div class="shell-card w-full border-border/52 bg-card/84 px-4 py-6 sm:px-6 sm:py-8">
+              <EmptyState @send="handleEmptyStateSend" />
+            </div>
+          </div>
+          <div v-else class="mx-auto w-full max-w-[1180px] px-4 py-4 sm:px-6">
+            <MessageList
+              :messages="chatStore.messages"
+              :is-streaming="isStreaming"
+              :streaming-content="chatStore.streamingContent"
+              :streaming-reasoning-events="reasoningEvents"
+              :streaming-react-steps="streamingReactSteps"
+              :streaming-a2ui-components="streamingA2uiComponents"
+              :streaming-permission-approvals="pendingPermissionApprovals"
+              :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
+              :query="searchQuery"
+              @retry="handleRetry"
+              @like="handleLike"
+              @dislike="handleDislike"
+              @fork="handleFork"
+              @regenerate="handleRegenerate"
+              @resume="handleResume"
+              @restart="handleRestart"
+              @copy="handleCopy"
+              @permission-approval-resolve="resolvePermissionApproval"
+            />
+          </div>
         </div>
-        <div v-else class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 xl:px-8">
-          <MessageList
-            :messages="chatStore.messages"
-            :is-streaming="isStreaming"
-            :streaming-content="chatStore.streamingContent"
-            :streaming-reasoning-events="reasoningEvents"
-            :streaming-react-steps="streamingReactSteps"
-            :streaming-a2ui-components="streamingA2uiComponents"
-            :streaming-permission-approvals="pendingPermissionApprovals"
-            :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
-            :query="searchQuery"
-            @retry="handleRetry"
-            @like="handleLike"
-            @dislike="handleDislike"
-            @fork="handleFork"
-            @regenerate="handleRegenerate"
-            @resume="handleResume"
-            @restart="handleRestart"
-            @copy="handleCopy"
-            @permission-approval-resolve="resolvePermissionApproval"
-          />
+
+        <div class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-4 pt-3 sm:px-6">
+          <div class="mx-auto w-full max-w-[1180px]">
+            <StatePanel
+              v-if="showGlobalErrorPanel"
+              class="mb-3"
+              title="本轮对话出现错误"
+              :description="error ?? undefined"
+              tone="danger"
+            >
+              <template #actions>
+                <Button type="button" variant="outline" size="sm" @click="error = null">
+                  关闭
+                </Button>
+              </template>
+            </StatePanel>
+            <ChatInput
+              :disabled="isStreaming && !activeInteraction"
+              :placeholder="inputPlaceholder"
+              :continuation-title="continuationTitle"
+              :continuation-detail="continuationDetail"
+              :knowledge-bases="kbStore.list"
+              :datastores="datastoreStore.list"
+              :base-session-config="activeSessionConfig"
+              @send="handleSend"
+            />
+          </div>
+        </div>
+      </section>
+
+      <div class="pointer-events-none absolute inset-y-3 right-3 z-30 hidden items-center justify-end xl:flex">
+        <div class="pointer-events-auto flex items-center gap-3">
+          <Transition
+            enter-active-class="transition-all duration-250 ease-out"
+            enter-from-class="opacity-0 translate-x-3"
+            enter-to-class="opacity-100 translate-x-0"
+            leave-active-class="transition-all duration-180 ease-in"
+            leave-from-class="opacity-100 translate-x-0"
+            leave-to-class="opacity-0 translate-x-3"
+          >
+            <div
+              v-if="showDesktopSidebar"
+              class="h-[min(760px,100%)] max-h-full w-[340px] rounded-[1.2rem] border border-border/58 bg-background/94 p-3 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)]"
+            >
+              <div class="h-full overflow-hidden">
+                <div v-if="activeSidebarPanel === 'config'" class="h-full overflow-y-auto pr-1 scrollbar-thin">
+                  <SessionConfigPanel
+                    :preferred-provider-id="activeSessionConfig.preferredProviderId"
+                    :temperature="activeSessionConfig.temperature"
+                    :max-steps="activeSessionConfig.maxSteps"
+                    :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
+                    :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
+                    :datastore-ids="activeSessionConfig.datastoreIds"
+                    :providers="chatProviders"
+                    :knowledge-bases="kbStore.list"
+                    :datastores="datastoreStore.list"
+                    @close="closeDesktopSidebar"
+                    @update="handleConfigUpdate"
+                  />
+                </div>
+                <SessionSidebar
+                  v-else-if="activeSidebarPanel === 'session'"
+                  :session="currentSessionDetail"
+                  :knowledge-bases="kbStore.list"
+                  v-model:search-query="searchQuery"
+                  :message-count="chatStore.messages.length"
+                  :status-text="sessionStatusText"
+                  :context-count="activeContextCount"
+                  :matched-message-count="matchedMessageCount"
+                  @close="closeDesktopSidebar"
+                  @clear="handleClearSession"
+                  @update-title="handleUpdateSessionTitle"
+                />
+                <DebugDrawer
+                  v-else
+                  :token-usage="lastTokenUsage"
+                  :model-id="lastModelId"
+                  :prompt="lastPrompt"
+                  :reasoning-events="reasoningEvents"
+                  :tools-summary="lastToolsSummary"
+                  :kb-sources="lastKbSources"
+                  :trace-id="lastAssistantMessage?.traceId"
+                  @close="closeDesktopSidebar"
+                />
+              </div>
+            </div>
+          </Transition>
+
+          <div class="shell-card border-border/52 bg-card/86 p-2 shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.12)]">
+            <div class="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px]"
+                :class="showDesktopSidebar && activeSidebarPanel === 'session' && 'status-btn-active'"
+                @click="toggleDesktopSidebar('session')"
+              >
+                <LibraryBig class="size-4" />
+                信息
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px]"
+                :class="showDesktopSidebar && activeSidebarPanel === 'config' && 'status-btn-active'"
+                @click="toggleDesktopSidebar('config')"
+              >
+                <Settings2 class="size-4" />
+                配置
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px]"
+                :class="showDesktopSidebar && activeSidebarPanel === 'debug' && 'status-btn-active'"
+                @click="toggleDesktopSidebar('debug')"
+              >
+                <SlidersHorizontal class="size-4" />
+                调试
+              </Button>
+              <Button
+                v-if="isStreaming"
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px] text-destructive hover:text-destructive"
+                @click="abort"
+              >
+                <Square class="size-4" />
+                停止
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -591,74 +721,92 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
         leave-to-class="opacity-0 translate-x-4"
       >
         <div
-          v-if="showSessionSidebar || showDebugDrawer || showConfigPanel"
-          class="absolute inset-y-0 right-0 z-30 w-[320px] border-l border-border/60 bg-background/95 shadow-lg backdrop-blur-sm"
+          v-if="showMobileSidebar"
+          class="absolute inset-y-4 right-4 z-30 w-[340px] rounded-[1.2rem] border border-border/58 bg-background/94 p-3 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)] xl:hidden"
         >
-          <div class="flex h-full flex-col gap-4 overflow-y-auto p-3">
-            <SessionConfigPanel
-              v-if="showConfigPanel"
-              :preferred-provider-id="activeSessionConfig.preferredProviderId"
-              :temperature="activeSessionConfig.temperature"
-              :max-steps="activeSessionConfig.maxSteps"
-              :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
-              :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
-              :datastore-ids="activeSessionConfig.datastoreIds"
-              :providers="chatProviders"
-              :knowledge-bases="kbStore.list"
-              :datastores="datastoreStore.list"
-              @close="showConfigPanel = false"
-              @update="handleConfigUpdate"
-            />
-            <SessionSidebar
-              v-if="showSessionSidebar && chatStore.activeSessionId"
-              :session="currentSessionDetail"
-              :knowledge-bases="kbStore.list"
-              :message-count="chatStore.messages.length"
-              @close="showSessionSidebar = false"
-              @update-title="handleUpdateSessionTitle"
-            />
-            <DebugDrawer
-              v-if="showDebugDrawer"
-              :token-usage="lastTokenUsage"
-              :model-id="lastModelId"
-              :prompt="lastPrompt"
-              :reasoning-events="reasoningEvents"
-              :tools-summary="lastToolsSummary"
-              :kb-sources="lastKbSources"
-              :trace-id="lastAssistantMessage?.traceId"
-              @close="showDebugDrawer = false"
-            />
+          <div class="flex h-full min-h-0 flex-col gap-3">
+            <div class="shell-card border-border/52 bg-card/86 p-1">
+              <div class="grid grid-cols-3 gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="rounded-xl"
+                  :class="activeSidebarPanel === 'session' && 'status-btn-active'"
+                  @click="selectSidebarPanel('session')"
+                >
+                  <LibraryBig class="size-4" />
+                  信息
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="rounded-xl"
+                  :class="activeSidebarPanel === 'config' && 'status-btn-active'"
+                  @click="selectSidebarPanel('config')"
+                >
+                  <Settings2 class="size-4" />
+                  配置
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="rounded-xl"
+                  :class="activeSidebarPanel === 'debug' && 'status-btn-active'"
+                  @click="selectSidebarPanel('debug')"
+                >
+                  <SlidersHorizontal class="size-4" />
+                  调试
+                </Button>
+              </div>
+            </div>
+
+            <div class="min-h-0 flex-1 overflow-hidden">
+              <div v-if="activeSidebarPanel === 'config'" class="h-full overflow-y-auto pr-1 scrollbar-thin">
+                <SessionConfigPanel
+                  :preferred-provider-id="activeSessionConfig.preferredProviderId"
+                  :temperature="activeSessionConfig.temperature"
+                  :max-steps="activeSessionConfig.maxSteps"
+                  :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
+                  :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
+                  :datastore-ids="activeSessionConfig.datastoreIds"
+                  :providers="chatProviders"
+                  :knowledge-bases="kbStore.list"
+                  :datastores="datastoreStore.list"
+                  @close="closeMobileSidebar"
+                  @update="handleConfigUpdate"
+                />
+              </div>
+              <SessionSidebar
+                v-else-if="activeSidebarPanel === 'session'"
+                :session="currentSessionDetail"
+                :knowledge-bases="kbStore.list"
+                v-model:search-query="searchQuery"
+                :message-count="chatStore.messages.length"
+                :status-text="sessionStatusText"
+                :context-count="activeContextCount"
+                :matched-message-count="matchedMessageCount"
+                @close="closeMobileSidebar"
+                @clear="handleClearSession"
+                @update-title="handleUpdateSessionTitle"
+              />
+              <DebugDrawer
+                v-else
+                :token-usage="lastTokenUsage"
+                :model-id="lastModelId"
+                :prompt="lastPrompt"
+                :reasoning-events="reasoningEvents"
+                :tools-summary="lastToolsSummary"
+                :kb-sources="lastKbSources"
+                :trace-id="lastAssistantMessage?.traceId"
+                @close="closeMobileSidebar"
+              />
+            </div>
           </div>
         </div>
       </Transition>
-    </div>
-
-    <div class="shrink-0 border-t border-border/60 bg-background px-4 pb-3 pt-2 sm:px-6">
-      <div class="mx-auto max-w-[1460px]">
-        <StatePanel
-          v-if="showGlobalErrorPanel"
-          class="mb-2"
-          title="本轮对话出现错误"
-          :description="error ?? undefined"
-          tone="danger"
-        >
-          <template #actions>
-            <Button type="button" variant="outline" size="sm" @click="error = null">
-              关闭
-            </Button>
-          </template>
-        </StatePanel>
-        <ChatInput
-          :disabled="isStreaming && !activeInteraction"
-          :placeholder="inputPlaceholder"
-          :continuation-title="continuationTitle"
-          :continuation-detail="continuationDetail"
-          :knowledge-bases="kbStore.list"
-          :datastores="datastoreStore.list"
-          :base-session-config="activeSessionConfig"
-          @send="handleSend"
-        />
-      </div>
     </div>
   </div>
 </template>

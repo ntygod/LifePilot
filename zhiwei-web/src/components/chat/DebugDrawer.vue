@@ -13,6 +13,7 @@ const props = defineProps<{
   toolsSummary: ToolCallSummary[]
   kbSources: SourceSummary[]
   traceId?: string
+  showClose?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +54,7 @@ function toggle(key: keyof typeof sections.value) {
 <template>
   <InspectorRail
     title="对话详情"
+    :show-close="props.showClose ?? true"
     @close="emit('close')"
   >
     <template #eyebrow>
@@ -214,7 +216,7 @@ function toggle(key: keyof typeof sections.value) {
     <template #footer>
       <RouterLink
         :to="traceId ? { name: 'traces', query: { id: traceId } } : { name: 'traces' }"
-        class="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/8 px-4 py-2.5 text-sm font-medium text-primary transition-all hover:bg-primary/15 active:scale-[0.98]"
+        class="flex w-full items-center justify-center gap-2 rounded-[0.9rem] border border-primary/16 bg-primary/6 px-4 py-2.5 text-sm font-medium text-primary transition-all hover:bg-primary/10 active:scale-[0.98]"
       >
         <Route class="size-4" />
         {{ traceId ? '查看轨迹详情' : '浏览轨迹列表' }}

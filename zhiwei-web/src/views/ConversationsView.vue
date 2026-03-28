@@ -465,10 +465,10 @@ async function batchDelete() {
               v-for="session in filteredSessions"
               :key="session.id"
               tabindex="0"
-              class="list-card group cursor-pointer p-4 outline-none focus-visible:border-primary/28 focus-visible:shadow-[0_22px_38px_-28px_hsl(var(--shadow-color)/0.28)] sm:p-5"
+              class="list-card group cursor-pointer p-4 outline-none focus-visible:border-primary/24 focus-visible:shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.14)] sm:p-5"
               :class="[
-                selectedIds.has(session.id) && 'border-primary/28 bg-primary/[0.045] shadow-[0_18px_34px_-28px_hsl(var(--shadow-color)/0.24)]',
-                isCurrentSession(session.id) && 'border-primary/30 bg-primary/[0.052] shadow-[0_20px_38px_-28px_hsl(var(--shadow-color)/0.26)]',
+                selectedIds.has(session.id) && 'border-primary/24 bg-primary/[0.04] shadow-[0_10px_18px_-16px_hsl(var(--shadow-color)/0.12)]',
+                isCurrentSession(session.id) && 'border-primary/26 bg-primary/[0.05] shadow-[0_12px_20px_-16px_hsl(var(--shadow-color)/0.14)]',
               ]"
               @click="selectSession(session)"
               @keyup.enter.stop="selectSession(session)"
@@ -487,7 +487,7 @@ async function batchDelete() {
                     <div class="flex flex-wrap items-center gap-2">
                       <span
                         v-if="session.pinned"
-                        class="inline-flex items-center gap-1 rounded-full border border-primary/18 bg-primary/8 px-2.5 py-1 text-xs font-medium text-primary"
+                        class="inline-flex items-center gap-1 rounded-full border border-primary/16 bg-primary/6 px-2.5 py-1 text-xs font-medium text-primary"
                       >
                         <Pin class="size-3.5" />
                         置顶

@@ -143,33 +143,40 @@ async function handleDelete(sessionId: string) {
 <template>
   <div class="flex h-full flex-col">
     <div class="border-b border-sidebar-border/45 px-4 py-4">
-      <div class="space-y-4">
-        <div class="space-y-1">
-          <div class="surface-label">对话</div>
-          <div class="text-sm font-semibold text-foreground">会话历史</div>
-          <p class="text-xs leading-5 text-muted-foreground">
-            最近的任务、标题和上下文固定在左侧，不再和全局导航混在一起。
-          </p>
-        </div>
+      <div class="shell-card px-4 py-4">
+        <div class="space-y-3.5">
+          <div class="space-y-1.5">
+            <div class="surface-label">对话</div>
+            <div class="text-base font-semibold tracking-tight text-foreground">最近对话</div>
+            <p class="text-xs leading-4 text-muted-foreground">
+              从这里继续。
+            </p>
+          </div>
 
-        <div class="grid grid-cols-2 gap-2">
-          <Button type="button" class="justify-center" @click="handleNewConversation">
-            <Plus class="size-4" />
-            新对话
-          </Button>
-          <Button type="button" variant="outline" class="justify-center" @click="openConversationWorkspace">
-            工作台
-          </Button>
-        </div>
+          <div class="flex flex-wrap gap-1.5 text-[11px]">
+            <span class="surface-chip surface-chip-strong">{{ activeSessions.length }} 段对话</span>
+            <span class="surface-chip">归档 {{ archivedSessions.length }}</span>
+          </div>
 
-        <div class="relative">
-          <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            v-model="searchQuery"
-            type="search"
-            placeholder="搜索会话"
-            class="h-10 border-border/55 bg-background/72 pl-9 text-sm"
-          />
+          <div class="grid grid-cols-2 gap-2">
+            <Button type="button" class="justify-center rounded-[0.9rem] shadow-none" @click="handleNewConversation">
+              <Plus class="size-4" />
+              新对话
+            </Button>
+            <Button type="button" variant="outline" class="justify-center rounded-[0.9rem] shadow-none" @click="openConversationWorkspace">
+              全部对话
+            </Button>
+          </div>
+
+          <div class="relative">
+            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              v-model="searchQuery"
+              type="search"
+              placeholder="搜索会话"
+              class="h-10 rounded-[0.9rem] border-border/50 bg-background/78 pl-9 text-sm shadow-none"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -185,7 +192,7 @@ async function handleDelete(sessionId: string) {
           v-if="activeSessions.length === 0"
           class="section-panel border-dashed px-4 py-5 text-sm text-muted-foreground"
         >
-          {{ searchQuery ? '没有匹配的会话。' : '还没有会话，从上方开始一段新对话。' }}
+          {{ searchQuery ? '没有结果。' : '还没有对话。' }}
         </div>
 
         <div v-else class="space-y-2">
@@ -227,7 +234,7 @@ async function handleDelete(sessionId: string) {
               <div class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                 <button
                   type="button"
-                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-card/80 hover:text-foreground"
+                  class="rounded-[0.7rem] p-1.5 text-muted-foreground transition-colors hover:bg-card/72 hover:text-foreground"
                   title="重命名"
                   @click.stop="startRename(session)"
                 >
@@ -235,7 +242,7 @@ async function handleDelete(sessionId: string) {
                 </button>
                 <button
                   type="button"
-                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  class="rounded-[0.7rem] p-1.5 text-muted-foreground transition-colors hover:bg-destructive/8 hover:text-destructive"
                   title="删除会话"
                   @click.stop="handleDelete(session.id)"
                 >
@@ -250,7 +257,7 @@ async function handleDelete(sessionId: string) {
       <section class="mt-5 space-y-2" v-if="archivedSessions.length > 0">
         <button
           type="button"
-          class="flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-muted/45"
+          class="flex w-full items-center justify-between rounded-[0.9rem] px-2 py-1.5 text-left transition-colors hover:bg-card/44"
           @click="showArchived = !showArchived"
         >
           <div class="flex items-center gap-2 text-xs font-medium text-muted-foreground">

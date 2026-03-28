@@ -141,6 +141,21 @@ const lastAssistantId = computed(() => {
   return null
 })
 
+function getMotionInitial(message: Message) {
+  if (message.role === 'assistant') {
+    return { y: 18, x: -10, opacity: 0, scale: 0.992 }
+  }
+
+  return { y: 14, x: 14, opacity: 0, scale: 0.97 }
+}
+
+function getMotionTransition(message: Message) {
+  return {
+    duration: message.role === 'assistant' ? 0.34 : 0.26,
+    ease: 'easeOut' as const,
+  }
+}
+
 /** 简单日期标签：今天 / 昨天 / 更早。 */
 function getDateLabel(timestamp: number): string {
   const date = new Date(timestamp)
@@ -174,9 +189,9 @@ function highlight(text: string): string {
       </div>
 
       <MotionDiv
-        :initial="{ y: 16, opacity: 0 }"
-        :animate="{ y: 0, opacity: 1 }"
-        :transition="{ duration: 0.3, ease: 'easeOut' }"
+        :initial="getMotionInitial(msg)"
+        :animate="{ y: 0, x: 0, opacity: 1, scale: 1 }"
+        :transition="getMotionTransition(msg)"
         class="w-full"
       >
         <MessageBubble
@@ -207,9 +222,9 @@ function highlight(text: string): string {
 
     <MotionDiv
       v-if="isStreaming && (mergedMessages.length === 0 || mergedMessages[mergedMessages.length - 1]?.role === 'user')"
-      :initial="{ y: 16, opacity: 0 }"
-      :animate="{ y: 0, opacity: 1 }"
-      :transition="{ duration: 0.3, ease: 'easeOut' }"
+      :initial="{ y: 18, x: -10, opacity: 0, scale: 0.992 }"
+      :animate="{ y: 0, x: 0, opacity: 1, scale: 1 }"
+      :transition="{ duration: 0.34, ease: 'easeOut' }"
     >
       <MessageBubble
         :message="{ id: 'streaming', role: 'assistant', content: '', timestamp: Date.now() }"
