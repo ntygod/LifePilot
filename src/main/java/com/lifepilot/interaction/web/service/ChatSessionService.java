@@ -49,8 +49,11 @@ public class ChatSessionService {
     private final AttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final SessionTranscriptRepository transcriptRepository;
+    @Nullable
     private final SessionStoreRepository sessionStoreRepository;
+    @Nullable
     private final AgentConfigProperties agentConfig;
+    @Nullable
     private final TranscriptCompactionBoundaryResolver compactionBoundaryResolver;
     @Nullable
     private final GenerationRouter generationRouter;
@@ -63,9 +66,9 @@ public class ChatSessionService {
                               AttachmentRepository attachmentRepository,
                               ObjectMapper objectMapper,
                               SessionTranscriptRepository transcriptRepository,
-                              SessionStoreRepository sessionStoreRepository,
-                              AgentConfigProperties agentConfig,
-                              TranscriptCompactionBoundaryResolver compactionBoundaryResolver,
+                              @Nullable SessionStoreRepository sessionStoreRepository,
+                              @Nullable AgentConfigProperties agentConfig,
+                              @Nullable TranscriptCompactionBoundaryResolver compactionBoundaryResolver,
                               @Nullable GenerationRouter generationRouter,
                               @Nullable ChatTurnService chatTurnService) {
         this.sessionRepository = sessionRepository;
@@ -537,6 +540,23 @@ public class ChatSessionService {
     }
 
     private SessionCompactionStatusInfo buildCompactionStatus(String sessionId, Map<String, Object> sessionConfig) {
+        if (agentConfig == null || compactionBoundaryResolver == null || sessionStoreRepository == null) {
+            return new SessionCompactionStatusInfo(
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    false,
+                    false,
+                    0,
+                    null
+            );
+        }
         AgentConfigProperties.ContextConfig.CompactionConfig compactionConfig = agentConfig.getContext().getCompaction();
         boolean enabled = compactionConfig == null || compactionConfig.isEnabled();
         int triggerThresholdPercent = resolveTriggerThresholdPercent(compactionConfig);
