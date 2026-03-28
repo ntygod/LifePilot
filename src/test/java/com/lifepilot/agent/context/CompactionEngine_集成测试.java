@@ -218,7 +218,7 @@ class CompactionEngine_集成测试 {
                 )
         );
 
-        boolean compacted = engine.compactIfNeeded(SESSION_ID, "trace-compact");
+        boolean compacted = engine.compactIfNeeded(SESSION_ID, "trace-compact", null);
 
         assertThat(compacted).isTrue();
         var rows = transcriptRepository.findBySessionId(SESSION_ID);

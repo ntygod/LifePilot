@@ -42,6 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -266,7 +267,7 @@ class ReactAgentLoop_预算控制测试 {
 
         when(contextAssembler.assemble(any())).thenReturn(baseContext("请执行测试任务"));
         when(agentToolProvider.resolveToolDisplayName("todo.create")).thenReturn("创建待办");
-        when(compactionEngine.compactIfNeeded(any(), any())).thenReturn(true);
+        when(compactionEngine.compactIfNeeded(any(), any(), any())).thenReturn(true);
         when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(new ToolCallback() {
             private final ToolDefinition definition = DefaultToolDefinition.builder()
                     .name("todo.create")
@@ -321,7 +322,11 @@ class ReactAgentLoop_预算控制测试 {
 
         assertThat(result.finalOutput()).isEqualTo("已继续执行完毕");
         verify(contextAssembler, org.mockito.Mockito.times(2)).assemble(any());
-        verify(compactionEngine).compactIfNeeded(eq("session-mid-compact"), eq(result.traceId()));
+        verify(compactionEngine).compactIfNeeded(
+                eq("session-mid-compact"),
+                eq(result.traceId()),
+                isNull()
+        );
     }
 
     @Test

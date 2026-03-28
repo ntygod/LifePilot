@@ -13,7 +13,6 @@ import { Label } from '@/components/ui/label'
 const props = defineProps<{
   preferredProviderId?: string
   temperature?: number
-  maxTokens?: number
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
@@ -28,13 +27,11 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const DEFAULT_MAX_TOKENS = 131072
 const DEFAULT_MAX_STEPS = 60
 const DEFAULT_MAX_DURATION_SECONDS = 300
 
 const localPreferredProviderId = ref(props.preferredProviderId ?? '')
 const localTemperature = ref(props.temperature ?? 0.7)
-const localMaxTokens = ref(props.maxTokens ?? DEFAULT_MAX_TOKENS)
 const localMaxSteps = ref(props.maxSteps ?? DEFAULT_MAX_STEPS)
 const localMaxDurationSeconds = ref(props.maxDurationSeconds ?? DEFAULT_MAX_DURATION_SECONDS)
 const localKbIds = ref<string[]>(props.knowledgeBaseIds ?? [])
@@ -42,7 +39,6 @@ const localDatastoreIds = ref<string[]>(props.datastoreIds ?? [])
 
 watch(() => props.preferredProviderId, v => { localPreferredProviderId.value = v ?? '' })
 watch(() => props.temperature, v => { localTemperature.value = v ?? 0.7 })
-watch(() => props.maxTokens, v => { localMaxTokens.value = v ?? DEFAULT_MAX_TOKENS })
 watch(() => props.maxSteps, v => { localMaxSteps.value = v ?? DEFAULT_MAX_STEPS })
 watch(() => props.maxDurationSeconds, v => { localMaxDurationSeconds.value = v ?? DEFAULT_MAX_DURATION_SECONDS })
 watch(() => props.knowledgeBaseIds, v => { localKbIds.value = v ?? [] })
@@ -58,7 +54,6 @@ function emitUpdate() {
   emit('update', {
     preferredProviderId: localPreferredProviderId.value || undefined,
     temperature: Math.min(2, Math.max(0, localTemperature.value)),
-    maxTokens: clampInteger(localMaxTokens.value, DEFAULT_MAX_TOKENS, 256, 1000000),
     maxSteps: clampInteger(localMaxSteps.value, DEFAULT_MAX_STEPS, 1, 500),
     maxDurationSeconds: clampInteger(localMaxDurationSeconds.value, DEFAULT_MAX_DURATION_SECONDS, 5, 86400),
     knowledgeBaseIds: localKbIds.value.length > 0 ? localKbIds.value : undefined,
@@ -74,11 +69,6 @@ function onProviderChange(value: unknown) {
 
 function onTemperatureChange(value: number[] | undefined) {
   if (value?.length) localTemperature.value = value[0]
-  emitUpdate()
-}
-
-function onMaxTokensChange(value: string | number) {
-  localMaxTokens.value = clampInteger(value, DEFAULT_MAX_TOKENS, 256, 1000000)
   emitUpdate()
 }
 
@@ -156,18 +146,6 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
       <div class="flex justify-between text-[10px] text-muted-foreground/60">
         <span>精确</span><span>平衡</span><span>发散</span>
       </div>
-    </section>
-
-    <!-- Token 预算 -->
-    <section class="space-y-1.5">
-      <Label class="text-xs text-muted-foreground">总 Token 预算</Label>
-      <Input
-        type="number"
-        class="bg-background/80"
-        :model-value="localMaxTokens"
-        :min="256" :max="1000000" :step="256"
-        @update:model-value="onMaxTokensChange"
-      />
     </section>
 
     <section class="space-y-1.5">

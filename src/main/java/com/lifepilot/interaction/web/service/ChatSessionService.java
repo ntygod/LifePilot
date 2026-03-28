@@ -1,14 +1,20 @@
 package com.lifepilot.interaction.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.context.TranscriptCompactionBoundaryResolver;
 import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.conversation.transcript.TranscriptEntryType;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.model.AttachmentInfo;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.model.ChatTurnRecord;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.model.MessageInfo;
+import com.lifepilot.interaction.web.model.SessionCompactionStatusInfo;
 import com.lifepilot.interaction.web.model.SessionConfigKeys;
 import com.lifepilot.interaction.web.model.SessionConfigRequest;
 import com.lifepilot.interaction.web.model.SessionDetailInfo;
@@ -24,10 +30,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -41,6 +49,11 @@ public class ChatSessionService {
     private final AttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final SessionTranscriptRepository transcriptRepository;
+    private final SessionStoreRepository sessionStoreRepository;
+    private final AgentConfigProperties agentConfig;
+    private final TranscriptCompactionBoundaryResolver compactionBoundaryResolver;
+    @Nullable
+    private final GenerationRouter generationRouter;
     @Nullable
     private final ChatTurnService chatTurnService;
 
@@ -50,6 +63,10 @@ public class ChatSessionService {
                               AttachmentRepository attachmentRepository,
                               ObjectMapper objectMapper,
                               SessionTranscriptRepository transcriptRepository,
+                              SessionStoreRepository sessionStoreRepository,
+                              AgentConfigProperties agentConfig,
+                              TranscriptCompactionBoundaryResolver compactionBoundaryResolver,
+                              @Nullable GenerationRouter generationRouter,
                               @Nullable ChatTurnService chatTurnService) {
         this.sessionRepository = sessionRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
@@ -57,6 +74,10 @@ public class ChatSessionService {
         this.attachmentRepository = attachmentRepository;
         this.objectMapper = objectMapper;
         this.transcriptRepository = transcriptRepository;
+        this.sessionStoreRepository = sessionStoreRepository;
+        this.agentConfig = agentConfig;
+        this.compactionBoundaryResolver = compactionBoundaryResolver;
+        this.generationRouter = generationRouter;
         this.chatTurnService = chatTurnService;
     }
 
@@ -187,6 +208,7 @@ public class ChatSessionService {
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(id);
         List<String> datastoreIds = sessionDatastoreRepository.findDatastoreIdsBySessionId(id);
         Map<String, Object> sessionConfig = sessionRepository.getConfig(id);
+        SessionCompactionStatusInfo compactionStatus = buildCompactionStatus(id, sessionConfig);
 
         return new SessionDetailInfo(
                 session.id(),
@@ -197,14 +219,14 @@ public class ChatSessionService {
                 session.archived(),
                 SessionConfigKeys.resolvePreferredProviderId(sessionConfig),
                 SessionConfigKeys.getDouble(sessionConfig, SessionConfigKeys.TEMPERATURE),
-                SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_TOKENS),
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_STEPS),
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS),
                 knowledgeBaseIds,
                 datastoreIds,
                 session.messageCount(),
                 0L,
-                session.summary()
+                session.summary(),
+                compactionStatus
         );
     }
 
@@ -224,7 +246,6 @@ public class ChatSessionService {
         config.put(SessionConfigKeys.PREFERRED_PROVIDER, SessionConfigKeys.normalizeString(request.preferredProviderId()));
         config.put(SessionConfigKeys.LEGACY_MODEL_ID, null);
         config.put(SessionConfigKeys.TEMPERATURE, request.temperature());
-        config.put(SessionConfigKeys.MAX_TOKENS, request.maxTokens());
         config.put(SessionConfigKeys.MAX_STEPS, request.maxSteps());
         config.put(SessionConfigKeys.MAX_DURATION_SECONDS, request.maxDurationSeconds());
 
@@ -260,9 +281,9 @@ public class ChatSessionService {
         var tree = A2uiPayloadSupport.deserializeStoredTree(row.a2uiComponentsJson(), objectMapper);
         ChatTurnRecord turn = row.turnId() != null ? turnsByTurnId.get(row.turnId()) : null;
         var rowCompletionMode = parseCompletionMode(row.completionMode());
-        var effectiveCompletionMode = parseCompletionMode(
-                turn != null && turn.completionMode() != null ? turn.completionMode() : row.completionMode());
-        ChatTurnStatus effectiveTurnStatus = resolveMessageTurnStatus(turn, rowCompletionMode);
+        boolean currentAttemptMessage = isCurrentAttemptMessage(row, turn);
+        var effectiveCompletionMode = resolveMessageCompletionMode(turn, rowCompletionMode, currentAttemptMessage);
+        ChatTurnStatus effectiveTurnStatus = resolveMessageTurnStatus(turn, rowCompletionMode, currentAttemptMessage);
         return new MessageInfo(
                 row.entryId(),
                 row.turnId(),
@@ -275,31 +296,77 @@ public class ChatSessionService {
                 null,
                 deserializeReactSteps(row.reactStepsJson()),
                 effectiveCompletionMode,
-                turn != null && turn.resumedFromTraceId() != null ? turn.resumedFromTraceId() : row.resumedFromTraceId(),
+                resolveMessageResumedFromTraceId(row, turn, currentAttemptMessage),
                 effectiveTurnStatus,
-                resolveMessageErrorMessage(turn, rowCompletionMode)
+                resolveMessageErrorMessage(turn, currentAttemptMessage)
         );
     }
 
     @Nullable
     private ChatTurnStatus resolveMessageTurnStatus(@Nullable ChatTurnRecord turn,
-                                                    @Nullable com.lifepilot.agent.model.CompletionMode rowCompletionMode) {
-        if (rowCompletionMode == com.lifepilot.agent.model.CompletionMode.SUSPENDED) {
-            return ChatTurnStatus.SUSPENDED;
+                                                    @Nullable com.lifepilot.agent.model.CompletionMode rowCompletionMode,
+                                                    boolean currentAttemptMessage) {
+        if (currentAttemptMessage && turn != null) {
+            return turn.status();
         }
-        if (rowCompletionMode == com.lifepilot.agent.model.CompletionMode.DEGRADED) {
-            return ChatTurnStatus.DEGRADED;
-        }
-        return turn != null ? turn.status() : null;
+        return resolveHistoricalTurnStatus(rowCompletionMode);
     }
 
     @Nullable
-    private String resolveMessageErrorMessage(@Nullable ChatTurnRecord turn,
-                                              @Nullable com.lifepilot.agent.model.CompletionMode rowCompletionMode) {
-        if (rowCompletionMode == com.lifepilot.agent.model.CompletionMode.SUSPENDED) {
-            return null;
+    private String resolveMessageErrorMessage(@Nullable ChatTurnRecord turn, boolean currentAttemptMessage) {
+        return currentAttemptMessage && turn != null ? turn.lastErrorMessage() : null;
+    }
+
+    @Nullable
+    private CompletionMode resolveMessageCompletionMode(@Nullable ChatTurnRecord turn,
+                                                        @Nullable CompletionMode rowCompletionMode,
+                                                        boolean currentAttemptMessage) {
+        if (!currentAttemptMessage) {
+            return rowCompletionMode;
         }
-        return turn != null ? turn.lastErrorMessage() : null;
+        CompletionMode turnCompletionMode = parseCompletionMode(turn != null ? turn.completionMode() : null);
+        return turnCompletionMode != null ? turnCompletionMode : rowCompletionMode;
+    }
+
+    @Nullable
+    private String resolveMessageResumedFromTraceId(SessionTranscriptRepository.TranscriptMessageViewRow row,
+                                                    @Nullable ChatTurnRecord turn,
+                                                    boolean currentAttemptMessage) {
+        if (!currentAttemptMessage) {
+            return row.resumedFromTraceId();
+        }
+        return turn != null && turn.resumedFromTraceId() != null
+                ? turn.resumedFromTraceId()
+                : row.resumedFromTraceId();
+    }
+
+    private boolean isCurrentAttemptMessage(SessionTranscriptRepository.TranscriptMessageViewRow row,
+                                            @Nullable ChatTurnRecord turn) {
+        if (turn == null) {
+            return false;
+        }
+        if (!"assistant".equalsIgnoreCase(row.role())) {
+            return true;
+        }
+        if (turn.assistantEntryId() != null && !turn.assistantEntryId().isBlank()) {
+            return Objects.equals(turn.assistantEntryId(), row.entryId());
+        }
+        return turn.latestTraceId() != null
+                && !turn.latestTraceId().isBlank()
+                && row.traceId() != null
+                && !row.traceId().isBlank()
+                && Objects.equals(turn.latestTraceId(), row.traceId());
+    }
+
+    @Nullable
+    private ChatTurnStatus resolveHistoricalTurnStatus(@Nullable CompletionMode rowCompletionMode) {
+        if (rowCompletionMode == CompletionMode.SUSPENDED) {
+            return ChatTurnStatus.SUSPENDED;
+        }
+        if (rowCompletionMode == CompletionMode.DEGRADED) {
+            return ChatTurnStatus.DEGRADED;
+        }
+        return null;
     }
 
     private List<MessageInfo> withAttachments(List<MessageInfo> messages) {
@@ -467,5 +534,125 @@ public class ChatSessionService {
                 session.summary(),
                 session.lastMessageAt()
         );
+    }
+
+    private SessionCompactionStatusInfo buildCompactionStatus(String sessionId, Map<String, Object> sessionConfig) {
+        AgentConfigProperties.ContextConfig.CompactionConfig compactionConfig = agentConfig.getContext().getCompaction();
+        boolean enabled = compactionConfig == null || compactionConfig.isEnabled();
+        int triggerThresholdPercent = resolveTriggerThresholdPercent(compactionConfig);
+        int effectiveContextWindow = resolveEffectiveContextWindow(SessionConfigKeys.resolvePreferredProviderId(sessionConfig));
+        int triggerThresholdTokens = Math.max(1, effectiveContextWindow * triggerThresholdPercent / 100);
+        int minTurnCount = resolveMinTurnCount(compactionConfig);
+        int keepRecentTurns = resolveKeepRecentTurns(compactionConfig);
+
+        List<SessionTranscriptRepository.SessionTranscriptEntryRow> allRows = transcriptRepository.findBySessionId(sessionId);
+        TranscriptCompactionBoundaryResolver.CompactionBoundary boundary =
+                compactionBoundaryResolver.resolveLatest(allRows).orElse(null);
+        List<SessionTranscriptRepository.SessionTranscriptEntryRow> activeRows =
+                compactionBoundaryResolver.filterRowsForActiveContext(allRows, boundary);
+        List<SessionTranscriptRepository.SessionTranscriptEntryRow> activeVisibleRows = activeRows.stream()
+                .filter(SessionTranscriptRepository.SessionTranscriptEntryRow::visibleToModel)
+                .filter(row -> !TranscriptEntryType.COMPACTION_SUMMARY.value().equals(row.entryType()))
+                .toList();
+
+        int activeTranscriptTokens = activeVisibleRows.stream()
+                .mapToInt(row -> Math.max(0, row.tokenEstimate()))
+                .sum();
+        int activeTurnCount = countCompleteTurns(activeVisibleRows);
+        boolean thresholdReached = activeTranscriptTokens >= triggerThresholdTokens;
+        boolean minTurnsReached = activeTurnCount >= minTurnCount;
+        boolean readyToCompact = enabled
+                && thresholdReached
+                && minTurnsReached
+                && activeTurnCount > keepRecentTurns;
+        int remainingTokens = Math.max(0, triggerThresholdTokens - activeTranscriptTokens);
+        int compactionCount = sessionStoreRepository.findBySessionId(sessionId)
+                .map(SessionStoreRepository.SessionStoreRow::compactionCount)
+                .orElse(0);
+
+        return new SessionCompactionStatusInfo(
+                enabled,
+                activeTranscriptTokens,
+                triggerThresholdTokens,
+                triggerThresholdPercent,
+                remainingTokens,
+                activeTurnCount,
+                minTurnCount,
+                keepRecentTurns,
+                thresholdReached,
+                minTurnsReached,
+                readyToCompact,
+                compactionCount,
+                boundary != null ? boundary.createdAt() : null
+        );
+    }
+
+    private int resolveEffectiveContextWindow(@Nullable String preferredProviderId) {
+        int configuredWindow = Math.max(1024, agentConfig.getContext().getMaxContextTokens());
+        if (generationRouter == null) {
+            return configuredWindow;
+        }
+        try {
+            int providerWindow = generationRouter.resolveMaxContextWindow(
+                    agentConfig.getLoop().getLlmScene(),
+                    preferredProviderId,
+                    null
+            );
+            if (providerWindow > 0) {
+                return Math.min(configuredWindow, providerWindow);
+            }
+        } catch (Exception e) {
+            log.debug("读取会话 Provider 上下文窗口失败，回退默认配置: sessionPreferredProvider={}, error={}",
+                    preferredProviderId, e.getMessage());
+        }
+        return configuredWindow;
+    }
+
+    private int countCompleteTurns(List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        List<List<SessionTranscriptRepository.SessionTranscriptEntryRow>> turns = new ArrayList<>();
+        List<SessionTranscriptRepository.SessionTranscriptEntryRow> current = new ArrayList<>();
+        boolean hasAssistantReply = false;
+
+        for (SessionTranscriptRepository.SessionTranscriptEntryRow row : rows) {
+            TranscriptEntryType entryType = TranscriptEntryType.fromValue(row.entryType());
+            if (entryType == TranscriptEntryType.USER_MESSAGE) {
+                if (!current.isEmpty() && hasAssistantReply) {
+                    turns.add(List.copyOf(current));
+                }
+                current = new ArrayList<>();
+                current.add(row);
+                hasAssistantReply = false;
+                continue;
+            }
+            if (current.isEmpty()) {
+                continue;
+            }
+            current.add(row);
+            if (entryType == TranscriptEntryType.ASSISTANT_MESSAGE) {
+                hasAssistantReply = true;
+            }
+        }
+        if (!current.isEmpty() && hasAssistantReply) {
+            turns.add(List.copyOf(current));
+        }
+        return turns.size();
+    }
+
+    private int resolveTriggerThresholdPercent(@Nullable AgentConfigProperties.ContextConfig.CompactionConfig compactionConfig) {
+        int configured = compactionConfig != null ? compactionConfig.getTriggerThresholdPercent() : 0;
+        return configured > 0 ? configured : 75;
+    }
+
+    private int resolveMinTurnCount(@Nullable AgentConfigProperties.ContextConfig.CompactionConfig compactionConfig) {
+        int configured = compactionConfig != null ? compactionConfig.getMinTurnCount() : 0;
+        return configured > 0 ? configured : 6;
+    }
+
+    private int resolveKeepRecentTurns(@Nullable AgentConfigProperties.ContextConfig.CompactionConfig compactionConfig) {
+        int configured = compactionConfig != null ? compactionConfig.getKeepRecentTurns() : 0;
+        return configured > 0 ? configured : 2;
     }
 }

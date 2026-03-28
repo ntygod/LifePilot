@@ -70,9 +70,9 @@ class ExecutionMiddleware_单元测试 {
     }
 
     @Test
-    void 会话仅覆盖maxTokens时应继承全局步骤与时长预算() {
+    void 会话仅覆盖maxSteps时应继承全局Token与时长预算() {
         when(chatSessionRepository.getConfig("session-1"))
-                .thenReturn(Map.of(SessionConfigKeys.MAX_TOKENS, 4096));
+                .thenReturn(Map.of(SessionConfigKeys.MAX_STEPS, 11));
         when(agentOrchestrator.run(any()))
                 .thenReturn(new AgentResponse("trace-1", "session-1", "ok", 12, 1, null));
 
@@ -87,16 +87,15 @@ class ExecutionMiddleware_单元测试 {
         verify(agentOrchestrator).run(requestCaptor.capture());
         var budget = requestCaptor.getValue().budget();
         assertThat(budget).isNotNull();
-        assertThat(budget.maxTokens()).isEqualTo(4096);
-        assertThat(budget.maxSteps()).isEqualTo(77);
+        assertThat(budget.maxTokens()).isEqualTo(32000);
+        assertThat(budget.maxSteps()).isEqualTo(11);
         assertThat(budget.maxDuration()).isEqualTo(Duration.ofSeconds(444));
     }
 
     @Test
-    void 会话覆盖三维预算时应完整生效() {
+    void 会话覆盖步骤与时长预算时应完整生效() {
         when(chatSessionRepository.getConfig("session-2"))
                 .thenReturn(Map.of(
-                        SessionConfigKeys.MAX_TOKENS, 8192,
                         SessionConfigKeys.MAX_STEPS, 9,
                         SessionConfigKeys.MAX_DURATION_SECONDS, 42
                 ));
@@ -112,7 +111,7 @@ class ExecutionMiddleware_单元测试 {
         verify(agentOrchestrator).run(requestCaptor.capture());
         var budget = requestCaptor.getValue().budget();
         assertThat(budget).isNotNull();
-        assertThat(budget.maxTokens()).isEqualTo(8192);
+        assertThat(budget.maxTokens()).isEqualTo(32000);
         assertThat(budget.maxSteps()).isEqualTo(9);
         assertThat(budget.maxDuration()).isEqualTo(Duration.ofSeconds(42));
     }

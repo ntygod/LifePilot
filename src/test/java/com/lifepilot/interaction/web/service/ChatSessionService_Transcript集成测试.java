@@ -1,14 +1,19 @@
 package com.lifepilot.interaction.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.context.TranscriptCompactionBoundaryResolver;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.conversation.transcript.JdbcTranscriptStore;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
+import com.lifepilot.interaction.web.model.SessionConfigKeys;
+import com.lifepilot.interaction.web.model.SessionDetailInfo;
 import com.lifepilot.interaction.web.model.SessionInfo;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
@@ -26,6 +31,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -47,6 +53,12 @@ class ChatSessionService_Transcript集成测试 {
     private JdbcTranscriptStore transcriptStore;
     private ChatTurnService chatTurnService;
     private JdbcTemplate jdbcTemplate;
+    private ObjectMapper objectMapper;
+    private SessionStoreRepository sessionStoreRepository;
+    private SessionKnowledgeBaseRepository knowledgeBaseRepository;
+    private SessionDatastoreRepository datastoreRepository;
+    private AgentConfigProperties agentConfigProperties;
+    private TranscriptCompactionBoundaryResolver transcriptCompactionBoundaryResolver;
 
     @BeforeEach
     void setUp() {
@@ -143,9 +155,9 @@ class ChatSessionService_Transcript集成测试 {
                 )
                 """);
 
-        var objectMapper = new ObjectMapper();
+        objectMapper = new ObjectMapper();
         var eventBus = new NoopMemoryEventBus();
-        var sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper, eventBus);
+        sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper, eventBus);
         transcriptRepository = new SessionTranscriptRepository(
                 jdbcTemplate, objectMapper, sessionStoreRepository, eventBus);
         chatSessionRepository = new ChatSessionRepository(sessionStoreRepository);
@@ -157,10 +169,12 @@ class ChatSessionService_Transcript集成测试 {
                 objectMapper
         );
 
-        SessionKnowledgeBaseRepository knowledgeBaseRepository = mock(SessionKnowledgeBaseRepository.class);
+        knowledgeBaseRepository = mock(SessionKnowledgeBaseRepository.class);
         when(knowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(List.of());
-        SessionDatastoreRepository datastoreRepository = new SessionDatastoreRepository(jdbcTemplate);
+        datastoreRepository = new SessionDatastoreRepository(jdbcTemplate);
+        agentConfigProperties = new AgentConfigProperties();
+        transcriptCompactionBoundaryResolver = new TranscriptCompactionBoundaryResolver(objectMapper);
 
         chatSessionService = new ChatSessionService(
                 chatSessionRepository,
@@ -169,6 +183,10 @@ class ChatSessionService_Transcript集成测试 {
                 attachmentRepository,
                 objectMapper,
                 transcriptRepository,
+                sessionStoreRepository,
+                agentConfigProperties,
+                transcriptCompactionBoundaryResolver,
+                null,
                 chatTurnService
         );
     }
@@ -333,6 +351,92 @@ class ChatSessionService_Transcript集成测试 {
     }
 
     @Test
+    void getSessionDetail_返回上下文压缩进度摘要() {
+        ChatSession session = ChatSession.createWithId("session-transcript-detail", "详情测试");
+        chatSessionRepository.save(session);
+
+        transcriptStore.appendUserMessage(
+                session.id(),
+                "第一轮用户输入，整理项目背景",
+                "trace-detail",
+                Instant.parse("2026-03-28T01:00:00Z")
+        );
+        transcriptStore.appendAssistantMessage(
+                session.id(),
+                "第一轮回复，记录背景和目标",
+                null,
+                "trace-detail",
+                null,
+                null,
+                CompletionMode.NORMAL,
+                null,
+                Instant.parse("2026-03-28T01:00:01Z")
+        );
+
+        transcriptStore.appendUserMessage(
+                session.id(),
+                "第二轮用户输入，补充更多约束条件，让上下文进一步增长",
+                "trace-detail",
+                Instant.parse("2026-03-28T01:01:00Z")
+        );
+        transcriptStore.appendAssistantMessage(
+                session.id(),
+                "第二轮回复，继续整理细节并形成执行计划",
+                null,
+                "trace-detail",
+                null,
+                null,
+                CompletionMode.NORMAL,
+                null,
+                Instant.parse("2026-03-28T01:01:01Z")
+        );
+
+        SessionDetailInfo detail = chatSessionService.getSessionDetail(session.id());
+
+        assertThat(detail.compactionStatus()).isNotNull();
+        assertThat(detail.compactionStatus().enabled()).isTrue();
+        assertThat(detail.compactionStatus().triggerThresholdPercent()).isEqualTo(75);
+        assertThat(detail.compactionStatus().triggerThresholdTokens()).isEqualTo(98304);
+        assertThat(detail.compactionStatus().activeTurnCount()).isEqualTo(2);
+        assertThat(detail.compactionStatus().activeTranscriptTokens()).isGreaterThan(0);
+        assertThat(detail.compactionStatus().compactionCount()).isZero();
+        assertThat(detail.compactionStatus().readyToCompact()).isFalse();
+    }
+
+    @Test
+    void getSessionDetail_压缩阈值应跟随Provider上下文窗口() {
+        ChatSession session = ChatSession.createWithId("session-transcript-provider-window", "provider 窗口测试");
+        chatSessionRepository.save(session);
+        chatSessionRepository.updateConfig(
+                session.id(),
+                Map.of(SessionConfigKeys.PREFERRED_PROVIDER, "provider-small-window")
+        );
+
+        GenerationRouter generationRouter = mock(GenerationRouter.class);
+        when(generationRouter.resolveMaxContextWindow("agent_react", "provider-small-window", null)).thenReturn(32768);
+        when(knowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(session.id())).thenReturn(List.of());
+        chatSessionService = new ChatSessionService(
+                chatSessionRepository,
+                knowledgeBaseRepository,
+                datastoreRepository,
+                attachmentRepository,
+                objectMapper,
+                transcriptRepository,
+                sessionStoreRepository,
+                agentConfigProperties,
+                transcriptCompactionBoundaryResolver,
+                generationRouter,
+                chatTurnService
+        );
+
+        SessionDetailInfo detail = chatSessionService.getSessionDetail(session.id());
+
+        assertThat(detail.compactionStatus()).isNotNull();
+        assertThat(detail.compactionStatus().triggerThresholdTokens()).isEqualTo(24576);
+        assertThat(detail.compactionStatus().triggerThresholdPercent()).isEqualTo(75);
+    }
+
+    @Test
     void getSessionMessages_刷新后保留Turn状态与错误信息() {
         ChatSession session = ChatSession.createWithId("session-transcript-turn-state", "turn 状态测试");
         chatSessionRepository.save(session);
@@ -393,6 +497,114 @@ class ChatSessionService_Transcript集成测试 {
                         "模型调用超时",
                         "trace-turn-1",
                         CompletionMode.DEGRADED
+                );
+    }
+
+    @Test
+    void getSessionMessages_resume后历史Assistant保留原始挂起状态() {
+        ChatSession session = ChatSession.createWithId("session-transcript-resume-state", "resume 状态测试");
+        chatSessionRepository.save(session);
+
+        chatTurnService.prepare(
+                session.id(),
+                new ChatRequest(
+                        "turn-resume-1",
+                        ChatTurnAction.SEND,
+                        "请继续推进仓库自动化接入",
+                        session.id(),
+                        List.of(),
+                        "provider-turn"
+                )
+        );
+
+        String suspendedAssistantEntryId = transcriptStore.appendAssistantMessage(
+                session.id(),
+                "turn-resume-1",
+                "当前缺少仓库地址，请补充后继续。",
+                null,
+                "trace-resume-old",
+                null,
+                null,
+                CompletionMode.SUSPENDED,
+                null,
+                Instant.parse("2026-03-25T02:00:00Z")
+        );
+        chatTurnService.markCompleted(
+                session.id(),
+                "turn-resume-1",
+                ChatTurnStatus.SUSPENDED,
+                suspendedAssistantEntryId,
+                "trace-resume-old",
+                null,
+                CompletionMode.SUSPENDED
+        );
+
+        chatTurnService.prepare(
+                session.id(),
+                new ChatRequest(
+                        "turn-resume-1",
+                        ChatTurnAction.RESUME,
+                        "仓库地址是 https://github.com/acme/demo.git",
+                        session.id(),
+                        List.of(),
+                        "provider-turn"
+                )
+        );
+
+        String resumedAssistantEntryId = transcriptStore.appendAssistantMessage(
+                session.id(),
+                "turn-resume-1",
+                "已接入仓库并继续执行后续步骤。",
+                null,
+                "trace-resume-new",
+                null,
+                null,
+                CompletionMode.NORMAL,
+                "trace-resume-old",
+                Instant.parse("2026-03-25T02:05:00Z")
+        );
+        chatTurnService.markCompleted(
+                session.id(),
+                "turn-resume-1",
+                ChatTurnStatus.SUCCESS,
+                resumedAssistantEntryId,
+                "trace-resume-new",
+                "trace-resume-old",
+                CompletionMode.NORMAL
+        );
+
+        var messages = chatSessionService.getSessionMessages(session.id());
+
+        assertThat(messages).hasSize(2);
+        assertThat(messages.get(0))
+                .extracting(
+                        com.lifepilot.interaction.web.model.MessageInfo::content,
+                        com.lifepilot.interaction.web.model.MessageInfo::completionMode,
+                        com.lifepilot.interaction.web.model.MessageInfo::turnStatus,
+                        com.lifepilot.interaction.web.model.MessageInfo::resumedFromTraceId,
+                        com.lifepilot.interaction.web.model.MessageInfo::errorMessage
+                )
+                .containsExactly(
+                        "当前缺少仓库地址，请补充后继续。",
+                        CompletionMode.SUSPENDED,
+                        ChatTurnStatus.SUSPENDED,
+                        null,
+                        null
+                );
+        assertThat(messages.get(1))
+                .extracting(
+                        com.lifepilot.interaction.web.model.MessageInfo::content,
+                        com.lifepilot.interaction.web.model.MessageInfo::completionMode,
+                        com.lifepilot.interaction.web.model.MessageInfo::turnStatus,
+                        com.lifepilot.interaction.web.model.MessageInfo::resumedFromTraceId,
+                        com.lifepilot.interaction.web.model.MessageInfo::errorMessage
+                )
+                .containsExactly(
+                        "已接入仓库并继续执行后续步骤。",
+                        CompletionMode.NORMAL,
+                        ChatTurnStatus.SUCCESS,
+                        "trace-resume-old",
+                        null
                 );
     }
 

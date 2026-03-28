@@ -542,7 +542,11 @@ public class ReactAgentLoop implements CallbackHelper {
             return false;
         }
         try {
-            boolean compacted = compactionEngine.compactIfNeeded(state.sessionId(), state.traceId());
+            boolean compacted = compactionEngine.compactIfNeeded(
+                    state.sessionId(),
+                    state.traceId(),
+                    state.preferredProvider()
+            );
             if (compacted) {
                 log.info("ReAct 循环中途压缩生效: traceId={}, iteration={}", state.traceId(), iteration);
             }

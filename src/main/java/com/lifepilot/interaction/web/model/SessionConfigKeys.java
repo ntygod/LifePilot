@@ -15,7 +15,6 @@ public final class SessionConfigKeys {
     public static final String PREFERRED_PROVIDER = "preferredProvider";
     public static final String LEGACY_MODEL_ID = "modelId";
     public static final String TEMPERATURE = "temperature";
-    public static final String MAX_TOKENS = "maxTokens";
     public static final String MAX_STEPS = "maxSteps";
     public static final String MAX_DURATION_SECONDS = "maxDurationSeconds";
 

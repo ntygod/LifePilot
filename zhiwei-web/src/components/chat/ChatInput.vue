@@ -298,13 +298,12 @@ function buildTemporarySessionConfig(): SessionConfig | undefined {
     selectedContexts.value.filter(option => option.kind === 'datastore').map(option => option.id),
   )
 
-  return {
-    preferredProviderId: props.baseSessionConfig.preferredProviderId,
-    temperature: props.baseSessionConfig.temperature,
-    maxTokens: props.baseSessionConfig.maxTokens,
-    maxSteps: props.baseSessionConfig.maxSteps,
-    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-    knowledgeBaseIds,
+    return {
+      preferredProviderId: props.baseSessionConfig.preferredProviderId,
+      temperature: props.baseSessionConfig.temperature,
+      maxSteps: props.baseSessionConfig.maxSteps,
+      maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
+      knowledgeBaseIds,
     datastoreIds,
   }
 }
@@ -313,13 +312,12 @@ function buildRestoreSessionConfig(): SessionConfig | undefined {
   if (!props.baseSessionConfig) {
     return undefined
   }
-  return {
-    preferredProviderId: props.baseSessionConfig.preferredProviderId,
-    temperature: props.baseSessionConfig.temperature,
-    maxTokens: props.baseSessionConfig.maxTokens,
-    maxSteps: props.baseSessionConfig.maxSteps,
-    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-    knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
+    return {
+      preferredProviderId: props.baseSessionConfig.preferredProviderId,
+      temperature: props.baseSessionConfig.temperature,
+      maxSteps: props.baseSessionConfig.maxSteps,
+      maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
+      knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
     datastoreIds: props.baseSessionConfig.datastoreIds ?? [],
   }
 }

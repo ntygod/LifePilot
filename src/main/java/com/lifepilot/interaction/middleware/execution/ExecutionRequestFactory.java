@@ -135,21 +135,17 @@ public final class ExecutionRequestFactory {
     /**
      * 根据会话配置覆盖默认预算。
      *
-     * <p>仅在会话显式配置了 token、step 或 duration 上限时生成新预算，否则返回 null，表示沿用系统默认值。
+     * <p>仅在会话显式配置了 step 或 duration 上限时生成新预算，否则返回 null，表示沿用系统默认值。
      */
     @Nullable
     private Budget resolveSessionBudget(Map<String, Object> sessionConfig) {
-        Integer maxTokens = positiveInteger(sessionConfig, SessionConfigKeys.MAX_TOKENS);
         Integer maxSteps = positiveInteger(sessionConfig, SessionConfigKeys.MAX_STEPS);
         Integer maxDurationSeconds = positiveInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS);
-        if (maxTokens == null && maxSteps == null && maxDurationSeconds == null) {
+        if (maxSteps == null && maxDurationSeconds == null) {
             return null;
         }
 
         var builder = Budget.fromConfig(agentConfigProperties.getBudget()).toBuilder();
-        if (maxTokens != null) {
-            builder.maxTokens(maxTokens);
-        }
         if (maxSteps != null) {
             builder.maxSteps(maxSteps);
         }

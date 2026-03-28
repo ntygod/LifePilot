@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
-import type { ChatAttachment, ChatTurnAction, Message, SessionConfig } from '@/types'
+import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,18 +63,17 @@ const showConfigPanel = ref(false)
 const providers = ref<ModelService[]>([])
 
 const DEFAULT_SESSION_TEMPERATURE = 0.7
-const DEFAULT_SESSION_MAX_TOKENS = 131072
 const DEFAULT_SESSION_MAX_STEPS = 60
 const DEFAULT_SESSION_MAX_DURATION_SECONDS = 300
 
 const activeSessionConfig = ref<SessionConfig>({
   temperature: DEFAULT_SESSION_TEMPERATURE,
-  maxTokens: DEFAULT_SESSION_MAX_TOKENS,
   maxSteps: DEFAULT_SESSION_MAX_STEPS,
   maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
   knowledgeBaseIds: [],
   datastoreIds: [],
 })
+const currentSessionDetail = ref<ChatSessionDetail | null>(null)
 
 const CHAT_SCENES = new Set([
   'chat',
@@ -103,7 +102,6 @@ const currentSession = computed(() => {
 function resetActiveSessionConfig() {
   activeSessionConfig.value = {
     temperature: DEFAULT_SESSION_TEMPERATURE,
-    maxTokens: DEFAULT_SESSION_MAX_TOKENS,
     maxSteps: DEFAULT_SESSION_MAX_STEPS,
     maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
     knowledgeBaseIds: [],
@@ -113,6 +111,7 @@ function resetActiveSessionConfig() {
 
 async function loadActiveSessionConfig(sessionId: string | null) {
   if (!sessionId) {
+    currentSessionDetail.value = null
     resetActiveSessionConfig()
     return
   }
@@ -121,10 +120,10 @@ async function loadActiveSessionConfig(sessionId: string | null) {
     const detail = await chatApi.getSession(sessionId)
     if (chatStore.activeSessionId !== sessionId) return
 
+    currentSessionDetail.value = detail
     activeSessionConfig.value = {
       preferredProviderId: detail.preferredProviderId ?? undefined,
       temperature: detail.temperature ?? DEFAULT_SESSION_TEMPERATURE,
-      maxTokens: detail.maxTokens ?? DEFAULT_SESSION_MAX_TOKENS,
       maxSteps: detail.maxSteps ?? DEFAULT_SESSION_MAX_STEPS,
       maxDurationSeconds: detail.maxDurationSeconds ?? DEFAULT_SESSION_MAX_DURATION_SECONDS,
       knowledgeBaseIds: detail.knowledgeBaseIds ?? [],
@@ -133,6 +132,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
   } catch (event) {
     console.warn('加载会话配置失败:', event)
     if (chatStore.activeSessionId === sessionId) {
+      currentSessionDetail.value = null
       resetActiveSessionConfig()
     }
   }
@@ -230,7 +230,7 @@ const lastTraceTarget = computed(() => (
     : { name: 'traces' }
 ))
 
-const headerTitle = computed(() => currentSession.value?.title?.trim() || '新对话')
+const headerTitle = computed(() => currentSessionDetail.value?.title?.trim() || currentSession.value?.title?.trim() || '新对话')
 const contextLabel = computed(() => lastModelId.value || '默认模型')
 
 onMounted(async () => {
@@ -412,7 +412,6 @@ async function handleConfigUpdate(config: SessionConfig) {
     activeSessionConfig.value = {
       preferredProviderId: config.preferredProviderId,
       temperature: config.temperature ?? activeSessionConfig.value.temperature,
-      maxTokens: config.maxTokens ?? activeSessionConfig.value.maxTokens,
       maxSteps: config.maxSteps ?? activeSessionConfig.value.maxSteps,
       maxDurationSeconds: config.maxDurationSeconds ?? activeSessionConfig.value.maxDurationSeconds,
       knowledgeBaseIds: config.knowledgeBaseIds ?? [],
@@ -429,6 +428,12 @@ async function handleUpdateSessionTitle(title: string) {
 
   try {
     await chatApi.updateSession(chatStore.activeSessionId, { title: title.trim() })
+    if (currentSessionDetail.value) {
+      currentSessionDetail.value = {
+        ...currentSessionDetail.value,
+        title: title.trim(),
+      }
+    }
     await chatStore.loadSessions()
   } catch {
     uiStore.showToast('error', '更新会话标题失败')
@@ -594,7 +599,6 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
               v-if="showConfigPanel"
               :preferred-provider-id="activeSessionConfig.preferredProviderId"
               :temperature="activeSessionConfig.temperature"
-              :max-tokens="activeSessionConfig.maxTokens"
               :max-steps="activeSessionConfig.maxSteps"
               :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
               :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
@@ -607,7 +611,7 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
             />
             <SessionSidebar
               v-if="showSessionSidebar && chatStore.activeSessionId"
-              :session="currentSession"
+              :session="currentSessionDetail"
               :knowledge-bases="kbStore.list"
               :message-count="chatStore.messages.length"
               @close="showSessionSidebar = false"

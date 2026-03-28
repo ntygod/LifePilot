@@ -85,7 +85,9 @@ public class CompactionEngine {
         this.memoryFlushEngine = memoryFlushEngine;
     }
 
-    public boolean compactIfNeeded(@Nullable String sessionId, @Nullable String traceId) {
+    public boolean compactIfNeeded(@Nullable String sessionId,
+                                   @Nullable String traceId,
+                                   @Nullable String preferredProviderId) {
         if (sessionId == null || sessionId.isBlank() || !compactionConfig().isEnabled()) {
             return false;
         }
@@ -108,7 +110,7 @@ public class CompactionEngine {
                     .filter(SessionTranscriptRepository.SessionTranscriptEntryRow::visibleToModel)
                     .filter(row -> !TranscriptEntryType.COMPACTION_SUMMARY.value().equals(row.entryType()))
                     .toList();
-            if (!shouldCompact(activeVisibleRows)) {
+            if (!shouldCompact(activeVisibleRows, preferredProviderId)) {
                 return false;
             }
 
@@ -205,11 +207,12 @@ public class CompactionEngine {
         }
     }
 
-    private boolean shouldCompact(List<SessionTranscriptRepository.SessionTranscriptEntryRow> activeVisibleRows) {
+    private boolean shouldCompact(List<SessionTranscriptRepository.SessionTranscriptEntryRow> activeVisibleRows,
+                                  @Nullable String preferredProviderId) {
         if (activeVisibleRows.isEmpty()) {
             return false;
         }
-        int triggerThresholdTokens = resolveTriggerThresholdTokens();
+        int triggerThresholdTokens = resolveTriggerThresholdTokens(preferredProviderId);
         if (triggerThresholdTokens <= 0) {
             return false;
         }
@@ -478,12 +481,30 @@ public class CompactionEngine {
         return compaction != null ? compaction : new AgentConfigProperties.ContextConfig.CompactionConfig();
     }
 
-    private int resolveTriggerThresholdTokens() {
+    private int resolveTriggerThresholdTokens(@Nullable String preferredProviderId) {
         int percent = compactionConfig().getTriggerThresholdPercent();
         if (percent <= 0) {
             percent = DEFAULT_TRIGGER_THRESHOLD_PERCENT;
         }
-        return Math.max(1, config.getContext().getMaxContextTokens() * percent / 100);
+        return Math.max(1, resolveEffectiveContextWindow(preferredProviderId) * percent / 100);
+    }
+
+    private int resolveEffectiveContextWindow(@Nullable String preferredProviderId) {
+        int configuredWindow = Math.max(1024, config.getContext().getMaxContextTokens());
+        try {
+            int providerWindow = generationRouter.resolveMaxContextWindow(
+                    config.getLoop().getLlmScene(),
+                    preferredProviderId,
+                    null
+            );
+            if (providerWindow > 0) {
+                return Math.min(configuredWindow, providerWindow);
+            }
+        } catch (Exception e) {
+            log.debug("读取 Provider 上下文窗口失败，回退默认配置: provider={}, error={}",
+                    preferredProviderId, e.getMessage());
+        }
+        return configuredWindow;
     }
 
     private int resolveKeepRecentTurns() {
