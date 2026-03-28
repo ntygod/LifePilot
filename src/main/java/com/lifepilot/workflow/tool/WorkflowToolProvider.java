@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 工作流管理工具提供者 — 构建 4 个工作流管理 BuiltinTool。
+ * 工作流管理工具提供者 — 构建 5 个工作流管理 BuiltinTool。
  *
  * <p>遵循 BrowserToolProvider 的委托构建模式，
  * 由 {@link com.lifepilot.meta.infra.InfraToolProvider} 在 registerTools() 中调用。</p>
@@ -43,7 +43,7 @@ public class WorkflowToolProvider {
     }
 
     /**
-     * 构建 4 个工作流管理工具。
+     * 构建 5 个工作流管理工具。
      *
      * @return 工具列表
      */

@@ -10,6 +10,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -48,59 +50,57 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_注册31个工具_含全部已实现类别() {
+    void registerTools_注册全部已实现类别工具() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(34)).registerBuiltinTool(captor.capture());
+        verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
+        var expectedToolIds = List.of(
+                // 信息获取（3）
+                "web.search",
+                "web.fetch",
+                "http.request",
+                // 推理辅助（1）
+                "reason.calculate",
+                // Shell 执行（1）
+                "shell.exec",
+                // 浏览器自动化（14）
+                "browser.navigate",
+                "browser.click",
+                "browser.input",
+                "browser.screenshot",
+                "browser.scroll",
+                "browser.wait",
+                "browser.hover",
+                "browser.select",
+                "browser.keyboard",
+                "browser.evaluate",
+                "browser.accessibility",
+                "browser.tab",
+                "browser.storage",
+                "browser.close",
+                // 代码执行（1）
+                "code.execute",
+                // 文件系统（11）
+                "file.read",
+                "file.write",
+                "file.list",
+                "file.search",
+                "file.delete",
+                "file.copy",
+                "file.move",
+                "file.info",
+                "file.patch",
+                "file.grep",
+                "file.find"
+        );
+        assertThat(tools).hasSize(expectedToolIds.size());
         assertThat(tools).extracting(BuiltinTool::id)
-                .containsExactlyInAnyOrder(
-                        // 环境感知（3）
-                        "env.datetime",
-                        "env.user-profile",
-                        "env.system-info",
-                        // 信息获取（2）
-                        "web.search",
-                        "web.fetch",
-                        "http.request",
-                        // 推理辅助（1）
-                        "reason.calculate",
-                        // Shell 执行（1）
-                        "shell.exec",
-                        // 浏览器自动化（13）
-                        "browser.navigate",
-                        "browser.click",
-                        "browser.input",
-                        "browser.screenshot",
-                        "browser.scroll",
-                        "browser.wait",
-                        "browser.hover",
-                        "browser.select",
-                        "browser.keyboard",
-                        "browser.evaluate",
-                        "browser.accessibility",
-                        "browser.tab",
-                        "browser.storage",
-                        "browser.close",
-                        // 代码执行（1）
-                        "code.execute",
-                        // 文件系统（10）
-                        "file.read",
-                        "file.write",
-                        "file.list",
-                        "file.search",
-                        "file.delete",
-                        "file.copy",
-                        "file.move",
-                        "file.info",
-                        "file.patch",
-                        "file.grep",
-                        "file.find"
-                );
+                .containsExactlyInAnyOrderElementsOf(expectedToolIds);
     }
 
     @Test
@@ -131,10 +131,7 @@ class InfraToolProviderTest {
             toolMap.put(tool.id(), tool.riskLevel());
         }
 
-        // 环境感知 / 信息获取 / 推理 → LOW
-        assertThat(toolMap.get("env.datetime")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("env.user-profile")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("env.system-info")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+        // 信息获取 / 推理 → LOW
         assertThat(toolMap.get("web.search")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
         assertThat(toolMap.get("web.fetch")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
         assertThat(toolMap.get("reason.calculate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);

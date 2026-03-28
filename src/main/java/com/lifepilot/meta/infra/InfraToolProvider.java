@@ -5,9 +5,6 @@ import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
 import com.lifepilot.meta.infra.file.FileToolProvider;
-import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
-import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
-import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ProcessToolProvider;
@@ -50,7 +47,7 @@ import java.util.Map;
  * 基础工具提供者 — 注册 Infrastructure Tool 到 DynamicToolRegistry。
  *
  * <p>所有基础工具 tags 含 {@code "infrastructure"}，始终对所有调用者可用。
- * 当前注册环境感知工具（3 个），后续任务将逐步添加其他类别工具。</p>
+ * 当前注册 Web、推理、Shell、浏览器、代码与文件工具，后续任务将逐步添加其他类别工具。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -127,147 +124,94 @@ public class InfraToolProvider {
      * @param toolRegistry 动态工具注册中心
      */
     public void registerTools(DynamicToolRegistry toolRegistry) {
-        // 环境感知工具（3 个）
-        var dateTimeExecutor = new DateTimeToolExecutor(properties);
-        var userProfileExecutor = new UserProfileToolExecutor(properties);
-        var systemInfoExecutor = new SystemInfoToolExecutor();
-
-        toolRegistry.registerBuiltinTool(buildDateTimeTool(dateTimeExecutor));
-        toolRegistry.registerBuiltinTool(buildUserProfileTool(userProfileExecutor));
-        toolRegistry.registerBuiltinTool(buildSystemInfoTool(systemInfoExecutor));
-
-        // 信息获取工具（2 个）
+        // 信息获取工具
         var webSearchExecutor = new WebSearchToolExecutor(webSearchConfigProvider);
         var webFetchExecutor = new WebFetchToolExecutor(properties);
+        int totalTools = registerBuiltinTools(toolRegistry, List.of(
+                buildWebSearchTool(webSearchExecutor),
+                buildWebFetchTool(webFetchExecutor)
+        ));
 
-        toolRegistry.registerBuiltinTool(buildWebSearchTool(webSearchExecutor));
-        toolRegistry.registerBuiltinTool(buildWebFetchTool(webFetchExecutor));
-
-        // HTTP 请求工具（1 个）
+        // HTTP 请求工具
         var httpRequestExecutor = new HttpRequestToolExecutor();
-        toolRegistry.registerBuiltinTool(buildHttpRequestTool(httpRequestExecutor));
+        totalTools += registerBuiltinTools(toolRegistry, List.of(
+                buildHttpRequestTool(httpRequestExecutor)
+        ));
 
-        // 推理辅助工具（1 个）
+        // 推理辅助工具
         var calculateExecutor = new CalculateToolExecutor();
+        totalTools += registerBuiltinTools(toolRegistry, List.of(
+                buildCalculateTool(calculateExecutor)
+        ));
 
-        toolRegistry.registerBuiltinTool(buildCalculateTool(calculateExecutor));
-
-        // Shell 执行工具（1 个）
+        // Shell 执行工具
         var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager);
+        totalTools += registerBuiltinTools(toolRegistry, List.of(
+                buildShellExecTool(shellExecExecutor)
+        ));
 
-        toolRegistry.registerBuiltinTool(buildShellExecTool(shellExecExecutor));
-
-        // 浏览器自动化工具（13 个，委托给 BrowserToolProvider）
+        // 浏览器自动化工具（委托给 BrowserToolProvider）
         var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties);
-        browserToolProvider.buildBrowserTools().forEach(toolRegistry::registerBuiltinTool);
+        totalTools += registerBuiltinTools(toolRegistry, browserToolProvider.buildBrowserTools());
 
-        // 代码执行工具（1 个）
+        // 代码执行工具
         var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxSessionManager, codeValidator, sandboxRepository);
-
-        toolRegistry.registerBuiltinTool(buildCodeExecuteTool(codeExecuteExecutor));
+        totalTools += registerBuiltinTools(toolRegistry, List.of(
+                buildCodeExecuteTool(codeExecuteExecutor)
+        ));
 
         // 文件系统工具（委托给 FileToolProvider）
         var fileToolProvider = new FileToolProvider(properties);
-        fileToolProvider.buildFileTools().forEach(toolRegistry::registerBuiltinTool);
+        totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
-        // 交互控制工具（3 个，委托给 InteractionToolProvider）
+        // 交互控制工具（委托给 InteractionToolProvider）
         if (interactionBridge != null && notificationService != null) {
             var interactionToolProvider = new InteractionToolProvider(interactionBridge, notificationService, notificationProperties);
-            interactionToolProvider.buildInteractionTools().forEach(toolRegistry::registerBuiltinTool);
+            totalTools += registerBuiltinTools(toolRegistry, interactionToolProvider.buildInteractionTools());
         } else {
             log.warn("InteractionBridge 或 NotificationService 不可用，跳过交互控制工具注册");
         }
 
-        // 工作流管理工具（4 个，委托给 WorkflowToolProvider）
+        // 工作流管理工具（委托给 WorkflowToolProvider）
         if (workflowRegistry != null && workflowCommandService != null) {
             var workflowToolProvider = new WorkflowToolProvider(workflowRegistry, workflowCommandService);
-            workflowToolProvider.buildWorkflowTools().forEach(toolRegistry::registerBuiltinTool);
-            log.info("工作流管理工具注册完成: count=4");
+            var workflowTools = workflowToolProvider.buildWorkflowTools();
+            totalTools += registerBuiltinTools(toolRegistry, workflowTools);
+            log.info("工作流管理工具注册完成: count={}", workflowTools.size());
         } else {
             log.warn("WorkflowRegistry 或 WorkflowCommandService 不可用，跳过工作流管理工具注册");
         }
 
-        // 自主任务工具（6 个，委托给 TaskToolProvider）
+        // 自主任务工具（委托给 TaskToolProvider）
         if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) {
             var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, agentConfigProperties);
-            taskToolProvider.buildCronTools().forEach(toolRegistry::registerBuiltinTool);
-            taskToolProvider.buildHeartbeatTools().forEach(toolRegistry::registerBuiltinTool);
-            log.info("自主任务工具注册完成: count=6, categories=[cron, heartbeat]");
+            var cronTools = taskToolProvider.buildCronTools();
+            var heartbeatTools = taskToolProvider.buildHeartbeatTools();
+            totalTools += registerBuiltinTools(toolRegistry, cronTools);
+            totalTools += registerBuiltinTools(toolRegistry, heartbeatTools);
+            log.info("自主任务工具注册完成: count={}, categories=[cron, heartbeat]",
+                    cronTools.size() + heartbeatTools.size());
         } else {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
         }
 
-        // 后台进程管理工具（4 个，委托给 ProcessToolProvider）
+        // 后台进程管理工具（委托给 ProcessToolProvider）
         if (backgroundProcessManager != null) {
             var processToolProvider = new ProcessToolProvider(backgroundProcessManager);
-            processToolProvider.buildProcessTools().forEach(toolRegistry::registerBuiltinTool);
-            log.info("后台进程管理工具注册完成: count=4");
+            var processTools = processToolProvider.buildProcessTools();
+            totalTools += registerBuiltinTools(toolRegistry, processTools);
+            log.info("后台进程管理工具注册完成: count={}", processTools.size());
         } else {
             log.warn("BackgroundProcessManager 不可用，跳过后台进程管理工具注册");
         }
 
-        int totalTools = 28; // 基础工具
-        if (interactionBridge != null && notificationService != null) totalTools += 3;
-        if (workflowRegistry != null && workflowCommandService != null) totalTools += 4;
-        if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) totalTools += 6;
-        if (backgroundProcessManager != null) totalTools += 4;
-        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact, workflow, task, process]",
+        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process]",
                 totalTools);
     }
 
-    // ─────────────────────────────────────────────
-    //  环境感知工具构建
-    // ─────────────────────────────────────────────
-
-    /** 构建日期时间工具。 */
-    private BuiltinTool buildDateTimeTool(DateTimeToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("env.datetime")
-                .category(ToolCategory.PERCEPTION)
-                .name("获取当前日期时间")
-                .description("获取当前日期、时间、星期和时区信息，可选覆盖时区")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "timezone", Map.of("type", "string",
-                                        "description", "时区 ID（如 Asia/Shanghai），不传则使用用户配置或系统时区")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建用户画像工具。 */
-    private BuiltinTool buildUserProfileTool(UserProfileToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("env.user-profile")
-                .category(ToolCategory.PERCEPTION)
-                .name("获取用户偏好")
-                .description("获取用户偏好配置，包括时区、缓存 TTL 等信息")
-                .inputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建系统信息工具。 */
-    private BuiltinTool buildSystemInfoTool(SystemInfoToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("env.system-info")
-                .category(ToolCategory.PERCEPTION)
-                .name("获取系统信息")
-                .description("获取操作系统、JVM 版本、可用内存和磁盘空间等系统信息")
-                .inputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
+    private int registerBuiltinTools(DynamicToolRegistry toolRegistry, List<BuiltinTool> tools) {
+        tools.forEach(toolRegistry::registerBuiltinTool);
+        return tools.size();
     }
 
     // ─────────────────────────────────────────────
@@ -280,7 +224,9 @@ public class InfraToolProvider {
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
-                .description("通过 Tavily 联网检索信息，返回标题、摘要和链接列表，可附带 AI 生成的答案摘要")
+                .description("通过搜索引擎搜索互联网上的内容。\n" +
+                        "当你的知识无法回答用户提出的问题，或用户请求你进行联网搜索时，调用此工具。请从与用户的对话中提取用户想要搜索的内容作为 query 参数的值。" +
+                        "搜索结果包含网站的标题、网站的地址（URL）以及网站简介。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -312,7 +258,7 @@ public class InfraToolProvider {
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
-                .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取")
+                .description("抓取指定 URL 的静态网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),

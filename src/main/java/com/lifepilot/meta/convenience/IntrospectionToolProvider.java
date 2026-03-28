@@ -72,13 +72,15 @@ public class IntrospectionToolProvider {
      * @param registry 动态工具注册中心
      */
     public void registerTools(DynamicToolRegistry registry) {
-        registry.registerBuiltinTool(buildListCapabilitiesTool());
-        registry.registerBuiltinTool(buildExplainTool());
-        registry.registerBuiltinTool(buildStatusTool());
-        registry.registerBuiltinTool(buildSuggestTool());
-        registry.registerBuiltinTool(buildRuntimeTool());
-
-        log.info("系统自省工具注册完成: count=5");
+        var tools = List.of(
+                buildListCapabilitiesTool(),
+                buildExplainTool(),
+                buildStatusTool(),
+                buildSuggestTool(),
+                buildRuntimeTool()
+        );
+        tools.forEach(registry::registerBuiltinTool);
+        log.info("系统自省工具注册完成: count={}", tools.size());
     }
 
     // ─────────────────────────────────────────────

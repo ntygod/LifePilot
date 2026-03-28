@@ -18,7 +18,7 @@ import java.util.Map;
  * 浏览器工具提供者 — 构建所有浏览器自动化工具的 {@link BuiltinTool} 列表。
  *
  * <p>从 {@link com.lifepilot.meta.infra.InfraToolProvider} 中拆分出来，
- * 集中管理 13 个浏览器工具的注册逻辑。</p>
+ * 集中管理 14 个浏览器工具的注册逻辑。</p>
  *
  * @author zsg
  * @since 2026-03-16
@@ -43,7 +43,7 @@ public class BrowserToolProvider {
     }
 
     /**
-     * 构建所有浏览器工具的 BuiltinTool 列表（13 个）。
+     * 构建所有浏览器工具的 BuiltinTool 列表（14 个）。
      *
      * @return 浏览器工具列表
      */
@@ -58,7 +58,7 @@ public class BrowserToolProvider {
         tools.add(buildBrowserInputTool(new BrowserInputToolExecutor(browserSessionManager)));
         tools.add(buildBrowserScreenshotTool(new BrowserScreenshotToolExecutor(browserSessionManager)));
 
-        // 扩展浏览器工具（9 个）
+        // 扩展浏览器工具（10 个）
         tools.add(buildBrowserScrollTool(new BrowserScrollToolExecutor(browserSessionManager, properties)));
         tools.add(buildBrowserWaitTool(new BrowserWaitToolExecutor(browserSessionManager, properties)));
         tools.add(buildBrowserHoverTool(new BrowserHoverToolExecutor(browserSessionManager)));
@@ -185,7 +185,7 @@ public class BrowserToolProvider {
     }
 
     // ─────────────────────────────────────────────
-    //  扩展浏览器工具构建（9 个）
+    //  扩展浏览器工具构建（10 个）
     // ─────────────────────────────────────────────
 
     /** 构建浏览器滚动工具 — 方向滚动或元素定位滚动，MEDIUM 风险。 */

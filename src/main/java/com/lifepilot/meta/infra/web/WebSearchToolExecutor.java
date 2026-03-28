@@ -50,7 +50,7 @@ public class WebSearchToolExecutor {
     public ToolResult execute(ToolInput input) {
         try {
             String query = input.getParam("query", String.class);
-            if (query == null || query.isBlank()) {
+            if (query.isBlank()) {
                 return ToolResult.error("参数错误: query 不能为空");
             }
 

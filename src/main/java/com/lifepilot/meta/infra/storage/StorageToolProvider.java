@@ -48,15 +48,18 @@ public class StorageToolProvider {
      * @param toolRegistry 动态工具注册中心
      */
     public void registerTools(DynamicToolRegistry toolRegistry) {
-        toolRegistry.registerBuiltinTool(buildCreateCollectionTool());
-        toolRegistry.registerBuiltinTool(buildListCollectionsTool());
-        toolRegistry.registerBuiltinTool(buildDeleteCollectionTool());
-        toolRegistry.registerBuiltinTool(buildAddDocumentTool());
-        toolRegistry.registerBuiltinTool(buildQueryDocumentsTool());
-        toolRegistry.registerBuiltinTool(buildUpdateDocumentTool());
-        toolRegistry.registerBuiltinTool(buildDeleteDocumentTool());
-        toolRegistry.registerBuiltinTool(buildAggregateTool());
-        log.info("数据存储 Skill 工具注册完成: count=8");
+        var tools = List.of(
+                buildCreateCollectionTool(),
+                buildListCollectionsTool(),
+                buildDeleteCollectionTool(),
+                buildAddDocumentTool(),
+                buildQueryDocumentsTool(),
+                buildUpdateDocumentTool(),
+                buildDeleteDocumentTool(),
+                buildAggregateTool()
+        );
+        tools.forEach(toolRegistry::registerBuiltinTool);
+        log.info("数据存储 Skill 工具注册完成: count={}", tools.size());
     }
 
     // ---- 工具构建方法 ----

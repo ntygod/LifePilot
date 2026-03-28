@@ -2,13 +2,12 @@
 id: desktop-automation
 name: "桌面自动化"
 description: "Windows 桌面自动化：UI 元素操作、窗口管理、对话框处理、键鼠模拟、屏幕截图分析。"
-version: "1.0.0"
+version: "1.0.1"
 suggested-tools:
   - shell.exec
   - code.execute
   - file.read
   - file.write
-  - env.system-info
 triggers:
   - "桌面自动化"
   - "鼠标操作"
@@ -25,8 +24,8 @@ triggers:
 仅支持 Windows。执行前先确认：
 
 ```
-env.system-info()
-→ 确认操作系统为 Windows
+shell.exec(command="ver")
+→ 确认当前运行环境为 Windows
 ```
 
 

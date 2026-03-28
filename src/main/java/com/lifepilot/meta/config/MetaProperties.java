@@ -31,7 +31,7 @@ public class MetaProperties {
     private Onboarding onboarding = new Onboarding();
 
     /**
-     * 基础工具配置 — 包含 Web 搜索、Web 抓取、用户画像、Shell、浏览器、代码执行、文件访问和交互控制。
+     * 基础工具配置 — 包含 Web 搜索、Web 抓取、Shell、浏览器、代码执行、文件访问和交互控制。
      *
      * @author zsg
      * @since 2026-03-10
@@ -47,9 +47,6 @@ public class MetaProperties {
 
         /** Web 抓取配置。 */
         private WebFetch webFetch = new WebFetch();
-
-        /** 用户画像配置。 */
-        private UserProfile userProfile = new UserProfile();
 
         /** Shell 执行配置。 */
         private Shell shell = new Shell();
@@ -117,22 +114,6 @@ public class MetaProperties {
 
             /** HTTP 请求超时（秒），默认 10。 */
             private int timeoutSeconds = 10;
-        }
-
-        /**
-         * 用户画像配置。
-         *
-         * @author zsg
-         * @since 2026-03-10
-         */
-        @Data
-        public static class UserProfile {
-
-            /** 用户时区，空字符串表示使用系统时区。 */
-            private String timezone = "";
-
-            /** 缓存 TTL（秒），默认 300。 */
-            private int cacheTtlSeconds = 300;
         }
 
         /**

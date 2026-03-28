@@ -70,23 +70,24 @@ class IntrospectionToolProviderTest {
     }
 
     @Test
-    void registerTools_注册5个工具() {
+    void registerTools_注册全部自省工具() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
+        var expectedToolIds = List.of(
+                "system.list-capabilities",
+                "system.explain",
+                "system.status",
+                "system.suggest",
+                "system.runtime"
+        );
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(5)).registerBuiltinTool(captor.capture());
+        verify(registry, times(expectedToolIds.size())).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
         assertThat(tools).extracting(BuiltinTool::id)
-                .containsExactlyInAnyOrder(
-                        "system.list-capabilities",
-                        "system.explain",
-                        "system.status",
-                        "system.suggest",
-                        "system.runtime"
-                );
+                .containsExactlyInAnyOrderElementsOf(expectedToolIds);
     }
 
     @Test
@@ -148,22 +149,22 @@ class IntrospectionToolProviderTest {
     @Test
     void explain_查找Tool_返回详细信息() {
         var tool = BuiltinTool.builder()
-                .id("env.datetime")
-                .name("获取日期时间")
-                .description("获取当前日期时间")
+                .id("web.search")
+                .name("Web 搜索")
+                .description("搜索互联网内容")
                 .riskLevel(RiskLevel.LOW)
                 .tags(List.of("infrastructure"))
                 .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
                         com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
-        when(toolRegistry.resolve("env.datetime")).thenReturn(Optional.of(tool));
+        when(toolRegistry.resolve("web.search")).thenReturn(Optional.of(tool));
 
         var result = executeToolByProvider("system.explain",
-                Map.of("id", "env.datetime"));
+                Map.of("id", "web.search"));
 
         assertThat(result.ok()).isTrue();
-        assertThat((String) result.getData("id")).isEqualTo("env.datetime");
+        assertThat((String) result.getData("id")).isEqualTo("web.search");
         assertThat((String) result.getData("type")).isEqualTo("tool");
         assertThat((String) result.getData("riskLevel")).isEqualTo("LOW");
     }

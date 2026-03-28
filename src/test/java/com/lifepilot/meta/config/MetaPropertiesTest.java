@@ -52,16 +52,6 @@ class MetaPropertiesTest {
     }
 
     @Test
-    void 默认值绑定正确_Infra_UserProfile() {
-        contextRunner.run(context -> {
-            var props = context.getBean(MetaProperties.class);
-            var up = props.getInfra().getUserProfile();
-            assertThat(up.getTimezone()).isEmpty();
-            assertThat(up.getCacheTtlSeconds()).isEqualTo(300);
-        });
-    }
-
-    @Test
     void 默认值绑定正确_Infra_Shell() {
         contextRunner.run(context -> {
             var props = context.getBean(MetaProperties.class);

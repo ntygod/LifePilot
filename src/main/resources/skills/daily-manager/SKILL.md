@@ -2,13 +2,12 @@
 id: daily-manager
 name: "日常管理"
 description: "日常事务管理：多 Skill 协调、任务分解与优先级排序、日程提醒、信息汇总。"
-version: "1.0.0"
+version: "1.0.1"
 suggested-tools:
   - memory.search
   - memory.create
   - interact.input
   - interact.notify
-  - env.datetime
   - web.search
   - file.read
   - file.write
@@ -44,10 +43,9 @@ triggers:
 
 ### 任务规划模式
 
-1. 获取当前时间和上下文
+1. 获取当前上下文
 
 ```
-env.datetime()
 memory.search(query="今日待办")
 ```
 
