@@ -1,6 +1,5 @@
 package com.lifepilot.meta.infra.task;
 
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskEntry;
 import com.lifepilot.agent.task.CronTaskRepository;
@@ -10,11 +9,7 @@ import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,7 +21,7 @@ import static org.mockito.Mockito.*;
 /**
  * TaskToolProvider 单元测试。
  *
- * <p>验证 Cron 工具（create/list/update/remove）和 Heartbeat 工具（read/write）的行为。</p>
+ * <p>验证 Cron 工具（create/list/update/remove）的行为。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -36,27 +31,18 @@ class TaskToolProvider_单元测试 {
     private TaskToolProvider provider;
     private CronTaskRepository cronTaskRepository;
     private CronScheduler cronScheduler;
-    private AgentConfigProperties config;
-
-    @TempDir
-    Path tempDir;
 
     @BeforeEach
     void setUp() {
         cronTaskRepository = mock(CronTaskRepository.class);
         cronScheduler = mock(CronScheduler.class);
-        config = new AgentConfigProperties();
-        provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
+        provider = new TaskToolProvider(cronTaskRepository, cronScheduler);
     }
 
     /** 构造测试用 ToolInput。 */
     private ToolInput input(Map<String, Object> params) {
         return new ToolInput("test", params, JsonSchema.empty(), null, null);
     }
-
-    // ─────────────────────────────────────────────
-    //  Cron 工具测试
-    // ─────────────────────────────────────────────
 
     @Test
     void buildCronTools_返回4个工具() {
@@ -158,64 +144,6 @@ class TaskToolProvider_单元测试 {
         inOrder.verify(cronScheduler).cancel("id1");
         inOrder.verify(cronTaskRepository).deleteById("id1");
     }
-
-    // ─────────────────────────────────────────────
-    //  Heartbeat 工具测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    void buildHeartbeatTools_返回2个工具() {
-        List<BuiltinTool> tools = provider.buildHeartbeatTools();
-        assertThat(tools).hasSize(2);
-        assertThat(tools.stream().map(BuiltinTool::id).toList())
-                .containsExactly("heartbeat.read", "heartbeat.write");
-    }
-
-    @Test
-    void heartbeatRead_文件不存在_返回exists为false() {
-        config.getTask().setHeartbeatFile(tempDir.resolve("not-exist.md").toString());
-        provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
-
-        BuiltinTool readTool = findTool(provider.buildHeartbeatTools(), "heartbeat.read");
-        ToolResult result = readTool.execute(input(Map.of()));
-
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(result.data().get("exists")).isEqualTo(false);
-    }
-
-    @Test
-    void heartbeatRead_文件存在_返回内容() throws IOException {
-        Path file = tempDir.resolve("HEARTBEAT.md");
-        Files.writeString(file, "# Checklist\n- 检查邮箱");
-        config.getTask().setHeartbeatFile(file.toString());
-        provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
-
-        BuiltinTool readTool = findTool(provider.buildHeartbeatTools(), "heartbeat.read");
-        ToolResult result = readTool.execute(input(Map.of()));
-
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(result.data().get("exists")).isEqualTo(true);
-        assertThat((String) result.data().get("content")).contains("检查邮箱");
-    }
-
-    @Test
-    void heartbeatWrite_写入内容_文件创建成功() {
-        Path file = tempDir.resolve("sub/HEARTBEAT.md");
-        config.getTask().setHeartbeatFile(file.toString());
-        provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
-
-        BuiltinTool writeTool = findTool(provider.buildHeartbeatTools(), "heartbeat.write");
-        ToolResult result = writeTool.execute(input(Map.of(
-                "content", "# Checklist\n- 新条目"
-        )));
-
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(Files.exists(file)).isTrue();
-    }
-
-    // ─────────────────────────────────────────────
-    //  辅助方法
-    // ─────────────────────────────────────────────
 
     private BuiltinTool findTool(List<BuiltinTool> tools, String id) {
         return tools.stream()

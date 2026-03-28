@@ -9,7 +9,7 @@
 
 核心差异化：
 - **多层记忆系统**：L1 工作记忆 → L2 情景记忆 → L3 语义记忆 + 时序知识图谱 → L4 程序记忆，模拟人类认知记忆层次
-- **自主任务执行**：支持 cron 定时、heartbeat 巡检和自主工作流，任务定义持久化在 SQLite 中
+- **自主任务执行**：支持 cron 定时、heartbeat 唤醒驱动的主动提醒和自主工作流，任务定义持久化在 SQLite 中
 - **权限与自动执行**：高风险工具改为作用域授权模型，自主任务支持任务级预授权
 - **Skill 自扩展**：Agent 可检测能力缺口并自动生成新 Skill（YAML 声明式）
 - **单 JAR 部署**：后端 + SQLite + sqlite-vec 打包为单个可执行 JAR，零外部依赖
@@ -45,7 +45,7 @@ graph TB
 
     subgraph "引擎层"
         AGENT["Agent 引擎<br/>ReactAgentLoop + ReactAgentState"]
-        TASK["自主任务<br/>HeartbeatRunner"]
+        TASK["自主任务<br/>CronScheduler + HeartbeatRunner"]
         MULTI["多 Agent 协作<br/>HandoffTool"]
         CTX["ContextAssembler<br/>上下文组装"]
     end
@@ -233,6 +233,7 @@ graph TB
 | 内置 Skill（Memory / Task） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
 | 工具权限与自动执行 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |
+| 主动提醒引擎（目标态） | [架构](architecture/proactive-reminder-engine.md) |
 | 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | 部署与运维 | [架构](architecture/deployment.md) · [特性](features/deployment.md) |
 | 性能优化 | [架构](architecture/performance-optimization.md) · [特性](features/performance-optimization.md) |

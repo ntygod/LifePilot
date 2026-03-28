@@ -84,6 +84,28 @@ public class NotificationRepository {
     }
 
     /**
+     * 查询指定用户在某个类型下的最近通知历史。
+     *
+     * @param userId 用户 ID
+     * @param typeId 通知类型
+     * @param since  起始时间
+     * @param limit  最大返回条数
+     * @return 通知记录列表
+     */
+    public List<NotificationRecord> findByUserIdAndTypeSince(String userId, String typeId, Instant since, int limit) {
+        return List.copyOf(jdbcTemplate.query(
+                """
+                SELECT * FROM notification_history
+                WHERE user_id = ? AND type_id = ? AND sent_at >= ?
+                ORDER BY sent_at DESC
+                LIMIT ?
+                """,
+                notificationRowMapper,
+                userId, typeId, since.toString(), limit
+        ));
+    }
+
+    /**
      * 统计用户通知总数。
      *
      * @param userId 用户 ID
@@ -106,6 +128,24 @@ public class NotificationRepository {
         var count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM notification_history WHERE user_id = ? AND read_status = 'UNREAD'",
                 Long.class, userId);
+        return count != null ? count : 0L;
+    }
+
+    /**
+     * 统计某类通知在指定时间之后的发送数量。
+     *
+     * @param userId 用户 ID
+     * @param typeId 通知类型
+     * @param since  起始时间
+     * @return 已发送数量
+     */
+    public long countSentByUserIdAndTypeSince(String userId, String typeId, Instant since) {
+        var count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM notification_history
+                WHERE user_id = ? AND type_id = ? AND status = 'SENT' AND sent_at >= ?
+                """,
+                Long.class, userId, typeId, since.toString());
         return count != null ? count : 0L;
     }
 

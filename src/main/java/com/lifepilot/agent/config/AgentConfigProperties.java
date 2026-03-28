@@ -221,18 +221,86 @@ public class AgentConfigProperties {
 
     }
 
-    /** 自主任务配置（Cron + Heartbeat 双轨）。 */
+    /** 自主任务配置（Cron + 主动提醒）。 */
     @Setter
     @Getter
     public static class TaskConfig {
         /** 任务系统总开关。 */
         private boolean enabled = true;
-        /** Heartbeat 单独开关。 */
+        /** 心跳唤醒单独开关。 */
         private boolean heartbeatEnabled = true;
+        /** 是否启用主动提醒引擎。 */
+        private boolean proactiveReminderEnabled = true;
         /** 心跳间隔（秒）。 */
         private int heartbeatIntervalSeconds = 1800;
-        /** 心跳 checklist 文件路径。 */
-        private String heartbeatFile = "~/.zhiwei/HEARTBEAT.md";
+        /** 主动提醒每日上限。 */
+        private int proactiveReminderDailyMaxReminders = 3;
+        /** 主动提醒默认冷却时长（小时）。 */
+        private int proactiveReminderCooldownHours = 24;
+        /** 主动提醒静默开始时间（HH:mm）。 */
+        private String proactiveReminderQuietHoursStart = "23:00";
+        /** 主动提醒静默结束时间（HH:mm）。 */
+        private String proactiveReminderQuietHoursEnd = "08:00";
+        /** 延后提醒扫描间隔（秒）。 */
+        private int proactiveReminderWakeupScanIntervalSeconds = 60;
+        /** 单次延后提醒扫描的最大主题数。 */
+        private int proactiveReminderWakeupBatchSize = 20;
+        /** 隐式完成推断回看窗口（天）。 */
+        private int proactiveReminderOutcomeInferenceLookbackDays = 30;
+        /** 单次隐式完成推断批量大小。 */
+        private int proactiveReminderOutcomeInferenceBatchSize = 60;
+        /** 是否启用基于上下文反馈的动作 bandit。 */
+        private boolean proactiveReminderBanditEnabled = true;
+        /** bandit 探索系数。 */
+        private float proactiveReminderBanditExplorationAlpha = 0.18f;
+        /** 启动 bandit 所需的最小训练样本数。 */
+        private int proactiveReminderBanditMinExamples = 16;
+        /** 每个动作至少需要的训练样本数。 */
+        private int proactiveReminderBanditMinActionSamples = 3;
+        /** bandit 回放历史窗口（天）。 */
+        private int proactiveReminderBanditLookbackDays = 30;
+        /** 单次加载的 bandit 训练样本上限。 */
+        private int proactiveReminderBanditMaxExamples = 400;
+        /** 是否启用基于离线回放的策略调优。 */
+        private boolean proactiveReminderReplayTuningEnabled = true;
+        /** 启用回放调优所需的最小样本数。 */
+        private int proactiveReminderReplayMinSamples = 12;
+        /** 是否启用定时离线回放评估。 */
+        private boolean proactiveReminderReplayEvaluationEnabled = true;
+        /** 定时离线回放评估间隔（秒）。 */
+        private int proactiveReminderReplayEvaluationIntervalSeconds = 21600;
+        /** 单次离线回放评估的最大用户数。 */
+        private int proactiveReminderReplayEvaluationUserBatchSize = 8;
+        /** 主动提醒运行数据保留天数。 */
+        private int proactiveReminderRetentionDays = 180;
+        /** 主动提醒样本治理清理间隔（秒）。 */
+        private int proactiveReminderCleanupIntervalSeconds = 21600;
+        /** 是否启用主动提醒安全调参护栏。 */
+        private boolean proactiveReminderSafeTuningEnabled = true;
+        /** 单次阈值类参数允许调整的最大浮点步长。 */
+        private float proactiveReminderTuningMaxScoreDelta = 0.04f;
+        /** 单次时间阈值允许调整的最大小时步长。 */
+        private int proactiveReminderTuningMaxHourDelta = 6;
+        /** 单次 lookahead 允许调整的最大分钟步长。 */
+        private int proactiveReminderTuningMaxLookaheadMinutesDelta = 45;
+        /** 单次每日提醒上限允许调整的最大步长。 */
+        private int proactiveReminderTuningMaxDailyReminderDelta = 1;
+        /** 回放收益恶化达到该阈值时回退到上一版策略。 */
+        private float proactiveReminderTuningReplayRollbackDelta = 0.05f;
+        /** 是否要求连续两轮信号方向一致后才放松策略。 */
+        private boolean proactiveReminderTuningRequireConsistentReplayDirection = true;
+        /** 是否启用机会判断学习。 */
+        private boolean proactiveReminderOpportunityLearningEnabled = true;
+        /** 机会学习的补发阈值。 */
+        private float proactiveReminderOpportunityPromoteThreshold = 0.72f;
+        /** 机会学习的抑制阈值。 */
+        private float proactiveReminderOpportunitySuppressThreshold = 0.34f;
+        /** 允许从分数不足补发提醒的安全边距。 */
+        private float proactiveReminderOpportunityPromotionMargin = 0.08f;
+        /** 主动提醒文案生成场景。 */
+        private String proactiveReminderLlmScene = "proactive_reminder";
+        /** 主动提醒文案生成超时（秒）。 */
+        private int proactiveReminderLlmTimeoutSeconds = 15;
         /** 单次执行超时（秒）。 */
         private int executionTimeoutSeconds = 300;
         /** 活跃时段开始（HH:mm，null 表示全天）。 */

@@ -27,6 +27,8 @@ public final class LlmScene {
     public static final String KNOWLEDGE_RERANK = "knowledge_rerank";
     /** ReAct Agent 循环。 */
     public static final String AGENT_REACT = "agent_react";
+    /** 主动提醒文案生成。 */
+    public static final String PROACTIVE_REMINDER = "proactive_reminder";
 
     private LlmScene() {
     }
@@ -42,7 +44,8 @@ public final class LlmScene {
                 EMBEDDING,
                 SKILL_GENERATION,
                 KNOWLEDGE_RERANK,
-                AGENT_REACT
+                AGENT_REACT,
+                PROACTIVE_REMINDER
         );
     }
 }

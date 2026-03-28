@@ -22,7 +22,6 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.tool.WorkflowToolProvider;
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
@@ -80,8 +79,6 @@ public class InfraToolProvider {
     @Nullable
     private final CronScheduler cronScheduler;
     @Nullable
-    private final AgentConfigProperties agentConfigProperties;
-    @Nullable
     private final NotificationProperties notificationProperties;
     @Nullable
     private final BackgroundProcessManager backgroundProcessManager;
@@ -98,7 +95,6 @@ public class InfraToolProvider {
                              @Nullable WorkflowCommandService workflowCommandService,
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
-                             @Nullable AgentConfigProperties agentConfigProperties,
                              @Nullable NotificationProperties notificationProperties,
                              @Nullable BackgroundProcessManager backgroundProcessManager) {
         this.properties = properties;
@@ -113,7 +109,6 @@ public class InfraToolProvider {
         this.workflowCommandService = workflowCommandService;
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
-        this.agentConfigProperties = agentConfigProperties;
         this.notificationProperties = notificationProperties;
         this.backgroundProcessManager = backgroundProcessManager;
     }
@@ -183,14 +178,11 @@ public class InfraToolProvider {
         }
 
         // 自主任务工具（委托给 TaskToolProvider）
-        if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) {
-            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, agentConfigProperties);
+        if (cronTaskRepository != null && cronScheduler != null) {
+            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler);
             var cronTools = taskToolProvider.buildCronTools();
-            var heartbeatTools = taskToolProvider.buildHeartbeatTools();
             totalTools += registerBuiltinTools(toolRegistry, cronTools);
-            totalTools += registerBuiltinTools(toolRegistry, heartbeatTools);
-            log.info("自主任务工具注册完成: count={}, categories=[cron, heartbeat]",
-                    cronTools.size() + heartbeatTools.size());
+            log.info("自主任务工具注册完成: count={}, categories=[cron]", cronTools.size());
         } else {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
         }

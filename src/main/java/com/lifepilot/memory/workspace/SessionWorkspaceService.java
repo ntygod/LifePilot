@@ -71,6 +71,26 @@ public class SessionWorkspaceService {
                 Instant.now().toString());
     }
 
+    public Optional<WorkspaceItem> findLatestByTaskOrItemId(String reference) {
+        if (reference == null || reference.isBlank()) {
+            return Optional.empty();
+        }
+        List<WorkspaceItem> items = jdbcTemplate.query(
+                """
+                SELECT id, session_id, kind, title, summary, payload_json, status, priority,
+                       task_id, source_trace_id, expires_at, created_at, updated_at
+                FROM session_workspace_items
+                WHERE id = ? OR task_id = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                this::mapRow,
+                reference,
+                reference
+        );
+        return items.stream().findFirst();
+    }
+
     public int resolveByTaskId(String sessionId, @Nullable String taskId) {
         if (taskId == null || taskId.isBlank()) {
             return 0;

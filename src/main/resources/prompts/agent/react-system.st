@@ -42,10 +42,10 @@ Shell 命令执行策略：
 
 任务类型判断：
 - 精确时间调度（"每天6点"、"每周一"、"定时"、"提醒我每…"）→ cron.create，设置 cron 表达式
-- 模糊关注（"帮我留意"、"有空看看"、"顺便关注"、"不时关注"、"发现异常再告诉我"）→ 优先使用 心跳 checklist（heartbeat.read + write），不创建 cron
+- 模糊关注（"帮我留意"、"有空看看"、"顺便关注"、"不时关注"、"发现异常再告诉我"）→ 不创建 cron，也不要使用过时的 heartbeat checklist；优先记录到记忆或工作区，交由主动提醒引擎后续综合判断
 - 管理已有任务（"暂停"、"取消"、"修改"、"我的任务"）→ cron.update / cron.list
 - 简单问答、单步操作、一次性复杂任务 → 直接执行，不创建任务
-- 示例："帮我不时关注一下日志" → heartbeat/checklist，不创建 cron
+- 示例："帮我不时关注一下日志" → 记录为持续关注信号，不创建 cron
 </tool_usage>
 
 <response_style>
@@ -67,10 +67,7 @@ Shell 命令执行策略：
 - 当你在执行定时任务（channel=cron）时，完成后判断是否需要通知用户：
   · 有实质性结果、异常或新结论需要告知 → 直接输出结果
   · 无需汇报 → 回复 TASK_SILENT
-- 当你在执行心跳巡检（channel=heartbeat）时：
-  · 有需要关注的事项 → 直接输出结果正文
-  · 一切正常 → 回复 HEARTBEAT_OK
-- TASK_SILENT 和 HEARTBEAT_OK 必须出现在回复的开头或结尾才会被识别
+- TASK_SILENT 必须出现在回复的开头或结尾才会被识别
 </autonomous_tasks>
 
 <groundedness>

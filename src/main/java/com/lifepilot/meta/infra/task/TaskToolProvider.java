@@ -1,6 +1,5 @@
 package com.lifepilot.meta.infra.task;
 
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskEntry;
 import com.lifepilot.agent.task.CronTaskRepository;
@@ -8,29 +7,23 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
-import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
-import com.lifepilot.tool.semantics.ToolScopeNormalizer;
-import com.lifepilot.tool.semantics.ToolScopeResolution;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 自主任务工具提供者 — 构建 Cron 定时任务和心跳 Checklist 的 {@link BuiltinTool} 列表。
+ * 自主任务工具提供者 — 构建 Cron 定时任务的 {@link BuiltinTool} 列表。
  *
  * <p>从 {@link com.lifepilot.meta.infra.InfraToolProvider} 委托调用，
- * 集中管理 6 个任务工具（cron: create/list/update/remove + heartbeat: read/write）。</p>
+ * 集中管理 4 个任务工具（cron: create/list/update/remove）。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -42,14 +35,11 @@ public class TaskToolProvider {
 
     private final CronTaskRepository cronTaskRepository;
     private final CronScheduler cronScheduler;
-    private final AgentConfigProperties config;
 
     public TaskToolProvider(CronTaskRepository cronTaskRepository,
-                            CronScheduler cronScheduler,
-                            AgentConfigProperties config) {
+                            CronScheduler cronScheduler) {
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
-        this.config = config;
     }
 
     // ─────────────────────────────────────────────
@@ -107,7 +97,6 @@ public class TaskToolProvider {
                         String schedule = input.getParam("schedule", String.class);
                         String instruction = input.getParam("instruction", String.class);
 
-                        // 验证 cron 表达式
                         org.springframework.scheduling.support.CronExpression.parse(schedule);
 
                         String now = Instant.now().toString();
@@ -222,7 +211,6 @@ public class TaskToolProvider {
                         String instruction = input.getOptionalParam("instruction", String.class).orElse(old.instruction());
                         String status = input.getOptionalParam("status", String.class).orElse(old.status());
 
-                        // 验证新的 cron 表达式
                         if (!schedule.equals(old.schedule())) {
                             org.springframework.scheduling.support.CronExpression.parse(schedule);
                         }
@@ -233,7 +221,6 @@ public class TaskToolProvider {
                         );
                         cronTaskRepository.update(updated);
 
-                        // 状态或 schedule 变更时重新调度
                         boolean scheduleChanged = !schedule.equals(old.schedule());
                         boolean statusChanged = !status.equals(old.status());
 
@@ -297,130 +284,5 @@ public class TaskToolProvider {
                     }
                 })
                 .build();
-    }
-
-    // ─────────────────────────────────────────────
-    //  Heartbeat Checklist 工具（2 个）
-    // ─────────────────────────────────────────────
-
-    /**
-     * 构建所有心跳 Checklist 工具。
-     *
-     * @return Heartbeat 工具列表（read / write）
-     */
-    public List<BuiltinTool> buildHeartbeatTools() {
-        return List.of(
-                buildHeartbeatReadTool(),
-                buildHeartbeatWriteTool()
-        );
-    }
-
-    /** 构建读取心跳 Checklist 工具。 */
-    private BuiltinTool buildHeartbeatReadTool() {
-        return BuiltinTool.builder()
-                .id("heartbeat.read")
-                .category(ToolCategory.PERCEPTION)
-                .name("读取心跳 Checklist")
-                .description("读取 HEARTBEAT.md 文件内容，返回当前的心跳巡检 checklist")
-                .inputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.PARALLEL_SAFE,
-                        input -> heartbeatScopeResolution()
-                ))
-                .tags(TASK_TAGS)
-                .executor(input -> {
-                    try {
-                        Path path = resolveHeartbeatPath();
-                        if (!Files.exists(path)) {
-                            return ToolResult.success(Map.of(
-                                    "exists", false,
-                                    "content", "",
-                                    "path", path.toString()
-                            ));
-                        }
-                        String content = Files.readString(path);
-                        return ToolResult.success(Map.of(
-                                "exists", true,
-                                "content", content,
-                                "path", path.toString()
-                        ));
-                    } catch (IOException e) {
-                        log.error("读取 HEARTBEAT.md 失败: {}", e.getMessage(), e);
-                        return ToolResult.error("读取 HEARTBEAT.md 失败: " + e.getMessage());
-                    }
-                })
-                .build();
-    }
-
-    /** 构建写入心跳 Checklist 工具。 */
-    private BuiltinTool buildHeartbeatWriteTool() {
-        return BuiltinTool.builder()
-                .id("heartbeat.write")
-                .category(ToolCategory.ACTION)
-                .name("写入心跳 Checklist")
-                .description("覆写 HEARTBEAT.md 文件内容，更新心跳巡检 checklist。文件不存在时自动创建")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("content"),
-                        "properties", Map.of(
-                                "content", Map.of("type", "string",
-                                        "description", "新的 HEARTBEAT.md 完整内容（Markdown 格式）")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        input -> heartbeatScopeResolution()
-                ))
-                .tags(TASK_TAGS)
-                .executor(input -> {
-                    try {
-                        String content = input.getParam("content", String.class);
-                        Path path = resolveHeartbeatPath();
-
-                        // 确保父目录存在
-                        Files.createDirectories(path.getParent());
-                        Files.writeString(path, content);
-
-                        log.info("HEARTBEAT.md 写入成功: path={}", path);
-                        return ToolResult.success(Map.of(
-                                "written", true,
-                                "path", path.toString()
-                        ));
-                    } catch (IOException e) {
-                        log.error("写入 HEARTBEAT.md 失败: {}", e.getMessage(), e);
-                        return ToolResult.error("写入 HEARTBEAT.md 失败: " + e.getMessage());
-                    }
-                })
-                .build();
-    }
-
-    /** 解析心跳文件路径，支持 ~ 展开。 */
-    private Path resolveHeartbeatPath() {
-        String filePath = config.getTask().getHeartbeatFile();
-        if (filePath == null || filePath.isBlank()) {
-            filePath = "~/.zhiwei/HEARTBEAT.md";
-        }
-        if (filePath.startsWith("~")) {
-            filePath = System.getProperty("user.home") + filePath.substring(1);
-        }
-        return Path.of(filePath);
-    }
-
-    private ToolScopeResolution heartbeatScopeResolution() {
-        String normalizedPath = ToolScopeNormalizer.normalizePath(resolveHeartbeatPath().toString());
-        if (normalizedPath == null) {
-            return ToolScopeResolution.EMPTY;
-        }
-        return ToolScopeResolvers.paths("path").resolve(new com.lifepilot.tool.model.ToolInput(
-                "heartbeat",
-                Map.of("path", normalizedPath),
-                JsonSchema.empty(),
-                null,
-                null
-        ));
     }
 }

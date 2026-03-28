@@ -1,20 +1,33 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRecord;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackType;
+import com.lifepilot.agent.task.reminder.ReminderNotificationFeedbackView;
+import com.lifepilot.agent.task.reminder.ReminderTopicPreferenceRecord;
 import com.lifepilot.interaction.web.model.NotificationDto;
 import com.lifepilot.interaction.web.model.PageResult;
+import com.lifepilot.interaction.web.model.ReminderFeedbackRequest;
 import com.lifepilot.notification.NotificationRecord;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.config.NotificationProperties;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * 通知管理 REST Controller — 提供通知历史查询、已读标记等端点。
@@ -28,14 +41,26 @@ import java.util.Map;
 public class NotificationController {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationController.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String REMINDER_TYPE = "proactive_reminder";
 
     private final NotificationRepository notificationRepository;
     private final NotificationProperties notificationProperties;
+    @Nullable
+    private final ReminderFeedbackRepository reminderFeedbackRepository;
 
     public NotificationController(NotificationRepository notificationRepository,
                                   NotificationProperties notificationProperties) {
+        this(notificationRepository, notificationProperties, null);
+    }
+
+    @Autowired
+    public NotificationController(NotificationRepository notificationRepository,
+                                  NotificationProperties notificationProperties,
+                                  @Nullable ReminderFeedbackRepository reminderFeedbackRepository) {
         this.notificationRepository = notificationRepository;
         this.notificationProperties = notificationProperties;
+        this.reminderFeedbackRepository = reminderFeedbackRepository;
     }
 
     /**
@@ -57,8 +82,10 @@ public class NotificationController {
 
         List<NotificationRecord> records = notificationRepository.findByUserId(userId, page, effectiveSize);
         long total = notificationRepository.countByUserId(userId);
-
-        var dtos = records.stream().map(NotificationDto::from).toList();
+        Map<String, ReminderNotificationFeedbackView> feedbackViews = loadFeedbackViews(records);
+        var dtos = records.stream()
+                .map(record -> NotificationDto.from(record, feedbackViews.get(record.id())))
+                .toList();
         log.debug("查询通知历史: userId={}, page={}, size={}, total={}",
                 userId, page, effectiveSize, total);
 
@@ -82,7 +109,7 @@ public class NotificationController {
 
         // 重新查询获取更新后的记录
         var updated = notificationRepository.findById(id).orElse(record);
-        return ResponseEntity.ok(NotificationDto.from(updated));
+        return ResponseEntity.ok(NotificationDto.from(updated, loadFeedbackView(id)));
     }
 
     /**
@@ -96,5 +123,105 @@ public class NotificationController {
         int count = notificationRepository.markAllAsRead(userId);
         log.info("批量标记通知已读: userId={}, count={}", userId, count);
         return ResponseEntity.ok(Map.of("updatedCount", count));
+    }
+
+    /**
+     * 提交主动提醒反馈。
+     *
+     * @param id      通知 ID
+     * @param request 反馈请求
+     * @return 更新后的通知记录
+     */
+    @PostMapping("/{id}/feedback")
+    public ResponseEntity<NotificationDto> submitReminderFeedback(@PathVariable String id,
+                                                                  @RequestBody ReminderFeedbackRequest request) {
+        if (reminderFeedbackRepository == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "主动提醒反馈未启用");
+        }
+        if (request.feedbackType() == null || request.feedbackType().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "反馈类型不能为空");
+        }
+
+        NotificationRecord record = notificationRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "通知不存在: id=" + id));
+        if (!REMINDER_TYPE.equals(record.typeId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "仅主动提醒支持反馈");
+        }
+
+        ReminderFeedbackType feedbackType;
+        try {
+            feedbackType = ReminderFeedbackType.parse(request.feedbackType());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "反馈类型无效: " + request.feedbackType(), e);
+        }
+
+        String topicKey = extractTopicKey(record.metadataJson())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "通知缺少提醒主题"));
+        Instant now = Instant.now();
+        reminderFeedbackRepository.saveFeedback(new ReminderFeedbackRecord(
+                UUID.randomUUID().toString(),
+                record.id(),
+                record.userId(),
+                topicKey,
+                feedbackType,
+                request.comment(),
+                now,
+                now
+        ));
+        if (request.muteTopic() != null) {
+            reminderFeedbackRepository.upsertTopicPreference(new ReminderTopicPreferenceRecord(
+                    record.userId(),
+                    topicKey,
+                    request.muteTopic(),
+                    Boolean.TRUE.equals(request.muteTopic()) ? now : null,
+                    now
+            ));
+        }
+        notificationRepository.markAsRead(id);
+        NotificationRecord updated = notificationRepository.findById(id).orElse(record);
+        ReminderNotificationFeedbackView feedbackView = reminderFeedbackRepository.findFeedbackViewByNotificationId(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "主动提醒反馈保存后未能读取"));
+        log.info("提交主动提醒反馈: notificationId={}, topicKey={}, feedbackType={}, muteTopic={}",
+                id, topicKey, feedbackType, request.muteTopic());
+        return ResponseEntity.ok(NotificationDto.from(updated, feedbackView));
+    }
+
+    private Map<String, ReminderNotificationFeedbackView> loadFeedbackViews(List<NotificationRecord> records) {
+        if (reminderFeedbackRepository == null || records.isEmpty()) {
+            return Map.of();
+        }
+        List<String> notificationIds = records.stream()
+                .map(NotificationRecord::id)
+                .toList();
+        return reminderFeedbackRepository.findFeedbackViewsByNotificationIds(notificationIds);
+    }
+
+    @Nullable
+    private ReminderNotificationFeedbackView loadFeedbackView(String notificationId) {
+        if (reminderFeedbackRepository == null) {
+            return null;
+        }
+        return reminderFeedbackRepository.findFeedbackViewByNotificationId(notificationId).orElse(null);
+    }
+
+    private Optional<String> extractTopicKey(@Nullable String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            Map<String, Object> metadata = MAPPER.readValue(metadataJson, new TypeReference<>() {});
+            Object topicKey = metadata.get("topicKey");
+            if (topicKey == null) {
+                return Optional.empty();
+            }
+            String value = topicKey.toString().trim();
+            return value.isEmpty() ? Optional.empty() : Optional.of(value);
+        } catch (Exception e) {
+            log.debug("解析通知元数据失败: notificationMetadata={}, error={}", metadataJson, e.getMessage());
+            return Optional.empty();
+        }
     }
 }

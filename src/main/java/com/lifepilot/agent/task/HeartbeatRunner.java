@@ -1,29 +1,20 @@
 package com.lifepilot.agent.task;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.model.AgentRequest;
-import com.lifepilot.agent.orchestration.AgentOrchestrator;
-import com.lifepilot.interaction.model.InteractionSource;
-import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.notification.NotificationRequest;
-import com.lifepilot.notification.NotificationService;
-import com.lifepilot.notification.config.NotificationProperties;
+import com.lifepilot.agent.task.reminder.ProactiveReminderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalTime;
-import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 心跳巡检运行器。
+ * 心跳唤醒运行器。
  *
- * <p>定时给 Agent 发一条消息，Agent 自己决定做什么。
- * 设计极其简单：读取 HEARTBEAT.md → 构造 prompt → 调用 AgentOrchestrator。</p>
+ * <p>仅负责按固定频率唤醒主动提醒引擎，并执行活跃时段控制。
+ * 不再直接读取 HEARTBEAT.md，也不再通过 Agent 运行巡检 checklist。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -33,21 +24,21 @@ public class HeartbeatRunner {
     private static final Logger log = LoggerFactory.getLogger(HeartbeatRunner.class);
 
     private final ScheduledExecutorService scheduler;
-    private final AgentOrchestrator agentOrchestrator;
-    private final NotificationService notificationService;
     private final AgentConfigProperties config;
-    private final NotificationProperties notificationProperties;
+    @Nullable
+    private final ProactiveReminderService proactiveReminderService;
 
     public HeartbeatRunner(ScheduledExecutorService scheduler,
-                           AgentOrchestrator agentOrchestrator,
-                           NotificationService notificationService,
+                           AgentConfigProperties config) {
+        this(scheduler, config, null);
+    }
+
+    public HeartbeatRunner(ScheduledExecutorService scheduler,
                            AgentConfigProperties config,
-                           NotificationProperties notificationProperties) {
+                           @Nullable ProactiveReminderService proactiveReminderService) {
         this.scheduler = scheduler;
-        this.agentOrchestrator = agentOrchestrator;
-        this.notificationService = notificationService;
         this.config = config;
-        this.notificationProperties = notificationProperties;
+        this.proactiveReminderService = proactiveReminderService;
     }
 
     /**
@@ -56,9 +47,8 @@ public class HeartbeatRunner {
     public void start() {
         long intervalMs = config.getTask().getHeartbeatIntervalSeconds() * 1000L;
         scheduler.scheduleAtFixedRate(this::beat, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
-        log.info("心跳巡检已启动: interval={}s, file={}",
-                config.getTask().getHeartbeatIntervalSeconds(),
-                config.getTask().getHeartbeatFile());
+        log.info("心跳唤醒已启动: interval={}s",
+                config.getTask().getHeartbeatIntervalSeconds());
     }
 
     /**
@@ -71,38 +61,20 @@ public class HeartbeatRunner {
             return;
         }
 
-        // 读取 HEARTBEAT.md
-        String checklist = readHeartbeatFile();
-        if (checklist == null || checklist.isBlank()) {
-            log.debug("心跳跳过: HEARTBEAT.md 为空或不存在");
+        runProactiveReminderIfEnabled();
+    }
+
+    private void runProactiveReminderIfEnabled() {
+        if (!config.getTask().isProactiveReminderEnabled() || proactiveReminderService == null) {
+            log.debug("心跳跳过: 主动提醒未启用或服务不可用");
             return;
         }
-
-        // 构造心跳 prompt
-        String prompt = """
-                [心跳巡检]
-                以下是你的 checklist：
-                
-                %s
-                
-                按 checklist 检查。不要推测或重复之前已汇报的内容。无事则回复 HEARTBEAT_OK。""".formatted(checklist);
-        var request = new AgentRequest(prompt, "heartbeat:main", InteractionSource.heartbeat("heartbeat:main"));
-
         try {
-            var response = agentOrchestrator.run(request);
-
-            // HEARTBEAT_OK 协议
-            boolean ok = CronScheduler.isSilentResponse(response.content(), "HEARTBEAT_OK");
-
-            if (!ok && !response.content().isBlank() && response.terminationReason() == null) {
-                notificationService.send(new NotificationRequest(
-                        notificationProperties.getDefaultUserId(),
-                        new ResponseContent.TextContent("【心跳巡检】\n" + response.content()),
-                        null, "heartbeat", Map.of()
-                ));
-            }
+            var result = proactiveReminderService.runOnce();
+            log.debug("主动提醒评估完成: topics={}, decisions={}, sent={}",
+                    result.topicsCollected(), result.decisionsEvaluated(), result.remindersSent());
         } catch (Exception e) {
-            log.warn("心跳执行异常: {}", e.getMessage());
+            log.warn("主动提醒执行异常: {}", e.getMessage());
         }
     }
 
@@ -128,28 +100,4 @@ public class HeartbeatRunner {
         }
     }
 
-    /**
-     * 读取心跳 checklist 文件。
-     *
-     * @return 文件内容，文件不存在或读取失败返回 null
-     */
-    String readHeartbeatFile() {
-        String filePath = config.getTask().getHeartbeatFile();
-        if (filePath == null || filePath.isBlank()) return null;
-
-        // 解析 ~ 为用户目录
-        if (filePath.startsWith("~")) {
-            filePath = System.getProperty("user.home") + filePath.substring(1);
-        }
-
-        Path path = Path.of(filePath);
-        if (!Files.exists(path)) return null;
-
-        try {
-            return Files.readString(path);
-        } catch (IOException e) {
-            log.warn("读取 HEARTBEAT.md 失败: path={}, error={}", filePath, e.getMessage());
-            return null;
-        }
-    }
 }

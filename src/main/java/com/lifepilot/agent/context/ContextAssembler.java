@@ -498,13 +498,13 @@ public class ContextAssembler {
                     - 没有新的有效结果时返回 TASK_SILENT
                     """.trim();
             case "heartbeat" -> """
-                    - 这是 heartbeat 巡检任务，优先按 checklist 检查状态和新增异常
-                    - 不要擅自把巡检任务改成新的 cron 调度
-                    - 一切正常时返回 HEARTBEAT_OK
+                    - 这是系统内部的 heartbeat 唤醒任务，不维护 checklist，也不要输出 HEARTBEAT_OK
+                    - 仅在存在明确需要上报的内部结果时才返回正文
+                    - 不要擅自把唤醒任务改成新的 cron 调度
                     """.trim();
             default -> """
                     - 明确时间点或周期任务时，使用 cron
-                    - 模糊持续关注类请求时，优先使用 heartbeat/checklist
+                    - 模糊持续关注类请求时，不要创建过时的 heartbeat checklist；优先记录到记忆或工作区，交由主动提醒引擎后续判断
                     - 一次性分析或执行任务时，直接执行，不创建长期任务
                     """.trim();
         };

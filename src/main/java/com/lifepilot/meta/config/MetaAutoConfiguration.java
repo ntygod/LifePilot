@@ -1,7 +1,6 @@
 package com.lifepilot.meta.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
@@ -125,10 +124,9 @@ public class MetaAutoConfiguration {
                                         @Nullable WorkflowCommandService workflowCommandService,
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
-                                        @Nullable AgentConfigProperties agentConfigProperties,
                                         @Nullable NotificationProperties notificationProperties,
                                         @Nullable BackgroundProcessManager backgroundProcessManager) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager);
     }
 
     /**

@@ -86,11 +86,45 @@ lifepilot:
       max-recent-turns: 10
       cleanup-interval-ms: 300000
     task:
-      # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
+      # ===== 自主任务配置（Cron + 主动提醒） =====
       enabled: true
       heartbeat-enabled: true
+      proactive-reminder-enabled: true
       heartbeat-interval-seconds: 1800
-      heartbeat-file: "~/.zhiwei/HEARTBEAT.md"
+      proactive-reminder-daily-max-reminders: 3
+      proactive-reminder-cooldown-hours: 24
+      proactive-reminder-quiet-hours-start: "23:00"
+      proactive-reminder-quiet-hours-end: "08:00"
+      proactive-reminder-wakeup-scan-interval-seconds: 60
+      proactive-reminder-wakeup-batch-size: 20
+      proactive-reminder-outcome-inference-lookback-days: 30
+      proactive-reminder-outcome-inference-batch-size: 60
+      proactive-reminder-bandit-enabled: true
+      proactive-reminder-bandit-exploration-alpha: 0.18
+      proactive-reminder-bandit-min-examples: 16
+      proactive-reminder-bandit-min-action-samples: 3
+      proactive-reminder-bandit-lookback-days: 30
+      proactive-reminder-bandit-max-examples: 400
+      proactive-reminder-replay-tuning-enabled: true
+      proactive-reminder-replay-min-samples: 12
+      proactive-reminder-replay-evaluation-enabled: true
+      proactive-reminder-replay-evaluation-interval-seconds: 21600
+      proactive-reminder-replay-evaluation-user-batch-size: 8
+      proactive-reminder-retention-days: 180
+      proactive-reminder-cleanup-interval-seconds: 21600
+      proactive-reminder-safe-tuning-enabled: true
+      proactive-reminder-tuning-max-score-delta: 0.04
+      proactive-reminder-tuning-max-hour-delta: 6
+      proactive-reminder-tuning-max-lookahead-minutes-delta: 45
+      proactive-reminder-tuning-max-daily-reminder-delta: 1
+      proactive-reminder-tuning-replay-rollback-delta: 0.05
+      proactive-reminder-tuning-require-consistent-replay-direction: true
+      proactive-reminder-opportunity-learning-enabled: true
+      proactive-reminder-opportunity-promote-threshold: 0.72
+      proactive-reminder-opportunity-suppress-threshold: 0.34
+      proactive-reminder-opportunity-promotion-margin: 0.08
+      proactive-reminder-llm-scene: "proactive_reminder"
+      proactive-reminder-llm-timeout-seconds: 15
       execution-timeout-seconds: 300
       # active-hours-start: "08:00"
       # active-hours-end: "22:00"

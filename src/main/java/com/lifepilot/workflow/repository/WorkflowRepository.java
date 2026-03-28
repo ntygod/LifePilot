@@ -235,6 +235,30 @@ public class WorkflowRepository {
     }
 
     /**
+     * 根据实例 ID 或 traceId 查询最新工作流实例。
+     *
+     * @param reference 实例 ID 或 traceId
+     * @return 匹配的最新实例
+     */
+    public Optional<WorkflowInstance> findLatestByInstanceIdOrTraceId(String reference) {
+        if (reference == null || reference.isBlank()) {
+            return Optional.empty();
+        }
+        List<WorkflowInstance> results = jdbcTemplate.query(
+                """
+                SELECT * FROM workflow_instances
+                WHERE id = ? OR trace_id = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                instanceRowMapper,
+                reference,
+                reference
+        );
+        return results.stream().findFirst();
+    }
+
+    /**
      * 按状态查询工作流实例。
      *
      * @param states 要查询的状态（varargs）
