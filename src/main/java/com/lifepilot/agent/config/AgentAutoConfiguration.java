@@ -281,6 +281,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) ApplicationEventPublisher eventPublisher,
             @Autowired(required = false) ProceduralMemory proceduralMemory,
             @Autowired(required = false) IntentMatcher intentMatcher,
+            @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler) {
         return new ReactAgentLoop(
                 contextAssembler,
@@ -296,6 +297,7 @@ public class AgentAutoConfiguration {
                 eventPublisher,
                 proceduralMemory,
                 intentMatcher,
+                compactionEngine,
                 sharedScheduler);
     }
 

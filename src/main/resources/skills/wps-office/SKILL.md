@@ -4,10 +4,10 @@ name: "WPS 办公"
 description: "WPS 文档操作：创建文档、编辑表格、格式转换。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.http.request
-  - builtin.file.read
-  - builtin.file.write
+  - shell.exec
+  - http.request
+  - file.read
+  - file.write
 triggers:
   - "WPS"
   - "WPS文档"
@@ -78,7 +78,7 @@ doc.save('output.docx')
 
 ### 创建在线文档
 ```
-builtin.http.request(
+http.request(
   url="https://openapi.wps.cn/oauthapi/v3/office/file/new",
   method="POST",
   headers={"Content-Type": "application/json"},

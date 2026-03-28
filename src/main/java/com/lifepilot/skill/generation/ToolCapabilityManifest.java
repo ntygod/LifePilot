@@ -33,11 +33,11 @@ public class ToolCapabilityManifest {
      * <p>Format:</p>
      * <pre>
      * ## 感知（获取外部世界的信息）
-     * - builtin.web.search: Web 搜索
-     * - builtin.file.read: 读取文件
+     * - web.search: Web 搜索
+     * - file.read: 读取文件
      *
      * ## 行动（改变外部世界的状态）
-     * - builtin.file.write: 写入文件
+     * - file.write: 写入文件
      * </pre>
      *
      * @return 格式化的能力清单文本

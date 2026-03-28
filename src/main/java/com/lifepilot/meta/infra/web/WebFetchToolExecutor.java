@@ -118,6 +118,6 @@ public class WebFetchToolExecutor {
 
         // 回退到 body 全文
         Element body = doc.body();
-        return body != null ? body.text() : doc.text();
+        return body.text();
     }
 }

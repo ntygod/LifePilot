@@ -413,6 +413,6 @@ class FileToolExecutorTest {
     // ─────────────────────────────────────────────
 
     private ToolInput buildInput(Map<String, Object> params) {
-        return new ToolInput("builtin.file.test", params, JsonSchema.empty(), null, null);
+        return new ToolInput("file.test", params, JsonSchema.empty(), null, null);
     }
 }

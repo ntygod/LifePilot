@@ -263,6 +263,6 @@ class CodeExecuteToolExecutorTest {
     // ─────────────────────────────────────────────
 
     private ToolInput buildInput(Map<String, Object> params) {
-        return new ToolInput("builtin.code.execute", params, JsonSchema.empty(), null, null);
+        return new ToolInput("code.execute", params, JsonSchema.empty(), null, null);
     }
 }

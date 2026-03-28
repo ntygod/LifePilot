@@ -73,7 +73,7 @@ class MemoryToolProviderTest {
                         Optional.of("collection-a")
                 )));
 
-        var tool = registry.resolve("builtin.knowledge.search").orElseThrow();
+        var tool = registry.resolve("knowledge.search").orElseThrow();
         var result = tool.execute(new ToolInput(
                 tool.id(),
                 Map.of("query", "主角金手指", "top_k", 3),
@@ -115,7 +115,7 @@ class MemoryToolProviderTest {
 
         when(scopeResolver.resolveScopes("session-empty")).thenReturn(List.of());
 
-        var tool = registry.resolve("builtin.knowledge.search").orElseThrow();
+        var tool = registry.resolve("knowledge.search").orElseThrow();
         var result = tool.execute(new ToolInput(
                 tool.id(),
                 Map.of("query", "春季旅游"),

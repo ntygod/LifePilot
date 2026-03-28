@@ -4,14 +4,14 @@ name: "编码代理"
 description: "调度外部编码 Agent（Codex/Claude Code/Pi）执行编码任务：新功能开发、PR 审查、大规模重构、迭代式编码。不适用于：简单单行修改（直接编辑）、仅读取代码（用 file.read）"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.process.list
-  - builtin.process.output
-  - builtin.process.write
-  - builtin.process.kill
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.file.list
+  - shell.exec
+  - process.list
+  - process.output
+  - process.write
+  - process.kill
+  - file.read
+  - file.write
+  - file.list
 triggers:
   - "写代码"
   - "编程"
@@ -47,7 +47,7 @@ triggers:
 
 ```bash
 # 后台启动 Codex（需要 PTY 模式）
-builtin.shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true)
+shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true)
 ```
 
 | 标志 | 效果 |
@@ -59,14 +59,14 @@ builtin.shell.exec(command="codex exec --full-auto '你的任务描述'", workin
 
 ```bash
 # 后台启动 Claude Code（使用 --print 模式，无需 PTY）
-builtin.shell.exec(command="claude --permission-mode bypassPermissions --print '你的任务描述'", workingDirectory="/path/to/project", background=true)
+shell.exec(command="claude --permission-mode bypassPermissions --print '你的任务描述'", workingDirectory="/path/to/project", background=true)
 ```
 
 ### Pi / OpenCode
 
 ```bash
 # 后台启动（交互式终端应用）
-builtin.shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true)
+shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true)
 ```
 
 ## 核心工作流
@@ -74,14 +74,14 @@ builtin.shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to
 ### 1. 启动编码 Agent
 
 ```
-builtin.shell.exec(command="...", workingDirectory="项目路径", background=true)
+shell.exec(command="...", workingDirectory="项目路径", background=true)
 → 返回 { sessionId: "abc123" }
 ```
 
 ### 2. 监控进度
 
 ```
-builtin.process.output(sessionId="abc123")
+process.output(sessionId="abc123")
 → 返回增量输出，查看编码进展
 ```
 
@@ -93,7 +93,7 @@ builtin.process.output(sessionId="abc123")
 ### 3. 交互（按需）
 
 ```
-builtin.process.write(sessionId="abc123", input="yes\n")
+process.write(sessionId="abc123", input="yes\n")
 → 向 Agent 发送确认或输入
 ```
 
@@ -101,10 +101,10 @@ builtin.process.write(sessionId="abc123", input="yes\n")
 
 ```
 # 查看最终输出
-builtin.process.output(sessionId="abc123")
+process.output(sessionId="abc123")
 
 # 如需终止
-builtin.process.kill(sessionId="abc123")
+process.kill(sessionId="abc123")
 ```
 
 ## 并行任务模式
@@ -113,16 +113,16 @@ builtin.process.kill(sessionId="abc123")
 
 ```bash
 # 创建独立工作树
-builtin.shell.exec(command="git worktree add -b fix/issue-78 /tmp/issue-78 main", workingDirectory="/project")
+shell.exec(command="git worktree add -b fix/issue-78 /tmp/issue-78 main", workingDirectory="/project")
 
 # 在工作树中启动 Agent
-builtin.shell.exec(command="codex exec --full-auto 'Fix issue #78'", workingDirectory="/tmp/issue-78", background=true)
+shell.exec(command="codex exec --full-auto 'Fix issue #78'", workingDirectory="/tmp/issue-78", background=true)
 
 # 同时启动另一个任务
-builtin.shell.exec(command="codex exec --full-auto 'Fix issue #79'", workingDirectory="/tmp/issue-79", background=true)
+shell.exec(command="codex exec --full-auto 'Fix issue #79'", workingDirectory="/tmp/issue-79", background=true)
 
 # 用 process.list 查看所有进程
-builtin.process.list()
+process.list()
 ```
 
 ## 进度更新规则

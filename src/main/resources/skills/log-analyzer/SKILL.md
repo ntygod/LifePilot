@@ -4,10 +4,10 @@ name: "日志分析"
 description: "分析应用日志、系统日志，追踪错误、识别模式、生成统计报告"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.file.read
-  - builtin.file.grep
-  - builtin.file.find
+  - shell.exec
+  - file.read
+  - file.grep
+  - file.find
 triggers:
   - "分析日志"
   - "查看日志"
@@ -35,13 +35,13 @@ triggers:
 
 ### 1. 定位日志文件
 ```
-builtin.file.find(path="/var/log", pattern="*.log")
-builtin.file.find(path="~/.zhiwei/logs", pattern="*.log")
+file.find(path="/var/log", pattern="*.log")
+file.find(path="~/.zhiwei/logs", pattern="*.log")
 ```
 
 ### 2. 快速扫描错误
 ```
-builtin.file.grep(path="/path/to/logs", pattern="ERROR|FATAL|Exception", contextLines=3)
+file.grep(path="/path/to/logs", pattern="ERROR|FATAL|Exception", contextLines=3)
 ```
 
 ### 3. 时间范围过滤

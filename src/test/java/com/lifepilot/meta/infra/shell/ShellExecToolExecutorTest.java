@@ -332,6 +332,6 @@ class ShellExecToolExecutorTest {
     // ─────────────────────────────────────────────
 
     private ToolInput buildInput(Map<String, Object> params) {
-        return new ToolInput("builtin.shell.exec", params, JsonSchema.empty(), null, null);
+        return new ToolInput("shell.exec", params, JsonSchema.empty(), null, null);
     }
 }

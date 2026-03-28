@@ -2,16 +2,15 @@
 id: daily-manager
 name: "日常管理"
 description: "日常事务管理：多 Skill 协调、任务分解与优先级排序、日程提醒、信息汇总。"
-version: "1.0.0"
+version: "1.0.1"
 suggested-tools:
-  - builtin.memory.search
-  - builtin.memory.create
-  - builtin.interact.input
-  - builtin.interact.notify
-  - builtin.env.datetime
-  - builtin.web.search
-  - builtin.file.read
-  - builtin.file.write
+  - memory.search
+  - memory.create
+  - interact.input
+  - interact.notify
+  - web.search
+  - file.read
+  - file.write
 triggers:
   - "日程"
   - "待办"
@@ -44,17 +43,16 @@ triggers:
 
 ### 任务规划模式
 
-1. 获取当前时间和上下文
+1. 获取当前上下文
 
 ```
-builtin.env.datetime()
-builtin.memory.search(query="今日待办")
+memory.search(query="今日待办")
 ```
 
 2. 与用户确认任务列表
 
 ```
-builtin.interact.input(question="今天需要完成哪些任务？")
+interact.input(question="今天需要完成哪些任务？")
 ```
 
 3. 任务分解和排序
@@ -68,7 +66,7 @@ builtin.interact.input(question="今天需要完成哪些任务？")
 4. 记录到记忆
 
 ```
-builtin.memory.create(name="今日任务计划", entityType="EVENT", description="任务列表...")
+memory.create(name="今日任务计划", entityType="EVENT", description="任务列表...")
 ```
 
 ### 多 Skill 协调模式
@@ -89,13 +87,13 @@ builtin.memory.create(name="今日任务计划", entityType="EVENT", description
 
 ```
 # 搜索相关记忆
-builtin.memory.search(query="本周完成事项")
+memory.search(query="本周完成事项")
 
 # 读取相关文件
-builtin.file.read(path="notes/weekly.md")
+file.read(path="notes/weekly.md")
 
 # 生成汇总
-builtin.file.write(path="reports/weekly-summary.md", content="汇总内容")
+file.write(path="reports/weekly-summary.md", content="汇总内容")
 ```
 
 ## 协调原则

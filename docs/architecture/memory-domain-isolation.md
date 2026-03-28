@@ -412,7 +412,7 @@ L2 到 L3 的抽取 / 巩固必须完全服从 turn snapshot：
 
 ### 5.4 Memory Tool 检索
 
-`builtin.memory.search` 最终态至少要支持：
+`memory.search` 最终态至少要支持：
 
 - `spaceIds`
 - `memoryScopes`

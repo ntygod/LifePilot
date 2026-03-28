@@ -36,8 +36,8 @@ class ContextMessageFormatterTest {
                         """),
                 ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
-                                "builtin.memory.create",
-                                "builtin.memory.create",
+                                "memory.create",
+                                "memory.create",
                                 "{\"summary\":\"ok\"}"
                         )))
                         .build()
@@ -48,7 +48,7 @@ class ContextMessageFormatterTest {
                 .contains("<runtime_context>")
                 .contains("<history_transcript>")
                 .contains("<current_request>")
-                .contains("ToolResultMessage: builtin.memory.create: {\"summary\":\"ok\"}")
+                .contains("ToolResultMessage: memory.create: {\"summary\":\"ok\"}")
                 .doesNotContain("[0] <user_profile_context>")
                 .doesNotContain("UserMessage: <runtime_context>")
                 .doesNotContain("AssistantMessage: <user_profile_context>");

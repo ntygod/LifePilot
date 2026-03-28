@@ -196,7 +196,7 @@ sequenceDiagram
 |------|------|---------|
 | 被依赖 | `agent.task` | cron / heartbeat 通过 `NotificationService` 发送结果 |
 | 被依赖 | `workflow` | `NotifyStep` 通过 `NotificationService` 投递通知 |
-| 被依赖 | `meta` | `builtin.interact.notify` 通过 `NotifyToolExecutor` 调用通知服务 |
+| 被依赖 | `meta` | `interact.notify` 通过 `NotifyToolExecutor` 调用通知服务 |
 | 依赖 | `interaction.channel` | 通过 `ChannelAdapter` 向外部渠道发送 |
 | 依赖 | `interaction.web.sse` | 通过 `SseSessionManager` 实时广播 Web 通知 |
 | 依赖 | SQLite | 持久化通知历史 |

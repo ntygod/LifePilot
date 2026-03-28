@@ -172,18 +172,35 @@ class CompactionEngine_集成测试 {
                     Map<String, Object> vars = invocation.getArgument(1, Map.class);
                     return "压缩提示:\n" + vars.get("conversation");
                 });
+        when(promptRegistry.render(eq("memory/compression-keypoints"), anyMap()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> vars = invocation.getArgument(1, Map.class);
+                    return "摘要内容：\n" + vars.get("summary");
+                });
 
         var generationRouter = mock(GenerationRouter.class);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
-                .thenReturn(new LlmResponse(
-                        "这是压缩摘要，保留关键决策、约束和工具结果。",
-                        120,
-                        30,
-                        "provider-x",
-                        "model-x",
-                        20,
-                        false
-                ));
+                .thenReturn(
+                        new LlmResponse(
+                                "这是压缩摘要，保留关键决策、约束和工具结果。",
+                                120,
+                                30,
+                                "provider-x",
+                                "model-x",
+                                20,
+                                false
+                        ),
+                        new LlmResponse(
+                                "- 已完成需求整理\n- 决定保留关键决策\n- 后续需要继续验证测试",
+                                60,
+                                20,
+                                "provider-x",
+                                "model-x",
+                                20,
+                                false
+                        )
+                );
 
         var engine = new CompactionEngine(
                 config,
@@ -201,7 +218,7 @@ class CompactionEngine_集成测试 {
                 )
         );
 
-        boolean compacted = engine.compactIfNeeded(SESSION_ID, "trace-compact");
+        boolean compacted = engine.compactIfNeeded(SESSION_ID, "trace-compact", null);
 
         assertThat(compacted).isTrue();
         var rows = transcriptRepository.findBySessionId(SESSION_ID);
@@ -216,6 +233,7 @@ class CompactionEngine_集成测试 {
                 .containsEntry("summary", "这是压缩摘要，保留关键决策、约束和工具结果。")
                 .containsEntry("firstKeptEntryId", turn3UserId)
                 .containsEntry("sourceStartEntryId", turn1UserId);
+        assertThat(payload).containsKey("keyPoints").containsKey("checkpoint");
         var sessionRow = sessionStoreRepository.findBySessionId(SESSION_ID).orElseThrow();
         assertThat(sessionRow.compactionCount()).isEqualTo(1);
         assertThat(sessionRow.memoryFlushAt()).isNotNull();
@@ -231,13 +249,17 @@ class CompactionEngine_集成测试 {
         assertThat(memoryDocumentRepository.findChunks(documentId)).isNotEmpty();
 
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(generationRouter).call(anyString(), promptCaptor.capture(), any(), any(), any(), any(), any());
-        assertThat(promptCaptor.getValue())
+        verify(generationRouter, org.mockito.Mockito.times(2))
+                .call(anyString(), promptCaptor.capture(), any(), any(), any(), any(), any());
+        assertThat(promptCaptor.getAllValues().getFirst())
                 .contains("[新增待压缩内容]")
                 .contains("第一轮问题")
                 .contains("第二轮回答")
                 .contains("tool.search")
                 .doesNotContain("第三轮回答");
+        assertThat(promptCaptor.getAllValues().getLast())
+                .contains("摘要内容")
+                .contains("这是压缩摘要");
     }
 
     private String appendMessage(String role, String content, String turnId, Instant createdAt) {

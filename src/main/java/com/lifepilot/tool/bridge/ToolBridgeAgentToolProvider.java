@@ -24,6 +24,7 @@ import org.springframework.lang.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -43,6 +44,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
     private final int maxToolOutputChars;
+    private volatile Map<String, String> toolIdToModelName = Map.of();
+    private volatile Map<String, String> modelNameToToolId = Map.of();
 
     public ToolBridgeAgentToolProvider(
             DynamicToolRegistry toolRegistry,
@@ -58,21 +61,21 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     @Override
     @Nullable
     public String resolveToolDisplayName(String toolId) {
-        return toolRegistry.resolve(toolId)
+        return resolveTool(toolId)
                 .map(ToolContract::name)
                 .orElse(null);
     }
 
     @Override
     public RiskLevel resolveToolRiskLevel(String toolId) {
-        return toolRegistry.resolve(toolId)
+        return resolveTool(toolId)
                 .map(ToolContract::riskLevel)
                 .orElse(RiskLevel.LOW);
     }
 
     @Override
     public ToolSchedulingHint resolveSchedulingHint(String toolId, String inputJson) {
-        ToolContract tool = toolRegistry.resolve(toolId).orElse(null);
+        ToolContract tool = resolveTool(toolId).orElse(null);
         if (tool == null) {
             return ToolSchedulingHint.sequential();
         }
@@ -100,6 +103,11 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     }
 
     @Override
+    public String resolveCanonicalToolId(String toolId) {
+        return modelNameToToolId.getOrDefault(toolId, toolId);
+    }
+
+    @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
         if (isWebConversation(state)) {
@@ -118,6 +126,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else {
             log.debug("生成 ToolCallback: count={}", tools.size());
         }
+        refreshToolNameMappings(tools);
         return tools.stream()
                 .map(t -> toToolCallback(t, streamId, state))
                 .toList();
@@ -130,8 +139,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     /** 这两类工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
     private boolean isUserPromptInteractionTool(String toolId) {
-        return "builtin.interact.input".equals(toolId)
-                || "builtin.interact.choose".equals(toolId);
+        return "interact.input".equals(toolId)
+                || "interact.choose".equals(toolId);
     }
 
     /**
@@ -164,7 +173,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
 
         ToolDefinition definition = DefaultToolDefinition.builder()
-                .name(tool.id())
+                .name(resolveModelToolName(tool.id()))
                 .description(tool.description())
                 .inputSchema(formatInputSchema(tool))
                 .build();
@@ -187,6 +196,47 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                 return output;
             }
         };
+    }
+
+    private void refreshToolNameMappings(List<ToolContract> tools) {
+        Map<String, String> nextToolIdToModelName = new LinkedHashMap<>();
+        Map<String, String> nextModelNameToToolId = new LinkedHashMap<>();
+        for (ToolContract tool : tools) {
+            String modelName = buildUniqueModelToolName(tool.id(), nextModelNameToToolId);
+            nextToolIdToModelName.put(tool.id(), modelName);
+            nextModelNameToToolId.put(modelName, tool.id());
+        }
+        this.toolIdToModelName = Map.copyOf(nextToolIdToModelName);
+        this.modelNameToToolId = Map.copyOf(nextModelNameToToolId);
+    }
+
+    private String buildUniqueModelToolName(String toolId, Map<String, String> occupiedNames) {
+        String baseName = sanitizeToolName(toolId);
+        String candidate = baseName;
+        if (occupiedNames.containsKey(candidate) && !Objects.equals(occupiedNames.get(candidate), toolId)) {
+            String suffix = "_" + Integer.toHexString(toolId.hashCode()).replace('-', '0');
+            candidate = baseName + suffix;
+        }
+        int attempt = 1;
+        while (occupiedNames.containsKey(candidate) && !Objects.equals(occupiedNames.get(candidate), toolId)) {
+            candidate = baseName + "_" + attempt;
+            attempt++;
+        }
+        return candidate;
+    }
+
+    static String sanitizeToolName(String toolId) {
+        String sanitized = toolId.replaceAll("[^a-zA-Z0-9_-]", "_");
+        return sanitized.isBlank() ? "tool" : sanitized;
+    }
+
+    private String resolveModelToolName(String toolId) {
+        return toolIdToModelName.getOrDefault(toolId, sanitizeToolName(toolId));
+    }
+
+    private java.util.Optional<ToolContract> resolveTool(String toolIdOrAlias) {
+        String canonicalToolId = resolveCanonicalToolId(toolIdOrAlias);
+        return toolRegistry.resolve(canonicalToolId);
     }
 
     /** 格式化输入 Schema 为 JSON 字符串。 */

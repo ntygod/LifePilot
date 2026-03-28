@@ -45,7 +45,7 @@ class PermissionEvaluatorTest {
     @Test
     void lowRisk_直接放行且不查授权仓储() {
         var request = new PermissionRequest(
-                "builtin.memory.search",
+                "memory.search",
                 PermissionActionType.GENERIC_TOOL_OPERATION,
                 RiskLevel.LOW,
                 "web",
@@ -67,7 +67,7 @@ class PermissionEvaluatorTest {
     @Test
     void highRisk_命中会话级授权时放行() {
         var request = new PermissionRequest(
-                "builtin.file.write",
+                "file.write",
                 PermissionActionType.WRITE_FILE,
                 RiskLevel.HIGH,
                 "web",
@@ -112,7 +112,7 @@ class PermissionEvaluatorTest {
     @Test
     void autonomousCritical_无预授权时阻断() {
         var request = new PermissionRequest(
-                "builtin.shell.exec",
+                "shell.exec",
                 PermissionActionType.EXECUTE_SHELL,
                 RiskLevel.CRITICAL,
                 "cron",
@@ -138,7 +138,7 @@ class PermissionEvaluatorTest {
     @Test
     void autonomousHigh_无预授权时阻断() {
         var request = new PermissionRequest(
-                "builtin.http.request",
+                "http.request",
                 PermissionActionType.HTTP_REQUEST,
                 RiskLevel.HIGH,
                 "heartbeat",
@@ -164,7 +164,7 @@ class PermissionEvaluatorTest {
     @Test
     void autonomousHigh_命中任务级自主授权时放行() {
         var request = new PermissionRequest(
-                "builtin.code.execute",
+                "code.execute",
                 PermissionActionType.EXECUTE_SHELL,
                 RiskLevel.HIGH,
                 "cron",
@@ -210,7 +210,7 @@ class PermissionEvaluatorTest {
     @Test
     void autonomousCritical_命中任务级自主授权时放行() {
         var request = new PermissionRequest(
-                "builtin.shell.exec",
+                "shell.exec",
                 PermissionActionType.EXECUTE_SHELL,
                 RiskLevel.CRITICAL,
                 "workflow",
@@ -256,7 +256,7 @@ class PermissionEvaluatorTest {
     @Test
     void interactiveHigh_无授权时要求审批() {
         var request = new PermissionRequest(
-                "builtin.browser.navigate",
+                "browser.navigate",
                 PermissionActionType.BROWSER_AUTOMATION,
                 RiskLevel.HIGH,
                 "web",
@@ -280,7 +280,7 @@ class PermissionEvaluatorTest {
     @Test
     void interactiveScheduleWithAutonomousGrantRequirement_应要求审批() {
         var request = new PermissionRequest(
-                "builtin.cron.create",
+                "cron.create",
                 PermissionActionType.CREATE_SCHEDULE,
                 RiskLevel.LOW,
                 "web",

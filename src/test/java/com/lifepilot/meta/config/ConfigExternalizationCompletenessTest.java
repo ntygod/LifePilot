@@ -40,7 +40,6 @@ class ConfigExternalizationCompletenessTest {
         var infra = props.getInfra();
         assertThat(infra.getWebSearch()).isNotNull();
         assertThat(infra.getWebFetch()).isNotNull();
-        assertThat(infra.getUserProfile()).isNotNull();
         assertThat(infra.getShell()).isNotNull();
         assertThat(infra.getBrowser()).isNotNull();
         assertThat(infra.getCodeExecute()).isNotNull();
@@ -68,15 +67,6 @@ class ConfigExternalizationCompletenessTest {
         var wf = props.getInfra().getWebFetch();
         assertThat(wf.getMaxContentLength()).isEqualTo(50000);
         assertThat(wf.getTimeoutSeconds()).isEqualTo(10);
-    }
-
-    // ── UserProfile 默认值 ────────────────────────────────────
-
-    @Test
-    void UserProfile默认值正确() {
-        var up = props.getInfra().getUserProfile();
-        assertThat(up.getTimezone()).isEqualTo("");
-        assertThat(up.getCacheTtlSeconds()).isEqualTo(300);
     }
 
     // ── Shell 默认值 ─────────────────────────────────────────

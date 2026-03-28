@@ -24,11 +24,11 @@ class AutonomousTaskApprovalAdvisorTest {
     private final AutonomousTaskApprovalAdvisor advisor = new AutonomousTaskApprovalAdvisor(toolRegistry);
 
     AutonomousTaskApprovalAdvisorTest() {
-        register("builtin.file.delete", "删除文件",
+        register("file.delete", "删除文件",
                 "删除文件或目录，支持递归删除非空目录", RiskLevel.HIGH);
-        register("builtin.code.execute", "执行代码",
+        register("code.execute", "执行代码",
                 "在沙箱环境中执行代码，支持 Python/JavaScript/Shell", RiskLevel.HIGH);
-        register("builtin.file.read", "读取文件",
+        register("file.read", "读取文件",
                 "读取指定路径的文件内容", RiskLevel.LOW);
     }
 

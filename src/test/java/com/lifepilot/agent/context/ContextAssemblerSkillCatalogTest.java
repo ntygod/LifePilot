@@ -252,7 +252,7 @@ class ContextAssemblerSkillCatalogTest {
                 .contains("<active_knowledge_bindings>")
                 .contains("小红书集合 (ds-xhs)")
                 .contains("小红书资料库 (kb-xhs)")
-                .doesNotContain("builtin.knowledge.search");
+                .doesNotContain("knowledge.search");
     }
 
     @Test

@@ -33,7 +33,7 @@ public interface AgentToolProvider {
      * 根据工具 ID 解析用户可读的显示名称。
      *
      * <p>用于前端展示场景（推理时间线、工具确认卡片等），
-     * 将技术 ID（如 {@code builtin.todo.create}）转换为中文名称（如 "创建待办"）。</p>
+     * 将技术 ID（如 {@code todo.create}）转换为中文名称（如 "创建待办"）。</p>
      *
      * @param toolId 工具技术标识
      * @return 工具显示名称，未找到时返回 null（前端回退到 toolId）
@@ -67,6 +67,19 @@ public interface AgentToolProvider {
      */
     default ToolSchedulingHint resolveSchedulingHint(String toolId, String inputJson) {
         return ToolSchedulingHint.sequential();
+    }
+
+    /**
+     * 将模型返回的工具名解析为内部工具 ID。
+     *
+     * <p>部分 Provider 对工具名格式有限制，桥接层可能会对外暴露合法别名；
+     * 执行阶段再通过该方法恢复为真实工具 ID。</p>
+     *
+     * @param toolId 模型返回的工具名或原始工具 ID
+     * @return 内部真实工具 ID，默认原样返回
+     */
+    default String resolveCanonicalToolId(String toolId) {
+        return toolId;
     }
 
     /**

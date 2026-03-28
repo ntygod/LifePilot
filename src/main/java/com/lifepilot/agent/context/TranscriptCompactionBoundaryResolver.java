@@ -29,8 +29,14 @@ public class TranscriptCompactionBoundaryResolver {
             String summaryEntryId,
             @Nullable String firstKeptEntryId,
             @Nullable String summary,
+            List<String> keyPoints,
+            TaskCheckpoint checkpoint,
             Instant createdAt
     ) {
+        public CompactionBoundary {
+            keyPoints = keyPoints == null ? List.of() : List.copyOf(keyPoints);
+            checkpoint = checkpoint != null ? checkpoint : TaskCheckpoint.empty();
+        }
     }
 
     public TranscriptCompactionBoundaryResolver(ObjectMapper objectMapper) {
@@ -52,9 +58,30 @@ public class TranscriptCompactionBoundaryResolver {
                             row.id(),
                             stringValue(payload.get("firstKeptEntryId")),
                             stringValue(payload.get("summary")),
+                            readKeyPoints(payload.get("keyPoints")),
+                            TaskCheckpoint.fromPayload(payload.get("checkpoint"), objectMapper),
                             row.createdAt()
                     );
                 });
+    }
+
+    private List<String> readKeyPoints(@Nullable Object rawValue) {
+        if (rawValue == null) {
+            return List.of();
+        }
+        try {
+            List<String> values = objectMapper.convertValue(
+                    rawValue,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)
+            );
+            return values != null ? values.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(value -> !value.isEmpty())
+                    .toList() : List.of();
+        } catch (IllegalArgumentException e) {
+            return List.of();
+        }
     }
 
     public List<SessionTranscriptRepository.SessionTranscriptEntryRow> filterRowsForActiveContext(

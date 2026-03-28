@@ -112,7 +112,6 @@ describe('ChatInput 上下文选择', () => {
         baseSessionConfig: {
           preferredProviderId: 'provider-1',
           temperature: 0.7,
-          maxTokens: 4096,
           maxSteps: 12,
           maxDurationSeconds: 90,
           knowledgeBaseIds: ['kb-default'],
@@ -175,5 +174,4 @@ describe('ChatInput 上传进行中禁用发送（Property 15）', () => {
     )
   })
 })
-
 

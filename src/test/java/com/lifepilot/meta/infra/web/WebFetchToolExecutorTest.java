@@ -44,7 +44,7 @@ class WebFetchToolExecutorTest {
                 </html>
                 """);
 
-        ToolInput input = new ToolInput("builtin.web.fetch",
+        ToolInput input = new ToolInput("web.fetch",
                 Map.of("url", "https://example.com"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -71,7 +71,7 @@ class WebFetchToolExecutorTest {
                 </html>
                 """);
 
-        ToolInput input = new ToolInput("builtin.web.fetch",
+        ToolInput input = new ToolInput("web.fetch",
                 Map.of("url", "https://example.com", "selector", ".content"),
                 JsonSchema.empty(), null, null);
 
@@ -86,7 +86,7 @@ class WebFetchToolExecutorTest {
         var executor = new TestableWebFetchToolExecutor(properties,
                 "<html><body><p>简单页面</p></body></html>");
 
-        ToolInput input = new ToolInput("builtin.web.fetch",
+        ToolInput input = new ToolInput("web.fetch",
                 Map.of("url", "https://example.com", "selector", ".nonexistent"),
                 JsonSchema.empty(), null, null);
 
@@ -104,7 +104,7 @@ class WebFetchToolExecutorTest {
         var executor = new TestableWebFetchToolExecutor(properties,
                 "<html><head><title>截断测试</title></head><body><article>这是一段很长的文章内容，需要被截断处理以避免超出限制。</article></body></html>");
 
-        ToolInput input = new ToolInput("builtin.web.fetch",
+        ToolInput input = new ToolInput("web.fetch",
                 Map.of("url", "https://example.com"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -118,7 +118,7 @@ class WebFetchToolExecutorTest {
     void 缺少url参数_返回错误() {
         var executor = new WebFetchToolExecutor(properties);
 
-        ToolInput input = new ToolInput("builtin.web.fetch",
+        ToolInput input = new ToolInput("web.fetch",
                 Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -140,7 +140,7 @@ class WebFetchToolExecutorTest {
                 </html>
                 """);
 
-        ToolInput input = new ToolInput("builtin.web.fetch",
+        ToolInput input = new ToolInput("web.fetch",
                 Map.of("url", "https://example.com"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);

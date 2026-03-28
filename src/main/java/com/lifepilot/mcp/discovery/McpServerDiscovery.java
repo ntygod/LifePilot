@@ -38,7 +38,7 @@ public class McpServerDiscovery {
     private static final Logger log = LoggerFactory.getLogger(McpServerDiscovery.class);
 
     /** classpath 内置 MCP 服务器配置路径。 */
-    private static final String BUILTIN_MCP_RESOURCE = "builtin-mcp/servers.json";
+    private static final String BUILTIN_MCP_RESOURCE = "mcp/servers.json";
 
     private final McpConfigProperties properties;
 

@@ -19,11 +19,11 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 
 ### 2.1 记忆实体搜索
 
-`builtin.memory.search` 用于搜索长期记忆实体，如人物、地点、事件、偏好、习惯、目标和经验。
+`memory.search` 用于搜索长期记忆实体，如人物、地点、事件、偏好、习惯、目标和经验。
 
 ### 2.2 跨会话对话回忆
 
-`builtin.memory.recall` 用于搜索别的 session 里的历史对话片段。
+`memory.recall` 用于搜索别的 session 里的历史对话片段。
 
 - 返回的是 snippet，而不是零散单条消息
 - 会自动排除当前 session
@@ -31,21 +31,21 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 
 ### 2.3 知识库文档搜索
 
-`builtin.knowledge.search` 用于搜索当前会话绑定的资料文档，适合“文档里怎么说”的场景。
+`knowledge.search` 用于搜索当前会话绑定的资料文档，适合“文档里怎么说”的场景。
 
 ### 2.4 语义记忆管理
 
 以下工具用于管理长期记忆实体和关系：
 
-- `builtin.memory.create`
-- `builtin.memory.update`
-- `builtin.memory.delete`
-- `builtin.memory.tag`
-- `builtin.memory.query-at-time`
+- `memory.create`
+- `memory.update`
+- `memory.delete`
+- `memory.tag`
+- `memory.query-at-time`
 
 ### 2.5 历史经验复用
 
-`builtin.memory.search-experience` 用于主动搜索历史执行经验，适用于：
+`memory.search-experience` 用于主动搜索历史执行经验，适用于：
 
 - 遇到类似任务时想复用过去策略
 - 工具连续失败时参考成功经验
@@ -55,36 +55,36 @@ Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，
 
 | 工具 | 说明 |
 |------|------|
-| `builtin.memory.search` | 搜索长期记忆实体 |
-| `builtin.memory.recall` | 回忆跨会话历史对话片段 |
-| `builtin.knowledge.search` | 搜索资料文档 |
-| `builtin.memory.create` | 创建记忆实体 |
-| `builtin.memory.update` | 更新记忆实体 |
-| `builtin.memory.delete` | 归档记忆实体 |
-| `builtin.memory.tag` | 添加实体关系 |
-| `builtin.memory.query-at-time` | 查询时间点有效实体 |
-| `builtin.memory.search-experience` | 搜索历史执行经验 |
+| `memory.search` | 搜索长期记忆实体 |
+| `memory.recall` | 回忆跨会话历史对话片段 |
+| `knowledge.search` | 搜索资料文档 |
+| `memory.create` | 创建记忆实体 |
+| `memory.update` | 更新记忆实体 |
+| `memory.delete` | 归档记忆实体 |
+| `memory.tag` | 添加实体关系 |
+| `memory.query-at-time` | 查询时间点有效实体 |
+| `memory.search-experience` | 搜索历史执行经验 |
 
 ## 4. 使用场景
 
 ### 4.1 回忆别的会话
 
-用户问“我上次提到过旅行计划吗”，Agent 应调用 `builtin.memory.recall`，而不是在主 Prompt 里自动混入跨会话历史。
+用户问“我上次提到过旅行计划吗”，Agent 应调用 `memory.recall`，而不是在主 Prompt 里自动混入跨会话历史。
 
 ### 4.2 查用户长期偏好
 
-用户问“你还记得我喜欢什么样的工作节奏吗”，Agent 可以通过 `builtin.memory.search` 查长期偏好实体。
+用户问“你还记得我喜欢什么样的工作节奏吗”，Agent 可以通过 `memory.search` 查长期偏好实体。
 
 ### 4.3 查文档资料
 
-用户问“部署文档里关于回滚怎么写的”，Agent 应调用 `builtin.knowledge.search`。
+用户问“部署文档里关于回滚怎么写的”，Agent 应调用 `knowledge.search`。
 
 ### 4.4 复用执行经验
 
-当某个任务与过去做过的任务相似时，Agent 可以主动调用 `builtin.memory.search-experience` 查历史策略。
+当某个任务与过去做过的任务相似时，Agent 可以主动调用 `memory.search-experience` 查历史策略。
 
 ## 5. 当前限制
 
 - Memory Skill 只负责给出使用说明，真正能力边界由底层工具实现决定
-- `builtin.knowledge.search` 依赖会话绑定知识库或 datastore，没有绑定时会返回空结果
+- `knowledge.search` 依赖会话绑定知识库或 datastore，没有绑定时会返回空结果
 - `recall` 只检索跨 session 片段，不负责当前 session 连续性

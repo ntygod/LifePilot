@@ -4,11 +4,11 @@ name: "内容摘要"
 description: "内容摘要生成：URL 网页摘要、本地文件摘要、会议纪要、多文档对比摘要。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.web.fetch
-  - builtin.web.search
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.knowledge.search
+  - web.fetch
+  - web.search
+  - file.read
+  - file.write
+  - knowledge.search
 triggers:
   - "总结"
   - "摘要"
@@ -49,10 +49,10 @@ triggers:
 
 ```
 # 1. 抓取网页内容
-builtin.web.fetch(url="目标URL")
+web.fetch(url="目标URL")
 
 # 2. 如果内容过长，用选择器提取正文
-builtin.web.fetch(url="目标URL", selector="article, .content, main")
+web.fetch(url="目标URL", selector="article, .content, main")
 
 # 3. 生成摘要
 ```
@@ -61,18 +61,18 @@ builtin.web.fetch(url="目标URL", selector="article, .content, main")
 
 ```
 # 1. 读取文件
-builtin.file.read(path="文件路径")
+file.read(path="文件路径")
 
 # 2. 大文件分段读取
-builtin.file.read(path="文件路径", offset=0, maxChars=10000)
+file.read(path="文件路径", offset=0, maxChars=10000)
 ```
 
 ### 多文档对比
 
 ```
 # 1. 逐一读取各文档
-builtin.file.read(path="doc1.md")
-builtin.file.read(path="doc2.md")
+file.read(path="doc1.md")
+file.read(path="doc2.md")
 
 # 2. 提取各文档核心观点
 # 3. 生成对比表格

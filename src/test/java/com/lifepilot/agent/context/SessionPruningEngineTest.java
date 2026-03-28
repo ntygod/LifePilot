@@ -62,6 +62,28 @@ class SessionPruningEngineTest {
     }
 
     @Test
+    void pruneToolResults_recentOnly模式会额外保留最近失败结果() {
+        var config = buildConfig();
+        config.getContext().getPruning().setToolResultMode("recent_only");
+        config.getContext().getPruning().setRecentToolResultLimit(1);
+        config.getContext().getPruning().setFailedToolResultLimit(1);
+
+        var engine = new SessionPruningEngine(config, new ObjectMapper());
+
+        SessionPruningEngine.PruningSnapshot snapshot = engine.pruneToolResults(List.of(
+                toolResultRow("1", "tool.alpha", "{\"summary\":\"alpha\"}", true, Instant.parse("2026-03-23T10:00:01Z")),
+                toolResultRow("2", "tool.beta", "{\"summary\":\"beta fail\"}", false, Instant.parse("2026-03-23T10:00:02Z")),
+                toolResultRow("3", "tool.gamma", "{\"summary\":\"gamma\"}", true, Instant.parse("2026-03-23T10:00:03Z"))
+        ), 2048);
+
+        assertThat(snapshot.selectedEntryIds())
+                .containsExactlyInAnyOrder("2", "3")
+                .doesNotContain("1");
+        assertThat(snapshot.selectedCount()).isEqualTo(2);
+        assertThat(snapshot.pruningApplied()).isTrue();
+    }
+
+    @Test
     void formatToolResultPreview_长文本时会软裁剪并保留首尾信息() {
         var config = buildConfig();
         config.getContext().getPruning().setToolResultPreviewChars(40);
@@ -124,6 +146,31 @@ class SessionPruningEngineTest {
                 """
                 {"toolId":"%s","callId":"call-%s","success":true,"outputJson":%s}
                 """.formatted(toolId, id, quoteJson(outputJson)).trim(),
+                0,
+                createdAt
+        );
+    }
+
+    private SessionTranscriptRepository.SessionTranscriptEntryRow toolResultRow(
+            String id,
+            String toolId,
+            String outputJson,
+            boolean success,
+            Instant createdAt
+    ) {
+        return new SessionTranscriptRepository.SessionTranscriptEntryRow(
+                id,
+                "session-1",
+                "main",
+                "tool_result",
+                "tool",
+                "turn-1",
+                "trace-1",
+                true,
+                false,
+                """
+                {"toolId":"%s","callId":"call-%s","success":%s,"outputJson":%s}
+                """.formatted(toolId, id, success, quoteJson(outputJson)).trim(),
                 0,
                 createdAt
         );

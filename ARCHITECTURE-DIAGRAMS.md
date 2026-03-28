@@ -442,7 +442,7 @@ ZhiWei/
 │   ├── application.yml             # 主配置
 │   ├── db/migration/               # Flyway 迁移脚本
 │   ├── builtin-skills/             # 内置 Skill 定义
-│   └── builtin-mcp/                # 内置 MCP 服务器配置
+│   └── mcp/                # 内置 MCP 服务器配置
 ├── docker-compose.yml
 └── Dockerfile                      # 多阶段构建
 ```

@@ -110,7 +110,7 @@ graph TB
 
 ### 3.7 内置 MCP 服务器（JSON 发现机制）
 
-- 职责：通过 `classpath:builtin-mcp/servers.json` 定义内置 MCP 服务器（mcp-installer、desktop-control 等）
+- 职责：通过 `classpath:mcp/servers.json` 定义内置 MCP 服务器（mcp-installer、desktop-control 等）
 - 启动时由 `McpServerDiscovery.seedBuiltinServers()` 将内置配置合并到用户目录 `~/.zhiwei/mcp/servers.json`
 - 合并策略：仅添加新条目，不覆盖用户已有配置（保留用户自定义修改）
 - `McpServerDiscovery` 扫描用户目录 JSON 作为最高优先级发现路径

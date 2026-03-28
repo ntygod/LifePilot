@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RotateCcw } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
 import type { RelationItem, RelationListParams } from '@/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -17,6 +18,20 @@ import Pagination from '@/components/common/Pagination.vue'
 import { useMemoryStore } from '@/stores/memory'
 
 const store = useMemoryStore()
+
+const MEMORY_SCOPE_LABELS: Record<string, string> = {
+  USER_PROFILE: '用户画像',
+  USER_FACT: '用户事实',
+  AGENT_EXPERIENCE: '执行经验',
+  DOMAIN_MEMORY: '领域记忆',
+}
+
+const REALITY_TYPE_LABELS: Record<string, string> = {
+  REAL: '真实',
+  FICTIONAL: '虚构',
+  SIMULATED: '模拟',
+  UNKNOWN: '未标注',
+}
 
 // ── 筛选状态 ──
 const filterEntityId = ref('')
@@ -87,7 +102,7 @@ onMounted(() => loadRelations())
 
 // ── 点击实体名称，切换到实体 Tab ──
 function navigateToEntity(_entityId: string) {
-  store.activeTab = 'entities'
+  store.requestEntityDetail(_entityId)
 }
 
 // ── 辅助函数 ──
@@ -97,6 +112,21 @@ function formatDate(iso: string) {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function formatMemoryScope(scope?: string | null) {
+  if (!scope) return '未分配'
+  return MEMORY_SCOPE_LABELS[scope] || scope
+}
+
+function formatRealityType(realityType?: string | null) {
+  if (!realityType) return '未标注'
+  return REALITY_TYPE_LABELS[realityType] || realityType
+}
+
+function formatSpaceId(spaceId?: string | null) {
+  if (!spaceId) return '默认空间'
+  return spaceId
 }
 </script>
 
@@ -180,31 +210,55 @@ function formatDate(iso: string) {
             class="border-b border-border/40 transition-colors hover:bg-muted/50"
           >
             <td class="px-4 py-3">
-              <button
-                class="font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
-                @click="navigateToEntity(relation.sourceEntityId)"
-              >
-                {{ relation.sourceEntityName }}
-              </button>
-              <span class="ml-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                {{ relation.sourceEntityType }}
-              </span>
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button
+                    class="font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
+                    @click="navigateToEntity(relation.sourceEntityId)"
+                  >
+                    {{ relation.sourceEntityName }}
+                  </button>
+                  <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                    {{ relation.sourceEntityType }}
+                  </span>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline">{{ formatMemoryScope(relation.sourceEntityMemoryScope) }}</Badge>
+                  <Badge variant="secondary">{{ formatRealityType(relation.sourceEntityRealityType) }}</Badge>
+                </div>
+                <p class="text-xs text-muted-foreground break-all">
+                  {{ formatSpaceId(relation.sourceEntitySpaceId) }}
+                </p>
+              </div>
             </td>
             <td class="px-4 py-3">
-              <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                {{ relation.relationType }}
-              </span>
+              <div class="space-y-1">
+                <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  {{ relation.relationType }}
+                </span>
+              </div>
             </td>
             <td class="px-4 py-3">
-              <button
-                class="font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
-                @click="navigateToEntity(relation.targetEntityId)"
-              >
-                {{ relation.targetEntityName }}
-              </button>
-              <span class="ml-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                {{ relation.targetEntityType }}
-              </span>
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button
+                    class="font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
+                    @click="navigateToEntity(relation.targetEntityId)"
+                  >
+                    {{ relation.targetEntityName }}
+                  </button>
+                  <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                    {{ relation.targetEntityType }}
+                  </span>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline">{{ formatMemoryScope(relation.targetEntityMemoryScope) }}</Badge>
+                  <Badge variant="secondary">{{ formatRealityType(relation.targetEntityRealityType) }}</Badge>
+                </div>
+                <p class="text-xs text-muted-foreground break-all">
+                  {{ formatSpaceId(relation.targetEntitySpaceId) }}
+                </p>
+              </div>
             </td>
             <td class="px-4 py-3 text-right tabular-nums">{{ relation.strength.toFixed(2) }}</td>
             <td class="px-4 py-3 text-muted-foreground">{{ formatDate(relation.createdAt) }}</td>

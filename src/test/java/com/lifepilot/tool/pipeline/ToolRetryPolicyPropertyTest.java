@@ -57,7 +57,7 @@ class ToolRetryPolicyPropertyTest {
         var infra = buildPipelineInfra();
 
         var callCount = new AtomicInteger(0);
-        String toolId = "builtin.test.normal";
+        String toolId = "test.normal";
         int maxRetries = 2;
         var tool = BuiltinTool.builder()
                 .id(toolId)
@@ -90,7 +90,7 @@ class ToolRetryPolicyPropertyTest {
         var infra = buildPipelineInfra();
 
         var callCount = new AtomicInteger(0);
-        String toolId = "builtin.test.nonretry";
+        String toolId = "test.nonretry";
         var tool = BuiltinTool.builder()
                 .id(toolId)
                 .name("test-nonretry")
@@ -169,7 +169,7 @@ class ToolRetryPolicyPropertyTest {
 
     private PermissionRequest defaultPermissionRequest() {
         return new PermissionRequest(
-                "builtin.test.normal",
+                "test.normal",
                 PermissionActionType.GENERIC_TOOL_OPERATION,
                 RiskLevel.LOW,
                 "web",
@@ -191,7 +191,7 @@ class ToolRetryPolicyPropertyTest {
                 null,
                 null,
                 "user-1",
-                "builtin.test.normal",
+                "test.normal",
                 PermissionActionType.GENERIC_TOOL_OPERATION,
                 RiskLevel.LOW,
                 "web",

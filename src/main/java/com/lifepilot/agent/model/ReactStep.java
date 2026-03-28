@@ -40,7 +40,7 @@ public sealed interface ReactStep permits
     /**
      * 工具调用记录（由 Spring AI function calling 触发）。
      *
-     * @param toolId    工具标识（技术 ID，如 builtin.todo.create）
+     * @param toolId    工具标识（技术 ID，如 todo.create）
      * @param toolName  工具显示名称（用户可读，如 "创建待办"），为 null 时前端回退到 toolId
      * @param inputJson 工具输入 JSON
      * @param latencyMs 调用耗时（毫秒）

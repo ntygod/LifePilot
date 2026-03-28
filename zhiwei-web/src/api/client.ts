@@ -271,7 +271,6 @@ export const chatApi = {
     config: {
       preferredProviderId?: string
       temperature?: number
-      maxTokens?: number
       maxSteps?: number
       maxDurationSeconds?: number
       knowledgeBaseIds?: string[]

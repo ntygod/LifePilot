@@ -29,7 +29,7 @@ class MediaDataExtractorTest {
         String json = objectMapper.writeValueAsString(
                 java.util.Map.of("screenshot", base64, "url", "https://example.com", "fullPage", false));
 
-        var result = extractor.extract("builtin.browser.screenshot", json);
+        var result = extractor.extract("browser.screenshot", json);
 
         assertEquals(1, result.mediaItems().size());
         var item = result.mediaItems().getFirst();
@@ -61,7 +61,7 @@ class MediaDataExtractorTest {
         String json = objectMapper.writeValueAsString(
                 java.util.Map.of("screenshot", shortBase64, "url", "https://example.com"));
 
-        var result = extractor.extract("builtin.browser.screenshot", json);
+        var result = extractor.extract("browser.screenshot", json);
 
         assertTrue(result.mediaItems().isEmpty());
         assertEquals(json, result.sanitizedOutput());
@@ -106,7 +106,7 @@ class MediaDataExtractorTest {
         String json = objectMapper.writeValueAsString(
                 java.util.Map.of("screenshot", base64, "url", "https://test.com", "fullPage", true));
 
-        var result = extractor.extract("builtin.browser.screenshot", json);
+        var result = extractor.extract("browser.screenshot", json);
 
         assertEquals(1, result.mediaItems().size());
         var metadata = result.mediaItems().getFirst().metadata();

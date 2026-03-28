@@ -31,7 +31,7 @@ describe('MessageList 权限审批历史合并', () => {
         permissionApprovalLogs: [
           {
             requestId: 'req-1',
-            toolId: 'builtin.shell.exec',
+            toolId: 'shell.exec',
             toolName: '执行 Shell 命令',
             actionType: 'EXECUTE_SHELL',
             resolution: 'approved',
@@ -83,7 +83,7 @@ describe('MessageList 权限审批历史合并', () => {
         permissionApprovalLogs: [
           {
             requestId: 'req-2',
-            toolId: 'builtin.code.execute',
+            toolId: 'code.execute',
             toolName: '执行代码',
             actionType: 'EXECUTE_SHELL',
             resolution: 'approved',

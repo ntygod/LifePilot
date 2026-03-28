@@ -88,11 +88,11 @@ class DynamicToolRegistryTest {
 
     @Test
     void 通用注销可移除单个Builtin工具() {
-        BuiltinTool tool = createBuiltinTool("builtin.echo", "Echo");
+        BuiltinTool tool = createBuiltinTool("echo", "Echo");
         registry.registerBuiltinTool(tool);
 
-        assertTrue(registry.unregisterTool("builtin.echo"));
-        assertTrue(registry.resolve("builtin.echo").isEmpty());
+        assertTrue(registry.unregisterTool("echo"));
+        assertTrue(registry.resolve("echo").isEmpty());
         assertEquals(0, registry.getAllTools().size());
     }
 
@@ -123,7 +123,7 @@ class DynamicToolRegistryTest {
 
     @Test
     void 按层次过滤工具() {
-        registry.registerBuiltinTool(createBuiltinTool("builtin.a", "A"));
+        registry.registerBuiltinTool(createBuiltinTool("a", "A"));
         registry.registerMcpTools("s1", List.of(createMcpTool("mcp.b", "B")));
 
         var counts = registry.getToolCountByLayer();

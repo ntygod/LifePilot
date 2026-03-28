@@ -27,7 +27,7 @@ class MediaDataExtractor属性测试 {
         String json = objectMapper.writeValueAsString(
                 Map.of("screenshot", base64, "url", "https://example.com"));
 
-        var result = extractor.extract("builtin.browser.screenshot", json);
+        var result = extractor.extract("browser.screenshot", json);
 
         assertFalse(result.mediaItems().isEmpty(), "应提取到媒体数据");
         assertEquals(base64, result.mediaItems().getFirst().data(),
@@ -42,7 +42,7 @@ class MediaDataExtractor属性测试 {
         String json = objectMapper.writeValueAsString(
                 Map.of("screenshot", base64, "url", "https://example.com"));
 
-        var result = extractor.extract("builtin.browser.screenshot", json);
+        var result = extractor.extract("browser.screenshot", json);
 
         assertFalse(result.mediaItems().isEmpty());
         assertFalse(result.sanitizedOutput().contains(base64),
@@ -57,7 +57,7 @@ class MediaDataExtractor属性测试 {
         String json = objectMapper.writeValueAsString(
                 Map.of("screenshot", base64, "url", "https://example.com"));
 
-        var result = extractor.extract("builtin.browser.screenshot", json);
+        var result = extractor.extract("browser.screenshot", json);
 
         assertFalse(result.mediaItems().isEmpty());
         var sanitizedNode = objectMapper.readTree(result.sanitizedOutput());

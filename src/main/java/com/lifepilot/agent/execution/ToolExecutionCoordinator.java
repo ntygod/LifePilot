@@ -176,13 +176,20 @@ public class ToolExecutionCoordinator {
         var planned = new ArrayList<PlannedToolCall>(toolCalls.size());
         for (int i = 0; i < toolCalls.size(); i++) {
             AssistantMessage.ToolCall toolCall = toolCalls.get(i);
-            String toolId = toolCall.name();
+            String modelToolName = toolCall.name();
+            String toolId = agentToolProvider.resolveCanonicalToolId(modelToolName);
+            if (toolId == null || toolId.isBlank()) {
+                toolId = modelToolName;
+            }
             String inputJson = toolCall.arguments();
             String toolDisplayName = agentToolProvider.resolveToolDisplayName(toolId);
             RiskLevel toolRiskLevel = agentToolProvider.resolveToolRiskLevel(toolId);
             AgentToolProvider.ToolSchedulingHint schedulingHint =
                     normalizeSchedulingHint(agentToolProvider.resolveSchedulingHint(toolId, inputJson));
-            ToolCallback matchedCallback = callbackIndex.get(toolId);
+            ToolCallback matchedCallback = callbackIndex.get(modelToolName);
+            if (matchedCallback == null) {
+                matchedCallback = callbackIndex.get(toolId);
+            }
             if (matchedCallback == null) {
                 schedulingHint = AgentToolProvider.ToolSchedulingHint.sequential();
             }

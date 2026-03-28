@@ -4,12 +4,12 @@ name: "教学辅助"
 description: "教学辅助：概念解释、代码示例演示、学习路径规划、练习题生成、知识点回顾。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.web.search
-  - builtin.code.execute
-  - builtin.file.write
-  - builtin.file.read
-  - builtin.knowledge.search
-  - builtin.memory.create
+  - web.search
+  - code.execute
+  - file.write
+  - file.read
+  - knowledge.search
+  - memory.create
 triggers:
   - "教学"
   - "学习"
@@ -70,7 +70,7 @@ triggers:
 
 ```python
 # 通过 code.execute 运行示例代码
-builtin.code.execute(language="python", code="
+code.execute(language="python", code="
 # 示例：理解列表推导式
 numbers = [1, 2, 3, 4, 5]
 
@@ -99,17 +99,17 @@ print(f'结果相同: {squares_traditional == squares_comprehension}')
 
 ```
 # 记录学习进度到记忆
-builtin.memory.create(name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
+memory.create(name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
 ```
 
 ## 学习路径规划
 
 ```
 # 搜索推荐学习资源
-builtin.web.search(query="Python 入门学习路径 2026")
+web.search(query="Python 入门学习路径 2026")
 
 # 生成个性化学习计划
-builtin.file.write(path="learning-plan.md", content="学习计划内容")
+file.write(path="learning-plan.md", content="学习计划内容")
 ```
 
 ## 教学风格

@@ -14,8 +14,8 @@ const actionTypeLabels: Record<string, string> = {
 }
 
 const toolLabels: Record<string, string> = {
-  'builtin.code.execute': '运行本地代码',
-  'builtin.shell.exec': '执行本地命令',
+  'code.execute': '运行本地代码',
+  'shell.exec': '执行本地命令',
 }
 
 const subjectTypeLabels: Record<string, string> = {

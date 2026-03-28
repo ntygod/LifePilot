@@ -88,7 +88,7 @@ public class ReactAgentLoop {
 - L3 用户画像与经验实体
 - 其他段落按需预留
 
-跨会话原始对话不会自动注入主 Prompt；如需回忆别的会话，Agent 应显式调用 `builtin.memory.recall`。
+跨会话原始对话不会自动注入主 Prompt；如需回忆别的会话，Agent 应显式调用 `memory.recall`。
 
 ### 3.5 媒体处理
 

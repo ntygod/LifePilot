@@ -4,8 +4,8 @@ name: "Gitee 代码托管"
 description: "Gitee 操作：管理仓库、PR、Issue、CI/CD。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.http.request
-  - builtin.shell.exec
+  - http.request
+  - shell.exec
 triggers:
   - "Gitee"
   - "码云"
@@ -38,7 +38,7 @@ triggers:
 
 ### 查看仓库列表
 ```
-builtin.http.request(
+http.request(
   url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20",
   method="GET"
 )
@@ -46,7 +46,7 @@ builtin.http.request(
 
 ### 创建 Issue
 ```
-builtin.http.request(
+http.request(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/issues",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -56,7 +56,7 @@ builtin.http.request(
 
 ### 创建 Pull Request
 ```
-builtin.http.request(
+http.request(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -66,7 +66,7 @@ builtin.http.request(
 
 ### 查看 PR 列表
 ```
-builtin.http.request(
+http.request(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls?access_token=${GITEE_TOKEN}&state=open",
   method="GET"
 )

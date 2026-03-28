@@ -4,11 +4,11 @@ name: "文件管理"
 description: "文件整理和管理：批量重命名、目录结构优化、文件分类归档、重复文件检测、磁盘空间分析"
 version: "1.0.0"
 suggested-tools:
-  - builtin.file.list
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.file.search
-  - builtin.shell.exec
+  - file.list
+  - file.read
+  - file.write
+  - file.search
+  - shell.exec
 triggers:
   - "文件整理"
   - "文件管理"
@@ -42,10 +42,10 @@ triggers:
 
 ```
 # 列出目标目录
-builtin.file.list(path="目标目录", recursive=true)
+file.list(path="目标目录", recursive=true)
 
 # 分析文件分布
-builtin.shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
+shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
 ```
 
 ### 2. 制定整理方案
@@ -76,19 +76,19 @@ builtin.shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -
 
 ```
 # 批量重命名
-builtin.shell.exec(command="mv old_name new_name")
+shell.exec(command="mv old_name new_name")
 
 # 创建目录结构
-builtin.shell.exec(command="mkdir -p docs/2026 images/2026")
+shell.exec(command="mkdir -p docs/2026 images/2026")
 
 # 移动文件
-builtin.shell.exec(command="mv file.pdf docs/2026/")
+shell.exec(command="mv file.pdf docs/2026/")
 ```
 
 ### 5. 验证结果
 
 ```
-builtin.file.list(path="目标目录", recursive=true)
+file.list(path="目标目录", recursive=true)
 ```
 
 ## 安全原则

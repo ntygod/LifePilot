@@ -153,8 +153,9 @@ public class ProviderAdapterFactory {
     }
 
     private SpringAiProviderAdapter createOpenAiCompatibleAdapter(ProviderConfig config) {
+        String baseUrl = normalizeOpenAiCompatibleBaseUrl(config.apiUrl(), config.id());
         var openAiApiBuilder = OpenAiApi.builder()
-                .baseUrl(config.apiUrl());
+                .baseUrl(baseUrl);
 
         String apiKey = config.apiKey();
         if (apiKey != null && !apiKey.isBlank()) {
@@ -193,5 +194,15 @@ public class ProviderAdapterFactory {
         log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}, hasEmbedding={}",
                 config.id(), config.type(), config.modelName(), embeddingModel != null);
         return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
+    }
+
+    static String normalizeOpenAiCompatibleBaseUrl(String baseUrl, String providerId) {
+        if (baseUrl.endsWith("/v1") || baseUrl.endsWith("/v1/")) {
+            String normalized = baseUrl.replaceAll("/v1/?$", "");
+            log.info("OpenAI 兼容 baseUrl 自动修正: 移除 /v1 后缀, id={}, 修正后={}",
+                    providerId, normalized);
+            return normalized;
+        }
+        return baseUrl;
     }
 }

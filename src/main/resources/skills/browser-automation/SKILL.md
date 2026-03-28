@@ -4,14 +4,14 @@ name: "浏览器自动化"
 description: "浏览器自动化操作：网页导航、表单填写、信息抓取、截图验证、无障碍树分析。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.browser.navigate
-  - builtin.browser.screenshot
-  - builtin.browser.click
-  - builtin.browser.input
-  - builtin.browser.scroll
-  - builtin.browser.evaluate
-  - builtin.browser.close
-  - builtin.file.write
+  - browser.navigate
+  - browser.screenshot
+  - browser.click
+  - browser.input
+  - browser.scroll
+  - browser.evaluate
+  - browser.close
+  - file.write
 triggers:
   - "浏览器"
   - "网页操作"
@@ -45,13 +45,13 @@ triggers:
 ### 1. 导航到目标页面
 
 ```
-builtin.browser.navigate(url="https://example.com")
+browser.navigate(url="https://example.com")
 ```
 
 ### 2. 截图确认页面状态
 
 ```
-builtin.browser.screenshot()
+browser.screenshot()
 → 确认页面已加载完成，识别目标元素位置
 ```
 
@@ -60,7 +60,7 @@ builtin.browser.screenshot()
 ### 3. 分析页面结构
 
 ```
-builtin.browser.accessibility()
+browser.accessibility()
 → 获取无障碍树，了解页面元素层次和可交互元素
 ```
 
@@ -68,26 +68,26 @@ builtin.browser.accessibility()
 
 ```
 # 点击元素
-builtin.browser.click(selector="#submit-btn")
+browser.click(selector="#submit-btn")
 
 # 输入文本
-builtin.browser.input(selector="#search-input", text="搜索内容")
+browser.input(selector="#search-input", text="搜索内容")
 
 # 滚动页面
-builtin.browser.scroll(direction="down", pixels=500)
+browser.scroll(direction="down", pixels=500)
 ```
 
 ### 5. 提取数据
 
 ```
 # 通过 JavaScript 提取结构化数据
-builtin.browser.evaluate(script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, link: el.querySelector('a').href})))")
+browser.evaluate(script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, link: el.querySelector('a').href})))")
 ```
 
 ### 6. 清理资源
 
 ```
-builtin.browser.close()
+browser.close()
 ```
 
 **务必在完成后关闭浏览器会话，释放资源。**

@@ -10,6 +10,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -48,59 +50,57 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_注册31个工具_含全部已实现类别() {
+    void registerTools_注册全部已实现类别工具() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(34)).registerBuiltinTool(captor.capture());
+        verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
+        var expectedToolIds = List.of(
+                // 信息获取（3）
+                "web.search",
+                "web.fetch",
+                "http.request",
+                // 推理辅助（1）
+                "reason.calculate",
+                // Shell 执行（1）
+                "shell.exec",
+                // 浏览器自动化（14）
+                "browser.navigate",
+                "browser.click",
+                "browser.input",
+                "browser.screenshot",
+                "browser.scroll",
+                "browser.wait",
+                "browser.hover",
+                "browser.select",
+                "browser.keyboard",
+                "browser.evaluate",
+                "browser.accessibility",
+                "browser.tab",
+                "browser.storage",
+                "browser.close",
+                // 代码执行（1）
+                "code.execute",
+                // 文件系统（11）
+                "file.read",
+                "file.write",
+                "file.list",
+                "file.search",
+                "file.delete",
+                "file.copy",
+                "file.move",
+                "file.info",
+                "file.patch",
+                "file.grep",
+                "file.find"
+        );
+        assertThat(tools).hasSize(expectedToolIds.size());
         assertThat(tools).extracting(BuiltinTool::id)
-                .containsExactlyInAnyOrder(
-                        // 环境感知（3）
-                        "builtin.env.datetime",
-                        "builtin.env.user-profile",
-                        "builtin.env.system-info",
-                        // 信息获取（2）
-                        "builtin.web.search",
-                        "builtin.web.fetch",
-                        "builtin.http.request",
-                        // 推理辅助（1）
-                        "builtin.reason.calculate",
-                        // Shell 执行（1）
-                        "builtin.shell.exec",
-                        // 浏览器自动化（13）
-                        "builtin.browser.navigate",
-                        "builtin.browser.click",
-                        "builtin.browser.input",
-                        "builtin.browser.screenshot",
-                        "builtin.browser.scroll",
-                        "builtin.browser.wait",
-                        "builtin.browser.hover",
-                        "builtin.browser.select",
-                        "builtin.browser.keyboard",
-                        "builtin.browser.evaluate",
-                        "builtin.browser.accessibility",
-                        "builtin.browser.tab",
-                        "builtin.browser.storage",
-                        "builtin.browser.close",
-                        // 代码执行（1）
-                        "builtin.code.execute",
-                        // 文件系统（10）
-                        "builtin.file.read",
-                        "builtin.file.write",
-                        "builtin.file.list",
-                        "builtin.file.search",
-                        "builtin.file.delete",
-                        "builtin.file.copy",
-                        "builtin.file.move",
-                        "builtin.file.info",
-                        "builtin.file.patch",
-                        "builtin.file.grep",
-                        "builtin.file.find"
-                );
+                .containsExactlyInAnyOrderElementsOf(expectedToolIds);
     }
 
     @Test
@@ -131,23 +131,20 @@ class InfraToolProviderTest {
             toolMap.put(tool.id(), tool.riskLevel());
         }
 
-        // 环境感知 / 信息获取 / 推理 → LOW
-        assertThat(toolMap.get("builtin.env.datetime")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("builtin.env.user-profile")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("builtin.env.system-info")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("builtin.web.search")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("builtin.web.fetch")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("builtin.reason.calculate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+        // 信息获取 / 推理 → LOW
+        assertThat(toolMap.get("web.search")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+        assertThat(toolMap.get("web.fetch")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+        assertThat(toolMap.get("reason.calculate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
 
         // Shell / 代码执行 → HIGH
-        assertThat(toolMap.get("builtin.shell.exec")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
-        assertThat(toolMap.get("builtin.code.execute")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
+        assertThat(toolMap.get("shell.exec")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
+        assertThat(toolMap.get("code.execute")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
 
         // 浏览器导航/点击/输入 → MEDIUM，截图 → LOW
-        assertThat(toolMap.get("builtin.browser.navigate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-        assertThat(toolMap.get("builtin.browser.click")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-        assertThat(toolMap.get("builtin.browser.input")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-        assertThat(toolMap.get("builtin.browser.screenshot")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+        assertThat(toolMap.get("browser.navigate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
+        assertThat(toolMap.get("browser.click")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
+        assertThat(toolMap.get("browser.input")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
+        assertThat(toolMap.get("browser.screenshot")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
     }
 
     @Test
@@ -164,10 +161,10 @@ class InfraToolProviderTest {
             toolMap.put(tool.id(), tool);
         }
 
-        assertThat(toolMap.get("builtin.file.read").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("builtin.file.write").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("builtin.file.search").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("builtin.file.patch").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("builtin.file.find").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.read").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.write").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.search").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.patch").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.find").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
     }
 }

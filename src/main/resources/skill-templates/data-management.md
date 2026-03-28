@@ -7,10 +7,10 @@ triggers:
   - 管理数据
   - 查看列表
 suggestedTools:
-  - builtin.datastore.add_document
-  - builtin.datastore.query_documents
-  - builtin.datastore.update_document
-  - builtin.datastore.delete_document
+  - datastore.add_document
+  - datastore.query_documents
+  - datastore.update_document
+  - datastore.delete_document
 maxSteps: 5
 timeoutSeconds: 30
 ---

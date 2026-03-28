@@ -18,7 +18,7 @@ import java.util.Map;
  * 浏览器工具提供者 — 构建所有浏览器自动化工具的 {@link BuiltinTool} 列表。
  *
  * <p>从 {@link com.lifepilot.meta.infra.InfraToolProvider} 中拆分出来，
- * 集中管理 13 个浏览器工具的注册逻辑。</p>
+ * 集中管理 14 个浏览器工具的注册逻辑。</p>
  *
  * @author zsg
  * @since 2026-03-16
@@ -43,7 +43,7 @@ public class BrowserToolProvider {
     }
 
     /**
-     * 构建所有浏览器工具的 BuiltinTool 列表（13 个）。
+     * 构建所有浏览器工具的 BuiltinTool 列表（14 个）。
      *
      * @return 浏览器工具列表
      */
@@ -58,7 +58,7 @@ public class BrowserToolProvider {
         tools.add(buildBrowserInputTool(new BrowserInputToolExecutor(browserSessionManager)));
         tools.add(buildBrowserScreenshotTool(new BrowserScreenshotToolExecutor(browserSessionManager)));
 
-        // 扩展浏览器工具（9 个）
+        // 扩展浏览器工具（10 个）
         tools.add(buildBrowserScrollTool(new BrowserScrollToolExecutor(browserSessionManager, properties)));
         tools.add(buildBrowserWaitTool(new BrowserWaitToolExecutor(browserSessionManager, properties)));
         tools.add(buildBrowserHoverTool(new BrowserHoverToolExecutor(browserSessionManager)));
@@ -80,7 +80,7 @@ public class BrowserToolProvider {
     /** 构建浏览器导航工具 — Playwright page.navigate()，MEDIUM 风险。 */
     private BuiltinTool buildBrowserNavigateTool(BrowserNavigateToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.navigate")
+                .id("browser.navigate")
                 .category(ToolCategory.PERCEPTION)
                 .name("浏览器导航")
                 .description("使用浏览器导航到指定 URL，返回页面标题和文本快照。适用于访问 JavaScript 渲染的动态网页")
@@ -112,7 +112,7 @@ public class BrowserToolProvider {
     /** 构建浏览器点击工具 — Playwright page.click()，MEDIUM 风险。 */
     private BuiltinTool buildBrowserClickTool(BrowserClickToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.click")
+                .id("browser.click")
                 .category(ToolCategory.ACTION)
                 .name("浏览器点击")
                 .description("点击页面中指定 CSS 选择器的元素，等待导航或响应完成")
@@ -137,7 +137,7 @@ public class BrowserToolProvider {
     /** 构建浏览器输入工具 — Playwright page.fill()，MEDIUM 风险。 */
     private BuiltinTool buildBrowserInputTool(BrowserInputToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.input")
+                .id("browser.input")
                 .category(ToolCategory.ACTION)
                 .name("浏览器输入")
                 .description("在页面表单字段中填入文本内容，使用 CSS 选择器定位输入框")
@@ -164,7 +164,7 @@ public class BrowserToolProvider {
     /** 构建浏览器截图工具 — Playwright page.screenshot()，LOW 风险。 */
     private BuiltinTool buildBrowserScreenshotTool(BrowserScreenshotToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.screenshot")
+                .id("browser.screenshot")
                 .category(ToolCategory.PERCEPTION)
                 .name("浏览器截图")
                 .description("截取当前页面截图，返回 Base64 编码的 PNG 图片。支持全页截图")
@@ -185,13 +185,13 @@ public class BrowserToolProvider {
     }
 
     // ─────────────────────────────────────────────
-    //  扩展浏览器工具构建（9 个）
+    //  扩展浏览器工具构建（10 个）
     // ─────────────────────────────────────────────
 
     /** 构建浏览器滚动工具 — 方向滚动或元素定位滚动，MEDIUM 风险。 */
     private BuiltinTool buildBrowserScrollTool(BrowserScrollToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.scroll")
+                .id("browser.scroll")
                 .category(ToolCategory.ACTION)
                 .name("浏览器滚动")
                 .description("滚动页面或滚动到指定元素。支持方向滚动（up/down）和元素定位滚动")
@@ -219,7 +219,7 @@ public class BrowserToolProvider {
     /** 构建浏览器等待工具 — 等待元素出现/消失，LOW 风险。 */
     private BuiltinTool buildBrowserWaitTool(BrowserWaitToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.wait")
+                .id("browser.wait")
                 .category(ToolCategory.PERCEPTION)
                 .name("浏览器等待")
                 .description("等待页面中指定元素达到目标状态（visible/hidden/attached）")
@@ -248,7 +248,7 @@ public class BrowserToolProvider {
     /** 构建浏览器悬停工具 — 鼠标悬停到元素，MEDIUM 风险。 */
     private BuiltinTool buildBrowserHoverTool(BrowserHoverToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.hover")
+                .id("browser.hover")
                 .category(ToolCategory.ACTION)
                 .name("浏览器悬停")
                 .description("将鼠标悬停到指定 CSS 选择器的元素上，返回元素信息")
@@ -273,7 +273,7 @@ public class BrowserToolProvider {
     /** 构建浏览器下拉选择工具 — select 元素选项选择，MEDIUM 风险。 */
     private BuiltinTool buildBrowserSelectTool(BrowserSelectToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.select")
+                .id("browser.select")
                 .category(ToolCategory.ACTION)
                 .name("浏览器下拉选择")
                 .description("从 select 下拉元素中选择选项，支持按 value 或 label 选择")
@@ -302,7 +302,7 @@ public class BrowserToolProvider {
     /** 构建浏览器键盘工具 — 按键或文本输入，MEDIUM 风险。 */
     private BuiltinTool buildBrowserKeyboardTool(BrowserKeyboardToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.keyboard")
+                .id("browser.keyboard")
                 .category(ToolCategory.ACTION)
                 .name("浏览器键盘")
                 .description("模拟键盘操作，支持单键/组合键按下和逐字符文本输入")
@@ -330,7 +330,7 @@ public class BrowserToolProvider {
     /** 构建浏览器 JS 执行工具 — 执行任意 JavaScript，HIGH 风险。 */
     private BuiltinTool buildBrowserEvaluateTool(BrowserEvaluateToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.evaluate")
+                .id("browser.evaluate")
                 .category(ToolCategory.ACTION)
                 .name("浏览器 JS 执行")
                 .description("在当前页面上下文中执行 JavaScript 表达式，返回 JSON 序列化结果。HIGH 风险")
@@ -355,7 +355,7 @@ public class BrowserToolProvider {
     /** 构建浏览器无障碍树工具 — 获取页面无障碍树快照，LOW 风险。 */
     private BuiltinTool buildBrowserAccessibilityTool(BrowserAccessibilityToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.accessibility")
+                .id("browser.accessibility")
                 .category(ToolCategory.PERCEPTION)
                 .name("浏览器无障碍树")
                 .description("获取页面或子树的无障碍树结构快照，用于理解页面语义结构")
@@ -381,7 +381,7 @@ public class BrowserToolProvider {
     /** 构建浏览器标签页管理工具 — 多标签页操作，MEDIUM 风险。 */
     private BuiltinTool buildBrowserTabTool(BrowserTabToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.tab")
+                .id("browser.tab")
                 .category(ToolCategory.ACTION)
                 .name("浏览器标签页")
                 .description("管理浏览器标签页，支持打开新标签页、切换、关闭和列出所有标签页")
@@ -410,7 +410,7 @@ public class BrowserToolProvider {
     /** 构建浏览器存储管理工具 — Cookie 和 localStorage 操作，MEDIUM 风险。 */
     private BuiltinTool buildBrowserStorageTool(BrowserStorageToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.browser.storage")
+                .id("browser.storage")
                 .category(ToolCategory.ACTION)
                 .name("浏览器存储")
                 .description("管理浏览器存储，支持 Cookie 和 localStorage 的读取、设置和清除")
@@ -439,7 +439,7 @@ public class BrowserToolProvider {
     /** 构建浏览器关闭工具。 */
     private BuiltinTool buildBrowserCloseTool() {
         return BuiltinTool.builder()
-                .id("builtin.browser.close")
+                .id("browser.close")
                 .category(ToolCategory.ACTION)
                 .name("关闭浏览器")
                 .description("关闭当前浏览器会话，释放资源")

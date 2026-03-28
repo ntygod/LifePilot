@@ -33,7 +33,7 @@ class PermissionRequestFactoryTest {
 
     PermissionRequestFactoryTest() {
         toolRegistry.registerBuiltinTool(BuiltinTool.builder()
-                .id("builtin.file.delete")
+                .id("file.delete")
                 .name("删除文件")
                 .description("删除文件或目录，支持递归删除非空目录")
                 .inputSchema(JsonSchema.empty())
@@ -47,7 +47,7 @@ class PermissionRequestFactoryTest {
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build());
         toolRegistry.registerBuiltinTool(BuiltinTool.builder()
-                .id("builtin.code.execute")
+                .id("code.execute")
                 .name("执行代码")
                 .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell")
                 .inputSchema(JsonSchema.empty())
@@ -70,7 +70,7 @@ class PermissionRequestFactoryTest {
                 autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
-                .id("builtin.shell.exec")
+                .id("shell.exec")
                 .name("执行 Shell")
                 .description("执行命令")
                 .inputSchema(JsonSchema.empty())
@@ -110,7 +110,7 @@ class PermissionRequestFactoryTest {
                 autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
-                .id("builtin.cron.create")
+                .id("cron.create")
                 .name("创建定时任务")
                 .description("创建任务")
                 .inputSchema(JsonSchema.empty())
@@ -146,7 +146,7 @@ class PermissionRequestFactoryTest {
                 autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
-                .id("builtin.file.write")
+                .id("file.write")
                 .name("写入文件")
                 .description("写入文件")
                 .inputSchema(JsonSchema.empty())
@@ -181,7 +181,7 @@ class PermissionRequestFactoryTest {
                 autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
-                .id("builtin.cron.create")
+                .id("cron.create")
                 .name("创建定时任务")
                 .description("创建任务")
                 .inputSchema(JsonSchema.empty())

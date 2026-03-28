@@ -158,7 +158,7 @@ class CalculateToolExecutorTest {
     @Test
     void execute_缺少expression参数_返回错误() {
         ToolInput input = new ToolInput(
-                "builtin.reason.calculate",
+                "reason.calculate",
                 Map.of(),
                 JsonSchema.empty(), null, null);
 
@@ -182,7 +182,7 @@ class CalculateToolExecutorTest {
 
     private ToolResult calculate(String expression) {
         ToolInput input = new ToolInput(
-                "builtin.reason.calculate",
+                "reason.calculate",
                 Map.of("expression", expression),
                 JsonSchema.empty(), null, null);
         return executor.execute(input);

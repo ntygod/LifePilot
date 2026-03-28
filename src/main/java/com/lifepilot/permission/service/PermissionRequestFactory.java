@@ -95,7 +95,7 @@ public class PermissionRequestFactory {
     }
 
     private RiskLevel applyTrustedWorkspaceDowngrade(String toolId, RiskLevel originalLevel, ToolInput input) {
-        if (!"builtin.shell.exec".equals(toolId) && !"builtin.code.execute".equals(toolId)) {
+        if (!"shell.exec".equals(toolId) && !"code.execute".equals(toolId)) {
             return originalLevel;
         }
         String execPath = firstNonBlankParam(input, "workingDirectory", "cwd");

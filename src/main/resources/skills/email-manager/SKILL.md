@@ -4,10 +4,10 @@ name: "邮件管理"
 description: "邮件收发、模板管理、批量发送。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.shell.exec
-  - builtin.http.request
-  - builtin.file.read
-  - builtin.file.write
+  - shell.exec
+  - http.request
+  - file.read
+  - file.write
 triggers:
   - "发邮件"
   - "邮件"
@@ -35,7 +35,7 @@ triggers:
 
 ### 方式1：通过 HTTP API（推荐）
 ```
-builtin.http.request(
+http.request(
   url="https://api.sendgrid.com/v3/mail/send",
   method="POST",
   headers={"Authorization": "Bearer ${API_KEY}", "Content-Type": "application/json"},
@@ -65,7 +65,7 @@ curl --url "smtp://smtp.example.com:587" \
 
 模板存储在 `~/.zhiwei/templates/email/` 目录：
 ```
-builtin.file.read(path="~/.zhiwei/templates/email/weekly-report.md")
+file.read(path="~/.zhiwei/templates/email/weekly-report.md")
 ```
 
 ## 注意事项

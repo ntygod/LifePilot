@@ -125,6 +125,15 @@ const groupedServices = computed(() => {
 
 const isGenerationKind = computed(() => formData.value.kind === 'GENERATION')
 const isEmbeddingKind = computed(() => formData.value.kind === 'EMBEDDING')
+const apiUrlPlaceholder = computed(() => {
+  if (formData.value.type === 'OPENAI_COMPATIBLE') {
+    return 'https://api.example.com'
+  }
+  if (formData.value.type === 'ANTHROPIC') {
+    return 'https://api.anthropic.com'
+  }
+  return 'https://api.example.com/v1'
+})
 
 function normalizeSelectValue(value: SelectValue): string {
   if (typeof value === 'string') return value
@@ -506,7 +515,7 @@ onMounted(() => {
 
         <div class="space-y-2">
           <Label>API 地址 <span class="text-destructive">*</span></Label>
-          <Input v-model="formData.apiUrl" placeholder="https://api.example.com/v1" :class="{ 'border-destructive': errors.apiUrl }" />
+          <Input v-model="formData.apiUrl" :placeholder="apiUrlPlaceholder" :class="{ 'border-destructive': errors.apiUrl }" />
           <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
         </div>
 

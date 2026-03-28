@@ -18,12 +18,12 @@ public record SessionDetailInfo(
         Boolean archived,
         String preferredProviderId,
         Double temperature,
-        Integer maxTokens,
         Integer maxSteps,
         Integer maxDurationSeconds,
         List<String> knowledgeBaseIds,
         List<String> datastoreIds,
         Integer messageCount,
         Long totalTokens,
-        String lastMessagePreview
+        String lastMessagePreview,
+        SessionCompactionStatusInfo compactionStatus
 ) {}

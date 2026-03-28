@@ -24,6 +24,7 @@ import java.util.Set;
 public class SessionPruningEngine {
 
     private static final int DEFAULT_TOOL_RESULT_LIMIT = 4;
+    private static final int DEFAULT_FAILED_TOOL_RESULT_LIMIT = 2;
     private static final int DEFAULT_TOOL_RESULT_PREVIEW_CHARS = 240;
     private static final int SOFT_TRIM_MIN_THRESHOLD = 240;
     private static final int SOFT_TRIM_MAX_THRESHOLD = 1200;
@@ -81,15 +82,18 @@ public class SessionPruningEngine {
         boolean pruned = false;
         boolean recentOnlyMode = isRecentOnlyMode();
         int resultLimit = resolveRecentToolResultLimit();
+        Set<String> pinnedFailureEntryIds = selectPinnedFailureEntryIds(candidates);
 
         for (int i = candidates.size() - 1; i >= 0; i--) {
             SessionTranscriptRepository.SessionTranscriptEntryRow candidate = candidates.get(i);
-            String preview = formatToolResultPreview(readPayload(candidate.payloadJson()));
+            Map<String, Object> payload = readPayload(candidate.payloadJson());
+            String preview = formatToolResultPreview(payload);
             if (preview.isBlank()) {
                 continue;
             }
             int lineTokens = estimateTokens(preview);
-            boolean overRecentLimit = recentOnlyMode && selectedCount >= resultLimit;
+            boolean pinnedFailure = pinnedFailureEntryIds.contains(candidate.id());
+            boolean overRecentLimit = recentOnlyMode && selectedCount >= resultLimit && !pinnedFailure;
             boolean overTokenBudget = usedTokens + lineTokens > toolResultBudget;
             if (overRecentLimit || overTokenBudget) {
                 pruned = true;
@@ -114,7 +118,19 @@ public class SessionPruningEngine {
     }
 
     String formatToolResultPreview(Map<String, Object> payload) {
-        return extractPreview(payload.get("outputJson"));
+        boolean success = booleanValue(payload.get("success"));
+        String preview = extractPreview(resolvePreviewSource(payload));
+        if (preview.isBlank()) {
+            preview = success ? "工具执行成功" : "工具执行失败";
+        }
+        String reference = buildReferenceSuffix(payload);
+        if (!reference.isBlank()) {
+            preview = preview.isBlank() ? reference : preview + " " + reference;
+        }
+        if (!success && !preview.startsWith("失败")) {
+            preview = "失败: " + preview;
+        }
+        return normalizeWhitespace(preview);
     }
 
     Map<String, Object> readPayload(@Nullable String payloadJson) {
@@ -151,9 +167,79 @@ public class SessionPruningEngine {
         return configured > 0 ? configured : DEFAULT_TOOL_RESULT_LIMIT;
     }
 
+    private int resolveFailedToolResultLimit() {
+        AgentConfigProperties.ContextConfig.PruningConfig pruning = config.getContext().getPruning();
+        int configured = pruning != null ? pruning.getFailedToolResultLimit() : 0;
+        return configured > 0 ? configured : DEFAULT_FAILED_TOOL_RESULT_LIMIT;
+    }
+
     private int resolveToolResultPreviewChars() {
         int configured = config.getContext().getPruning().getToolResultPreviewChars();
         return configured > 0 ? configured : DEFAULT_TOOL_RESULT_PREVIEW_CHARS;
+    }
+
+    private Set<String> selectPinnedFailureEntryIds(
+            List<SessionTranscriptRepository.SessionTranscriptEntryRow> candidates
+    ) {
+        int failureLimit = resolveFailedToolResultLimit();
+        if (failureLimit <= 0) {
+            return Set.of();
+        }
+        List<String> entryIds = new ArrayList<>();
+        for (int i = candidates.size() - 1; i >= 0; i--) {
+            SessionTranscriptRepository.SessionTranscriptEntryRow row = candidates.get(i);
+            if (!isFailurePayload(readPayload(row.payloadJson()))) {
+                continue;
+            }
+            entryIds.add(row.id());
+            if (entryIds.size() >= failureLimit) {
+                break;
+            }
+        }
+        return Set.copyOf(entryIds);
+    }
+
+    private boolean isFailurePayload(Map<String, Object> payload) {
+        if (payload.isEmpty()) {
+            return false;
+        }
+        if (!booleanValue(payload.get("success"))) {
+            return true;
+        }
+        return stringValue(payload.get("error")) != null;
+    }
+
+    @Nullable
+    private Object resolvePreviewSource(Map<String, Object> payload) {
+        boolean success = booleanValue(payload.get("success"));
+        if (!success) {
+            Object error = payload.get("error");
+            if (error != null) {
+                return error;
+            }
+        }
+        Object outputJson = payload.get("outputJson");
+        if (outputJson != null) {
+            return outputJson;
+        }
+        return payload.get("message");
+    }
+
+    private String buildReferenceSuffix(Map<String, Object> payload) {
+        List<String> refs = new ArrayList<>();
+        String artifactId = stringValue(payload.get("artifactId"));
+        if (artifactId != null) {
+            refs.add("产物:" + artifactId);
+        }
+        Object artifactIds = payload.get("artifactIds");
+        if (artifactIds instanceof List<?> list && !list.isEmpty()) {
+            refs.add("产物数:" + list.size());
+        }
+        Object documentIds = payload.get("documentIds");
+        if (documentIds instanceof List<?> list && !list.isEmpty()) {
+            refs.add("记忆文档数:" + list.size());
+        }
+        return String.join("，", refs);
     }
 
     private String extractPreview(@Nullable Object outputJsonValue) {
@@ -255,5 +341,12 @@ public class SessionPruningEngine {
                 .count();
         long otherChars = text.length() - cjkChars;
         return Math.max(1, (int) (cjkChars + otherChars / 4));
+    }
+
+    private boolean booleanValue(@Nullable Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value != null && Boolean.parseBoolean(value.toString());
     }
 }

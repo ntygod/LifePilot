@@ -49,7 +49,7 @@ class ToolExecutionCoordinatorTest {
     void 工具返回错误Envelope时应标记为失败() {
         AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
         TranscriptStore transcriptStore = mock(TranscriptStore.class);
-        when(agentToolProvider.resolveToolDisplayName("builtin.code.execute")).thenReturn("执行代码");
+        when(agentToolProvider.resolveToolDisplayName("code.execute")).thenReturn("执行代码");
 
         var coordinator = new ToolExecutionCoordinator(
                 agentToolProvider,
@@ -76,7 +76,7 @@ class ToolExecutionCoordinatorTest {
 
         ToolCallback callback = new ToolCallback() {
             private final ToolDefinition definition = DefaultToolDefinition.builder()
-                    .name("builtin.code.execute")
+                    .name("code.execute")
                     .description("执行代码")
                     .inputSchema("{}")
                     .build();
@@ -95,7 +95,7 @@ class ToolExecutionCoordinatorTest {
         var toolCall = new AssistantMessage.ToolCall(
                 "call-1",
                 "function",
-                "builtin.code.execute",
+                "code.execute",
                 "{\"language\":\"python\",\"code\":\"print('Hello')\"}"
         );
 
@@ -119,7 +119,7 @@ class ToolExecutionCoordinatorTest {
                 eq("session-1"),
                 nullable(String.class),
                 eq(result.traceId()),
-                eq("builtin.code.execute"),
+                eq("code.execute"),
                 eq("call-1"),
                 eq(false),
                 eq("{\"error\":\"代码执行失败: exitCode=9009\",\"status\":\"ERROR\"}"),
@@ -133,11 +133,11 @@ class ToolExecutionCoordinatorTest {
     @Test
     void 记录程序记忆时不应把大段JSON正文直接送入意图匹配() {
         AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
-        when(agentToolProvider.resolveToolDisplayName("builtin.file.write")).thenReturn("写入文件");
+        when(agentToolProvider.resolveToolDisplayName("file.write")).thenReturn("写入文件");
         ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
         IntentMatcher intentMatcher = mock(IntentMatcher.class);
         when(intentMatcher.match(argThat(query ->
-                query.contains("builtin file write")
+                query.contains("file write")
                         && query.contains("path")
                         && query.contains("D:\\WorkSpace\\Project\\News\\AI_News_2026-03-24.md")
                         && !query.contains("AI 资讯汇总")
@@ -173,7 +173,7 @@ class ToolExecutionCoordinatorTest {
 
         ToolCallback callback = new ToolCallback() {
             private final ToolDefinition definition = DefaultToolDefinition.builder()
-                    .name("builtin.file.write")
+                    .name("file.write")
                     .description("写入文件")
                     .inputSchema("{}")
                     .build();
@@ -205,7 +205,7 @@ class ToolExecutionCoordinatorTest {
         var toolCall = new AssistantMessage.ToolCall(
                 "call-2",
                 "function",
-                "builtin.file.write",
+                "file.write",
                 """
                 {"content":"# AI 资讯汇总 - 2026 年 3 月 24 日\\n`D:\\\\WorkSpace\\\\Project\\\\News`","path":"D:\\\\WorkSpace\\\\Project\\\\News\\\\AI_News_2026-03-24.md"}
                 """
@@ -222,7 +222,7 @@ class ToolExecutionCoordinatorTest {
         );
 
         verify(intentMatcher).match(argThat(query ->
-                query.contains("builtin file write")
+                query.contains("file write")
                         && query.contains("path")
                         && query.contains("D:\\WorkSpace\\Project\\News\\AI_News_2026-03-24.md")
                         && !query.contains("AI 资讯汇总")

@@ -2,17 +2,17 @@
 id: web-novel-writer
 name: "网文写作"
 description: "网文创作助手：选题立项、书名简介、世界观与角色设定、主线/卷纲/章纲设计、单章正文、续写、改稿、爽点与悬念优化、连载节奏维护。适用于玄幻、都市、言情、悬疑、历史等网络小说创作，以及已绑定 Datastore/Knowledge Base 时的设定检索与一致性校对。"
-version: "1.0.0"
+version: "1.1.0"
 suggested-tools:
-  - builtin.knowledge.search
-  - builtin.datastore.create_collection
-  - builtin.datastore.add_document
-  - builtin.datastore.query_documents
-  - builtin.datastore.update_document
-  - builtin.file.read
-  - builtin.file.write
-  - builtin.web.search
-  - builtin.memory.search
+  - knowledge.search
+  - datastore.create_collection
+  - datastore.add_document
+  - datastore.query_documents
+  - datastore.update_document
+  - file.read
+  - file.write
+  - web.search
+  - memory.search
 triggers:
   - "写网文"
   - "网文"
@@ -72,7 +72,7 @@ triggers:
 - 卷纲/章纲
 - 术语和地名
 
-优先使用 `builtin.knowledge.search` 检索资料，再继续写作或判断。
+优先使用 `knowledge.search` 检索资料，再继续写作或判断。
 
 ### 网文优先连载感
 
@@ -98,13 +98,13 @@ triggers:
 
 ### 资料检索
 
-- `builtin.knowledge.search`
+- `knowledge.search`
   用于检索已绑定资料中的角色、设定、前文、伏笔、卷纲、术语
 - 用户只说简短主题词，例如“春季旅游”属于资料型主题检索；网文场景里类似“林砚的人设”“第三卷主线”“金手指规则”也优先走这类检索
 
 ### 结构化查询
 
-- `builtin.datastore.query_documents`
+- `datastore.query_documents`
   只用于精确结构化查询，例如：
   - 查某个角色卡
   - 查某条伏笔
@@ -115,18 +115,48 @@ triggers:
 ### 资料沉淀
 
 - 用户要求“记住这套设定”“把人物表存起来”“维护伏笔台账”时，再使用：
-  - `builtin.datastore.create_collection`
-  - `builtin.datastore.add_document`
-  - `builtin.datastore.update_document`
+  - `datastore.create_collection`
+  - `datastore.add_document`
+  - `datastore.update_document`
 - 如果用户说“帮我创建网文数据空间”“搭一个小说工作台”“先把设定库建起来”，默认按下方“单集合工作台”方案建库，不要一上来拆成多个集合
 
 ### 外部参考
 
-- `builtin.web.search`
+- `web.search`
   只在这些情况使用：
   - 用户明确要求查平台趋势、题材热点、投稿方向
   - 用户要现实背景资料、历史细节、职业细节
   - 用户要“最新”市场信息
+
+### 本地正文保存
+
+- 当任务类型是 `正文` 或 `续写`，且你已经生成了可直接交付的正文成稿时，默认还要把正文落到本地文件，不要只在聊天里给出文本
+- 保存优先使用 `file.write`
+- 续写和后续章节一律使用 `mode=append`
+- 只有在用户明确说“不要保存到本地”时，才跳过这一步
+
+默认路径规则：
+
+- 如果用户已经给出书名，保存到：`novels/<书名>/正文.md`
+- 如果用户还没定书名，保存到：`novels/novel_workspace/正文.md`
+
+默认追加格式：
+
+- 第一次写入时，可先写一个总标题
+- 之后每次新写一章或续写一段，都按下面结构追加：
+  - `## 第X章 章节名`
+  - 空行
+  - 正文
+  - 空行
+  - `---`
+  - 空行
+
+执行规则：
+
+- 在写正文前，如有必要可先用 `file.read` 查看已有内容末尾，避免章节号、标题或衔接重复
+- 如果用户明确指定了本地路径、文件名或目录，以用户指定为准
+- 如果当前只是讨论思路、章纲、设定，不要把讨论稿强行写入正文文件
+- 如果本轮只是“续写上一章的一小段”，也继续追加到同一个 `正文.md` 文件，不要每次生成新文件
 
 ## 创作工作流
 
@@ -204,6 +234,7 @@ triggers:
 - 每 300 到 800 字最好有一次新的变化点
 - 一章至少推进一项：剧情、关系、秘密、资源、危机
 - 结尾优先留下未解决问题，而不是完整收束
+- 正文完成后，默认同步追加保存到本地 `正文.md`
 
 ### 6. 续写
 

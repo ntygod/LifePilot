@@ -58,7 +58,7 @@ class SubtaskReflectorTest {
                   "strategy": "测试工具策略",
                   "lessons": [],
                   "applicableConditions": [],
-                  "toolsUsed": ["builtin.web.search"],
+                  "toolsUsed": ["web.search"],
                   "success": true,
                   "failureAttribution": null,
                   "effectivenessScore": 0.0,
@@ -96,8 +96,8 @@ class SubtaskReflectorTest {
                 .goal("总结这次工具调用")
                 .channel("web")
                 .steps(List.of(
-                        new ReactStep.ToolCall("builtin.web.search", "Web 搜索", "{\"q\":\"test\"}", 20),
-                        new ReactStep.Observation("builtin.web.search", "Web 搜索", true, "命中结果", 0)
+                        new ReactStep.ToolCall("web.search", "Web 搜索", "{\"q\":\"test\"}", 20),
+                        new ReactStep.Observation("web.search", "Web 搜索", true, "命中结果", 0)
                 ))
                 .stepCount(2)
                 .shortTermMemory(List.of())

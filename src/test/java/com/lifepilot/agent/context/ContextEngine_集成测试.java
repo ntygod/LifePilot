@@ -190,7 +190,15 @@ class ContextEngine_集成测试 {
                 false,
                 Map.of(
                         "summary", "已压缩更早轮次，只保留近期关键事实",
-                        "firstKeptEntryId", turn2UserEntryId
+                        "firstKeptEntryId", turn2UserEntryId,
+                        "keyPoints", List.of("已确认约束", "后续继续推进最近轮次"),
+                        "checkpoint", Map.of(
+                                "goal", "整理上下文",
+                                "currentPhase", "tool_result",
+                                "completedItems", List.of("已完成更早轮次压缩"),
+                                "resumePlan", List.of("继续结合最近原始 transcript 执行"),
+                                "neededContextRefs", List.of("memory:doc-1")
+                        )
                 ),
                 Instant.parse("2026-03-23T10:02:20Z")
         );
@@ -233,6 +241,7 @@ class ContextEngine_集成测试 {
         String history = serializeMessages(snapshot.historyMessages());
 
         assertThat(history)
+                .contains("任务检查点")
                 .contains("历史压缩摘要")
                 .contains("[user] 第二轮问题")
                 .contains("[tool_call] tool.beta")
@@ -256,6 +265,7 @@ class ContextEngine_集成测试 {
                 .containsEntry("toolResultCount", 2)
                 .containsEntry("toolResultTotalCount", 2)
                 .containsEntry("artifactCount", 2)
+                .containsEntry("checkpointApplied", true)
                 .containsEntry("compactionFirstKeptEntryId", turn2UserEntryId);
     }
 

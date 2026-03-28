@@ -53,7 +53,7 @@ lifepilot:
     loop:
       # ReAct 循环配置
       max-iterations: 45
-      max-consecutive-failures: 35
+      max-consecutive-failures: 3
       max-parallel-tool-calls: 4
       llm-scene: agent_react
     budget:

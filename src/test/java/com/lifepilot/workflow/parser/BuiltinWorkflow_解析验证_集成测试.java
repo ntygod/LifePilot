@@ -41,11 +41,6 @@ class BuiltinWorkflow_解析验证_集成测试 {
 
     /** 预期的内置工作流文件名列表 */
     private static final List<String> EXPECTED_FILES = List.of(
-            "daily-briefing.yml",
-            "weekly-summary.yml",
-            "knowledge-collect.yml",
-            "research-assistant.yml",
-            "content-creator.yml",
             "goal-review-planner.yml"
     );
 

@@ -21,11 +21,27 @@ export interface ChatSessionDetail extends ChatSession {
   datastoreIds: string[]
   preferredProviderId?: string
   temperature?: number
-  maxTokens?: number
   maxSteps?: number
   maxDurationSeconds?: number
   messageCount: number
   totalTokens: number
+  compactionStatus?: SessionCompactionStatus
+}
+
+export interface SessionCompactionStatus {
+  enabled: boolean
+  activeTranscriptTokens: number
+  triggerThresholdTokens: number
+  triggerThresholdPercent: number
+  remainingTokens: number
+  activeTurnCount: number
+  minTurnCount: number
+  keepRecentTurns: number
+  thresholdReached: boolean
+  minTurnsReached: boolean
+  readyToCompact: boolean
+  compactionCount: number
+  lastCompactedAt?: string | null
 }
 
 /** 聊天附件/文件上传 */
@@ -469,7 +485,6 @@ export interface ErrorResponse {
 export interface SessionConfig {
   preferredProviderId?: string
   temperature?: number
-  maxTokens?: number
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
@@ -1621,9 +1636,15 @@ export interface RelationItem {
   sourceEntityId: string
   sourceEntityName: string
   sourceEntityType: string
+  sourceEntitySpaceId: string | null
+  sourceEntityMemoryScope: string | null
+  sourceEntityRealityType: string | null
   targetEntityId: string
   targetEntityName: string
   targetEntityType: string
+  targetEntitySpaceId: string | null
+  targetEntityMemoryScope: string | null
+  targetEntityRealityType: string | null
   relationType: string
   strength: number
   validFrom: string

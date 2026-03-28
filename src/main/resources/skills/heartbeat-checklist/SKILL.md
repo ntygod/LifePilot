@@ -4,8 +4,8 @@ name: "心跳巡检 Checklist"
 description: "管理心跳巡检的 HEARTBEAT.md checklist 文件，定期由 Agent 自动检查执行"
 version: "1.0.0"
 suggested-tools:
-  - builtin.heartbeat.read
-  - builtin.heartbeat.write
+  - heartbeat.read
+  - heartbeat.write
 triggers:
   - "心跳"
   - "巡检"
@@ -36,11 +36,11 @@ triggers:
 
 ### 读取 Checklist
 
-使用 `builtin.heartbeat.read` 读取当前 HEARTBEAT.md 内容。
+使用 `heartbeat.read` 读取当前 HEARTBEAT.md 内容。
 
 ### 写入 Checklist
 
-使用 `builtin.heartbeat.write` 覆写 HEARTBEAT.md 内容。
+使用 `heartbeat.write` 覆写 HEARTBEAT.md 内容。
 
 ## HEARTBEAT.md 格式
 
@@ -65,9 +65,9 @@ triggers:
 
 当用户说"帮我加一个检查 PR 的提醒"：
 
-1. 先调用 `builtin.heartbeat.read` 读取现有内容
+1. 先调用 `heartbeat.read` 读取现有内容
 2. 在合适的分组下追加新条目
-3. 调用 `builtin.heartbeat.write` 写回完整内容
+3. 调用 `heartbeat.write` 写回完整内容
 4. 告知用户已添加到心跳 checklist
 
 ## 静默协议

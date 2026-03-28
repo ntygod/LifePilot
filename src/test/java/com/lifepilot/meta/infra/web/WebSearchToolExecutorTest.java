@@ -76,7 +76,7 @@ class WebSearchToolExecutorTest {
         );
         when(responseSpec.body(Map.class)).thenReturn(tavilyResponse);
 
-        ToolInput input = new ToolInput("builtin.web.search",
+        ToolInput input = new ToolInput("web.search",
                 Map.of("query", "Java programming"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -101,7 +101,7 @@ class WebSearchToolExecutorTest {
     void tavily搜索_空响应返回错误() {
         when(responseSpec.body(Map.class)).thenReturn(null);
 
-        ToolInput input = new ToolInput("builtin.web.search",
+        ToolInput input = new ToolInput("web.search",
                 Map.of("query", "test"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -123,7 +123,7 @@ class WebSearchToolExecutorTest {
                 true
         ));
 
-        ToolInput input = new ToolInput("builtin.web.search",
+        ToolInput input = new ToolInput("web.search",
                 Map.of("query", "test"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -143,7 +143,7 @@ class WebSearchToolExecutorTest {
                 )
         ));
 
-        ToolInput input = new ToolInput("builtin.web.search",
+        ToolInput input = new ToolInput("web.search",
                 Map.of("query", "test", "offset", 1, "limit", 1), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
@@ -160,7 +160,7 @@ class WebSearchToolExecutorTest {
 
     @Test
     void 缺少query参数_返回错误() {
-        ToolInput input = new ToolInput("builtin.web.search",
+        ToolInput input = new ToolInput("web.search",
                 Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);

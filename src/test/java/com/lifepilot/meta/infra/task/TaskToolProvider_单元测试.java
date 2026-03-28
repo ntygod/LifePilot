@@ -63,13 +63,13 @@ class TaskToolProvider_单元测试 {
         List<BuiltinTool> tools = provider.buildCronTools();
         assertThat(tools).hasSize(4);
         assertThat(tools.stream().map(BuiltinTool::id).toList())
-                .containsExactly("builtin.cron.create", "builtin.cron.list",
-                        "builtin.cron.update", "builtin.cron.remove");
+                .containsExactly("cron.create", "cron.list",
+                        "cron.update", "cron.remove");
     }
 
     @Test
     void cronCreate_有效表达式_保存并调度() {
-        BuiltinTool createTool = findTool(provider.buildCronTools(), "builtin.cron.create");
+        BuiltinTool createTool = findTool(provider.buildCronTools(), "cron.create");
 
         ToolResult result = createTool.execute(input(Map.of(
                 "name", "每日AI资讯",
@@ -84,7 +84,7 @@ class TaskToolProvider_单元测试 {
 
     @Test
     void cronCreate_无效表达式_返回错误() {
-        BuiltinTool createTool = findTool(provider.buildCronTools(), "builtin.cron.create");
+        BuiltinTool createTool = findTool(provider.buildCronTools(), "cron.create");
 
         ToolResult result = createTool.execute(input(Map.of(
                 "name", "测试",
@@ -102,7 +102,7 @@ class TaskToolProvider_单元测试 {
                 "2026-03-20T00:00:00Z", "2026-03-20T00:00:00Z");
         when(cronTaskRepository.findAll()).thenReturn(List.of(entry));
 
-        BuiltinTool listTool = findTool(provider.buildCronTools(), "builtin.cron.list");
+        BuiltinTool listTool = findTool(provider.buildCronTools(), "cron.list");
         ToolResult result = listTool.execute(input(Map.of()));
 
         assertThat(result.isSuccess()).isTrue();
@@ -115,7 +115,7 @@ class TaskToolProvider_单元测试 {
                 "2026-03-20T00:00:00Z", "2026-03-20T00:00:00Z");
         when(cronTaskRepository.findById("id1")).thenReturn(Optional.of(existing));
 
-        BuiltinTool updateTool = findTool(provider.buildCronTools(), "builtin.cron.update");
+        BuiltinTool updateTool = findTool(provider.buildCronTools(), "cron.update");
         ToolResult result = updateTool.execute(input(Map.of("taskId", "id1", "status", "paused")));
 
         assertThat(result.isSuccess()).isTrue();
@@ -130,7 +130,7 @@ class TaskToolProvider_单元测试 {
                 "2026-03-20T00:00:00Z", "2026-03-20T00:00:00Z");
         when(cronTaskRepository.findById("id1")).thenReturn(Optional.of(existing));
 
-        BuiltinTool updateTool = findTool(provider.buildCronTools(), "builtin.cron.update");
+        BuiltinTool updateTool = findTool(provider.buildCronTools(), "cron.update");
         ToolResult result = updateTool.execute(input(Map.of("taskId", "id1", "status", "active")));
 
         assertThat(result.isSuccess()).isTrue();
@@ -142,7 +142,7 @@ class TaskToolProvider_单元测试 {
     void cronUpdate_任务不存在_返回错误() {
         when(cronTaskRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
-        BuiltinTool updateTool = findTool(provider.buildCronTools(), "builtin.cron.update");
+        BuiltinTool updateTool = findTool(provider.buildCronTools(), "cron.update");
         ToolResult result = updateTool.execute(input(Map.of("taskId", "nonexistent", "status", "paused")));
 
         assertThat(result.isSuccess()).isFalse();
@@ -150,7 +150,7 @@ class TaskToolProvider_单元测试 {
 
     @Test
     void cronRemove_先取消再删除() {
-        BuiltinTool removeTool = findTool(provider.buildCronTools(), "builtin.cron.remove");
+        BuiltinTool removeTool = findTool(provider.buildCronTools(), "cron.remove");
         ToolResult result = removeTool.execute(input(Map.of("taskId", "id1")));
 
         assertThat(result.isSuccess()).isTrue();
@@ -168,7 +168,7 @@ class TaskToolProvider_单元测试 {
         List<BuiltinTool> tools = provider.buildHeartbeatTools();
         assertThat(tools).hasSize(2);
         assertThat(tools.stream().map(BuiltinTool::id).toList())
-                .containsExactly("builtin.heartbeat.read", "builtin.heartbeat.write");
+                .containsExactly("heartbeat.read", "heartbeat.write");
     }
 
     @Test
@@ -176,7 +176,7 @@ class TaskToolProvider_单元测试 {
         config.getTask().setHeartbeatFile(tempDir.resolve("not-exist.md").toString());
         provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
 
-        BuiltinTool readTool = findTool(provider.buildHeartbeatTools(), "builtin.heartbeat.read");
+        BuiltinTool readTool = findTool(provider.buildHeartbeatTools(), "heartbeat.read");
         ToolResult result = readTool.execute(input(Map.of()));
 
         assertThat(result.isSuccess()).isTrue();
@@ -190,7 +190,7 @@ class TaskToolProvider_单元测试 {
         config.getTask().setHeartbeatFile(file.toString());
         provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
 
-        BuiltinTool readTool = findTool(provider.buildHeartbeatTools(), "builtin.heartbeat.read");
+        BuiltinTool readTool = findTool(provider.buildHeartbeatTools(), "heartbeat.read");
         ToolResult result = readTool.execute(input(Map.of()));
 
         assertThat(result.isSuccess()).isTrue();
@@ -204,7 +204,7 @@ class TaskToolProvider_单元测试 {
         config.getTask().setHeartbeatFile(file.toString());
         provider = new TaskToolProvider(cronTaskRepository, cronScheduler, config);
 
-        BuiltinTool writeTool = findTool(provider.buildHeartbeatTools(), "builtin.heartbeat.write");
+        BuiltinTool writeTool = findTool(provider.buildHeartbeatTools(), "heartbeat.write");
         ToolResult result = writeTool.execute(input(Map.of(
                 "content", "# Checklist\n- 新条目"
         )));

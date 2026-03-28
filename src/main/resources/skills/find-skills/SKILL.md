@@ -4,7 +4,7 @@ name: "Skill 发现与安装"
 description: "搜索和安装 Skill 扩展包。"
 version: "1.2.0"
 suggested-tools:
-  - builtin.shell.exec
+  - shell.exec
 triggers:
   - "搜索技能"
   - "查找Skill"

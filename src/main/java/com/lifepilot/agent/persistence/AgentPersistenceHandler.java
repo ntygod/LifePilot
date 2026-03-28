@@ -333,7 +333,11 @@ public class AgentPersistenceHandler {
         Thread.startVirtualThread(() -> {
             try {
                 if (compactionEngine != null) {
-                    compactionEngine.compactIfNeeded(finalState.sessionId(), finalState.traceId());
+                    compactionEngine.compactIfNeeded(
+                            finalState.sessionId(),
+                            finalState.traceId(),
+                            finalState.preferredProvider()
+                    );
                 }
             } catch (Exception e) {
                 log.warn("会话压缩后处理失败：sessionId={}, error={}",

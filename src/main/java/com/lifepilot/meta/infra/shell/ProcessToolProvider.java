@@ -22,10 +22,10 @@ import java.util.Map;
  *
  * <p>工具列表：
  * <ul>
- *   <li>{@code builtin.process.list} — 列出后台进程（LOW）</li>
- *   <li>{@code builtin.process.output} — 读取进程输出（LOW）</li>
- *   <li>{@code builtin.process.write} — 写入进程输入（MEDIUM）</li>
- *   <li>{@code builtin.process.kill} — 终止后台进程（HIGH）</li>
+ *   <li>{@code process.list} — 列出后台进程（LOW）</li>
+ *   <li>{@code process.output} — 读取进程输出（LOW）</li>
+ *   <li>{@code process.write} — 写入进程输入（MEDIUM）</li>
+ *   <li>{@code process.kill} — 终止后台进程（HIGH）</li>
  * </ul>
  *
  * @author zsg
@@ -59,7 +59,7 @@ public class ProcessToolProvider {
     /** 列出后台进程。 */
     private BuiltinTool buildListTool() {
         return BuiltinTool.builder()
-                .id("builtin.process.list")
+                .id("process.list")
                 .category(ToolCategory.PERCEPTION)
                 .name("列出后台进程")
                 .description("列出所有后台进程的 sessionId、命令、状态和启动时间")
@@ -74,7 +74,7 @@ public class ProcessToolProvider {
     /** 读取进程输出。 */
     private BuiltinTool buildOutputTool() {
         return BuiltinTool.builder()
-                .id("builtin.process.output")
+                .id("process.output")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取进程输出")
                 .description("读取指定后台进程的输出缓冲区增量（自上次读取以来的新内容）")
@@ -100,7 +100,7 @@ public class ProcessToolProvider {
     /** 写入进程输入。 */
     private BuiltinTool buildWriteTool() {
         return BuiltinTool.builder()
-                .id("builtin.process.write")
+                .id("process.write")
                 .category(ToolCategory.ACTION)
                 .name("写入进程输入")
                 .description("向指定后台进程的 stdin 写入内容（可能影响进程行为）")
@@ -129,7 +129,7 @@ public class ProcessToolProvider {
     /** 终止后台进程。 */
     private BuiltinTool buildKillTool() {
         return BuiltinTool.builder()
-                .id("builtin.process.kill")
+                .id("process.kill")
                 .category(ToolCategory.ACTION)
                 .name("终止后台进程")
                 .description("强制终止指定后台进程")

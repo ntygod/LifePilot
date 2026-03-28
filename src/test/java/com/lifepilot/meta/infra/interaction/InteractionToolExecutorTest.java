@@ -131,7 +131,7 @@ class InteractionToolExecutorTest {
         var executor = new ChooseToolExecutor(bridgeWithCli);
 
         var futureResult = CompletableFuture.supplyAsync(() -> executor.execute(new ToolInput(
-                "builtin.interact.choose",
+                "interact.choose",
                 Map.of("message", "选择语言", "options", List.of("Java", "Python", "Go")),
                 JsonSchema.empty(),
                 null,
@@ -164,7 +164,7 @@ class InteractionToolExecutorTest {
         var executor = new ChooseToolExecutor(bridgeWithCli);
 
         ToolResult result = executor.execute(new ToolInput(
-                "builtin.interact.choose",
+                "interact.choose",
                 Map.of("message", "选择", "options", List.of()),
                 JsonSchema.empty(),
                 null,
@@ -182,7 +182,7 @@ class InteractionToolExecutorTest {
         var executor = new InputToolExecutor(bridgeWithCli);
 
         var futureResult = CompletableFuture.supplyAsync(() -> executor.execute(new ToolInput(
-                "builtin.interact.input",
+                "interact.input",
                 Map.of("message", "请输入姓名"),
                 JsonSchema.empty(),
                 null,
@@ -216,7 +216,7 @@ class InteractionToolExecutorTest {
         var executor = new InputToolExecutor(bridgeWithCli);
 
         ToolResult result = executor.execute(new ToolInput(
-                "builtin.interact.input",
+                "interact.input",
                 Map.of("message", "请输入"),
                 JsonSchema.empty(),
                 null,
@@ -235,7 +235,7 @@ class InteractionToolExecutorTest {
                 new com.lifepilot.notification.config.NotificationProperties());
 
         ToolResult result = executor.execute(new ToolInput(
-                "builtin.interact.notify",
+                "interact.notify",
                 Map.of("message", "任务已完成"),
                 JsonSchema.empty(),
                 null,

@@ -19,7 +19,6 @@ import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
-import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -131,15 +130,6 @@ public class ContextAssembler {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.collectionRepository = collectionRepository;
     }
-    /**
-     * 运行时传入的模型上下文窗口，0 表示使用配置值和 Provider 默认值。
-     * -- SETTER --
-     *  设置运行时传入的模型上下文窗口。
-     *
-     */
-    @Setter
-    private volatile int modelContextWindow = 0;
-
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -772,9 +762,6 @@ public class ContextAssembler {
             } catch (Exception e) {
                 log.debug("读取 Provider 上下文窗口失败，回退默认配置: error={}", e.getMessage());
             }
-        }
-        if (modelContextWindow > 0) {
-            resolvedWindow = Math.min(resolvedWindow, modelContextWindow);
         }
         return resolvedWindow;
     }

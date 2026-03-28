@@ -29,7 +29,7 @@
 **Note（非结构化笔记）**
 - 适用场景：日记、会议记录、灵感记录、梦境日志
 - 能力：写入 + 资料沉淀
-- 资料检索：绑定到会话后，笔记内容统一通过 `builtin.knowledge.search` 参与检索，而不是通过单独的 Datastore 全文搜索工具暴露给 LLM
+- 资料检索：绑定到会话后，笔记内容统一通过 `knowledge.search` 参与检索，而不是通过单独的 Datastore 全文搜索工具暴露给 LLM
 - 示例对话：
   - 「记一下今天的想法：关于项目架构的思考...」→ 写入笔记
   - 「我之前记过关于架构的笔记吗？」→ 全文搜索
@@ -68,8 +68,8 @@ Agent 通过 8 个内置工具操作数据存储，无需用户手动配置：
 
 其中：
 
-- `builtin.datastore.query_documents` 仅用于精确结构化条件查询
-- Datastore 绑定到会话后的资料型、主题型、说明型问题，统一优先通过 `builtin.knowledge.search` 检索
+- `datastore.query_documents` 仅用于精确结构化条件查询
+- Datastore 绑定到会话后的资料型、主题型、说明型问题，统一优先通过 `knowledge.search` 检索
 
 `create_collection` 还支持可选的 `projectionConfig` 参数，用于声明结构化数据如何投影为后续检索文本；如果未提供，系统会自动保存 `{}` 并启用默认通用投影规则。
 
@@ -149,11 +149,11 @@ instructions: |
   集合名称：食谱
   属性：name(TEXT), cuisine(SELECT), difficulty(SELECT), ingredients(JSON), steps(JSON)
 suggestedTools:
-  - builtin.datastore.create_collection
-  - builtin.datastore.add_document
-  - builtin.datastore.query_documents
-  - builtin.datastore.update_document
-  - builtin.datastore.delete_document
+  - datastore.create_collection
+  - datastore.add_document
+  - datastore.query_documents
+  - datastore.update_document
+  - datastore.delete_document
 ```
 
 ## 4. 配置项

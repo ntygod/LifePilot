@@ -16,26 +16,26 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 
 | 功能域 | 工具 ID | 说明 |
 |--------|---------|------|
-| 环境感知 | `builtin.env.datetime` | 获取当前日期时间 |
-| 环境感知 | `builtin.env.user-profile` | 获取用户画像信息 |
-| 环境感知 | `builtin.env.system-info` | 获取系统环境信息 |
-| Web 信息 | `builtin.web.search` | Web 搜索（统一使用 Tavily） |
-| Web 信息 | `builtin.web.fetch` | 抓取网页内容 |
-| 推理辅助 | `builtin.reason.think` | 结构化思考（scratchpad） |
-| 推理辅助 | `builtin.reason.calculate` | 数学计算 |
-| Shell 执行 | `builtin.shell.exec` | 执行 Shell 命令（含命令黑名单安全检查） |
-| 浏览器自动化 | `builtin.browser.navigate` | 导航到 URL |
-| 浏览器自动化 | `builtin.browser.click` | 点击页面元素 |
-| 浏览器自动化 | `builtin.browser.input` | 输入文本 |
-| 浏览器自动化 | `builtin.browser.screenshot` | 截取页面截图 |
-| 代码执行 | `builtin.code.execute` | 在沙箱中执行代码 |
-| 文件系统 | `builtin.file.read` | 读取文件内容 |
-| 文件系统 | `builtin.file.write` | 写入文件 |
-| 文件系统 | `builtin.file.list` | 列出目录内容 |
-| 文件系统 | `builtin.file.search` | 搜索文件 |
-| 交互控制 | `builtin.interact.choose` | 请求用户选择（多选项） |
-| 交互控制 | `builtin.interact.input` | 请求用户输入文本 |
-| 交互控制 | `builtin.interact.notify` | 向用户推送结果通知（非阻塞，默认回到当前会话渠道） |
+| 环境感知 | `env.datetime` | 获取当前日期时间 |
+| 环境感知 | `env.user-profile` | 获取用户画像信息 |
+| 环境感知 | `env.system-info` | 获取系统环境信息 |
+| Web 信息 | `web.search` | Web 搜索（统一使用 Tavily） |
+| Web 信息 | `web.fetch` | 抓取网页内容 |
+| 推理辅助 | `reason.think` | 结构化思考（scratchpad） |
+| 推理辅助 | `reason.calculate` | 数学计算 |
+| Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查） |
+| 浏览器自动化 | `browser.navigate` | 导航到 URL |
+| 浏览器自动化 | `browser.click` | 点击页面元素 |
+| 浏览器自动化 | `browser.input` | 输入文本 |
+| 浏览器自动化 | `browser.screenshot` | 截取页面截图 |
+| 代码执行 | `code.execute` | 在沙箱中执行代码 |
+| 文件系统 | `file.read` | 读取文件内容 |
+| 文件系统 | `file.write` | 写入文件 |
+| 文件系统 | `file.list` | 列出目录内容 |
+| 文件系统 | `file.search` | 搜索文件 |
+| 交互控制 | `interact.choose` | 请求用户选择（多选项） |
+| 交互控制 | `interact.input` | 请求用户输入文本 |
+| 交互控制 | `interact.notify` | 向用户推送结果通知（非阻塞，默认回到当前会话渠道） |
 
 ### 2.2 系统自省（4 个工具）
 

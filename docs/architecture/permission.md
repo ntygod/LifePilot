@@ -138,7 +138,7 @@ sequenceDiagram
 
 ### 4.2 高风险定时任务创建
 
-创建 `builtin.cron.create` 时，如果任务说明里包含写文件、删文件、执行命令、联网等高风险意图：
+创建 `cron.create` 时，如果任务说明里包含写文件、删文件、执行命令、联网等高风险意图：
 
 1. `AutonomousTaskApprovalAdvisor` 标记 `requiresAutonomousPreAuthorization`
 2. 当前请求不会直接放行，而是进入授权流程

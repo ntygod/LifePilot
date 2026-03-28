@@ -4,10 +4,10 @@ name: "会话日志分析"
 description: "回顾和分析历史会话日志，提取关键决策、未完成事项和模式。"
 version: "1.0.0"
 suggested-tools:
-  - builtin.memory.recall
-  - builtin.memory.search
-  - builtin.memory.search-experience
-  - builtin.file.read
+  - memory.recall
+  - memory.search
+  - memory.search-experience
+  - file.read
 triggers:
   - "回顾对话"
   - "上次讨论"
@@ -36,8 +36,8 @@ triggers:
 ### 1. 搜索相关记忆
 
 ```
-builtin.memory.recall(query="用户描述的主题")
-builtin.memory.search-experience(query="相关经验")
+memory.recall(query="用户描述的主题")
+memory.search-experience(query="相关经验")
 ```
 
 ### 2. 分析和整理
