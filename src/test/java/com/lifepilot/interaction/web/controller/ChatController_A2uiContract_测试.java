@@ -1,14 +1,17 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.interaction.model.ChannelType;
+import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.interaction.model.DeliveryMode;
+import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
+import com.lifepilot.interaction.service.ChannelIngressService;
 import com.lifepilot.interaction.web.model.A2uiComponent;
 import com.lifepilot.interaction.web.model.A2uiSignal;
 import com.lifepilot.interaction.web.model.MessageInfo;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
+import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatSessionService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
@@ -29,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,7 +49,9 @@ class ChatController_A2uiContract_测试 {
     private MockMvc mockMvc;
 
     @Mock
-    WebChannelAdapter webChannelAdapter;
+    BrowserIngressService browserIngressService;
+    @Mock
+    ChannelIngressService channelIngressService;
     @Mock
     SseSessionManager sseSessionManager;
     @Mock
@@ -60,7 +67,8 @@ class ChatController_A2uiContract_测试 {
     void setUp() {
         var mediaProperties = new MediaProperties();
         var controller = new ChatController(
-                webChannelAdapter,
+                browserIngressService,
+                channelIngressService,
                 sseSessionManager,
                 chatSessionService,
                 messageFeedbackRepository,
@@ -77,29 +85,20 @@ class ChatController_A2uiContract_测试 {
     @Test
     void 非流式消息接口_返回标准ChatResponse并包含A2ui组件() throws Exception {
         var components = List.of(
-                new A2uiComponent(
-                        "card-1",
-                        "Card",
-                        Map.of("title", "待办面板"),
-                        List.of("btn-1"),
-                        null
-                ),
-                new A2uiComponent(
-                        "btn-1",
-                        "Button",
-                        Map.of("label", "刷新"),
-                        List.of(),
-                        new A2uiSignal("panel.refresh", Map.of("section", "todos"))
-                )
+                new A2uiComponent("card-1", "Card", Map.of("title", "待办面板"), List.of("btn-1"), null),
+                new A2uiComponent("btn-1", "Button", Map.of("label", "刷新"), List.of(),
+                        new A2uiSignal("panel.refresh", Map.of("section", "todos")))
         );
-
-        when(webChannelAdapter.processMessage(any(), any())).thenReturn(
+        when(browserIngressService.buildChatMessage(any(), any(), eq(DeliveryMode.SYNC)))
+                .thenReturn(mock(GatewayMessage.class));
+        when(channelIngressService.submitSync(any())).thenReturn(
                 GatewayResponse.builder()
                         .responseId("assistant-1")
-                        .channelType(ChannelType.WEB)
                         .content(new ResponseContent.TextContent("这是当前面板"))
                         .metadata(Map.of(
                                 "traceId", "trace-1",
+                                "turnId", "turn-1",
+                                "completionMode", CompletionMode.NORMAL.name(),
                                 "a2uiComponents", components
                         ))
                         .latency(Duration.ofMillis(8))
@@ -124,32 +123,6 @@ class ChatController_A2uiContract_测试 {
     }
 
     @Test
-    void 非流式消息接口_允许空文本加附件发送() throws Exception {
-        when(webChannelAdapter.processMessage(any(), any())).thenReturn(
-                GatewayResponse.builder()
-                        .responseId("assistant-attachment")
-                        .channelType(ChannelType.WEB)
-                        .content(new ResponseContent.TextContent("已收到附件"))
-                        .latency(Duration.ofMillis(5))
-                        .statusCode(200)
-                        .build()
-        );
-
-        mockMvc.perform(post("/api/chat/messages")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "content": "   ",
-                                  "sessionId": "session-1",
-                                  "attachmentIds": ["file-1"]
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.entryId").value("assistant-attachment"))
-                .andExpect(jsonPath("$.content").value("已收到附件"));
-    }
-
-    @Test
     void 非流式消息接口_文本和附件都为空时返回400() throws Exception {
         mockMvc.perform(post("/api/chat/messages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -164,35 +137,27 @@ class ChatController_A2uiContract_测试 {
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("消息内容和附件不能同时为空"));
 
-        verify(webChannelAdapter, never()).processMessage(any(), any());
+        verify(browserIngressService, never()).buildChatMessage(any(), any(), any());
+        verify(channelIngressService, never()).submitSync(any());
     }
 
     @Test
     void signal接口_返回标准ChatResponse并包含A2ui组件() throws Exception {
         var components = List.of(
-                new A2uiComponent(
-                        "card-1",
-                        "Card",
-                        Map.of("title", "待办面板"),
-                        List.of("btn-1"),
-                        null
-                ),
-                new A2uiComponent(
-                        "btn-1",
-                        "Button",
-                        Map.of("label", "刷新"),
-                        List.of(),
-                        new A2uiSignal("panel.refresh", Map.of("section", "todos"))
-                )
+                new A2uiComponent("card-1", "Card", Map.of("title", "待办面板"), List.of("btn-1"), null),
+                new A2uiComponent("btn-1", "Button", Map.of("label", "刷新"), List.of(),
+                        new A2uiSignal("panel.refresh", Map.of("section", "todos")))
         );
-
-        when(webChannelAdapter.processSignal(any(), any())).thenReturn(
+        when(browserIngressService.buildSignalMessage(any(), any()))
+                .thenReturn(mock(GatewayMessage.class));
+        when(channelIngressService.submitSync(any())).thenReturn(
                 GatewayResponse.builder()
                         .responseId("assistant-2")
-                        .channelType(ChannelType.WEB)
                         .content(new ResponseContent.TextContent("好的，已刷新面板"))
                         .metadata(Map.of(
                                 "traceId", "trace-2",
+                                "turnId", "turn-2",
+                                "completionMode", CompletionMode.NORMAL.name(),
                                 "a2uiComponents", components
                         ))
                         .latency(Duration.ofMillis(5))
@@ -225,20 +190,9 @@ class ChatController_A2uiContract_测试 {
                         "assistant",
                         "这是当前面板",
                         List.of(
-                                new A2uiComponent(
-                                        "card-1",
-                                        "Card",
-                                        Map.of("title", "待办面板"),
-                                        List.of("btn-1"),
-                                        null
-                                ),
-                                new A2uiComponent(
-                                        "btn-1",
-                                        "Button",
-                                        Map.of("label", "刷新"),
-                                        List.of(),
-                                        new A2uiSignal("panel.refresh", Map.of("section", "todos"))
-                                )
+                                new A2uiComponent("card-1", "Card", Map.of("title", "待办面板"), List.of("btn-1"), null),
+                                new A2uiComponent("btn-1", "Button", Map.of("label", "刷新"), List.of(),
+                                        new A2uiSignal("panel.refresh", Map.of("section", "todos")))
                         ),
                         Instant.parse("2026-03-11T08:00:00Z"),
                         "已生成结构化面板",

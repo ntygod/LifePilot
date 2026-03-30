@@ -1,9 +1,12 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.marketplace.MarketplaceService;
+import com.lifepilot.marketplace.model.ExtensionAssetContent;
 import com.lifepilot.marketplace.model.ExtensionPackage;
+import com.lifepilot.marketplace.model.ExtensionInstallation;
 import com.lifepilot.marketplace.model.ExtensionType;
 import com.lifepilot.marketplace.model.InstallResult;
+import com.lifepilot.marketplace.model.InstalledExtensionAsset;
 import com.lifepilot.marketplace.model.RiskLevel;
 import com.lifepilot.marketplace.model.SecurityFinding;
 import com.lifepilot.marketplace.model.SecurityReport;
@@ -119,6 +122,50 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(get("/api/marketplace/extensions/unknown"))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void 已安装扩展快照_返回200() throws Exception {
+            var installation = new ExtensionInstallation(
+                    "pkg-1",
+                    ExtensionType.CHANNEL,
+                    "测试渠道",
+                    "1.0.0",
+                    "D:/plugins/pkg-1/channel-plugin.json",
+                    "D:/plugins/pkg-1",
+                    List.of(new InstalledExtensionAsset(
+                            "README",
+                            "docs/README.md",
+                            "D:/plugins/pkg-1/docs/README.md"
+                    ))
+            );
+            when(marketplaceService.getInstallation("pkg-1")).thenReturn(Optional.of(installation));
+
+            mockMvc.perform(get("/api/marketplace/extensions/pkg-1/installation"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.packageId").value("pkg-1"))
+                    .andExpect(jsonPath("$.type").value("CHANNEL"))
+                    .andExpect(jsonPath("$.installRootPath").value("D:/plugins/pkg-1"))
+                    .andExpect(jsonPath("$.assets", hasSize(1)))
+                    .andExpect(jsonPath("$.assets[0].kind").value("README"));
+        }
+
+        @Test
+        void 已安装扩展资产_返回文件内容() throws Exception {
+            var asset = new ExtensionAssetContent(
+                    "pkg-1",
+                    "docs/README.md",
+                    "README",
+                    "text/markdown",
+                    "# hello".getBytes()
+            );
+            when(marketplaceService.getInstallationAsset("pkg-1", "docs/README.md")).thenReturn(Optional.of(asset));
+
+            mockMvc.perform(get("/api/marketplace/extensions/pkg-1/assets/file")
+                            .param("path", "docs/README.md"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", containsString("text/markdown")))
+                    .andExpect(content().bytes("# hello".getBytes()));
         }
     }
 

@@ -77,11 +77,15 @@ public sealed interface ProviderAdapter permits SpringAiProviderAdapter {
      *
      * @param prompt        文本提示词
      * @param mediaContents 媒体内容列表
+     * @param outputSchema  输出 Schema（可选，用于结构化输出）
      * @param timeout       超时时间
      * @return 统一响应
      * @throws UnsupportedOperationException 若 Provider 不支持 VISION 能力
      */
-    LlmResponse callWithMedia(String prompt, List<MediaContent> mediaContents, Duration timeout);
+    LlmResponse callWithMedia(String prompt,
+                             List<MediaContent> mediaContents,
+                             @Nullable String outputSchema,
+                             Duration timeout);
 
     /**
      * 执行多模态流式调用（携带媒体内容）。
@@ -96,24 +100,32 @@ public sealed interface ProviderAdapter permits SpringAiProviderAdapter {
     /**
      * 执行原生视频调用（通过 Gemini File API URI 引用视频）。
      *
-     * @param text     文本提示词
-     * @param videoUri Gemini File API 返回的视频 URI（files/{fileId} 格式）
-     * @param timeout  超时时间
+     * @param text         文本提示词
+     * @param videoUri     Gemini File API 返回的视频 URI（files/{fileId} 格式）
+     * @param outputSchema 输出 Schema（可选，用于结构化输出）
+     * @param timeout      超时时间
      * @return 统一响应
      * @throws UnsupportedOperationException 若 Provider 不支持 NATIVE_VIDEO 能力
      */
-    LlmResponse callWithVideo(String text, String videoUri, Duration timeout);
+    LlmResponse callWithVideo(String text,
+                              String videoUri,
+                              @Nullable String outputSchema,
+                              Duration timeout);
 
     /**
      * 执行原生音频调用（携带音频二进制数据）。
      *
      * @param prompt        文本提示词
      * @param audioContents 音频内容列表
+     * @param outputSchema  输出 Schema（可选，用于结构化输出）
      * @param timeout       超时时间
      * @return 统一响应
      * @throws UnsupportedOperationException 若 Provider 不支持 NATIVE_AUDIO 能力
      */
-    LlmResponse callWithAudio(String prompt, List<MediaContent> audioContents, Duration timeout);
+    LlmResponse callWithAudio(String prompt,
+                              List<MediaContent> audioContents,
+                              @Nullable String outputSchema,
+                              Duration timeout);
 
     /**
      * 执行原生音频流式调用（携带音频二进制数据）。

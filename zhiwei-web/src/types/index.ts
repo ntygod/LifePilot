@@ -1248,10 +1248,115 @@ export interface UploadFileItem {
 }
 
 
-// ========== 第三部分 25: 扩展市场相关 ==========
+// ========== 第三部分 25: 渠道控制面相关 ==========
+
+export type ChannelConnectorMode = 'LOCAL' | 'EXTERNAL'
+
+export type ChannelInstanceStatus = 'CREATED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'STOPPED' | 'ERROR'
+
+export interface ChannelConfigSchemaProperty {
+  type?: string
+  title?: string
+  description?: string
+  enum?: Array<string | number>
+  default?: unknown
+  secret?: boolean
+}
+
+export interface ChannelConfigSchema {
+  type?: string
+  properties?: Record<string, ChannelConfigSchemaProperty>
+  required?: string[]
+}
+
+export interface ChannelSetupGuide {
+  title?: string
+  steps?: string[]
+  [key: string]: unknown
+}
+
+export interface ChannelPluginResources {
+  readmePath?: string | null
+  iconPath?: string | null
+  examplePaths: string[]
+  assetPaths: string[]
+}
+
+export interface ChannelPluginDescriptor {
+  pluginId: string
+  name: string
+  version: string
+  vendor: string
+  platform: string
+  connectorMode: ChannelConnectorMode
+  connectorSpec?: Record<string, unknown> | null
+  capabilities: string[]
+  configSchema: ChannelConfigSchema
+  secretFields: string[]
+  setupGuide?: ChannelSetupGuide | null
+  resources?: ChannelPluginResources | null
+}
+
+export interface ChannelInstance {
+  instanceId: string
+  pluginId: string
+  platform: string
+  displayName: string
+  enabled: boolean
+  status: ChannelInstanceStatus
+  config: Record<string, unknown>
+  secretConfig?: Record<string, unknown> | null
+  routingPolicy?: Record<string, unknown> | null
+  lastHeartbeatAt?: string | null
+  lastError?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChannelInstanceEvent {
+  id: string
+  instanceId: string
+  eventType: string
+  message?: string | null
+  payload?: Record<string, unknown> | null
+  createdAt: string
+}
+
+export interface ChannelHealthStatus {
+  instanceId: string
+  pluginId: string
+  platform: string
+  enabled: boolean
+  status: ChannelInstanceStatus
+  connectorMode: ChannelConnectorMode
+  healthy: boolean
+  lastHeartbeatAt?: string | null
+  lastError?: string | null
+  details?: Record<string, unknown>
+}
+
+export interface CreateChannelInstanceRequest {
+  pluginId: string
+  instanceId?: string
+  displayName?: string
+  config?: Record<string, unknown>
+  secretConfig?: Record<string, unknown> | null
+  routingPolicy?: Record<string, unknown> | null
+  enabled?: boolean
+}
+
+export interface UpdateChannelInstanceRequest {
+  displayName?: string
+  enabled?: boolean
+  config?: Record<string, unknown>
+  secretConfig?: Record<string, unknown> | null
+  routingPolicy?: Record<string, unknown> | null
+}
+
+// ========== 第三部分 26: 扩展市场相关 ==========
 
 /** 扩展类型 */
-export type ExtensionType = 'SKILL' | 'AGENT' | 'WORKFLOW'
+export type ExtensionType = 'SKILL' | 'AGENT' | 'WORKFLOW' | 'CHANNEL'
 
 /** 扩展包 */
 export interface ExtensionPackage {
@@ -1301,6 +1406,22 @@ export interface InstallResult {
   requirements?: string[]
   errorMessage?: string
   requiresConfirmation: boolean
+}
+
+export interface InstalledExtensionAsset {
+  kind: string
+  relativePath: string
+  localPath: string
+}
+
+export interface ExtensionInstallation {
+  packageId: string
+  type: ExtensionType
+  name: string
+  version: string
+  entryPath: string
+  installRootPath: string
+  assets?: InstalledExtensionAsset[] | null
 }
 
 /** 分页结果 */

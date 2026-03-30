@@ -2,11 +2,9 @@ package com.lifepilot.interaction.web.config;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
-import com.lifepilot.interaction.config.GatewayProperties;
-import com.lifepilot.interaction.gateway.MessageGateway;
-import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.service.WebPermissionApprovalService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -32,7 +30,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Web 模块自动配置。
  *
  * <p>在 {@code lifepilot.gateway.channels.web.enabled=true} 时注册所有 Web 相关 Bean：
- * {@link WebChannelAdapter}、{@link SseSessionManager}、{@link WebExceptionHandler} 和 CORS 配置。</p>
+ * {@link BrowserIngressService}、
+ * {@link SseSessionManager}、{@link WebExceptionHandler} 和 CORS 配置。</p>
  *
  * <p>Web Controller（如 {@link com.lifepilot.interaction.web.controller.ChatController}、
  * {@link com.lifepilot.interaction.web.controller.SettingsController} 等）通过组件扫描自动注册。
@@ -52,17 +51,19 @@ public class WebAutoConfiguration {
     private static final Logger log = LoggerFactory.getLogger(WebAutoConfiguration.class);
 
     @Bean
-    public WebChannelAdapter webChannelAdapter(MessageGateway gateway,
-                                                GatewayProperties gatewayProperties,
-                                                AttachmentRepository attachmentRepository,
-                                                ChatTurnService chatTurnService,
-                                                SseSessionManager sseSessionManager,
-                                                @Nullable AudioTranscriber audioTranscriber,
-                                                MediaProperties mediaProperties,
-                                                SharedScheduler sharedScheduler) {
-        log.info("注册 WebChannelAdapter");
-        return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository,
-                chatTurnService, sseSessionManager, audioTranscriber, mediaProperties, sharedScheduler);
+    public BrowserIngressService browserIngressService(AttachmentRepository attachmentRepository,
+                                                       ChatTurnService chatTurnService,
+                                                       SseSessionManager sseSessionManager,
+                                                       @Nullable AudioTranscriber audioTranscriber,
+                                                       MediaProperties mediaProperties) {
+        log.info("注册 BrowserIngressService");
+        return new BrowserIngressService(
+                attachmentRepository,
+                chatTurnService,
+                sseSessionManager,
+                audioTranscriber,
+                mediaProperties
+        );
     }
 
     @Bean

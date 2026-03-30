@@ -9,6 +9,7 @@ import com.lifepilot.agent.context.TokenBudget;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.SegmentInfo;
@@ -353,7 +354,7 @@ public class AgentController {
             var agentRequest = new AgentRequest(
                     request.message(),
                     testSessionId,
-                    "web-test",
+                    InteractionSource.channel("web-test", "web", "web.test"),
                     null,
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),
@@ -465,7 +466,7 @@ public class AgentController {
         var agentRequest = new AgentRequest(
                 request.message(),
                 testSessionId,
-                "web-test",
+                InteractionSource.channel("web-test", "web", "web.test"),
                 null,
                 agent.systemPrompt(),
                 agent.budget().toAgentBudget(),
@@ -529,7 +530,7 @@ public class AgentController {
             var agentRequest = new AgentRequest(
                     request.message(),
                     sessionId,
-                    "web-preview",
+                    InteractionSource.channel("web-preview", "web", "web.preview"),
                     null,
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),

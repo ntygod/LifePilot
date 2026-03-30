@@ -6,6 +6,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
+import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.GenerationSettingsEntity;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
@@ -207,6 +208,8 @@ public class GenerationRouter {
                     clientFactory.getOrCreate(candidate).chatModel(),
                     candidate.id(),
                     candidate.modelName(),
+                    candidate.providerType(),
+                    candidate.apiUrl(),
                     candidate.generationCapabilities().contains(GenerationCapability.STREAMING));
         }
         throw new LlmUnavailableException("无可用 ChatModel: scene=" + scene, scene, List.of());
@@ -340,6 +343,7 @@ public class GenerationRouter {
      * ChatModel 及其元信息。
      */
     public record ChatModelInfo(ChatModel chatModel, String serviceId, String modelName,
+                                ProviderType providerType, String apiUrl,
                                 boolean supportsStreaming) {
     }
 

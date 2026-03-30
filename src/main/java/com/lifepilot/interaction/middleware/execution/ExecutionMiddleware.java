@@ -87,8 +87,24 @@ public class ExecutionMiddleware implements GatewayMiddleware {
 
     /** 判断当前请求是否应走 Web SSE 流式返回。 */
     private boolean isStreamingRequest(GatewayMessage message) {
+        DeliveryMode deliveryMode = resolveDeliveryMode(message);
+        if (deliveryMode == DeliveryMode.SSE_STREAM) {
+            return true;
+        }
         return message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata
                 && webMetadata.acceptsSse();
+    }
+
+    private DeliveryMode resolveDeliveryMode(GatewayMessage message) {
+        String rawMode = message.traceHeaders().get(InteractionTraceHeaders.DELIVERY_MODE);
+        if (rawMode == null || rawMode.isBlank()) {
+            return DeliveryMode.SYNC;
+        }
+        try {
+            return DeliveryMode.valueOf(rawMode);
+        } catch (IllegalArgumentException ignored) {
+            return DeliveryMode.SYNC;
+        }
     }
 
     /**

@@ -497,6 +497,13 @@ lifepilot:
       response-summary-max-length: 200
       retention-days: 90
     channels:
+      connector-manager:
+        enabled: true
+        auto-manage-official: true
+        host: 127.0.0.1
+        port-range-start: 19091
+        port-range-end: 19120
+        startup-timeout: 45s
       web:
         enabled: true
       wecom:
@@ -590,6 +597,7 @@ lifepilot:
       gemini-api-base-url: "https://generativelanguage.googleapis.com"
   marketplace:
     enabled: true
+    compatibility-version: "1.0.0"
     index-sources:
       - "https://raw.githubusercontent.com/ntygod/ZhiWei-index/main/index.json"
     cache-ttl-hours: 24

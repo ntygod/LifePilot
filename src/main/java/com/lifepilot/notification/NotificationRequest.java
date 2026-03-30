@@ -12,7 +12,7 @@ import java.util.Map;
  *
  * @param targetUserId 目标用户标识
  * @param content      通知内容（{@link ResponseContent} 类型）
- * @param channel      指定渠道（可选，{@code null} 表示由通知服务按默认路由策略选择渠道）
+ * @param channel      指定渠道选择器（可选，可传实例 ID / platform / pluginId）
  * @param typeId       通知类型标识（可选）
  * @param metadata     扩展元数据
  * @author zsg

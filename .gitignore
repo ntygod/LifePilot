@@ -45,3 +45,4 @@ dist/
 *~
 # === Reference ===
 .openclaw-ref/
+/.claude/

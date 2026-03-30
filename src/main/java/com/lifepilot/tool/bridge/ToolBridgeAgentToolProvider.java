@@ -134,7 +134,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     /** Web 对话里改用自然语言挂起追问，不再暴露弹窗式输入工具。 */
     private boolean isWebConversation(ReactAgentState state) {
-        return state.channel() != null && "web".equalsIgnoreCase(state.channel());
+        return state.channelPlatform() != null && "web".equalsIgnoreCase(state.channelPlatform());
     }
 
     /** 这两类工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
@@ -163,7 +163,17 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             context.put(ToolContextKeys.USER_ID, state.userId());
         }
         if (state.channel() != null && !state.channel().isBlank()) {
+            context.put(ToolContextKeys.SOURCE_ID, state.channel());
+        }
+        context.put(ToolContextKeys.SOURCE_KIND, state.sourceKind().name());
+        if (state.channelPlatform() != null && !state.channelPlatform().isBlank()) {
+            context.put(ToolContextKeys.CHANNEL_TYPE, state.channelPlatform());
+            context.put(ToolContextKeys.CHANNEL_PLATFORM, state.channelPlatform());
+        } else if (state.channel() != null && !state.channel().isBlank()) {
             context.put(ToolContextKeys.CHANNEL_TYPE, state.channel());
+        }
+        if (state.channelInstanceId() != null && !state.channelInstanceId().isBlank()) {
+            context.put(ToolContextKeys.CHANNEL_INSTANCE_ID, state.channelInstanceId());
         }
         if (streamId != null && !streamId.isBlank()) {
             context.put(ToolContextKeys.STREAM_ID, streamId);
@@ -241,10 +251,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     /** 格式化输入 Schema 为 JSON 字符串。 */
     private String formatInputSchema(ToolContract tool) {
-        Map<String, Object> schema = tool.inputSchema().toMap();
-        if (schema.isEmpty()) {
-            return "{}";
-        }
+        Map<String, Object> schema = normalizeInputSchema(tool.inputSchema().toMap(), tool.id());
         // 简单序列化，避免引入额外依赖
         var sb = new StringBuilder("{");
         boolean first = true;
@@ -256,6 +263,28 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         }
         sb.append("}");
         return sb.toString();
+    }
+
+    private Map<String, Object> normalizeInputSchema(Map<String, Object> rawSchema, String toolId) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        if (rawSchema != null) {
+            schema.putAll(rawSchema);
+        }
+
+        Object type = schema.get("type");
+        if (!"object".equals(type)) {
+            if (type != null) {
+                log.warn("工具输入 Schema 根类型不是 object，已强制修正: toolId={}, originalType={}", toolId, type);
+            }
+            schema.put("type", "object");
+        }
+
+        Object properties = schema.get("properties");
+        if (!(properties instanceof Map<?, ?>)) {
+            schema.put("properties", Map.of());
+        }
+
+        return Map.copyOf(schema);
     }
 
     /** 解析 Spring AI 传入的 JSON 字符串为参数 Map。 */

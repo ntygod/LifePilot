@@ -39,7 +39,7 @@ const navigationItems = [
   {
     path: '/settings/channels',
     label: '集成渠道',
-    description: '飞书、企微、钉钉等渠道的凭据与开关配置。',
+    description: '管理渠道插件、连接实例、运行状态和 connector 配置。',
   },
   {
     path: '/settings/permissions',

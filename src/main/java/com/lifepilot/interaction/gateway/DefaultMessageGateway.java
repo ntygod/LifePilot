@@ -1,8 +1,6 @@
 package com.lifepilot.interaction.gateway;
 
-import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.middleware.MiddlewarePipeline;
-import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -10,9 +8,6 @@ import org.slf4j.MDC;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -27,7 +22,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class DefaultMessageGateway implements MessageGateway {
 
-    private final ConcurrentHashMap<ChannelType, ChannelAdapter> channels = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final MiddlewarePipeline pipeline;
 
@@ -72,64 +66,14 @@ public class DefaultMessageGateway implements MessageGateway {
     }
 
     @Override
-    public void registerChannel(ChannelAdapter adapter) {
-        var type = adapter.channelType();
-        var existing = channels.putIfAbsent(type, adapter);
-        if (existing != null) {
-            throw new IllegalStateException("通道类型已注册: " + type);
-        }
-
-        if (running.get()) {
-            try {
-                adapter.start();
-            } catch (Exception e) {
-                log.warn("通道适配器启动失败，已从注册表移除: type={}", type, e);
-                channels.remove(type);
-                return;
-            }
-        }
-
-        log.info("通道适配器注册成功: type={}", type);
-    }
-
-    @Override
-    public void unregisterChannel(ChannelType type) {
-        channels.remove(type);
-    }
-
-    @Override
-    public Optional<ChannelAdapter> getChannel(ChannelType type) {
-        return Optional.ofNullable(channels.get(type));
-    }
-
-    @Override
-    public List<ChannelAdapter> getAllChannels() {
-        return List.copyOf(channels.values());
-    }
-
-    @Override
     public void start() {
         running.set(true);
-        for (var entry : channels.entrySet()) {
-            try {
-                entry.getValue().start();
-            } catch (Exception e) {
-                log.error("通道启动失败: type={}", entry.getKey(), e);
-            }
-        }
-        log.info("消息网关已启动，已注册通道数: {}", channels.size());
+        log.info("消息网关已启动");
     }
 
     @Override
     public void stop() {
         running.set(false);
-        for (var entry : channels.entrySet()) {
-            try {
-                entry.getValue().stop();
-            } catch (Exception e) {
-                log.error("通道停止失败: type={}", entry.getKey(), e);
-            }
-        }
         log.info("消息网关已停止");
     }
 

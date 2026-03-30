@@ -3,6 +3,8 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.model.CreateModelServiceRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.ModelServiceResponse;
+import com.lifepilot.interaction.web.model.ModelServiceTemplateModelResponse;
+import com.lifepilot.interaction.web.model.ModelServiceTemplateResponse;
 import com.lifepilot.interaction.web.model.UpdateModelServiceRequest;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.GenerationSettingsEntity;
@@ -12,6 +14,7 @@ import com.lifepilot.modelservice.model.RerankSettingsEntity;
 import com.lifepilot.modelservice.repository.EmbeddingSettingsRepository;
 import com.lifepilot.modelservice.repository.GenerationSettingsRepository;
 import com.lifepilot.modelservice.repository.ModelServiceRepository;
+import com.lifepilot.modelservice.repository.ModelServiceTemplateRepository;
 import com.lifepilot.modelservice.repository.RerankSettingsRepository;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import com.lifepilot.llm.config.ProviderType;
@@ -50,17 +53,20 @@ public class ModelServiceController {
     private final GenerationSettingsRepository generationSettingsRepository;
     private final EmbeddingSettingsRepository embeddingSettingsRepository;
     private final RerankSettingsRepository rerankSettingsRepository;
+    private final ModelServiceTemplateRepository modelServiceTemplateRepository;
     private final ModelServiceRegistrationService registrationService;
 
     public ModelServiceController(ModelServiceRepository modelServiceRepository,
                                   GenerationSettingsRepository generationSettingsRepository,
                                   EmbeddingSettingsRepository embeddingSettingsRepository,
                                   RerankSettingsRepository rerankSettingsRepository,
+                                  ModelServiceTemplateRepository modelServiceTemplateRepository,
                                   ModelServiceRegistrationService registrationService) {
         this.modelServiceRepository = modelServiceRepository;
         this.generationSettingsRepository = generationSettingsRepository;
         this.embeddingSettingsRepository = embeddingSettingsRepository;
         this.rerankSettingsRepository = rerankSettingsRepository;
+        this.modelServiceTemplateRepository = modelServiceTemplateRepository;
         this.registrationService = registrationService;
     }
 
@@ -74,6 +80,36 @@ public class ModelServiceController {
     public ResponseEntity<List<ModelServiceResponse>> listEnabledServices(@RequestParam(required = false) String kind) {
         List<ModelServiceEntity> services = resolveServices(kind, true);
         return ResponseEntity.ok(services.stream().map(this::toResponse).toList());
+    }
+
+    @GetMapping("/templates")
+    public ResponseEntity<List<ModelServiceTemplateResponse>> listTemplates() {
+        return ResponseEntity.ok(modelServiceTemplateRepository.findAll().stream()
+                .map(template -> new ModelServiceTemplateResponse(
+                        template.vendorKey(),
+                        template.displayName(),
+                        template.providerType().name(),
+                        template.description(),
+                        template.defaultApiUrl(),
+                        template.supportedKinds().stream().map(Enum::name).toList(),
+                        template.defaultTimeoutSeconds(),
+                        template.defaultCapabilities(),
+                        template.defaultScenes(),
+                        template.defaultSupportsStreaming(),
+                        template.defaultMaxContextWindow(),
+                        template.modelOptions().stream()
+                                .map(option -> new ModelServiceTemplateModelResponse(
+                                        option.kind().name(),
+                                        option.value(),
+                                        option.label(),
+                                        option.recommended(),
+                                        option.capabilities(),
+                                        option.scenes(),
+                                        option.supportsStreaming(),
+                                        option.maxContextWindow(),
+                                        option.embeddingDimension()))
+                                .toList()))
+                .toList());
     }
 
     @GetMapping("/{id}")
@@ -160,6 +196,7 @@ public class ModelServiceController {
         }
         parseKind(request.kind());
         parseProviderType(request.type());
+        validateVendorKey(request.vendorKey());
     }
 
     private ModelServiceEntity toEntity(CreateModelServiceRequest request) {
@@ -182,6 +219,7 @@ public class ModelServiceController {
                         request.maxContextWindow(),
                         request.embeddingDimension(),
                         request.supportsStreaming(),
+                        request.vendorKey(),
                         Map.of()
                 ),
                 emptyToNull(request.displayName()),
@@ -192,6 +230,7 @@ public class ModelServiceController {
     private ModelServiceEntity merge(ModelServiceEntity existing, UpdateModelServiceRequest request) {
         ModelServiceKind kind = request.kind() != null ? parseKind(request.kind()) : existing.kind();
         ProviderType providerType = request.type() != null ? parseProviderType(request.type()) : existing.providerType();
+        validateVendorKey(request.vendorKey());
         return new ModelServiceEntity(
                 existing.id(),
                 kind,
@@ -212,6 +251,7 @@ public class ModelServiceController {
                         request.maxContextWindow(),
                         request.embeddingDimension(),
                         request.supportsStreaming(),
+                        request.vendorKey() != null ? request.vendorKey() : getStringMetadata(existing, "vendorKey"),
                         existing.metadata()
                 ),
                 request.displayName() != null ? emptyToNull(request.displayName()) : existing.displayName(),
@@ -249,6 +289,7 @@ public class ModelServiceController {
                                               @Nullable Integer maxContextWindow,
                                               @Nullable Integer embeddingDimension,
                                               @Nullable Boolean supportsStreaming,
+                                              @Nullable String vendorKey,
                                               Map<String, Object> base) {
         Map<String, Object> metadata = new LinkedHashMap<>(base);
         putOrRemove(metadata, "costPerInputToken", costPerInputToken);
@@ -256,6 +297,7 @@ public class ModelServiceController {
         putOrRemove(metadata, "maxContextWindow", maxContextWindow);
         putOrRemove(metadata, "embeddingDimension", embeddingDimension);
         putOrRemove(metadata, "supportsStreaming", supportsStreaming);
+        putOrRemove(metadata, "vendorKey", emptyToNull(vendorKey));
         return Map.copyOf(metadata);
     }
 
@@ -272,6 +314,7 @@ public class ModelServiceController {
                 entity.id(),
                 entity.kind().name(),
                 entity.providerType().name(),
+                getStringMetadata(entity, "vendorKey"),
                 entity.apiUrl(),
                 entity.modelName(),
                 entity.timeoutSeconds(),
@@ -285,23 +328,29 @@ public class ModelServiceController {
                 getIntegerMetadata(entity, "embeddingDimension"),
                 getBooleanMetadata(entity, "supportsStreaming")
                         || entity.generationCapabilities().contains(GenerationCapability.STREAMING),
-                false,
                 entity.displayName(),
                 entity.description()
         );
     }
 
     private List<String> toCapabilities(ModelServiceEntity entity) {
-        return switch (entity.kind()) {
-            case GENERATION -> entity.generationCapabilities().stream().map(Enum::name).sorted().toList();
-            case EMBEDDING -> List.of("EMBEDDING");
-            case RERANK -> List.of("RERANK");
-        };
+        if (entity.kind() == ModelServiceKind.GENERATION) {
+            return entity.generationCapabilities().stream().map(Enum::name).sorted().toList();
+        }
+        if (entity.kind() == ModelServiceKind.EMBEDDING) {
+            return List.of("EMBEDDING");
+        }
+        return List.of("RERANK");
     }
 
     private Integer getIntegerMetadata(ModelServiceEntity entity, String key) {
         Object value = entity.metadata().get(key);
         return value instanceof Number number ? number.intValue() : null;
+    }
+
+    private @Nullable String getStringMetadata(ModelServiceEntity entity, String key) {
+        Object value = entity.metadata().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
     }
 
     private boolean getBooleanMetadata(ModelServiceEntity entity, String key) {
@@ -373,6 +422,16 @@ public class ModelServiceController {
             return ProviderType.valueOf(type);
         } catch (Exception e) {
             throw new IllegalArgumentException("不支持的 Provider 类型: " + type);
+        }
+    }
+
+    private void validateVendorKey(@Nullable String vendorKey) {
+        String normalizedVendorKey = emptyToNull(vendorKey);
+        if (normalizedVendorKey == null) {
+            return;
+        }
+        if (!modelServiceTemplateRepository.existsByVendorKey(normalizedVendorKey)) {
+            throw new IllegalArgumentException("不支持的厂商模板: " + normalizedVendorKey);
         }
     }
 

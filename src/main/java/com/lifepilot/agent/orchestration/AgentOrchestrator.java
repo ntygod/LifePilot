@@ -353,7 +353,7 @@ public class AgentOrchestrator {
                 Duration.between(suspended.suspendedAt(), Instant.now())));
         String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
         state = state.appendStep(new ReactStep.Observation(
-                resumeToolId, null, true, agentLoop.formatResumeObservation(payload), 0));
+                resumeToolId, null, true, agentLoop.formatResumeObservation(payload), 0, null));
         suspendStore.delete(traceId);
 
         log.info("Agent 从挂起状态恢复执行：traceId={}, reasonType={}, payloadType={}",
@@ -376,7 +376,7 @@ public class AgentOrchestrator {
             var request = new AgentRequest(
                     state.goal(),
                     state.sessionId(),
-                    state.channel(),
+                    state.source(),
                     state.userId(),
                     state.turnId(),
                     ChatTurnAction.RESUME,
@@ -432,7 +432,7 @@ public class AgentOrchestrator {
             return new AgentRequest(
                     request.message(),
                     request.sessionId(),
-                    request.channel(),
+                    request.source(),
                     request.userId(),
                     request.turnId(),
                     request.action(),

@@ -596,15 +596,12 @@ public class ContextEngine {
         }
         String callId = sessionPruningEngine.stringValue(payload.get("callId"));
         String inputJson = sessionPruningEngine.stringValue(payload.get("inputJson"));
-        return AssistantMessage.builder()
-                .content("")
-                .toolCalls(List.of(new AssistantMessage.ToolCall(
+        return buildAssistantToolCallMessage(List.of(new AssistantMessage.ToolCall(
                         callId != null ? callId : toolId,
                         "function",
                         toolId,
                         inputJson != null ? inputJson : "{}"
-                )))
-                .build();
+                )));
     }
 
     @Nullable
@@ -613,13 +610,14 @@ public class ContextEngine {
         if (toolId == null || toolId.isBlank()) {
             return null;
         }
+        String callId = sessionPruningEngine.stringValue(payload.get("callId"));
         String preview = sessionPruningEngine.formatToolResultPreview(payload);
         if (preview.isBlank()) {
             preview = booleanValue(payload.get("success")) ? "工具执行成功" : "工具执行失败";
         }
         return ToolResponseMessage.builder()
                 .responses(List.of(new ToolResponseMessage.ToolResponse(
-                        toolId,
+                        callId != null ? callId : toolId,
                         toolId,
                         preview
                 )))
@@ -633,6 +631,12 @@ public class ContextEngine {
             return null;
         }
         return new AssistantMessage(content);
+    }
+
+    private AssistantMessage buildAssistantToolCallMessage(List<AssistantMessage.ToolCall> toolCalls) {
+        return AssistantMessage.builder()
+                .toolCalls(toolCalls)
+                .build();
     }
 
     private int estimateMessageTokens(Message message) {

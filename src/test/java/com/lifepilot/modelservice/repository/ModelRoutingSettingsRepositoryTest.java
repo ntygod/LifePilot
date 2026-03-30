@@ -71,6 +71,11 @@ class ModelRoutingSettingsRepositoryTest {
         embeddingSettingsRepository = new EmbeddingSettingsRepository(jdbcTemplate);
         rerankSettingsRepository = new RerankSettingsRepository(jdbcTemplate);
 
+        upsertService("gen-main", "GENERATION", "OPENAI_COMPATIBLE", "https://api.openai.com/v1", "gpt-5.4");
+        upsertService("gen-agent", "GENERATION", "OPENAI_COMPATIBLE", "https://api.deepseek.com/v1", "deepseek-chat");
+        upsertService("embed-main", "EMBEDDING", "TEI", "http://localhost:8080/v1", "text-embedding-v4");
+        upsertService("embed-memory", "EMBEDDING", "OLLAMA", "http://localhost:11434", "nomic-embed-text");
+
         jdbcTemplate.update("""
                 INSERT INTO model_services (
                     id, kind, provider_type, api_url, api_key, model_name, timeout_seconds, priority, enabled,
@@ -99,7 +104,7 @@ class ModelRoutingSettingsRepositoryTest {
                 SET default_service_id = ?, scene_service_bindings_json = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
-                "ollama-qwen2.5",
+                "gen-main",
                 "{}",
                 GenerationSettingsRepository.DEFAULT_ID);
         jdbcTemplate.update("""
@@ -107,16 +112,17 @@ class ModelRoutingSettingsRepositoryTest {
                 SET default_service_id = ?, knowledge_base_service_id = ?, memory_service_id = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
-                "ollama-nomic-embed",
-                "ollama-nomic-embed",
-                "ollama-nomic-embed",
+                "embed-main",
+                "embed-main",
+                "embed-memory",
                 EmbeddingSettingsRepository.DEFAULT_ID);
         jdbcTemplate.update("""
                 UPDATE rerank_settings
-                SET enabled = 0, mode = 'DISABLED', native_service_id = NULL, llm_service_id = 'ollama-qwen2.5',
+                SET enabled = 0, mode = 'DISABLED', native_service_id = NULL, llm_service_id = ?,
                     knowledge_top_k = 5, memory_enabled = 1, memory_top_k = 10, updated_at = datetime('now')
                 WHERE id = ?
                 """,
+                "gen-main",
                 RerankSettingsRepository.DEFAULT_ID);
     }
 
@@ -124,30 +130,30 @@ class ModelRoutingSettingsRepositoryTest {
     void generationSettings_支持默认服务与场景绑定() {
         generationSettingsRepository.save(new GenerationSettingsEntity(
                 GenerationSettingsRepository.DEFAULT_ID,
-                "openai-gpt-4",
-                Map.of("chat", "openai-gpt-4", "code_generation", "deepseek-r1")));
+                "gen-agent",
+                Map.of("chat", "gen-agent", "agent_react", "gen-main")));
 
         var found = generationSettingsRepository.findDefault();
         assertThat(found).isPresent();
-        assertThat(found.get().defaultServiceId()).isEqualTo("openai-gpt-4");
+        assertThat(found.get().defaultServiceId()).isEqualTo("gen-agent");
         assertThat(found.get().sceneServiceBindings())
-                .containsEntry("chat", "openai-gpt-4")
-                .containsEntry("code_generation", "deepseek-r1");
+                .containsEntry("chat", "gen-agent")
+                .containsEntry("agent_react", "gen-main");
     }
 
     @Test
     void embeddingSettings_支持知识库与记忆独立绑定() {
         embeddingSettingsRepository.save(new EmbeddingSettingsEntity(
                 EmbeddingSettingsRepository.DEFAULT_ID,
-                "tei-embedding",
-                "tei-embedding",
-                "ollama-nomic-embed"));
+                "embed-main",
+                "embed-main",
+                "embed-memory"));
 
         var found = embeddingSettingsRepository.findDefault();
         assertThat(found).isPresent();
-        assertThat(found.get().defaultServiceId()).isEqualTo("tei-embedding");
-        assertThat(found.get().knowledgeBaseServiceId()).isEqualTo("tei-embedding");
-        assertThat(found.get().memoryServiceId()).isEqualTo("ollama-nomic-embed");
+        assertThat(found.get().defaultServiceId()).isEqualTo("embed-main");
+        assertThat(found.get().knowledgeBaseServiceId()).isEqualTo("embed-main");
+        assertThat(found.get().memoryServiceId()).isEqualTo("embed-memory");
     }
 
     @Test
@@ -169,5 +175,30 @@ class ModelRoutingSettingsRepositoryTest {
         assertThat(found.get().nativeServiceId()).isEqualTo("local-bge-reranker");
         assertThat(found.get().knowledgeTopK()).isEqualTo(8);
         assertThat(found.get().memoryTopK()).isEqualTo(12);
+    }
+
+    private void upsertService(String id, String kind, String providerType, String apiUrl, String modelName) {
+        jdbcTemplate.update("""
+                INSERT INTO model_services (
+                    id, kind, provider_type, api_url, api_key, model_name, timeout_seconds, priority, enabled,
+                    supported_scenes_json, generation_capabilities_json, metadata_json,
+                    display_name, description, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, NULL, ?, 30, 0, 1, '[]', '[]', '{}', ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(id) DO UPDATE SET
+                    kind = excluded.kind,
+                    provider_type = excluded.provider_type,
+                    api_url = excluded.api_url,
+                    model_name = excluded.model_name,
+                    display_name = excluded.display_name,
+                    description = excluded.description,
+                    updated_at = excluded.updated_at
+                """,
+                id,
+                kind,
+                providerType,
+                apiUrl,
+                modelName,
+                id,
+                "测试模型服务");
     }
 }

@@ -1,5 +1,7 @@
 package com.lifepilot.agent.model;
 
+import com.lifepilot.interaction.model.InteractionSource;
+import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.llm.multimodal.MediaContent;
 import lombok.Builder;
 import org.springframework.lang.Nullable;
@@ -23,7 +25,7 @@ public record ReactAgentState(
         String sessionId,
         @Nullable String turnId,
         String goal,
-        String channel,
+        InteractionSource source,
         @Nullable String userId,
         AgentTaskMode taskMode,
         List<ReactStep> steps,
@@ -49,6 +51,7 @@ public record ReactAgentState(
 ) {
 
     public ReactAgentState {
+        source = source != null ? source : InteractionSource.system("unknown");
         taskMode = taskMode != null ? taskMode : AgentTaskMode.AUTO;
         steps = List.copyOf(steps);
         shortTermMemory = List.copyOf(shortTermMemory);
@@ -70,7 +73,7 @@ public record ReactAgentState(
                 .sessionId(request.sessionId())
                 .turnId(request.turnId())
                 .goal(request.message())
-                .channel(request.channel())
+                .source(request.source())
                 .userId(request.userId())
                 .taskMode(request.taskMode())
                 .steps(List.of())
@@ -93,6 +96,24 @@ public record ReactAgentState(
                 .suspended(false)
                 .suspendReason(null)
                 .build();
+    }
+
+    public String channel() {
+        return source.sourceId();
+    }
+
+    public SourceKind sourceKind() {
+        return source.sourceKind();
+    }
+
+    @Nullable
+    public String channelPlatform() {
+        return source.channelPlatform();
+    }
+
+    @Nullable
+    public String channelInstanceId() {
+        return source.channelInstanceId();
     }
 
     public boolean isDone() {
@@ -162,5 +183,12 @@ public record ReactAgentState(
         return this.toBuilder()
                 .pendingMedia(null)
                 .build();
+    }
+
+    public static class ReactAgentStateBuilder {
+
+        public ReactAgentStateBuilder channel(String channel) {
+            return source(InteractionSource.legacy(channel, this.sessionId));
+        }
     }
 }

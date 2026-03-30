@@ -4,6 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.adapter.ProviderChatOptionsFactory;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.observability.trace.TraceContext;
@@ -12,12 +13,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * 非流式迭代回调 — run() 使用。
@@ -99,26 +98,22 @@ public class NonStreamingCallback implements IterationCallback {
         this.providerId = chatModelInfo.serviceId();
         this.modelId = chatModelInfo.modelName();
 
-        // 构建 ChatOptions：注入工具定义但禁用自动执行
-        var optionsBuilder = DefaultToolCallingChatOptions.builder()
-                .internalToolExecutionEnabled(false);
-
-        // 温度透传
-        if (req.temperature() != null) {
-            optionsBuilder.temperature(req.temperature());
-        }
-
-        if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
-            var validCallbacks = toolCallbacks.stream()
-                    .filter(Objects::nonNull)
-                    .toList();
-            if (!validCallbacks.isEmpty()) {
-                optionsBuilder.toolCallbacks(validCallbacks);
-            }
-        }
+        var chatOptions = ProviderChatOptionsFactory.create(
+                new ProviderChatOptionsFactory.ProviderDescriptor(
+                        chatModelInfo.providerType(),
+                        chatModelInfo.apiUrl()
+                ),
+                chatModelInfo.chatModel(),
+                chatModelInfo.modelName(),
+                req.temperature(),
+                toolCallbacks,
+                false,
+                false,
+                null
+        );
 
         // 构建 Prompt 并调用 ChatModel
-        var prompt = new Prompt(messages, optionsBuilder.build());
+        var prompt = new Prompt(messages, chatOptions);
         return chatModelInfo.chatModel().call(prompt);
     }
 

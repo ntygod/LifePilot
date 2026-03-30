@@ -1,7 +1,6 @@
 package com.lifepilot.meta.infra.interaction;
 
 import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
@@ -78,39 +77,42 @@ public class NotifyToolExecutor {
     }
 
     /**
-     * 优先使用显式参数，其次使用当前请求上下文中的渠道信息。
+     * 优先使用显式参数，其次使用当前请求上下文中的实例 / 平台信息。
      *
-     * <p>notify 工具默认应回到当前会话渠道，避免再次广播到所有适配器。</p>
+     * <p>notify 工具默认应回到当前会话渠道实例，避免再次广播到所有实例。</p>
      */
     private String resolveChannel(ToolInput input) {
         String explicit = input.getOptionalParam("channel", String.class)
                 .filter(value -> !value.isBlank())
                 .orElse(null);
         if (explicit != null) {
-            return normalizeChannel(explicit);
+            return explicit.trim();
+        }
+        String instanceId = input.getContextValue(ToolContextKeys.CHANNEL_INSTANCE_ID, String.class)
+                .filter(value -> !value.isBlank())
+                .orElse(null);
+        if (instanceId != null) {
+            return instanceId.trim();
+        }
+        String platform = input.getContextValue(ToolContextKeys.CHANNEL_PLATFORM, String.class)
+                .filter(value -> !value.isBlank())
+                .orElse(null);
+        if (platform != null) {
+            return platform.trim();
         }
         String fromContext = input.getContextValue(ToolContextKeys.CHANNEL_TYPE, String.class)
                 .filter(value -> !value.isBlank())
                 .orElse(null);
         if (fromContext != null) {
-            return normalizeChannel(fromContext);
+            return fromContext.trim();
         }
         String sessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class)
                 .filter(value -> !value.isBlank())
                 .orElse(null);
         if (sessionId != null) {
             int index = sessionId.indexOf(':');
-            String inferred = index > 0 ? sessionId.substring(0, index) : ChannelType.WEB.value();
-            return normalizeChannel(inferred);
+            return index > 0 ? sessionId.substring(0, index).trim() : "web.default";
         }
-        return ChannelType.WEB.name();
-    }
-
-    private String normalizeChannel(String raw) {
-        try {
-            return ChannelType.fromValue(raw.toLowerCase()).name();
-        } catch (IllegalArgumentException ignored) {
-            return raw.toUpperCase();
-        }
+        return "web.default";
     }
 }

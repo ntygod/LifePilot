@@ -1,6 +1,8 @@
 package com.lifepilot.marketplace.install;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.model.ChannelPluginDescriptor;
+import com.lifepilot.interaction.model.ChannelPluginResources;
 import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.model.*;
 import com.lifepilot.marketplace.security.SecurityScanner;
@@ -15,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -40,9 +43,6 @@ import java.util.stream.Stream;
 public class ExtensionInstaller {
 
     private static final Logger log = LoggerFactory.getLogger(ExtensionInstaller.class);
-
-    /** 当前应用版本，用于兼容性检查。 */
-    private static final String APP_VERSION = "0.1.0";
 
     private final IndexManager indexManager;
     private final VersionResolver versionResolver;
@@ -96,13 +96,14 @@ public class ExtensionInstaller {
             return failure("未找到包: " + packageId);
         }
         var pkg = packageOpt.get();
+        String compatibilityVersion = properties.getCompatibilityVersion();
 
         // 2. 版本兼容性检查
-        if (!versionResolver.checkCompatibility(APP_VERSION, pkg.minLifepilotVersion())) {
+        if (!versionResolver.checkCompatibility(compatibilityVersion, pkg.minLifepilotVersion())) {
             log.warn("安装失败，版本不兼容: packageId={}, minVersion={}, currentVersion={}",
-                    packageId, pkg.minLifepilotVersion(), APP_VERSION);
-            return failure("版本不兼容，当前版本 %s 低于最低要求 %s"
-                    .formatted(APP_VERSION, pkg.minLifepilotVersion()));
+                    packageId, pkg.minLifepilotVersion(), compatibilityVersion);
+            return failure("版本不兼容，当前 Marketplace 兼容版本 %s 低于最低要求 %s"
+                    .formatted(compatibilityVersion, pkg.minLifepilotVersion()));
         }
 
         // 3. 获取对应的安装策略
@@ -164,6 +165,8 @@ public class ExtensionInstaller {
         Instant now = Instant.now();
         String securityReportJson = serializeJson(securityReport);
         String requirementsJson = serializeJson(pkg.requirements());
+        String installRootPath = resolveInstallRootPath(localPath);
+        String assetsJson = resolveAssetsJson(pkg, localPath, installRootPath);
 
         var installed = new InstalledExtension(
                 UUID.randomUUID().toString(),
@@ -174,8 +177,10 @@ public class ExtensionInstaller {
                 resolveIndexSourceUrl(),
                 pkg.repoUrl(),
                 localPath.toString(),
+                installRootPath,
                 requirementsJson,
                 securityReportJson,
+                assetsJson,
                 now,
                 now
         );
@@ -237,8 +242,10 @@ public class ExtensionInstaller {
             log.warn("升级失败，未找到已安装记录: packageId={}", packageId);
             return failure("未找到已安装扩展: " + packageId);
         }
+        var previousInstalled = installedOpt.get();
 
-        // 2. 卸载旧版本
+        // 2. 先尝试安装新版本（下载 + 安全扫描 + 风险评估），不影响旧版本
+        //    注意：install 内部会调用 repository.save()，会覆盖旧记录
         var uninstallResult = uninstall(packageId);
         if (!uninstallResult.success()) {
             log.warn("升级失败，卸载旧版本失败: packageId={}", packageId);
@@ -246,7 +253,27 @@ public class ExtensionInstaller {
         }
 
         // 3. 安装新版本
-        return install(packageId, confirmHighRisk);
+        var installResult = install(packageId, confirmHighRisk);
+        if (!installResult.success()) {
+            // 安装失败时尝试回滚：重新安装旧版本
+            log.warn("升级失败，新版本安装失败，尝试回滚旧版本: packageId={}, version={}",
+                    packageId, previousInstalled.version());
+            try {
+                var strategy = strategies.get(previousInstalled.type());
+                if (strategy != null) {
+                    Path oldPath = Path.of(previousInstalled.entryPath());
+                    if (Files.exists(oldPath)) {
+                        strategy.register(oldPath, indexManager.getPackage(packageId).orElse(null));
+                        repository.save(previousInstalled);
+                        log.info("升级回滚成功，已恢复旧版本: packageId={}, version={}",
+                                packageId, previousInstalled.version());
+                    }
+                }
+            } catch (Exception rollbackError) {
+                log.error("升级回滚也失败: packageId={}, error={}", packageId, rollbackError.getMessage());
+            }
+        }
+        return installResult;
     }
 
     // ─────────────────────────────────────────────
@@ -291,6 +318,57 @@ public class ExtensionInstaller {
             log.warn("JSON 序列化失败: error={}", e.getMessage());
             return null;
         }
+    }
+
+    private String resolveInstallRootPath(Path localPath) {
+        if (Files.isDirectory(localPath)) {
+            return localPath.toString();
+        }
+        Path parent = localPath.getParent();
+        return parent != null ? parent.toString() : localPath.toString();
+    }
+
+    private String resolveAssetsJson(ExtensionPackage pkg, Path localPath, String installRootPath) {
+        if (pkg.type() != ExtensionType.CHANNEL) {
+            return null;
+        }
+        try {
+            ChannelPluginDescriptor descriptor = objectMapper.readValue(
+                    Files.readString(localPath), ChannelPluginDescriptor.class);
+            List<InstalledExtensionAsset> assets = resolveAssets(descriptor.resources(), Path.of(installRootPath));
+            return assets.isEmpty() ? null : serializeJson(assets);
+        } catch (Exception e) {
+            log.warn("解析渠道插件资源失败: packageId={}, path={}, error={}",
+                    pkg.id(), localPath, e.getMessage());
+            return null;
+        }
+    }
+
+    private List<InstalledExtensionAsset> resolveAssets(ChannelPluginResources resources, Path installRoot) {
+        if (resources == null) {
+            return List.of();
+        }
+        java.util.ArrayList<InstalledExtensionAsset> assets = new java.util.ArrayList<>();
+        addAsset(assets, "README", resources.readmePath(), installRoot);
+        addAsset(assets, "ICON", resources.iconPath(), installRoot);
+        resources.examplePaths().forEach(path -> addAsset(assets, "EXAMPLE", path, installRoot));
+        resources.assetPaths().forEach(path -> addAsset(assets, "ASSET", path, installRoot));
+        return List.copyOf(assets);
+    }
+
+    private void addAsset(List<InstalledExtensionAsset> assets,
+                          String kind,
+                          String relativePath,
+                          Path installRoot) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        Path localPath = installRoot.resolve(relativePath).normalize();
+        assets.add(new InstalledExtensionAsset(
+                kind,
+                relativePath,
+                localPath.toString()
+        ));
     }
 
     /**

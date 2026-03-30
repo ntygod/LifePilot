@@ -97,7 +97,13 @@
   ForgettingLog,
   ForgettingLogListParams,
   PermissionGrant,
-  PermissionGrantCreateRequest
+  PermissionGrantCreateRequest,
+  ChannelPluginDescriptor,
+  ChannelInstance,
+  ChannelInstanceEvent,
+  ChannelHealthStatus,
+  CreateChannelInstanceRequest,
+  UpdateChannelInstanceRequest
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
 
@@ -128,11 +134,18 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       ...options
     })
     if (!res.ok) {
+      const text = await res.text()
       let error: ErrorResponse
       try {
-        error = await res.json()
+        error = text
+          ? JSON.parse(text) as ErrorResponse
+          : { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
       } catch {
-        error = { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
+        error = {
+          code: res.status,
+          message: text?.trim() || res.statusText || '请求失败',
+          timestamp: new Date().toISOString()
+        }
       }
       throw error
     }
@@ -447,6 +460,7 @@ export interface ModelService {
   id: string
   kind: string
   type: string
+  vendorKey?: string
   modelName: string
   displayName?: string
   capabilities?: string[]
@@ -460,12 +474,38 @@ export interface ModelService {
   healthy?: boolean
   apiUrl?: string
   timeoutSeconds?: number
-  isPreset?: boolean
   description?: string
   embeddingDimension?: number
 }
 
 export type ModelServiceDetail = ModelService
+
+export interface ModelServiceTemplateModel {
+  kind: string
+  value: string
+  label: string
+  recommended: boolean
+  capabilities: string[]
+  scenes: string[]
+  supportsStreaming: boolean
+  maxContextWindow?: number
+  embeddingDimension?: number
+}
+
+export interface ModelServiceTemplate {
+  vendorKey: string
+  displayName: string
+  providerType: string
+  description: string
+  defaultApiUrl: string
+  supportedKinds: string[]
+  defaultTimeoutSeconds: number
+  defaultCapabilities: string[]
+  defaultScenes: string[]
+  defaultSupportsStreaming: boolean
+  defaultMaxContextWindow?: number
+  modelOptions: ModelServiceTemplateModel[]
+}
 
 export interface GenerationRoutingSettings {
   defaultServiceId?: string
@@ -547,19 +587,6 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
-  },
-
-  /** 获取渠道配置（敏感字段已 mask） */
-  getChannelConfig(): Promise<ChannelConfig> {
-    return request('/settings/channels')
-  },
-
-  /** 更新渠道配置 */
-  updateChannelConfig(config: ChannelConfig): Promise<ChannelConfig> {
-    return request('/settings/channels', {
-      method: 'PUT',
-      body: JSON.stringify(config)
-    })
   }
 }
 
@@ -611,18 +638,71 @@ export interface SearchSettingsRequest {
   readTimeoutSeconds?: number
 }
 
-/** 单个渠道配置 */
-export interface SingleChannelConfig {
-  enabled?: boolean
-  [key: string]: unknown
-}
+/** 渠道控制面 API */
+export const channelApi = {
+  listPlugins(): Promise<ChannelPluginDescriptor[]> {
+    return request('/channels/plugins')
+  },
 
-/** 渠道配置（按渠道名分组） */
-export interface ChannelConfig {
-  feishu?: SingleChannelConfig
-  wecom?: SingleChannelConfig
-  dingtalk?: SingleChannelConfig
-  [key: string]: SingleChannelConfig | undefined
+  listInstances(): Promise<ChannelInstance[]> {
+    return request('/channels/instances')
+  },
+
+  getInstance(instanceId: string): Promise<ChannelInstance> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}`)
+  },
+
+  createInstance(payload: CreateChannelInstanceRequest): Promise<ChannelInstance> {
+    return request('/channels/instances', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  updateInstance(instanceId: string, payload: UpdateChannelInstanceRequest): Promise<ChannelInstance> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  updateEnabled(instanceId: string, enabled: boolean): Promise<ChannelInstance> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}/enabled?enabled=${enabled}`, {
+      method: 'PATCH'
+    })
+  },
+
+  startInstance(instanceId: string): Promise<ChannelInstance> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}/start`, {
+      method: 'POST'
+    })
+  },
+
+  stopInstance(instanceId: string): Promise<ChannelInstance> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}/stop`, {
+      method: 'POST'
+    })
+  },
+
+  reloadInstance(instanceId: string): Promise<ChannelInstance> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}/reload`, {
+      method: 'POST'
+    })
+  },
+
+  getHealth(instanceId: string): Promise<ChannelHealthStatus> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}/health`)
+  },
+
+  listInstanceEvents(instanceId: string, limit = 20): Promise<ChannelInstanceEvent[]> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}/events?limit=${limit}`)
+  },
+
+  deleteInstance(instanceId: string): Promise<void> {
+    return request(`/channels/instances/${encodeURIComponent(instanceId)}`, {
+      method: 'DELETE'
+    })
+  }
 }
 
 export const modelRoutingApi = {
@@ -668,6 +748,11 @@ export const modelServiceApi = {
     return request(`/model-services${query}`)
   },
 
+  /** 获取模型服务模板目录。 */
+  listTemplates(): Promise<ModelServiceTemplate[]> {
+    return request('/model-services/templates')
+  },
+
   /** 获取所有已启用的模型服务。 */
   listEnabledServices(kind?: string): Promise<ModelService[]> {
     const query = kind ? `?kind=${encodeURIComponent(kind)}` : ''
@@ -708,6 +793,7 @@ export interface CreateModelServiceRequest {
   id: string
   kind: string
   type: string
+  vendorKey?: string
   apiUrl: string
   apiKey?: string
   modelName: string
@@ -729,6 +815,7 @@ export interface CreateModelServiceRequest {
 export interface UpdateModelServiceRequest {
   kind?: string
   type?: string
+  vendorKey?: string
   apiUrl?: string
   apiKey?: string
   modelName?: string

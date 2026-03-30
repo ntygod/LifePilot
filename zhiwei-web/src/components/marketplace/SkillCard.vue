@@ -11,11 +11,15 @@ const props = defineProps<{
   skill: ExtensionPackage
   /** 是否有可用更新 */
   hasUpdate?: boolean
+  /** 当前是否被选中 */
+  selected?: boolean
 }>()
 
 const emit = defineEmits<{
   /** 安装/卸载/升级后刷新列表 */
   refresh: []
+  /** 选中当前扩展 */
+  inspect: [id: string]
 }>()
 
 // 操作状态
@@ -26,12 +30,14 @@ const typeLabel: Record<string, string> = {
   SKILL: '技能',
   AGENT: '智能体',
   WORKFLOW: '工作流',
+  CHANNEL: '渠道',
 }
 
 const typeVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
   SKILL: 'default',
   AGENT: 'secondary',
   WORKFLOW: 'outline',
+  CHANNEL: 'secondary',
 }
 const uninstalling = ref(false)
 const upgrading = ref(false)
@@ -44,7 +50,7 @@ const securityReport = ref<SecurityReport | null>(null)
 // 卸载确认对话框
 const showUninstallConfirm = ref(false)
 
-/** 安装 Skill */
+/** 安装扩展 */
 async function handleInstall() {
   installing.value = true
   errorMsg.value = ''
@@ -84,7 +90,7 @@ async function confirmHighRiskInstall() {
   }
 }
 
-/** 卸载 Skill */
+/** 卸载扩展 */
 async function handleUninstall() {
   showUninstallConfirm.value = false
   uninstalling.value = true
@@ -99,7 +105,7 @@ async function handleUninstall() {
   }
 }
 
-/** 升级 Skill */
+/** 升级扩展 */
 async function handleUpgrade() {
   upgrading.value = true
   errorMsg.value = ''
@@ -122,7 +128,10 @@ async function handleUpgrade() {
 </script>
 
 <template>
-  <article class="list-card flex h-full flex-col p-5">
+  <article
+    class="list-card flex h-full flex-col p-5 transition-shadow"
+    :class="selected ? 'border-primary/50 shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]' : ''"
+  >
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1 space-y-2">
@@ -181,6 +190,14 @@ async function handleUpgrade() {
 
         <div class="flex items-center gap-1.5">
           <Button
+            variant="ghost"
+            size="sm"
+            @click="emit('inspect', skill.id)"
+          >
+            详情
+          </Button>
+
+          <Button
             v-if="skill.installed && hasUpdate"
             size="sm"
             :disabled="upgrading"
@@ -228,7 +245,7 @@ async function handleUpgrade() {
     <ConfirmDialog
       v-model:show="showUninstallConfirm"
       title="确认卸载"
-      :message="`确定要卸载「${skill.name}」吗？卸载后将从本地移除该技能。`"
+      :message="`确定要卸载「${skill.name}」吗？卸载后将从本地移除该扩展。`"
       confirm-label="卸载"
       confirm-variant="destructive"
       @confirm="handleUninstall"

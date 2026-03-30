@@ -1,5 +1,9 @@
 package com.lifepilot.marketplace.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.registry.ChannelRegistry;
+import com.lifepilot.interaction.repository.ChannelPluginRepository;
+import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.marketplace.MarketplaceService;
 import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.index.IndexRepository;
@@ -141,6 +145,26 @@ public class MarketplaceAutoConfiguration {
                 workflowRegistry, installDir);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public ChannelInstallStrategy channelInstallStrategy(ChannelRegistry channelRegistry,
+                                                         ChannelPluginRepository channelPluginRepository,
+                                                         ChannelInstanceService channelInstanceService,
+                                                         ObjectMapper objectMapper,
+                                                         MarketplaceProperties properties) {
+        Path installDir = Path.of(properties.getInstallDirs().getChannels()
+                .replace("${user.home}", System.getProperty("user.home")));
+        log.info("扩展市场: 注册 ChannelInstallStrategy, installDir={}", installDir);
+        return new ChannelInstallStrategy(
+                channelRegistry,
+                channelPluginRepository,
+                channelInstanceService,
+                objectMapper,
+                installDir,
+                properties
+        );
+    }
+
     // ─────────────────────────────────────────────
     //  扩展安装协调器
     // ─────────────────────────────────────────────
@@ -155,11 +179,13 @@ public class MarketplaceAutoConfiguration {
                                                  SkillInstallStrategy skillInstallStrategy,
                                                  AgentInstallStrategy agentInstallStrategy,
                                                  WorkflowInstallStrategy workflowInstallStrategy,
+                                                 ChannelInstallStrategy channelInstallStrategy,
                                                  RestClient.Builder restClientBuilder) {
         Map<ExtensionType, InstallStrategy> strategies = Map.of(
                 ExtensionType.SKILL, skillInstallStrategy,
                 ExtensionType.AGENT, agentInstallStrategy,
-                ExtensionType.WORKFLOW, workflowInstallStrategy
+                ExtensionType.WORKFLOW, workflowInstallStrategy,
+                ExtensionType.CHANNEL, channelInstallStrategy
         );
         log.info("扩展市场: 注册 ExtensionInstaller, strategies={}", strategies.keySet());
         return new ExtensionInstaller(indexManager, versionResolver, securityScanner,
@@ -175,9 +201,10 @@ public class MarketplaceAutoConfiguration {
     public MarketplaceService marketplaceService(IndexManager indexManager,
                                                   ExtensionInstaller extensionInstaller,
                                                   VersionResolver versionResolver,
-                                                  InstalledExtensionRepository installedExtensionRepository) {
+                                                  InstalledExtensionRepository installedExtensionRepository,
+                                                  ObjectMapper objectMapper) {
         log.info("扩展市场: 注册 MarketplaceService");
         return new MarketplaceService(indexManager, extensionInstaller, versionResolver,
-                installedExtensionRepository);
+                installedExtensionRepository, objectMapper);
     }
 }

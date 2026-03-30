@@ -271,16 +271,18 @@ class ToolExecutionCoordinatorTest {
 
         assertThat(maxConcurrent.get()).isGreaterThanOrEqualTo(2);
         assertThat(result.steps()).hasSize(4);
-        assertThat(result.steps().get(0)).isEqualTo(new ReactStep.ToolCall("tool.alpha", null, "{\"q\":1}", 0));
-        assertThat(result.steps().get(1)).isEqualTo(new ReactStep.ToolCall("tool.beta", null, "{\"q\":2}", 0));
+        assertThat(result.steps().get(0)).isEqualTo(new ReactStep.ToolCall("tool.alpha", null, "{\"q\":1}", 0, "call-a"));
+        assertThat(result.steps().get(1)).isEqualTo(new ReactStep.ToolCall("tool.beta", null, "{\"q\":2}", 0, "call-b"));
         assertThat(result.steps().get(2)).isInstanceOf(ReactStep.Observation.class);
         assertThat(result.steps().get(3)).isInstanceOf(ReactStep.Observation.class);
         var firstObservation = (ReactStep.Observation) result.steps().get(2);
         var secondObservation = (ReactStep.Observation) result.steps().get(3);
         assertThat(firstObservation.toolId()).isEqualTo("tool.alpha");
+        assertThat(firstObservation.callId()).isEqualTo("call-a");
         assertThat(firstObservation.success()).isTrue();
         assertThat(firstObservation.output()).isEqualTo("{\"tool\":\"alpha\"}");
         assertThat(secondObservation.toolId()).isEqualTo("tool.beta");
+        assertThat(secondObservation.callId()).isEqualTo("call-b");
         assertThat(secondObservation.success()).isTrue();
         assertThat(secondObservation.output()).isEqualTo("{\"tool\":\"beta\"}");
     }

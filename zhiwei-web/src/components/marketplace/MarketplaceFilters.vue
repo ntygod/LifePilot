@@ -68,6 +68,7 @@ function handleTypeChange(val: string | undefined) {
         <ToggleGroupItem value="SKILL">技能</ToggleGroupItem>
         <ToggleGroupItem value="AGENT">智能体</ToggleGroupItem>
         <ToggleGroupItem value="WORKFLOW">工作流</ToggleGroupItem>
+        <ToggleGroupItem value="CHANNEL">渠道</ToggleGroupItem>
       </ToggleGroup>
     </div>
 

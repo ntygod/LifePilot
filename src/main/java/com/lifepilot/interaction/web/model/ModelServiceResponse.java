@@ -12,6 +12,7 @@ public record ModelServiceResponse(
         String id,
         String kind,
         String type,
+        String vendorKey,
         String apiUrl,
         String modelName,
         int timeoutSeconds,
@@ -24,7 +25,6 @@ public record ModelServiceResponse(
         Integer maxContextWindow,
         Integer embeddingDimension,
         boolean supportsStreaming,
-        boolean isPreset,
         String displayName,
         String description
 ) {

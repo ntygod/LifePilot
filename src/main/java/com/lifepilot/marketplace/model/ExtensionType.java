@@ -9,5 +9,6 @@ package com.lifepilot.marketplace.model;
 public enum ExtensionType {
     SKILL,
     AGENT,
-    WORKFLOW
+    WORKFLOW,
+    CHANNEL
 }

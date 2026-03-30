@@ -1,6 +1,5 @@
 package com.lifepilot.agent;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
@@ -9,12 +8,7 @@ import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
 import com.lifepilot.agent.execution.ToolExecutionCoordinator;
 import com.lifepilot.agent.media.MediaDataExtractor;
-import com.lifepilot.agent.model.AgentRequest;
-import com.lifepilot.agent.model.CompletionMode;
-import com.lifepilot.agent.model.CompletionReason;
-import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.agent.model.SuspendReason;
+import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.config.threadpool.SharedScheduler;
@@ -29,9 +23,7 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.LlmCallStep;
-import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
@@ -292,7 +284,7 @@ public class ReactAgentLoop implements CallbackHelper {
 
             // 构造有效请求：将当前迭代的媒体内容传递给 callLlm
             var effectiveRequest = assembledContext.mediaContents() != null && !assembledContext.mediaContents().isEmpty()
-                    ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
+                    ? new AgentRequest(request.message(), request.sessionId(), request.source(),
                         request.userId(),
                         request.turnId(), request.action(), request.taskMode(),
                         request.systemPrompt(), request.budget(), request.parentTraceId(),
@@ -313,7 +305,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     break;
                 }
                 state = state.appendStep(new ReactStep.Observation(
-                        "llm", null, false, "LLM 调用失败: " + e.getMessage(), 0));
+                        "llm", null, false, "LLM 调用失败: " + e.getMessage(), 0, null));
                 pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 continue;
             }
@@ -602,11 +594,6 @@ public class ReactAgentLoop implements CallbackHelper {
      * </ol>
      *
      * @param state             当前状态
-     * @param tc                LLM 请求的 tool call
-     * @param toolCallbacks     可用工具回调列表
-     * @param traceContext      追踪上下文
-     * @param cancellationToken 取消信号
-     * @return 更新后的状态
      */
     public void scheduleWakeupIfNeeded(ReactAgentState state) {
         if (state.suspendReason() instanceof SuspendReason.ScheduledWakeup sw && eventPublisher != null) {
@@ -970,23 +957,27 @@ public class ReactAgentLoop implements CallbackHelper {
                     content.length() > 100 ? content.substring(0, 100) + "..." : content,
                     null
             };
-            case ReactStep.ToolCall(var toolId, var toolName, var inputJson, var latencyMs) -> {
+            case ReactStep.ToolCall toolCall -> {
                 // 用户可读的显示名称，优先 toolName，回退到 toolId
-                String display = toolName != null ? toolName : toolId;
+                String display = toolCall.toolName() != null ? toolCall.toolName() : toolCall.toolId();
                 yield new String[]{
                     "TOOL_CALL", "调用工具: " + display,
                     "正在执行工具 " + display,
                     display,  // SSE toolName 字段传显示名称
-                    toolId    // SSE toolId 字段传技术标识
+                    toolCall.toolId()    // SSE toolId 字段传技术标识
                 };
             }
-            case ReactStep.Observation(var toolId, var toolName, var success, var output, var tokensUsed) -> {
-                String display = toolName != null ? toolName : toolId;
+            case ReactStep.Observation observation -> {
+                String display = observation.toolName() != null
+                        ? observation.toolName()
+                        : observation.toolId();
                 yield new String[]{
-                    "OBSERVATION", (success ? "工具返回: " : "工具失败: ") + display,
-                    output.length() > 100 ? output.substring(0, 100) + "..." : output,
+                    "OBSERVATION", (observation.success() ? "工具返回: " : "工具失败: ") + display,
+                    observation.output().length() > 100
+                            ? observation.output().substring(0, 100) + "..."
+                            : observation.output(),
                     display,
-                    toolId
+                    observation.toolId()
                 };
             }
             case ReactStep.Answer(var content) -> new String[]{

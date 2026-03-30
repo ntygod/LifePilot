@@ -44,13 +44,28 @@ public sealed interface ReactStep permits
      * @param toolName  工具显示名称（用户可读，如 "创建待办"），为 null 时前端回退到 toolId
      * @param inputJson 工具输入 JSON
      * @param latencyMs 调用耗时（毫秒）
+     * @param callId    模型返回的工具调用 ID，用于和 tool result 做精确关联
      */
     record ToolCall(
             String toolId,
             @org.springframework.lang.Nullable String toolName,
             String inputJson,
-            long latencyMs
-    ) implements ReactStep {}
+            long latencyMs,
+            @org.springframework.lang.Nullable String callId
+    ) implements ReactStep {
+        public ToolCall(String toolId,
+                        @org.springframework.lang.Nullable String toolName,
+                        String inputJson,
+                        long latencyMs) {
+            this(toolId, toolName, inputJson, latencyMs, null);
+        }
+
+        public ToolCall {
+            if (callId != null && callId.isBlank()) {
+                callId = null;
+            }
+        }
+    }
 
     /**
      * 工具调用结果观察。
@@ -60,14 +75,30 @@ public sealed interface ReactStep permits
      * @param success    是否成功
      * @param output     工具输出内容
      * @param tokensUsed 本次调用消耗的 Token 数
+     * @param callId     对应的工具调用 ID，用于保持 transcript 回放一致性
      */
     record Observation(
             String toolId,
             @org.springframework.lang.Nullable String toolName,
             boolean success,
             String output,
-            int tokensUsed
-    ) implements ReactStep {}
+            int tokensUsed,
+            @org.springframework.lang.Nullable String callId
+    ) implements ReactStep {
+        public Observation(String toolId,
+                           @org.springframework.lang.Nullable String toolName,
+                           boolean success,
+                           String output,
+                           int tokensUsed) {
+            this(toolId, toolName, success, output, tokensUsed, null);
+        }
+
+        public Observation {
+            if (callId != null && callId.isBlank()) {
+                callId = null;
+            }
+        }
+    }
 
     /** 最终回答（LLM 未调用工具时的纯文本输出）。 */
     record Answer(String content) implements ReactStep {}

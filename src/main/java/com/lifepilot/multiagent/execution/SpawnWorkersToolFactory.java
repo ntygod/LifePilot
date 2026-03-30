@@ -4,6 +4,7 @@ import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
@@ -179,7 +180,7 @@ public class SpawnWorkersToolFactory {
                 var workerRequest = new AgentRequest(
                         message,
                         workerSessionId,
-                        "internal",
+                        InteractionSource.system("internal"),
                         null,
                         workerPrompt,
                         perWorkerBudget,

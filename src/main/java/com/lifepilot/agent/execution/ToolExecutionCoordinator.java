@@ -347,7 +347,8 @@ public class ToolExecutionCoordinator {
                     planned.toolId(),
                     planned.toolDisplayName(),
                     planned.inputJson(),
-                    0
+                    0,
+                    planned.toolCall().id()
             ), loopContext);
             persistTranscriptToolCall(
                     state,
@@ -477,7 +478,8 @@ public class ToolExecutionCoordinator {
                     planned.toolDisplayName(),
                     true,
                     outcome.observationOutput(),
-                    0
+                    0,
+                    planned.toolCall().id()
             ), loopContext);
             persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
                     true, outcome.rawOutput(), null, outcome.startedAt());
@@ -498,7 +500,8 @@ public class ToolExecutionCoordinator {
                 planned.toolDisplayName(),
                 outcome.success(),
                 outcome.observationOutput(),
-                outcome.observationTokens()
+                outcome.observationTokens(),
+                planned.toolCall().id()
         ), loopContext);
         persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
                 outcome.success(), outcome.rawOutput(), null, outcome.startedAt());

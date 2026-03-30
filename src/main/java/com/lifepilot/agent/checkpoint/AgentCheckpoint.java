@@ -56,7 +56,7 @@ public record AgentCheckpoint(
                     .sessionId(request.sessionId())
                     .turnId(request.turnId())
                     .goal(request.message())
-                    .channel(request.channel())
+                    .source(request.source())
                     .parentTraceId(sourceTraceId)
                     .preferredProvider(request.preferredProvider())
                     .allowedToolIds(request.allowedToolIds())

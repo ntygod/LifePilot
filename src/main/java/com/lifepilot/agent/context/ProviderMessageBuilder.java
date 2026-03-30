@@ -194,18 +194,17 @@ public class ProviderMessageBuilder {
         return switch (step) {
             case ReactStep.Progress ignored -> null;
             case ReactStep.Thought thought -> new AssistantMessage(thought.content());
-            case ReactStep.ToolCall toolCall -> AssistantMessage.builder()
-                    .content("")
-                    .toolCalls(List.of(new AssistantMessage.ToolCall(
-                            toolCall.toolId(),
+            case ReactStep.ToolCall toolCall -> buildAssistantToolCallMessage(List.of(
+                    new AssistantMessage.ToolCall(
+                            toolCall.callId() != null ? toolCall.callId() : toolCall.toolId(),
                             "function",
                             toolCall.toolId(),
                             toolCall.inputJson()
-                    )))
-                    .build();
+                    )
+            ));
             case ReactStep.Observation observation -> ToolResponseMessage.builder()
                     .responses(List.of(new ToolResponseMessage.ToolResponse(
-                            observation.toolId(),
+                            observation.callId() != null ? observation.callId() : observation.toolId(),
                             observation.toolId(),
                             observation.output()
                     )))
@@ -222,6 +221,12 @@ public class ProviderMessageBuilder {
                     )))
                     .build();
         };
+    }
+
+    private AssistantMessage buildAssistantToolCallMessage(List<AssistantMessage.ToolCall> toolCalls) {
+        return AssistantMessage.builder()
+                .toolCalls(toolCalls)
+                .build();
     }
 
     private void appendSection(StringBuilder buffer, String title, @Nullable String content) {

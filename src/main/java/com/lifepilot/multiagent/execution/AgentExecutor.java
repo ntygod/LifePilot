@@ -68,7 +68,7 @@ public class AgentExecutor {
             var subRequest = new AgentRequest(
                     request.message(),
                     request.sessionId(),
-                    request.channel(),
+                    request.source(),
                     request.userId(),
                     request.systemPrompt(),
                     request.budget(),

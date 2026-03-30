@@ -32,8 +32,10 @@ public class InstalledExtensionRepository {
             rs.getString("index_source_url"),
             rs.getString("repo_url"),
             rs.getString("file_path"),
+            rs.getString("install_root_path"),
             rs.getString("requirements_json"),
             rs.getString("security_report_json"),
+            rs.getString("assets_json"),
             Instant.parse(rs.getString("created_at")),
             Instant.parse(rs.getString("updated_at"))
     );
@@ -53,13 +55,14 @@ public class InstalledExtensionRepository {
         jdbcTemplate.update("""
                 INSERT INTO installed_extensions
                     (id, package_id, type, name, version, index_source_url, repo_url,
-                     file_path, requirements_json, security_report_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     file_path, install_root_path, requirements_json, security_report_json, assets_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 extension.id(), extension.packageId(), extension.type().name(),
                 extension.name(), extension.version(), extension.indexSourceUrl(),
-                extension.repoUrl(), extension.filePath(),
+                extension.repoUrl(), extension.filePath(), extension.installRootPath(),
                 extension.requirementsJson(), extension.securityReportJson(),
+                extension.assetsJson(),
                 extension.createdAt().toString(), extension.updatedAt().toString());
         log.info("已安装扩展记录保存成功: packageId={}, type={}", extension.packageId(), extension.type());
     }
@@ -107,14 +110,15 @@ public class InstalledExtensionRepository {
         jdbcTemplate.update("""
                 UPDATE installed_extensions SET
                     package_id = ?, type = ?, name = ?, version = ?, index_source_url = ?,
-                    repo_url = ?, file_path = ?, requirements_json = ?,
-                    security_report_json = ?, updated_at = ?
+                    repo_url = ?, file_path = ?, install_root_path = ?, requirements_json = ?,
+                    security_report_json = ?, assets_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 extension.packageId(), extension.type().name(), extension.name(),
                 extension.version(), extension.indexSourceUrl(),
-                extension.repoUrl(), extension.filePath(),
+                extension.repoUrl(), extension.filePath(), extension.installRootPath(),
                 extension.requirementsJson(), extension.securityReportJson(),
+                extension.assetsJson(),
                 Instant.now().toString(), extension.id());
         log.info("已安装扩展记录更新成功: packageId={}", extension.packageId());
     }

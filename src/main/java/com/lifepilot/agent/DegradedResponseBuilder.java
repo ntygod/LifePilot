@@ -87,9 +87,10 @@ public final class DegradedResponseBuilder {
     private static String summarizeSuccessfulTools(List<ReactStep> steps) {
         Set<String> toolNames = new LinkedHashSet<>();
         for (ReactStep step : steps) {
-            if (step instanceof ReactStep.Observation(var toolId, var toolName, var success, var output, var tokensUsed)
-                    && success) {
-                String displayName = toolName != null && !toolName.isBlank() ? toolName : toolId;
+            if (step instanceof ReactStep.Observation observation && observation.success()) {
+                String displayName = observation.toolName() != null && !observation.toolName().isBlank()
+                        ? observation.toolName()
+                        : observation.toolId();
                 if (displayName != null && !displayName.isBlank()) {
                     toolNames.add(displayName);
                 }

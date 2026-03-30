@@ -56,7 +56,7 @@ public record ExecutionGrant(
         return currentSubjectId != null && currentSubjectId.equals(subjectId);
     }
 
-    public boolean supportsChannel(String requestChannel) {
+    public boolean supportsChannel(PermissionRequest request) {
         if (channels.isEmpty()) {
             return true;
         }
@@ -64,8 +64,12 @@ public record ExecutionGrant(
             if ("*".equals(allowedChannel)) {
                 return true;
             }
-            if (requestChannel.equals(allowedChannel) || requestChannel.startsWith(allowedChannel + ":")) {
-                return true;
+            for (String requestChannel : request.channelAliases()) {
+                if (requestChannel.equals(allowedChannel)
+                        || requestChannel.startsWith(allowedChannel + ":")
+                        || requestChannel.startsWith(allowedChannel + ".")) {
+                    return true;
+                }
             }
         }
         return false;

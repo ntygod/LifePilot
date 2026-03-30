@@ -1,5 +1,7 @@
 package com.lifepilot.permission.service;
 
+import com.lifepilot.interaction.model.InteractionSource;
+import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.ExecutionGrantScope;
@@ -46,14 +48,29 @@ public class PermissionRequestFactory {
         PermissionActionType actionType = semantics.actionType();
         ToolScopeResolution scopeResolution = semantics.scopeResolver().resolve(input);
         ExecutionGrantScope resourceScope = scopeResolution.scope();
-        String channel = input.getContextValue(ToolContextKeys.CHANNEL_TYPE, String.class).orElse("unknown");
         String sessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class).orElse(null);
+        String rawChannel = input.getContextValue(ToolContextKeys.CHANNEL_TYPE, String.class).orElse(null);
+        InteractionSource legacySource = InteractionSource.legacy(rawChannel, sessionId);
+        SourceKind sourceKind = input.getContextValue(ToolContextKeys.SOURCE_KIND, String.class)
+                .map(this::resolveSourceKind)
+                .orElse(legacySource.sourceKind());
+        String sourceId = input.getContextValue(ToolContextKeys.SOURCE_ID, String.class)
+                .orElse(legacySource.sourceId());
+        String channelPlatform = input.getContextValue(ToolContextKeys.CHANNEL_PLATFORM, String.class)
+                .orElse(legacySource.channelPlatform());
+        String channelInstanceId = input.getContextValue(ToolContextKeys.CHANNEL_INSTANCE_ID, String.class)
+                .orElse(legacySource.channelInstanceId());
+        String channel = channelInstanceId != null && !channelInstanceId.isBlank()
+                ? channelInstanceId
+                : (channelPlatform != null && !channelPlatform.isBlank()
+                ? channelPlatform
+                : (rawChannel != null && !rawChannel.isBlank() ? rawChannel : sourceId));
         String userId = input.getContextValue(ToolContextKeys.USER_ID, String.class).orElse(null);
         String turnId = input.getContextValue(ToolContextKeys.TURN_ID, String.class).orElse(null);
         String traceId = input.getContextValue(ToolContextKeys.CALLER_TRACE_ID, String.class)
                 .orElse(fallbackTraceId);
         String taskId = input.getContextValue(ToolContextKeys.TASK_ID, String.class)
-                .orElseGet(() -> resolveTaskId(channel, sessionId));
+                .orElseGet(() -> resolveTaskId(sourceKind, sourceId, sessionId));
         String workspaceId = input.getContextValue(ToolContextKeys.WORKSPACE_ID, String.class)
                 .orElse(scopeResolution.workspaceId());
         boolean autonomousTaskGrantRequired = actionType == PermissionActionType.CREATE_SCHEDULE
@@ -64,6 +81,10 @@ public class PermissionRequestFactory {
                 actionType,
                 resolveRiskLevel(tool, input),
                 channel,
+                sourceKind,
+                sourceId,
+                channelPlatform,
+                channelInstanceId,
                 resourceScope,
                 sessionId,
                 workspaceId,
@@ -83,6 +104,14 @@ public class PermissionRequestFactory {
                     : RiskLevel.valueOf(defaultRisk.toUpperCase(Locale.ROOT));
         }
         return applyTrustedWorkspaceDowngrade(tool.id(), baseRiskLevel, input);
+    }
+
+    private SourceKind resolveSourceKind(String raw) {
+        try {
+            return SourceKind.valueOf(raw.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return SourceKind.SYSTEM;
+        }
     }
 
     private RiskLevel resolveConfiguredRiskLevel(ToolContract tool) {
@@ -115,11 +144,16 @@ public class PermissionRequestFactory {
         return downgraded.ordinal() < originalLevel.ordinal() ? downgraded : originalLevel;
     }
 
-    private String resolveTaskId(String channel, String sessionId) {
+    private String resolveTaskId(SourceKind sourceKind, String sourceId, String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return null;
         }
-        if (channel != null && (channel.startsWith("cron") || channel.startsWith("heartbeat") || channel.startsWith("workflow"))) {
+        if (sourceKind == SourceKind.CRON
+                || sourceKind == SourceKind.HEARTBEAT
+                || sourceKind == SourceKind.WORKFLOW
+                || sourceId.startsWith("cron")
+                || sourceId.startsWith("heartbeat")
+                || sourceId.startsWith("workflow")) {
             int separator = sessionId.indexOf(':');
             return separator >= 0 && separator + 1 < sessionId.length()
                     ? sessionId.substring(separator + 1)

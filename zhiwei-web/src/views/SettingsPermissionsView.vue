@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
 import { Clock3, RefreshCw, ShieldAlert, ShieldCheck, ShieldPlus, Trash2 } from 'lucide-vue-next'
-import { permissionApi } from '@/api/client'
+import { channelApi, permissionApi } from '@/api/client'
 import type { PermissionGrant, PermissionGrantCreateRequest } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -34,6 +34,7 @@ interface Option {
 const uiStore = useUiStore()
 
 const grants = ref<PermissionGrant[]>([])
+const pluginChannelOptions = ref<Array<{ value: string; label: string }>>([])
 const loading = ref(true)
 const creating = ref(false)
 const revokingGrantId = ref<string | null>(null)
@@ -48,7 +49,7 @@ const form = ref({
   actionType: 'WRITE_FILE',
   riskCeiling: 'HIGH' as RiskLevel,
   autonomousAllowed: false,
-  channels: ['web'] as string[],
+  channels: [defaultSingleChannel()] as string[],
   expiresAt: '',
   reason: '',
   scopeJson: '',
@@ -81,15 +82,24 @@ const riskOptions: Option[] = [
   { value: 'CRITICAL', label: '关键风险', description: '涉及不可逆或高敏感操作，建议谨慎授权。' },
 ]
 
-const channelOptions = [
-  { value: 'web', label: 'Web' },
-  { value: 'feishu', label: '飞书' },
-  { value: 'wecom', label: '企微' },
-  { value: 'dingtalk', label: '钉钉' },
+const systemChannelOptions = [
   { value: 'workflow', label: '工作流' },
   { value: 'cron', label: 'Cron' },
   { value: 'heartbeat', label: '心跳巡检' },
 ]
+
+const channelOptions = computed(() => {
+  const merged = [...pluginChannelOptions.value, ...systemChannelOptions]
+  const unique = new Map<string, { value: string; label: string }>()
+  merged.forEach(option => {
+    if (!unique.has(option.value)) {
+      unique.set(option.value, option)
+    }
+  })
+  return Array.from(unique.values())
+})
+
+const interactiveChannelValues = computed(() => pluginChannelOptions.value.map(option => option.value))
 
 const summaryItems = computed(() => {
   const activeGrants = grants.value.filter(grant => !grant.revokedAt)
@@ -183,6 +193,16 @@ function subjectLabel(subjectType: string) {
   return subjectOptions.find(option => option.value === subjectType)?.label ?? subjectType
 }
 
+function defaultSingleChannel() {
+  return interactiveChannelValues.value[0] ?? 'web'
+}
+
+function defaultInteractiveChannels() {
+  return interactiveChannelValues.value.length > 0
+    ? [...interactiveChannelValues.value]
+    : ['web']
+}
+
 function syncSubjectDefaults(subjectType: SubjectType) {
   if (subjectType === 'TASK') {
     form.value.channels = ['workflow', 'cron', 'heartbeat']
@@ -190,11 +210,11 @@ function syncSubjectDefaults(subjectType: SubjectType) {
     return
   }
   if (subjectType === 'USER') {
-    form.value.channels = ['web', 'feishu', 'wecom', 'dingtalk']
+    form.value.channels = defaultInteractiveChannels()
     form.value.autonomousAllowed = false
     return
   }
-  form.value.channels = ['web']
+  form.value.channels = [defaultSingleChannel()]
   form.value.autonomousAllowed = false
 }
 
@@ -213,10 +233,32 @@ function resetForm() {
     actionType: 'WRITE_FILE',
     riskCeiling: 'HIGH',
     autonomousAllowed: false,
-    channels: ['web'],
+    channels: [defaultSingleChannel()],
     expiresAt: '',
     reason: '',
     scopeJson: '',
+  }
+}
+
+async function loadChannelOptions() {
+  try {
+    const plugins = await channelApi.listPlugins()
+    const unique = new Map<string, { value: string; label: string }>()
+    plugins.forEach(plugin => {
+      if (!unique.has(plugin.platform)) {
+        unique.set(plugin.platform, {
+          value: plugin.platform,
+          label: plugin.name,
+        })
+      }
+    })
+    pluginChannelOptions.value = Array.from(unique.values())
+    if (!form.value.channels.length) {
+      form.value.channels = [defaultSingleChannel()]
+    }
+  } catch (error) {
+    console.error('加载渠道选项失败:', error)
+    pluginChannelOptions.value = [{ value: 'web', label: 'Web UI' }]
   }
 }
 
@@ -332,6 +374,7 @@ function updateFilterSubjectType(value: SelectValue) {
 }
 
 onMounted(() => {
+  void loadChannelOptions()
   void loadGrants()
 })
 </script>

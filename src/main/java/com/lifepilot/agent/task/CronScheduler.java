@@ -3,6 +3,7 @@ package com.lifepilot.agent.task;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
@@ -129,7 +130,8 @@ public class CronScheduler {
         try {
             // 构造 AgentRequest
             String prompt = "[定时任务: %s]\n%s".formatted(task.name(), task.instruction());
-            var request = new AgentRequest(prompt, "cron:" + task.id(), "cron");
+            String sessionId = "cron:" + task.id();
+            var request = new AgentRequest(prompt, sessionId, InteractionSource.cron(sessionId));
 
             // 调用 AgentOrchestrator
             AgentResponse response = agentOrchestrator.run(request);

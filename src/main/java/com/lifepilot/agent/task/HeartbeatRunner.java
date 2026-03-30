@@ -3,6 +3,7 @@ package com.lifepilot.agent.task;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
@@ -85,7 +86,7 @@ public class HeartbeatRunner {
                 %s
                 
                 按 checklist 检查。不要推测或重复之前已汇报的内容。无事则回复 HEARTBEAT_OK。""".formatted(checklist);
-        var request = new AgentRequest(prompt, "heartbeat:main", "heartbeat");
+        var request = new AgentRequest(prompt, "heartbeat:main", InteractionSource.heartbeat("heartbeat:main"));
 
         try {
             var response = agentOrchestrator.run(request);

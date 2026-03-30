@@ -6,12 +6,11 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * TranscriptHygieneEngine 负责把 provider 消息序列修正为更稳定的可发送形式。
@@ -53,6 +52,9 @@ public class TranscriptHygieneEngine {
         this.config = Objects.requireNonNull(config);
     }
 
+    private record PendingToolCall(@Nullable String id, String name) {
+    }
+
     public HygieneResult clean(List<Message> rawMessages) {
         if (rawMessages == null || rawMessages.isEmpty() || !messageBuildConfig().isHygieneEnabled()) {
             return new HygieneResult(
@@ -69,7 +71,7 @@ public class TranscriptHygieneEngine {
         }
 
         List<Message> cleaned = new ArrayList<>();
-        Set<String> pendingToolNames = new LinkedHashSet<>();
+        List<PendingToolCall> pendingToolCalls = new ArrayList<>();
         boolean systemSeen = false;
         int droppedEmptyAssistant = 0;
         int droppedOrphanToolResponses = 0;
@@ -98,7 +100,7 @@ public class TranscriptHygieneEngine {
                         droppedEmptyUserMessages++;
                         continue;
                     }
-                    pendingToolNames.clear();
+                    pendingToolCalls.clear();
                     cleaned.add(userMessage);
                 }
                 case AssistantMessage assistantMessage -> {
@@ -108,7 +110,7 @@ public class TranscriptHygieneEngine {
                             droppedEmptyAssistant++;
                             continue;
                         }
-                        pendingToolNames.clear();
+                        pendingToolCalls.clear();
                         cleaned.add(assistantMessage);
                         continue;
                     }
@@ -123,32 +125,29 @@ public class TranscriptHygieneEngine {
                         continue;
                     }
 
-                    pendingToolNames.clear();
+                    pendingToolCalls.clear();
                     toolCalls.stream()
-                            .map(AssistantMessage.ToolCall::name)
+                            .map(this::toPendingToolCall)
                             .filter(Objects::nonNull)
-                            .forEach(pendingToolNames::add);
+                            .forEach(pendingToolCalls::add);
 
                     if (toolCalls.isEmpty()) {
                         cleaned.add(new AssistantMessage(assistantMessage.getText()));
                     } else {
-                        cleaned.add(AssistantMessage.builder()
-                                .content(assistantMessage.getText() != null ? assistantMessage.getText() : "")
-                                .toolCalls(toolCalls)
-                                .build());
+                        cleaned.add(buildAssistantToolCallMessage(assistantMessage.getText(), toolCalls));
                     }
                 }
                 case ToolResponseMessage toolResponseMessage -> {
-                    if (pendingToolNames.isEmpty() && messageBuildConfig().isDropOrphanToolResponses()) {
+                    if (pendingToolCalls.isEmpty() && messageBuildConfig().isDropOrphanToolResponses()) {
                         droppedOrphanToolResponses++;
                         continue;
                     }
 
                     List<ToolResponseMessage.ToolResponse> responses = toolResponseMessage.getResponses().stream()
                             .filter(Objects::nonNull)
-                            .filter(response -> !isBlank(response.name()))
-                            .filter(response -> pendingToolNames.isEmpty()
-                                    || pendingToolNames.contains(response.name())
+                            .filter(response -> !isBlank(response.name()) || !isBlank(response.id()))
+                            .filter(response -> pendingToolCalls.isEmpty()
+                                    || matchesPendingToolCall(response, pendingToolCalls)
                                     || !messageBuildConfig().isDropOrphanToolResponses())
                             .toList();
 
@@ -158,9 +157,7 @@ public class TranscriptHygieneEngine {
                     }
 
                     responses.stream()
-                            .map(ToolResponseMessage.ToolResponse::name)
-                            .filter(Objects::nonNull)
-                            .forEach(pendingToolNames::remove);
+                            .forEach(response -> consumePendingToolCall(response, pendingToolCalls));
 
                     cleaned.add(ToolResponseMessage.builder()
                             .responses(responses)
@@ -193,5 +190,64 @@ public class TranscriptHygieneEngine {
 
     private boolean isBlank(String text) {
         return text == null || text.isBlank();
+    }
+
+    private AssistantMessage buildAssistantToolCallMessage(@Nullable String content,
+                                                           List<AssistantMessage.ToolCall> toolCalls) {
+        var builder = AssistantMessage.builder().toolCalls(toolCalls);
+        if (!isBlank(content)) {
+            builder.content(content);
+        }
+        return builder.build();
+    }
+
+    @Nullable
+    private PendingToolCall toPendingToolCall(AssistantMessage.ToolCall toolCall) {
+        if (toolCall == null || isBlank(toolCall.name())) {
+            return null;
+        }
+        return new PendingToolCall(blankToNull(toolCall.id()), toolCall.name());
+    }
+
+    private boolean matchesPendingToolCall(ToolResponseMessage.ToolResponse response,
+                                           List<PendingToolCall> pendingToolCalls) {
+        String responseId = blankToNull(response.id());
+        if (responseId != null) {
+            return pendingToolCalls.stream().anyMatch(pending -> responseId.equals(pending.id()));
+        }
+        String responseName = blankToNull(response.name());
+        return responseName != null
+                && pendingToolCalls.stream().anyMatch(pending -> responseName.equals(pending.name()));
+    }
+
+    private void consumePendingToolCall(ToolResponseMessage.ToolResponse response,
+                                        List<PendingToolCall> pendingToolCalls) {
+        String responseId = blankToNull(response.id());
+        if (responseId != null) {
+            for (int i = 0; i < pendingToolCalls.size(); i++) {
+                PendingToolCall pending = pendingToolCalls.get(i);
+                if (responseId.equals(pending.id())) {
+                    pendingToolCalls.remove(i);
+                    return;
+                }
+            }
+        }
+
+        String responseName = blankToNull(response.name());
+        if (responseName == null) {
+            return;
+        }
+        for (int i = 0; i < pendingToolCalls.size(); i++) {
+            PendingToolCall pending = pendingToolCalls.get(i);
+            if (responseName.equals(pending.name())) {
+                pendingToolCalls.remove(i);
+                return;
+            }
+        }
+    }
+
+    @Nullable
+    private String blankToNull(@Nullable String value) {
+        return isBlank(value) ? null : value;
     }
 }

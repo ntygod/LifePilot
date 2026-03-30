@@ -17,7 +17,7 @@ import java.nio.file.Path;
  * @since 2026-03-08
  */
 public sealed interface InstallStrategy
-        permits SkillInstallStrategy, AgentInstallStrategy, WorkflowInstallStrategy {
+        permits SkillInstallStrategy, AgentInstallStrategy, WorkflowInstallStrategy, ChannelInstallStrategy {
 
     /**
      * 下载远程文件到本地目标目录，返回本地路径。

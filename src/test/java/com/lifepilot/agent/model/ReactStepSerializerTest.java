@@ -48,6 +48,15 @@ class ReactStepSerializerTest {
     }
 
     @Test
+    void serialize_ToolCall步骤_有callId时应输出callId() {
+        var steps = List.<ReactStep>of(
+                new ReactStep.ToolCall("web-search", "网页搜索", "{\"query\":\"test\"}", 150, "call-123"));
+        var result = ReactStepSerializer.serialize(steps);
+
+        assertEquals("call-123", result.getFirst().get("callId"));
+    }
+
+    @Test
     void serialize_ToolCall步骤_toolName为null时不包含该字段() {
         var steps = List.<ReactStep>of(
                 new ReactStep.ToolCall("unknown-tool", null, "{}", 50));
@@ -68,6 +77,15 @@ class ReactStepSerializerTest {
         assertEquals(true, result.getFirst().get("success"));
         assertEquals("搜索结果内容", result.getFirst().get("outputSummary"));
         assertEquals(42, result.getFirst().get("tokensUsed"));
+    }
+
+    @Test
+    void serialize_Observation步骤_有callId时应输出callId() {
+        var steps = List.<ReactStep>of(
+                new ReactStep.Observation("web-search", "网页搜索", true, "搜索结果内容", 42, "call-456"));
+        var result = ReactStepSerializer.serialize(steps);
+
+        assertEquals("call-456", result.getFirst().get("callId"));
     }
 
     @Test

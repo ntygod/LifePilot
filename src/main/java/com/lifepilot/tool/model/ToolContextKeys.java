@@ -13,6 +13,10 @@ public final class ToolContextKeys {
     public static final String STREAM_ID = "streamId";
     public static final String USER_ID = "userId";
     public static final String CHANNEL_TYPE = "channelType";
+    public static final String SOURCE_ID = "sourceId";
+    public static final String SOURCE_KIND = "sourceKind";
+    public static final String CHANNEL_PLATFORM = "channelPlatform";
+    public static final String CHANNEL_INSTANCE_ID = "channelInstanceId";
     public static final String CALLER_TRACE_ID = "callerTraceId";
     public static final String CALLER_DEPTH = "callerDepth";
     public static final String CALLER_BUDGET = "callerBudget";

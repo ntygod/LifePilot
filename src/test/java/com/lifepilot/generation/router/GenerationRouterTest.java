@@ -190,7 +190,7 @@ class GenerationRouterTest {
         return new ModelServiceEntity(
                 id,
                 ModelServiceKind.GENERATION,
-                ProviderType.QWEN,
+                ProviderType.OPENAI_COMPATIBLE,
                 "http://localhost:8080",
                 null,
                 modelName,

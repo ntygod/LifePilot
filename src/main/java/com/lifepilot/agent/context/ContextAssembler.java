@@ -4,6 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
@@ -472,14 +473,13 @@ public class ContextAssembler {
     }
 
     private String resolveTaskMode(@Nullable ReactAgentState state) {
-        if (state == null || state.channel() == null || state.channel().isBlank()) {
+        if (state == null) {
             return "interactive";
         }
-        String channel = state.channel().toLowerCase(Locale.ROOT);
-        if (channel.startsWith("cron")) {
+        if (state.sourceKind() == SourceKind.CRON) {
             return "cron";
         }
-        if (channel.startsWith("heartbeat")) {
+        if (state.sourceKind() == SourceKind.HEARTBEAT) {
             return "heartbeat";
         }
         return "interactive";

@@ -3,6 +3,7 @@ package com.lifepilot.eval.engine;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.observability.evaluation.EvaluationConfig;
 import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.evaluation.EvaluationResult;
@@ -136,7 +137,7 @@ public class EvalEngine {
             try {
                 // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
                 String systemPrompt = buildSystemPrompt(scenario);
-                var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval",
+                var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), InteractionSource.system("eval"),
                         null,
                         systemPrompt, null, null, 0, null, null, null, null);
 

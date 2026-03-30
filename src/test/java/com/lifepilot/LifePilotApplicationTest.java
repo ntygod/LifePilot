@@ -106,6 +106,8 @@ class LifePilotApplicationTest {
                 WHERE type='table'
                   AND name IN (
                     'model_services',
+                    'model_service_vendor_templates',
+                    'model_service_model_presets',
                     'generation_settings',
                     'embedding_settings',
                     'rerank_settings',
@@ -114,20 +116,40 @@ class LifePilotApplicationTest {
                   )
                 """,
                 Integer.class);
-        assertThat(count).isEqualTo(6);
+        assertThat(count).isEqualTo(8);
 
         var modelServiceCount = jdbcTemplate.queryForObject("SELECT count(*) FROM model_services", Integer.class);
+        var vendorTemplateCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM model_service_vendor_templates",
+                Integer.class);
+        var modelPresetCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM model_service_model_presets",
+                Integer.class);
         var generationSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM generation_settings", Integer.class);
         var embeddingSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM embedding_settings", Integer.class);
         var rerankSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM rerank_settings", Integer.class);
         var executionGrantCount = jdbcTemplate.queryForObject("SELECT count(*) FROM execution_grants", Integer.class);
         var permissionDecisionCount = jdbcTemplate.queryForObject("SELECT count(*) FROM permission_decisions", Integer.class);
-        assertThat(modelServiceCount).isGreaterThanOrEqualTo(10);
+        var generationDefaultServiceId = jdbcTemplate.queryForObject(
+                "SELECT default_service_id FROM generation_settings WHERE id = 'default'",
+                String.class);
+        var embeddingDefaultServiceId = jdbcTemplate.queryForObject(
+                "SELECT default_service_id FROM embedding_settings WHERE id = 'default'",
+                String.class);
+        var rerankLlmServiceId = jdbcTemplate.queryForObject(
+                "SELECT llm_service_id FROM rerank_settings WHERE id = 'default'",
+                String.class);
+        assertThat(modelServiceCount).isZero();
+        assertThat(vendorTemplateCount).isEqualTo(7);
+        assertThat(modelPresetCount).isGreaterThanOrEqualTo(16);
         assertThat(generationSettingsCount).isEqualTo(1);
         assertThat(embeddingSettingsCount).isEqualTo(1);
         assertThat(rerankSettingsCount).isEqualTo(1);
         assertThat(executionGrantCount).isEqualTo(0);
         assertThat(permissionDecisionCount).isEqualTo(0);
+        assertThat(generationDefaultServiceId).isNull();
+        assertThat(embeddingDefaultServiceId).isNull();
+        assertThat(rerankLlmServiceId).isNull();
     }
 
     @Test

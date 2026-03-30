@@ -64,27 +64,54 @@ class ModelServiceRepositoryTest {
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("DELETE FROM model_services");
         repository = new ModelServiceRepository(jdbcTemplate, objectMapper);
     }
 
     @Test
-    void findById_能读取内置生成服务() {
-        var found = repository.findById("ollama-qwen2.5");
-
-        assertThat(found).isPresent();
-        assertThat(found.get().kind()).isEqualTo(ModelServiceKind.GENERATION);
-        assertThat(found.get().modelName()).isEqualTo("qwen3:8b");
-        assertThat(found.get().generationCapabilities()).contains(GenerationCapability.CHAT);
-        assertThat(found.get().supportedScenes()).contains("chat");
+    void findById_初始化时不再注入预置模型服务() {
+        assertThat(repository.findAll()).isEmpty();
+        assertThat(repository.findById("ollama-qwen2.5")).isEmpty();
     }
 
     @Test
     void findByKind_能区分生成与向量服务() {
+        repository.save(new ModelServiceEntity(
+                "generation-main",
+                ModelServiceKind.GENERATION,
+                ProviderType.OPENAI_COMPATIBLE,
+                "https://api.openai.com/v1",
+                null,
+                "gpt-5.4",
+                60,
+                0,
+                true,
+                java.util.List.of("chat"),
+                Set.of(GenerationCapability.CHAT, GenerationCapability.STREAMING),
+                Map.of("vendorKey", "openai"),
+                "主生成服务",
+                "测试生成服务"));
+        repository.save(new ModelServiceEntity(
+                "embedding-main",
+                ModelServiceKind.EMBEDDING,
+                ProviderType.TEI,
+                "http://localhost:8080/v1",
+                null,
+                "text-embedding-v4",
+                30,
+                0,
+                true,
+                java.util.List.of(),
+                Set.of(),
+                Map.of("embeddingDimension", 1024),
+                "主向量服务",
+                "测试向量服务"));
+
         var generation = repository.findByKind(ModelServiceKind.GENERATION);
         var embedding = repository.findByKind(ModelServiceKind.EMBEDDING);
 
-        assertThat(generation).isNotEmpty();
-        assertThat(embedding).isNotEmpty();
+        assertThat(generation).hasSize(1);
+        assertThat(embedding).hasSize(1);
         assertThat(generation).allMatch(service -> service.kind() == ModelServiceKind.GENERATION);
         assertThat(embedding).allMatch(service -> service.kind() == ModelServiceKind.EMBEDDING);
     }

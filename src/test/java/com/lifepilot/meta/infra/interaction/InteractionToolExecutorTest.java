@@ -249,7 +249,7 @@ class InteractionToolExecutorTest {
         assertThat(result.ok()).isTrue();
         assertThat(notificationService.sentRequests).hasSize(1);
         assertThat(notificationService.sentRequests.getFirst().content().toPlainText()).isEqualTo("任务已完成");
-        assertThat(notificationService.sentRequests.getFirst().channel()).isEqualTo("WEB");
+        assertThat(notificationService.sentRequests.getFirst().channel()).isEqualTo("web");
         assertThat(notificationService.sentRequests.getFirst().targetUserId()).isEqualTo("user-1");
     }
 

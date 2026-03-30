@@ -9,8 +9,10 @@ import com.lifepilot.interaction.middleware.MiddlewareContext;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
+import com.lifepilot.interaction.model.InteractionTraceHeaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 /**
  * 认证鉴权中间件，根据通道类型选择认证策略执行认证。
@@ -46,6 +48,15 @@ public class AuthMiddleware implements GatewayMiddleware {
 
     @Override
     public GatewayResponse process(GatewayMessage message, MiddlewareChain chain) {
+        AuthResult preAuthenticated = resolvePreAuthenticatedResult(message);
+        if (preAuthenticated != null) {
+            log.debug("使用 trace header 预认证结果: channelType={}, userId={}, trustLevel={}",
+                    message.channelType(), preAuthenticated.userId(), preAuthenticated.trustLevel());
+            chain.context().set(MiddlewareContext.KEY_AUTH_RESULT, preAuthenticated);
+            chain.context().set(MiddlewareContext.KEY_TRUST_LEVEL, preAuthenticated.trustLevel());
+            return chain.next(message);
+        }
+
         // 1. 查找匹配的认证策略
         var strategy = strategies.get(message.channelType());
         if (strategy == null) {
@@ -83,5 +94,30 @@ public class AuthMiddleware implements GatewayMiddleware {
     @Override
     public boolean enabled() {
         return properties.middleware().auth().enabled();
+    }
+
+    @Nullable
+    private AuthResult resolvePreAuthenticatedResult(GatewayMessage message) {
+        String trustLevelValue = message.traceHeaders().get(InteractionTraceHeaders.AUTH_TRUST_LEVEL);
+        if (trustLevelValue == null || trustLevelValue.isBlank()) {
+            return null;
+        }
+
+        TrustLevel trustLevel;
+        try {
+            trustLevel = TrustLevel.valueOf(trustLevelValue.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("忽略无效的预认证信任等级: channelType={}, trustLevel={}",
+                    message.channelType(), trustLevelValue);
+            return null;
+        }
+
+        String userId = message.traceHeaders().getOrDefault(
+                InteractionTraceHeaders.AUTH_USER_ID, message.userId());
+        if (userId == null || userId.isBlank()) {
+            log.warn("忽略缺少 userId 的预认证结果: channelType={}", message.channelType());
+            return null;
+        }
+        return AuthResult.success(userId, trustLevel);
     }
 }
