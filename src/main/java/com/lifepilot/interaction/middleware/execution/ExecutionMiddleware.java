@@ -5,6 +5,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.execution.ExecutionRetrySupport;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -316,7 +317,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         Map<String, Object> metadata = buildResponseMetadata(agentResponse);
         if (agentResponse.completionMode() == CompletionMode.NORMAL
                 && agentResponse.terminationReason() != null
-                && !agentResponse.terminationReason().isBlank()) {
+                && !agentResponse.terminationReason().isBlank()
+                && agentResponse.completionReason() != CompletionReason.EXPLICIT_BLOCKED) {
             return GatewayResponse.error(message.channelType(), agentResponse.content(), 500)
                     .toBuilder()
                     .responseId(agentResponse.assistantEntryId())

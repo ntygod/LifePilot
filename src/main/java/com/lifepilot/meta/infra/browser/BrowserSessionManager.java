@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 浏览器会话管理器 — 单例管理 Playwright Browser 实例。
@@ -34,6 +35,7 @@ public class BrowserSessionManager {
 
     private final MetaProperties.Infra.Browser browserConfig;
     private final boolean playwrightAvailable;
+    private final BrowserRuntime browserRuntime;
 
     /** Playwright 实例（懒初始化），仅在 Playwright 可用时非 null。 */
     @Nullable
@@ -48,18 +50,25 @@ public class BrowserSessionManager {
 
     /** 会话内多标签页容器。 */
     private static class SessionPages {
+        final Object browserContext;
         final ConcurrentHashMap<String, PlaywrightPageWrapper> pages = new ConcurrentHashMap<>();
         volatile String activeTabId;
 
-        SessionPages(String tabId, PlaywrightPageWrapper page) {
+        SessionPages(Object browserContext, String tabId, PlaywrightPageWrapper page) {
+            this.browserContext = browserContext;
             this.pages.put(tabId, page);
             this.activeTabId = tabId;
         }
     }
 
     public BrowserSessionManager(MetaProperties properties) {
+        this(properties, detectPlaywright(), new DefaultBrowserRuntime());
+    }
+
+    BrowserSessionManager(MetaProperties properties, boolean playwrightAvailable, BrowserRuntime browserRuntime) {
         this.browserConfig = properties.getInfra().getBrowser();
-        this.playwrightAvailable = detectPlaywright();
+        this.playwrightAvailable = playwrightAvailable;
+        this.browserRuntime = browserRuntime;
         if (playwrightAvailable) {
             log.info("Playwright 检测成功，浏览器自动化功能可用");
         } else {
@@ -72,7 +81,7 @@ public class BrowserSessionManager {
      *
      * @return true 表示 Playwright 可用
      */
-    private boolean detectPlaywright() {
+    private static boolean detectPlaywright() {
         try {
             Class.forName(PLAYWRIGHT_CLASS);
             return true;
@@ -113,21 +122,7 @@ public class BrowserSessionManager {
         if (!isAvailable()) {
             throw new IllegalStateException(UNAVAILABLE_MESSAGE);
         }
-        var sessionPages = sessions.compute(sessionId, (id, existing) -> {
-            if (existing != null && existing.pages.containsKey(existing.activeTabId)) {
-                var activePage = existing.pages.get(existing.activeTabId);
-                if (!activePage.isClosed()) {
-                    activePage.touch();
-                    return existing;
-                }
-            }
-            // 创建新会话或替换已关闭的会话
-            var browser = ensureBrowser();
-            var page = PlaywrightBridge.createPage(browser);
-            String tabId = UUID.randomUUID().toString().substring(0, 8);
-            log.debug("创建浏览器 Page: sessionId={}, tabId={}", sessionId, tabId);
-            return new SessionPages(tabId, new PlaywrightPageWrapper(page));
-        });
+        var sessionPages = sessions.compute(sessionId, this::ensureSessionPages);
         return sessionPages.pages.get(sessionPages.activeTabId);
     }
 
@@ -139,8 +134,7 @@ public class BrowserSessionManager {
     public void closePage(String sessionId) {
         var sessionPages = sessions.remove(sessionId);
         if (sessionPages != null) {
-            sessionPages.pages.values().forEach(PlaywrightPageWrapper::close);
-            log.debug("关闭浏览器会话所有 Page: sessionId={}", sessionId);
+            closeSessionPages(sessionId, sessionPages);
         }
     }
 
@@ -155,14 +149,21 @@ public class BrowserSessionManager {
         if (!isAvailable()) {
             throw new IllegalStateException(UNAVAILABLE_MESSAGE);
         }
-        var sp = sessions.get(sessionId);
-        if (sp == null) {
-            // 如果会话不存在，先创建
-            getOrCreatePage(sessionId);
-            sp = sessions.get(sessionId);
+        var createdSession = new AtomicBoolean(false);
+        var sp = sessions.compute(sessionId, (id, existing) -> {
+            if (existing == null) {
+                createdSession.set(true);
+                return createSessionPages(id);
+            }
+            return ensureSessionPages(id, existing);
+        });
+        if (createdSession.get()) {
+            var wrapper = sp.pages.get(sp.activeTabId);
+            wrapper.navigate(url);
+            log.debug("创建首个标签页并导航: sessionId={}, tabId={}, url={}", sessionId, sp.activeTabId, url);
+            return sp.activeTabId;
         }
-        var browser = ensureBrowser();
-        var page = PlaywrightBridge.createPage(browser);
+        var page = browserRuntime.createPage(sp.browserContext);
         var wrapper = new PlaywrightPageWrapper(page);
         wrapper.navigate(url);
         String tabId = UUID.randomUUID().toString().substring(0, 8);
@@ -212,6 +213,7 @@ public class BrowserSessionManager {
         // 如果所有标签页都关闭了，移除整个会话
         if (sp.pages.isEmpty()) {
             sessions.remove(sessionId);
+            closeBrowserContext(sp.browserContext);
         }
         log.debug("关闭标签页: sessionId={}, tabId={}", sessionId, tabId);
     }
@@ -238,20 +240,14 @@ public class BrowserSessionManager {
     public void close() {
         // 关闭所有 Page
         sessions.forEach((id, sp) -> {
-            sp.pages.values().forEach(wrapper -> {
-                try {
-                    wrapper.close();
-                } catch (Exception e) {
-                    log.warn("关闭浏览器 Page 失败: sessionId={}, error={}", id, e.getMessage());
-                }
-            });
+            closeSessionPages(id, sp);
         });
         sessions.clear();
 
         // 关闭 Browser
         if (browserInstance != null) {
             try {
-                PlaywrightBridge.closeBrowser(browserInstance);
+                browserRuntime.closeBrowser(browserInstance);
             } catch (Exception e) {
                 log.warn("关闭 Browser 失败: error={}", e.getMessage());
             }
@@ -261,7 +257,7 @@ public class BrowserSessionManager {
         // 关闭 Playwright
         if (playwrightInstance != null) {
             try {
-                PlaywrightBridge.closePlaywright(playwrightInstance);
+                browserRuntime.closePlaywright(playwrightInstance);
             } catch (Exception e) {
                 log.warn("关闭 Playwright 失败: error={}", e.getMessage());
             }
@@ -284,8 +280,7 @@ public class BrowserSessionManager {
             boolean allIdle = sp.pages.values().stream()
                     .allMatch(w -> now - w.getLastAccessTime() > idleTimeoutMs);
             if (allIdle) {
-                sp.pages.values().forEach(PlaywrightPageWrapper::close);
-                log.debug("空闲超时关闭浏览器会话: sessionId={}", entry.getKey());
+                closeSessionPages(entry.getKey(), sp);
                 return true;
             }
             return false;
@@ -303,9 +298,9 @@ public class BrowserSessionManager {
      */
     private synchronized Object ensureBrowser() {
         if (browserInstance == null) {
-            playwrightInstance = PlaywrightBridge.createPlaywright();
+            playwrightInstance = browserRuntime.createPlaywright();
             try {
-                browserInstance = PlaywrightBridge.launchBrowser(playwrightInstance, browserConfig.isHeadless());
+                browserInstance = browserRuntime.launchBrowser(playwrightInstance, browserConfig.isHeadless());
             } catch (Exception e) {
                 // Playwright 浏览器二进制未安装时，launch() 会抛出异常
                 String msg = e.getMessage();
@@ -321,6 +316,55 @@ public class BrowserSessionManager {
         return browserInstance;
     }
 
+    private SessionPages ensureSessionPages(String sessionId, @Nullable SessionPages existing) {
+        if (existing == null) {
+            return createSessionPages(sessionId);
+        }
+        var activePage = existing.pages.get(existing.activeTabId);
+        if (activePage != null && !activePage.isClosed()) {
+            activePage.touch();
+            return existing;
+        }
+        for (var entry : existing.pages.entrySet()) {
+            if (!entry.getValue().isClosed()) {
+                existing.activeTabId = entry.getKey();
+                entry.getValue().touch();
+                return existing;
+            }
+        }
+        closeSessionPages(sessionId, existing);
+        return createSessionPages(sessionId);
+    }
+
+    private SessionPages createSessionPages(String sessionId) {
+        var browser = ensureBrowser();
+        var browserContext = browserRuntime.createContext(browser);
+        var page = browserRuntime.createPage(browserContext);
+        String tabId = UUID.randomUUID().toString().substring(0, 8);
+        log.debug("创建浏览器会话上下文: sessionId={}, tabId={}", sessionId, tabId);
+        return new SessionPages(browserContext, tabId, new PlaywrightPageWrapper(page));
+    }
+
+    private void closeSessionPages(String sessionId, SessionPages sessionPages) {
+        sessionPages.pages.values().forEach(wrapper -> {
+            try {
+                wrapper.close();
+            } catch (Exception e) {
+                log.warn("关闭浏览器 Page 失败: sessionId={}, error={}", sessionId, e.getMessage());
+            }
+        });
+        closeBrowserContext(sessionPages.browserContext);
+        log.debug("关闭浏览器会话所有 Page: sessionId={}", sessionId);
+    }
+
+    private void closeBrowserContext(Object browserContext) {
+        try {
+            browserRuntime.closeContext(browserContext);
+        } catch (Exception e) {
+            log.warn("关闭 BrowserContext 失败: error={}", e.getMessage());
+        }
+    }
+
     /**
      * 获取当前活跃会话数。
      *
@@ -328,5 +372,59 @@ public class BrowserSessionManager {
      */
     public int getActiveSessionCount() {
         return sessions.size();
+    }
+
+    interface BrowserRuntime {
+        Object createPlaywright();
+
+        Object launchBrowser(Object playwrightObj, boolean headless);
+
+        Object createContext(Object browserObj);
+
+        Object createPage(Object browserContextObj);
+
+        void closeContext(Object browserContextObj);
+
+        void closeBrowser(Object browserObj);
+
+        void closePlaywright(Object playwrightObj);
+    }
+
+    private static final class DefaultBrowserRuntime implements BrowserRuntime {
+
+        @Override
+        public Object createPlaywright() {
+            return PlaywrightBridge.createPlaywright();
+        }
+
+        @Override
+        public Object launchBrowser(Object playwrightObj, boolean headless) {
+            return PlaywrightBridge.launchBrowser(playwrightObj, headless);
+        }
+
+        @Override
+        public Object createContext(Object browserObj) {
+            return PlaywrightBridge.createContext(browserObj);
+        }
+
+        @Override
+        public Object createPage(Object browserContextObj) {
+            return PlaywrightBridge.createPage(browserContextObj);
+        }
+
+        @Override
+        public void closeContext(Object browserContextObj) {
+            PlaywrightBridge.closeContext(browserContextObj);
+        }
+
+        @Override
+        public void closeBrowser(Object browserObj) {
+            PlaywrightBridge.closeBrowser(browserObj);
+        }
+
+        @Override
+        public void closePlaywright(Object playwrightObj) {
+            PlaywrightBridge.closePlaywright(playwrightObj);
+        }
     }
 }

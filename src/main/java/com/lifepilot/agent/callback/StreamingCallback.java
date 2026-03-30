@@ -45,6 +45,11 @@ import java.util.*;
 public class StreamingCallback implements IterationCallback {
 
     private static final Logger log = LoggerFactory.getLogger(StreamingCallback.class);
+    private static final Duration TOKEN_BATCH_MAX_DELAY = Duration.ofMillis(24);
+    private static final int TOKEN_BATCH_MAX_CHARS = 96;
+    private static final String A2UI_OPEN_TAG = "<a2ui>";
+    private static final String A2UI_CLOSE_TAG = "</a2ui>";
+    private static final int A2UI_PROBE_TAIL_LIMIT = A2UI_CLOSE_TAG.length() - 1;
 
     private final AgentConfigProperties config;
     private final GenerationRouter generationRouter;
@@ -63,6 +68,9 @@ public class StreamingCallback implements IterationCallback {
     private String modelId = IterationCallback.DEFAULT_MODEL_ID;
     @Nullable private Exception streamingError;
     @Nullable private String finalContent;
+    private final StringBuilder pendingTokenBatch = new StringBuilder();
+    @Nullable private Instant tokenBatchOpenedAt;
+    private int nextTokenIndex;
 
     public StreamingCallback(AgentConfigProperties config,
                              GenerationRouter generationRouter,
@@ -128,8 +136,9 @@ public class StreamingCallback implements IterationCallback {
         log.debug("流式多模态路由开始: scene={}, provider={}, model={}",
                 scene, this.providerId, this.modelId);
 
-        StreamingA2uiParser a2uiParser = helper.isA2uiEnabled() ? new StreamingA2uiParser() : null;
         Instant callStart = Instant.now();
+        markModelStreamStarted(callStart);
+        var outputState = new StreamOutputState(helper.isA2uiEnabled(), helper.getA2uiMaxComponents());
         var contentBuilder = new StringBuilder();
         final Instant[] firstTokenTime = {null};
 
@@ -138,14 +147,17 @@ public class StreamingCallback implements IterationCallback {
                         && sseManager.getEmitter(streamId) != null)
                 .doOnNext(token -> {
                     contentBuilder.append(token);
-                    if (firstTokenTime[0] == null) firstTokenTime[0] = Instant.now();
-                    pushTokenToSse(token, a2uiParser);
+                    Instant now = Instant.now();
+                    if (firstTokenTime[0] == null) {
+                        firstTokenTime[0] = now;
+                    }
+                    markFirstModelToken(now);
+                    pushTokenToSse(token, outputState);
                 })
                 .doOnError(e -> {
                     log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
                     this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
                 })
-                // blockLast() 在虚拟线程上下文中调用是安全的，不会阻塞平台线程池
                 .blockLast();
 
         if (cancellationToken.isCancelled()) {
@@ -153,20 +165,26 @@ public class StreamingCallback implements IterationCallback {
         } else if (sseManager.getEmitter(streamId) == null) {
             log.debug("多模态流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
+        outputState.flush();
         if (this.streamingError != null) {
             log.warn("多模态流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
             throw this.streamingError instanceof RuntimeException re ? re : new RuntimeException(this.streamingError);
         }
 
-        flushA2uiParser(a2uiParser);
         String collectedContent = contentBuilder.toString();
         this.finalContent = collectedContent;
 
         Instant callEnd = Instant.now();
         long ttftMs = firstTokenTime[0] != null ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
         long totalMs = Duration.between(callStart, callEnd).toMillis();
-        log.info("多模态流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms",
-                scene, this.providerId, this.modelId, ttftMs, totalMs);
+        var timings = streamingTimings();
+        log.info("多模态流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
+                        "requestToFirstReasoning={}ms, requestToFirstTokenSse={}ms, modelStreamStartToFirstToken={}ms, contentLength={}",
+                scene, this.providerId, this.modelId, ttftMs, totalMs,
+                timingOrDefault(timings, "requestReceivedToFirstReasoningEventMs"),
+                timingOrDefault(timings, "requestReceivedToFirstTokenSseMs"),
+                timingOrDefault(timings, "modelStreamStartToFirstTokenMs"),
+                collectedContent.length());
 
         ChatResponse chatResponse = helper.adaptToChatResponse(
                 new LlmResponse(collectedContent, 0, 0, this.providerId, this.modelId, 0, false));
@@ -231,21 +249,21 @@ public class StreamingCallback implements IterationCallback {
 
         // 真正的流式调用路径
         Instant callStart = Instant.now();
-        // 注意：此处复用外层参数 scene，避免在流式消费过程中重新读取配置导致不一致
+        markModelStreamStarted(callStart);
+        String scene2 = config.getLoop().getLlmScene();
 
-        StreamingA2uiParser a2uiParser = helper.isA2uiEnabled() ? new StreamingA2uiParser() : null;
-
+        var outputState = new StreamOutputState(helper.isA2uiEnabled(), helper.getA2uiMaxComponents());
         var contentBuilder = new StringBuilder();
         var toolCallAggregator = new StreamingToolCallAggregator();
         final ChatResponse[] lastChunk = {null};
         final Instant[] firstTokenTime = {null};
+        final boolean[] toolCallPreviewSent = {false};
         // 累加流式 chunk 中的 Token 用量（部分 Provider 仅在最后一个 chunk 返回完整 usage）
         final long[] accumulatedPromptTokens = {0};
         final long[] accumulatedCompletionTokens = {0};
 
         Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
 
-        // blockLast() 在虚拟线程上下文中调用是安全的，不会阻塞平台线程池
         try {
             flux.takeWhile(chunk -> !cancellationToken.isCancelled()
                             && sseManager.getEmitter(streamId) != null)
@@ -266,13 +284,16 @@ public class StreamingCallback implements IterationCallback {
                     String text = output.getText();
                     if (text != null && !text.isEmpty()) {
                         contentBuilder.append(text);
+                        Instant now = Instant.now();
                         if (firstTokenTime[0] == null) {
-                            firstTokenTime[0] = Instant.now();
+                            firstTokenTime[0] = now;
                         }
-                        pushTokenToSse(text, a2uiParser);
+                        markFirstModelToken(now);
+                        pushTokenToSse(text, outputState);
                     }
 
                     if (output.hasToolCalls()) {
+                        emitToolCallPreview(output.getToolCalls(), toolCallPreviewSent);
                         toolCallAggregator.merge(output.getToolCalls());
                     }
                 } catch (Exception e) {
@@ -280,12 +301,12 @@ public class StreamingCallback implements IterationCallback {
                 }
             }).doOnError(e -> {
                 log.warn("流式调用异常: scene={}, provider={}, error={}",
-                        scene, chatModelInfo.serviceId(), describeProviderError(e));
+                        scene2, chatModelInfo.serviceId(), describeProviderError(e));
                 this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
             }).blockLast();
         } catch (Exception e) {
             log.error("流式调用失败: scene={}, provider={}, error={}",
-                    scene, chatModelInfo.serviceId(), describeProviderError(e));
+                    scene2, chatModelInfo.serviceId(), describeProviderError(e));
             throw e;
         }
 
@@ -294,6 +315,7 @@ public class StreamingCallback implements IterationCallback {
         } else if (sseManager.getEmitter(streamId) == null) {
             log.debug("流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
+        outputState.flush();
 
         if (this.streamingError != null) {
             log.warn("流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
@@ -305,21 +327,19 @@ public class StreamingCallback implements IterationCallback {
         String collectedContent = contentBuilder.toString();
         this.finalContent = collectedContent;
 
-        flushA2uiParser(a2uiParser);
-
         // 流式响应为空时构造空内容 ChatResponse
         List<AssistantMessage.ToolCall> toolCalls = toolCallAggregator.toolCalls();
 
         if (collectedContent.isEmpty() && toolCallAggregator.isEmpty()) {
             log.warn("流式响应为空: scene={}, provider={}, model={}",
-                    scene, chatModelInfo.serviceId(), chatModelInfo.modelName());
+                    scene2, chatModelInfo.serviceId(), chatModelInfo.modelName());
             var emptyMessage = new AssistantMessage("");
             var generation = new Generation(emptyMessage);
             ChatResponse emptyResponse = lastChunk[0] != null
                     ? new ChatResponse(List.of(generation), lastChunk[0].getMetadata())
                     : new ChatResponse(List.of(generation));
             helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
-                    scene, emptyResponse, null);
+                    scene2, emptyResponse, null);
             return emptyResponse;
         }
 
@@ -332,14 +352,19 @@ public class StreamingCallback implements IterationCallback {
         long ttftMs = firstTokenTime[0] != null
                 ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
         long totalMs = Duration.between(callStart, callEnd).toMillis();
+        var timings = streamingTimings();
         log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
+                        "requestToFirstReasoning={}ms, requestToFirstTokenSse={}ms, modelStreamStartToFirstToken={}ms, " +
                         "promptTokens={}, completionTokens={}, toolCallCount={}, contentLength={}",
-                scene, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
+                scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
+                timingOrDefault(timings, "requestReceivedToFirstReasoningEventMs"),
+                timingOrDefault(timings, "requestReceivedToFirstTokenSseMs"),
+                timingOrDefault(timings, "modelStreamStartToFirstTokenMs"),
                 accumulatedPromptTokens[0], accumulatedCompletionTokens[0],
                 toolCalls.size(), collectedContent.length());
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
-                scene, chatResponse, null);
+                scene2, chatResponse, null);
 
         return chatResponse;
     }
@@ -438,119 +463,216 @@ public class StreamingCallback implements IterationCallback {
 
     /** 将文本内容逐段推送为 SSE TOKEN 事件。 */
     private void streamContentToSse(String content) {
-        boolean a2uiEnabled = helper.isA2uiEnabled();
-        StreamingA2uiParser a2uiParser = a2uiEnabled ? new StreamingA2uiParser() : null;
-        int maxComponents = a2uiEnabled ? helper.getA2uiMaxComponents() : 0;
-        int tokenIndex = 0;
-
-        if (a2uiParser != null) {
-            var segments = a2uiParser.feed(content);
-            for (var segment : segments) {
-                switch (segment) {
-                    case StreamingA2uiParser.Segment.TextSegment(var text) -> {
-                        if (!text.isEmpty()) {
-                            markVisibleOutputEmitted();
-                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                                    "sessionId", sessionId, "turnId", turnId,
-                                    "content", text, "index", tokenIndex++));
-                        }
-                    }
-                    case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
-                        var tree = helper.parseAndValidateA2uiTree(json, maxComponents);
-                        if (tree != null) {
-                            if (loopContext != null) {
-                                loopContext.setLastCollectedA2uiTree(tree);
-                            }
-                            markVisibleOutputEmitted();
-                            sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
-                                    "sessionId", sessionId, "turnId", turnId,
-                                    "components", tree.components()));
-                        }
-                    }
-                }
-            }
-            var remaining = a2uiParser.flush();
-            for (var seg : remaining) {
-                if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
-                        && !text.isEmpty()) {
-                    markVisibleOutputEmitted();
-                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                            "sessionId", sessionId, "turnId", turnId,
-                            "content", text, "index", tokenIndex++));
-                }
-            }
-        } else {
-            markVisibleOutputEmitted();
-            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                    "sessionId", sessionId, "turnId", turnId,
-                    "content", content, "index", 0));
-        }
+        var outputState = new StreamOutputState(helper.isA2uiEnabled(), helper.getA2uiMaxComponents());
+        outputState.accept(content);
+        outputState.flush();
     }
 
     /**
      * 将单个流式 token 推送为 SSE 事件，支持 A2UI 增量解析。
      *
      * @param token      LLM 流式输出的单个 token
-     * @param a2uiParser A2UI 增量解析器实例（A2UI 未启用时为 null）
+     * @param outputState 输出合批与 A2UI 探测状态
      */
-    private void pushTokenToSse(String token, @Nullable StreamingA2uiParser a2uiParser) {
-        if (a2uiParser != null) {
-            int maxComponents = helper.getA2uiMaxComponents();
-            var segments = a2uiParser.feed(token);
-            for (var segment : segments) {
-                switch (segment) {
-                    case StreamingA2uiParser.Segment.TextSegment(var text) -> {
-                        if (!text.isEmpty()) {
-                            markVisibleOutputEmitted();
-                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                                    "sessionId", sessionId, "turnId", turnId,
-                                    "content", text, "index", 0));
-                        }
-                    }
-                    case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
-                        var tree = helper.parseAndValidateA2uiTree(json, maxComponents);
-                        if (tree != null) {
-                            if (loopContext != null) {
-                                loopContext.setLastCollectedA2uiTree(tree);
-                            }
-                            markVisibleOutputEmitted();
-                            sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
-                                    "sessionId", sessionId, "turnId", turnId,
-                                    "components", tree.components()));
-                        }
-                    }
-                }
-            }
-        } else {
-            markVisibleOutputEmitted();
-            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                    "sessionId", sessionId, "turnId", turnId,
-                    "content", token, "index", 0));
-        }
+    private void pushTokenToSse(String token, StreamOutputState outputState) {
+        outputState.accept(token);
     }
 
-    /**
-     * 流结束时刷出 A2UI 解析器剩余缓冲内容。
-     *
-     * @param a2uiParser A2UI 增量解析器实例（A2UI 未启用时为 null）
-     */
-    private void flushA2uiParser(@Nullable StreamingA2uiParser a2uiParser) {
-        if (a2uiParser == null) return;
-        var remaining = a2uiParser.flush();
-        for (var seg : remaining) {
-            if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
-                    && !text.isEmpty()) {
-                markVisibleOutputEmitted();
-                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                        "sessionId", sessionId, "turnId", turnId,
-                        "content", text, "index", 0));
-            }
+    private void emitToolCallPreview(List<AssistantMessage.ToolCall> toolCalls, boolean[] toolCallPreviewSent) {
+        if (toolCallPreviewSent[0] || toolCalls == null || toolCalls.isEmpty()) {
+            return;
         }
+        toolCallPreviewSent[0] = true;
+        flushPendingTokenBatch();
+        String toolName = toolCalls.stream()
+                .map(AssistantMessage.ToolCall::name)
+                .filter(Objects::nonNull)
+                .filter(name -> !name.isBlank())
+                .findFirst()
+                .orElse(null);
+        String description = toolName != null && !toolName.isBlank()
+                ? "模型已进入工具调用阶段，正在整理参数：" + toolName
+                : "模型已进入工具调用阶段，正在整理参数。";
+        helper.sendReasoningEvent(
+                sseManager,
+                streamId,
+                sessionId,
+                turnId,
+                "PROGRESS",
+                "准备调用工具",
+                description,
+                toolName,
+                Map.of("phase", "stream_tool_call_preview")
+        );
     }
 
     private void markVisibleOutputEmitted() {
         if (loopContext != null) {
             loopContext.markVisibleOutputEmitted();
+        }
+    }
+
+    private void markModelStreamStarted(Instant startedAt) {
+        if (loopContext != null) {
+            loopContext.markModelStreamStarted(startedAt);
+        }
+    }
+
+    private void markFirstModelToken(Instant tokenAt) {
+        if (loopContext != null) {
+            loopContext.markFirstModelToken(tokenAt);
+        }
+    }
+
+    private Map<String, Long> streamingTimings() {
+        return loopContext != null ? loopContext.streamingTimingsMs() : Map.of();
+    }
+
+    private long timingOrDefault(Map<String, Long> timings, String key) {
+        return timings.getOrDefault(key, -1L);
+    }
+
+    private void enqueueTokenChunk(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        if (pendingTokenBatch.isEmpty()) {
+            tokenBatchOpenedAt = Instant.now();
+        }
+        pendingTokenBatch.append(text);
+        Instant openedAt = tokenBatchOpenedAt;
+        if (pendingTokenBatch.length() >= TOKEN_BATCH_MAX_CHARS
+                || (openedAt != null && Duration.between(openedAt, Instant.now()).compareTo(TOKEN_BATCH_MAX_DELAY) >= 0)) {
+            flushPendingTokenBatch();
+        }
+    }
+
+    private void flushPendingTokenBatch() {
+        if (pendingTokenBatch.isEmpty()) {
+            return;
+        }
+        Instant emittedAt = Instant.now();
+        String content = pendingTokenBatch.toString();
+        pendingTokenBatch.setLength(0);
+        tokenBatchOpenedAt = null;
+        markVisibleOutputEmitted();
+        if (loopContext != null) {
+            loopContext.markFirstTokenSse(emittedAt);
+        }
+        sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                "sessionId", sessionId,
+                "turnId", turnId,
+                "content", content,
+                "index", nextTokenIndex++
+        ));
+    }
+
+    private boolean looksLikeA2uiCandidate(String text) {
+        if (text == null || text.isEmpty() || text.indexOf('<') < 0) {
+            return false;
+        }
+        for (int index = text.indexOf('<'); index >= 0; index = text.indexOf('<', index + 1)) {
+            String tail = text.substring(index);
+            if (A2UI_OPEN_TAG.startsWith(tail)
+                    || A2UI_CLOSE_TAG.startsWith(tail)
+                    || tail.startsWith(A2UI_OPEN_TAG)
+                    || tail.startsWith(A2UI_CLOSE_TAG)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private final class StreamOutputState {
+
+        private final boolean a2uiEnabled;
+        private final int maxComponents;
+        @Nullable private StreamingA2uiParser parser;
+        private String probeTail = "";
+
+        private StreamOutputState(boolean a2uiEnabled, int maxComponents) {
+            this.a2uiEnabled = a2uiEnabled;
+            this.maxComponents = maxComponents;
+        }
+
+        private void accept(String chunk) {
+            if (chunk == null || chunk.isEmpty()) {
+                return;
+            }
+            if (!a2uiEnabled) {
+                enqueueTokenChunk(chunk);
+                return;
+            }
+            if (parser != null) {
+                feedParser(chunk);
+                return;
+            }
+            String combined = probeTail + chunk;
+            if (looksLikeA2uiCandidate(combined)) {
+                parser = new StreamingA2uiParser();
+                probeTail = "";
+                feedParser(combined);
+                return;
+            }
+            emitPlainWithProbeTail(combined);
+        }
+
+        private void flush() {
+            if (parser != null) {
+                handleSegments(parser.flush());
+                parser = null;
+            } else if (!probeTail.isEmpty()) {
+                enqueueTokenChunk(probeTail);
+                probeTail = "";
+            }
+            flushPendingTokenBatch();
+        }
+
+        private void feedParser(String text) {
+            handleSegments(parser.feed(text));
+        }
+
+        private void handleSegments(List<StreamingA2uiParser.Segment> segments) {
+            for (var segment : segments) {
+                switch (segment) {
+                    case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                        if (!text.isEmpty()) {
+                            enqueueTokenChunk(text);
+                        }
+                    }
+                    case StreamingA2uiParser.Segment.A2uiSegment(var json) -> emitA2ui(json);
+                }
+            }
+        }
+
+        private void emitPlainWithProbeTail(String combined) {
+            if (combined.length() <= A2UI_PROBE_TAIL_LIMIT) {
+                probeTail = combined;
+                return;
+            }
+            int emitLength = combined.length() - A2UI_PROBE_TAIL_LIMIT;
+            String emitText = combined.substring(0, emitLength);
+            if (!emitText.isEmpty()) {
+                enqueueTokenChunk(emitText);
+            }
+            probeTail = combined.substring(emitLength);
+        }
+
+        private void emitA2ui(String json) {
+            flushPendingTokenBatch();
+            var tree = helper.parseAndValidateA2uiTree(json, maxComponents);
+            if (tree == null) {
+                return;
+            }
+            if (loopContext != null) {
+                loopContext.setLastCollectedA2uiTree(tree);
+            }
+            markVisibleOutputEmitted();
+            sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                    "sessionId", sessionId,
+                    "turnId", turnId,
+                    "components", tree.components()
+            ));
         }
     }
 

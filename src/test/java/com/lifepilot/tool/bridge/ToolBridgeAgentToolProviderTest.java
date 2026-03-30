@@ -15,6 +15,7 @@ import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
@@ -25,7 +26,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -137,21 +142,6 @@ class ToolBridgeAgentToolProviderTest {
                 .contains("\"items\":{\"type\":\"array\"}");
     }
 
-    private ReactAgentState baseState() {
-        var budget = Budget.builder()
-                .maxTokens(4096)
-                .tokensUsed(0)
-                .tokensReserved(0)
-                .maxSteps(20)
-                .stepsUsed(0)
-                .maxDuration(Duration.ofMinutes(5))
-                .elapsed(Duration.ZERO)
-                .build();
-        var request = new AgentRequest("测试工具别名", "session-1", "web", null, null,
-                budget, null, 0, null, null, null, null);
-        return ReactAgentState.init(request, budget);
-    }
-
     @Test
     void ResourceSerialized文件工具应生成稳定资源集合() {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
@@ -223,5 +213,182 @@ class ToolBridgeAgentToolProviderTest {
 
         assertThat(hint.mode()).isEqualTo(ToolSchedulingMode.SEQUENTIAL);
         assertThat(hint.resourceKeys()).isEmpty();
+    }
+
+    @Test
+    void 单Agent模式下即使allowedToolIds收窄仍保留infrastructure工具() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("infra.echo")
+                .name("基础回显")
+                .description("基础工具")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("custom.echo")
+                .name("普通回显")
+                .description("普通工具")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("custom"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                mock(ToolExecutionPipeline.class),
+                new ObjectMapper(),
+                30000
+        );
+
+        var callbacks = provider.getToolCallbacks(baseState(List.of("custom.echo")), null);
+        var toolNames = callbacks.stream()
+                .map(callback -> callback.getToolDefinition().name())
+                .toList();
+
+        assertThat(toolNames).contains("custom_echo", "infra_echo");
+    }
+
+    @Test
+    void 工具别名冲突时应基于稳定快照生成可复现名称() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("foo_bar")
+                .name("下划线工具")
+                .description("测试冲突")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("foo.bar")
+                .name("点号工具")
+                .description("测试冲突")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                mock(ToolExecutionPipeline.class),
+                new ObjectMapper(),
+                30000
+        );
+
+        var callbacks = provider.getToolCallbacks(baseState(), null);
+        String collidedName = "foo_bar_" + Integer.toHexString("foo_bar".hashCode()).replace('-', '0');
+        var toolNames = callbacks.stream()
+                .map(callback -> callback.getToolDefinition().name())
+                .toList();
+
+        assertThat(toolNames).containsExactly("foo_bar", collidedName);
+        assertThat(provider.resolveCanonicalToolId("foo_bar")).isEqualTo("foo.bar");
+        assertThat(provider.resolveCanonicalToolId(collidedName)).isEqualTo("foo_bar");
+    }
+
+    @Test
+    void 白名单只读工具应在同一Trace内生成稳定幂等键() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("web.search")
+                .name("Web 搜索")
+                .description("搜索网页")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        ToolExecutionPipeline pipeline = mock(ToolExecutionPipeline.class);
+        when(pipeline.execute(anyString(), anyMap(), anyString(), any(), any(), anyMap()))
+                .thenReturn(ToolResult.success(Map.of("ok", true)));
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                pipeline,
+                new ObjectMapper(),
+                30000
+        );
+        var callback = provider.getToolCallbacks(baseState(), null).getFirst();
+
+        callback.call("{\"query\":\"budget\"}");
+        callback.call("{\"query\":\"budget\"}");
+
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(pipeline, times(2)).execute(eq("web.search"), anyMap(), anyString(), keyCaptor.capture(), isNull(), anyMap());
+        assertThat(keyCaptor.getAllValues()).hasSize(2);
+        assertThat(keyCaptor.getAllValues().getFirst()).isEqualTo(keyCaptor.getAllValues().get(1));
+        assertThat(keyCaptor.getAllValues().getFirst()).startsWith("trace:");
+    }
+
+    @Test
+    void 非白名单工具即使声明幂等也不应注入幂等键() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("file.read")
+                .name("读取文件")
+                .description("读取文件")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        ToolExecutionPipeline pipeline = mock(ToolExecutionPipeline.class);
+        when(pipeline.execute(anyString(), anyMap(), anyString(), any(), any(), anyMap()))
+                .thenReturn(ToolResult.success(Map.of("ok", true)));
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                pipeline,
+                new ObjectMapper(),
+                30000
+        );
+        var callback = provider.getToolCallbacks(baseState(), null).getFirst();
+
+        callback.call("{\"path\":\"demo.txt\"}");
+
+        verify(pipeline).execute(eq("file.read"), anyMap(), anyString(), isNull(), isNull(), anyMap());
+    }
+
+    private ReactAgentState baseState() {
+        return baseState(null);
+    }
+
+    private ReactAgentState baseState(List<String> allowedToolIds) {
+        var budget = Budget.builder()
+                .maxTokens(4096)
+                .tokensUsed(0)
+                .tokensReserved(0)
+                .maxSteps(20)
+                .stepsUsed(0)
+                .maxDuration(Duration.ofMinutes(5))
+                .elapsed(Duration.ZERO)
+                .build();
+        var request = new AgentRequest("测试工具别名", "session-1", "web", null, null,
+                budget, null, 0, null, allowedToolIds, null, null);
+        return ReactAgentState.init(request, budget);
     }
 }

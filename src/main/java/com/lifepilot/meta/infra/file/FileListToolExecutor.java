@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.stream.Stream;
 
 /**
@@ -29,6 +30,9 @@ import java.util.stream.Stream;
 public class FileListToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(FileListToolExecutor.class);
+    private static final Comparator<EntryCandidate> ENTRY_ORDER = Comparator
+            .<EntryCandidate, Boolean>comparing(candidate -> !candidate.directory())
+            .thenComparing(EntryCandidate::relativeName);
 
     private final PathSecurityChecker securityChecker;
     private final int defaultMaxEntries;
@@ -68,6 +72,7 @@ public class FileListToolExecutor {
                 .orElse(null);
         int maxEntries = input.getOptionalParam("maxEntries", Number.class)
                 .map(Number::intValue)
+                .map(value -> Math.max(0, value))
                 .orElse(defaultMaxEntries);
 
         Path dirPath = Path.of(pathStr);
@@ -89,34 +94,42 @@ public class FileListToolExecutor {
                     ? FileSystems.getDefault().getPathMatcher("glob:" + pattern)
                     : null;
 
-            // 收集所有条目，目录优先排序
-            List<Path> allPaths;
+            int totalEntries = 0;
+            PriorityQueue<EntryCandidate> selectedEntries = new PriorityQueue<>(ENTRY_ORDER.reversed());
             try (Stream<Path> walk = Files.walk(dirPath, maxDepth)) {
-                allPaths = walk
+                for (var iterator = walk
                         .filter(p -> !p.equals(dirPath))
                         .filter(p -> matcher == null || matcher.matches(p.getFileName()))
-                        .sorted(Comparator
-                                .<Path, Boolean>comparing(p -> !Files.isDirectory(p))
-                                .thenComparing(p -> dirPath.relativize(p).toString()))
-                        .toList();
+                        .iterator(); iterator.hasNext(); ) {
+                    Path path = iterator.next();
+                    totalEntries++;
+                    EntryCandidate candidate = buildCandidate(dirPath, path);
+                    if (maxEntries == 0) {
+                        continue;
+                    }
+                    if (selectedEntries.size() < maxEntries) {
+                        selectedEntries.offer(candidate);
+                        continue;
+                    }
+                    EntryCandidate worst = selectedEntries.peek();
+                    if (worst != null && ENTRY_ORDER.compare(candidate, worst) < 0) {
+                        selectedEntries.poll();
+                        selectedEntries.offer(candidate);
+                    }
+                }
             }
 
-            int totalEntries = allPaths.size();
             boolean truncated = totalEntries > maxEntries;
-
-            List<Map<String, Object>> entries = new ArrayList<>();
-            int limit = Math.min(totalEntries, maxEntries);
-            for (int i = 0; i < limit; i++) {
-                Path p = allPaths.get(i);
+            List<EntryCandidate> orderedEntries = selectedEntries.stream()
+                    .sorted(ENTRY_ORDER)
+                    .toList();
+            List<Map<String, Object>> entries = new ArrayList<>(orderedEntries.size());
+            for (EntryCandidate candidate : orderedEntries) {
                 var entry = new LinkedHashMap<String, Object>();
-                entry.put("name", dirPath.relativize(p).toString());
-                entry.put("type", Files.isDirectory(p) ? "directory" : "file");
-                try {
-                    if (Files.isRegularFile(p)) {
-                        entry.put("size", Files.size(p));
-                    }
-                } catch (IOException ignored) {
-                    // 无法获取大小时跳过
+                entry.put("name", candidate.relativeName());
+                entry.put("type", candidate.directory() ? "directory" : "file");
+                if (candidate.size() != null) {
+                    entry.put("size", candidate.size());
                 }
                 entries.add(entry);
             }
@@ -136,4 +149,19 @@ public class FileListToolExecutor {
             return ToolResult.error("目录列表失败: " + e.getMessage());
         }
     }
+
+    private EntryCandidate buildCandidate(Path rootDir, Path path) {
+        boolean directory = Files.isDirectory(path);
+        Long size = null;
+        if (!directory) {
+            try {
+                size = Files.size(path);
+            } catch (IOException ignored) {
+                // 无法获取大小时保留 null
+            }
+        }
+        return new EntryCandidate(rootDir.relativize(path).toString(), directory, size);
+    }
+
+    private record EntryCandidate(String relativeName, boolean directory, Long size) {}
 }

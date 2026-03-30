@@ -252,8 +252,9 @@ public class ReactAgentLoop implements CallbackHelper {
                 }
             }
             var assembledContext = cachedContext;
+            boolean firstIteration = iteration == 0;
             // 首轮迭代注入用户上传的媒体内容到上下文
-            if (state.steps().isEmpty() && hasMultimodalContent(request)) {
+            if (firstIteration && hasMultimodalContent(request)) {
                 assembledContext = assembledContext.withMediaContents(request.mediaContents());
             }
             // 非首轮迭代：有 pendingMedia 时注入工具产生的媒体
@@ -1003,6 +1004,7 @@ public class ReactAgentLoop implements CallbackHelper {
         if (info.length > 4 && info[4] != null) {
             extra.put("toolId", info[4]);
         }
+        loopContext.markFirstReasoningEvent(Instant.now());
         sendReasoningEvent(sseManager, streamId, state.sessionId(), turnId,
                 info[0], info[1], info[2], info[3], extra);
     }

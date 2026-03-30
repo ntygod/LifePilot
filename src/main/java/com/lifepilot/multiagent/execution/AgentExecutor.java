@@ -118,7 +118,8 @@ public class AgentExecutor {
      *
      * <p>交集约束：当父 Agent 的 allowedToolIds 非空时，子 Agent 的有效工具集
      * 取与父 Agent 作用域的交集，防止通过委托实现权限提升。
-     * Infrastructure 工具（tags 含 "infrastructure"）始终保留，不受交集约束。</p>
+     * 当前主产品仍按“单 Agent 负责所有事”设计，Infrastructure 工具（tags 含 "infrastructure"）
+     * 继续保留透传语义；后续若演进为真正的受限子 Agent，再单独收紧这里的策略。</p>
      *
      * @param definition       子 Agent 蓝图
      * @param parentAllowedIds 父 Agent 的工具白名单（可为 null）

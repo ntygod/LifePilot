@@ -122,6 +122,19 @@ class DynamicToolRegistryTest {
     }
 
     @Test
+    void 工具快照应按工具ID稳定排序() {
+        registry.registerBuiltinTool(createBuiltinTool("z.tool", "Z"));
+        registry.registerBuiltinTool(createBuiltinTool("a.tool", "A"));
+        registry.registerBuiltinTool(createBuiltinTool("m.tool", "M"));
+
+        List<String> toolIds = registry.getToolSnapshot().stream()
+                .map(ToolContract::id)
+                .toList();
+
+        assertEquals(List.of("a.tool", "m.tool", "z.tool"), toolIds);
+    }
+
+    @Test
     void 按层次过滤工具() {
         registry.registerBuiltinTool(createBuiltinTool("a", "A"));
         registry.registerMcpTools("s1", List.of(createMcpTool("mcp.b", "B")));

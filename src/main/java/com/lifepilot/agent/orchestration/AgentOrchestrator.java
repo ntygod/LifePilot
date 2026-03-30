@@ -228,7 +228,7 @@ public class AgentOrchestrator {
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
             var callback = new StreamingCallback(config, generationRouter, multimodalRouter, agentLoop,
-                    cancellationToken, null, sseManager, streamId,
+                    cancellationToken, loopContext, sseManager, streamId,
                     request.sessionId(), tempTurnId, effectiveRequest);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, cancellationToken, loopContext);
@@ -328,7 +328,8 @@ public class AgentOrchestrator {
                 var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
                         state.steps(), reasoningSummary, finalContent, assistantEntryId,
-                        loopContext.getLastCollectedA2uiTree());
+                        loopContext.getLastCollectedA2uiTree(),
+                        loopContext.streamingTimingsMs());
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 sseManager.closeEmitter(streamId);
             }
@@ -354,20 +355,18 @@ public class AgentOrchestrator {
         String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
         state = state.appendStep(new ReactStep.Observation(
                 resumeToolId, null, true, agentLoop.formatResumeObservation(payload), 0, null));
-        suspendStore.delete(traceId);
-
         log.info("Agent 从挂起状态恢复执行：traceId={}, reasonType={}, payloadType={}",
                 traceId, suspended.suspendReason().getClass().getSimpleName(),
                 payload.getClass().getSimpleName());
 
         final ReactAgentState resumedState = state;
-        Thread.startVirtualThread(() -> runResume(resumedState));
+        Thread.startVirtualThread(() -> runResume(traceId, resumedState));
     }
 
     /** 在虚拟线程中异步执行恢复后的 Agent 逻辑
         避免阻塞调用方（通常是 Web 请求线程），让恢复操作在后台运行
      */
-    private void runResume(ReactAgentState state) {
+    private void runResume(String suspendedTraceId, ReactAgentState state) {
         var token = new CancellationToken();
         var loopStart = Instant.now();
         var loopContext = new AgentLoopContext();
@@ -395,11 +394,21 @@ public class AgentOrchestrator {
                     config, generationRouter, multimodalRouter, request, agentLoop);
             state = agentLoop.coreLoop(state, request, null, loopStart, callback, token, loopContext);
 
+            if (state.suspended() && state.suspendReason() != null) {
+                handleSuspendSync(state, null, loopContext);
+                log.info("Agent 从挂起恢复后再次进入挂起态：traceId={}, reasonType={}",
+                        state.traceId(), state.suspendReason().getClass().getSimpleName());
+                return;
+            }
+
             boolean testSession = isTestSession(state.sessionId());
             if (!testSession) {
                 String reactStepsJson = serializeReactStepsJson(state.steps());
                 String assistantEntryId = executionPersistence.persistAssistantSync(state, reactStepsJson, loopContext);
                 executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
+            }
+            if (suspendStore != null) {
+                suspendStore.delete(suspendedTraceId);
             }
             log.info("Agent 从挂起恢复完成：traceId={}, stepCount={}", state.traceId(), state.stepCount());
         } catch (Exception e) {
@@ -450,6 +459,7 @@ public class AgentOrchestrator {
         } catch (MediaValidationException e) {
             log.warn("媒体内容校验失败：sessionId={}, error={}", request.sessionId(), e.getMessage());
             if (sseManager != null && streamId != null) {
+                executionPersistence.markTurnFailed(state, e);
                 streamingEventHandler.sendStreamError(
                         sseManager,
                         streamId,
@@ -569,7 +579,14 @@ public class AgentOrchestrator {
 
     /** 判断是否应该对异常进行降级处理而不是直接抛出 */
     private boolean shouldDegradeUnexpectedException(ReactAgentState state) {
-        return state.stepCount() > 0 || !state.steps().isEmpty();
+        if (state.finalOutput() != null && !state.finalOutput().isBlank()) {
+            return true;
+        }
+        return state.steps().stream().anyMatch(this::isSubstantiveStep);
+    }
+
+    private boolean isSubstantiveStep(ReactStep step) {
+        return !(step instanceof ReactStep.Progress);
     }
 
     /** 构造一个可接受的降级状态，将异常转换为终止原因并保留已有输出 */

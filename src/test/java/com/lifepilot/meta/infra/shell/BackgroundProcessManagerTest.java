@@ -128,6 +128,7 @@ class BackgroundProcessManagerTest {
 
         var processes = manager.listProcesses();
         assertThat(processes.getFirst().state()).isEqualTo(ProcessState.COMPLETED);
+        assertThat(processes.getFirst().exitCode()).isZero();
     }
 
     @Test
@@ -138,6 +139,7 @@ class BackgroundProcessManagerTest {
 
         var processes = manager.listProcesses();
         assertThat(processes.getFirst().state()).isEqualTo(ProcessState.FAILED);
+        assertThat(processes.getFirst().exitCode()).isEqualTo(1);
     }
 
     @Test
@@ -165,5 +167,40 @@ class BackgroundProcessManagerTest {
         manager.cleanupIdleProcesses();
 
         assertThat(manager.listProcesses()).isEmpty();
+    }
+
+    @Test
+    void 输出快照应区分stdout和stderr并记录真实退出码() throws Exception {
+        String sessionId = manager.startProcess(buildStdoutStderrFailCommand(7), Path.of(System.getProperty("user.home")));
+
+        ProcessInfo info = awaitTerminal(sessionId);
+        ProcessOutputChunk chunk = manager.readOutputChunk(sessionId);
+
+        assertThat(info.state()).isEqualTo(ProcessState.FAILED);
+        assertThat(info.exitCode()).isEqualTo(7);
+        assertThat(chunk.stdout()).contains("stdout-line");
+        assertThat(chunk.stderr()).contains("stderr-line");
+        assertThat(chunk.output()).contains("stdout-line").contains("stderr-line");
+        assertThat(chunk.exitCode()).isEqualTo(7);
+        assertThat(chunk.state()).isEqualTo(ProcessState.FAILED);
+    }
+
+    private ProcessInfo awaitTerminal(String sessionId) throws InterruptedException {
+        for (int i = 0; i < 40; i++) {
+            ProcessInfo info = manager.getProcessInfo(sessionId);
+            if (info.state() != ProcessState.RUNNING) {
+                return info;
+            }
+            Thread.sleep(100);
+        }
+        return manager.getProcessInfo(sessionId);
+    }
+
+    private String buildStdoutStderrFailCommand(int exitCode) {
+        String osName = System.getProperty("os.name").toLowerCase();
+        if (osName.contains("win")) {
+            return "Write-Output 'stdout-line'; [Console]::Error.WriteLine('stderr-line'); exit " + exitCode;
+        }
+        return "printf 'stdout-line\\n'; printf 'stderr-line\\n' >&2; exit " + exitCode;
     }
 }

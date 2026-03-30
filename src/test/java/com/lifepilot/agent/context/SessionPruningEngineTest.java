@@ -119,6 +119,59 @@ class SessionPruningEngineTest {
                 .contains("原始约");
     }
 
+    @Test
+    void formatCurrentObservationPreview_webSearch结果应提取答案与命中摘要() {
+        var engine = new SessionPruningEngine(buildConfig(), new ObjectMapper());
+
+        String preview = engine.formatCurrentObservationPreview("web.search", true, """
+                {
+                  "provider":"tavily",
+                  "query":"2026 年预算编制流程",
+                  "resultCount":2,
+                  "answer":"预算编制一般需要先明确目标与口径，再汇总部门需求并复核。",
+                  "results":[
+                    {
+                      "title":"预算编制指南",
+                      "snippet":"本文介绍预算编制的前置准备、口径统一和审批流程。",
+                      "url":"https://example.com/budget-guide"
+                    },
+                    {
+                      "title":"年度预算流程说明",
+                      "snippet":"覆盖申报、评审、调整和归档四个阶段。",
+                      "url":"https://example.com/budget-process"
+                    }
+                  ]
+                }
+                """);
+
+        assertThat(preview)
+                .contains("搜索“2026 年预算编制流程”")
+                .contains("命中 2 条")
+                .contains("预算编制指南")
+                .contains("答案:");
+    }
+
+    @Test
+    void formatCurrentObservationPreview_webFetch结果应提取页面与正文摘要() {
+        var engine = new SessionPruningEngine(buildConfig(), new ObjectMapper());
+
+        String preview = engine.formatCurrentObservationPreview("web.fetch", true, """
+                {
+                  "title":"项目周报模板",
+                  "url":"https://example.com/weekly-report",
+                  "content":"本页给出了项目周报的固定结构，包括本周进展、风险阻塞、下周计划和资源需求。为了便于测试，这里继续补充一段较长正文，确保会走到摘要逻辑。",
+                  "contentLength":1280,
+                  "truncated":true
+                }
+                """);
+
+        assertThat(preview)
+                .contains("页面: 项目周报模板")
+                .contains("URL: https://example.com/weekly-report")
+                .contains("正文摘要:")
+                .contains("正文已截断");
+    }
+
     private AgentConfigProperties buildConfig() {
         var config = new AgentConfigProperties();
         config.getContext().setMaxContextTokens(4096);
