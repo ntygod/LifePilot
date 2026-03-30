@@ -74,8 +74,9 @@ public class ReminderDecisionEngine {
                 result.add(new ReminderDecision(
                         decision.candidate(),
                         ReminderAction.SKIP,
+                        ReminderSkipReason.DAILY_LIMIT,
                         decision.nextEvaluationAt(),
-                        "已达到今日主动提醒上限"
+                        ReminderSkipReason.DAILY_LIMIT.label()
                 ));
             } else {
                 result.add(decision);
@@ -94,16 +95,16 @@ public class ReminderDecisionEngine {
                                     ReminderRuntimeContext context,
                                     ReminderPolicyConfig config) {
         if (state.muted()) {
-            return new ReminderDecision(candidate, ReminderAction.SKIP, null, "主题已静默");
+            return skipDecision(candidate, ReminderSkipReason.TOPIC_MUTED);
         }
         if (context.isWithinQuietHours()) {
-            return new ReminderDecision(candidate, ReminderAction.SKIP, null, "当前处于静默时段");
+            return skipDecision(candidate, ReminderSkipReason.QUIET_HOURS);
         }
         if (isWithinCooldown(state, context, config)) {
-            return new ReminderDecision(candidate, ReminderAction.SKIP, null, "同主题仍在冷却期");
+            return skipDecision(candidate, ReminderSkipReason.COOLDOWN);
         }
         if (candidate.finalScore() < config.minFinalScore()) {
-            return new ReminderDecision(candidate, ReminderAction.SKIP, null, "候选得分不足");
+            return skipDecision(candidate, ReminderSkipReason.LOW_SCORE);
         }
         if (candidate.suggestedAt() != null && candidate.suggestedAt().isAfter(context.now())) {
             return new ReminderDecision(candidate, ReminderAction.DEFER_TO_WINDOW,
@@ -115,7 +116,11 @@ public class ReminderDecisionEngine {
         if (candidate.finalScore() >= config.softPushThreshold()) {
             return new ReminderDecision(candidate, ReminderAction.SOFT_PUSH, null, "适合发送轻提醒");
         }
-        return new ReminderDecision(candidate, ReminderAction.SKIP, null, "当前没有足够理由打扰用户");
+        return skipDecision(candidate, ReminderSkipReason.INSUFFICIENT_REASON);
+    }
+
+    private static ReminderDecision skipDecision(ReminderCandidate candidate, ReminderSkipReason skipReason) {
+        return new ReminderDecision(candidate, ReminderAction.SKIP, skipReason, null, skipReason.label());
     }
 
     private boolean isWithinCooldown(ReminderTopicState state,

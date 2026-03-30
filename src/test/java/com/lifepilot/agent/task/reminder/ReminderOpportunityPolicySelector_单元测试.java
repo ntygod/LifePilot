@@ -83,8 +83,9 @@ class ReminderOpportunityPolicySelector_单元测试 {
                         "你最近几次都提过这件事"
                 ),
                 ReminderAction.SKIP,
+                ReminderSkipReason.LOW_SCORE,
                 null,
-                "候选得分不足"
+                ReminderSkipReason.LOW_SCORE.label()
         );
         ReminderDecision refined = selector.refine(
                 baseDecision,

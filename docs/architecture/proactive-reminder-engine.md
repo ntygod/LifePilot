@@ -10,6 +10,22 @@
 
 本文档描述的是最终形态，不代表当前代码已经全部实现。
 
+### 实现进度
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 信号采集（`DefaultReminderSignalCollector`） | ✅ 已实现 | L3/L4/L2/Workspace/通知反馈/topic alias |
+| 候选生成与评分（`ReminderCandidateDetector` / `ReminderScoringModel`） | ✅ 已实现 | 5 类检测器 + 统一评分模型 |
+| 规则决策引擎（`ReminderDecisionEngine`） | ✅ 已实现 | 硬边界 + 评分阈值控制 |
+| Contextual Bandit 策略（`ReminderActionContextualBandit`） | ✅ 已实现 | LinUCB 在线学习，机会层 + 动作层双层 Bandit |
+| LLM 文案生成（`DefaultReminderMessageGenerator`） | ✅ 已实现 | StringTemplate + GenerationRouter |
+| 通知投递与反馈闭环 | ✅ 已实现 | 反馈接口 + 主题静默 + 奖励映射 |
+| 隐式结果推断（`ReminderOutcomeInferenceService`） | ✅ 已实现 | Workspace/Workflow/Trace/Semantic/Conversation 多源推断 |
+| 离线回放与策略评估 | ✅ 已实现 | `ReminderReplayService` + 定时调度器 |
+| 策略调优与版本化 | ✅ 已实现 | `ReminderPolicyTuner` + 安全护栏 + 版本持久化 |
+| 时机预测模型（危险率 / 时序点过程） | ⏳ 待定 | 当前为规则回退，点过程模型为后续迭代方向 |
+| 外部系统信号接入（日历/AFK/Focus） | ⏳ 待定 | 依赖 sync 模块后续对接 |
+
 ## 2. 问题定义
 
 知微中的自主执行需要拆分为三条明确轨道：
@@ -261,7 +277,10 @@ collect signals
 
 ### 8.3 第二层：时机预测
 
-目标态采用“规则回退 + 时机预测模型”的双层机制。
+目标态采用”规则回退 + 时机预测模型”的双层机制。
+
+> **当前实现**：仅使用规则回退层（`ReminderScoringModel.calcTimingScore`），
+> 危险率模型和时序点过程为后续迭代方向。
 
 优先策略：
 
@@ -292,6 +311,10 @@ collect signals
 
 目标态采用 Contextual Bandit，而不是直接用全量 RL。
 
+> **当前实现**：`ReminderActionContextualBandit` 已落地 LinUCB 策略，
+> 分为机会层（`ReminderOpportunityPolicySelector`）和动作层（`ReminderActionPolicySelector`）双层 Bandit。
+> LinTS 为后续可选替换方案。
+
 推荐策略：
 
 - `LinTS` 作为默认策略
@@ -316,14 +339,19 @@ collect signals
 
 建议奖励函数：
 
-| 结果 | reward |
-|------|--------|
-| `acted` | `+1.0` |
-| `snoozed` | `+0.2` |
-| `read` | `+0.1` |
-| `dismissed` | `-0.3` |
-| `not_relevant` | `-1.0` |
-| 未查看且过期 | `-0.2` |
+> **实现说明**：当前 `ReminderRewardModel` 采用 `[0, 1]` 归一化区间，
+> 无反馈时使用被动基线 `0.42` 而非负分，以适配 LinUCB 的非负奖励假设。
+> 下表同时列出目标态语义方向和当前实现值。
+
+| 结果 | 语义方向 | 当前实现值（[0,1]） |
+|------|----------|---------------------|
+| `acted`（显式处理） | 最强正反馈 | `1.0` |
+| `snoozed`（稍后提醒） | 弱正反馈 | `0.72` |
+| `read`（已读未行动） | 中性偏正 | `0.58` |
+| 无反馈（被动基线） | 中性 | `0.42` |
+| `dismissed`（忽略） | 弱负反馈 | `0.18` |
+| `not_relevant`（不相关） | 最强负反馈 | `0.0` |
+| 隐式完成（推断归因） | 视归因置信度而定 | `max(0.42, attributionScore)` |
 
 ### 8.5 第四层：提醒文案生成
 

@@ -116,7 +116,7 @@ public class ReminderOpportunityPolicySelector {
                                ReminderPolicyConfig config,
                                ReminderActionBanditEstimate estimate) {
         ReminderCandidate candidate = baseDecision.candidate();
-        if (!isPromotableSkipReason(baseDecision.reason())) {
+        if (!isPromotableSkip(baseDecision)) {
             return false;
         }
         if (candidate.urgencyScore() < 0.35f && candidate.timingScore() < 0.70f) {
@@ -128,9 +128,8 @@ public class ReminderOpportunityPolicySelector {
         return estimate.optimisticReward() >= promoteThreshold;
     }
 
-    private boolean isPromotableSkipReason(String reason) {
-        return "候选得分不足".equals(reason)
-                || "当前没有足够理由打扰用户".equals(reason);
+    private boolean isPromotableSkip(ReminderDecision decision) {
+        return decision.skipReason() != null && decision.skipReason().isPromotable();
     }
 
     private ReminderActionBanditEstimate betterEstimate(ReminderActionBanditEstimate left,

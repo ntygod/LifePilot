@@ -112,10 +112,12 @@ public class ReminderScoringModel {
         }
 
         float thresholdHours = switch (type) {
-            case PREPARATION_WINDOW -> Math.max(1.0f,
-                    (float) (signal.preparationLeadTime() != null
-                            ? signal.preparationLeadTime()
-                            : Duration.ofHours(2)).toMinutes() / 60.0f);
+            case PREPARATION_WINDOW -> {
+                Duration leadTime = signal.preparationLeadTime() != null
+                        ? signal.preparationLeadTime()
+                        : Duration.ofHours(2);
+                yield Math.max(1.0f, leadTime.toMinutes() / 60.0f);
+            }
             default -> (float) config.dueSoonThresholdHours();
         };
         float remainingHours = Math.max(0.0f, remaining.toMinutes() / 60.0f);

@@ -41,7 +41,7 @@ public class ReminderWakeupScheduler {
      * 启动延后唤醒扫描。
      */
     public void start() {
-        long intervalMs = Math.max(1L, config.getTask().getProactiveReminderWakeupScanIntervalSeconds()) * 1000L;
+        long intervalMs = Math.max(30L, config.getTask().getProactiveReminderWakeupScanIntervalSeconds()) * 1000L;
         long initialDelayMs = Math.min(5000L, intervalMs);
         scheduler.scheduleAtFixedRate(this::scan, initialDelayMs, intervalMs, TimeUnit.MILLISECONDS);
         log.info("主动提醒延后唤醒调度器已启动: interval={}s, batchSize={}",

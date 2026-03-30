@@ -41,7 +41,7 @@ import static org.mockito.Mockito.mock;
  * TaskAutoConfiguration 集成测试 — 验证 Bean 注册和构造函数注入。
  *
  * <p>轻量级测试，手动模拟 Bean 注册流程，验证 TaskAutoConfiguration
- * 注册的所有 Bean 能正确构造且依赖注入链完整。</p>
+ * 和 ReminderAutoConfiguration 注册的所有 Bean 能正确构造且依赖注入链完整。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -62,62 +62,63 @@ class TaskAutoConfiguration_集成测试 {
         org.mockito.Mockito.when(sharedScheduler.heartbeat()).thenReturn(scheduler);
         org.mockito.Mockito.when(sharedScheduler.cleanup()).thenReturn(cleanupScheduler);
 
-        var autoConfig = new TaskAutoConfiguration();
+        var taskConfig = new TaskAutoConfiguration();
+        var reminderConfig = new ReminderAutoConfiguration();
 
-        // 验证 CronTaskRepository Bean
-        CronTaskRepository repository = autoConfig.cronTaskRepository(jdbcTemplate);
+        // ===== TaskAutoConfiguration Bean =====
+        CronTaskRepository repository = taskConfig.cronTaskRepository(jdbcTemplate);
         assertThat(repository).isNotNull();
 
-        // 验证 CronScheduler Bean
-        CronScheduler cronScheduler = autoConfig.cronScheduler(
+        CronScheduler cronScheduler = taskConfig.cronScheduler(
                 sharedScheduler, repository, agentOrchestrator, notificationService, notificationProperties);
         assertThat(cronScheduler).isNotNull();
 
-        ReminderExecutionRepository reminderExecutionRepository = autoConfig.reminderExecutionRepository(jdbcTemplate);
+        // ===== ReminderAutoConfiguration Bean =====
+        ReminderExecutionRepository reminderExecutionRepository = reminderConfig.reminderExecutionRepository(jdbcTemplate);
         assertThat(reminderExecutionRepository).isNotNull();
 
-        ReminderFeedbackRepository reminderFeedbackRepository = autoConfig.reminderFeedbackRepository(jdbcTemplate);
+        ReminderFeedbackRepository reminderFeedbackRepository = reminderConfig.reminderFeedbackRepository(jdbcTemplate);
         assertThat(reminderFeedbackRepository).isNotNull();
 
         ReminderReplayReportRepository reminderReplayReportRepository =
-                autoConfig.reminderReplayReportRepository(jdbcTemplate);
+                reminderConfig.reminderReplayReportRepository(jdbcTemplate);
         assertThat(reminderReplayReportRepository).isNotNull();
 
-        ReminderOutcomeRepository reminderOutcomeRepository = autoConfig.reminderOutcomeRepository(jdbcTemplate);
+        ReminderOutcomeRepository reminderOutcomeRepository = reminderConfig.reminderOutcomeRepository(jdbcTemplate);
         assertThat(reminderOutcomeRepository).isNotNull();
 
         ReminderTopicAliasRepository reminderTopicAliasRepository =
-                autoConfig.reminderTopicAliasRepository(jdbcTemplate);
+                reminderConfig.reminderTopicAliasRepository(jdbcTemplate);
         assertThat(reminderTopicAliasRepository).isNotNull();
 
         ReminderPolicyVersionRepository reminderPolicyVersionRepository =
-                autoConfig.reminderPolicyVersionRepository(jdbcTemplate);
+                reminderConfig.reminderPolicyVersionRepository(jdbcTemplate);
         assertThat(reminderPolicyVersionRepository).isNotNull();
 
         ReminderPolicyVersionService reminderPolicyVersionService =
-                autoConfig.reminderPolicyVersionService(reminderPolicyVersionRepository);
+                reminderConfig.reminderPolicyVersionService(reminderPolicyVersionRepository);
         assertThat(reminderPolicyVersionService).isNotNull();
 
-        ReminderSignalCollector reminderSignalCollector = autoConfig.reminderSignalCollector(
+        ReminderSignalCollector reminderSignalCollector = reminderConfig.reminderSignalCollector(
                 null, null, null, null, mock(NotificationRepository.class),
                 reminderFeedbackRepository, reminderOutcomeRepository, reminderTopicAliasRepository);
         assertThat(reminderSignalCollector).isNotNull();
 
-        ReminderMessageGenerator reminderMessageGenerator = autoConfig.reminderMessageGenerator(
+        ReminderMessageGenerator reminderMessageGenerator = reminderConfig.reminderMessageGenerator(
                 null, null, config);
         assertThat(reminderMessageGenerator).isNotNull();
 
-        ReminderPolicyTuner reminderPolicyTuner = autoConfig.reminderPolicyTuner();
+        ReminderPolicyTuner reminderPolicyTuner = reminderConfig.reminderPolicyTuner();
         assertThat(reminderPolicyTuner).isNotNull();
 
-        ReminderActionPolicySelector reminderActionPolicySelector = autoConfig.reminderActionPolicySelector(config);
+        ReminderActionPolicySelector reminderActionPolicySelector = reminderConfig.reminderActionPolicySelector(config);
         assertThat(reminderActionPolicySelector).isNotNull();
 
         ReminderOpportunityPolicySelector reminderOpportunityPolicySelector =
-                autoConfig.reminderOpportunityPolicySelector(config);
+                reminderConfig.reminderOpportunityPolicySelector(config);
         assertThat(reminderOpportunityPolicySelector).isNotNull();
 
-        ReminderOutcomeInferenceService reminderOutcomeInferenceService = autoConfig.reminderOutcomeInferenceService(
+        ReminderOutcomeInferenceService reminderOutcomeInferenceService = reminderConfig.reminderOutcomeInferenceService(
                 reminderExecutionRepository,
                 reminderOutcomeRepository,
                 null,
@@ -129,7 +130,7 @@ class TaskAutoConfiguration_集成测试 {
         );
         assertThat(reminderOutcomeInferenceService).isNotNull();
 
-        ReminderReplayService reminderReplayService = autoConfig.reminderReplayService(
+        ReminderReplayService reminderReplayService = reminderConfig.reminderReplayService(
                 reminderExecutionRepository,
                 reminderOpportunityPolicySelector,
                 reminderActionPolicySelector,
@@ -137,7 +138,7 @@ class TaskAutoConfiguration_集成测试 {
         );
         assertThat(reminderReplayService).isNotNull();
 
-        ProactiveReminderService proactiveReminderService = autoConfig.proactiveReminderService(
+        ProactiveReminderService proactiveReminderService = reminderConfig.proactiveReminderService(
                 reminderSignalCollector,
                 new ReminderDecisionEngine(),
                 reminderPolicyTuner,
@@ -156,12 +157,12 @@ class TaskAutoConfiguration_集成测试 {
         );
         assertThat(proactiveReminderService).isNotNull();
 
-        ReminderWakeupScheduler reminderWakeupScheduler = autoConfig.reminderWakeupScheduler(
+        ReminderWakeupScheduler reminderWakeupScheduler = reminderConfig.reminderWakeupScheduler(
                 sharedScheduler, reminderExecutionRepository, proactiveReminderService, config);
         assertThat(reminderWakeupScheduler).isNotNull();
 
         ReminderReplayEvaluationScheduler reminderReplayEvaluationScheduler =
-                autoConfig.reminderReplayEvaluationScheduler(
+                reminderConfig.reminderReplayEvaluationScheduler(
                         sharedScheduler,
                         reminderExecutionRepository,
                         reminderReplayReportRepository,
@@ -171,7 +172,7 @@ class TaskAutoConfiguration_集成测试 {
                 );
         assertThat(reminderReplayEvaluationScheduler).isNotNull();
 
-        ReminderRetentionScheduler reminderRetentionScheduler = autoConfig.reminderRetentionScheduler(
+        ReminderRetentionScheduler reminderRetentionScheduler = reminderConfig.reminderRetentionScheduler(
                 sharedScheduler,
                 reminderExecutionRepository,
                 reminderFeedbackRepository,
@@ -181,8 +182,8 @@ class TaskAutoConfiguration_集成测试 {
         );
         assertThat(reminderRetentionScheduler).isNotNull();
 
-        // 验证 HeartbeatRunner Bean
-        HeartbeatRunner heartbeatRunner = autoConfig.heartbeatRunner(
+        // ===== HeartbeatRunner Bean =====
+        HeartbeatRunner heartbeatRunner = taskConfig.heartbeatRunner(
                 sharedScheduler, config, null);
         assertThat(heartbeatRunner).isNotNull();
 

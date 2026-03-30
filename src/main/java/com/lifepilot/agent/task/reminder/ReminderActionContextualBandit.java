@@ -218,7 +218,8 @@ public class ReminderActionContextualBandit {
         private void observe(double[] x, float reward) {
             double[] invTimesX = multiply(inverse, x);
             double denominator = 1.0d + dot(x, invTimesX);
-            if (denominator <= 0.0d) {
+            if (denominator <= 1e-12d) {
+                // 数值退化：跳过本次样本，不更新模型也不计数
                 return;
             }
             for (int i = 0; i < inverse.length; i++) {

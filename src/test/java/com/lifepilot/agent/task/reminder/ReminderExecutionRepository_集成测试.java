@@ -773,7 +773,7 @@ class ReminderExecutionRepository_集成测试 {
                 "sig-promoted",
                 "COMMITMENT_GAP",
                 "SOFT_PUSH",
-                "候选得分不足；结合近期类似场景反馈，补发轻提醒",
+                ReminderSkipReason.LOW_SCORE.label() + "；结合近期类似场景反馈，补发轻提醒",
                 "最近反复提到",
                 0.53f,
                 0.62f,

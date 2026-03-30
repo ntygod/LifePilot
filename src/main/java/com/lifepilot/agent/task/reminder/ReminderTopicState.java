@@ -49,6 +49,17 @@ public record ReminderTopicState(
      * 估算该主题的用户适配度。
      *
      * <p>正反馈权重大于弱反馈，负反馈对得分压制更强。</p>
+     * <p>权重设计依据：
+     * <ul>
+     *   <li>{@code acted × 5}：用户主动处理是最强正信号</li>
+     *   <li>{@code snoozed × 2}：稍后提醒说明内容有价值但时机不对，算弱正反馈</li>
+     *   <li>{@code read × 1}：已读但未行动，仅作为基线正信号</li>
+     *   <li>{@code dismissed × 3}：主动忽略是中等负信号</li>
+     *   <li>{@code notRelevant × 5}：明确表示不相关，与 acted 对称的最强负信号</li>
+     * </ul>
+     * </p>
+     * <p>公式采用 Laplace 平滑 {@code (positive + 1) / (positive + negative + 2)}，
+     * 无反馈时回退到先验 0.5。</p>
      */
     public float userFitScore() {
         int positive = actedCount30d * 5 + snoozedCount30d * 2 + readCount30d;

@@ -309,7 +309,7 @@ class ProactiveReminderService_单元测试 {
                 .thenReturn(0L);
         when(signalCollector.collect(eq("default"), any())).thenReturn(List.of(topic));
         when(mockedEngine.evaluate(any(), any(), any())).thenReturn(List.of(
-                new ReminderDecision(lowScoreCandidate, ReminderAction.SKIP, null, "候选得分不足")
+                new ReminderDecision(lowScoreCandidate, ReminderAction.SKIP, ReminderSkipReason.LOW_SCORE, null, ReminderSkipReason.LOW_SCORE.label())
         ));
         when(executionRepository.summarizeActionPerformanceByUserIdSince(eq("default"), any()))
                 .thenReturn(List.of());
