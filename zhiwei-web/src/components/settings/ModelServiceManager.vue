@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
-import { modelServiceApi, type CreateModelServiceRequest, type ModelService } from '@/api/client'
+import { ArrowLeft, Trash2 } from 'lucide-vue-next'
+import {
+  modelServiceApi,
+  type CreateModelServiceRequest,
+  type ModelService,
+  type ModelServiceTemplate,
+} from '@/api/client'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useUiStore } from '@/stores/ui'
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +16,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -26,156 +31,125 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  availableVendorsForKind,
+  buildEmptyModelServiceRequest,
+  buildSuggestedServiceId,
+  CUSTOM_MODEL_VALUE,
+  defaultModelForKind,
+  findVendorTemplate,
+  GENERATION_CAPABILITY_OPTIONS,
+  GENERATION_SCENE_OPTIONS,
+  inferVendorKey,
+  KIND_OPTIONS,
+  modelOptionsForKind,
+  type ServiceKind,
+} from './modelServiceCatalog'
 
-type SelectValue = AcceptableValue | undefined
+type UiSelectValue = AcceptableValue | undefined
+type DetailMode = 'create' | 'edit' | null
+
+const props = withDefaults(defineProps<{
+  initialMode?: 'create' | 'edit'
+  initialServiceId?: string | null
+}>(), {
+  initialMode: undefined,
+  initialServiceId: null,
+})
 
 const emit = defineEmits<{ close: [] }>()
 const uiStore = useUiStore()
 
 const services = ref<ModelService[]>([])
-const loading = ref(false)
-const showForm = ref(false)
-const showDeleteConfirm = ref(false)
+const templates = ref<ModelServiceTemplate[]>([])
+const loading = ref(true)
+const detailMode = ref<DetailMode>(null)
 const deletingServiceId = ref<string | null>(null)
-const isEditing = ref(false)
+const showDeleteConfirm = ref(false)
+const vendorKey = ref<string>('openai')
+const selectedModelValue = ref<string>(CUSTOM_MODEL_VALUE)
+const customModelName = ref('')
+const serviceIdCustomized = ref(false)
+const displayNameCustomized = ref(false)
 
-const kindOptions = [
-  { value: 'GENERATION', label: '生成服务' },
-  { value: 'EMBEDDING', label: '向量服务' },
-  { value: 'RERANK', label: '精排服务' },
-]
-
-const typeOptions = [
-  { value: 'OLLAMA', label: 'Ollama（本地）' },
-  { value: 'DEEPSEEK', label: 'DeepSeek' },
-  { value: 'QWEN', label: 'Qwen' },
-  { value: 'GLM', label: 'GLM' },
-  { value: 'WENXIN', label: 'Wenxin' },
-  { value: 'TEI', label: 'TEI（本地推理）' },
-  { value: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容' },
-  { value: 'ANTHROPIC', label: 'Anthropic' },
-]
-
-const generationCapabilityOptions = [
-  { value: 'CHAT', label: '对话' },
-  { value: 'STRUCTURED_OUTPUT', label: '结构化输出' },
-  { value: 'FUNCTION_CALLING', label: '函数调用' },
-  { value: 'STREAMING', label: '流式输出' },
-  { value: 'VISION', label: '视觉理解' },
-  { value: 'NATIVE_AUDIO', label: '原生音频' },
-  { value: 'NATIVE_VIDEO', label: '原生视频' },
-]
-
-const generationSceneOptions = [
-  { value: 'chat', label: '通用对话' },
-  { value: 'agent_react', label: 'Agent 推理' },
-  { value: 'knowledge_extraction', label: '知识提取' },
-  { value: 'memory_compression', label: '记忆压缩' },
-  { value: 'skill_generation', label: '技能生成' },
-]
-
-const formData = ref<CreateModelServiceRequest>({
-  id: '',
-  kind: 'GENERATION',
-  type: 'OPENAI_COMPATIBLE',
-  apiUrl: '',
-  apiKey: '',
-  modelName: '',
-  timeoutSeconds: 30,
-  priority: 0,
-  scenes: ['chat', 'agent_react'],
-  capabilities: ['CHAT'],
-  enabled: true,
-  costPerInputToken: 0,
-  costPerOutputToken: 0,
-  maxContextWindow: 131072,
-  embeddingDimension: undefined,
-  supportsStreaming: true,
-  displayName: '',
-  description: '',
-})
-
+const formData = ref<CreateModelServiceRequest>(buildEmptyModelServiceRequest())
 const errors = ref<Record<string, string>>({})
 
-const deleteConfirmMessage = computed(() => {
-  if (!deletingServiceId.value) return ''
-  return `确认删除模型服务“${deletingServiceId.value}”吗？此操作不可恢复。`
-})
+const kindOptions = KIND_OPTIONS
+const generationCapabilityOptions = GENERATION_CAPABILITY_OPTIONS
+const generationSceneOptions = GENERATION_SCENE_OPTIONS
 
-const groupedServices = computed(() => {
-  const groups = new Map<string, ModelService[]>()
-  for (const option of kindOptions) {
-    groups.set(option.value, [])
-  }
-  for (const service of services.value) {
-    const bucket = groups.get(service.kind) ?? []
-    bucket.push(service)
-    groups.set(service.kind, bucket)
-  }
-  return kindOptions.map(option => ({
-    ...option,
-    items: (groups.get(option.value) ?? []).sort((left, right) => {
-      if ((left.priority ?? 0) !== (right.priority ?? 0)) {
-        return (left.priority ?? 0) - (right.priority ?? 0)
-      }
-      return left.id.localeCompare(right.id)
-    }),
-  }))
-})
+const activeService = computed(() => (
+  detailMode.value === 'edit'
+    ? services.value.find(service => service.id === formData.value.id)
+    : null
+))
 
+const isEditing = computed(() => detailMode.value === 'edit')
 const isGenerationKind = computed(() => formData.value.kind === 'GENERATION')
 const isEmbeddingKind = computed(() => formData.value.kind === 'EMBEDDING')
-const apiUrlPlaceholder = computed(() => {
-  if (formData.value.type === 'OPENAI_COMPATIBLE') {
-    return 'https://api.example.com'
-  }
-  if (formData.value.type === 'ANTHROPIC') {
-    return 'https://api.anthropic.com'
-  }
-  return 'https://api.example.com/v1'
+const vendorOptions = computed(() => availableVendorsForKind(templates.value, formData.value.kind as ServiceKind))
+const currentVendorTemplate = computed(() => (
+  findVendorTemplate(templates.value, vendorKey.value) ?? vendorOptions.value[0]
+))
+const modelOptions = computed(() => (
+  modelOptionsForKind(currentVendorTemplate.value, formData.value.kind as ServiceKind)
+))
+const usingCustomModel = computed(() => (
+  selectedModelValue.value === CUSTOM_MODEL_VALUE || modelOptions.value.length === 0
+))
+const apiUrlPlaceholder = computed(() => (
+  currentVendorTemplate.value?.defaultApiUrl ?? 'https://api.example.com/v1'
+))
+const dialogTitle = computed(() => {
+  if (detailMode.value === 'create') return '新建模型服务'
+  if (detailMode.value === 'edit') return formData.value.displayName || formData.value.id || '模型服务详情'
+  return '模型服务'
+})
+const deleteConfirmMessage = computed(() => {
+  if (!deletingServiceId.value) return ''
+  const service = services.value.find(item => item.id === deletingServiceId.value)
+  return `确认删除模型服务“${service?.displayName || deletingServiceId.value}”吗？此操作不可恢复。`
 })
 
-function normalizeSelectValue(value: SelectValue): string {
+function normalizeSelectValue(value: UiSelectValue): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number') return String(value)
   return ''
 }
 
-function resetForm() {
-  formData.value = {
-    id: '',
-    kind: 'GENERATION',
-    type: 'OPENAI_COMPATIBLE',
-    apiUrl: '',
-    apiKey: '',
-    modelName: '',
-    timeoutSeconds: 30,
-    priority: 0,
-    scenes: ['chat', 'agent_react'],
-    capabilities: ['CHAT'],
-    enabled: true,
-    costPerInputToken: 0,
-    costPerOutputToken: 0,
-    maxContextWindow: 131072,
-    embeddingDimension: undefined,
-    supportsStreaming: true,
-    displayName: '',
-    description: '',
+function defaultVendorKeyForKind(kind: ServiceKind): string | undefined {
+  return availableVendorsForKind(templates.value, kind)[0]?.vendorKey ?? templates.value[0]?.vendorKey
+}
+
+function currentModelName(): string {
+  return usingCustomModel.value ? customModelName.value.trim() : selectedModelValue.value.trim()
+}
+
+function syncSuggestedFields() {
+  const modelName = currentModelName()
+  const template = currentVendorTemplate.value
+  if (!template) return
+
+  if (!displayNameCustomized.value) {
+    formData.value.displayName = modelName ? `${template.displayName} / ${modelName}` : template.displayName
   }
-  errors.value = {}
+  if (!isEditing.value && !serviceIdCustomized.value) {
+    formData.value.id = buildSuggestedServiceId(formData.value.kind as ServiceKind, template.vendorKey, modelName)
+  }
 }
 
 function normalizeFormForKind() {
   if (formData.value.kind === 'GENERATION') {
+    const template = currentVendorTemplate.value
     formData.value.capabilities = formData.value.capabilities?.length
       ? formData.value.capabilities
-      : ['CHAT']
+      : [...(template?.defaultCapabilities ?? ['CHAT'])]
     formData.value.scenes = formData.value.scenes?.length
       ? formData.value.scenes
-      : ['chat', 'agent_react']
-    if (formData.value.supportsStreaming == null) {
-      formData.value.supportsStreaming = formData.value.capabilities.includes('STREAMING')
-    }
+      : [...(template?.defaultScenes ?? ['chat', 'agent_react'])]
+    formData.value.supportsStreaming = Boolean(formData.value.supportsStreaming)
+    formData.value.embeddingDimension = undefined
     return
   }
 
@@ -183,39 +157,118 @@ function normalizeFormForKind() {
   formData.value.capabilities = []
   formData.value.supportsStreaming = false
 
-  if (formData.value.kind === 'RERANK') {
+  if (formData.value.kind !== 'EMBEDDING') {
     formData.value.embeddingDimension = undefined
   }
 }
 
-async function loadServices() {
-  loading.value = true
-  try {
-    services.value = await modelServiceApi.listServices()
-  } catch (error) {
-    console.error('加载模型服务失败:', error)
-    uiStore.showToast('error', '加载模型服务失败')
-  } finally {
-    loading.value = false
+function applyPresetDefaults() {
+  const template = currentVendorTemplate.value
+  if (!template) return
+
+  formData.value.vendorKey = template.vendorKey
+  formData.value.type = template.providerType
+  if (!formData.value.apiUrl || !isEditing.value) {
+    formData.value.apiUrl = template.defaultApiUrl
+  }
+  if (!formData.value.timeoutSeconds || !isEditing.value) {
+    formData.value.timeoutSeconds = template.defaultTimeoutSeconds
+  }
+
+  const preset = modelOptions.value.find(option => option.value === selectedModelValue.value)
+  if (preset && !usingCustomModel.value) {
+    formData.value.modelName = preset.value
+    if (formData.value.kind === 'GENERATION') {
+      formData.value.capabilities = [...(preset.capabilities?.length ? preset.capabilities : template.defaultCapabilities)]
+      formData.value.scenes = [...(preset.scenes?.length ? preset.scenes : template.defaultScenes)]
+      formData.value.supportsStreaming = preset.supportsStreaming ?? template.defaultSupportsStreaming ?? false
+      if (preset.maxContextWindow != null) {
+        formData.value.maxContextWindow = preset.maxContextWindow
+      }
+    }
+    if (formData.value.kind === 'EMBEDDING' && preset.embeddingDimension != null) {
+      formData.value.embeddingDimension = preset.embeddingDimension
+    }
+  } else if (usingCustomModel.value) {
+    formData.value.modelName = customModelName.value.trim()
+    if (formData.value.kind === 'GENERATION') {
+      formData.value.capabilities = formData.value.capabilities?.length
+        ? formData.value.capabilities
+        : [...template.defaultCapabilities]
+      formData.value.scenes = formData.value.scenes?.length
+        ? formData.value.scenes
+        : [...template.defaultScenes]
+      formData.value.supportsStreaming = formData.value.supportsStreaming ?? template.defaultSupportsStreaming ?? false
+      if (!formData.value.maxContextWindow && template.defaultMaxContextWindow != null) {
+        formData.value.maxContextWindow = template.defaultMaxContextWindow
+      }
+    }
+  }
+
+  normalizeFormForKind()
+  syncSuggestedFields()
+}
+
+function applyVendorTemplate(nextVendorKey: string, keepCurrentModel = false) {
+  vendorKey.value = nextVendorKey
+  const template = currentVendorTemplate.value
+  if (!template) return
+
+  formData.value.vendorKey = template.vendorKey
+  formData.value.type = template.providerType
+  formData.value.apiUrl = template.defaultApiUrl
+  formData.value.timeoutSeconds = template.defaultTimeoutSeconds
+
+  const presetOptions = modelOptionsForKind(template, formData.value.kind as ServiceKind)
+  const currentModel = keepCurrentModel ? currentModelName() : ''
+  const matchedPreset = presetOptions.find(option => option.value === currentModel)
+  const fallbackPreset = matchedPreset ?? defaultModelForKind(template, formData.value.kind as ServiceKind)
+
+  if (fallbackPreset) {
+    selectedModelValue.value = fallbackPreset.value
+    customModelName.value = ''
+  } else {
+    selectedModelValue.value = CUSTOM_MODEL_VALUE
+    customModelName.value = keepCurrentModel ? currentModel : ''
+  }
+
+  applyPresetDefaults()
+}
+
+function resetForm() {
+  formData.value = buildEmptyModelServiceRequest()
+  errors.value = {}
+  serviceIdCustomized.value = false
+  displayNameCustomized.value = false
+  selectedModelValue.value = CUSTOM_MODEL_VALUE
+  customModelName.value = ''
+  vendorKey.value = defaultVendorKeyForKind('GENERATION') ?? 'custom-openai'
+  if (findVendorTemplate(templates.value, vendorKey.value)) {
+    applyVendorTemplate(vendorKey.value)
   }
 }
 
-function openCreateForm() {
-  isEditing.value = false
+function enterCreateView() {
+  if (!templates.value.length) {
+    uiStore.showToast('error', '模型服务模板未加载完成')
+    return
+  }
+  detailMode.value = 'create'
   resetForm()
-  showForm.value = true
 }
 
-function openEditForm(service: ModelService) {
-  isEditing.value = true
+function enterEditView(service: ModelService) {
+  detailMode.value = 'edit'
+  vendorKey.value = inferVendorKey(service)
   formData.value = {
     id: service.id,
     kind: service.kind,
     type: service.type,
+    vendorKey: vendorKey.value,
     apiUrl: service.apiUrl ?? '',
     apiKey: '',
     modelName: service.modelName,
-    timeoutSeconds: service.timeoutSeconds ?? 30,
+    timeoutSeconds: service.timeoutSeconds ?? 60,
     priority: service.priority ?? 0,
     scenes: [...(service.scenes ?? [])],
     capabilities: [...(service.capabilities ?? [])],
@@ -228,21 +281,70 @@ function openEditForm(service: ModelService) {
     displayName: service.displayName ?? '',
     description: service.description ?? '',
   }
-  normalizeFormForKind()
+  const matchedPreset = modelOptionsForKind(findVendorTemplate(templates.value, vendorKey.value), service.kind as ServiceKind)
+    .find(option => option.value === service.modelName)
+  selectedModelValue.value = matchedPreset?.value ?? CUSTOM_MODEL_VALUE
+  customModelName.value = matchedPreset ? '' : service.modelName
+  serviceIdCustomized.value = true
+  displayNameCustomized.value = true
   errors.value = {}
-  showForm.value = true
+}
+
+function closeManager() {
+  errors.value = {}
+  deletingServiceId.value = null
+  emit('close')
+}
+
+async function loadServices() {
+  services.value = await modelServiceApi.listServices()
+}
+
+async function loadInitialData() {
+  try {
+    const [loadedServices, loadedTemplates] = await Promise.all([
+      modelServiceApi.listServices(),
+      modelServiceApi.listTemplates(),
+    ])
+    services.value = loadedServices
+    templates.value = loadedTemplates
+    if (props.initialMode === 'create') {
+      enterCreateView()
+      return
+    }
+    if (props.initialMode === 'edit' && props.initialServiceId) {
+      const targetService = loadedServices.find(service => service.id === props.initialServiceId)
+      if (targetService) {
+        enterEditView(targetService)
+        return
+      }
+      uiStore.showToast('error', '未找到目标模型服务')
+      emit('close')
+      return
+    }
+    enterCreateView()
+  } catch (error) {
+    console.error('加载模型服务配置失败:', error)
+    uiStore.showToast('error', '加载模型服务配置失败')
+    emit('close')
+  } finally {
+    loading.value = false
+  }
 }
 
 function validate() {
   errors.value = {}
 
-  if (!formData.value.id.trim()) {
+  formData.value.modelName = currentModelName()
+  normalizeFormForKind()
+
+  if (!formData.value.id?.trim()) {
     errors.value.id = '服务 ID 不能为空。'
   }
-  if (!formData.value.apiUrl.trim()) {
+  if (!formData.value.apiUrl?.trim()) {
     errors.value.apiUrl = 'API 地址不能为空。'
   }
-  if (!formData.value.modelName.trim()) {
+  if (!formData.value.modelName?.trim()) {
     errors.value.modelName = '模型名称不能为空。'
   }
   if ((formData.value.timeoutSeconds ?? 0) <= 0) {
@@ -256,12 +358,12 @@ function validate() {
 }
 
 async function saveService() {
-  normalizeFormForKind()
+  applyPresetDefaults()
   if (!validate()) return
 
   loading.value = true
   try {
-    const payload = { ...formData.value }
+    const payload: CreateModelServiceRequest = { ...formData.value }
     if (isEditing.value && !payload.apiKey) {
       delete payload.apiKey
     }
@@ -271,26 +373,11 @@ async function saveService() {
     } else {
       await modelServiceApi.createService(payload)
     }
-
-    await loadServices()
-    showForm.value = false
-    uiStore.showToast('success', '模型服务已保存')
+    uiStore.showToast('success', isEditing.value ? '模型服务已更新' : '模型服务已创建')
+    closeManager()
   } catch (error: any) {
     console.error('保存模型服务失败:', error)
     errors.value._general = error?.message || '保存模型服务失败。'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function toggleEnabled(service: ModelService) {
-  loading.value = true
-  try {
-    await modelServiceApi.updateService(service.id, { enabled: !service.enabled })
-    await loadServices()
-  } catch (error) {
-    console.error('更新模型服务状态失败:', error)
-    uiStore.showToast('error', '更新模型服务状态失败')
   } finally {
     loading.value = false
   }
@@ -309,6 +396,9 @@ async function handleDelete() {
     await modelServiceApi.deleteService(deletingServiceId.value)
     await loadServices()
     uiStore.showToast('success', '模型服务已删除')
+    if (formData.value.id === deletingServiceId.value) {
+      closeManager()
+    }
   } catch (error: any) {
     console.error('删除模型服务失败:', error)
     uiStore.showToast('error', error?.message || '删除模型服务失败')
@@ -319,13 +409,27 @@ async function handleDelete() {
   }
 }
 
-function updateKind(value: SelectValue) {
-  formData.value.kind = normalizeSelectValue(value) || 'GENERATION'
-  normalizeFormForKind()
+function updateKind(value: UiSelectValue) {
+  formData.value.kind = (normalizeSelectValue(value) || 'GENERATION') as ServiceKind
+  const supportedVendors = availableVendorsForKind(templates.value, formData.value.kind as ServiceKind)
+  const nextVendor = supportedVendors.find(option => option.vendorKey === vendorKey.value)?.vendorKey ?? supportedVendors[0]?.vendorKey
+  if (nextVendor) {
+    applyVendorTemplate(nextVendor)
+  }
 }
 
-function updateType(value: SelectValue) {
-  formData.value.type = normalizeSelectValue(value) || 'OPENAI_COMPATIBLE'
+function updateVendor(value: UiSelectValue) {
+  const nextVendor = normalizeSelectValue(value)
+  if (!nextVendor) return
+  applyVendorTemplate(nextVendor)
+}
+
+function updateModel(value: UiSelectValue) {
+  selectedModelValue.value = normalizeSelectValue(value) || CUSTOM_MODEL_VALUE
+  if (selectedModelValue.value !== CUSTOM_MODEL_VALUE) {
+    customModelName.value = ''
+  }
+  applyPresetDefaults()
 }
 
 function updateEnabled(value: boolean | 'indeterminate') {
@@ -358,272 +462,289 @@ function toggleCapability(capability: string) {
   formData.value.capabilities = capabilities
 }
 
-function kindLabel(kind: string) {
-  return kindOptions.find(option => option.value === kind)?.label ?? kind
+function handleCustomModelInput(value: string | number) {
+  customModelName.value = String(value)
+  formData.value.modelName = String(value).trim()
+  syncSuggestedFields()
+}
+
+function handleDisplayNameInput(value: string | number) {
+  displayNameCustomized.value = true
+  formData.value.displayName = String(value)
+}
+
+function handleServiceIdInput(value: string | number) {
+  serviceIdCustomized.value = true
+  formData.value.id = String(value)
 }
 
 onMounted(() => {
-  void loadServices()
+  void loadInitialData()
 })
 </script>
 
 <template>
   <Dialog :open="true" @update:open="(value: boolean) => { if (!value) emit('close') }">
-    <DialogContent class="flex max-h-[90vh] max-w-6xl flex-col overflow-hidden">
+    <DialogContent class="flex max-h-[92vh] w-[min(1180px,calc(100vw-2rem))] max-w-[min(1180px,calc(100vw-2rem))] flex-col overflow-hidden sm:max-w-[min(1180px,calc(100vw-3rem))]">
       <DialogHeader>
-        <DialogTitle>模型服务管理</DialogTitle>
-        <DialogDescription>
-          统一管理生成、向量和精排服务。服务保存后会立即参与运行时路由。
-        </DialogDescription>
+        <DialogTitle>{{ dialogTitle }}</DialogTitle>
       </DialogHeader>
 
       <div class="flex-1 overflow-y-auto px-1 py-2">
-        <div class="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <h3 class="text-lg font-medium text-foreground">已注册服务</h3>
-            <p class="text-sm text-muted-foreground">
-              按服务类型分组展示，支持直接启用、编辑和删除。
-            </p>
-          </div>
-          <Button @click="openCreateForm">
-            新建模型服务
-          </Button>
+        <div
+          v-if="loading && detailMode === null"
+          class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/60 px-5 py-10 text-sm text-muted-foreground"
+        >
+          正在加载模型服务配置...
         </div>
 
-        <div class="space-y-6">
-          <section
-            v-for="group in groupedServices"
-            :key="group.value"
-            class="space-y-3"
-          >
-            <div class="flex items-center gap-2">
-              <h4 class="text-sm font-semibold text-foreground">{{ group.label }}</h4>
-              <Badge variant="outline">{{ group.items.length }}</Badge>
-            </div>
-
-            <div v-if="group.items.length > 0" class="space-y-3">
-              <article
-                v-for="service in group.items"
-                :key="service.id"
-                class="flex flex-col gap-4 rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/72 p-4 lg:flex-row lg:items-center lg:justify-between"
-              >
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium text-foreground">
-                      {{ service.displayName || service.id }}
-                    </span>
-                    <Badge variant="outline">{{ kindLabel(service.kind) }}</Badge>
-                    <Badge :variant="service.enabled ? 'default' : 'secondary'">
-                      {{ service.enabled ? '已启用' : '已禁用' }}
-                    </Badge>
-                  </div>
-                  <p class="mt-1 text-sm text-muted-foreground">
-                    {{ service.type }} / {{ service.modelName }}
-                  </p>
-                  <p v-if="service.description" class="mt-2 text-sm text-muted-foreground">
-                    {{ service.description }}
-                  </p>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-2">
-                  <Button variant="ghost" size="sm" @click="openEditForm(service)">
-                    编辑
-                  </Button>
-                  <Button variant="outline" size="sm" @click="toggleEnabled(service)">
-                    {{ service.enabled ? '禁用' : '启用' }}
-                  </Button>
-                  <Button variant="destructive" size="sm" @click="confirmDelete(service)">
-                    删除
-                  </Button>
-                </div>
-              </article>
-            </div>
-
-            <div
-              v-else
-              class="rounded-[calc(var(--radius)+8px)] border border-dashed border-border/70 bg-background/60 px-5 py-6 text-sm text-muted-foreground"
+        <template v-else>
+          <div class="mb-5 flex items-center justify-between gap-3">
+            <Button variant="ghost" class="gap-2" @click="closeManager">
+              <ArrowLeft class="size-4" />
+              返回模型服务页
+            </Button>
+            <Button
+              v-if="isEditing && activeService"
+              variant="destructive"
+              size="sm"
+              class="gap-2"
+              @click="confirmDelete(activeService)"
             >
-              当前没有{{ group.label }}。
+              <Trash2 class="size-4" />
+              删除服务
+            </Button>
+          </div>
+
+          <form class="space-y-4" @submit.prevent="saveService">
+            <div v-if="errors._general" class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {{ errors._general }}
             </div>
-          </section>
-        </div>
+
+            <div class="grid gap-4 2xl:grid-cols-[minmax(0,1.65fr)_minmax(360px,1fr)]">
+              <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{{ currentVendorTemplate?.displayName || '未选择模板' }}</Badge>
+                    <Badge variant="secondary">{{ currentVendorTemplate?.providerType || formData.type }}</Badge>
+                  </div>
+                  <div class="flex items-center gap-3 rounded-full border border-border/70 bg-muted/20 px-3 py-2">
+                    <span class="text-sm text-foreground">启用服务</span>
+                    <Switch :model-value="formData.enabled" @update:model-value="updateEnabled" />
+                  </div>
+                </div>
+
+                <div class="mt-4 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                  <div class="space-y-2">
+                    <Label>服务类型</Label>
+                    <Select :model-value="formData.kind" @update:model-value="updateKind">
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择服务类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="option in kindOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label>厂商模板</Label>
+                    <Select :model-value="vendorKey" @update:model-value="updateVendor">
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择厂商模板" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="option in vendorOptions" :key="option.vendorKey" :value="option.vendorKey">
+                          {{ option.displayName }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label>模型</Label>
+                    <Select :model-value="selectedModelValue" @update:model-value="updateModel">
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          v-for="option in modelOptions"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </SelectItem>
+                        <SelectItem :value="CUSTOM_MODEL_VALUE">自定义输入</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div v-if="usingCustomModel" class="space-y-2 md:col-span-2 2xl:col-span-2">
+                    <Label>自定义模型名</Label>
+                    <Input
+                      :model-value="customModelName"
+                      placeholder="输入模型名称"
+                      :class="{ 'border-destructive': errors.modelName }"
+                      @update:model-value="handleCustomModelInput"
+                    />
+                    <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label>显示名称</Label>
+                    <Input
+                      :model-value="formData.displayName"
+                      placeholder="例如：OpenAI / 主力"
+                      @update:model-value="handleDisplayNameInput"
+                    />
+                  </div>
+
+                  <div class="space-y-2 md:col-span-2">
+                    <Label>API 地址</Label>
+                    <Input
+                      v-model="formData.apiUrl"
+                      :placeholder="apiUrlPlaceholder"
+                      :class="{ 'border-destructive': errors.apiUrl }"
+                    />
+                    <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
+                  </div>
+
+                  <div class="space-y-2 md:col-span-2 2xl:col-span-3">
+                    <Label>API 密钥</Label>
+                    <Input
+                      v-model="formData.apiKey"
+                      type="password"
+                      :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <div class="grid content-start gap-4">
+                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="space-y-2 sm:col-span-2">
+                      <Label>服务 ID</Label>
+                      <Input
+                        :model-value="formData.id"
+                        placeholder="自动生成，可手动调整"
+                        :readonly="isEditing"
+                        :class="{ 'border-destructive': errors.id }"
+                        @update:model-value="value => { if (!isEditing) handleServiceIdInput(value) }"
+                      />
+                      <p v-if="errors.id" class="text-sm text-destructive">{{ errors.id }}</p>
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label>超时时间（秒）</Label>
+                      <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
+                      <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label>优先级</Label>
+                      <Input v-model.number="formData.priority" type="number" />
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label>最大上下文窗口</Label>
+                      <Input v-model.number="formData.maxContextWindow" type="number" :min="0" />
+                    </div>
+
+                    <div v-if="isEmbeddingKind" class="space-y-2">
+                      <Label>向量维度</Label>
+                      <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
+                    </div>
+                  </div>
+                </section>
+
+                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="space-y-2">
+                      <Label>输入成本（每百万 token）</Label>
+                      <Input v-model.number="formData.costPerInputToken" type="number" :min="0" />
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label>输出成本（每百万 token）</Label>
+                      <Input v-model.number="formData.costPerOutputToken" type="number" :min="0" />
+                    </div>
+
+                    <div class="space-y-2 sm:col-span-2">
+                      <Label>描述</Label>
+                      <Textarea
+                        v-model="formData.description"
+                        rows="4"
+                        placeholder="补充用途或备注"
+                      />
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <section v-if="isGenerationKind" class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+              <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
+                <div class="space-y-2">
+                  <Label>生成能力</Label>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <label
+                      v-for="option in generationCapabilityOptions"
+                      :key="option.value"
+                      class="flex min-h-11 items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+                    >
+                      <Checkbox
+                        :model-value="formData.capabilities?.includes(option.value)"
+                        @update:model-value="() => toggleCapability(option.value)"
+                      />
+                      <span class="text-sm">{{ option.label }}</span>
+                    </label>
+                  </div>
+                  <p v-if="errors.capabilities" class="text-sm text-destructive">{{ errors.capabilities }}</p>
+                </div>
+
+                <div class="space-y-2">
+                  <Label>支持场景</Label>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <label
+                      v-for="option in generationSceneOptions"
+                      :key="option.value"
+                      class="flex min-h-11 items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+                    >
+                      <Checkbox
+                        :model-value="formData.scenes?.includes(option.value)"
+                        @update:model-value="() => toggleScene(option.value)"
+                      />
+                      <span class="text-sm">{{ option.label }}</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <Label>流式输出</Label>
+                  <label class="flex min-h-11 items-center gap-3 rounded-md border border-border/60 px-3 py-2">
+                    <Checkbox
+                      :model-value="formData.supportsStreaming"
+                      @update:model-value="updateSupportsStreaming"
+                    />
+                    <span class="text-sm text-foreground">支持流式输出</span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" @click="closeManager">返回模型服务页</Button>
+              <Button type="submit" :disabled="loading">
+                {{ isEditing ? '保存修改' : '创建服务' }}
+              </Button>
+            </DialogFooter>
+          </form>
+        </template>
       </div>
-    </DialogContent>
-  </Dialog>
-
-  <Dialog v-model:open="showForm">
-    <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-[760px]">
-      <DialogHeader>
-        <DialogTitle>{{ isEditing ? '编辑模型服务' : '新建模型服务' }}</DialogTitle>
-        <DialogDescription>
-          配置服务类型、底层模型、支持场景和能力边界。
-        </DialogDescription>
-      </DialogHeader>
-
-      <form class="space-y-4" @submit.prevent="saveService">
-        <div v-if="errors._general" class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {{ errors._general }}
-        </div>
-
-        <div v-if="!isEditing" class="space-y-2">
-          <Label>服务 ID <span class="text-destructive">*</span></Label>
-          <Input v-model="formData.id" placeholder="例如：openai-gpt5-chat" :class="{ 'border-destructive': errors.id }" />
-          <p v-if="errors.id" class="text-sm text-destructive">{{ errors.id }}</p>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>服务类型 <span class="text-destructive">*</span></Label>
-            <Select :model-value="formData.kind" @update:model-value="updateKind">
-              <SelectTrigger>
-                <SelectValue placeholder="选择服务类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="option in kindOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div class="space-y-2">
-            <Label>底层类型 <span class="text-destructive">*</span></Label>
-            <Select :model-value="formData.type" @update:model-value="updateType">
-              <SelectTrigger>
-                <SelectValue placeholder="选择底层类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="option in typeOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>显示名称</Label>
-            <Input v-model="formData.displayName" placeholder="例如：GPT-5 生产路由" />
-          </div>
-          <div class="space-y-2">
-            <Label>模型名称 <span class="text-destructive">*</span></Label>
-            <Input v-model="formData.modelName" placeholder="例如：gpt-5" :class="{ 'border-destructive': errors.modelName }" />
-            <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <Label>API 地址 <span class="text-destructive">*</span></Label>
-          <Input v-model="formData.apiUrl" :placeholder="apiUrlPlaceholder" :class="{ 'border-destructive': errors.apiUrl }" />
-          <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
-        </div>
-
-        <div class="space-y-2">
-          <Label>API 密钥</Label>
-          <Input
-            v-model="formData.apiKey"
-            type="password"
-            :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
-          />
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <div class="space-y-2">
-            <Label>超时时间（秒）</Label>
-            <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
-            <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
-          </div>
-          <div class="space-y-2">
-            <Label>优先级</Label>
-            <Input v-model.number="formData.priority" type="number" />
-          </div>
-          <div class="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
-            <div class="space-y-0.5">
-              <Label>启用服务</Label>
-              <p class="text-xs text-muted-foreground">关闭后不会参与运行时路由。</p>
-            </div>
-            <Switch :model-value="formData.enabled" @update:model-value="updateEnabled" />
-          </div>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <div class="space-y-2">
-            <Label>输入成本（每百万 token）</Label>
-            <Input v-model.number="formData.costPerInputToken" type="number" :min="0" />
-          </div>
-          <div class="space-y-2">
-            <Label>输出成本（每百万 token）</Label>
-            <Input v-model.number="formData.costPerOutputToken" type="number" :min="0" />
-          </div>
-          <div class="space-y-2">
-            <Label>最大上下文窗口</Label>
-            <Input v-model.number="formData.maxContextWindow" type="number" :min="0" />
-          </div>
-        </div>
-
-        <div v-if="isEmbeddingKind" class="space-y-2">
-          <Label>向量维度</Label>
-          <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
-        </div>
-
-        <div v-if="isGenerationKind" class="space-y-4 rounded-lg border border-border/70 p-4">
-          <div class="space-y-2">
-            <Label>生成能力</Label>
-            <div class="grid gap-3 md:grid-cols-2">
-              <label
-                v-for="option in generationCapabilityOptions"
-                :key="option.value"
-                class="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
-              >
-                <Checkbox
-                  :model-value="formData.capabilities?.includes(option.value)"
-                  @update:model-value="() => toggleCapability(option.value)"
-                />
-                <span class="text-sm">{{ option.label }}</span>
-              </label>
-            </div>
-            <p v-if="errors.capabilities" class="text-sm text-destructive">{{ errors.capabilities }}</p>
-          </div>
-
-          <div class="space-y-2">
-            <Label>支持场景</Label>
-            <div class="grid gap-3 md:grid-cols-2">
-              <label
-                v-for="option in generationSceneOptions"
-                :key="option.value"
-                class="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
-              >
-                <Checkbox
-                  :model-value="formData.scenes?.includes(option.value)"
-                  @update:model-value="() => toggleScene(option.value)"
-                />
-                <span class="text-sm">{{ option.label }}</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
-            <div class="space-y-0.5">
-              <Label>支持流式输出</Label>
-              <p class="text-xs text-muted-foreground">仅对生成服务生效。</p>
-            </div>
-            <Switch :model-value="formData.supportsStreaming" @update:model-value="updateSupportsStreaming" />
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <Label>描述</Label>
-          <Textarea v-model="formData.description" rows="4" placeholder="补充服务用途、约束或运维说明。" />
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="outline" @click="showForm = false">取消</Button>
-          <Button type="submit" :disabled="loading">
-            {{ isEditing ? '保存修改' : '创建服务' }}
-          </Button>
-        </DialogFooter>
-      </form>
     </DialogContent>
   </Dialog>
 

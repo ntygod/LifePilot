@@ -16,6 +16,7 @@ import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.media.video.VideoProcessResult;
 import com.lifepilot.media.video.VideoProcessor;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -116,20 +117,27 @@ public class MultimodalRouter {
             return audioResult;
         }
 
-        var preprocessed = preprocessVideo(request);
-        String text = preprocessed.text();
-        List<MediaContent> mediaList = preprocessed.mediaList();
+        var preprocessed = preprocessVideoForCall(request, timeoutOverride);
+        if (preprocessed.directResponse() != null) {
+            return preprocessed.directResponse();
+        }
+
+        MultimodalRequest preparedRequest = preprocessed.request();
+        String text = preparedRequest.text();
+        List<MediaContent> mediaList = preparedRequest.mediaList();
 
         boolean hasImages = mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
             log.debug("无图片附件，委托 GenerationRouter: scene={}", request.scene());
             return generationRouter.call(
-                    request.scene(),
+                    preparedRequest.scene(),
                     text,
-                    request.outputSchema(),
-                    request.preferredProviderId(),
-                    request.modelName(),
-                    com.lifepilot.modelservice.model.GenerationCapability.CHAT,
+                    preparedRequest.outputSchema(),
+                    preparedRequest.preferredProviderId(),
+                    preparedRequest.modelName(),
+                    hasText(preparedRequest.outputSchema())
+                            ? GenerationCapability.STRUCTURED_OUTPUT
+                            : GenerationCapability.CHAT,
                     timeoutOverride);
         }
 
@@ -155,6 +163,7 @@ public class MultimodalRouter {
                 var response = adapter.callWithMedia(
                         text,
                         processedImages,
+                        preparedRequest.outputSchema(),
                         effectiveTimeout(config, timeoutOverride)
                 );
                 circuitBreakerManager.recordSuccess(config.id(), "VISION");
@@ -191,7 +200,7 @@ public class MultimodalRouter {
             return audioStreamResult;
         }
 
-        var preprocessed = preprocessVideo(request);
+        var preprocessed = preprocessVideoForStream(request);
         String text = preprocessed.text();
         List<MediaContent> mediaList = preprocessed.mediaList();
 
@@ -225,9 +234,10 @@ public class MultimodalRouter {
         );
     }
 
-    private MultimodalRequest preprocessVideo(MultimodalRequest request) {
+    private PreprocessedCall preprocessVideoForCall(MultimodalRequest request,
+                                                    @Nullable Duration timeoutOverride) {
         if (!request.hasVideos()) {
-            return request;
+            return new PreprocessedCall(request, null);
         }
 
         MediaContent videoContent = request.mediaList().stream()
@@ -235,7 +245,7 @@ public class MultimodalRouter {
                 .findFirst()
                 .orElse(null);
         if (videoContent == null) {
-            return request;
+            return new PreprocessedCall(request, null);
         }
 
         // 尝试原生视频路由：enabled + GeminiFileApiClient 可用 + 存在 NATIVE_VIDEO Provider
@@ -251,33 +261,48 @@ public class MultimodalRouter {
 
                     var config = nativeProviders.getFirst();
                     var adapter = providerRegistry.getAdapter(config.id());
-                    var timeout = Duration.ofSeconds(config.timeoutSeconds());
+                    var timeout = effectiveTimeout(config, timeoutOverride);
                     LlmResponse videoResponse = adapter.callWithVideo(
-                            request.text(), uploadResult.fileUri(), timeout);
+                            request.text(),
+                            uploadResult.fileUri(),
+                            request.outputSchema(),
+                            timeout
+                    );
 
                     log.info("原生视频调用成功: provider={}, latency={}ms",
                             config.id(), videoResponse.latencyMs());
-
-                    // 返回空媒体列表的请求，call() 方法会检测无图片后委托 GenerationRouter，
-                    // 但此处已获得结果，需要直接返回。通过移除视频内容使后续流程跳过多模态调用。
-                    List<MediaContent> nonVideoItems = request.mediaList().stream()
-                            .filter(mc -> !mc.mimeType().startsWith("video/"))
-                            .toList();
-                    return new MultimodalRequest(
-                            request.scene(),
-                            request.text(),
-                            nonVideoItems,
-                            request.outputSchema(),
-                            request.preferredProviderId(),
-                            request.modelName()
-                    );
+                    return new PreprocessedCall(request, videoResponse);
                 } catch (Exception e) {
                     log.warn("原生视频路由失败，回退到关键帧分治: error={}", e.getMessage());
                 }
             }
         }
 
-        // 回退到关键帧分治策略
+        return new PreprocessedCall(splitVideoIntoFrames(request, videoContent), null);
+    }
+
+    private MultimodalRequest preprocessVideoForStream(MultimodalRequest request) {
+        if (!request.hasVideos()) {
+            return request;
+        }
+
+        MediaContent videoContent = request.mediaList().stream()
+                .filter(mc -> mc.mimeType().startsWith("video/"))
+                .findFirst()
+                .orElse(null);
+        if (videoContent == null) {
+            return request;
+        }
+
+        if (mediaProperties.getNativeVideo().isEnabled() && geminiFileApiClient != null) {
+            log.info("流式视频暂不支持原生视频直连，回退到关键帧分治: fileName={}, size={}B",
+                    videoContent.fileName(), videoContent.sizeBytes());
+        }
+
+        return splitVideoIntoFrames(request, videoContent);
+    }
+
+    private MultimodalRequest splitVideoIntoFrames(MultimodalRequest request, MediaContent videoContent) {
         VideoProcessor processor = this.videoProcessor;
         if (processor == null) {
             return request;
@@ -340,7 +365,7 @@ public class MultimodalRouter {
                 log.info("音频路由策略: 原生音频, audioCount={}, provider={}", audioContents.size(), config.id());
                 var adapter = providerRegistry.getAdapter(config.id());
                 var timeout = effectiveTimeout(config, timeoutOverride);
-                var response = adapter.callWithAudio(request.text(), audioContents, timeout);
+                var response = adapter.callWithAudio(request.text(), audioContents, request.outputSchema(), timeout);
                 log.info("原生音频调用成功: provider={}, latency={}ms", config.id(), response.latencyMs());
                 return response;
             } catch (Exception e) {
@@ -433,6 +458,10 @@ public class MultimodalRouter {
         return timeoutOverride != null ? timeoutOverride : Duration.ofSeconds(config.timeoutSeconds());
     }
 
+    private static boolean hasText(@Nullable String value) {
+        return value != null && !value.isBlank();
+    }
+
     private void sleepBackoff(int attempt) {
         long delay = backoff.delayForAttempt(attempt);
         try {
@@ -479,5 +508,8 @@ public class MultimodalRouter {
         List<MediaContent> processedImages = mediaProcessor.processAll(images);
         preprocessCache.put(cacheKey, new CacheEntry(processedImages, Instant.now()));
         return processedImages;
+    }
+
+    private record PreprocessedCall(MultimodalRequest request, @Nullable LlmResponse directResponse) {
     }
 }

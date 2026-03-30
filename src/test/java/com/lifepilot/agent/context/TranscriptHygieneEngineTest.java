@@ -58,16 +58,43 @@ class TranscriptHygieneEngineTest {
         List<Message> raw = List.of(
                 new SystemMessage("system"),
                 new UserMessage("user"),
-                AssistantMessage.builder().content("").toolCalls(List.of(toolCall)).build(),
+                AssistantMessage.builder().toolCalls(List.of(toolCall)).build(),
                 ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
-                                "tool.search", "tool.search", "{\"summary\":\"ok\"}")))
+                                "call-1", "tool.search", "{\"summary\":\"ok\"}")))
                         .build()
         );
 
         var result = engine.clean(raw);
 
         assertThat(result.messages()).hasSize(4);
+        assertThat(((AssistantMessage) result.messages().get(2)).getText()).isNull();
         assertThat(result.report().hasRepairs()).isFalse();
+    }
+
+    @Test
+    void clean_同名工具并行时应优先按callId匹配工具结果() {
+        var engine = new TranscriptHygieneEngine(new AgentConfigProperties());
+
+        List<Message> raw = List.of(
+                new SystemMessage("system"),
+                new UserMessage("user"),
+                AssistantMessage.builder().toolCalls(List.of(
+                        new AssistantMessage.ToolCall("call-1", "function", "tool.search", "{\"q\":\"alpha\"}"),
+                        new AssistantMessage.ToolCall("call-2", "function", "tool.search", "{\"q\":\"beta\"}")
+                )).build(),
+                ToolResponseMessage.builder()
+                        .responses(List.of(new ToolResponseMessage.ToolResponse(
+                                "call-2", "tool.search", "{\"summary\":\"beta\"}")))
+                        .build()
+        );
+
+        var result = engine.clean(raw);
+
+        assertThat(result.messages()).hasSize(4);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+        assertThat(toolResponse.getResponses()).singleElement()
+                .extracting(ToolResponseMessage.ToolResponse::id)
+                .isEqualTo("call-2");
     }
 }

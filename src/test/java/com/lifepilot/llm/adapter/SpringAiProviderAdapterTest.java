@@ -8,10 +8,15 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.ResponseFormat;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.List;
@@ -25,7 +30,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,7 +45,7 @@ class SpringAiProviderAdapterTest {
         SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
 
         assertThrows(UnsupportedOperationException.class, () ->
-                adapter.callWithMedia("hi", List.of(), Duration.ofSeconds(1)));
+                adapter.callWithMedia("hi", List.of(), null, Duration.ofSeconds(1)));
     }
 
     @Test
@@ -62,7 +69,7 @@ class SpringAiProviderAdapterTest {
                 Map.of()
         );
 
-        LlmResponse llmResponse = adapter.callWithMedia("请看图", List.of(image), Duration.ofSeconds(1));
+        LlmResponse llmResponse = adapter.callWithMedia("请看图", List.of(image), null, Duration.ofSeconds(1));
 
         assertEquals("ok", llmResponse.content());
         assertEquals(5, llmResponse.inputTokens());
@@ -86,6 +93,85 @@ class SpringAiProviderAdapterTest {
                 adapter.call("slow", null, Duration.ofMillis(50)));
         assertNotNull(exception.getCause());
         assertTrue(exception.getCause() instanceof TimeoutException);
+    }
+
+    @Test
+    void call_对OpenAi兼容模型下发协议级JsonSchema() {
+        String outputSchema = """
+                {"type":"object","properties":{"answer":{"type":"string"}}}
+                """;
+        ProviderConfig config = providerConfig(
+                Set.of(ProviderCapability.CHAT),
+                "gpt-4.1",
+                "https://api.openai.com/v1"
+        );
+        OpenAiChatModel chatModel = mock(OpenAiChatModel.class);
+
+        ChatResponse response = mock(ChatResponse.class, RETURNS_DEEP_STUBS);
+        when(response.getResult().getOutput().getText()).thenReturn("{\"answer\":\"ok\"}");
+        when(chatModel.call(any(Prompt.class))).thenReturn(response);
+
+        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+
+        adapter.call("请按 schema 输出", outputSchema, Duration.ofSeconds(1));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        OpenAiChatOptions options = (OpenAiChatOptions) promptCaptor.getValue().getOptions();
+        assertEquals(ResponseFormat.Type.JSON_SCHEMA, options.getResponseFormat().getType());
+        assertEquals(Boolean.TRUE, options.getResponseFormat().getJsonSchema().getStrict());
+        assertEquals("object", options.getResponseFormat().getJsonSchema().getSchema().get("type"));
+    }
+
+    @Test
+    void stream_对OpenAi兼容模型开启Usage回传() {
+        ProviderConfig config = providerConfig(
+                Set.of(ProviderCapability.CHAT, ProviderCapability.STREAMING),
+                "gpt-4.1",
+                "https://api.openai.com/v1"
+        );
+        OpenAiChatModel chatModel = mock(OpenAiChatModel.class);
+        ChatResponse response = mock(ChatResponse.class, RETURNS_DEEP_STUBS);
+        when(response.getResult().getOutput().getText()).thenReturn("ok");
+        doReturn(Flux.just(response)).when(chatModel).stream(any(Prompt.class));
+
+        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+
+        assertEquals(List.of("ok"), adapter.stream("hello").collectList().block());
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).stream(promptCaptor.capture());
+        OpenAiChatOptions options = (OpenAiChatOptions) promptCaptor.getValue().getOptions();
+        assertEquals(Boolean.TRUE, options.getStreamUsage());
+    }
+
+    @Test
+    void call_对DeepSeek应回退为jsonObject并附带Schema提示词() {
+        String outputSchema = """
+                {"type":"object","properties":{"summary":{"type":"string"}}}
+                """;
+        ProviderConfig config = providerConfig(
+                Set.of(ProviderCapability.CHAT),
+                "deepseek-chat",
+                "https://api.deepseek.com/v1"
+        );
+        OpenAiChatModel chatModel = mock(OpenAiChatModel.class);
+
+        ChatResponse response = mock(ChatResponse.class, RETURNS_DEEP_STUBS);
+        when(response.getResult().getOutput().getText()).thenReturn("{\"summary\":\"ok\"}");
+        when(chatModel.call(any(Prompt.class))).thenReturn(response);
+
+        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+
+        adapter.call("请按 schema 输出", outputSchema, Duration.ofSeconds(1));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        Prompt prompt = promptCaptor.getValue();
+        OpenAiChatOptions options = (OpenAiChatOptions) prompt.getOptions();
+        assertEquals(ResponseFormat.Type.JSON_OBJECT, options.getResponseFormat().getType());
+        assertTrue(prompt.getContents().contains("请仅输出一个合法 JSON 对象"));
+        assertTrue(prompt.getContents().contains("<json_schema>"));
     }
 
     @Test
@@ -128,10 +214,14 @@ class SpringAiProviderAdapterTest {
     }
 
     private ProviderConfig providerConfig(Set<ProviderCapability> capabilities, String modelName) {
+        return providerConfig(capabilities, modelName, "https://api.openai.com/v1");
+    }
+
+    private ProviderConfig providerConfig(Set<ProviderCapability> capabilities, String modelName, String apiUrl) {
         return new ProviderConfig(
                 "p1",
                 ProviderType.OPENAI_COMPATIBLE,
-                "url",
+                apiUrl,
                 null,
                 modelName,
                 30,

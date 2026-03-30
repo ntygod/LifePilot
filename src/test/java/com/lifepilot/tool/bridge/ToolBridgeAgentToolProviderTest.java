@@ -73,6 +73,70 @@ class ToolBridgeAgentToolProviderTest {
         assertThat(callbacks.getFirst().call("{}")).contains("\"ok\":true");
     }
 
+    @Test
+    void 空输入Schema应归一化为object类型供兼容厂商使用() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("process.list")
+                .name("处理列表")
+                .description("处理列表")
+                .inputSchema(JsonSchema.empty())
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                mock(ToolExecutionPipeline.class),
+                new ObjectMapper(),
+                30000
+        );
+
+        var callbacks = provider.getToolCallbacks(baseState(), null);
+
+        assertThat(callbacks.getFirst().getToolDefinition().inputSchema())
+                .contains("\"type\":\"object\"")
+                .contains("\"properties\":{}");
+    }
+
+    @Test
+    void 缺少根类型的输入Schema应自动补全为object() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("process.items")
+                .name("处理条目")
+                .description("处理条目")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "properties", Map.of(
+                                "items", Map.of("type", "array")
+                        )
+                )))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("infrastructure"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                mock(ToolExecutionPipeline.class),
+                new ObjectMapper(),
+                30000
+        );
+
+        var callbacks = provider.getToolCallbacks(baseState(), null);
+
+        assertThat(callbacks.getFirst().getToolDefinition().inputSchema())
+                .contains("\"type\":\"object\"")
+                .contains("\"items\":{\"type\":\"array\"}");
+    }
+
     private ReactAgentState baseState() {
         var budget = Budget.builder()
                 .maxTokens(4096)

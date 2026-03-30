@@ -60,25 +60,27 @@ public final class ReactStepSerializer {
                     "index", index,
                     "content", truncate(content, THOUGHT_MAX_LENGTH)
             );
-            case ReactStep.ToolCall(var toolId, var toolName, var inputJson, var latencyMs) -> {
+            case ReactStep.ToolCall toolCall -> {
                 var map = new LinkedHashMap<String, Object>();
                 map.put("type", "TOOL_CALL");
                 map.put("index", index);
-                map.put("toolId", toolId);
-                if (toolName != null) map.put("toolName", toolName);
-                map.put("inputSummary", truncate(inputJson, INPUT_MAX_LENGTH));
-                map.put("latencyMs", latencyMs);
+                map.put("toolId", toolCall.toolId());
+                if (toolCall.toolName() != null) map.put("toolName", toolCall.toolName());
+                if (toolCall.callId() != null) map.put("callId", toolCall.callId());
+                map.put("inputSummary", truncate(toolCall.inputJson(), INPUT_MAX_LENGTH));
+                map.put("latencyMs", toolCall.latencyMs());
                 yield Map.copyOf(map);
             }
-            case ReactStep.Observation(var toolId, var toolName, var success, var output, var tokensUsed) -> {
+            case ReactStep.Observation observation -> {
                 var map = new LinkedHashMap<String, Object>();
                 map.put("type", "OBSERVATION");
                 map.put("index", index);
-                map.put("toolId", toolId);
-                if (toolName != null) map.put("toolName", toolName);
-                map.put("success", success);
-                map.put("outputSummary", truncate(output, OUTPUT_MAX_LENGTH));
-                map.put("tokensUsed", tokensUsed);
+                map.put("toolId", observation.toolId());
+                if (observation.toolName() != null) map.put("toolName", observation.toolName());
+                if (observation.callId() != null) map.put("callId", observation.callId());
+                map.put("success", observation.success());
+                map.put("outputSummary", truncate(observation.output(), OUTPUT_MAX_LENGTH));
+                map.put("tokensUsed", observation.tokensUsed());
                 yield Map.copyOf(map);
             }
             case ReactStep.Answer(var content) -> Map.of(

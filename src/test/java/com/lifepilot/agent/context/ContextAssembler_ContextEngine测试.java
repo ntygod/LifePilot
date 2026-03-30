@@ -74,7 +74,6 @@ class ContextAssembler_ContextEngine测试 {
                         new AssistantMessage("<history_summary>\n之前已确认需求范围与约束。\n</history_summary>"),
                         new UserMessage("上一轮用户消息"),
                         AssistantMessage.builder()
-                                .content("")
                                 .toolCalls(List.of(new AssistantMessage.ToolCall(
                                         "call-search",
                                         "function",
@@ -157,8 +156,11 @@ class ContextAssembler_ContextEngine测试 {
         assertThat(context.historyMessages().get(2)).isInstanceOf(AssistantMessage.class);
         assertThat(context.historyMessages().get(3)).isInstanceOf(ToolResponseMessage.class);
         assertThat(context.historyMessages().get(4)).isInstanceOf(AssistantMessage.class);
-        assertThat(context.historyMessages()).allSatisfy(message ->
-                assertThat(message.getText()).doesNotContain("<history_transcript>"));
+        assertThat(context.historyMessages()).allSatisfy(message -> {
+            if (message.getText() != null) {
+                assertThat(message.getText()).doesNotContain("<history_transcript>");
+            }
+        });
         assertThat(context.tokenBudget().historyUsed()).isEqualTo(42);
         assertThat(context.tokenBudget().toolResultUsed()).isEqualTo(15);
         assertThat(context.tokenBudget().memoryUsed()).isPositive();

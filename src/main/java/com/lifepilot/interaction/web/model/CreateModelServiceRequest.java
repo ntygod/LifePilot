@@ -14,6 +14,7 @@ public record CreateModelServiceRequest(
         String id,
         String kind,
         String type,
+        @Nullable String vendorKey,
         String apiUrl,
         @Nullable String apiKey,
         String modelName,

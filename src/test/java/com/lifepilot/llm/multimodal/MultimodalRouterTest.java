@@ -12,6 +12,7 @@ import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.media.video.VideoProcessResult;
 import com.lifepilot.media.video.VideoProcessor;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -95,7 +96,40 @@ class MultimodalRouterTest {
     }
 
     @Test
+    void 无图片附件且有输出Schema时按结构化能力委托() {
+        String outputSchema = """
+                {"type":"object","properties":{"answer":{"type":"string"}}}
+                """;
+        MultimodalRequest request = new MultimodalRequest(
+                "chat",
+                "请输出结构化结果",
+                List.of(),
+                outputSchema
+        );
+
+        LlmResponse expected = new LlmResponse("{}", 1, 1, "p1", "m", 10, false);
+        when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
+                .thenReturn(expected);
+
+        LlmResponse actual = router.call(request);
+
+        assertSame(expected, actual);
+        verify(generationRouter).call(
+                eq("chat"),
+                eq("请输出结构化结果"),
+                eq(outputSchema),
+                isNull(),
+                isNull(),
+                eq(GenerationCapability.STRUCTURED_OUTPUT),
+                isNull()
+        );
+    }
+
+    @Test
     void 有图片附件时执行VISION过滤并调用ProviderAdapter() {
+        String outputSchema = """
+                {"type":"object","properties":{"summary":{"type":"string"}}}
+                """;
         MediaContent image = new MediaContent(
                 "img1",
                 "image/png",
@@ -108,7 +142,7 @@ class MultimodalRouterTest {
                 "vision-scene",
                 "看一下这张图片",
                 List.of(image),
-                null
+                outputSchema
         );
 
         ProviderConfig visionProvider = new ProviderConfig(
@@ -142,14 +176,14 @@ class MultimodalRouterTest {
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
 
         LlmResponse response = new LlmResponse("answer", 10, 20, "vision-1", "gpt", 100, false);
-        when(adapter.callWithMedia(anyString(), anyList(), any(Duration.class))).thenReturn(response);
+        when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class))).thenReturn(response);
 
         LlmResponse actual = router.call(request);
 
         assertSame(response, actual);
         verify(mediaValidator).validateAll(anyList());
         verify(mediaProcessor).processAll(anyList());
-        verify(adapter).callWithMedia(eq("看一下这张图片"), anyList(), any(Duration.class));
+        verify(adapter).callWithMedia(eq("看一下这张图片"), anyList(), eq(outputSchema), any(Duration.class));
         verify(circuitBreakerManager).recordSuccess("vision-1", "VISION");
     }
 
@@ -194,7 +228,7 @@ class MultimodalRouterTest {
 
         var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
-        when(adapter.callWithMedia(anyString(), anyList(), any(Duration.class)))
+        when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
                 .thenThrow(new RuntimeException("下游异常"));
 
         assertThrows(LlmUnavailableException.class, () -> router.call(request));
@@ -267,14 +301,14 @@ class MultimodalRouterTest {
 
         var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
-        when(adapter.callWithMedia(anyString(), anyList(), any(Duration.class)))
+        when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
                 .thenReturn(new LlmResponse("ok", 0, 0, "vision-1", "m", 1, false));
 
         router.call(request);
 
         // 捕获传入 adapter 的 prompt，验证包含转录文本
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(adapter).callWithMedia(promptCaptor.capture(), anyList(), any(Duration.class));
+        verify(adapter).callWithMedia(promptCaptor.capture(), anyList(), isNull(), any(Duration.class));
         String prompt = promptCaptor.getValue();
         assertTrue(prompt.contains("原始文本"));
         assertTrue(prompt.contains("视频音轨转录"), "应包含转录标题");

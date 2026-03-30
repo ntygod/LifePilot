@@ -9,16 +9,8 @@ package com.lifepilot.llm.config;
 public enum ProviderType {
     /** 本地 Ollama 服务 */
     OLLAMA("ollama"),
-    /** DeepSeek API */
-    DEEPSEEK("deepseek"),
     /** HuggingFace Text Embeddings Inference（TEI） */
     TEI("tei"),
-    /** 百度文心一言 API */
-    WENXIN("wenxin"),
-    /** 阿里通义千问 API */
-    QWEN("qwen"),
-    /** 智谱 GLM API */
-    GLM("glm"),
     /** OpenAI 兼容 API */
     OPENAI_COMPATIBLE("openai-compatible"),
     /** Anthropic Claude API */
@@ -42,12 +34,12 @@ public enum ProviderType {
     /**
      * 是否使用 OpenAI 兼容 API。
      *
-     * @return DEEPSEEK、QWEN、GLM、TEI、OPENAI_COMPATIBLE 返回 true
+     * @return TEI、OPENAI_COMPATIBLE 返回 true
      */
     public boolean isOpenAiCompatible() {
         return switch (this) {
-            case DEEPSEEK, QWEN, GLM, TEI, OPENAI_COMPATIBLE -> true;
-            case OLLAMA, WENXIN, ANTHROPIC -> false;
+            case TEI, OPENAI_COMPATIBLE -> true;
+            case OLLAMA, ANTHROPIC -> false;
         };
     }
 }

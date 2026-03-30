@@ -13,6 +13,7 @@ import java.util.List;
 public record UpdateModelServiceRequest(
         @Nullable String kind,
         @Nullable String type,
+        @Nullable String vendorKey,
         @Nullable String apiUrl,
         @Nullable String apiKey,
         @Nullable String modelName,

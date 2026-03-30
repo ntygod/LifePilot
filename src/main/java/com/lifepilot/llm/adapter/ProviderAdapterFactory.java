@@ -67,9 +67,6 @@ public class ProviderAdapterFactory {
         if (providerType == ProviderType.OLLAMA) {
             return createOllamaAdapter(config);
         }
-        if (providerType == ProviderType.WENXIN) {
-            throw new UnsupportedOperationException("WENXIN 适配器尚未实现");
-        }
         if (providerType == ProviderType.ANTHROPIC) {
             return createAnthropicAdapter(config);
         }

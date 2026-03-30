@@ -5,13 +5,16 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.generation.support.JsonOutputParser;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -64,37 +67,24 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Override
     public LlmResponse call(String prompt, @Nullable String outputSchema, Duration timeout) {
         long start = System.currentTimeMillis();
-        ChatResponse response = executeWithTimeout(() -> chatModel.call(new Prompt(prompt)), timeout);
-        long latencyMs = System.currentTimeMillis() - start;
-
-        var usage = response.getMetadata().getUsage();
-        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
-        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
-        String content = response.getResult().getOutput().getText();
-
-        return new LlmResponse(
-                content,
-                inputTokens,
-                outputTokens,
-                config.id(),
-                config.modelName(),
-                latencyMs,
-                false
+        ChatResponse response = executeWithTimeout(
+                () -> chatModel.call(buildPrompt(prompt, outputSchema, false)),
+                timeout
         );
+        long latencyMs = System.currentTimeMillis() - start;
+        return toLlmResponse(response, latencyMs);
     }
 
     @Override
     public <T> T callEntity(String prompt, Class<T> responseType) {
+        BeanOutputConverter<T> converter = new BeanOutputConverter<>(responseType);
+        String rawText = executeStructuredContentCall(prompt, converter);
         try {
-            return buildChatClient()
-                    .prompt(prompt)
-                    .call()
-                    .entity(responseType);
+            return converter.convert(rawText);
         } catch (Exception e) {
-            // BeanOutputConverter 解析失败时，尝试获取原始文本并修复 JSON
             if (isJsonParseError(e)) {
                 log.debug("结构化输出解析失败，尝试 JSON 修复: error={}", e.getMessage());
-                return callEntityWithJsonRepair(prompt, responseType);
+                return JsonOutputParser.parse(rawText, responseType);
             }
             throw e;
         }
@@ -117,18 +107,6 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             cause = cause.getCause();
         }
         return false;
-    }
-
-    /**
-     * JSON 修复降级：获取原始文本 → 修复常见 JSON 格式问题 → 手动反序列化。
-     */
-    private <T> T callEntityWithJsonRepair(String prompt, Class<T> responseType) {
-        // 重新调用获取原始文本
-        String rawText = buildChatClient()
-                .prompt(prompt)
-                .call()
-                .content();
-        return JsonOutputParser.parse(rawText, responseType);
     }
 
     /**
@@ -155,7 +133,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             throw new UnsupportedOperationException(
                     "Provider 不支持 STREAMING 能力: id=" + config.id());
         }
-        return chatModel.stream(new Prompt(prompt))
+        return chatModel.stream(buildPrompt(prompt, null, true))
                 .mapNotNull(response -> response.getResult().getOutput().getText())
                 .filter(text -> text != null && !text.isEmpty());
     }
@@ -232,7 +210,10 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     }
 
     @Override
-    public LlmResponse callWithMedia(String prompt, List<MediaContent> mediaContents, Duration timeout) {
+    public LlmResponse callWithMedia(String prompt,
+                                     List<MediaContent> mediaContents,
+                                     @Nullable String outputSchema,
+                                     Duration timeout) {
         if (!config.hasCapability(ProviderCapability.VISION)) {
             throw new UnsupportedOperationException("Provider 不支持 VISION 能力: " + config.id());
         }
@@ -248,23 +229,12 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         long start = System.currentTimeMillis();
-        ChatResponse response = executeWithTimeout(() -> chatModel.call(new Prompt(userMessage)), timeout);
-        long latencyMs = System.currentTimeMillis() - start;
-
-        var usage = response.getMetadata().getUsage();
-        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
-        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
-        String content = response.getResult().getOutput().getText();
-
-        return new LlmResponse(
-                content,
-                inputTokens,
-                outputTokens,
-                config.id(),
-                config.modelName(),
-                latencyMs,
-                false
+        ChatResponse response = executeWithTimeout(
+                () -> chatModel.call(buildPrompt(userMessage, outputSchema, false)),
+                timeout
         );
+        long latencyMs = System.currentTimeMillis() - start;
+        return toLlmResponse(response, latencyMs);
     }
 
     @Override
@@ -283,7 +253,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         }
         UserMessage userMessage = builder.build();
 
-        return chatModel.stream(new Prompt(userMessage))
+        return chatModel.stream(buildPrompt(userMessage, null, true))
                 .mapNotNull(response -> {
                     var result = response.getResult();
                     if (result == null || result.getOutput() == null) return null;
@@ -293,7 +263,10 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     }
 
     @Override
-    public LlmResponse callWithVideo(String text, String videoUri, Duration timeout) {
+    public LlmResponse callWithVideo(String text,
+                                     String videoUri,
+                                     @Nullable String outputSchema,
+                                     Duration timeout) {
         if (!config.hasCapability(ProviderCapability.NATIVE_VIDEO)) {
             throw new UnsupportedOperationException("Provider 不支持 NATIVE_VIDEO 能力: " + config.id());
         }
@@ -306,24 +279,10 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                     .data(java.net.URI.create(videoUri).toURL())
                     .build();
             var userMessage = UserMessage.builder().text(text).media(media).build();
-            return chatModel.call(new Prompt(userMessage));
+            return chatModel.call(buildPrompt(userMessage, outputSchema, false));
         }, timeout);
         long latencyMs = System.currentTimeMillis() - start;
-
-        var usage = response.getMetadata().getUsage();
-        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
-        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
-        String content = response.getResult().getOutput().getText();
-
-        return new LlmResponse(
-                content,
-                inputTokens,
-                outputTokens,
-                config.id(),
-                config.modelName(),
-                latencyMs,
-                false
-        );
+        return toLlmResponse(response, latencyMs);
     }
 
     public ProviderConfig config() {
@@ -331,7 +290,10 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     }
 
     @Override
-    public LlmResponse callWithAudio(String prompt, List<MediaContent> audioContents, Duration timeout) {
+    public LlmResponse callWithAudio(String prompt,
+                                     List<MediaContent> audioContents,
+                                     @Nullable String outputSchema,
+                                     Duration timeout) {
         if (!config.hasCapability(ProviderCapability.NATIVE_AUDIO)) {
             throw new UnsupportedOperationException("Provider 不支持 NATIVE_AUDIO 能力: " + config.id());
         }
@@ -347,23 +309,12 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         long start = System.currentTimeMillis();
-        ChatResponse response = executeWithTimeout(() -> chatModel.call(new Prompt(userMessage)), timeout);
-        long latencyMs = System.currentTimeMillis() - start;
-
-        var usage = response.getMetadata().getUsage();
-        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
-        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
-        String content = response.getResult().getOutput().getText();
-
-        return new LlmResponse(
-                content,
-                inputTokens,
-                outputTokens,
-                config.id(),
-                config.modelName(),
-                latencyMs,
-                false
+        ChatResponse response = executeWithTimeout(
+                () -> chatModel.call(buildPrompt(userMessage, outputSchema, false)),
+                timeout
         );
+        long latencyMs = System.currentTimeMillis() - start;
+        return toLlmResponse(response, latencyMs);
     }
 
     @Override
@@ -382,7 +333,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         }
         UserMessage userMessage = builder.build();
 
-        return chatModel.stream(new Prompt(userMessage))
+        return chatModel.stream(buildPrompt(userMessage, null, true))
                 .mapNotNull(response -> {
                     var result = response.getResult();
                     if (result == null || result.getOutput() == null) return null;
@@ -398,6 +349,119 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Nullable
     public EmbeddingModel embeddingModel() {
         return embeddingModel;
+    }
+
+    private Prompt buildPrompt(String prompt, @Nullable String outputSchema, boolean streamUsage) {
+        return new Prompt(
+                maybeAppendStructuredOutputInstruction(prompt, outputSchema),
+                ProviderChatOptionsFactory.create(
+                        providerDescriptor(),
+                        chatModel,
+                        config.modelName(),
+                        null,
+                        null,
+                        false,
+                        streamUsage,
+                        outputSchema
+                )
+        );
+    }
+
+    private Prompt buildPrompt(Message message, @Nullable String outputSchema, boolean streamUsage) {
+        return new Prompt(
+                maybeAppendStructuredOutputInstruction(message, outputSchema),
+                ProviderChatOptionsFactory.create(
+                        providerDescriptor(),
+                        chatModel,
+                        config.modelName(),
+                        null,
+                        null,
+                        false,
+                        streamUsage,
+                        outputSchema
+                )
+        );
+    }
+
+    private <T> String executeStructuredContentCall(String prompt, BeanOutputConverter<T> converter) {
+        String effectivePrompt = prompt;
+        if (!supportsProtocolStructuredOutput()) {
+            effectivePrompt = prompt + System.lineSeparator() + System.lineSeparator() + converter.getFormat();
+        }
+        return Optional.ofNullable(
+                buildChatClient()
+                        .prompt(new Prompt(
+                                effectivePrompt,
+                                ProviderChatOptionsFactory.create(
+                                        providerDescriptor(),
+                                        chatModel,
+                                        config.modelName(),
+                                        null,
+                                        null,
+                                        false,
+                                        false,
+                                        converter.getJsonSchema()
+                                )
+                        ))
+                        .call()
+                        .content()
+        ).orElse("");
+    }
+
+    private boolean supportsProtocolStructuredOutput() {
+        return ProviderChatOptionsFactory.supportsProtocolStructuredOutput(providerDescriptor());
+    }
+
+    private ProviderChatOptionsFactory.ProviderDescriptor providerDescriptor() {
+        return new ProviderChatOptionsFactory.ProviderDescriptor(config.type(), config.apiUrl());
+    }
+
+    private String maybeAppendStructuredOutputInstruction(String prompt, @Nullable String outputSchema) {
+        if (outputSchema == null || outputSchema.isBlank() || supportsProtocolStructuredOutput()) {
+            return prompt;
+        }
+        return prompt + System.lineSeparator() + System.lineSeparator()
+                + """
+                请仅输出一个合法 JSON 对象，不要输出任何额外说明、Markdown 代码块或前后缀。
+                输出必须符合以下 JSON Schema：
+                <json_schema>
+                %s
+                </json_schema>
+                """.formatted(outputSchema.trim());
+    }
+
+    private Message maybeAppendStructuredOutputInstruction(Message message, @Nullable String outputSchema) {
+        if (outputSchema == null || outputSchema.isBlank() || supportsProtocolStructuredOutput()) {
+            return message;
+        }
+        if (message instanceof UserMessage userMessage) {
+            var builder = UserMessage.builder()
+                    .text(maybeAppendStructuredOutputInstruction(userMessage.getText(), outputSchema));
+            for (Media media : userMessage.getMedia()) {
+                builder.media(media);
+            }
+            return builder.build();
+        }
+        return message;
+    }
+
+    private LlmResponse toLlmResponse(ChatResponse response, long latencyMs) {
+        Usage usage = response.getMetadata() != null ? response.getMetadata().getUsage() : null;
+        int inputTokens = usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+        int outputTokens = usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        String content = Optional.ofNullable(response.getResult())
+                .map(result -> result.getOutput())
+                .map(output -> output.getText())
+                .orElse("");
+        return new LlmResponse(
+                content,
+                inputTokens,
+                outputTokens,
+                config.id(),
+                config.modelName(),
+                latencyMs,
+                false
+        );
     }
 
     private <T> T executeWithTimeout(Callable<T> action, Duration timeout) {

@@ -11,6 +11,7 @@ import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.StreamingLlmResponse;
+import com.lifepilot.llm.adapter.ProviderChatOptionsFactory;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.observability.trace.TraceContext;
@@ -22,9 +23,9 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
@@ -141,7 +142,7 @@ public class StreamingCallback implements IterationCallback {
                     pushTokenToSse(token, a2uiParser);
                 })
                 .doOnError(e -> {
-                    log.warn("流式多模态调用异常: scene={}, error={}", scene, e.getMessage());
+                    log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
                     this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
                 })
                 .blockLast();
@@ -194,23 +195,19 @@ public class StreamingCallback implements IterationCallback {
         this.providerId = chatModelInfo.serviceId();
         this.modelId = chatModelInfo.modelName();
 
-        // 构建带工具定义但禁用自动执行的 ChatOptions
-        var optionsBuilder = DefaultToolCallingChatOptions.builder()
-                .internalToolExecutionEnabled(false);
-
-        // 温度透传
-        if (req.temperature() != null) {
-            optionsBuilder.temperature(req.temperature());
-        }
-
-        if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
-            var validCallbacks = toolCallbacks.stream()
-                    .filter(Objects::nonNull)
-                    .toList();
-            if (!validCallbacks.isEmpty()) {
-                optionsBuilder.toolCallbacks(validCallbacks);
-            }
-        }
+        var chatOptions = ProviderChatOptionsFactory.create(
+                new ProviderChatOptionsFactory.ProviderDescriptor(
+                        chatModelInfo.providerType(),
+                        chatModelInfo.apiUrl()
+                ),
+                chatModelInfo.chatModel(),
+                chatModelInfo.modelName(),
+                req.temperature(),
+                toolCallbacks,
+                false,
+                true,
+                null
+        );
 
         // 替换 system message 为增强版
         var enhancedMessages = new ArrayList<>(messages);
@@ -222,7 +219,7 @@ public class StreamingCallback implements IterationCallback {
         // 调试日志
         helper.logLlmPromptIfEnabled(scene, enhancedMessages, toolCallbacks);
 
-        var prompt = new Prompt(enhancedMessages, optionsBuilder.build());
+        var prompt = new Prompt(enhancedMessages, chatOptions);
 
         // 流式能力检查与分支
         if (!chatModelInfo.supportsStreaming()) {
@@ -238,7 +235,7 @@ public class StreamingCallback implements IterationCallback {
         StreamingA2uiParser a2uiParser = helper.isA2uiEnabled() ? new StreamingA2uiParser() : null;
 
         var contentBuilder = new StringBuilder();
-        var toolCallCollector = new ArrayList<AssistantMessage.ToolCall>();
+        var toolCallAggregator = new StreamingToolCallAggregator();
         final ChatResponse[] lastChunk = {null};
         final Instant[] firstTokenTime = {null};
         // 累加流式 chunk 中的 Token 用量（部分 Provider 仅在最后一个 chunk 返回完整 usage）
@@ -274,19 +271,19 @@ public class StreamingCallback implements IterationCallback {
                     }
 
                     if (output.hasToolCalls()) {
-                        toolCallCollector.addAll(output.getToolCalls());
+                        toolCallAggregator.merge(output.getToolCalls());
                     }
                 } catch (Exception e) {
                     log.warn("流式 chunk 处理异常，跳过: error={}", e.getMessage());
                 }
             }).doOnError(e -> {
                 log.warn("流式调用异常: scene={}, provider={}, error={}",
-                        scene2, chatModelInfo.serviceId(), e.getMessage());
+                        scene2, chatModelInfo.serviceId(), describeProviderError(e));
                 this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
             }).blockLast();
         } catch (Exception e) {
             log.error("流式调用失败: scene={}, provider={}, error={}",
-                    scene2, chatModelInfo.serviceId(), e.getMessage());
+                    scene2, chatModelInfo.serviceId(), describeProviderError(e));
             throw e;
         }
 
@@ -309,7 +306,9 @@ public class StreamingCallback implements IterationCallback {
         flushA2uiParser(a2uiParser);
 
         // 流式响应为空时构造空内容 ChatResponse
-        if (collectedContent.isEmpty() && toolCallCollector.isEmpty()) {
+        List<AssistantMessage.ToolCall> toolCalls = toolCallAggregator.toolCalls();
+
+        if (collectedContent.isEmpty() && toolCallAggregator.isEmpty()) {
             log.warn("流式响应为空: scene={}, provider={}, model={}",
                     scene2, chatModelInfo.serviceId(), chatModelInfo.modelName());
             var emptyMessage = new AssistantMessage("");
@@ -325,7 +324,7 @@ public class StreamingCallback implements IterationCallback {
         // tool call 事件已由 pushReactStepEvent 自动推送
 
         ChatResponse chatResponse = buildChatResponseFromStream(
-                collectedContent, toolCallCollector, lastChunk[0],
+                collectedContent, toolCalls, lastChunk[0],
                 accumulatedPromptTokens[0], accumulatedCompletionTokens[0]);
 
         long ttftMs = firstTokenTime[0] != null
@@ -335,7 +334,7 @@ public class StreamingCallback implements IterationCallback {
                         "promptTokens={}, completionTokens={}, toolCallCount={}, contentLength={}",
                 scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
                 accumulatedPromptTokens[0], accumulatedCompletionTokens[0],
-                toolCallCollector.size(), collectedContent.length());
+                toolCalls.size(), collectedContent.length());
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
                 scene2, chatResponse, null);
@@ -364,10 +363,11 @@ public class StreamingCallback implements IterationCallback {
             long accumulatedCompletionTokens) {
         AssistantMessage assistantMessage;
         if (!toolCalls.isEmpty()) {
-            assistantMessage = AssistantMessage.builder()
-                    .content(collectedContent)
-                    .toolCalls(toolCalls)
-                    .build();
+            var builder = AssistantMessage.builder().toolCalls(toolCalls);
+            if (collectedContent != null && !collectedContent.isBlank()) {
+                builder.content(collectedContent);
+            }
+            assistantMessage = builder.build();
         } else {
             assistantMessage = new AssistantMessage(collectedContent);
         }
@@ -550,6 +550,29 @@ public class StreamingCallback implements IterationCallback {
         if (loopContext != null) {
             loopContext.markVisibleOutputEmitted();
         }
+    }
+
+    private String describeProviderError(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof WebClientResponseException webClientResponseException) {
+                return formatWebClientError(webClientResponseException);
+            }
+            current = current.getCause();
+        }
+        return error.getMessage();
+    }
+
+    private String formatWebClientError(WebClientResponseException exception) {
+        String body = exception.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            return exception.getMessage();
+        }
+        String normalized = body.replace('\r', ' ').replace('\n', ' ').trim();
+        if (normalized.length() > 1000) {
+            normalized = normalized.substring(0, 1000) + "...";
+        }
+        return exception.getMessage() + ", responseBody=" + normalized;
     }
 
     public boolean hasStreamingError() { return streamingError != null; }

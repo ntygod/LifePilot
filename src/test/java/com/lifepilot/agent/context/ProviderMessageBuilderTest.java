@@ -246,4 +246,77 @@ class ProviderMessageBuilderTest {
                         && ("正在检索相关记忆和知识…".equals(assistantMessage.getText())
                         || "正在思考回答…".equals(assistantMessage.getText())));
     }
+
+    @Test
+    void build_工具调用与结果应保留callId用于后续回放() {
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(new AgentConfigProperties())
+        );
+        var context = new AssembledContext(
+                "system prompt",
+                List.of(),
+                List.of(),
+                """
+                        <current_request>
+                        执行搜索
+                        </current_request>
+                        """,
+                List.of(),
+                TokenBudget.allocateDefault(4096),
+                0,
+                0.0f,
+                0,
+                false,
+                List.of(),
+                null
+        );
+        var state = ReactAgentState.builder()
+                .traceId("trace-call-id")
+                .sessionId("session-call-id")
+                .goal("test")
+                .channel("web")
+                .steps(List.of(
+                        new ReactStep.ToolCall("tool.search", "搜索", "{\"q\":\"call-id\"}", 10, "call-123"),
+                        new ReactStep.Observation("tool.search", "搜索", true, "{\"summary\":\"ok\"}", 12, "call-123")
+                ))
+                .stepCount(2)
+                .shortTermMemory(List.of())
+                .mentionedEntities(List.of())
+                .budget(Budget.builder()
+                        .maxTokens(4000)
+                        .tokensUsed(0)
+                        .tokensReserved(0)
+                        .maxSteps(10)
+                        .stepsUsed(0)
+                        .maxDuration(Duration.ofMinutes(1))
+                        .elapsed(Duration.ZERO)
+                        .build())
+                .parentTraceId(null)
+                .depth(0)
+                .preferredProvider(null)
+                .done(false)
+                .finalOutput(null)
+                .terminationReason(null)
+                .completionReason(null)
+                .reasoningSummary(null)
+                .completionMode(CompletionMode.NORMAL)
+                .allowedToolIds(null)
+                .pendingMedia(null)
+                .earlyStopRejectCount(0)
+                .suspended(false)
+                .suspendReason(null)
+                .build();
+
+        var result = builder.build(context, state);
+
+        var assistant = (AssistantMessage) result.messages().get(2);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+        assertThat(assistant.getText()).isNull();
+        assertThat(assistant.getToolCalls()).singleElement()
+                .extracting(AssistantMessage.ToolCall::id)
+                .isEqualTo("call-123");
+        assertThat(toolResponse.getResponses()).singleElement()
+                .extracting(ToolResponseMessage.ToolResponse::id)
+                .isEqualTo("call-123");
+    }
 }
