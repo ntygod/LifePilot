@@ -493,13 +493,13 @@ onMounted(() => {
       <div class="flex-1 overflow-y-auto px-1 py-2">
         <div
           v-if="loading && detailMode === null"
-          class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/60 px-5 py-10 text-sm text-muted-foreground"
+          class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/60 px-6 py-10 text-sm text-muted-foreground"
         >
           正在加载模型服务配置...
         </div>
 
         <template v-else>
-          <div class="mb-5 flex items-center justify-between gap-3">
+          <div class="mb-6 flex items-center justify-between gap-4">
             <Button variant="ghost" class="gap-2" @click="closeManager">
               <ArrowLeft class="size-4" />
               返回模型服务页
@@ -517,18 +517,18 @@ onMounted(() => {
           </div>
 
           <form class="space-y-4" @submit.prevent="saveService">
-            <div v-if="errors._general" class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+            <div v-if="errors._general" class="rounded-md bg-destructive/10 p-4 text-sm text-destructive">
               {{ errors._general }}
             </div>
 
             <div class="grid gap-4 2xl:grid-cols-[minmax(0,1.65fr)_minmax(360px,1fr)]">
-              <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
+              <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
+                <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-4">
                   <div class="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{{ currentVendorTemplate?.displayName || '未选择模板' }}</Badge>
                     <Badge variant="secondary">{{ currentVendorTemplate?.providerType || formData.type }}</Badge>
                   </div>
-                  <div class="flex items-center gap-3 rounded-full border border-border/70 bg-muted/20 px-3 py-2">
+                  <div class="flex items-center gap-4 rounded-full border border-border/70 bg-muted/20 px-4 py-2">
                     <span class="text-sm text-foreground">启用服务</span>
                     <Switch :model-value="formData.enabled" @update:model-value="updateEnabled" />
                   </div>
@@ -624,7 +624,7 @@ onMounted(() => {
               </section>
 
               <div class="grid content-start gap-4">
-                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
                   <div class="grid gap-4 sm:grid-cols-2">
                     <div class="space-y-2 sm:col-span-2">
                       <Label>服务 ID</Label>
@@ -661,7 +661,7 @@ onMounted(() => {
                   </div>
                 </section>
 
-                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
                   <div class="grid gap-4 sm:grid-cols-2">
                     <div class="space-y-2">
                       <Label>输入成本（每百万 token）</Label>
@@ -686,15 +686,15 @@ onMounted(() => {
               </div>
             </div>
 
-            <section v-if="isGenerationKind" class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-5">
+            <section v-if="isGenerationKind" class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
               <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
                 <div class="space-y-2">
                   <Label>生成能力</Label>
-                  <div class="grid gap-3 sm:grid-cols-2">
+                  <div class="grid gap-4 sm:grid-cols-2">
                     <label
                       v-for="option in generationCapabilityOptions"
                       :key="option.value"
-                      class="flex min-h-11 items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+                      class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
                     >
                       <Checkbox
                         :model-value="formData.capabilities?.includes(option.value)"
@@ -708,11 +708,11 @@ onMounted(() => {
 
                 <div class="space-y-2">
                   <Label>支持场景</Label>
-                  <div class="grid gap-3 sm:grid-cols-2">
+                  <div class="grid gap-4 sm:grid-cols-2">
                     <label
                       v-for="option in generationSceneOptions"
                       :key="option.value"
-                      class="flex min-h-11 items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+                      class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
                     >
                       <Checkbox
                         :model-value="formData.scenes?.includes(option.value)"
@@ -725,7 +725,7 @@ onMounted(() => {
 
                 <div class="space-y-2">
                   <Label>流式输出</Label>
-                  <label class="flex min-h-11 items-center gap-3 rounded-md border border-border/60 px-3 py-2">
+                  <label class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2">
                     <Checkbox
                       :model-value="formData.supportsStreaming"
                       @update:model-value="updateSupportsStreaming"

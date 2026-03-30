@@ -49,6 +49,13 @@ final class StreamingToolCallAggregator {
                 }
             }
         }
+        // 当 id 为空且 fallbackIndex 指向的槽位已被不同 id 的 tool call 占用时，追加新槽位
+        if (fallbackIndex < partialToolCalls.size()) {
+            PartialToolCall existing = partialToolCalls.get(fallbackIndex);
+            if (hasText(existing.id) && !existing.id.equals(toolCall.id())) {
+                return partialToolCalls.size();
+            }
+        }
         return fallbackIndex;
     }
 

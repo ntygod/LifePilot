@@ -933,7 +933,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
         </Button>
       </template>
 
-      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="item in summaryItems"
           :key="item.label"
@@ -953,7 +953,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
     </div>
 
     <template v-else>
-      <section class="detail-card p-5">
+      <section class="detail-card p-6">
         <div class="flex flex-col gap-4 border-b border-border/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
           <div class="space-y-1">
             <div class="surface-label">插件注册表</div>
@@ -964,14 +964,14 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
           </div>
         </div>
 
-        <div class="mt-5 grid gap-4 xl:grid-cols-2">
+        <div class="mt-6 grid gap-4 xl:grid-cols-2">
           <article
             v-for="plugin in plugins"
             :key="plugin.pluginId"
             class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4"
           >
             <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div class="min-w-0 flex-1 space-y-3">
+              <div class="min-w-0 flex-1 space-y-4">
                 <div class="flex flex-wrap items-center gap-2">
                   <h4 class="text-base font-semibold text-foreground">{{ plugin.name }}</h4>
                   <Badge :variant="connectorModeVariant(plugin.connectorMode)">
@@ -1020,7 +1020,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
         </div>
       </section>
 
-      <section v-if="createPlugin" class="detail-card p-5">
+      <section v-if="createPlugin" class="detail-card p-6">
         <SettingSection
           :title="`新建 ${createPlugin.name} 实例`"
           :description="connectorHint(createPlugin)"
@@ -1110,12 +1110,12 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             </SettingItem>
           </template>
 
-          <div v-else class="py-3 text-sm text-muted-foreground">
+          <div v-else class="py-4 text-sm text-muted-foreground">
             该插件没有额外配置字段，创建后即可作为实例托管到统一控制面。
           </div>
 
           <div class="pt-2">
-            <details class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-3">
+            <details class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-4">
               <summary class="cursor-pointer select-none text-sm font-medium text-foreground">
                 高级选项
               </summary>
@@ -1135,7 +1135,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
       </section>
 
       <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <section class="detail-card p-5">
+        <section class="detail-card p-6">
           <div class="flex items-center justify-between border-b border-border/70 pb-4">
             <div>
               <div class="surface-label">实例列表</div>
@@ -1144,7 +1144,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             <Badge variant="outline">{{ instances.length }} 个实例</Badge>
           </div>
 
-          <div class="mt-5 space-y-3">
+          <div class="mt-6 space-y-4">
             <button
               v-for="instance in instances"
               :key="instance.instanceId"
@@ -1161,21 +1161,21 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 <Badge variant="outline">{{ instance.platform }}</Badge>
               </div>
               <div class="mt-2 text-sm text-muted-foreground">{{ instance.instanceId }}</div>
-              <div class="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+              <div class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                 <div>插件：{{ instance.pluginId }}</div>
                 <div>启用：{{ instance.enabled ? '是' : '否' }}</div>
                 <div>最近心跳：{{ formatDateTime(instance.lastHeartbeatAt, '暂无') }}</div>
                 <div>最近更新：{{ formatDateTime(instance.updatedAt) }}</div>
               </div>
-              <div v-if="instance.lastError" class="mt-3 rounded-[calc(var(--radius)+6px)] border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <div v-if="instance.lastError" class="mt-4 rounded-[calc(var(--radius)+6px)] border border-destructive/20 bg-destructive/5 px-4 py-2 text-xs text-destructive">
                 {{ instance.lastError }}
               </div>
             </button>
           </div>
         </section>
 
-        <section class="detail-card p-5">
-          <div v-if="selectedInstance && selectedPlugin" class="space-y-5">
+        <section class="detail-card p-6">
+          <div v-if="selectedInstance && selectedPlugin" class="space-y-6">
             <div class="flex flex-col gap-4 border-b border-border/70 pb-4 xl:flex-row xl:items-start xl:justify-between">
               <div class="space-y-2">
                 <div class="surface-label">实例详情</div>
@@ -1229,7 +1229,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
               </div>
             </div>
 
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
                 <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">插件</div>
                 <div class="mt-2 text-sm font-medium text-foreground">{{ selectedPlugin.name }}</div>
@@ -1326,12 +1326,12 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                   </SettingItem>
                 </template>
 
-                <div v-else class="py-3 text-sm text-muted-foreground">
+                <div v-else class="py-4 text-sm text-muted-foreground">
                   当前插件没有可编辑的 schema 字段，实例主要通过运行状态和系统默认行为参与统一控制面。
                 </div>
 
                 <div class="pt-2">
-                  <details class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-3">
+                  <details class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-4">
                     <summary class="cursor-pointer select-none text-sm font-medium text-foreground">
                       高级选项
                     </summary>
@@ -1376,7 +1376,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 </Badge>
               </template>
 
-              <div class="grid gap-3 md:grid-cols-2">
+              <div class="grid gap-4 md:grid-cols-2">
                 <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
                   <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">状态</div>
                   <div class="mt-2 text-sm font-medium text-foreground">{{ statusLabel(healthStatus.status) }}</div>
@@ -1391,7 +1391,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             </StatePanel>
 
             <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
-              <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div class="text-sm font-semibold text-foreground">插件安装资产</div>
                   <p class="mt-1 text-sm leading-6 text-muted-foreground">
@@ -1403,7 +1403,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 </Badge>
               </div>
 
-              <div v-if="installationLoading" class="mt-4 space-y-3">
+              <div v-if="installationLoading" class="mt-4 space-y-4">
                 <Skeleton class="h-28 w-full rounded-[calc(var(--radius)+6px)]" />
                 <Skeleton class="h-40 w-full rounded-[calc(var(--radius)+6px)]" />
               </div>
@@ -1444,7 +1444,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                     class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/80 px-4 py-4"
                   >
                     <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">附加资产</div>
-                    <div class="mt-3 space-y-2">
+                    <div class="mt-4 space-y-2">
                       <a
                         v-for="asset in installationExtraAssets"
                         :key="`asset-link-${asset.relativePath}`"
@@ -1502,7 +1502,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                       </a>
                     </div>
 
-                    <div v-if="assetPreviewLoading" class="mt-4 space-y-3">
+                    <div v-if="assetPreviewLoading" class="mt-4 space-y-4">
                       <Skeleton class="h-5 w-48 rounded-md" />
                       <Skeleton class="h-48 w-full rounded-[calc(var(--radius)+6px)]" />
                     </div>
@@ -1531,7 +1531,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             </section>
 
             <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
-              <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center justify-between gap-4">
                 <div>
                   <div class="text-sm font-semibold text-foreground">最近事件</div>
                   <p class="mt-1 text-sm leading-6 text-muted-foreground">
@@ -1541,7 +1541,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 <Badge variant="outline">{{ instanceEvents.length }} 条</Badge>
               </div>
 
-              <div v-if="eventsLoading" class="mt-4 space-y-3">
+              <div v-if="eventsLoading" class="mt-4 space-y-4">
                 <Skeleton class="h-20 w-full rounded-[calc(var(--radius)+6px)]" />
                 <Skeleton class="h-20 w-full rounded-[calc(var(--radius)+6px)]" />
               </div>
@@ -1550,7 +1550,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 当前实例还没有运行事件，启动实例或执行一次健康检查后会在这里看到轨迹。
               </div>
 
-              <div v-else class="mt-4 space-y-3">
+              <div v-else class="mt-4 space-y-4">
                 <article
                   v-for="event in instanceEvents"
                   :key="event.id"
@@ -1566,13 +1566,13 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                     <div class="text-xs text-muted-foreground">{{ formatDateTime(event.createdAt) }}</div>
                   </div>
 
-                  <div v-if="event.message" class="mt-3 text-sm leading-6 text-foreground">
+                  <div v-if="event.message" class="mt-4 text-sm leading-6 text-foreground">
                     {{ event.message }}
                   </div>
 
                   <pre
                     v-if="hasEventPayload(event)"
-                    class="mt-3 overflow-x-auto rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-3 text-xs text-foreground"
+                    class="mt-4 overflow-x-auto rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-4 text-xs text-foreground"
                   >{{ JSON.stringify(event.payload ?? {}, null, 2) }}</pre>
                 </article>
               </div>
@@ -1583,7 +1583,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 <Globe class="size-4 text-primary" />
                 <div class="text-sm font-semibold text-foreground">{{ pluginGuideTitle(selectedPlugin) }}</div>
               </div>
-              <ol v-if="pluginGuideSteps(selectedPlugin).length" class="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+              <ol v-if="pluginGuideSteps(selectedPlugin).length" class="mt-4 space-y-2 text-sm leading-6 text-muted-foreground">
                 <li
                   v-for="(step, index) in pluginGuideSteps(selectedPlugin)"
                   :key="`guide-${selectedPlugin.pluginId}-${index}`"
@@ -1593,7 +1593,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                   <span>{{ step }}</span>
                 </li>
               </ol>
-              <p v-else class="mt-3 text-sm leading-6 text-muted-foreground">
+              <p v-else class="mt-4 text-sm leading-6 text-muted-foreground">
                 当前插件没有额外接入说明。
               </p>
             </section>

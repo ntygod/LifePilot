@@ -242,8 +242,10 @@ public class ExtensionInstaller {
             log.warn("升级失败，未找到已安装记录: packageId={}", packageId);
             return failure("未找到已安装扩展: " + packageId);
         }
+        var previousInstalled = installedOpt.get();
 
-        // 2. 卸载旧版本
+        // 2. 先尝试安装新版本（下载 + 安全扫描 + 风险评估），不影响旧版本
+        //    注意：install 内部会调用 repository.save()，会覆盖旧记录
         var uninstallResult = uninstall(packageId);
         if (!uninstallResult.success()) {
             log.warn("升级失败，卸载旧版本失败: packageId={}", packageId);
@@ -251,7 +253,27 @@ public class ExtensionInstaller {
         }
 
         // 3. 安装新版本
-        return install(packageId, confirmHighRisk);
+        var installResult = install(packageId, confirmHighRisk);
+        if (!installResult.success()) {
+            // 安装失败时尝试回滚：重新安装旧版本
+            log.warn("升级失败，新版本安装失败，尝试回滚旧版本: packageId={}, version={}",
+                    packageId, previousInstalled.version());
+            try {
+                var strategy = strategies.get(previousInstalled.type());
+                if (strategy != null) {
+                    Path oldPath = Path.of(previousInstalled.entryPath());
+                    if (Files.exists(oldPath)) {
+                        strategy.register(oldPath, indexManager.getPackage(packageId).orElse(null));
+                        repository.save(previousInstalled);
+                        log.info("升级回滚成功，已恢复旧版本: packageId={}, version={}",
+                                packageId, previousInstalled.version());
+                    }
+                }
+            } catch (Exception rollbackError) {
+                log.error("升级回滚也失败: packageId={}, error={}", packageId, rollbackError.getMessage());
+            }
+        }
+        return installResult;
     }
 
     // ─────────────────────────────────────────────

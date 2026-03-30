@@ -48,6 +48,11 @@ public class ConnectorManager {
             "dingtalk", new ManagedConnectorDefaults("dist/dingtalk-connector.jar", "connectors/dingtalk-connector", 19093, "/actuator/health")
     );
 
+    /** 已安装 JAR 启动策略。 */
+    static final String STRATEGY_INSTALLED_JAR = "installed-jar";
+    /** 工作区 Maven 启动策略。 */
+    static final String STRATEGY_WORKSPACE_MAVEN = "workspace-maven";
+
     private final ConnectorManagerProperties properties;
     private final Environment environment;
     private final RestClient restClient;
@@ -108,7 +113,7 @@ public class ConnectorManager {
     }
 
     @Nullable
-    public String resolveBaseUrl(ChannelInstance instance,
+    public synchronized String resolveBaseUrl(ChannelInstance instance,
                                  ChannelPluginDescriptor descriptor,
                                  boolean ensureStarted) {
         String manualBaseUrl = readManualBaseUrl(instance.config());
@@ -247,15 +252,19 @@ public class ConnectorManager {
             return;
         }
         process.destroy();
-        sleepSilently(2000);
-        if (process.isAlive()) {
+        try {
+            if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) && process.isAlive()) {
+                process.destroyForcibly();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             process.destroyForcibly();
         }
         log.info("官方 connector 已停止: pluginId={}", managedProcess.pluginId());
     }
 
     private List<String> buildCommand(ConnectorLaunchTarget launchTarget, int port) {
-        if ("installed-jar".equals(launchTarget.launchMode())) {
+        if (STRATEGY_INSTALLED_JAR.equals(launchTarget.launchMode())) {
             return List.of(
                     javaCommand(),
                     "-jar",
@@ -307,9 +316,9 @@ public class ConnectorManager {
         }
         if (strategy == null) {
             if (artifactPath != null && !artifactPath.isBlank()) {
-                strategy = "installed-jar";
+                strategy = STRATEGY_INSTALLED_JAR;
             } else if (defaults != null || (workspace != null && !workspace.isBlank())) {
-                strategy = "workspace-maven";
+                strategy = STRATEGY_WORKSPACE_MAVEN;
             }
         }
         String healthPath = textValue(managed.get("healthPath"));
@@ -360,7 +369,7 @@ public class ConnectorManager {
     }
 
     private Optional<ConnectorLaunchTarget> resolveLaunchTarget(ManagedConnectorSpec spec) {
-        if ("installed-jar".equals(spec.strategy())) {
+        if (STRATEGY_INSTALLED_JAR.equals(spec.strategy())) {
             Optional<Path> installedArtifact = resolveInstalledArtifactPath(spec.pluginId(), spec.artifactPath());
             if (installedArtifact.isPresent()) {
                 Path launchPath = installedArtifact.get();
@@ -382,7 +391,7 @@ public class ConnectorManager {
             }
             return Optional.empty();
         }
-        if ("workspace-maven".equals(spec.strategy()) && spec.workspace() != null && !spec.workspace().isBlank()) {
+        if (STRATEGY_WORKSPACE_MAVEN.equals(spec.strategy()) && spec.workspace() != null && !spec.workspace().isBlank()) {
             return resolveWorkspacePath(spec.workspace())
                     .map(path -> new ConnectorLaunchTarget(
                             "workspace-maven",
@@ -446,13 +455,6 @@ public class ConnectorManager {
         } catch (IOException e) {
             return false;
         }
-    }
-
-    private Optional<Path> resolveWorkspacePath(ManagedConnectorSpec spec) {
-        if (spec.workspace() == null || spec.workspace().isBlank()) {
-            return Optional.empty();
-        }
-        return resolveWorkspacePath(spec.workspace());
     }
 
     private Optional<Path> resolveWorkspacePath(String workspace) {

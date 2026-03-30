@@ -84,13 +84,21 @@ public class ChannelControlPlaneConfiguration {
     }
 
     @Bean
+    public RestClient channelControlPlaneRestClient() {
+        return RestClient.builder()
+                .defaultHeader("User-Agent", "ZhiWei-ChannelControlPlane")
+                .build();
+    }
+
+    @Bean
     public ConnectorManager connectorManager(ConnectorManagerProperties properties,
                                              Environment environment,
+                                             RestClient channelControlPlaneRestClient,
                                              ObjectProvider<InstalledExtensionRepository> installedExtensionRepositoryProvider) {
         return new ConnectorManager(
                 properties,
                 environment,
-                RestClient.create(),
+                channelControlPlaneRestClient,
                 installedExtensionRepositoryProvider.getIfAvailable()
         );
     }
@@ -99,12 +107,13 @@ public class ChannelControlPlaneConfiguration {
     public ConnectorRuntimeManager connectorRuntimeManager(ChannelInstanceService channelInstanceService,
                                                            ChannelRegistry channelRegistry,
                                                            ChannelInstanceEventService channelInstanceEventService,
+                                                           RestClient channelControlPlaneRestClient,
                                                            ConnectorManager connectorManager) {
         return new ConnectorRuntimeManager(
                 channelInstanceService,
                 channelRegistry,
                 channelInstanceEventService,
-                RestClient.create(),
+                channelControlPlaneRestClient,
                 connectorManager
         );
     }
@@ -117,12 +126,13 @@ public class ChannelControlPlaneConfiguration {
     @Bean
     public ChannelDeliveryDispatcher channelDeliveryDispatcher(ChannelRegistry channelRegistry,
                                                               ChannelInstanceEventService channelInstanceEventService,
+                                                              RestClient channelControlPlaneRestClient,
                                                               ConnectorManager connectorManager,
                                                               @Nullable SseSessionManager sseSessionManager) {
         return new ChannelDeliveryDispatcher(
                 channelRegistry,
                 channelInstanceEventService,
-                RestClient.create(),
+                channelControlPlaneRestClient,
                 connectorManager,
                 sseSessionManager
         );

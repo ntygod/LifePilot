@@ -35,4 +35,36 @@ public record ChannelInstance(
         createdAt = createdAt != null ? createdAt : Instant.now();
         updatedAt = updatedAt != null ? updatedAt : createdAt;
     }
+
+    /** 变更状态、错误信息和心跳时间，保留其余字段不变。 */
+    public ChannelInstance withStatus(ChannelInstanceStatus newStatus,
+                                     @Nullable String newLastError,
+                                     @Nullable Instant newLastHeartbeatAt) {
+        return new ChannelInstance(
+                instanceId, pluginId, platform, displayName, enabled,
+                newStatus, config, secretConfig, routingPolicy,
+                newLastHeartbeatAt, newLastError,
+                createdAt, Instant.now()
+        );
+    }
+
+    /** 变更启用状态，保留其余字段不变。 */
+    public ChannelInstance withEnabled(boolean newEnabled) {
+        return new ChannelInstance(
+                instanceId, pluginId, platform, displayName, newEnabled,
+                status, config, secretConfig, routingPolicy,
+                lastHeartbeatAt, lastError,
+                createdAt, Instant.now()
+        );
+    }
+
+    /** 替换 secretConfig，保留其余字段不变。 */
+    public ChannelInstance withSecretConfig(@Nullable Map<String, Object> newSecretConfig) {
+        return new ChannelInstance(
+                instanceId, pluginId, platform, displayName, enabled,
+                status, config, newSecretConfig, routingPolicy,
+                lastHeartbeatAt, lastError,
+                createdAt, Instant.now()
+        );
+    }
 }
