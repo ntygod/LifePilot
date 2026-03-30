@@ -3,14 +3,17 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.agent.model.AgentTaskMode;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.CompletionReason;
+import com.lifepilot.interaction.model.DeliveryMode;
+import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
+import com.lifepilot.interaction.service.ChannelIngressService;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.audio.SpeechSynthesizer;
 import com.lifepilot.media.config.MediaProperties;
@@ -42,9 +45,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * 对话 REST + SSE 端点，处理消息发送、会话管理和 A2UI 信号回传。
  *
- * <p>非流式端点通过 {@link WebChannelAdapter#processMessage} 同步处理，
- * 流式端点通过 {@link WebChannelAdapter#processMessageStreaming} 获取 streamId
- * 后由 {@link SseSessionManager} 管理 SseEmitter 生命周期。</p>
+ * <p>浏览器请求先由 {@link BrowserIngressService} 组装为统一网关消息，
+ * 再通过 {@link ChannelIngressService} 进入主执行链路。</p>
  *
  * @author zsg
  * @since 2026-02-26
@@ -76,7 +78,8 @@ public class ChatController {
             ".mp4", ".avi", ".mov", ".mkv", ".flv"
     );
 
-    private final WebChannelAdapter adapter;
+    private final BrowserIngressService browserIngressService;
+    private final ChannelIngressService channelIngressService;
     private final SseSessionManager sseManager;
     private final com.lifepilot.interaction.web.service.ChatSessionService sessionService;
     private final MessageFeedbackRepository feedbackRepository;
@@ -90,7 +93,9 @@ public class ChatController {
     private final SpeechSynthesizer speechSynthesizer;
     private final MediaProperties mediaProperties;
 
-    public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
+    public ChatController(BrowserIngressService browserIngressService,
+                          ChannelIngressService channelIngressService,
+                          SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
@@ -99,7 +104,8 @@ public class ChatController {
                           @Nullable FeedbackProcessor feedbackProcessor,
                           @Nullable SpeechSynthesizer speechSynthesizer,
                           MediaProperties mediaProperties) {
-        this.adapter = adapter;
+        this.browserIngressService = browserIngressService;
+        this.channelIngressService = channelIngressService;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
         this.feedbackRepository = feedbackRepository;
@@ -134,7 +140,8 @@ public class ChatController {
         }
 
         log.debug("收到非流式消息请求: sessionId={}", request.sessionId());
-        var response = adapter.processMessage(request, httpRequest);
+        GatewayMessage message = browserIngressService.buildChatMessage(request, httpRequest, DeliveryMode.SYNC);
+        var response = channelIngressService.submitSync(message);
         if (!response.isSuccess()) {
             return ResponseEntity.status(response.statusCode()).body(
                     new ErrorResponse(response.statusCode(), response.errorMessage(), Instant.now()));
@@ -173,7 +180,8 @@ public class ChatController {
         }
 
         log.debug("收到流式消息请求: sessionId={}", request.sessionId());
-        var response = adapter.processMessageStreaming(request, httpRequest);
+        GatewayMessage message = browserIngressService.buildChatMessage(request, httpRequest, DeliveryMode.SSE_STREAM);
+        var response = channelIngressService.submitSync(message);
 
         if (response.content() instanceof ResponseContent.StreamingContent(String streamId)) {
             // 流式响应：emitter 已在 ExecutionMiddleware 中预创建，直接获取
@@ -515,7 +523,8 @@ public class ChatController {
         }
 
         log.debug("收到 A2UI 信号: name={}, sessionId={}", request.name(), request.sessionId());
-        var response = adapter.processSignal(request, httpRequest);
+        GatewayMessage message = browserIngressService.buildSignalMessage(request, httpRequest);
+        var response = channelIngressService.submitSync(message);
         if (!response.isSuccess()) {
             return ResponseEntity.status(response.statusCode()).body(
                     new ErrorResponse(response.statusCode(), response.errorMessage(), Instant.now()));

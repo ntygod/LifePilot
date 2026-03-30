@@ -2,7 +2,6 @@ package com.lifepilot.interaction.config;
 
 import java.util.List;
 
-import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.gateway.DefaultMessageGateway;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.middleware.GatewayMiddleware;
@@ -20,7 +19,7 @@ import org.springframework.context.annotation.Bean;
  * Gateway 核心框架自动配置。
  *
  * <p>注册 {@link MiddlewarePipeline} 和 {@link MessageGateway} Bean，
- * 自动收集所有 {@link GatewayMiddleware} 和 {@link ChannelAdapter} Bean。
+ * 自动收集所有 {@link GatewayMiddleware} Bean。
  * 在 {@link ApplicationReadyEvent} 触发时启动网关。</p>
  *
  * @author zsg
@@ -48,9 +47,7 @@ public class GatewayAutoConfiguration {
     }
 
     /**
-     * 注册消息网关（不在构造时注入 ChannelAdapter，避免循环依赖）。
-     *
-     * <p>通道适配器在 {@link ApplicationReadyEvent} 中延迟注册。</p>
+     * 注册消息网关。
      *
      * @param pipeline 中间件管道
      * @return 消息网关实例
@@ -62,9 +59,10 @@ public class GatewayAutoConfiguration {
     }
 
     /**
-     * 应用就绪后注册通道适配器并启动消息网关。
+     * 应用就绪后启动消息网关。
      *
-     * <p>延迟注册通道适配器，打破 MessageGateway ↔ ChannelAdapter 循环依赖。</p>
+     * <p>新的渠道 ingress 已改为直接提交统一 {@code GatewayMessage}，
+     * 不再依赖旧 {@code ChannelAdapter} 注册流程。</p>
      *
      * @param event 应用就绪事件
      */
@@ -73,13 +71,8 @@ public class GatewayAutoConfiguration {
         var ctx = event.getApplicationContext();
         if (ctx.containsBean("messageGateway")) {
             var gateway = (DefaultMessageGateway) ctx.getBean(MessageGateway.class);
-            var adapters = ctx.getBeansOfType(ChannelAdapter.class).values();
-            for (var adapter : adapters) {
-                gateway.registerChannel(adapter);
-                log.info("注册通道适配器: type={}", adapter.channelType());
-            }
             gateway.start();
-            log.info("ApplicationReady: 消息网关已启动，已注册 {} 个通道适配器", adapters.size());
+            log.info("ApplicationReady: 消息网关已启动");
         }
     }
 }

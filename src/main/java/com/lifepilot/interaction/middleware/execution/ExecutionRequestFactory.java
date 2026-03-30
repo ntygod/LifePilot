@@ -6,6 +6,9 @@ import com.lifepilot.agent.model.AgentTaskMode;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.interaction.model.ChannelMetadata;
 import com.lifepilot.interaction.model.GatewayMessage;
+import com.lifepilot.interaction.model.InteractionSource;
+import com.lifepilot.interaction.model.InteractionTraceHeaders;
+import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.SessionConfigKeys;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
@@ -47,10 +50,11 @@ public final class ExecutionRequestFactory {
     public AgentRequest build(GatewayMessage message) {
         Map<String, Object> sessionConfig = getSessionConfig(message.sessionId());
         ChatTurnAction action = resolveTurnAction(message);
+        InteractionSource interactionSource = resolveInteractionSource(message);
         return new AgentRequest(
                 message.contentAsText(),
                 message.sessionId(),
-                message.channelType().value(),
+                interactionSource,
                 message.userId(),
                 resolveTurnId(message),
                 action,
@@ -65,6 +69,61 @@ public final class ExecutionRequestFactory {
                 resolveTemperature(sessionConfig),
                 action.toResumePolicy()
         );
+    }
+
+    private InteractionSource resolveInteractionSource(GatewayMessage message) {
+        InteractionSource tracedSource = resolveTraceHeaderSource(message);
+        if (tracedSource != null) {
+            return tracedSource;
+        }
+        return InteractionSource.legacy(message.channelType().value(), message.sessionId());
+    }
+
+    @Nullable
+    private InteractionSource resolveTraceHeaderSource(GatewayMessage message) {
+        Map<String, String> traceHeaders = message.traceHeaders();
+        String rawSourceKind = normalizeText(traceHeaders.get(InteractionTraceHeaders.SOURCE_KIND));
+        String sourceId = normalizeText(traceHeaders.get(InteractionTraceHeaders.SOURCE_ID));
+        String platform = normalizeText(traceHeaders.get(InteractionTraceHeaders.CHANNEL_PLATFORM));
+        String instanceId = normalizeText(traceHeaders.get(InteractionTraceHeaders.CHANNEL_INSTANCE_ID));
+        if (rawSourceKind == null && platform == null && instanceId == null) {
+            return null;
+        }
+        SourceKind sourceKind = resolveSourceKind(rawSourceKind);
+        String effectiveSourceId = sourceId != null ? sourceId : instanceId;
+        if (sourceKind == SourceKind.CHANNEL && platform != null && instanceId != null) {
+            return InteractionSource.channel(
+                    effectiveSourceId != null ? effectiveSourceId : instanceId,
+                    platform,
+                    instanceId
+            );
+        }
+        if (effectiveSourceId == null) {
+            return null;
+        }
+        return switch (sourceKind) {
+            case CHANNEL -> InteractionSource.channel(message.channelType().value(), effectiveSourceId);
+            case WORKFLOW -> InteractionSource.workflow(effectiveSourceId);
+            case CRON -> InteractionSource.cron(effectiveSourceId);
+            case HEARTBEAT -> InteractionSource.heartbeat(effectiveSourceId);
+            case SYSTEM -> InteractionSource.system(effectiveSourceId);
+        };
+    }
+
+    private SourceKind resolveSourceKind(@Nullable String rawSourceKind) {
+        if (rawSourceKind == null || rawSourceKind.isBlank()) {
+            return SourceKind.SYSTEM;
+        }
+        try {
+            return SourceKind.valueOf(rawSourceKind);
+        } catch (IllegalArgumentException ignored) {
+            return SourceKind.SYSTEM;
+        }
+    }
+
+    @Nullable
+    private String normalizeText(@Nullable String value) {
+        return value != null && !value.isBlank() ? value.trim() : null;
     }
 
     /**

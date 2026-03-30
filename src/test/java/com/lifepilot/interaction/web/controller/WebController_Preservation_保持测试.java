@@ -1,8 +1,9 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
+import com.lifepilot.interaction.service.ChannelIngressService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
+import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatSessionService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
@@ -51,7 +52,9 @@ class WebController_Preservation_保持测试 {
 
     // ── ChatController 依赖 ──────────────────────────────────
     @Mock
-    WebChannelAdapter webChannelAdapter;
+    BrowserIngressService browserIngressService;
+    @Mock
+    ChannelIngressService channelIngressService;
     @Mock
     SseSessionManager sseSessionManager;
     @Mock
@@ -71,7 +74,7 @@ class WebController_Preservation_保持测试 {
     void setUp() {
         var mediaProperties = new MediaProperties();
         var chatController = new ChatController(
-                webChannelAdapter, sseSessionManager, chatSessionService,
+                browserIngressService, channelIngressService, sseSessionManager, chatSessionService,
                 messageFeedbackRepository, attachmentRepository, knowledgeBaseProperties,
                 null, null, null, mediaProperties);
         var kbController = new KnowledgeBaseController(
