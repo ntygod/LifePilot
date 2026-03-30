@@ -413,7 +413,9 @@ public class AgentOrchestrator {
             log.info("Agent 从挂起恢复完成：traceId={}, stepCount={}", state.traceId(), state.stepCount());
         } catch (Exception e) {
             executionPersistence.markTurnFailed(state, e);
-            log.error("Agent 从挂起恢复失败：traceId={}, error={}", state.traceId(), e.getMessage(), e);
+            // 恢复失败时保留快照，允许后续重试恢复；快照会由 SuspendStore 的 TTL 策略自动清理
+            log.error("Agent 从挂起恢复失败（快照已保留，可重试）：traceId={}, suspendedTraceId={}, error={}",
+                    state.traceId(), suspendedTraceId, e.getMessage(), e);
         }
     }
     /**

@@ -141,9 +141,9 @@ public class AgentLoopContext {
 
     /** 在首次用户可见 token 到来前，记录当前模型流开始时间。 */
     public void markModelStreamStarted(Instant instant) {
-        if (firstModelTokenAt == null) {
+        if (modelStreamStartAt == null) {
             synchronized (this) {
-                if (firstModelTokenAt == null) {
+                if (modelStreamStartAt == null) {
                     modelStreamStartAt = instant;
                 }
             }

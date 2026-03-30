@@ -124,6 +124,8 @@ public class StreamingCallback implements IterationCallback {
     /** 多模态流式路由。 */
     private ChatResponse callMultimodalStreaming(AgentRequest req, List<Message> messages,
                                                  String scene, @Nullable TraceContext traceContext) {
+        // 清空上一次迭代可能残留的 token 缓冲
+        clearPendingTokenBatch();
         var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
                 ? req.mediaContents()
                 : helper.extractMediaContentsFromMessages(messages);
@@ -196,6 +198,8 @@ public class StreamingCallback implements IterationCallback {
     private ChatResponse callTextStreaming(AgentRequest req, List<Message> messages,
                                            List<ToolCallback> toolCallbacks, String scene,
                                            @Nullable TraceContext traceContext) {
+        // 清空上一次迭代可能残留的 token 缓冲
+        clearPendingTokenBatch();
         String preferredProviderId = request.preferredProvider();
 
         // 提取 system 文本，通过 CallbackHelper 集中增强（流式约束 + A2UI）
@@ -565,6 +569,12 @@ public class StreamingCallback implements IterationCallback {
                 "content", content,
                 "index", nextTokenIndex++
         ));
+    }
+
+    /** 清空 token 合批缓冲，防止跨迭代残留。 */
+    private void clearPendingTokenBatch() {
+        pendingTokenBatch.setLength(0);
+        tokenBatchOpenedAt = null;
     }
 
     private boolean looksLikeA2uiCandidate(String text) {
