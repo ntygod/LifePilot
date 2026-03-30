@@ -184,8 +184,8 @@ class ExtensionInstallerTest {
                 pluginId,
                 "飞书",
                 "1.0.0",
-                "zhiwei",
-                "feishu",
+                "community",
+                "feishu-ext",
                 ConnectorMode.EXTERNAL,
                 Map.of(
                         "protocol", "http",
