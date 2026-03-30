@@ -72,7 +72,7 @@ public class ChannelInstanceService {
                                         @Nullable String lastError,
                                         @Nullable Instant lastHeartbeatAt) {
         ChannelInstance updated = find(instanceId)
-                .map(instance -> copyOf(instance, status, lastError, lastHeartbeatAt, instance.enabled()))
+                .map(instance -> instance.withStatus(status, lastError, lastHeartbeatAt))
                 .orElseThrow(() -> new IllegalArgumentException("渠道实例不存在: " + instanceId));
         channelInstanceRepository.save(updated);
         return updated;
@@ -80,7 +80,7 @@ public class ChannelInstanceService {
 
     public ChannelInstance updateEnabled(String instanceId, boolean enabled) {
         ChannelInstance updated = find(instanceId)
-                .map(instance -> copyOf(instance, instance.status(), instance.lastError(), instance.lastHeartbeatAt(), enabled))
+                .map(instance -> instance.withEnabled(enabled))
                 .orElseThrow(() -> new IllegalArgumentException("渠道实例不存在: " + instanceId));
         channelInstanceRepository.save(updated);
         return updated;
@@ -107,25 +107,4 @@ public class ChannelInstanceService {
         }
     }
 
-    private ChannelInstance copyOf(ChannelInstance instance,
-                                   ChannelInstanceStatus status,
-                                   @Nullable String lastError,
-                                   @Nullable Instant lastHeartbeatAt,
-                                   boolean enabled) {
-        return new ChannelInstance(
-                instance.instanceId(),
-                instance.pluginId(),
-                instance.platform(),
-                instance.displayName(),
-                enabled,
-                status,
-                instance.config(),
-                instance.secretConfig(),
-                instance.routingPolicy(),
-                lastHeartbeatAt,
-                lastError,
-                instance.createdAt(),
-                Instant.now()
-        );
-    }
 }

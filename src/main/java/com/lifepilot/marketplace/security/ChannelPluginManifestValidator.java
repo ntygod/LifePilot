@@ -27,8 +27,10 @@ import java.nio.file.Path;
 public final class ChannelPluginManifestValidator {
 
     private static final List<String> RESERVED_PLATFORMS = List.of(
+            "web", "feishu", "dingtalk", "wecom", "wechatwork",
             "cron", "workflow", "heartbeat", "eval", "a2a", "web-test"
     );
+    private static final java.util.regex.Pattern WINDOWS_DRIVE_PATTERN = java.util.regex.Pattern.compile("^[A-Za-z]:.*");
 
     private ChannelPluginManifestValidator() {
     }
@@ -213,7 +215,7 @@ public final class ChannelPluginManifestValidator {
             if (normalized.isAbsolute()
                     || value.startsWith("/")
                     || value.startsWith("\\")
-                    || value.matches("^[A-Za-z]:.*")
+                    || WINDOWS_DRIVE_PATTERN.matcher(value).matches()
                     || text.isBlank()
                     || text.startsWith("..")) {
                 issues.add(new ValidationIssue(

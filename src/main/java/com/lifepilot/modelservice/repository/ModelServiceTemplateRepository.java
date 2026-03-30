@@ -8,6 +8,7 @@ import com.lifepilot.modelservice.model.ModelServiceKind;
 import com.lifepilot.modelservice.model.ModelServiceTemplate;
 import com.lifepilot.modelservice.model.ModelServiceTemplateModel;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
@@ -25,6 +26,8 @@ import java.util.Map;
  */
 @Repository
 public class ModelServiceTemplateRepository {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ModelServiceTemplateRepository.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -107,7 +110,7 @@ public class ModelServiceTemplateRepository {
         return new ModelServiceTemplateRow(
                 rs.getString("vendor_key"),
                 rs.getString("display_name"),
-                ProviderType.valueOf(rs.getString("provider_type")),
+                safeValueOf(ProviderType.class, rs.getString("provider_type"), ProviderType.OPENAI_COMPATIBLE),
                 rs.getString("description"),
                 rs.getString("default_api_url"),
                 readKinds(rs.getString("supported_kinds_json")),
@@ -122,7 +125,7 @@ public class ModelServiceTemplateRepository {
     private ModelServiceTemplateModel mapModelRow(ResultSet rs) throws SQLException {
         return new ModelServiceTemplateModel(
                 rs.getString("vendor_key"),
-                ModelServiceKind.valueOf(rs.getString("kind")),
+                safeValueOf(ModelServiceKind.class, rs.getString("kind"), ModelServiceKind.GENERATION),
                 rs.getString("model_value"),
                 rs.getString("label"),
                 rs.getInt("recommended") == 1,
@@ -137,7 +140,8 @@ public class ModelServiceTemplateRepository {
 
     private List<ModelServiceKind> readKinds(String json) {
         return readStringList(json).stream()
-                .map(ModelServiceKind::valueOf)
+                .map(value -> safeValueOf(ModelServiceKind.class, value, null))
+                .filter(java.util.Objects::nonNull)
                 .toList();
     }
 
@@ -156,6 +160,18 @@ public class ModelServiceTemplateRepository {
     private Integer integerOrNull(ResultSet rs, String column) throws SQLException {
         int value = rs.getInt(column);
         return rs.wasNull() ? null : value;
+    }
+
+    private static <T extends Enum<T>> T safeValueOf(Class<T> enumType, String value, @Nullable T fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Enum.valueOf(enumType, value.trim());
+        } catch (IllegalArgumentException e) {
+            log.warn("未识别的枚举值，使用默认值: type={}, value={}, fallback={}", enumType.getSimpleName(), value, fallback);
+            return fallback;
+        }
     }
 
     private record ModelServiceTemplateRow(

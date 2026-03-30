@@ -145,6 +145,7 @@ public class StreamingCallback implements IterationCallback {
                     log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
                     this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
                 })
+                // blockLast() 在虚拟线程上下文中调用是安全的，不会阻塞平台线程池
                 .blockLast();
 
         if (cancellationToken.isCancelled()) {
@@ -230,7 +231,7 @@ public class StreamingCallback implements IterationCallback {
 
         // 真正的流式调用路径
         Instant callStart = Instant.now();
-        String scene2 = config.getLoop().getLlmScene();
+        // 注意：此处复用外层参数 scene，避免在流式消费过程中重新读取配置导致不一致
 
         StreamingA2uiParser a2uiParser = helper.isA2uiEnabled() ? new StreamingA2uiParser() : null;
 
@@ -244,6 +245,7 @@ public class StreamingCallback implements IterationCallback {
 
         Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
 
+        // blockLast() 在虚拟线程上下文中调用是安全的，不会阻塞平台线程池
         try {
             flux.takeWhile(chunk -> !cancellationToken.isCancelled()
                             && sseManager.getEmitter(streamId) != null)
@@ -278,12 +280,12 @@ public class StreamingCallback implements IterationCallback {
                 }
             }).doOnError(e -> {
                 log.warn("流式调用异常: scene={}, provider={}, error={}",
-                        scene2, chatModelInfo.serviceId(), describeProviderError(e));
+                        scene, chatModelInfo.serviceId(), describeProviderError(e));
                 this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
             }).blockLast();
         } catch (Exception e) {
             log.error("流式调用失败: scene={}, provider={}, error={}",
-                    scene2, chatModelInfo.serviceId(), describeProviderError(e));
+                    scene, chatModelInfo.serviceId(), describeProviderError(e));
             throw e;
         }
 
@@ -310,14 +312,14 @@ public class StreamingCallback implements IterationCallback {
 
         if (collectedContent.isEmpty() && toolCallAggregator.isEmpty()) {
             log.warn("流式响应为空: scene={}, provider={}, model={}",
-                    scene2, chatModelInfo.serviceId(), chatModelInfo.modelName());
+                    scene, chatModelInfo.serviceId(), chatModelInfo.modelName());
             var emptyMessage = new AssistantMessage("");
             var generation = new Generation(emptyMessage);
             ChatResponse emptyResponse = lastChunk[0] != null
                     ? new ChatResponse(List.of(generation), lastChunk[0].getMetadata())
                     : new ChatResponse(List.of(generation));
             helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
-                    scene2, emptyResponse, null);
+                    scene, emptyResponse, null);
             return emptyResponse;
         }
 
@@ -332,12 +334,12 @@ public class StreamingCallback implements IterationCallback {
         long totalMs = Duration.between(callStart, callEnd).toMillis();
         log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
                         "promptTokens={}, completionTokens={}, toolCallCount={}, contentLength={}",
-                scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
+                scene, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
                 accumulatedPromptTokens[0], accumulatedCompletionTokens[0],
                 toolCalls.size(), collectedContent.length());
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
-                scene2, chatResponse, null);
+                scene, chatResponse, null);
 
         return chatResponse;
     }

@@ -465,15 +465,20 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     }
 
     private <T> T executeWithTimeout(Callable<T> action, Duration timeout) {
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // 使用虚拟线程执行器进行超时控制。注意：try-with-resources 的 close() 会等待任务完成，
+        // 但由于已调用 future.cancel(true) 且虚拟线程响应中断，不会无限阻塞。
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
             var future = executor.submit(action);
             try {
                 return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
                 future.cancel(true);
+                executor.shutdownNow();
                 throw new RuntimeException("LLM 调用超时: " + timeout.toSeconds() + "s", e);
             } catch (InterruptedException e) {
                 future.cancel(true);
+                executor.shutdownNow();
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("LLM 调用被中断", e);
             } catch (ExecutionException e) {
@@ -487,6 +492,8 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             throw e;
         } catch (Exception e) {
             throw new RuntimeException("LLM 调用失败", e);
+        } finally {
+            executor.close();
         }
     }
 }

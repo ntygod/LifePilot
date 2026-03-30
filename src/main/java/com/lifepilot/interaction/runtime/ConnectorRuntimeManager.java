@@ -82,23 +82,28 @@ public class ConnectorRuntimeManager {
     public ChannelInstance stop(String instanceId) {
         ChannelInstance instance = channelInstanceService.find(instanceId)
                 .orElseThrow(() -> new IllegalArgumentException("渠道实例不存在: " + instanceId));
-        channelInstanceService.updateStatus(
-                instanceId,
-                ChannelInstanceStatus.STOPPING,
-                null,
-                instance.lastHeartbeatAt()
-        );
-        invokeExternalCommand(instance, "/stop", false);
-        ChannelInstance updated = channelInstanceService.updateStatus(
-                instanceId, ChannelInstanceStatus.STOPPED, null, null);
-        channelInstanceEventService.record(
-                instanceId,
-                "INSTANCE_STOPPED",
-                "渠道实例已停止",
-                Map.of("status", updated.status().name())
-        );
-        log.info("渠道实例已停止: instanceId={}", instanceId);
-        return updated;
+        try {
+            channelInstanceService.updateStatus(
+                    instanceId,
+                    ChannelInstanceStatus.STOPPING,
+                    null,
+                    instance.lastHeartbeatAt()
+            );
+            invokeExternalCommand(instance, "/stop", false);
+            ChannelInstance updated = channelInstanceService.updateStatus(
+                    instanceId, ChannelInstanceStatus.STOPPED, null, null);
+            channelInstanceEventService.record(
+                    instanceId,
+                    "INSTANCE_STOPPED",
+                    "渠道实例已停止",
+                    Map.of("status", updated.status().name())
+            );
+            log.info("渠道实例已停止: instanceId={}", instanceId);
+            return updated;
+        } catch (RuntimeException e) {
+            markError(instanceId, e.getMessage());
+            throw e;
+        }
     }
 
     public ChannelInstance reload(String instanceId) {
@@ -322,7 +327,7 @@ public class ConnectorRuntimeManager {
 
     private boolean readHealthyFlag(@Nullable Map<String, Object> healthDetails) {
         if (healthDetails == null) {
-            return true;
+            return false;
         }
         Object raw = healthDetails.get("healthy");
         if (raw instanceof Boolean healthy) {
@@ -331,7 +336,7 @@ public class ConnectorRuntimeManager {
         if (raw instanceof String text && !text.isBlank()) {
             return Boolean.parseBoolean(text.trim());
         }
-        return true;
+        return false;
     }
 
     private void putIfNotNull(Map<String, Object> payload,

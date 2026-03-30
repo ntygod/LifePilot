@@ -28,6 +28,8 @@ import java.util.Objects;
  */
 public final class ProviderChatOptionsFactory {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ProviderChatOptionsFactory.class);
+
     private static final String STRUCTURED_OUTPUT_SCHEMA_NAME = "zhiwei_structured_output";
     private static final String OPENAI_HOST = "api.openai.com";
     private static final String QWEN_HOST = "dashscope.aliyuncs.com";
@@ -193,6 +195,7 @@ public final class ProviderChatOptionsFactory {
         try {
             return new URI(apiUrl.trim()).getHost();
         } catch (URISyntaxException e) {
+            log.debug("解析 apiUrl Host 失败: apiUrl={}, error={}", apiUrl, e.getMessage());
             return null;
         }
     }

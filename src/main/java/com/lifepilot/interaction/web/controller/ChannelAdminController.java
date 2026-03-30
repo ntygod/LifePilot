@@ -187,6 +187,7 @@ public class ChannelAdminController {
     @GetMapping("/instances/{instanceId}/events")
     public ResponseEntity<List<ChannelInstanceEvent>> listInstanceEvents(@PathVariable String instanceId,
                                                                          @RequestParam(defaultValue = "20") int limit) {
+        limit = Math.min(Math.max(limit, 1), 200);
         if (channelInstanceService.find(instanceId).isEmpty()) {
             return ResponseEntity.notFound().build();
         }
@@ -281,7 +282,13 @@ public class ChannelAdminController {
                 ? new LinkedHashMap<>(existing.secretConfig())
                 : new LinkedHashMap<>();
         if (incoming != null) {
-            secrets.putAll(incoming);
+            // 保护系统自动生成的 runtimeToken，防止被用户输入覆盖
+            incoming.forEach((key, value) -> {
+                if (ChannelRuntimeProtocol.INSTANCE_TOKEN_SECRET_KEY.equals(key)) {
+                    return;
+                }
+                secrets.put(key, value);
+            });
         }
         if (plugin.connectorMode() == ConnectorMode.EXTERNAL) {
             secrets.computeIfAbsent(
@@ -293,33 +300,18 @@ public class ChannelAdminController {
     }
 
     private ChannelInstance maskSecrets(ChannelInstance instance) {
-        Map<String, Object> maskedSecrets = null;
-        if (instance.secretConfig() != null && !instance.secretConfig().isEmpty()) {
-            Map<String, Object> copy = new LinkedHashMap<>();
-            instance.secretConfig().forEach((key, value) -> {
-                if (value instanceof String text && !text.isBlank()) {
-                    copy.put(key, maskSecret(text));
-                } else {
-                    copy.put(key, value);
-                }
-            });
-            maskedSecrets = Map.copyOf(copy);
+        if (instance.secretConfig() == null || instance.secretConfig().isEmpty()) {
+            return instance;
         }
-        return new ChannelInstance(
-                instance.instanceId(),
-                instance.pluginId(),
-                instance.platform(),
-                instance.displayName(),
-                instance.enabled(),
-                instance.status(),
-                instance.config(),
-                maskedSecrets,
-                instance.routingPolicy(),
-                instance.lastHeartbeatAt(),
-                instance.lastError(),
-                instance.createdAt(),
-                instance.updatedAt()
-        );
+        Map<String, Object> copy = new LinkedHashMap<>();
+        instance.secretConfig().forEach((key, value) -> {
+            if (value instanceof String text && !text.isBlank()) {
+                copy.put(key, maskSecret(text));
+            } else {
+                copy.put(key, value);
+            }
+        });
+        return instance.withSecretConfig(Map.copyOf(copy));
     }
 
     private String maskSecret(String raw) {

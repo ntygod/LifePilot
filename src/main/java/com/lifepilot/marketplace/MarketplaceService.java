@@ -237,6 +237,15 @@ public class MarketplaceService {
                                                              InstalledExtensionAsset asset) {
         try {
             Path localPath = Path.of(asset.localPath());
+            // 路径穿越防护：验证 localPath 在安装根目录内
+            if (installed.installRootPath() != null && !installed.installRootPath().isBlank()) {
+                Path installRoot = Path.of(installed.installRootPath()).toAbsolutePath().normalize();
+                if (!localPath.toAbsolutePath().normalize().startsWith(installRoot)) {
+                    log.warn("安装资产路径超出安装根目录，拒绝读取: packageId={}, path={}, installRoot={}",
+                            installed.packageId(), asset.localPath(), installRoot);
+                    return Optional.empty();
+                }
+            }
             if (!Files.exists(localPath) || !Files.isRegularFile(localPath)) {
                 return Optional.empty();
             }

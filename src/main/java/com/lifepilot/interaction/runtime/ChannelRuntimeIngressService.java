@@ -38,6 +38,8 @@ import java.util.UUID;
 public class ChannelRuntimeIngressService {
 
     private static final Logger log = LoggerFactory.getLogger(ChannelRuntimeIngressService.class);
+    /** 单个附件最大允许大小：10MB。 */
+    private static final long MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 
     private final ChannelInstanceService channelInstanceService;
     private final ChannelIngressService channelIngressService;
@@ -168,6 +170,11 @@ public class ChannelRuntimeIngressService {
                 data = Base64.getDecoder().decode(attachment.base64Data());
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("附件 Base64 解码失败: " + attachment.fileName(), e);
+            }
+            if (data.length > MAX_ATTACHMENT_SIZE) {
+                throw new IllegalArgumentException(
+                        "附件大小超出限制（最大 %dMB）: fileName=%s, size=%d"
+                                .formatted(MAX_ATTACHMENT_SIZE / 1024 / 1024, attachment.fileName(), data.length));
             }
             String attachmentId = attachment.attachmentId() != null && !attachment.attachmentId().isBlank()
                     ? attachment.attachmentId().trim()
