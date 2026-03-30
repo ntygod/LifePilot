@@ -4,6 +4,7 @@ import com.lifepilot.a2a.model.*;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import org.slf4j.Logger;
@@ -79,7 +80,7 @@ public class A2aAgentExecutor {
                     return taskStore.find(taskId).orElseThrow();
                 }
                 // 使用 AgentExecutor 执行子 Agent（A2A 目前不携带多模态媒体）
-                var subRequest = new AgentRequest(textContent, taskId, "a2a",
+                var subRequest = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"),
                         null,
                         definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
                         null, 0, definition.get().preferredProvider(), null, null, null);
@@ -87,7 +88,7 @@ public class A2aAgentExecutor {
                 result = subResult.output();
                 } else {
                     // 路由到主 AgentOrchestrator（A2A 目前不携带多模态媒体）
-                    var request = new AgentRequest(textContent, taskId, "a2a");
+                    var request = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"));
                 AgentResponse response = agentOrchestrator.run(request);
                 result = response.content();
             }
@@ -142,14 +143,14 @@ public class A2aAgentExecutor {
                         listener.accept(taskStore.find(taskId).orElseThrow());
                         return;
                     }
-                    var subRequest = new AgentRequest(textContent, taskId, "a2a",
+                    var subRequest = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"),
                             null,
                             definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
                             null, 0, definition.get().preferredProvider(), null, null, null);
                     var subResult = agentExecutor.execute(definition.get(), subRequest);
                     result = subResult.output();
                 } else {
-                    var request = new AgentRequest(textContent, taskId, "a2a");
+                    var request = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"));
                     AgentResponse response = agentOrchestrator.run(request);
                     result = response.content();
                 }

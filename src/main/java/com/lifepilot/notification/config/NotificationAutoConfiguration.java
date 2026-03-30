@@ -1,9 +1,7 @@
 package com.lifepilot.notification.config;
 
-import com.lifepilot.interaction.channel.ChannelAdapter;
-import com.lifepilot.interaction.channel.converter.MessageConverter;
-import com.lifepilot.interaction.config.ChannelConfigProvider;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.notification.DefaultNotificationService;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.NotificationService;
@@ -15,10 +13,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.lang.Nullable;
-
-import java.util.List;
-
 /**
  * 通知模块自动配置。
  *
@@ -45,14 +39,16 @@ public class NotificationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public NotificationService notificationService(List<ChannelAdapter> channelAdapters,
-                                                    List<MessageConverter> messageConverters,
-                                                    NotificationRepository notificationRepository,
-                                                    NotificationProperties properties,
-                                                    @Nullable ChannelConfigProvider channelConfigProvider,
-                                                    @Nullable SseSessionManager sseSessionManager) {
+    public NotificationService notificationService(ChannelInstanceService channelInstanceService,
+                                                   ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                                   NotificationRepository notificationRepository,
+                                                   NotificationProperties properties) {
         log.info("通知模块: 注册 DefaultNotificationService");
-        return new DefaultNotificationService(channelAdapters, messageConverters,
-                notificationRepository, properties, channelConfigProvider, sseSessionManager);
+        return new DefaultNotificationService(
+                channelInstanceService,
+                channelDeliveryDispatcher,
+                notificationRepository,
+                properties
+        );
     }
 }

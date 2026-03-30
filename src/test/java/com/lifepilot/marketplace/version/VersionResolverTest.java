@@ -248,6 +248,8 @@ class VersionResolverTest {
                 "https://example.com/index.json",
                 "https://github.com/example/" + packageId,
                 "extensions/" + packageId,
+                "extensions/" + packageId,
+                null,
                 null,
                 null,
                 Instant.now(),

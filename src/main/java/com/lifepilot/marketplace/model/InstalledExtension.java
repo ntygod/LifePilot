@@ -14,9 +14,11 @@ import java.time.Instant;
  * @param version            已安装版本号
  * @param indexSourceUrl     索引源 URL
  * @param repoUrl            Git 仓库 URL
- * @param filePath           文件路径
+ * @param filePath           主入口文件路径
+ * @param installRootPath    安装根目录
  * @param requirementsJson   前置条件 JSON（可空）
  * @param securityReportJson 安全报告 JSON（可空）
+ * @param assetsJson         安装资产 JSON（可空）
  * @param createdAt          安装时间
  * @param updatedAt          最后更新时间
  * @author zsg
@@ -31,8 +33,14 @@ public record InstalledExtension(
         String indexSourceUrl,
         String repoUrl,
         String filePath,
+        String installRootPath,
         @Nullable String requirementsJson,
         @Nullable String securityReportJson,
+        @Nullable String assetsJson,
         Instant createdAt,
         Instant updatedAt
-) {}
+) {
+    public String entryPath() {
+        return filePath;
+    }
+}

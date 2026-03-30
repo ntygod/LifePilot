@@ -1,4 +1,4 @@
-import type { ExtensionPackage, InstallResult, PagedResult } from '@/types'
+import type { ExtensionInstallation, ExtensionPackage, InstallResult, PagedResult } from '@/types'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
 const BASE = '/api/marketplace'
@@ -10,11 +10,18 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     ...options
   })
   if (!res.ok) {
+    const text = await res.text()
     let error: { code: number; message: string; timestamp: string }
     try {
-      error = await res.json()
+      error = text
+        ? JSON.parse(text) as { code: number; message: string; timestamp: string }
+        : { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
     } catch {
-      error = { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
+      error = {
+        code: res.status,
+        message: text?.trim() || res.statusText || '请求失败',
+        timestamp: new Date().toISOString(),
+      }
     }
     throw error
   }
@@ -40,6 +47,30 @@ export const marketplaceApi = {
   /** 获取单个扩展详情 */
   getSkill(id: string): Promise<ExtensionPackage> {
     return request(`/extensions/${id}`)
+  },
+
+  /** 获取已安装扩展的本地安装快照 */
+  getInstallation(id: string): Promise<ExtensionInstallation> {
+    return request(`/extensions/${id}/installation`)
+  },
+
+  /** 构造已安装扩展资产的文件 URL */
+  getInstallationAssetUrl(id: string, relativePath: string): string {
+    return `${BASE}/extensions/${encodeURIComponent(id)}/assets/file?path=${encodeURIComponent(relativePath)}`
+  },
+
+  /** 读取已安装扩展的文本资产 */
+  async getInstallationAssetText(id: string, relativePath: string): Promise<string> {
+    const res = await fetch(this.getInstallationAssetUrl(id, relativePath))
+    if (!res.ok) {
+      const text = await res.text()
+      throw {
+        code: res.status,
+        message: text?.trim() || '读取插件资产失败',
+        timestamp: new Date().toISOString(),
+      }
+    }
+    return res.text()
   },
 
   /** 安装扩展 — confirmHighRisk 作为查询参数传递 */

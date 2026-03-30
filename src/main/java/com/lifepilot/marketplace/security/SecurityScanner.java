@@ -1,5 +1,7 @@
 package com.lifepilot.marketplace.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.model.ChannelPluginDescriptor;
 import com.lifepilot.marketplace.model.*;
 import com.lifepilot.marketplace.config.MarketplaceProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -12,17 +14,10 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * 统一安全扫描器 — 支持 SKILL / AGENT / WORKFLOW 三种扩展类型的安装前安全检查。
+ * 统一安全扫描器 — 支持 SKILL / AGENT / WORKFLOW / CHANNEL 四种扩展类型的安装前安全检查。
  *
  * <p>扫描项目按类型分派：</p>
- * <table>
- *   <tr><th>扫描项</th><th>SKILL</th><th>AGENT</th><th>WORKFLOW</th></tr>
- *   <tr><td>危险 Tool 引用</td><td>✅ tools 列表</td><td>✅ allowedTools</td><td>✅ step actions</td></tr>
- *   <tr><td>Prompt 注入</td><td>✅ SKILL.md 内容</td><td>✅ systemPrompt</td><td>❌</td></tr>
- *   <tr><td>未知 Tool ID</td><td>✅</td><td>✅</td><td>✅</td></tr>
- *   <tr><td>YAML 结构校验</td><td>❌</td><td>❌</td><td>✅</td></tr>
- *   <tr><td>SemVer 版本校验</td><td>✅</td><td>✅</td><td>✅</td></tr>
- * </table>
+ * <p>CHANNEL 额外执行 manifest JSON 结构与 connector 模式校验。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -53,6 +48,7 @@ public class SecurityScanner {
 
     private final DynamicToolRegistry toolRegistry;
     private final List<Pattern> compiledInjectionPatterns;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SecurityScanner(MarketplaceProperties properties,
                            DynamicToolRegistry toolRegistry) {
@@ -77,6 +73,7 @@ public class SecurityScanner {
             case SKILL -> scanSkill(pkg, fileContent, findings);
             case AGENT -> scanAgent(pkg, fileContent, findings);
             case WORKFLOW -> scanWorkflow(pkg, fileContent, findings);
+            case CHANNEL -> scanChannel(pkg, fileContent, findings);
         }
 
         // 所有类型共享：SemVer 版本校验
@@ -174,6 +171,31 @@ public class SecurityScanner {
 
         checkDangerousTools(toolIds, "step actions", findings);
         checkUnknownTools(toolIds, "step actions", findings);
+    }
+
+    /**
+     * CHANNEL 类型扫描：manifest JSON 结构与 connector 运行模式校验。
+     */
+    private void scanChannel(ExtensionPackage pkg, String fileContent,
+                             List<SecurityFinding> findings) {
+        ChannelPluginDescriptor descriptor;
+        try {
+            descriptor = objectMapper.readValue(fileContent, ChannelPluginDescriptor.class);
+        } catch (Exception e) {
+            findings.add(new SecurityFinding(
+                    RiskLevel.MEDIUM,
+                    "Manifest 结构",
+                    "channel-plugin.json 解析失败: %s".formatted(e.getMessage())
+            ));
+            return;
+        }
+
+        ChannelPluginManifestValidator.validateForMarketplace(pkg, descriptor)
+                .forEach(issue -> findings.add(new SecurityFinding(
+                        issue.level(),
+                        issue.category(),
+                        issue.message()
+                )));
     }
 
     /**

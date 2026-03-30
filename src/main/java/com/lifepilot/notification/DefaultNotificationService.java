@@ -2,17 +2,15 @@ package com.lifepilot.notification;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.interaction.channel.ChannelAdapter;
-import com.lifepilot.interaction.channel.converter.MessageConverter;
-import com.lifepilot.interaction.config.ChannelConfigProvider;
-import com.lifepilot.interaction.model.ChannelType;
-import com.lifepilot.interaction.model.GatewayResponse;
-import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.model.ChannelInstance;
+import com.lifepilot.interaction.model.ChannelInstanceStatus;
+import com.lifepilot.interaction.model.DeliveryMode;
+import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.model.ChannelRuntimeDeliveryRequest;
+import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,14 +18,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * 默认通知服务实现。
  *
- * <p>统一采用直接发送策略。若请求显式指定渠道则定向发送，
- * 否则仅在已启用渠道内路由。
- * 单渠道失败记录 WARN 日志，不中断其他渠道。
+ * <p>通知统一按渠道实例路由。Web 本地渠道继续输出原有通知 payload，
+ * 外部渠道实例通过统一 connector delivery 协议主动发送。</p>
  *
  * @author zsg
  * @since 2026-03-13
@@ -37,36 +33,19 @@ public class DefaultNotificationService implements NotificationService {
     private static final Logger log = LoggerFactory.getLogger(DefaultNotificationService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final Map<ChannelType, ChannelAdapter> adapterMap;
-    private final Map<ChannelType, MessageConverter> converterMap;
+    private final ChannelInstanceService channelInstanceService;
+    private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
     private final NotificationRepository notificationRepository;
     private final NotificationProperties properties;
-    @Nullable
-    private final ChannelConfigProvider channelConfigProvider;
-    @Nullable
-    private final SseSessionManager sseSessionManager;
 
-    public DefaultNotificationService(List<ChannelAdapter> channelAdapters,
-                                      List<MessageConverter> messageConverters,
+    public DefaultNotificationService(ChannelInstanceService channelInstanceService,
+                                      ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                       NotificationRepository notificationRepository,
                                       NotificationProperties properties) {
-        this(channelAdapters, messageConverters, notificationRepository, properties, null, null);
-    }
-
-    public DefaultNotificationService(List<ChannelAdapter> channelAdapters,
-                                      List<MessageConverter> messageConverters,
-                                      NotificationRepository notificationRepository,
-                                      NotificationProperties properties,
-                                      @Nullable ChannelConfigProvider channelConfigProvider,
-                                      @Nullable SseSessionManager sseSessionManager) {
-        this.adapterMap = channelAdapters.stream()
-                .collect(Collectors.toMap(ChannelAdapter::channelType, a -> a, (a, b) -> a));
-        this.converterMap = messageConverters.stream()
-                .collect(Collectors.toMap(MessageConverter::channelType, c -> c, (a, b) -> a));
+        this.channelInstanceService = channelInstanceService;
+        this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.notificationRepository = notificationRepository;
         this.properties = properties;
-        this.channelConfigProvider = channelConfigProvider;
-        this.sseSessionManager = sseSessionManager;
     }
 
     @Override
@@ -76,9 +55,9 @@ public class DefaultNotificationService implements NotificationService {
             return List.of();
         }
 
-        var targetAdapters = resolveTargetAdapters(request);
-        if (targetAdapters.isEmpty()) {
-            log.warn("无可用通知渠道: userId={}, channel={}", request.targetUserId(), request.channel());
+        var targetInstances = resolveTargetInstances(request);
+        if (targetInstances.isEmpty()) {
+            log.warn("无可用通知渠道实例: userId={}, selector={}", request.targetUserId(), request.channel());
             return List.of();
         }
 
@@ -87,15 +66,14 @@ public class DefaultNotificationService implements NotificationService {
         var metadataJson = serializeMetadata(request.metadata());
         var notificationIds = new ArrayList<String>();
 
-        for (var adapter : targetAdapters) {
-            var channelType = adapter.channelType();
+        for (var instance : targetInstances) {
             var id = UUID.randomUUID().toString();
             var sentRecord = new NotificationRecord(
                     id,
                     request.targetUserId(),
                     request.typeId(),
                     contentJson,
-                    channelType.name(),
+                    instance.instanceId(),
                     "UNREAD",
                     "SENT",
                     metadataJson,
@@ -104,19 +82,20 @@ public class DefaultNotificationService implements NotificationService {
                     now
             );
             try {
-                sendToChannel(adapter, request, sentRecord);
+                sendToInstance(instance, request, sentRecord);
                 persistRecord(sentRecord);
                 notificationIds.add(id);
-                log.debug("通知发送成功: id={}, channel={}, userId={}",
-                        id, channelType, request.targetUserId());
+                log.debug("通知发送成功: id={}, instanceId={}, userId={}",
+                        id, instance.instanceId(), request.targetUserId());
             } catch (Exception e) {
-                log.warn("通知发送失败: channel={}, userId={}", channelType, request.targetUserId(), e);
+                log.warn("通知发送失败: instanceId={}, userId={}",
+                        instance.instanceId(), request.targetUserId(), e);
                 persistRecord(new NotificationRecord(
                         id,
                         request.targetUserId(),
                         request.typeId(),
                         contentJson,
-                        channelType.name(),
+                        instance.instanceId(),
                         "UNREAD",
                         "FAILED",
                         metadataJson,
@@ -130,32 +109,37 @@ public class DefaultNotificationService implements NotificationService {
         return List.copyOf(notificationIds);
     }
 
-    private void sendToChannel(ChannelAdapter adapter,
-                               NotificationRequest request,
-                               NotificationRecord record) {
-        var channelType = adapter.channelType();
-        if (channelType == ChannelType.WEB) {
-            broadcastWebNotification(record);
+    private void sendToInstance(ChannelInstance instance,
+                                NotificationRequest request,
+                                NotificationRecord record) {
+        if ("web".equalsIgnoreCase(instance.platform())) {
+            channelDeliveryDispatcher.broadcastNotification(toNotificationPayload(record));
             return;
         }
 
-        var converter = converterMap.get(channelType);
-        ResponseContent convertedContent;
-        if (converter != null) {
-            var converted = converter.convert(request.content());
-            convertedContent = new ResponseContent.TextContent(converted);
-        } else {
-            convertedContent = request.content();
-        }
-
-        adapter.sendResponse(request.targetUserId(), GatewayResponse.success(channelType, convertedContent));
+        var delivery = new ChannelRuntimeDeliveryRequest(
+                instance.instanceId(),
+                record.id(),
+                DeliveryMode.ASYNC_PUSH,
+                new ChannelRuntimeDeliveryRequest.Target(request.targetUserId(), null, Map.of()),
+                channelDeliveryDispatcher.buildContent(request.content()),
+                List.of(),
+                buildDeliveryMetadata(request, record)
+        );
+        channelDeliveryDispatcher.deliver(instance, delivery);
     }
 
-    private void broadcastWebNotification(NotificationRecord record) {
-        if (sseSessionManager == null) {
-            throw new IllegalStateException("SseSessionManager 不可用，无法发送 WEB 通知");
+    private Map<String, Object> buildDeliveryMetadata(NotificationRequest request, NotificationRecord record) {
+        var metadata = new LinkedHashMap<String, Object>();
+        metadata.put("notificationId", record.id());
+        metadata.put("channel", record.channel());
+        if (request.typeId() != null && !request.typeId().isBlank()) {
+            metadata.put("typeId", request.typeId());
         }
-        sseSessionManager.broadcastNotification(toNotificationPayload(record));
+        if (request.metadata() != null && !request.metadata().isEmpty()) {
+            metadata.put("notificationMetadata", request.metadata());
+        }
+        return Map.copyOf(metadata);
     }
 
     private Map<String, Object> toNotificationPayload(NotificationRecord record) {
@@ -176,35 +160,26 @@ public class DefaultNotificationService implements NotificationService {
         return Map.copyOf(payload);
     }
 
-    /**
-     * 解析目标渠道适配器列表。
-     *
-     * <p>如果 request 指定了 channel，只发送到该渠道；否则在已启用渠道内路由。
-     */
-    private List<ChannelAdapter> resolveTargetAdapters(NotificationRequest request) {
-        if (request.channel() != null) {
-            try {
-                var channelType = ChannelType.valueOf(request.channel());
-                var adapter = adapterMap.get(channelType);
-                return adapter != null && isChannelEnabled(channelType) ? List.of(adapter) : List.of();
-            } catch (IllegalArgumentException e) {
-                log.warn("未知的渠道类型: channel={}", request.channel());
-                return List.of();
-            }
-        }
-
-        return adapterMap.values().stream()
-                .filter(adapter -> isChannelEnabled(adapter.channelType()))
+    private List<ChannelInstance> resolveTargetInstances(NotificationRequest request) {
+        return channelInstanceService.listAll().stream()
+                .filter(this::isAvailable)
+                .filter(instance -> matchesSelector(instance, request.channel()))
                 .toList();
     }
 
-    private boolean isChannelEnabled(ChannelType channelType) {
-        return switch (channelType) {
-            case WEB -> true;
-            case FEISHU -> channelConfigProvider == null || channelConfigProvider.getFeishuConfig().enabled();
-            case DINGTALK -> channelConfigProvider == null || channelConfigProvider.getDingtalkConfig().enabled();
-            case WECOM -> channelConfigProvider == null || channelConfigProvider.getWecomConfig().enabled();
-        };
+    private boolean isAvailable(ChannelInstance instance) {
+        return instance.enabled() && instance.status() == ChannelInstanceStatus.RUNNING;
+    }
+
+    private boolean matchesSelector(ChannelInstance instance, String selector) {
+        if (selector == null || selector.isBlank()) {
+            return true;
+        }
+        String normalizedSelector = selector.trim();
+        return normalizedSelector.equalsIgnoreCase(instance.instanceId())
+                || normalizedSelector.equalsIgnoreCase(instance.platform())
+                || normalizedSelector.equalsIgnoreCase(instance.pluginId())
+                || normalizedSelector.equalsIgnoreCase(instance.platform().toUpperCase());
     }
 
     private void persistRecord(NotificationRecord record) {
@@ -215,7 +190,7 @@ public class DefaultNotificationService implements NotificationService {
         }
     }
 
-    private String serializeContent(ResponseContent content) {
+    private String serializeContent(com.lifepilot.interaction.model.ResponseContent content) {
         try {
             return MAPPER.writeValueAsString(content);
         } catch (JsonProcessingException e) {

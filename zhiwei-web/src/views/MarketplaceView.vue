@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { Download, RefreshCw, ServerOff, ShieldCheck, Store } from 'lucide-vue-next'
-import type { ExtensionPackage } from '@/types'
+import type { ExtensionInstallation, ExtensionPackage, InstalledExtensionAsset } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
 import MetricCard from '@/components/common/MetricCard.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -28,16 +28,35 @@ const error = ref('')
 const refreshing = ref(false)
 const serviceUnavailable = ref(false)
 const updates = ref<ExtensionPackage[]>([])
+const selectedExtensionId = ref('')
+const installationLoading = ref(false)
+const installationMessage = ref('')
+const installationError = ref('')
+const selectedInstallation = ref<ExtensionInstallation | null>(null)
+const assetPreviewLoading = ref(false)
+const assetPreviewPath = ref('')
+const assetPreviewContent = ref('')
+const assetPreviewError = ref('')
 
 const updateIds = computed(() => new Set(updates.value.map(item => item.id)))
 const installedCount = computed(() => skills.value.filter(skill => skill.installed).length)
 const verifiedCount = computed(() => skills.value.filter(skill => skill.verified).length)
 const hasFilters = computed(() => Boolean(search.value) || Boolean(tag.value) || Boolean(extensionType.value))
+const selectedExtension = computed(() => {
+  if (!selectedExtensionId.value) return skills.value[0] ?? null
+  return skills.value.find(skill => skill.id === selectedExtensionId.value) ?? skills.value[0] ?? null
+})
+const installationAssets = computed(() => selectedInstallation.value?.assets ?? [])
+const installationReadmeAsset = computed(() => installationAssets.value.find(asset => asset.kind === 'README') ?? null)
+const installationIconAsset = computed(() => installationAssets.value.find(asset => asset.kind === 'ICON') ?? null)
+const installationExampleAssets = computed(() => installationAssets.value.filter(asset => asset.kind === 'EXAMPLE'))
+const installationExtraAssets = computed(() => installationAssets.value.filter(asset => !['README', 'ICON', 'EXAMPLE'].includes(asset.kind)))
 const extensionTypeLabel = computed(() => {
   if (!extensionType.value) return '全部类型'
   if (extensionType.value === 'SKILL') return '技能'
   if (extensionType.value === 'AGENT') return '智能体'
   if (extensionType.value === 'WORKFLOW') return '工作流'
+  if (extensionType.value === 'CHANNEL') return '渠道'
   return extensionType.value
 })
 const tagLabel = computed(() => tag.value || '全部标签')
@@ -63,6 +82,7 @@ async function loadSkills() {
     skills.value = result.content
     totalPages.value = result.totalPages
     totalElements.value = result.totalElements
+    syncSelectedExtension(result.content)
   } catch (event: any) {
     error.value = event?.message || '加载市场扩展包失败。'
   } finally {
@@ -103,6 +123,10 @@ watch([search, tag, extensionType], () => {
   void loadSkills()
 })
 
+watch(selectedExtension, extensionPackage => {
+  void loadInstallation(extensionPackage)
+})
+
 function handlePageChange(newPage: number) {
   page.value = newPage
   void loadSkills()
@@ -111,6 +135,103 @@ function handlePageChange(newPage: number) {
 function handleRefreshAfterAction() {
   void loadSkills()
   void loadUpdates()
+}
+
+function syncSelectedExtension(items: ExtensionPackage[]) {
+  if (items.length === 0) {
+    selectedExtensionId.value = ''
+    return
+  }
+  if (selectedExtensionId.value && items.some(item => item.id === selectedExtensionId.value)) {
+    return
+  }
+  const preferred = items.find(item => item.type === 'CHANNEL' && item.installed) ?? items[0]
+  selectedExtensionId.value = preferred.id
+}
+
+function selectExtension(id: string) {
+  selectedExtensionId.value = id
+}
+
+function resetInstallationPreview(message = '') {
+  selectedInstallation.value = null
+  installationMessage.value = message
+  installationError.value = ''
+  assetPreviewLoading.value = false
+  assetPreviewPath.value = ''
+  assetPreviewContent.value = ''
+  assetPreviewError.value = ''
+}
+
+function assetFileName(asset: InstalledExtensionAsset): string {
+  return asset.relativePath.split('/').filter(Boolean).at(-1) ?? asset.relativePath
+}
+
+function assetKindLabel(kind: string): string {
+  if (kind === 'README') return 'README'
+  if (kind === 'ICON') return '图标'
+  if (kind === 'EXAMPLE') return '示例'
+  return kind
+}
+
+function installationAssetUrl(asset: InstalledExtensionAsset): string {
+  if (!selectedInstallation.value) return '#'
+  return marketplaceApi.getInstallationAssetUrl(selectedInstallation.value.packageId, asset.relativePath)
+}
+
+async function previewInstallationAsset(asset: InstalledExtensionAsset) {
+  if (!selectedInstallation.value) return
+  assetPreviewLoading.value = true
+  assetPreviewPath.value = asset.relativePath
+  assetPreviewError.value = ''
+  assetPreviewContent.value = ''
+  try {
+    assetPreviewContent.value = await marketplaceApi.getInstallationAssetText(
+      selectedInstallation.value.packageId,
+      asset.relativePath,
+    )
+  } catch (event: any) {
+    assetPreviewError.value = event?.message || '读取安装资产失败。'
+  } finally {
+    assetPreviewLoading.value = false
+  }
+}
+
+async function loadInstallation(extensionPackage: ExtensionPackage | null) {
+  if (!extensionPackage) {
+    resetInstallationPreview()
+    return
+  }
+  if (!extensionPackage.installed) {
+    resetInstallationPreview('安装后可在这里直接预览本地 README、图标和示例配置。')
+    return
+  }
+
+  installationLoading.value = true
+  resetInstallationPreview()
+  try {
+    const installation = await marketplaceApi.getInstallation(extensionPackage.id)
+    selectedInstallation.value = installation
+    if (!installation.assets || installation.assets.length === 0) {
+      installationMessage.value = '当前扩展已安装，但没有声明额外的安装资产。'
+      return
+    }
+    installationMessage.value = '安装资产来自 Marketplace 本地安装目录。'
+    const previewAsset = installation.assets.find(asset => asset.kind === 'README')
+      ?? installation.assets.find(asset => asset.kind === 'EXAMPLE')
+    if (previewAsset) {
+      await previewInstallationAsset(previewAsset)
+    }
+  } catch (event: any) {
+    selectedInstallation.value = null
+    if (event?.code === 404) {
+      installationMessage.value = '当前扩展已安装，但还没有本地安装快照。'
+    } else {
+      installationError.value = event?.message || '加载安装快照失败。'
+    }
+  } finally {
+    installationLoading.value = false
+  }
 }
 
 async function handleRetryServiceCheck() {
@@ -143,7 +264,7 @@ onMounted(() => {
         <PageHeader
           eyebrow="市场"
           title="扩展市场"
-          description="浏览和安装扩展。"
+          description="浏览和安装技能、智能体、工作流与渠道插件。"
         >
           <template #actions>
             <Button variant="outline" :disabled="refreshing" @click="handleRefresh">
@@ -250,7 +371,7 @@ onMounted(() => {
         <PageSection
           eyebrow="扩展包"
           title="可用扩展"
-          description="浏览当前市场索引中的可安装技能、智能体和工作流。"
+          description="浏览当前市场索引中的可安装技能、智能体、工作流和渠道插件。"
         >
           <div v-if="loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
@@ -296,23 +417,220 @@ onMounted(() => {
             </template>
           </StatePanel>
 
-          <div v-else class="space-y-5">
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <SkillCard
-                v-for="skill in skills"
-                :key="skill.id"
-                :skill="skill"
-                :has-update="updateIds.has(skill.id)"
-                @refresh="handleRefreshAfterAction"
+          <div v-else class="grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.95fr)]">
+            <div class="space-y-5">
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <SkillCard
+                  v-for="skill in skills"
+                  :key="skill.id"
+                  :skill="skill"
+                  :selected="selectedExtension?.id === skill.id"
+                  :has-update="updateIds.has(skill.id)"
+                  @refresh="handleRefreshAfterAction"
+                  @inspect="selectExtension"
+                />
+              </div>
+
+              <Pagination
+                v-if="totalPages > 1"
+                :page="page"
+                :page-count="totalPages"
+                @change="handlePageChange"
               />
             </div>
 
-            <Pagination
-              v-if="totalPages > 1"
-              :page="page"
-              :page-count="totalPages"
-              @change="handlePageChange"
-            />
+            <section
+              v-if="selectedExtension"
+              class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4"
+            >
+              <div class="space-y-3">
+                <div class="space-y-2">
+                  <div class="surface-label text-[0.68rem]">详情</div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="text-base font-semibold tracking-tight text-foreground">
+                      {{ selectedExtension.name }}
+                    </h3>
+                    <span class="filter-pill">{{ selectedExtension.type }}</span>
+                    <span v-if="selectedExtension.installed" class="filter-pill">已安装</span>
+                  </div>
+                  <p class="text-sm leading-6 text-muted-foreground">
+                    {{ selectedExtension.description || '暂无描述' }}
+                  </p>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/80 px-4 py-4">
+                    <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">版本</div>
+                    <div class="mt-2 text-sm font-medium text-foreground">
+                      v{{ selectedExtension.version }}
+                    </div>
+                    <div v-if="selectedExtension.installedVersion" class="mt-1 text-xs text-muted-foreground">
+                      已安装 v{{ selectedExtension.installedVersion }}
+                    </div>
+                  </div>
+                  <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/80 px-4 py-4">
+                    <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">来源</div>
+                    <div class="mt-2 break-all text-sm text-foreground">
+                      {{ selectedExtension.repoUrl || selectedExtension.filePath }}
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="selectedExtension.requirements?.length" class="space-y-2">
+                  <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">前置条件</div>
+                  <div class="flex flex-wrap gap-2">
+                    <span
+                      v-for="req in selectedExtension.requirements"
+                      :key="`selected-req-${req}`"
+                      class="filter-pill"
+                    >
+                      {{ req }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/80 px-4 py-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div class="text-sm font-semibold text-foreground">本地安装资产</div>
+                      <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                        已安装扩展会在这里显示安装目录、README 和示例文件。渠道插件可以直接把接入文档暴露给用户。
+                      </p>
+                    </div>
+                    <span v-if="selectedInstallation" class="filter-pill">
+                      {{ installationAssets.length }} 项资产
+                    </span>
+                  </div>
+
+                  <div v-if="installationLoading" class="mt-4 space-y-3">
+                    <Skeleton class="h-20 w-full rounded-[calc(var(--radius)+6px)]" />
+                    <Skeleton class="h-48 w-full rounded-[calc(var(--radius)+6px)]" />
+                  </div>
+
+                  <div
+                    v-else-if="installationError"
+                    class="mt-4 rounded-[calc(var(--radius)+6px)] border border-dashed border-destructive/40 bg-destructive/5 px-4 py-6 text-sm leading-6 text-destructive"
+                  >
+                    {{ installationError }}
+                  </div>
+
+                  <div
+                    v-else-if="!selectedInstallation"
+                    class="mt-4 rounded-[calc(var(--radius)+6px)] border border-dashed border-border/70 bg-muted/20 px-4 py-6 text-sm leading-6 text-muted-foreground"
+                  >
+                    {{ installationMessage }}
+                  </div>
+
+                  <div v-else class="mt-4 space-y-4">
+                    <div class="grid gap-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                      <div
+                        v-if="installationIconAsset"
+                        class="flex items-center justify-center rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 p-3"
+                      >
+                        <img
+                          :src="installationAssetUrl(installationIconAsset)"
+                          :alt="`${selectedExtension.name} 图标`"
+                          class="max-h-14 w-auto object-contain"
+                        />
+                      </div>
+                      <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-4">
+                        <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">安装目录</div>
+                        <div class="mt-2 break-all font-mono text-xs text-foreground">
+                          {{ selectedInstallation.installRootPath }}
+                        </div>
+                        <div class="mt-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">入口文件</div>
+                        <div class="mt-2 break-all font-mono text-xs text-foreground">
+                          {{ selectedInstallation.entryPath }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-if="installationReadmeAsset || installationExampleAssets.length" class="space-y-2">
+                      <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">可预览文件</div>
+                      <div class="flex flex-wrap gap-2">
+                        <Button
+                          v-if="installationReadmeAsset"
+                          size="sm"
+                          :variant="assetPreviewPath === installationReadmeAsset.relativePath ? 'default' : 'outline'"
+                          @click="previewInstallationAsset(installationReadmeAsset)"
+                        >
+                          README
+                        </Button>
+                        <Button
+                          v-for="asset in installationExampleAssets"
+                          :key="`selected-example-${asset.relativePath}`"
+                          size="sm"
+                          :variant="assetPreviewPath === asset.relativePath ? 'default' : 'outline'"
+                          @click="previewInstallationAsset(asset)"
+                        >
+                          {{ assetFileName(asset) }}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div v-if="installationExtraAssets.length" class="space-y-2">
+                      <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">附加资产</div>
+                      <div class="space-y-2">
+                        <a
+                          v-for="asset in installationExtraAssets"
+                          :key="`selected-asset-${asset.relativePath}`"
+                          :href="installationAssetUrl(asset)"
+                          target="_blank"
+                          rel="noreferrer"
+                          class="block text-xs text-primary transition-colors hover:text-primary/80 hover:underline"
+                        >
+                          {{ assetKindLabel(asset.kind) }} · {{ assetFileName(asset) }}
+                        </a>
+                      </div>
+                    </div>
+
+                    <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div class="text-sm font-semibold text-foreground">README / 示例预览</div>
+                          <p class="mt-1 text-xs text-muted-foreground">
+                            {{ assetPreviewPath || installationMessage || '当前扩展没有可预览的文本资产。' }}
+                          </p>
+                        </div>
+                        <a
+                          v-if="assetPreviewPath"
+                          :href="marketplaceApi.getInstallationAssetUrl(selectedInstallation.packageId, assetPreviewPath)"
+                          target="_blank"
+                          rel="noreferrer"
+                          class="text-xs text-primary transition-colors hover:text-primary/80 hover:underline"
+                        >
+                          打开原文件
+                        </a>
+                      </div>
+
+                      <div v-if="assetPreviewLoading" class="mt-4 space-y-3">
+                        <Skeleton class="h-5 w-32 rounded-md" />
+                        <Skeleton class="h-48 w-full rounded-[calc(var(--radius)+6px)]" />
+                      </div>
+
+                      <div
+                        v-else-if="assetPreviewError"
+                        class="mt-4 rounded-[calc(var(--radius)+6px)] border border-dashed border-border/70 bg-background/70 px-4 py-6 text-sm leading-6 text-muted-foreground"
+                      >
+                        {{ assetPreviewError }}
+                      </div>
+
+                      <pre
+                        v-else-if="assetPreviewContent"
+                        class="mt-4 max-h-[420px] overflow-auto rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4 text-xs leading-6 text-foreground whitespace-pre-wrap"
+                      >{{ assetPreviewContent }}</pre>
+
+                      <div
+                        v-else
+                        class="mt-4 rounded-[calc(var(--radius)+6px)] border border-dashed border-border/70 bg-background/70 px-4 py-6 text-sm leading-6 text-muted-foreground"
+                      >
+                        当前扩展没有可直接预览的文本资产。
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </PageSection>
       </div>

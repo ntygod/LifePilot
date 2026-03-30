@@ -117,6 +117,23 @@ class IndexManagerTest {
         }
 
         @Test
+        void rawGithub失败_自动回退到JsDelivr() {
+            properties.setIndexSources(List.of("https://raw.githubusercontent.com/test/index/main/index.json"));
+
+            mockGetRequestForUrls(java.util.Map.of(
+                    "https://raw.githubusercontent.com/test/index/main/index.json",
+                    (Object) new ResourceAccessException("Connection reset"),
+                    "https://cdn.jsdelivr.net/gh/test/index@main/index.json",
+                    (Object) SAMPLE_INDEX_JSON
+            ));
+
+            int count = indexManager.refreshAll();
+
+            assertThat(count).isEqualTo(1);
+            verify(indexRepository).save("https://raw.githubusercontent.com/test/index/main/index.json", SAMPLE_INDEX_JSON);
+        }
+
+        @Test
         void 返回空内容_跳过该源() {
             mockGetRequest("");
 
@@ -550,6 +567,8 @@ class IndexManagerTest {
                 "https://example.com/index.json",
                 "https://github.com/example/" + packageId,
                 "extensions/" + packageId,
+                "extensions/" + packageId,
+                null,
                 null,
                 null,
                 Instant.now(),

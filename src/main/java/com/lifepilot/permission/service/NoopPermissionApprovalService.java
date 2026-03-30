@@ -23,7 +23,7 @@ public class NoopPermissionApprovalService implements PermissionApprovalService 
     @Nullable
     public ExecutionGrant requestApproval(ToolContract tool, PermissionRequest request, @Nullable String streamId) {
         log.info("当前渠道未提供权限审批实现，拒绝执行: toolId={}, channel={}, actionType={}",
-                tool.id(), request.channel(), request.actionType());
+                tool.id(), request.channelAliases(), request.actionType());
         return null;
     }
 }

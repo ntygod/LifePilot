@@ -42,7 +42,7 @@ public class PermissionEvaluator {
                 .filter(grant -> grant.isActiveAt(now))
                 .filter(grant -> grant.matchesSubject(request))
                 .filter(grant -> grant.supportsRisk(request.riskLevel()))
-                .filter(grant -> grant.supportsChannel(request.channel()))
+                .filter(grant -> grant.supportsChannel(request))
                 .filter(grant -> grant.supportsAutonomous(request))
                 .filter(grant -> PermissionScopeMatcher.matches(grant.scope(), request.resourceScope()))
                 .sorted(Comparator
@@ -54,7 +54,7 @@ public class PermissionEvaluator {
     }
 
     private List<ExecutionGrant> findCandidateGrants(PermissionRequest request, Instant now) {
-        if (request.isAutonomousChannel()
+        if (request.isAutonomousSource()
                 && request.actionType() != PermissionActionType.GENERIC_TOOL_OPERATION
                 && request.actionType() != PermissionActionType.CREATE_SCHEDULE) {
             return executionGrantRepository.findActiveByActionTypes(
@@ -66,7 +66,7 @@ public class PermissionEvaluator {
     }
 
     private PermissionDecision fallbackDecision(PermissionRequest request) {
-        if (request.isAutonomousChannel()) {
+        if (request.isAutonomousSource()) {
             return PermissionDecision.blocked("自主执行缺少有效预授权");
         }
         return PermissionDecision.needsApproval("高风险操作需要用户授权");

@@ -20,7 +20,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link SecurityScanner} 单元测试 — 覆盖 SKILL / AGENT / WORKFLOW 三种扩展类型。
+ * {@link SecurityScanner} 单元测试 — 覆盖 SKILL / AGENT / WORKFLOW / CHANNEL 四种扩展类型。
  *
  * @author zsg
  * @since 2026-03-08
@@ -316,6 +316,195 @@ class SecurityScannerTest {
         }
     }
 
+    // ── CHANNEL 扫描 ─────────────────────────────────────────
+
+    @Nested
+    class CHANNEL扫描 {
+
+        @Test
+        void 安全ChannelManifest_无高风险发现() {
+            var pkg = channelPkg("1.0.0");
+            String content = """
+                    {
+                      "pluginId": "test-channel",
+                      "name": "测试渠道",
+                      "version": "1.0.0",
+                      "vendor": "test",
+                      "platform": "telegram",
+                      "connectorMode": "EXTERNAL",
+                      "connectorSpec": {
+                        "protocol": "http"
+                      },
+                      "capabilities": ["receive", "send"],
+                      "configSchema": {
+                        "type": "object",
+                        "properties": {
+                          "baseUrl": {"type": "string", "title": "Base URL"},
+                          "botToken": {"type": "string", "title": "Bot Token", "secret": true}
+                        },
+                        "required": ["baseUrl", "botToken"]
+                      },
+                      "secretFields": ["botToken"],
+                      "setupGuide": {
+                        "title": "接入说明",
+                        "steps": ["启动 connector", "填写配置"]
+                      }
+                    }
+                    """;
+
+            SecurityReport report = scanner.scan(pkg, content);
+
+            assertThat(report.findings())
+                    .noneMatch(f -> f.level() == RiskLevel.HIGH)
+                    .noneMatch(f -> f.category().equals("Manifest 结构"));
+        }
+
+        @Test
+        void 本地Connector渠道_标记为HIGH() {
+            var pkg = channelPkg("1.0.0");
+            String content = """
+                    {
+                      "pluginId": "test-channel",
+                      "name": "测试渠道",
+                      "version": "1.0.0",
+                      "vendor": "test",
+                      "platform": "telegram",
+                      "connectorMode": "LOCAL",
+                      "capabilities": ["receive"],
+                      "configSchema": {
+                        "type": "object",
+                        "properties": {}
+                      },
+                      "secretFields": []
+                    }
+                    """;
+
+            SecurityReport report = scanner.scan(pkg, content);
+
+            assertThat(report.findings())
+                    .anyMatch(f -> f.level() == RiskLevel.HIGH
+                            && f.category().equals("运行时模式"));
+        }
+
+        @Test
+        void secretFields引用未声明字段_标记为MEDIUM() {
+            var pkg = channelPkg("1.0.0");
+            String content = """
+                    {
+                      "pluginId": "test-channel",
+                      "name": "测试渠道",
+                      "version": "1.0.0",
+                      "vendor": "test",
+                      "platform": "telegram",
+                      "connectorMode": "EXTERNAL",
+                      "connectorSpec": {
+                        "protocol": "http",
+                        "url": "http://localhost:9001"
+                      },
+                      "capabilities": ["receive"],
+                      "configSchema": {
+                        "type": "object",
+                        "properties": {
+                          "baseUrl": {"type": "string", "title": "Base URL"}
+                        }
+                      },
+                      "secretFields": ["botToken"]
+                    }
+                    """;
+
+            SecurityReport report = scanner.scan(pkg, content);
+
+            assertThat(report.findings())
+                    .anyMatch(f -> f.level() == RiskLevel.MEDIUM
+                            && f.category().equals("配置 Schema")
+                            && f.description().contains("botToken"));
+        }
+
+        @Test
+        void 非法JsonManifest_标记为结构问题() {
+            var pkg = channelPkg("1.0.0");
+
+            SecurityReport report = scanner.scan(pkg, "{not-json}");
+
+            assertThat(report.findings())
+                    .anyMatch(f -> f.category().equals("Manifest 结构"));
+        }
+
+        @Test
+        void 资源路径越界_标记为MEDIUM() {
+            var pkg = channelPkg("1.0.0");
+            String content = """
+                    {
+                      "pluginId": "test-channel",
+                      "name": "测试渠道",
+                      "version": "1.0.0",
+                      "vendor": "test",
+                      "platform": "telegram",
+                      "connectorMode": "EXTERNAL",
+                      "connectorSpec": {
+                        "protocol": "http",
+                        "url": "http://localhost:9001"
+                      },
+                      "capabilities": ["receive", "send"],
+                      "configSchema": {
+                        "type": "object",
+                        "properties": {
+                          "baseUrl": {"type": "string"}
+                        }
+                      },
+                      "secretFields": [],
+                      "resources": {
+                        "readmePath": "../README.md"
+                      }
+                    }
+                    """;
+
+            SecurityReport report = scanner.scan(pkg, content);
+
+            assertThat(report.findings())
+                    .anyMatch(f -> f.level() == RiskLevel.MEDIUM
+                            && f.category().equals("资源路径")
+                            && f.description().contains("readmePath"));
+        }
+
+        @Test
+        void 托管Connector产物路径越界_标记为MEDIUM() {
+            var pkg = channelPkg("1.0.0");
+            String content = """
+                    {
+                      "pluginId": "test-channel",
+                      "name": "测试渠道",
+                      "version": "1.0.0",
+                      "vendor": "test",
+                      "platform": "telegram",
+                      "connectorMode": "EXTERNAL",
+                      "connectorSpec": {
+                        "protocol": "http",
+                        "managed": {
+                          "strategy": "installed-jar",
+                          "artifactPath": "../dist/connector.jar"
+                        }
+                      },
+                      "capabilities": ["receive", "send"],
+                      "configSchema": {
+                        "type": "object",
+                        "properties": {
+                          "botToken": {"type": "string"}
+                        }
+                      },
+                      "secretFields": []
+                    }
+                    """;
+
+            SecurityReport report = scanner.scan(pkg, content);
+
+            assertThat(report.findings())
+                    .anyMatch(f -> f.level() == RiskLevel.MEDIUM
+                            && f.category().equals("资源路径")
+                            && f.description().contains("artifactPath"));
+        }
+    }
+
     // ── 整体风险级别 ──────────────────────────────────────────
 
     @Nested
@@ -407,6 +596,26 @@ class SecurityScannerTest {
                 .description("测试 Workflow")
                 .repoUrl("https://github.com/test/workflow")
                 .filePath("workflow.yml")
+                .tags(List.of())
+                .requirements(List.of())
+                .minLifepilotVersion("1.0.0")
+                .createdAt("2026-01-01T00:00:00Z")
+                .updatedAt("2026-01-01T00:00:00Z")
+                .downloads(0)
+                .verified(false)
+                .build();
+    }
+
+    private static ExtensionPackage channelPkg(String version) {
+        return ExtensionPackage.builder()
+                .id("test-channel")
+                .name("Test Channel")
+                .type(ExtensionType.CHANNEL)
+                .version(version)
+                .author("test")
+                .description("测试渠道")
+                .repoUrl("https://github.com/test/channel")
+                .filePath("channel-plugin.json")
                 .tags(List.of())
                 .requirements(List.of())
                 .minLifepilotVersion("1.0.0")

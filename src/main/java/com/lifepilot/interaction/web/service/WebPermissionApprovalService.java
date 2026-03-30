@@ -210,7 +210,7 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
         if (subjectType == PermissionSubjectType.TASK) {
             return List.of("cron", "heartbeat", "workflow");
         }
-        return List.of(request.channel());
+        return request.channelAliases();
     }
 
     private List<String> resolveAvailableSubjectTypes(PermissionRequest request) {

@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -90,10 +92,7 @@ public class IndexManager {
         int successCount = 0;
         for (String sourceUrl : sources) {
             try {
-                String json = restClient.get()
-                        .uri(sourceUrl)
-                        .retrieve()
-                        .body(String.class);
+                String json = downloadText(sourceUrl);
 
                 if (json == null || json.isBlank()) {
                     log.warn("索引源返回空内容: url={}", sourceUrl);
@@ -113,6 +112,88 @@ public class IndexManager {
 
         log.info("索引刷新完成: 成功={}/{}", successCount, sources.size());
         return successCount;
+    }
+
+    private String downloadText(String sourceUrl) throws IOException {
+        List<String> candidateUrls = candidateUrls(sourceUrl);
+        int maxAttempts = Math.max(1, properties.getHttp().getMaxAttempts());
+        long backoffMillis = Math.max(0, properties.getHttp().getRetryBackoffMillis());
+        IOException lastError = null;
+        for (String candidateUrl : candidateUrls) {
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    String json = restClient.get()
+                            .uri(candidateUrl)
+                            .retrieve()
+                            .body(String.class);
+                    if (json == null) {
+                        throw new IOException("索引响应内容为空");
+                    }
+                    if (!Objects.equals(candidateUrl, sourceUrl)) {
+                        log.info("索引刷新命中回退地址: sourceUrl={}, candidateUrl={}", sourceUrl, candidateUrl);
+                    }
+                    return json;
+                } catch (Exception e) {
+                    lastError = new IOException(
+                            "拉取索引失败: url=%s, attempt=%d/%d, error=%s"
+                                    .formatted(candidateUrl, attempt, maxAttempts, e.getMessage()),
+                            e
+                    );
+                    if (attempt < maxAttempts) {
+                        log.warn("索引拉取失败，准备重试: url={}, attempt={}/{}, error={}",
+                                candidateUrl, attempt, maxAttempts, e.getMessage());
+                        sleepQuietly(backoffMillis);
+                    }
+                }
+            }
+        }
+        throw lastError != null ? lastError : new IOException("拉取索引失败: " + sourceUrl);
+    }
+
+    private List<String> candidateUrls(String sourceUrl) {
+        ArrayList<String> candidates = new ArrayList<>();
+        candidates.add(sourceUrl);
+        if (properties.getHttp().isEnableGithubMirrorFallback()) {
+            String jsDelivrUrl = toJsDelivrUrl(sourceUrl);
+            if (jsDelivrUrl != null && !candidates.contains(jsDelivrUrl)) {
+                candidates.add(jsDelivrUrl);
+            }
+        }
+        return List.copyOf(candidates);
+    }
+
+    private String toJsDelivrUrl(String sourceUrl) {
+        try {
+            URI uri = URI.create(sourceUrl);
+            if (!"raw.githubusercontent.com".equalsIgnoreCase(uri.getHost())) {
+                return null;
+            }
+            String path = uri.getPath();
+            if (path == null || path.isBlank()) {
+                return null;
+            }
+            String normalized = path.startsWith("/") ? path.substring(1) : path;
+            String[] segments = normalized.split("/", 4);
+            if (segments.length < 4) {
+                return null;
+            }
+            return "https://cdn.jsdelivr.net/gh/%s/%s@%s/%s"
+                    .formatted(segments[0], segments[1], segments[2], segments[3]);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void sleepQuietly(long backoffMillis) throws IOException {
+        if (backoffMillis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(Duration.ofMillis(backoffMillis));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("索引重试等待被中断", e);
+        }
     }
 
     /**

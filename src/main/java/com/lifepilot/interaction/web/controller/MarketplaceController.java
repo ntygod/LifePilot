@@ -1,12 +1,16 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.marketplace.MarketplaceService;
+import com.lifepilot.marketplace.model.ExtensionAssetContent;
 import com.lifepilot.marketplace.model.ExtensionPackage;
+import com.lifepilot.marketplace.model.ExtensionInstallation;
 import com.lifepilot.marketplace.model.ExtensionType;
 import com.lifepilot.marketplace.model.InstallResult;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
@@ -68,6 +72,36 @@ public class MarketplaceController {
         log.debug("查询扩展详情: id={}", id);
         return marketplaceService.getExtension(id)
                 .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 按 ID 获取已安装扩展的本地安装快照。
+     *
+     * @param id 包 ID
+     * @return 安装快照或 404
+     */
+    @GetMapping("/extensions/{id}/installation")
+    public ResponseEntity<ExtensionInstallation> getInstallation(@PathVariable String id) {
+        log.debug("查询扩展安装快照: id={}", id);
+        return marketplaceService.getInstallation(id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 按相对路径读取已安装扩展资产文件。
+     *
+     * @param id   包 ID
+     * @param path 插件目录内相对路径
+     * @return 资产文件或 404
+     */
+    @GetMapping("/extensions/{id}/assets/file")
+    public ResponseEntity<byte[]> getInstallationAsset(@PathVariable String id,
+                                                       @RequestParam("path") String path) {
+        log.debug("读取扩展安装资产: id={}, path={}", id, path);
+        return marketplaceService.getInstallationAsset(id, path)
+                .map(this::assetResponse)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -147,4 +181,22 @@ public class MarketplaceController {
      * @param message 结果描述
      */
     public record RefreshResult(int count, String message) {}
+
+    private ResponseEntity<byte[]> assetResponse(ExtensionAssetContent asset) {
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(asset.contentType());
+        } catch (Exception ignored) {
+            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeFileName(asset.relativePath()) + "\"")
+                .body(asset.content());
+    }
+
+    private String sanitizeFileName(String relativePath) {
+        int slashIndex = Math.max(relativePath.lastIndexOf('/'), relativePath.lastIndexOf('\\'));
+        return slashIndex >= 0 ? relativePath.substring(slashIndex + 1) : relativePath;
+    }
 }
