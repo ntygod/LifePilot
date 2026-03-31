@@ -112,6 +112,18 @@ public class CodeExecuteToolExecutor {
         // 当 kernelId 参数存在且 PersistentKernelManager 可用时，路由到持久内核
         Optional<String> kernelIdOpt = input.getOptionalParam("kernelId", String.class);
         if (kernelIdOpt.isPresent() && kernelManager != null) {
+            // 持久内核同样需要安全预检
+            if (validator != null) {
+                var languageOpt = Language.fromString(languageStr);
+                if (languageOpt.isPresent()) {
+                    ValidationResult validation = validator.validate(languageOpt.get(), code);
+                    if (!validation.passed()) {
+                        String violationMsg = formatViolations(validation.violations());
+                        log.warn("持久内核代码预检未通过: kernelId={}, violations={}", kernelIdOpt.get(), violationMsg);
+                        return ToolResult.error("代码预检未通过: " + violationMsg);
+                    }
+                }
+            }
             return executeViaKernel(kernelIdOpt.get(), languageStr, code, timeoutSeconds);
         }
 
@@ -216,6 +228,7 @@ public class CodeExecuteToolExecutor {
      * @return 执行结果
      */
     private ToolResult executeViaKernel(String kernelId, String language, String code, int timeoutSeconds) {
+        String codeHash = sha256(code);
         try {
             var kernel = kernelManager.getOrCreate(kernelId, language);
             var result = kernel.execute(code, timeoutSeconds);
@@ -229,8 +242,25 @@ public class CodeExecuteToolExecutor {
 
             if (result.error() != null) {
                 data.put("error", result.error());
+                // 审计持久化（内核执行失败）
+                var languageOpt = Language.fromString(language);
+                if (languageOpt.isPresent()) {
+                    persistRecord(kernelId, languageOpt.get(), codeHash, code.length(),
+                            "kernel", true, 0, 1, null, null,
+                            (long) result.durationMs(), "FAILED", result.error());
+                }
                 return new ToolResult(ToolResultStatus.ERROR, Map.copyOf(data),
                         "内核执行失败: " + result.error(), ToolResultMeta.empty());
+            }
+
+            // 审计持久化（内核执行成功）
+            var languageOpt = Language.fromString(language);
+            if (languageOpt.isPresent()) {
+                persistRecord(kernelId, languageOpt.get(), codeHash, code.length(),
+                        "kernel", true, 0, 0,
+                        result.stdout().getBytes(StandardCharsets.UTF_8).length,
+                        result.stderr().getBytes(StandardCharsets.UTF_8).length,
+                        (long) result.durationMs(), "COMPLETED", null);
             }
 
             log.debug("内核代码执行完成: kernelId={}, language={}, durationMs={}",
