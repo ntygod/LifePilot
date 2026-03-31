@@ -857,6 +857,16 @@ lifepilot:
         max-concurrent: 5
         max-output-buffer-size: 100000
         idle-timeout-minutes: 30
+      shell-session:
+        enabled: true
+        max-concurrent-sessions: 5
+        ttl-minutes: 30
+        default-cols: 120
+        default-rows: 40
+        history-lines: 2000
+        exec-timeout-seconds: 120
+        output-max-chars: 50000
+        cleanup-interval-seconds: 60
     introspection:
       cache-ttl-seconds: 60
       debounce-millis: 500

@@ -74,6 +74,9 @@ public class MetaProperties {
         /** 文件编辑历史配置。 */
         private FileEdit fileEdit = new FileEdit();
 
+        /** Shell 持久会话配置。 */
+        private ShellSession shellSession = new ShellSession();
+
         /**
          * Web 搜索配置。
          *
@@ -340,6 +343,43 @@ public class MetaProperties {
 
             /** 单文件快照最大字节数，超过则跳过快照，默认 5MB。 */
             private long maxSnapshotSizeBytes = 5 * 1024 * 1024;
+        }
+
+        /**
+         * Shell 持久会话配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class ShellSession {
+
+            /** 功能开关，默认 true。 */
+            private boolean enabled = true;
+
+            /** 最大并发会话数，默认 5。 */
+            private int maxConcurrentSessions = 5;
+
+            /** 空闲超时（分钟），超时后自动清理会话，默认 30。 */
+            private int ttlMinutes = 30;
+
+            /** 默认终端列数，默认 120。 */
+            private int defaultCols = 120;
+
+            /** 默认终端行数，默认 40。 */
+            private int defaultRows = 40;
+
+            /** 历史行数，capture-pane 回溯行数，默认 2000。 */
+            private int historyLines = 2000;
+
+            /** 命令执行超时（秒），默认 120。 */
+            private int execTimeoutSeconds = 120;
+
+            /** 输出最大字符数，默认 50000。 */
+            private int outputMaxChars = 50000;
+
+            /** 空闲清理调度间隔（秒），默认 60。 */
+            private int cleanupIntervalSeconds = 60;
         }
     }
 

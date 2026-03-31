@@ -13,6 +13,9 @@ import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ProcessToolProvider;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
+import com.lifepilot.meta.infra.shell.session.SessionToolProvider;
+import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
+import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
 import com.lifepilot.meta.infra.web.HttpRequestToolExecutor;
@@ -227,7 +230,21 @@ public class InfraToolProvider {
             }
         }
 
-        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git]",
+        // Shell 持久会话工具（委托给 SessionToolProvider）
+        var shellSessionConfig = properties.getInfra().getShellSession();
+        if (shellSessionConfig.isEnabled()) {
+            var tmuxCmd = new TmuxCommandExecutor(shellSessionConfig.getExecTimeoutSeconds());
+            if (tmuxCmd.isTmuxAvailable()) {
+                var sessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig);
+                var sessionToolProvider = new SessionToolProvider(sessionManager);
+                totalTools += registerBuiltinTools(toolRegistry, sessionToolProvider.buildSessionTools());
+                log.info("Shell 持久会话工具注册完成: count={}", 8);
+            } else {
+                log.warn("tmux 不可用，跳过 Shell 持久会话工具注册");
+            }
+        }
+
+        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git, session]",
                 totalTools);
     }
 
