@@ -841,6 +841,14 @@ lifepilot:
           - "/etc"
           - "/var"
           - "C:\\Windows"
+      file-edit:
+        undo-max-depth: 50
+        auto-lint: false
+        lint-commands:
+          ".py": "python3 -m py_compile {file}"
+          ".js": "node --check {file}"
+        lint-timeout-seconds: 10
+        max-snapshot-size-bytes: 5242880
       interaction:
         response-timeout-seconds: 120
       process:

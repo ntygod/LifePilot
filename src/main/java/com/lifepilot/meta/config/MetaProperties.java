@@ -3,7 +3,9 @@ package com.lifepilot.meta.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 元能力系统配置属性。
@@ -68,6 +70,9 @@ public class MetaProperties {
 
         /** Git 工具配置。 */
         private Git git = new Git();
+
+        /** 文件编辑历史配置。 */
+        private FileEdit fileEdit = new FileEdit();
 
         /**
          * Web 搜索配置。
@@ -304,6 +309,31 @@ public class MetaProperties {
 
             /** 输出最大字符数，默认 50000。 */
             private int maxOutputChars = 50000;
+        }
+
+        /**
+         * 文件编辑历史配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class FileEdit {
+
+            /** undo 栈最大深度，默认 50。 */
+            private int undoMaxDepth = 50;
+
+            /** 是否在文件写入后自动执行 lint 检查，默认 false。 */
+            private boolean autoLint = false;
+
+            /** 文件扩展名 → lint 命令映射，命令中 {file} 占位符会被替换为实际路径。 */
+            private Map<String, String> lintCommands = new LinkedHashMap<>();
+
+            /** lint 命令执行超时（秒），默认 10。 */
+            private int lintTimeoutSeconds = 10;
+
+            /** 单文件快照最大字节数，超过则跳过快照，默认 5MB。 */
+            private long maxSnapshotSizeBytes = 5 * 1024 * 1024;
         }
     }
 

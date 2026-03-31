@@ -85,7 +85,7 @@ class InfraToolProviderTest {
                 "browser.close",
                 // 代码执行（1）
                 "code.execute",
-                // 文件系统（11）
+                // 文件系统（11 + 3 编辑历史）
                 "file.read",
                 "file.write",
                 "file.list",
@@ -96,7 +96,18 @@ class InfraToolProviderTest {
                 "file.info",
                 "file.patch",
                 "file.grep",
-                "file.find"
+                "file.find",
+                "file.undo",
+                "file.redo",
+                "file.diff",
+                // Git 工具（7）
+                "git.status",
+                "git.diff",
+                "git.log",
+                "git.commit",
+                "git.blame",
+                "git.stash",
+                "git.branch"
         );
         assertThat(tools).hasSize(expectedToolIds.size());
         assertThat(tools).extracting(BuiltinTool::id)

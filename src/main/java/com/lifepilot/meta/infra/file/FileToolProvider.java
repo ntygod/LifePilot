@@ -1,6 +1,9 @@
 package com.lifepilot.meta.infra.file;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.file.history.FileEditHistory;
+import com.lifepilot.meta.infra.file.history.FileEditToolProvider;
+import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -9,6 +12,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
+import jakarta.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,9 +33,30 @@ public class FileToolProvider {
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final MetaProperties properties;
+    @Nullable
+    private final FileEditHistory editHistory;
+    @Nullable
+    private final LintHookExecutor lintHook;
 
     public FileToolProvider(MetaProperties properties) {
         this.properties = properties;
+        this.editHistory = null;
+        this.lintHook = null;
+    }
+
+    /**
+     * 构造函数 — 支持注入文件编辑历史和 lint 钩子。
+     *
+     * @param properties   元能力配置
+     * @param editHistory  文件编辑历史（可为 null）
+     * @param lintHook     lint 钩子执行器（可为 null）
+     */
+    public FileToolProvider(MetaProperties properties,
+                            @Nullable FileEditHistory editHistory,
+                            @Nullable LintHookExecutor lintHook) {
+        this.properties = properties;
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
     }
 
     /**
@@ -43,18 +68,24 @@ public class FileToolProvider {
         var tools = new ArrayList<BuiltinTool>();
 
         tools.add(buildFileReadTool(new FileReadToolExecutor(properties)));
-        tools.add(buildFileWriteTool(new FileWriteToolExecutor(properties)));
+        tools.add(buildFileWriteTool(new FileWriteToolExecutor(properties, editHistory, lintHook)));
         tools.add(buildFileListTool(new FileListToolExecutor(properties)));
         tools.add(buildFileSearchTool(new FileSearchToolExecutor(properties)));
         tools.add(buildFileDeleteTool(new FileDeleteToolExecutor(properties)));
         tools.add(buildFileCopyTool(new FileCopyToolExecutor(properties)));
         tools.add(buildFileMoveTool(new FileMoveToolExecutor(properties)));
         tools.add(buildFileInfoTool(new FileInfoToolExecutor(properties)));
-        tools.add(buildFilePatchTool(new FilePatchToolExecutor(properties)));
+        tools.add(buildFilePatchTool(new FilePatchToolExecutor(properties, editHistory, lintHook)));
         // file.grep 是 file.search 的别名，对标 OpenClaw grep 工具
         tools.add(buildFileGrepTool(new FileSearchToolExecutor(properties)));
         // file.find 按条件查找文件（glob/大小/时间），对标 OpenClaw find 工具
         tools.add(buildFileFindTool(new FileListToolExecutor(properties)));
+
+        // 文件编辑历史工具（undo/redo/diff）
+        if (editHistory != null) {
+            var editToolProvider = new FileEditToolProvider(editHistory);
+            tools.addAll(editToolProvider.buildEditHistoryTools());
+        }
 
         return List.copyOf(tools);
     }

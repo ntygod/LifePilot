@@ -5,6 +5,8 @@ import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
 import com.lifepilot.meta.infra.file.FileToolProvider;
+import com.lifepilot.meta.infra.file.history.FileEditHistory;
+import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.meta.infra.git.GitCommandExecutor;
 import com.lifepilot.meta.infra.git.GitToolProvider;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
@@ -163,7 +165,12 @@ public class InfraToolProvider {
         ));
 
         // 文件系统工具（委托给 FileToolProvider）
-        var fileToolProvider = new FileToolProvider(properties);
+        var fileEditConfig = properties.getInfra().getFileEdit();
+        var editHistory = new FileEditHistory(
+                fileEditConfig.getUndoMaxDepth(),
+                fileEditConfig.getMaxSnapshotSizeBytes());
+        var lintHook = new LintHookExecutor();
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 交互控制工具（委托给 InteractionToolProvider）

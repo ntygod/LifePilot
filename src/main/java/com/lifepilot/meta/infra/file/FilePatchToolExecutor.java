@@ -1,8 +1,11 @@
 package com.lifepilot.meta.infra.file;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.file.history.FileEditHistory;
+import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,14 +37,42 @@ public class FilePatchToolExecutor {
     private static final Logger log = LoggerFactory.getLogger(FilePatchToolExecutor.class);
 
     private final PathSecurityChecker securityChecker;
+    @Nullable
+    private final FileEditHistory editHistory;
+    @Nullable
+    private final LintHookExecutor lintHook;
+    @Nullable
+    private final MetaProperties.Infra.FileEdit fileEditConfig;
 
     public FilePatchToolExecutor(MetaProperties properties) {
         this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+        this.editHistory = null;
+        this.lintHook = null;
+        this.fileEditConfig = null;
+    }
+
+    /**
+     * 构造函数 — 支持注入文件编辑历史和 lint 钩子。
+     *
+     * @param properties   元能力配置
+     * @param editHistory  文件编辑历史（可为 null）
+     * @param lintHook     lint 钩子执行器（可为 null）
+     */
+    public FilePatchToolExecutor(MetaProperties properties,
+                                 @Nullable FileEditHistory editHistory,
+                                 @Nullable LintHookExecutor lintHook) {
+        this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
+        this.fileEditConfig = properties.getInfra().getFileEdit();
     }
 
     /** 构造函数 — 允许注入自定义 PathSecurityChecker（用于测试）。 */
     FilePatchToolExecutor(PathSecurityChecker securityChecker) {
         this.securityChecker = securityChecker;
+        this.editHistory = null;
+        this.lintHook = null;
+        this.fileEditConfig = null;
     }
 
     /**
@@ -81,6 +112,11 @@ public class FilePatchToolExecutor {
         }
 
         try {
+            // 修改前捕获快照
+            if (editHistory != null) {
+                editHistory.captureBeforeModify(filePath);
+            }
+
             // 读取全部行
             List<String> lines = new ArrayList<>(Files.readAllLines(filePath, StandardCharsets.UTF_8));
             int linesAffected = 0;
@@ -170,6 +206,16 @@ public class FilePatchToolExecutor {
             var data = new LinkedHashMap<String, Object>();
             data.put("path", filePath.toString());
             data.put("linesAffected", linesAffected);
+
+            // 写入成功后执行 lint 检查
+            if (lintHook != null && fileEditConfig != null && fileEditConfig.isAutoLint()) {
+                String lintOutput = lintHook.runLint(filePath,
+                        fileEditConfig.getLintCommands(),
+                        fileEditConfig.getLintTimeoutSeconds());
+                if (!lintOutput.isEmpty()) {
+                    data.put("lintWarning", lintOutput);
+                }
+            }
 
             log.debug("文件补丁成功: path={}, linesAffected={}", pathStr, linesAffected);
             return ToolResult.success(Map.copyOf(data));
