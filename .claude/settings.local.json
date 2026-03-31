@@ -42,7 +42,12 @@
       "WebFetch(domain:www.shareuhack.com)",
       "WebFetch(domain:www.innobu.com)",
       "WebFetch(domain:boilerplatehub.com)",
-      "WebFetch(domain:docs.all-hands.dev)"
+      "WebFetch(domain:docs.all-hands.dev)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Skill(update-config)"
     ]
   }
 }

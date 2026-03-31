@@ -123,10 +123,40 @@ public class SkillRegistry {
      * @return 按相似度降序排列的 Skill 列表
      */
     public List<SkillDefinition> search(String query) {
-        var searchResults = searchIndex.search(query, defaultSearchTopK);
+        return search(query, defaultSearchTopK);
+    }
+
+    /**
+     * 语义搜索，返回指定数量的候选 Skill。
+     *
+     * @param query 查询文本
+     * @param topK 最大返回数量
+     * @return 按相似度降序排列的 Skill 列表
+     */
+    public List<SkillDefinition> search(String query, int topK) {
+        return searchDetailed(query, topK).stream()
+                .map(ScoredSkillMatch::skill)
+                .toList();
+    }
+
+    /**
+     * 语义搜索，返回带分数的候选 Skill。
+     *
+     * @param query 查询文本
+     * @param topK 最大返回数量
+     * @return 按相似度降序排列的 Skill 匹配结果
+     */
+    public List<ScoredSkillMatch> searchDetailed(String query, int topK) {
+        var searchResults = searchIndex.search(query, topK);
         return searchResults.stream()
-                .map(r -> skills.get(r.skillId()))
-                .filter(d -> d != null)
+                .map(r -> {
+                    SkillDefinition definition = skills.get(r.skillId());
+                    if (definition == null) {
+                        return null;
+                    }
+                    return new ScoredSkillMatch(definition, r.similarity());
+                })
+                .filter(match -> match != null)
                 .toList();
     }
 
@@ -174,5 +204,8 @@ public class SkillRegistry {
         }
         log.info("按来源类型批量注销完成: sourceType={}, count={}", sourceType.getSimpleName(), count);
         return count;
+    }
+
+    public record ScoredSkillMatch(SkillDefinition skill, double score) {
     }
 }

@@ -1,16 +1,10 @@
 ---
 id: browser-automation
 name: "浏览器自动化"
-description: "浏览器自动化操作：网页导航、表单填写、信息抓取、截图验证、无障碍树分析。"
+description: "网页导航、表单填写、信息抓取、截图、无障碍树分析"
 version: "1.0.0"
 suggested-tools:
-  - browser.navigate
-  - browser.screenshot
-  - browser.click
-  - browser.input
-  - browser.scroll
-  - browser.evaluate
-  - browser.close
+  - browser
   - file.write
 triggers:
   - "浏览器"
@@ -45,13 +39,13 @@ triggers:
 ### 1. 导航到目标页面
 
 ```
-browser.navigate(url="https://example.com")
+browser(url="https://example.com")
 ```
 
 ### 2. 截图确认页面状态
 
 ```
-browser.screenshot()
+browser()
 → 确认页面已加载完成，识别目标元素位置
 ```
 
@@ -60,7 +54,7 @@ browser.screenshot()
 ### 3. 分析页面结构
 
 ```
-browser.accessibility()
+browser()
 → 获取无障碍树，了解页面元素层次和可交互元素
 ```
 
@@ -68,26 +62,26 @@ browser.accessibility()
 
 ```
 # 点击元素
-browser.click(selector="#submit-btn")
+browser(selector="#submit-btn")
 
 # 输入文本
-browser.input(selector="#search-input", text="搜索内容")
+browser(selector="#search-input", text="搜索内容")
 
 # 滚动页面
-browser.scroll(direction="down", pixels=500)
+browser(direction="down", pixels=500)
 ```
 
 ### 5. 提取数据
 
 ```
 # 通过 JavaScript 提取结构化数据
-browser.evaluate(script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, link: el.querySelector('a').href})))")
+browser(script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, link: el.querySelector('a').href})))")
 ```
 
 ### 6. 清理资源
 
 ```
-browser.close()
+browser()
 ```
 
 **务必在完成后关闭浏览器会话，释放资源。**

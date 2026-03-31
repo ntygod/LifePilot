@@ -1,11 +1,11 @@
 ---
 id: wps-office
 name: "WPS 办公"
-description: "WPS 文档操作：创建文档、编辑表格、格式转换。"
+description: "WPS 文档创建、表格编辑、格式转换"
 version: "1.0.0"
 suggested-tools:
-  - shell.exec
-  - http.request
+  - shell
+  - web.fetch
   - file.read
   - file.write
 triggers:
@@ -78,7 +78,7 @@ doc.save('output.docx')
 
 ### 创建在线文档
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://openapi.wps.cn/oauthapi/v3/office/file/new",
   method="POST",
   headers={"Content-Type": "application/json"},

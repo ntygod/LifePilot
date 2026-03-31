@@ -232,6 +232,72 @@ class ToolExecutionCoordinatorTest {
     }
 
     @Test
+    void 模型返回原始点号工具ID时也应命中下划线别名回调() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveCanonicalToolId("web_search")).thenReturn("web.search");
+        when(agentToolProvider.resolveCanonicalToolId("web.search")).thenReturn("web.search");
+        when(agentToolProvider.resolveToolDisplayName("web.search")).thenReturn("Web 搜索");
+        when(agentToolProvider.resolveToolRiskLevel("web.search")).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(eq("web.search"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.parallelSafe());
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        ToolCallback callback = new ToolCallback() {
+            private final ToolDefinition definition = DefaultToolDefinition.builder()
+                    .name("web_search")
+                    .description("Web 搜索")
+                    .inputSchema("{}")
+                    .build();
+
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return definition;
+            }
+
+            @Override
+            public String call(String toolInput) {
+                return "{\"status\":\"SUCCESS\",\"data\":{\"hits\":1}}";
+            }
+        };
+
+        ReactAgentState result = coordinator.execute(
+                baseState(),
+                new AssistantMessage.ToolCall(
+                        "call-search",
+                        "function",
+                        "web.search",
+                        "{\"query\":\"昨天的AI资讯\"}"
+                ),
+                List.of(callback),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(result.steps()).hasSize(2);
+        assertThat(result.steps().get(0)).isEqualTo(
+                new ReactStep.ToolCall("web.search", "Web 搜索", "{\"query\":\"昨天的AI资讯\"}", 0, "call-search")
+        );
+        assertThat(result.steps().get(1)).isInstanceOf(ReactStep.Observation.class);
+        var observation = (ReactStep.Observation) result.steps().get(1);
+        assertThat(observation.toolId()).isEqualTo("web.search");
+        assertThat(observation.toolName()).isEqualTo("Web 搜索");
+        assertThat(observation.success()).isTrue();
+        assertThat(observation.output()).isEqualTo("{\"status\":\"SUCCESS\",\"data\":{\"hits\":1}}");
+        assertThat(observation.callId()).isEqualTo("call-search");
+    }
+
+    @Test
     void 并行安全工具应并发执行且按原始顺序回放() {
         AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
         when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);

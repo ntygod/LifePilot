@@ -35,7 +35,7 @@ class StorageToolProviderTest {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         StorageToolProvider provider = new StorageToolProvider(dataStoreManager);
 
-        provider.registerTools(registry);
+        provider.buildStorageTools().forEach(registry::registerBuiltinTool);
 
         var created = new Collection(
                 "ds-1",
@@ -59,10 +59,11 @@ class StorageToolProviderTest {
                 eq(null)
         )).thenReturn(created);
 
-        var tool = registry.resolve("datastore.create_collection").orElseThrow();
+        var tool = registry.resolve("datastore").orElseThrow();
         var result = tool.execute(new ToolInput(
                 tool.id(),
                 Map.of(
+                        "action", "create-collection",
                         "name", "novel-workspace",
                         "type", "DOCUMENT",
                         "description", "小说创作数据存储",
@@ -101,7 +102,7 @@ class StorageToolProviderTest {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         StorageToolProvider provider = new StorageToolProvider(dataStoreManager);
 
-        provider.registerTools(registry);
+        provider.buildStorageTools().forEach(registry::registerBuiltinTool);
 
         var collection = new Collection(
                 "ds-1",
@@ -118,10 +119,10 @@ class StorageToolProviderTest {
         when(dataStoreManager.findCollection("dev-workspace")).thenReturn(Optional.of(collection));
         when(dataStoreManager.deleteCollection("ds-1")).thenReturn(true);
 
-        var tool = registry.resolve("datastore.delete_collection").orElseThrow();
+        var tool = registry.resolve("datastore").orElseThrow();
         var result = tool.execute(new ToolInput(
                 tool.id(),
-                Map.of("collectionName", "dev-workspace"),
+                Map.of("action", "delete-collection", "collectionName", "dev-workspace"),
                 tool.inputSchema(),
                 null,
                 null

@@ -1,14 +1,10 @@
 ---
 id: introspection
 name: "系统自省"
-description: "查看系统能力、状态和运行时信息：列出已注册能力、查看能力详情、系统状态概览、智能推荐、运行时动态信息"
+description: "查看系统能力、状态、运行时信息"
 version: "1.0.0"
 suggested-tools:
-  - system.list-capabilities
-  - system.explain
   - system.status
-  - system.suggest
-  - system.runtime
 triggers:
   - "自省"
   - "能力查询"
@@ -71,20 +67,20 @@ triggers:
 
 ### 用户问"你能做什么？"
 
-1. 用 `system.list-capabilities` 获取全部能力概览
+1. 用 `system.status` 获取全部能力概览
 2. 按类型分组向用户展示，突出核心能力
 
 ### 用户描述需求，寻找合适工具
 
-1. 用 `system.suggest` 传入需求描述，获取推荐列表
-2. 对推荐结果中感兴趣的能力，用 `system.explain` 查看详情
+1. 用 `system.status` 传入需求描述，获取推荐列表
+2. 对推荐结果中感兴趣的能力，用 `system.status` 查看详情
 3. 如果推荐结果为空，建议用户使用 find-skills Skill 搜索开源扩展
 
 ### 排查系统问题
 
 1. 用 `system.status` 查看系统整体状态
-2. 用 `system.runtime` 查看运行时动态（工作流实例、MCP 连接）
-3. 对异常的能力，用 `system.explain` 查看详细配置
+2. 用 `system.status` 查看运行时动态（工作流实例、MCP 连接）
+3. 对异常的能力，用 `system.status` 查看详细配置
 
 ## 常见错误处理
 

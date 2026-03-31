@@ -1,10 +1,10 @@
 ---
 id: healthcheck
 name: "系统健康检查"
-description: "检查系统运行状态、资源使用、服务健康度，生成诊断报告和修复建议"
+description: "系统状态检查、资源监控、诊断报告"
 version: "1.0.1"
 suggested-tools:
-  - shell.exec
+  - shell
   - file.read
 triggers:
   - "系统检查"
@@ -33,7 +33,7 @@ triggers:
 
 ### 1. 系统概览
 ```
-shell.exec(command="uname -a || ver")
+shell(action=exec, command="uname -a || ver")
 ```
 
 ### 2. 资源使用检查

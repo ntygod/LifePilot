@@ -1,10 +1,10 @@
 ---
 id: project-scaffolder
 name: "项目脚手架"
-description: "新项目初始化：模板生成、目录结构搭建、依赖配置、开发环境设置。"
+description: "项目模板生成、目录搭建、依赖配置"
 version: "1.0.0"
 suggested-tools:
-  - shell.exec
+  - shell
   - file.write
   - file.list
   - file.read
@@ -48,19 +48,19 @@ triggers:
 
 ```bash
 # Java + Spring Boot
-shell.exec(command="curl https://start.spring.io/starter.zip -d dependencies=web,actuator -d type=maven-project -d language=java -d javaVersion=22 -o project.zip", workingDirectory="/target")
+shell(action=exec, command="curl https://start.spring.io/starter.zip -d dependencies=web,actuator -d type=maven-project -d language=java -d javaVersion=22 -o project.zip", workingDirectory="/target")
 
 # Node.js
-shell.exec(command="npm init -y", workingDirectory="/target/project")
+shell(action=exec, command="npm init -y", workingDirectory="/target/project")
 
 # Python
-shell.exec(command="python -m venv venv", workingDirectory="/target/project")
+shell(action=exec, command="python -m venv venv", workingDirectory="/target/project")
 
 # Go
-shell.exec(command="go mod init github.com/user/project", workingDirectory="/target/project")
+shell(action=exec, command="go mod init github.com/user/project", workingDirectory="/target/project")
 
 # Rust
-shell.exec(command="cargo init project-name", workingDirectory="/target")
+shell(action=exec, command="cargo init project-name", workingDirectory="/target")
 ```
 
 ### 3. 补充项目文件

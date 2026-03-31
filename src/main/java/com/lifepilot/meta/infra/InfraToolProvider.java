@@ -4,23 +4,19 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
-import com.lifepilot.meta.infra.code.kernel.CodeKernelToolProvider;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.meta.infra.git.GitCommandExecutor;
 import com.lifepilot.meta.infra.git.GitToolProvider;
-import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
-import com.lifepilot.meta.infra.shell.ProcessToolProvider;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
-import com.lifepilot.meta.infra.shell.session.SessionToolProvider;
+import com.lifepilot.meta.infra.shell.ShellToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
-import com.lifepilot.meta.infra.web.HttpRequestToolExecutor;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
@@ -31,7 +27,6 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.tool.WorkflowToolProvider;
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
@@ -41,7 +36,6 @@ import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
@@ -90,8 +84,6 @@ public class InfraToolProvider {
     @Nullable
     private final CronScheduler cronScheduler;
     @Nullable
-    private final AgentConfigProperties agentConfigProperties;
-    @Nullable
     private final NotificationProperties notificationProperties;
     @Nullable
     private final BackgroundProcessManager backgroundProcessManager;
@@ -108,7 +100,6 @@ public class InfraToolProvider {
                              @Nullable WorkflowCommandService workflowCommandService,
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
-                             @Nullable AgentConfigProperties agentConfigProperties,
                              @Nullable NotificationProperties notificationProperties,
                              @Nullable BackgroundProcessManager backgroundProcessManager) {
         this.properties = properties;
@@ -123,7 +114,6 @@ public class InfraToolProvider {
         this.workflowCommandService = workflowCommandService;
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
-        this.agentConfigProperties = agentConfigProperties;
         this.notificationProperties = notificationProperties;
         this.backgroundProcessManager = backgroundProcessManager;
     }
@@ -142,23 +132,6 @@ public class InfraToolProvider {
                 buildWebFetchTool(webFetchExecutor)
         ));
 
-        // HTTP 请求工具
-        var httpRequestExecutor = new HttpRequestToolExecutor();
-        totalTools += registerBuiltinTools(toolRegistry, List.of(
-                buildHttpRequestTool(httpRequestExecutor)
-        ));
-
-        // 推理辅助工具
-        var calculateExecutor = new CalculateToolExecutor();
-        totalTools += registerBuiltinTools(toolRegistry, List.of(
-                buildCalculateTool(calculateExecutor)
-        ));
-
-        // Shell 执行工具
-        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager);
-        totalTools += registerBuiltinTools(toolRegistry, List.of(
-                buildShellExecTool(shellExecExecutor)
-        ));
 
         // 浏览器自动化工具（委托给 BrowserToolProvider）
         var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties);
@@ -192,26 +165,13 @@ public class InfraToolProvider {
         }
 
         // 自主任务工具（委托给 TaskToolProvider）
-        if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) {
-            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, agentConfigProperties);
+        if (cronTaskRepository != null && cronScheduler != null) {
+            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler);
             var cronTools = taskToolProvider.buildCronTools();
-            var heartbeatTools = taskToolProvider.buildHeartbeatTools();
             totalTools += registerBuiltinTools(toolRegistry, cronTools);
-            totalTools += registerBuiltinTools(toolRegistry, heartbeatTools);
-            log.info("自主任务工具注册完成: count={}, categories=[cron, heartbeat]",
-                    cronTools.size() + heartbeatTools.size());
+            log.info("自主任务工具注册完成: count={}", cronTools.size());
         } else {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
-        }
-
-        // 后台进程管理工具（委托给 ProcessToolProvider）
-        if (backgroundProcessManager != null) {
-            var processToolProvider = new ProcessToolProvider(backgroundProcessManager);
-            var processTools = processToolProvider.buildProcessTools();
-            totalTools += registerBuiltinTools(toolRegistry, processTools);
-            log.info("后台进程管理工具注册完成: count={}", processTools.size());
-        } else {
-            log.warn("BackgroundProcessManager 不可用，跳过后台进程管理工具注册");
         }
 
         // Git 工具（委托给 GitToolProvider）
@@ -227,30 +187,30 @@ public class InfraToolProvider {
             }
         }
 
-        // Shell 持久会话工具（委托给 SessionToolProvider）
-        // 提前创建 tmuxSessionManager，供 Shell 持久会话和代码内核共用
+        // 提前创建 tmuxSessionManager，供 shell 工具与代码内核共用
         TmuxSessionManager tmuxSessionManager = null;
         var shellSessionConfig = properties.getInfra().getShellSession();
         if (shellSessionConfig.isEnabled()) {
             var tmuxCmd = new TmuxCommandExecutor(shellSessionConfig.getExecTimeoutSeconds());
             if (tmuxCmd.isTmuxAvailable()) {
                 tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig);
-                var sessionToolProvider = new SessionToolProvider(tmuxSessionManager);
-                totalTools += registerBuiltinTools(toolRegistry, sessionToolProvider.buildSessionTools());
-                log.info("Shell 持久会话工具注册完成: count={}", 8);
             } else {
-                log.warn("tmux 不可用，跳过 Shell 持久会话工具注册");
+                log.warn("tmux 不可用，Shell 持久会话能力将不可用");
             }
         }
 
-        // 持久代码内核工具（委托给 CodeKernelToolProvider）
+        // Shell 工具（统一 exec / process / session）
+        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager);
+        var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
+        var shellTools = shellToolProvider.buildShellTools();
+        totalTools += registerBuiltinTools(toolRegistry, shellTools);
+        log.info("Shell 工具注册完成: count={}", shellTools.size());
+
+        // 持久代码内核（供代码执行工具路由使用，不再单独注册 kernel 工具）
         PersistentKernelManager kernelManager = null;
         var kernelConfig = properties.getInfra().getKernel();
         if (kernelConfig.isEnabled()) {
             kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager);
-            var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
-            totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
-            log.info("持久代码内核工具注册完成: count=2");
         }
 
         // 代码执行工具（支持持久内核路由）
@@ -259,7 +219,7 @@ public class InfraToolProvider {
                 buildCodeExecuteTool(codeExecuteExecutor)
         ));
 
-        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git, session, kernel]",
+        log.info("基础工具注册完成: count={}, categories=[web, shell, browser, code, file, interact, workflow, task, git]",
                 totalTools);
     }
 
@@ -277,7 +237,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("Web 搜索")
                 .description("通过搜索引擎搜索互联网上的内容。\n" +
                         "当你的知识无法回答用户提出的问题，或用户请求你进行联网搜索时，调用此工具。请从与用户的对话中提取用户想要搜索的内容作为 query 参数的值。" +
@@ -312,19 +271,31 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("Web 页面抓取")
-                .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取。当静态抓取内容为空或过短时自动回退到浏览器渲染（需 Playwright 可用）")
+                .description("抓取指定 URL 的网页内容或发送 HTTP 请求到外部 API。" +
+                        "当用户提供具体 URL 需要获取内容，或需要调用外部 REST API 时使用。" +
+                        "默认 GET 请求并解析 HTML 提取正文文本，支持 CSS 选择器定向提取。" +
+                        "可通过 method/headers/body 参数发送 POST/PUT/DELETE/PATCH 请求。" +
+                        "当静态抓取内容为空或过短时自动回退到浏览器渲染。" +
+                        "需要 JavaScript 渲染的多步交互操作请用 browser。禁止访问内网地址")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
-                        "properties", Map.of(
-                                "url", Map.of("type", "string",
-                                        "description", "目标网页 URL"),
-                                "selector", Map.of("type", "string",
-                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选）"),
-                                "renderJs", Map.of("type", "boolean",
-                                        "description", "强制使用浏览器渲染（适用于 JS 动态页面），默认 false 由系统自动判断")
+                        "properties", Map.ofEntries(
+                                Map.entry("url", Map.of("type", "string",
+                                        "description", "目标网页 URL 或 API 地址")),
+                                Map.entry("method", Map.of("type", "string",
+                                        "description", "HTTP 方法（GET/POST/PUT/DELETE/PATCH），默认 GET")),
+                                Map.entry("headers", Map.of("type", "object",
+                                        "description", "请求头 Map（可选）")),
+                                Map.entry("body", Map.of("type", "string",
+                                        "description", "请求体（POST/PUT/PATCH 时使用）")),
+                                Map.entry("selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选，仅 GET 请求有效）")),
+                                Map.entry("renderJs", Map.of("type", "boolean",
+                                        "description", "强制使用浏览器渲染（适用于 JS 动态页面），默认 false")),
+                                Map.entry("timeoutSeconds", Map.of("type", "integer",
+                                        "description", "请求超时时间（秒），默认 30"))
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -339,109 +310,8 @@ public class InfraToolProvider {
     }
 
 
-    /** 构建计算工具 — BigDecimal 精确运算。 */
-    private BuiltinTool buildCalculateTool(CalculateToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("reason.calculate")
-                .category(ToolCategory.COGNITION)
-                .tier(ToolTier.CORE)
-                .name("精确计算")
-                .description("使用 BigDecimal 进行精确算术运算。支持四则运算(如 123.45+67.89)、百分比(如 200*15%)、日期差(如 2026-03-08 - 2025-01-01)")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("expression"),
-                        "properties", Map.of(
-                                "expression", Map.of("type", "string",
-                                        "description", "数学表达式或日期差表达式")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
 
-    // ─────────────────────────────────────────────
-    //  Shell 执行工具构建
-    // ─────────────────────────────────────────────
 
-    /** 构建 Shell 命令执行工具 — ProcessBuilder 子进程执行，HIGH 风险。 */
-    private BuiltinTool buildShellExecTool(ShellExecToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("shell.exec")
-                .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
-                .name("执行 Shell 命令")
-                .description("在操作系统 Shell 中执行命令，捕获 stdout/stderr 输出。支持同步执行、后台执行和 yieldMs 自动后台化三种模式")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("command"),
-                        "properties", Map.of(
-                                "command", Map.of("type", "string",
-                                        "description", "要执行的 Shell 命令"),
-                                "workingDirectory", Map.of("type", "string",
-                                        "description", "工作目录路径，默认使用当前进程工作目录"),
-                                "timeoutSeconds", Map.of("type", "integer",
-                                        "description", "命令超时时间（秒），默认 120"),
-                                "background", Map.of("type", "boolean",
-                                        "description", "立即后台执行，返回 sessionId，通过 process.* 工具管理进程"),
-                                "yieldMs", Map.of("type", "integer",
-                                        "description", "同步等待毫秒数，超时后自动转后台（0=立即后台，默认不启用）。适合不确定耗时的命令"),
-                                "pty", Map.of("type", "boolean",
-                                        "description", "分配伪终端（PTY），用于交互式 CLI（如 npm init、vim）。Unix 下通过 script 命令实现")
-                        )
-                )))
-                .riskLevel(RiskLevel.HIGH)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.EXECUTE_SHELL,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.workspacePaths("workingDirectory", "cwd")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    // ─────────────────────────────────────────────
-    //  HTTP 请求工具构建
-    // ─────────────────────────────────────────────
-
-    /** 构建 HTTP 请求工具 — 支持 GET/POST/PUT/DELETE/PATCH，MEDIUM 风险。 */
-    private BuiltinTool buildHttpRequestTool(HttpRequestToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("http.request")
-                .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
-                .name("HTTP 请求")
-                .description("发送 HTTP 请求到外部 API，支持 GET/POST/PUT/DELETE/PATCH 方法。禁止访问内网地址")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("url"),
-                        "properties", Map.of(
-                                "url", Map.of("type", "string",
-                                        "description", "请求 URL"),
-                                "method", Map.of("type", "string",
-                                        "description", "HTTP 方法（GET/POST/PUT/DELETE/PATCH），默认 GET"),
-                                "headers", Map.of("type", "object",
-                                        "description", "请求头 Map"),
-                                "body", Map.of("type", "string",
-                                        "description", "请求体（POST/PUT/PATCH 时使用）"),
-                                "timeoutSeconds", Map.of("type", "integer",
-                                        "description", "请求超时时间（秒），默认 30")
-                        )
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.HTTP_REQUEST,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.origins("url")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
 
     // ─────────────────────────────────────────────
     //  代码执行工具构建
@@ -452,7 +322,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
                 .name("执行代码")
                 .description("在安全环境中执行代码，支持 Python/JavaScript/Shell。有两种执行模式：\n\n" +
                         "【一次性沙箱模式】（默认）：不传 kernelId，每次执行完全独立，变量不保留。" +
@@ -478,8 +347,8 @@ public class InfraToolProvider {
                                         "description", "持久内核 ID（如 \"data-analysis\"、\"debug\"）。" +
                                                 "传入后变量和导入跨调用保持，适合多步数据分析或调试。" +
                                                 "同一 kernelId 共享状态，不同 kernelId 互相隔离。" +
-                                                "不传则使用一次性沙箱。用 code.kernel.inspect 查看内核中的变量，" +
-                                                "用 code.kernel.reset 清空内核状态。")
+                                                "不传则使用一次性沙箱。传入 'kernel:reset' 作为 code 值可清空指定 kernelId 的状态，" +
+                                                "传入 'kernel:inspect' 作为 code 值可查看指定 kernelId 中的变量。")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

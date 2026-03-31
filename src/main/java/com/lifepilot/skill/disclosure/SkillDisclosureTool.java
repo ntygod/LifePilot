@@ -1,17 +1,14 @@
 package com.lifepilot.skill.disclosure;
 
-import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.skill.activation.SkillActivationException;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.model.SkillActivation;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolCategory;
-import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
@@ -70,7 +67,6 @@ public class SkillDisclosureTool {
         BuiltinTool loadSkillTool = BuiltinTool.builder()
                 .id("load_skill")
                 .name("加载 Skill 指南")
-                .tier(ToolTier.CORE)
                 .description("根据 Skill ID 列表加载完整操作指南和建议工具。"
                         + "从 system prompt 的能力清单中选择 skill_ids 调用。")
                 .inputSchema(inputSchema)
@@ -121,17 +117,6 @@ public class SkillDisclosureTool {
 
         if (loadedSkills.isEmpty()) {
             return handleSkillNotFound(String.join(", ", missingSkills));
-        }
-
-        // 将激活的 Skill 建议工具注入到 Agent 循环上下文，
-        // 使其在后续迭代中通过工具分层过滤变为可见
-        if (!suggestedTools.isEmpty()) {
-            var loopContextRef = input.getContextValue(
-                    ToolContextKeys.LOOP_CONTEXT_REF, AgentLoopContext.class);
-            if (loopContextRef.isPresent()) {
-                loopContextRef.get().addActivatedSkillTools(suggestedTools);
-                log.debug("已激活 Skill 工具: count={}, tools={}", suggestedTools.size(), suggestedTools);
-            }
         }
 
         var data = Map.of(

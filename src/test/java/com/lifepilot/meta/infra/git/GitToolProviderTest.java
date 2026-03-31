@@ -30,9 +30,9 @@ class GitToolProviderTest {
     }
 
     @Test
-    void buildGitTools_应返回7个工具() {
+    void buildGitTools_应返回2个统一工具() {
         List<BuiltinTool> tools = provider.buildGitTools();
-        assertThat(tools).hasSize(7);
+        assertThat(tools).hasSize(2);
     }
 
     @Test
@@ -44,16 +44,10 @@ class GitToolProviderTest {
                 .collect(Collectors.toSet());
 
         assertThat(ids).containsExactlyInAnyOrder(
-                "git.status",
-                "git.diff",
-                "git.log",
-                "git.commit",
-                "git.blame",
-                "git.stash",
-                "git.branch"
+                "git.query",
+                "git.mutate"
         );
 
-        // 每个工具都应该有非空的 inputSchema
         for (BuiltinTool tool : tools) {
             assertThat(tool.inputSchema()).isNotNull();
             assertThat(tool.inputSchema().toMap()).isNotEmpty();
@@ -71,81 +65,65 @@ class GitToolProviderTest {
     }
 
     @Test
-    void 读操作工具应为PARALLEL_SAFE() {
+    void query工具应为PARALLEL_SAFE() {
         List<BuiltinTool> tools = provider.buildGitTools();
 
-        Set<String> readToolIds = Set.of("git.status", "git.diff", "git.log", "git.blame");
-        for (BuiltinTool tool : tools) {
-            if (readToolIds.contains(tool.id())) {
-                assertThat(tool.executionSemantics().schedulingMode())
-                        .as("工具 %s 应为 PARALLEL_SAFE", tool.id())
-                        .isEqualTo(com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE);
-            }
-        }
-    }
-
-    @Test
-    void 写操作工具应为SEQUENTIAL() {
-        List<BuiltinTool> tools = provider.buildGitTools();
-
-        Set<String> writeToolIds = Set.of("git.commit", "git.stash", "git.branch");
-        for (BuiltinTool tool : tools) {
-            if (writeToolIds.contains(tool.id())) {
-                assertThat(tool.executionSemantics().schedulingMode())
-                        .as("工具 %s 应为 SEQUENTIAL", tool.id())
-                        .isEqualTo(com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL);
-            }
-        }
-    }
-
-    @Test
-    void commit工具风险等级应为HIGH() {
-        List<BuiltinTool> tools = provider.buildGitTools();
-
-        BuiltinTool commitTool = tools.stream()
-                .filter(t -> "git.commit".equals(t.id()))
+        BuiltinTool queryTool = tools.stream()
+                .filter(t -> "git.query".equals(t.id()))
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(commitTool.riskLevel())
+        assertThat(queryTool.executionSemantics().schedulingMode())
+                .isEqualTo(com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE);
+    }
+
+    @Test
+    void mutate工具应为SEQUENTIAL() {
+        List<BuiltinTool> tools = provider.buildGitTools();
+
+        BuiltinTool mutateTool = tools.stream()
+                .filter(t -> "git.mutate".equals(t.id()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(mutateTool.executionSemantics().schedulingMode())
+                .isEqualTo(com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL);
+    }
+
+    @Test
+    void mutate工具风险等级应为HIGH() {
+        List<BuiltinTool> tools = provider.buildGitTools();
+
+        BuiltinTool mutateTool = tools.stream()
+                .filter(t -> "git.mutate".equals(t.id()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(mutateTool.riskLevel())
                 .isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
     }
 
     @Test
-    void stash和branch工具风险等级应为MEDIUM() {
+    void query工具inputSchema应包含action为必需参数() {
         List<BuiltinTool> tools = provider.buildGitTools();
 
-        Set<String> mediumRiskIds = Set.of("git.stash", "git.branch");
-        for (BuiltinTool tool : tools) {
-            if (mediumRiskIds.contains(tool.id())) {
-                assertThat(tool.riskLevel())
-                        .as("工具 %s 风险等级应为 MEDIUM", tool.id())
-                        .isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-            }
-        }
-    }
-
-    @Test
-    void commit工具inputSchema应包含message为必需参数() {
-        List<BuiltinTool> tools = provider.buildGitTools();
-
-        BuiltinTool commitTool = tools.stream()
-                .filter(t -> "git.commit".equals(t.id()))
+        BuiltinTool queryTool = tools.stream()
+                .filter(t -> "git.query".equals(t.id()))
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(commitTool.inputSchema().requiredFields()).contains("message");
+        assertThat(queryTool.inputSchema().requiredFields()).contains("action");
     }
 
     @Test
-    void blame工具inputSchema应包含filePath为必需参数() {
+    void mutate工具inputSchema应包含action为必需参数() {
         List<BuiltinTool> tools = provider.buildGitTools();
 
-        BuiltinTool blameTool = tools.stream()
-                .filter(t -> "git.blame".equals(t.id()))
+        BuiltinTool mutateTool = tools.stream()
+                .filter(t -> "git.mutate".equals(t.id()))
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(blameTool.inputSchema().requiredFields()).contains("filePath");
+        assertThat(mutateTool.inputSchema().requiredFields()).contains("action");
     }
 }

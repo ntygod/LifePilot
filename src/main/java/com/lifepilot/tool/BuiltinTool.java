@@ -1,17 +1,19 @@
 package com.lifepilot.tool;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.dispatch.ActionDispatchExecutor;
+import com.lifepilot.tool.dispatch.ActionMetadata;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Java 原生工具（Layer 3）。
@@ -31,7 +33,7 @@ import java.util.List;
  * @param tags 工具标签
  * @param exportable 是否可导出为 MCP 工具
  * @param category 工具所属元能力分组
- * @param tier 工具分层级别
+ * @param actionMetadata action 级别元数据（可选）
  * @param executor 实际执行逻辑
  * @author zsg
  * @since 2026-02-24
@@ -49,7 +51,7 @@ public record BuiltinTool(
         List<String> tags,
         boolean exportable,
         ToolCategory category,
-        ToolTier tier,
+        Map<String, ActionMetadata> actionMetadata,
         ToolExecutor executor
 ) implements ToolContract {
 
@@ -59,13 +61,46 @@ public record BuiltinTool(
     }
 
     @Override
-    public ToolTier tier() {
-        return tier;
-    }
-
-    @Override
     public ToolResult execute(ToolInput input) {
         return executor.execute(input);
+    }
+
+    /**
+     * 解析当前输入对应的有效风险等级。
+     *
+     * <p>若工具声明了 action 元数据且输入中包含 action，则优先返回 action 对应的风险等级；
+     * 否则返回工具默认风险等级。</p>
+     *
+     * @param input 工具输入
+     * @return 有效风险等级
+     */
+    public RiskLevel resolveRiskLevel(ToolInput input) {
+        return resolveActionMetadata(input)
+                .map(ActionMetadata::riskLevel)
+                .orElse(riskLevel);
+    }
+
+    /**
+     * 解析当前输入对应的有效执行语义。
+     *
+     * <p>若工具声明了 action 元数据且输入中包含 action，则优先返回 action 对应的执行语义；
+     * 否则返回工具默认执行语义。</p>
+     *
+     * @param input 工具输入
+     * @return 有效执行语义
+     */
+    public ToolExecutionSemantics resolveExecutionSemantics(ToolInput input) {
+        return resolveActionMetadata(input)
+                .map(ActionMetadata::executionSemantics)
+                .orElse(executionSemantics);
+    }
+
+    private java.util.Optional<ActionMetadata> resolveActionMetadata(ToolInput input) {
+        if (actionMetadata == null || actionMetadata.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        return input.getOptionalParam("action", String.class)
+                .map(actionMetadata::get);
     }
 
     /** Builder 模式构建 BuiltinTool。 */
@@ -92,7 +127,7 @@ public record BuiltinTool(
         private List<String> tags = List.of();
         private boolean exportable = false;
         private ToolCategory category = ToolCategory.ACTION;
-        private ToolTier tier = ToolTier.SKILL;
+        private Map<String, ActionMetadata> actionMetadata = Map.of();
         private ToolExecutor executor;
 
         public Builder id(String id) { this.id = id; return this; }
@@ -110,7 +145,14 @@ public record BuiltinTool(
         public Builder tags(List<String> tags) { this.tags = List.copyOf(tags); return this; }
         public Builder exportable(boolean exportable) { this.exportable = exportable; return this; }
         public Builder category(ToolCategory category) { this.category = category; return this; }
-        public Builder tier(ToolTier tier) { this.tier = tier; return this; }
+        public Builder actionMetadata(Map<String, ActionMetadata> actionMetadata) {
+            this.actionMetadata = actionMetadata != null ? Map.copyOf(actionMetadata) : Map.of();
+            return this;
+        }
+        public Builder actionMetadataFrom(ActionDispatchExecutor executor) {
+            this.actionMetadata = executor != null ? executor.actionMetadata() : Map.of();
+            return this;
+        }
         public Builder executor(ToolExecutor executor) { this.executor = executor; return this; }
 
         public BuiltinTool build() {
@@ -119,7 +161,7 @@ public record BuiltinTool(
             }
             return new BuiltinTool(id, name, description, inputSchema, outputSchema,
                     riskLevel, idempotent, executionSemantics, budget, List.copyOf(tags),
-                    exportable, category, tier, executor);
+                    exportable, category, Map.copyOf(actionMetadata), executor);
         }
     }
 }

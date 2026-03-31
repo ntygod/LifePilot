@@ -1,6 +1,5 @@
 package com.lifepilot.agent;
 
-import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolSchedulingMode;
@@ -29,23 +28,6 @@ public interface AgentToolProvider {
      * @return 工具回调列表（Spring AI ToolCallback）
      */
     List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId);
-
-    /**
-     * 获取工具回调列表（含循环上下文，支持工具分层过滤）。
-     *
-     * <p>当 {@code loopContext} 不为 null 时，根据工具分层级别和
-     * 已激活 Skill 的 suggestedTools 过滤可见工具集。</p>
-     *
-     * @param state       当前 ReAct Agent 状态
-     * @param streamId    SSE 流标识（用于精确推送授权审批请求，CLI 场景为 null）
-     * @param loopContext Agent 循环上下文（含已激活 Skill 工具集），可为 null
-     * @return 工具回调列表（Spring AI ToolCallback）
-     */
-    default List<ToolCallback> getToolCallbacks(ReactAgentState state,
-                                                 @Nullable String streamId,
-                                                 @Nullable AgentLoopContext loopContext) {
-        return getToolCallbacks(state, streamId);
-    }
 
     /**
      * 根据工具 ID 解析用户可读的显示名称。

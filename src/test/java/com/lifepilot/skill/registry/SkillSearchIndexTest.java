@@ -43,7 +43,7 @@ class SkillSearchIndexTest {
 
         searchIndex.index(createSkillDefinition("todo", "待办管理", "管理待办事项"));
 
-        verify(embeddingRouter).embed("待办管理 管理待办事项", EmbeddingUseCase.DEFAULT, null, null);
+        verify(embeddingRouter).embed("todo 待办管理 管理待办事项 待办管理", EmbeddingUseCase.DEFAULT, null, null);
     }
 
     @Test
@@ -75,11 +75,11 @@ class SkillSearchIndexTest {
 
     @Test
     void search_返回高相关结果() {
-        when(embeddingRouter.embed("待办管理 管理待办事项", EmbeddingUseCase.DEFAULT, null, null))
+        when(embeddingRouter.embed("todo 待办管理 管理待办事项 待办管理", EmbeddingUseCase.DEFAULT, null, null))
                 .thenReturn(new float[]{1.0f, 0.0f, 0.0f});
         searchIndex.index(createSkillDefinition("todo", "待办管理", "管理待办事项"));
 
-        when(embeddingRouter.embed("日程管理 管理日程安排", EmbeddingUseCase.DEFAULT, null, null))
+        when(embeddingRouter.embed("schedule 日程管理 管理日程安排 日程管理", EmbeddingUseCase.DEFAULT, null, null))
                 .thenReturn(new float[]{0.0f, 1.0f, 0.0f});
         searchIndex.index(createSkillDefinition("schedule", "日程管理", "管理日程安排"));
 
@@ -94,11 +94,11 @@ class SkillSearchIndexTest {
 
     @Test
     void search_按相似度降序返回() {
-        when(embeddingRouter.embed("高相似 高相似技能", EmbeddingUseCase.DEFAULT, null, null))
+        when(embeddingRouter.embed("high 高相似 高相似技能 高相似", EmbeddingUseCase.DEFAULT, null, null))
                 .thenReturn(new float[]{0.9f, 0.1f, 0.0f});
         searchIndex.index(createSkillDefinition("high", "高相似", "高相似技能"));
 
-        when(embeddingRouter.embed("中相似 中相似技能", EmbeddingUseCase.DEFAULT, null, null))
+        when(embeddingRouter.embed("medium 中相似 中相似技能 中相似", EmbeddingUseCase.DEFAULT, null, null))
                 .thenReturn(new float[]{0.7f, 0.3f, 0.0f});
         searchIndex.index(createSkillDefinition("medium", "中相似", "中相似技能"));
 
@@ -112,10 +112,16 @@ class SkillSearchIndexTest {
 
     @Test
     void search_限制TopK数量() {
+        when(embeddingRouter.embed(anyString(), any(), any(), any()))
+                .thenReturn(
+                        new float[]{0.81f, 0.1f, 0.0f},
+                        new float[]{0.82f, 0.1f, 0.0f},
+                        new float[]{0.83f, 0.1f, 0.0f},
+                        new float[]{1.0f, 0.0f, 0.0f}
+                );
+
         for (int i = 1; i <= 3; i++) {
             String id = "skill-" + i;
-            when(embeddingRouter.embed(id + " 技能" + i, EmbeddingUseCase.DEFAULT, null, null))
-                    .thenReturn(new float[]{0.8f + i * 0.01f, 0.1f, 0.0f});
             searchIndex.index(createSkillDefinition(id, id, "技能" + i));
         }
 
@@ -128,7 +134,7 @@ class SkillSearchIndexTest {
 
     @Test
     void search_查询向量生成失败时降级为关键词搜索() {
-        when(embeddingRouter.embed("待办管理 管理待办事项", EmbeddingUseCase.DEFAULT, null, null))
+        when(embeddingRouter.embed("todo 待办管理 管理待办事项 待办管理", EmbeddingUseCase.DEFAULT, null, null))
                 .thenReturn(new float[]{1.0f, 0.0f, 0.0f});
         searchIndex.index(createSkillDefinition("todo", "待办管理", "管理待办事项"));
 
@@ -142,7 +148,7 @@ class SkillSearchIndexTest {
 
     @Test
     void search_过滤低相似度结果() {
-        when(embeddingRouter.embed("无关技能 完全无关的技能", EmbeddingUseCase.DEFAULT, null, null))
+        when(embeddingRouter.embed("unrelated 无关技能 完全无关的技能 无关技能", EmbeddingUseCase.DEFAULT, null, null))
                 .thenReturn(new float[]{0.0f, 1.0f, 0.0f});
         searchIndex.index(createSkillDefinition("unrelated", "无关技能", "完全无关的技能"));
 
@@ -193,6 +199,7 @@ class SkillSearchIndexTest {
                 .source(new SkillSource.UserDefined("/test", null))
                 .instructions("测试 Prompt")
                 .suggestedTools(List.of("tool-1"))
+                .triggers(List.of(name))
                 .metadata(Map.of())
                 .build();
     }

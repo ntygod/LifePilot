@@ -264,7 +264,11 @@ public class ToolExecutionPipeline implements java.io.Closeable {
     }
 
     private Map<String, Object> prepareParameters(String toolId, Map<String, Object> parameters) {
-        if (!"cron.create".equals(toolId) || parameters.containsKey("taskId")) {
+        if (!"cron".equals(toolId) || parameters.containsKey("taskId")) {
+            return parameters;
+        }
+        Object action = parameters.get("action");
+        if (!(action instanceof String actionName) || !"create".equals(actionName)) {
             return parameters;
         }
         Map<String, Object> enriched = new LinkedHashMap<>(parameters);

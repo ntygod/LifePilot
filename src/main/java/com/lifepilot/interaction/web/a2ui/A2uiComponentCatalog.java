@@ -84,28 +84,24 @@ public final class A2uiComponentCatalog {
                 .collect(Collectors.joining("\n"));
 
         return """
-                A2UI 组件输出（可选）：当回答包含结构化信息（列表、表格、表单、进度、可操作事项）时，你可以输出 A2UI JSON，让前端渲染交互式界面。
+                A2UI 组件输出（可选）：当回答包含结构化信息时，输出 A2UI JSON 让前端渲染交互式界面。
 
-                使用规则：
-                - 只在回答确实需要结构化展示时使用 A2UI；纯文本回答不要输出 A2UI
-                - A2UI JSON 必须包裹在 <a2ui>...</a2ui> 中
-                - 每次回答最多输出一个 <a2ui>...</a2ui> 块
-                - <a2ui> 标签外的文本照常输出，标签内只能放 JSON
-                - signal 必须放在组件顶层字段 signal，绝不能放在 properties.signal
-                - 单个组件树最多包含 %d 个组件
+                规则：
+                - 仅在需要结构化展示时使用；纯文本不输出 A2UI
+                - JSON 必须包裹在 <a2ui>...</a2ui> 中，每次最多一个
+                - <a2ui> 标签外的文本照常输出，标签内只放 JSON
+                - signal 放在组件顶层字段，不放在 properties 内
+                - 单组件树最多 %d 个组件
 
-                已注册组件（type -> properties）：
+                已注册组件（type → properties）：
                 %s
 
-                Signal 格式：
-                {name: string, payload: {[key]: value}}
-
-                组件树 JSON 结构：
-                {"components":[{"id":"唯一ID","type":"组件类型","properties":{...},"children":["child-id"],"signal":null}]}
+                Signal 格式：{name: string, payload: {[key]: value}}
+                组件树结构：{"components":[{"id","type","properties","children":[],"signal":null}]}
 
                 示例：
-                今天有 2 项待办：
-                <a2ui>{"components":[{"id":"list-1","type":"List","properties":{"ordered":true},"children":["item-1","item-2"],"signal":null},{"id":"item-1","type":"ListItem","properties":{"text":"提交周报"},"children":[],"signal":{"name":"todo.complete","payload":{"taskId":"1"}}},{"id":"item-2","type":"ListItem","properties":{"text":"回复客户邮件"},"children":[],"signal":{"name":"todo.complete","payload":{"taskId":"2"}}}]}</a2ui>
+                今天有 1 项待办：
+                <a2ui>{"components":[{"id":"list-1","type":"List","properties":{"ordered":true},"children":["item-1"],"signal":null},{"id":"item-1","type":"ListItem","properties":{"text":"提交周报"},"children":[],"signal":{"name":"todo.complete","payload":{"taskId":"1"}}}]}</a2ui>
                 """.formatted(maxComponentsPerTree, lines);
     }
 

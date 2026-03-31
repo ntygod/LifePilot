@@ -4,6 +4,7 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.lang.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -87,6 +88,26 @@ public record AssembledContext(
                 degraded(),
                 injectedEntityIds(),
                 newMediaContents
+        );
+    }
+
+    /** 基于当前上下文，追加一条上下文消息，返回新实例。 */
+    public AssembledContext appendContextMessage(Message message) {
+        var mergedMessages = new ArrayList<>(contextMessages());
+        mergedMessages.add(message);
+        return new AssembledContext(
+                systemPrompt(),
+                mergedMessages,
+                historyMessages(),
+                userPrompt(),
+                retrievedMemories(),
+                tokenBudget(),
+                retrievalCount(),
+                topRetrievalScore(),
+                workingMemoryTokens(),
+                degraded(),
+                injectedEntityIds(),
+                mediaContents()
         );
     }
 }

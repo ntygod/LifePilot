@@ -1,16 +1,13 @@
 ---
 id: gitee
 name: "Gitee 代码托管"
-description: "Gitee 操作：管理仓库、PR、Issue、CI/CD。"
+description: "Gitee 仓库/PR/Issue/CI 管理"
 version: "1.0.0"
 suggested-tools:
-  - http.request
-  - shell.exec
-  - git.status
-  - git.diff
-  - git.log
-  - git.commit
-  - git.branch
+  - web.fetch
+  - shell
+  - git.query
+  - git.mutate
 triggers:
   - "Gitee"
   - "码云"
@@ -31,7 +28,7 @@ triggers:
 
 ## When NOT to Use
 - GitHub 操作（用 github-workflow Skill）
-- 本地 Git 操作（直接用 shell.exec）
+- 本地 Git 操作（直接用 shell）
 - 代码编写和调试（用 code-assistant）
 
 ## 前置条件
@@ -43,7 +40,7 @@ triggers:
 
 ### 查看仓库列表
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20",
   method="GET"
 )
@@ -51,7 +48,7 @@ http.request(
 
 ### 创建 Issue
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/issues",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -61,7 +58,7 @@ http.request(
 
 ### 创建 Pull Request
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -71,7 +68,7 @@ http.request(
 
 ### 查看 PR 列表
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls?access_token=${GITEE_TOKEN}&state=open",
   method="GET"
 )

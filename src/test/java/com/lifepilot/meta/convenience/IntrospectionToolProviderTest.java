@@ -3,13 +3,10 @@ package com.lifepilot.meta.convenience;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.config.MetaProperties;
-import com.lifepilot.multiagent.model.AgentBudget;
-import com.lifepilot.multiagent.model.AgentDefinition;
-import com.lifepilot.multiagent.model.AgentSource;
-import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -22,7 +19,6 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -66,7 +62,7 @@ class IntrospectionToolProviderTest {
                 skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler);
 
         provider = new IntrospectionToolProvider(
-                aggregator, skillRegistry, agentRegistry, toolRegistry, workflowRegistry, workflowRepository, mcpServerRegistry);
+                aggregator, toolRegistry, workflowRegistry, workflowRepository, mcpServerRegistry);
     }
 
     @Test
@@ -76,11 +72,7 @@ class IntrospectionToolProviderTest {
         provider.registerTools(registry);
 
         var expectedToolIds = List.of(
-                "system.list-capabilities",
-                "system.explain",
-                "system.status",
-                "system.suggest",
-                "system.runtime"
+                "system.status"
         );
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
         verify(registry, times(expectedToolIds.size())).registerBuiltinTool(captor.capture());
@@ -106,119 +98,6 @@ class IntrospectionToolProviderTest {
     }
 
     // ─────────────────────────────────────────────
-    //  system.list-capabilities 测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void listCapabilities_无过滤_返回全部分组() {
-        var skill = createSkill("test.skill");
-        when(skillRegistry.listAll()).thenReturn(List.of(skill));
-        aggregator.invalidateCache();
-
-        var result = executeToolByProvider("system.list-capabilities", Map.of());
-
-        assertThat(result.ok()).isTrue();
-        assertThat((int) result.getData("totalCount")).isEqualTo(1);
-        assertThat((List<Map<String, Object>>) result.getData("skills")).hasSize(1);
-    }
-
-    @Test
-    void listCapabilities_按类型过滤_只返回匹配类型() {
-        var skill = createSkill("test.skill");
-        when(skillRegistry.listAll()).thenReturn(List.of(skill));
-        aggregator.invalidateCache();
-
-        var result = executeToolByProvider("system.list-capabilities",
-                Map.of("type", "skill"));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((int) result.getData("count")).isEqualTo(1);
-
-        // 过滤不存在的类型
-        var emptyResult = executeToolByProvider("system.list-capabilities",
-                Map.of("type", "workflow"));
-        assertThat(emptyResult.ok()).isTrue();
-        assertThat((int) emptyResult.getData("count")).isZero();
-    }
-
-    // ─────────────────────────────────────────────
-    //  system.explain 测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    void explain_查找Tool_返回详细信息() {
-        var tool = BuiltinTool.builder()
-                .id("web.search")
-                .name("Web 搜索")
-                .description("搜索互联网内容")
-                .riskLevel(RiskLevel.LOW)
-                .tags(List.of("infrastructure"))
-                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
-                        com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
-                .executor(input -> ToolResult.success(Map.of()))
-                .build();
-        when(toolRegistry.resolve("web.search")).thenReturn(Optional.of(tool));
-
-        var result = executeToolByProvider("system.explain",
-                Map.of("id", "web.search"));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((String) result.getData("id")).isEqualTo("web.search");
-        assertThat((String) result.getData("type")).isEqualTo("tool");
-        assertThat((String) result.getData("riskLevel")).isEqualTo("LOW");
-    }
-
-    @Test
-    void explain_查找Skill_返回详细信息() {
-        var skill = createSkill("test.skill");
-        when(skillRegistry.find("test.skill")).thenReturn(Optional.of(skill));
-        when(toolRegistry.resolve("test.skill")).thenReturn(Optional.empty());
-
-        var result = executeToolByProvider("system.explain",
-                Map.of("id", "test.skill"));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((String) result.getData("id")).isEqualTo("test.skill");
-        assertThat((String) result.getData("type")).isEqualTo("skill");
-    }
-
-    @Test
-    void explain_指定类型_直接路由() {
-        var agent = AgentDefinition.builder()
-                .id("test.agent")
-                .name("测试 Agent")
-                .description("测试描述")
-                .systemPrompt("测试")
-                .allowedTools(List.of())
-                .budget(AgentBudget.DEFAULT)
-                .source(new AgentSource.Builtin())
-                .metadata(Map.of())
-                .build();
-        when(agentRegistry.find("test.agent")).thenReturn(Optional.of(agent));
-
-        var result = executeToolByProvider("system.explain",
-                Map.of("id", "test.agent", "type", "agent"));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((String) result.getData("type")).isEqualTo("agent");
-    }
-
-    @Test
-    void explain_未找到_返回错误() {
-        when(toolRegistry.resolve("nonexistent")).thenReturn(Optional.empty());
-        when(skillRegistry.find("nonexistent")).thenReturn(Optional.empty());
-        when(agentRegistry.find("nonexistent")).thenReturn(Optional.empty());
-        when(workflowRegistry.find("nonexistent")).thenReturn(Optional.empty());
-
-        var result = executeToolByProvider("system.explain",
-                Map.of("id", "nonexistent"));
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("nonexistent");
-    }
-
-    // ─────────────────────────────────────────────
     //  system.status 测试
     // ─────────────────────────────────────────────
 
@@ -226,6 +105,10 @@ class IntrospectionToolProviderTest {
     void status_返回各注册中心计数() {
         var skill = createSkill("test.skill");
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
+        when(toolRegistry.getToolCountByLayer()).thenReturn(Map.of(
+                com.lifepilot.tool.model.ToolLayer.JAVA_NATIVE, 5,
+                com.lifepilot.tool.model.ToolLayer.MCP_EXTERNAL, 1
+        ));
         aggregator.invalidateCache();
 
         var result = executeToolByProvider("system.status", Map.of());
@@ -236,52 +119,10 @@ class IntrospectionToolProviderTest {
         assertThat((int) result.getData("toolCount")).isZero();
         assertThat((Object) result.getData("totalCapabilities")).isNotNull();
         assertThat((Object) result.getData("jvmMemoryUsedMB")).isNotNull();
-    }
-
-    // ─────────────────────────────────────────────
-    //  system.suggest 测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void suggest_关键词匹配_返回匹配结果() {
-        var skill = createSkill("todo.manager");
-        when(skillRegistry.listAll()).thenReturn(List.of(skill));
-        when(skillRegistry.search("todo")).thenReturn(List.of());
-        aggregator.invalidateCache();
-
-        var result = executeToolByProvider("system.suggest",
-                Map.of("query", "todo"));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((int) result.getData("matchCount")).isGreaterThan(0);
-        var suggestions = (List<Map<String, Object>>) result.getData("suggestions");
-        assertThat(suggestions).isNotEmpty();
-    }
-
-    @Test
-    void suggest_无匹配_返回提示信息() {
-        when(skillRegistry.search("不存在的功能")).thenReturn(List.of());
-        aggregator.invalidateCache();
-
-        var result = executeToolByProvider("system.suggest",
-                Map.of("query", "不存在的功能"));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((int) result.getData("matchCount")).isZero();
-        assertThat((String) result.getData("hint")).isNotBlank();
-    }
-
-    @Test
-    void suggest_语义搜索异常_降级为仅关键词匹配() {
-        when(skillRegistry.search(anyString())).thenThrow(new RuntimeException("搜索异常"));
-        aggregator.invalidateCache();
-
-        var result = executeToolByProvider("system.suggest",
-                Map.of("query", "test"));
-
-        // 不应抛异常，应正常返回
-        assertThat(result.ok()).isTrue();
+        @SuppressWarnings("unchecked")
+        var toolLayerDistribution = (Map<String, Object>) result.getData("toolLayerDistribution");
+        assertThat(toolLayerDistribution)
+                .isEqualTo(Map.of("JAVA_NATIVE", 5, "MCP_EXTERNAL", 1));
     }
 
     // ─────────────────────────────────────────────

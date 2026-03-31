@@ -37,9 +37,9 @@ class A2uiComponentCatalogContractTest {
     void renderedPrompt_mentionsCurrentContract() {
         String prompt = A2uiComponentCatalog.renderPrompt(50);
 
-        assertThat(prompt).contains("每次回答最多输出一个 <a2ui>...</a2ui> 块");
-        assertThat(prompt).contains("signal 必须放在组件顶层字段 signal");
-        assertThat(prompt).contains("单个组件树最多包含 50 个组件");
+        assertThat(prompt).contains("JSON 必须包裹在 <a2ui>...</a2ui> 中，每次最多一个");
+        assertThat(prompt).contains("signal 放在组件顶层字段，不放在 properties 内");
+        assertThat(prompt).contains("单组件树最多 50 个组件");
         A2uiComponentCatalog.supportedTypes().forEach(type -> assertThat(prompt).contains("- " + type + ":"));
     }
 }

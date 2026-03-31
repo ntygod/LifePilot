@@ -1,18 +1,15 @@
 ---
 id: web-novel-writer
 name: "网文写作"
-description: "网文创作助手：选题立项、书名简介、世界观与角色设定、主线/卷纲/章纲设计、单章正文、续写、改稿、爽点与悬念优化、连载节奏维护。适用于玄幻、都市、言情、悬疑、历史等网络小说创作，以及已绑定 Datastore/Knowledge Base 时的设定检索与一致性校对。"
+description: "网文创作全流程：选题、设定、大纲、正文、续写、改稿"
 version: "1.1.0"
 suggested-tools:
   - knowledge.search
-  - datastore.create_collection
-  - datastore.add_document
-  - datastore.query_documents
-  - datastore.update_document
+  - datastore
   - file.read
   - file.write
   - web.search
-  - memory.search
+  - memory
 triggers:
   - "写网文"
   - "网文"
@@ -104,7 +101,7 @@ triggers:
 
 ### 结构化查询
 
-- `datastore.query_documents`
+- `datastore`
   只用于精确结构化查询，例如：
   - 查某个角色卡
   - 查某条伏笔
@@ -115,9 +112,9 @@ triggers:
 ### 资料沉淀
 
 - 用户要求“记住这套设定”“把人物表存起来”“维护伏笔台账”时，再使用：
-  - `datastore.create_collection`
-  - `datastore.add_document`
-  - `datastore.update_document`
+  - `datastore`
+  - `datastore`
+  - `datastore`
 - 如果用户说“帮我创建网文数据空间”“搭一个小说工作台”“先把设定库建起来”，默认按下方“单集合工作台”方案建库，不要一上来拆成多个集合
 
 ### 外部参考

@@ -37,16 +37,16 @@ public class GitBranchToolExecutor {
     /**
      * 执行 Git branch 操作。
      *
-     * @param input 工具输入，必需参数 action（list/create/switch/delete），可选参数 path、name
+     * @param input 工具输入，必需参数 branchAction（list/create/switch/delete），兼容旧参数 action；可选参数 path、name
      * @return 操作结果
      */
     public ToolResult execute(ToolInput input) {
         try {
-            String action;
-            try {
-                action = input.getParam("action", String.class);
-            } catch (IllegalArgumentException e) {
-                return ToolResult.error("缺少必需参数: action");
+            String action = input.getOptionalParam("branchAction", String.class)
+                    .or(() -> input.getOptionalParam("action", String.class))
+                    .orElse(null);
+            if (action == null || action.isBlank()) {
+                return ToolResult.error("缺少必需参数: branchAction");
             }
 
             String pathStr = input.getOptionalParam("path", String.class)

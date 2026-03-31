@@ -489,7 +489,7 @@ lifepilot:
         - mcp
         - skill
     execution:
-      timeout-seconds: 120
+      timeout-seconds: 6000
       streaming-enabled: true
     audit:
       enabled: true

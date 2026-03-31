@@ -15,14 +15,15 @@ import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -68,7 +69,7 @@ public final class ChannelInstallStrategy implements InstallStrategy {
 
         String content = downloadText(restClient, manifestUrl);
 
-        if (content == null || content.isBlank()) {
+        if (content.isBlank()) {
             throw new IOException("下载的 channel-plugin.json 内容为空: packageId=" + pkg.id());
         }
 
@@ -87,7 +88,7 @@ public final class ChannelInstallStrategy implements InstallStrategy {
             if (!issues.isEmpty()) {
                 String summary = issues.stream()
                         .map(issue -> "[%s] %s".formatted(issue.category(), issue.message()))
-                        .collect(java.util.stream.Collectors.joining("；"));
+                        .collect(Collectors.joining("；"));
                 throw new IllegalArgumentException("渠道插件 manifest 校验失败: " + summary);
             }
             channelPluginRepository.save(descriptor);
@@ -150,7 +151,7 @@ public final class ChannelInstallStrategy implements InstallStrategy {
             }
             String resourceUrl = buildDownloadUrl(pkg.repoUrl(), relativePath);
             byte[] payload = downloadBytes(restClient, resourceUrl);
-            if (payload == null || payload.length == 0) {
+            if (payload.length == 0) {
                 throw new IOException("下载的渠道插件资源内容为空: packageId=%s, path=%s"
                         .formatted(pkg.id(), relativePath));
             }

@@ -1,7 +1,6 @@
 package com.lifepilot.meta.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
@@ -125,10 +124,9 @@ public class MetaAutoConfiguration {
                                         @Nullable WorkflowCommandService workflowCommandService,
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
-                                        @Nullable AgentConfigProperties agentConfigProperties,
                                         @Nullable NotificationProperties notificationProperties,
                                         @Nullable BackgroundProcessManager backgroundProcessManager) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager);
     }
 
     /**
@@ -162,15 +160,12 @@ public class MetaAutoConfiguration {
      */
     @Bean
     IntrospectionToolProvider introspectionToolProvider(CapabilityAggregator aggregator,
-                                                          SkillRegistry skillRegistry,
-                                                          AgentRegistry agentRegistry,
                                                           DynamicToolRegistry toolRegistry,
                                                           WorkflowRegistry workflowRegistry,
                                                           @Nullable WorkflowRepository workflowRepository,
                                                           @Nullable McpServerRegistry mcpServerRegistry) {
-        return new IntrospectionToolProvider(aggregator, skillRegistry,
-                agentRegistry, toolRegistry, workflowRegistry,
-                workflowRepository, mcpServerRegistry);
+        return new IntrospectionToolProvider(aggregator, toolRegistry,
+                workflowRegistry, workflowRepository, mcpServerRegistry);
     }
 
     /**
@@ -235,7 +230,7 @@ public class MetaAutoConfiguration {
 
         ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
         ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
-        ctx.getBean(StorageToolProvider.class).registerTools(toolRegistry);
+        ctx.getBean(StorageToolProvider.class).buildStorageTools().forEach(toolRegistry::registerBuiltinTool);
         if (ctx.containsBean("memoryToolProvider")) {
             ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
         }

@@ -1,7 +1,6 @@
 package com.lifepilot.tool.bridge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
@@ -10,7 +9,6 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -373,122 +371,6 @@ class ToolBridgeAgentToolProviderTest {
         callback.call("{\"path\":\"demo.txt\"}");
 
         verify(pipeline).execute(eq("file.read"), anyMap(), anyString(), isNull(), isNull(), anyMap());
-    }
-
-    @Test
-    void CORE工具始终可见_SKILL工具默认不可见() {
-        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("shell.exec")
-                .name("执行命令")
-                .description("Shell 执行")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.HIGH)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("infrastructure"))
-                .tier(ToolTier.CORE)
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("git.status")
-                .name("Git 状态")
-                .description("Git 状态查看")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("infrastructure"))
-                .tier(ToolTier.SKILL)
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-
-        var provider = new ToolBridgeAgentToolProvider(
-                registry,
-                mock(ToolExecutionPipeline.class),
-                new ObjectMapper(),
-                30000
-        );
-
-        var loopContext = new AgentLoopContext();
-        var callbacks = provider.getToolCallbacks(baseState(), null, loopContext);
-        var toolNames = callbacks.stream()
-                .map(cb -> cb.getToolDefinition().name())
-                .toList();
-
-        // CORE 工具始终可见
-        assertThat(toolNames).contains("shell_exec");
-        // SKILL 工具在未激活时不可见
-        assertThat(toolNames).doesNotContain("git_status");
-    }
-
-    @Test
-    void 激活Skill后对应工具可见() {
-        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("shell.exec")
-                .name("执行命令")
-                .description("Shell 执行")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.HIGH)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("infrastructure"))
-                .tier(ToolTier.CORE)
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("git.status")
-                .name("Git 状态")
-                .description("Git 状态查看")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("infrastructure"))
-                .tier(ToolTier.SKILL)
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("git.commit")
-                .name("Git 提交")
-                .description("Git 提交")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("infrastructure"))
-                .tier(ToolTier.SKILL)
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-
-        var provider = new ToolBridgeAgentToolProvider(
-                registry,
-                mock(ToolExecutionPipeline.class),
-                new ObjectMapper(),
-                30000
-        );
-
-        // 模拟 Skill 激活后把 git.status 加入已激活工具集
-        var loopContext = new AgentLoopContext();
-        loopContext.addActivatedSkillTools(List.of("git.status"));
-
-        var callbacks = provider.getToolCallbacks(baseState(), null, loopContext);
-        var toolNames = callbacks.stream()
-                .map(cb -> cb.getToolDefinition().name())
-                .toList();
-
-        // CORE 工具始终可见
-        assertThat(toolNames).contains("shell_exec");
-        // 已激活的 SKILL 工具可见
-        assertThat(toolNames).contains("git_status");
-        // 未激活的 SKILL 工具不可见
-        assertThat(toolNames).doesNotContain("git_commit");
     }
 
     private ReactAgentState baseState() {
