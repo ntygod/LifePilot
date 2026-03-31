@@ -24,9 +24,11 @@
 - 批量比对
 - 多目标检查
 
+`SpawnWorkersToolFactory` 直接调用 `AgentOrchestrator.run()` 执行 Worker（不经过 AgentExecutor）。Worker 继承父 Agent 完整工具集，但排除 `spawn_workers` 自身以防止递归。
+
 ### 2.3 剩余额度预算裁剪
 
-Worker 预算不再从固定默认值派生，而是从父请求剩余额度派生，并支持任务级覆盖上限。
+`SubAgentBudgetAllocator` 负责预算分配。Worker 预算不再从固定默认值派生，而是从父请求剩余额度派生，并支持任务级预算覆盖上限（per-task budget override）。
 
 ### 2.4 Agent 资产独立管理
 

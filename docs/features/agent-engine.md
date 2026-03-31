@@ -27,19 +27,33 @@ public class ReactAgentLoop {
 
 ### 2.2 状态管理
 
-- `ReactAgentState`: 当前执行状态（idle/running/streaming/completed/error）
-- `ReactStep`: 步骤记录（llm_call/tool_call/answer/error）
+- `ReactAgentState`: 不可变状态快照（record）
+  - `boolean done` — 循环是否结束
+  - `boolean suspended` — 是否处于挂起状态
+  - `CompletionMode` — 完成模式（NORMAL / DEGRADED / SUSPENDED）
+  - `CompletionReason` — 11 种终止原因
+- `ReactStep`: 7 种步骤类型（sealed interface）
+  - `Progress` — 执行进度提示
+  - `Thought` — LLM 推理文本
+  - `ToolCall` — 工具调用请求
+  - `Observation` — 工具返回结果
+  - `Answer` — 最终回答
+  - `Suspend` — 挂起点
+  - `Resume` — 恢复点
 - `Budget`: 预算控制（token数量/时间/步骤数）
 
 ### 2.3 核心依赖
 
 | 组件 | 职责 |
 |------|------|
+| `AgentOrchestrator` | 编排器，同步/流式/恢复三个入口（`run` / `runStreaming` / `resume`） |
 | `ContextAssembler` | 动态组装 LLM 上下文（系统Prompt/记忆检索/对话历史/知识库） |
-| `LlmRouter` | 多模型路由、熔断器、故障转移 |
+| `GenerationRouter` | 多模型路由、熔断器、故障转移 |
 | `TraceRecorder` | 执行轨迹记录 |
-| `SessionManager` | 会话管理 |
 | `AgentToolProvider` | 工具提供（内置工具/Skill/MCP） |
+| `ToolExecutionCoordinator` | 波次并行工具执行协调器 |
+| `ExecutionCompletionPolicy` | 任务完成判定策略（`<completion_control>` 和 `<await_user_input>` 协议） |
+| `CompactionEngine` | 循环中途上下文压缩 |
 
 ### 2.4 可选依赖（@Nullable）
 
@@ -51,13 +65,19 @@ public class ReactAgentLoop {
 
 ## 3. 核心特性
 
-### 3.1 预算控制
+### 3.1 预算控制与渐进式降级
 
 - Token 数量限制
 - 执行时间限制
 - 步骤数限制
 
-预算耗尽时自动生成降级响应（DegradedResponseBuilder），汇总已完成的步骤结果。
+预算耗尽时通过 `DegradedResponseBuilder.terminateWithReason()` 生成降级响应，汇总已完成的步骤结果。
+
+5 级渐进式预算降级策略：NORMAL → COMPRESS_HISTORY → TRIM_TOOLS → SKIP_MEMORY → TERMINATE，逐步收缩能力而非直接终止。
+
+### 3.1.1 挂起/恢复
+
+支持需要用户确认的长任务中断（`Suspend` 步骤）和恢复（`Resume` 步骤），通过 `AgentOrchestrator.resume()` 从挂起点继续执行。
 
 ### 3.2 SSE 流式输出
 
@@ -84,7 +104,7 @@ public class ReactAgentLoop {
 
 - 系统 Prompt（通过 `PromptRegistry`）
 - 当前 session 最近完整轮次（通过 `ContextEngine` 从 transcript 读取）
-- L1 临时工作区摘要（通过 `SessionWorkspaceService` 读取）
+- L1 临时工作区摘要（通过 `ContextEngine.ContextSnapshot.workspaceItems()` 读取）
 - L3 用户画像与经验实体
 - 其他段落按需预留
 
@@ -98,11 +118,14 @@ public class ReactAgentLoop {
 
 | 类 | 职责 |
 |---|------|
-| `ReactAgentLoop` | ReAct 循环执行器 |
+| `AgentOrchestrator` | 编排器（同步/流式/恢复入口） |
+| `ReactAgentLoop` | ReAct 循环执行器（仅暴露 `coreLoop()`） |
 | `AgentRequest` | 请求模型（消息/会话ID/附件/配置） |
 | `AgentResponse` | 响应模型（内容/流式/工具调用/Token使用） |
 | `ContextAssembler` | 上下文组装器 |
-| `SessionManager` | 会话管理器 |
+| `ToolExecutionCoordinator` | 波次并行工具执行协调器 |
+| `ExecutionCompletionPolicy` | 任务完成判定策略 |
+| `CompactionEngine` | 循环中途上下文压缩 |
 | `DegradedResponseBuilder` | 降级响应构建器 |
 
 ## 5. 配置项
@@ -110,9 +133,9 @@ public class ReactAgentLoop {
 ```yaml
 lifepilot:
   agent:
-    max-iterations: 10
+    max-iterations: 25
     budget:
-      max-tokens: 4000
+      max-tokens: 131072
       max-duration: 60s
       max-steps: 20
     context:
@@ -121,8 +144,8 @@ lifepilot:
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.agent.max-iterations` | 10 | 单次循环最大迭代次数 |
-| `lifepilot.agent.budget.max-tokens` | 4000 | Token 预算上限 |
+| `lifepilot.agent.max-iterations` | 25 | 单次循环最大迭代次数 |
+| `lifepilot.agent.budget.max-tokens` | 131072 | Token 预算上限 |
 | `lifepilot.agent.budget.max-duration` | 60s | 时间预算上限 |
 | `lifepilot.agent.budget.max-steps` | 20 | 步数预算上限 |
 | `lifepilot.agent.context.mode` | full | 上下文组装模式 |
@@ -142,5 +165,4 @@ lifepilot:
 ## 7. 限制与未来方向
 
 - 当前依赖 LLM 输出格式稳定性，格式偏差可能导致解析失败
-- 反思阶段评估质量依赖 LLM 能力
 - 未来：优化首字响应时间（TTFT）、引入更细粒度执行策略

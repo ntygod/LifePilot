@@ -10,7 +10,7 @@
 - **长期记忆**：多层记忆系统让助手真正"记住"用户的偏好、习惯和历史
 - **自主任务**：支持 cron 定时、heartbeat 巡检和自主工作流，遵循“无结果静默，有结果直接通知”
 - **本地优先**：单 JAR 部署 + SQLite 存储，数据完全在用户本地，隐私友好
-- **可扩展**：YAML 声明式 Skill 系统 + MCP 协议，能力可按需扩展
+- **可扩展**：Markdown SKILL.md 声明式 Skill 系统 + MCP 协议，能力可按需扩展
 
 ## 2. 竞品对比
 
@@ -19,8 +19,8 @@
 | 多层记忆系统 | ✅ L1~L4 四层 | ❌ 仅会话内 | ❌ 仅会话内 | ❌ |
 | 自主任务执行 | ✅ cron/条件触发 | ❌ | ❌ | ❌ |
 | 本地部署 | ✅ 单 JAR | ❌ 云端 | ❌ 云端 | ❌ 云端 |
-| 工具扩展 | ✅ MCP + YAML Skill | ✅ 插件 | ✅ 插件 | ❌ |
-| 多 Agent 协作 | ✅ HandoffTool | ❌ | ❌ | ❌ |
+| 工具扩展 | ✅ MCP + Markdown SKILL.md | ✅ 插件 | ✅ 插件 | ❌ |
+| 多 Agent 协作 | ✅ spawn_workers 并行 Worker 派发 | ❌ | ❌ | ❌ |
 | 外部数据同步 | ✅ CalDAV/Todoist 等 | ❌ | ❌ | 部分 |
 | 工作流自动化 | ✅ YAML 声明式 | ❌ | ❌ | ❌ |
 | 代码执行 | ✅ 沙箱隔离 | ✅ | ✅ | ❌ |
@@ -32,7 +32,7 @@
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
 | LLM 多模型路由 | 支持多 LLM Provider 动态路由，内置熔断器和故障转移 | [特性](features/llm-router.md) |
-| Agent 控制循环 | 基于 StateReducer 的不可变状态机，支持预算控制和取消 | [特性](features/agent-engine.md) |
+| Agent 控制循环 | AgentOrchestrator + ReactAgentLoop ReAct 循环，支持预算控制、挂起/恢复和取消 | [特性](features/agent-engine.md) |
 | 工具系统 | ToolContract 统一契约，支持内置工具、YAML 工具、MCP 工具 | [特性](features/tool-ecosystem.md) |
 | 工具授权 | 高风险工具按会话 / 工作区 / 任务 / 长期授权，自主任务支持任务级预授权 | [特性](features/permission.md) |
 | 安全护栏 | 四级风险分级（LOW/MEDIUM/HIGH/CRITICAL），工具执行前自动检查 | [特性](features/guardrail.md) |
@@ -51,9 +51,9 @@
 
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
-| Skill 系统 | YAML 声明式 Skill 定义、热加载、SubAgent 激活模式 | [特性](features/skill-system.md) |
+| Skill 系统 | Markdown SKILL.md 声明式 Skill 定义、热加载、SubAgent 激活模式 | [特性](features/skill-system.md) |
 | 内置 Skill | Memory / Task 等核心 Skill | [特性](features/builtin-skills.md) |
-| Skill 自扩展 | Gap 检测 + YAML 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
+| Skill 自扩展 | Gap 检测 + Markdown SKILL.md 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
 | CLI 交互 | JLine 3 交互式对话，快捷命令（llm/mcp/skill） | [特性](features/gateway-channels.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
@@ -75,7 +75,7 @@
 
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
-| 多 Agent 协作 | AgentRegistry + HandoffTool 委托模式，预设专家 Agent | [特性](features/multi-agent.md) |
+| 多 Agent 协作 | AgentRegistry + spawn_workers 并行 Worker 派发，预设专家 Agent | [特性](features/multi-agent.md) |
 | A2A 协议 | Agent-to-Agent 协议 Client/Server 实现，跨系统 Agent 互操作 | [特性](features/a2a-protocol.md) |
 | 插件市场 | Skill 发布/发现/安装、GitHub 仓库索引、安全审核 | [特性](features/skill-marketplace.md) |
 | 元能力 | 便捷指令、基础设施工具 | [特性](features/meta-capabilities.md) |

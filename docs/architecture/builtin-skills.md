@@ -6,6 +6,8 @@
 
 > **说明**：本文只覆盖与记忆模块直接相关的预置能力，不展开其他 Skill 子系统实现。
 
+> **注意**：`src/main/resources/skills/` 目录下共有 **33** 个内置 Skill 定义。完整 Skill ID 列表：`api-debugger`、`browser-automation`、`code-assistant`、`content-creator`、`cron-scheduler`、`daily-manager`、`data-analyst`、`database-query`、`datastore`、`desktop-automation`、`dingtalk`、`doc-processor`、`email-manager`、`feishu`、`file-organizer`、`find-skills`、`gitee`、`github-workflow`、`healthcheck`、`heartbeat-checklist`、`introspection`、`log-analyzer`、`memory`、`project-scaffolder`、`research-assistant`、`session-logs`、`summarizer`、`teaching-assistant`、`translator`、`web-novel-writer`、`workflow-creator`、`wps-office`、`yuque`。本文仅覆盖 Memory Skill。
+
 ## 1. 模块概述
 
 当前记忆相关的预置能力分成两层：

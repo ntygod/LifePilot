@@ -65,7 +65,7 @@ graph TB
 
 ### 3.1 InfraToolProvider — 基础工具提供者
 
-- 职责：实现 `BuiltinSkillProvider` 接口，注册 30+ 个内置工具到 `DynamicToolRegistry`
+- 职责：注册 30+ 个内置工具到 `DynamicToolRegistry`
 - Skill ID：`builtin.infrastructure`
 - 工具按功能域分为 5 类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell-exec）、文件系统（file-read/file-write/file-list/file-search/file-copy/file-move/file-delete/file-append/file-patch/file-info）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）
 - 可选依赖：`SandboxBooter`（代码执行）、`InteractionBridge`（交互控制）、`BrowserSessionManager`（浏览器自动化，需 Playwright）
@@ -171,7 +171,7 @@ sequenceDiagram
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 工具注册方式 | BuiltinSkillProvider 接口 | 与 Skill 系统统一注册机制，工具自动纳入 DynamicToolRegistry 管理 |
+| 工具注册方式 | `BuiltinToolRegistrar` + `DynamicToolRegistry` | 工具自动纳入 DynamicToolRegistry 管理 |
 | 交互模型 | CompletableFuture 阻塞等待 | Agent 工具执行是同步模型，阻塞等待最简单直接 |
 | 能力聚合缓存 | ConcurrentHashMap + TTL + 事件防抖 | 避免每次自省都遍历四个注册中心，防抖合并短时间内的多次注册事件 |
 | 浏览器自动化 | Playwright + 条件注册 | Playwright 是可选重依赖，通过 @ConditionalOnClass 避免强制引入 |

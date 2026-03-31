@@ -70,25 +70,23 @@
 - `space = personal:default`，`scope = USER_PROFILE`
 - `space = personal:default`，`scope = USER_FACT`
 - `space = agent:default`，`scope = AGENT_EXPERIENCE`
-- `space = project:novel-workspace`，`scope = DOMAIN_MEMORY`
+- `space = domain:datastore:{id}`，`scope = DOMAIN_MEMORY`
 
 这两者不能混成一个字段，否则后面过滤、注入、学习策略都会变脆。
 
 ### 2.3 逻辑实体不等于版本行
 
-当前 `temporal_entities` 直接把“逻辑实体”和“版本记录”揉在一起，短期能跑，长期会带来三个问题：
+当前已实现 `memory_entities`（逻辑实体根表）和 `memory_entity_versions`（版本快照表）的拆分。逻辑实体与版本记录不再揉在一起，三个原先的问题已经解决：
 
-- 版本变更后，实体主键变了，关系和向量索引要跟着抖动
-- 同一实体的多来源证据难以稳定挂接
-- 删除某个来源时，很难判断是在删“一个实体版本”，还是删“这个实体的某条证据”
+- 版本变更不影响实体主键，关系和向量索引保持稳定
+- 同一实体的多来源证据通过 provenance 稳定挂接
+- 删除某个来源时，可以精确删除”某条证据”而不是盲删实体
 
-最终态必须把：
+实体建模已拆分为三层：
 
-- `逻辑实体（stable identity）`
-- `实体当前/历史版本（version rows）`
-- `来源证据（provenance rows）`
-
-三者分开建模。
+- `逻辑实体（stable identity）` → `memory_entities`
+- `实体当前/历史版本（version rows）` → `memory_entity_versions`
+- `来源证据（provenance rows）` → `memory_entity_provenances`
 
 ### 2.4 来源证据不等于实体本体
 
@@ -129,12 +127,13 @@
   - 稳定唯一键，例如：
     - `personal:default`
     - `agent:default`
-    - `project:novel-workspace`
+    - `domain:datastore:{id}`
+    - `domain:knowledge-base:{id}`
 - `space_type`
   - `PERSONAL | DOMAIN | EXPERIENCE`
 - `display_name`
 - `owner_type`
-  - `USER | PROJECT | SYSTEM`
+  - `SYSTEM | DATASTORE | KNOWLEDGE_BASE`
 - `owner_id`
 - `metadata_json`
 - `created_at`
@@ -514,16 +513,16 @@ L2 到 L3 的抽取 / 巩固必须完全服从 turn snapshot：
 - `memory_spaces`
   - `personal:default`
   - `agent:default`
-  - `project:novel-workspace`
+  - `domain:datastore:{novel-workspace-id}`
 - `memory_space_datastores`
-  - `project:novel-workspace -> datastore:novel-workspace`
+  - `domain:datastore:{novel-workspace-id} -> datastore:novel-workspace`
 - `memory_space_knowledge_bases`
-  - `project:novel-workspace -> kb:知天命`
+  - `domain:datastore:{novel-workspace-id} -> kb:知天命`
 - 当前 turn 通过 `@novel-workspace` 进入创作模式
 - `chat_turn_memory_snapshots`
   - `personal_learning_enabled = false`
   - `domain_learning_enabled = true`
-  - `domain_write_space_id = project:novel-workspace`
+  - `domain_write_space_id = domain:datastore:{novel-workspace-id}`
 
 如果这一轮抽取到：
 
@@ -532,7 +531,7 @@ L2 到 L3 的抽取 / 巩固必须完全服从 turn snapshot：
 
 那么最终写入应是：
 
-- `memory_entities.space_id = project:novel-workspace`
+- `memory_entities.space_id = domain:datastore:{novel-workspace-id}`
 - `memory_entities.memory_scope = DOMAIN_MEMORY`
 - provenance 指向：
   - 当前 `turn_id`

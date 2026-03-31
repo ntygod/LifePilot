@@ -1,4 +1,4 @@
-# Skill 市场架构设计
+# 扩展市场（Extension Marketplace）架构设计
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.marketplace`
@@ -6,15 +6,26 @@
 
 ## 1. 模块定位与职责边界
 
-Skill 市场（模块 25）为 ZhiWei 提供 Skill 的发布、发现、安装和版本管理能力。它是 Skill 系统（模块 10）和 MCP 协议支持（模块 4）的上层扩展，不改变已有 Skill 运行时行为，仅增加分发渠道。
+扩展市场（Extension Marketplace，模块 25）为 ZhiWei 提供扩展的发布、发现、安装和版本管理能力。它是 Skill 系统（模块 10）和 MCP 协议支持（模块 4）的上层扩展，不改变已有运行时行为，仅增加分发渠道。
 
 ### 核心职责
 
-- **索引管理**：维护远程 Skill 索引（GitHub 仓库托管的 JSON 索引文件）
-- **发现与搜索**：从索引中检索 Skill，支持关键词搜索和分类筛选
-- **安装与卸载**：从远程仓库下载 YAML Skill 文件到本地 skills 目录，注册到 SkillRegistry
+- **索引管理**：维护远程扩展索引（GitHub 仓库托管的 JSON 索引文件）
+- **发现与搜索**：从索引中检索扩展，支持关键词搜索和分类筛选
+- **安装与卸载**：从远程仓库下载扩展到本地目录，注册到对应注册中心
 - **版本管理**：基于 SemVer 的版本比较，支持升级检测和版本锁定
-- **安全审核**：安装前对 YAML Skill 进行安全扫描（危险工具检测、Prompt 注入检测）
+- **安全审核**：安装前对扩展进行安全扫描（危险工具检测、Prompt 注入检测）
+
+### 扩展类型
+
+`ExtensionType` 定义了 4 种扩展类型：
+
+| 类型 | 说明 |
+|------|------|
+| `SKILL` | Skill 定义（SKILL.md 格式） |
+| `AGENT` | Agent 配置包 |
+| `WORKFLOW` | 工作流定义 |
+| `CHANNEL` | 渠道适配器插件 |
 
 ### 不在范围内
 
@@ -27,10 +38,10 @@ Skill 市场（模块 25）为 ZhiWei 提供 Skill 的发布、发现、安装�
 
 | 术语 | 定义 |
 |------|------|
-| SkillPackage | 远程 Skill 包的元数据描述（id、name、version、author、repoUrl、tags 等） |
-| SkillIndex | 远程索引文件，JSON 格式，包含所有可用 SkillPackage 的列表 |
+| ExtensionPackage | 远程扩展包的元数据描述（id、name、version、author、repoUrl、tags、extensionType 等） |
+| ExtensionIndex | 远程索引文件，JSON 格式，包含所有可用 ExtensionPackage 的列表 |
 | IndexSource | 索引源配置，指向一个 GitHub 仓库的 index.json URL |
-| InstalledSkill | 本地已安装 Skill 的记录（packageId、version、installedAt、indexSource） |
+| InstalledExtension / InstalledExtensionAsset | 本地已安装扩展的记录（packageId、version、installedAt、indexSource）及关联资产 |
 | SecurityReport | 安装前安全扫描的结果报告 |
 
 ## 3. 架构设计
@@ -46,19 +57,19 @@ graph TB
     subgraph Service["服务层"]
         MS["MarketplaceService"]
         IM["IndexManager<br/>索引获取与缓存"]
-        SI["SkillInstaller<br/>下载、校验、安装"]
-        SS["SkillSecurityScanner<br/>安全扫描"]
+        SI["ExtensionInstaller<br/>下载、校验、安装"]
+        SS["SecurityScanner<br/>安全扫描"]
         VR["VersionResolver<br/>版本比较与升级检测"]
     end
 
     subgraph Data["数据层 (SQLite)"]
-        IS["installed_skills 表"]
+        IS["InstalledExtension /<br/>InstalledExtensionAsset"]
         IC["marketplace_index_cache 表"]
     end
 
     subgraph Existing["已有模块"]
         SR["SkillRegistry"]
-        YL["YamlSkillLoader"]
+        ML["MarkdownSkillLoader"]
         SV["SkillDefinitionValidator"]
         GE["GuardrailEngine"]
     end
@@ -67,7 +78,7 @@ graph TB
     MS --> IM & SI & SS & VR
     IM --> IC
     SI --> IS
-    SI --> YL & SV
+    SI --> ML & SV
     SS --> GE
 ```
 
@@ -75,8 +86,8 @@ graph TB
 
 采用 **GitHub 仓库索引** 模式（参考 LobeChat Plugin Index、Copilot Plugins Registry）：
 
-- 索引仓库托管一个 `index.json` 文件，包含所有可用 Skill 的元数据
-- 每个 Skill 条目指向其 GitHub 仓库和 YAML 文件路径
+- 索引仓库托管一个 `index.json` 文件，包含所有可用扩展的元数据
+- 每个扩展条目指向其 GitHub 仓库和文件路径
 - ZhiWei 定期或手动刷新索引缓存
 - 支持配置多个索引源（官方 + 社区 + 私有）
 
@@ -86,15 +97,16 @@ graph TB
 {
   "version": "1.0.0",
   "updatedAt": "2026-03-05T00:00:00Z",
-  "skills": [
+  "extensions": [
     {
       "id": "weekly-planner",
       "name": "周计划助手",
       "description": "自动生成和管理每周计划",
       "version": "1.2.0",
+      "extensionType": "SKILL",
       "author": "community",
       "repoUrl": "https://github.com/lifepilot-skills/weekly-planner",
-      "filePath": "skill.yaml",
+      "filePath": "SKILL.md",
       "tags": ["productivity", "planning"],
       "minLifepilotVersion": "1.0.0",
       "createdAt": "2026-01-15T00:00:00Z",
@@ -118,28 +130,28 @@ IndexManager.getPackage(id)  ← 从缓存索引获取元数据
 VersionResolver.checkCompatibility()  ← 检查 minLifepilotVersion
     │
     ▼
-SkillInstaller.download()  ← HTTP GET 从 GitHub raw URL 下载 YAML
+ExtensionInstaller.download()  ← HTTP GET 从 GitHub raw URL 下载 SKILL.md
     │
     ▼
-YamlSchemaValidator.validate()  ← 复用已有 YAML Schema 校验
+MarkdownSkillParser.parse()  ← 复用已有 Markdown 解析校验
     │
     ▼
-SkillSecurityScanner.scan()  ← 安全扫描
+SecurityScanner.scan()  ← 安全扫描
     │  ├─ 危险工具检测（shell_execute、http_request 等）
     │  ├─ Prompt 注入模式检测
     │  └─ 生成 SecurityReport
     │
     ▼
-写入本地 skills 目录  ← ~/.zhiwei/skills/{id}.yaml
+写入本地 skills 目录  ← ~/.zhiwei/skills/{id}/SKILL.md
     │
     ▼
-YamlSkillLoader.loadFile()  ← 复用已有加载逻辑
+MarkdownSkillLoader.loadFolder()  ← 复用已有加载逻辑
     │
     ▼
 SkillRegistry.register()  ← 注册到运行时
     │
     ▼
-记录 installed_skills 表  ← 持久化安装记录
+记录 InstalledExtension 表  ← 持久化安装记录
 ```
 
 ### 3.4 安全扫描策略
@@ -167,7 +179,7 @@ SkillRegistry.register()  ← 注册到运行时
 
 ### 4.2 为什么不实现依赖解析
 
-- ZhiWei Skill 是独立的 YAML 声明，不存在 Skill 间依赖关系
+- ZhiWei Skill 是独立的 Markdown 声明（SKILL.md 文件夹），不存在 Skill 间依赖关系
 - Skill 的工具依赖由 DynamicToolRegistry 在运行时解析
 - 避免引入 npm/Maven 式的依赖地狱复杂度
 
@@ -182,10 +194,10 @@ SkillRegistry.register()  ← 注册到运行时
 | 已有模块 | 集成方式 |
 |---------|---------|
 | SkillRegistry | 安装后调用 register()，卸载时调用 unregister() |
-| YamlSkillLoader | 复用 loadFile() 解析下载的 YAML |
+| MarkdownSkillLoader | 复用 loadFolder() 解析下载的 SKILL.md |
 | SkillDefinitionValidator | 复用校验逻辑 |
-| YamlSchemaValidator | 复用 YAML Schema 校验 |
-| GuardrailEngine | 安装的 Skill 运行时仍受护栏约束 |
+| MarkdownSkillParser | 复用 Markdown 解析校验 |
+| GuardrailEngine | 安装的扩展运行时仍受护栏约束 |
 | SkillConfigProperties | 复用 skills.directory 配置 |
 | WebAutoConfiguration | 新增 MarketplaceController REST 端点 |
 

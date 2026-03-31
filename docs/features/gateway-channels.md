@@ -12,7 +12,9 @@
 
 ### 2.1 统一消息网关
 
-所有通道的消息经过 `ChannelAdapter` 标准化为 `GatewayMessage` 后，进入同一条中间件管道处理。网关支持运行时动态注册/注销通道，单个通道故障不影响其他通道。
+所有通道的消息经过通道适配器标准化为 `GatewayMessage` 后，进入同一条中间件管道处理。网关支持运行时动态注册/注销通道，单个通道故障不影响其他通道。
+
+> ⚠️ 渠道适配层已重构为插件架构，`ChannelAdapter` / `AbstractChannelAdapter` 等接口已迁移，详见 [channel-plugin-architecture.md](../architecture/channel-plugin-architecture.md)。
 
 ### 2.2 6 层中间件管道
 
@@ -53,11 +55,11 @@
 
 ### 3.1 Web UI 对话
 
-用户通过 Vue 3 前端发送消息，经 REST Controller 接入 WebChannelAdapter，标准化后进入中间件管道。Agent 响应通过 SSE（Server-Sent Events）流式推送到前端，实现逐字输出效果。
+用户通过 Vue 3 前端发送消息，经 REST Controller 接入 Web 通道适配器，标准化后进入中间件管道。Agent 响应通过 SSE（Server-Sent Events）流式推送到前端，实现逐字输出效果。
 
 ### 3.2 企业微信集成
 
-企业微信通过 Webhook 回调将用户消息推送到 WecomChannelAdapter。适配器解密 AES 加密的 XML 消息体，验证 SHA1 签名，标准化为 GatewayMessage 后异步提交到 Gateway（Virtual Thread）。响应通过企业微信 API 主动推送给用户。
+企业微信通过 Webhook 回调将用户消息推送到企业微信通道适配器。适配器解密 AES 加密的 XML 消息体，验证 SHA1 签名，标准化为 GatewayMessage 后异步提交到 Gateway（Virtual Thread）。响应通过企业微信 API 主动推送给用户。
 
 ### 3.3 钉钉集成
 
@@ -106,3 +108,5 @@
 - CLI 可选通过 HTTP 客户端模式接入 Gateway
 - 支持更多 IM 平台（Telegram、Slack、Discord）
 - 中间件管道可视化监控
+
+> ⚠️ 渠道适配层已重构为插件架构，详见 [channel-plugin-architecture.md](../architecture/channel-plugin-architecture.md)。

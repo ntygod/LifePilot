@@ -1,7 +1,7 @@
 # Web UI 特性说明
 
 > **文档性质**：特性说明文档
-> **模块归属**：`com.lifepilot.interaction.web`（后端）+ `lifepilot-web`（前端）
+> **模块归属**：`com.lifepilot.interaction.web`（后端）+ `zhiwei-web`（前端）
 > **最后更新**：2026-03
 
 ---
@@ -28,7 +28,7 @@ Web UI 为 ZhiWei 提供浏览器端交互界面，用户通过 Web 页面与 AI
 - SSE 流式端点，支持 `token`、`ui`、`done`、`error` 四种事件类型
 - A2UI 信号回传端点（用户与 Generative UI 组件交互）
 - 设置管理 API
-- WebChannelAdapter 接入 MessageGateway 中间件管道
+- BrowserIngressService 接入 MessageGateway 中间件管道
 - CORS 配置支持跨域前端访问
 
 ### 2.2 流式对话（前端）
@@ -101,10 +101,10 @@ Agent 通过 A2UI 生成表单组件，用户直接在 UI 中填写信息：
 
 ```bash
 # 启动后端（端口 8080）
-java -jar lifepilot.jar
+java -jar zhiwei.jar
 
 # 启动前端（端口 5173，独立项目目录）
-cd lifepilot-web
+cd zhiwei-web
 npm run dev
 ```
 
@@ -112,10 +112,10 @@ npm run dev
 
 ```bash
 # 后端
-java -jar lifepilot.jar
+java -jar zhiwei.jar
 
 # 前端（构建后部署静态文件）
-cd lifepilot-web
+cd zhiwei-web
 npm run build
 # 将 dist/ 部署到 Nginx / Caddy / 任意静态服务器
 ```
