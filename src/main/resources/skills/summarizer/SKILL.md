@@ -1,7 +1,7 @@
 ---
 id: summarizer
 name: "内容摘要"
-description: "内容摘要生成：URL 网页摘要、本地文件摘要、会议纪要、多文档对比摘要。"
+description: "URL/文件摘要、会议纪要、多文档对比摘要"
 version: "1.0.0"
 suggested-tools:
   - web.fetch

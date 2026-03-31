@@ -1,17 +1,13 @@
 ---
 id: file-organizer
 name: "文件管理"
-description: "文件整理和管理：批量重命名、目录结构优化、文件分类归档、重复文件检测、磁盘空间分析"
+description: "批量重命名、目录优化、分类归档、重复检测"
 version: "1.0.0"
 suggested-tools:
   - file.list
   - file.read
   - file.write
-  - file.search
-  - shell.exec
-  - file.undo
-  - file.redo
-  - file.diff
+  - shell
 triggers:
   - "文件整理"
   - "文件管理"
@@ -48,7 +44,7 @@ triggers:
 file.list(path="目标目录", recursive=true)
 
 # 分析文件分布
-shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
+shell(action=exec, command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
 ```
 
 ### 2. 制定整理方案
@@ -79,13 +75,13 @@ shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort
 
 ```
 # 批量重命名
-shell.exec(command="mv old_name new_name")
+shell(action=exec, command="mv old_name new_name")
 
 # 创建目录结构
-shell.exec(command="mkdir -p docs/2026 images/2026")
+shell(action=exec, command="mkdir -p docs/2026 images/2026")
 
 # 移动文件
-shell.exec(command="mv file.pdf docs/2026/")
+shell(action=exec, command="mv file.pdf docs/2026/")
 ```
 
 ### 5. 验证结果

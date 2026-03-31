@@ -41,15 +41,12 @@ public record SkillDefinition(
     /**
      * 返回 XML 格式的摘要字符串，用于系统提示词中的 Skill 发现。
      *
-     * @return 包含 id、name、description、triggers 的 XML 摘要
+     * @return 包含 id、name、description 的 XML 摘要
      */
     public String toDiscoverySummary() {
         var sb = new StringBuilder();
         sb.append("<skill id=\"").append(id).append("\" name=\"").append(name).append("\">\n");
         sb.append("  <description>").append(description != null ? description : "").append("</description>\n");
-        if (!triggers.isEmpty()) {
-            sb.append("  <triggers>").append(String.join(", ", triggers)).append("</triggers>\n");
-        }
         sb.append("</skill>");
         return sb.toString();
     }

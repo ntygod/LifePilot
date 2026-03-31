@@ -1,7 +1,7 @@
 ---
 id: content-creator
 name: "内容创作"
-description: "内容创作助手：文章撰写、报告生成、邮件起草、文案优化。"
+description: "文章撰写、报告生成、文案优化"
 version: "1.0.0"
 suggested-tools:
   - web.search
@@ -9,7 +9,7 @@ suggested-tools:
   - file.read
   - file.write
   - knowledge.search
-  - memory.search
+  - memory
 triggers:
   - "写文章"
   - "写文案"

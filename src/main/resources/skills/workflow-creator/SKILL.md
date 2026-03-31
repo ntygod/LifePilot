@@ -1,10 +1,10 @@
 ---
 id: workflow-creator
 name: "工作流创建助手"
-description: "通过对话引导用户创建工作流 YAML 定义，生成后自动保存到 ~/.zhiwei/workflows/ 目录"
+description: "对话式工作流 YAML 创建，保存至 ~/.zhiwei/workflows/"
 version: "1.1.0"
 suggested-tools:
-  - shell.exec
+  - shell
 ---
 
 # 工作流创建指南
@@ -41,7 +41,7 @@ suggested-tools:
 
 ## 保存工作流
 
-生成 YAML 后，使用 `shell.exec` 写入文件：
+生成 YAML 后，使用 `shell` 写入文件：
 
 ```bash
 cat > ~/.zhiwei/workflows/{workflowId}.yml << 'EOF'
@@ -185,7 +185,7 @@ body 是步骤列表，loopVar 在 body 内通过 `${loopVar}` 引用：
     - id: mark-done
       name: 标记完成
       type: tool
-      toolId: datastore.update_document
+      toolId: datastore
       params:
         documentId: "${item.id}"
         data: '{"status": "done"}'

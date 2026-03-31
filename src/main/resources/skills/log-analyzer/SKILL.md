@@ -1,13 +1,12 @@
 ---
 id: log-analyzer
 name: "日志分析"
-description: "分析应用日志、系统日志，追踪错误、识别模式、生成统计报告"
+description: "应用/系统日志分析、错误追踪、统计报告"
 version: "1.0.0"
 suggested-tools:
-  - shell.exec
+  - shell
   - file.read
-  - file.grep
-  - file.find
+  - file.list
 triggers:
   - "分析日志"
   - "查看日志"

@@ -1,16 +1,14 @@
 ---
 id: data-analyst
 name: "数据分析"
-description: "数据分析助手：数据加载、探索性分析（EDA）、清洗转换、统计分析、可视化图表生成。"
+description: "数据加载、EDA、清洗、统计分析、可视化"
 version: "1.0.0"
 suggested-tools:
   - code.execute
   - file.read
   - file.write
   - file.list
-  - shell.exec
-  - code.kernel.reset
-  - code.kernel.inspect
+  - shell
 triggers:
   - "数据分析"
   - "统计"

@@ -30,16 +30,16 @@ public class GitStashToolExecutor {
     /**
      * 执行 Git stash 操作。
      *
-     * @param input 工具输入，必需参数 action（push/pop/list/drop），可选参数 path、message、index
+     * @param input 工具输入，必需参数 stashAction（push/pop/list/drop），兼容旧参数 action；可选参数 path、message、index
      * @return 操作结果
      */
     public ToolResult execute(ToolInput input) {
         try {
-            String action;
-            try {
-                action = input.getParam("action", String.class);
-            } catch (IllegalArgumentException e) {
-                return ToolResult.error("缺少必需参数: action");
+            String action = input.getOptionalParam("stashAction", String.class)
+                    .or(() -> input.getOptionalParam("action", String.class))
+                    .orElse(null);
+            if (action == null || action.isBlank()) {
+                return ToolResult.error("缺少必需参数: stashAction");
             }
 
             String pathStr = input.getOptionalParam("path", String.class)

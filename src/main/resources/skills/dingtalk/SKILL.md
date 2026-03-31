@@ -1,11 +1,11 @@
 ---
 id: dingtalk
 name: "钉钉集成"
-description: "钉钉操作：发送消息、工作通知、创建任务。"
+description: "钉钉消息、工作通知、任务创建"
 version: "1.0.0"
 suggested-tools:
-  - http.request
-  - shell.exec
+  - web.fetch
+  - shell
 triggers:
   - "钉钉"
   - "发钉钉消息"
@@ -36,7 +36,7 @@ triggers:
 
 ### 方式1：群机器人 Webhook（最简单）
 ```
-http.request(
+web.fetch(method=POST, 
   url="${DINGTALK_WEBHOOK}",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -50,7 +50,7 @@ http.request(
 
 获取 Token：
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://oapi.dingtalk.com/gettoken?appkey=${APP_KEY}&appsecret=${APP_SECRET}",
   method="GET"
 )
@@ -58,7 +58,7 @@ http.request(
 
 发送工作通知：
 ```
-http.request(
+web.fetch(method=POST, 
   url="https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=${TOKEN}",
   method="POST",
   headers={"Content-Type": "application/json"},

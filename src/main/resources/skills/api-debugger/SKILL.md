@@ -1,10 +1,10 @@
 ---
 id: api-debugger
 name: "API 调试"
-description: "API 接口调试：REST/GraphQL 请求测试、响应分析、Mock 数据生成、接口文档验证。"
+description: "REST/GraphQL 请求测试、响应分析、Mock 生成"
 version: "1.0.0"
 suggested-tools:
-  - shell.exec
+  - shell
   - code.execute
   - file.read
   - file.write
@@ -34,7 +34,7 @@ triggers:
 
 - 浏览器自动化测试（用 browser-automation）
 - 代码级单元测试（用 code-assistant）
-- 简单的 curl 命令（直接用 shell.exec）
+- 简单的 curl 命令（直接用 shell）
 
 ## 请求测试
 
@@ -42,22 +42,22 @@ triggers:
 
 ```bash
 # GET 请求
-shell.exec(command="curl -s -w '\\nHTTP_CODE:%{http_code}' 'https://api.example.com/users'")
+shell(action=exec, command="curl -s -w '\\nHTTP_CODE:%{http_code}' 'https://api.example.com/users'")
 
 # POST 请求（JSON）
-shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"test\"}' 'https://api.example.com/users'")
+shell(action=exec, command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"test\"}' 'https://api.example.com/users'")
 
 # 带认证
-shell.exec(command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.example.com/protected'")
+shell(action=exec, command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.example.com/protected'")
 
 # 格式化输出
-shell.exec(command="curl -s 'https://api.example.com/users' | python -m json.tool")
+shell(action=exec, command="curl -s 'https://api.example.com/users' | python -m json.tool")
 ```
 
 ### GraphQL
 
 ```bash
-shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"query\":\"{ users { id name } }\"}' 'https://api.example.com/graphql'")
+shell(action=exec, command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"query\":\"{ users { id name } }\"}' 'https://api.example.com/graphql'")
 ```
 
 ## 响应分析

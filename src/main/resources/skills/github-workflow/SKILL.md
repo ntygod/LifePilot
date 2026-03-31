@@ -1,19 +1,15 @@
 ---
 id: github-workflow
 name: "GitHub 协作"
-description: "GitHub 协作流程：PR 管理、Issue 处理、代码审查、CI/CD 诊断。"
+description: "GitHub PR/Issue 管理、代码审查、CI/CD 诊断"
 version: "1.1.0"
 suggested-tools:
-  - shell.exec
+  - shell
   - web.fetch
   - file.read
   - file.write
-  - git.status
-  - git.diff
-  - git.log
-  - git.commit
-  - git.branch
-  - git.stash
+  - git.query
+  - git.mutate
 triggers:
   - "GitHub"
   - "Git"
@@ -36,7 +32,7 @@ triggers:
 ## When NOT to Use
 
 - Gitee 操作（用 gitee Skill）
-- 本地 Git 操作（直接用 shell.exec）
+- 本地 Git 操作（直接用 shell）
 - 代码编写（用 code-assistant）
 
 ## 硬规则
@@ -65,68 +61,68 @@ triggers:
 
 ```bash
 # 查看仓库摘要
-shell.exec(command="gh repo view owner/repo --json name,description,defaultBranchRef,isPrivate")
+shell(action=exec, command="gh repo view owner/repo --json name,description,defaultBranchRef,isPrivate")
 
 # 查看默认分支最近提交
-shell.exec(command="gh api repos/owner/repo/commits?sha=main&per_page=20")
+shell(action=exec, command="gh api repos/owner/repo/commits?sha=main&per_page=20")
 ```
 
 ### Pull Request
 
 ```bash
 # 列出打开中的 PR（结构化输出）
-shell.exec(command="gh pr list --repo owner/repo --state open --json number,title,author,headRefName,baseRefName,updatedAt")
+shell(action=exec, command="gh pr list --repo owner/repo --state open --json number,title,author,headRefName,baseRefName,updatedAt")
 
 # 查看 PR 详情
-shell.exec(command="gh pr view 55 --repo owner/repo --json number,title,body,state,author,commits,files")
+shell(action=exec, command="gh pr view 55 --repo owner/repo --json number,title,body,state,author,commits,files")
 
 # 检查 PR CI 状态
-shell.exec(command="gh pr checks 55 --repo owner/repo")
+shell(action=exec, command="gh pr checks 55 --repo owner/repo")
 
 # 创建 PR
-shell.exec(command="gh pr create --repo owner/repo --title \"feat: 新功能\" --body \"变更说明\"")
+shell(action=exec, command="gh pr create --repo owner/repo --title \"feat: 新功能\" --body \"变更说明\"")
 
 # 合并 PR
-shell.exec(command="gh pr merge 55 --repo owner/repo --squash")
+shell(action=exec, command="gh pr merge 55 --repo owner/repo --squash")
 ```
 
 ### Issue
 
 ```bash
 # 列出 Issue
-shell.exec(command="gh issue list --repo owner/repo --state open --json number,title,assignees,labels,updatedAt")
+shell(action=exec, command="gh issue list --repo owner/repo --state open --json number,title,assignees,labels,updatedAt")
 
 # 创建 Issue
-shell.exec(command="gh issue create --repo owner/repo --title \"Bug: 问题描述\" --body \"详情\"")
+shell(action=exec, command="gh issue create --repo owner/repo --title \"Bug: 问题描述\" --body \"详情\"")
 
 # 关闭 Issue
-shell.exec(command="gh issue close 42 --repo owner/repo")
+shell(action=exec, command="gh issue close 42 --repo owner/repo")
 ```
 
 ### CI/CD
 
 ```bash
 # 查看最近工作流运行
-shell.exec(command="gh run list --repo owner/repo --limit 10 --json databaseId,workflowName,status,conclusion,createdAt,headBranch")
+shell(action=exec, command="gh run list --repo owner/repo --limit 10 --json databaseId,workflowName,status,conclusion,createdAt,headBranch")
 
 # 查看失败日志
-shell.exec(command="gh run view <run-id> --repo owner/repo --log-failed")
+shell(action=exec, command="gh run view <run-id> --repo owner/repo --log-failed")
 
 # 重新运行失败任务
-shell.exec(command="gh run rerun <run-id> --repo owner/repo --failed")
+shell(action=exec, command="gh run rerun <run-id> --repo owner/repo --failed")
 ```
 
 ## 时间范围查询
 
 ```bash
 # 查询时间窗内的 PR 更新记录
-shell.exec(command="gh api \"repos/owner/repo/pulls?state=all&sort=updated&direction=desc&per_page=100\" --jq '.[] | select(.updated_at >= \"2026-03-01T00:00:00Z\" and .updated_at < \"2026-03-08T00:00:00Z\") | {number, title, updated_at}'")
+shell(action=exec, command="gh api \"repos/owner/repo/pulls?state=all&sort=updated&direction=desc&per_page=100\" --jq '.[] | select(.updated_at >= \"2026-03-01T00:00:00Z\" and .updated_at < \"2026-03-08T00:00:00Z\") | {number, title, updated_at}'")
 
 # 查询时间窗内的 Issue 更新记录
-shell.exec(command="gh api \"repos/owner/repo/issues?state=all&since=2026-03-01T00:00:00Z&per_page=100\" --jq '.[] | select(.updated_at < \"2026-03-08T00:00:00Z\") | {number, title, updated_at}'")
+shell(action=exec, command="gh api \"repos/owner/repo/issues?state=all&since=2026-03-01T00:00:00Z&per_page=100\" --jq '.[] | select(.updated_at < \"2026-03-08T00:00:00Z\") | {number, title, updated_at}'")
 
 # 查询提交记录时按 since / until 限定窗口
-shell.exec(command="gh api \"repos/owner/repo/commits?sha=main&since=2026-03-01T00:00:00Z&until=2026-03-08T00:00:00Z&per_page=100\" --jq '.[] | {sha: .sha, message: .commit.message, date: .commit.author.date}'")
+shell(action=exec, command="gh api \"repos/owner/repo/commits?sha=main&since=2026-03-01T00:00:00Z&until=2026-03-08T00:00:00Z&per_page=100\" --jq '.[] | {sha: .sha, message: .commit.message, date: .commit.author.date}'")
 ```
 
 如果结果仍然过多，不要翻页，改为缩小时间窗口后重试。
@@ -137,24 +133,24 @@ shell.exec(command="gh api \"repos/owner/repo/commits?sha=main&since=2026-03-01T
 
 ```bash
 # 读取仓库文件内容（Base64）
-shell.exec(command="gh api repos/owner/repo/contents/docs/spec.md?ref=main")
+shell(action=exec, command="gh api repos/owner/repo/contents/docs/spec.md?ref=main")
 ```
 
 ### 单文件提交
 
 ```bash
 # 先读取文件 sha
-shell.exec(command="gh api repos/owner/repo/contents/docs/spec.md?ref=main --jq '.sha'")
+shell(action=exec, command="gh api repos/owner/repo/contents/docs/spec.md?ref=main --jq '.sha'")
 
 # 再通过 Contents API 提交单文件更新
-shell.exec(command=\"gh api repos/owner/repo/contents/docs/spec.md --method PUT --input - <<'EOF'\n{\\\"message\\\":\\\"docs: 更新说明\\\",\\\"content\\\":\\\"<base64-content>\\\",\\\"sha\\\":\\\"<blob-sha>\\\",\\\"branch\\\":\\\"main\\\"}\nEOF\")
+shell(action=exec, command=\"gh api repos/owner/repo/contents/docs/spec.md --method PUT --input - <<'EOF'\n{\\\"message\\\":\\\"docs: 更新说明\\\",\\\"content\\\":\\\"<base64-content>\\\",\\\"sha\\\":\\\"<blob-sha>\\\",\\\"branch\\\":\\\"main\\\"}\nEOF\")
 ```
 
 ### 多文件提交
 
 ```bash
 # 多文件变更使用 GraphQL createCommitOnBranch
-shell.exec(command=\"gh api graphql --input - <<'EOF'\n{\\\"query\\\":\\\"mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }\\\",\\\"variables\\\":{\\\"input\\\":{\\\"branch\\\":{\\\"repositoryNameWithOwner\\\":\\\"owner/repo\\\",\\\"branchName\\\":\\\"main\\\"},\\\"message\\\":{\\\"headline\\\":\\\"docs: 批量更新文档\\\"},\\\"fileChanges\\\":{\\\"additions\\\":[{\\\"path\\\":\\\"docs/a.md\\\",\\\"contents\\\":\\\"<base64-content>\\\"},{\\\"path\\\":\\\"docs/b.md\\\",\\\"contents\\\":\\\"<base64-content>\\\"}]}}}}\nEOF\")
+shell(action=exec, command=\"gh api graphql --input - <<'EOF'\n{\\\"query\\\":\\\"mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }\\\",\\\"variables\\\":{\\\"input\\\":{\\\"branch\\\":{\\\"repositoryNameWithOwner\\\":\\\"owner/repo\\\",\\\"branchName\\\":\\\"main\\\"},\\\"message\\\":{\\\"headline\\\":\\\"docs: 批量更新文档\\\"},\\\"fileChanges\\\":{\\\"additions\\\":[{\\\"path\\\":\\\"docs/a.md\\\",\\\"contents\\\":\\\"<base64-content>\\\"},{\\\"path\\\":\\\"docs/b.md\\\",\\\"contents\\\":\\\"<base64-content>\\\"}]}}}}\nEOF\")
 ```
 
 ## 代码审查工作流
@@ -165,8 +161,8 @@ shell.exec(command=\"gh api graphql --input - <<'EOF'\n{\\\"query\\\":\\\"mutati
 4. 提交审查意见。
 
 ```bash
-shell.exec(command="gh pr diff 55 --repo owner/repo --name-only")
-shell.exec(command="gh pr review 55 --repo owner/repo --approve --body \"审查通过\"")
+shell(action=exec, command="gh pr diff 55 --repo owner/repo --name-only")
+shell(action=exec, command="gh pr review 55 --repo owner/repo --approve --body \"审查通过\"")
 ```
 
 ## CI 失败诊断流程

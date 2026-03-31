@@ -146,10 +146,9 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         return state.channelPlatform() != null && "web".equalsIgnoreCase(state.channelPlatform());
     }
 
-    /** 这两类工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
+    /** 统一交互工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
     private boolean isUserPromptInteractionTool(String toolId) {
-        return "interact.input".equals(toolId)
-                || "interact.choose".equals(toolId);
+        return "interact".equals(toolId);
     }
 
     /**

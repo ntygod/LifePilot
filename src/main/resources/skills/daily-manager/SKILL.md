@@ -1,13 +1,11 @@
 ---
 id: daily-manager
 name: "日常管理"
-description: "日常事务管理：多 Skill 协调、任务分解与优先级排序、日程提醒、信息汇总。"
+description: "多 Skill 协调、任务分解、日程提醒、信息汇总"
 version: "1.0.1"
 suggested-tools:
-  - memory.search
-  - memory.create
-  - interact.input
-  - interact.notify
+  - memory
+  - interact
   - web.search
   - file.read
   - file.write
@@ -46,13 +44,13 @@ triggers:
 1. 获取当前上下文
 
 ```
-memory.search(query="今日待办")
+memory(query="今日待办")
 ```
 
 2. 与用户确认任务列表
 
 ```
-interact.input(question="今天需要完成哪些任务？")
+interact(question="今天需要完成哪些任务？")
 ```
 
 3. 任务分解和排序
@@ -66,7 +64,7 @@ interact.input(question="今天需要完成哪些任务？")
 4. 记录到记忆
 
 ```
-memory.create(name="今日任务计划", entityType="EVENT", description="任务列表...")
+memory(name="今日任务计划", entityType="EVENT", description="任务列表...")
 ```
 
 ### 多 Skill 协调模式
@@ -87,7 +85,7 @@ memory.create(name="今日任务计划", entityType="EVENT", description="任务
 
 ```
 # 搜索相关记忆
-memory.search(query="本周完成事项")
+memory(query="本周完成事项")
 
 # 读取相关文件
 file.read(path="notes/weekly.md")
