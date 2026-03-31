@@ -793,6 +793,8 @@ lifepilot:
       web-fetch:
         max-content-length: 50000
         timeout-seconds: 10
+        min-static-content-length: 100
+        render-timeout-seconds: 15
       user-profile:
         timezone: ""
         cache-ttl-seconds: 300

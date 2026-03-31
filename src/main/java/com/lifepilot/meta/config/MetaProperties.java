@@ -122,6 +122,12 @@ public class MetaProperties {
 
             /** HTTP 请求超时（秒），默认 10。 */
             private int timeoutSeconds = 10;
+
+            /** 静态抓取内容低于此长度时触发浏览器渲染回退（字符），默认 100。 */
+            private int minStaticContentLength = 100;
+
+            /** 浏览器渲染超时（秒），默认 15。 */
+            private int renderTimeoutSeconds = 15;
         }
 
         /**

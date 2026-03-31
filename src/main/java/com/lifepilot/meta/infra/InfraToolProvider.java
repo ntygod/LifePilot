@@ -130,7 +130,7 @@ public class InfraToolProvider {
     public void registerTools(DynamicToolRegistry toolRegistry) {
         // 信息获取工具
         var webSearchExecutor = new WebSearchToolExecutor(webSearchConfigProvider);
-        var webFetchExecutor = new WebFetchToolExecutor(properties);
+        var webFetchExecutor = new WebFetchToolExecutor(properties, browserSessionManager);
         int totalTools = registerBuiltinTools(toolRegistry, List.of(
                 buildWebSearchTool(webSearchExecutor),
                 buildWebFetchTool(webFetchExecutor)
@@ -280,7 +280,7 @@ public class InfraToolProvider {
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
-                .description("抓取指定 URL 的静态网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取")
+                .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取。当静态抓取内容为空或过短时自动回退到浏览器渲染（需 Playwright 可用）")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -288,7 +288,9 @@ public class InfraToolProvider {
                                 "url", Map.of("type", "string",
                                         "description", "目标网页 URL"),
                                 "selector", Map.of("type", "string",
-                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选）")
+                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选）"),
+                                "renderJs", Map.of("type", "boolean",
+                                        "description", "强制使用浏览器渲染（适用于 JS 动态页面），默认 false 由系统自动判断")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
