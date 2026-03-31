@@ -10,6 +10,8 @@ suggested-tools:
   - file.read
   - knowledge.search
   - memory.create
+  - code.kernel.reset
+  - code.kernel.inspect
 triggers:
   - "教学"
   - "学习"

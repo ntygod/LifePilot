@@ -7,6 +7,7 @@ import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 
@@ -30,6 +31,7 @@ import java.util.List;
  * @param tags 工具标签
  * @param exportable 是否可导出为 MCP 工具
  * @param category 工具所属元能力分组
+ * @param tier 工具分层级别
  * @param executor 实际执行逻辑
  * @author zsg
  * @since 2026-02-24
@@ -47,12 +49,18 @@ public record BuiltinTool(
         List<String> tags,
         boolean exportable,
         ToolCategory category,
+        ToolTier tier,
         ToolExecutor executor
 ) implements ToolContract {
 
     @Override
     public ToolLayer layer() {
         return ToolLayer.JAVA_NATIVE;
+    }
+
+    @Override
+    public ToolTier tier() {
+        return tier;
     }
 
     @Override
@@ -84,6 +92,7 @@ public record BuiltinTool(
         private List<String> tags = List.of();
         private boolean exportable = false;
         private ToolCategory category = ToolCategory.ACTION;
+        private ToolTier tier = ToolTier.SKILL;
         private ToolExecutor executor;
 
         public Builder id(String id) { this.id = id; return this; }
@@ -101,6 +110,7 @@ public record BuiltinTool(
         public Builder tags(List<String> tags) { this.tags = List.copyOf(tags); return this; }
         public Builder exportable(boolean exportable) { this.exportable = exportable; return this; }
         public Builder category(ToolCategory category) { this.category = category; return this; }
+        public Builder tier(ToolTier tier) { this.tier = tier; return this; }
         public Builder executor(ToolExecutor executor) { this.executor = executor; return this; }
 
         public BuiltinTool build() {
@@ -109,7 +119,7 @@ public record BuiltinTool(
             }
             return new BuiltinTool(id, name, description, inputSchema, outputSchema,
                     riskLevel, idempotent, executionSemantics, budget, List.copyOf(tags),
-                    exportable, category, executor);
+                    exportable, category, tier, executor);
         }
     }
 }

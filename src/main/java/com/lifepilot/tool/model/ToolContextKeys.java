@@ -22,6 +22,7 @@ public final class ToolContextKeys {
     public static final String CALLER_BUDGET = "callerBudget";
     public static final String TASK_ID = "taskId";
     public static final String WORKSPACE_ID = "workspaceId";
+    public static final String LOOP_CONTEXT_REF = "loopContextRef";
 
     private ToolContextKeys() {
     }

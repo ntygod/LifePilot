@@ -273,7 +273,7 @@ public class ReactAgentLoop implements CallbackHelper {
                         messageBuildResult.hygieneReport().droppedOrphanToolResponses(),
                         messageBuildResult.hygieneReport().droppedAdditionalSystemMessages());
             }
-            var toolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
+            var toolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId(), loopContext);
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());

@@ -1,6 +1,7 @@
 package com.lifepilot.tool.bridge;
 
 import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.ToolContract;
@@ -8,6 +9,7 @@ import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.semantics.ToolScopeResolution;
@@ -23,6 +25,7 @@ import org.springframework.lang.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -116,28 +119,56 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
+        return getToolCallbacks(state, streamId, null);
+    }
+
+    @Override
+    public List<ToolCallback> getToolCallbacks(ReactAgentState state,
+                                                @Nullable String streamId,
+                                                @Nullable AgentLoopContext loopContext) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
         if (isWebConversation(state)) {
             tools = tools.stream()
                     .filter(tool -> !isUserPromptInteractionTool(tool.id()))
                     .toList();
         }
+
+        // 工具分层过滤
         var allowedToolIds = state.allowedToolIds();
-        if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
-            int totalCount = tools.size();
-            tools = tools.stream()
-                    // 当前仍是单 Agent 全能模式，基础设施工具默认透传；
-                    // allowedToolIds 主要用于未来多 Agent / 受限代理场景预留。
-                    .filter(t -> allowedToolIds.contains(t.id())
-                                 || t.tags().contains("infrastructure"))
-                    .toList();
-            log.debug("生成 ToolCallback: total={}, filtered={}", totalCount, tools.size());
-        } else {
-            log.debug("生成 ToolCallback: count={}", tools.size());
+        var exposedTools = new ArrayList<ToolContract>();
+        for (var tool : tools) {
+            // Step 1: 始终包含 CORE 层工具
+            if (tool.tier() == ToolTier.CORE) {
+                exposedTools.add(tool);
+                continue;
+            }
+            // Step 2: 包含已激活 skill 的工具
+            if (loopContext != null
+                    && loopContext.getActivatedSkillToolIds().contains(tool.id())) {
+                exposedTools.add(tool);
+                continue;
+            }
+            // Step 3: 如果有显式 allowedToolIds（多 Agent 模式），也包含
+            if (allowedToolIds != null && !allowedToolIds.isEmpty()
+                    && allowedToolIds.contains(tool.id())) {
+                exposedTools.add(tool);
+                continue;
+            }
+            // Step 4: 兼容旧路径 — 当没有 loopContext 时（非 ReAct 循环），
+            // 保持原有行为：infrastructure 标签的工具始终透传
+            if (loopContext == null && tool.tags().contains("infrastructure")) {
+                exposedTools.add(tool);
+            }
         }
+        tools = exposedTools;
+
+        log.debug("生成 ToolCallback: total={}, exposed={}, activatedSkillTools={}",
+                toolRegistry.getToolSnapshot().size(), tools.size(),
+                loopContext != null ? loopContext.getActivatedSkillToolIds().size() : 0);
+
         refreshToolNameMappings(tools);
         return tools.stream()
-                .map(t -> toToolCallback(t, streamId, state))
+                .map(t -> toToolCallback(t, streamId, state, loopContext))
                 .toList();
     }
 
@@ -157,9 +188,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
      *
      * @param tool 工具契约
      * @param streamId SSE 流标识（用于精确推送授权审批请求，可选）
+     * @param loopContext Agent 循环上下文（可选）
      * @return Spring AI ToolCallback
      */
-    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state) {
+    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId,
+                                        ReactAgentState state,
+                                        @Nullable AgentLoopContext loopContext) {
         // 构建请求级上下文，传递会话、预算和委托链元数据给工具执行器
         Map<String, Object> context = new LinkedHashMap<>();
         if (state.sessionId() != null) {
@@ -190,6 +224,9 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
         context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
+        if (loopContext != null) {
+            context.put(ToolContextKeys.LOOP_CONTEXT_REF, loopContext);
+        }
 
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(resolveModelToolName(tool.id()))

@@ -7,6 +7,7 @@ import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 
@@ -60,6 +61,11 @@ public sealed interface ToolContract permits BuiltinTool, McpTool {
 
     /** 工具标签。 */
     List<String> tags();
+
+    /** 工具分层级别，默认 SKILL — 激活对应 Skill 后暴露。 */
+    default ToolTier tier() {
+        return ToolTier.SKILL;
+    }
 
     /** 工具所属元能力分组，默认 ACTION。 */
     default ToolCategory category() {

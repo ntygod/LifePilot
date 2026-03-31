@@ -8,9 +8,13 @@ import org.springframework.lang.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Agent 循环请求作用域上下文 — 替代单例 Bean 上的可变实例字段。
@@ -25,6 +29,7 @@ public class AgentLoopContext {
 
     private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
     private final List<String> injectedEntityIds = new ArrayList<>();
+    private final Set<String> activatedSkillToolIds = ConcurrentHashMap.newKeySet();
     private final Instant requestReceivedAt;
     private volatile @Nullable A2uiComponentTree lastCollectedA2uiTree;
     private volatile boolean visibleOutputEmitted;
@@ -110,6 +115,18 @@ public class AgentLoopContext {
     /** 获取已注入的实体 ID 列表（防御性拷贝）。 */
     public List<String> getInjectedEntityIds() {
         return List.copyOf(injectedEntityIds);
+    }
+
+    /** Skill 激活时调用 — 将 skill 的 suggestedTools 加入当前请求的工具集。 */
+    public void addActivatedSkillTools(Collection<String> toolIds) {
+        if (toolIds != null) {
+            activatedSkillToolIds.addAll(toolIds);
+        }
+    }
+
+    /** 获取当前请求中已激活的 skill 工具 ID 集合。 */
+    public Set<String> getActivatedSkillToolIds() {
+        return Collections.unmodifiableSet(activatedSkillToolIds);
     }
 
     /** 获取最近收集的 A2UI 组件树。 */

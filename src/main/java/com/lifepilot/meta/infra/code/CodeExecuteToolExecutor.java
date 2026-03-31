@@ -1,17 +1,14 @@
 package com.lifepilot.meta.infra.code;
 
 import com.lifepilot.meta.config.MetaProperties;
-import com.lifepilot.meta.infra.code.kernel.KernelExecutionResult;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.model.*;
+import com.lifepilot.sandbox.model.ValidationResult;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
-import com.lifepilot.tool.model.ToolInput;
-import com.lifepilot.tool.model.ToolResult;
-import com.lifepilot.tool.model.ToolResultMeta;
-import com.lifepilot.tool.model.ToolResultStatus;
+import com.lifepilot.tool.model.*;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -207,13 +204,20 @@ public class CodeExecuteToolExecutor {
     }
 
     /**
-     * 兼容无 sessionId 的调用（向后兼容）。
+     * 从 ToolInput 上下文中提取会话 ID 并执行。
      *
-     * @param input 工具输入
+     * <p>ToolBridgeAgentToolProvider 在构建 ToolInput 时会将 ReactAgentState.sessionId()
+     * 注入到 context 中（key = {@link ToolContextKeys#SESSION_ID}），
+     * 此处优先使用该值以实现按会话隔离沙箱实例和审计追踪。</p>
+     *
+     * @param input 工具输入（context 中应包含 sessionId）
      * @return 执行结果
      */
     public ToolResult execute(ToolInput input) {
-        return execute(input, "default");
+        String sessionId = input.getContextValue(
+                ToolContextKeys.SESSION_ID, String.class
+        ).orElse("default");
+        return execute(input, sessionId);
     }
 
     // ==================== 持久内核执行路径 ====================

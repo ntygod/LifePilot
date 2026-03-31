@@ -9,6 +9,7 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
@@ -76,10 +77,6 @@ public class FileToolProvider {
         tools.add(buildFileMoveTool(new FileMoveToolExecutor(properties)));
         tools.add(buildFileInfoTool(new FileInfoToolExecutor(properties)));
         tools.add(buildFilePatchTool(new FilePatchToolExecutor(properties, editHistory, lintHook)));
-        // file.grep 是 file.search 的别名，对标 OpenClaw grep 工具
-        tools.add(buildFileGrepTool(new FileSearchToolExecutor(properties)));
-        // file.find 按条件查找文件（glob/大小/时间），对标 OpenClaw find 工具
-        tools.add(buildFileFindTool(new FileListToolExecutor(properties)));
 
         // 文件编辑历史工具（undo/redo/diff）
         if (editHistory != null) {
@@ -95,6 +92,7 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
+                .tier(ToolTier.CORE)
                 .name("读取文件")
                 .description("读取指定路径的文件内容，支持行范围读取、maxChars 截断和编码指定。返回 totalLines 字段")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -129,6 +127,7 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.write")
                 .category(ToolCategory.ACTION)
+                .tier(ToolTier.CORE)
                 .name("写入文件")
                 .description("写入文件内容。mode=write（默认）原子覆写，mode=append 追加到末尾。支持自动创建父目录")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -162,8 +161,9 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.list")
                 .category(ToolCategory.PERCEPTION)
+                .tier(ToolTier.CORE)
                 .name("列出目录")
-                .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序")
+                .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序。替代已移除的 file.find 别名")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -194,8 +194,9 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.search")
                 .category(ToolCategory.PERCEPTION)
+                .tier(ToolTier.CORE)
                 .name("搜索文件内容")
-                .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过")
+                .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过。替代已移除的 file.grep 别名")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "pattern"),
@@ -248,6 +249,7 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.patch")
                 .category(ToolCategory.ACTION)
+                .tier(ToolTier.CORE)
                 .name("补丁文件")
                 .description("对文件执行行级 insert/replace/delete 操作，原子写入。MEDIUM 风险")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -391,69 +393,4 @@ public class FileToolProvider {
                 .build();
     }
 
-    /** 构建文件内容搜索工具（grep 别名，对标 OpenClaw grep）。 */
-    private BuiltinTool buildFileGrepTool(FileSearchToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.grep")
-                .category(ToolCategory.PERCEPTION)
-                .name("搜索文件内容（grep）")
-                .description("递归搜索目录下文件内容，支持正则表达式。等同于 file.search，对标 Unix grep")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "pattern"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "搜索起始目录路径"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "搜索内容的正则表达式"),
-                                "filePattern", Map.of("type", "string",
-                                        "description", "文件名 glob 过滤模式（如 *.java），可选"),
-                                "maxResults", Map.of("type", "integer",
-                                        "description", "最大返回结果数，默认 50"),
-                                "contextLines", Map.of("type", "integer",
-                                        "description", "匹配行前后上下文行数，默认 0")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件查找工具（对标 OpenClaw find）。 */
-    private BuiltinTool buildFileFindTool(FileListToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.find")
-                .category(ToolCategory.PERCEPTION)
-                .name("查找文件（find）")
-                .description("按名称 glob 模式递归查找文件，对标 Unix find。比 file.list 更适合按条件搜索文件")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "pattern"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "搜索起始目录路径"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "文件名 glob 模式（如 *.java、**/*.md）"),
-                                "maxDepth", Map.of("type", "integer",
-                                        "description", "最大遍历深度，默认 10"),
-                                "maxEntries", Map.of("type", "integer",
-                                        "description", "最大返回条目数，默认 200")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
 }

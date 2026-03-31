@@ -9,6 +9,8 @@ suggested-tools:
   - file.write
   - file.list
   - shell.exec
+  - code.kernel.reset
+  - code.kernel.inspect
 triggers:
   - "数据分析"
   - "统计"

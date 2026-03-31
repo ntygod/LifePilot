@@ -86,7 +86,7 @@ class InfraToolProviderTest {
                 "browser.close",
                 // 代码执行（1）
                 "code.execute",
-                // 文件系统（11 + 3 编辑历史）
+                // 文件系统（9 + 3 编辑历史）
                 "file.read",
                 "file.write",
                 "file.list",
@@ -96,8 +96,6 @@ class InfraToolProviderTest {
                 "file.move",
                 "file.info",
                 "file.patch",
-                "file.grep",
-                "file.find",
                 "file.undo",
                 "file.redo",
                 "file.diff",
@@ -194,6 +192,5 @@ class InfraToolProviderTest {
         assertThat(toolMap.get("file.write").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
         assertThat(toolMap.get("file.search").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
         assertThat(toolMap.get("file.patch").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("file.find").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
     }
 }
