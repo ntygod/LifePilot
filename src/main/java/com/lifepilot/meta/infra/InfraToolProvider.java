@@ -447,9 +447,16 @@ public class InfraToolProvider {
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
                 .name("执行代码")
-                .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell。" +
-                        "如果提供 kernelId 参数，将使用持久内核执行（跨调用保持变量状态），适合数据分析等需要上下文连续的场景。" +
-                        "HIGH 风险，每次执行需用户确认")
+                .description("在安全环境中执行代码，支持 Python/JavaScript/Shell。有两种执行模式：\n\n" +
+                        "【一次性沙箱模式】（默认）：不传 kernelId，每次执行完全独立，变量不保留。" +
+                        "适合运行一次性脚本、验证代码片段、执行系统命令等不需要上下文连续的场景。\n\n" +
+                        "【持久内核模式】：传入 kernelId（如 \"data-analysis\" 或 \"debug-session\"），" +
+                        "变量和导入在同一 kernelId 的多次调用之间保持。适合：" +
+                        "(1) 数据分析——先 import pandas 读数据，后续多步处理同一个 DataFrame；" +
+                        "(2) 多步调试——逐步排查问题，保留中间变量；" +
+                        "(3) 环境搭建——先 %pip install 安装依赖，再 import 使用。" +
+                        "同一个 kernelId 的多次调用共享状态，不同 kernelId 互相隔离。\n\n" +
+                        "如果不确定是否需要持久内核，默认不传 kernelId 即可。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("code"),
@@ -461,7 +468,11 @@ public class InfraToolProvider {
                                 "timeoutSeconds", Map.of("type", "integer",
                                         "description", "执行超时时间（秒），默认 30"),
                                 "kernelId", Map.of("type", "string",
-                                        "description", "持久内核 ID。提供此参数时使用持久内核（跨调用保持变量），不提供则使用一次性沙箱")
+                                        "description", "持久内核 ID（如 \"data-analysis\"、\"debug\"）。" +
+                                                "传入后变量和导入跨调用保持，适合多步数据分析或调试。" +
+                                                "同一 kernelId 共享状态，不同 kernelId 互相隔离。" +
+                                                "不传则使用一次性沙箱。用 code.kernel.inspect 查看内核中的变量，" +
+                                                "用 code.kernel.reset 清空内核状态。")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)
