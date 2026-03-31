@@ -5,6 +5,8 @@ import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
 import com.lifepilot.meta.infra.file.FileToolProvider;
+import com.lifepilot.meta.infra.git.GitCommandExecutor;
+import com.lifepilot.meta.infra.git.GitToolProvider;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ProcessToolProvider;
@@ -205,7 +207,20 @@ public class InfraToolProvider {
             log.warn("BackgroundProcessManager 不可用，跳过后台进程管理工具注册");
         }
 
-        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process]",
+        // Git 工具（委托给 GitToolProvider）
+        var gitConfig = properties.getInfra().getGit();
+        if (gitConfig.isEnabled()) {
+            var gitCmd = new GitCommandExecutor(gitConfig);
+            if (gitCmd.isGitAvailable()) {
+                var gitToolProvider = new GitToolProvider(gitCmd, gitConfig);
+                totalTools += registerBuiltinTools(toolRegistry, gitToolProvider.buildGitTools());
+                log.info("Git 工具注册完成: count={}", 7);
+            } else {
+                log.warn("git 不可用，跳过 Git 工具注册");
+            }
+        }
+
+        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git]",
                 totalTools);
     }
 

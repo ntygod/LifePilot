@@ -66,6 +66,9 @@ public class MetaProperties {
         /** 后台进程管理配置。 */
         private Process process = new Process();
 
+        /** Git 工具配置。 */
+        private Git git = new Git();
+
         /**
          * Web 搜索配置。
          *
@@ -273,6 +276,34 @@ public class MetaProperties {
 
             /** 空闲超时（分钟），超时后自动清理进程，默认 30。 */
             private int idleTimeoutMinutes = 30;
+        }
+
+        /**
+         * Git 工具配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class Git {
+
+            /** 功能开关，默认 true。 */
+            private boolean enabled = true;
+
+            /** Git 命令执行超时（秒），默认 30。 */
+            private int timeoutSeconds = 30;
+
+            /** diff 输出最大行数，默认 500。 */
+            private int maxDiffLines = 500;
+
+            /** log 最大条目数，默认 50。 */
+            private int maxLogEntries = 50;
+
+            /** blame 最大行数，默认 200。 */
+            private int maxBlameLines = 200;
+
+            /** 输出最大字符数，默认 50000。 */
+            private int maxOutputChars = 50000;
         }
     }
 

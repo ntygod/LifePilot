@@ -822,6 +822,13 @@ lifepilot:
         wait-timeout-seconds: 10
         accessibility-max-depth: 5
         js-execution-timeout-seconds: 10
+      git:
+        enabled: true
+        timeout-seconds: 30
+        max-diff-lines: 500
+        max-log-entries: 50
+        max-blame-lines: 200
+        max-output-chars: 50000
       code-execute:
         enabled: true
         default-language: python
