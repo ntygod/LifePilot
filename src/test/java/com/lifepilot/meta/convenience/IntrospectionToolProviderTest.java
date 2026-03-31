@@ -167,6 +167,7 @@ class IntrospectionToolProviderTest {
         assertThat((String) result.getData("id")).isEqualTo("web.search");
         assertThat((String) result.getData("type")).isEqualTo("tool");
         assertThat((String) result.getData("riskLevel")).isEqualTo("LOW");
+        assertThat((String) result.getData("layer")).isEqualTo("JAVA_NATIVE");
     }
 
     @Test
@@ -226,6 +227,10 @@ class IntrospectionToolProviderTest {
     void status_返回各注册中心计数() {
         var skill = createSkill("test.skill");
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
+        when(toolRegistry.getToolCountByLayer()).thenReturn(Map.of(
+                com.lifepilot.tool.model.ToolLayer.JAVA_NATIVE, 5,
+                com.lifepilot.tool.model.ToolLayer.MCP_EXTERNAL, 1
+        ));
         aggregator.invalidateCache();
 
         var result = executeToolByProvider("system.status", Map.of());
@@ -236,6 +241,10 @@ class IntrospectionToolProviderTest {
         assertThat((int) result.getData("toolCount")).isZero();
         assertThat((Object) result.getData("totalCapabilities")).isNotNull();
         assertThat((Object) result.getData("jvmMemoryUsedMB")).isNotNull();
+        @SuppressWarnings("unchecked")
+        var toolLayerDistribution = (Map<String, Object>) result.getData("toolLayerDistribution");
+        assertThat(toolLayerDistribution)
+                .isEqualTo(Map.of("JAVA_NATIVE", 5, "MCP_EXTERNAL", 1));
     }
 
     // ─────────────────────────────────────────────

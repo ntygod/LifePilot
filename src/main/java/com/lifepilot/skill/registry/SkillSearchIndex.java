@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 /**
  * Skill 语义搜索索引。
@@ -37,8 +38,8 @@ public class SkillSearchIndex {
     }
 
     public void index(SkillDefinition definition) {
-        String text = definition.name() + " " + definition.description();
-        skillTexts.put(definition.id(), text.toLowerCase(Locale.ROOT));
+        String text = buildSearchText(definition);
+        skillTexts.put(definition.id(), normalizeText(text));
 
         if (embeddingRouter == null) {
             log.debug("Skill 关键词索引完成（降级模式）: skillId={}", definition.id());
@@ -108,10 +109,14 @@ public class SkillSearchIndex {
         if (router == null) {
             return keywordSearch(query, topK);
         }
+        String normalizedQuery = expandTerms(query);
+        if (normalizedQuery.isBlank()) {
+            return List.of();
+        }
 
         float[] queryVector;
         try {
-            queryVector = router.embed(query, EmbeddingUseCase.DEFAULT, null, null);
+            queryVector = router.embed(normalizedQuery, EmbeddingUseCase.DEFAULT, null, null);
         } catch (LlmUnavailableException e) {
             log.warn("Skill 查询向量生成失败，降级为关键词搜索: query={}, error={}", query, e.getMessage());
             return keywordSearch(query, topK);
@@ -143,8 +148,11 @@ public class SkillSearchIndex {
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        String lowerQuery = query.toLowerCase(Locale.ROOT);
-        String[] keywords = lowerQuery.split("\\s+");
+        String normalizedQuery = normalizeText(query);
+        if (normalizedQuery.isBlank()) {
+            return List.of();
+        }
+        String[] keywords = normalizedQuery.split("\\s+");
 
         List<SearchResult> results = new ArrayList<>();
         skillTexts.forEach((skillId, text) -> {
@@ -191,6 +199,33 @@ public class SkillSearchIndex {
 
     private static boolean isEmptyVector(@Nullable float[] vector) {
         return vector == null || vector.length == 0;
+    }
+
+    private String buildSearchText(SkillDefinition definition) {
+        return Stream.of(
+                        definition.id(),
+                        definition.name(),
+                        definition.description(),
+                        String.join(" ", definition.triggers())
+                )
+                .filter(part -> part != null && !part.isBlank())
+                .map(SkillSearchIndex::expandTerms)
+                .reduce((left, right) -> left + " " + right)
+                .orElse("");
+    }
+
+    private static String normalizeText(String text) {
+        return expandTerms(text).toLowerCase(Locale.ROOT);
+    }
+
+    private static String expandTerms(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return text
+                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     public record SearchResult(String skillId, double similarity) {

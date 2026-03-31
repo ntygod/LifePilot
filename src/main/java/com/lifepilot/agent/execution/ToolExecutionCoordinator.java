@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;
@@ -163,10 +164,17 @@ public class ToolExecutionCoordinator {
         for (ToolCallback callback : toolCallbacks) {
             if (callback == null) {
                 continue;
-            } else {
-                callback.getToolDefinition();
             }
-            index.putIfAbsent(callback.getToolDefinition().name(), callback);
+            ToolDefinition definition = callback.getToolDefinition();
+            if (definition == null || definition.name() == null || definition.name().isBlank()) {
+                continue;
+            }
+            index.putIfAbsent(definition.name(), callback);
+
+            String canonicalToolId = agentToolProvider.resolveCanonicalToolId(definition.name());
+            if (canonicalToolId != null && !canonicalToolId.isBlank()) {
+                index.putIfAbsent(canonicalToolId, callback);
+            }
         }
         return Map.copyOf(index);
     }

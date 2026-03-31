@@ -278,7 +278,7 @@ public class IntrospectionToolProvider {
         return BuiltinTool.builder()
                 .id("system.status")
                 .name("查看系统状态")
-                .description("查看系统当前状态概览，包括各注册中心的能力计数和工具层次分布")
+                .description("查看系统当前状态概览，包括各注册中心的能力计数和工具层分布")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
@@ -300,7 +300,7 @@ public class IntrospectionToolProvider {
         data.put("mcpServerCount", summary.mcpServers().size());
         data.put("totalCapabilities", summary.totalCount());
 
-        // 工具层次分布
+        // 工具层分布
         var layerDistribution = new LinkedHashMap<String, Object>();
         toolCountByLayer.forEach((layer, count) ->
                 layerDistribution.put(layer.name(), count));

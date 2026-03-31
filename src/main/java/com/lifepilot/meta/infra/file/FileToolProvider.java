@@ -9,7 +9,6 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
@@ -92,7 +91,6 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("读取文件")
                 .description("读取指定路径的文件内容，支持行范围读取、maxChars 截断和编码指定。返回 totalLines 字段")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -127,7 +125,6 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.write")
                 .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
                 .name("写入文件")
                 .description("写入文件内容。mode=write（默认）原子覆写，mode=append 追加到末尾。支持自动创建父目录")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -161,7 +158,6 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.list")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("列出目录")
                 .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序。替代已移除的 file.find 别名")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -194,7 +190,6 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.search")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("搜索文件内容")
                 .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过。替代已移除的 file.grep 别名")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -249,7 +244,6 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("file.patch")
                 .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
                 .name("补丁文件")
                 .description("对文件执行行级 insert/replace/delete 操作，原子写入。MEDIUM 风险")
                 .inputSchema(JsonSchema.of(Map.of(

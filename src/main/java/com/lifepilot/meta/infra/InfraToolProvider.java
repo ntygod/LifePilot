@@ -41,7 +41,6 @@ import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.model.ToolTier;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
@@ -277,7 +276,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("Web 搜索")
                 .description("通过搜索引擎搜索互联网上的内容。\n" +
                         "当你的知识无法回答用户提出的问题，或用户请求你进行联网搜索时，调用此工具。请从与用户的对话中提取用户想要搜索的内容作为 query 参数的值。" +
@@ -312,7 +310,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
-                .tier(ToolTier.CORE)
                 .name("Web 页面抓取")
                 .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取。当静态抓取内容为空或过短时自动回退到浏览器渲染（需 Playwright 可用）")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -344,7 +341,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("reason.calculate")
                 .category(ToolCategory.COGNITION)
-                .tier(ToolTier.CORE)
                 .name("精确计算")
                 .description("使用 BigDecimal 进行精确算术运算。支持四则运算(如 123.45+67.89)、百分比(如 200*15%)、日期差(如 2026-03-08 - 2025-01-01)")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -371,7 +367,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
                 .name("执行 Shell 命令")
                 .description("在操作系统 Shell 中执行命令，捕获 stdout/stderr 输出。支持同步执行、后台执行和 yieldMs 自动后台化三种模式")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -413,7 +408,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("http.request")
                 .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
                 .name("HTTP 请求")
                 .description("发送 HTTP 请求到外部 API，支持 GET/POST/PUT/DELETE/PATCH 方法。禁止访问内网地址")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -452,7 +446,6 @@ public class InfraToolProvider {
         return BuiltinTool.builder()
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
-                .tier(ToolTier.CORE)
                 .name("执行代码")
                 .description("在安全环境中执行代码，支持 Python/JavaScript/Shell。有两种执行模式：\n\n" +
                         "【一次性沙箱模式】（默认）：不传 kernelId，每次执行完全独立，变量不保留。" +
