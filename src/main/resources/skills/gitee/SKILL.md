@@ -6,6 +6,11 @@ version: "1.0.0"
 suggested-tools:
   - http.request
   - shell.exec
+  - git.status
+  - git.diff
+  - git.log
+  - git.commit
+  - git.branch
 triggers:
   - "Gitee"
   - "码云"

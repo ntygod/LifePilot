@@ -12,6 +12,15 @@ suggested-tools:
   - file.read
   - file.write
   - file.list
+  - git.status
+  - git.diff
+  - git.log
+  - git.commit
+  - file.undo
+  - file.redo
+  - file.diff
+  - code.kernel.reset
+  - code.kernel.inspect
 triggers:
   - "写代码"
   - "编程"

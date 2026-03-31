@@ -9,6 +9,9 @@ suggested-tools:
   - file.write
   - file.search
   - shell.exec
+  - file.undo
+  - file.redo
+  - file.diff
 triggers:
   - "文件整理"
   - "文件管理"

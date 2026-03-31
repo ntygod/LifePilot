@@ -8,6 +8,12 @@ suggested-tools:
   - code.execute
   - file.read
   - file.write
+  - shell.session.create
+  - shell.session.exec
+  - shell.session.write
+  - shell.session.read
+  - shell.session.signal
+  - shell.session.close
 triggers:
   - "桌面自动化"
   - "鼠标操作"

@@ -8,6 +8,12 @@ suggested-tools:
   - web.fetch
   - file.read
   - file.write
+  - git.status
+  - git.diff
+  - git.log
+  - git.commit
+  - git.branch
+  - git.stash
 triggers:
   - "GitHub"
   - "Git"
