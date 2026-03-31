@@ -8,6 +8,7 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -131,6 +132,18 @@ public class SessionPruningEngine {
             preview = "失败: " + preview;
         }
         return normalizeWhitespace(preview);
+    }
+
+    String formatCurrentObservationPreview(String toolId,
+                                          boolean success,
+                                          @Nullable String outputJson) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("toolId", toolId);
+        payload.put("success", success);
+        if (outputJson != null && !outputJson.isBlank()) {
+            payload.put("outputJson", outputJson);
+        }
+        return formatToolResultPreview(payload);
     }
 
     Map<String, Object> readPayload(@Nullable String payloadJson) {
@@ -270,7 +283,11 @@ public class SessionPruningEngine {
             return text;
         }
         if (value instanceof Map<?, ?> map) {
-            for (String key : List.of("summary", "content", "message", "result", "text", "output")) {
+            String specialized = summarizeSpecializedPayload(map);
+            if (!specialized.isBlank()) {
+                return specialized;
+            }
+            for (String key : List.of("error", "summary", "content", "message", "result", "text", "output")) {
                 Object candidate = map.get(key);
                 if (candidate != null) {
                     return summarizeObject(candidate);
@@ -291,6 +308,126 @@ public class SessionPruningEngine {
                     .orElse("");
         }
         return value.toString();
+    }
+
+    private String summarizeSpecializedPayload(Map<?, ?> map) {
+        if (looksLikeWebSearchPayload(map)) {
+            return summarizeWebSearchPayload(map);
+        }
+        if (looksLikeWebFetchPayload(map)) {
+            return summarizeWebFetchPayload(map);
+        }
+        return "";
+    }
+
+    private boolean looksLikeWebSearchPayload(Map<?, ?> map) {
+        return map.containsKey("results") && (map.containsKey("query") || map.containsKey("resultCount"));
+    }
+
+    private boolean looksLikeWebFetchPayload(Map<?, ?> map) {
+        return map.containsKey("url") && map.containsKey("content");
+    }
+
+    private String summarizeWebSearchPayload(Map<?, ?> map) {
+        var parts = new ArrayList<String>();
+        String query = stringValue(map.get("query"));
+        if (query != null) {
+            parts.add("搜索“" + compactText(query, 80) + "”");
+        }
+
+        int resultCount = numberValue(map.get("resultCount"));
+        if (resultCount <= 0 && map.get("results") instanceof List<?> results) {
+            resultCount = results.size();
+        }
+        if (resultCount > 0) {
+            parts.add("命中 " + resultCount + " 条");
+        }
+
+        String answer = stringValue(map.get("answer"));
+        if (answer != null) {
+            parts.add("答案: " + compactText(answer, 160));
+        }
+
+        String topResults = summarizeSearchResults(map.get("results"));
+        if (!topResults.isBlank()) {
+            parts.add("结果: " + topResults);
+        }
+
+        return String.join("；", parts);
+    }
+
+    private String summarizeSearchResults(@Nullable Object resultsValue) {
+        if (!(resultsValue instanceof List<?> results) || results.isEmpty()) {
+            return "";
+        }
+        return results.stream()
+                .limit(3)
+                .map(this::summarizeSearchResult)
+                .filter(item -> !item.isBlank())
+                .reduce((left, right) -> left + "；" + right)
+                .orElse("");
+    }
+
+    private String summarizeSearchResult(Object result) {
+        if (!(result instanceof Map<?, ?> item)) {
+            return "";
+        }
+        var parts = new ArrayList<String>();
+        String title = stringValue(item.get("title"));
+        if (title != null) {
+            parts.add(compactText(title, 60));
+        }
+        String snippet = stringValue(item.get("snippet"));
+        if (snippet != null) {
+            parts.add(compactText(snippet, 120));
+        }
+        String url = stringValue(item.get("url"));
+        if (url != null) {
+            parts.add(url);
+        }
+        return String.join(" | ", parts);
+    }
+
+    private String summarizeWebFetchPayload(Map<?, ?> map) {
+        var parts = new ArrayList<String>();
+        String title = stringValue(map.get("title"));
+        if (title != null) {
+            parts.add("页面: " + compactText(title, 80));
+        }
+        String url = stringValue(map.get("url"));
+        if (url != null) {
+            parts.add("URL: " + url);
+        }
+        String content = stringValue(map.get("content"));
+        if (content != null) {
+            parts.add("正文摘要: " + compactText(content, 180));
+        }
+        if (booleanValue(map.get("truncated"))) {
+            parts.add("正文已截断");
+        }
+        return String.join("；", parts);
+    }
+
+    private String compactText(@Nullable String text, int maxChars) {
+        String normalized = normalizeWhitespace(text);
+        if (normalized.isBlank() || normalized.length() <= maxChars) {
+            return normalized;
+        }
+        return normalized.substring(0, maxChars) + "...";
+    }
+
+    private int numberValue(@Nullable Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private String trimForPrompt(String text, int maxChars) {

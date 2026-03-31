@@ -30,6 +30,9 @@ type ExecuteTurnOptions = {
   userMessageId?: string | null
 }
 
+const TOKEN_FLUSH_INTERVAL_MS = 24
+const TOKEN_FLUSH_CHAR_THRESHOLD = 96
+
 export function useChat() {
   const chatStore = useChatStore()
   const a2uiStore = useA2uiStore()
@@ -53,6 +56,50 @@ export function useChat() {
   let currentTurnId: string | null = null
   let currentUserMessageId: string | null = null
   let currentExecutionSeq = 0
+  let pendingStreamingText = ''
+  let pendingStreamingFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+  function flushStreamingText() {
+    if (pendingStreamingFlushTimer !== null) {
+      clearTimeout(pendingStreamingFlushTimer)
+      pendingStreamingFlushTimer = null
+    }
+    if (!pendingStreamingText) {
+      return
+    }
+    chatStore.streamingContent += pendingStreamingText
+    pendingStreamingText = ''
+  }
+
+  function clearStreamingTextBuffer() {
+    if (pendingStreamingFlushTimer !== null) {
+      clearTimeout(pendingStreamingFlushTimer)
+      pendingStreamingFlushTimer = null
+    }
+    pendingStreamingText = ''
+  }
+
+  function scheduleStreamingFlush() {
+    if (pendingStreamingFlushTimer !== null) {
+      return
+    }
+    pendingStreamingFlushTimer = setTimeout(() => {
+      pendingStreamingFlushTimer = null
+      flushStreamingText()
+    }, TOKEN_FLUSH_INTERVAL_MS)
+  }
+
+  function queueStreamingText(content: string) {
+    if (!content) {
+      return
+    }
+    pendingStreamingText += content
+    if (pendingStreamingText.length >= TOKEN_FLUSH_CHAR_THRESHOLD) {
+      flushStreamingText()
+      return
+    }
+    scheduleStreamingFlush()
+  }
 
   async function sendMessage(
     content: string,
@@ -169,6 +216,7 @@ export function useChat() {
       if (e instanceof DOMException && e.name === 'AbortError') {
         return
       }
+      clearStreamingTextBuffer()
       markCurrentTurnFailed(e instanceof Error ? e.message : '请求失败')
       activeInteraction.value = null
       interactionSubmitting.value = false
@@ -240,6 +288,7 @@ export function useChat() {
   }
 
   function resetStreamingState(content: string) {
+    clearStreamingTextBuffer()
     isStreaming.value = true
     chatStore.isStreaming = true
     chatStore.streamingContent = ''
@@ -310,6 +359,7 @@ export function useChat() {
         handleSseEvent(currentEvent, currentData)
       }
     } catch (e) {
+      clearStreamingTextBuffer()
       markCurrentTurnFailed(e instanceof Error ? e.message : 'SSE 解析失败')
       activeInteraction.value = null
       interactionSubmitting.value = false
@@ -355,7 +405,7 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.TOKEN: {
           const event: SseTokenEvent = JSON.parse(data)
-          chatStore.streamingContent += event.content
+          queueStreamingText(event.content)
           break
         }
         case SSE_EVENT_TYPES.UI: {
@@ -376,6 +426,7 @@ export function useChat() {
             chatStore.activeSessionId = event.sessionId
           }
 
+          flushStreamingText()
           const finalContent = resolveDoneContent(event)
           const attachments = buildStreamingAttachments(event.contents)
           const assistantMessage = {
@@ -447,6 +498,7 @@ export function useChat() {
           const event: SseAgentSuspendedEvent = JSON.parse(data)
           currentTurnId = event.turnId ?? currentTurnId
           const suspendReasonDetail = event.reasonDetail?.trim() || event.terminationReason?.trim()
+          flushStreamingText()
           const suspendedContent = event.content?.trim()
             || buildInterruptedAssistantContent('SUSPENDED', suspendReasonDetail)
 
@@ -471,6 +523,7 @@ export function useChat() {
           const event: SseErrorEvent = JSON.parse(data)
           currentTurnId = event.turnId ?? currentTurnId
 
+          flushStreamingText()
           if (!finalizeInterruptedTurn({
             id: buildTerminalAssistantId(event.turnId, event.traceId, 'error'),
             turnId: event.turnId ?? currentTurnId ?? undefined,
@@ -513,6 +566,7 @@ export function useChat() {
         || eventType === SSE_EVENT_TYPES.ERROR
         || eventType === SSE_EVENT_TYPES.AGENT_SUSPENDED
       ) {
+        clearStreamingTextBuffer()
         markCurrentTurnFailed(e instanceof Error ? e.message : '事件解析失败')
         activeInteraction.value = null
         interactionSubmitting.value = false
@@ -1039,6 +1093,7 @@ export function useChat() {
 
   function abort() {
     abortController?.abort()
+    clearStreamingTextBuffer()
     activeInteraction.value = null
     interactionSubmitting.value = false
     interactionError.value = null

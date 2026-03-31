@@ -41,7 +41,8 @@
       "WebFetch(domain:markaicode.com)",
       "WebFetch(domain:www.shareuhack.com)",
       "WebFetch(domain:www.innobu.com)",
-      "WebFetch(domain:boilerplatehub.com)"
+      "WebFetch(domain:boilerplatehub.com)",
+      "WebFetch(domain:docs.all-hands.dev)"
     ]
   }
 }

@@ -20,9 +20,11 @@ import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.llm.multimodal.MediaContent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.ai.chat.messages.Message;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -31,13 +33,16 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.lang.NonNull;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -123,6 +128,67 @@ class ReactAgentLoop_预算控制测试 {
                 .contains("本轮处理已中断")
                 .contains("我已保留当前进度");
         verifyNoInteractions(callback);
+    }
+
+    @Test
+    void 首轮多模态请求应把媒体注入到Provider消息() {
+        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+        when(contextAssembler.assemble(any())).thenReturn(baseContext("请描述这张图片"));
+
+        var budget = baseBudget();
+        var media = new MediaContent(
+                "img-1",
+                "image/png",
+                new byte[]{1, 2, 3},
+                "demo.png",
+                3,
+                Map.of("source", "test")
+        );
+        var request = new AgentRequest(
+                "请描述这张图片",
+                "session-media-first-round",
+                "web",
+                null,
+                null,
+                ChatTurnAction.SEND,
+                null,
+                budget,
+                null,
+                0,
+                null,
+                null,
+                List.of(media),
+                null,
+                null
+        );
+        var initialState = ReactAgentState.init(request, budget);
+
+        var capturedMessages = new AtomicReference<List<Message>>();
+        var capturedRequest = new AtomicReference<AgentRequest>();
+        IterationCallback callback = (agentRequest, messages, toolCallbacks, traceContext) -> {
+            capturedRequest.set(agentRequest);
+            capturedMessages.set(messages);
+            return new ChatResponse(List.of(new Generation(new AssistantMessage("图片描述完成"))));
+        };
+
+        var result = reactAgentLoop.coreLoop(
+                initialState,
+                request,
+                null,
+                Instant.now(),
+                callback,
+                new CancellationToken(),
+                new AgentLoopContext()
+        );
+
+        assertThat(result.finalOutput()).isEqualTo("图片描述完成");
+        assertThat(capturedRequest.get()).isNotNull();
+        assertThat(capturedRequest.get().mediaContents()).hasSize(1);
+        assertThat(capturedMessages.get()).isNotNull();
+        assertThat(capturedMessages.get())
+                .filteredOn(message -> message instanceof UserMessage)
+                .singleElement()
+                .satisfies(message -> assertThat(((UserMessage) message).getMedia()).hasSize(1));
     }
 
     @Test

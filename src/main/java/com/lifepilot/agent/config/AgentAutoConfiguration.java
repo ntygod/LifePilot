@@ -91,8 +91,9 @@ public class AgentAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ProviderMessageBuilder providerMessageBuilder(
-            TranscriptHygieneEngine transcriptHygieneEngine) {
-        return new ProviderMessageBuilder(transcriptHygieneEngine);
+            TranscriptHygieneEngine transcriptHygieneEngine,
+            SessionPruningEngine sessionPruningEngine) {
+        return new ProviderMessageBuilder(transcriptHygieneEngine, sessionPruningEngine);
     }
 
     @Bean

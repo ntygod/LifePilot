@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra.browser;
 
 import com.microsoft.playwright.Browser;
+import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Playwright;
 
@@ -43,14 +44,34 @@ final class PlaywrightBridge {
     }
 
     /**
-     * 创建新 Page。
+     * 创建新 BrowserContext。
      *
      * @param browserObj Browser 实例
+     * @return BrowserContext 实例
+     */
+    static Object createContext(Object browserObj) {
+        Browser browser = (Browser) browserObj;
+        return browser.newContext();
+    }
+
+    /**
+     * 在指定 BrowserContext 中创建新 Page。
+     *
+     * @param browserContextObj BrowserContext 实例
      * @return Page 实例
      */
-    static Object createPage(Object browserObj) {
-        Browser browser = (Browser) browserObj;
-        return browser.newPage();
+    static Object createPage(Object browserContextObj) {
+        BrowserContext browserContext = (BrowserContext) browserContextObj;
+        return browserContext.newPage();
+    }
+
+    /**
+     * 关闭 BrowserContext。
+     *
+     * @param browserContextObj BrowserContext 实例
+     */
+    static void closeContext(Object browserContextObj) {
+        ((BrowserContext) browserContextObj).close();
     }
 
     /**

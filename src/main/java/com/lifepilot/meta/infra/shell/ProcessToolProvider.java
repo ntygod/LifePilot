@@ -165,6 +165,9 @@ public class ProcessToolProvider {
                     entry.put("sessionId", p.sessionId());
                     entry.put("command", p.command());
                     entry.put("state", p.state().name());
+                    if (p.exitCode() != null) {
+                        entry.put("exitCode", p.exitCode());
+                    }
                     entry.put("startTime", p.startTime().toString());
                     entry.put("workDir", p.workDir());
                     return (Map<String, Object>) Map.copyOf(entry);
@@ -176,8 +179,17 @@ public class ProcessToolProvider {
     private ToolResult executeOutput(ToolInput input) {
         try {
             String sessionId = input.getParam("sessionId", String.class);
-            String output = processManager.readOutput(sessionId);
-            return ToolResult.success(Map.of("sessionId", sessionId, "output", output));
+            ProcessOutputChunk chunk = processManager.readOutputChunk(sessionId);
+            var data = new LinkedHashMap<String, Object>();
+            data.put("sessionId", sessionId);
+            data.put("output", chunk.output());
+            data.put("stdout", chunk.stdout());
+            data.put("stderr", chunk.stderr());
+            data.put("state", chunk.state().name());
+            if (chunk.exitCode() != null) {
+                data.put("exitCode", chunk.exitCode());
+            }
+            return ToolResult.success(Map.copyOf(data));
         } catch (IllegalArgumentException e) {
             return ToolResult.error(e.getMessage());
         }

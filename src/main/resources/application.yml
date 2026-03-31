@@ -793,6 +793,8 @@ lifepilot:
       web-fetch:
         max-content-length: 50000
         timeout-seconds: 10
+        min-static-content-length: 100
+        render-timeout-seconds: 15
       user-profile:
         timezone: ""
         cache-ttl-seconds: 300
@@ -822,6 +824,13 @@ lifepilot:
         wait-timeout-seconds: 10
         accessibility-max-depth: 5
         js-execution-timeout-seconds: 10
+      git:
+        enabled: true
+        timeout-seconds: 30
+        max-diff-lines: 500
+        max-log-entries: 50
+        max-blame-lines: 200
+        max-output-chars: 50000
       code-execute:
         enabled: true
         default-language: python
@@ -834,12 +843,39 @@ lifepilot:
           - "/etc"
           - "/var"
           - "C:\\Windows"
+      file-edit:
+        undo-max-depth: 50
+        auto-lint: false
+        lint-commands:
+          ".py": "python3 -m py_compile {file}"
+          ".js": "node --check {file}"
+        lint-timeout-seconds: 10
+        max-snapshot-size-bytes: 5242880
       interaction:
         response-timeout-seconds: 120
       process:
         max-concurrent: 5
         max-output-buffer-size: 100000
         idle-timeout-minutes: 30
+      shell-session:
+        enabled: true
+        max-concurrent-sessions: 5
+        ttl-minutes: 30
+        default-cols: 120
+        default-rows: 40
+        history-lines: 2000
+        exec-timeout-seconds: 120
+        output-max-chars: 50000
+        cleanup-interval-seconds: 60
+      kernel:
+        enabled: true
+        max-concurrent-kernels: 3
+        ttl-minutes: 30
+        cleanup-interval-seconds: 60
+        execution-timeout-seconds: 60
+        python-runtime: "python3"
+        node-runtime: "node"
+        max-output-chars: 50000
     introspection:
       cache-ttl-seconds: 60
       debounce-millis: 500

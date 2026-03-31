@@ -11,9 +11,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -67,6 +65,7 @@ public class FileReadToolExecutor {
                 .map(Number::intValue);
         int maxChars = input.getOptionalParam("maxChars", Number.class)
                 .map(Number::intValue)
+                .map(value -> Math.max(1, value))
                 .orElse(defaultMaxChars);
 
         Path filePath = Path.of(pathStr);
@@ -87,52 +86,57 @@ public class FileReadToolExecutor {
         try {
             Charset charset = Charset.forName(encoding);
             long fileSize = Files.size(filePath);
+            var sb = new StringBuilder();
+            boolean truncated = false;
+            int totalLines = 0;
+            int lastIncludedLine = 0;
+            int requestedStart = startLineOpt.map(value -> Math.max(1, value)).orElse(1);
+            int requestedEnd = endLineOpt
+                    .map(value -> Math.max(requestedStart, value))
+                    .orElse(Integer.MAX_VALUE);
 
-            // 使用 BufferedReader 逐行读取，避免大文件预分配
-            List<String> allLines = new ArrayList<>();
             try (BufferedReader reader = Files.newBufferedReader(filePath, charset)) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    allLines.add(line);
-                }
-            }
+                    totalLines++;
+                    int lineNumber = totalLines;
+                    if (lineNumber < requestedStart || lineNumber > requestedEnd) {
+                        continue;
+                    }
+                    if (truncated) {
+                        continue;
+                    }
 
-            int totalLines = allLines.size();
-
-            // 确定行范围（1-based，自动调整到有效范围）
-            int start = startLineOpt.map(s -> Math.max(1, Math.min(s, totalLines))).orElse(1);
-            int end = endLineOpt.map(e -> Math.max(start, Math.min(e, totalLines))).orElse(totalLines);
-
-            // 提取指定范围的行，按 maxChars 截断（按完整行）
-            var sb = new StringBuilder();
-            boolean truncated = false;
-            int actualEnd = start - 1;
-
-            for (int i = start - 1; i < end; i++) {
-                String line = allLines.get(i);
-                int lineLen = line.length() + 1; // +1 for newline
-                if (sb.length() == 0 && line.length() > maxChars) {
-                    sb.append(line, 0, maxChars);
-                    truncated = true;
-                    actualEnd = i + 1;
-                    break;
+                    int projectedLength = sb.length() + line.length() + (sb.isEmpty() ? 0 : 1);
+                    if (sb.isEmpty() && line.length() > maxChars) {
+                        sb.append(line, 0, maxChars);
+                        truncated = true;
+                        lastIncludedLine = lineNumber;
+                        continue;
+                    }
+                    if (!sb.isEmpty() && projectedLength > maxChars) {
+                        truncated = true;
+                        continue;
+                    }
+                    if (!sb.isEmpty()) {
+                        sb.append('\n');
+                    }
+                    sb.append(line);
+                    lastIncludedLine = lineNumber;
                 }
-                if (sb.length() + lineLen > maxChars && sb.length() > 0) {
-                    truncated = true;
-                    break;
-                }
-                if (sb.length() > 0) {
-                    sb.append('\n');
-                }
-                sb.append(line);
-                actualEnd = i + 1;
             }
 
             String content = sb.toString();
+            int actualStart = totalLines == 0 ? 1 : Math.min(requestedStart, totalLines);
+            int clampedEnd = totalLines == 0
+                    ? 0
+                    : Math.max(actualStart, Math.min(requestedEnd == Integer.MAX_VALUE ? totalLines : requestedEnd, totalLines));
+            int actualEnd = truncated && lastIncludedLine > 0 ? lastIncludedLine : clampedEnd;
+
             if (truncated) {
                 content += "[文件已截断]";
                 content += "\n...[内容已截断，maxChars=" + maxChars
-                        + "，显示行 " + start + "-" + actualEnd + "/" + totalLines + "]";
+                        + "，显示行 " + actualStart + "-" + actualEnd + "/" + totalLines + "]";
             }
 
             var data = new LinkedHashMap<String, Object>();
@@ -142,7 +146,7 @@ public class FileReadToolExecutor {
             data.put("totalLines", totalLines);
             data.put("truncated", truncated);
             if (startLineOpt.isPresent() || endLineOpt.isPresent()) {
-                data.put("startLine", start);
+                data.put("startLine", actualStart);
                 data.put("endLine", actualEnd);
             }
 

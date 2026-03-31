@@ -4,11 +4,20 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
+import com.lifepilot.meta.infra.code.kernel.CodeKernelToolProvider;
+import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
+import com.lifepilot.meta.infra.file.history.FileEditHistory;
+import com.lifepilot.meta.infra.file.history.LintHookExecutor;
+import com.lifepilot.meta.infra.git.GitCommandExecutor;
+import com.lifepilot.meta.infra.git.GitToolProvider;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ProcessToolProvider;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
+import com.lifepilot.meta.infra.shell.session.SessionToolProvider;
+import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
+import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
 import com.lifepilot.meta.infra.web.HttpRequestToolExecutor;
@@ -126,7 +135,7 @@ public class InfraToolProvider {
     public void registerTools(DynamicToolRegistry toolRegistry) {
         // 信息获取工具
         var webSearchExecutor = new WebSearchToolExecutor(webSearchConfigProvider);
-        var webFetchExecutor = new WebFetchToolExecutor(properties);
+        var webFetchExecutor = new WebFetchToolExecutor(properties, browserSessionManager);
         int totalTools = registerBuiltinTools(toolRegistry, List.of(
                 buildWebSearchTool(webSearchExecutor),
                 buildWebFetchTool(webFetchExecutor)
@@ -154,14 +163,13 @@ public class InfraToolProvider {
         var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties);
         totalTools += registerBuiltinTools(toolRegistry, browserToolProvider.buildBrowserTools());
 
-        // 代码执行工具
-        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxSessionManager, codeValidator, sandboxRepository);
-        totalTools += registerBuiltinTools(toolRegistry, List.of(
-                buildCodeExecuteTool(codeExecuteExecutor)
-        ));
-
         // 文件系统工具（委托给 FileToolProvider）
-        var fileToolProvider = new FileToolProvider(properties);
+        var fileEditConfig = properties.getInfra().getFileEdit();
+        var editHistory = new FileEditHistory(
+                fileEditConfig.getUndoMaxDepth(),
+                fileEditConfig.getMaxSnapshotSizeBytes());
+        var lintHook = new LintHookExecutor();
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 交互控制工具（委托给 InteractionToolProvider）
@@ -205,7 +213,52 @@ public class InfraToolProvider {
             log.warn("BackgroundProcessManager 不可用，跳过后台进程管理工具注册");
         }
 
-        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process]",
+        // Git 工具（委托给 GitToolProvider）
+        var gitConfig = properties.getInfra().getGit();
+        if (gitConfig.isEnabled()) {
+            var gitCmd = new GitCommandExecutor(gitConfig);
+            if (gitCmd.isGitAvailable()) {
+                var gitToolProvider = new GitToolProvider(gitCmd, gitConfig);
+                totalTools += registerBuiltinTools(toolRegistry, gitToolProvider.buildGitTools());
+                log.info("Git 工具注册完成: count={}", 7);
+            } else {
+                log.warn("git 不可用，跳过 Git 工具注册");
+            }
+        }
+
+        // Shell 持久会话工具（委托给 SessionToolProvider）
+        // 提前创建 tmuxSessionManager，供 Shell 持久会话和代码内核共用
+        TmuxSessionManager tmuxSessionManager = null;
+        var shellSessionConfig = properties.getInfra().getShellSession();
+        if (shellSessionConfig.isEnabled()) {
+            var tmuxCmd = new TmuxCommandExecutor(shellSessionConfig.getExecTimeoutSeconds());
+            if (tmuxCmd.isTmuxAvailable()) {
+                tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig);
+                var sessionToolProvider = new SessionToolProvider(tmuxSessionManager);
+                totalTools += registerBuiltinTools(toolRegistry, sessionToolProvider.buildSessionTools());
+                log.info("Shell 持久会话工具注册完成: count={}", 8);
+            } else {
+                log.warn("tmux 不可用，跳过 Shell 持久会话工具注册");
+            }
+        }
+
+        // 持久代码内核工具（委托给 CodeKernelToolProvider）
+        PersistentKernelManager kernelManager = null;
+        var kernelConfig = properties.getInfra().getKernel();
+        if (kernelConfig.isEnabled()) {
+            kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager);
+            var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
+            totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+            log.info("持久代码内核工具注册完成: count=2");
+        }
+
+        // 代码执行工具（支持持久内核路由）
+        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxSessionManager, codeValidator, sandboxRepository, kernelManager);
+        totalTools += registerBuiltinTools(toolRegistry, List.of(
+                buildCodeExecuteTool(codeExecuteExecutor)
+        ));
+
+        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git, session, kernel]",
                 totalTools);
     }
 
@@ -258,7 +311,7 @@ public class InfraToolProvider {
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
-                .description("抓取指定 URL 的静态网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取")
+                .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取。当静态抓取内容为空或过短时自动回退到浏览器渲染（需 Playwright 可用）")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -266,7 +319,9 @@ public class InfraToolProvider {
                                 "url", Map.of("type", "string",
                                         "description", "目标网页 URL"),
                                 "selector", Map.of("type", "string",
-                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选）")
+                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选）"),
+                                "renderJs", Map.of("type", "boolean",
+                                        "description", "强制使用浏览器渲染（适用于 JS 动态页面），默认 false 由系统自动判断")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -386,13 +441,22 @@ public class InfraToolProvider {
     //  代码执行工具构建
     // ─────────────────────────────────────────────
 
-    /** 构建代码执行工具 — 桥接 SandboxBooter，HIGH 风险。 */
+    /** 构建代码执行工具 — 桥接 SandboxBooter，HIGH 风险。支持 kernelId 路由到持久内核。 */
     private BuiltinTool buildCodeExecuteTool(CodeExecuteToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
                 .name("执行代码")
-                .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell。HIGH 风险，每次执行需用户确认")
+                .description("在安全环境中执行代码，支持 Python/JavaScript/Shell。有两种执行模式：\n\n" +
+                        "【一次性沙箱模式】（默认）：不传 kernelId，每次执行完全独立，变量不保留。" +
+                        "适合运行一次性脚本、验证代码片段、执行系统命令等不需要上下文连续的场景。\n\n" +
+                        "【持久内核模式】：传入 kernelId（如 \"data-analysis\" 或 \"debug-session\"），" +
+                        "变量和导入在同一 kernelId 的多次调用之间保持。适合：" +
+                        "(1) 数据分析——先 import pandas 读数据，后续多步处理同一个 DataFrame；" +
+                        "(2) 多步调试——逐步排查问题，保留中间变量；" +
+                        "(3) 环境搭建——先 %pip install 安装依赖，再 import 使用。" +
+                        "同一个 kernelId 的多次调用共享状态，不同 kernelId 互相隔离。\n\n" +
+                        "如果不确定是否需要持久内核，默认不传 kernelId 即可。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("code"),
@@ -402,7 +466,13 @@ public class InfraToolProvider {
                                 "language", Map.of("type", "string",
                                         "description", "编程语言（python/javascript/shell），默认使用配置值"),
                                 "timeoutSeconds", Map.of("type", "integer",
-                                        "description", "执行超时时间（秒），默认 30")
+                                        "description", "执行超时时间（秒），默认 30"),
+                                "kernelId", Map.of("type", "string",
+                                        "description", "持久内核 ID（如 \"data-analysis\"、\"debug\"）。" +
+                                                "传入后变量和导入跨调用保持，适合多步数据分析或调试。" +
+                                                "同一 kernelId 共享状态，不同 kernelId 互相隔离。" +
+                                                "不传则使用一次性沙箱。用 code.kernel.inspect 查看内核中的变量，" +
+                                                "用 code.kernel.reset 清空内核状态。")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

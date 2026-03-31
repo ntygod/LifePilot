@@ -1,5 +1,6 @@
 package com.lifepilot.agent.context;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
@@ -26,7 +27,10 @@ import java.util.Objects;
  */
 public class ProviderMessageBuilder {
 
+    private static final int CURRENT_TURN_DIGEST_MIN_CHARS = 320;
+
     private final TranscriptHygieneEngine hygieneEngine;
+    private final SessionPruningEngine pruningEngine;
 
     public record BuildResult(
             List<Message> messages,
@@ -38,7 +42,13 @@ public class ProviderMessageBuilder {
     }
 
     public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine) {
+        this(hygieneEngine, new SessionPruningEngine(new com.lifepilot.agent.config.AgentConfigProperties(), new ObjectMapper()));
+    }
+
+    public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine,
+                                  SessionPruningEngine pruningEngine) {
         this.hygieneEngine = Objects.requireNonNull(hygieneEngine);
+        this.pruningEngine = Objects.requireNonNull(pruningEngine);
     }
 
     public BuildResult build(AssembledContext context, ReactAgentState state) {
@@ -206,7 +216,7 @@ public class ProviderMessageBuilder {
                     .responses(List.of(new ToolResponseMessage.ToolResponse(
                             observation.callId() != null ? observation.callId() : observation.toolId(),
                             observation.toolId(),
-                            observation.output()
+                            formatObservationForPrompt(observation)
                     )))
                     .build();
             case ReactStep.Answer answer -> new AssistantMessage(answer.content());
@@ -220,6 +230,28 @@ public class ProviderMessageBuilder {
                                     + "，恢复载荷: " + resume.payload()
                     )))
                     .build();
+        };
+    }
+
+    private String formatObservationForPrompt(ReactStep.Observation observation) {
+        if (!shouldUseObservationPreview(observation)) {
+            return observation.output();
+        }
+        String preview = pruningEngine.formatCurrentObservationPreview(
+                observation.toolId(),
+                observation.success(),
+                observation.output()
+        );
+        return preview.isBlank() ? observation.output() : preview;
+    }
+
+    private boolean shouldUseObservationPreview(ReactStep.Observation observation) {
+        if (observation.output() == null || observation.output().length() < CURRENT_TURN_DIGEST_MIN_CHARS) {
+            return false;
+        }
+        return switch (observation.toolId()) {
+            case "web.search", "web.fetch" -> true;
+            default -> false;
         };
     }
 

@@ -4,6 +4,7 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -23,11 +24,20 @@ class ShellExecToolExecutorTest {
 
     private ShellExecToolExecutor executor;
     private MetaProperties properties;
+    private BackgroundProcessManager backgroundProcessManager;
 
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
         executor = new ShellExecToolExecutor(properties, null);
+        backgroundProcessManager = null;
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (backgroundProcessManager != null) {
+            backgroundProcessManager.shutdown();
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -217,6 +227,26 @@ class ShellExecToolExecutorTest {
         assertThat(stdout).contains("输出已截断");
     }
 
+    @Test
+    void execute_yieldMs快速失败时保留真实exitCode与双通道输出() {
+        backgroundProcessManager = new BackgroundProcessManager(properties.getInfra().getProcess());
+        executor = new ShellExecToolExecutor(properties, backgroundProcessManager);
+
+        ToolInput input = buildInput(Map.of(
+                "command", buildStdoutStderrFailCommand(7),
+                "yieldMs", 1000
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("exitCode=7");
+        assertThat((int) result.data().get("exitCode")).isEqualTo(7);
+        assertThat((String) result.data().get("stdout")).contains("yield-stdout");
+        assertThat((String) result.data().get("stderr")).contains("yield-stderr");
+        assertThat((String) result.data().get("output")).contains("yield-stdout").contains("yield-stderr");
+    }
+
     // ─────────────────────────────────────────────
     //  参数缺失测试
     // ─────────────────────────────────────────────
@@ -333,5 +363,13 @@ class ShellExecToolExecutorTest {
 
     private ToolInput buildInput(Map<String, Object> params) {
         return new ToolInput("shell.exec", params, JsonSchema.empty(), null, null);
+    }
+
+    private String buildStdoutStderrFailCommand(int exitCode) {
+        String osName = System.getProperty("os.name").toLowerCase();
+        if (osName.contains("win")) {
+            return "Write-Output 'yield-stdout'; [Console]::Error.WriteLine('yield-stderr'); exit " + exitCode;
+        }
+        return "printf 'yield-stdout\\n'; printf 'yield-stderr\\n' >&2; exit " + exitCode;
     }
 }

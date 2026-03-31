@@ -12,8 +12,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * @param sessionId 唯一会话标识
  * @param process 底层操作系统进程
- * @param outputBuffer 环形输出缓冲区（stdout + stderr 合并）
+ * @param stdoutBuffer stdout 环形输出缓冲区
+ * @param stderrBuffer stderr 环形输出缓冲区
  * @param state 进程状态
+ * @param exitCode 真实退出码，运行中时为 null
  * @param startTime 启动时间
  * @param lastAccessTime 最后访问时间（用于空闲超时计算）
  * @param command 启动命令
@@ -24,8 +26,10 @@ import java.util.concurrent.atomic.AtomicReference;
 public record ManagedProcess(
         String sessionId,
         Process process,
-        RingBuffer outputBuffer,
+        RingBuffer stdoutBuffer,
+        RingBuffer stderrBuffer,
         AtomicReference<ProcessState> state,
+        AtomicReference<Integer> exitCode,
         Instant startTime,
         AtomicReference<Instant> lastAccessTime,
         String command,

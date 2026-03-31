@@ -90,6 +90,7 @@ public class StreamingEventHandler {
      * @param finalContent 最终内容
      * @param assistantEntryId 助手 transcript 条目 ID
      * @param lastCollectedA2uiTree 最后收集的 A2UI 组件树
+     * @param streamTimings 流式体验时序指标
      * @return DONE 事件 payload
      */
     public Map<String, Object> buildDoneEventPayload(AgentRequest request,
@@ -100,7 +101,8 @@ public class StreamingEventHandler {
                                                      @Nullable String reasoningSummary,
                                                      @Nullable String finalContent,
                                                      @Nullable String assistantEntryId,
-                                                     @Nullable A2uiComponentTree lastCollectedA2uiTree) {
+                                                     @Nullable A2uiComponentTree lastCollectedA2uiTree,
+                                                     @Nullable Map<String, Long> streamTimings) {
         var doneData = new HashMap<String, Object>();
         doneData.put("entryId", assistantEntryId != null ? assistantEntryId : tempTurnId);
         doneData.put("sessionId", request.sessionId());
@@ -149,6 +151,9 @@ public class StreamingEventHandler {
         }
         if (lastCollectedA2uiTree != null && !lastCollectedA2uiTree.components().isEmpty()) {
             doneData.put("a2uiComponents", lastCollectedA2uiTree.components());
+        }
+        if (streamTimings != null && !streamTimings.isEmpty()) {
+            doneData.put("streamTimings", streamTimings);
         }
 
         var contents = new ArrayList<Map<String, Object>>();

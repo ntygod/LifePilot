@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -75,6 +76,7 @@ public class BackgroundProcessManager {
      * @throws IOException 进程启动失败时
      */
     public String startProcess(String command, Path workDir) throws IOException {
+        processes.values().forEach(this::refreshProcessState);
         // 检查并发限制（只计算 RUNNING 状态的进程）
         long runningCount = processes.values().stream()
                 .filter(ManagedProcess::isRunning)
@@ -105,17 +107,20 @@ public class BackgroundProcessManager {
             pb = new ProcessBuilder("sh", "-c", command);
         }
         pb.directory(workDir.toFile());
-        pb.redirectErrorStream(true); // stdout + stderr 合并
+        pb.redirectErrorStream(false);
 
         Process process = pb.start();
-        var outputBuffer = new RingBuffer(processConfig.getMaxOutputBufferSize());
+        var stdoutBuffer = new RingBuffer(processConfig.getMaxOutputBufferSize());
+        var stderrBuffer = new RingBuffer(processConfig.getMaxOutputBufferSize());
         var now = Instant.now();
 
         var managed = new ManagedProcess(
                 sessionId,
                 process,
-                outputBuffer,
+                stdoutBuffer,
+                stderrBuffer,
                 new AtomicReference<>(ProcessState.RUNNING),
+                new AtomicReference<>(null),
                 now,
                 new AtomicReference<>(now),
                 command,
@@ -124,8 +129,13 @@ public class BackgroundProcessManager {
 
         processes.put(sessionId, managed);
 
-        // 启动虚拟线程读取进程输出
-        Thread.ofVirtual().name("process-reader-" + sessionId).start(() -> readProcessOutput(managed));
+        // 启动虚拟线程分别读取 stdout/stderr，避免丢失通道语义
+        Thread.ofVirtual().name("process-stdout-reader-" + sessionId)
+                .start(() -> readProcessOutput(managed, managed.process().getInputStream(),
+                        managed.stdoutBuffer(), "stdout"));
+        Thread.ofVirtual().name("process-stderr-reader-" + sessionId)
+                .start(() -> readProcessOutput(managed, managed.process().getErrorStream(),
+                        managed.stderrBuffer(), "stderr"));
 
         // 启动虚拟线程监控进程退出
         Thread.ofVirtual().name("process-monitor-" + sessionId).start(() -> monitorProcessExit(managed));
@@ -141,14 +151,21 @@ public class BackgroundProcessManager {
      */
     public List<ProcessInfo> listProcesses() {
         return processes.values().stream()
-                .map(mp -> new ProcessInfo(
-                        mp.sessionId(),
-                        mp.command(),
-                        mp.currentState(),
-                        mp.startTime(),
-                        mp.workDir().toString()
-                ))
+                .map(this::snapshotProcessInfo)
                 .toList();
+    }
+
+    /**
+     * 获取指定后台进程的摘要信息。
+     *
+     * @param sessionId 会话标识
+     * @return 进程摘要
+     * @throws IllegalArgumentException sessionId 不存在时
+     */
+    public ProcessInfo getProcessInfo(String sessionId) {
+        var managed = getProcess(sessionId);
+        managed.touch();
+        return snapshotProcessInfo(managed);
     }
 
     /**
@@ -159,9 +176,29 @@ public class BackgroundProcessManager {
      * @throws IllegalArgumentException sessionId 不存在时
      */
     public String readOutput(String sessionId) {
+        return readOutputChunk(sessionId).output();
+    }
+
+    /**
+     * 读取指定进程的输出缓冲区增量快照。
+     *
+     * @param sessionId 会话标识
+     * @return stdout/stderr 分离的增量快照
+     * @throws IllegalArgumentException sessionId 不存在时
+     */
+    public ProcessOutputChunk readOutputChunk(String sessionId) {
         var managed = getProcess(sessionId);
         managed.touch();
-        return managed.outputBuffer().readIncremental();
+        refreshProcessState(managed);
+        String stdout = managed.stdoutBuffer().readIncremental();
+        String stderr = managed.stderrBuffer().readIncremental();
+        return new ProcessOutputChunk(
+                stdout,
+                stderr,
+                mergeOutput(stdout, stderr),
+                managed.currentState(),
+                managed.exitCode().get()
+        );
     }
 
     /**
@@ -250,16 +287,18 @@ public class BackgroundProcessManager {
     }
 
     /** 持续读取进程输出到环形缓冲区。 */
-    private void readProcessOutput(ManagedProcess managed) {
-        try (var reader = new BufferedReader(
-                new InputStreamReader(managed.process().getInputStream(), StandardCharsets.UTF_8))) {
+    private void readProcessOutput(ManagedProcess managed,
+                                   InputStream stream,
+                                   RingBuffer buffer,
+                                   String streamName) {
+        try (var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             char[] buf = new char[4096];
             int read;
             while ((read = reader.read(buf)) != -1) {
-                managed.outputBuffer().append(new String(buf, 0, read));
+                buffer.append(new String(buf, 0, read));
             }
         } catch (IOException e) {
-            log.debug("进程输出读取结束: sessionId={}, reason={}", managed.sessionId(), e.getMessage());
+            log.debug("进程{}读取结束: sessionId={}, reason={}", streamName, managed.sessionId(), e.getMessage());
         }
     }
 
@@ -267,15 +306,60 @@ public class BackgroundProcessManager {
     private void monitorProcessExit(ManagedProcess managed) {
         try {
             int exitCode = managed.process().waitFor();
+            managed.exitCode().set(exitCode);
             if (managed.currentState() == ProcessState.RUNNING) {
                 var newState = exitCode == 0 ? ProcessState.COMPLETED : ProcessState.FAILED;
                 managed.state().set(newState);
                 log.info("后台进程退出: sessionId={}, exitCode={}, state={}",
                         managed.sessionId(), exitCode, newState);
+            } else {
+                log.info("后台进程退出: sessionId={}, exitCode={}, state={}",
+                        managed.sessionId(), exitCode, managed.currentState());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.debug("进程监控被中断: sessionId={}", managed.sessionId());
         }
+    }
+
+    private void refreshProcessState(ManagedProcess managed) {
+        if (managed.currentState() != ProcessState.RUNNING || managed.process().isAlive()) {
+            return;
+        }
+        Integer exitCode = managed.exitCode().get();
+        if (exitCode == null) {
+            try {
+                exitCode = managed.process().exitValue();
+                managed.exitCode().compareAndSet(null, exitCode);
+            } catch (IllegalThreadStateException ignored) {
+                return;
+            }
+        }
+        if (exitCode != null && managed.currentState() == ProcessState.RUNNING) {
+            managed.state().compareAndSet(ProcessState.RUNNING,
+                    exitCode == 0 ? ProcessState.COMPLETED : ProcessState.FAILED);
+        }
+    }
+
+    private ProcessInfo snapshotProcessInfo(ManagedProcess managed) {
+        refreshProcessState(managed);
+        return new ProcessInfo(
+                managed.sessionId(),
+                managed.command(),
+                managed.currentState(),
+                managed.exitCode().get(),
+                managed.startTime(),
+                managed.workDir().toString()
+        );
+    }
+
+    private String mergeOutput(String stdout, String stderr) {
+        if (stdout.isEmpty()) {
+            return stderr;
+        }
+        if (stderr.isEmpty()) {
+            return stdout;
+        }
+        return stdout + stderr;
     }
 }

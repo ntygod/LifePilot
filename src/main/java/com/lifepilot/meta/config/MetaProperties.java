@@ -3,7 +3,9 @@ package com.lifepilot.meta.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 元能力系统配置属性。
@@ -66,6 +68,18 @@ public class MetaProperties {
         /** 后台进程管理配置。 */
         private Process process = new Process();
 
+        /** Git 工具配置。 */
+        private Git git = new Git();
+
+        /** 文件编辑历史配置。 */
+        private FileEdit fileEdit = new FileEdit();
+
+        /** Shell 持久会话配置。 */
+        private ShellSession shellSession = new ShellSession();
+
+        /** 持久代码内核配置。 */
+        private Kernel kernel = new Kernel();
+
         /**
          * Web 搜索配置。
          *
@@ -114,6 +128,12 @@ public class MetaProperties {
 
             /** HTTP 请求超时（秒），默认 10。 */
             private int timeoutSeconds = 10;
+
+            /** 静态抓取内容低于此长度时触发浏览器渲染回退（字符），默认 100。 */
+            private int minStaticContentLength = 100;
+
+            /** 浏览器渲染超时（秒），默认 15。 */
+            private int renderTimeoutSeconds = 15;
         }
 
         /**
@@ -273,6 +293,130 @@ public class MetaProperties {
 
             /** 空闲超时（分钟），超时后自动清理进程，默认 30。 */
             private int idleTimeoutMinutes = 30;
+        }
+
+        /**
+         * Git 工具配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class Git {
+
+            /** 功能开关，默认 true。 */
+            private boolean enabled = true;
+
+            /** Git 命令执行超时（秒），默认 30。 */
+            private int timeoutSeconds = 30;
+
+            /** diff 输出最大行数，默认 500。 */
+            private int maxDiffLines = 500;
+
+            /** log 最大条目数，默认 50。 */
+            private int maxLogEntries = 50;
+
+            /** blame 最大行数，默认 200。 */
+            private int maxBlameLines = 200;
+
+            /** 输出最大字符数，默认 50000。 */
+            private int maxOutputChars = 50000;
+        }
+
+        /**
+         * 文件编辑历史配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class FileEdit {
+
+            /** undo 栈最大深度，默认 50。 */
+            private int undoMaxDepth = 50;
+
+            /** 是否在文件写入后自动执行 lint 检查，默认 false。 */
+            private boolean autoLint = false;
+
+            /** 文件扩展名 → lint 命令映射，命令中 {file} 占位符会被替换为实际路径。 */
+            private Map<String, String> lintCommands = new LinkedHashMap<>();
+
+            /** lint 命令执行超时（秒），默认 10。 */
+            private int lintTimeoutSeconds = 10;
+
+            /** 单文件快照最大字节数，超过则跳过快照，默认 5MB。 */
+            private long maxSnapshotSizeBytes = 5 * 1024 * 1024;
+        }
+
+        /**
+         * Shell 持久会话配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class ShellSession {
+
+            /** 功能开关，默认 true。 */
+            private boolean enabled = true;
+
+            /** 最大并发会话数，默认 5。 */
+            private int maxConcurrentSessions = 5;
+
+            /** 空闲超时（分钟），超时后自动清理会话，默认 30。 */
+            private int ttlMinutes = 30;
+
+            /** 默认终端列数，默认 120。 */
+            private int defaultCols = 120;
+
+            /** 默认终端行数，默认 40。 */
+            private int defaultRows = 40;
+
+            /** 历史行数，capture-pane 回溯行数，默认 2000。 */
+            private int historyLines = 2000;
+
+            /** 命令执行超时（秒），默认 120。 */
+            private int execTimeoutSeconds = 120;
+
+            /** 输出最大字符数，默认 50000。 */
+            private int outputMaxChars = 50000;
+
+            /** 空闲清理调度间隔（秒），默认 60。 */
+            private int cleanupIntervalSeconds = 60;
+        }
+
+        /**
+         * 持久代码内核配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class Kernel {
+
+            /** 功能开关，默认 true。 */
+            private boolean enabled = true;
+
+            /** 最大并发内核数，默认 3。 */
+            private int maxConcurrentKernels = 3;
+
+            /** 空闲超时（分钟），超时后自动清理内核，默认 30。 */
+            private int ttlMinutes = 30;
+
+            /** 空闲清理调度间隔（秒），默认 60。 */
+            private int cleanupIntervalSeconds = 60;
+
+            /** 默认执行超时（秒），默认 60。 */
+            private int executionTimeoutSeconds = 60;
+
+            /** Python 运行时路径，默认 python3。 */
+            private String pythonRuntime = "python3";
+
+            /** Node.js 运行时路径，默认 node。 */
+            private String nodeRuntime = "node";
+
+            /** 输出最大字符数，默认 50000。 */
+            private int maxOutputChars = 50000;
         }
     }
 

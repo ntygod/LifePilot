@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { chatApi } from '@/api/client'
@@ -62,6 +62,29 @@ function createDeferredSseStream(events: Array<{ type: string; payload: unknown 
   }
 }
 
+function createManualSseStream() {
+  const encoder = new TextEncoder()
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controllerRef = controller
+    },
+  })
+
+  return {
+    stream,
+    push(event: { type: string; payload: unknown }) {
+      controllerRef?.enqueue(
+        encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`),
+      )
+    },
+    close() {
+      controllerRef?.close()
+    },
+  }
+}
+
 async function flushUi() {
   await Promise.resolve()
   await nextTick()
@@ -72,9 +95,14 @@ describe('useChat A2UI integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.useRealTimers()
     vi.mocked(chatApi.getSessionMessages).mockResolvedValue([])
     vi.mocked(chatApi.updateSessionConfig).mockResolvedValue(undefined)
     vi.mocked(chatApi.respondInteraction).mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('persists A2UI from the DONE event payload into the final assistant message', async () => {
@@ -154,6 +182,55 @@ describe('useChat A2UI integration', () => {
     const assistant = chatStore.messages.find(message => message.id === 'assistant-2')
     expect(assistant?.content).toBe('面板已生成')
     expect(assistant?.a2uiComponents?.[0]?.id).toBe('card-stream')
+  })
+
+  it('buffers token chunks locally and flushes them on the short timer or terminal DONE', async () => {
+    vi.useFakeTimers()
+    const manualStream = createManualSseStream()
+
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(manualStream.stream)
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    const pendingSend = sendMessage('开始流式回答')
+    await flushUi()
+
+    manualStream.push({
+      type: SSE_EVENT_TYPES.TOKEN,
+      payload: { content: '第一段' },
+    })
+    await flushUi()
+
+    expect(chatStore.streamingContent).toBe('')
+
+    vi.advanceTimersByTime(24)
+    await flushUi()
+
+    expect(chatStore.streamingContent).toBe('第一段')
+
+    manualStream.push({
+      type: SSE_EVENT_TYPES.TOKEN,
+      payload: { content: '第二段' },
+    })
+    manualStream.push({
+      type: SSE_EVENT_TYPES.DONE,
+      payload: {
+        entryId: 'assistant-buffered',
+        sessionId: 'session-1',
+        content: '第一段第二段',
+        timestamp: 1_741_683_261_000,
+      },
+    })
+    manualStream.close()
+
+    await pendingSend
+
+    const assistant = chatStore.messages.find(message => message.id === 'assistant-buffered')
+    expect(assistant?.content).toBe('第一段第二段')
+    expect(chatStore.streamingContent).toBe('')
   })
 
   it('allows attachment-only sends when attachmentIds exist', async () => {

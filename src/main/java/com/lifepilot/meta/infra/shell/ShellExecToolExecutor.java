@@ -3,6 +3,8 @@ package com.lifepilot.meta.infra.shell;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolResultMeta;
+import com.lifepilot.tool.model.ToolResultStatus;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -213,24 +215,32 @@ public class ShellExecToolExecutor {
             Thread.sleep(Math.min(yieldMs, 120_000)); // 上限 120 秒
 
             // 检查进程是否已完成
-            var processes = backgroundProcessManager.listProcesses();
-            var processInfo = processes.stream()
-                    .filter(p -> p.sessionId().equals(sessionId))
-                    .findFirst()
-                    .orElse(null);
-
-            if (processInfo != null && processInfo.state() != ProcessState.RUNNING) {
+            var processInfo = backgroundProcessManager.getProcessInfo(sessionId);
+            if (processInfo.state() != ProcessState.RUNNING) {
                 // 进程已完成，收集输出并返回同步结果
-                String output = backgroundProcessManager.readOutput(sessionId);
+                ProcessOutputChunk outputChunk = backgroundProcessManager.readOutputChunk(sessionId);
+                int exitCode = processInfo.exitCode() != null
+                        ? processInfo.exitCode()
+                        : processInfo.state() == ProcessState.COMPLETED ? 0 : 1;
+                String stdout = truncateOutput(outputChunk.stdout(), shellConfig.getMaxOutputLength());
+                String stderr = truncateOutput(outputChunk.stderr(), shellConfig.getMaxOutputLength());
+                String output = truncateOutput(outputChunk.output(), shellConfig.getMaxOutputLength());
                 var data = new LinkedHashMap<String, Object>();
-                data.put("exitCode", processInfo.state() == ProcessState.COMPLETED ? 0 : 1);
-                data.put("stdout", truncateOutput(output, shellConfig.getMaxOutputLength()));
-                data.put("stderr", "");
+                data.put("exitCode", exitCode);
+                data.put("stdout", stdout);
+                data.put("stderr", stderr);
+                data.put("output", output);
 
                 log.debug("yieldMs 模式: 进程在等待期间完成, sessionId={}, state={}", sessionId, processInfo.state());
 
-                if (processInfo.state() == ProcessState.FAILED) {
-                    return ToolResult.error("命令执行失败: " + output);
+                if (processInfo.state() != ProcessState.COMPLETED) {
+                    String errorMessage = !stderr.isBlank() ? stderr : stdout;
+                    return new ToolResult(
+                            ToolResultStatus.ERROR,
+                            Map.copyOf(data),
+                            "命令执行失败 (exitCode=" + exitCode + "): " + errorMessage,
+                            ToolResultMeta.empty()
+                    );
                 }
                 return ToolResult.success(Map.copyOf(data));
             }
