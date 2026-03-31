@@ -43,21 +43,20 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 手动 tool calling（internalToolExecutionEnabled=false），完全控制工具执行流程
 - ContextAssembler 上下文组装（记忆检索 + Token 预算动态分配）
 - 5 种挂起/恢复场景（WorkflowWait / UserConfirmation / RemoteDelegation / ScheduledWakeup / ExternalDataWait）
-- ReactStep sealed interface 6 种步骤类型 + 不可变状态快照
+- ReactStep sealed interface 7 种步骤类型（Progress / Thought / ToolCall / Observation / Answer / Suspend / Resume） + 不可变状态快照
 
 ### 🔀 多 LLM 智能路由
-- LlmRouter 场景路由：按 scene / modelName / capability 三级匹配
-- ProviderRegistry 运行时动态管理，Web UI 可视化配置
+- GenerationRouter / EmbeddingRouter / RerankRouter / MultimodalRouter 按能力分离路由
+- ModelServiceRegistry DB 持久化模型服务注册 + Web UI 可视化配置
 - CircuitBreaker 熔断器（Closed → Open → HalfOpen 三态）+ ExponentialBackoff 故障转移
 - SemanticCache 语义缓存（scene + responseFormatKey + prompt 三维匹配）
-- 支持 DeepSeek / OpenAI / Anthropic Claude / 通义千问 / Ollama（本地）等多家服务商
 
 ### 🎯 Skill 技能系统
 - 两层工具架构（ToolContract sealed interface）：BuiltinTool（Java Native）→ McpTool（External）
 - 7 大元能力维度（ToolCategory）：感知 / 行动 / 认知 / 存储 / 交互 / 自省 / 扩展
 - Skill 验证三阶段管线：FormatValidator → SecurityValidator → SandboxValidator
-- Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 YAML Skill
-- 内置 Skill：通用数据存储 / 定时任务 / 记忆管理
+- Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 Markdown SKILL.md
+- 内置 33 个 Skill：记忆管理 / 定时任务 / 浏览器自动化 / 代码助手 / 数据分析 等
 - DynamicToolRegistry 运行时工具注册表，支持热加载
 
 ### 📚 知识库管理
@@ -72,8 +71,8 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ### 🤝 多 Agent 协作
 - AgentRegistry + AgentDefinition 注册管理
-- HandoffTool 委托工具模式，SubAgent 独立预算和上下文
-- 预设专家 Agent（写作 / 分析 / 调研）
+- spawn_workers 并行 Worker 派发，SubAgent 独立预算和上下文
+- AgentDefinition Markdown 定义，支持自定义 Agent 蓝图
 
 ### 🔄 工作流引擎
 - YAML 声明式工作流定义
@@ -95,7 +94,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ### 🌐 Gateway 中间件
 - 6 层可插拔中间件管道（Auth=100 → RateLimit=200 → Security=300 → Router=400 → Execution=500 → Audit=600）
-- ChannelAdapter 适配器：Web / CLI / 企业微信 / 钉钉 / 飞书
+- 渠道插件架构：Web / 企业微信 / 钉钉 / 飞书（插件式加载）
 - SecurityMiddleware：PromptInjectionDetector + SensitiveDataDetector + TrustScoreCalculator
 - AuditMiddleware：DataRedactor 自动脱敏 + 审计日志
 
@@ -118,9 +117,9 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ### 🔗 协议支持
 - A2A 协议：Agent Card 能力声明 + 跨系统 Agent 互操作
-- 插件市场：Skill / Agent / Workflow 发布与安装
+- 扩展市场：Skill / Agent / Workflow / Channel 发布与安装
 
-### 🔄 外部数据源同步
+### 🔄 外部数据源同步（📋 规划中）
 - CalDAV / Todoist / 滴答清单 / Obsidian 连接器
 - 冲突解决策略（Last-Write-Wins / 用户确认）
 
@@ -303,13 +302,17 @@ ZhiWei/
 │   ├── eval/            # Agentic Evals 评估框架
 │   ├── interaction/     # 交互层（Web API / CLI / Gateway 中间件）
 │   ├── knowledge/       # 知识库管理（文档解析 / 分块 / 检索 / Reranker）
-│   ├── llm/             # LLM 路由（ProviderRegistry / CircuitBreaker / SemanticCache）
-│   ├── marketplace/     # 插件市场
+│   ├── llm/             # LLM 基础设施（CircuitBreaker / SemanticCache / Provider 适配）
+│   ├── generation/      # 生成路由（GenerationRouter）
+│   ├── embedding/       # 向量嵌入路由（EmbeddingRouter）
+│   ├── rerank/          # 重排序路由（RerankRouter）
+│   ├── modelservice/    # 模型服务注册（ModelServiceRegistry）
+│   ├── marketplace/     # 扩展市场（Extension Marketplace）
 │   ├── mcp/             # MCP 协议（McpServerRegistry / McpServerDiscovery）
 │   ├── media/           # 多模态处理（图片 / 音频 / 视频）
 │   ├── memory/          # 四层记忆系统（Working / Episodic / Semantic / Procedural / 经验学习）
 │   ├── meta/            # 元能力（文件工具 / 浏览器工具 / 基础设施工具 / 交互工具）
-│   ├── multiagent/      # 多 Agent 协作（Handoff / SubAgent）
+│   ├── multiagent/      # 多 Agent 协作（spawn_workers / AgentExecutor）
 │   ├── notification/    # 统一通知系统（直接投递 / 历史 / SSE）
 │   ├── observability/   # 可观测性（TraceRecorder / GuardrailEngine / DataRedactor）
 │   ├── permission/      # 工具授权（作用域匹配 / 预授权 / 授权记录）
@@ -471,7 +474,7 @@ ZhiWei 本身免费开源，但需要自备 LLM API Key（如 DeepSeek、OpenAI 
 
 ### 支持哪些 LLM？
 
-支持 DeepSeek、OpenAI、Anthropic Claude、通义千问、Ollama（本地）等多种 LLM Provider。通过 ProviderRegistry 运行时动态管理，Web UI 可视化配置。
+支持 DeepSeek、OpenAI、Anthropic Claude、通义千问、Ollama（本地）等多种 LLM Provider。通过 ModelServiceRegistry 数据库管理，Web UI 可视化配置。
 
 ### 如何自定义 Skill？
 

@@ -52,7 +52,7 @@ graph TB
     subgraph "检索层"
         DR["DocumentRetriever<br/>(双路 RRF 融合)"]
         QE["QueryEnhancer<br/>(rewrite / HyDE / none)"]
-        RR["Reranker<br/>(sealed: LLM / API)"]
+        RR["RerankRouter<br/>(com.lifepilot.rerank.router)"]
         DR --> QE
         DR --> RR
     end
@@ -135,11 +135,10 @@ graph TB
 - 三种模式：`rewrite`（生成查询改写变体）、`hyde`（生成假设文档 Embedding）、`none`（不增强）
 - 带独立超时控制，LLM 不可用时降级返回原始查询
 
-### 3.8 Reranker（精排器体系）
+### 3.8 Reranker（精排器）
 
-- 通过 sealed interface 定义，当前 2 种实现：
-  - `LlmReranker`：使用 LLM 对候选结果评分排序（支持 pointwise / listwise 模式）
-  - `ApiReranker`：调用外部 Reranker API（如 Jina）进行精排
+- 精排功能由 `RerankRouter`（`com.lifepilot.rerank.router`）提供
+- `RerankRouter` 统一路由到不同的精排后端（LLM 精排、外部 API 精排等），调用方无需关心具体实现
 - 可选启用，通过配置选择精排类型和模型
 
 ### 3.9 KnowledgeExtractionPipeline（知识提取管线）
@@ -276,7 +275,7 @@ sequenceDiagram
 | 文档解析 | Apache Tika 格式检测 + 4 种解析器 | Tika 提供可靠的格式检测，sealed interface 保证类型安全 |
 | 双路检索融合 | 向量 + FTS5 + 自适应 RRF | 语义检索和关键词检索互补，自适应权重处理低置信度场景 |
 | 查询增强 | rewrite / HyDE / none 三模式 | rewrite 适合模糊查询，HyDE 适合专业领域，none 适合精确查询 |
-| 精排器 | LLM + API 双实现 | LLM 精排无需额外服务，API 精排性能更好；sealed interface 保证穷举 |
+| 精排器 | RerankRouter 统一路由 | 通过路由器统一接入不同精排后端（LLM / API），调用方无需关心实现细节 |
 | 断点续传 | DocumentStatus 阶段记录 | 大文档摄入可能耗时较长，断点续传避免重复处理 |
 | 上下文增强 | LLM 生成分块上下文前缀 | 独立分块可能缺乏上下文，前缀增强提升检索精度 |
 

@@ -116,6 +116,7 @@ graph TB
 ### 3.4 SemanticMemory（L3 语义记忆）
 
 - `SemanticMemory` 存放版本化实体与关系，是稳定事实、用户画像和经验实体的主存储
+- `EntityType` 枚举包含 12 种类型：PERSON、ORGANIZATION、PLACE、EVENT、PROJECT、TOPIC、PREFERENCE、HABIT、GOAL、SKILL、EXPERIENCE、CUSTOM
 - `RealtimeExtractor` 在对话后异步提取实体写入 L3
 - `ContextAssembler` 当前自动注入的长期信息主要来自：
   - `PREFERENCE / HABIT / GOAL`
@@ -130,6 +131,8 @@ graph TB
 ### 3.6 HybridRetriever 与记忆工具
 
 - `HybridRetriever` 继续负责 L3/L4 的混合检索，包含向量、FTS 和图遍历三路融合
+- `HybridRetriever` 支持可选的 `RerankRouter` 步骤，对记忆候选进行精排重排序
+- `HybridRetriever` 实现 `knownEmpty` 短路优化：当检索空间已知为空时，跳过实际检索直接返回空结果
 - `MemoryToolProvider` 当前注册 9 个记忆工具：
   - `memory.search`
   - `memory.recall`

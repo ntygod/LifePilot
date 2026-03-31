@@ -10,7 +10,7 @@
 
 删除 CLI 模式、Tray 模式和 LaunchMode 枚举，后端统一为纯 Web 服务器：
 
-- `java -jar lifepilot.jar` 启动即为完整后端服务
+- `java -jar zhiwei.jar` 启动即为完整后端服务
 - 不再支持 `--mode=cli` / `--mode=tray` 等启动参数
 - 自主任务通知走 IM Channel（企微/钉钉/飞书）或未来 Web Push
 - 如需桌面客户端体验，远期可用 Tauri WebView 包装本地 Web UI

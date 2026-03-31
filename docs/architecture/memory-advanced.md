@@ -63,7 +63,7 @@ graph TB
         EM["EpisodicMemory (L2)"]
         SM["SemanticMemory (L3)"]
         VS["VectorSearcher"]
-        LLM["LlmRouter"]
+        LLM["GenerationRouter"]
     end
 
     E2S -->|"读取近期对话"| EM
@@ -72,7 +72,7 @@ graph TB
     E2P -->|"写入模板"| PM
     FE -->|"获取/归档实体"| SM
     IM -->|"向量匹配"| VS
-    RS -->|"摘要压缩"| LLM
+    RS -->|"摘要压缩"| GenerationRouter
 ```
 
 ## 3. 核心组件
@@ -122,7 +122,7 @@ graph TB
 
 - 职责：定时执行认知遗忘，维持记忆系统健康容量
 - 核心流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 选择候选 → 执行遗忘动作 → 记录日志
-- 受保护实体（永不遗忘）：PREFERENCE / HABIT / GOAL 类型，或 importanceScore ≥ 0.9
+- 受保护实体（永不遗忘）：受保护类型（可配置，`config.getProtectedTypes()`，默认 PREFERENCE / HABIT / GOAL），或 importanceScore ≥ 保护阈值（可配置，`config.getProtectionThreshold()`，默认 0.9）
 - 遗忘动作决策：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档
 - LLM 压缩失败时降级为直接归档
 
@@ -192,11 +192,11 @@ sequenceDiagram
     participant FE as ForgettingEngine
     participant SM as SemanticMemory
     participant HP as HybridPolicy
-    participant LLM as LlmRouter
+    participant LLM as GenerationRouter
 
     SCH->>FE: scheduledForget()
     FE->>SM: findAllCurrent()
-    FE->>FE: 过滤受保护实体（PREFERENCE/HABIT/GOAL, importance≥0.9）
+    FE->>FE: 过滤受保护实体（config.getProtectedTypes() 默认 PREFERENCE/HABIT/GOAL, importance≥config.getProtectionThreshold() 默认 0.9）
 
     FE->>HP: selectForForgetting(candidates, maxPerRun)
     Note over HP: 四阶段遗忘：FIFO → LRU → PriorityDecay → ReflectionSummary
@@ -233,7 +233,7 @@ sequenceDiagram
 | EpisodicMemory (L2) | 构造函数注入 | 巩固管线读取近期对话数据 |
 | SemanticMemory (L3) | 构造函数注入 | 巩固写入实体、遗忘归档实体 |
 | VectorSearcher | 构造函数注入 | IntentMatcher 和 ProceduralMemory 的向量匹配 |
-| LlmRouter | 构造函数注入（@Nullable） | ReflectionSummaryPolicy 摘要压缩、EpisodicToProcedural 模式识别 |
+| GenerationRouter | 构造函数注入（@Nullable） | ReflectionSummaryPolicy 摘要压缩、EpisodicToProcedural 模式识别 |
 | PromptRegistry | 构造函数注入 | 遗忘压缩提示词模板 |
 | KnowledgeExtractionPipeline | ObjectProvider 延迟获取 | EpisodicToSemantic 可选使用知识提取管线 |
 

@@ -35,7 +35,7 @@ graph TB
         FE["ForgettingEngine"]
         LR["LlmReranker"]
         CE["ChunkContextEnricher"]
-        SP["BuiltinSkillProvider（各 Skill）"]
+        SP["SkillDisclosureTool / SkillGenerator"]
         SG["SkillGenerator"]
     end
 
@@ -122,8 +122,8 @@ sequenceDiagram
 | agent（ContextAssembler / AgentLoop） | agent → prompt | 渲染 Agent 系统提示词与任务模式提示词（react-system / react-system-task / react-user-prompt） |
 | memory（CompressionService / ForgettingEngine） | memory → prompt | 渲染对话压缩和实体压缩提示词 |
 | memory（ConflictDetector） | memory → prompt | 渲染实体消歧义提示词 |
-| knowledge（LlmReranker / ChunkContextEnricher） | knowledge → prompt | 渲染重排序和分块上下文提示词 |
-| skill（BuiltinSkillProvider 各实现） | skill → prompt | 渲染内置 Skill 的 instructions 提示词 |
+| knowledge（RerankRouter / ChunkContextEnricher） | knowledge → prompt | 渲染重排序和分块上下文提示词 |
+| skill（SkillDisclosureTool / SkillGenerator） | skill → prompt | 渲染 Skill 的 instructions 提示词 |
 | skill（SkillGenerator） | skill → prompt | 渲染 Skill 自动生成提示词 |
 | sync（SyncSkillProvider） | sync → prompt | 渲染同步 Skill 的 instructions 提示词 |
 

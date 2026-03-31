@@ -64,7 +64,7 @@ graph TB
 
 - 职责：工具生态的核心抽象，所有工具必须实现此接口
 - 两个 permits：`BuiltinTool`（Java 内置）、`McpTool`（MCP 外部）
-- 关键属性：`id()`、`riskLevel()`、`idempotent()`、`budget()`、`layer()`、`inputSchema()`、`outputSchema()`
+- 关键属性：`id()`、`name()`、`description()`、`riskLevel()`、`idempotent()`、`budget()`、`layer()`、`inputSchema()`、`outputSchema()`、`executionSemantics()`、`schedulingMode()`、`tags()`、`category()`、`exportable()`、`composable()`
 - 关键方法：`execute(ToolInput)` → `ToolResult`
 
 ### 3.2 DynamicToolRegistry

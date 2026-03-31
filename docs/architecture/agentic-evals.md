@@ -101,8 +101,8 @@ eval 和 observability 模块各有一个 `TrajectoryEvaluator`，均委托给 `
 ### 3.6 LlmJudge — LLM 语义评判
 
 使用 LLM 评估 Agent 输出的语义质量。三级降级策略：
-1. 优先使用 `LlmRouter.callEntity()` 结构化输出解析为 `JudgeResponse`
-2. 降级到 `LlmRouter.call()` + 正则手动解析
+1. 优先使用 `GenerationRouter.callEntity()` 结构化输出解析为 `JudgeResponse`
+2. 降级到 `GenerationRouter.call()` + 正则手动解析
 3. 再降级到简化 Prompt（仅要求返回数字评分）
 
 评判结果为 `JudgeResult` record（score + justification + tokensUsed + degraded 标记）。
@@ -190,7 +190,7 @@ sequenceDiagram
 |---------|------|------|
 | Agent 引擎（`agent`） | eval → agent | `EvalEngine` 调用 `AgentLoop.run()` 执行场景 |
 | 可观测性（`observability`） | eval → observability | 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹步骤；`EvaluationCore` 提供共享五维评估逻辑 |
-| LLM Router（`llm`） | eval → llm | `LlmJudge` 通过 `LlmRouter` 调用 LLM 进行语义评估 |
+| LLM Router（`llm`） | eval → llm | `LlmJudge` 通过 `GenerationRouter` 调用 LLM 进行语义评估 |
 | 工具系统（`tool`） | eval → tool | `EvalEngine` 通过 `DynamicToolRegistry` 注入/注销 Mock 工具 |
 | JUnit 5 | eval ← junit | `@EvalTest` / `@EvalSuite` 注解驱动评估执行 |
 

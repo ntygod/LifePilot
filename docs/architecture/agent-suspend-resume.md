@@ -33,7 +33,9 @@ ReactAgentLoop 当前是「一次性执行到底」的模型 — 从 `run()` / `
 | `SessionManager` + `SessionSnapshot` | 会话上下文已有持久化基础 |
 | `SseSessionManager` | 推送 SUSPENDED / RESUMED 事件通知前端 |
 | Virtual Thread | 恢复时在新 Virtual Thread 上重新进入 coreLoop，不阻塞平台线程 |
-| `ToolResultStatus` 枚举 | 可新增 `SUSPENDED` 状态，不破坏现有 record 结构 |
+| JSON 输出解析 | LLM 输出 `_suspend` + `_suspendReason` 字段触发挂起检测 |
+| `<await_user_input>` 标签 | 通过 `ExecutionCompletionPolicy` 提供额外的挂起路径 |
+| `ToolExecutionCoordinator` | 工具执行委托给 `ToolExecutionCoordinator.executeBatch()` 批量执行 |
 
 ### 2.2 结论
 
@@ -170,28 +172,13 @@ public sealed interface ReactStep permits
 
 Suspend / Resume 作为 ReactStep 的一等公民，自然融入 steps 列表，Trace 和 Observability 无需特殊处理即可记录挂起-恢复事件。
 
-### 3.4 ToolResultStatus 扩展
+### 3.4 挂起检测机制
 
-```java
-public enum ToolResultStatus {
-    SUCCESS,
-    ERROR,
-    PARTIAL_SUCCESS,
-    RATE_LIMITED,
-    SUSPENDED;       // 新增
+挂起检测使用 JSON 输出解析方式，而不是 `ToolResultStatus` 枚举。当 LLM 输出中包含 `_suspend` 和 `_suspendReason` 字段时，coreLoop 解析这些字段触发挂起流程。
 
-    public boolean isSuccess() { return this == SUCCESS; }
+此外，`<await_user_input>` 标签提供额外的挂起路径，由 `ExecutionCompletionPolicy` 处理。
 
-    public boolean isTerminal() {
-        return this == SUCCESS || this == ERROR;
-    }
-
-    /** 是否需要挂起 Agent 循环。 */
-    public boolean isSuspend() { return this == SUSPENDED; }
-}
-```
-
-工具返回 `SUSPENDED` 时，coreLoop 不将其视为失败，而是触发挂起流程。
+工具执行统一委托给 `ToolExecutionCoordinator.executeBatch()`，而不是逐个调用。
 
 ### 3.5 ReactAgentState 扩展
 
@@ -228,61 +215,48 @@ public ReactAgentState resume() {
 
 ### 3.6 coreLoop 挂起检测
 
-在 coreLoop 的工具执行后插入通用挂起检测逻辑：
+在 coreLoop 中，挂起检测基于 JSON 输出解析。工具执行统一委托给 `ToolExecutionCoordinator.executeBatch()`：
 
 ```java
-// 在 executeToolCall 返回后检查
-for (var tc : toolCalls) {
-    state = executeToolCall(state, tc, toolCallbacks, ...);
+// 工具批量执行
+var batchResult = toolExecutionCoordinator.executeBatch(toolCalls, toolCallbacks, ...);
+state = batchResult.updatedState();
 
-    // ★ 通用挂起检测 — 不绑定任何特定工具
-    if (state.suspended()) {
-        log.info("Agent 进入挂起态: traceId={}, reason={}",
-                state.traceId(), state.suspendReason());
-        state = state.appendStep(new ReactStep.Suspend(
-                state.suspendReason(),
-                Instant.now(),
-                state.stepCount()));
-        // 冻结 Budget 时间
-        state = state.toBuilder()
-                .budget(state.budget().withElapsed(
-                        Duration.between(loopStart, Instant.now())))
-                .build();
-        break; // 退出 tool call 循环
-    }
-    if (cancellationToken.isCancelled()) break;
+// ★ 通用挂起检测 — 解析 LLM 输出中的 _suspend / _suspendReason 字段
+if (state.suspended()) {
+    log.info("Agent 进入挂起态: traceId={}, reason={}",
+            state.traceId(), state.suspendReason());
+    state = state.appendStep(new ReactStep.Suspend(
+            state.suspendReason(),
+            Instant.now(),
+            state.stepCount()));
+    // 冻结 Budget 时间
+    state = state.toBuilder()
+            .budget(state.budget().withElapsed(
+                    Duration.between(loopStart, Instant.now())))
+            .build();
+    break; // 退出循环
 }
 
-// 外层 for 循环也需要检测
-if (state.suspended()) break;
-```
-
-关键设计：coreLoop 本身不知道「为什么」挂起，只检查 `state.suspended()` 布尔标志。挂起原因由具体的工具执行逻辑（或 Guardrail 拦截器）设置到 state 中。
-
-### 3.7 executeToolCall 中的挂起触发
-
-工具执行返回 `ToolResultStatus.SUSPENDED` 时，在 executeToolCall 中设置挂起态：
-
-```java
-private ReactAgentState executeToolCall(...) {
-    // ... 现有逻辑 ...
-
-    ToolResult toolResult = matchedCallback.call(inputJson);
-
-    if (toolResult.status().isSuspend()) {
-        // 从 toolResult.data() 中反序列化 SuspendReason
-        SuspendReason reason = parseSuspendReason(toolResult);
-        state = state.suspend(reason);
-        state = state.appendStep(new ReactStep.Observation(
-                toolId, true, "工具请求挂起: " + reason, 0));
-        return state;
-    }
-
-    // ... 正常处理逻辑 ...
+// ★ <await_user_input> 标签路径 — 通过 ExecutionCompletionPolicy 检测
+if (executionCompletionPolicy.shouldSuspend(state)) {
+    // 同样触发挂起流程
+    break;
 }
+
+if (cancellationToken.isCancelled()) break;
 ```
 
-注意：不是所有挂起都由工具触发。UserConfirmation 场景由 Guardrail 拦截器在工具执行前触发，此时 executeToolCall 尚未被调用。Guardrail 直接设置 `state.suspend(new UserConfirmation(...))` 并跳过工具执行。
+关键设计：coreLoop 本身不知道「为什么」挂起，只检查 `state.suspended()` 布尔标志。挂起原因由 JSON 输出字段解析（`_suspend` + `_suspendReason`）或 `ExecutionCompletionPolicy`（`<await_user_input>` 标签）设置到 state 中。
+
+### 3.7 挂起触发路径
+
+挂起有两条触发路径：
+
+1. **JSON 输出解析**：LLM 输出包含 `_suspend` + `_suspendReason` 字段时，coreLoop 解析并设置挂起态
+2. **`<await_user_input>` 标签**：通过 `ExecutionCompletionPolicy` 检测并触发挂起
+
+注意：不是所有挂起都由工具触发。UserConfirmation 场景由 Guardrail 拦截器在工具执行前触发，Guardrail 直接设置 `state.suspend(new UserConfirmation(...))` 并跳过工具执行。
 
 ### 3.8 run() / runStreaming() 挂起处理
 
@@ -293,6 +267,7 @@ coreLoop 退出后，run() 和 runStreaming() 需要区分「正常完成」和�
 state = coreLoop(state, request, traceContext, loopStart, callback, token, null, null);
 
 if (state.suspended()) {
+    // SSE 挂起事件先于持久化发送（降低延迟）
     // 持久化挂起状态
     suspendStore.save(SuspendedAgent.from(state));
     return new AgentResponse(
@@ -310,13 +285,14 @@ if (state.suspended()) {
 state = coreLoop(state, request, traceContext, loopStart, callback, token, sseManager, streamId);
 
 if (state.suspended()) {
-    suspendStore.save(SuspendedAgent.from(state));
-    // 推送 SUSPENDED 事件通知前端
+    // 推送 SUSPENDED 事件通知前端（先于持久化，降低延迟）
     var suspendData = Map.of(
             "traceId", state.traceId(),
             "sessionId", state.sessionId(),
             "reason", serializeSuspendReason(state.suspendReason()));
     sseManager.sendEvent(streamId, SseEventType.AGENT_SUSPENDED, suspendData);
+    // 持久化在 SSE 事件之后
+    suspendStore.save(SuspendedAgent.from(state));
     sseManager.closeEmitter(streamId);
     return;
 }
@@ -325,7 +301,10 @@ if (state.suspended()) {
 
 ### 3.9 resumeFromSuspend() — 通用恢复入口
 
+`resumeFromSuspend()` 位于 `AgentOrchestrator`（而非 `ReactAgentLoop`）：
+
 ```java
+// AgentOrchestrator 上的方法
 /**
  * 从挂起态恢复 Agent 执行。
  *
@@ -458,7 +437,7 @@ ExternalDataWatcher     → ExternalDataReadyEvent     ─┘  resumeFromSuspend
 @Component
 public class AgentResumeListener {
 
-    private final ReactAgentLoop agentLoop;
+    private final AgentOrchestrator agentOrchestrator;
     private final SuspendStore suspendStore;
 
     /** 工作流完成 → 恢复等待该工作流的 Agent。 */
@@ -467,7 +446,7 @@ public class AgentResumeListener {
         suspendStore.findByReasonType("WorkflowWait").stream()
                 .filter(sa -> matchWorkflow(sa, event.executionId()))
                 .findFirst()
-                .ifPresent(sa -> agentLoop.resumeFromSuspend(
+                .ifPresent(sa -> agentOrchestrator.resumeFromSuspend(
                         sa.traceId(),
                         new ResumePayload.WorkflowResult(
                                 event.executionId(),
@@ -481,7 +460,7 @@ public class AgentResumeListener {
         suspendStore.findByReasonType("UserConfirmation").stream()
                 .filter(sa -> matchConfirmation(sa, event.confirmationId()))
                 .findFirst()
-                .ifPresent(sa -> agentLoop.resumeFromSuspend(
+                .ifPresent(sa -> agentOrchestrator.resumeFromSuspend(
                         sa.traceId(),
                         new ResumePayload.UserDecision(
                                 event.confirmationId(),
@@ -581,9 +560,9 @@ public final class SseEventType {
  │                  │                  │               │── appendStep(Suspend) ──→    │               │
  │                  │                  │←── state(suspended=true) ──│               │               │
  │                  │                  │                              │               │               │
- │                  │                  │── save ─────────────────────→│               │               │
  │                  │                  │── SSE: AGENT_SUSPENDED ────→│               │               │
  │←── 挂起通知 ────│                  │               │             │               │               │
+ │                  │                  │── save ─────────────────────→│               │               │
  │                  │                  │               │             │               │               │
  │   ... 时间流逝 ...                  │               │             │               │               │
  │                  │                  │               │             │               │               │

@@ -44,9 +44,9 @@ graph TB
     end
 
     subgraph "引擎层"
-        AGENT["Agent 引擎<br/>ReactAgentLoop + ReactAgentState"]
+        AGENT["Agent 引擎<br/>AgentOrchestrator + ReactAgentLoop"]
         TASK["自主任务<br/>HeartbeatRunner"]
-        MULTI["多 Agent 协作<br/>HandoffTool"]
+        MULTI["多 Agent 协作<br/>spawn_workers"]
         CTX["ContextAssembler<br/>上下文组装"]
     end
 
@@ -139,7 +139,7 @@ graph TB
 | `media` | 多模态处理（图片预处理、音频、文档格式检测） | [架构](architecture/multimodal.md) · [特性](features/multimodal.md) |
 | `sync` | 外部数据源同步（CalDAV/Todoist/滴答清单/Obsidian）、冲突解决（规划中，尚未实现） | [架构](architecture/external-data-sync.md) · [特性](features/external-data-sync.md) |
 | `eval` | Agentic Evals 评估框架、YAML 场景、五维规则评估、LLM-as-a-Judge | [架构](architecture/agentic-evals.md) · [特性](features/agentic-evals.md) |
-| `multiagent` | 多 Agent 协作、AgentRegistry、HandoffTool 委托模式 | [架构](architecture/multi-agent.md) · [特性](features/multi-agent.md) |
+| `multiagent` | 多 Agent 协作、AgentRegistry、spawn_workers 并行 Worker 执行 | [架构](architecture/multi-agent.md) · [特性](features/multi-agent.md) |
 | `a2a` | Agent-to-Agent 协议、Client/Server 实现、Agent Card | [架构](architecture/a2a-protocol.md) · [特性](features/a2a-protocol.md) |
 | `marketplace` | 插件市场、Skill 发布/发现/安装、安全审核 | [架构](architecture/skill-marketplace.md) · [特性](features/skill-marketplace.md) |
 | `meta` | 元能力（便捷指令、基础设施工具） | [架构](architecture/meta-capabilities.md) · [特性](features/meta-capabilities.md) |
@@ -204,7 +204,7 @@ graph LR
 ```mermaid
 graph TB
     subgraph "生产部署"
-        JAR["lifepilot.jar<br/>单 JAR（后端 + SQLite native + sqlite-vec native）"]
+        JAR["zhiwei.jar<br/>单 JAR（后端 + SQLite native + sqlite-vec native）"]
         WEBDIST["zhiwei-web/dist<br/>前端静态资源"]
         NGINX["Nginx / 静态服务器"]
     end

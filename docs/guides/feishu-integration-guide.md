@@ -4,6 +4,8 @@
 > **适用范围**：`com.lifepilot.interaction.channel.feishu`
 > **最后更新**：2026-03-11
 
+> ⚠️ 本指南基于旧版 ChannelAdapter 架构编写。飞书渠道已迁移至插件架构，具体参见 [channel-plugin-architecture.md](../architecture/channel-plugin-architecture.md)。部分类名和流程可能已变更。
+
 ---
 
 ## 1. 文档目标
