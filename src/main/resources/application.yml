@@ -867,6 +867,15 @@ lifepilot:
         exec-timeout-seconds: 120
         output-max-chars: 50000
         cleanup-interval-seconds: 60
+      kernel:
+        enabled: true
+        max-concurrent-kernels: 3
+        ttl-minutes: 30
+        cleanup-interval-seconds: 60
+        execution-timeout-seconds: 60
+        python-runtime: "python3"
+        node-runtime: "node"
+        max-output-chars: 50000
     introspection:
       cache-ttl-seconds: 60
       debounce-millis: 500

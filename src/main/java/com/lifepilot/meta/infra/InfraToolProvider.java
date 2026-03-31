@@ -4,6 +4,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
+import com.lifepilot.meta.infra.code.kernel.CodeKernelToolProvider;
+import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
@@ -161,12 +163,6 @@ public class InfraToolProvider {
         var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties);
         totalTools += registerBuiltinTools(toolRegistry, browserToolProvider.buildBrowserTools());
 
-        // 代码执行工具
-        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxSessionManager, codeValidator, sandboxRepository);
-        totalTools += registerBuiltinTools(toolRegistry, List.of(
-                buildCodeExecuteTool(codeExecuteExecutor)
-        ));
-
         // 文件系统工具（委托给 FileToolProvider）
         var fileEditConfig = properties.getInfra().getFileEdit();
         var editHistory = new FileEditHistory(
@@ -231,12 +227,14 @@ public class InfraToolProvider {
         }
 
         // Shell 持久会话工具（委托给 SessionToolProvider）
+        // 提前创建 tmuxSessionManager，供 Shell 持久会话和代码内核共用
+        TmuxSessionManager tmuxSessionManager = null;
         var shellSessionConfig = properties.getInfra().getShellSession();
         if (shellSessionConfig.isEnabled()) {
             var tmuxCmd = new TmuxCommandExecutor(shellSessionConfig.getExecTimeoutSeconds());
             if (tmuxCmd.isTmuxAvailable()) {
-                var sessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig);
-                var sessionToolProvider = new SessionToolProvider(sessionManager);
+                tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig);
+                var sessionToolProvider = new SessionToolProvider(tmuxSessionManager);
                 totalTools += registerBuiltinTools(toolRegistry, sessionToolProvider.buildSessionTools());
                 log.info("Shell 持久会话工具注册完成: count={}", 8);
             } else {
@@ -244,7 +242,23 @@ public class InfraToolProvider {
             }
         }
 
-        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git, session]",
+        // 持久代码内核工具（委托给 CodeKernelToolProvider）
+        PersistentKernelManager kernelManager = null;
+        var kernelConfig = properties.getInfra().getKernel();
+        if (kernelConfig.isEnabled()) {
+            kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager);
+            var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
+            totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+            log.info("持久代码内核工具注册完成: count=2");
+        }
+
+        // 代码执行工具（支持持久内核路由）
+        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxSessionManager, codeValidator, sandboxRepository, kernelManager);
+        totalTools += registerBuiltinTools(toolRegistry, List.of(
+                buildCodeExecuteTool(codeExecuteExecutor)
+        ));
+
+        log.info("基础工具注册完成: count={}, categories=[web, reason, shell, browser, code, file, interact, workflow, task, process, git, session, kernel]",
                 totalTools);
     }
 
@@ -427,13 +441,15 @@ public class InfraToolProvider {
     //  代码执行工具构建
     // ─────────────────────────────────────────────
 
-    /** 构建代码执行工具 — 桥接 SandboxBooter，HIGH 风险。 */
+    /** 构建代码执行工具 — 桥接 SandboxBooter，HIGH 风险。支持 kernelId 路由到持久内核。 */
     private BuiltinTool buildCodeExecuteTool(CodeExecuteToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
                 .name("执行代码")
-                .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell。HIGH 风险，每次执行需用户确认")
+                .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell。" +
+                        "如果提供 kernelId 参数，将使用持久内核执行（跨调用保持变量状态），适合数据分析等需要上下文连续的场景。" +
+                        "HIGH 风险，每次执行需用户确认")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("code"),
@@ -443,7 +459,9 @@ public class InfraToolProvider {
                                 "language", Map.of("type", "string",
                                         "description", "编程语言（python/javascript/shell），默认使用配置值"),
                                 "timeoutSeconds", Map.of("type", "integer",
-                                        "description", "执行超时时间（秒），默认 30")
+                                        "description", "执行超时时间（秒），默认 30"),
+                                "kernelId", Map.of("type", "string",
+                                        "description", "持久内核 ID。提供此参数时使用持久内核（跨调用保持变量），不提供则使用一次性沙箱")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

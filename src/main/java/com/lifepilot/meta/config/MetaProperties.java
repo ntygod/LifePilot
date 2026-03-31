@@ -77,6 +77,9 @@ public class MetaProperties {
         /** Shell 持久会话配置。 */
         private ShellSession shellSession = new ShellSession();
 
+        /** 持久代码内核配置。 */
+        private Kernel kernel = new Kernel();
+
         /**
          * Web 搜索配置。
          *
@@ -380,6 +383,40 @@ public class MetaProperties {
 
             /** 空闲清理调度间隔（秒），默认 60。 */
             private int cleanupIntervalSeconds = 60;
+        }
+
+        /**
+         * 持久代码内核配置。
+         *
+         * @author zsg
+         * @since 2026-03-31
+         */
+        @Data
+        public static class Kernel {
+
+            /** 功能开关，默认 true。 */
+            private boolean enabled = true;
+
+            /** 最大并发内核数，默认 3。 */
+            private int maxConcurrentKernels = 3;
+
+            /** 空闲超时（分钟），超时后自动清理内核，默认 30。 */
+            private int ttlMinutes = 30;
+
+            /** 空闲清理调度间隔（秒），默认 60。 */
+            private int cleanupIntervalSeconds = 60;
+
+            /** 默认执行超时（秒），默认 60。 */
+            private int executionTimeoutSeconds = 60;
+
+            /** Python 运行时路径，默认 python3。 */
+            private String pythonRuntime = "python3";
+
+            /** Node.js 运行时路径，默认 node。 */
+            private String nodeRuntime = "node";
+
+            /** 输出最大字符数，默认 50000。 */
+            private int maxOutputChars = 50000;
         }
     }
 
