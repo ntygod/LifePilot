@@ -107,7 +107,10 @@ class InfraToolProviderTest {
                 "git.commit",
                 "git.blame",
                 "git.stash",
-                "git.branch"
+                "git.branch",
+                // 代码持久内核（2）
+                "code.kernel.reset",
+                "code.kernel.inspect"
         );
         assertThat(tools).hasSize(expectedToolIds.size());
         assertThat(tools).extracting(BuiltinTool::id)
