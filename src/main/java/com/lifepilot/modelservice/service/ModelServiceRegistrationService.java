@@ -1,14 +1,18 @@
 package com.lifepilot.modelservice.service;
 
+import com.lifepilot.embedding.client.EmbeddingClientFactory;
+import com.lifepilot.generation.client.GenerationClientFactory;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.model.ModelServiceKind;
 import com.lifepilot.modelservice.repository.ModelServiceRepository;
 import com.lifepilot.modelservice.support.ModelServiceProviderConfigMapper;
+import com.lifepilot.rerank.client.RerankClientFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -32,11 +36,23 @@ public class ModelServiceRegistrationService {
 
     private final ModelServiceRepository modelServiceRepository;
     private final ProviderRegistry providerRegistry;
+    @Nullable
+    private final GenerationClientFactory generationClientFactory;
+    @Nullable
+    private final EmbeddingClientFactory embeddingClientFactory;
+    @Nullable
+    private final RerankClientFactory rerankClientFactory;
 
     public ModelServiceRegistrationService(ModelServiceRepository modelServiceRepository,
-                                           ProviderRegistry providerRegistry) {
+                                           ProviderRegistry providerRegistry,
+                                           @Nullable GenerationClientFactory generationClientFactory,
+                                           @Nullable EmbeddingClientFactory embeddingClientFactory,
+                                           @Nullable RerankClientFactory rerankClientFactory) {
         this.modelServiceRepository = modelServiceRepository;
         this.providerRegistry = providerRegistry;
+        this.generationClientFactory = generationClientFactory;
+        this.embeddingClientFactory = embeddingClientFactory;
+        this.rerankClientFactory = rerankClientFactory;
     }
 
     /**
@@ -74,6 +90,8 @@ public class ModelServiceRegistrationService {
             return;
         }
 
+        evictClientCaches(service.id());
+
         if (providerRegistry.getConfig(service.id()).isPresent()) {
             providerRegistry.deregister(service.id());
         }
@@ -87,6 +105,7 @@ public class ModelServiceRegistrationService {
      * @param serviceId 服务 ID
      */
     public void deregisterService(String serviceId) {
+        evictClientCaches(serviceId);
         if (providerRegistry.getConfig(serviceId).isPresent()) {
             providerRegistry.deregister(serviceId);
             log.info("模型服务已从运行时注销: id={}", serviceId);
@@ -103,5 +122,21 @@ public class ModelServiceRegistrationService {
             case EMBEDDING -> ModelServiceProviderConfigMapper.toEmbeddingProviderConfig(service);
             case RERANK -> throw new IllegalArgumentException("RERANK 服务不应注册到 ProviderRegistry");
         };
+    }
+
+    /**
+     * 驱逐所有客户端工厂中该服务的缓存实例，确保下次调用时基于最新配置重建。
+     */
+    private void evictClientCaches(String serviceId) {
+        if (generationClientFactory != null) {
+            generationClientFactory.evict(serviceId);
+        }
+        if (embeddingClientFactory != null) {
+            embeddingClientFactory.evict(serviceId);
+        }
+        if (rerankClientFactory != null) {
+            rerankClientFactory.evict(serviceId);
+        }
+        log.debug("已清除客户端工厂缓存: serviceId={}", serviceId);
     }
 }

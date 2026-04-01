@@ -34,4 +34,13 @@ public class EmbeddingClientFactory {
             return new SpringAiEmbeddingClient(adapter);
         });
     }
+
+    /**
+     * 驱逐指定服务的缓存客户端，下次调用时将基于最新配置重建。
+     *
+     * @param serviceId 服务 ID
+     */
+    public void evict(String serviceId) {
+        cache.remove(serviceId);
+    }
 }

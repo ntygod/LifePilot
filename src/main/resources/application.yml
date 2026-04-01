@@ -57,11 +57,11 @@ lifepilot:
       max-parallel-tool-calls: 4
       llm-scene: agent_react
     budget:
-      default-max-tokens: 131072
+      default-max-tokens: 20000000
       default-max-steps: 60
       default-max-duration-seconds: 300
     context:
-      max-context-tokens: 131072
+      max-context-tokens: 2000000
       output-reserved-tokens: 8192
       success-step-max-length: 200
       failed-step-max-length: 80

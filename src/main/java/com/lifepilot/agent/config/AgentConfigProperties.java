@@ -59,7 +59,7 @@ public class AgentConfigProperties {
     @Getter
     public static class BudgetConfig {
         /** 对话总 Token 预算（整个对话允许消耗的总 Token）。 */
-        private int defaultMaxTokens = 131072;
+        private int defaultMaxTokens = 20000000;
         private int defaultMaxSteps = 30;
         private int defaultMaxDurationSeconds = 300;
 
@@ -73,7 +73,7 @@ public class AgentConfigProperties {
          * <p>实际使用时取 min(此值, 模型的 maxContextWindow)。</p>
          */
         @Setter
-        private int maxContextTokens = 131072;
+        private int maxContextTokens = 2000000;
         @Setter
         private int outputReservedTokens = 8192;
         /** 成功步骤输出截断长度。 */
