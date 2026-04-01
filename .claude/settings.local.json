@@ -1,53 +1,34 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs grep:*)",
-      "Bash(xargs ls:*)",
-      "Bash(git:*)",
-      "Bash(find D:WorkSpaceProjectNews/src/main/java/com/lifepilot/skill -type f -name *.java)",
       "Bash(*)",
-      "WebFetch(domain:skillhub.tencent.com)",
-      "WebFetch(domain:github.com)",
       "WebSearch",
-      "WebFetch(domain:claudeskill.site)",
-      "WebFetch(domain:support.claude.com)",
-      "WebFetch(domain:dotclaude.com)",
-      "WebFetch(domain:fp8.co)",
-      "WebFetch(domain:www.datacamp.com)",
-      "WebFetch(domain:meshworld.in)",
-      "WebFetch(domain:sherlock.xyz)",
-      "WebFetch(domain:claudefa.st)",
-      "WebFetch(domain:www.digitalapplied.com)",
-      "WebFetch(domain:claude.com)",
-      "WebFetch(domain:blog.laozhang.ai)",
-      "WebFetch(domain:www.anthropic.com)",
-      "WebFetch(domain:playbooks.com)",
-      "WebFetch(domain:docs.bswen.com)",
-      "WebFetch(domain:juri.dev)",
-      "WebFetch(domain:apidog.com)",
-      "WebFetch(domain:travis.media)",
-      "WebFetch(domain:macaron.im)",
-      "WebFetch(domain:www.teamday.ai)",
-      "WebFetch(domain:brightdata.com)",
-      "WebFetch(domain:yyiki.org)",
-      "WebFetch(domain:www.makr.io)",
-      "WebFetch(domain:www.verdent.ai)",
-      "WebFetch(domain:lobehub.com)",
+      "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:promptforward.dev)",
-      "WebFetch(domain:zenvanriel.nl)",
-      "WebFetch(domain:www.zeik0.com)",
-      "WebFetch(domain:squadofagents.substack.com)",
-      "WebFetch(domain:markaicode.com)",
-      "WebFetch(domain:www.shareuhack.com)",
-      "WebFetch(domain:www.innobu.com)",
-      "WebFetch(domain:boilerplatehub.com)",
-      "WebFetch(domain:docs.all-hands.dev)",
-      "WebFetch(domain:docs.openclaw.ai)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:claude.com)",
+      "WebFetch(domain:support.claude.com)",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:pypi.org)",
-      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:docs.all-hands.dev)",
+      "WebFetch(domain:lobehub.com)",
+      "WebFetch(domain:docs.openclaw.ai)",
       "Skill(update-config)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c \"cd $CLAUDE_PROJECT_DIR && changed=$(git diff --name-only 2>/dev/null); if echo \\\"$changed\\\" | grep -q '\\.java$'; then mvn compile -q -DskipTests 2>&1 | tail -20; fi\"",
+            "timeout": 120000
+          }
+        ]
+      }
     ]
   }
 }
