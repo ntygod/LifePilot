@@ -714,7 +714,7 @@ public class ToolExecutionCoordinator {
         }
     }
 
-    /** 将 tool_call 记录到 transcript，便于后续回放和历史审计。 */
+    /** 异步将 tool_call 记录到 transcript，不阻塞工具执行主路径。 */
     private void persistTranscriptToolCall(ReactAgentState state,
                                            AssistantMessage.ToolCall toolCall,
                                            String toolId,
@@ -724,24 +724,26 @@ public class ToolExecutionCoordinator {
         if (transcriptStore == null) {
             return;
         }
-        try {
-            transcriptStore.appendToolCall(
-                    state.sessionId(),
-                    state.traceId(),
-                    state.traceId(),
-                    toolId,
-                    toolCall.id(),
-                    toolDisplayName,
-                    inputJson,
-                    createdAt
-            );
-        } catch (Exception e) {
-            log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
-                    state.sessionId(), toolId, e.getMessage());
-        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                transcriptStore.appendToolCall(
+                        state.sessionId(),
+                        state.traceId(),
+                        state.traceId(),
+                        toolId,
+                        toolCall.id(),
+                        toolDisplayName,
+                        inputJson,
+                        createdAt
+                );
+            } catch (Exception e) {
+                log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
+                        state.sessionId(), toolId, e.getMessage());
+            }
+        });
     }
 
-    /** 将 tool_result 记录到 transcript，与 tool_call 组成完整工具轨迹。 */
+    /** 异步将 tool_result 记录到 transcript，不阻塞工具执行主路径。 */
     private void persistTranscriptToolResult(ReactAgentState state,
                                              AssistantMessage.ToolCall toolCall,
                                              String toolId,
@@ -752,24 +754,26 @@ public class ToolExecutionCoordinator {
         if (transcriptStore == null) {
             return;
         }
-        try {
-            transcriptStore.appendToolResult(
-                    state.sessionId(),
-                    state.traceId(),
-                    state.traceId(),
-                    toolId,
-                    toolCall.id(),
-                    success,
-                    outputJson != null ? outputJson : "",
-                    artifactId,
-                    true,
-                    false,
-                    createdAt
-            );
-        } catch (Exception e) {
-            log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
-                    state.sessionId(), toolId, e.getMessage());
-        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                transcriptStore.appendToolResult(
+                        state.sessionId(),
+                        state.traceId(),
+                        state.traceId(),
+                        toolId,
+                        toolCall.id(),
+                        success,
+                        outputJson != null ? outputJson : "",
+                        artifactId,
+                        true,
+                        false,
+                        createdAt
+                );
+            } catch (Exception e) {
+                log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
+                        state.sessionId(), toolId, e.getMessage());
+            }
+        });
     }
 
     /** 将工具执行结果写入 Trace，保证后续诊断能看到输入、输出和耗时。 */

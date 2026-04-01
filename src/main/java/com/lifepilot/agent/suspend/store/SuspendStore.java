@@ -57,6 +57,20 @@ public interface SuspendStore {
     void delete(String traceId);
 
     /**
+     * 原子加载并删除挂起状态，防止并发恢复同一个 Agent。
+     *
+     * <p>默认实现分两步执行（非原子），子类应使用事务保证原子性。</p>
+     *
+     * @param traceId Agent 轨迹 ID
+     * @return 挂起状态快照，不存在时返回 empty
+     */
+    default Optional<SuspendedAgent> loadAndDelete(String traceId) {
+        Optional<SuspendedAgent> agent = load(traceId);
+        agent.ifPresent(_ -> delete(traceId));
+        return agent;
+    }
+
+    /**
      * 清理超过 maxAge 的过期挂起记录。
      *
      * @param maxAge 最大保留时长

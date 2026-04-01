@@ -32,6 +32,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -139,10 +140,21 @@ public class ContextAssembler {
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
-            ContextEngine.ContextSnapshot contextSnapshot = safeLoadContextSnapshot(state, totalContextTokens);
+            // 三路独立检索并行化：contextSnapshot、userProfile、experiences 互不依赖
+            var contextFuture = CompletableFuture.supplyAsync(
+                    () -> safeLoadContextSnapshot(state, totalContextTokens));
+            var profileFuture = mediaPlaceholder
+                    ? CompletableFuture.completedFuture("")
+                    : CompletableFuture.supplyAsync(() -> safeGetUserProfile(state.goal()));
+            var experiencesFuture = mediaPlaceholder
+                    ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
+                    : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()));
+            CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture).join();
+
+            ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
             List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
-            String userProfile = mediaPlaceholder ? "" : safeGetUserProfile(state.goal());
-            List<TemporalEntity> experiences = mediaPlaceholder ? List.of() : safeRetrieveExperiences(state.goal());
+            String userProfile = profileFuture.join();
+            List<TemporalEntity> experiences = experiencesFuture.join();
             List<String> injectedIds = recordExperienceInjection(state, experiences);
             String profileSection = safeRedact(formatUserProfileSection(userProfile));
             String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
