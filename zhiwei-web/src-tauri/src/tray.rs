@@ -18,8 +18,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .items(&[&open, &restart, &separator, &quit])
         .build()?;
 
-    let icon = Image::from_path("icons/icon.png")
-        .unwrap_or_else(|_| Image::from_bytes(include_bytes!("../icons/icon.png")).unwrap());
+    let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .expect("内嵌图标解码失败");
 
     TrayIconBuilder::new()
         .icon(icon)

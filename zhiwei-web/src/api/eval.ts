@@ -6,9 +6,9 @@ import type {
   ComparisonReport,
   EvalFeedback,
 } from '@/types'
-import { API_ORIGIN } from '@/api/config'
+import { getApiOrigin } from '@/api/config'
 
-const BASE = API_ORIGIN + '/api'
+const getBase = () => getApiOrigin() + '/api'
 
 /** ApiResponse 包装结构 */
 interface ApiResponse<T> {
@@ -19,7 +19,7 @@ interface ApiResponse<T> {
 
 /** 统一 HTTP 请求封装，自动解包 ApiResponse */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, {
+  const res = await fetch(`${getBase()}${url}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })

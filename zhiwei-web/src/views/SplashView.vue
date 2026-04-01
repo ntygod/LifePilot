@@ -2,13 +2,13 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Loader2 } from 'lucide-vue-next'
-import { API_ORIGIN } from '@/api/config'
 import { modelServiceApi } from '@/api/client'
 
 const router = useRouter()
 const status = ref('正在启动后端服务...')
 const hasError = ref(false)
 let unlisten: (() => void) | null = null
+let unlistenError: (() => void) | null = null
 
 /** 后端就绪后，检查是否已配置模型服务，决定跳转目标 */
 async function navigateAfterReady() {
@@ -49,7 +49,7 @@ async function waitForBackend() {
     })
 
     // 也监听错误事件
-    await listen<string>('backend-error', (event) => {
+    unlistenError = await listen<string>('backend-error', (event) => {
       status.value = `启动失败: ${event.payload}`
       hasError.value = true
     })
@@ -92,6 +92,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (unlisten) unlisten()
+  if (unlistenError) unlistenError()
 })
 </script>
 

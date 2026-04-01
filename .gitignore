@@ -41,6 +41,7 @@ dist/
 
 # === Tauri / Rust ===
 zhiwei-web/src-tauri/target/
+zhiwei-web/src-tauri/gen/
 zhiwei-web/src-tauri/resources/jre/
 zhiwei-web/src-tauri/resources/*.jar
 

@@ -72,8 +72,13 @@ if "%SKIP_JAR%"=="true" (
 )
 
 if not exist "%RESOURCES_DIR%" mkdir "%RESOURCES_DIR%"
-copy /y "%PROJECT_ROOT%\target\zhiwei.jar" "%RESOURCES_DIR%\zhiwei.jar" >nul
-echo   已复制到 %RESOURCES_DIR%\zhiwei.jar
+if exist "%PROJECT_ROOT%\target\zhiwei.jar" (
+    copy /y "%PROJECT_ROOT%\target\zhiwei.jar" "%RESOURCES_DIR%\zhiwei.jar" >nul
+    echo   已复制到 %RESOURCES_DIR%\zhiwei.jar
+) else if not exist "%RESOURCES_DIR%\zhiwei.jar" (
+    echo 错误: target\zhiwei.jar 不存在且 resources 中无缓存，请先构建 JAR
+    exit /b 1
+)
 
 REM ------- 3. 构建精简 JRE -------
 if "%SKIP_JRE%"=="true" (

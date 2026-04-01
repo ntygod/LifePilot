@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -24,7 +24,7 @@ pub struct JavaManager {
 
 impl JavaManager {
     /// 创建新的 Java 管理器实例
-    pub fn new(resource_dir: &PathBuf) -> Self {
+    pub fn new(resource_dir: &Path) -> Self {
         let port = port_finder::find_available_port();
         let jar_path = resource_dir.join("zhiwei.jar");
         let jre_path = Self::detect_jre(resource_dir);
@@ -113,7 +113,7 @@ impl JavaManager {
             });
         }
 
-        *self.process.lock().unwrap() = Some(child);
+        *self.process.lock().expect("JavaManager process mutex 中毒") = Some(child);
 
         // 异步等待健康检查 + 监控进程
         let port = self.port;
@@ -136,15 +136,15 @@ impl JavaManager {
 
     /// 优雅关闭 Java 后端
     pub fn stop(&self) -> Result<(), String> {
-        if let Some(mut child) = self.process.lock().unwrap().take() {
+        if let Some(mut child) = self.process.lock().expect("JavaManager process mutex 中毒").take() {
             log::info!("正在关闭 Java 后端进程...");
 
-            // Windows 下使用 taskkill 发送终止信号
+            // Windows 下使用 taskkill /F 强制终止进程树（Java 控制台进程无窗口句柄，不带 /F 会被忽略）
             #[cfg(target_os = "windows")]
             {
                 let pid = child.id();
                 let _ = Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/T"])
+                    .args(["/F", "/PID", &pid.to_string(), "/T"])
                     .output();
             }
 
@@ -191,7 +191,7 @@ impl JavaManager {
 
     /// 检查 Java 进程是否存活
     pub fn is_running(&self) -> bool {
-        if let Some(ref mut child) = *self.process.lock().unwrap() {
+        if let Some(ref mut child) = *self.process.lock().expect("JavaManager process mutex 中毒") {
             child.try_wait().map(|opt| opt.is_none()).unwrap_or(false)
         } else {
             false
@@ -199,7 +199,7 @@ impl JavaManager {
     }
 
     /// 检测内嵌 JRE 路径
-    fn detect_jre(resource_dir: &PathBuf) -> Option<PathBuf> {
+    fn detect_jre(resource_dir: &Path) -> Option<PathBuf> {
         let jre_dir = resource_dir.join("jre");
         if jre_dir.exists() {
             Some(jre_dir)
@@ -248,7 +248,8 @@ impl JavaManager {
 
     /// 计算 JVM 最大堆内存（系统内存 50%，上限 2048MB，下限 512MB）
     fn calculate_xmx() -> u64 {
-        let sys = System::new_all();
+        let mut sys = System::new();
+        sys.refresh_memory();
         let total_mb = sys.total_memory() / 1024 / 1024;
         let xmx = total_mb / 2;
         xmx.clamp(512, 2048)

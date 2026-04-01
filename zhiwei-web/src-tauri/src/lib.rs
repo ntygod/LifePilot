@@ -69,10 +69,10 @@ fn resolve_resource_dir(app: &tauri::App) -> PathBuf {
     }
 
     // 最终回退：项目根目录的 target
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest
         .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target")
+        .and_then(|p| p.parent())
+        .map(|p| p.join("target"))
+        .unwrap_or(manifest)
 }

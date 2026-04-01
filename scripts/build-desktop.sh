@@ -67,8 +67,13 @@ fi
 
 # 复制 JAR 到 resources
 mkdir -p "${RESOURCES_DIR}"
-cp "${PROJECT_ROOT}/target/zhiwei.jar" "${RESOURCES_DIR}/zhiwei.jar"
-echo "  已复制到 ${RESOURCES_DIR}/zhiwei.jar"
+if [ -f "${PROJECT_ROOT}/target/zhiwei.jar" ]; then
+  cp "${PROJECT_ROOT}/target/zhiwei.jar" "${RESOURCES_DIR}/zhiwei.jar"
+  echo "  已复制到 ${RESOURCES_DIR}/zhiwei.jar"
+elif [ ! -f "${RESOURCES_DIR}/zhiwei.jar" ]; then
+  echo "错误: target/zhiwei.jar 不存在且 resources 中无缓存，请先构建 JAR"
+  exit 1
+fi
 
 # ------- 3. 构建精简 JRE -------
 if [ "$SKIP_JRE" = false ]; then

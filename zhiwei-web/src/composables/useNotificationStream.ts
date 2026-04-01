@@ -1,5 +1,5 @@
 import { onMounted, onUnmounted, ref } from 'vue'
-import { API_ORIGIN } from '@/api/config'
+import { getApiOrigin } from '@/api/config'
 import { useNotificationStore } from '@/stores/notification'
 import { useChatStore } from '@/stores/chat'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
@@ -22,7 +22,7 @@ export function useNotificationStream() {
   function connect() {
     if (eventSource) return
 
-    eventSource = new EventSource(`${API_ORIGIN}/api/notifications/stream?userId=default`)
+    eventSource = new EventSource(`${getApiOrigin()}/api/notifications/stream?userId=default`)
     const notificationStore = useNotificationStore()
     const chatStore = useChatStore()
 
