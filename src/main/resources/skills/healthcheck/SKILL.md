@@ -4,7 +4,7 @@ name: "系统健康检查"
 description: "系统状态检查、资源监控、诊断报告"
 version: "1.0.1"
 suggested-tools:
-  - shell
+  - shell.exec
   - file.read
 triggers:
   - "系统检查"
@@ -27,13 +27,13 @@ triggers:
 ## When NOT to Use
 - 应用层面的 bug 调试（用 code-assistant）
 - 日志分析（用 log-analyzer）
-- 网络问题排查（直接用 shell 命令）
+- 网络问题排查（直接用 shell.exec）
 
 ## 检查流程（按顺序执行）
 
 ### 1. 系统概览
 ```
-shell(action=exec, command="uname -a || ver")
+shell.exec(command="uname -a || ver")
 ```
 
 ### 2. 资源使用检查

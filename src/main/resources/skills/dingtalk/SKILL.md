@@ -5,7 +5,7 @@ description: "钉钉消息、工作通知、任务创建"
 version: "1.0.0"
 suggested-tools:
   - web.fetch
-  - shell
+  - shell.exec
 triggers:
   - "钉钉"
   - "发钉钉消息"

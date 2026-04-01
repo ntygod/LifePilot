@@ -8,7 +8,7 @@ suggested-tools:
   - file.read
   - file.write
   - file.list
-  - shell
+  - shell.exec
 triggers:
   - "数据分析"
   - "统计"

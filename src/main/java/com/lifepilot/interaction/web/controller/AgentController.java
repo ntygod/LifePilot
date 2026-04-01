@@ -872,7 +872,8 @@ public class AgentController {
                         return new AgentDetail.KnowledgeBaseInfo(
                                 kb.id(),
                                 kb.name(),
-                                kbConfig.containsKey("topK") ? Integer.parseInt(kbConfig.get("topK")) : null,
+                                kbConfig.containsKey("top_k") ? Integer.parseInt(kbConfig.get("top_k"))
+                                : kbConfig.containsKey("topK") ? Integer.parseInt(kbConfig.get("topK")) : null,
                                 kbConfig.containsKey("maxContextTokens") ? Integer.parseInt(kbConfig.get("maxContextTokens")) : null
                         );
                     }

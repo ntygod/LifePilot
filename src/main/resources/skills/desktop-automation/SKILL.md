@@ -4,7 +4,7 @@ name: "桌面自动化"
 description: "Windows 桌面 UI 操作、窗口管理、键鼠模拟、截图分析"
 version: "1.0.1"
 suggested-tools:
-  - shell
+  - shell.exec
   - code.execute
   - file.read
   - file.write
@@ -24,7 +24,7 @@ triggers:
 仅支持 Windows。执行前先确认：
 
 ```
-shell(action=exec, command="ver")
+shell.exec(command="ver")
 → 确认当前运行环境为 Windows
 ```
 
@@ -32,7 +32,7 @@ shell(action=exec, command="ver")
 ## When NOT to Use
 
 - 网页自动化（用 browser-automation）
-- 命令行操作（用 shell）
+- 命令行操作（用 shell.exec）
 - Linux/macOS 桌面（当前仅支持 Windows）
 
 ## 适用场景
@@ -48,7 +48,7 @@ shell(action=exec, command="ver")
 
 ```bash
 # 安装 Python 自动化库
-shell(action=exec, command="pip install pyautogui pywinauto pillow")
+shell.exec(command="pip install pyautogui pywinauto pillow")
 ```
 
 | 库 | 用途 |

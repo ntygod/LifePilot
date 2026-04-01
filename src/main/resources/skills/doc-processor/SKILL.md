@@ -4,7 +4,7 @@ name: "文档处理"
 description: "PDF 解析、格式转换、文档合并、元数据提取"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
   - file.read
   - file.write
   - code.execute
@@ -48,25 +48,25 @@ triggers:
 ### Markdown → HTML
 
 ```bash
-shell(action=exec, command="pandoc input.md -o output.html --standalone")
+shell.exec(command="pandoc input.md -o output.html --standalone")
 ```
 
 ### Markdown → DOCX
 
 ```bash
-shell(action=exec, command="pandoc input.md -o output.docx")
+shell.exec(command="pandoc input.md -o output.docx")
 ```
 
 ### Markdown → PDF
 
 ```bash
-shell(action=exec, command="pandoc input.md -o output.pdf --pdf-engine=wkhtmltopdf")
+shell.exec(command="pandoc input.md -o output.pdf --pdf-engine=wkhtmltopdf")
 ```
 
 ### HTML → Markdown
 
 ```bash
-shell(action=exec, command="pandoc input.html -t markdown -o output.md")
+shell.exec(command="pandoc input.html -t markdown -o output.md")
 ```
 
 ## PDF 处理
@@ -75,7 +75,7 @@ shell(action=exec, command="pandoc input.html -t markdown -o output.md")
 
 ```bash
 # 使用 pdftotext
-shell(action=exec, command="pdftotext input.pdf output.txt")
+shell.exec(command="pdftotext input.pdf output.txt")
 
 # 使用 Python
 code.execute(language="python", code="
@@ -88,21 +88,21 @@ print(result.stdout[:5000])
 ### PDF 信息
 
 ```bash
-shell(action=exec, command="pdfinfo input.pdf")
+shell.exec(command="pdfinfo input.pdf")
 ```
 
 ## 批量处理
 
 ```bash
 # 批量转换目录下所有 Markdown 为 HTML
-shell(action=exec, command="for f in docs/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" --standalone; done")
+shell.exec(command="for f in docs/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" --standalone; done")
 ```
 
 ## 文档合并
 
 ```bash
 # 合并多个 Markdown 文件
-shell(action=exec, command="pandoc part1.md part2.md part3.md -o combined.pdf")
+shell.exec(command="pandoc part1.md part2.md part3.md -o combined.pdf")
 ```
 
 ## 常见错误处理

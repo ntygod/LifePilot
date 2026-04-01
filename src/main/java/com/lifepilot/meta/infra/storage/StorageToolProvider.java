@@ -76,13 +76,13 @@ public class StorageToolProvider {
         ));
         properties.put("name", Map.of("type", "string", "description", "action=create-collection 时的集合名称（唯一）"));
         properties.put("type", Map.of("type", "string", "description", "action=create-collection/list-collections 时的集合类型: DOCUMENT/NOTE/METRIC"));
-        properties.put("properties", Map.of("type", "string", "description", "action=create-collection 时的属性定义 JSON 数组"));
+        properties.put("properties", Map.of("type", "array", "description", "action=create-collection 时的属性定义数组，每个元素包含 name/type/required 等字段"));
         properties.put("description", Map.of("type", "string", "description", "action=create-collection 时的集合描述"));
         properties.put("projectionConfig", Map.of("type", "string", "description", "action=create-collection 时的向量投影配置 JSON"));
         properties.put("collectionName", Map.of("type", "string", "description", "目标集合名称；用于 delete-collection/insert/query/aggregate"));
-        properties.put("data", Map.of("type", "string", "description", "文档 JSON 数据；用于 insert/update"));
+        properties.put("data", Map.of("type", "object", "description", "文档数据对象；用于 insert/update"));
         properties.put("recordedAt", Map.of("type", "string", "description", "记录时间 ISO 8601（METRIC 类型 insert 时必填）"));
-        properties.put("filters", Map.of("type", "string", "description", "action=query 时的过滤条件 JSON 数组"));
+        properties.put("filters", Map.of("type", "array", "description", "action=query 时的过滤条件数组，每个元素包含 field/op/value 字段"));
         properties.put("sortField", Map.of("type", "string", "description", "action=query 时排序字段"));
         properties.put("sortDirection", Map.of("type", "string", "description", "action=query 时排序方向: ASC/DESC"));
         properties.put("offset", Map.of("type", "integer", "description", "action=query 时分页偏移"));

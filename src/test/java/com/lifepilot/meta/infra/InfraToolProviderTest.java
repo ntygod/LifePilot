@@ -64,8 +64,8 @@ class InfraToolProviderTest {
                 // 信息获取（2）
                 "web.search",
                 "web.fetch",
-                // Shell 执行（1）
-                "shell",
+                // Shell（1，shell.exec 始终注册；shell.process 仅当 processManager/sessionManager 可用时注册）
+                "shell.exec",
                 // 浏览器自动化（1）
                 "browser",
                 // 代码执行（1）
@@ -80,22 +80,11 @@ class InfraToolProviderTest {
                 "git.query",
                 "git.mutate"
         );
-        // 环境相关工具（tmux 可用时注册）
-        var conditionalToolIds = List.of(
-                "shell.session.create",
-                "shell.session.exec",
-                "shell.session.write",
-                "shell.session.read",
-                "shell.session.signal",
-                "shell.session.list",
-                "shell.session.close",
-                "shell.session.resize"
-        );
         var toolIds = tools.stream().map(BuiltinTool::id).toList();
         assertThat(toolIds).containsAll(alwaysExpected);
-        // shell.session 工具只在 tmux 可用时注册，不强制断言
+        // shell.process 工具只在 processManager 或 sessionManager 可用时注册，不强制断言
         int expectedMin = alwaysExpected.size();
-        int expectedMax = alwaysExpected.size() + conditionalToolIds.size();
+        int expectedMax = alwaysExpected.size() + 1; // shell.process
         assertThat(tools.size()).isBetween(expectedMin, expectedMax);
     }
 
@@ -131,8 +120,8 @@ class InfraToolProviderTest {
         assertThat(toolMap.get("web.search")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
         assertThat(toolMap.get("web.fetch")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
 
-        // Shell / 代码執行 → HIGH
-        assertThat(toolMap.get("shell")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
+        // Shell / 代码执行 → HIGH
+        assertThat(toolMap.get("shell.exec")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
         assertThat(toolMap.get("code.execute")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
 
         // 浏览器 → HIGH（包含 evaluate 等高风险 action）

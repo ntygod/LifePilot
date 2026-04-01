@@ -135,8 +135,9 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                     buildMeta(toolId, start, 0, false, idempotencyKey));
         }
 
-        // 2. 参数预处理与校验
+        // 2. 参数预处理、类型强转与校验
         Map<String, Object> effectiveParameters = prepareParameters(toolId, parameters);
+        effectiveParameters = tool.inputSchema().coerceParameters(effectiveParameters);
         ToolInput input = new ToolInput(toolId, effectiveParameters, tool.inputSchema(), idempotencyKey, context);
         ValidationResult validation = input.validate();
         if (!validation.isValid()) {

@@ -64,11 +64,11 @@ export const useMemoryStore = defineStore('memory', () => {
    * 跨层记忆搜索。
    *
    * @param query 搜索关键词
-   * @param topK 返回结果数量，默认 10
+   * @param top_k 返回结果数量，默认 10
    * @returns 搜索结果列表
    */
-  async function search(query: string, topK?: number): Promise<MemorySearchResult[]> {
-    return memoryApi.search(query, topK)
+  async function search(query: string, top_k?: number): Promise<MemorySearchResult[]> {
+    return memoryApi.search(query, top_k)
   }
 
   /**

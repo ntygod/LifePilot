@@ -1,6 +1,5 @@
 package com.lifepilot.meta.infra.shell;
 
-import com.lifepilot.meta.infra.shell.session.SessionInfo;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
@@ -16,137 +15,129 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Shell 工具 action 路由执行器。
+ * 后台进程与持久会话 action 路由执行器。
  *
- * <p>统一承接 shell.exec、process.*、shell.session.* 的能力。</p>
+ * <p>承接 shell.process 工具的所有 action：
+ * 后台进程管理（list/output/write/kill）和持久会话管理（session-*）。</p>
  *
  * @author zsg
- * @since 2026-03-31
+ * @since 2026-04-02
  */
-public class ShellActionDispatchExecutor extends ActionDispatchExecutor {
+public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
 
-    private static final Logger log = LoggerFactory.getLogger(ShellActionDispatchExecutor.class);
+    private static final Logger log = LoggerFactory.getLogger(ShellProcessDispatchExecutor.class);
 
-    private final ShellExecToolExecutor shellExecExecutor;
     @Nullable
     private final BackgroundProcessManager processManager;
     @Nullable
     private final TmuxSessionManager sessionManager;
 
-    public ShellActionDispatchExecutor(ShellExecToolExecutor shellExecExecutor,
-                                       @Nullable BackgroundProcessManager processManager,
-                                       @Nullable TmuxSessionManager sessionManager) {
-        this.shellExecExecutor = shellExecExecutor;
+    public ShellProcessDispatchExecutor(@Nullable BackgroundProcessManager processManager,
+                                         @Nullable TmuxSessionManager sessionManager) {
         this.processManager = processManager;
         this.sessionManager = sessionManager;
 
-        register("exec",
-                RiskLevel.HIGH,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.EXECUTE_SHELL,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.workspacePaths("workingDirectory", "cwd")
-                ),
-                shellExecExecutor::execute);
-
         if (processManager != null) {
-            register("process-list",
-                RiskLevel.LOW,
-                ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
-                this::executeProcessList);
-        register("process-output",
-                RiskLevel.LOW,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.PARALLEL_SAFE,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeProcessOutput);
-        register("process-write",
-                RiskLevel.MEDIUM,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeProcessWrite);
-        register("process-kill",
-                RiskLevel.HIGH,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeProcessKill);
+            register("list",
+                    RiskLevel.LOW,
+                    ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
+                    this::executeProcessList);
+            register("output",
+                    RiskLevel.LOW,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.PARALLEL_SAFE,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeProcessOutput);
+            register("write",
+                    RiskLevel.MEDIUM,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeProcessWrite);
+            register("kill",
+                    RiskLevel.HIGH,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeProcessKill);
         }
 
         if (sessionManager != null) {
             register("session-create",
-                RiskLevel.HIGH,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.EXECUTE_SHELL,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.none()
-                ),
-                this::executeSessionCreate);
-        register("session-exec",
-                RiskLevel.HIGH,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.EXECUTE_SHELL,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeSessionExec);
-        register("session-write",
-                RiskLevel.MEDIUM,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeSessionWrite);
-        register("session-read",
-                RiskLevel.LOW,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.PARALLEL_SAFE,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeSessionRead);
-        register("session-signal",
-                RiskLevel.HIGH,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.EXECUTE_SHELL,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeSessionSignal);
-        register("session-list",
-                RiskLevel.LOW,
-                ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
-                this::executeSessionList);
-        register("session-close",
-                RiskLevel.MEDIUM,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeSessionClose);
-        register("session-resize",
-                RiskLevel.LOW,
-                ToolExecutionSemantics.of(
-                        PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
-                ),
-                this::executeSessionResize);
+                    RiskLevel.HIGH,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.EXECUTE_SHELL,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.none()
+                    ),
+                    this::executeSessionCreate);
+            register("session-exec",
+                    RiskLevel.HIGH,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.EXECUTE_SHELL,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeSessionExec);
+            register("session-write",
+                    RiskLevel.MEDIUM,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeSessionWrite);
+            register("session-read",
+                    RiskLevel.LOW,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.PARALLEL_SAFE,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeSessionRead);
+            register("session-signal",
+                    RiskLevel.HIGH,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.EXECUTE_SHELL,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeSessionSignal);
+            register("session-list",
+                    RiskLevel.LOW,
+                    ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
+                    this::executeSessionList);
+            register("session-close",
+                    RiskLevel.MEDIUM,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeSessionClose);
+            register("session-resize",
+                    RiskLevel.LOW,
+                    ToolExecutionSemantics.of(
+                            PermissionActionType.GENERIC_TOOL_OPERATION,
+                            ToolSchedulingMode.SEQUENTIAL,
+                            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                    ),
+                    this::executeSessionResize);
         }
     }
+
+    // ─────────────────────────────────────────────
+    //  后台进程管理
+    // ─────────────────────────────────────────────
 
     private ToolResult executeProcessList(ToolInput input) {
         if (processManager == null) {
@@ -210,13 +201,17 @@ public class ShellActionDispatchExecutor extends ActionDispatchExecutor {
         }
     }
 
+    // ─────────────────────────────────────────────
+    //  持久会话管理
+    // ─────────────────────────────────────────────
+
     private ToolResult executeSessionCreate(ToolInput input) {
         if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String name = input.getOptionalParam("name", String.class).orElse(null);
             String workDir = input.getOptionalParam("workDir", String.class).orElse(null);
             String sessionId = sessionManager.createSession(name, workDir);
-            return ToolResult.success(Map.of("sessionId", sessionId, "message", "持久会话已创建，使用 shell(action=session-exec) 执行命令"));
+            return ToolResult.success(Map.of("sessionId", sessionId, "message", "持久会话已创建，使用 shell.process(action=session-exec) 执行命令"));
         } catch (IllegalStateException e) {
             return ToolResult.error(e.getMessage());
         } catch (IOException e) {

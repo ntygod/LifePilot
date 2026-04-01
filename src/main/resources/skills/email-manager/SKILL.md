@@ -4,7 +4,7 @@ name: "邮件管理"
 description: "邮件收发、模板管理、批量发送。"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
   - web.fetch
   - file.read
   - file.write

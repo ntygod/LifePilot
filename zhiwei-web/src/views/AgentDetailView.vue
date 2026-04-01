@@ -69,7 +69,7 @@ const systemPrompt = ref('')
 const systemPromptDirty = ref(false)
 const systemPromptSaving = ref(false)
 const llmConfig = ref({ preferredProviderId: '', temperature: 0.7, maxTokens: 2000, topP: 1.0 })
-const selectedKbs = ref<Array<{ id: string; name: string; topK?: number; maxContextTokens?: number }>>([])
+const selectedKbs = ref<Array<{ id: string; name: string; top_k?: number; maxContextTokens?: number }>>([])
 const enabledTools = ref<string[]>([])
 const showKbDialog = ref(false)
 const showToolsDialog = ref(false)
@@ -254,7 +254,7 @@ async function saveKnowledgeBases() {
     const metadata: Record<string, any> = {}
     for (const knowledgeBase of selectedKbs.value) {
       const prefix = `kb.${knowledgeBase.id}.`
-      if (knowledgeBase.topK != null) metadata[`${prefix}topK`] = knowledgeBase.topK
+      if (knowledgeBase.top_k != null) metadata[`${prefix}top_k`] = knowledgeBase.top_k
       if (knowledgeBase.maxContextTokens != null) metadata[`${prefix}maxContextTokens`] = knowledgeBase.maxContextTokens
     }
     await agentStore.updateAgent(agent.value.id, {
@@ -337,7 +337,7 @@ function toggleKb(kbId: string, kbName: string) {
     selectedKbs.value.splice(index, 1)
     return
   }
-  selectedKbs.value.push({ id: kbId, name: kbName, topK: 5, maxContextTokens: 2000 })
+  selectedKbs.value.push({ id: kbId, name: kbName, top_k: 5, maxContextTokens: 2000 })
 }
 
 function toggleTool(toolId: string) {
@@ -607,7 +607,7 @@ function goBack() {
                         <div>
                           <div class="text-sm font-medium text-foreground">{{ knowledgeBase.name }}</div>
                           <div class="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            <span class="surface-chip">Top-K {{ knowledgeBase.topK || 5 }}</span>
+                            <span class="surface-chip">Top-K {{ knowledgeBase.top_k || 5 }}</span>
                             <span class="surface-chip">最大上下文 {{ knowledgeBase.maxContextTokens || 2000 }} token</span>
                           </div>
                         </div>
@@ -701,13 +701,13 @@ function goBack() {
               </div>
               <div v-if="selectedKbs.some(item => item.id === knowledgeBase.id)" class="grid gap-3 sm:grid-cols-2">
                 <Input
-                  :model-value="selectedKbs.find(item => item.id === knowledgeBase.id)?.topK ?? 5"
+                  :model-value="selectedKbs.find(item => item.id === knowledgeBase.id)?.top_k ?? 5"
                   type="number"
                   :min="1"
                   :max="20"
                   placeholder="Top-K"
                   class="w-full sm:w-24"
-                  @update:model-value="(value: string | number) => { const found = selectedKbs.find(item => item.id === knowledgeBase.id); if (found) found.topK = Number(value) }"
+                  @update:model-value="(value: string | number) => { const found = selectedKbs.find(item => item.id === knowledgeBase.id); if (found) found.top_k = Number(value) }"
                 />
                 <Input
                   :model-value="selectedKbs.find(item => item.id === knowledgeBase.id)?.maxContextTokens ?? 2000"

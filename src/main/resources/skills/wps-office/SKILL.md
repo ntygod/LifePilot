@@ -4,7 +4,7 @@ name: "WPS 办公"
 description: "WPS 文档创建、表格编辑、格式转换"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
   - web.fetch
   - file.read
   - file.write

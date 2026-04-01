@@ -119,8 +119,7 @@ public class MemoryToolProvider {
                                         "enum", List.of("search", "recall", "create", "update", "delete", "tag", "query-at-time", "search-experience"),
                                         "description", "记忆操作类型")),
                                 Map.entry("query", Map.of("type", "string", "description", "搜索关键词、语义描述或经验检索场景")),
-                                Map.entry("topK", Map.of("type", "integer", "description", "返回数量，search/search-experience 使用")),
-                                Map.entry("top_k", Map.of("type", "integer", "description", "返回数量，recall 使用")),
+                                Map.entry("top_k", Map.of("type", "integer", "description", "返回数量，search/recall/search-experience 使用")),
                                 Map.entry("name", Map.of("type", "string", "description", "action=create 时的实体名称")),
                                 Map.entry("entityType", Map.of("type", "string", "description", "实体类型或 query-at-time 的类型过滤")),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
@@ -192,7 +191,7 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
             String query = input.getParam("query", String.class);
-            int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
+            int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
             List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
             if (!results.isEmpty()) {
                 hybridRetriever.updateAccessCounts(results);
@@ -350,7 +349,7 @@ public class MemoryToolProvider {
     ToolResult executeSearchExperience(com.lifepilot.tool.model.ToolInput input) {
         try {
             String query = input.getParam("query", String.class);
-            int topK = input.getOptionalParam("topK", Integer.class).orElse(3);
+            int topK = input.getOptionalParam("top_k", Integer.class).orElse(3);
             boolean successOnly = input.getOptionalParam("successOnly", Boolean.class).orElse(false);
             if (query.isBlank()) {
                 return ToolResult.error("query 参数不能为空");

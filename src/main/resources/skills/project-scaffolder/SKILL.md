@@ -4,7 +4,7 @@ name: "项目脚手架"
 description: "项目模板生成、目录搭建、依赖配置"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
   - file.write
   - file.list
   - file.read
@@ -48,19 +48,19 @@ triggers:
 
 ```bash
 # Java + Spring Boot
-shell(action=exec, command="curl https://start.spring.io/starter.zip -d dependencies=web,actuator -d type=maven-project -d language=java -d javaVersion=22 -o project.zip", workingDirectory="/target")
+shell.exec(command="curl https://start.spring.io/starter.zip -d dependencies=web,actuator -d type=maven-project -d language=java -d javaVersion=22 -o project.zip", workingDirectory="/target")
 
 # Node.js
-shell(action=exec, command="npm init -y", workingDirectory="/target/project")
+shell.exec(command="npm init -y", workingDirectory="/target/project")
 
 # Python
-shell(action=exec, command="python -m venv venv", workingDirectory="/target/project")
+shell.exec(command="python -m venv venv", workingDirectory="/target/project")
 
 # Go
-shell(action=exec, command="go mod init github.com/user/project", workingDirectory="/target/project")
+shell.exec(command="go mod init github.com/user/project", workingDirectory="/target/project")
 
 # Rust
-shell(action=exec, command="cargo init project-name", workingDirectory="/target")
+shell.exec(command="cargo init project-name", workingDirectory="/target")
 ```
 
 ### 3. 补充项目文件

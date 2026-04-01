@@ -53,14 +53,14 @@ triggers:
 ### 集合管理
 
 - 使用 `datastore` 创建集合时，选择合适的类型
-- 可通过 `properties` 参数定义集合的属性结构（JSON 数组格式）
+- 可通过 `properties` 参数定义集合的属性结构（数组，每项包含 name/type/required 字段）
 - 可通过 `projectionConfig` 参数声明集合级向量投影规则；省略时系统会自动保存 `{}` 并使用默认通用投影
 - 使用 `datastore` 查看所有集合，支持按类型过滤
 - 使用 `datastore` 删除整个集合前，先确认目标名称无误；该操作会同时删除集合内全部文档
 
 ### 文档 CRUD
 
-- **添加**：`datastore` 通过集合名称定位，数据为 JSON 格式
+- **添加**：`datastore` 通过集合名称定位，`data` 为对象类型
   - METRIC 类型集合必须提供 `recordedAt` 时间戳
 - **查询**：`datastore` 支持过滤、排序和分页
   - 只适合精确结构化条件查询，例如字段过滤、排序、分页、按 ID/状态/分类精确查找
@@ -107,6 +107,6 @@ triggers:
 - **文档不存在**：更新/删除时返回"文档不存在"，先用 `query_documents` 确认文档 ID
 - **无效集合类型**：`type` 必须是 DOCUMENT、NOTE 或 METRIC
 - **聚合类型不匹配**：`aggregate` 仅支持 METRIC 类型集合
-- **属性定义格式错误**：`properties` 参数需为 JSON 数组，每项包含 `name`、`type`、`required` 字段
+- **属性定义格式错误**：`properties` 参数需为数组，每项包含 `name`、`type`、`required` 字段
 - **projectionConfig 省略**：这是合法情况，系统会自动回退到默认投影配置 `{}`，不需要手工补空对象
 - **资料问题选错工具**：主题词、资料问答、架构/设定/说明类问题不要用 `query_documents`，改用 `knowledge.search`
