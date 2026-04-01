@@ -106,9 +106,10 @@
   UpdateChannelInstanceRequest
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
+import { API_ORIGIN } from '@/api/config'
 
-// API 基础路径（开发环境通过 Vite proxy 转发）
-const BASE = '/api'
+// API 基础路径（Tauri 桌面端使用绝对路径，浏览器环境通过 Vite proxy 转发）
+const BASE = API_ORIGIN + '/api'
 
 /** 网络错误类 */
 export class NetworkError extends Error {

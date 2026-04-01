@@ -6,8 +6,9 @@ import type {
   ComparisonReport,
   EvalFeedback,
 } from '@/types'
+import { API_ORIGIN } from '@/api/config'
 
-const BASE = '/api'
+const BASE = API_ORIGIN + '/api'
 
 /** ApiResponse 包装结构 */
 interface ApiResponse<T> {

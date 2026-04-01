@@ -544,11 +544,13 @@ lifepilot:
       heartbeat-interval: 30000
       mcp-status-timeout: 1800000
     cors:
-      # CORS 跨域配置：开发环境（5173）和 Docker 部署（80/同源）
+      # CORS 跨域配置：开发环境（5173）、Docker 部署（80/同源）和 Tauri 桌面端
       allowed-origins:
         - "http://localhost:5173"
         - "http://localhost:80"
         - "http://localhost"
+        - "tauri://localhost"
+        - "https://tauri.localhost"
       allow-credentials: true
   a2ui:
     # A2UI（Agent-to-UI）生成功能配置

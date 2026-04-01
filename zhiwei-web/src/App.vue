@@ -10,7 +10,7 @@ const DISPLAY_PREFERENCES_KEY = 'zhiwei_display_preferences'
 const route = useRoute()
 const settingsStore = useSettingsStore()
 
-const showAppLayout = computed(() => route.path !== '/')
+const showAppLayout = computed(() => route.path !== '/' && route.path !== '/splash')
 
 settingsStore.hydrate()
 

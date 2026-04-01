@@ -45,7 +45,25 @@ const DISPLAY_PREFERENCES_KEY = 'zhiwei_display_preferences'
   }
 })()
 
-const app = createApp(App)
-app.use(createPinia())
-app.use(router)
-app.mount('#app')
+// Tauri 桌面端：在应用挂载前获取后端端口
+async function initTauriPort() {
+  if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      window.__ZHIWEI_BACKEND_PORT__ = await invoke<number>('get_backend_port')
+    } catch (e) {
+      console.warn('Tauri 端口获取失败，使用默认端口 8080:', e)
+    }
+  }
+}
+
+async function bootstrap() {
+  await initTauriPort()
+
+  const app = createApp(App)
+  app.use(createPinia())
+  app.use(router)
+  app.mount('#app')
+}
+
+bootstrap()
