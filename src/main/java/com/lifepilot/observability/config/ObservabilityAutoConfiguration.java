@@ -5,7 +5,6 @@ import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.evaluation.TrajectoryEvaluator;
 import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
-import com.lifepilot.observability.guardrail.GuardrailPolicy;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.*;
 import org.slf4j.Logger;
@@ -118,18 +117,6 @@ public class ObservabilityAutoConfiguration {
     public GuardrailAdvisor guardrailAdvisor(GuardrailEngine guardrailEngine) {
         log.info("可观测性: 注册 GuardrailAdvisor（Spring AI Advisor）");
         return new GuardrailAdvisor(guardrailEngine);
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "lifepilot.observability.guardrail", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
-    public GuardrailPolicy defaultBudgetLimitPolicy(GuardrailEngine guardrailEngine,
-                                                    ObservabilityProperties properties) {
-        int dailyTokenLimit = properties.getGuardrail().getBudgetLimit().getDailyTokenLimit();
-        var policy = GuardrailPolicy.budgetLimitPolicy("default-budget-limit", true, 20, dailyTokenLimit);
-        guardrailEngine.registerPolicy(policy);
-        log.info("可观测性: 注册默认 BudgetLimitPolicy: dailyTokenLimit={}", dailyTokenLimit);
-        return policy;
     }
 
     /**
