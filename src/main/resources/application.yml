@@ -463,9 +463,6 @@ lifepilot:
         enabled: true
         order: 600
     rate-limit:
-      max-tokens-per-hour: 100000
-      max-tokens-per-day: 500000
-      estimated-tokens-per-request: 2000
       max-requests-per-minute: 30
     security:
       prompt-injection:
@@ -739,11 +736,8 @@ lifepilot:
       content-safety:
         blocked-patterns: []
         sensitive-topics: []
-      budget-limit:
-        daily-token-limit: 1000000
       rate-limit:
         max-calls-per-minute: 60
-        max-calls-per-hour: 1000
     redaction:
       enabled: true
       redact-before-llm: true

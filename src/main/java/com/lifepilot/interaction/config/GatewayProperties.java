@@ -82,9 +82,6 @@ public record GatewayProperties(
 
     /** 限流配置。 */
     public record RateLimitProperties(
-            @DefaultValue("100000") int maxTokensPerHour,
-            @DefaultValue("500000") int maxTokensPerDay,
-            @DefaultValue("2000") int estimatedTokensPerRequest,
             @DefaultValue("30") int maxRequestsPerMinute
     ) {}
 

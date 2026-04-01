@@ -229,7 +229,7 @@ class ExecutionMiddleware_单元测试 {
         return new GatewayProperties(
                 true,
                 middleware,
-                new GatewayProperties.RateLimitProperties(100000, 500000, 2000, 30),
+                new GatewayProperties.RateLimitProperties(30),
                 new GatewayProperties.SecurityProperties(
                         new GatewayProperties.SecurityProperties.PromptInjectionProperties(true),
                         new GatewayProperties.SecurityProperties.SensitiveDataProperties(true),
