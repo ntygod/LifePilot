@@ -2,11 +2,29 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Loader2 } from 'lucide-vue-next'
+import { API_ORIGIN } from '@/api/config'
+import { modelServiceApi } from '@/api/client'
 
 const router = useRouter()
 const status = ref('正在启动后端服务...')
 const hasError = ref(false)
 let unlisten: (() => void) | null = null
+
+/** 后端就绪后，检查是否已配置模型服务，决定跳转目标 */
+async function navigateAfterReady() {
+  status.value = '正在检查配置...'
+  try {
+    const services = await modelServiceApi.listEnabledServices('GENERATION')
+    if (services.length === 0) {
+      router.replace('/setup')
+    } else {
+      router.replace('/conversations')
+    }
+  } catch {
+    // API 调用失败时直接进入主界面，用户可在设置中配置
+    router.replace('/conversations')
+  }
+}
 
 async function waitForBackend() {
   if (!window.__TAURI_INTERNALS__) {
@@ -27,7 +45,7 @@ async function waitForBackend() {
     // 监听后端就绪事件
     unlisten = await listen<number>('backend-ready', () => {
       status.value = '后端已就绪，正在加载...'
-      setTimeout(() => router.replace('/conversations'), 300)
+      navigateAfterReady()
     })
 
     // 也监听错误事件
@@ -39,12 +57,11 @@ async function waitForBackend() {
     // 可能后端已经启动好了（事件在监听前已发送），主动检查一次
     const result = await invoke<{ running: boolean; port: number }>('get_backend_status')
     if (result.running) {
-      // 再做一次 HTTP 健康检查确认
       try {
         const resp = await fetch(`http://localhost:${port}/actuator/health`)
         if (resp.ok) {
           status.value = '后端已就绪，正在加载...'
-          setTimeout(() => router.replace('/conversations'), 300)
+          navigateAfterReady()
         }
       } catch {
         // 进程在但还没 ready，等事件

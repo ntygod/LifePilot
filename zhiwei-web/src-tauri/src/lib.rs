@@ -2,6 +2,7 @@ mod commands;
 mod health_check;
 mod java_manager;
 mod port_finder;
+mod tray;
 
 use java_manager::JavaManager;
 use std::path::PathBuf;
@@ -28,6 +29,9 @@ pub fn run() {
 
             // 注册到全局状态
             app.manage(java_manager);
+
+            // 初始化系统托盘
+            tray::setup_tray(app.handle())?;
 
             Ok(())
         })
