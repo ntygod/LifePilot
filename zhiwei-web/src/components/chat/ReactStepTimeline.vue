@@ -213,38 +213,37 @@ function getGroupKey(group: StepGroup): string {
 <template>
   <div
     v-if="summary || hasSteps"
-    class="react-panel mt-3 overflow-hidden rounded-[1.15rem] border text-xs transition-all duration-300"
+    class="react-panel mt-2 overflow-hidden rounded-xl border text-xs transition-all duration-300"
     :class="streaming ? 'react-panel-streaming' : 'react-panel-idle'"
   >
     <button
       type="button"
-      class="react-trigger flex w-full items-center justify-between gap-3 px-3 py-3 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+      class="react-trigger flex w-full items-center justify-between gap-2 px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       @click="expanded = !expanded"
     >
-      <div class="flex min-w-0 flex-1 items-center gap-3">
+      <div class="flex min-w-0 flex-1 items-center gap-2">
         <div
           class="react-icon-shell relative shrink-0"
           :class="streaming ? 'react-icon-shell-streaming' : ''"
         >
           <component
             :is="latestStep ? getStepIcon(latestStep.type) : CircleDot"
-            :size="14"
+            :size="12"
             class="transition-colors duration-300"
             :class="streaming
               ? 'text-primary'
               : latestStep ? getStepColor(latestStep.type) : 'text-muted-foreground'"
           />
         </div>
-        <div class="min-w-0 space-y-1">
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">执行轨迹</span>
-            <span v-if="toolCallCount > 0" class="react-chip">
-              <Wrench :size="10" />
-              {{ toolCallCount }}
-            </span>
-          </div>
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <span class="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">执行轨迹</span>
+          <span v-if="toolCallCount > 0" class="react-chip">
+            <Wrench :size="10" />
+            {{ toolCallCount }}
+          </span>
+          <span class="text-muted-foreground/30">·</span>
           <p
-            class="truncate text-[11px] font-medium"
+            class="min-w-0 truncate text-[11px] font-medium"
             :class="streaming ? 'text-primary' : 'text-foreground/84'"
           >
             {{ triggerLabel }}
@@ -441,11 +440,11 @@ function getGroupKey(group: StepGroup): string {
 
 .react-icon-shell {
   display: inline-flex;
-  height: 2rem;
-  width: 2rem;
+  height: 1.5rem;
+  width: 1.5rem;
   align-items: center;
   justify-content: center;
-  border-radius: 1rem;
+  border-radius: 0.625rem;
   border: 1px solid hsl(from var(--border) h s l / 0.46);
   background: hsl(from var(--background) h s l / 0.8);
   box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.32);

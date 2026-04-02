@@ -174,39 +174,38 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
 <template>
   <div
     v-if="summary || hasEvents"
-    class="reasoning-panel mt-3 overflow-hidden rounded-[1.15rem] border text-xs transition-all duration-300"
+    class="reasoning-panel mt-2 overflow-hidden rounded-xl border text-xs transition-all duration-300"
     :class="streaming ? 'reasoning-panel-streaming' : 'reasoning-panel-idle'"
   >
     <!-- 触发栏 -->
     <button
       type="button"
-      class="reasoning-trigger flex w-full items-center justify-between gap-3 px-3 py-3 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+      class="reasoning-trigger flex w-full items-center justify-between gap-2 px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       @click="expanded = !expanded"
     >
-      <div class="flex min-w-0 flex-1 items-center gap-3">
+      <div class="flex min-w-0 flex-1 items-center gap-2">
         <div
           class="reasoning-icon-shell relative shrink-0"
           :class="streaming ? 'reasoning-icon-shell-streaming' : ''"
         >
           <component
             :is="latestEvent ? getEventIcon(latestEvent.type) : CircleDot"
-            :size="14"
+            :size="12"
             class="transition-colors duration-300"
             :class="streaming
               ? 'text-primary'
               : latestEvent ? getEventColor(latestEvent.type) : 'text-muted-foreground'"
           />
         </div>
-        <div class="min-w-0 space-y-1">
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">推理轨迹</span>
-            <span v-if="toolCallCount > 0" class="reasoning-chip">
-              <Wrench :size="10" />
-              {{ toolCallCount }}
-            </span>
-          </div>
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <span class="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">推理轨迹</span>
+          <span v-if="toolCallCount > 0" class="reasoning-chip">
+            <Wrench :size="10" />
+            {{ toolCallCount }}
+          </span>
+          <span class="text-muted-foreground/30">·</span>
           <p
-            class="truncate text-[11px] font-medium"
+            class="min-w-0 truncate text-[11px] font-medium"
             :class="streaming ? 'text-primary' : 'text-foreground/84'"
           >
             {{ triggerLabel }}
@@ -321,11 +320,11 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
 
 .reasoning-icon-shell {
   display: inline-flex;
-  height: 2rem;
-  width: 2rem;
+  height: 1.5rem;
+  width: 1.5rem;
   align-items: center;
   justify-content: center;
-  border-radius: 1rem;
+  border-radius: 0.625rem;
   border: 1px solid hsl(from var(--border) h s l / 0.46);
   background: hsl(from var(--background) h s l / 0.8);
   box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.32);
