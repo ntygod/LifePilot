@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  * 审计日志中间件，包裹整个管道记录请求/响应审计事件。
  *
  * <p>order=50，最先执行。在 {@code chain.next()} 前后记录时间，
- * 构建 {@link AuditEvent} 后通过 {@link CompletableFuture#runAsync} 异步持久化，
+ * 构建 {@link AuditEvent} 后通过 virtual thread 异步持久化，
  * 持久化失败不影响响应。</p>
  *
  * @author zsg

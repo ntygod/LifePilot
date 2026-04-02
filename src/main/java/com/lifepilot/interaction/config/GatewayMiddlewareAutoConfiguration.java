@@ -13,6 +13,7 @@ import com.lifepilot.interaction.middleware.security.PromptInjectionDetector;
 import com.lifepilot.interaction.middleware.security.SecurityMiddleware;
 import com.lifepilot.interaction.middleware.security.SensitiveDataDetector;
 import com.lifepilot.interaction.middleware.security.TrustScoreCalculator;
+import com.lifepilot.config.threadpool.VirtualThreadExecutorFactory;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -85,7 +86,8 @@ public class GatewayMiddlewareAutoConfiguration {
                                                    GatewayProperties properties,
                                                    ObjectProvider<SseSessionManager> sseSessionManagerProvider,
                                                    ChatSessionRepository chatSessionRepository,
-                                                   ChatTurnService chatTurnService) {
+                                                   ChatTurnService chatTurnService,
+                                                   VirtualThreadExecutorFactory virtualThreadExecutorFactory) {
         log.info("注册 ExecutionMiddleware");
         return new ExecutionMiddleware(
                 agentOrchestrator,
@@ -93,7 +95,8 @@ public class GatewayMiddlewareAutoConfiguration {
                 properties,
                 chatSessionRepository,
                 chatTurnService,
-                sseSessionManagerProvider.getIfAvailable()
+                sseSessionManagerProvider.getIfAvailable(),
+                virtualThreadExecutorFactory.create("agent-exec")
         );
     }
 
