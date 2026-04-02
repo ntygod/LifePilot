@@ -5,7 +5,7 @@ description: "飞书消息、任务、文档、日程管理"
 version: "1.0.0"
 suggested-tools:
   - web.fetch
-  - shell
+  - shell.exec
 triggers:
   - "飞书"
   - "发飞书消息"

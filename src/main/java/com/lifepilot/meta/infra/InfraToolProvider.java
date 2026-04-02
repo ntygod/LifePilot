@@ -199,7 +199,7 @@ public class InfraToolProvider {
             }
         }
 
-        // Shell 工具（统一 exec / process / session）
+        // Shell 工具（shell.exec + shell.process）
         var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager);
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         var shellTools = shellToolProvider.buildShellTools();

@@ -7,7 +7,7 @@ suggested-tools:
   - file.list
   - file.read
   - file.write
-  - shell
+  - shell.exec
 triggers:
   - "文件整理"
   - "文件管理"
@@ -44,7 +44,7 @@ triggers:
 file.list(path="目标目录", recursive=true)
 
 # 分析文件分布
-shell(action=exec, command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
+shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
 ```
 
 ### 2. 制定整理方案
@@ -75,13 +75,13 @@ shell(action=exec, command="find /path -type f | sed 's/.*\\.//' | sort | uniq -
 
 ```
 # 批量重命名
-shell(action=exec, command="mv old_name new_name")
+shell.exec(command="mv old_name new_name")
 
 # 创建目录结构
-shell(action=exec, command="mkdir -p docs/2026 images/2026")
+shell.exec(command="mkdir -p docs/2026 images/2026")
 
 # 移动文件
-shell(action=exec, command="mv file.pdf docs/2026/")
+shell.exec(command="mv file.pdf docs/2026/")
 ```
 
 ### 5. 验证结果

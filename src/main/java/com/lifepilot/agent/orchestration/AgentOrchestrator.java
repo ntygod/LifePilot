@@ -345,7 +345,8 @@ public class AgentOrchestrator {
         if (suspendStore == null) {
             throw new IllegalStateException("SuspendStore 未配置，无法恢复挂起的 Agent");
         }
-        SuspendedAgent suspended = suspendStore.load(traceId)
+        // 原子加载并删除挂起状态，防止并发恢复同一个 Agent
+        SuspendedAgent suspended = suspendStore.loadAndDelete(traceId)
                 .orElseThrow(() -> new IllegalStateException("找不到挂起的 Agent: " + traceId));
         agentLoop.validateResumePayload(suspended.suspendReason(), payload);
 
@@ -360,13 +361,14 @@ public class AgentOrchestrator {
                 payload.getClass().getSimpleName());
 
         final ReactAgentState resumedState = state;
-        Thread.startVirtualThread(() -> runResume(traceId, resumedState));
+        Thread.startVirtualThread(() -> runResume(traceId, resumedState, suspended));
     }
 
     /** 在虚拟线程中异步执行恢复后的 Agent 逻辑
         避免阻塞调用方（通常是 Web 请求线程），让恢复操作在后台运行
      */
-    private void runResume(String suspendedTraceId, ReactAgentState state) {
+    private void runResume(String suspendedTraceId, ReactAgentState state,
+                           SuspendedAgent originalSuspend) {
         var token = new CancellationToken();
         var loopStart = Instant.now();
         var loopContext = new AgentLoopContext();
@@ -407,14 +409,21 @@ public class AgentOrchestrator {
                 String assistantEntryId = executionPersistence.persistAssistantSync(state, reactStepsJson, loopContext);
                 executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
             }
-            if (suspendStore != null) {
-                suspendStore.delete(suspendedTraceId);
-            }
+            // 挂起状态已在 resumeFromSuspend 中原子删除，无需再次清理
             log.info("Agent 从挂起恢复完成：traceId={}, stepCount={}", state.traceId(), state.stepCount());
         } catch (Exception e) {
             executionPersistence.markTurnFailed(state, e);
-            // 恢复失败时保留快照，允许后续重试恢复；快照会由 SuspendStore 的 TTL 策略自动清理
-            log.error("Agent 从挂起恢复失败（快照已保留，可重试）：traceId={}, suspendedTraceId={}, error={}",
+            // 恢复失败时重新保存挂起快照，允许后续重试恢复
+            if (suspendStore != null) {
+                try {
+                    suspendStore.save(originalSuspend);
+                    log.warn("恢复失败，已重新保存挂起快照以允许重试：traceId={}", suspendedTraceId);
+                } catch (Exception saveEx) {
+                    log.error("重新保存挂起快照也失败，状态已丢失：traceId={}, error={}",
+                            suspendedTraceId, saveEx.getMessage());
+                }
+            }
+            log.error("Agent 从挂起恢复失败：traceId={}, suspendedTraceId={}, error={}",
                     state.traceId(), suspendedTraceId, e.getMessage(), e);
         }
     }

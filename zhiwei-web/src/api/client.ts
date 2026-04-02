@@ -1550,8 +1550,8 @@ export const memoryApi = {
   getStats: () => request<MemoryStats>('/memories/stats'),
 
   /** 统一搜索 */
-  search: (q: string, topK = 10) =>
-    request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&topK=${topK}`),
+  search: (q: string, top_k = 10) =>
+    request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&top_k=${top_k}`),
 
   /** 手动巩固 */
   triggerConsolidation: () =>

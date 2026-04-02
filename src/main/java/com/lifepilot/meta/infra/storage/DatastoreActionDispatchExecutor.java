@@ -19,6 +19,7 @@ import com.lifepilot.datastore.model.TimeGranularity;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.dispatch.ActionDispatchExecutor;
+import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
@@ -138,7 +139,7 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
                 input -> {
                     try {
                         String collectionName = input.getParam("collectionName", String.class);
-                        String data = input.getParam("data", String.class);
+                        String data = resolveJsonParam(input, "data");
                         String recordedAt = input.getOptionalParam("recordedAt", String.class).orElse(null);
 
                         Collection collection = dataStoreManager.findCollection(collectionName)
@@ -168,18 +169,7 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
                         Collection collection = dataStoreManager.findCollection(collectionName)
                                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: " + collectionName));
 
-                        String filtersJson = input.getOptionalParam("filters", String.class).orElse(null);
-                        List<QueryFilter> filters = new ArrayList<>();
-                        if (filtersJson != null) {
-                            List<Map<String, Object>> filterMaps = OBJECT_MAPPER.readValue(filtersJson, new TypeReference<>() {});
-                            for (Map<String, Object> fm : filterMaps) {
-                                filters.add(new QueryFilter(
-                                        (String) fm.get("field"),
-                                        FilterOp.valueOf(((String) fm.get("op")).toUpperCase()),
-                                        fm.get("value")
-                                ));
-                            }
-                        }
+                        List<QueryFilter> filters = parseFilters(input);
 
                         String sortField = input.getOptionalParam("sortField", String.class).orElse(null);
                         String sortDirStr = input.getOptionalParam("sortDirection", String.class).orElse(null);
@@ -215,7 +205,7 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
                 input -> {
                     try {
                         String documentId = input.getParam("documentId", String.class);
-                        String data = input.getParam("data", String.class);
+                        String data = resolveJsonParam(input, "data");
                         boolean success = dataStoreManager.updateDocument(documentId, data);
                         return success
                                 ? ToolResult.success(Map.of("updated", true))
@@ -308,6 +298,49 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
             case List<?> rawList -> OBJECT_MAPPER.convertValue(rawList, new TypeReference<>() {});
             default -> throw new IllegalArgumentException("properties 参数类型不匹配: 期望数组或 JSON 字符串");
         };
+    }
+
+    /**
+     * 解析 JSON 参数 — 兼容 Map/List（原生类型）和 String（JSON 字符串）。
+     *
+     * <p>LLM 可能传入 Map/List 原生结构或 JSON 字符串，此方法统一转为 JSON 字符串供底层存储使用。</p>
+     */
+    private String resolveJsonParam(ToolInput input, String paramName) throws JsonProcessingException {
+        Object raw = input.parameters().get(paramName);
+        if (raw == null) {
+            throw new IllegalArgumentException("缺少必需参数: " + paramName);
+        }
+        return switch (raw) {
+            case String s -> s;
+            case Map<?, ?> m -> OBJECT_MAPPER.writeValueAsString(m);
+            case List<?> l -> OBJECT_MAPPER.writeValueAsString(l);
+            default -> raw.toString();
+        };
+    }
+
+    /**
+     * 解析 filters 参数 — 兼容 List（原生数组）和 String（JSON 字符串）。
+     */
+    @SuppressWarnings("unchecked")
+    private List<QueryFilter> parseFilters(ToolInput input) throws JsonProcessingException {
+        Object raw = input.parameters().get("filters");
+        if (raw == null) {
+            return new ArrayList<>();
+        }
+        List<Map<String, Object>> filterMaps = switch (raw) {
+            case List<?> list -> (List<Map<String, Object>>) list;
+            case String json -> OBJECT_MAPPER.readValue(json, new TypeReference<>() {});
+            default -> throw new IllegalArgumentException("filters 参数类型不匹配: 期望数组或 JSON 字符串");
+        };
+        var filters = new ArrayList<QueryFilter>();
+        for (Map<String, Object> fm : filterMaps) {
+            filters.add(new QueryFilter(
+                    (String) fm.get("field"),
+                    FilterOp.valueOf(((String) fm.get("op")).toUpperCase()),
+                    fm.get("value")
+            ));
+        }
+        return filters;
     }
 
     private Map<String, Object> documentToMap(Document doc) {

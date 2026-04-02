@@ -4,7 +4,7 @@ name: "日志分析"
 description: "应用/系统日志分析、错误追踪、统计报告"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
   - file.read
   - file.list
 triggers:
@@ -27,7 +27,7 @@ triggers:
 
 ## When NOT to Use
 - 系统级健康检查（用 healthcheck）
-- 实时监控告警（用 shell 命令 + cron）
+- 实时监控告警（用 shell.exec + cron）
 - 代码级调试（用 code-assistant）
 
 ## 分析流程

@@ -4,7 +4,7 @@ name: "数据库查询"
 description: "数据库连接、SQL 查询/生成、数据导出"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
   - file.write
   - file.read
 triggers:

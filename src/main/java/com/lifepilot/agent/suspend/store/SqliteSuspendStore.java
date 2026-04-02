@@ -103,6 +103,19 @@ public class SqliteSuspendStore implements SuspendStore {
     }
 
     @Override
+    @Transactional
+    public Optional<SuspendedAgent> loadAndDelete(String traceId) {
+        List<SuspendedAgent> results = jdbcTemplate.query(
+                "SELECT * FROM suspended_agents WHERE trace_id = ?", rowMapper, traceId);
+        if (results.isEmpty()) {
+            return Optional.empty();
+        }
+        jdbcTemplate.update("DELETE FROM suspended_agents WHERE trace_id = ?", traceId);
+        log.debug("挂起状态已原子加载并删除: traceId={}", traceId);
+        return Optional.of(results.getFirst());
+    }
+
+    @Override
     public int cleanExpired(Duration maxAge) {
         Instant cutoff = Instant.now().minus(maxAge);
         int deleted = jdbcTemplate.update(

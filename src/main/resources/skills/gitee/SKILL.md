@@ -5,7 +5,7 @@ description: "Gitee 仓库/PR/Issue/CI 管理"
 version: "1.0.0"
 suggested-tools:
   - web.fetch
-  - shell
+  - shell.exec
   - git.query
   - git.mutate
 triggers:
@@ -28,7 +28,7 @@ triggers:
 
 ## When NOT to Use
 - GitHub 操作（用 github-workflow Skill）
-- 本地 Git 操作（直接用 shell）
+- 本地 Git 操作（直接用 shell.exec）
 - 代码编写和调试（用 code-assistant）
 
 ## 前置条件

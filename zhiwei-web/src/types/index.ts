@@ -967,7 +967,7 @@ export interface AgentLlmConfig {
 export interface AgentKnowledgeBaseBinding {
   id: string
   name: string
-  topK?: number
+  top_k?: number
   maxContextTokens?: number
 }
 

@@ -211,6 +211,8 @@ public class ReactAgentLoop implements CallbackHelper {
         int consecutiveFailures = 0;
         // 缓存首次组装的上下文 — 记忆检索结果和预算分配在迭代间不变
         AssembledContext cachedContext = null;
+        // 缓存工具回调列表 — 工具集在迭代间不变，仅 TRIM_TOOLS 降级时失效重建
+        List<ToolCallback> cachedToolCallbacks = null;
 
         for (int iteration = 0; !state.isDone(); iteration++) {
             // 1. 取消信号检查
@@ -231,8 +233,12 @@ public class ReactAgentLoop implements CallbackHelper {
             // 3. 预算检查：每轮开始前先刷新 elapsed，并在任一维度超限时统一降级终止
             var startBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
             state = startBudgetCheck.state();
-            if (startBudgetCheck.invalidateCachedContext()) {
-                cachedContext = null;
+            if (startBudgetCheck.invalidateCachedContext() && cachedContext != null) {
+                // 增量降级：基于已缓存的上下文裁剪，避免重新检索记忆和知识
+                cachedContext = cachedContext.degrade(startBudgetCheck.degradationLevel());
+                if (startBudgetCheck.degradationLevel() == Budget.DegradationLevel.TRIM_TOOLS) {
+                    cachedToolCallbacks = null;
+                }
             }
             if (state.isDone()) {
                 break;
@@ -273,7 +279,10 @@ public class ReactAgentLoop implements CallbackHelper {
                         messageBuildResult.hygieneReport().droppedOrphanToolResponses(),
                         messageBuildResult.hygieneReport().droppedAdditionalSystemMessages());
             }
-            var toolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
+            if (cachedToolCallbacks == null) {
+                cachedToolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
+            }
+            var toolCallbacks = cachedToolCallbacks;
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
@@ -441,6 +450,7 @@ public class ReactAgentLoop implements CallbackHelper {
                                 .build();
                         consecutiveFailures = 0;
                         cachedContext = null;
+                        cachedToolCallbacks = null;
                     } else {
                         String visibleContent = completionEvaluation.userVisibleContent() != null
                                 ? completionEvaluation.userVisibleContent()
@@ -481,11 +491,15 @@ public class ReactAgentLoop implements CallbackHelper {
                             loopContext
                     );
                     cachedContext = null;
+                    cachedToolCallbacks = null;
                 }
                 var endBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
                 state = endBudgetCheck.state();
-                if (endBudgetCheck.invalidateCachedContext()) {
-                    cachedContext = null;
+                if (endBudgetCheck.invalidateCachedContext() && cachedContext != null) {
+                    cachedContext = cachedContext.degrade(endBudgetCheck.degradationLevel());
+                    if (endBudgetCheck.degradationLevel() == Budget.DegradationLevel.TRIM_TOOLS) {
+                        cachedToolCallbacks = null;
+                    }
                 }
                 if (state.isDone()) {
                     break;
@@ -506,14 +520,16 @@ public class ReactAgentLoop implements CallbackHelper {
         state = refreshBudgetElapsed(state, loopStart);
 
         boolean invalidateCachedContext = false;
-        var degradation = state.budget().degradationLevel();
-        if ((degradation == com.lifepilot.agent.model.Budget.DegradationLevel.COMPRESS_HISTORY
-                || degradation == com.lifepilot.agent.model.Budget.DegradationLevel.TRIM_TOOLS
-                || degradation == com.lifepilot.agent.model.Budget.DegradationLevel.SKIP_MEMORY)
+        Budget.DegradationLevel degradation = state.budget().degradationLevel();
+        Budget.DegradationLevel reportedLevel = null;
+        if ((degradation == Budget.DegradationLevel.COMPRESS_HISTORY
+                || degradation == Budget.DegradationLevel.TRIM_TOOLS
+                || degradation == Budget.DegradationLevel.SKIP_MEMORY)
                 && hasCachedContext) {
             log.info("预算渐进式降级: traceId={}, level={}, tokenUtilization={}%",
                     state.traceId(), degradation, (int) (state.budget().tokenUtilization() * 100));
             invalidateCachedContext = true;
+            reportedLevel = degradation;
         }
 
         if (state.budget().exceeded()) {
@@ -521,7 +537,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     state.traceId(), state.budget().exceedReason());
             state = DegradedResponseBuilder.terminateWithReason(state, state.budget().exceedReason());
         }
-        return new BudgetCheckResult(state, invalidateCachedContext);
+        return new BudgetCheckResult(state, invalidateCachedContext, reportedLevel);
     }
 
     private boolean maybeCompactMidLoop(ReactAgentState state, int iteration, boolean hasCachedContext) {
@@ -577,7 +593,8 @@ public class ReactAgentLoop implements CallbackHelper {
     /** 预算检查结果：同时返回新 state 以及是否需要丢弃缓存上下文。 */
     private record BudgetCheckResult(
             ReactAgentState state,
-            boolean invalidateCachedContext
+            boolean invalidateCachedContext,
+            @Nullable Budget.DegradationLevel degradationLevel
     ) {
     }
 

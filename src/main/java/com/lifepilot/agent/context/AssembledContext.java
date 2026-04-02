@@ -91,6 +91,26 @@ public record AssembledContext(
         );
     }
 
+    /**
+     * 基于当前上下文做增量降级，避免全量重组装。
+     *
+     * <p>根据降级级别裁剪相应部分：SKIP_MEMORY 清空上下文消息和记忆，
+     * TRIM_TOOLS 和 COMPRESS_HISTORY 清空上下文消息（减少 token 占用），
+     * 标记 degraded=true。</p>
+     */
+    public AssembledContext degrade(com.lifepilot.agent.model.Budget.DegradationLevel level) {
+        return switch (level) {
+            case SKIP_MEMORY -> new AssembledContext(
+                    systemPrompt, List.of(), historyMessages, userPrompt,
+                    List.of(), tokenBudget, 0, 0f, 0, true, injectedEntityIds, mediaContents);
+            case TRIM_TOOLS, COMPRESS_HISTORY -> new AssembledContext(
+                    systemPrompt, List.of(), historyMessages, userPrompt,
+                    retrievedMemories, tokenBudget, retrievalCount, topRetrievalScore,
+                    0, true, injectedEntityIds, mediaContents);
+            default -> this;
+        };
+    }
+
     /** 基于当前上下文，追加一条上下文消息，返回新实例。 */
     public AssembledContext appendContextMessage(Message message) {
         var mergedMessages = new ArrayList<>(contextMessages());

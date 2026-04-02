@@ -4,7 +4,7 @@ name: "工作流创建助手"
 description: "对话式工作流 YAML 创建，保存至 ~/.zhiwei/workflows/"
 version: "1.1.0"
 suggested-tools:
-  - shell
+  - shell.exec
 ---
 
 # 工作流创建指南

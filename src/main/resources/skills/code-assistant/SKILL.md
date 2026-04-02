@@ -4,7 +4,8 @@ name: "编码代理"
 description: "调度外部编码 Agent 执行开发/重构/PR 审查（简单修改直接编辑）"
 version: "1.0.0"
 suggested-tools:
-  - shell
+  - shell.exec
+  - shell.process
   - file.read
   - file.write
   - file.list
@@ -46,7 +47,7 @@ triggers:
 
 ```bash
 # 后台启动 Codex（需要 PTY 模式）
-shell(action=exec, command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true)
+shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true)
 ```
 
 | 标志 | 效果 |
@@ -58,14 +59,14 @@ shell(action=exec, command="codex exec --full-auto '你的任务描述'", workin
 
 ```bash
 # 后台启动 Claude Code（使用 --print 模式，无需 PTY）
-shell(action=exec, command="claude --permission-mode bypassPermissions --print '你的任务描述'", workingDirectory="/path/to/project", background=true)
+shell.exec(command="claude --permission-mode bypassPermissions --print '你的任务描述'", workingDirectory="/path/to/project", background=true)
 ```
 
 ### Pi / OpenCode
 
 ```bash
 # 后台启动（交互式终端应用）
-shell(action=exec, command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true)
+shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true)
 ```
 
 ## 核心工作流
@@ -73,14 +74,14 @@ shell(action=exec, command="pi '你的任务描述'", workingDirectory="/path/to
 ### 1. 启动编码 Agent
 
 ```
-shell(action=exec, command="...", workingDirectory="项目路径", background=true)
+shell.exec(command="...", workingDirectory="项目路径", background=true)
 → 返回 { sessionId: "abc123" }
 ```
 
 ### 2. 监控进度
 
 ```
-shell(action=process-output, sessionId="abc123")
+shell.process(action=output, sessionId="abc123")
 → 返回增量输出，查看编码进展
 ```
 
@@ -92,7 +93,7 @@ shell(action=process-output, sessionId="abc123")
 ### 3. 交互（按需）
 
 ```
-shell(action=process-write, sessionId="abc123", input="yes\n")
+shell.process(action=write, sessionId="abc123", input="yes\n")
 → 向 Agent 发送确认或输入
 ```
 
@@ -100,10 +101,10 @@ shell(action=process-write, sessionId="abc123", input="yes\n")
 
 ```
 # 查看最终输出
-shell(action=process-output, sessionId="abc123")
+shell.process(action=output, sessionId="abc123")
 
 # 如需终止
-shell(action=process-output, sessionId="abc123")
+shell.process(action=kill, sessionId="abc123")
 ```
 
 ## 并行任务模式
@@ -112,16 +113,16 @@ shell(action=process-output, sessionId="abc123")
 
 ```bash
 # 创建独立工作树
-shell(action=exec, command="git worktree add -b fix/issue-78 /tmp/issue-78 main", workingDirectory="/project")
+shell.exec(command="git worktree add -b fix/issue-78 /tmp/issue-78 main", workingDirectory="/project")
 
 # 在工作树中启动 Agent
-shell(action=exec, command="codex exec --full-auto 'Fix issue #78'", workingDirectory="/tmp/issue-78", background=true)
+shell.exec(command="codex exec --full-auto 'Fix issue #78'", workingDirectory="/tmp/issue-78", background=true)
 
 # 同时启动另一个任务
-shell(action=exec, command="codex exec --full-auto 'Fix issue #79'", workingDirectory="/tmp/issue-79", background=true)
+shell.exec(command="codex exec --full-auto 'Fix issue #79'", workingDirectory="/tmp/issue-79", background=true)
 
-# 用 shell 查看所有进程
-shell(action=process-list)
+# 查看所有后台进程
+shell.process(action=list)
 ```
 
 ## 进度更新规则
@@ -134,6 +135,6 @@ shell(action=process-list)
 ## 常见错误处理
 
 - **Agent 未安装**：提示用户安装对应 CLI（`npm install -g @openai/codex`、`npm install -g @anthropic-ai/claude-code` 等）
-- **进程超时**：检查 `shell` 确认是否卡住，必要时 `shell` 后重试
+- **进程超时**：用 `shell.process(action=output)` 确认是否卡住，必要时 `shell.process(action=kill)` 后重试
 - **权限错误**：确认工作目录权限，Claude Code 需要 `--permission-mode bypassPermissions`
-- **并发限制**：`shell` 查看当前进程数，必要时先终止空闲进程
+- **并发限制**：用 `shell.process(action=list)` 查看当前进程数，必要时先终止空闲进程
