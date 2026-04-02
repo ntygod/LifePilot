@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, onMounted, onUpdated, watch } from 'vue'
+import { ref, onBeforeUnmount, onMounted, onUpdated, watch } from 'vue'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import { highlightCode } from '@/lib/highlight'
@@ -11,23 +11,6 @@ const props = defineProps<{
 }>()
 
 const proseRef = ref<HTMLElement | null>(null)
-const renderedContent = ref(props.streaming ? '' : props.content)
-let frameId: number | null = null
-let nextTickAt = 0
-
-function tryInjectCopyButtons() {
-  if (proseRef.value) {
-    injectCopyButtons(proseRef.value)
-  }
-}
-
-onMounted(tryInjectCopyButtons)
-onUpdated(tryInjectCopyButtons)
-onBeforeUnmount(() => {
-  if (frameId !== null) {
-    cancelAnimationFrame(frameId)
-  }
-})
 
 const markedInstance = new Marked(
   markedHighlight({
@@ -38,141 +21,102 @@ const markedInstance = new Marked(
   })
 )
 
-function stopStreamAnimation() {
-  if (frameId !== null) {
-    cancelAnimationFrame(frameId)
-    frameId = null
+/* ---- Markdown 节流渲染 ----
+ * 流式输出时，token 以 ~24ms 间隔到达并触发 content 变更。
+ * 如果每次变更都做全量 markdown 解析 + v-html 替换 DOM，
+ * 60fps 的布局重排是抖动的主要来源。
+ *
+ * 方案：leading + trailing 节流，首次变更立即解析，
+ * 后续变更在 PARSE_INTERVAL_MS 内合并为一次 DOM 更新。
+ */
+const html = ref('')
+let parseTimer: ReturnType<typeof setTimeout> | null = null
+let lastParseTs = 0
+const PARSE_INTERVAL_MS = 80
+
+function safeParseMarkdown(text: string): string {
+  if (!text) return ''
+  try {
+    return markedInstance.parse(text) as string
+  } catch {
+    // 流式输出时尝试修复未闭合的代码块
+    let fixed = text
+    if ((fixed.match(/```/g) || []).length % 2 !== 0) {
+      fixed += '\n```'
+    }
+    try {
+      return markedInstance.parse(fixed) as string
+    } catch {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/\n/g, '<br>')
+    }
   }
-  nextTickAt = 0
 }
 
-function getChunkSize(remaining: number) {
-  if (remaining > 420) return 28
-  if (remaining > 260) return 20
-  if (remaining > 160) return 15
-  if (remaining > 80) return 10
-  if (remaining > 36) return 6
-  return 3
+function clearParseTimer() {
+  if (parseTimer !== null) {
+    clearTimeout(parseTimer)
+    parseTimer = null
+  }
 }
 
-function getChunkDelay(chunk: string, remaining: number) {
-  const lastChar = chunk.at(-1) ?? ''
-
-  if (/\n/.test(chunk)) {
-    return remaining > 120 ? 34 : 58
-  }
-
-  if (/[。！？!?]/.test(lastChar)) {
-    return remaining > 80 ? 44 : 88
-  }
-
-  if (/[，、；：,;:]/.test(lastChar)) {
-    return remaining > 80 ? 28 : 56
-  }
-
-  if (/[）)]/.test(lastChar)) {
-    return 42
-  }
-
-  return remaining > 220 ? 14 : remaining > 100 ? 20 : 28
+/** 立即解析并渲染 markdown */
+function flushMarkdown() {
+  clearParseTimer()
+  lastParseTs = Date.now()
+  html.value = safeParseMarkdown(props.content)
 }
 
-function scheduleStreamAnimation() {
-  if (!props.streaming) {
-    renderedContent.value = props.content
-    stopStreamAnimation()
+/** leading + trailing 节流：首次立即触发，后续按间隔合并 */
+function scheduleMarkdownParse() {
+  const now = Date.now()
+  const elapsed = now - lastParseTs
+
+  // leading edge：距上次解析已超过间隔，立即执行
+  if (elapsed >= PARSE_INTERVAL_MS) {
+    lastParseTs = now
+    html.value = safeParseMarkdown(props.content)
     return
   }
 
-  if (props.content.length < renderedContent.value.length) {
-    renderedContent.value = props.content
-  }
-
-  if (frameId !== null) {
-    return
-  }
-
-  const tick = (timestamp: number) => {
-    if (timestamp < nextTickAt) {
-      frameId = requestAnimationFrame(tick)
-      return
-    }
-
-    const target = props.content
-    const currentLength = renderedContent.value.length
-
-    if (!props.streaming) {
-      renderedContent.value = target
-      frameId = null
-      return
-    }
-
-    if (currentLength >= target.length) {
-      frameId = null
-      return
-    }
-
-    const remaining = target.length - currentLength
-    const chunkSize = Math.min(getChunkSize(remaining), remaining)
-    const nextContent = target.slice(0, currentLength + chunkSize)
-    const chunk = nextContent.slice(currentLength)
-
-    renderedContent.value = nextContent
-    nextTickAt = timestamp + getChunkDelay(chunk, remaining)
-    frameId = requestAnimationFrame(tick)
-  }
-
-  frameId = requestAnimationFrame(tick)
+  // trailing edge：在剩余时间后执行
+  if (parseTimer !== null) return
+  parseTimer = setTimeout(() => {
+    parseTimer = null
+    lastParseTs = Date.now()
+    html.value = safeParseMarkdown(props.content)
+  }, PARSE_INTERVAL_MS - elapsed)
 }
+
+/* ---- 生命周期 ---- */
+function tryInjectCopyButtons() {
+  if (proseRef.value) {
+    injectCopyButtons(proseRef.value)
+  }
+}
+
+onMounted(tryInjectCopyButtons)
+onUpdated(tryInjectCopyButtons)
+onBeforeUnmount(clearParseTimer)
+
+/* ---- 响应式监听 ---- */
+watch(() => props.content, () => {
+  if (props.streaming) {
+    scheduleMarkdownParse()
+  } else {
+    flushMarkdown()
+  }
+}, { immediate: true })
 
 watch(() => props.streaming, (streaming) => {
   if (!streaming) {
-    renderedContent.value = props.content
-    stopStreamAnimation()
-    return
-  }
-  scheduleStreamAnimation()
-}, { immediate: true })
-
-watch(() => props.content, (content) => {
-  if (!props.streaming) {
-    renderedContent.value = content
-    return
-  }
-  scheduleStreamAnimation()
-}, { immediate: true })
-
-const html = computed(() => {
-  if (!renderedContent.value) return ''
-  try {
-    const parsed = markedInstance.parse(renderedContent.value) as string
-    return parsed
-  } catch (e) {
-    if (props.streaming) {
-      let fixedContent = renderedContent.value
-      const openCodeBlocks = (fixedContent.match(/```/g) || []).length
-      if (openCodeBlocks % 2 !== 0) {
-        fixedContent += '\n```'
-      }
-      try {
-        return markedInstance.parse(fixedContent) as string
-      } catch {
-        return renderedContent.value
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;')
-          .replace(/\n/g, '<br>')
-      }
-    }
-    return renderedContent.value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-      .replace(/\n/g, '<br>')
+    // 流结束时立即做最终渲染
+    flushMarkdown()
   }
 })
 </script>
@@ -423,6 +367,7 @@ const html = computed(() => {
 
 .streaming-prose {
   position: relative;
+  contain: layout;
 }
 
 .streaming-prose::after {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   LibraryBig,
@@ -284,8 +284,14 @@ watch(
   { immediate: true },
 )
 
+/* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次，
+   避免 token 到达时（~24ms）与 DOM 重排交叉触发导致滚动抖动 */
+let scrollRaf: number | null = null
+
 function scrollToBottom() {
-  nextTick(() => {
+  if (scrollRaf !== null) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = null
     if (scrollContainer.value) {
       scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
     }
