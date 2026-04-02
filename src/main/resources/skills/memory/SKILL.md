@@ -33,7 +33,7 @@ triggers:
 ## When NOT to Use
 
 - 结构化业务数据存储（用 datastore）
-- 文件内容搜索（用 file.grep）
+- 文件内容搜索（用 file.list 的 search 模式）
 - 外部数据库查询（用 database-query）
 
 ## 工具使用最佳实践
@@ -44,24 +44,24 @@ triggers:
 
 | 工具 | 适用场景 | 示例 |
 |------|---------|------|
-| `memory` | 搜索知识实体（人物、地点、事件、偏好） | "我喜欢什么颜色？" |
-| `memory` | 回忆跨会话的历史对话片段 | "我之前说过什么关于旅行的？" |
+| `memory(action=search)` | 搜索知识实体（人物、地点、事件、偏好） | "我喜欢什么颜色？" |
+| `memory(action=recall)` | 回忆跨会话的历史对话片段 | "我之前说过什么关于旅行的？" |
 | `knowledge.search` | 搜索已上传的资料文档 | "文档里关于部署流程怎么说的？" |
 
 ### 创建与更新
 
-- 使用 `memory` 创建新记忆时，选择准确的 `entityType`（PERSON/PLACE/EVENT/PREFERENCE/HABIT/GOAL 等）
+- 使用 `memory(action=create)` 创建新记忆时，选择准确的 `entityType`（PERSON/PLACE/EVENT/PREFERENCE/HABIT/GOAL 等）
 - 如果实体已存在，`create` 会自动版本化合并，无需先搜索再判断
-- 使用 `memory` 更新已有实体的描述或类型，需要先通过 `search` 获取 `entityId`
+- 使用 `memory(action=update)` 更新已有实体的描述或类型，需要先通过 `search` 获取 `entityId`
 
 ### 标签与关联
 
-- 使用 `memory` 建立实体间关系（如 RELATED_TO、BELONGS_TO、CAUSED_BY）
-- 建立关联前，先用 `search` 确认两个实体都存在并获取 ID
+- 使用 `memory(action=tag)` 建立实体间关系（如 RELATED_TO、BELONGS_TO、CAUSED_BY），需传 `sourceEntityId`、`targetEntityId`、`relationType`
+- 建立关联前，先用 `memory(action=search)` 确认两个实体都存在并获取 ID
 
 ### 时间查询
 
-- 使用 `memory` 查询指定时间点有效的记忆
+- 使用 `memory(action=query-at-time)` 查询指定时间点有效的记忆
 - 时间格式为 ISO 8601（如 `2026-01-15T10:30:00Z`）
 - 可通过 `entityType` 参数过滤特定类型
 
@@ -75,20 +75,20 @@ triggers:
 
 ### 记忆创建完整流程
 
-1. 用 `memory` 检查是否已有相关记忆
-2. 用 `memory` 创建新实体
-3. 如需关联已有实体，用 `memory` 建立关系
+1. 用 `memory(action=search)` 检查是否已有相关记忆
+2. 用 `memory(action=create)` 创建新实体
+3. 如需关联已有实体，用 `memory(action=tag)` 建立关系
 
 ### 记忆更新流程
 
-1. 用 `memory` 找到目标实体，获取 `entityId`
-2. 用 `memory` 更新描述或类型
+1. 用 `memory(action=search)` 找到目标实体，获取 `entityId`
+2. 用 `memory(action=update)` 更新描述或类型
 
 ### 记忆删除流程
 
-1. 用 `memory` 确认目标实体
+1. 用 `memory(action=search)` 确认目标实体
 2. 向用户确认删除意图
-3. 用 `memory` 执行归档（非物理删除）
+3. 用 `memory(action=delete)` 执行归档（非物理删除）
 
 ## 常见错误处理
 

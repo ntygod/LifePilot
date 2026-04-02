@@ -35,7 +35,7 @@ triggers:
 
 - 数据库 SQL 查询（用 database-query）
 - 日志文件分析（用 log-analyzer）
-- 简单计算（用 reason.calculate 工具）
+- 简单数学计算（直接回答，无需加载本 Skill）
 
 ## 分析工作流
 

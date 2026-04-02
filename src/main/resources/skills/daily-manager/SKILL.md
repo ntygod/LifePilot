@@ -13,9 +13,9 @@ triggers:
   - "日程"
   - "待办"
   - "日常管理"
-  - "提醒"
   - "安排"
   - "计划"
+  - "任务规划"
 ---
 
 # 日常管理指南
@@ -44,13 +44,13 @@ triggers:
 1. 获取当前上下文
 
 ```
-memory(query="今日待办")
+memory(action=search, query="今日待办")
 ```
 
 2. 与用户确认任务列表
 
 ```
-interact(question="今天需要完成哪些任务？")
+interact(action="input", question="今天需要完成哪些任务？")
 ```
 
 3. 任务分解和排序
@@ -64,7 +64,7 @@ interact(question="今天需要完成哪些任务？")
 4. 记录到记忆
 
 ```
-memory(name="今日任务计划", entityType="EVENT", description="任务列表...")
+memory(action=create, name="今日任务计划", entityType="EVENT", description="任务列表...")
 ```
 
 ### 多 Skill 协调模式
@@ -85,7 +85,7 @@ memory(name="今日任务计划", entityType="EVENT", description="任务列表.
 
 ```
 # 搜索相关记忆
-memory(query="本周完成事项")
+memory(action=search, query="本周完成事项")
 
 # 读取相关文件
 file.read(path="notes/weekly.md")

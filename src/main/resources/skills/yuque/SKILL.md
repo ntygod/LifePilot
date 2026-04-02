@@ -39,7 +39,7 @@ triggers:
 
 ### 获取知识库列表
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://www.yuque.com/api/v2/users/${user}/repos",
   method="GET",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}"}
@@ -48,7 +48,7 @@ web.fetch(method=POST,
 
 ### 创建文档
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://www.yuque.com/api/v2/repos/${namespace}/docs",
   method="POST",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}", "Content-Type": "application/json"},
@@ -58,7 +58,7 @@ web.fetch(method=POST,
 
 ### 搜索文档
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://www.yuque.com/api/v2/search?q=${关键词}&type=doc",
   method="GET",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}"}
@@ -67,7 +67,7 @@ web.fetch(method=POST,
 
 ### 更新文档
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://www.yuque.com/api/v2/repos/${namespace}/docs/${slug}",
   method="PUT",
   headers={"X-Auth-Token": "${YUQUE_TOKEN}", "Content-Type": "application/json"},
