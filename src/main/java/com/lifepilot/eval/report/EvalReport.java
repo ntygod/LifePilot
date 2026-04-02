@@ -107,8 +107,8 @@ public class EvalReport {
                 }
             }
 
-            // 渐进漂移检测：连续 3 次评分递减标记为 drifting
-            List<Double> scoreHistory = evalStore.findScoreHistory(current.scenarioId(), 4);
+            // 渐进漂移检测：连续 3 次评分递减标记为 drifting（排除当前运行）
+            List<Double> scoreHistory = evalStore.findScoreHistory(current.scenarioId(), evalRunId, 4);
             if (scoreHistory.size() >= 3) {
                 boolean drifting = true;
                 for (int i = 0; i < scoreHistory.size() - 1; i++) {

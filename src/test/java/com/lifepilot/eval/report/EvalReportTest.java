@@ -47,7 +47,7 @@ class EvalReportTest {
 
         // 默认无基线、无评分历史（lenient 避免未使用 stub 导致失败）
         lenient().when(evalStore.findLatestBaselineRunId()).thenReturn(Optional.empty());
-        lenient().when(evalStore.findScoreHistory(anyString(), anyInt())).thenReturn(List.of());
+        lenient().when(evalStore.findScoreHistory(anyString(), anyString(), anyInt())).thenReturn(List.of());
     }
 
     @Test

@@ -29,7 +29,7 @@ public class LlmJudge {
 
     private static final Logger log = LoggerFactory.getLogger(LlmJudge.class);
 
-    /** 匹配 0.0 ~ 1.0 范围内的小数（含整数 0 和 1）。 */
+    /** 匹配任意数字（最终 fallback 用，需配合 [0.0, 1.0] 范围校验使用）。 */
     private static final Pattern SCORE_PATTERN = Pattern.compile("(\\d+\\.?\\d*)");
 
     private final GenerationRouter generationRouter;

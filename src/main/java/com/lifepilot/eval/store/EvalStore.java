@@ -89,7 +89,7 @@ public class EvalStore {
 
     private static final String FIND_SCORE_HISTORY_SQL = """
             SELECT overall_score FROM eval_results
-            WHERE scenario_id = ?
+            WHERE scenario_id = ? AND eval_run_id != ?
             ORDER BY evaluated_at DESC
             LIMIT ?
             """;
@@ -227,12 +227,13 @@ public class EvalStore {
      * 查询指定场景最近 N 次评估的 overallScore 历史（按时间降序）。
      *
      * @param scenarioId 场景 ID
-     * @param limit      最大返回条数
+     * @param excludeRunId 排除的运行 ID（避免包含当前运行的异步写入结果）
+     * @param limit        最大返回条数
      * @return 评分列表（最新的在前）
      */
-    public List<Double> findScoreHistory(String scenarioId, int limit) {
+    public List<Double> findScoreHistory(String scenarioId, String excludeRunId, int limit) {
         try {
-            return jdbcTemplate.queryForList(FIND_SCORE_HISTORY_SQL, Double.class, scenarioId, limit);
+            return jdbcTemplate.queryForList(FIND_SCORE_HISTORY_SQL, Double.class, scenarioId, excludeRunId, limit);
         } catch (Exception e) {
             log.error("查询评分历史失败: scenarioId={}, limit={}", scenarioId, limit, e);
             return List.of();

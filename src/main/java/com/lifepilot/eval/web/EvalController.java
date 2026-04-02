@@ -177,6 +177,9 @@ public class EvalController {
             @RequestBody FeedbackRequest request) {
         log.info("提交反馈: evalId={}, scenarioId={}, type={}", evalId, scenarioId, request.feedbackType());
 
+        if (request.feedbackType() == null || request.feedbackType().isBlank()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "feedbackType 不能为空"));
+        }
         FeedbackType type;
         try {
             type = FeedbackType.valueOf(request.feedbackType().toUpperCase());

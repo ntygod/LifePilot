@@ -198,6 +198,10 @@ public class EvalEngine {
                 }
 
                 // 3. 维度评估：优先使用 DimensionEvaluator 体系，为空时回退到 EvaluationCore
+                //    同时缓存 EvaluationCore 结果供步骤 6 诊断报告使用（过渡方案：DiagnosticEnricher 依赖 EvaluationResult 类型）
+                EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
+                EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
+
                 Map<String, Double> dimensionScores;
                 double overallScore;
                 List<String> violations;
@@ -211,8 +215,6 @@ public class EvalEngine {
                     suggestions = new ArrayList<>(dimResult.suggestions());
                 } else {
                     // 回退到 EvaluationCore（防御性）
-                    EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
-                    EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
                     dimensionScores = Map.of(
                             "toolSelection", coreResult.toolSelectionScore(),
                             "parameterValidity", coreResult.parameterValidityScore(),
@@ -228,12 +230,18 @@ public class EvalEngine {
                 // 3.5 输出内容正则匹配（零成本硬门控）
                 String pattern = scenario.expectedOutputPattern();
                 if (pattern != null && !pattern.isBlank() && response.content() != null) {
-                    boolean matched = Pattern.compile(pattern).matcher(response.content()).find();
-                    if (!matched) {
-                        violations.add("输出未匹配期望模式: " + pattern);
-                        overallScore *= (1.0 - config.getExecution().getOutputPatternMismatchPenalty());
-                        log.debug("输出正则不匹配，施加惩罚系数: scenarioId={}, penalty={}",
-                                scenario.id(), config.getExecution().getOutputPatternMismatchPenalty());
+                    try {
+                        boolean matched = Pattern.compile(pattern).matcher(response.content()).find();
+                        if (!matched) {
+                            violations.add("输出未匹配期望模式: " + pattern);
+                            overallScore *= (1.0 - config.getExecution().getOutputPatternMismatchPenalty());
+                            log.debug("输出正则不匹配，施加惩罚系数: scenarioId={}, penalty={}",
+                                    scenario.id(), config.getExecution().getOutputPatternMismatchPenalty());
+                        }
+                    } catch (java.util.regex.PatternSyntaxException e) {
+                        violations.add("expectedOutputPattern 正则语法错误: " + e.getMessage());
+                        log.warn("场景 expectedOutputPattern 正则无效: scenarioId={}, pattern={}",
+                                scenario.id(), pattern);
                     }
                 }
 
@@ -289,11 +297,9 @@ public class EvalEngine {
                     }
                 }
 
-                // 6. 生成诊断报告
-                EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
-                EvaluationResult coreResultForDiagnostic = evaluationCore.evaluate(steps, evalConfig, traceId);
+                // 6. 生成诊断报告（复用步骤 3 缓存的 coreResult）
                 try {
-                    DiagnosticReport diagnostic = diagnosticEnricher.enrich(coreResultForDiagnostic, judgeResult, scenario);
+                    DiagnosticReport diagnostic = diagnosticEnricher.enrich(coreResult, judgeResult, scenario);
                     String diagnosticJson = objectMapper.writeValueAsString(diagnostic);
                     // 合并诊断建议到 suggestions
                     var enrichedSuggestions = new ArrayList<>(evalResult.suggestions());
@@ -439,6 +445,8 @@ public class EvalEngine {
         // 归一化（防止权重之和不为 1.0）
         if (totalWeight > 0.0 && Math.abs(totalWeight - 1.0) > 0.001) {
             overallScore /= totalWeight;
+        } else if (totalWeight == 0.0) {
+            log.warn("维度权重总和为 0，overallScore 无法计算: scenarioId={}", scenario.id());
         }
 
         return new DimensionAggregation(dimensionScores, overallScore, allViolations, allSuggestions);
