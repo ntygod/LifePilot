@@ -13,7 +13,7 @@
 ```mermaid
 graph TB
     subgraph "调用链"
-        AGENT["AgentLoop"]
+        AGENT["ReactAgentLoop"]
         PIPE["ToolExecutionPipeline"]
     end
 

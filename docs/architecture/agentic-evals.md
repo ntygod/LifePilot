@@ -23,7 +23,7 @@ graph TB
     end
 
     subgraph "评估执行"
-        AL["AgentLoop<br/>Agent 执行"]
+        AL["AgentOrchestrator<br/>Agent 执行"]
         TQ["TraceQuery<br/>轨迹查询"]
         TE_E["TrajectoryEvaluator<br/>eval 轨迹评估"]
         TE_O["TrajectoryEvaluator<br/>observability 轨迹评估"]
@@ -76,7 +76,7 @@ YAML 声明式评估用例，定义用户输入、期望工具调用序列、维
 
 ### 3.3 EvalEngine — 评估引擎
 
-核心协调器，编排完整评估流程。单场景评估流程：构造 `AgentRequest` → 调用 `AgentLoop.run()`（Virtual Thread + `CompletableFuture.orTimeout` 超时控制）→ 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹步骤 → `TrajectoryEvaluator` 规则评估 → 可选 `LlmJudge` 语义评估 → 填充 Git 元数据 → 异步持久化。
+核心协调器，编排完整评估流程。单场景评估流程：构造 `AgentRequest` → 调用 `AgentOrchestrator.run()`（Virtual Thread + `CompletableFuture.orTimeout` 超时控制）→ 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹步骤 → `TrajectoryEvaluator` 规则评估 → 可选 `LlmJudge` 语义评估 → 填充 Git 元数据 → 异步持久化。
 
 `evaluateScenario` 接受 `evalRunId` 参数，批量评估时在循环前生成统一 UUID 传入，确保同批次结果共享 evalRunId。支持 Mock 工具响应注入（通过 `DynamicToolRegistry` 临时注册/注销）和 `initialContext` 注入（作为 systemPrompt 前缀）。单场景失败不影响其他场景，失败场景评分为 0.0。
 
@@ -123,7 +123,7 @@ eval 和 observability 模块各有一个 `TrajectoryEvaluator`，均委托给 `
 sequenceDiagram
     participant JU as JUnit / 调用方
     participant EE as EvalEngine
-    participant AL as AgentLoop
+    participant AL as AgentOrchestrator
     participant TQ as TraceQuery
     participant TE as TrajectoryEvaluator
     participant EC as EvaluationCore
@@ -188,7 +188,7 @@ sequenceDiagram
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| Agent 引擎（`agent`） | eval → agent | `EvalEngine` 调用 `AgentLoop.run()` 执行场景 |
+| Agent 引擎（`agent`） | eval → agent | `EvalEngine` 调用 `AgentOrchestrator.run()` 执行场景 |
 | 可观测性（`observability`） | eval → observability | 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹步骤；`EvaluationCore` 提供共享五维评估逻辑 |
 | LLM Router（`llm`） | eval → llm | `LlmJudge` 通过 `GenerationRouter` 调用 LLM 进行语义评估 |
 | 工具系统（`tool`） | eval → tool | `EvalEngine` 通过 `DynamicToolRegistry` 注入/注销 Mock 工具 |

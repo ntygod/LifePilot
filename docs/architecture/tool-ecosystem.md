@@ -16,7 +16,7 @@
 ```mermaid
 graph TB
     subgraph "Agent 引擎"
-        AGENT["AgentLoop"]
+        AGENT["ReactAgentLoop"]
         BRIDGE["ToolBridgeAgentToolProvider<br/>工具回调桥接"]
     end
 
@@ -87,7 +87,7 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant A as AgentLoop
+    participant A as ReactAgentLoop
     participant B as ToolBridge
     participant R as DynamicToolRegistry
     participant P as ToolExecutionPipeline

@@ -24,7 +24,7 @@
 | 2 | RateLimitMiddleware | 200 | Token 感知限流 + 请求数限流 |
 | 3 | SecurityMiddleware | 300 | Prompt 注入检测、敏感数据过滤 |
 | 4 | RouterMiddleware | 400 | 意图路由，快速路径分流 |
-| 5 | ExecutionMiddleware | 500 | 调用 AgentLoop 执行任务 |
+| 5 | ExecutionMiddleware | 500 | 调用 AgentOrchestrator 执行任务 |
 | 6 | AuditMiddleware | 600 | 审计日志记录 |
 
 每个中间件可独立启用/禁用、调整顺序。任何中间件可短路终止管道（如认证失败直接返回 401）。

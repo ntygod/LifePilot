@@ -41,7 +41,7 @@ graph TB
 
     subgraph "集成"
         AR["AgentRegistry<br/>多 Agent 模块"]
-        AL["AgentLoop<br/>Agent 引擎"]
+        AL["AgentOrchestrator<br/>Agent 引擎"]
         TR["DynamicToolRegistry<br/>工具注册表"]
         EP["ApplicationEventPublisher<br/>事件总线"]
     end
@@ -108,7 +108,7 @@ sequenceDiagram
     participant AJRC as JsonRpcController
     participant AMV as MessageValidator
     participant AAE as AgentExecutor
-    participant AL as AgentLoop
+    participant AL as AgentOrchestrator
     participant ATS as TaskStore
 
     RA->>AKF: POST /api/a2a {jsonrpc:"2.0", method:"tasks/send"}
@@ -182,7 +182,7 @@ sequenceDiagram
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
 | 多 Agent 协作（`multiagent`） | a2a → multiagent | `AgentCardGenerator` 从 `AgentRegistry` 读取 Agent 列表生成 Card |
-| Agent 引擎（`agent`） | a2a → agent | `A2aAgentExecutor` 调用 `AgentLoop.run()` 执行消息 |
+| Agent 引擎（`agent`） | a2a → agent | `A2aAgentExecutor` 调用 `AgentOrchestrator.run()` 执行消息 |
 | Agent 挂起恢复（`agent.suspend`） | a2a → agent | `RemoteAgentToolFactory` 发布 `A2aTaskCompletedEvent` 恢复挂起的 Agent |
 | 工具系统（`tool`） | a2a → tool | `RemoteAgentToolFactory` 将远程 Agent 注册为 `BuiltinTool` |
 | MCP 协议（`mcp`） | a2a → mcp | `A2aJsonRpcController` 复用 `JsonRpcMessage` record |

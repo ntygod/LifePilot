@@ -46,7 +46,7 @@ public class ReactAgentLoop {
 
 | 组件 | 职责 |
 |------|------|
-| `AgentOrchestrator` | 编排器，同步/流式/恢复三个入口（`run` / `runStreaming` / `resume`） |
+| `AgentOrchestrator` | 编排器，同步/流式/恢复三个入口（`run` / `runStreaming` / `resumeFromSuspend`） |
 | `ContextAssembler` | 动态组装 LLM 上下文（系统Prompt/记忆检索/对话历史/知识库） |
 | `GenerationRouter` | 多模型路由、熔断器、故障转移 |
 | `TraceRecorder` | 执行轨迹记录 |
@@ -77,7 +77,7 @@ public class ReactAgentLoop {
 
 ### 3.1.1 挂起/恢复
 
-支持需要用户确认的长任务中断（`Suspend` 步骤）和恢复（`Resume` 步骤），通过 `AgentOrchestrator.resume()` 从挂起点继续执行。
+支持需要用户确认的长任务中断（`Suspend` 步骤）和恢复（`Resume` 步骤），通过 `AgentOrchestrator.resumeFromSuspend(traceId, ResumePayload)` 从挂起点继续执行。
 
 ### 3.2 SSE 流式输出
 
@@ -133,22 +133,44 @@ public class ReactAgentLoop {
 ```yaml
 lifepilot:
   agent:
-    max-iterations: 25
+    enabled: true
+    loop:
+      max-iterations: 25
+      max-consecutive-failures: 3
+      max-parallel-tool-calls: 4
+      llm-scene: agent_react
     budget:
-      max-tokens: 131072
-      max-duration: 60s
-      max-steps: 20
+      default-max-tokens: 20000000
+      default-max-steps: 30
+      default-max-duration-seconds: 300
     context:
-      mode: full  # basic / full
+      max-context-tokens: 2000000
+      output-reserved-tokens: 8192
+    checkpoint:
+      enabled: true
+      max-age: 7d
+    execution-retry:
+      enabled: true
+      max-attempts: 2
+    session:
+      timeout-minutes: 30
+    debug:
+      log-llm-prompts: false
 ```
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.agent.max-iterations` | 25 | 单次循环最大迭代次数 |
-| `lifepilot.agent.budget.max-tokens` | 131072 | Token 预算上限 |
-| `lifepilot.agent.budget.max-duration` | 60s | 时间预算上限 |
-| `lifepilot.agent.budget.max-steps` | 20 | 步数预算上限 |
-| `lifepilot.agent.context.mode` | full | 上下文组装模式 |
+| `lifepilot.agent.enabled` | `true` | Agent 引擎总开关 |
+| `lifepilot.agent.loop.max-iterations` | 25 | 单次循环最大迭代次数 |
+| `lifepilot.agent.loop.max-consecutive-failures` | 3 | 连续失败最大次数 |
+| `lifepilot.agent.loop.max-parallel-tool-calls` | 4 | 单个工具波次最大并发数 |
+| `lifepilot.agent.budget.default-max-tokens` | 20000000 | 对话总 Token 预算 |
+| `lifepilot.agent.budget.default-max-steps` | 30 | 步数预算上限 |
+| `lifepilot.agent.budget.default-max-duration-seconds` | 300 | 时间预算上限（秒） |
+| `lifepilot.agent.context.max-context-tokens` | 2000000 | 单次 LLM 调用最大上下文 Token 数 |
+| `lifepilot.agent.checkpoint.enabled` | `true` | 检查点功能开关 |
+| `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
+| `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词 |
 
 ## 6. 使用场景
 

@@ -28,7 +28,7 @@ flowchart TD
     end
 
     subgraph "已实现的业务层"
-        AGENT["AgentLoop"]
+        AGENT["AgentOrchestrator"]
         SKILL["SkillRegistry"]
         TOOL["DynamicToolRegistry"]
     end
@@ -67,7 +67,7 @@ flowchart TD
 ### 3.3 CommandRouter
 
 - 职责：将用户输入分发到快捷命令或自然语言对话
-- 路由策略：前缀匹配快捷命令（todo/schedule/habit/llm/mcp/skill），其余走 AgentLoop
+- 路由策略：前缀匹配快捷命令（todo/schedule/habit/llm/mcp/skill），其余走 AgentOrchestrator
 
 ### 3.4 QuickCommand
 
@@ -90,7 +90,7 @@ sequenceDiagram
     participant S as CliShell
     participant R as CommandRouter
     participant Q as QuickCommand
-    participant A as AgentLoop
+    participant A as AgentOrchestrator
 
     U->>S: 输入 "todo list"
     S->>R: route("todo list")
@@ -100,7 +100,7 @@ sequenceDiagram
 
     U->>S: 输入 "今天有什么安排？"
     S->>R: route("今天有什么安排？")
-    R->>A: AgentLoop.run(request)
+    R->>A: AgentOrchestrator.run(request)
     A-->>S: 流式响应
     S-->>U: 逐字渲染输出
 ```
@@ -111,7 +111,7 @@ sequenceDiagram
 |------|------|------|
 | 终端库 | JLine 3 | Java 生态最成熟的终端交互库，支持补全、高亮、历史记录 |
 | 快速路径 | main() 拦截 | 最简方案，零依赖，避免 Spring 启动开销 |
-| 快捷命令直调 Repository | 不经过 AgentLoop | 延迟低、不消耗 Token、LLM 不可用时仍可工作 |
+| 快捷命令直调 Repository | 不经过 AgentOrchestrator | 延迟低、不消耗 Token、LLM 不可用时仍可工作 |
 | CJK 宽字符计算 | 自定义 displayWidth() | 中文字符占 2 个终端宽度，表格对齐必须正确计算 |
 | 当前不实现 CLI | 优先 Web UI + IM 通道 | REST/SSE API 层已建立，CLI 可后续通过 HTTP 客户端接入 |
 
@@ -119,11 +119,11 @@ sequenceDiagram
 
 | 依赖模块 | 交互方式 | 说明 |
 |---------|---------|------|
-| Agent 引擎 | `AgentLoop.run()` | 自然语言对话走 Agent 控制循环 |
+| Agent 引擎 | `AgentOrchestrator.run()` | 自然语言对话走 Agent 控制循环 |
 | Skill 系统 | `SkillRegistry` | 快捷命令可直接调用 Skill |
-| 记忆系统 | 通过 AgentLoop | 对话上下文通过 Agent 引擎访问记忆 |
+| 记忆系统 | 通过 AgentOrchestrator | 对话上下文通过 Agent 引擎访问记忆 |
 
-> CLI 层规划为直接调用 AgentLoop（进程内通信），不经过 MessageGateway 中间件管道。这与 Web/IM 通道不同——后者通过 Gateway 统一入口。未来 CLI 可迁移为 HTTP 客户端模式，通过 REST API 接入 Gateway。
+> CLI 层规划为直接调用 AgentOrchestrator（进程内通信），不经过 MessageGateway 中间件管道。这与 Web/IM 通道不同——后者通过 Gateway 统一入口。未来 CLI 可迁移为 HTTP 客户端模式，通过 REST API 接入 Gateway。
 
 ## 7. 配置参考（规划）
 
