@@ -3,8 +3,10 @@ mod health_check;
 mod java_manager;
 mod port_finder;
 mod tray;
+mod whisper_manager;
 
 use java_manager::JavaManager;
+use whisper_manager::WhisperManager;
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -20,8 +22,15 @@ pub fn run() {
             let resource_dir = resolve_resource_dir(app);
             log::info!("资源目录: {}", resource_dir.display());
 
-            // 初始化 Java 管理器
-            let java_manager = JavaManager::new(&resource_dir);
+            // 初始化 Whisper 管理器（计算目标路径，供 Java 后端使用）
+            let whisper_manager = WhisperManager::new();
+
+            // 初始化 Java 管理器（传入 Whisper 路径）
+            let java_manager = JavaManager::new(
+                &resource_dir,
+                Some(whisper_manager.cli_path()),
+                Some(whisper_manager.model_path()),
+            );
 
             // 启动 Java 后端
             let app_handle = app.handle().clone();
@@ -29,6 +38,7 @@ pub fn run() {
 
             // 注册到全局状态
             app.manage(java_manager);
+            app.manage(whisper_manager);
 
             // 初始化系统托盘
             tray::setup_tray(app.handle())?;
@@ -40,6 +50,9 @@ pub fn run() {
             commands::is_backend_running,
             commands::restart_backend,
             commands::get_backend_status,
+            commands::check_whisper_status,
+            commands::start_whisper_download,
+            commands::cancel_whisper_download,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -1,8 +1,12 @@
 package com.lifepilot.meta.infra;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
+import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
+import com.lifepilot.meta.infra.channel.FeishuToolProvider;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
@@ -87,6 +91,12 @@ public class InfraToolProvider {
     private final NotificationProperties notificationProperties;
     @Nullable
     private final BackgroundProcessManager backgroundProcessManager;
+    @Nullable
+    private final ChannelOperationDispatcher channelOperationDispatcher;
+    @Nullable
+    private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
+    @Nullable
+    private final ChannelInstanceService channelInstanceService;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -101,7 +111,10 @@ public class InfraToolProvider {
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
                              @Nullable NotificationProperties notificationProperties,
-                             @Nullable BackgroundProcessManager backgroundProcessManager) {
+                             @Nullable BackgroundProcessManager backgroundProcessManager,
+                             @Nullable ChannelOperationDispatcher channelOperationDispatcher,
+                             @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                             @Nullable ChannelInstanceService channelInstanceService) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -116,6 +129,9 @@ public class InfraToolProvider {
         this.cronScheduler = cronScheduler;
         this.notificationProperties = notificationProperties;
         this.backgroundProcessManager = backgroundProcessManager;
+        this.channelOperationDispatcher = channelOperationDispatcher;
+        this.channelDeliveryDispatcher = channelDeliveryDispatcher;
+        this.channelInstanceService = channelInstanceService;
     }
 
     /**
@@ -174,6 +190,16 @@ public class InfraToolProvider {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
         }
 
+        // 飞书渠道工具（委托给 FeishuToolProvider）
+        if (channelOperationDispatcher != null && channelDeliveryDispatcher != null && channelInstanceService != null) {
+            var feishuToolProvider = new FeishuToolProvider(channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
+            var feishuTools = feishuToolProvider.buildFeishuTools();
+            totalTools += registerBuiltinTools(toolRegistry, feishuTools);
+            log.info("飞书渠道工具注册完成: count={}", feishuTools.size());
+        } else {
+            log.warn("渠道操作组件不完整，跳过飞书渠道工具注册");
+        }
+
         // Git 工具（委托给 GitToolProvider）
         var gitConfig = properties.getInfra().getGit();
         if (gitConfig.isEnabled()) {
@@ -219,7 +245,7 @@ public class InfraToolProvider {
                 buildCodeExecuteTool(codeExecuteExecutor)
         ));
 
-        log.info("基础工具注册完成: count={}, categories=[web, shell, browser, code, file, interact, workflow, task, git]",
+        log.info("基础工具注册完成: count={}, categories=[web, shell, browser, code, file, interact, workflow, task, channel, git]",
                 totalTools);
     }
 

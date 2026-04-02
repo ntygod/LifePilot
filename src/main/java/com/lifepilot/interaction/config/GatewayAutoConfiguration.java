@@ -14,6 +14,8 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.event.EventListener;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 /**
  * Gateway 核心框架自动配置。
@@ -59,6 +61,17 @@ public class GatewayAutoConfiguration {
     }
 
     /**
+     * 注册网关健康指标，确保 Actuator 健康检查在网关启动前返回 OUT_OF_SERVICE。
+     *
+     * @param gateway 消息网关
+     * @return 健康指标实例
+     */
+    @Bean
+    public GatewayHealthIndicator gatewayHealthIndicator(MessageGateway gateway) {
+        return new GatewayHealthIndicator(gateway);
+    }
+
+    /**
      * 应用就绪后启动消息网关。
      *
      * <p>新的渠道 ingress 已改为直接提交统一 {@code GatewayMessage}，
@@ -67,6 +80,7 @@ public class GatewayAutoConfiguration {
      * @param event 应用就绪事件
      */
     @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
         if (ctx.containsBean("messageGateway")) {

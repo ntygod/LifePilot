@@ -7,6 +7,7 @@ import com.lifepilot.interaction.repository.ChannelInstanceRepository;
 import com.lifepilot.interaction.repository.ChannelPluginRepository;
 import com.lifepilot.interaction.runtime.ConnectorManager;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.runtime.ChannelRuntimeIngressService;
 import com.lifepilot.interaction.runtime.ConnectorRuntimeManager;
 import com.lifepilot.interaction.model.ChannelInstanceStatus;
@@ -135,6 +136,19 @@ public class ChannelControlPlaneConfiguration {
                 channelControlPlaneRestClient,
                 connectorManager,
                 sseSessionManager
+        );
+    }
+
+    @Bean
+    public ChannelOperationDispatcher channelOperationDispatcher(ChannelRegistry channelRegistry,
+                                                                 ChannelInstanceEventService channelInstanceEventService,
+                                                                 RestClient channelControlPlaneRestClient,
+                                                                 ConnectorManager connectorManager) {
+        return new ChannelOperationDispatcher(
+                channelRegistry,
+                channelInstanceEventService,
+                channelControlPlaneRestClient,
+                connectorManager
         );
     }
 

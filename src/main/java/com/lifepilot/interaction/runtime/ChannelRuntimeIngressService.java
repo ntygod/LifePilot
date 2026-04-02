@@ -119,7 +119,7 @@ public class ChannelRuntimeIngressService {
                 .channelType(resolveChannelType(instance.platform()))
                 .userId(request.userId().trim())
                 .sessionId(sessionId)
-                .content(buildContent(request.content()))
+                .content(buildContent(request.content(), request.attachments()))
                 .attachments(buildAttachments(request.attachments()))
                 .channelMetadata(null)
                 .timestamp(timestamp)
@@ -127,12 +127,15 @@ public class ChannelRuntimeIngressService {
                 .build();
     }
 
-    private MessageContent buildContent(ChannelRuntimeEventRequest.Content content) {
+    private MessageContent buildContent(ChannelRuntimeEventRequest.Content content,
+                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
         String type = content.type() != null ? content.type().trim().toLowerCase() : "text";
         return switch (type) {
             case "command" -> buildCommandContent(content);
             case "event" -> buildEventContent(content);
             case "text" -> new MessageContent.TextMessage(requireText(content.text(), "text"));
+            case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments);
+            case "card_action" -> buildCardActionContent(content);
             default -> throw new IllegalArgumentException("不支持的 connector 内容类型: " + type);
         };
     }
@@ -154,6 +157,59 @@ public class ChannelRuntimeIngressService {
                 eventName,
                 content.payload() != null ? content.payload() : Map.of()
         );
+    }
+
+    private MessageContent.FileMessage buildFileContent(ChannelRuntimeEventRequest.Content content,
+                                                         String type,
+                                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
+        Map<String, Object> payload = content.payload();
+        String fileName = payload != null && payload.get("fileName") instanceof String fn && !fn.isBlank()
+                ? fn.trim()
+                : defaultFileName(type);
+        String mimeType = payload != null && payload.get("mimeType") instanceof String mt && !mt.isBlank()
+                ? mt.trim()
+                : defaultMimeType(type);
+        String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : null;
+
+        byte[] data;
+        if (attachments != null && !attachments.isEmpty()) {
+            ChannelRuntimeEventRequest.Attachment first = attachments.getFirst();
+            try {
+                data = Base64.getDecoder().decode(first.base64Data());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("富媒体附件 Base64 解码失败: " + fileName, e);
+            }
+        } else {
+            // 没有附件数据，可能只有 fileToken 引用，Agent 后续通过工具下载
+            data = new byte[0];
+        }
+        return new MessageContent.FileMessage(fileName, mimeType, data, caption);
+    }
+
+    private String defaultFileName(String type) {
+        return switch (type) {
+            case "image" -> "image.png";
+            case "audio" -> "audio.mp3";
+            case "video" -> "video.mp4";
+            default -> "file.bin";
+        };
+    }
+
+    private String defaultMimeType(String type) {
+        return switch (type) {
+            case "image" -> "image/png";
+            case "audio" -> "audio/mpeg";
+            case "video" -> "video/mp4";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private MessageContent.EventMessage buildCardActionContent(ChannelRuntimeEventRequest.Content content) {
+        String eventType = content.name() != null && !content.name().isBlank()
+                ? content.name().trim()
+                : "card_action";
+        Map<String, Object> payload = content.payload() != null ? content.payload() : Map.of();
+        return new MessageContent.EventMessage(eventType, payload);
     }
 
     private List<GatewayMessage.Attachment> buildAttachments(List<ChannelRuntimeEventRequest.Attachment> attachments) {

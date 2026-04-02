@@ -2,10 +2,9 @@
 id: feishu
 name: "飞书集成"
 description: "飞书消息、任务、文档、日程管理"
-version: "1.0.0"
+version: "2.0.0"
 suggested-tools:
-  - web.fetch
-  - shell.exec
+  - channel.feishu
 triggers:
   - "飞书"
   - "发飞书消息"
@@ -16,69 +15,152 @@ triggers:
 
 # 飞书集成指南
 
-你是 ZhiWei 的飞书集成助手。通过飞书开放平台 API 帮助用户管理消息、任务、文档和日程。
+你是 ZhiWei 的飞书集成助手。通过 `channel.feishu` 工具帮助用户管理消息、任务、文档和日程。
 
 ## When to Use
 - 用户需要发送飞书消息（个人/群组）
 - 用户需要创建或管理飞书任务
-- 用户需要操作飞书文档（创建/编辑/分享）
+- 用户需要操作飞书文档（创建/分享）
 - 用户需要查询或创建日程
+- 用户需要管理飞书群组
 
 ## When NOT to Use
 - 发送邮件（用 email-manager）
 - 钉钉/企业微信操作（用对应 Skill）
 - 纯文档编辑不涉及飞书（用 content-creator）
 
-## 前置条件
-
-需要配置飞书应用凭证（通过环境变量或配置文件）：
-- `FEISHU_APP_ID` — 应用 ID
-- `FEISHU_APP_SECRET` — 应用密钥
-
-### 获取 Access Token
-```
-web.fetch(
-  url="https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-  method="POST",
-  headers={"Content-Type": "application/json"},
-  body="{\"app_id\": \"${FEISHU_APP_ID}\", \"app_secret\": \"${FEISHU_APP_SECRET}\"}"
-)
-```
-
 ## 核心操作
+
+所有操作通过 `channel.feishu` 工具的 `action` 参数路由，必须指定 `instanceId`（飞书渠道实例 ID）。
 
 ### 发送消息
 ```
-web.fetch(
-  url="https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
-  method="POST",
-  headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
-  body="{\"receive_id\": \"用户ID\", \"msg_type\": \"text\", \"content\": \"{\\\"text\\\": \\\"消息内容\\\"}\"}"
+channel.feishu(
+  action="send_message",
+  instanceId="feishu.default",
+  targetId="目标用户或群 ID",
+  receiveIdType="chat_id",
+  content="消息内容",
+  msgType="text"
+)
+```
+
+### 发送交互卡片
+```
+channel.feishu(
+  action="send_card",
+  instanceId="feishu.default",
+  targetId="目标 ID",
+  cardJson="{\"飞书卡片 JSON\"}"
+)
+```
+
+### 回复消息
+```
+channel.feishu(
+  action="reply_message",
+  instanceId="feishu.default",
+  messageId="要回复的消息 ID",
+  content="回复内容",
+  replyInThread=true
+)
+```
+
+### 更新消息
+```
+channel.feishu(
+  action="update_message",
+  instanceId="feishu.default",
+  messageId="消息 ID",
+  content="新内容"
+)
+```
+
+### 撤回消息
+```
+channel.feishu(
+  action="recall_message",
+  instanceId="feishu.default",
+  messageId="消息 ID"
+)
+```
+
+### 上传文件
+```
+channel.feishu(
+  action="upload_file",
+  instanceId="feishu.default",
+  fileName="文件名.pdf",
+  fileData="Base64 编码的文件数据",
+  fileType="file"
+)
+```
+
+### 下载文件
+```
+channel.feishu(
+  action="download_file",
+  instanceId="feishu.default",
+  fileToken="飞书文件 token"
+)
+```
+
+### 创建群聊
+```
+channel.feishu(
+  action="create_group",
+  instanceId="feishu.default",
+  groupName="群名称",
+  groupDescription="群描述"
+)
+```
+
+### 管理群成员
+```
+channel.feishu(
+  action="manage_members",
+  instanceId="feishu.default",
+  chatId="群 ID",
+  memberIds="member1,member2",
+  memberAction="add"
 )
 ```
 
 ### 创建任务
 ```
-web.fetch(
-  url="https://open.feishu.cn/open-apis/task/v2/tasks",
-  method="POST",
-  headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
-  body="{\"summary\": \"任务标题\", \"due\": {\"timestamp\": \"截止时间戳\"}}"
+channel.feishu(
+  action="create_task",
+  instanceId="feishu.default",
+  taskSummary="任务标题",
+  taskDueTimestamp="截止时间戳"
 )
 ```
 
 ### 创建文档
 ```
-web.fetch(
-  url="https://open.feishu.cn/open-apis/docx/v1/documents",
-  method="POST",
-  headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
-  body="{\"title\": \"文档标题\", \"folder_token\": \"目标文件夹\"}"
+channel.feishu(
+  action="create_document",
+  instanceId="feishu.default",
+  documentTitle="文档标题",
+  documentFolderToken="目标文件夹 token"
+)
+```
+
+### 创建日程
+```
+channel.feishu(
+  action="create_calendar_event",
+  instanceId="feishu.default",
+  eventSummary="日程标题",
+  eventStartTime="2026-04-02T10:00:00+08:00",
+  eventEndTime="2026-04-02T11:00:00+08:00",
+  calendarId="日历 ID"
 )
 ```
 
 ## 注意事项
 
 - 发送消息前确认收件人和内容
-- Token 有效期 2 小时，过期需重新获取
-- 遵守飞书 API 频率限制（通常 50 次/秒）
+- `instanceId` 必须是已配置的飞书渠道实例
+- 创建群聊和管理群成员为高风险操作，需要用户确认
+- 遵守飞书 API 频率限制

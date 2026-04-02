@@ -8,11 +8,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.stream.Stream;
 
 /**
@@ -32,13 +37,26 @@ public class SkillSearchIndex {
     private final ConcurrentHashMap<String, String> skillTexts = new ConcurrentHashMap<>();
     @Nullable
     private final EmbeddingRouter embeddingRouter;
+    @Nullable
+    private final Executor asyncExecutor;
+    @Nullable
+    private final SkillEmbeddingCacheRepository cacheRepository;
 
     public SkillSearchIndex(@Nullable EmbeddingRouter embeddingRouter) {
+        this(embeddingRouter, null, null);
+    }
+
+    public SkillSearchIndex(@Nullable EmbeddingRouter embeddingRouter,
+                            @Nullable Executor asyncExecutor,
+                            @Nullable SkillEmbeddingCacheRepository cacheRepository) {
         this.embeddingRouter = embeddingRouter;
+        this.asyncExecutor = asyncExecutor;
+        this.cacheRepository = cacheRepository;
     }
 
     public void index(SkillDefinition definition) {
         String text = buildSearchText(definition);
+        String contentHash = sha256(text);
         skillTexts.put(definition.id(), normalizeText(text));
 
         if (embeddingRouter == null) {
@@ -46,23 +64,48 @@ public class SkillSearchIndex {
             return;
         }
 
+        // 优先从持久化缓存加载（内容未变则命中）
+        if (cacheRepository != null) {
+            float[] cached = cacheRepository.find(definition.id(), contentHash);
+            if (cached != null) {
+                embeddings.put(definition.id(), cached);
+                log.debug("Skill 向量索引命中缓存: skillId={}", definition.id());
+                return;
+            }
+        }
+
+        // 缓存未命中，异步调用 embedding API
+        if (asyncExecutor != null) {
+            asyncExecutor.execute(() -> indexVector(definition.id(), text, contentHash));
+        } else {
+            indexVector(definition.id(), text, contentHash);
+        }
+    }
+
+    private void indexVector(String skillId, String text, String contentHash) {
         try {
             float[] vector = embeddingRouter.embed(text, EmbeddingUseCase.DEFAULT, null, null);
             if (isEmptyVector(vector)) {
-                log.warn("Skill 向量索引返回空向量，降级为关键词模式: skillId={}", definition.id());
+                log.warn("Skill 向量索引返回空向量，降级为关键词模式: skillId={}", skillId);
                 return;
             }
-            embeddings.put(definition.id(), vector);
-            log.debug("Skill 向量索引完成: skillId={}", definition.id());
+            embeddings.put(skillId, vector);
+            if (cacheRepository != null) {
+                cacheRepository.save(skillId, contentHash, vector);
+            }
+            log.debug("Skill 向量索引完成: skillId={}", skillId);
         } catch (LlmUnavailableException e) {
             log.warn("Skill 向量索引失败，降级为关键词模式: skillId={}, error={}",
-                    definition.id(), e.getMessage());
+                    skillId, e.getMessage());
         }
     }
 
     public void remove(String skillId) {
         embeddings.remove(skillId);
         skillTexts.remove(skillId);
+        if (cacheRepository != null) {
+            cacheRepository.delete(skillId);
+        }
         log.debug("Skill 索引已移除: skillId={}", skillId);
     }
 
@@ -72,29 +115,52 @@ public class SkillSearchIndex {
             return 0;
         }
 
-        int rebuilt = 0;
-        for (var entry : skillTexts.entrySet()) {
-            String skillId = entry.getKey();
-            if (embeddings.containsKey(skillId)) {
-                continue;
-            }
-            try {
-                float[] vector = embeddingRouter.embed(entry.getValue(), EmbeddingUseCase.DEFAULT, null, null);
-                if (isEmptyVector(vector)) {
-                    log.debug("Skill 向量重建返回空向量，跳过: skillId={}", skillId);
-                    continue;
-                }
-                embeddings.put(skillId, vector);
-                rebuilt++;
-                log.debug("Skill 向量重建成功: skillId={}", skillId);
-            } catch (LlmUnavailableException e) {
-                log.debug("Skill 向量重建失败: skillId={}, error={}", skillId, e.getMessage());
-            }
+        // 收集需要重建的 skillId
+        var pending = skillTexts.entrySet().stream()
+                .filter(e -> !embeddings.containsKey(e.getKey()))
+                .toList();
+
+        if (pending.isEmpty()) {
+            return 0;
         }
-        if (rebuilt > 0) {
-            log.info("Skill 向量重建完成: success={}, total={}", rebuilt, skillTexts.size());
+
+        // 异步重建，不阻塞调用方
+        if (asyncExecutor != null) {
+            int count = pending.size();
+            log.info("Skill 向量异步重建启动: pending={}", count);
+            for (var entry : pending) {
+                asyncExecutor.execute(() -> rebuildSingle(entry.getKey(), entry.getValue()));
+            }
+            return count;
+        }
+
+        // 无异步执行器时同步重建
+        int rebuilt = 0;
+        for (var entry : pending) {
+            if (rebuildSingle(entry.getKey(), entry.getValue())) {
+                rebuilt++;
+            }
         }
         return rebuilt;
+    }
+
+    private boolean rebuildSingle(String skillId, String text) {
+        try {
+            float[] vector = embeddingRouter.embed(text, EmbeddingUseCase.DEFAULT, null, null);
+            if (isEmptyVector(vector)) {
+                log.debug("Skill 向量重建返回空向量，跳过: skillId={}", skillId);
+                return false;
+            }
+            embeddings.put(skillId, vector);
+            if (cacheRepository != null) {
+                cacheRepository.save(skillId, sha256(text), vector);
+            }
+            log.debug("Skill 向量重建成功: skillId={}", skillId);
+            return true;
+        } catch (LlmUnavailableException e) {
+            log.debug("Skill 向量重建失败: skillId={}, error={}", skillId, e.getMessage());
+            return false;
+        }
     }
 
     public List<SearchResult> search(String query, int topK) {
@@ -199,6 +265,17 @@ public class SkillSearchIndex {
 
     private static boolean isEmptyVector(@Nullable float[] vector) {
         return vector == null || vector.length == 0;
+    }
+
+    private static String sha256(String text) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 在所有 JVM 实现中都是必须支持的
+            throw new AssertionError(e);
+        }
     }
 
     private String buildSearchText(SkillDefinition definition) {
