@@ -38,25 +38,28 @@ import java.util.UUID;
 public class ChannelRuntimeIngressService {
 
     private static final Logger log = LoggerFactory.getLogger(ChannelRuntimeIngressService.class);
-    /** 单个附件最大允许大小：10MB。 */
-    private static final long MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+    /** 单个附件最大允许大小的默认值：10MB。 */
+    private static final long DEFAULT_MAX_ATTACHMENT_SIZE = 10L * 1024 * 1024;
 
     private final ChannelInstanceService channelInstanceService;
     private final ChannelIngressService channelIngressService;
     private final ConnectorRuntimeManager connectorRuntimeManager;
     private final ChannelInstanceEventService channelInstanceEventService;
     private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
+    private final long maxAttachmentSize;
 
     public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
                                         ChannelIngressService channelIngressService,
                                         ConnectorRuntimeManager connectorRuntimeManager,
                                         ChannelInstanceEventService channelInstanceEventService,
-                                        ChannelDeliveryDispatcher channelDeliveryDispatcher) {
+                                        ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        long maxAttachmentSize) {
         this.channelInstanceService = channelInstanceService;
         this.channelIngressService = channelIngressService;
         this.connectorRuntimeManager = connectorRuntimeManager;
         this.channelInstanceEventService = channelInstanceEventService;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
+        this.maxAttachmentSize = maxAttachmentSize > 0 ? maxAttachmentSize : DEFAULT_MAX_ATTACHMENT_SIZE;
     }
 
     public ChannelRuntimeEventResponse processEvent(String instanceId, ChannelRuntimeEventRequest request) {
@@ -227,10 +230,10 @@ public class ChannelRuntimeIngressService {
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("附件 Base64 解码失败: " + attachment.fileName(), e);
             }
-            if (data.length > MAX_ATTACHMENT_SIZE) {
+            if (data.length > maxAttachmentSize) {
                 throw new IllegalArgumentException(
                         "附件大小超出限制（最大 %dMB）: fileName=%s, size=%d"
-                                .formatted(MAX_ATTACHMENT_SIZE / 1024 / 1024, attachment.fileName(), data.length));
+                                .formatted(maxAttachmentSize / 1024 / 1024, attachment.fileName(), data.length));
             }
             String attachmentId = attachment.attachmentId() != null && !attachment.attachmentId().isBlank()
                     ? attachment.attachmentId().trim()

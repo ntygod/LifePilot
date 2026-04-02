@@ -68,7 +68,8 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
                 channelIngressService,
                 connectorRuntimeManager,
                 channelInstanceEventService,
-                channelDeliveryDispatcher
+                channelDeliveryDispatcher,
+                10L * 1024 * 1024
         );
 
         activeInstance = new ChannelInstance(

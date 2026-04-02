@@ -157,13 +157,15 @@ public class ChannelControlPlaneConfiguration {
                                                                     ChannelIngressService channelIngressService,
                                                                     ConnectorRuntimeManager connectorRuntimeManager,
                                                                     ChannelInstanceEventService channelInstanceEventService,
-                                                                    ChannelDeliveryDispatcher channelDeliveryDispatcher) {
+                                                                    ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                                                    ConnectorManagerProperties connectorManagerProperties) {
         return new ChannelRuntimeIngressService(
                 channelInstanceService,
                 channelIngressService,
                 connectorRuntimeManager,
                 channelInstanceEventService,
-                channelDeliveryDispatcher
+                channelDeliveryDispatcher,
+                connectorManagerProperties.getMaxAttachmentSizeBytes()
         );
     }
 
