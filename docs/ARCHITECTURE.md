@@ -127,7 +127,7 @@ graph TB
 | `embedding` | 向量化路由（EmbeddingRouter）、客户端工厂 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `rerank` | 精排路由（RerankRouter）、原生/LLM Pointwise/Listwise 策略 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `modelservice` | DB 驱动模型服务注册表（ModelServiceRegistry）、厂商模板管理 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
-| `agent` | Agent 控制循环、状态机、上下文组装、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
+| `agent` | Agent ReAct 循环、不可变状态管理、上下文组装、挂起恢复、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
@@ -164,7 +164,7 @@ sequenceDiagram
     U->>F: 输入消息
     F->>B: POST /api/chat（SSE）
     B->>B: MessageGateway 中间件管道
-    B->>B: AgentLoop 启动
+    B->>B: AgentOrchestrator 启动 ReAct 循环
     B->>LLM: 调用 LLM（流式）
     LLM-->>B: Token 流
     B-->>F: SSE 事件流（token + ui 事件）

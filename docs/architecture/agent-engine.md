@@ -58,8 +58,8 @@ graph TB
 
 - `AgentOrchestrator`：编排器，提供三个入口方法：
   - `run(AgentRequest)` → `AgentResponse`（同步执行）
-  - `runStreaming(request, streamId, sseManager, callback)`（SSE 流式执行）
-  - `resume(suspendedState)`（从挂起点恢复执行）
+  - `runStreaming(request, streamId, sseManager, cancellationToken)`（SSE 流式执行）
+  - `resumeFromSuspend(traceId, ResumePayload)`（从挂起点恢复执行）
 - `ReactAgentLoop`：ReAct 循环核心，仅暴露 `coreLoop()` 方法，由 AgentOrchestrator 调用
 - 关键协作组件：
   - `ToolExecutionCoordinator` — 波次并行工具执行协调器，同一轮多个 tool call 并行执行
@@ -154,13 +154,27 @@ sequenceDiagram
 - **工具系统**（`tool`）：通过 `AgentToolProvider` 获取工具回调，执行计划步骤
 - **记忆系统**（`memory`）：通过 `ContextAssembler` 读取最近完整轮次、工作区、画像和经验
 - **可观测性**（`observability`）：TraceRecorder 记录每步执行轨迹
-- **主动推理**（`agent.proactive`）：ProactiveReasoner 在循环后异步触发（📋 规划中，尚未实现）
+- **程序记忆反馈**（`memory.procedural`）：L4 反馈闭环，通过 `ProceduralMemory` + `IntentMatcher` 在工具执行后记录经验
 - **多 Agent**（`multiagent`）：通过 `spawn_workers` 并行 Worker 执行，结果回传到主循环
 
 ## 7. 配置参考
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.agent.max-iterations` | 25 | 单次循环最大迭代次数 |
-| `lifepilot.agent.budget.*` | — | 预算配置（Token 上限、时间上限、步数上限） |
-| `lifepilot.agent.context.*` | — | 上下文组装配置（最近轮次与 Prompt 组装策略） |
+| `lifepilot.agent.enabled` | `true` | Agent 引擎总开关 |
+| `lifepilot.agent.loop.max-iterations` | 25 | 单次循环最大迭代次数 |
+| `lifepilot.agent.loop.max-consecutive-failures` | 3 | 连续工具调用失败最大次数 |
+| `lifepilot.agent.loop.max-early-stop-rejects` | 2 | 疑似提前结束最大拒绝次数 |
+| `lifepilot.agent.loop.max-parallel-tool-calls` | 4 | 单个工具波次最大并发数 |
+| `lifepilot.agent.loop.llm-scene` | `agent_react` | LLM 调用场景标识 |
+| `lifepilot.agent.budget.default-max-tokens` | 20000000 | 对话总 Token 预算 |
+| `lifepilot.agent.budget.default-max-steps` | 30 | 步数预算上限 |
+| `lifepilot.agent.budget.default-max-duration-seconds` | 300 | 时间预算上限（秒） |
+| `lifepilot.agent.context.max-context-tokens` | 2000000 | 单次 LLM 调用最大上下文 Token 数 |
+| `lifepilot.agent.context.output-reserved-tokens` | 8192 | 输出预留 Token 数 |
+| `lifepilot.agent.checkpoint.enabled` | `true` | 检查点功能开关 |
+| `lifepilot.agent.checkpoint.max-age` | 7d | 检查点最大保留时长 |
+| `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
+| `lifepilot.agent.execution-retry.max-attempts` | 2 | 最大尝试次数（含首次） |
+| `lifepilot.agent.session.timeout-minutes` | 30 | 会话超时时间（分钟） |
+| `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词（仅限受控环境） |

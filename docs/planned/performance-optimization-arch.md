@@ -24,7 +24,7 @@
 
 ### 1.1 当前瓶颈
 
-ZhiWei 作为个人 AI Agent，每次用户交互都会触发 AgentLoop 控制循环，循环中的每一步都涉及 LLM 调用。当前存在两个核心性能问题：
+ZhiWei 作为个人 AI Agent，每次用户交互都会触发 ReactAgentLoop 控制循环，循环中的每一步都涉及 LLM 调用。当前存在两个核心性能问题：
 
 **问题 1：Token 消耗冗余**
 
@@ -75,7 +75,7 @@ Agent 循环中存在大量重复的 Token 消耗：
 
 **已实现的流式能力：**
 
-- `AgentLoop.runStreaming()` 支持 SSE 流式输出
+- `AgentOrchestrator.runStreaming()` 支持 SSE 流式输出
 - `LlmRouter.stream()` / `streamWithInfo()` 支持流式 LLM 调用
 - 前端 SSE 接收 token + ui 事件交替传输
 
@@ -167,7 +167,7 @@ ContextAssembler 当前的检索流程是串行的：HybridRetriever → 知识�
 
 **流式优先架构：**
 
-传统的请求-响应模式要求完整生成响应后才返回。流式架构允许 LLM 生成第一个 Token 后立即开始传输，用户感知的 TTFT 等于 LLM 的实际 TTFT，而非 LLM TTFT + 完整生成时间。ZhiWei 已实现流式架构（`AgentLoop.runStreaming`），但上下文组装阶段仍是阻塞的。
+传统的请求-响应模式要求完整生成响应后才返回。流式架构允许 LLM 生成第一个 Token 后立即开始传输，用户感知的 TTFT 等于 LLM 的实际 TTFT，而非 LLM TTFT + 完整生成时间。ZhiWei 已实现流式架构（`AgentOrchestrator.runStreaming`），但上下文组装阶段仍是阻塞的。
 
 ### 2.5 Token 消耗优化研究
 

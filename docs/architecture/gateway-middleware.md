@@ -42,7 +42,7 @@ flowchart TD
     end
 
     subgraph "业务执行层"
-        AGENT["AgentLoop"]
+        AGENT["AgentOrchestrator"]
         SKILL["SkillRegistry"]
     end
 
@@ -120,7 +120,7 @@ flowchart TD
 | `DINGTALK` | `"dingtalk"` | 是 |
 | `FEISHU` | `"feishu"` | 是 |
 
-> 注意：当前 `ChannelType` 枚举中没有 `CLI` 值。CLI 交互层尚未实现，规划中 CLI 直接调用 AgentLoop，不经过 Gateway。
+> 注意：当前 `ChannelType` 枚举中没有 `CLI` 值。CLI 交互层尚未实现，规划中 CLI 直接调用 AgentOrchestrator，不经过 Gateway。
 
 ## 4. 核心流程
 
@@ -137,7 +137,7 @@ sequenceDiagram
     participant RT as RouterMiddleware
     participant EX as ExecutionMiddleware
     participant AD as AuditMiddleware
-    participant AL as AgentLoop
+    participant AL as AgentOrchestrator
 
     CH->>GW: process(GatewayMessage)
     GW->>GW: MDC.put("messageId")
@@ -149,7 +149,7 @@ sequenceDiagram
     RL->>SEC: chain.next(message)
     SEC->>RT: chain.next(message)
     RT->>EX: chain.next(message)
-    EX->>AL: AgentLoop.run(request)
+    EX->>AL: AgentOrchestrator.run(request)
     AL-->>EX: AgentResponse
     EX->>AD: chain.next(message)
     AD-->>GW: GatewayResponse
@@ -189,7 +189,7 @@ stateDiagram-v2
 
 | 依赖方向 | 模块 | 交互方式 |
 |---------|------|---------|
-| Gateway → Agent | `com.lifepilot.agent` | `ExecutionMiddleware` 调用 `AgentLoop.run()` |
+| Gateway → Agent | `com.lifepilot.agent` | `ExecutionMiddleware` 调用 `AgentOrchestrator.run()` / `runStreaming()` |
 | Gateway → Guardrail | `com.lifepilot.observability.guardrail` | `SecurityMiddleware` 调用 `GuardrailEngine` 进行安全检查 |
 | Gateway → Skill | `com.lifepilot.skill` | `RouterMiddleware` 快速路径直接调用 Skill |
 | Gateway → Observability | `com.lifepilot.observability` | `AuditMiddleware` 记录审计日志 |
