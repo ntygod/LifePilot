@@ -473,12 +473,12 @@ function selectSidebarPanel(panel: SidebarPanel) {
       <div class="absolute left-[-10rem] bottom-[-8rem] h-[20rem] w-[20rem] rounded-full bg-[radial-gradient(circle,rgba(15,23,42,0.08),transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(148,163,184,0.1),transparent_72%)]" />
     </div>
 
-    <header class="relative shrink-0 px-4 pt-3 sm:px-6">
+    <header class="relative shrink-0 px-4 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1180px]">
-        <div class="flex min-w-0 items-start justify-between gap-3 px-1 py-1">
+        <div class="flex min-w-0 items-center justify-between gap-3 px-1 py-1">
           <div class="min-w-0">
             <div class="surface-label">当前对话</div>
-            <h1 class="mt-1 truncate text-xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
+            <h1 class="mt-0.5 truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl">
               {{ headerTitle }}
             </h1>
           </div>
@@ -571,7 +571,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
           </div>
         </div>
 
-        <div class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-4 pt-3 sm:px-6">
+        <div class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
           <div class="mx-auto w-full max-w-[1180px]">
             <StatePanel
               v-if="showGlobalErrorPanel"

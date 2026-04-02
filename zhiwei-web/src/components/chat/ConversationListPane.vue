@@ -142,15 +142,12 @@ async function handleDelete(sessionId: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="border-b border-sidebar-border/45 px-3 py-3">
-      <div class="conversation-hero shell-card px-3.5 py-3">
-        <div class="space-y-3">
-          <div class="space-y-1">
+    <div class="border-b border-sidebar-border/45 px-2.5 py-2.5">
+      <div class="conversation-hero shell-card px-3 py-2.5">
+        <div class="space-y-2.5">
+          <div class="space-y-0.5">
             <div class="surface-label">对话</div>
-            <div class="text-base font-semibold tracking-tight text-foreground">最近对话</div>
-            <p class="text-xs leading-4 text-muted-foreground">
-              从这里继续。
-            </p>
+            <div class="text-sm font-semibold tracking-tight text-foreground">最近对话</div>
           </div>
 
           <div class="flex flex-wrap gap-1.5 text-[11px]">
@@ -158,31 +155,31 @@ async function handleDelete(sessionId: string) {
             <span class="surface-chip">归档 {{ archivedSessions.length }}</span>
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
-            <Button type="button" class="h-9 justify-center rounded-[0.9rem] shadow-none" @click="handleNewConversation">
-              <Plus class="size-4" />
+          <div class="grid grid-cols-2 gap-1.5">
+            <Button type="button" class="h-8 justify-center rounded-[0.75rem] text-xs shadow-none" @click="handleNewConversation">
+              <Plus class="size-3.5" />
               新对话
             </Button>
-            <Button type="button" variant="outline" class="h-9 justify-center rounded-[0.9rem] shadow-none" @click="openConversationWorkspace">
+            <Button type="button" variant="outline" class="h-8 justify-center rounded-[0.75rem] text-xs shadow-none" @click="openConversationWorkspace">
               全部对话
             </Button>
           </div>
 
           <div class="relative">
-            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               v-model="searchQuery"
               type="search"
               placeholder="搜索会话"
-              class="h-9 rounded-[0.9rem] border-border/50 bg-background/78 pl-9 text-sm shadow-none"
+              class="h-8 rounded-[0.75rem] border-border/50 bg-background/78 pl-8 text-xs shadow-none"
             />
           </div>
         </div>
       </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
-      <section class="space-y-2">
+    <div class="flex-1 overflow-y-auto px-2.5 py-3 scrollbar-thin">
+      <section class="space-y-1.5">
         <div class="flex items-center justify-between px-2">
           <div class="nav-section-title">最近会话</div>
           <span class="text-xs text-muted-foreground">{{ activeSessions.length }}</span>
@@ -225,7 +222,7 @@ async function handleDelete(sessionId: string) {
                     </span>
                     <Pin v-if="session.pinned" class="size-3.5 shrink-0 text-primary" />
                   </div>
-                  <p v-if="session.lastMessagePreview" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                  <p v-if="session.lastMessagePreview" class="line-clamp-1 text-xs leading-5 text-muted-foreground">
                     {{ session.lastMessagePreview }}
                   </p>
                   <div class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
