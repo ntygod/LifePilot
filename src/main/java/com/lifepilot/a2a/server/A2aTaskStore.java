@@ -50,6 +50,22 @@ public class A2aTaskStore {
         return task;
     }
 
+    /**
+     * 解析或创建 Task：若消息携带已有 taskId 则追加 history，否则创建新 Task。
+     *
+     * @param message A2A 消息
+     * @return 已有或新建的 Task
+     */
+    public A2aTask resolveOrCreate(A2aMessage message) {
+        if (message.taskId() != null) {
+            var existing = find(message.taskId());
+            if (existing.isPresent()) {
+                return appendHistory(message.taskId(), message);
+            }
+        }
+        return create(message);
+    }
+
     /** 按 ID 查找 Task。 */
     public Optional<A2aTask> find(String taskId) {
         return Optional.ofNullable(tasks.get(taskId));
@@ -127,29 +143,30 @@ public class A2aTaskStore {
     }
 
     /**
-     * 取消 Task。
+     * 取消 Task（原子操作）。
      *
-     * <p>仅 SUBMITTED / WORKING 状态可取消，终态 Task 返回 false。</p>
+     * <p>允许取消 SUBMITTED / WORKING / INPUT_REQUIRED / AUTH_REQUIRED 状态的 Task，
+     * 终态 Task 返回 false。使用 computeIfPresent 保证并发安全。</p>
      */
     public boolean cancel(String taskId) {
-        var existing = tasks.get(taskId);
-        if (existing == null) {
-            return false;
-        }
-        var currentState = existing.status().state();
-        if (currentState.isTerminal() || currentState == A2aTaskState.INPUT_REQUIRED) {
-            // INPUT_REQUIRED 也允许取消，但终态不允许
-            if (currentState.isTerminal()) {
-                return false;
+        boolean[] success = {false};
+        tasks.computeIfPresent(taskId, (id, existing) -> {
+            var currentState = existing.status().state();
+            if (currentState.isTerminal()
+                    || (currentState != A2aTaskState.SUBMITTED
+                        && currentState != A2aTaskState.WORKING
+                        && currentState != A2aTaskState.INPUT_REQUIRED
+                        && currentState != A2aTaskState.AUTH_REQUIRED)) {
+                return existing;
             }
-        }
-        if (currentState != A2aTaskState.SUBMITTED
-                && currentState != A2aTaskState.WORKING
-                && currentState != A2aTaskState.INPUT_REQUIRED) {
-            return false;
-        }
-        updateStatus(taskId, A2aTaskState.CANCELED, "Task 已取消");
-        return true;
+            var statusMsg = new A2aMessage(UUID.randomUUID().toString(), A2aRole.AGENT,
+                    List.of(new A2aPart.Text("Task 已取消", null)), taskId, existing.contextId(), null);
+            var newStatus = new A2aTaskStatus(A2aTaskState.CANCELED, statusMsg, Instant.now().toString());
+            success[0] = true;
+            return new A2aTask(existing.id(), existing.contextId(), newStatus,
+                    existing.history(), existing.artifacts(), existing.metadata());
+        });
+        return success[0];
     }
 
     /**

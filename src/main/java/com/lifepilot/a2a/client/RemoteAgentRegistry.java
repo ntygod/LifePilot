@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 远程 A2A Agent 注册表。
@@ -27,6 +28,7 @@ public class RemoteAgentRegistry {
     private record CacheEntry(A2aAgentCard card, Instant fetchedAt) {}
 
     private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> refreshLocks = new ConcurrentHashMap<>();
     private final A2aClientService clientService;
     private final A2aProperties properties;
 
@@ -113,6 +115,8 @@ public class RemoteAgentRegistry {
 
     /**
      * 检查缓存是否过期，过期则重新获取。
+     *
+     * <p>使用 per-URL ReentrantLock 防止多线程同时刷新同一 URL（thundering herd）。</p>
      */
     private Optional<A2aAgentCard> getOrRefresh(String agentUrl) {
         CacheEntry entry = cache.get(agentUrl);
@@ -122,18 +126,32 @@ public class RemoteAgentRegistry {
 
         int ttlMinutes = properties.getClient().getCardCacheTtlMinutes();
         if (entry.fetchedAt().plusSeconds(ttlMinutes * 60L).isBefore(Instant.now())) {
-            // 缓存过期，重新获取
-            log.debug("远程 Agent Card 缓存过期，重新获取: url={}", agentUrl);
-            return clientService.discoverAgent(agentUrl)
-                    .map(card -> {
-                        cache.put(agentUrl, new CacheEntry(card, Instant.now()));
-                        return card;
-                    })
-                    .or(() -> {
-                        // 刷新失败，返回旧缓存
-                        log.warn("远程 Agent Card 刷新失败，使用旧缓存: url={}", agentUrl);
-                        return Optional.of(entry.card());
-                    });
+            // 缓存过期，使用锁保证同一 URL 同时只有一个线程刷新
+            var lock = refreshLocks.computeIfAbsent(agentUrl, _ -> new ReentrantLock());
+            if (lock.tryLock()) {
+                try {
+                    // 双重检查：获取锁后重新检查缓存是否已被其他线程刷新
+                    CacheEntry recheck = cache.get(agentUrl);
+                    if (recheck != null && recheck.fetchedAt().plusSeconds(ttlMinutes * 60L).isAfter(Instant.now())) {
+                        return Optional.of(recheck.card());
+                    }
+                    log.debug("远程 Agent Card 缓存过期，重新获取: url={}", agentUrl);
+                    return clientService.discoverAgent(agentUrl)
+                            .map(card -> {
+                                cache.put(agentUrl, new CacheEntry(card, Instant.now()));
+                                return card;
+                            })
+                            .or(() -> {
+                                log.warn("远程 Agent Card 刷新失败，使用旧缓存: url={}", agentUrl);
+                                return Optional.of(entry.card());
+                            });
+                } finally {
+                    lock.unlock();
+                }
+            } else {
+                // 其他线程正在刷新，直接返回旧缓存
+                return Optional.of(entry.card());
+            }
         }
 
         return Optional.of(entry.card());

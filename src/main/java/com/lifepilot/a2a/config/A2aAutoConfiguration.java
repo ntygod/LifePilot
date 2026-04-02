@@ -1,5 +1,7 @@
 package com.lifepilot.a2a.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.a2a.client.A2aCircuitBreakerRegistry;
 import com.lifepilot.a2a.client.A2aClientService;
 import com.lifepilot.a2a.client.RemoteAgentRegistry;
 import com.lifepilot.a2a.client.RemoteAgentToolFactory;
@@ -10,12 +12,14 @@ import com.lifepilot.multiagent.config.MultiAgentAutoConfiguration;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 
@@ -69,9 +73,11 @@ public class A2aAutoConfiguration {
     public A2aAgentExecutor a2aAgentExecutor(AgentRegistry agentRegistry,
                                               AgentExecutor agentExecutor,
                                               AgentOrchestrator agentOrchestrator,
-                                              A2aTaskStore taskStore) {
+                                              A2aTaskStore taskStore,
+                                              MeterRegistry meterRegistry) {
         log.info("A2A Server: 注册 A2aAgentExecutor");
-        return new A2aAgentExecutor(agentRegistry, agentExecutor, agentOrchestrator, taskStore);
+        return new A2aAgentExecutor(agentRegistry, agentExecutor, agentOrchestrator,
+                taskStore, meterRegistry);
     }
 
     @Bean
@@ -87,7 +93,7 @@ public class A2aAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public A2aMessageController a2aMessageController(A2aAgentExecutor executor,
                                                       A2aProperties properties) {
-        log.info("A2A Server: 注册 A2aMessageController");
+        log.info("A2A Server: 注册 A2aMessageController（已废弃，请使用 JSON-RPC 端点）");
         return new A2aMessageController(executor, properties);
     }
 
@@ -95,8 +101,18 @@ public class A2aAutoConfiguration {
     @ConditionalOnProperty(prefix = "lifepilot.a2a.server", name = "enabled",
             havingValue = "true", matchIfMissing = true)
     public A2aTaskController a2aTaskController(A2aTaskStore taskStore) {
-        log.info("A2A Server: 注册 A2aTaskController");
+        log.info("A2A Server: 注册 A2aTaskController（已废弃，请使用 JSON-RPC 端点）");
         return new A2aTaskController(taskStore);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "lifepilot.a2a.server", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public A2aJsonRpcController a2aJsonRpcController(A2aAgentExecutor executor,
+                                                      A2aTaskStore taskStore,
+                                                      A2aProperties properties) {
+        log.info("A2A Server: 注册 A2aJsonRpcController");
+        return new A2aJsonRpcController(executor, taskStore, properties);
     }
 
     @Bean
@@ -112,9 +128,19 @@ public class A2aAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "lifepilot.a2a.client", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public A2aClientService a2aClientService(A2aProperties properties) {
+    public A2aCircuitBreakerRegistry a2aCircuitBreakerRegistry(A2aProperties properties) {
+        log.info("A2A Client: 注册 A2aCircuitBreakerRegistry");
+        return new A2aCircuitBreakerRegistry(properties);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "lifepilot.a2a.client", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public A2aClientService a2aClientService(A2aProperties properties,
+                                              A2aCircuitBreakerRegistry circuitBreakerRegistry,
+                                              MeterRegistry meterRegistry) {
         log.info("A2A Client: 注册 A2aClientService");
-        return new A2aClientService(properties);
+        return new A2aClientService(properties, circuitBreakerRegistry, meterRegistry);
     }
 
     @Bean
@@ -130,9 +156,11 @@ public class A2aAutoConfiguration {
     @ConditionalOnProperty(prefix = "lifepilot.a2a.client", name = "enabled",
             havingValue = "true", matchIfMissing = true)
     public RemoteAgentToolFactory remoteAgentToolFactory(A2aClientService clientService,
-                                                          DynamicToolRegistry toolRegistry) {
+                                                          DynamicToolRegistry toolRegistry,
+                                                          ApplicationEventPublisher eventPublisher,
+                                                          ObjectMapper objectMapper) {
         log.info("A2A Client: 注册 RemoteAgentToolFactory");
-        return new RemoteAgentToolFactory(clientService, toolRegistry);
+        return new RemoteAgentToolFactory(clientService, toolRegistry, eventPublisher, objectMapper);
     }
 
     // ── 启动后初始化 ──
@@ -142,24 +170,17 @@ public class A2aAutoConfiguration {
         var ctx = event.getApplicationContext();
         var properties = ctx.getBean(A2aProperties.class);
 
-        // 1. Client 启动时自动发现配置的远程 Agent
+        // 1. Client 启动时自动发现配置的远程 Agent 并注册工具
         if (properties.getClient().isEnabled() && ctx.containsBean("remoteAgentRegistry")) {
             var registry = ctx.getBean(RemoteAgentRegistry.class);
             var toolFactory = ctx.getBean(RemoteAgentToolFactory.class);
             registry.discoverConfiguredAgents();
 
-            // 为已发现的远程 Agent 注册工具
-            registry.listAll().forEach(card -> {
-                String agentUrl = properties.getClient().getRemoteAgents().stream()
-                        .filter(url -> registry.findByUrl(url)
-                                .map(c -> c.name().equals(card.name()))
-                                .orElse(false))
-                        .findFirst()
-                        .orElse("");
-                if (!agentUrl.isEmpty()) {
-                    toolFactory.registerRemoteTool(agentUrl, card);
-                }
-            });
+            // 直接遍历 URL 列表注册工具，避免 O(n²) 反向查找
+            for (String url : properties.getClient().getRemoteAgents()) {
+                registry.findByUrl(url).ifPresent(card ->
+                        toolFactory.registerRemoteTool(url, card));
+            }
         }
 
         // 2. Server 启动 TTL 清理定时任务

@@ -120,12 +120,17 @@ lifepilot:
       agent-version: 1.0.0
       protocol-version: 0.2.5
       streaming-enabled: true
+      sse-timeout-seconds: 120
     client:
       enabled: true
       remote-agents: []
       connect-timeout-seconds: 10
       read-timeout-seconds: 60
       card-cache-ttl-minutes: 30
+      remote-agent-keys: {}
+      circuit-breaker-failure-threshold: 3
+      circuit-breaker-reset-timeout-seconds: 60
+      circuit-breaker-half-open-max-attempts: 1
     task:
       ttl-minutes: 60
       max-history-length: 50

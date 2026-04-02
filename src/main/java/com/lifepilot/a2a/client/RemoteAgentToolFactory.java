@@ -1,6 +1,8 @@
 package com.lifepilot.a2a.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.a2a.model.*;
+import com.lifepilot.agent.suspend.event.A2aTaskCompletedEvent;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolSchedulingMode;
@@ -9,6 +11,7 @@ import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Map;
@@ -31,10 +34,17 @@ public class RemoteAgentToolFactory {
 
     private final A2aClientService clientService;
     private final DynamicToolRegistry toolRegistry;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ObjectMapper objectMapper;
 
-    public RemoteAgentToolFactory(A2aClientService clientService, DynamicToolRegistry toolRegistry) {
+    public RemoteAgentToolFactory(A2aClientService clientService,
+                                   DynamicToolRegistry toolRegistry,
+                                   ApplicationEventPublisher eventPublisher,
+                                   ObjectMapper objectMapper) {
         this.clientService = clientService;
         this.toolRegistry = toolRegistry;
+        this.eventPublisher = eventPublisher;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -82,6 +92,11 @@ public class RemoteAgentToolFactory {
 
                     // 调用远程 Agent
                     A2aTask result = clientService.sendMessage(agentUrl, message);
+
+                    // 发布 A2aTaskCompletedEvent 以恢复挂起的 Agent
+                    if (result.status().state().isTerminal()) {
+                        publishTaskCompletedEvent(result);
+                    }
 
                     // 提取 Artifact 文本作为结果
                     String output = extractArtifactText(result);
@@ -136,6 +151,17 @@ public class RemoteAgentToolFactory {
         // 移除首尾下划线
         result = result.replaceAll("^_|_$", "");
         return TOOL_ID_PREFIX + result;
+    }
+
+    /** 发布远程 Task 完成事件，用于恢复挂起等待结果的 Agent。 */
+    private void publishTaskCompletedEvent(A2aTask result) {
+        try {
+            String resultJson = objectMapper.writeValueAsString(result);
+            eventPublisher.publishEvent(new A2aTaskCompletedEvent(result.id(), resultJson));
+            log.debug("A2A 远程任务完成事件已发布: taskId={}", result.id());
+        } catch (Exception e) {
+            log.warn("A2A 远程任务完成事件发布失败: taskId={}, error={}", result.id(), e.getMessage());
+        }
     }
 
     /**
