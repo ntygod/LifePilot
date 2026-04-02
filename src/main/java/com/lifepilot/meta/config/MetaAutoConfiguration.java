@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
+import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -125,8 +128,11 @@ public class MetaAutoConfiguration {
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
                                         @Nullable NotificationProperties notificationProperties,
-                                        @Nullable BackgroundProcessManager backgroundProcessManager) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager);
+                                        @Nullable BackgroundProcessManager backgroundProcessManager,
+                                        @Nullable ChannelOperationDispatcher channelOperationDispatcher,
+                                        @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        @Nullable ChannelInstanceService channelInstanceService) {
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
     }
 
     /**

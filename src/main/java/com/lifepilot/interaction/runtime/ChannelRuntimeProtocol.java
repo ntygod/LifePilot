@@ -10,6 +10,8 @@ public final class ChannelRuntimeProtocol {
 
     public static final String HEADER_INSTANCE_TOKEN = "X-Channel-Instance-Token";
     public static final String INSTANCE_TOKEN_SECRET_KEY = "runtimeToken";
+    /** 通用操作端点路径。 */
+    public static final String OPERATION_PATH = "/operate";
 
     private ChannelRuntimeProtocol() {
     }
