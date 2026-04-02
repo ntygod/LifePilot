@@ -3,10 +3,12 @@ mod health_check;
 mod java_manager;
 mod port_finder;
 mod tray;
+mod whisper_manager;
 
 use java_manager::JavaManager;
 use std::path::PathBuf;
 use tauri::Manager;
+use whisper_manager::WhisperManager;
 
 /// Tauri 插件注册入口
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -20,14 +22,20 @@ pub fn run() {
             let resource_dir = resolve_resource_dir(app);
             log::info!("资源目录: {}", resource_dir.display());
 
-            // 初始化 Java 管理器
-            let java_manager = JavaManager::new(&resource_dir);
+            // 初始化 Whisper 语音引擎管理器
+            let whisper_manager = WhisperManager::new();
+            let whisper_cli = whisper_manager.cli_path_if_exists();
+            let whisper_model = whisper_manager.model_path_if_exists();
+
+            // 初始化 Java 管理器（传入 Whisper 路径）
+            let java_manager = JavaManager::new(&resource_dir, whisper_cli, whisper_model);
 
             // 启动 Java 后端
             let app_handle = app.handle().clone();
             java_manager.start(&app_handle)?;
 
             // 注册到全局状态
+            app.manage(whisper_manager);
             app.manage(java_manager);
 
             // 初始化系统托盘
@@ -40,6 +48,9 @@ pub fn run() {
             commands::is_backend_running,
             commands::restart_backend,
             commands::get_backend_status,
+            commands::check_whisper_status,
+            commands::start_whisper_download,
+            commands::cancel_whisper_download,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

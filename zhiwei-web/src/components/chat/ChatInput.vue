@@ -22,6 +22,7 @@ import { useChatStore } from '@/stores/chat'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useVoice } from '@/composables/useVoice'
+import { useWhisperDownload } from '@/composables/useWhisperDownload'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
 import type { ChatAttachment, Datastore, KnowledgeBase, SessionConfig } from '@/types'
 
@@ -74,6 +75,24 @@ const {
   isRecording, recordingDuration, audioBlob, isSupported: voiceSupported, analyserNode,
   startRecording, stopRecording,
 } = useVoice()
+
+// Whisper 语音引擎自动下载（桌面端）
+const { checkAvailability: checkWhisper, triggerDownload: triggerWhisperDownload } = useWhisperDownload()
+
+/** 麦克风按钮点击：检测 Whisper 可用性，不可用则触发下载，可用则录音 */
+async function handleMicClick() {
+  if (!('__TAURI_INTERNALS__' in window)) {
+    // 浏览器环境直接录音
+    startRecording()
+    return
+  }
+  const ok = await checkWhisper()
+  if (ok) {
+    startRecording()
+  } else {
+    triggerWhisperDownload()
+  }
+}
 
 const promptTemplates = [
   { name: '整理要点', content: '请帮我整理以下内容的重点、结论和待办：\n\n' },
@@ -779,7 +798,7 @@ defineExpose({
                 type="button"
                 :disabled="disabled || isUploading || voiceSending"
                 class="flex size-9 items-center justify-center rounded-[1rem] border border-border/55 bg-background/76 text-muted-foreground/70 transition-all duration-150 hover:bg-accent/48 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
-                @click="startRecording"
+                @click="handleMicClick"
               >
                 <Mic class="size-4" />
               </button>

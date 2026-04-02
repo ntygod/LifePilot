@@ -19,6 +19,8 @@ pub struct JavaManager {
     port: u16,
     jar_path: PathBuf,
     jre_path: Option<PathBuf>,
+    whisper_cli_path: Option<PathBuf>,
+    whisper_model_path: Option<PathBuf>,
     #[allow(dead_code)] // Phase 2: 崩溃自动重启
     max_restart_attempts: u32,
     #[allow(dead_code)] // Phase 2: 崩溃自动重启
@@ -27,7 +29,11 @@ pub struct JavaManager {
 
 impl JavaManager {
     /// 创建新的 Java 管理器实例
-    pub fn new(resource_dir: &Path) -> Self {
+    pub fn new(
+        resource_dir: &Path,
+        whisper_cli_path: Option<PathBuf>,
+        whisper_model_path: Option<PathBuf>,
+    ) -> Self {
         let port = port_finder::find_available_port();
         let jar_path = resource_dir.join("zhiwei.jar");
         let jre_path = Self::detect_jre(resource_dir);
@@ -44,6 +50,8 @@ impl JavaManager {
             port,
             jar_path,
             jre_path,
+            whisper_cli_path,
+            whisper_model_path,
             max_restart_attempts: 2,
             restart_count: Mutex::new(0),
         }
@@ -85,8 +93,17 @@ impl JavaManager {
             .arg("-Dstderr.encoding=UTF-8")
             .arg("-jar")
             .arg(&self.jar_path)
-            .arg(format!("--server.port={}", self.port))
-            .stdout(Stdio::piped())
+            .arg(format!("--server.port={}", self.port));
+
+        // Whisper 语音引擎路径参数
+        if let Some(ref p) = self.whisper_cli_path {
+            cmd.arg(format!("--lifepilot.media.audio.whisper-cli-path={}", p.display()));
+        }
+        if let Some(ref p) = self.whisper_model_path {
+            cmd.arg(format!("--lifepilot.media.audio.whisper-model={}", p.display()));
+        }
+
+        cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
         // Windows 下隐藏 Java 进程的控制台窗口
