@@ -9,7 +9,6 @@ import com.lifepilot.mcp.protocol.JsonRpcMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,11 +25,15 @@ import java.util.Map;
  *
  * <p>单一入口 {@code POST /api/a2a}，通过 JSON-RPC method 字段路由：
  * <ul>
- *   <li>{@code tasks/send} — 同步执行消息</li>
- *   <li>{@code tasks/sendSubscribe} — SSE 流式执行</li>
+ *   <li>{@code tasks/send} — 同步执行消息，返回 {@code application/json} JSON-RPC response</li>
+ *   <li>{@code tasks/sendSubscribe} — SSE 流式执行。<b>成功时返回 {@code text/event-stream}
+ *       （SseEmitter），失败时返回 {@code application/json} JSON-RPC error response。</b>
+ *       客户端应根据 Content-Type 区分响应类型。</li>
  *   <li>{@code tasks/get} — 查询 Task 状态</li>
  *   <li>{@code tasks/cancel} — 取消 Task</li>
  * </ul>
+ *
+ * <p>所有 JSON-RPC error 响应均使用 HTTP 200，错误语义由 JSON body 中的 error 对象承载。</p>
  *
  * @author zsg
  * @since 2026-04-02
@@ -45,14 +48,16 @@ public class A2aJsonRpcController {
     private final A2aAgentExecutor executor;
     private final A2aTaskStore taskStore;
     private final A2aProperties properties;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     public A2aJsonRpcController(A2aAgentExecutor executor,
                                  A2aTaskStore taskStore,
-                                 A2aProperties properties) {
+                                 A2aProperties properties,
+                                 ObjectMapper objectMapper) {
         this.executor = executor;
         this.taskStore = taskStore;
         this.properties = properties;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -60,7 +65,6 @@ public class A2aJsonRpcController {
      */
     @PostMapping(value = "", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> handleJsonRpc(@RequestBody JsonRpcMessage request) {
-        // 校验 JSON-RPC 基本格式
         if (!"2.0".equals(request.jsonrpc())) {
             return errorResponse(request, A2aJsonRpcError.invalidRequest("jsonrpc 版本必须为 2.0"));
         }
@@ -100,11 +104,17 @@ public class A2aJsonRpcController {
         }
     }
 
-    /** tasks/sendSubscribe — SSE 流式执行。 */
+    /**
+     * tasks/sendSubscribe — SSE 流式执行。
+     *
+     * <p>成功时返回 {@code text/event-stream}（SseEmitter），每个 SSE 事件以
+     * JSON-RPC notification 格式推送。校验失败或流式禁用时返回
+     * {@code application/json} JSON-RPC error response。</p>
+     */
     private ResponseEntity<?> handleTasksSendSubscribe(JsonRpcMessage request) {
         if (!properties.getServer().isStreamingEnabled()) {
             return errorResponse(request,
-                    new A2aJsonRpcError(-32001, "流式消息处理已禁用", null));
+                    new A2aJsonRpcError(A2aJsonRpcError.STREAMING_DISABLED, "流式消息处理已禁用", null));
         }
 
         var parsed = parseMessageParams(request);
@@ -128,7 +138,6 @@ public class A2aJsonRpcController {
                                 ? SseEventType.TASK_ARTIFACT_UPDATE
                                 : SseEventType.TASK_STATUS_UPDATE;
 
-                // 以 JSON-RPC notification 格式推送事件
                 var notification = JsonRpcMessage.notification(eventType, task);
                 var event = SseEmitter.event()
                         .name(eventType)
@@ -160,7 +169,7 @@ public class A2aJsonRpcController {
         return taskStore.find(taskId)
                 .map(task -> ResponseEntity.ok(jsonRpcResponse(request.id(), task)))
                 .orElseGet(() -> errorResponse(request,
-                        new A2aJsonRpcError(-32002, "Task 不存在: " + taskId, null)));
+                        new A2aJsonRpcError(A2aJsonRpcError.TASK_NOT_FOUND, "Task 不存在: " + taskId, null)));
     }
 
     /** tasks/cancel — 取消 Task。 */
@@ -172,13 +181,13 @@ public class A2aJsonRpcController {
 
         if (taskStore.find(taskId).isEmpty()) {
             return errorResponse(request,
-                    new A2aJsonRpcError(-32002, "Task 不存在: " + taskId, null));
+                    new A2aJsonRpcError(A2aJsonRpcError.TASK_NOT_FOUND, "Task 不存在: " + taskId, null));
         }
 
         boolean canceled = taskStore.cancel(taskId);
         if (!canceled) {
             return errorResponse(request,
-                    new A2aJsonRpcError(-32003, "Task 已处于终态，无法取消", null));
+                    new A2aJsonRpcError(A2aJsonRpcError.TASK_TERMINAL, "Task 已处于终态，无法取消", null));
         }
 
         return taskStore.find(taskId)
@@ -190,7 +199,6 @@ public class A2aJsonRpcController {
     // ── 辅助方法 ──
 
     /** 从 params 中解析 A2aMessage 和 skillId。 */
-    @SuppressWarnings("unchecked")
     private MessageParams parseMessageParams(JsonRpcMessage request) {
         if (!(request.params() instanceof Map<?, ?> params)) {
             return null;
@@ -217,20 +225,16 @@ public class A2aJsonRpcController {
         return params.get("id") instanceof String id ? id : null;
     }
 
-    /** 构建 JSON-RPC 成功响应。 */
+    /** 构建 JSON-RPC 成功响应（保留原始 id，null 则传 null）。 */
     private JsonRpcMessage jsonRpcResponse(Long id, Object result) {
-        return JsonRpcMessage.response(id != null ? id : 0, result);
+        long effectiveId = id != null ? id : 0;
+        return JsonRpcMessage.response(effectiveId, result);
     }
 
-    /** 构建 JSON-RPC 错误响应。 */
+    /** 构建 JSON-RPC 错误响应（统一 HTTP 200，错误语义由 error 对象承载）。 */
     private ResponseEntity<JsonRpcMessage> errorResponse(JsonRpcMessage request, A2aJsonRpcError error) {
-        int httpStatus = switch (error.code()) {
-            case A2aJsonRpcError.INVALID_REQUEST, A2aJsonRpcError.INVALID_PARAMS -> HttpStatus.BAD_REQUEST.value();
-            case A2aJsonRpcError.METHOD_NOT_FOUND -> HttpStatus.NOT_FOUND.value();
-            default -> HttpStatus.OK.value(); // JSON-RPC 规范：业务错误用 200 + error 字段
-        };
         var response = new JsonRpcMessage("2.0", request.id(), null, null, null, error);
-        return ResponseEntity.status(httpStatus).body(response);
+        return ResponseEntity.ok(response);
     }
 
     /** 消息参数解析结果。 */

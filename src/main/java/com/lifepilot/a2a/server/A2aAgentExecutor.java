@@ -110,6 +110,7 @@ public class A2aAgentExecutor {
                                 @Nullable String skillId,
                                 Consumer<A2aTask> listener) {
         Thread.startVirtualThread(() -> {
+            try {
             A2aTask task = taskStore.resolveOrCreate(message);
             String taskId = task.id();
             safeNotify(listener, task);
@@ -142,6 +143,11 @@ public class A2aAgentExecutor {
                 taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行异常: " + e.getMessage());
                 streamFailedCounter.increment();
                 safeNotify(listener, taskStore.find(taskId).orElseThrow());
+            }
+            } catch (Exception outerEx) {
+                // 最外层防护：resolveOrCreate 等初始化步骤异常时不让 Virtual Thread 静默终止
+                log.error("A2A 流式任务初始化异常: error={}", outerEx.getMessage(), outerEx);
+                streamFailedCounter.increment();
             }
         });
     }

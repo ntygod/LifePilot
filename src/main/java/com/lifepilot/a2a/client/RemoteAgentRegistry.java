@@ -64,6 +64,7 @@ public class RemoteAgentRegistry {
      */
     public boolean unregister(String agentUrl) {
         CacheEntry removed = cache.remove(agentUrl);
+        refreshLocks.remove(agentUrl);
         if (removed != null) {
             log.info("远程 Agent 注销成功: url={}", agentUrl);
             return true;

@@ -40,7 +40,7 @@ public class A2aClientService {
     private final RestClient restClient;
     private final A2aProperties properties;
     private final A2aCircuitBreakerRegistry circuitBreakerRegistry;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
     private final AtomicLong jsonRpcIdGenerator = new AtomicLong(1);
 
     private final Counter discoverSuccessCounter;
@@ -52,12 +52,14 @@ public class A2aClientService {
 
     public A2aClientService(A2aProperties properties,
                             A2aCircuitBreakerRegistry circuitBreakerRegistry,
-                            MeterRegistry meterRegistry) {
+                            MeterRegistry meterRegistry,
+                            ObjectMapper objectMapper) {
         this.properties = properties;
         this.circuitBreakerRegistry = circuitBreakerRegistry;
+        this.objectMapper = objectMapper;
         var requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(properties.getClient().getConnectTimeoutSeconds() * 1000);
-        requestFactory.setReadTimeout(properties.getClient().getReadTimeoutSeconds() * 1000);
+        requestFactory.setConnectTimeout((int) (properties.getClient().getConnectTimeoutSeconds() * 1000L));
+        requestFactory.setReadTimeout((int) (properties.getClient().getReadTimeoutSeconds() * 1000L));
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)
                 .build();

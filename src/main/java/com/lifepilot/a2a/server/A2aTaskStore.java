@@ -149,24 +149,23 @@ public class A2aTaskStore {
      * 终态 Task 返回 false。使用 computeIfPresent 保证并发安全。</p>
      */
     public boolean cancel(String taskId) {
-        boolean[] success = {false};
+        var success = new java.util.concurrent.atomic.AtomicBoolean(false);
         tasks.computeIfPresent(taskId, (id, existing) -> {
             var currentState = existing.status().state();
-            if (currentState.isTerminal()
-                    || (currentState != A2aTaskState.SUBMITTED
-                        && currentState != A2aTaskState.WORKING
-                        && currentState != A2aTaskState.INPUT_REQUIRED
-                        && currentState != A2aTaskState.AUTH_REQUIRED)) {
+            if (currentState != A2aTaskState.SUBMITTED
+                    && currentState != A2aTaskState.WORKING
+                    && currentState != A2aTaskState.INPUT_REQUIRED
+                    && currentState != A2aTaskState.AUTH_REQUIRED) {
                 return existing;
             }
             var statusMsg = new A2aMessage(UUID.randomUUID().toString(), A2aRole.AGENT,
                     List.of(new A2aPart.Text("Task 已取消", null)), taskId, existing.contextId(), null);
             var newStatus = new A2aTaskStatus(A2aTaskState.CANCELED, statusMsg, Instant.now().toString());
-            success[0] = true;
+            success.set(true);
             return new A2aTask(existing.id(), existing.contextId(), newStatus,
                     existing.history(), existing.artifacts(), existing.metadata());
         });
-        return success[0];
+        return success.get();
     }
 
     /**

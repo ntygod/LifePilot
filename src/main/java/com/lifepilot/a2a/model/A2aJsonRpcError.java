@@ -15,6 +15,13 @@ import org.springframework.lang.Nullable;
  *   <li>-32603: 内部错误</li>
  * </ul>
  *
+ * <p>A2A 服务端自定义错误码（-32000 ~ -32099 保留给实现方）：
+ * <ul>
+ *   <li>-32001: 流式处理已禁用</li>
+ *   <li>-32002: Task 不存在</li>
+ *   <li>-32003: Task 已处于终态</li>
+ * </ul>
+ *
  * @author zsg
  * @since 2026-04-02
  */
@@ -34,6 +41,15 @@ public record A2aJsonRpcError(
     public static final int INVALID_PARAMS = -32602;
     /** 内部错误。 */
     public static final int INTERNAL_ERROR = -32603;
+
+    // ── A2A 服务端自定义错误码 ──
+
+    /** 流式处理已禁用。 */
+    public static final int STREAMING_DISABLED = -32001;
+    /** Task 不存在。 */
+    public static final int TASK_NOT_FOUND = -32002;
+    /** Task 已处于终态，无法操作。 */
+    public static final int TASK_TERMINAL = -32003;
 
     public static A2aJsonRpcError parseError(String detail) {
         return new A2aJsonRpcError(PARSE_ERROR, "解析错误", detail);

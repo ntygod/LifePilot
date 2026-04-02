@@ -110,9 +110,10 @@ public class A2aAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public A2aJsonRpcController a2aJsonRpcController(A2aAgentExecutor executor,
                                                       A2aTaskStore taskStore,
-                                                      A2aProperties properties) {
+                                                      A2aProperties properties,
+                                                      ObjectMapper objectMapper) {
         log.info("A2A Server: 注册 A2aJsonRpcController");
-        return new A2aJsonRpcController(executor, taskStore, properties);
+        return new A2aJsonRpcController(executor, taskStore, properties, objectMapper);
     }
 
     @Bean
@@ -138,9 +139,10 @@ public class A2aAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public A2aClientService a2aClientService(A2aProperties properties,
                                               A2aCircuitBreakerRegistry circuitBreakerRegistry,
-                                              MeterRegistry meterRegistry) {
+                                              MeterRegistry meterRegistry,
+                                              ObjectMapper objectMapper) {
         log.info("A2A Client: 注册 A2aClientService");
-        return new A2aClientService(properties, circuitBreakerRegistry, meterRegistry);
+        return new A2aClientService(properties, circuitBreakerRegistry, meterRegistry, objectMapper);
     }
 
     @Bean
@@ -171,29 +173,30 @@ public class A2aAutoConfiguration {
         var properties = ctx.getBean(A2aProperties.class);
 
         // 1. Client 启动时自动发现配置的远程 Agent 并注册工具
-        if (properties.getClient().isEnabled() && ctx.containsBean("remoteAgentRegistry")) {
-            var registry = ctx.getBean(RemoteAgentRegistry.class);
-            var toolFactory = ctx.getBean(RemoteAgentToolFactory.class);
-            registry.discoverConfiguredAgents();
+        if (properties.getClient().isEnabled()) {
+            ctx.getBeanProvider(RemoteAgentRegistry.class).ifAvailable(registry -> {
+                var toolFactory = ctx.getBean(RemoteAgentToolFactory.class);
+                registry.discoverConfiguredAgents();
 
-            // 直接遍历 URL 列表注册工具，避免 O(n²) 反向查找
-            for (String url : properties.getClient().getRemoteAgents()) {
-                registry.findByUrl(url).ifPresent(card ->
-                        toolFactory.registerRemoteTool(url, card));
-            }
+                for (String url : properties.getClient().getRemoteAgents()) {
+                    registry.findByUrl(url).ifPresent(card ->
+                            toolFactory.registerRemoteTool(url, card));
+                }
+            });
         }
 
         // 2. Server 启动 TTL 清理定时任务
-        if (properties.getServer().isEnabled() && ctx.containsBean("a2aTaskStore")) {
-            var taskStore = ctx.getBean(A2aTaskStore.class);
-            int ttlMinutes = properties.getTask().getTtlMinutes();
-            sharedScheduler.cleanup().scheduleAtFixedRate(() -> {
-                int cleaned = taskStore.cleanupExpired();
-                if (cleaned > 0) {
-                    log.info("A2A Task TTL 清理完成: 清理 {} 个过期 Task", cleaned);
-                }
-            }, ttlMinutes, ttlMinutes, TimeUnit.MINUTES);
-            log.info("A2A Server: TTL 清理定时任务已启动, 间隔={}分钟", ttlMinutes);
+        if (properties.getServer().isEnabled()) {
+            ctx.getBeanProvider(A2aTaskStore.class).ifAvailable(taskStore -> {
+                int ttlMinutes = properties.getTask().getTtlMinutes();
+                sharedScheduler.cleanup().scheduleAtFixedRate(() -> {
+                    int cleaned = taskStore.cleanupExpired();
+                    if (cleaned > 0) {
+                        log.info("A2A Task TTL 清理完成: 清理 {} 个过期 Task", cleaned);
+                    }
+                }, ttlMinutes, ttlMinutes, TimeUnit.MINUTES);
+                log.info("A2A Server: TTL 清理定时任务已启动, 间隔={}分钟", ttlMinutes);
+            });
         }
 
         log.info("A2A 模块初始化完成");
