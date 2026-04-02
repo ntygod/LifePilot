@@ -1,0 +1,130 @@
+name: Build Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      skip_jre:
+        description: '跳过 JRE 构建（使用系统 Java）'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.label }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ------- 工具链 -------
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '22'
+          distribution: 'temurin'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: zhiwei-web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zhiwei-web/src-tauri
+
+      # Linux 依赖
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # ------- 构建后端 JAR -------
+      - name: Build backend JAR
+        run: mvn clean package -DskipTests -q
+
+      - name: Copy JAR to resources
+        shell: bash
+        run: |
+          mkdir -p zhiwei-web/src-tauri/resources
+          cp target/zhiwei.jar zhiwei-web/src-tauri/resources/zhiwei.jar
+          echo "JAR size: $(du -h zhiwei-web/src-tauri/resources/zhiwei.jar | cut -f1)"
+
+      # ------- 构建精简 JRE -------
+      - name: Build JRE with jlink
+        if: inputs.skip_jre != 'true'
+        shell: bash
+        run: |
+          MODULES=$(grep -v '^#' scripts/jlink-modules.txt | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+          JRE_OUTPUT="zhiwei-web/src-tauri/resources/jre"
+
+          jlink \
+            --module-path "$JAVA_HOME/jmods" \
+            --add-modules "$MODULES" \
+            --no-header-files \
+            --no-man-pages \
+            --strip-debug \
+            --compress=zip-6 \
+            --output "$JRE_OUTPUT"
+
+          echo "JRE size: $(du -sh "$JRE_OUTPUT" | cut -f1)"
+          "$JRE_OUTPUT/bin/java" --version
+
+      # ------- 构建前端 -------
+      - name: Install frontend dependencies
+        working-directory: zhiwei-web
+        run: npm ci
+
+      # ------- 构建 Tauri 安装包 -------
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: zhiwei-web
+          tauriScript: npx tauri
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseName: 'ZhiWei ${{ github.ref_name }}'
+          releaseBody: |
+            ## ZhiWei 桌面端 ${{ github.ref_name }}
+
+            ### 安装说明
+            - **Windows**: 下载 `.exe` 安装包，双击安装
+            - **macOS**: 下载 `.dmg`，拖入 Applications
+            - **Linux**: 下载 `.AppImage` 或 `.deb`
+
+            ### 系统要求
+            - 无需安装 Java（已内嵌 JRE 22）
+            - 至少 2GB 可用内存
+            - 至少一个 LLM API Key（首次启动时配置）
+          releaseDraft: true
+          prerelease: false

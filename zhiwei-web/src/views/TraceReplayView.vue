@@ -12,6 +12,7 @@ import {
   Shield,
   Wrench,
 } from 'lucide-vue-next'
+import { getApiOrigin } from '@/api/config'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import type { TraceItem, TraceStep } from '@/types'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -247,7 +248,7 @@ function startLiveStream(traceId: string) {
   stopLiveStream()
 
   try {
-    liveSource = new EventSource(`/api/traces/${traceId}/stream`)
+    liveSource = new EventSource(`${getApiOrigin()}/api/traces/${traceId}/stream`)
 
     liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_START, () => {
       liveConnected.value = true

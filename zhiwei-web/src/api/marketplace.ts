@@ -1,11 +1,12 @@
 import type { ExtensionInstallation, ExtensionPackage, InstallResult, PagedResult } from '@/types'
+import { getApiOrigin } from '@/api/config'
 
-// API 基础路径（开发环境通过 Vite proxy 转发）
-const BASE = '/api/marketplace'
+// API 基础路径（运行时求值，Tauri 桌面端使用绝对路径，浏览器环境通过 Vite proxy 转发）
+const getBase = () => getApiOrigin() + '/api/marketplace'
 
 /** 统一 HTTP 请求封装 */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, {
+  const res = await fetch(`${getBase()}${url}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options
   })
@@ -56,7 +57,7 @@ export const marketplaceApi = {
 
   /** 构造已安装扩展资产的文件 URL */
   getInstallationAssetUrl(id: string, relativePath: string): string {
-    return `${BASE}/extensions/${encodeURIComponent(id)}/assets/file?path=${encodeURIComponent(relativePath)}`
+    return `${getBase()}/extensions/${encodeURIComponent(id)}/assets/file?path=${encodeURIComponent(relativePath)}`
   },
 
   /** 读取已安装扩展的文本资产 */

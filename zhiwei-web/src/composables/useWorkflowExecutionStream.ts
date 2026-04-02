@@ -1,4 +1,5 @@
 import { onBeforeUnmount, ref } from 'vue'
+import { getApiOrigin } from '@/api/config'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import { useWorkflowStore } from '@/stores/workflow'
 import type {
@@ -50,7 +51,7 @@ export function useWorkflowExecutionStream() {
 
     disconnectWorkflow()
     currentWorkflowId = workflowId
-    workflowSource = new EventSource(`/api/workflows/${workflowId}/executions/stream`)
+    workflowSource = new EventSource(`${getApiOrigin()}/api/workflows/${workflowId}/executions/stream`)
 
     workflowSource.onopen = () => {
       workflowConnected.value = true
@@ -91,7 +92,7 @@ export function useWorkflowExecutionStream() {
 
     disconnectInstance()
     currentInstanceId = instanceId
-    instanceSource = new EventSource(`/api/workflows/executions/${instanceId}/stream`)
+    instanceSource = new EventSource(`${getApiOrigin()}/api/workflows/executions/${instanceId}/stream`)
 
     instanceSource.onopen = () => {
       instanceConnected.value = true

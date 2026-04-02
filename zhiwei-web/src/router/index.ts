@@ -4,6 +4,24 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     /**
+     * 桌面端启动页（Tauri 环境下等待后端就绪）
+     */
+    {
+      path: '/splash',
+      name: 'splash',
+      component: () => import('@/views/SplashView.vue')
+    },
+
+    /**
+     * 桌面端首次启动引导（配置 AI 模型服务）
+     */
+    {
+      path: '/setup',
+      name: 'setup',
+      component: () => import('@/components/desktop/SetupWizard.vue')
+    },
+
+    /**
      * 根路由：产品介绍页（登录前）
      */
     {

@@ -1,5 +1,6 @@
 import { ref, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
+import { getApiOrigin } from '@/api/config'
 
 /**
  * 语音交互 composable，封装录音生命周期与 TTS 播放逻辑。
@@ -153,7 +154,7 @@ export function useVoice(maxRecordingSeconds = 120) {
     try {
       let buffer = ttsCache.get(entryId)
       if (!buffer) {
-        const resp = await fetch(`/api/chat/entries/${entryId}/tts`, { method: 'POST' })
+        const resp = await fetch(`${getApiOrigin()}/api/chat/entries/${entryId}/tts`, { method: 'POST' })
         if (!resp.ok) throw new Error(`TTS 请求失败: ${resp.status}`)
         const arrayBuffer = await resp.arrayBuffer()
         if (!ttsAudioContext) ttsAudioContext = new AudioContext()
