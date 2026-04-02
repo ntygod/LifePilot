@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra.channel;
 
 import com.lifepilot.interaction.model.ChannelInstance;
+import com.lifepilot.interaction.model.ChannelInstanceStatus;
 import com.lifepilot.interaction.model.DeliveryMode;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
@@ -161,8 +162,8 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleSendMessage(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String targetId = input.getParam("targetId", String.class);
-            String content = input.getParam("content", String.class);
+            String targetId = requireParam(input, "targetId", "send_message");
+            String content = requireParam(input, "content", "send_message");
             String msgType = input.getOptionalParam("msgType", String.class).orElse("text");
             String receiveIdType = input.getOptionalParam("receiveIdType", String.class).orElse("chat_id");
 
@@ -195,8 +196,8 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleSendCard(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String targetId = input.getParam("targetId", String.class);
-            String cardJson = input.getParam("cardJson", String.class);
+            String targetId = requireParam(input, "targetId", "send_card");
+            String cardJson = requireParam(input, "cardJson", "send_card");
             String receiveIdType = input.getOptionalParam("receiveIdType", String.class).orElse("chat_id");
 
             var deliveryContent = new ChannelRuntimeDeliveryRequest.Content(
@@ -227,8 +228,8 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleReplyMessage(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String messageId = input.getParam("messageId", String.class);
-            String content = input.getParam("content", String.class);
+            String messageId = requireParam(input, "messageId", "reply_message");
+            String content = requireParam(input, "content", "reply_message");
             String msgType = input.getOptionalParam("msgType", String.class).orElse("text");
             boolean replyInThread = input.getOptionalParam("replyInThread", Boolean.class).orElse(false);
 
@@ -260,8 +261,8 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleUpdateMessage(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String messageId = input.getParam("messageId", String.class);
-            String content = input.getParam("content", String.class);
+            String messageId = requireParam(input, "messageId", "update_message");
+            String content = requireParam(input, "content", "update_message");
             String msgType = input.getOptionalParam("msgType", String.class).orElse("text");
 
             var params = Map.<String, Object>of(
@@ -290,7 +291,7 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleRecallMessage(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String messageId = input.getParam("messageId", String.class);
+            String messageId = requireParam(input, "messageId", "recall_message");
 
             var params = Map.<String, Object>of("messageId", messageId);
             var request = new ChannelRuntimeOperationRequest(
@@ -314,8 +315,8 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleUploadFile(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String fileName = input.getParam("fileName", String.class);
-            String fileData = input.getParam("fileData", String.class);
+            String fileName = requireParam(input, "fileName", "upload_file");
+            String fileData = requireParam(input, "fileData", "upload_file");
             String fileType = input.getOptionalParam("fileType", String.class).orElse("file");
 
             var params = new LinkedHashMap<String, Object>();
@@ -344,7 +345,7 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleDownloadFile(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String fileToken = input.getParam("fileToken", String.class);
+            String fileToken = requireParam(input, "fileToken", "download_file");
 
             var params = Map.<String, Object>of("fileToken", fileToken);
             var request = new ChannelRuntimeOperationRequest(
@@ -368,7 +369,7 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleCreateGroup(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String groupName = input.getParam("groupName", String.class);
+            String groupName = requireParam(input, "groupName", "create_group");
             String groupDescription = input.getOptionalParam("groupDescription", String.class).orElse("");
 
             var params = new LinkedHashMap<String, Object>();
@@ -396,9 +397,9 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleManageMembers(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String chatId = input.getParam("chatId", String.class);
-            String memberIds = input.getParam("memberIds", String.class);
-            String memberAction = input.getParam("memberAction", String.class);
+            String chatId = requireParam(input, "chatId", "manage_members");
+            String memberIds = requireParam(input, "memberIds", "manage_members");
+            String memberAction = requireParam(input, "memberAction", "manage_members");
 
             var params = new LinkedHashMap<String, Object>();
             params.put("chatId", chatId);
@@ -431,7 +432,7 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleCreateTask(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String taskSummary = input.getParam("taskSummary", String.class);
+            String taskSummary = requireParam(input, "taskSummary", "create_task");
 
             var params = new LinkedHashMap<String, Object>();
             params.put("taskSummary", taskSummary);
@@ -459,7 +460,7 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleCreateDocument(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String documentTitle = input.getParam("documentTitle", String.class);
+            String documentTitle = requireParam(input, "documentTitle", "create_document");
 
             var params = new LinkedHashMap<String, Object>();
             params.put("documentTitle", documentTitle);
@@ -487,9 +488,9 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleCreateCalendarEvent(ToolInput input) {
         try {
             var instance = resolveInstance(input);
-            String eventSummary = input.getParam("eventSummary", String.class);
-            String eventStartTime = input.getParam("eventStartTime", String.class);
-            String eventEndTime = input.getParam("eventEndTime", String.class);
+            String eventSummary = requireParam(input, "eventSummary", "create_calendar_event");
+            String eventStartTime = requireParam(input, "eventStartTime", "create_calendar_event");
+            String eventEndTime = requireParam(input, "eventEndTime", "create_calendar_event");
 
             var params = new LinkedHashMap<String, Object>();
             params.put("eventSummary", eventSummary);
@@ -528,8 +529,33 @@ public class FeishuActionDispatchExecutor extends ActionDispatchExecutor {
      */
     private ChannelInstance resolveInstance(ToolInput input) {
         String instanceId = input.getParam("instanceId", String.class);
-        return channelInstanceService.find(instanceId)
+        ChannelInstance instance = channelInstanceService.find(instanceId)
                 .orElseThrow(() -> new IllegalArgumentException("飞书渠道实例不存在: " + instanceId));
+        if (!instance.enabled()) {
+            throw new IllegalStateException("飞书渠道实例未启用: " + instanceId);
+        }
+        if (instance.status() == ChannelInstanceStatus.STOPPED
+                || instance.status() == ChannelInstanceStatus.STOPPING) {
+            throw new IllegalStateException("飞书渠道实例未运行: " + instanceId
+                    + ", 当前状态: " + instance.status());
+        }
+        return instance;
+    }
+
+    /**
+     * 校验必填参数是否存在且非空白。
+     *
+     * @param input      工具输入
+     * @param paramName  参数名
+     * @param actionName 操作名称（用于错误消息）
+     * @return 参数值（已 trim）
+     */
+    private String requireParam(ToolInput input, String paramName, String actionName) {
+        String value = input.getOptionalParam(paramName, String.class).orElse(null);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("%s 操作要求 %s 参数".formatted(actionName, paramName));
+        }
+        return value.trim();
     }
 
     /** 构建文本响应内容。 */
