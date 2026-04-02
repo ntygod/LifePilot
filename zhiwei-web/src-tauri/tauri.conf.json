@@ -5,7 +5,7 @@
   "version": "0.2.0",
   "build": {
     "beforeDevCommand": "npm run dev -- --port 1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run tauri:build",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420"
   },

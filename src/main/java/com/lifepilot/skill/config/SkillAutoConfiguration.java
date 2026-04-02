@@ -20,6 +20,7 @@ import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.skill.markdown.SkillFileWatcher;
 import com.lifepilot.skill.registry.SkillDefinitionValidator;
+import com.lifepilot.skill.registry.SkillEmbeddingCacheRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
 import com.lifepilot.skill.validation.FormatValidator;
@@ -80,13 +81,22 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillSearchIndex skillSearchIndex(@Autowired(required = false) EmbeddingRouter embeddingRouter) {
+    public SkillEmbeddingCacheRepository skillEmbeddingCacheRepository(JdbcTemplate jdbcTemplate) {
+        return new SkillEmbeddingCacheRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SkillSearchIndex skillSearchIndex(@Autowired(required = false) EmbeddingRouter embeddingRouter,
+                                             SkillEmbeddingCacheRepository cacheRepository) {
         if (embeddingRouter == null) {
             log.warn("Skill 系统: EmbeddingRouter 不可用，SkillSearchIndex 降级为关键词匹配模式");
         } else {
-            log.info("Skill 系统: 注册 SkillSearchIndex（向量搜索模式）");
+            log.info("Skill 系统: 注册 SkillSearchIndex（向量搜索模式，异步索引 + 持久化缓存）");
         }
-        return new SkillSearchIndex(embeddingRouter);
+        var asyncExecutor = java.util.concurrent.Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("skill-index-", 0).factory());
+        return new SkillSearchIndex(embeddingRouter, asyncExecutor, cacheRepository);
     }
 
     @Bean
@@ -284,10 +294,15 @@ public class SkillAutoConfiguration {
         var ctx = event.getApplicationContext();
 
         // SkillFileWatcher.start() 内部已包含 MarkdownSkillLoader.loadAll() 初始加载
+        // 捕获异常避免 embedding 服务不可用时阻塞其他 ApplicationReadyEvent 监听器
         if (ctx.containsBean("skillFileWatcher")) {
-            var watcher = ctx.getBean(SkillFileWatcher.class);
-            watcher.start();
-            log.info("ApplicationReady: SkillFileWatcher 已启动（含初始加载）");
+            try {
+                var watcher = ctx.getBean(SkillFileWatcher.class);
+                watcher.start();
+                log.info("ApplicationReady: SkillFileWatcher 已启动（含初始加载）");
+            } catch (Exception e) {
+                log.warn("ApplicationReady: SkillFileWatcher 启动失败，Skill 向量索引可能不可用: {}", e.getMessage());
+            }
         }
 
         // 注册 L2 渐进式披露工具
