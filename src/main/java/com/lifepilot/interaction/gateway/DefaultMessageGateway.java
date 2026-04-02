@@ -3,7 +3,8 @@ package com.lifepilot.interaction.gateway;
 import com.lifepilot.interaction.middleware.MiddlewarePipeline;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.time.Duration;
@@ -11,16 +12,16 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 默认消息网关实现，管理通道注册表和生命周期，将消息推入中间件管道处理。
+ * 默认消息网关实现，将消息推入中间件管道处理并管理运行状态。
  *
- * <p>使用 {@link ConcurrentHashMap} 存储通道注册表，{@link AtomicBoolean} 管理运行状态，
- * 保证线程安全。单个通道的启动/停止失败不影响其他通道和网关整体运行。
+ * <p>使用 {@link AtomicBoolean} 管理运行状态，保证线程安全。
  *
  * @author zsg
  * @since 2026-02-25
  */
-@Slf4j
 public class DefaultMessageGateway implements MessageGateway {
+
+    private static final Logger log = LoggerFactory.getLogger(DefaultMessageGateway.class);
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final MiddlewarePipeline pipeline;

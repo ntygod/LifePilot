@@ -205,6 +205,18 @@ public record AgentRequest(
                 AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO);
     }
 
+    /**
+     * 创建一个替换 mediaContents 的新请求副本，其他字段保持不变。
+     *
+     * @param newMediaContents 新的媒体内容列表
+     * @return 新的 AgentRequest 实例
+     */
+    public AgentRequest withMediaContents(@Nullable List<MediaContent> newMediaContents) {
+        return new AgentRequest(message, sessionId, source, userId, turnId, action, taskMode,
+                systemPrompt, budget, parentTraceId, depth, preferredProvider, allowedToolIds,
+                newMediaContents, temperature, resumePolicy);
+    }
+
     public String channel() {
         return source.sourceId();
     }

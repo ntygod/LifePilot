@@ -2,7 +2,6 @@ package com.lifepilot.interaction.middleware;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
@@ -14,7 +13,7 @@ import com.lifepilot.interaction.model.GatewayResponse;
  * 每次 {@link #execute(GatewayMessage)} 调用创建新的 {@link MiddlewareContext} 和
  * {@link MiddlewareChain} 实例，保证请求间隔离。
  *
- * <p>使用 {@link CopyOnWriteArrayList} 保证读多写少场景下的线程安全，
+ * <p>使用 volatile 不可变列表引用保证读端无锁线程安全，
  * 支持通过 {@link #register(GatewayMiddleware)} 和 {@link #unregister(String)} 动态管理中间件。
  *
  * @author zsg
@@ -25,7 +24,8 @@ public class MiddlewarePipeline {
     private static final Comparator<GatewayMiddleware> ORDER_COMPARATOR =
             Comparator.comparingInt(GatewayMiddleware::order);
 
-    private final CopyOnWriteArrayList<GatewayMiddleware> middlewares;
+    /** volatile 不可变列表引用 — 写端 synchronized 保证互斥，读端通过引用赋值天然原子。 */
+    private volatile List<GatewayMiddleware> middlewares;
 
     /**
      * 构造中间件管道，按 {@code order()} 排序存储。
@@ -35,37 +35,36 @@ public class MiddlewarePipeline {
     public MiddlewarePipeline(List<GatewayMiddleware> middlewares) {
         var sorted = new java.util.ArrayList<>(middlewares);
         sorted.sort(ORDER_COMPARATOR);
-        this.middlewares = new CopyOnWriteArrayList<>(sorted);
+        this.middlewares = List.copyOf(sorted);
     }
 
     /**
      * 执行中间件管道处理消息。
      *
      * <p>每次调用创建新的 {@link MiddlewareContext} 和 {@link MiddlewareChain}，
-     * 保证请求间上下文隔离。
+     * 保证请求间上下文隔离。读取 volatile 引用获取一致快照，无需加锁。
      *
      * @param message 入站消息
      * @return 网关响应
      */
     public GatewayResponse execute(GatewayMessage message) {
         var context = new MiddlewareContext();
-        var chain = new MiddlewareChain(List.copyOf(middlewares), context);
+        var chain = new MiddlewareChain(middlewares, context);
         return chain.next(message);
     }
 
     /**
      * 动态注册中间件，注册后自动按 {@code order()} 重新排序。
      *
+     * <p>synchronized 保证并发写互斥，volatile 引用赋值保证读端立即可见。
+     *
      * @param middleware 要注册的中间件
      */
-    public void register(GatewayMiddleware middleware) {
-        middlewares.add(middleware);
-        // CopyOnWriteArrayList 不支持原地排序，需要替换整个列表
-        var sorted = new java.util.ArrayList<>(middlewares);
-        sorted.sort(ORDER_COMPARATOR);
-        // 清空并重新添加排序后的列表
-        middlewares.clear();
-        middlewares.addAll(sorted);
+    public synchronized void register(GatewayMiddleware middleware) {
+        var snapshot = new java.util.ArrayList<>(middlewares);
+        snapshot.add(middleware);
+        snapshot.sort(ORDER_COMPARATOR);
+        middlewares = List.copyOf(snapshot);
     }
 
     /**
@@ -74,8 +73,13 @@ public class MiddlewarePipeline {
      * @param name 中间件名称
      * @return 如果找到并移除则返回 true
      */
-    public boolean unregister(String name) {
-        return middlewares.removeIf(mw -> mw.name().equals(name));
+    public synchronized boolean unregister(String name) {
+        var snapshot = new java.util.ArrayList<>(middlewares);
+        boolean removed = snapshot.removeIf(mw -> mw.name().equals(name));
+        if (removed) {
+            middlewares = List.copyOf(snapshot);
+        }
+        return removed;
     }
 
     /**
@@ -84,6 +88,6 @@ public class MiddlewarePipeline {
      * @return 不可变的中间件列表
      */
     public List<GatewayMiddleware> getMiddlewares() {
-        return List.copyOf(middlewares);
+        return middlewares;
     }
 }

@@ -94,8 +94,16 @@ public class CircuitBreaker {
                 }
                 yield false;
             }
-            case CircuitState.HalfOpen _ ->
-                    halfOpenAttempts.incrementAndGet() <= halfOpenMaxAttempts;
+            case CircuitState.HalfOpen _ -> {
+                int attempts;
+                do {
+                    attempts = halfOpenAttempts.get();
+                    if (attempts >= halfOpenMaxAttempts) {
+                        yield false;
+                    }
+                } while (!halfOpenAttempts.compareAndSet(attempts, attempts + 1));
+                yield true;
+            }
         };
     }
 
@@ -105,14 +113,15 @@ public class CircuitBreaker {
      * <p>CLOSED 状态重置失败计数；HALF_OPEN 状态恢复为 CLOSED。
      */
     public void recordSuccess() {
-        state.getAndUpdate(current -> switch (current) {
+        var before = state.getAndUpdate(current -> switch (current) {
             case CircuitState.Closed _ -> CircuitState.Closed.initial();
-            case CircuitState.HalfOpen _ -> {
-                log.info("熔断器状态转换: key={}, HALF_OPEN -> CLOSED", key);
-                yield CircuitState.Closed.initial();
-            }
+            case CircuitState.HalfOpen _ -> CircuitState.Closed.initial();
             case CircuitState.Open _ -> current; // OPEN 状态下不应有成功调用
         });
+        if (before instanceof CircuitState.HalfOpen) {
+            halfOpenAttempts.set(0);
+            log.info("熔断器状态转换: key={}, HALF_OPEN -> CLOSED", key);
+        }
     }
 
     /**
@@ -121,21 +130,25 @@ public class CircuitBreaker {
      * <p>CLOSED 状态累加失败计数，达到阈值触发 OPEN；HALF_OPEN 状态重新进入 OPEN。
      */
     public void recordFailure() {
-        state.getAndUpdate(current -> switch (current) {
+        var before = state.getAndUpdate(current -> switch (current) {
             case CircuitState.Closed closed -> {
                 int newCount = closed.consecutiveFailures() + 1;
                 if (newCount >= failureThreshold) {
-                    log.warn("熔断器触发: key={}, failures={}", key, newCount);
                     yield new CircuitState.Open(Instant.now(), newCount);
                 }
                 yield new CircuitState.Closed(newCount);
             }
-            case CircuitState.HalfOpen _ -> {
-                log.info("熔断器状态转换: key={}, HALF_OPEN -> OPEN", key);
-                yield new CircuitState.Open(Instant.now(), failureThreshold);
-            }
+            case CircuitState.HalfOpen _ -> new CircuitState.Open(Instant.now(), failureThreshold);
             case CircuitState.Open _ -> current; // 已经是 OPEN，保持不变
         });
+        var after = state.get();
+        // 副作用移到 CAS 之外，避免 getAndUpdate 重试时重复执行
+        if (before instanceof CircuitState.HalfOpen) {
+            halfOpenAttempts.set(0);
+            log.info("熔断器状态转换: key={}, HALF_OPEN -> OPEN", key);
+        } else if (before instanceof CircuitState.Closed && after instanceof CircuitState.Open) {
+            log.warn("熔断器触发: key={}, failures={}", key, failureThreshold);
+        }
     }
 
     /**
