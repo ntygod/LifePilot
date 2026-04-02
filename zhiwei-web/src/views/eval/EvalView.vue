@@ -46,7 +46,7 @@ function openRunDialog() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <!-- 页面头部 -->
         <PageHeader

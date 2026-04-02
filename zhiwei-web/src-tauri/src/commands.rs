@@ -33,28 +33,24 @@ pub fn get_backend_status(manager: State<JavaManager>) -> serde_json::Value {
     })
 }
 
-/// 检查 Whisper 语音引擎可用状态
+/// 检查 Whisper CLI 和模型是否可用
 #[tauri::command]
-pub fn check_whisper_status(
-    whisper: State<WhisperManager>,
-) -> Result<serde_json::Value, String> {
-    let availability = whisper.check_availability();
-    serde_json::to_value(availability).map_err(|e| format!("序列化失败: {}", e))
+pub fn check_whisper_status(manager: State<WhisperManager>) -> serde_json::Value {
+    let availability = manager.check_availability();
+    serde_json::to_value(availability).unwrap_or_default()
 }
 
-/// 启动 Whisper 语音引擎下载
+/// 启动 Whisper 下载（非阻塞）
 #[tauri::command]
 pub fn start_whisper_download(
-    whisper: State<WhisperManager>,
+    manager: State<WhisperManager>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    whisper.start_download(app)
+    manager.start_download(app)
 }
 
-/// 取消 Whisper 语音引擎下载
+/// 取消 Whisper 下载
 #[tauri::command]
-pub fn cancel_whisper_download(
-    whisper: State<WhisperManager>,
-) -> Result<(), String> {
-    whisper.cancel_download()
+pub fn cancel_whisper_download(manager: State<WhisperManager>) -> Result<(), String> {
+    manager.cancel_download()
 }

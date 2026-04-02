@@ -372,7 +372,7 @@ function goBack() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -563,7 +563,7 @@ function goBack() {
                 />
               </PageSection>
 
-              <div class="grid gap-5 2xl:grid-cols-2">
+              <div class="grid gap-4 2xl:grid-cols-2">
                 <PageSection eyebrow="模型" title="推理参数" description="调整模型、最大token数和采样参数。">
                   <div class="grid gap-4">
                     <div class="space-y-2">

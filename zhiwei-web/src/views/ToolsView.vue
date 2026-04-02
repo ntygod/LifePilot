@@ -86,7 +86,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
         <header class="space-y-4 border-b border-border/70 pb-5">
           <div class="max-w-3xl space-y-2">
@@ -121,7 +121,7 @@ onMounted(() => {
           </div>
         </header>
 
-        <section class="detail-card p-5">
+        <section class="detail-card p-4">
           <div class="space-y-4">
             <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div class="space-y-1">
@@ -193,7 +193,7 @@ onMounted(() => {
             <div
               v-for="index in 6"
               :key="index"
-              class="list-card p-5"
+              class="list-card p-4"
             >
               <div class="space-y-4">
                 <div class="flex items-center justify-between gap-2">
@@ -255,7 +255,7 @@ onMounted(() => {
               v-for="tool in filteredTools"
               :key="tool.id"
               type="button"
-              class="list-card group flex w-full flex-col gap-4 p-5 text-left"
+              class="list-card group flex w-full flex-col gap-4 p-4 text-left"
               @click="openTool(tool.id)"
             >
               <div class="flex items-start justify-between gap-4">

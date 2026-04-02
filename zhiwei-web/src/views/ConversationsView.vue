@@ -13,7 +13,6 @@ import {
   Trash2,
 } from 'lucide-vue-next'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import { Button } from '@/components/ui/button'
@@ -84,28 +83,8 @@ const filteredSessions = computed(() => {
   })
 })
 
-const totalActive = computed(() => chatStore.sessions.filter(session => !session.archived).length)
-const totalArchived = computed(() => chatStore.sessions.filter(session => session.archived).length)
-const totalPinned = computed(() => chatStore.sessions.filter(session => session.pinned).length)
-const updatedThisWeek = computed(() => {
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
-  return chatStore.sessions.filter(session => new Date(session.updatedAt).getTime() >= cutoff).length
-})
-
 const hasFilters = computed(() => {
   return Boolean(searchQuery.value.trim()) || showArchived.value || filterPinned.value !== 'all' || timeRange.value !== 'all'
-})
-
-const archiveScopeLabel = computed(() => showArchived.value ? '归档内容' : '活跃会话')
-const pinnedScopeLabel = computed(() => {
-  if (filterPinned.value === 'pinned') return '仅置顶'
-  if (filterPinned.value === 'unpinned') return '未置顶'
-  return '全部会话'
-})
-const timeRangeLabel = computed(() => {
-  if (timeRange.value === '7d') return '最近 7 天'
-  if (timeRange.value === '30d') return '最近 30 天'
-  return '全部时间'
 })
 
 const allSelected = computed(() => {
@@ -287,314 +266,221 @@ async function batchDelete() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
-      <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
-        <header class="space-y-4 border-b border-border/70 pb-5">
-          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div class="max-w-3xl space-y-2">
-              <div class="surface-label">会话</div>
-              <h1 class="text-3xl font-semibold tracking-tight text-foreground">会话列表</h1>
-              <p class="text-sm leading-6 text-muted-foreground">
-                把还在推进的对话、已归档内容和置顶项放在一张工作清单里，方便继续跟进和整理。
-              </p>
-            </div>
+    <PageContainer size="wide" class="py-4 sm:py-5">
+      <div class="mx-auto flex max-w-[1180px] flex-col gap-md">
+        <!-- 标题行 -->
+        <div class="flex items-center justify-between">
+          <h1 class="text-xl font-semibold tracking-tight text-foreground">会话</h1>
+          <Button type="button" size="sm" :disabled="loading" @click="handleNewConversation">
+            <Plus class="size-4" />
+            新建会话
+          </Button>
+        </div>
 
-            <Button type="button" :disabled="loading" @click="handleNewConversation">
-              <Plus class="size-4" />
-              新建会话
+        <!-- 工具栏 -->
+        <div class="flex flex-col gap-sm md:flex-row md:items-center md:justify-between">
+          <div class="flex flex-1 items-center gap-sm">
+            <div class="relative min-w-[180px] flex-1 md:max-w-[24rem]">
+              <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                v-model="searchQuery"
+                type="search"
+                placeholder="搜索会话…"
+                class="h-8 pl-9 text-sm"
+              />
+            </div>
+            <Select v-model="filterPinned">
+              <SelectTrigger class="h-8 w-[120px] text-sm">
+                <SelectValue placeholder="置顶" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="pinned">仅置顶</SelectItem>
+                <SelectItem value="unpinned">未置顶</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select v-model="timeRange">
+              <SelectTrigger class="h-8 w-[120px] text-sm">
+                <SelectValue placeholder="时间" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部时间</SelectItem>
+                <SelectItem value="7d">近 7 天</SelectItem>
+                <SelectItem value="30d">近 30 天</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex items-center gap-sm">
+            <label class="flex cursor-pointer items-center gap-xs text-sm text-muted-foreground">
+              <Checkbox
+                :model-value="showArchived"
+                @update:model-value="showArchived = Boolean($event)"
+              />
+              <span>归档</span>
+            </label>
+            <Button v-if="hasFilters" type="button" variant="ghost" size="sm" class="text-xs" @click="clearFilters">
+              清空筛选
             </Button>
           </div>
+        </div>
 
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="活跃会话" :value="totalActive" hint="还在使用中的对话，会按更新时间继续往前排。">
-              <template #icon>
-                <MessageSquareText class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="最近 7 天更新" :value="updatedThisWeek" hint="最近有动作的会话，更适合优先回到上下文里。">
-              <template #icon>
-                <Clock3 class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已置顶" :value="totalPinned" hint="需要反复回看的会话可以固定在前面。">
-              <template #icon>
-                <Pin class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已归档" :value="totalArchived" hint="处理完成的内容可以先收起，但仍然保留记录。">
-              <template #icon>
-                <Archive class="size-5" />
-              </template>
-            </MetricCard>
+        <!-- 批量操作栏 -->
+        <div
+          v-if="selectedIds.size > 0"
+          class="flex items-center justify-between rounded-lg border border-primary/18 bg-primary/6 px-md py-sm"
+        >
+          <span class="text-sm text-muted-foreground">已选 {{ selectedIds.size }} 项</span>
+          <div class="flex items-center gap-xs">
+            <Button type="button" variant="outline" size="sm" @click="batchPin">置顶</Button>
+            <Button type="button" variant="outline" size="sm" @click="batchArchive">归档</Button>
+            <Button type="button" variant="destructive" size="sm" @click="batchDelete">删除</Button>
+            <Button type="button" variant="ghost" size="sm" @click="selectedIds.clear()">取消</Button>
           </div>
-        </header>
+        </div>
 
-        <section class="detail-card p-5">
-          <div class="space-y-4">
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-              <div class="space-y-1">
-                <div class="surface-label">筛选与整理</div>
-              </div>
+        <!-- 列表头 -->
+        <div class="flex items-center justify-between">
+          <button
+            type="button"
+            class="text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground"
+            @click="selectAll"
+          >
+            {{ allSelected ? '取消全选' : '全选' }}
+          </button>
+          <span class="text-xs text-muted-foreground/70">{{ filteredSessions.length }} 条</span>
+        </div>
 
-              <div class="flex flex-wrap gap-2 text-xs">
-                <span class="filter-pill">当前视图：{{ archiveScopeLabel }}</span>
-                <span class="filter-pill">置顶状态：{{ pinnedScopeLabel }}</span>
-                <span class="filter-pill">时间范围：{{ timeRangeLabel }}</span>
-              </div>
-            </div>
+        <!-- 内容区域 -->
+        <div v-if="loading">
+          <StatePanel title="加载中…" description="正在获取会话列表">
+            <template #icon>
+              <MessageSquareText class="size-5" />
+            </template>
+          </StatePanel>
+        </div>
 
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
-                <div class="relative min-w-[220px] flex-1 xl:max-w-[28rem]">
-                  <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <div v-else-if="filteredSessions.length === 0">
+          <StatePanel
+            :title="showArchived ? '暂无归档会话' : searchQuery ? '没有匹配的会话' : '还没有会话'"
+            :description="showArchived
+              ? '归档后的会话会出现在这里。'
+              : searchQuery
+                ? '换个关键词试试。'
+                : '开始第一次对话吧。'"
+          >
+            <template #icon>
+              <MessageSquareText class="size-5" />
+            </template>
+            <template #actions>
+              <Button v-if="!showArchived && !searchQuery" type="button" @click="handleNewConversation">
+                <Plus class="size-4" />
+                新建会话
+              </Button>
+              <Button v-else type="button" variant="outline" size="sm" @click="clearFilters">
+                清空筛选
+              </Button>
+            </template>
+          </StatePanel>
+        </div>
+
+        <div v-else class="grid gap-sm">
+          <article
+            v-for="session in filteredSessions"
+            :key="session.id"
+            tabindex="0"
+            class="list-card group cursor-pointer px-md py-sm outline-none transition-colors hover:border-border focus-visible:border-primary/24"
+            :class="[
+              selectedIds.has(session.id) && 'border-primary/24 bg-primary/[0.04]',
+              isCurrentSession(session.id) && 'border-primary/26 bg-primary/[0.05]',
+            ]"
+            @click="selectSession(session)"
+            @keyup.enter.stop="selectSession(session)"
+            @keyup.space.prevent.stop="selectSession(session)"
+          >
+            <div class="flex items-center gap-sm">
+              <Checkbox
+                :model-value="selectedIds.has(session.id)"
+                class="shrink-0"
+                @click.stop
+                @update:model-value="toggleSelect(session.id)"
+              />
+
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-sm">
                   <Input
-                    v-model="searchQuery"
-                    type="search"
-                    placeholder="搜索会话标题或最近消息"
-                    class="pl-9"
-                  />
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
-                  <Select v-model="filterPinned">
-                    <SelectTrigger class="w-full lg:w-[150px]">
-                      <SelectValue placeholder="置顶状态" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部会话</SelectItem>
-                      <SelectItem value="pinned">仅置顶</SelectItem>
-                      <SelectItem value="unpinned">未置顶</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select v-model="timeRange">
-                    <SelectTrigger class="w-full lg:w-[150px]">
-                      <SelectValue placeholder="时间范围" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部时间</SelectItem>
-                      <SelectItem value="7d">最近 7 天</SelectItem>
-                      <SelectItem value="30d">最近 30 天</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <label class="filter-pill cursor-pointer text-sm">
-                  <Checkbox
-                    :model-value="showArchived"
-                    @update:model-value="showArchived = Boolean($event)"
-                  />
-                  <span>显示归档</span>
-                </label>
-
-                <Button type="button" variant="outline" @click="selectAll">
-                  {{ allSelected ? '取消全选' : '选择当前结果' }}
-                </Button>
-
-                <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
-                  清空筛选
-                </Button>
-              </div>
-            </div>
-
-            <div
-              v-if="selectedIds.size > 0"
-              class="flex flex-col gap-3 rounded-[calc(var(--radius)+2px)] border border-primary/18 bg-primary/6 px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
-            >
-              <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span class="surface-chip surface-chip-strong">已选 {{ selectedIds.size }}</span>
-                <span>可以一次性置顶、归档或删除。</span>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline" size="sm" @click="batchPin">批量置顶</Button>
-                <Button type="button" variant="outline" size="sm" @click="batchArchive">批量归档</Button>
-                <Button type="button" variant="destructive" size="sm" @click="batchDelete">批量删除</Button>
-                <Button type="button" variant="ghost" size="sm" @click="selectedIds.clear()">取消选择</Button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="space-y-4">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <h2 class="text-lg font-semibold text-foreground">全部会话</h2>
-              <p class="text-sm text-muted-foreground">
-                {{ showArchived ? '当前显示归档内容，可回看但不打扰日常工作。' : '按更新时间和置顶状态排序' }}
-              </p>
-            </div>
-            <div class="text-sm text-muted-foreground">{{ filteredSessions.length }} 条结果</div>
-          </div>
-
-          <div v-if="loading">
-            <StatePanel title="正在加载会话" description="会话列表载入中，请稍候。">
-              <template #icon>
-                <MessageSquareText class="size-5" />
-              </template>
-            </StatePanel>
-          </div>
-
-          <div v-else-if="filteredSessions.length === 0">
-            <StatePanel
-              :title="showArchived ? '暂无归档会话' : searchQuery ? '没有匹配的会话' : '还没有任何会话'"
-              :description="showArchived
-                ? '当前条件下没有找到归档会话。'
-                : searchQuery
-                  ? '可以换个关键词，或放宽置顶和时间条件。'
-                  : '创建对话后，最近的会话会出现在列表中。'"
-            >
-              <template #icon>
-                <MessageSquareText class="size-5" />
-              </template>
-              <template #actions>
-                <Button v-if="!showArchived && !searchQuery" type="button" @click="handleNewConversation">
-                  <Plus class="size-4" />
-                  新建会话
-                </Button>
-                <Button v-else type="button" variant="outline" @click="clearFilters">
-                  清空筛选
-                </Button>
-              </template>
-            </StatePanel>
-          </div>
-
-          <div v-else class="grid gap-3">
-            <article
-              v-for="session in filteredSessions"
-              :key="session.id"
-              tabindex="0"
-              class="list-card group cursor-pointer p-4 outline-none focus-visible:border-primary/24 focus-visible:shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.14)] sm:p-5"
-              :class="[
-                selectedIds.has(session.id) && 'border-primary/24 bg-primary/[0.04] shadow-[0_10px_18px_-16px_hsl(var(--shadow-color)/0.12)]',
-                isCurrentSession(session.id) && 'border-primary/26 bg-primary/[0.05] shadow-[0_12px_20px_-16px_hsl(var(--shadow-color)/0.14)]',
-              ]"
-              @click="selectSession(session)"
-              @keyup.enter.stop="selectSession(session)"
-              @keyup.space.prevent.stop="selectSession(session)"
-            >
-              <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div class="flex min-w-0 items-start gap-4">
-                  <Checkbox
-                    :model-value="selectedIds.has(session.id)"
-                    class="mt-1"
+                    v-if="renamingId === session.id"
+                    v-model="renameTitle"
+                    class="h-7 max-w-[24rem] text-sm"
+                    @blur="confirmRename(session.id)"
                     @click.stop
-                    @update:model-value="toggleSelect(session.id)"
+                    @keyup.enter.stop="confirmRename(session.id)"
+                    @keyup.esc.stop="cancelRename"
                   />
+                  <h3 v-else class="truncate text-sm font-medium text-foreground">
+                    {{ session.title || '新会话' }}
+                  </h3>
 
-                  <div class="min-w-0 flex-1 space-y-3">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span
-                        v-if="session.pinned"
-                        class="inline-flex items-center gap-1 rounded-full border border-primary/16 bg-primary/6 px-2.5 py-1 text-xs font-medium text-primary"
-                      >
-                        <Pin class="size-3.5" />
-                        置顶
-                      </span>
-                      <span
-                        v-if="session.archived"
-                        class="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/70 px-2.5 py-1 text-xs font-medium text-muted-foreground"
-                      >
-                        <Archive class="size-3.5" />
-                        归档
-                      </span>
-                      <span
-                        v-if="session.type"
-                        class="surface-chip"
-                      >
-                        {{ session.type }}
-                      </span>
-                      <span
-                        v-if="isCurrentSession(session.id)"
-                        class="surface-chip surface-chip-strong"
-                      >
-                        当前会话
-                      </span>
-                    </div>
-
-                    <div class="flex items-start gap-3">
-                      <Input
-                        v-if="renamingId === session.id"
-                        v-model="renameTitle"
-                        class="h-9 max-w-[36rem]"
-                        @blur="confirmRename(session.id)"
-                        @click.stop
-                        @keyup.enter.stop="confirmRename(session.id)"
-                        @keyup.esc.stop="cancelRename"
-                      />
-                      <h3 v-else class="truncate text-base font-semibold text-foreground sm:text-lg">
-                        {{ session.title || '新会话' }}
-                      </h3>
-
-                      <div class="hidden items-center gap-1 text-xs font-medium text-primary xl:flex xl:translate-x-1 xl:opacity-0 xl:transition-all xl:duration-150 xl:group-hover:translate-x-0 xl:group-hover:opacity-100">
-                        <span>继续处理</span>
-                        <ArrowRight class="size-3.5" />
-                      </div>
-                    </div>
-
-                    <p v-if="session.lastMessagePreview" class="line-clamp-2 text-sm leading-6 text-muted-foreground">
-                      {{ session.lastMessagePreview }}
-                    </p>
-
-                    <div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                      <span class="inline-flex items-center gap-2">
-                        <Clock3 class="size-4" />
-                        {{ formatTime(session.updatedAt) }}
-                      </span>
-                      <span class="inline-flex items-center gap-2">
-                        <MessageSquareText class="size-4" />
-                        {{ session.lastMessagePreview ? '有最近消息' : '暂无消息摘要' }}
-                      </span>
-                    </div>
-                  </div>
+                  <Pin v-if="session.pinned" class="size-3.5 shrink-0 text-primary" />
+                  <Archive v-if="session.archived" class="size-3.5 shrink-0 text-muted-foreground" />
+                  <span
+                    v-if="isCurrentSession(session.id)"
+                    class="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+                  >
+                    当前
+                  </span>
                 </div>
 
-                <div class="flex shrink-0 items-center gap-1 xl:translate-y-1 xl:opacity-0 xl:transition-all xl:duration-150 xl:group-hover:translate-y-0 xl:group-hover:opacity-100">
-                  <button
-                    type="button"
-                    class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
-                    title="重命名"
-                    @click.stop="startRename(session)"
-                  >
-                    <Edit2 class="size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
-                    :title="session.pinned ? '取消置顶' : '置顶'"
-                    @click.stop="togglePin(session.id)"
-                  >
-                    <Pin class="size-4" :fill="session.pinned ? 'currentColor' : 'none'" />
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
-                    :title="session.archived ? '取消归档' : '归档'"
-                    @click.stop="toggleArchive(session.id)"
-                  >
-                    <Archive class="size-4" :fill="session.archived ? 'currentColor' : 'none'" />
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    title="删除"
-                    @click.stop="requestDelete(session.id)"
-                  >
-                    <Trash2 class="size-4" />
-                  </button>
+                <div class="mt-xs flex items-center gap-md text-xs text-muted-foreground">
+                  <span>{{ formatTime(session.updatedAt) }}</span>
+                  <span v-if="session.lastMessagePreview" class="truncate">{{ session.lastMessagePreview }}</span>
                 </div>
               </div>
-            </article>
-          </div>
-        </section>
+
+              <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
+                  title="重命名"
+                  @click.stop="startRename(session)"
+                >
+                  <Edit2 class="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
+                  :title="session.pinned ? '取消置顶' : '置顶'"
+                  @click.stop="togglePin(session.id)"
+                >
+                  <Pin class="size-3.5" :fill="session.pinned ? 'currentColor' : 'none'" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
+                  :title="session.archived ? '取消归档' : '归档'"
+                  @click.stop="toggleArchive(session.id)"
+                >
+                  <Archive class="size-3.5" :fill="session.archived ? 'currentColor' : 'none'" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  title="删除"
+                  @click.stop="requestDelete(session.id)"
+                >
+                  <Trash2 class="size-3.5" />
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
       </div>
     </PageContainer>
 
     <ConfirmDialog
       v-model:show="deleteDialogOpen"
       title="确认删除会话"
-      message="确定要删除这个会话吗？删除后将无法恢复。"
+      message="删除后无法恢复，确定继续？"
       confirm-label="删除"
       cancel-label="取消"
       confirm-variant="destructive"

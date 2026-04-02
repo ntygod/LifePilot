@@ -1,78 +1,84 @@
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-/// Whisper CLI 版本号
+/// Whisper CLI 版本号（对应 GitHub Releases tag）
 const WHISPER_VERSION: &str = "1.7.3";
 
-/// Hugging Face 模型下载地址
-const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin";
+/// 模型文件名
+const MODEL_FILENAME: &str = "ggml-base.bin";
 
-/// 下载状态枚举
+/// 下载所需最小磁盘空间（字节）
+const MIN_DISK_SPACE: u64 = 200 * 1024 * 1024;
+
+/// 进度事件发送间隔（毫秒）
+const PROGRESS_INTERVAL_MS: u128 = 300;
+
+/// Whisper 下载状态
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum WhisperStatus {
     /// 空闲
     Idle,
     /// 下载中
     Downloading,
+    /// 已就绪
+    Available,
+    /// 出错
+    Error(String),
 }
 
-/// 可用性检查结果，通过 Tauri command 返回给前端
+/// 前端进度事件负载
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadProgress {
+    pub stage: String,
+    pub progress: u8,
+    pub downloaded: u64,
+    pub total: u64,
+    pub speed_bps: u64,
+}
+
+/// 下载完成事件负载
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadComplete {
+    pub cli_path: String,
+    pub model_path: String,
+}
+
+/// 下载错误事件负载
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadError {
+    pub message: String,
+    pub recoverable: bool,
+}
+
+/// Whisper CLI 可用性检查结果
 #[derive(Debug, Clone, Serialize)]
 pub struct WhisperAvailability {
     pub available: bool,
-    pub cli_path: Option<String>,
-    pub model_path: Option<String>,
+    pub cli_path: String,
+    pub model_path: String,
     pub downloading: bool,
 }
 
-/// 下载进度事件载荷
-#[derive(Debug, Clone, Serialize)]
-struct DownloadProgress {
-    stage: String,
-    progress: f64,
-    downloaded: u64,
-    total: u64,
-    speed_bps: u64,
-}
-
-/// 下载完成事件载荷
-#[derive(Debug, Clone, Serialize)]
-struct DownloadComplete {
-    cli_path: String,
-    model_path: String,
-}
-
-/// 下载错误事件载荷
-#[derive(Debug, Clone, Serialize)]
-struct DownloadError {
-    message: String,
-    recoverable: bool,
-}
-
-/// Whisper 语音引擎管理器
-///
-/// 负责检测、下载、解压 whisper-cli 和 ggml 模型文件。
-/// 通过 Tauri 事件向前端汇报下载进度。
+/// Whisper CLI + 模型自动下载管理器
 pub struct WhisperManager {
     /// 数据目录（~/.zhiwei）
     data_dir: PathBuf,
-    /// 下载状态（共享给异步任务）
+    /// 当前状态（Arc 共享给异步下载任务）
     status: Arc<Mutex<WhisperStatus>>,
 }
 
 impl WhisperManager {
-    /// 创建新的 WhisperManager 实例
+    /// 创建管理器实例，数据目录从 `~/.zhiwei` 解析
     pub fn new() -> Self {
         let data_dir = dirs::home_dir()
-            .expect("无法获取用户主目录")
+            .unwrap_or_else(|| PathBuf::from("."))
             .join(".zhiwei");
-
-        log::info!("WhisperManager 初始化: 数据目录={}", data_dir.display());
 
         Self {
             data_dir,
@@ -80,115 +86,70 @@ impl WhisperManager {
         }
     }
 
-    /// CLI 可执行文件路径
-    fn cli_path(&self) -> PathBuf {
-        let name = if cfg!(target_os = "windows") {
-            "whisper-cli.exe"
-        } else {
-            "whisper-cli"
-        };
-        self.data_dir.join("bin").join(name)
+    /// 返回 whisper-cli 的目标路径（确定性，不检查是否存在）
+    pub fn cli_path(&self) -> PathBuf {
+        self.data_dir.join("bin").join(cli_filename())
     }
 
-    /// 模型文件路径
-    fn model_path(&self) -> PathBuf {
-        self.data_dir.join("models").join("ggml-base.bin")
+    /// 返回模型文件的目标路径（确定性，不检查是否存在）
+    pub fn model_path(&self) -> PathBuf {
+        self.data_dir.join("models").join(MODEL_FILENAME)
     }
 
-    /// 取消标记文件路径
-    fn cancel_marker(&self) -> PathBuf {
-        self.data_dir.join("bin").join(".whisper-download-cancel")
-    }
-
-    /// 检查 whisper-cli 和模型是否可用
+    /// 检测 whisper-cli 和模型是否都已就绪
     pub fn check_availability(&self) -> WhisperAvailability {
         let cli = self.cli_path();
         let model = self.model_path();
-        let cli_ok = cli.exists();
-        let model_ok = model.exists();
+        let cli_ok = cli.exists() && is_executable(&cli);
+        let model_ok = model.exists()
+            && std::fs::metadata(&model).map(|m| m.len() > 1024 * 1024).unwrap_or(false);
         let downloading = {
-            let s = self.status.lock().expect("WhisperStatus mutex 中毒");
+            let s = self.status.lock().expect("WhisperManager status mutex 中毒");
             *s == WhisperStatus::Downloading
         };
 
         WhisperAvailability {
             available: cli_ok && model_ok,
-            cli_path: if cli_ok {
-                Some(cli.to_string_lossy().into_owned())
-            } else {
-                None
-            },
-            model_path: if model_ok {
-                Some(model.to_string_lossy().into_owned())
-            } else {
-                None
-            },
+            cli_path: cli.to_string_lossy().to_string(),
+            model_path: model.to_string_lossy().to_string(),
             downloading,
         }
     }
 
-    /// 获取 CLI 路径（如果文件存在）
-    pub fn cli_path_if_exists(&self) -> Option<PathBuf> {
-        let p = self.cli_path();
-        if p.exists() {
-            Some(p)
-        } else {
-            None
-        }
-    }
-
-    /// 获取模型路径（如果文件存在）
-    pub fn model_path_if_exists(&self) -> Option<PathBuf> {
-        let p = self.model_path();
-        if p.exists() {
-            Some(p)
-        } else {
-            None
-        }
-    }
-
-    /// 启动后台下载任务
+    /// 启动异步下载（非阻塞，立即返回）
     pub fn start_download(&self, app: AppHandle) -> Result<(), String> {
         {
-            let mut s = self.status.lock().expect("WhisperStatus mutex 中毒");
+            let mut s = self.status.lock().expect("WhisperManager status mutex 中毒");
             if *s == WhisperStatus::Downloading {
-                return Err("已有下载任务正在进行".into());
+                return Err("已有下载任务进行中".into());
             }
             *s = WhisperStatus::Downloading;
         }
 
-        // 清除可能残留的取消标记
-        let _ = std::fs::remove_file(self.cancel_marker());
-
+        let cli_path = self.cli_path();
+        let model_path = self.model_path();
         let data_dir = self.data_dir.clone();
-        let status = Arc::clone(&self.status);
+        let status_ref = Arc::clone(&self.status);
+        let cancel_marker = data_dir.join("bin").join(".whisper-cancel");
 
         tauri::async_runtime::spawn(async move {
-            let result = download_all(&data_dir, &app).await;
-
-            // 更新状态
-            {
-                let mut s = status.lock().expect("WhisperStatus mutex 中毒");
-                *s = WhisperStatus::Idle;
-            }
-
+            let result =
+                download_all(&app, &data_dir, &cli_path, &model_path, &cancel_marker).await;
+            let mut s = status_ref.lock().expect("WhisperManager status mutex 中毒");
             match result {
-                Ok((cli_path, model_path)) => {
-                    log::info!("Whisper 下载完成: cli={}, model={}", cli_path, model_path);
+                Ok(()) => {
+                    *s = WhisperStatus::Available;
                     let _ = app.emit(
                         "whisper-download-complete",
                         DownloadComplete {
-                            cli_path,
-                            model_path,
+                            cli_path: cli_path.to_string_lossy().to_string(),
+                            model_path: model_path.to_string_lossy().to_string(),
                         },
                     );
                 }
-                Err(e) if e == "__CANCELLED__" => {
-                    log::info!("Whisper 下载已取消");
-                    let _ = app.emit("whisper-download-cancelled", serde_json::json!({}));
-                }
                 Err(e) => {
                     log::error!("Whisper 下载失败: {}", e);
+                    *s = WhisperStatus::Error(e.clone());
                     let _ = app.emit(
                         "whisper-download-error",
                         DownloadError {
@@ -203,171 +164,116 @@ impl WhisperManager {
         Ok(())
     }
 
-    /// 取消正在进行的下载
+    /// 标记取消下载
     pub fn cancel_download(&self) -> Result<(), String> {
-        // 写入取消标记文件
-        let marker = self.cancel_marker();
-        if let Some(parent) = marker.parent() {
+        let cancel_marker = self.data_dir.join("bin").join(".whisper-cancel");
+        if let Some(parent) = cancel_marker.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("创建取消标记目录失败: {}", e))?;
+                .map_err(|e| format!("创建目录失败: {}", e))?;
         }
-        std::fs::write(&marker, "cancel")
+        std::fs::write(&cancel_marker, b"cancel")
             .map_err(|e| format!("写入取消标记失败: {}", e))?;
-
-        // 立即将状态设为 Idle，防止取消后立即重试时出现双任务并发
-        {
-            let mut s = self.status.lock().expect("WhisperStatus mutex 中毒");
-            *s = WhisperStatus::Idle;
-        }
-
-        log::info!("已发送 Whisper 下载取消信号");
+        // 异步任务会在下一轮 chunk 检测到取消标记后自行更新状态
         Ok(())
     }
 }
 
-/// 根据平台返回 whisper.cpp Release 包的资产名
-///
-/// 基于 whisper.cpp v1.7.3 实际的 Release assets 命名
-fn platform_asset_name() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "whisper-blas-bin-x64.zip"
-    } else if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            "whisper-bin-arm64.zip"
-        } else {
-            "whisper-bin-x86_64.zip"
-        }
-    } else {
-        "whisper-bin-x64.zip"
-    }
-}
-
-/// 检查取消标记是否存在
-fn is_cancelled(data_dir: &PathBuf) -> bool {
-    data_dir
-        .join("bin")
-        .join(".whisper-download-cancel")
-        .exists()
-}
-
-/// 执行完整的下载流程（CLI + 模型）
+/// 执行完整下载流程
 async fn download_all(
-    data_dir: &PathBuf,
     app: &AppHandle,
-) -> Result<(String, String), String> {
-    // 确保目录存在
-    let bin_dir = data_dir.join("bin");
-    let models_dir = data_dir.join("models");
-    std::fs::create_dir_all(&bin_dir).map_err(|e| format!("创建 bin 目录失败: {}", e))?;
-    std::fs::create_dir_all(&models_dir)
+    data_dir: &Path,
+    cli_path: &Path,
+    model_path: &Path,
+    cancel_marker: &Path,
+) -> Result<(), String> {
+    // 清理可能残留的取消标记
+    let _ = std::fs::remove_file(cancel_marker);
+
+    // 1. 创建目录
+    std::fs::create_dir_all(data_dir.join("bin"))
+        .map_err(|e| format!("创建 bin 目录失败: {}", e))?;
+    std::fs::create_dir_all(data_dir.join("models"))
         .map_err(|e| format!("创建 models 目录失败: {}", e))?;
 
-    let cli_name = if cfg!(target_os = "windows") {
-        "whisper-cli.exe"
-    } else {
-        "whisper-cli"
-    };
-    let cli_path = bin_dir.join(cli_name);
-    let model_path = models_dir.join("ggml-base.bin");
+    // 2. 检查磁盘空间
+    emit_progress(app, "正在检查磁盘空间...", 0, 0, 0, 0);
+    check_disk_space(data_dir)?;
 
-    // 阶段 1：下载 whisper-cli（如果不存在）
-    if !cli_path.exists() {
-        let asset_name = platform_asset_name();
-        let url = format!(
-            "https://github.com/ggerganov/whisper.cpp/releases/download/v{}/{}",
-            WHISPER_VERSION, asset_name
-        );
-        log::info!("下载 whisper-cli: {}", url);
-
-        let zip_path = bin_dir.join(format!("{}.part", asset_name));
-        download_file(&url, &zip_path, "正在下载语音引擎", data_dir, app).await?;
-
-        if is_cancelled(data_dir) {
-            let _ = std::fs::remove_file(&zip_path);
-            return Err("__CANCELLED__".into());
-        }
-
-        // 解压 zip
-        let _ = app.emit(
-            "whisper-download-progress",
-            DownloadProgress {
-                stage: "正在解压语音引擎".into(),
-                progress: -1.0,
-                downloaded: 0,
-                total: 0,
-                speed_bps: 0,
-            },
-        );
-
-        extract_cli_from_zip(&zip_path, &bin_dir, cli_name)?;
-
-        // 删除 zip 文件
-        let _ = std::fs::remove_file(&zip_path);
-
-        // Unix 下设置可执行权限
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o755);
-            std::fs::set_permissions(&cli_path, perms)
-                .map_err(|e| format!("设置可执行权限失败: {}", e))?;
-        }
-
-        log::info!("whisper-cli 已就绪: {}", cli_path.display());
+    if is_cancelled(cancel_marker) {
+        return Err("下载已取消".into());
     }
 
-    if is_cancelled(data_dir) {
-        return Err("__CANCELLED__".into());
+    // 3. 下载 CLI 压缩包
+    let cli_url = build_cli_download_url();
+    let zip_path = data_dir.join("bin").join("whisper-cli.zip");
+    emit_progress(app, "正在下载语音引擎...", 1, 0, 0, 0);
+
+    download_file_with_progress(app, &cli_url, &zip_path, cancel_marker, "正在下载语音引擎...", 1, 30)
+        .await?;
+
+    // 4. 解压 CLI
+    emit_progress(app, "正在解压语音引擎...", 31, 0, 0, 0);
+    extract_cli_from_zip(&zip_path, cli_path)?;
+    let _ = std::fs::remove_file(&zip_path);
+
+    // 5. 设置可执行权限（Unix）
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(cli_path)
+            .map_err(|e| format!("读取文件权限失败: {}", e))?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(cli_path, perms)
+            .map_err(|e| format!("设置可执行权限失败: {}", e))?;
     }
 
-    // 阶段 2：下载模型（如果不存在）
-    if !model_path.exists() {
-        log::info!("下载 Whisper 模型: {}", MODEL_URL);
-        let part_path = models_dir.join("ggml-base.bin.part");
-        download_file(MODEL_URL, &part_path, "正在下载语音模型", data_dir, app).await?;
-
-        if is_cancelled(data_dir) {
-            let _ = std::fs::remove_file(&part_path);
-            return Err("__CANCELLED__".into());
-        }
-
-        // 下载完成，重命名
-        std::fs::rename(&part_path, &model_path)
-            .map_err(|e| format!("重命名模型文件失败: {}", e))?;
-        log::info!("模型文件已就绪: {}", model_path.display());
+    if is_cancelled(cancel_marker) {
+        return Err("下载已取消".into());
     }
 
-    // 清除取消标记（如果有的话）
-    let _ = std::fs::remove_file(data_dir.join("bin").join(".whisper-download-cancel"));
+    // 6. 下载模型文件（支持断点续传）
+    let model_url = build_model_download_url();
+    emit_progress(app, "正在下载语音模型...", 35, 0, 0, 0);
 
-    Ok((
-        cli_path.to_string_lossy().into_owned(),
-        model_path.to_string_lossy().into_owned(),
-    ))
+    download_file_with_progress(app, &model_url, model_path, cancel_marker, "正在下载语音模型...", 35, 95)
+        .await?;
+
+    // 7. 验证
+    emit_progress(app, "正在验证...", 96, 0, 0, 0);
+    verify_cli(cli_path)?;
+    verify_model(model_path)?;
+
+    emit_progress(app, "下载完成", 100, 0, 0, 0);
+    let _ = std::fs::remove_file(cancel_marker);
+
+    Ok(())
 }
 
-/// 下载单个文件，支持断点续传和进度回调
-async fn download_file(
-    url: &str,
-    dest: &PathBuf,
-    stage: &str,
-    data_dir: &PathBuf,
+/// 带进度追踪的文件下载（支持断点续传）
+async fn download_file_with_progress(
     app: &AppHandle,
+    url: &str,
+    target_path: &Path,
+    cancel_marker: &Path,
+    stage_label: &str,
+    progress_start: u8,
+    progress_end: u8,
 ) -> Result<(), String> {
-    let client = reqwest::Client::new();
+    let part_path = PathBuf::from(format!("{}.part", target_path.display()));
 
-    // 检查已下载的字节数（断点续传）
-    let existing_bytes = if dest.exists() {
-        std::fs::metadata(dest)
-            .map(|m| m.len())
-            .unwrap_or(0)
+    // 检查已有的部分下载
+    let existing_bytes = if part_path.exists() {
+        std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0)
     } else {
         0
     };
 
+    let client = reqwest::Client::new();
     let mut request = client.get(url);
+
     if existing_bytes > 0 {
-        log::info!("断点续传: 已下载 {} 字节", existing_bytes);
+        log::info!("断点续传: 从 {} 字节继续下载 {}", existing_bytes, url);
         request = request.header("Range", format!("bytes={}-", existing_bytes));
     }
 
@@ -377,12 +283,10 @@ async fn download_file(
         .map_err(|e| format!("网络请求失败: {}", e))?;
 
     if !response.status().is_success() && response.status().as_u16() != 206 {
-        return Err(format!("HTTP 错误: {}", response.status()));
+        return Err(format!("下载失败，HTTP 状态码: {}", response.status()));
     }
 
-    // 解析总大小
-    let total = if response.status().as_u16() == 206 {
-        // 部分内容响应，从 Content-Range 解析总大小
+    let total_bytes = if response.status().as_u16() == 206 {
         response
             .headers()
             .get("content-range")
@@ -391,142 +295,258 @@ async fn download_file(
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0)
     } else {
-        response.content_length().unwrap_or(0) + existing_bytes
+        response.content_length().unwrap_or(0)
     };
-
-    // 打开文件（追加模式）
-    let file = if existing_bytes > 0 {
-        std::fs::OpenOptions::new()
-            .append(true)
-            .open(dest)
-            .map_err(|e| format!("打开文件失败: {}", e))?
-    } else {
-        std::fs::File::create(dest).map_err(|e| format!("创建文件失败: {}", e))?
-    };
-    let mut writer = std::io::BufWriter::new(file);
 
     let mut downloaded = existing_bytes;
-    let mut last_emit = std::time::Instant::now();
-    let start_time = std::time::Instant::now();
+    let mut file = if existing_bytes > 0 && response.status().as_u16() == 206 {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&part_path)
+            .map_err(|e| format!("打开文件失败: {}", e))?
+    } else {
+        downloaded = 0;
+        std::fs::File::create(&part_path).map_err(|e| format!("创建文件失败: {}", e))?
+    };
 
     let mut stream = response.bytes_stream();
+    let mut last_emit = std::time::Instant::now();
+    let mut speed_bytes = 0u64;
+    let mut speed_start = std::time::Instant::now();
+
     while let Some(chunk) = stream.next().await {
-        // 检查取消
-        if is_cancelled(data_dir) {
-            return Err("__CANCELLED__".into());
+        if is_cancelled(cancel_marker) {
+            return Err("下载已取消".into());
         }
 
-        let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
-        std::io::Write::write_all(&mut writer, &chunk)
-            .map_err(|e| format!("写入文件失败: {}", e))?;
+        let chunk = chunk.map_err(|e| format!("下载数据块失败: {}", e))?;
+        file.write_all(&chunk).map_err(|e| format!("写入文件失败: {}", e))?;
         downloaded += chunk.len() as u64;
+        speed_bytes += chunk.len() as u64;
 
-        // 每 200ms 发射一次进度事件
-        let now = std::time::Instant::now();
-        if now.duration_since(last_emit).as_millis() >= 200 {
-            let elapsed = now.duration_since(start_time).as_secs_f64();
-            let speed_bps = if elapsed > 0.0 {
-                ((downloaded - existing_bytes) as f64 / elapsed) as u64
+        if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
+            let elapsed_secs = speed_start.elapsed().as_secs_f64();
+            let speed = if elapsed_secs > 0.0 {
+                (speed_bytes as f64 / elapsed_secs) as u64
             } else {
                 0
             };
 
-            let progress = if total > 0 {
-                downloaded as f64 / total as f64
+            let pct = if total_bytes > 0 {
+                let ratio = downloaded as f64 / total_bytes as f64;
+                progress_start + ((progress_end - progress_start) as f64 * ratio) as u8
             } else {
-                0.0
+                progress_start
             };
 
-            let _ = app.emit(
-                "whisper-download-progress",
-                DownloadProgress {
-                    stage: stage.into(),
-                    progress,
-                    downloaded,
-                    total,
-                    speed_bps,
-                },
-            );
-
-            last_emit = now;
+            emit_progress(app, stage_label, pct, downloaded, total_bytes, speed);
+            last_emit = std::time::Instant::now();
+            speed_bytes = 0;
+            speed_start = std::time::Instant::now();
         }
     }
 
-    // 最终进度
-    let elapsed = start_time.elapsed().as_secs_f64();
-    let _ = app.emit(
-        "whisper-download-progress",
-        DownloadProgress {
-            stage: stage.into(),
-            progress: if total > 0 {
-                downloaded as f64 / total as f64
-            } else {
-                1.0
-            },
-            downloaded,
-            total,
-            speed_bps: if elapsed > 0.0 {
-                ((downloaded - existing_bytes) as f64 / elapsed) as u64
-            } else {
-                0
-            },
-        },
-    );
+    file.flush().map_err(|e| format!("刷新文件失败: {}", e))?;
+    drop(file);
 
-    std::io::Write::flush(&mut writer).map_err(|e| format!("刷新缓冲区失败: {}", e))?;
+    std::fs::rename(&part_path, target_path).map_err(|e| format!("重命名文件失败: {}", e))?;
+
     Ok(())
 }
 
-/// 从 zip 包中解压 whisper-cli 可执行文件
-fn extract_cli_from_zip(
-    zip_path: &PathBuf,
-    dest_dir: &PathBuf,
-    cli_name: &str,
-) -> Result<(), String> {
+/// 从 zip 压缩包中提取 whisper-cli 二进制
+fn extract_cli_from_zip(zip_path: &Path, target: &Path) -> Result<(), String> {
     let file =
         std::fs::File::open(zip_path).map_err(|e| format!("打开 zip 文件失败: {}", e))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("解析 zip 文件失败: {}", e))?;
 
-    // 在 zip 中查找 whisper-cli 可执行文件
-    let mut found = false;
+    let cli_name = cli_filename();
+
+    // 第一轮：精确匹配文件名
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
             .map_err(|e| format!("读取 zip 条目失败: {}", e))?;
 
-        let entry_name = entry.name().to_string();
-
-        // 匹配文件名（可能在子目录中）
-        let is_target = entry_name == cli_name
-            || entry_name.ends_with(&format!("/{}", cli_name))
-            || entry_name.ends_with(&format!("\\{}", cli_name));
-
-        if is_target && !entry.is_dir() {
-            let out_path = dest_dir.join(cli_name);
-            let mut out_file = std::fs::File::create(&out_path)
-                .map_err(|e| format!("创建文件失败: {}", e))?;
-            std::io::copy(&mut entry, &mut out_file)
-                .map_err(|e| format!("解压文件失败: {}", e))?;
-            log::info!(
-                "已从 zip 解压: {} -> {}",
-                entry_name,
-                out_path.display()
-            );
-            found = true;
-            break;
+        let name = entry.name().to_string();
+        if name.ends_with(&cli_name) || name.ends_with(&format!("/{}", cli_name)) {
+            let mut out =
+                std::fs::File::create(target).map_err(|e| format!("创建目标文件失败: {}", e))?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| format!("提取文件失败: {}", e))?;
+            log::info!("已提取 whisper-cli 到: {}", target.display());
+            return Ok(());
         }
     }
 
-    if !found {
-        return Err(format!(
-            "zip 包中未找到 {}，包含的文件: {:?}",
-            cli_name,
-            (0..archive.len())
-                .filter_map(|i| archive.by_index(i).ok().map(|e| e.name().to_string()))
-                .collect::<Vec<_>>()
-        ));
+    // 第二轮：模糊匹配含 "whisper" 的可执行文件
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("读取 zip 条目失败: {}", e))?;
+
+        let name = entry.name().to_string();
+        let is_executable = if cfg!(target_os = "windows") {
+            name.ends_with(".exe")
+        } else {
+            !name.contains('.') || name.ends_with("/whisper")
+        };
+
+        if name.contains("whisper") && is_executable && !entry.is_dir() {
+            let mut out =
+                std::fs::File::create(target).map_err(|e| format!("创建目标文件失败: {}", e))?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| format!("提取文件失败: {}", e))?;
+            log::info!(
+                "已提取 whisper 可执行文件 '{}' 到: {}",
+                name,
+                target.display()
+            );
+            return Ok(());
+        }
     }
 
+    Err("zip 压缩包中未找到 whisper-cli 可执行文件".into())
+}
+
+/// 验证 CLI 可执行
+fn verify_cli(cli_path: &Path) -> Result<(), String> {
+    if !cli_path.exists() {
+        return Err("whisper-cli 文件不存在".into());
+    }
+    if !is_executable(cli_path) {
+        return Err("whisper-cli 无执行权限".into());
+    }
+    log::info!("whisper-cli 验证通过: {}", cli_path.display());
     Ok(())
+}
+
+/// 验证模型文件完整性（基于大小检查）
+fn verify_model(model_path: &Path) -> Result<(), String> {
+    let meta = std::fs::metadata(model_path)
+        .map_err(|e| format!("读取模型文件元数据失败: {}", e))?;
+
+    if meta.len() < 100 * 1024 * 1024 {
+        return Err(format!(
+            "模型文件大小异常: {} 字节，可能下载不完整",
+            meta.len()
+        ));
+    }
+    log::info!(
+        "模型文件验证通过: {} ({} MB)",
+        model_path.display(),
+        meta.len() / 1024 / 1024
+    );
+    Ok(())
+}
+
+/// 检查磁盘空间
+fn check_disk_space(path: &Path) -> Result<(), String> {
+    let test_file = path.join(".space-check");
+    std::fs::write(&test_file, b"ok").map_err(|e| format!("磁盘写入测试失败: {}", e))?;
+    let _ = std::fs::remove_file(&test_file);
+
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    for disk in disks.list() {
+        let mount = disk.mount_point();
+        if path.starts_with(mount) {
+            if disk.available_space() < MIN_DISK_SPACE {
+                return Err(format!(
+                    "磁盘空间不足，需要约 200MB，当前可用: {} MB",
+                    disk.available_space() / 1024 / 1024
+                ));
+            }
+            return Ok(());
+        }
+    }
+
+    log::warn!("无法检测磁盘空间，继续下载");
+    Ok(())
+}
+
+/// 检查是否已取消
+fn is_cancelled(cancel_marker: &Path) -> bool {
+    cancel_marker.exists()
+}
+
+/// 发送进度事件
+fn emit_progress(
+    app: &AppHandle,
+    stage: &str,
+    progress: u8,
+    downloaded: u64,
+    total: u64,
+    speed_bps: u64,
+) {
+    let _ = app.emit(
+        "whisper-download-progress",
+        DownloadProgress {
+            stage: stage.to_string(),
+            progress,
+            downloaded,
+            total,
+            speed_bps,
+        },
+    );
+}
+
+/// 获取平台对应的 CLI 文件名
+fn cli_filename() -> String {
+    if cfg!(target_os = "windows") {
+        "whisper-cli.exe".to_string()
+    } else {
+        "whisper-cli".to_string()
+    }
+}
+
+/// 构建 whisper-cli 下载 URL
+fn build_cli_download_url() -> String {
+    let archive = platform_archive_name(WHISPER_VERSION);
+    format!(
+        "https://github.com/ggerganov/whisper.cpp/releases/download/v{}/{}",
+        WHISPER_VERSION, archive
+    )
+}
+
+/// 构建模型下载 URL
+fn build_model_download_url() -> String {
+    format!(
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
+        MODEL_FILENAME
+    )
+}
+
+/// 生成平台对应的压缩包名
+fn platform_archive_name(version: &str) -> String {
+    let (os, arch) = if cfg!(target_os = "windows") {
+        ("win", arch_name())
+    } else if cfg!(target_os = "macos") {
+        ("macos", arch_name())
+    } else {
+        ("linux", arch_name())
+    };
+    format!("whisper-{}-bin-{}-{}.zip", version, os, arch)
+}
+
+/// 获取架构名称
+fn arch_name() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x64"
+    }
+}
+
+/// 检查文件是否可执行
+fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|m| m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        path.exists()
+    }
 }

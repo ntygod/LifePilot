@@ -27,6 +27,8 @@ public class ConnectorManagerProperties {
     private String workspaceRoot;
     @Nullable
     private String zhiweiBaseUrl;
+    /** 单个入站附件最大允许字节数，默认 10MB。 */
+    private long maxAttachmentSizeBytes = 10L * 1024 * 1024;
 
     public boolean isEnabled() {
         return enabled;
@@ -92,5 +94,13 @@ public class ConnectorManagerProperties {
 
     public void setZhiweiBaseUrl(@Nullable String zhiweiBaseUrl) {
         this.zhiweiBaseUrl = zhiweiBaseUrl;
+    }
+
+    public long getMaxAttachmentSizeBytes() {
+        return maxAttachmentSizeBytes;
+    }
+
+    public void setMaxAttachmentSizeBytes(long maxAttachmentSizeBytes) {
+        this.maxAttachmentSizeBytes = maxAttachmentSizeBytes;
     }
 }

@@ -81,7 +81,18 @@ function stopHealthPoller() {
   }
 }
 
-async function navigateAfterReady() {
+async function resolveDestination(): Promise<string> {
+  try {
+    const services = await modelServiceApi.listEnabledServices('GENERATION')
+    const onboardingDone = localStorage.getItem('zhiwei_onboarding_completed') === 'true'
+    if (services.length === 0 && !onboardingDone) return '/setup'
+  } catch {
+    // 查询失败，直接进入主界面
+  }
+  return '/conversations'
+}
+
+async function navigateAfterReady(quick = false) {
   if (navigating) return
   navigating = true
 
@@ -89,14 +100,10 @@ async function navigateAfterReady() {
   steps.value[3].status = 'completed'
   stopTimer()
   stopHealthPoller()
-  await new Promise(r => setTimeout(r, 500))
 
-  try {
-    const services = await modelServiceApi.listEnabledServices('GENERATION')
-    router.replace(services.length === 0 ? '/setup' : '/conversations')
-  } catch {
-    router.replace('/conversations')
-  }
+  if (!quick) await new Promise(r => setTimeout(r, 500))
+
+  router.replace(await resolveDestination())
 }
 
 async function waitForBackend() {
@@ -125,6 +132,19 @@ async function waitForBackend() {
     const status = await invoke<{ running: boolean; port: number }>('get_backend_status')
     syncStepsFromStatus(status.running)
 
+    // 立即做一次健康检查，后端已就绪时快速跳过动画
+    try {
+      const resp = await fetch(`http://localhost:${port}/actuator/health`, {
+        signal: AbortSignal.timeout(2000),
+      })
+      if (resp.ok) {
+        navigateAfterReady(true)
+        return
+      }
+    } catch {
+      // 后端还未就绪，继续走轮询流程
+    }
+
     // 启动健康检查轮询（每 2 秒），作为事件丢失时的可靠兜底
     healthPoller = setInterval(async () => {
       if (navigating || hasError.value) return
@@ -137,16 +157,6 @@ async function waitForBackend() {
         // 后端还未就绪，继续轮询
       }
     }, 2000)
-
-    // 立即做一次健康检查
-    try {
-      const resp = await fetch(`http://localhost:${port}/actuator/health`, {
-        signal: AbortSignal.timeout(2000),
-      })
-      if (resp.ok) navigateAfterReady()
-    } catch {
-      // 后端还未就绪，等轮询或事件
-    }
   } catch (e) {
     failAtCurrentStep(`初始化失败: ${e}`)
   }

@@ -133,10 +133,10 @@ function finish(path: string) {
 
     <Transition name="slide" mode="out-in">
       <!-- ==================== Welcome ==================== -->
-      <div v-if="page === 'welcome'" key="welcome" class="w-full max-w-2xl px-xl text-center">
+      <div v-if="page === 'welcome'" key="welcome" class="w-full max-w-[672px] px-xl text-center">
         <div class="text-5xl font-bold text-foreground">知微</div>
         <p class="mt-sm text-lg text-muted-foreground">见微知著，谋定后动</p>
-        <p class="mx-auto mt-md max-w-md text-sm leading-relaxed text-muted-foreground">
+        <p class="mx-auto mt-md max-w-[448px] text-sm leading-relaxed text-muted-foreground">
           自托管的 AI Agent 系统 —— 多模型接入、知识库增强、工作流自动化，数据完全由你掌控。
         </p>
 
@@ -174,7 +174,7 @@ function finish(path: string) {
       </div>
 
       <!-- ==================== Select Provider ==================== -->
-      <div v-else-if="page === 'provider'" key="provider" class="w-full max-w-lg px-xl">
+      <div v-else-if="page === 'provider'" key="provider" class="w-full max-w-[512px] px-xl">
         <h2 class="text-xl font-semibold text-foreground">接入 AI 模型</h2>
         <p class="mt-xs text-sm text-muted-foreground">
           知微需要至少一个 AI 模型才能工作，选择你常用的服务商
@@ -211,7 +211,7 @@ function finish(path: string) {
       </div>
 
       <!-- ==================== Configure Provider ==================== -->
-      <div v-else-if="page === 'configure'" key="configure" class="w-full max-w-lg px-xl">
+      <div v-else-if="page === 'configure'" key="configure" class="w-full max-w-[512px] px-xl">
         <button
           class="mb-lg flex items-center gap-xs text-sm text-muted-foreground transition-colors hover:text-foreground"
           @click="page = 'provider'"
@@ -286,7 +286,7 @@ function finish(path: string) {
       </div>
 
       <!-- ==================== Ready ==================== -->
-      <div v-else key="ready" class="w-full max-w-2xl px-xl text-center">
+      <div v-else key="ready" class="w-full max-w-[672px] px-xl text-center">
         <div class="flex justify-center">
           <div class="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
             <Check v-if="!skippedSetup" class="h-8 w-8 text-primary" />
@@ -337,6 +337,17 @@ function finish(path: string) {
           >
             配置至少一个 AI 模型
           </button>
+        </p>
+
+        <p v-if="!skippedSetup" class="mt-lg text-xs text-muted-foreground">
+          额外配置
+          <button
+            class="text-primary underline transition-colors hover:text-primary/80"
+            @click="finish('/settings/models')"
+          >
+            Embedding 模型
+          </button>
+          可启用记忆模块的语义检索，提升知识库与记忆召回质量
         </p>
       </div>
     </Transition>

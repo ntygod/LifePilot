@@ -6,9 +6,9 @@ mod tray;
 mod whisper_manager;
 
 use java_manager::JavaManager;
+use whisper_manager::WhisperManager;
 use std::path::PathBuf;
 use tauri::Manager;
-use whisper_manager::WhisperManager;
 
 /// Tauri 插件注册入口
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,21 +22,23 @@ pub fn run() {
             let resource_dir = resolve_resource_dir(app);
             log::info!("资源目录: {}", resource_dir.display());
 
-            // 初始化 Whisper 语音引擎管理器
+            // 初始化 Whisper 管理器（计算目标路径，供 Java 后端使用）
             let whisper_manager = WhisperManager::new();
-            let whisper_cli = whisper_manager.cli_path_if_exists();
-            let whisper_model = whisper_manager.model_path_if_exists();
 
             // 初始化 Java 管理器（传入 Whisper 路径）
-            let java_manager = JavaManager::new(&resource_dir, whisper_cli, whisper_model);
+            let java_manager = JavaManager::new(
+                &resource_dir,
+                Some(whisper_manager.cli_path()),
+                Some(whisper_manager.model_path()),
+            );
 
             // 启动 Java 后端
             let app_handle = app.handle().clone();
             java_manager.start(&app_handle)?;
 
             // 注册到全局状态
-            app.manage(whisper_manager);
             app.manage(java_manager);
+            app.manage(whisper_manager);
 
             // 初始化系统托盘
             tray::setup_tray(app.handle())?;

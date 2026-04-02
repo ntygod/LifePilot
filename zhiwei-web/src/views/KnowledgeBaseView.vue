@@ -264,7 +264,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <header class="space-y-4 border-b border-border/70 pb-5">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -508,7 +508,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
             <article
               v-for="(kb, index) in filteredKbs"
               :key="kb.id"
-              class="kb-card list-card group relative cursor-pointer p-5"
+              class="kb-card list-card group relative cursor-pointer p-4"
               @click="selectKb(kb)"
             >
               <div class="flex items-start justify-between gap-3">

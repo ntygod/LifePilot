@@ -173,7 +173,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <PageHeader
           eyebrow="工具分析"
@@ -205,7 +205,7 @@ onMounted(() => {
           </template>
         </PageHeader>
 
-        <section class="detail-card p-5">
+        <section class="detail-card p-4">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div class="flex flex-wrap items-center gap-3">
               <span class="text-sm font-medium text-foreground">时间范围</span>

@@ -19,7 +19,9 @@ pub struct JavaManager {
     port: u16,
     jar_path: PathBuf,
     jre_path: Option<PathBuf>,
+    /// Whisper CLI 路径（传给 Java 后端，即使文件尚未下载也可传入）
     whisper_cli_path: Option<PathBuf>,
+    /// Whisper 模型文件路径
     whisper_model_path: Option<PathBuf>,
     #[allow(dead_code)] // Phase 2: 崩溃自动重启
     max_restart_attempts: u32,
@@ -95,7 +97,7 @@ impl JavaManager {
             .arg(&self.jar_path)
             .arg(format!("--server.port={}", self.port));
 
-        // Whisper 语音引擎路径参数
+        // Whisper CLI 路径（即使文件尚未下载，Java 侧会在调用时动态检测可用性）
         if let Some(ref p) = self.whisper_cli_path {
             cmd.arg(format!("--lifepilot.media.audio.whisper-cli-path={}", p.display()));
         }

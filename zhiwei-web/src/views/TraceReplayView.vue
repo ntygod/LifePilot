@@ -421,7 +421,7 @@ async function handleRetryServiceCheck() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <template v-if="!store.current">
           <PageHeader
@@ -469,7 +469,7 @@ async function handleRetryServiceCheck() {
           </StatePanel>
 
           <template v-else>
-            <section class="detail-card p-5">
+            <section class="detail-card p-4">
               <div class="flex flex-col gap-5">
                 <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                   <div class="space-y-1">
@@ -644,7 +644,7 @@ async function handleRetryServiceCheck() {
                   v-for="trace in filteredTraces"
                   :key="trace.id"
                   type="button"
-                  class="list-card w-full p-5 text-left"
+                  class="list-card w-full p-4 text-left"
                   @click="selectTrace(trace.id)"
                 >
                   <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -777,7 +777,7 @@ async function handleRetryServiceCheck() {
             </PageHeader>
 
             <section class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-              <article class="detail-card p-5">
+              <article class="detail-card p-4">
                 <div class="surface-label mb-3">执行摘要</div>
                 <div class="grid gap-3 md:grid-cols-2">
                   <div
@@ -856,7 +856,7 @@ async function handleRetryServiceCheck() {
               </div>
             </div>
 
-            <div class="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div class="grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
               <div class="space-y-4">
                 <div
                   v-for="item in evaluationItems"

@@ -76,22 +76,28 @@ const {
   startRecording, stopRecording,
 } = useVoice()
 
-// Whisper 语音引擎自动下载（桌面端）
-const { checkAvailability: checkWhisper, triggerDownload: triggerWhisperDownload } = useWhisperDownload()
+// Whisper 自动下载（桌面端）
+const {
+  available: whisperAvailable,
+  status: whisperStatus,
+  checkAvailability: checkWhisper,
+  triggerDownload: downloadWhisper,
+} = useWhisperDownload()
 
-/** 麦克风按钮点击：检测 Whisper 可用性，不可用则触发下载，可用则录音 */
+/** 麦克风按钮点击：桌面端检测 Whisper 可用性，不可用则触发下载 */
 async function handleMicClick() {
-  if (!('__TAURI_INTERNALS__' in window)) {
-    // 浏览器环境直接录音
-    startRecording()
-    return
+  if ('__TAURI_INTERNALS__' in window) {
+    if (!whisperAvailable.value) {
+      await checkWhisper()
+      if (!whisperAvailable.value) {
+        if (whisperStatus.value !== 'downloading') {
+          downloadWhisper()
+        }
+        return
+      }
+    }
   }
-  const ok = await checkWhisper()
-  if (ok) {
-    startRecording()
-  } else {
-    triggerWhisperDownload()
-  }
+  startRecording()
 }
 
 const promptTemplates = [

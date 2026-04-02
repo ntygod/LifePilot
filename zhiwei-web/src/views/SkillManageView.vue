@@ -155,7 +155,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <PageHeader
           eyebrow="技能"
@@ -304,7 +304,7 @@ onMounted(() => {
             <article
               v-for="skill in filteredSkills"
               :key="skill.id"
-              class="list-card group cursor-pointer p-5"
+              class="list-card group cursor-pointer p-4"
               @click="viewSkillDetail(skill)"
             >
               <div class="flex items-start justify-between gap-3">

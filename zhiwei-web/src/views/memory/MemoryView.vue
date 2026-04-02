@@ -118,7 +118,7 @@ function formatSpaceId(spaceId?: string | null) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <!-- 记忆系统未启用提示 -->
         <div v-if="store.memoryDisabled" class="detail-card px-6 py-8 text-center">
@@ -150,7 +150,7 @@ function formatSpaceId(spaceId?: string | null) {
             <template #meta>
               <!-- 统计卡片：加载中展示 Skeleton -->
               <template v-if="store.statsLoading">
-                <div v-for="i in 5" :key="i" class="detail-card p-5 space-y-3">
+                <div v-for="i in 5" :key="i" class="detail-card p-4 space-y-3">
                   <Skeleton class="h-3 w-16" />
                   <Skeleton class="h-7 w-20" />
                 </div>

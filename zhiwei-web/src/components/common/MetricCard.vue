@@ -17,12 +17,12 @@ const slots = useSlots()
 <template>
   <article :class="cn('metric-card group', props.class)" :title="props.hint">
     <div class="flex items-start justify-between gap-3">
-      <div class="min-w-0 flex-1 space-y-1.5">
-        <div class="space-y-1">
+      <div class="min-w-0 flex-1 space-y-1">
+        <div class="space-y-0.5">
           <p class="surface-label">
             {{ props.label }}
           </p>
-          <div class="text-[1.55rem] font-semibold tracking-tight text-foreground sm:text-[1.7rem]">
+          <div class="text-[1.3rem] font-semibold tracking-tight text-foreground sm:text-[1.4rem]">
             {{ props.value }}
           </div>
         </div>

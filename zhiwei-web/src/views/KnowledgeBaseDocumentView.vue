@@ -213,7 +213,7 @@ watch(
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -425,7 +425,7 @@ watch(
             </div>
 
             <template v-else>
-              <section class="detail-card p-5">
+              <section class="detail-card p-4">
                 <div class="surface-label mb-3">文档信息</div>
                 <div class="space-y-3 text-sm text-muted-foreground">
                   <div class="flex items-center justify-between gap-3">

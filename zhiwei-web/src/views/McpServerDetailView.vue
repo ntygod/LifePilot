@@ -238,7 +238,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -351,7 +351,7 @@ onMounted(() => {
             title="连接设置"
             description="查看并修改连接方式、超时和重试设置。"
           >
-            <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
               <div class="grid gap-4 md:grid-cols-2">
                 <div class="space-y-2">
                   <Label for="mcp-detail-transport">传输方式</Label>
