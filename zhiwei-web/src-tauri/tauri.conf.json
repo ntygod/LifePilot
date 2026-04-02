@@ -4,8 +4,10 @@
   "identifier": "com.zhiwei.desktop",
   "version": "0.2.0",
   "build": {
+    "beforeDevCommand": "npm run dev -- --port 1420",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173"
+    "devUrl": "http://localhost:1420"
   },
   "app": {
     "windows": [

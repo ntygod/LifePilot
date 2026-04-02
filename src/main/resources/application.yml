@@ -547,6 +547,7 @@ lifepilot:
       # CORS 跨域配置：开发环境（5173）、Docker 部署（80/同源）和 Tauri 桌面端
       allowed-origins:
         - "http://localhost:5173"
+        - "http://localhost:1420"
         - "http://localhost:80"
         - "http://localhost"
         - "tauri://localhost"
