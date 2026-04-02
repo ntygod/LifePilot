@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.meta`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 功能概述
 
@@ -23,7 +23,8 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | Web 信息 | `web.fetch` | 抓取网页内容 |
 | 推理辅助 | `reason.think` | 结构化思考（scratchpad） |
 | 推理辅助 | `reason.calculate` | 数学计算 |
-| Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查） |
+| Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查），支持后台执行和 PTY |
+| Shell 执行 | `shell.process` | 后台进程管理和持久终端会话（tmux），支持 list/output/write/kill 以及 session-* 操作 |
 | 浏览器自动化 | `browser.navigate` | 导航到 URL |
 | 浏览器自动化 | `browser.click` | 点击页面元素 |
 | 浏览器自动化 | `browser.input` | 输入文本 |

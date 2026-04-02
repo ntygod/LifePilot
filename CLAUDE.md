@@ -24,7 +24,6 @@ npm install
 npm run dev          # Vite dev server (port 5173)
 npm run build        # Production build → dist/
 npm run test:run     # Vitest single run
-npm run lint         # ESLint
 ```
 
 ### Docker
@@ -37,7 +36,7 @@ docker compose up -d   # Start full stack
 
 The system is layered: **Interaction → Gateway → Agent Engine → Capability Layer → Knowledge/Memory → Infrastructure → Storage**.
 
-- **Interaction**: Web UI (Vue 3 SSE), Channel adapters (Feishu/DingTalk/WeChat Work)
+- **Interaction**: Web UI (Vue 3 SSE), Tauri 2.x desktop app, Channel adapters (Feishu/DingTalk/WeChat Work)
 - **Gateway**: `MessageGateway` with 6-stage middleware pipeline (Auth → RateLimit → Security → Router → Execution → Audit)
 - **Agent Engine**: `ReactAgentLoop` — ReAct-style control loop with suspend/resume, retry, and breakpoint recovery
 - **Capability Layer**: Skill system, Tool system, MCP protocol, Workflow engine, Code sandbox, Datastore
@@ -46,11 +45,14 @@ The system is layered: **Interaction → Gateway → Agent Engine → Capability
 
 Key source files:
 - `src/main/java/com/lifepilot/agent/ReactAgentLoop.java` — core agent loop
-- `src/main/java/com/lifepilot/llm/LlmRouter.java` — multi-model routing with circuit breaker
+- `src/main/java/com/lifepilot/generation/router/GenerationRouter.java` — text generation routing with circuit breaker
+- `src/main/java/com/lifepilot/embedding/router/EmbeddingRouter.java` — embedding routing
+- `src/main/java/com/lifepilot/rerank/router/RerankRouter.java` — rerank routing
 - `src/main/resources/application.yml` — all runtime configuration
-- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V9)
+- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V10)
 - `src/main/resources/prompts/` — StringTemplate prompt files
-- `src/main/resources/skills/` — built-in skill definitions
+- `src/main/resources/skills/` — built-in skill definitions (33 skills)
+- `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
 
 ## Coding Conventions
 
@@ -82,5 +84,5 @@ Detailed conventions are in `.claude/rules/` (auto-loaded by file type):
 
 - `docs/ARCHITECTURE.md` — system architecture overview
 - `docs/API_STANDARD.md` — API design standard
-- `docs/architecture/` — 38 detailed module design docs
+- `docs/architecture/` — 31 detailed module design docs
 - `docs/guides/` — usage guides (workflow, Feishu integration)

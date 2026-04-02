@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.interaction.web`（后端）+ `zhiwei-web`（前端）
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ---
 
@@ -14,9 +14,10 @@ Web UI 为 ZhiWei 提供浏览器端交互界面，用户通过 Web 页面与 AI
 
 核心价值：
 - 零安装访问：浏览器打开即用，无需安装客户端
+- 桌面客户端：Tauri 2.x 桌面应用，内嵌后端管理，提供原生桌面体验（SplashView 启动页 + SetupWizard 配置引导）
 - 流式对话体验：SSE 实时推送 LLM 生成的 Token，逐字显示
 - Generative UI：Agent 通过 A2UI 协议动态生成交互式 UI 组件（卡片、按钮、表单等），超越纯文本对话
-- 多端就绪：后端纯 API 设计，为 Phase 6 多端接入奠定基础
+- 多端复用：后端纯 API 设计，Web 和 Tauri 桌面端共享同一套前端 SPA
 
 ---
 

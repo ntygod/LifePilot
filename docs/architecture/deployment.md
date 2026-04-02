@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：跨模块（部署基础设施）
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -20,7 +20,7 @@
 - GraalVM native image（探索性任务，SQLite JNI + sqlite-vec native 兼容性问题尚未解决，归入远期）
 - 多设备数据同步（需要独立的同步协议设计）
 - CI/CD 流水线（GitHub Actions 等，归入运维层面）
-- 桌面客户端（Electron / Tauri，远期需求；如需桌面体验，Tauri 包一个 WebView 指向本地 Web UI 即可）
+- ~~桌面客户端~~（已通过 Tauri 2.x 实现，详见 3.7 节）
 
 ---
 
@@ -200,7 +200,27 @@ volumes:
 - 不做进程守护（用户可自行配置 systemd / launchd / Windows Service）
 - 不做自动更新
 
-### 3.6 配置版本迁移
+### 3.6 Tauri 2.x 桌面客户端
+
+位于 `zhiwei-web/src-tauri/`，使用 Tauri 2.x（Rust）构建桌面客户端，通过 WebView 加载前端 Vue 3 SPA，并内嵌管理 Java 后端进程的生命周期。
+
+**核心架构：**
+
+- **JavaManager**（`src/java_manager.rs`）：负责查找 Java 运行时、动态寻找可用端口、启动/停止 `zhiwei.jar` 后端进程
+- **PortFinder**（`src/port_finder.rs`）：自动查找可用端口，避免端口冲突
+- **HealthCheck**（`src/health_check.rs`）：后端就绪检测，轮询直到 API 可用
+- **TrayIcon**（`src/tray.rs`）：系统托盘图标，关闭窗口时隐藏到托盘而非退出
+- **Tauri Commands**（`src/commands.rs`）：暴露给前端的 Tauri IPC 命令（`get_backend_port`、`is_backend_running`、`restart_backend`、`get_backend_status`）
+
+**前端桌面适配：**
+
+- **SplashView**（`src/views/SplashView.vue`）：启动页，等待后端就绪后自动跳转；非 Tauri 环境直接跳过
+- **SetupWizard**（`src/components/desktop/SetupWizard.vue`）：首次启动引导向导，引导用户选择 LLM Provider 并配置 API Key
+- 启动流程：`/splash` → 等待后端 → 检查是否已配置模型服务 → 有则进入 `/conversations`，无则进入 `/setup`
+
+**打包目标：** NSIS（Windows）、DMG（macOS）、DEB/AppImage（Linux）
+
+### 3.7 配置版本迁移
 
 应用升级时，配置格式可能发生变化（如配置键重命名、结构调整）。配置版本迁移机制确保旧配置自动适配新版本。
 
@@ -241,7 +261,7 @@ public interface ConfigMigration {
 | 前后端分离部署 | 是 | 前端 Nginx 静态部署，后端纯 API 服务，职责清晰，可独立扩展 |
 | Docker 多阶段构建 | 是 | 分离编译和运行环境，最小化镜像体积 |
 | 不做 GraalVM native | 是 | SQLite JNI + sqlite-vec native 兼容性问题未解决，归入远期 |
-| 不做桌面客户端 | 是 | 浏览器即客户端，远期如需可用 Tauri WebView 包装 |
+| 桌面客户端用 Tauri 2.x | 是 | Tauri WebView 包装本地 Web UI + Rust 管理 Java 后端进程，安装包体积小 |
 | 配置迁移用代码而非脚本 | 是 | Java 代码可测试、可调试，比 shell 脚本可靠 |
 
 ---

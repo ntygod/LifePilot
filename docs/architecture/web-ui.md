@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.interaction.web`（后端）+ `zhiwei-web`（前端）
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ---
 
@@ -15,7 +15,7 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 - **后端 API 层**（本 Java 项目内）：Spring Boot REST Controller + SSE 流式端点，复用 MessageGateway 中间件管道。后端是纯 Server 端逻辑，不包含任何前端构建集成。
 - **前端 SPA 层**（独立项目）：Vue 3 + Vite + Pinia 单页应用，独立仓库、独立构建、独立部署。通过 HTTP/SSE 调用后端 API。
 
-这种分离为 Phase 6 的多端接入（CLI HTTP 客户端、移动端、桌面端）奠定基础，所有客户端共享同一套 REST/SSE API。
+这种分离已实现多端接入：Tauri 2.x 桌面客户端通过 WebView 加载同一套前端 SPA，共享 REST/SSE API。桌面端额外包含 SplashView（启动等待页）和 SetupWizard（首次配置引导）。
 
 ### 职责边界
 

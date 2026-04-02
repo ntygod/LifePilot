@@ -1,7 +1,7 @@
 # 知微（ZhiWei）— 系统架构总览
 
 > **文档性质**：架构总览文档
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 项目概述
 
@@ -20,12 +20,12 @@
 |------|------|------|
 | Java | 22 | Record / Sealed Interface / Pattern Matching / Virtual Thread |
 | Spring Boot | 3.5.x | Web 框架、自动配置、Actuator |
-| Spring AI | 1.1.2 | LLM 集成、Advisor 模式、MCP 支持、结构化输出 |
+| Spring AI | 1.1.3 | LLM 集成、Advisor 模式、MCP 支持、结构化输出 |
 | Maven | 3.9.x | 构建与依赖管理 |
 | SQLite + sqlite-vec | 3.51+ / 0.1.x | 结构化存储 + FTS5 全文索引 + 向量检索 |
 | Flyway | 10.x | 数据库迁移 |
-| JLine 3 | 3.28+ | CLI 交互（补全、高亮、历史） |
 | Vue 3 + Vite + Pinia | 3.5 / 6.x / 3.x | 前端 SPA（独立项目 zhiwei-web） |
+| Tauri | 2.x | 桌面客户端（Rust + WebView，位于 zhiwei-web/src-tauri） |
 | Apache Tika | — | 文档格式检测与解析 |
 
 ## 3. 系统分层架构
@@ -33,8 +33,8 @@
 ```mermaid
 graph TB
     subgraph "交互层"
-        CLI["CLI 交互<br/>JLine 3（规划中）"]
         WEB["Web UI<br/>Vue 3 + SSE"]
+        DESKTOP["桌面客户端<br/>Tauri 2.x + WebView"]
         CHANNEL["Channel 适配器<br/>企微/钉钉/飞书/Webhook"]
     end
 
@@ -67,7 +67,7 @@ graph TB
     end
 
     subgraph "基础设施层"
-        LLM["LLM Router<br/>多模型路由/熔断/故障转移"]
+        LLM["LLM 路由层<br/>4 Router 分治/熔断/故障转移"]
         MEDIA["多模态处理<br/>图片/音频/文档"]
         OBS["可观测性<br/>轨迹记录/脱敏/评估"]
         SYNC["外部数据同步<br/>CalDAV/Todoist/滴答清单"]
@@ -85,8 +85,8 @@ graph TB
         VEC["sqlite-vec<br/>向量索引"]
     end
 
-    CLI --> GW
     WEB --> GW
+    DESKTOP --> WEB
     CHANNEL --> GW
     GW --> MW --> AGENT
     AGENT --> CTX
@@ -122,22 +122,26 @@ graph TB
 
 | 模块包 | 职责 | 详细文档 |
 |--------|------|---------|
-| `llm` | 多模型路由、熔断器、故障转移、流式响应 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
+| `llm` | LLM 基础设施（Provider 适配、熔断器、语义缓存、多模态路由） | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
+| `generation` | 文本生成路由（GenerationRouter）、客户端工厂、结构化输出解析 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
+| `embedding` | 向量化路由（EmbeddingRouter）、客户端工厂 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
+| `rerank` | 精排路由（RerankRouter）、原生/LLM Pointwise/Listwise 策略 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
+| `modelservice` | DB 驱动模型服务注册表（ModelServiceRegistry）、厂商模板管理 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `agent` | Agent 控制循环、状态机、上下文组装、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
-| `guardrail` | 安全护栏策略定义（已合并至 `observability.guardrail`，不再独立存在，详见 [guardrail.md](architecture/guardrail.md)） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
+| `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
 | `mcp` | Model Context Protocol 客户端、工具桥接、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
 | `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
 | `skill` | Skill 注册/激活/热加载、内置 Skill、自扩展（Gap 检测 + YAML 生成） | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
-| `interaction` | CLI 交互、MessageGateway、中间件管道、Channel 适配器、Web 端点 | [架构](architecture/cli-interaction.md) · [架构](architecture/gateway-middleware.md) · [特性](features/gateway-channels.md) |
+| `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
 | `media` | 多模态处理（图片预处理、音频、文档格式检测） | [架构](architecture/multimodal.md) · [特性](features/multimodal.md) |
-| `sync` | 外部数据源同步（CalDAV/Todoist/滴答清单/Obsidian）、冲突解决（规划中，尚未实现） | [架构](architecture/external-data-sync.md) · [特性](features/external-data-sync.md) |
+| `sync` | 外部数据源同步（CalDAV/Todoist/滴答清单/Obsidian）、冲突解决（规划中，尚未实现） | [规划](planned/external-data-sync-arch.md) |
 | `eval` | Agentic Evals 评估框架、YAML 场景、五维规则评估、LLM-as-a-Judge | [架构](architecture/agentic-evals.md) · [特性](features/agentic-evals.md) |
 | `multiagent` | 多 Agent 协作、AgentRegistry、spawn_workers 并行 Worker 执行 | [架构](architecture/multi-agent.md) · [特性](features/multi-agent.md) |
 | `a2a` | Agent-to-Agent 协议、Client/Server 实现、Agent Card | [架构](architecture/a2a-protocol.md) · [特性](features/a2a-protocol.md) |
@@ -183,12 +187,12 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移"
-        V1["V1~V4: 核心表"]
-        V5["V5~V6: 记忆系统"]
-        V7["V7: 语义记忆 + 知识图谱"]
-        V8["V8+: 后续模块"]
-        V44["V44: 通用数据存储"]
+    subgraph "Flyway 迁移（V1~V10）"
+        V1["V1~V4: 核心表 + 通知 + 知识库/数据存储 + 记忆空间"]
+        V5["V5: 语义记忆实体模型"]
+        V6["V6: 数据存储工作区"]
+        V7["V7: 渠道插件控制面"]
+        V8["V8~V10: 市场资产 + Provider 规范化 + 模型服务模板"]
     end
 
     V1 --> SQL
@@ -209,6 +213,11 @@ graph TB
         NGINX["Nginx / 静态服务器"]
     end
 
+    subgraph "桌面部署"
+        TAURI["Tauri 2.x 桌面应用<br/>Rust + WebView"]
+        JAVA_MGR["JavaManager<br/>内嵌后端生命周期管理"]
+    end
+
     subgraph "Docker 部署"
         DOCKER["Docker 容器<br/>eclipse-temurin:22-jre-alpine"]
         COMPOSE["docker-compose.yml<br/>环境变量 + 卷挂载"]
@@ -216,6 +225,7 @@ graph TB
 
     JAR -->|"java -jar"| API["REST/SSE API<br/>:8080"]
     WEBDIST --> NGINX -->|"反向代理"| API
+    TAURI --> JAVA_MGR -->|"管理 JAR 进程"| API
     DOCKER -->|"包含 JAR"| API
     COMPOSE --> DOCKER
 ```
@@ -223,6 +233,7 @@ graph TB
 部署方式：
 - **本地运行**：`start.sh` / `start.bat` 一键启动
 - **Docker**：`docker-compose up -d`
+- **桌面客户端**：Tauri 2.x 桌面应用（内嵌 Java 后端管理 + WebView），支持 Windows/macOS/Linux
 - **前端**：独立构建部署，通过 REST/SSE API 与后端通信
 
 ## 8. 跨模块主题文档
@@ -235,7 +246,7 @@ graph TB
 | 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |
 | 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | 部署与运维 | [架构](architecture/deployment.md) · [特性](features/deployment.md) |
-| 性能优化 | [架构](architecture/performance-optimization.md) · [特性](features/performance-optimization.md) |
+| 性能优化 | [规划](planned/performance-optimization-arch.md) |
 | Web UI | [架构](architecture/web-ui.md) · [特性](features/web-ui.md) |
 | API 端点清单 | [API_ENDPOINTS.md](API_ENDPOINTS.md) |
 | API 规范标准 | [API_STANDARD.md](API_STANDARD.md) |

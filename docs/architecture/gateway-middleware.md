@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.interaction`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -61,7 +61,7 @@ flowchart TD
 - 职责：消息网关核心，管理通道注册表和生命周期，将消息推入中间件管道
 - 关键接口：`process(GatewayMessage)` → `GatewayResponse`、`start()`/`stop()`
 - 实现细节：`AtomicBoolean` 管理运行状态
-- 集成：可选注入 `ResponseTracker`（主动推理模块），对文本消息通知用户交互事件
+- 集成：纯消息分发，不含主动推理集成
 - MDC 注入：每条消息处理时将 `messageId` 注入 SLF4J MDC，整条链路日志可关联
 
 ### 3.2 MiddlewarePipeline
@@ -141,7 +141,6 @@ sequenceDiagram
 
     CH->>GW: process(GatewayMessage)
     GW->>GW: MDC.put("messageId")
-    GW->>GW: notifyResponseTracker()
     GW->>PP: execute(message)
     PP->>PP: new MiddlewareContext()
     PP->>PP: new MiddlewareChain()
@@ -191,11 +190,10 @@ stateDiagram-v2
 | 依赖方向 | 模块 | 交互方式 |
 |---------|------|---------|
 | Gateway → Agent | `com.lifepilot.agent` | `ExecutionMiddleware` 调用 `AgentLoop.run()` |
-| Gateway → Guardrail | `com.lifepilot.guardrail` | `SecurityMiddleware` 调用 `GuardrailEngine` 进行安全检查 |
+| Gateway → Guardrail | `com.lifepilot.observability.guardrail` | `SecurityMiddleware` 调用 `GuardrailEngine` 进行安全检查 |
 | Gateway → Skill | `com.lifepilot.skill` | `RouterMiddleware` 快速路径直接调用 Skill |
 | Gateway → Observability | `com.lifepilot.observability` | `AuditMiddleware` 记录审计日志 |
-| Gateway → 主动推理 | `com.lifepilot.agent.proactive` | `DefaultMessageGateway` 通知 `ResponseTracker` 用户交互 |
-| Web UI → Gateway | 前端 Vue 3 SPA | 通过 REST Controller + SSE 端点接入 |
+| Web UI → Gateway | 前端 Vue 3 SPA（Web / Tauri 桌面） | 通过 REST Controller + SSE 端点接入 |
 | 企业 IM → Gateway | Webhook 回调 | 各 IM 平台通过插件式通道适配器接入（详见 [channel-plugin-architecture.md](channel-plugin-architecture.md)） |
 
 ## 7. 配置参考
@@ -222,10 +220,9 @@ stateDiagram-v2
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.gateway.rate-limit.max-tokens-per-hour` | `100000` | 每用户每小时最大 Token 消耗 |
-| `lifepilot.gateway.rate-limit.max-tokens-per-day` | `500000` | 每用户每天最大 Token 消耗 |
 | `lifepilot.gateway.rate-limit.max-requests-per-minute` | `30` | 每用户每分钟最大请求数 |
-| `lifepilot.gateway.rate-limit.estimated-tokens-per-request` | `2000` | 预估每请求 Token 消耗 |
+
+> **变更说明**：Token 配额限流（`max-tokens-per-hour`、`max-tokens-per-day`、`estimated-tokens-per-request`）已移除。个人助手场景下不做 Token 配额限流，费用由用户自行承担。
 
 ### 7.3 通道配置
 

@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.meta`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -25,7 +25,7 @@ graph TB
                 ENV["环境感知<br/>datetime / user-profile / system-info"]
                 WEB["Web 信息<br/>web-search / web-fetch"]
                 REASON["推理辅助<br/>think / calculate"]
-                SHELL["Shell 执行<br/>shell-exec"]
+                SHELL["Shell 执行<br/>shell.exec + shell.process"]
                 BROWSER["浏览器自动化<br/>navigate / click / input / screenshot"]
                 CODE["代码执行<br/>code-execute"]
                 FILE["文件系统<br/>read / write / list / search"]
@@ -67,7 +67,7 @@ graph TB
 
 - 职责：注册 30+ 个内置工具到 `DynamicToolRegistry`
 - Skill ID：`builtin.infrastructure`
-- 工具按功能域分为 5 类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell-exec）、文件系统（file-read/file-write/file-list/file-search/file-copy/file-move/file-delete/file-append/file-patch/file-info）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）
+- 工具按功能域分类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell.exec 命令执行 + shell.process 后台进程与持久会话管理）、文件系统（file-read/file-write/file-list/file-search/file-copy/file-move/file-delete/file-append/file-patch/file-info）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）
 - 可选依赖：`SandboxBooter`（代码执行）、`InteractionBridge`（交互控制）、`BrowserSessionManager`（浏览器自动化，需 Playwright）
 
 ### 3.2 InteractionBridge — 交互桥接器

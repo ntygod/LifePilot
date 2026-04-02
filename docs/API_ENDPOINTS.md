@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-02
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -20,13 +20,16 @@
 - [Datastores（领域数据集）](#datastores领域数据集)
 - [Workflows（工作流）](#workflows工作流)
 - [Traces（轨迹）](#traces轨迹)
-- [LLM Providers（模型提供商）](#llm-providers模型提供商)
+- [Model Services（模型服务管理）](#model-services模型服务管理)
+- [Model Routing（模型路由设置）](#model-routing模型路由设置)
 - [Analytics（分析统计）](#analytics分析统计)
 - [Marketplace（插件市场）](#marketplace插件市场)
 - [Settings（用户设置）](#settings用户设置)
+- [Channels（渠道管理）](#channels渠道管理)
 - [Attachments（附件）](#attachments附件)
 - [Dependencies（依赖关系）](#dependencies依赖关系)
 - [A2A（Agent-to-Agent 协议）](#a2a协议端点)
+- [Eval（评估）](#eval评估)
 - [Webhooks（外部渠道回调）](#webhooks外部渠道回调)
 - [MCP Server（服务端 JSON-RPC）](#mcp-server服务端-json-rpc)
 
@@ -212,6 +215,7 @@
 | POST | `/api/mcp/servers/{name}/disconnect` | `disconnectMcpServer` | 断开（204） |
 | GET | `/api/mcp/servers/{name}/tools` | `getMcpServerTools` | 工具列表 |
 | GET | `/api/mcp/servers/{name}/last-errors` | `getMcpServerLastErrors` | 最近错误摘要 |
+| GET | `/api/mcp/servers/status-stream` | `statusStream` | SSE 实时推送所有 MCP Server 状态变更 |
 
 ---
 
@@ -287,18 +291,34 @@
 
 ---
 
-## LLM Providers（模型提供商）
+## Model Services（模型服务管理）
 
-来源：`LlmProviderController`，Base Path: `/api/llm-providers`
+来源：`ModelServiceController`，Base Path: `/api/model-services`
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
-| GET | `/api/llm-providers/enabled` | `listEnabledProviders` | 已启用 Provider 列表 |
-| GET | `/api/llm-providers/presets` | `listPresets` | 预设置 Provider 列表 |
-| GET | `/api/llm-providers/{id}` | `getProvider` | Provider 详情 |
-| PUT | `/api/llm-providers/{id}` | `updateProvider` | 更新 Provider |
-| DELETE | `/api/llm-providers/{id}` | `deleteProvider` | 删除（预设置不可删除） |
-| GET | `/api/llm-providers/{id}/health` | `getProviderHealth` | 健康状态 |
+| GET | `/api/model-services` | `listServices` | 模型服务列表（可选 kind 过滤） |
+| GET | `/api/model-services/enabled` | `listEnabledServices` | 已启用服务列表（可选 kind 过滤） |
+| GET | `/api/model-services/templates` | `listTemplates` | 厂商模板列表 |
+| GET | `/api/model-services/{id}` | `getService` | 服务详情 |
+| POST | `/api/model-services` | `createService` | 创建模型服务 |
+| PUT | `/api/model-services/{id}` | `updateService` | 更新模型服务 |
+| DELETE | `/api/model-services/{id}` | `deleteService` | 删除模型服务 |
+
+---
+
+## Model Routing（模型路由设置）
+
+来源：`ModelRoutingController`，Base Path: `/api/model-routing`
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/model-routing/generation` | `getGenerationSettings` | 生成路由设置 |
+| PUT | `/api/model-routing/generation` | `updateGenerationSettings` | 更新生成路由设置 |
+| GET | `/api/model-routing/embedding` | `getEmbeddingSettings` | 向量化路由设置 |
+| PUT | `/api/model-routing/embedding` | `updateEmbeddingSettings` | 更新向量化路由设置 |
+| GET | `/api/model-routing/rerank` | `getRerankSettings` | 精排路由设置 |
+| PUT | `/api/model-routing/rerank` | `updateRerankSettings` | 更新精排路由设置 |
 
 ---
 
@@ -343,6 +363,26 @@
 
 ---
 
+## Channels（渠道管理）
+
+来源：`ChannelAdminController`，Base Path: `/api/channels`
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/channels/plugins` | `listPlugins` | 已注册插件列表 |
+| GET | `/api/channels/instances` | `listInstances` | 渠道实例列表 |
+| GET | `/api/channels/instances/{instanceId}` | `getInstance` | 实例详情 |
+| POST | `/api/channels/instances` | `createInstance` | 创建渠道实例 |
+| PUT | `/api/channels/instances/{instanceId}` | `updateInstance` | 更新渠道实例 |
+| DELETE | `/api/channels/instances/{instanceId}` | `deleteInstance` | 删除渠道实例 |
+| POST | `/api/channels/instances/{instanceId}/start` | `startInstance` | 启动实例 |
+| POST | `/api/channels/instances/{instanceId}/stop` | `stopInstance` | 停止实例 |
+| POST | `/api/channels/instances/{instanceId}/reload` | `reloadInstance` | 重载实例 |
+| GET | `/api/channels/instances/{instanceId}/health` | `health` | 健康检查 |
+| GET | `/api/channels/instances/{instanceId}/events` | `listInstanceEvents` | 实例事件列表 |
+
+---
+
 ## Attachments（附件）
 
 来源：`AttachmentController`，Base Path: `/api/attachments`
@@ -375,6 +415,28 @@
 | POST | `/api/a2a/message/stream` | `A2aMessageController#streamMessage` | SSE 流式消息 |
 | GET | `/api/a2a/tasks/{id}` | `A2aTaskController#getTask` | 查询 Task |
 | POST | `/api/a2a/tasks/{id}/cancel` | `A2aTaskController#cancelTask` | 取消 Task |
+
+---
+
+## Eval（评估）
+
+来源：`EvalController`，Base Path: `/api/eval`
+
+> 仅在 `lifepilot.eval.enabled=true`（默认启用）时可用。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/eval/scenarios` | `listScenarios` | 评估场景列表（分页） |
+| GET | `/api/eval/scenarios/{id}` | `getScenario` | 场景详情 |
+| GET | `/api/eval/scenarios/{scenarioId}/golden-answers` | `getGoldenAnswers` | 场景黄金答案 |
+| POST | `/api/eval/runs` | `triggerRun` | 触发评估运行 |
+| GET | `/api/eval/runs/{evalRunId}/results` | `getRunResults` | 运行结果列表 |
+| GET | `/api/eval/runs/{evalRunId}/report` | `getRunReport` | 运行报告摘要 |
+| GET | `/api/eval/runs/{currentRunId}/compare/{baselineRunId}` | `compareRuns` | 对比两次运行 |
+| POST | `/api/eval/runs/{evalRunId}/baseline` | `markAsBaseline` | 标记为基线 |
+| GET | `/api/eval/results` | `getResultsByScenario` | 按场景查询结果 |
+| POST | `/api/eval/results/{evalId}/feedback` | `submitFeedback` | 提交人工反馈 |
+| GET | `/api/eval/results/{evalId}/feedback` | `getFeedback` | 查询反馈 |
 
 ---
 

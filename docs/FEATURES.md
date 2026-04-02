@@ -1,7 +1,7 @@
 ﻿# 知微（ZhiWei）— 特性总览
 
 > **文档性质**：特性总览文档
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 产品定位与核心价值
 
@@ -21,9 +21,10 @@
 | 本地部署 | ✅ 单 JAR | ❌ 云端 | ❌ 云端 | ❌ 云端 |
 | 工具扩展 | ✅ MCP + Markdown SKILL.md | ✅ 插件 | ✅ 插件 | ❌ |
 | 多 Agent 协作 | ✅ spawn_workers 并行 Worker 派发 | ❌ | ❌ | ❌ |
-| 外部数据同步 | ✅ CalDAV/Todoist 等 | ❌ | ❌ | 部分 |
+| 外部数据同步 | 📋 规划中（CalDAV/Todoist 等） | ❌ | ❌ | 部分 |
 | 工作流自动化 | ✅ YAML 声明式 | ❌ | ❌ | ❌ |
 | 代码执行 | ✅ 沙箱隔离 | ✅ | ✅ | ❌ |
+| 桌面客户端 | ✅ Tauri 2.x | ❌ | ❌ | ✅ |
 
 ## 3. 特性列表
 
@@ -54,7 +55,6 @@
 | Skill 系统 | Markdown SKILL.md 声明式 Skill 定义、热加载、SubAgent 激活模式 | [特性](features/skill-system.md) |
 | 内置 Skill | Memory / Task 等核心 Skill | [特性](features/builtin-skills.md) |
 | Skill 自扩展 | Gap 检测 + Markdown SKILL.md 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
-| CLI 交互 | JLine 3 交互式对话，快捷命令（llm/mcp/skill） | [特性](features/gateway-channels.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |
@@ -68,7 +68,7 @@
 | 多模态处理 | 图片预处理、音频处理、文档格式检测（Apache Tika） | [特性](features/multimodal.md) |
 | 工作流引擎 | YAML 声明式工作流、四种触发器（Cron/Event/Condition/Signal）、崩溃恢复 | [特性](features/workflow.md) |
 | 代码沙箱 | Process/Docker/Remote 三种沙箱模式、会话复用、危险操作预检 | [特性](features/sandbox.md) |
-| 外部数据同步 | CalDAV / Todoist / 滴答清单 / Obsidian 连接器、冲突解决策略 | [特性](features/external-data-sync.md) |
+| 外部数据同步 | CalDAV / Todoist / 滴答清单 / Obsidian 连接器、冲突解决策略（规划中） | [规划](planned/external-data-sync-feat.md) |
 | Agentic Evals | YAML 场景定义、五维规则评估、LLM-as-a-Judge、JUnit 5 集成 | [特性](features/agentic-evals.md) |
 
 ### 3.5 生态与进阶
@@ -81,16 +81,17 @@
 | 元能力 | 便捷指令、基础设施工具 | [特性](features/meta-capabilities.md) |
 | 可观测性 | 轨迹记录/查询、数据自动脱敏、轨迹评估 | [特性](features/observability.md) |
 
-### 3.6 Web UI
+### 3.6 Web UI 与桌面客户端
 
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
 | Web 对话界面 | SSE 流式响应、A2UI Generative UI 渲染 | [特性](features/web-ui.md) |
 | 管理页面 | 知识库管理、Skill/MCP 管理、轨迹回放、工作流管理 | [特性](features/web-ui.md) |
+| 桌面客户端 | Tauri 2.x 桌面应用，内嵌 Java 后端管理、启动引导向导、系统托盘 | [架构](architecture/deployment.md) |
 
 ### 3.7 部署与运维
 
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
-| 部署体验 | Docker 镜像、一键启动脚本、配置版本迁移 | [特性](features/deployment.md) |
-| 性能优化 | 对话压缩、Token 预算动态分配、缓存机制 | [特性](features/performance-optimization.md) |
+| 部署体验 | Docker 镜像、一键启动脚本、Tauri 桌面安装包、配置版本迁移 | [特性](features/deployment.md) |
+| 性能优化 | 对话压缩、Token 预算动态分配、缓存机制 | [规划](planned/performance-optimization-feat.md) |
