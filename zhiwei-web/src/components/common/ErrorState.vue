@@ -30,7 +30,7 @@ function handleAction() {
     :title="title"
     :description="description"
     tone="danger"
-    class="mx-auto max-w-3xl"
+    class="mx-auto max-w-[768px]"
   >
     <template #icon>
       <AlertTriangle class="size-5" />

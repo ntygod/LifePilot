@@ -1283,7 +1283,7 @@ function openDatastore(item: EntityProvenance) {
 
     <!-- 归档确认对话框 -->
     <Dialog :open="archiveOpen" @update:open="handleArchiveClose">
-      <DialogContent class="sm:max-w-sm">
+      <DialogContent class="sm:max-w-[384px]">
         <DialogHeader>
           <DialogTitle>确认归档</DialogTitle>
           <DialogDescription>

@@ -26,7 +26,7 @@ const sizeClass = computed(() => {
     :class="cn(
       'mx-auto w-full min-w-0',
       sizeClass,
-      props.padded && 'px-4 sm:px-6 lg:px-8',
+      props.padded && 'px-4 sm:px-5 lg:px-6',
       props.class,
     )"
   >

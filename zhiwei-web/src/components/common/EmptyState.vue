@@ -34,7 +34,7 @@ function handleExample(content: string) {
 </script>
 
 <template>
-  <StatePanel :title="title" :description="description" class="mx-auto max-w-3xl">
+  <StatePanel :title="title" :description="description" class="mx-auto max-w-[768px]">
     <template v-if="icon" #icon>
       <span class="text-3xl">{{ icon }}</span>
     </template>

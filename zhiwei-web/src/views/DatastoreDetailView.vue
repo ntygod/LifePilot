@@ -380,7 +380,7 @@ watch(
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -470,7 +470,7 @@ watch(
           >
 
           <PageSection title="基础信息" description="确认 Datastore 的类型、创建者和更新时间。">
-            <div class="detail-card p-5">
+            <div class="detail-card p-4">
               <div class="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <div class="text-muted-foreground">ID</div>
@@ -525,7 +525,7 @@ watch(
           </PageSection>
 
           <PageSection title="投影配置" description="控制 Datastore 结构化数据如何投影为可检索文本。">
-            <div class="detail-card p-5">
+            <div class="detail-card p-4">
               <pre
                 v-if="formattedProjectionConfig"
                 class="overflow-x-auto rounded-[calc(var(--radius)-2px)] border border-border/60 bg-background/70 p-4 text-xs leading-6 text-foreground"
@@ -537,7 +537,7 @@ watch(
           </PageSection>
 
           <PageSection title="元数据" description="保留 Datastore 的附加元数据，用于扩展和排查。">
-            <div class="detail-card p-5">
+            <div class="detail-card p-4">
               <pre
                 v-if="formattedMetadata"
                 class="overflow-x-auto rounded-[calc(var(--radius)-2px)] border border-border/60 bg-background/70 p-4 text-xs leading-6 text-foreground"
@@ -569,10 +569,10 @@ watch(
               <div v-if="domainDocumentsLoading" class="space-y-3">
                 <Skeleton v-for="index in 3" :key="`domain-doc-${index}`" class="h-24 rounded-[calc(var(--radius)+6px)]" />
               </div>
-              <div v-else-if="domainDocumentsError" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="domainDocumentsError" class="detail-card p-4 text-sm text-muted-foreground">
                 {{ domainDocumentsError }}
               </div>
-              <div v-else-if="datastoreDomainDocuments.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="datastoreDomainDocuments.length === 0" class="detail-card p-4 text-sm text-muted-foreground">
                 当前还没有上传到这个 Datastore 的领域文档。
               </div>
               <div v-else class="space-y-3">
@@ -619,17 +619,17 @@ watch(
               <div v-if="recordsLoading" class="space-y-3">
                 <Skeleton v-for="index in 3" :key="`record-${index}`" class="h-32 rounded-[calc(var(--radius)+6px)]" />
               </div>
-              <div v-else-if="recordsError" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="recordsError" class="detail-card p-4 text-sm text-muted-foreground">
                 {{ recordsError }}
               </div>
-              <div v-else-if="datastoreRecords.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="datastoreRecords.length === 0" class="detail-card p-4 text-sm text-muted-foreground">
                 当前还没有结构化记录。
               </div>
               <div v-else class="space-y-3">
                 <article
                   v-for="record in datastoreRecords"
                   :key="record.id"
-                  class="detail-card p-5"
+                  class="detail-card p-4"
                 >
                   <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="text-sm font-medium text-foreground">{{ record.id }}</div>
@@ -663,10 +663,10 @@ watch(
               <div v-if="relatedMemoryLoading" class="grid gap-4 md:grid-cols-2">
                 <Skeleton v-for="index in 4" :key="index" class="h-36 rounded-[calc(var(--radius)+6px)]" />
               </div>
-              <div v-else-if="relatedMemoryError" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="relatedMemoryError" class="detail-card p-4 text-sm text-muted-foreground">
                 {{ relatedMemoryError }}
               </div>
-              <div v-else-if="relatedMemoryEntities.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="relatedMemoryEntities.length === 0" class="detail-card p-4 text-sm text-muted-foreground">
                 当前还没有关联到这个 Datastore 的记忆实体。
               </div>
               <div v-else class="grid gap-4 md:grid-cols-2">
@@ -718,17 +718,17 @@ watch(
               <div v-if="recentProvenanceLoading" class="space-y-3">
                 <Skeleton v-for="index in 4" :key="index" class="h-28 rounded-[calc(var(--radius)+6px)]" />
               </div>
-              <div v-else-if="recentProvenanceError" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="recentProvenanceError" class="detail-card p-4 text-sm text-muted-foreground">
                 {{ recentProvenanceError }}
               </div>
-              <div v-else-if="recentProvenanceItems.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+              <div v-else-if="recentProvenanceItems.length === 0" class="detail-card p-4 text-sm text-muted-foreground">
                 当前还没有关联到这个 Datastore 的来源写入记录。
               </div>
               <div v-else class="space-y-3">
                 <article
                   v-for="item in recentProvenanceItems"
                   :key="`${item.entityId}-${item.createdAt}-${item.sourceTurnId || item.sourceDocumentId || item.sourceSessionId || item.originType}`"
-                  class="detail-card p-5"
+                  class="detail-card p-4"
                   data-test="recent-provenance-card"
                 >
                   <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -806,7 +806,7 @@ watch(
           </PageSection>
 
           <PageSection title="关联知识库" description="这里会展示服务当前 Datastore 的全部知识库，包含系统自动维护的内部知识库。">
-            <div v-if="relatedKnowledgeBases.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+            <div v-if="relatedKnowledgeBases.length === 0" class="detail-card p-4 text-sm text-muted-foreground">
               当前还没有知识库挂载这个 Datastore。
             </div>
             <div v-else class="grid gap-4 md:grid-cols-2">

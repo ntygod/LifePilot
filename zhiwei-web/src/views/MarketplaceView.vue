@@ -259,7 +259,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <PageHeader
           eyebrow="市场"
@@ -417,7 +417,7 @@ onMounted(() => {
             </template>
           </StatePanel>
 
-          <div v-else class="grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.95fr)]">
+          <div v-else class="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.95fr)]">
             <div class="space-y-5">
               <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <SkillCard

@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <template v-if="!store.current">
           <PageHeader
@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
               <article
                 v-for="workflow in filteredList"
                 :key="workflow.id"
-                class="list-card cursor-pointer p-5"
+                class="list-card cursor-pointer p-4"
                 @click="selectWorkflow(workflow)"
               >
                 <div class="flex items-start justify-between gap-4">

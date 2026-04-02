@@ -164,7 +164,7 @@ function formatUsageLabel(items: number, singular: string, plural: string) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -309,7 +309,7 @@ function formatUsageLabel(items: number, singular: string, plural: string) {
             </div>
           </PageSection>
 
-          <div class="grid gap-5 2xl:grid-cols-2">
+          <div class="grid gap-4 2xl:grid-cols-2">
             <PageSection
               eyebrow="参数"
               title="输入与输出说明"
@@ -428,7 +428,7 @@ function formatUsageLabel(items: number, singular: string, plural: string) {
               <Skeleton class="h-40 rounded-[calc(var(--radius)+6px)]" />
             </div>
 
-            <div v-else class="grid gap-5 xl:grid-cols-2">
+            <div v-else class="grid gap-4 xl:grid-cols-2">
               <div class="space-y-3">
                 <div class="surface-label text-[0.68rem]">
                   {{ formatUsageLabel(usage?.usedBySkills?.length ?? 0, '技能', '技能') }}

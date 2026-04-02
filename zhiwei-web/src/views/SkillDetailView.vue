@@ -224,7 +224,7 @@ function runTest() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -244,7 +244,7 @@ function runTest() {
             <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <Skeleton v-for="index in 4" :key="index" class="h-24 rounded-[calc(var(--radius)+6px)]" />
             </div>
-            <div class="grid gap-5 xl:grid-cols-2">
+            <div class="grid gap-4 xl:grid-cols-2">
               <Skeleton class="h-[280px] rounded-[calc(var(--radius)+6px)]" />
               <Skeleton class="h-[280px] rounded-[calc(var(--radius)+6px)]" />
             </div>
@@ -315,7 +315,7 @@ function runTest() {
             </template>
           </PageHeader>
 
-          <div class="grid gap-5 xl:grid-cols-2">
+          <div class="grid gap-4 xl:grid-cols-2">
             <PageSection
               eyebrow="基础信息"
               title="名称与说明"
@@ -470,7 +470,7 @@ function runTest() {
             title="测试方式"
             description="挂载到智能体进行测试。"
           >
-            <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
               <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-4">
                 <div class="surface-label mb-3 text-[0.68rem]">当前建议</div>
                 <ul class="space-y-2 text-sm leading-6 text-muted-foreground">

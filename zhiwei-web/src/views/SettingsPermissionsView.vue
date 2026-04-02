@@ -438,7 +438,7 @@ onMounted(() => {
       </div>
     </StatePanel>
 
-    <section class="detail-card p-5">
+    <section class="detail-card p-4">
       <SettingSection
         title="高级手动创建授权"
         description="只有在需要提前批量放权时才建议使用。日常优先通过聊天内授权完成。"
@@ -588,7 +588,7 @@ onMounted(() => {
       </SettingSection>
     </section>
 
-    <section class="detail-card p-5">
+    <section class="detail-card p-4">
       <SettingSection
         title="授权记录"
         description="查看当前生效的授权、无人值守范围和已撤销记录。"

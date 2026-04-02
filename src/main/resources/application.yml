@@ -1,3 +1,7 @@
+# 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.data-dir=xxx 覆盖）
+zhiwei:
+  data-dir: "${zhiwei.data-dir}"
+
 spring:
   application:
     name: zhiwei
@@ -5,7 +9,7 @@ spring:
     serialization:
       write-dates-as-timestamps: false
   datasource:
-    url: "jdbc:sqlite:${user.home}/.zhiwei/zhiwei.db?enable_load_extension=true"
+    url: "jdbc:sqlite:${zhiwei.data-dir}/zhiwei.db?enable_load_extension=true"
     driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true
@@ -90,7 +94,7 @@ lifepilot:
       enabled: true
       heartbeat-enabled: true
       heartbeat-interval-seconds: 1800
-      heartbeat-file: "~/.zhiwei/HEARTBEAT.md"
+      heartbeat-file: "${zhiwei.data-dir}/HEARTBEAT.md"
       execution-timeout-seconds: 300
       # active-hours-start: "08:00"
       # active-hours-end: "22:00"
@@ -98,7 +102,7 @@ lifepilot:
     multi-agent:
       enabled: true
       max-delegation-depth: 2
-      agent-definitions-path: "${user.home}/.zhiwei/agents/"
+      agent-definitions-path: "${zhiwei.data-dir}/agents/"
       hot-reload:
         enabled: true
         scan-interval-seconds: 5
@@ -180,7 +184,7 @@ lifepilot:
     max-retention-days: 180
     embedding-dimensions: 1024
     semantic-match-threshold: 0.92
-    vector-db-url: "jdbc:sqlite:${user.home}/.zhiwei/vectors.db"
+    vector-db-url: "jdbc:sqlite:${zhiwei.data-dir}/vectors.db"
     token-budget:
       system-prompt-ratio: 0.10
       user-message-ratio: 0.15
@@ -340,7 +344,7 @@ lifepilot:
     # LLM 不可用时 Skill 搜索降级为关键词匹配模式
     enabled: true
     max-concurrent-activations: 5
-    directory: "${user.home}/.zhiwei/skills"
+    directory: "${zhiwei.data-dir}/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
     builtin: {}
@@ -368,7 +372,7 @@ lifepilot:
       default-top-k: 10
   knowledge:
     enabled: true
-    data-dir: "${user.home}/.zhiwei/data"
+    data-dir: "${zhiwei.data-dir}/data"
     max-file-size: 104857600
     chunking:
       default-strategy: smart
@@ -506,6 +510,7 @@ lifepilot:
         port-range-start: 19091
         port-range-end: 19120
         startup-timeout: 45s
+        max-attachment-size-bytes: 10485760  # 10MB，单个入站附件最大字节数
       web:
         enabled: true
       wecom:
@@ -616,9 +621,9 @@ lifepilot:
         - "(?i)disregard\\s+(all\\s+)?(above|previous)"
         - "(?i)forget\\s+(all\\s+)?previous"
     install-dirs:
-      skills: "${user.home}/.zhiwei/skills"
-      agents: "${user.home}/.zhiwei/agents"
-      workflows: "${user.home}/.zhiwei/workflows"
+      skills: "${zhiwei.data-dir}/skills"
+      agents: "${zhiwei.data-dir}/agents"
+      workflows: "${zhiwei.data-dir}/workflows"
   mcp:
     enabled: true
     server:
@@ -647,7 +652,7 @@ lifepilot:
     # 最大循环迭代次数（LoopStep）
     max-loop-iterations: 100
     # 工作流 YAML 定义文件目录
-    definitions-dir: "${user.home}/.zhiwei/workflows"
+    definitions-dir: "${zhiwei.data-dir}/workflows"
     # 崩溃恢复开关
     crash-recovery-enabled: true
     # YAML 文件扫描间隔（秒）
@@ -768,7 +773,7 @@ lifepilot:
       max-latency-samples: 1000
   eval:
     enabled: true
-    scenario-directory: "${user.home}/.zhiwei/eval/scenarios"
+    scenario-directory: "${zhiwei.data-dir}/eval/scenarios"
     default-pass-threshold: 0.7
     degradation-threshold: 0.1
     llm-judge:

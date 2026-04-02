@@ -443,7 +443,7 @@ function formatPercent(rate: number) {
 
     <!-- 删除确认对话框 -->
     <Dialog v-model:open="deleteOpen">
-      <DialogContent class="sm:max-w-sm">
+      <DialogContent class="sm:max-w-[384px]">
         <DialogHeader>
           <DialogTitle>确认删除</DialogTitle>
           <DialogDescription>

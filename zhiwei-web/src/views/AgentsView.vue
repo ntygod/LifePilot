@@ -161,7 +161,7 @@ function formatDate(dateStr: string) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
         <header class="space-y-4 border-b border-border/70 pb-5">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -267,7 +267,7 @@ function formatDate(dateStr: string) {
             <div
               v-for="index in 6"
               :key="index"
-              class="rounded-[calc(var(--radius)+1px)] border border-border/64 bg-card/90 p-5"
+              class="rounded-[calc(var(--radius)+1px)] border border-border/64 bg-card/90 p-4"
             >
               <div class="flex items-center justify-between gap-3">
                 <div class="space-y-2">
@@ -322,7 +322,7 @@ function formatDate(dateStr: string) {
             <article
               v-for="agent in filteredAgents"
               :key="agent.id"
-              class="list-card group cursor-pointer p-5"
+              class="list-card group cursor-pointer p-4"
               @click="openAgent(agent.id)"
             >
               <div class="flex items-start justify-between gap-3">
