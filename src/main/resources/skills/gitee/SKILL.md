@@ -40,7 +40,7 @@ triggers:
 
 ### 查看仓库列表
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20",
   method="GET"
 )
@@ -48,7 +48,7 @@ web.fetch(method=POST,
 
 ### 创建 Issue
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/issues",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -58,7 +58,7 @@ web.fetch(method=POST,
 
 ### 创建 Pull Request
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -68,7 +68,7 @@ web.fetch(method=POST,
 
 ### 查看 PR 列表
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls?access_token=${GITEE_TOKEN}&state=open",
   method="GET"
 )

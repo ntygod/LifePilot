@@ -35,7 +35,7 @@ triggers:
 
 ### 方式1：通过 HTTP API（推荐）
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://api.sendgrid.com/v3/mail/send",
   method="POST",
   headers={"Authorization": "Bearer ${API_KEY}", "Content-Type": "application/json"},

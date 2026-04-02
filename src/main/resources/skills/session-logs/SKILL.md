@@ -9,9 +9,8 @@ suggested-tools:
 triggers:
   - "回顾对话"
   - "上次讨论"
-  - "之前说过"
-  - "历史记录"
   - "会话日志"
+  - "对话历史"
 ---
 
 # 会话日志分析指南
@@ -34,7 +33,7 @@ triggers:
 ### 1. 搜索相关记忆
 
 ```
-memory(query="用户描述的主题")
+memory(action=recall, query="用户描述的主题")
 memory(action=search-experience, query="相关经验")
 ```
 

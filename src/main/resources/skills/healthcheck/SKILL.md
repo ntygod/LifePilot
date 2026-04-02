@@ -32,38 +32,39 @@ triggers:
 ## 检查流程（按顺序执行）
 
 ### 1. 系统概览
-```
-shell.exec(command="uname -a || ver")
+```bash
+# Windows
+shell.exec(command="systeminfo | findstr /B /C:\"OS\" /C:\"System\" /C:\"Total Physical\"")
+# Linux
+shell.exec(command="uname -a")
 ```
 
 ### 2. 资源使用检查
 ```bash
-# 磁盘使用
-df -h
+# Windows — 磁盘、内存、CPU
+shell.exec(command="powershell -c \"Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free,@{N='Size(GB)';E={[math]::Round($_.Used/1GB+$_.Free/1GB,1)}} -AutoSize\"")
+shell.exec(command="powershell -c \"Get-CimInstance Win32_OperatingSystem | Select-Object @{N='TotalGB';E={[math]::Round($_.TotalVisibleMemorySize/1MB,1)}},@{N='FreeGB';E={[math]::Round($_.FreePhysicalMemory/1MB,1)}}\"")
+shell.exec(command="powershell -c \"Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 20 Name,Id,@{N='MemMB';E={[math]::Round($_.WorkingSet64/1MB)}} | Format-Table -AutoSize\"")
 
-# 内存使用
-free -h
-
-# CPU 负载
-uptime
-
-# 进程 TOP
-ps aux --sort=-%mem | head -20
+# Linux
+shell.exec(command="df -h && free -h && uptime && ps aux --sort=-%mem | head -20")
 ```
 
 ### 3. 服务状态检查
 ```bash
-# 检查关键端口
-ss -tlnp | grep -E '(8080|3306|5432|6379|11434)'
+# Windows — 检查关键端口和 Java 进程
+shell.exec(command="netstat -ano | findstr /R \"8080 3306 5432 6379 11434\"")
+shell.exec(command="jps -l")
 
-# 检查 Java 进程
-jps -l
+# Linux
+shell.exec(command="ss -tlnp | grep -E '(8080|3306|5432|6379|11434)' && jps -l")
 ```
 
 ### 4. 日志异常扫描
 ```bash
-# 最近的错误日志
-tail -100 ~/.zhiwei/logs/lifepilot.log | grep -i "error\|exception\|fatal"
+# 通过 file.read 读取最近日志
+file.read(path="~/.zhiwei/logs/lifepilot.log", offset=-100)
+# 然后从输出中筛选 ERROR/Exception/FATAL
 ```
 
 ### 5. 生成诊断报告

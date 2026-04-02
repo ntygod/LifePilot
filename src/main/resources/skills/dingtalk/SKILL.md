@@ -36,7 +36,7 @@ triggers:
 
 ### 方式1：群机器人 Webhook（最简单）
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="${DINGTALK_WEBHOOK}",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -50,7 +50,7 @@ web.fetch(method=POST,
 
 获取 Token：
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://oapi.dingtalk.com/gettoken?appkey=${APP_KEY}&appsecret=${APP_SECRET}",
   method="GET"
 )
@@ -58,7 +58,7 @@ web.fetch(method=POST,
 
 发送工作通知：
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=${TOKEN}",
   method="POST",
   headers={"Content-Type": "application/json"},

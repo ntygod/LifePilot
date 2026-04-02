@@ -35,8 +35,7 @@ triggers:
 
 ### 创建定时任务
 
-使用 `cron` 创建任务：
-- `taskId`：任务 ID，通常由系统自动注入
+使用 `cron(action=create)` 创建任务：
 - `name`：任务名称（中文）
 - `schedule`：Spring 6 位 Cron 表达式（秒 分 时 日 月 周）
 - `instruction`：Agent 执行时的 prompt 指令
@@ -56,9 +55,9 @@ triggers:
 
 ### 管理任务
 
-- `cron`：查看所有任务，可按状态过滤（active / paused / completed）
-- `cron`：修改任务名称、Cron 表达式、指令或状态
-- `cron`：删除任务（同时删除执行日志）
+- `cron(action=list)`：查看所有任务，可传 `status` 按状态过滤（active / paused / completed）
+- `cron(action=update)`：通过 `taskId` 修改任务的 name、schedule、instruction 或 status
+- `cron(action=remove)`：通过 `taskId` 删除任务（同时删除执行日志）
 
 ## 静默协议
 
@@ -69,12 +68,12 @@ TASK_SILENT 必须出现在回复的开头或结尾才会被识别。
 
 1. 用户描述需求（如"帮我每天早上8点搜索AI新闻"）
 2. 确定 Cron 表达式和执行指令
-3. 调用 `cron` 创建任务
+3. 调用 `cron(action=create)` 创建任务
 4. 告知用户任务已创建，定时器已生效
 
 ## 注意事项
 
 - Cron 表达式使用 Spring 6 位格式（含秒），不是 Linux 5 位格式
 - 任务创建后立即注册精确定时器，无需等待扫描
-- 暂停任务使用 `cron` 将 status 设为 `paused`
+- 暂停任务使用 `cron(action=update)` 将 status 设为 `paused`
 - 恢复任务将 status 设回 `active`

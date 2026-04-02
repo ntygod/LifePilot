@@ -37,7 +37,7 @@ triggers:
 
 ### 获取 Access Token
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -49,7 +49,7 @@ web.fetch(method=POST,
 
 ### 发送消息
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
   method="POST",
   headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
@@ -59,7 +59,7 @@ web.fetch(method=POST,
 
 ### 创建任务
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://open.feishu.cn/open-apis/task/v2/tasks",
   method="POST",
   headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
@@ -69,7 +69,7 @@ web.fetch(method=POST,
 
 ### 创建文档
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://open.feishu.cn/open-apis/docx/v1/documents",
   method="POST",
   headers={"Authorization": "Bearer ${TOKEN}", "Content-Type": "application/json"},
