@@ -159,6 +159,7 @@ public class EvalController {
     public ResponseEntity<ApiResponse<List<EvalResult>>> getResultsByScenario(
             @RequestParam String scenarioId,
             @RequestParam(defaultValue = "10") int limit) {
+        limit = Math.max(1, Math.min(limit, 200));
         log.info("按场景查询历史结果: scenarioId={}, limit={}", scenarioId, limit);
         List<EvalResult> results = evalStore.findByScenarioId(scenarioId, limit);
         return ResponseEntity.ok(ApiResponse.ok(results));
@@ -176,11 +177,18 @@ public class EvalController {
             @RequestBody FeedbackRequest request) {
         log.info("提交反馈: evalId={}, scenarioId={}, type={}", evalId, scenarioId, request.feedbackType());
 
+        FeedbackType type;
+        try {
+            type = FeedbackType.valueOf(request.feedbackType().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "无效的反馈类型: " + request.feedbackType()));
+        }
+
         var feedback = new EvalFeedback(
                 UUID.randomUUID().toString(),
                 evalId,
                 scenarioId,
-                FeedbackType.valueOf(request.feedbackType().toUpperCase()),
+                type,
                 request.comment(),
                 request.goldenAnswer(),
                 null,

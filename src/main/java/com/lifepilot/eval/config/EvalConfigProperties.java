@@ -96,5 +96,8 @@ public class EvalConfigProperties {
         /** 批量评估并行度，默认 4。设为 1 则串行执行。 */
         private int parallelism = 4;
 
+        /** 输出正则不匹配时的惩罚系数 [0.0, 1.0]，默认 0.3。overallScore 乘以 (1 - penalty)。 */
+        private double outputPatternMismatchPenalty = 0.3;
+
     }
 }

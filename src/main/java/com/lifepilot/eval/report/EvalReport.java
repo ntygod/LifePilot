@@ -2,8 +2,6 @@ package com.lifepilot.eval.report;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.ComparisonReport.ScenarioComparison;
@@ -37,13 +35,10 @@ public class EvalReport {
     private final EvalConfigProperties config;
     private final ObjectMapper jsonMapper;
 
-    public EvalReport(EvalStore evalStore, EvalConfigProperties config) {
+    public EvalReport(EvalStore evalStore, EvalConfigProperties config, ObjectMapper objectMapper) {
         this.evalStore = evalStore;
         this.config = config;
-        this.jsonMapper = new ObjectMapper();
-        this.jsonMapper.registerModule(new JavaTimeModule());
-        this.jsonMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        this.jsonMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        this.jsonMapper = objectMapper;
     }
 
     /**
@@ -75,32 +70,67 @@ public class EvalReport {
                 .map(EvalResult::scenarioId)
                 .toList();
 
-        // 检测新增退化场景（上次通过本次未通过）和退化标记
+        // 优先与基线对比，否则回退到与前一次运行对比
+        Optional<String> baselineRunId = evalStore.findLatestBaselineRunId();
+        Map<String, Double> baselineScoreMap = new HashMap<>();
+        if (baselineRunId.isPresent()) {
+            List<EvalResult> baselineResults = evalStore.findByRunId(baselineRunId.get());
+            for (EvalResult br : baselineResults) {
+                baselineScoreMap.put(br.scenarioId(), br.overallScore());
+            }
+        }
+
+        // 检测新增退化场景和渐进漂移
         List<String> newRegressions = new ArrayList<>();
-        List<Double> previousScores = new ArrayList<>();
+        List<Double> comparisonScores = new ArrayList<>();
+        List<String> driftingScenarios = new ArrayList<>();
 
         for (EvalResult current : results) {
-            List<EvalResult> previousResults = evalStore.findByScenarioId(current.scenarioId(), 5);
-            // 过滤掉当前运行的结果，取上一次运行的结果
-            Optional<EvalResult> previousResult = previousResults.stream()
-                    .filter(r -> !r.evalRunId().equals(evalRunId))
-                    .findFirst();
+            // 退化对比：优先使用基线，回退到前一次运行
+            Double comparisonScore = baselineScoreMap.get(current.scenarioId());
+            if (comparisonScore == null) {
+                // 无基线，回退到前一次运行
+                List<EvalResult> previousResults = evalStore.findByScenarioId(current.scenarioId(), 5);
+                Optional<EvalResult> previousResult = previousResults.stream()
+                        .filter(r -> !r.evalRunId().equals(evalRunId))
+                        .findFirst();
+                if (previousResult.isPresent()) {
+                    comparisonScore = previousResult.get().overallScore();
+                }
+            }
 
-            if (previousResult.isPresent()) {
-                EvalResult prev = previousResult.get();
-                previousScores.add(prev.overallScore());
-                // 上次通过、本次未通过 → 新增退化
-                if (prev.passed(passThreshold) && !current.passed(passThreshold)) {
+            if (comparisonScore != null) {
+                comparisonScores.add(comparisonScore);
+                // 对比方通过、本次未通过 → 新增退化
+                if (comparisonScore >= passThreshold && !current.passed(passThreshold)) {
                     newRegressions.add(current.scenarioId());
+                }
+            }
+
+            // 渐进漂移检测：连续 3 次评分递减标记为 drifting
+            List<Double> scoreHistory = evalStore.findScoreHistory(current.scenarioId(), 4);
+            if (scoreHistory.size() >= 3) {
+                boolean drifting = true;
+                for (int i = 0; i < scoreHistory.size() - 1; i++) {
+                    if (scoreHistory.get(i) >= scoreHistory.get(i + 1)) {
+                        drifting = false;
+                        break;
+                    }
+                }
+                // scoreHistory 按时间降序，所以最新的在前
+                // 连续递减意味着: history[0] < history[1] < history[2]
+                if (drifting) {
+                    driftingScenarios.add(current.scenarioId());
+                    log.warn("检测到渐进漂移: scenarioId={}, 最近评分={}", current.scenarioId(), scoreHistory);
                 }
             }
         }
 
-        // 退化检测：对比上次运行平均分
+        // 退化检测：对比平均分
         boolean degraded = false;
-        if (!previousScores.isEmpty()) {
-            double previousAvg = previousScores.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-            degraded = (previousAvg - averageOverallScore) > config.getDegradationThreshold();
+        if (!comparisonScores.isEmpty()) {
+            double comparisonAvg = comparisonScores.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            degraded = (comparisonAvg - averageOverallScore) > config.getDegradationThreshold();
         }
 
         ReportSummary summary = ReportSummary.builder()
@@ -113,12 +143,15 @@ public class EvalReport {
                 .degraded(degraded)
                 .regressedScenarios(regressedScenarios)
                 .newRegressions(newRegressions)
+                .baselineRunId(baselineRunId.orElse(null))
+                .driftingScenarios(driftingScenarios)
                 .evaluatedAt(Instant.now())
                 .build();
 
-        log.info("评估报告已生成: runId={}, 总场景={}, 通过={}, 失败={}, 平均分={}, 退化={}",
+        log.info("评估报告已生成: runId={}, 总场景={}, 通过={}, 失败={}, 平均分={}, 退化={}, 基线={}, 漂移场景={}",
                 evalRunId, totalScenarios, passCount, failCount,
-                String.format("%.3f", averageOverallScore), degraded);
+                String.format("%.3f", averageOverallScore), degraded,
+                baselineRunId.orElse("无"), driftingScenarios.size());
 
         return summary;
     }
@@ -165,6 +198,20 @@ public class EvalReport {
             System.out.println("  ⚠ 新增退化场景（上次通过，本次失败）:");
             summary.newRegressions().forEach(s ->
                     System.out.printf("    ↓ %s%n", s));
+            System.out.println(thinSeparator);
+        }
+
+        // 渐进漂移场景
+        if (!summary.driftingScenarios().isEmpty()) {
+            System.out.println("  ⚠ 渐进漂移场景（连续 3 次评分下降）:");
+            summary.driftingScenarios().forEach(s ->
+                    System.out.printf("    ~ %s%n", s));
+            System.out.println(thinSeparator);
+        }
+
+        // 基线信息
+        if (summary.baselineRunId() != null) {
+            System.out.printf("  %-20s %s%n", "对比基线:", summary.baselineRunId());
             System.out.println(thinSeparator);
         }
 

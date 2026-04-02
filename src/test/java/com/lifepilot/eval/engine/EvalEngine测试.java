@@ -5,6 +5,8 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.evaluator.DiagnosticEnricher;
+import com.lifepilot.eval.evaluator.DimensionEvaluator;
+import com.lifepilot.eval.feedback.FeedbackStore;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.EvalReport;
@@ -60,6 +62,7 @@ class EvalEngine测试 {
     @Mock private EvalStore evalStore;
     @Mock private EvalReport evalReport;
     @Mock private DynamicToolRegistry toolRegistry;
+    @Mock private FeedbackStore feedbackStore;
 
     private EvalConfigProperties config;
     private EvalEngine evalEngine;
@@ -85,7 +88,8 @@ class EvalEngine测试 {
                 scenarioLoader, agentOrchestrator, traceQuery,
                 evaluationCore, llmJudge, evalStore,
                 evalReport, toolRegistry, config,
-                executor, diagnosticEnricher, objectMapper, null
+                executor, diagnosticEnricher, objectMapper,
+                List.of(), feedbackStore, null
         );
     }
 
@@ -211,7 +215,8 @@ class EvalEngine测试 {
                 evaluationCore, llmJudge, evalStore,
                 evalReport, realRegistry, config,
                 Executors.newVirtualThreadPerTaskExecutor(),
-                new DiagnosticEnricher(), new ObjectMapper(), null
+                new DiagnosticEnricher(), new ObjectMapper(),
+                List.of(), feedbackStore, null
         );
 
         var scenario = BenchmarkScenario.builder()

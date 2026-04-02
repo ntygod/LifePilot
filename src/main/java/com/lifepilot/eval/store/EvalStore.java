@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.lang.Nullable;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -17,6 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 评估结果持久化存储。
@@ -44,14 +47,22 @@ public class EvalStore {
             """;
 
     private static final String FIND_BY_SCENARIO_SQL = """
-            SELECT * FROM eval_results
+            SELECT eval_id, trace_id, scenario_id, dimension_scores_json, overall_score,
+                   violations_json, suggestions_json, llm_judge_score, llm_judge_justification,
+                   llm_judge_tokens_used, git_commit_hash, git_branch, eval_run_id,
+                   evaluated_at, created_at, diagnostic_json, run_metadata_json
+            FROM eval_results
             WHERE scenario_id = ?
             ORDER BY evaluated_at DESC
             LIMIT ?
             """;
 
     private static final String FIND_BY_RUN_ID_SQL = """
-            SELECT * FROM eval_results
+            SELECT eval_id, trace_id, scenario_id, dimension_scores_json, overall_score,
+                   violations_json, suggestions_json, llm_judge_score, llm_judge_justification,
+                   llm_judge_tokens_used, git_commit_hash, git_branch, eval_run_id,
+                   evaluated_at, created_at, diagnostic_json, run_metadata_json
+            FROM eval_results
             WHERE eval_run_id = ?
             ORDER BY evaluated_at DESC
             """;
@@ -76,19 +87,31 @@ public class EvalStore {
             LIMIT 1
             """;
 
+    private static final String FIND_SCORE_HISTORY_SQL = """
+            SELECT overall_score FROM eval_results
+            WHERE scenario_id = ?
+            ORDER BY evaluated_at DESC
+            LIMIT ?
+            """;
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ExecutorService executor;
+    private final TransactionTemplate transactionTemplate;
 
-    public EvalStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public EvalStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+                     ExecutorService executor, PlatformTransactionManager transactionManager) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.executor = executor;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
-     * 异步持久化评估结果（Virtual Thread）。
+     * 异步持久化评估结果（使用受管理的 ExecutorService）。
      */
     public void persistAsync(EvalResult result) {
-        Thread.ofVirtual().name("eval-persist-" + result.evalId()).start(() -> {
+        executor.submit(() -> {
             try {
                 persist(result);
             } catch (Exception e) {
@@ -173,12 +196,14 @@ public class EvalStore {
     }
 
     /**
-     * 标记指定运行为基线（先清除旧基线）。
+     * 标记指定运行为基线（先清除旧基线，事务保护保证原子性）。
      */
     public void markAsBaseline(String evalRunId) {
         try {
-            jdbcTemplate.update(CLEAR_BASELINE_SQL);
-            jdbcTemplate.update(MARK_BASELINE_SQL, evalRunId);
+            transactionTemplate.executeWithoutResult(status -> {
+                jdbcTemplate.update(CLEAR_BASELINE_SQL);
+                jdbcTemplate.update(MARK_BASELINE_SQL, evalRunId);
+            });
             log.info("已标记基线运行: evalRunId={}", evalRunId);
         } catch (Exception e) {
             log.error("标记基线运行失败: evalRunId={}", evalRunId, e);
@@ -195,6 +220,22 @@ public class EvalStore {
         } catch (Exception e) {
             log.error("查找基线运行失败", e);
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 查询指定场景最近 N 次评估的 overallScore 历史（按时间降序）。
+     *
+     * @param scenarioId 场景 ID
+     * @param limit      最大返回条数
+     * @return 评分列表（最新的在前）
+     */
+    public List<Double> findScoreHistory(String scenarioId, int limit) {
+        try {
+            return jdbcTemplate.queryForList(FIND_SCORE_HISTORY_SQL, Double.class, scenarioId, limit);
+        } catch (Exception e) {
+            log.error("查询评分历史失败: scenarioId={}, limit={}", scenarioId, limit, e);
+            return List.of();
         }
     }
 

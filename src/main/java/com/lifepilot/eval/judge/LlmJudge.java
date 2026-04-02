@@ -325,11 +325,16 @@ public class LlmJudge {
             } catch (NumberFormatException ignored) {}
         }
 
-        // 最后回退到匹配任意数字
+        // 最后回退到匹配任意数字（需范围校验 [0.0, 1.0]）
         Matcher matcher = SCORE_PATTERN.matcher(content.trim());
         if (matcher.find()) {
             try {
-                return Double.parseDouble(matcher.group(1));
+                double val = Double.parseDouble(matcher.group(1));
+                if (val >= 0.0 && val <= 1.0) {
+                    return val;
+                }
+                // 超出 [0, 1] 范围的数字不是评分，返回 null
+                return null;
             } catch (NumberFormatException e) {
                 return null;
             }

@@ -12,6 +12,9 @@ import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.evaluator.DiagnosticEnricher;
+import com.lifepilot.eval.evaluator.DimensionEvaluator;
+import com.lifepilot.eval.evaluator.DimensionScore;
+import com.lifepilot.eval.feedback.FeedbackStore;
 import com.lifepilot.eval.model.DiagnosticReport;
 import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.eval.judge.JudgeResult;
@@ -39,6 +42,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,6 +50,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 /**
  * 评估引擎 — 协调场景加载、Agent 执行、轨迹采集、评估、报告。
@@ -77,8 +83,13 @@ public class EvalEngine {
     private final ExecutorService evalExecutor;
     private final DiagnosticEnricher diagnosticEnricher;
     private final ObjectMapper objectMapper;
+    private final List<DimensionEvaluator> dimensionEvaluators;
+    private final FeedbackStore feedbackStore;
     @Nullable
     private final ExperienceSummarizer experienceSummarizer;
+
+    /** Mock 工具并行安全锁 — 保证同一时间只有一个场景使用 mock 工具。 */
+    private final ReentrantLock mockToolLock = new ReentrantLock();
 
     /** 缓存 Git 信息，整个 bean 生命周期只解析一次。 */
     private volatile GitInfo cachedGitInfo;
@@ -99,6 +110,8 @@ public class EvalEngine {
                       ExecutorService evalExecutor,
                       DiagnosticEnricher diagnosticEnricher,
                       ObjectMapper objectMapper,
+                      List<DimensionEvaluator> dimensionEvaluators,
+                      FeedbackStore feedbackStore,
                       @Nullable ExperienceSummarizer experienceSummarizer) {
         this.scenarioLoader = scenarioLoader;
         this.agentOrchestrator = agentOrchestrator;
@@ -112,8 +125,10 @@ public class EvalEngine {
         this.evalExecutor = evalExecutor;
         this.diagnosticEnricher = diagnosticEnricher;
         this.objectMapper = objectMapper;
+        this.dimensionEvaluators = dimensionEvaluators;
+        this.feedbackStore = feedbackStore;
         this.experienceSummarizer = experienceSummarizer;
-        log.info("EvalEngine 初始化完成");
+        log.info("EvalEngine 初始化完成: dimensionEvaluators={}", dimensionEvaluators.size());
     }
 
     /**
@@ -133,6 +148,12 @@ public class EvalEngine {
         try {
             // 0. 注册 Mock 工具（如果场景定义了 mockToolResponses）
             List<MockToolRegistration> mockToolIds = registerMockTools(scenario);
+            boolean hasMocks = !mockToolIds.isEmpty();
+
+            // Mock 工具并行安全：有 mock 时加锁，保证 mock 生命周期内不受其他场景干扰
+            if (hasMocks) {
+                mockToolLock.lock();
+            }
 
             try {
                 // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
@@ -176,9 +197,45 @@ public class EvalEngine {
                     return buildFailedResult(scenario, evalRunId, "轨迹步骤获取失败: " + e.getMessage());
                 }
 
-                // 3. EvaluationCore 五维评估
-                EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
-                EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
+                // 3. 维度评估：优先使用 DimensionEvaluator 体系，为空时回退到 EvaluationCore
+                Map<String, Double> dimensionScores;
+                double overallScore;
+                List<String> violations;
+                List<String> suggestions;
+
+                if (!dimensionEvaluators.isEmpty()) {
+                    var dimResult = evaluateWithDimensions(steps, scenario);
+                    dimensionScores = dimResult.dimensionScores();
+                    overallScore = dimResult.overallScore();
+                    violations = new ArrayList<>(dimResult.violations());
+                    suggestions = new ArrayList<>(dimResult.suggestions());
+                } else {
+                    // 回退到 EvaluationCore（防御性）
+                    EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
+                    EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
+                    dimensionScores = Map.of(
+                            "toolSelection", coreResult.toolSelectionScore(),
+                            "parameterValidity", coreResult.parameterValidityScore(),
+                            "stepEfficiency", coreResult.stepEfficiencyScore(),
+                            "policyCompliance", coreResult.policyComplianceScore(),
+                            "tokenEfficiency", coreResult.tokenEfficiencyScore()
+                    );
+                    overallScore = coreResult.overallScore();
+                    violations = new ArrayList<>(coreResult.violations());
+                    suggestions = new ArrayList<>(coreResult.suggestions());
+                }
+
+                // 3.5 输出内容正则匹配（零成本硬门控）
+                String pattern = scenario.expectedOutputPattern();
+                if (pattern != null && !pattern.isBlank() && response.content() != null) {
+                    boolean matched = Pattern.compile(pattern).matcher(response.content()).find();
+                    if (!matched) {
+                        violations.add("输出未匹配期望模式: " + pattern);
+                        overallScore *= (1.0 - config.getExecution().getOutputPatternMismatchPenalty());
+                        log.debug("输出正则不匹配，施加惩罚系数: scenarioId={}, penalty={}",
+                                scenario.id(), config.getExecution().getOutputPatternMismatchPenalty());
+                    }
+                }
 
                 // 4. 构建 EvalResult
                 var gitInfo = getGitInfo();
@@ -186,16 +243,10 @@ public class EvalEngine {
                         .evalId(UUID.randomUUID().toString())
                         .traceId(traceId)
                         .scenarioId(scenario.id())
-                        .dimensionScores(Map.of(
-                                "toolSelection", coreResult.toolSelectionScore(),
-                                "parameterValidity", coreResult.parameterValidityScore(),
-                                "stepEfficiency", coreResult.stepEfficiencyScore(),
-                                "policyCompliance", coreResult.policyComplianceScore(),
-                                "tokenEfficiency", coreResult.tokenEfficiencyScore()
-                        ))
-                        .overallScore(coreResult.overallScore())
-                        .violations(coreResult.violations())
-                        .suggestions(coreResult.suggestions())
+                        .dimensionScores(dimensionScores)
+                        .overallScore(overallScore)
+                        .violations(violations)
+                        .suggestions(suggestions)
                         .llmJudgeScore(null)
                         .llmJudgeJustification(null)
                         .llmJudgeTokensUsed(0)
@@ -210,6 +261,15 @@ public class EvalEngine {
                 String criteria = scenario.llmJudgeCriteria();
                 if (criteria != null && !criteria.isBlank()) {
                     try {
+                        // 注入 Golden Answer 到 LLM Judge 评判标准
+                        var goldenAnswers = feedbackStore.findGoldenAnswers(scenario.id());
+                        if (!goldenAnswers.isEmpty()) {
+                            String goldenText = goldenAnswers.getFirst().goldenAnswer();
+                            if (goldenText != null) {
+                                criteria = criteria + "\n\n参考标注答案:\n" + goldenText;
+                            }
+                        }
+
                         String expectedPattern = scenario.expectedOutputPattern() != null
                                 ? scenario.expectedOutputPattern() : "";
                         judgeResult = llmJudge.judge(response.content(), expectedPattern, criteria);
@@ -230,8 +290,10 @@ public class EvalEngine {
                 }
 
                 // 6. 生成诊断报告
+                EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
+                EvaluationResult coreResultForDiagnostic = evaluationCore.evaluate(steps, evalConfig, traceId);
                 try {
-                    DiagnosticReport diagnostic = diagnosticEnricher.enrich(coreResult, judgeResult, scenario);
+                    DiagnosticReport diagnostic = diagnosticEnricher.enrich(coreResultForDiagnostic, judgeResult, scenario);
                     String diagnosticJson = objectMapper.writeValueAsString(diagnostic);
                     // 合并诊断建议到 suggestions
                     var enrichedSuggestions = new ArrayList<>(evalResult.suggestions());
@@ -255,6 +317,10 @@ public class EvalEngine {
             } finally {
                 // 注销 Mock 工具
                 unregisterMockTools(mockToolIds);
+                // 释放 Mock 锁
+                if (hasMocks && mockToolLock.isHeldByCurrentThread()) {
+                    mockToolLock.unlock();
+                }
             }
 
         } catch (Exception e) {
@@ -290,6 +356,9 @@ public class EvalEngine {
     public ReportSummary evaluateBatch(List<BenchmarkScenario> scenarios) {
         String evalRunId = UUID.randomUUID().toString();
         log.info("开始批量评估: evalRunId={}, 场景数={}", evalRunId, scenarios.size());
+
+        // 保存评估运行记录，让 eval_runs 表有数据，解锁基线管理和 A/B 对比功能
+        evalStore.saveRun(evalRunId, null);
 
         int parallelism = config.getExecution().getParallelism();
         List<EvalResult> results;
@@ -333,6 +402,55 @@ public class EvalEngine {
 
         return summary;
     }
+
+    /**
+     * 使用 DimensionEvaluator 体系执行五维评估。
+     *
+     * <p>遍历所有 DimensionEvaluator，收集 DimensionScore，
+     * 用 scenario.dimensionWeights() 加权计算 overallScore，聚合 violations 和 suggestions。</p>
+     *
+     * @param steps    轨迹步骤
+     * @param scenario 场景定义
+     * @return 聚合后的评估结果（维度评分、综合分、违规项、建议）
+     */
+    private DimensionAggregation evaluateWithDimensions(List<TraceStep> steps, BenchmarkScenario scenario) {
+        Map<String, Double> dimensionScores = new HashMap<>();
+        var allViolations = new ArrayList<String>();
+        var allSuggestions = new ArrayList<String>();
+
+        for (DimensionEvaluator evaluator : dimensionEvaluators) {
+            DimensionScore score = evaluator.evaluate(steps, scenario);
+            dimensionScores.put(score.dimensionName(), score.score());
+            allViolations.addAll(score.violations());
+            allSuggestions.addAll(score.suggestions());
+        }
+
+        // 加权计算 overallScore
+        Map<String, Double> weights = scenario.dimensionWeights();
+        double overallScore = 0.0;
+        double totalWeight = 0.0;
+
+        for (var entry : dimensionScores.entrySet()) {
+            double weight = weights.getOrDefault(entry.getKey(), 0.2);
+            overallScore += entry.getValue() * weight;
+            totalWeight += weight;
+        }
+
+        // 归一化（防止权重之和不为 1.0）
+        if (totalWeight > 0.0 && Math.abs(totalWeight - 1.0) > 0.001) {
+            overallScore /= totalWeight;
+        }
+
+        return new DimensionAggregation(dimensionScores, overallScore, allViolations, allSuggestions);
+    }
+
+    /** DimensionEvaluator 聚合结果。 */
+    private record DimensionAggregation(
+            Map<String, Double> dimensionScores,
+            double overallScore,
+            List<String> violations,
+            List<String> suggestions
+    ) {}
 
     /**
      * 获取缓存的 Git 信息（懒加载，整个 bean 生命周期只解析一次）。

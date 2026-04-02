@@ -14,9 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -39,7 +41,13 @@ class EvalReportTest {
         config = new EvalConfigProperties();
         config.setDefaultPassThreshold(0.7);
         config.setDegradationThreshold(0.1);
-        evalReport = new EvalReport(evalStore, config);
+        var objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        evalReport = new EvalReport(evalStore, config, objectMapper);
+
+        // 默认无基线、无评分历史（lenient 避免未使用 stub 导致失败）
+        lenient().when(evalStore.findLatestBaselineRunId()).thenReturn(Optional.empty());
+        lenient().when(evalStore.findScoreHistory(anyString(), anyInt())).thenReturn(List.of());
     }
 
     @Test

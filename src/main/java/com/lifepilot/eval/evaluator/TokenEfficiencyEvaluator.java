@@ -36,11 +36,13 @@ public final class TokenEfficiencyEvaluator implements DimensionEvaluator {
                 })
                 .sum();
 
-        if (actualTokens == 0) {
+        int expectedTokenBudget = scenario.expectedTokenBudget();
+
+        // 无 Token 消耗或无预算约束时，评分为 1.0
+        if (actualTokens == 0 || expectedTokenBudget <= 0) {
             return new DimensionScore(DIMENSION_NAME, 1.0, List.of(), List.of());
         }
 
-        int expectedTokenBudget = scenario.expectedTokenBudget();
         double score = Math.min((double) expectedTokenBudget / actualTokens, 1.0);
 
         var violations = new ArrayList<String>();
