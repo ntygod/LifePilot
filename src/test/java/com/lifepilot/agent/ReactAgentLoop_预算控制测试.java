@@ -99,6 +99,7 @@ class ReactAgentLoop_预算控制测试 {
                 null,
                 null,
                 null,
+                null,
                 sharedScheduler
         );
     }

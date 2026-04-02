@@ -7,7 +7,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -163,7 +162,7 @@ public class CircuitBreakerManager {
      * 异步持久化熔断器状态。
      */
     private void persistAsync(String key, CircuitState state) {
-        CompletableFuture.runAsync(() -> {
+        Thread.ofVirtual().name("circuit-persist").start(() -> {
             try {
                 var now = Instant.now().toString();
                 int failureCount = switch (state) {

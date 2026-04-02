@@ -103,40 +103,6 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable ApplicationEventPublisher eventPublisher,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
-            SharedScheduler sharedScheduler) {
-        this(
-                contextAssembler,
-                providerMessageBuilder,
-                agentToolProvider,
-                config,
-                objectMapper,
-                traceRecorder,
-                a2uiProperties,
-                transcriptStore,
-                multimodalRouter,
-                mediaDataExtractor,
-                eventPublisher,
-                proceduralMemory,
-                intentMatcher,
-                null,
-                sharedScheduler
-        );
-    }
-
-    public ReactAgentLoop(
-            ContextAssembler contextAssembler,
-            ProviderMessageBuilder providerMessageBuilder,
-            AgentToolProvider agentToolProvider,
-            AgentConfigProperties config,
-            ObjectMapper objectMapper,
-            @Nullable TraceRecorder traceRecorder,
-            @Nullable A2uiProperties a2uiProperties,
-            @Nullable TranscriptStore transcriptStore,
-            @Nullable MultimodalRouter multimodalRouter,
-            @Nullable MediaDataExtractor mediaDataExtractor,
-            @Nullable ApplicationEventPublisher eventPublisher,
-            @Nullable ProceduralMemory proceduralMemory,
-            @Nullable IntentMatcher intentMatcher,
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler) {
         this.contextAssembler = contextAssembler;
@@ -294,12 +260,7 @@ public class ReactAgentLoop implements CallbackHelper {
 
             // 构造有效请求：将当前迭代的媒体内容传递给 callLlm
             var effectiveRequest = assembledContext.mediaContents() != null && !assembledContext.mediaContents().isEmpty()
-                    ? new AgentRequest(request.message(), request.sessionId(), request.source(),
-                        request.userId(),
-                        request.turnId(), request.action(), request.taskMode(),
-                        request.systemPrompt(), request.budget(), request.parentTraceId(),
-                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        assembledContext.mediaContents(), request.temperature(), request.resumePolicy())
+                    ? request.withMediaContents(assembledContext.mediaContents())
                     : request;
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
@@ -705,7 +666,6 @@ public class ReactAgentLoop implements CallbackHelper {
         };
     }
 
-    /** 从 ChatResponse 估算 Token 消耗。 */
     /** 从 ChatResponse 中提取 prompt + completion token 总量。 */
     private int estimateTokens(ChatResponse chatResponse) {
         if (chatResponse == null) return 0;
@@ -780,7 +740,6 @@ public class ReactAgentLoop implements CallbackHelper {
         }
     }
 
-    /** 记录工具调用步骤到 Trace。 */
     /** 对纯文本做轻量 token 估算，主要用于日志和预算兜底。 */
     private int estimateTextTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
@@ -791,7 +750,6 @@ public class ReactAgentLoop implements CallbackHelper {
         return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
-    /** 判断请求是否包含多模态内容。 */
     /** 生成日志预览文本，避免把长回答整段打到日志里。 */
     private String previewForLog(@Nullable String content) {
         if (content == null || content.isBlank()) {

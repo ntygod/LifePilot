@@ -56,16 +56,18 @@ public class MiddlewarePipeline {
     /**
      * 动态注册中间件，注册后自动按 {@code order()} 重新排序。
      *
+     * <p>使用 synchronized 保证排序替换的原子性，
+     * 避免 clear + addAll 之间 execute() 读到空列表。
+     *
      * @param middleware 要注册的中间件
      */
-    public void register(GatewayMiddleware middleware) {
-        middlewares.add(middleware);
-        // CopyOnWriteArrayList 不支持原地排序，需要替换整个列表
-        var sorted = new java.util.ArrayList<>(middlewares);
-        sorted.sort(ORDER_COMPARATOR);
-        // 清空并重新添加排序后的列表
+    public synchronized void register(GatewayMiddleware middleware) {
+        var snapshot = new java.util.ArrayList<>(middlewares);
+        snapshot.add(middleware);
+        snapshot.sort(ORDER_COMPARATOR);
+        // 原子替换：先添加排序后列表，再移除旧元素
         middlewares.clear();
-        middlewares.addAll(sorted);
+        middlewares.addAll(snapshot);
     }
 
     /**
@@ -74,7 +76,7 @@ public class MiddlewarePipeline {
      * @param name 中间件名称
      * @return 如果找到并移除则返回 true
      */
-    public boolean unregister(String name) {
+    public synchronized boolean unregister(String name) {
         return middlewares.removeIf(mw -> mw.name().equals(name));
     }
 

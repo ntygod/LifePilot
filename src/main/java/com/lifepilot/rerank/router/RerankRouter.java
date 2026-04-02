@@ -55,7 +55,8 @@ public class RerankRouter {
      * @return true 表示启用
      */
     public boolean isKnowledgeRerankEnabled() {
-        return settings().enabled() && settings().mode() != RerankExecutionMode.DISABLED;
+        RerankSettingsEntity s = settings();
+        return s.enabled() && s.mode() != RerankExecutionMode.DISABLED;
     }
 
     /**
@@ -90,16 +91,18 @@ public class RerankRouter {
                                                       List<DocumentSearchResult> candidates,
                                                       int requestedTopK,
                                                       @Nullable String modelName) {
-        if (!isKnowledgeRerankEnabled() || candidates.isEmpty()) {
+        RerankSettingsEntity s = settings();
+        if (!s.enabled() || s.mode() == RerankExecutionMode.DISABLED || candidates.isEmpty()) {
             return candidates.stream().limit(requestedTopK).toList();
         }
-        int effectiveTopK = resolveKnowledgeTopK(requestedTopK);
-        return switch (settings().mode()) {
+        int configured = s.knowledgeTopK();
+        int effectiveTopK = requestedTopK > 0 ? Math.min(requestedTopK, configured) : configured;
+        return switch (s.mode()) {
             case NATIVE -> rerankDocumentsNative(query, candidates, effectiveTopK, modelName);
             case LLM_POINTWISE -> pointwiseStrategy.rerankDocuments(
-                    query, candidates, effectiveTopK, modelName, settings().llmServiceId());
+                    query, candidates, effectiveTopK, modelName, s.llmServiceId());
             case LLM_LISTWISE -> listwiseStrategy.rerankDocuments(
-                    query, candidates, effectiveTopK, modelName, settings().llmServiceId());
+                    query, candidates, effectiveTopK, modelName, s.llmServiceId());
             case DISABLED -> candidates.stream().limit(effectiveTopK).toList();
         };
     }
@@ -109,16 +112,18 @@ public class RerankRouter {
      */
     public List<RerankCandidate> rerankMemoryCandidates(String query,
                                                         List<RerankCandidate> candidates) {
-        if (!isMemoryRerankEnabled() || candidates.isEmpty()) {
-            return candidates.stream().limit(memoryTopK()).toList();
+        RerankSettingsEntity s = settings();
+        if (!s.enabled() || !s.memoryEnabled() || s.mode() == RerankExecutionMode.DISABLED || candidates.isEmpty()) {
+            return candidates.stream().limit(s.memoryTopK()).toList();
         }
-        return switch (settings().mode()) {
-            case NATIVE -> rerankGenericNative(query, candidates, memoryTopK(), null);
+        int topK = s.memoryTopK();
+        return switch (s.mode()) {
+            case NATIVE -> rerankGenericNative(query, candidates, topK, null);
             case LLM_POINTWISE -> pointwiseStrategy.rerankCandidates(
-                    query, candidates, memoryTopK(), null, settings().llmServiceId());
+                    query, candidates, topK, null, s.llmServiceId());
             case LLM_LISTWISE -> listwiseStrategy.rerankCandidates(
-                    query, candidates, memoryTopK(), null, settings().llmServiceId());
-            case DISABLED -> candidates.stream().limit(memoryTopK()).toList();
+                    query, candidates, topK, null, s.llmServiceId());
+            case DISABLED -> candidates.stream().limit(topK).toList();
         };
     }
 

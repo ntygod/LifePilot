@@ -94,8 +94,13 @@ public class CircuitBreaker {
                 }
                 yield false;
             }
-            case CircuitState.HalfOpen _ ->
-                    halfOpenAttempts.incrementAndGet() <= halfOpenMaxAttempts;
+            case CircuitState.HalfOpen _ -> {
+                int attempts = halfOpenAttempts.get();
+                if (attempts >= halfOpenMaxAttempts) {
+                    yield false;
+                }
+                yield halfOpenAttempts.incrementAndGet() <= halfOpenMaxAttempts;
+            }
         };
     }
 
@@ -108,6 +113,7 @@ public class CircuitBreaker {
         state.getAndUpdate(current -> switch (current) {
             case CircuitState.Closed _ -> CircuitState.Closed.initial();
             case CircuitState.HalfOpen _ -> {
+                halfOpenAttempts.set(0);
                 log.info("熔断器状态转换: key={}, HALF_OPEN -> CLOSED", key);
                 yield CircuitState.Closed.initial();
             }
@@ -131,6 +137,7 @@ public class CircuitBreaker {
                 yield new CircuitState.Closed(newCount);
             }
             case CircuitState.HalfOpen _ -> {
+                halfOpenAttempts.set(0);
                 log.info("熔断器状态转换: key={}, HALF_OPEN -> OPEN", key);
                 yield new CircuitState.Open(Instant.now(), failureThreshold);
             }

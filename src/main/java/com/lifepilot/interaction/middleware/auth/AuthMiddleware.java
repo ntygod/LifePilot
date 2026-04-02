@@ -96,8 +96,19 @@ public class AuthMiddleware implements GatewayMiddleware {
         return properties.middleware().auth().enabled();
     }
 
+    /**
+     * 仅允许内部通道（CHANNEL 类型）使用 trace header 预认证。
+     *
+     * <p>Web 等外部通道不信任 trace header 中的认证信息，防止请求伪造绕过认证。
+     * 仅 ChannelRuntimeIngressService 等内部服务设置这些 header。
+     */
     @Nullable
     private AuthResult resolvePreAuthenticatedResult(GatewayMessage message) {
+        // 安全防护：仅内部通道类型允许预认证，Web/CLI 等外部通道不信任 trace header
+        if (!isInternalChannel(message.channelType())) {
+            return null;
+        }
+
         String trustLevelValue = message.traceHeaders().get(InteractionTraceHeaders.AUTH_TRUST_LEVEL);
         if (trustLevelValue == null || trustLevelValue.isBlank()) {
             return null;
@@ -112,6 +123,13 @@ public class AuthMiddleware implements GatewayMiddleware {
             return null;
         }
 
+        // 预认证不允许声明 TRUSTED 等级 — TRUSTED 仅由 CLI 本地认证策略授予
+        if (trustLevel == TrustLevel.TRUSTED) {
+            log.warn("拒绝 trace header 声明 TRUSTED 等级: channelType={}, 降级为 VERIFIED",
+                    message.channelType());
+            trustLevel = TrustLevel.VERIFIED;
+        }
+
         String userId = message.traceHeaders().getOrDefault(
                 InteractionTraceHeaders.AUTH_USER_ID, message.userId());
         if (userId == null || userId.isBlank()) {
@@ -119,5 +137,14 @@ public class AuthMiddleware implements GatewayMiddleware {
             return null;
         }
         return AuthResult.success(userId, trustLevel);
+    }
+
+    /**
+     * 判断是否为内部通道类型（企业消息平台等服务端签名验证过的通道）。
+     */
+    private boolean isInternalChannel(ChannelType channelType) {
+        return channelType == ChannelType.FEISHU
+                || channelType == ChannelType.DINGTALK
+                || channelType == ChannelType.WECOM;
     }
 }

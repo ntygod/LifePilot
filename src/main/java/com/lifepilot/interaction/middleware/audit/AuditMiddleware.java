@@ -8,7 +8,6 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.GatewayMiddleware;
@@ -59,8 +58,8 @@ public class AuditMiddleware implements GatewayMiddleware {
         Duration latency = Duration.between(start, Instant.now());
         var event = buildAuditEvent(message, response, latency, chain.context());
 
-        // 异步持久化，失败不影响响应
-        CompletableFuture.runAsync(() -> {
+        // 异步持久化（virtual thread），失败不影响响应
+        Thread.ofVirtual().name("audit-persist").start(() -> {
             try {
                 repository.save(event);
             } catch (Exception e) {
@@ -114,16 +113,21 @@ public class AuditMiddleware implements GatewayMiddleware {
     }
 
     /**
-     * 序列化中间件结果为 JSON 字符串（简化实现）。
+     * 序列化中间件结果为 JSON 字符串 — 仅记录上下文键列表。
      */
     private static String serializeMiddlewareResults(MiddlewareContext context) {
         Map<String, Object> snapshot = context.snapshot();
         if (snapshot.isEmpty()) {
             return null;
         }
-        // 简化实现：记录上下文中的键列表
         var keys = snapshot.keySet().stream().sorted().toList();
-        return "{\"keys\":" + keys + "}";
+        var sb = new StringBuilder("{\"keys\":[");
+        for (int i = 0; i < keys.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append('"').append(keys.get(i).replace("\"", "\\\"")).append('"');
+        }
+        sb.append("]}");
+        return sb.toString();
     }
 
     /**

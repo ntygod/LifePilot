@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -41,6 +43,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionMiddleware.class);
     private static final String DEFAULT_MODEL_ID = "agent";
+    /** 使用 virtual thread 执行 Agent 任务，避免阻塞 ForkJoinPool.commonPool() */
+    private static final ExecutorService AGENT_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private final AgentOrchestrator agentOrchestrator;
     private final AgentConfigProperties agentConfigProperties;
@@ -122,7 +126,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             CompletableFuture<AgentResponse> future = null;
             try {
-                future = CompletableFuture.supplyAsync(() -> agentOrchestrator.run(agentRequest));
+                future = CompletableFuture.supplyAsync(() -> agentOrchestrator.run(agentRequest), AGENT_EXECUTOR);
                 AgentResponse agentResponse = future.get(properties.execution().timeoutSeconds(), TimeUnit.SECONDS);
 
                 if (shouldRetrySyncResponse(agentResponse) && attempt < maxAttempts) {
@@ -205,7 +209,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         int timeoutSeconds = properties.execution().timeoutSeconds();
         AgentRequest agentRequest = requestFactory.build(message);
 
-        CompletableFuture.runAsync(() -> runStreaming(agentRequest, message, streamId, manager, cancellationToken))
+        CompletableFuture.runAsync(() -> runStreaming(agentRequest, message, streamId, manager, cancellationToken), AGENT_EXECUTOR)
                 .orTimeout(timeoutSeconds, TimeUnit.SECONDS)
                 .exceptionally(ex -> {
                     if (ex instanceof TimeoutException || ex.getCause() instanceof TimeoutException) {
