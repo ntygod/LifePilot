@@ -1,122 +1,251 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Loader2 } from 'lucide-vue-next'
+import { Check, Loader2, RotateCcw, X } from 'lucide-vue-next'
 import { modelServiceApi } from '@/api/client'
 
 const router = useRouter()
-const status = ref('正在启动后端服务...')
-const hasError = ref(false)
-let unlisten: (() => void) | null = null
-let unlistenError: (() => void) | null = null
 
-/** 后端就绪后，检查是否已配置模型服务，决定跳转目标 */
+type StepStatus = 'pending' | 'active' | 'completed' | 'error'
+
+const steps = ref([
+  { label: '初始化运行环境', status: 'pending' as StepStatus },
+  { label: '加载记忆与工具', status: 'pending' as StepStatus },
+  { label: '启动核心服务', status: 'pending' as StepStatus },
+  { label: '准备就绪', status: 'pending' as StepStatus },
+])
+
+const hasError = ref(false)
+const errorMessage = ref('')
+const elapsedSeconds = ref(0)
+
+let unlisteners: (() => void)[] = []
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
+let healthPoller: ReturnType<typeof setInterval> | null = null
+let navigating = false
+
+function handleBackendStage(stage: string) {
+  switch (stage) {
+    case 'resolving_java':
+      if (steps.value[0].status === 'pending') steps.value[0].status = 'active'
+      break
+    case 'java_found':
+      steps.value[0].status = 'completed'
+      if (steps.value[1].status === 'pending') steps.value[1].status = 'active'
+      break
+    case 'process_started':
+      steps.value[1].status = 'completed'
+      if (steps.value[2].status === 'pending') steps.value[2].status = 'active'
+      break
+    case 'health_check':
+      if (steps.value[2].status === 'pending') steps.value[2].status = 'active'
+      break
+  }
+}
+
+/** 根据后端当前状态补齐已错过的步骤进度 */
+function syncStepsFromStatus(running: boolean) {
+  if (running) {
+    // 进程已在运行，前两步必然完成，第三步进行中
+    if (steps.value[0].status !== 'completed') steps.value[0].status = 'completed'
+    if (steps.value[1].status !== 'completed') steps.value[1].status = 'completed'
+    if (steps.value[2].status === 'pending') steps.value[2].status = 'active'
+  }
+}
+
+function failAtCurrentStep(error: string) {
+  const activeIdx = steps.value.findIndex(s => s.status === 'active')
+  if (activeIdx >= 0) steps.value[activeIdx].status = 'error'
+  hasError.value = true
+  errorMessage.value = error
+  stopTimer()
+  stopHealthPoller()
+}
+
+function startTimer() {
+  elapsedSeconds.value = 0
+  elapsedTimer = setInterval(() => elapsedSeconds.value++, 1000)
+}
+
+function stopTimer() {
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer)
+    elapsedTimer = null
+  }
+}
+
+function stopHealthPoller() {
+  if (healthPoller) {
+    clearInterval(healthPoller)
+    healthPoller = null
+  }
+}
+
 async function navigateAfterReady() {
-  status.value = '正在检查配置...'
+  if (navigating) return
+  navigating = true
+
+  steps.value[2].status = 'completed'
+  steps.value[3].status = 'completed'
+  stopTimer()
+  stopHealthPoller()
+  await new Promise(r => setTimeout(r, 500))
+
   try {
     const services = await modelServiceApi.listEnabledServices('GENERATION')
-    if (services.length === 0) {
-      router.replace('/setup')
-    } else {
-      router.replace('/conversations')
-    }
+    router.replace(services.length === 0 ? '/setup' : '/conversations')
   } catch {
-    // API 调用失败时直接进入主界面，用户可在设置中配置
     router.replace('/conversations')
   }
 }
 
 async function waitForBackend() {
   if (!window.__TAURI_INTERNALS__) {
-    // 非 Tauri 环境，直接跳转
     router.replace('/conversations')
     return
   }
+
+  // 第一步立即标记为进行中
+  steps.value[0].status = 'active'
+  startTimer()
 
   try {
     const { listen } = await import('@tauri-apps/api/event')
     const { invoke } = await import('@tauri-apps/api/core')
 
-    // 先检查端口
     const port = await invoke<number>('get_backend_port')
     window.__ZHIWEI_BACKEND_PORT__ = port
-    status.value = `正在启动后端服务（端口 ${port}）...`
 
-    // 监听后端就绪事件
-    unlisten = await listen<number>('backend-ready', () => {
-      status.value = '后端已就绪，正在加载...'
-      navigateAfterReady()
-    })
+    // 注册事件监听（用于步骤进度更新）
+    unlisteners.push(await listen<string>('backend-stage', e => handleBackendStage(e.payload)))
+    unlisteners.push(await listen<number>('backend-ready', () => navigateAfterReady()))
+    unlisteners.push(await listen<string>('backend-error', e => failAtCurrentStep(e.payload)))
 
-    // 也监听错误事件
-    unlistenError = await listen<string>('backend-error', (event) => {
-      status.value = `启动失败: ${event.payload}`
-      hasError.value = true
-    })
+    // 查询当前状态，补齐在监听注册前已完成的步骤
+    const status = await invoke<{ running: boolean; port: number }>('get_backend_status')
+    syncStepsFromStatus(status.running)
 
-    // 可能后端已经启动好了（事件在监听前已发送），主动检查一次
-    const result = await invoke<{ running: boolean; port: number }>('get_backend_status')
-    if (result.running) {
+    // 启动健康检查轮询（每 2 秒），作为事件丢失时的可靠兜底
+    healthPoller = setInterval(async () => {
+      if (navigating || hasError.value) return
       try {
-        const resp = await fetch(`http://localhost:${port}/actuator/health`)
-        if (resp.ok) {
-          status.value = '后端已就绪，正在加载...'
-          navigateAfterReady()
-        }
+        const resp = await fetch(`http://localhost:${port}/actuator/health`, {
+          signal: AbortSignal.timeout(2000),
+        })
+        if (resp.ok) navigateAfterReady()
       } catch {
-        // 进程在但还没 ready，等事件
+        // 后端还未就绪，继续轮询
       }
+    }, 2000)
+
+    // 立即做一次健康检查
+    try {
+      const resp = await fetch(`http://localhost:${port}/actuator/health`, {
+        signal: AbortSignal.timeout(2000),
+      })
+      if (resp.ok) navigateAfterReady()
+    } catch {
+      // 后端还未就绪，等轮询或事件
     }
   } catch (e) {
-    status.value = `初始化失败: ${e}`
-    hasError.value = true
+    failAtCurrentStep(`初始化失败: ${e}`)
   }
 }
 
 async function retry() {
+  navigating = false
   hasError.value = false
-  status.value = '正在重启后端服务...'
+  errorMessage.value = ''
+  steps.value.forEach(s => { s.status = 'pending' })
+  steps.value[0].status = 'active'
+  startTimer()
 
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     await invoke('restart_backend')
+
+    // 重启后重新开始健康轮询
+    const port = await invoke<number>('get_backend_port')
+    stopHealthPoller()
+    healthPoller = setInterval(async () => {
+      if (navigating || hasError.value) return
+      try {
+        const resp = await fetch(`http://localhost:${port}/actuator/health`, {
+          signal: AbortSignal.timeout(2000),
+        })
+        if (resp.ok) navigateAfterReady()
+      } catch {
+        // 继续轮询
+      }
+    }, 2000)
   } catch (e) {
-    status.value = `重启失败: ${e}`
-    hasError.value = true
+    failAtCurrentStep(`重启失败: ${e}`)
   }
 }
 
-onMounted(() => {
-  waitForBackend()
+const formattedElapsed = computed(() => {
+  const s = elapsedSeconds.value
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`
 })
 
+onMounted(() => waitForBackend())
 onUnmounted(() => {
-  if (unlisten) unlisten()
-  if (unlistenError) unlistenError()
+  unlisteners.forEach(fn => fn())
+  stopTimer()
+  stopHealthPoller()
 })
 </script>
 
 <template>
   <div class="flex h-screen w-screen items-center justify-center bg-background">
-    <div class="flex flex-col items-center gap-lg text-center">
+    <div style="width: 22rem;" class="flex flex-col items-center">
       <!-- Logo -->
       <div class="text-5xl font-bold text-foreground">知微</div>
-      <div class="text-sm text-muted-foreground">ZhiWei AI Assistant</div>
+      <div class="mt-sm text-sm text-muted-foreground">ZhiWei AI Assistant</div>
 
-      <!-- 加载状态 -->
-      <div class="mt-xl flex flex-col items-center gap-md">
-        <Loader2
-          v-if="!hasError"
-          class="h-8 w-8 animate-spin text-primary"
-        />
-        <p class="text-sm text-muted-foreground">{{ status }}</p>
+      <!-- 步骤 -->
+      <div class="mt-2xl flex flex-col gap-lg">
+        <div
+          v-for="(step, i) in steps"
+          :key="i"
+          class="flex items-center gap-md whitespace-nowrap"
+        >
+          <div class="flex h-5 w-5 shrink-0 items-center justify-center">
+            <Check v-if="step.status === 'completed'" class="h-5 w-5 text-green-500" />
+            <Loader2 v-else-if="step.status === 'active'" class="h-5 w-5 animate-spin text-primary" />
+            <X v-else-if="step.status === 'error'" class="h-5 w-5 text-destructive" />
+            <div v-else class="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+          </div>
+          <span
+            class="text-sm"
+            :class="{
+              'text-muted-foreground': step.status === 'completed',
+              'font-medium text-foreground': step.status === 'active',
+              'font-medium text-destructive': step.status === 'error',
+              'text-muted-foreground/40': step.status === 'pending',
+            }"
+          >
+            {{ step.label }}
+            <span v-if="step.status === 'active' && !hasError" class="ml-sm text-xs text-muted-foreground/50">
+              {{ formattedElapsed }}
+            </span>
+          </span>
+        </div>
+      </div>
 
-        <!-- 重试按钮 -->
+      <!-- 提示 -->
+      <p v-if="!hasError && elapsedSeconds > 10" class="mt-xl text-center text-xs text-muted-foreground/50">
+        首次启动可能需要较长时间
+      </p>
+
+      <!-- 错误 -->
+      <div v-if="hasError" class="mt-xl text-center">
+        <p class="text-sm text-destructive">{{ errorMessage }}</p>
         <button
-          v-if="hasError"
-          class="mt-md rounded-lg bg-primary px-lg py-sm text-sm text-primary-foreground hover:bg-primary/90"
+          class="mt-md inline-flex items-center gap-sm rounded-lg bg-primary px-lg py-sm text-sm text-primary-foreground hover:bg-primary/90"
           @click="retry"
         >
+          <RotateCcw class="h-4 w-4" />
           重试
         </button>
       </div>

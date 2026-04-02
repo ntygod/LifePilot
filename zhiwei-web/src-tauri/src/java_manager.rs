@@ -4,6 +4,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use sysinfo::System;
 use tauri::{AppHandle, Emitter};
 
@@ -52,7 +55,10 @@ impl JavaManager {
 
     /// 启动 Java 后端进程
     pub fn start(&self, app: &AppHandle) -> Result<(), String> {
+        let _ = app.emit("backend-stage", "resolving_java");
         let java_bin = self.resolve_java_binary()?;
+        let _ = app.emit("backend-stage", "java_found");
+
         let xmx = Self::calculate_xmx();
 
         // 确保数据目录存在
@@ -70,8 +76,8 @@ impl JavaManager {
             self.port
         );
 
-        let mut child = Command::new(&java_bin)
-            .arg(format!("-Xmx{}m", xmx))
+        let mut cmd = Command::new(&java_bin);
+        cmd.arg(format!("-Xmx{}m", xmx))
             .arg("-Xms256m")
             .arg("-XX:+UseG1GC")
             .arg("-Dfile.encoding=UTF-8")
@@ -81,9 +87,19 @@ impl JavaManager {
             .arg(&self.jar_path)
             .arg(format!("--server.port={}", self.port))
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Windows 下隐藏 Java 进程的控制台窗口
+        #[cfg(target_os = "windows")]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd
             .spawn()
             .map_err(|e| format!("启动 Java 进程失败: {}", e))?;
+        let _ = app.emit("backend-stage", "process_started");
 
         // 捕获 stdout 日志
         if let Some(stdout) = child.stdout.take() {
@@ -116,6 +132,7 @@ impl JavaManager {
         *self.process.lock().expect("JavaManager process mutex 中毒") = Some(child);
 
         // 异步等待健康检查 + 监控进程
+        let _ = app.emit("backend-stage", "health_check");
         let port = self.port;
         let app_handle = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -142,9 +159,11 @@ impl JavaManager {
             // Windows 下使用 taskkill /F 强制终止进程树（Java 控制台进程无窗口句柄，不带 /F 会被忽略）
             #[cfg(target_os = "windows")]
             {
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
                 let pid = child.id();
                 let _ = Command::new("taskkill")
                     .args(["/F", "/PID", &pid.to_string(), "/T"])
+                    .creation_flags(CREATE_NO_WINDOW)
                     .output();
             }
 

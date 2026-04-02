@@ -58,7 +58,7 @@ fn resolve_resource_dir(app: &tauri::App) -> PathBuf {
     if let Ok(resource_path) = app.path().resource_dir() {
         let bundled = resource_path.join("resources");
         if bundled.exists() {
-            return bundled;
+            return strip_extended_path_prefix(bundled);
         }
     }
 
@@ -75,4 +75,14 @@ fn resolve_resource_dir(app: &tauri::App) -> PathBuf {
         .and_then(|p| p.parent())
         .map(|p| p.join("target"))
         .unwrap_or(manifest)
+}
+
+/// 去除 Windows 扩展路径前缀 `\\?\`，Java 无法识别该格式
+fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path
+    }
 }

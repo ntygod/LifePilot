@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Menu } from 'lucide-vue-next'
-import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
 import ToastContainer from '@/components/global/ToastContainer.vue'
 import GlobalLoadingBar from '@/components/global/GlobalLoadingBar.vue'
 import { Button } from '@/components/ui/button'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import Sidebar from './Sidebar.vue'
 
-const showOnboarding = ref(false)
 const sidebarOpen = ref(false)
 const isMobile = ref(false)
 
@@ -26,20 +24,12 @@ onMounted(() => {
   window.addEventListener('resize', checkMobile)
   installShortcuts()
 
-  const completed = localStorage.getItem('zhiwei_onboarding_completed')
-  if (!completed) {
-    showOnboarding.value = true
-  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
   uninstallShortcuts()
 })
-
-function handleOnboardingComplete() {
-  showOnboarding.value = false
-}
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
@@ -82,6 +72,5 @@ function closeSidebar() {
     </div>
 
     <ToastContainer />
-    <OnboardingDialog v-if="showOnboarding" @complete="handleOnboardingComplete" />
   </div>
 </template>

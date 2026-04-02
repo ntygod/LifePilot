@@ -549,6 +549,7 @@ lifepilot:
         - "http://localhost"
         - "tauri://localhost"
         - "https://tauri.localhost"
+        - "http://tauri.localhost"
       allow-credentials: true
   a2ui:
     # A2UI（Agent-to-UI）生成功能配置
