@@ -1341,19 +1341,19 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                             </td>
                             <td class="px-5 py-4 align-top">
                               <div class="flex items-center justify-end gap-1 opacity-80 transition-opacity group-hover:opacity-100">
-                                <Button type="button" variant="ghost" size="icon-sm" class="size-8" title="查看详情" @click="viewDocument(doc)">
+                                <Button type="button" variant="ghost" size="icon-sm" class="size-8" title="查看详情" aria-label="查看详情" @click="viewDocument(doc)">
                                   <Eye class="size-4" />
                                 </Button>
-                                <Button type="button" variant="ghost" size="icon-sm" class="size-8" title="下载" @click="downloadDocument(doc)">
+                                <Button type="button" variant="ghost" size="icon-sm" class="size-8" title="下载" aria-label="下载" @click="downloadDocument(doc)">
                                   <Download class="size-4" />
                                 </Button>
-                                <Button v-if="doc.status === 'ERROR'" type="button" variant="ghost" size="icon-sm" class="size-8" title="重试" @click="handleRetry(doc)">
+                                <Button v-if="doc.status === 'ERROR'" type="button" variant="ghost" size="icon-sm" class="size-8" title="重试" aria-label="重试" @click="handleRetry(doc)">
                                   <RefreshCw class="size-4" />
                                 </Button>
-                                <Button v-if="doc.status === 'READY'" type="button" variant="ghost" size="icon-sm" class="size-8" title="重新分块" @click="handleRechunk(doc)">
+                                <Button v-if="doc.status === 'READY'" type="button" variant="ghost" size="icon-sm" class="size-8" title="重新分块" aria-label="重新分块" @click="handleRechunk(doc)">
                                   <RefreshCw class="size-4" />
                                 </Button>
-                                <Button type="button" variant="ghost" size="icon-sm" class="size-8" title="查看日志" @click="viewLogs(doc)">
+                                <Button type="button" variant="ghost" size="icon-sm" class="size-8" title="查看日志" aria-label="查看日志" @click="viewLogs(doc)">
                                   <FileText class="size-4" />
                                 </Button>
                                 <Button
@@ -1362,6 +1362,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                                   size="icon-sm"
                                   class="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                   title="删除"
+                                  aria-label="删除"
                                   @click="deleteTarget = { doc }"
                                 >
                                   <Trash2 class="size-4" />
@@ -1447,7 +1448,7 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
     </PageContainer>
 
     <Sheet :open="showLogs && !!selectedDoc" @update:open="(value: boolean) => { if (!value) { showLogs = false; selectedDoc = null } }">
-      <SheetContent side="right" class="overflow-y-auto p-6" style="width: 100%; max-width: 700px;">
+      <SheetContent side="right" class="w-full max-w-3xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>处理日志</SheetTitle>
           <SheetDescription>{{ selectedDoc?.fileName }}</SheetDescription>

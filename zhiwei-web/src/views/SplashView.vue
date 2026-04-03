@@ -209,7 +209,7 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-screen w-screen items-center justify-center bg-background">
-    <div style="width: 22rem;" class="flex flex-col items-center">
+    <div class="w-[22rem] flex flex-col items-center">
       <!-- Logo -->
       <div class="text-5xl font-bold text-foreground">知微</div>
       <div class="mt-sm text-sm text-muted-foreground">ZhiWei AI Assistant</div>

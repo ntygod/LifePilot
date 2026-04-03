@@ -8,6 +8,7 @@ import {
   type ModelService,
   type ModelServiceTemplate,
 } from '@/api/client'
+import { logger } from '@/utils/logger'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useUiStore } from '@/stores/ui'
 import { Badge } from '@/components/ui/badge'
@@ -324,7 +325,7 @@ async function loadInitialData() {
     }
     enterCreateView()
   } catch (error) {
-    console.error('加载模型服务配置失败:', error)
+    logger.error('加载模型服务配置失败:', error)
     uiStore.showToast('error', '加载模型服务配置失败')
     emit('close')
   } finally {
@@ -376,7 +377,7 @@ async function saveService() {
     uiStore.showToast('success', isEditing.value ? '模型服务已更新' : '模型服务已创建')
     closeManager()
   } catch (error: any) {
-    console.error('保存模型服务失败:', error)
+    logger.error('保存模型服务失败:', error)
     errors.value._general = error?.message || '保存模型服务失败。'
   } finally {
     loading.value = false
@@ -400,7 +401,7 @@ async function handleDelete() {
       closeManager()
     }
   } catch (error: any) {
-    console.error('删除模型服务失败:', error)
+    logger.error('删除模型服务失败:', error)
     uiStore.showToast('error', error?.message || '删除模型服务失败')
   } finally {
     loading.value = false

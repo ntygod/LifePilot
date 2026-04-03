@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-vue-next'
+import { logger } from '@/utils/logger'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
@@ -208,7 +209,7 @@ async function handleUpdate() {
     await store.fetchList()
     editingKb.value = null
   } catch (error) {
-    console.error('更新知识库失败', error)
+    logger.error('更新知识库失败', error)
   }
 }
 
@@ -540,6 +541,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                     size="icon-sm"
                     class="size-8"
                     title="编辑"
+                    aria-label="编辑"
                     @click.stop="startEdit(kb)"
                   >
                     <Edit2 class="size-4" />
@@ -550,6 +552,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                     size="icon-sm"
                     class="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     title="删除"
+                    aria-label="删除"
                     @click.stop="openDeleteDialog(kb)"
                   >
                     <Trash2 class="size-4" />

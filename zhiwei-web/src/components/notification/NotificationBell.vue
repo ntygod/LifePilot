@@ -13,7 +13,7 @@ const { unreadCount } = storeToRefs(notificationStore)
 <template>
   <Popover>
     <PopoverTrigger as-child>
-      <Button variant="ghost" size="icon" class="relative">
+      <Button variant="ghost" size="icon" class="relative" aria-label="通知">
         <Bell class="size-5" />
         <span
           v-if="unreadCount > 0"

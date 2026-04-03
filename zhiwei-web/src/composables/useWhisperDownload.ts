@@ -1,5 +1,6 @@
 import { ref, readonly } from 'vue'
 import type { Ref } from 'vue'
+import { logger } from '@/utils/logger'
 
 /**
  * Whisper 下载状态类型
@@ -128,7 +129,7 @@ async function checkAvailability(): Promise<boolean> {
 
     return result.available
   } catch (e) {
-    console.error('检查 Whisper 状态失败:', e)
+    logger.error('检查 Whisper 状态失败:', e)
     status.value = 'error'
     errorMessage.value = e instanceof Error ? e.message : '检查语音引擎状态失败'
     return false
@@ -171,7 +172,7 @@ async function cancelDownload(): Promise<void> {
     visible.value = false
     progress.value = 0
   } catch (e) {
-    console.error('取消下载失败:', e)
+    logger.error('取消下载失败:', e)
   }
 }
 

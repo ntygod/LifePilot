@@ -13,6 +13,7 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import { getApiOrigin } from '@/api/config'
+import { logger } from '@/utils/logger'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import type { TraceItem, TraceStep } from '@/types'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -267,7 +268,7 @@ function startLiveStream(traceId: string) {
 
         store.steps.sort((left, right) => left.stepIndex - right.stepIndex)
       } catch (error) {
-        console.warn('Failed to parse trace step event', error)
+        logger.warn('Failed to parse trace step event', error)
       }
     })
 

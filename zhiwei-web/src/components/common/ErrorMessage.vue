@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { AlertTriangle } from 'lucide-vue-next'
+
 interface Props {
   title?: string
   message: string
@@ -24,7 +26,7 @@ function handleRetry() {
 <template>
   <div class="rounded-md border border-destructive bg-destructive/10 p-4">
     <div class="flex items-start gap-3">
-      <div class="flex-shrink-0 text-destructive text-xl">⚠️</div>
+      <AlertTriangle class="size-5 shrink-0 text-destructive" />
       <div class="flex-1 min-w-0">
         <h3 class="text-sm font-semibold text-destructive mb-1">{{ title }}</h3>
         <p class="text-sm text-destructive/90 break-words">{{ message }}</p>

@@ -185,7 +185,7 @@ onMounted(() => {
     </div>
 
     <!-- Monaco Editor（单面板，无预览） -->
-    <div style="height: 480px;">
+    <div class="h-[480px]">
       <VueMonacoEditor
         :value="modelValue"
         language="yaml"

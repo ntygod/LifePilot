@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { modelServiceApi, type ModelService } from '@/api/client'
+import { logger } from '@/utils/logger'
 
 const props = defineProps<{
   modelValue: LlmStepConfig
@@ -35,7 +36,7 @@ onMounted(async () => {
   try {
     providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch (e) {
-    console.warn('加载 Provider 列表失败，下拉框将为空:', e)
+    logger.warn('加载 Provider 列表失败，下拉框将为空:', e)
   }
 })
 
@@ -186,7 +187,7 @@ function removeMedia(index: number) {
       <div v-for="(media, index) in modelValue.media" :key="index" class="space-y-2 rounded-lg border border-border/70 bg-background/80 p-3">
         <div class="flex items-center justify-between">
           <p class="text-xs font-medium text-foreground">媒体 {{ index + 1 }}</p>
-          <Button type="button" variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground" @click="removeMedia(index)">
+          <Button type="button" variant="ghost" size="icon" class="size-9 text-muted-foreground" aria-label="删除媒体" @click="removeMedia(index)">
             <Trash2 class="h-3.5 w-3.5" />
           </Button>
         </div>

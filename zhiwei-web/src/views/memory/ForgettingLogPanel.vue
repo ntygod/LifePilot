@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RotateCcw } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { ForgettingLog, ForgettingLogListParams } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -56,7 +57,7 @@ async function loadLogs() {
     items.value = result.items
     total.value = result.total
   } catch (e: any) {
-    console.error('加载遗忘日志失败:', e)
+    logger.error('加载遗忘日志失败:', e)
     error.value = e?.message || '加载遗忘日志失败，请稍后重试。'
   } finally {
     loading.value = false

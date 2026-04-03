@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { NotificationItem } from '@/types'
 import { notificationApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 
 /**
  * 通知中心 Pinia Store。
@@ -43,7 +44,7 @@ export const useNotificationStore = defineStore('notification', () => {
       }
       sseUnreadCount.value = null
     } catch (err) {
-      console.error('加载通知列表失败:', err)
+      logger.error('加载通知列表失败:', err)
     } finally {
       loading.value = false
     }
@@ -58,7 +59,7 @@ export const useNotificationStore = defineStore('notification', () => {
         notifications.value[index] = { ...notifications.value[index], readStatus: 'READ' }
       }
     } catch (err) {
-      console.error('标记通知已读失败:', err)
+      logger.error('标记通知已读失败:', err)
     }
   }
 
@@ -68,7 +69,7 @@ export const useNotificationStore = defineStore('notification', () => {
       await notificationApi.markAllAsRead('default')
       notifications.value = notifications.value.map(n => ({ ...n, readStatus: 'READ' as const }))
     } catch (err) {
-      console.error('标记全部已读失败:', err)
+      logger.error('标记全部已读失败:', err)
     }
   }
 

@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import { useChatStore } from '@/stores/chat'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -233,7 +234,7 @@ async function submit() {
       attachmentIds = uploaded.map(item => item.fileId)
       uploadedAttachments = uploaded
     } catch (error) {
-      console.error('附件上传失败:', error)
+      logger.error('附件上传失败:', error)
       uploadError.value = error instanceof Error ? error.message : '附件上传失败，请重试或移除附件'
       return
     } finally {
@@ -440,7 +441,7 @@ watch(audioBlob, async (blob) => {
     })
     resetTemporaryContextSelection()
   } catch (error) {
-    console.error('语音消息上传失败:', error)
+    logger.error('语音消息上传失败:', error)
     voiceError.value = error instanceof Error ? error.message : '语音消息上传失败，请重试'
   } finally {
     voiceSending.value = false

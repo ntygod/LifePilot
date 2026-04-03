@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search, Trash2, RotateCcw } from 'lucide-vue-next'
+import { Pin, Search, Trash2, RotateCcw } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type {
   ConversationSummary,
   ConversationDetail,
@@ -71,7 +72,7 @@ async function loadConversations() {
     items.value = result.items
     total.value = result.total
   } catch (e: any) {
-    console.error('加载对话列表失败:', e)
+    logger.error('加载对话列表失败:', e)
     error.value = e?.message || '加载对话列表失败，请稍后重试。'
   } finally {
     loading.value = false
@@ -105,7 +106,7 @@ async function openDetail(conversation: ConversationSummary) {
   try {
     detailConversation.value = await memoryApi.getConversation(conversation.id)
   } catch (e: any) {
-    console.error('加载对话详情失败:', e)
+    logger.error('加载对话详情失败:', e)
   } finally {
     detailLoading.value = false
   }
@@ -126,7 +127,7 @@ async function handleDelete() {
     detailOpen.value = false
     loadConversations()
   } catch (e: any) {
-    console.error('删除对话失败:', e)
+    logger.error('删除对话失败:', e)
     alert(e?.message || '删除对话失败')
   } finally {
     deleting.value = false
@@ -264,7 +265,7 @@ function roleLabel(role: string) {
 
     <!-- 详情 Sheet -->
     <Sheet v-model:open="detailOpen">
-      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+      <SheetContent class="w-full max-w-xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>{{ detailConversation?.goal || '对话详情' }}</SheetTitle>
           <SheetDescription>
@@ -348,7 +349,7 @@ function roleLabel(role: string) {
                 <p class="whitespace-pre-wrap text-sm leading-relaxed">{{ msg.content }}</p>
                 <div v-if="msg.tokenCount" class="mt-1.5 text-xs text-muted-foreground">
                   Token: {{ msg.tokenCount }}
-                  <span v-if="msg.isPinned" class="ml-2">📌 已固定</span>
+                  <span v-if="msg.isPinned" class="ml-sm inline-flex items-center gap-1"><Pin class="size-3.5" /> 已固定</span>
                   <span v-if="msg.compressionLevel !== 'ORIGINAL'" class="ml-2">
                     压缩: {{ msg.compressionLevel }}
                   </span>

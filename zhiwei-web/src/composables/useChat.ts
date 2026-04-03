@@ -3,6 +3,7 @@ import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
 import { chatApi } from '@/api/client'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import { logger } from '@/utils/logger'
 import type {
   A2uiComponent,
   ChatAttachment,
@@ -191,7 +192,7 @@ export function useChat() {
       try {
         await chatApi.updateSessionConfig(chatStore.activeSessionId, options.sessionConfig)
       } catch (e) {
-        console.warn('更新会话配置失败，将继续发送消息', e)
+        logger.warn('更新会话配置失败，将继续发送消息', e)
       }
     }
 
@@ -228,7 +229,7 @@ export function useChat() {
         try {
           await chatApi.updateSessionConfig(chatStore.activeSessionId, restoreSessionConfig)
         } catch (restoreError) {
-          console.warn('恢复会话配置失败', restoreError)
+          logger.warn('恢复会话配置失败', restoreError)
         }
       }
       if (currentExecutionSeq === executionSeq) {
@@ -558,7 +559,7 @@ export function useChat() {
           break
         }
         default:
-          console.warn('未知的 SSE 事件类型:', eventType)
+          logger.warn('未知的 SSE 事件类型:', eventType)
       }
     } catch (e) {
       if (
@@ -574,7 +575,7 @@ export function useChat() {
         chatStore.resetStreaming()
         a2uiStore.clearComponents()
       }
-      console.error('SSE 事件解析失败:', eventType, data, e)
+      logger.error('SSE 事件解析失败:', eventType, data, e)
     }
   }
 
@@ -657,7 +658,7 @@ export function useChat() {
       })
       activeInteraction.value = null
     } catch (submitError) {
-      console.error('回传交互失败:', submitError)
+      logger.error('回传交互失败:', submitError)
       interactionError.value = submitError instanceof Error
         ? submitError.message
         : '交互回传失败，请重试'

@@ -10,6 +10,7 @@ import {
   ArrowUpRight,
 } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type {
   EntitySummary,
   EntityDetail,
@@ -224,7 +225,7 @@ async function loadEntities() {
     items.value = result.items
     total.value = result.total
   } catch (e: any) {
-    console.error('加载实体列表失败:', e)
+    logger.error('加载实体列表失败:', e)
     error.value = e?.message || '加载实体列表失败，请稍后重试。'
   } finally {
     loading.value = false
@@ -313,7 +314,7 @@ async function openDetailById(entityId: string) {
     detailEntity.value = await memoryApi.getEntity(entityId)
     void fetchProvenances(true)
   } catch (e: any) {
-    console.error('加载实体详情失败:', e)
+    logger.error('加载实体详情失败:', e)
   } finally {
     detailLoading.value = false
   }
@@ -325,7 +326,7 @@ async function loadHistory() {
   try {
     historyItems.value = await memoryApi.getEntityHistory(detailEntity.value.id)
   } catch (e: any) {
-    console.error('加载版本历史失败:', e)
+    logger.error('加载版本历史失败:', e)
   } finally {
     historyLoading.value = false
   }
@@ -337,7 +338,7 @@ async function loadRelated() {
   try {
     relatedItems.value = await memoryApi.getRelatedEntities(detailEntity.value.id)
   } catch (e: any) {
-    console.error('加载关联实体失败:', e)
+    logger.error('加载关联实体失败:', e)
   } finally {
     relatedLoading.value = false
   }
@@ -356,7 +357,7 @@ async function fetchProvenances(force: boolean) {
     provenanceItems.value = await memoryApi.getEntityProvenances(detailEntity.value.id, buildProvenanceParams())
     loadedProvenanceKey.value = currentFilterKey
   } catch (e: any) {
-    console.error('加载来源明细失败:', e)
+    logger.error('加载来源明细失败:', e)
   } finally {
     provenanceLoading.value = false
   }
@@ -387,7 +388,7 @@ async function handleCreate() {
     createOpen.value = false
     loadEntities()
   } catch (e: any) {
-    console.error('创建实体失败:', e)
+    logger.error('创建实体失败:', e)
     alert(e?.message || '创建实体失败')
   } finally {
     creating.value = false
@@ -420,7 +421,7 @@ async function handleEdit() {
     detailOpen.value = true
     loadEntities()
   } catch (e: any) {
-    console.error('编辑实体失败:', e)
+    logger.error('编辑实体失败:', e)
     alert(e?.message || '编辑实体失败')
   } finally {
     editing.value = false
@@ -453,7 +454,7 @@ async function handleArchive() {
     detailEntity.value = null
     loadEntities()
   } catch (e: any) {
-    console.error('归档实体失败:', e)
+    logger.error('归档实体失败:', e)
     alert(e?.message || '归档实体失败')
   } finally {
     archiving.value = false
@@ -884,7 +885,7 @@ function openDatastore(item: EntityProvenance) {
 
     <!-- 详情 Sheet -->
     <Sheet v-model:open="detailOpen">
-      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+      <SheetContent class="w-full max-w-xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>{{ detailEntity?.name || '实体详情' }}</SheetTitle>
           <SheetDescription>
@@ -1172,7 +1173,7 @@ function openDatastore(item: EntityProvenance) {
 
     <!-- 新建实体 Sheet -->
     <Sheet v-model:open="createOpen">
-      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+      <SheetContent class="w-full max-w-xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>新建实体</SheetTitle>
           <SheetDescription>手动创建一个知识实体。</SheetDescription>
@@ -1236,7 +1237,7 @@ function openDatastore(item: EntityProvenance) {
 
     <!-- 编辑实体 Sheet -->
     <Sheet :open="editOpen" @update:open="handleEditClose">
-      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+      <SheetContent class="w-full max-w-xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>编辑实体</SheetTitle>
           <SheetDescription>修改实体的描述、属性和重要性分数。</SheetDescription>

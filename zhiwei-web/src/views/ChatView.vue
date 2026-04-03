@@ -11,6 +11,7 @@ import {
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
 import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
+import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
 import {
@@ -136,7 +137,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
       datastoreIds: detail.datastoreIds ?? [],
     }
   } catch (event) {
-    console.warn('加载会话配置失败:', event)
+    logger.warn('加载会话配置失败:', event)
     if (chatStore.activeSessionId === sessionId) {
       currentSessionDetail.value = null
       resetActiveSessionConfig()
@@ -248,7 +249,7 @@ onMounted(async () => {
     try {
       await chatStore.startNewSession()
     } catch (event) {
-      console.error('创建新会话失败:', event)
+      logger.error('创建新会话失败:', event)
     }
   }
 
@@ -271,7 +272,7 @@ watch(
       try {
         await chatStore.startNewSession()
       } catch (event) {
-        console.error('创建新会话失败:', event)
+        logger.error('创建新会话失败:', event)
       }
       return
     }
@@ -388,7 +389,7 @@ async function handleFork(message: Message) {
     router.push({ name: 'conversationDetail', params: { sessionId: newSession.id } })
   } catch (event) {
     uiStore.showToast('error', '分叉会话失败，请稍后重试')
-    console.error('分叉会话失败:', event)
+    logger.error('分叉会话失败:', event)
   }
 }
 
@@ -502,7 +503,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
 
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
-                <Button type="button" variant="outline" size="icon" class="size-8 rounded-full">
+                <Button type="button" variant="outline" size="icon" class="size-9 rounded-full" aria-label="更多操作">
                   <EllipsisVertical class="size-4" />
                 </Button>
               </DropdownMenuTrigger>

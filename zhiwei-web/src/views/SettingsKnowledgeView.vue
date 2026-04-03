@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { KnowledgeSettings, SearchSettings } from '@/api/client'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Globe } from 'lucide-vue-next'
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -101,7 +103,7 @@ async function loadSettings() {
     applyKnowledgeSettings(knowledgeData)
     applySearchSettings(searchData)
   } catch (error) {
-    console.error('加载知识与检索配置失败', error)
+    logger.error('加载知识与检索配置失败', error)
     loadError.value = '暂时无法读取知识与检索配置，请稍后重试。'
   } finally {
     loading.value = false
@@ -126,7 +128,7 @@ async function handleSave() {
       saveSuccess.value = false
     }, 2200)
   } catch (error: any) {
-    console.error('保存知识与检索配置失败', error)
+    logger.error('保存知识与检索配置失败', error)
     saveError.value = error?.message || '保存失败，请稍后重试。'
   } finally {
     saving.value = false
@@ -158,7 +160,10 @@ async function handleSave() {
         </SettingItem>
       </SettingSection>
 
-      <SettingSection title="联网搜索" icon="🌐" description="配置 Web 搜索工具的 API 密钥。">
+      <SettingSection title="联网搜索" description="配置 Web 搜索工具的 API 密钥。">
+        <template #icon>
+          <Globe class="size-4 text-muted-foreground" />
+        </template>
         <SettingItem
           label="Tavily API Key"
           description="用于联网搜索，留空则禁用搜索功能。保留不动可沿用原值，清空后保存可删除。"

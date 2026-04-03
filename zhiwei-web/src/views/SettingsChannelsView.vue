@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
 import { Activity, CircleAlert, Globe, Play, Plus, RefreshCw, RotateCcw, Server, Square, Trash2 } from 'lucide-vue-next'
 import { channelApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import { marketplaceApi } from '@/api/marketplace'
 import type {
   ChannelConfigSchemaProperty,
@@ -398,7 +399,7 @@ async function loadPluginInstallation(plugin: ChannelPluginDescriptor | null) {
       installationMessage.value = '当前插件没有 Marketplace 安装快照，通常表示这是内建插件。'
       return
     }
-    console.error('加载插件安装快照失败:', error)
+    logger.error('加载插件安装快照失败:', error)
     installationMessage.value = getErrorMessage(error, '加载插件安装快照失败')
     uiStore.showToast('error', installationMessage.value)
   } finally {
@@ -429,7 +430,7 @@ async function previewInstallationAsset(asset: InstalledExtensionAsset) {
     assetPreviewContent.value = content
   } catch (error) {
     if (currentRequestId !== assetPreviewRequestId) return
-    console.error('读取插件安装资产失败:', error)
+    logger.error('读取插件安装资产失败:', error)
     assetPreviewError.value = getErrorMessage(error, '读取插件安装资产失败')
     uiStore.showToast('error', assetPreviewError.value)
   } finally {
@@ -479,7 +480,7 @@ async function loadData(showSuccessToast = false) {
       uiStore.showToast('success', '渠道控制面已刷新')
     }
   } catch (error) {
-    console.error('加载渠道控制面失败:', error)
+    logger.error('加载渠道控制面失败:', error)
     uiStore.showToast('error', getErrorMessage(error, '加载渠道控制面失败'))
   } finally {
     loading.value = false
@@ -492,7 +493,7 @@ async function loadInstanceEvents(instanceId: string) {
   try {
     instanceEvents.value = await channelApi.listInstanceEvents(instanceId, 20)
   } catch (error) {
-    console.error('加载渠道实例事件失败:', error)
+    logger.error('加载渠道实例事件失败:', error)
     instanceEvents.value = []
     uiStore.showToast('error', getErrorMessage(error, '加载渠道实例事件失败'))
   } finally {
@@ -761,7 +762,7 @@ function parseJsonObject(text: string, fieldLabel: string) {
     }
     return parsed
   } catch (error) {
-    console.error(`解析 ${fieldLabel} 失败:`, error)
+    logger.error(`解析 ${fieldLabel} 失败:`, error)
     uiStore.showToast('error', `${fieldLabel} 格式不合法`)
     return INVALID_JSON
   }
@@ -804,7 +805,7 @@ async function createInstance() {
     selectedInstanceId.value = created.instanceId
     await loadInstanceEvents(created.instanceId)
   } catch (error) {
-    console.error('创建渠道实例失败:', error)
+    logger.error('创建渠道实例失败:', error)
     uiStore.showToast('error', getErrorMessage(error, '创建渠道实例失败'))
     await loadData()
   } finally {
@@ -838,7 +839,7 @@ async function saveSelectedInstance() {
     selectedInstanceId.value = updated.instanceId
     await loadInstanceEvents(updated.instanceId)
   } catch (error) {
-    console.error('保存渠道实例失败:', error)
+    logger.error('保存渠道实例失败:', error)
     uiStore.showToast('error', getErrorMessage(error, '保存渠道实例失败'))
   } finally {
     instanceAction.value = null
@@ -881,7 +882,7 @@ async function runInstanceAction(action: 'start' | 'stop' | 'reload' | 'health' 
       await loadInstanceEvents(currentInstanceId)
     }
   } catch (error) {
-    console.error(`执行实例动作失败: ${action}`, error)
+    logger.error(`执行实例动作失败: ${action}`, error)
     uiStore.showToast('error', getErrorMessage(error, '实例操作失败'))
   } finally {
     instanceAction.value = null

@@ -3,6 +3,7 @@ import { ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import type { WorkflowDetail } from '@/types'
 import type { ValidationResponse } from '@/types'
 import { workflowApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import FormDialogShell from '@/components/common/FormDialogShell.vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -114,7 +115,7 @@ async function validateWorkflow() {
     validationResult.value = await workflowApi.validateYaml(formData.value.yaml)
     return validationResult.value
   } catch (e) {
-    console.error('校验失败:', e)
+    logger.error('校验失败:', e)
     return null
   } finally {
     validating.value = false

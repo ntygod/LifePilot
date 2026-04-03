@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
 import { Clock3, RefreshCw, ShieldAlert, ShieldCheck, ShieldPlus, Trash2 } from 'lucide-vue-next'
 import { channelApi, permissionApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { PermissionGrant, PermissionGrantCreateRequest } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -257,7 +258,7 @@ async function loadChannelOptions() {
       form.value.channels = [defaultSingleChannel()]
     }
   } catch (error) {
-    console.error('加载渠道选项失败:', error)
+    logger.error('加载渠道选项失败:', error)
     pluginChannelOptions.value = [{ value: 'web', label: 'Web UI' }]
   }
 }
@@ -271,7 +272,7 @@ async function loadGrants() {
       subjectId: filterSubjectId.value.trim() || undefined,
     })
   } catch (error) {
-    console.error('加载授权记录失败:', error)
+    logger.error('加载授权记录失败:', error)
     uiStore.showToast('error', '加载授权记录失败')
   } finally {
     loading.value = false
@@ -289,7 +290,7 @@ function buildCreatePayload(): PermissionGrantCreateRequest | null {
     try {
       scope = JSON.parse(form.value.scopeJson)
     } catch (error) {
-      console.error('解析授权作用域失败:', error)
+      logger.error('解析授权作用域失败:', error)
       uiStore.showToast('error', '作用域 JSON 格式不合法')
       return null
     }
@@ -322,7 +323,7 @@ async function createGrant() {
     resetForm()
     await loadGrants()
   } catch (error) {
-    console.error('创建授权失败:', error)
+    logger.error('创建授权失败:', error)
     uiStore.showToast('error', '创建授权失败')
   } finally {
     creating.value = false
@@ -339,7 +340,7 @@ async function revokeGrant(grant: PermissionGrant) {
     uiStore.showToast('success', '授权已撤销')
     await loadGrants()
   } catch (error) {
-    console.error('撤销授权失败:', error)
+    logger.error('撤销授权失败:', error)
     uiStore.showToast('error', '撤销授权失败')
   } finally {
     revokingGrantId.value = null

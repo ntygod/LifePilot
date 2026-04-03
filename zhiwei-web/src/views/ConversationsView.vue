@@ -12,6 +12,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-vue-next'
+import { logger } from '@/utils/logger'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -128,7 +129,7 @@ async function handleNewConversation() {
     const session = await chatStore.createSession(defaultTitle)
     router.push({ name: 'conversationDetail', params: { sessionId: session.id } })
   } catch (error) {
-    console.error('创建会话失败:', error)
+    logger.error('创建会话失败:', error)
   } finally {
     loading.value = false
   }
@@ -159,7 +160,7 @@ async function confirmRename(sessionId: string) {
     await chatStore.updateSession(sessionId, { title })
     renamingId.value = null
   } catch (error) {
-    console.error('重命名失败:', error)
+    logger.error('重命名失败:', error)
   }
 }
 
@@ -174,7 +175,7 @@ async function togglePin(sessionId: string) {
   try {
     await chatStore.updateSession(sessionId, { pinned: !session.pinned })
   } catch (error) {
-    console.error('置顶操作失败:', error)
+    logger.error('置顶操作失败:', error)
   }
 }
 
@@ -185,7 +186,7 @@ async function toggleArchive(sessionId: string) {
   try {
     await chatStore.updateSession(sessionId, { archived: !session.archived })
   } catch (error) {
-    console.error('归档操作失败:', error)
+    logger.error('归档操作失败:', error)
   }
 }
 
@@ -202,7 +203,7 @@ async function confirmDelete() {
     selectedIds.value.delete(targetId)
     deleteTarget.value = null
   } catch (error) {
-    console.error('删除失败:', error)
+    logger.error('删除失败:', error)
   }
 }
 
