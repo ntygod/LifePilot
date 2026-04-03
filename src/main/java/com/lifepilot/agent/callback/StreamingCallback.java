@@ -144,23 +144,32 @@ public class StreamingCallback implements IterationCallback {
         var contentBuilder = new StringBuilder();
         final Instant[] firstTokenTime = {null};
 
-        streamingResponse.stream()
-                .takeWhile(token -> !cancellationToken.isCancelled()
-                        && sseManager.getEmitter(streamId) != null)
-                .doOnNext(token -> {
-                    contentBuilder.append(token);
-                    Instant now = Instant.now();
-                    if (firstTokenTime[0] == null) {
-                        firstTokenTime[0] = now;
-                    }
-                    markFirstModelToken(now);
-                    pushTokenToSse(token, outputState);
-                })
-                .doOnError(e -> {
-                    log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
-                    this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
-                })
-                .blockLast();
+        try {
+            streamingResponse.stream()
+                    .takeWhile(token -> !cancellationToken.isCancelled()
+                            && sseManager.getEmitter(streamId) != null)
+                    .doOnNext(token -> {
+                        contentBuilder.append(token);
+                        Instant now = Instant.now();
+                        if (firstTokenTime[0] == null) {
+                            firstTokenTime[0] = now;
+                        }
+                        markFirstModelToken(now);
+                        pushTokenToSse(token, outputState);
+                    })
+                    .doOnError(e -> {
+                        log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
+                        this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
+                    })
+                    .blockLast();
+        } catch (Exception e) {
+            // doOnError 已捕获异常到 streamingError，blockLast 会重新抛出同一异常；
+            // 统一由下方 streamingError 检查处理，避免双重抛出
+            if (this.streamingError == null) {
+                this.streamingError = e;
+            }
+            log.debug("多模态流式 blockLast 异常（已捕获到 streamingError）: {}", e.getMessage());
+        }
 
         if (cancellationToken.isCancelled()) {
             log.debug("多模态流式消费因取消信号停止: streamId={}", streamId);
@@ -309,9 +318,13 @@ public class StreamingCallback implements IterationCallback {
                 this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
             }).blockLast();
         } catch (Exception e) {
-            log.error("流式调用失败: scene={}, provider={}, error={}",
-                    scene2, chatModelInfo.serviceId(), describeProviderError(e));
-            throw e;
+            // doOnError 已捕获异常到 streamingError，blockLast 会重新抛出同一异常；
+            // 统一由下方 streamingError 检查处理，避免双重抛出
+            if (this.streamingError == null) {
+                this.streamingError = e;
+            }
+            log.debug("文本流式 blockLast 异常（已捕获到 streamingError）: scene={}, error={}",
+                    scene2, e.getMessage());
         }
 
         if (cancellationToken.isCancelled()) {
