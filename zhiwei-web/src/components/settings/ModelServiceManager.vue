@@ -626,6 +626,37 @@ onMounted(() => {
               <div class="grid content-start gap-4">
                 <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
                   <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="space-y-2">
+                      <Label>超时时间（秒）</Label>
+                      <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
+                      <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
+                    </div>
+
+                    <div v-if="isEmbeddingKind" class="space-y-2">
+                      <Label>向量维度</Label>
+                      <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
+                    </div>
+
+                    <div class="space-y-2 sm:col-span-2">
+                      <Label>描述</Label>
+                      <Textarea
+                        v-model="formData.description"
+                        rows="3"
+                        placeholder="补充用途或备注"
+                      />
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <details class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-muted/20 px-6 py-4">
+              <summary class="cursor-pointer select-none text-sm font-semibold text-foreground">高级参数</summary>
+              <p class="mt-1 text-sm text-muted-foreground">服务 ID、优先级、上下文窗口、成本统计、能力标签等参数。通常由厂商模板自动填充，无需手动修改。</p>
+
+              <div class="mt-4 space-y-4">
+                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
+                  <div class="grid gap-4 sm:grid-cols-2">
                     <div class="space-y-2 sm:col-span-2">
                       <Label>服务 ID</Label>
                       <Input
@@ -639,12 +670,6 @@ onMounted(() => {
                     </div>
 
                     <div class="space-y-2">
-                      <Label>超时时间（秒）</Label>
-                      <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
-                      <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
-                    </div>
-
-                    <div class="space-y-2">
                       <Label>优先级</Label>
                       <Input v-model.number="formData.priority" type="number" />
                     </div>
@@ -654,15 +679,6 @@ onMounted(() => {
                       <Input v-model.number="formData.maxContextWindow" type="number" :min="0" />
                     </div>
 
-                    <div v-if="isEmbeddingKind" class="space-y-2">
-                      <Label>向量维度</Label>
-                      <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
-                    </div>
-                  </div>
-                </section>
-
-                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
-                  <div class="grid gap-4 sm:grid-cols-2">
                     <div class="space-y-2">
                       <Label>输入成本（每百万 token）</Label>
                       <Input v-model.number="formData.costPerInputToken" type="number" :min="0" />
@@ -672,69 +688,60 @@ onMounted(() => {
                       <Label>输出成本（每百万 token）</Label>
                       <Input v-model.number="formData.costPerOutputToken" type="number" :min="0" />
                     </div>
+                  </div>
+                </section>
 
-                    <div class="space-y-2 sm:col-span-2">
-                      <Label>描述</Label>
-                      <Textarea
-                        v-model="formData.description"
-                        rows="4"
-                        placeholder="补充用途或备注"
-                      />
+                <section v-if="isGenerationKind" class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
+                  <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
+                    <div class="space-y-2">
+                      <Label>生成能力</Label>
+                      <div class="grid gap-4 sm:grid-cols-2">
+                        <label
+                          v-for="option in generationCapabilityOptions"
+                          :key="option.value"
+                          class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
+                        >
+                          <Checkbox
+                            :model-value="formData.capabilities?.includes(option.value)"
+                            @update:model-value="() => toggleCapability(option.value)"
+                          />
+                          <span class="text-sm">{{ option.label }}</span>
+                        </label>
+                      </div>
+                      <p v-if="errors.capabilities" class="text-sm text-destructive">{{ errors.capabilities }}</p>
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label>支持场景</Label>
+                      <div class="grid gap-4 sm:grid-cols-2">
+                        <label
+                          v-for="option in generationSceneOptions"
+                          :key="option.value"
+                          class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
+                        >
+                          <Checkbox
+                            :model-value="formData.scenes?.includes(option.value)"
+                            @update:model-value="() => toggleScene(option.value)"
+                          />
+                          <span class="text-sm">{{ option.label }}</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label>流式输出</Label>
+                      <label class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2">
+                        <Checkbox
+                          :model-value="formData.supportsStreaming"
+                          @update:model-value="updateSupportsStreaming"
+                        />
+                        <span class="text-sm text-foreground">支持流式输出</span>
+                      </label>
                     </div>
                   </div>
                 </section>
               </div>
-            </div>
-
-            <section v-if="isGenerationKind" class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
-              <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
-                <div class="space-y-2">
-                  <Label>生成能力</Label>
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <label
-                      v-for="option in generationCapabilityOptions"
-                      :key="option.value"
-                      class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
-                    >
-                      <Checkbox
-                        :model-value="formData.capabilities?.includes(option.value)"
-                        @update:model-value="() => toggleCapability(option.value)"
-                      />
-                      <span class="text-sm">{{ option.label }}</span>
-                    </label>
-                  </div>
-                  <p v-if="errors.capabilities" class="text-sm text-destructive">{{ errors.capabilities }}</p>
-                </div>
-
-                <div class="space-y-2">
-                  <Label>支持场景</Label>
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <label
-                      v-for="option in generationSceneOptions"
-                      :key="option.value"
-                      class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
-                    >
-                      <Checkbox
-                        :model-value="formData.scenes?.includes(option.value)"
-                        @update:model-value="() => toggleScene(option.value)"
-                      />
-                      <span class="text-sm">{{ option.label }}</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div class="space-y-2">
-                  <Label>流式输出</Label>
-                  <label class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2">
-                    <Checkbox
-                      :model-value="formData.supportsStreaming"
-                      @update:model-value="updateSupportsStreaming"
-                    />
-                    <span class="text-sm text-foreground">支持流式输出</span>
-                  </label>
-                </div>
-              </div>
-            </section>
+            </details>
 
             <DialogFooter>
               <Button type="button" variant="outline" @click="closeManager">返回模型服务页</Button>
