@@ -74,10 +74,11 @@ public class A2aAutoConfiguration {
                                               AgentExecutor agentExecutor,
                                               AgentOrchestrator agentOrchestrator,
                                               A2aTaskStore taskStore,
-                                              MeterRegistry meterRegistry) {
+                                              MeterRegistry meterRegistry,
+                                              ObjectMapper objectMapper) {
         log.info("A2A Server: 注册 A2aAgentExecutor");
         return new A2aAgentExecutor(agentRegistry, agentExecutor, agentOrchestrator,
-                taskStore, meterRegistry);
+                taskStore, meterRegistry, objectMapper);
     }
 
     @Bean

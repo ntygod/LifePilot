@@ -164,9 +164,7 @@ public class RemoteAgentToolFactory {
         }
     }
 
-    /**
-     * 从 A2aTask 的 Artifact 中提取文本内容（支持 Text / File / Data 全部 Part 类型）。
-     */
+    /* visible for testing — 从 A2aTask 的 Artifact 中提取文本内容（支持 Text / File / Data 全部 Part 类型）。 */
     String extractArtifactText(A2aTask task) {
         if (task.artifacts() == null || task.artifacts().isEmpty()) {
             // 尝试从 status message 提取

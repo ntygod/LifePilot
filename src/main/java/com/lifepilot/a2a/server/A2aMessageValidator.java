@@ -66,8 +66,7 @@ public final class A2aMessageValidator {
             case A2aPart.File file -> {
                 if (file.file() == null) {
                     yield "parts[" + index + "]: file 字段不能为空";
-                }
-                if ((file.file().bytes() == null || file.file().bytes().isBlank())
+                } else if ((file.file().bytes() == null || file.file().bytes().isBlank())
                         && (file.file().uri() == null || file.file().uri().isBlank())) {
                     yield "parts[" + index + "]: file 必须包含 bytes 或 uri";
                 }

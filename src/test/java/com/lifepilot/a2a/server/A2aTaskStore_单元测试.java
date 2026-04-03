@@ -239,18 +239,14 @@ class A2aTaskStore_单元测试 {
     // ── TTL 清理 ──
 
     @Test
-    @SuppressWarnings("unchecked")
-    void cleanupExpired_过期Task被清理() throws Exception {
+    void cleanupExpired_过期Task被清理() {
         var task1 = store.create(创建测试消息("msg-1", null));
         var task2 = store.create(创建测试消息("msg-2", null));
 
-        // 通过反射将 createdAt 时间回拨到 2 分钟前（TTL = 1 分钟）
-        var createdAtField = A2aTaskStore.class.getDeclaredField("createdAt");
-        createdAtField.setAccessible(true);
-        var createdAtMap = (java.util.concurrent.ConcurrentHashMap<String, java.time.Instant>) createdAtField.get(store);
+        // 将 createdAt 时间回拨到 2 分钟前（TTL = 1 分钟）
         var pastTime = java.time.Instant.now().minusSeconds(120);
-        createdAtMap.put(task1.id(), pastTime);
-        createdAtMap.put(task2.id(), pastTime);
+        store.overrideCreatedAt(task1.id(), pastTime);
+        store.overrideCreatedAt(task2.id(), pastTime);
 
         int cleaned = store.cleanupExpired();
 

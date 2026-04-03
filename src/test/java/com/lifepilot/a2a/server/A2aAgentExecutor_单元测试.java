@@ -1,5 +1,6 @@
 package com.lifepilot.a2a.server;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.a2a.config.A2aProperties;
 import com.lifepilot.a2a.model.*;
 import com.lifepilot.agent.model.AgentRequest;
@@ -59,7 +60,8 @@ class A2aAgentExecutor_单元测试 {
 
         var properties = new A2aProperties();
         taskStore = new A2aTaskStore(properties);
-        executor = new A2aAgentExecutor(agentRegistry, agentExecutor, agentOrchestrator, taskStore, meterRegistry);
+        executor = new A2aAgentExecutor(agentRegistry, agentExecutor, agentOrchestrator,
+                taskStore, meterRegistry, new ObjectMapper());
     }
 
     // ── extractText 测试 ──
@@ -109,12 +111,12 @@ class A2aAgentExecutor_单元测试 {
     }
 
     @Test
-    void extractText_Data部分格式化为结构化数据描述() {
+    void extractText_Data部分格式化为JSON() {
         var message = new A2aMessage("msg-1", A2aRole.USER,
                 List.of(new A2aPart.Data(Map.of("key", "value"), null)), null, null, null);
 
         String result = executor.extractText(message);
-        assertThat(result).contains("结构化数据").contains("key").contains("value");
+        assertThat(result).contains("结构化数据").contains("\"key\"").contains("\"value\"");
     }
 
     @Test

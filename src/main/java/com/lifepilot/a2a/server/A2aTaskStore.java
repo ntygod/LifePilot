@@ -189,4 +189,9 @@ public class A2aTaskStore {
         }
         return expiredIds.size();
     }
+
+    /* visible for testing — 覆盖指定 Task 的创建时间（用于 TTL 清理测试）。 */
+    void overrideCreatedAt(String taskId, Instant time) {
+        createdAt.put(taskId, time);
+    }
 }

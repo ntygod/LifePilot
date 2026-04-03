@@ -1,5 +1,7 @@
 package com.lifepilot.a2a.server;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.a2a.model.*;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
@@ -34,6 +36,7 @@ public class A2aAgentExecutor {
     private final AgentExecutor agentExecutor;
     private final AgentOrchestrator agentOrchestrator;
     private final A2aTaskStore taskStore;
+    private final ObjectMapper objectMapper;
 
     private final Counter syncSuccessCounter;
     private final Counter syncFailedCounter;
@@ -45,11 +48,13 @@ public class A2aAgentExecutor {
                             AgentExecutor agentExecutor,
                             AgentOrchestrator agentOrchestrator,
                             A2aTaskStore taskStore,
-                            MeterRegistry meterRegistry) {
+                            MeterRegistry meterRegistry,
+                            ObjectMapper objectMapper) {
         this.agentRegistry = agentRegistry;
         this.agentExecutor = agentExecutor;
         this.agentOrchestrator = agentOrchestrator;
         this.taskStore = taskStore;
+        this.objectMapper = objectMapper;
 
         this.syncSuccessCounter = meterRegistry.counter("a2a.server.messages.total", "method", "sync", "status", "success");
         this.syncFailedCounter = meterRegistry.counter("a2a.server.messages.total", "method", "sync", "status", "failed");
@@ -75,7 +80,8 @@ public class A2aAgentExecutor {
                 String result = doExecute(extractText(message), taskId, skillId);
                 if (result == null) {
                     // 确保 FAILED 状态已设置（doExecute 中 skillId 未找到时已设置，其他情况兜底）
-                    if (taskStore.find(taskId).orElseThrow().status().state() != A2aTaskState.FAILED) {
+                    var current = taskStore.find(taskId).orElseThrow();
+                    if (current.status().state() != A2aTaskState.FAILED) {
                         taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行返回空结果");
                     }
                     syncFailedCounter.increment();
@@ -124,7 +130,8 @@ public class A2aAgentExecutor {
             try {
                 String result = doExecute(extractText(message), taskId, skillId);
                 if (result == null) {
-                    if (taskStore.find(taskId).orElseThrow().status().state() != A2aTaskState.FAILED) {
+                    var current = taskStore.find(taskId).orElseThrow();
+                    if (current.status().state() != A2aTaskState.FAILED) {
                         taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行返回空结果");
                     }
                     streamFailedCounter.increment();
@@ -184,7 +191,7 @@ public class A2aAgentExecutor {
         }
     }
 
-    /** 从 A2aMessage 中提取文本内容（支持 Text / File / Data 三种 Part 类型）。 */
+    /* visible for testing — 从 A2aMessage 中提取文本内容（支持 Text / File / Data 三种 Part 类型）。 */
     String extractText(A2aMessage message) {
         var sb = new StringBuilder();
         for (A2aPart part : message.parts()) {
@@ -213,10 +220,14 @@ public class A2aAgentExecutor {
         return desc.toString();
     }
 
-    /** 将 Data Part 格式化为文本描述。 */
+    /** 将 Data Part 格式化为 JSON 文本描述。 */
     private String formatDataPart(A2aPart.Data data) {
         if (data.data() == null) return null;
-        return "[结构化数据: " + data.data() + "]";
+        try {
+            return "[结构化数据: " + objectMapper.writeValueAsString(data.data()) + "]";
+        } catch (JsonProcessingException e) {
+            return "[结构化数据: 序列化失败]";
+        }
     }
 
     /** 安全回调 — 捕获 listener 异常，避免 Virtual Thread 静默终止。 */
