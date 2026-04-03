@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+/** 不需要引导拦截的白名单路由 */
+const ONBOARDING_WHITELIST = new Set(['/', '/splash', '/setup'])
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -227,6 +230,15 @@ const router = createRouter({
       component: () => import('@/views/NotFoundView.vue')
     }
   ]
+})
+
+/**
+ * 首次启动引导守卫：未完成引导时强制跳转到 /setup
+ */
+router.beforeEach((to) => {
+  if (ONBOARDING_WHITELIST.has(to.path)) return
+  if (localStorage.getItem('zhiwei_onboarding_completed') === 'true') return
+  return '/setup'
 })
 
 export default router

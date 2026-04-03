@@ -82,12 +82,13 @@ function stopHealthPoller() {
 }
 
 async function resolveDestination(): Promise<string> {
+  const onboardingDone = localStorage.getItem('zhiwei_onboarding_completed') === 'true'
   try {
     const services = await modelServiceApi.listEnabledServices('GENERATION')
-    const onboardingDone = localStorage.getItem('zhiwei_onboarding_completed') === 'true'
     if (services.length === 0 && !onboardingDone) return '/setup'
   } catch {
-    // 查询失败，直接进入主界面
+    // 查询失败且未完成过引导，仍进入引导流程
+    if (!onboardingDone) return '/setup'
   }
   return '/conversations'
 }
