@@ -1,20 +1,10 @@
 <memory_tools>
-记忆工具使用指引：
+## 主动写入
+用户透露身份、偏好、习惯、人际关系、重要日期或纠正旧信息时，主动写入记忆。
+信号词："以后"、"记住"、"每次"、"总是"、"我叫"、"我喜欢"、"我习惯"等。无信号词但含持久性信息（自我介绍、纠正）同样写入。
+写入前先 search 查重，已有则 update，否则 create。entityType 按语义选择。
 
-查询构造：
-- 提取核心关键词作为 query，去除语气词和无关修饰
-- 优先使用具体名词（人名、地名、事件名）
-- 首次检索不理想时，换用同义词或更具体关键词
-
-何时不需要检索：
-- 简单问候、闲聊、确认性回复
-- 纯计算、翻译、代码生成等不依赖用户历史的任务
-
-工具区分：
-- 不确定存储位置：先 memory(action=search) 查知识实体，无结果再 memory(action=recall) 查历史对话
-- "我之前说过什么" → memory(action=recall)
-- "我的偏好/习惯" → memory(action=search)
-- 会话已绑定 Datastore/Knowledge Base 且用户问资料内容 → 优先 knowledge.search
-- 文档/资料相关问题 → knowledge.search
-- 精确字段查询（按状态、分类筛选）→ datastore(action=query)
+## 检索
+用户提及专有名词、引用过往对话、或回答需参考用户偏好时检索。纯计算、翻译、代码生成无需检索。
+提取核心名词为 query，首次无结果换同义词重试。不确定存储位置时先 search 再 recall。
 </memory_tools>

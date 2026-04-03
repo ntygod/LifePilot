@@ -21,6 +21,7 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -32,12 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * 记忆管理工具提供者。
@@ -102,14 +98,11 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("管理长期记忆。通过 action 参数支持：" +
-                        "search=搜索知识实体（人物、偏好、事件等），" +
-                        "recall=回忆历史对话片段（跨会话），" +
-                        "create=创建新记忆实体，update=更新已有实体，delete=归档实体，" +
-                        "tag=建立实体间关系（如 RELATED_TO），" +
-                        "query-at-time=查询指定时间点的记忆状态，" +
-                        "search-experience=检索历史执行经验和成功模式。" +
-                        "搜索当前会话绑定的资料文档请用 knowledge.search，精确字段过滤请用 datastore。")
+                .description("管理用户的长期记忆。用户透露身份、偏好、习惯等持久性信息时应主动调用写入。" +
+                        "action: search=搜索知识实体, recall=回忆历史对话(跨会话), " +
+                        "create=新建实体, update=更新实体, delete=归档, tag=建立关系, " +
+                        "query-at-time=时间点查询, search-experience=检索执行经验。" +
+                        "资料文档用 knowledge.search，精确字段用 datastore。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -187,7 +180,7 @@ public class MemoryToolProvider {
                 .build();
     }
 
-    ToolResult executeSearch(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeSearch(ToolInput input) {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
             String query = input.getParam("query", String.class);
@@ -204,7 +197,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeRecall(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeRecall(ToolInput input) {
         if (episodicMemory == null) {
             return ToolResult.error("回忆对话功能不可用");
         }
@@ -225,7 +218,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeCreate(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeCreate(ToolInput input) {
         try {
             String name = input.getParam("name", String.class);
             String typeStr = input.getParam("entityType", String.class);
@@ -235,7 +228,7 @@ public class MemoryToolProvider {
             var now = Instant.now();
             var incoming = new TemporalEntity(null, entityType, name, description, Map.of(), 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
-            var created = semanticMemory.upsertWithConflictDetection(incoming, conversationId);
+            var created = retryOnBusy(() -> semanticMemory.upsertWithConflictDetection(incoming, conversationId));
             return ToolResult.success(Map.of(
                     "id", created.id(), "name", created.name(), "type", created.type().name(), "version", created.version()));
         } catch (IllegalArgumentException e) {
@@ -246,7 +239,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeUpdate(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeUpdate(ToolInput input) {
         try {
             String entityId = input.getParam("entityId", String.class);
             var existing = semanticMemory.findById(entityId);
@@ -262,7 +255,7 @@ public class MemoryToolProvider {
                     entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
                     entity.extractionConfidence(), entity.importanceScore(),
                     entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-            var result = semanticMemory.upsertWithConflictDetection(updated, null);
+            var result = retryOnBusy(() -> semanticMemory.upsertWithConflictDetection(updated, null));
             return ToolResult.success(Map.of(
                     "id", result.id(), "name", result.name(), "type", result.type().name(),
                     "version", result.version(), "description", result.description() != null ? result.description() : ""));
@@ -274,7 +267,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeDelete(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeDelete(ToolInput input) {
         try {
             String entityId = input.getParam("entityId", String.class);
             var existing = semanticMemory.findById(entityId);
@@ -282,7 +275,7 @@ public class MemoryToolProvider {
                 return ToolResult.error("实体不存在: " + entityId);
             }
             var entity = existing.get();
-            semanticMemory.archive(entity);
+            retryOnBusy(() -> { semanticMemory.archive(entity); return null; });
             return ToolResult.success(Map.of("id", entity.id(), "name", entity.name(), "archived", true));
         } catch (Exception e) {
             log.error("删除记忆失败: {}", e.getMessage(), e);
@@ -290,7 +283,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeTag(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeTag(ToolInput input) {
         try {
             String sourceId = input.getParam("sourceEntityId", String.class);
             String targetId = input.getParam("targetEntityId", String.class);
@@ -300,7 +293,7 @@ public class MemoryToolProvider {
             var now = Instant.now();
             var relation = new TemporalRelation(UUID.randomUUID().toString(), sourceId, targetId, relationType, strength,
                     null, now, null, conversationId, now);
-            semanticMemory.addRelation(relation);
+            retryOnBusy(() -> { semanticMemory.addRelation(relation); return null; });
             return ToolResult.success(Map.of(
                     "id", relation.id(), "relationType", relationType,
                     "sourceEntityId", sourceId, "targetEntityId", targetId));
@@ -310,7 +303,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeQueryAtTime(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeQueryAtTime(ToolInput input) {
         try {
             String timestampStr = input.getParam("timestamp", String.class);
             Instant instant;
@@ -346,7 +339,7 @@ public class MemoryToolProvider {
         }
     }
 
-    ToolResult executeSearchExperience(com.lifepilot.tool.model.ToolInput input) {
+    ToolResult executeSearchExperience(ToolInput input) {
         try {
             String query = input.getParam("query", String.class);
             int topK = input.getOptionalParam("top_k", Integer.class).orElse(3);
@@ -443,5 +436,44 @@ public class MemoryToolProvider {
         return sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId).stream()
                 .map(kbId -> new KnowledgeSearchScope(kbId, null))
                 .toList();
+    }
+
+    /**
+     * SQLite BUSY 重试：指数退避，最多重试 3 次。
+     *
+     * <p>SQLite WAL 模式下并发写入可能触发 SQLITE_BUSY_SNAPSHOT，
+     * 此方法在事务外层重试，确保每次重试使用新的事务和快照。</p>
+     */
+    private <T> T retryOnBusy(java.util.function.Supplier<T> operation) {
+        int maxRetries = 3;
+        long baseDelayMs = 200;
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return operation.get();
+            } catch (Exception e) {
+                if (attempt >= maxRetries || !isSqliteBusy(e)) {
+                    throw e;
+                }
+                long delay = baseDelayMs * (1L << attempt); // 200, 400, 800ms
+                log.debug("SQLite BUSY 重试: attempt={}, delayMs={}", attempt + 1, delay);
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+
+    /** 判断异常链中是否包含 SQLite BUSY 错误。 */
+    private boolean isSqliteBusy(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.sqlite.SQLiteException sqliteEx && sqliteEx.getResultCode() != null
+                    && sqliteEx.getResultCode().name().startsWith("SQLITE_BUSY")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

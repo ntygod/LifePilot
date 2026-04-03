@@ -163,19 +163,49 @@ public class ExperienceSummarizer {
 
     // ===== 内部方法 =====
 
-    /** 检查触发条件：stepCount ≥ 2 且含至少一个 ToolCall。 */
+    /**
+     * 检查触发条件：过滤掉不值得提炼的简单交互。
+     *
+     * <p>经验的价值在于可迁移的策略知识，单工具直给（记偏好、查天气）不构成策略。
+     * 满足以下任一条件才触发提炼：
+     * <ul>
+     *   <li>工具调用轮次 ≥ 2（多步推理）</li>
+     *   <li>使用了 ≥ 2 种不同工具（能力组合）</li>
+     *   <li>存在失败后恢复（试错策略）</li>
+     * </ul>
+     */
     private boolean meetsTriggerConditions(ReactAgentState state) {
-        if (state.stepCount() < 2) {
-            log.debug("经验提炼: 步骤数不足, stepCount={}", state.stepCount());
-            return false;
-        }
-        boolean hasToolCall = state.steps().stream()
-                .anyMatch(s -> s instanceof ReactStep.ToolCall);
-        if (!hasToolCall) {
+        var toolCalls = state.steps().stream()
+                .filter(s -> s instanceof ReactStep.ToolCall)
+                .map(s -> (ReactStep.ToolCall) s)
+                .toList();
+
+        if (toolCalls.isEmpty()) {
             log.debug("经验提炼: 纯对话任务，无 ToolCall, sessionId={}", state.sessionId());
             return false;
         }
-        return true;
+
+        // 条件 1：工具调用轮次 ≥ 2
+        if (toolCalls.size() >= 2) {
+            return true;
+        }
+
+        // 条件 2：使用了 ≥ 2 种不同工具
+        long distinctTools = toolCalls.stream().map(ReactStep.ToolCall::toolId).distinct().count();
+        if (distinctTools >= 2) {
+            return true;
+        }
+
+        // 条件 3：存在失败后恢复（有失败的 Observation 但任务最终成功）
+        boolean hasFailedObservation = state.steps().stream()
+                .anyMatch(s -> s instanceof ReactStep.Observation obs && !obs.success());
+        if (hasFailedObservation && state.terminationReason() == null) {
+            return true;
+        }
+
+        log.debug("经验提炼: 单工具直给，无策略价值, sessionId={}, toolId={}",
+                state.sessionId(), toolCalls.getFirst().toolId());
+        return false;
     }
 
     /** 截断轨迹文本到 maxInputTokens（简单按字符估算）。 */
@@ -271,7 +301,7 @@ public class ExperienceSummarizer {
                 String existingId = similar.getFirst().entityId();
                 semanticMemory.findById(existingId).ifPresent(existing -> {
                     float boosted = Math.min(existing.importanceScore() + 0.1f, 1.0f);
-                    semanticMemory.updateImportanceScore(existingId, boosted);
+                    retryOnBusy(() -> { semanticMemory.updateImportanceScore(existingId, boosted); return null; });
                     log.debug("经验提炼: 去重命中，提升已有经验分数, entityId={}, newScore={}",
                             existingId, boosted);
                 });
@@ -325,7 +355,7 @@ public class ExperienceSummarizer {
                     now
             );
 
-            semanticMemory.upsertWithConflictDetection(entity, sourceId);
+            retryOnBusy(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId));
 
             // 更新向量索引
             vectorSearcher.upsertEntityVector(entity.id(), experienceText);
@@ -347,5 +377,44 @@ public class ExperienceSummarizer {
             result.add(config.getEvalTagPrefix() + tag);
         }
         return List.copyOf(result);
+    }
+
+    /**
+     * SQLite BUSY 重试：指数退避，最多重试 3 次。
+     *
+     * <p>SQLite WAL 模式下并发写入可能触发 SQLITE_BUSY_SNAPSHOT，
+     * 此方法在事务外层重试，确保每次重试使用新的事务和快照。</p>
+     */
+    private <T> T retryOnBusy(java.util.function.Supplier<T> operation) {
+        int maxRetries = 3;
+        long baseDelayMs = 200;
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return operation.get();
+            } catch (Exception e) {
+                if (attempt >= maxRetries || !isSqliteBusy(e)) {
+                    throw e;
+                }
+                long delay = baseDelayMs * (1L << attempt);
+                log.debug("经验提炼: SQLite BUSY 重试, attempt={}, delayMs={}", attempt + 1, delay);
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+
+    /** 判断异常链中是否包含 SQLite BUSY 错误。 */
+    private boolean isSqliteBusy(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.sqlite.SQLiteException sqliteEx && sqliteEx.getResultCode() != null
+                    && sqliteEx.getResultCode().name().startsWith("SQLITE_BUSY")) {
+                return true;
+            }
+        }
+        return false;
     }
 }
