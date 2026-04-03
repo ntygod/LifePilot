@@ -116,7 +116,7 @@ public class ExtractionValidator {
         }
         if (name.length() > maxEntityNameLength) {
             log.debug("ExtractionValidator: 丢弃超长名称决策, name={}, length={}",
-                    name.substring(0, 20) + "...", name.length());
+                    name.substring(0, Math.min(20, name.length())) + "...", name.length());
             return false;
         }
         return true;

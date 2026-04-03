@@ -8,6 +8,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { agentApi } from '@/api/client'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import { logger } from '@/utils/logger'
 import type { SseTokenEvent, SseDoneEvent, SseErrorEvent, TokenUsage, ToolCallSummary } from '@/types'
 import { Bot, Send, Trash2, Loader2, AlertCircle, ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
@@ -235,7 +236,7 @@ function handleSseEvent(eventType: string, data: string) {
         break
     }
   } catch (e) {
-    console.warn('SSE 事件解析失败:', eventType, e)
+    logger.warn('SSE 事件解析失败:', eventType, e)
   }
 }
 

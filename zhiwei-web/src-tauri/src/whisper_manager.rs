@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 /// Whisper CLI 版本号（对应 GitHub Releases tag）
-const WHISPER_VERSION: &str = "1.7.3";
+const WHISPER_VERSION: &str = "1.8.4";
 
 /// 模型文件名
 const MODEL_FILENAME: &str = "ggml-base.bin";
@@ -499,8 +499,12 @@ fn cli_filename() -> String {
 }
 
 /// 构建 whisper-cli 下载 URL
+///
+/// GitHub Releases 资源命名格式（v1.8.x 起）：
+/// - Windows x64: `whisper-bin-x64.zip`
+/// - Windows x86: `whisper-bin-Win32.zip`
 fn build_cli_download_url() -> String {
-    let archive = platform_archive_name(WHISPER_VERSION);
+    let archive = platform_archive_name();
     format!(
         "https://github.com/ggerganov/whisper.cpp/releases/download/v{}/{}",
         WHISPER_VERSION, archive
@@ -515,24 +519,20 @@ fn build_model_download_url() -> String {
     )
 }
 
-/// 生成平台对应的压缩包名
-fn platform_archive_name(version: &str) -> String {
-    let (os, arch) = if cfg!(target_os = "windows") {
-        ("win", arch_name())
-    } else if cfg!(target_os = "macos") {
-        ("macos", arch_name())
+/// 生成平台对应的压缩包名（仅 Windows 提供预编译包）
+fn platform_archive_name() -> String {
+    if cfg!(target_os = "windows") {
+        let arch = if cfg!(target_arch = "aarch64") || cfg!(target_arch = "x86") {
+            "Win32"
+        } else {
+            "x64"
+        };
+        format!("whisper-bin-{}.zip", arch)
     } else {
-        ("linux", arch_name())
-    };
-    format!("whisper-{}-bin-{}-{}.zip", version, os, arch)
-}
-
-/// 获取架构名称
-fn arch_name() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "x64"
+        // macOS / Linux 暂无官方预编译 CLI，保留旧格式以便后续适配
+        let os = if cfg!(target_os = "macos") { "macos" } else { "linux" };
+        let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
+        format!("whisper-{}-bin-{}-{}.zip", WHISPER_VERSION, os, arch)
     }
 }
 

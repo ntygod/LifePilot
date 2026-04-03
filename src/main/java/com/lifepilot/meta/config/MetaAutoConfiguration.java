@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.service.ChannelInstanceService;
@@ -129,10 +130,11 @@ public class MetaAutoConfiguration {
                                         @Nullable CronScheduler cronScheduler,
                                         @Nullable NotificationProperties notificationProperties,
                                         @Nullable BackgroundProcessManager backgroundProcessManager,
+                                        @Nullable ChannelRegistry channelRegistry,
                                         @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                                         @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                         @Nullable ChannelInstanceService channelInstanceService) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
     }
 
     /**

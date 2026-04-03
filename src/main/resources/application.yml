@@ -1,6 +1,6 @@
 # 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.data-dir=xxx 覆盖）
 zhiwei:
-  data-dir: "${zhiwei.data-dir}"
+  data-dir: "${user.home}/.zhiwei"
 
 spring:
   application:

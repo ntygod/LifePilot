@@ -6,6 +6,7 @@ import { workflowApi } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUiStore } from '@/stores/ui'
 import type { WorkflowDetail, WorkflowInputParam, WorkflowItem } from '@/types'
+import { logger } from '@/utils/logger'
 import { stateConfig } from '@/constants/workflowState'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -90,7 +91,7 @@ async function handleExport(workflowId: string) {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    console.error('导出失败:', e)
+    logger.error('导出失败:', e)
   } finally {
     exportLoading.value = false
   }
@@ -111,7 +112,7 @@ async function handleBatchExport() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    console.error('批量导出失败:', e)
+    logger.error('批量导出失败:', e)
   } finally {
     exportLoading.value = false
   }
@@ -155,7 +156,7 @@ async function handleImport(event: Event) {
     await workflowApi.importWorkflow(yamlContent)
     await store.fetchList()
   } catch (e) {
-    console.error('导入失败:', e)
+    logger.error('导入失败:', e)
   } finally {
     importLoading.value = false
     input.value = ''
@@ -652,7 +653,7 @@ onBeforeUnmount(() => {
                 <div class="surface-label">工作流</div>
                 <div class="space-y-2">
                   <div class="flex flex-wrap items-center gap-2">
-                    <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                    <h1 class="text-2xl font-semibold tracking-tight text-foreground">
                       {{ store.current.name }}
                     </h1>
                     <Badge :variant="store.current.enabled ? 'default' : 'secondary'">

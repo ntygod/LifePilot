@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { ErrorResponse } from '@/types'
 import { NetworkError, TimeoutError } from '@/api/client'
+import { logger } from '@/utils/logger'
 
 /** 错误处理选项 */
 export interface ErrorHandlerOptions {
@@ -96,7 +97,7 @@ export function useErrorHandler(options: ErrorHandlerOptions = {}) {
 
     // 记录错误日志
     if (logError) {
-      console.error('API Error:', error)
+      logger.error('API Error:', error)
     }
 
     return errorMessage

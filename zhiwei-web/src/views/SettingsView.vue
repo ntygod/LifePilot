@@ -23,8 +23,8 @@ const labelMap: Record<string, string> = {
   '/settings/general': '通用',
   '/settings/models': '模型与路由',
   '/settings/knowledge': '知识与检索',
-  '/settings/channels': '集成渠道',
-  '/settings/permissions': '授权与自动执行',
+  '/settings/channels': '集成渠道（高级）',
+  '/settings/permissions': '授权与自动执行（高级）',
 }
 
 const activeView = computed(() => viewMap[route.path] ?? SettingsGeneralView)

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { MemoryStats, MemorySearchResult, ErrorResponse } from '@/types'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 
 /**
  * 记忆管理 Pinia Store。
@@ -84,9 +85,9 @@ export const useMemoryStore = defineStore('memory', () => {
       const error = err as ErrorResponse
       if (error.code === 409) {
         // 巩固已在执行中，保持 consolidating 状态
-        console.warn('记忆巩固已在执行中')
+        logger.warn('记忆巩固已在执行中')
       } else {
-        console.error('触发巩固失败:', error.message)
+        logger.error('触发巩固失败:', error.message)
       }
     } finally {
       consolidating.value = false

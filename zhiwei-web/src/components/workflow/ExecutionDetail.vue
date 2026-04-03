@@ -5,6 +5,7 @@ import type { WorkflowExecution } from '@/types'
 import { getStateConfig } from '@/constants/workflowState'
 import { useWorkflowStore } from '@/stores/workflow'
 import { workflowApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import ApprovalPanel from '@/components/workflow/ApprovalPanel.vue'
 import EventTimeline from '@/components/workflow/EventTimeline.vue'
 import StepDagView from '@/components/workflow/StepDagView.vue'
@@ -77,7 +78,7 @@ async function loadContext() {
   try {
     executionContext.value = await workflowApi.getExecutionContext(props.execution.id)
   } catch (e) {
-    console.error('加载上下文失败:', e)
+    logger.error('加载上下文失败:', e)
   } finally {
     contextLoading.value = false
   }

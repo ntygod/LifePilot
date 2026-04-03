@@ -4,6 +4,7 @@ import App from './App.vue'
 import router from './router'
 import './assets/styles/main.css'
 import type { ThemeMode } from '@/composables/useTheme'
+import { logger } from '@/utils/logger'
 
 const DISPLAY_PREFERENCES_KEY = 'zhiwei_display_preferences'
 
@@ -52,7 +53,7 @@ async function initTauriPort() {
       const { invoke } = await import('@tauri-apps/api/core')
       window.__ZHIWEI_BACKEND_PORT__ = await invoke<number>('get_backend_port')
     } catch (e) {
-      console.warn('Tauri 端口获取失败，使用默认端口 8080:', e)
+      logger.warn('Tauri 端口获取失败，使用默认端口 8080:', e)
     }
   }
 }

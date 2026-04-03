@@ -106,6 +106,7 @@
   UpdateChannelInstanceRequest
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
+import { logger } from '@/utils/logger'
 import { getApiOrigin } from '@/api/config'
 
 // API 基础路径（运行时求值，Tauri 桌面端使用绝对路径，浏览器环境通过 Vite proxy 转发）
@@ -174,7 +175,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     try {
       return JSON.parse(text) as T
     } catch (e) {
-      console.error('JSON 解析失败:', e, '响应内容:', text)
+      logger.error('JSON 解析失败:', e, '响应内容:', text)
       throw { code: res.status, message: '响应解析失败', timestamp: new Date().toISOString() }
     }
   } catch (error) {

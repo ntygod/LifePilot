@@ -18,12 +18,14 @@ import {
   X,
 } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import { useChatStore } from '@/stores/chat'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useVoice } from '@/composables/useVoice'
 import { useWhisperDownload } from '@/composables/useWhisperDownload'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { ChatAttachment, Datastore, KnowledgeBase, SessionConfig } from '@/types'
 
 const props = defineProps<{
@@ -84,20 +86,28 @@ const {
   triggerDownload: downloadWhisper,
 } = useWhisperDownload()
 
-/** 麦克风按钮点击：桌面端检测 Whisper 可用性，不可用则触发下载 */
+/** Whisper 下载确认弹窗 */
+const showWhisperConfirm = ref(false)
+
+/** 麦克风按钮点击：桌面端检测 Whisper 可用性，不可用则弹窗确认后下载 */
 async function handleMicClick() {
   if ('__TAURI_INTERNALS__' in window) {
     if (!whisperAvailable.value) {
       await checkWhisper()
       if (!whisperAvailable.value) {
         if (whisperStatus.value !== 'downloading') {
-          downloadWhisper()
+          showWhisperConfirm.value = true
         }
         return
       }
     }
   }
   startRecording()
+}
+
+function confirmWhisperDownload() {
+  showWhisperConfirm.value = false
+  downloadWhisper()
 }
 
 const promptTemplates = [
@@ -224,7 +234,7 @@ async function submit() {
       attachmentIds = uploaded.map(item => item.fileId)
       uploadedAttachments = uploaded
     } catch (error) {
-      console.error('附件上传失败:', error)
+      logger.error('附件上传失败:', error)
       uploadError.value = error instanceof Error ? error.message : '附件上传失败，请重试或移除附件'
       return
     } finally {
@@ -431,7 +441,7 @@ watch(audioBlob, async (blob) => {
     })
     resetTemporaryContextSelection()
   } catch (error) {
-    console.error('语音消息上传失败:', error)
+    logger.error('语音消息上传失败:', error)
     voiceError.value = error instanceof Error ? error.message : '语音消息上传失败，请重试'
   } finally {
     voiceSending.value = false
@@ -846,6 +856,16 @@ defineExpose({
         <span v-if="voiceSending">正在发送语音…</span>
       </div>
     </div>
+
+    <!-- Whisper 语音引擎下载确认弹窗 -->
+    <ConfirmDialog
+      v-model:show="showWhisperConfirm"
+      title="需要下载语音引擎"
+      message="语音输入功能需要 Whisper 语音识别引擎（约 200 MB），是否立即下载？"
+      confirm-label="开始下载"
+      cancel-label="暂不需要"
+      @confirm="confirmWhisperDownload"
+    />
   </div>
 </template>
 

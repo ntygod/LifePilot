@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { KnowledgeSettings, SearchSettings } from '@/api/client'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Globe } from 'lucide-vue-next'
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -101,7 +103,7 @@ async function loadSettings() {
     applyKnowledgeSettings(knowledgeData)
     applySearchSettings(searchData)
   } catch (error) {
-    console.error('加载知识与检索配置失败', error)
+    logger.error('加载知识与检索配置失败', error)
     loadError.value = '暂时无法读取知识与检索配置，请稍后重试。'
   } finally {
     loading.value = false
@@ -126,7 +128,7 @@ async function handleSave() {
       saveSuccess.value = false
     }, 2200)
   } catch (error: any) {
-    console.error('保存知识与检索配置失败', error)
+    logger.error('保存知识与检索配置失败', error)
     saveError.value = error?.message || '保存失败，请稍后重试。'
   } finally {
     saving.value = false
@@ -158,102 +160,112 @@ async function handleSave() {
         </SettingItem>
       </SettingSection>
 
-      <SettingSection title="分块配置" icon="✂️" description="控制文档如何被切分为检索单元。">
-        <SettingItem label="分块策略" description="smart 自动选择最佳策略，fixed 固定大小切分。">
-          <Select v-model="knowledgeForm.chunkingStrategy">
-            <SelectTrigger class="w-40">
-              <SelectValue placeholder="选择策略" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="smart">Smart</SelectItem>
-              <SelectItem value="fixed">Fixed</SelectItem>
-              <SelectItem value="recursive">Recursive</SelectItem>
-              <SelectItem value="heading">Heading</SelectItem>
-              <SelectItem value="semantic">Semantic</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingItem>
-        <SettingItem label="分块大小" description="每个分块的目标字符数。">
-          <Input v-model.number="knowledgeForm.chunkSize" type="number" :min="128" :max="8192" class="w-28" />
-        </SettingItem>
-        <SettingItem label="重叠大小" description="相邻分块之间的重叠字符数，保证上下文连续性。">
-          <Input v-model.number="knowledgeForm.overlapSize" type="number" :min="0" :max="1024" class="w-28" />
-        </SettingItem>
-        <SettingItem label="最大分块 Token 数" description="单个分块的 Token 上限，超出时会截断。">
-          <Input v-model.number="knowledgeForm.maxChunkTokens" type="number" :min="64" :max="4096" class="w-28" />
-        </SettingItem>
-      </SettingSection>
-
-      <SettingSection title="检索配置" icon="🔎" description="控制知识库混合检索的权重和过滤阈值。">
-        <SettingItem label="返回数量 (TopK)" description="知识库检索返回的最大结果数。">
-          <Input v-model.number="knowledgeForm.retrievalTopK" type="number" :min="1" :max="100" class="w-28" />
-        </SettingItem>
-        <SettingItem label="向量权重" description="向量检索在混合评分中的权重，范围 0 到 1。">
-          <Input v-model.number="knowledgeForm.vectorWeight" type="number" :min="0" :max="1" :step="0.05" class="w-28" />
-        </SettingItem>
-        <SettingItem label="全文检索权重" description="FTS5 全文检索在混合评分中的权重，范围 0 到 1。">
-          <Input v-model.number="knowledgeForm.ftsWeight" type="number" :min="0" :max="1" :step="0.05" class="w-28" />
-        </SettingItem>
-        <SettingItem label="最低相关性分数" description="低于该分数的结果将被过滤。">
-          <Input v-model.number="knowledgeForm.minRelevanceScore" type="number" :min="0" :max="1" :step="0.05" class="w-28" />
-        </SettingItem>
-      </SettingSection>
-
-      <SettingSection title="联网搜索 / Tavily" icon="🌐" description="统一管理 Web 搜索工具使用的 Tavily 配置。">
-        <SettingItem label="搜索提供商" description="当前搜索工具固定使用 Tavily。">
-          <Input :model-value="searchForm.provider.toUpperCase()" readonly class="w-40" />
-        </SettingItem>
+      <SettingSection title="联网搜索" description="配置 Web 搜索工具的 API 密钥。">
+        <template #icon>
+          <Globe class="size-4 text-muted-foreground" />
+        </template>
         <SettingItem
           label="Tavily API Key"
-          description="返回时会显示掩码值；保留不动可沿用原值，清空后保存可删除。"
+          description="用于联网搜索，留空则禁用搜索功能。保留不动可沿用原值，清空后保存可删除。"
         >
           <Input v-model="searchForm.apiKey" type="text" class="w-[320px]" placeholder="tvly-..." />
         </SettingItem>
-        <SettingItem label="默认结果数" description="Web 搜索默认返回的结果条数，Tavily 最大支持 20。">
-          <Input v-model.number="searchForm.maxResults" type="number" :min="1" :max="20" class="w-28" />
-        </SettingItem>
-        <SettingItem label="搜索深度" description="advanced 召回更强但更慢，basic 更省时。">
-          <Select v-model="searchForm.searchDepth">
-            <SelectTrigger class="w-40">
-              <SelectValue placeholder="选择搜索深度" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="basic">Basic</SelectItem>
-              <SelectItem value="advanced">Advanced</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingItem>
-        <SettingItem label="搜索主题" description="根据任务类型调整 Tavily 的检索偏好。">
-          <Select v-model="searchForm.topic">
-            <SelectTrigger class="w-40">
-              <SelectValue placeholder="选择搜索主题" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="general">General</SelectItem>
-              <SelectItem value="news">News</SelectItem>
-              <SelectItem value="finance">Finance</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingItem>
-        <SettingItem label="附带答案摘要" description="启用后，搜索结果中会包含 Tavily 生成的 answer 摘要。">
-          <Switch v-model="searchForm.includeAnswer" />
-        </SettingItem>
-        <SettingItem label="连接超时 (秒)" description="建立到 Tavily 服务连接的超时时间。">
-          <Input v-model.number="searchForm.connectTimeoutSeconds" type="number" :min="1" :max="60" class="w-28" />
-        </SettingItem>
-        <SettingItem label="读取超时 (秒)" description="等待 Tavily 响应主体返回的超时时间。">
-          <Input v-model.number="searchForm.readTimeoutSeconds" type="number" :min="1" :max="120" class="w-28" />
-        </SettingItem>
       </SettingSection>
 
-      <SettingSection title="向量索引" icon="🧠" description="Embedding 维度和批量处理参数。">
-        <SettingItem label="Embedding 维度" description="向量嵌入的维度，需要与所用模型一致。">
-          <Input v-model.number="knowledgeForm.embeddingDimension" type="number" :min="128" :max="4096" class="w-28" />
-        </SettingItem>
-        <SettingItem label="批量大小" description="向量索引时每批处理的文档数。">
-          <Input v-model.number="knowledgeForm.vectorBatchSize" type="number" :min="1" :max="256" class="w-28" />
-        </SettingItem>
-      </SettingSection>
+      <details class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-muted/20 px-6 py-4">
+        <summary class="cursor-pointer select-none text-sm font-semibold text-foreground">高级参数</summary>
+        <p class="mt-1 text-sm text-muted-foreground">分块策略、检索权重、向量索引和搜索调优参数。通常无需修改，默认值已适用于大多数场景。</p>
+
+        <div class="mt-6 space-y-8">
+        <SettingSection title="分块配置" description="控制文档如何被切分为检索单元。">
+          <SettingItem label="分块策略" description="smart 自动选择最佳策略，fixed 固定大小切分。">
+            <Select v-model="knowledgeForm.chunkingStrategy">
+              <SelectTrigger class="w-40">
+                <SelectValue placeholder="选择策略" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="smart">Smart</SelectItem>
+                <SelectItem value="fixed">Fixed</SelectItem>
+                <SelectItem value="recursive">Recursive</SelectItem>
+                <SelectItem value="heading">Heading</SelectItem>
+                <SelectItem value="semantic">Semantic</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+          <SettingItem label="分块大小" description="每个分块的目标字符数。">
+            <Input v-model.number="knowledgeForm.chunkSize" type="number" :min="128" :max="8192" class="w-28" />
+          </SettingItem>
+          <SettingItem label="重叠大小" description="相邻分块之间的重叠字符数，保证上下文连续性。">
+            <Input v-model.number="knowledgeForm.overlapSize" type="number" :min="0" :max="1024" class="w-28" />
+          </SettingItem>
+          <SettingItem label="最大分块 Token 数" description="单个分块的 Token 上限，超出时会截断。">
+            <Input v-model.number="knowledgeForm.maxChunkTokens" type="number" :min="64" :max="4096" class="w-28" />
+          </SettingItem>
+        </SettingSection>
+
+        <SettingSection title="检索配置" description="控制知识库混合检索的权重和过滤阈值。">
+          <SettingItem label="返回数量 (TopK)" description="知识库检索返回的最大结果数。">
+            <Input v-model.number="knowledgeForm.retrievalTopK" type="number" :min="1" :max="100" class="w-28" />
+          </SettingItem>
+          <SettingItem label="向量权重" description="向量检索在混合评分中的权重，范围 0 到 1。">
+            <Input v-model.number="knowledgeForm.vectorWeight" type="number" :min="0" :max="1" :step="0.05" class="w-28" />
+          </SettingItem>
+          <SettingItem label="全文检索权重" description="FTS5 全文检索在混合评分中的权重，范围 0 到 1。">
+            <Input v-model.number="knowledgeForm.ftsWeight" type="number" :min="0" :max="1" :step="0.05" class="w-28" />
+          </SettingItem>
+          <SettingItem label="最低相关性分数" description="低于该分数的结果将被过滤。">
+            <Input v-model.number="knowledgeForm.minRelevanceScore" type="number" :min="0" :max="1" :step="0.05" class="w-28" />
+          </SettingItem>
+        </SettingSection>
+
+        <SettingSection title="向量索引" description="Embedding 维度和批量处理参数。">
+          <SettingItem label="Embedding 维度" description="向量嵌入的维度，需要与所用模型一致。">
+            <Input v-model.number="knowledgeForm.embeddingDimension" type="number" :min="128" :max="4096" class="w-28" />
+          </SettingItem>
+          <SettingItem label="批量大小" description="向量索引时每批处理的文档数。">
+            <Input v-model.number="knowledgeForm.vectorBatchSize" type="number" :min="1" :max="256" class="w-28" />
+          </SettingItem>
+        </SettingSection>
+
+        <SettingSection title="搜索调优" description="Tavily 搜索引擎的高级参数。">
+          <SettingItem label="默认结果数" description="Web 搜索默认返回的结果条数，Tavily 最大支持 20。">
+            <Input v-model.number="searchForm.maxResults" type="number" :min="1" :max="20" class="w-28" />
+          </SettingItem>
+          <SettingItem label="搜索深度" description="advanced 召回更强但更慢，basic 更省时。">
+            <Select v-model="searchForm.searchDepth">
+              <SelectTrigger class="w-40">
+                <SelectValue placeholder="选择搜索深度" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="basic">Basic</SelectItem>
+                <SelectItem value="advanced">Advanced</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+          <SettingItem label="搜索主题" description="根据任务类型调整 Tavily 的检索偏好。">
+            <Select v-model="searchForm.topic">
+              <SelectTrigger class="w-40">
+                <SelectValue placeholder="选择搜索主题" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">General</SelectItem>
+                <SelectItem value="news">News</SelectItem>
+                <SelectItem value="finance">Finance</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+          <SettingItem label="附带答案摘要" description="启用后，搜索结果中会包含 Tavily 生成的 answer 摘要。">
+            <Switch v-model="searchForm.includeAnswer" />
+          </SettingItem>
+          <SettingItem label="连接超时 (秒)" description="建立到 Tavily 服务连接的超时时间。">
+            <Input v-model.number="searchForm.connectTimeoutSeconds" type="number" :min="1" :max="60" class="w-28" />
+          </SettingItem>
+          <SettingItem label="读取超时 (秒)" description="等待 Tavily 响应主体返回的超时时间。">
+            <Input v-model.number="searchForm.readTimeoutSeconds" type="number" :min="1" :max="120" class="w-28" />
+          </SettingItem>
+        </SettingSection>
+        </div>
+      </details>
 
       <div class="sticky bottom-0 z-10 pb-2 pt-4">
         <div class="detail-card bg-background/92 px-4 py-4 backdrop-blur">

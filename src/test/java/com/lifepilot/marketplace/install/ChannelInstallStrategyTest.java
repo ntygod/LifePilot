@@ -72,6 +72,7 @@ class ChannelInstallStrategyTest {
                 ),
                 List.of("botToken"),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
         Path manifest = tempDir.resolve("channel-plugin.json");
@@ -112,6 +113,7 @@ class ChannelInstallStrategyTest {
                 ),
                 List.of(),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
         Path manifest = tempDir.resolve("channel-plugin.json");
@@ -160,7 +162,8 @@ class ChannelInstallStrategyTest {
                         "assets/icon.svg",
                         List.of("examples/default.json"),
                         List.of("assets/schema.json")
-                )
+                ),
+                null
         );
         RestClient restClient = mock(RestClient.class);
         mockResponses(restClient, Map.of(
@@ -216,6 +219,7 @@ class ChannelInstallStrategyTest {
                 Map.of("type", "object", "properties", Map.of()),
                 List.of(),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
         RestClient restClient = mock(RestClient.class);

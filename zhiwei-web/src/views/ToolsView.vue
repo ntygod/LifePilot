@@ -7,6 +7,7 @@ import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -87,17 +88,13 @@ onMounted(() => {
 <template>
   <div class="h-full overflow-y-auto">
     <PageContainer size="wide" class="py-4 sm:py-5">
-      <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
-        <header class="space-y-4 border-b border-border/70 pb-5">
-          <div class="max-w-3xl space-y-2">
-            <div class="surface-label">工具</div>
-            <h1 class="text-3xl font-semibold tracking-tight text-foreground">工具目录</h1>
-            <p class="text-sm leading-6 text-muted-foreground">
-              查看和管理所有可用的工具。
-            </p>
-          </div>
-
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="page-stack">
+        <PageHeader
+          eyebrow="工具"
+          title="工具目录"
+          description="查看和管理所有可用的工具。"
+        >
+          <template #meta>
             <MetricCard label="工具总数" :value="toolStore.tools.length" hint="全部可用工具">
               <template #icon>
                 <Wrench class="size-5" />
@@ -118,8 +115,8 @@ onMounted(() => {
                 <AlertTriangle class="size-5" />
               </template>
             </MetricCard>
-          </div>
-        </header>
+          </template>
+        </PageHeader>
 
         <section class="detail-card p-4">
           <div class="space-y-4">

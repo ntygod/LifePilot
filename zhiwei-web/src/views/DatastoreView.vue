@@ -294,6 +294,7 @@ function summarizeProperties(datastore: Datastore) {
                   variant="ghost"
                   size="icon"
                   title="删除 Datastore"
+                  aria-label="删除 Datastore"
                   data-test="delete-datastore-button"
                   @click.stop="openDeleteDialog(datastore, $event)"
                 >

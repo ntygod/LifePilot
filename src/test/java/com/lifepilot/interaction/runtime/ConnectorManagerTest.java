@@ -62,6 +62,7 @@ class ConnectorManagerTest {
                 Map.of("type", "object", "properties", Map.of("appId", Map.of("type", "string"))),
                 List.of(),
                 null,
+                null,
                 null
         );
 
@@ -97,6 +98,7 @@ class ConnectorManagerTest {
                 List.of("receive", "send"),
                 Map.of("type", "object", "properties", Map.of("baseUrl", Map.of("type", "string"))),
                 List.of(),
+                null,
                 null,
                 null
         );
@@ -169,6 +171,7 @@ class ConnectorManagerTest {
                 List.of("receive", "send"),
                 Map.of("type", "object", "properties", Map.of("appId", Map.of("type", "string"))),
                 List.of(),
+                null,
                 null,
                 null
         );

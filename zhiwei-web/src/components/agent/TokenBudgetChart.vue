@@ -91,11 +91,11 @@ const chartOption = computed(() => ({
 <template>
   <div class="flex items-start gap-6">
     <!-- 环形图 -->
-    <div class="shrink-0" style="width: 200px; height: 200px;">
+    <div class="shrink-0 size-[200px]">
       <VChart
         :option="chartOption"
         :autoresize="true"
-        style="width: 100%; height: 100%;"
+        class="size-full"
       />
     </div>
 

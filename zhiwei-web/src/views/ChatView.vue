@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  EllipsisVertical,
   LibraryBig,
   Settings2,
   SlidersHorizontal,
@@ -10,8 +11,15 @@ import {
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
 import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
+import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import DebugDrawer from '@/components/chat/DebugDrawer.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
@@ -129,7 +137,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
       datastoreIds: detail.datastoreIds ?? [],
     }
   } catch (event) {
-    console.warn('加载会话配置失败:', event)
+    logger.warn('加载会话配置失败:', event)
     if (chatStore.activeSessionId === sessionId) {
       currentSessionDetail.value = null
       resetActiveSessionConfig()
@@ -241,7 +249,7 @@ onMounted(async () => {
     try {
       await chatStore.startNewSession()
     } catch (event) {
-      console.error('创建新会话失败:', event)
+      logger.error('创建新会话失败:', event)
     }
   }
 
@@ -264,7 +272,7 @@ watch(
       try {
         await chatStore.startNewSession()
       } catch (event) {
-        console.error('创建新会话失败:', event)
+        logger.error('创建新会话失败:', event)
       }
       return
     }
@@ -381,7 +389,7 @@ async function handleFork(message: Message) {
     router.push({ name: 'conversationDetail', params: { sessionId: newSession.id } })
   } catch (event) {
     uiStore.showToast('error', '分叉会话失败，请稍后重试')
-    console.error('分叉会话失败:', event)
+    logger.error('分叉会话失败:', event)
   }
 }
 
@@ -476,47 +484,11 @@ function selectSidebarPanel(panel: SidebarPanel) {
     <header class="relative shrink-0 px-4 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1180px]">
         <div class="flex min-w-0 items-center justify-between gap-3 px-1 py-1">
-          <div class="min-w-0">
-            <div class="surface-label">当前对话</div>
-            <h1 class="mt-0.5 truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-              {{ headerTitle }}
-            </h1>
-          </div>
+          <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
+            {{ headerTitle }}
+          </h1>
 
           <div class="flex items-center gap-2">
-            <div class="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('config')"
-              >
-                <Settings2 class="size-4" />
-                配置
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('sidebar')"
-              >
-                <LibraryBig class="size-4" />
-                信息
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('debug')"
-              >
-                <SlidersHorizontal class="size-4" />
-                调试
-              </Button>
-            </div>
-
             <Button
               v-if="isStreaming"
               type="button"
@@ -528,6 +500,28 @@ function selectSidebarPanel(panel: SidebarPanel) {
               <Square class="size-4" />
               停止
             </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button type="button" variant="outline" size="icon" class="size-9 rounded-full" aria-label="更多操作">
+                  <EllipsisVertical class="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-36">
+                <DropdownMenuItem class="gap-2" @click="togglePanel('config')">
+                  <Settings2 class="size-4" />
+                  配置
+                </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="togglePanel('sidebar')">
+                  <LibraryBig class="size-4" />
+                  信息
+                </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="togglePanel('debug')">
+                  <SlidersHorizontal class="size-4" />
+                  调试
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

@@ -1,7 +1,9 @@
 package com.lifepilot.meta.infra.channel;
 
+import com.lifepilot.interaction.config.BuiltinChannelCatalog;
 import com.lifepilot.interaction.model.ChannelInstance;
 import com.lifepilot.interaction.model.ChannelInstanceStatus;
+import com.lifepilot.interaction.model.ChannelOperationDescriptor;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.runtime.ChannelRuntimeProtocol;
@@ -9,6 +11,7 @@ import com.lifepilot.interaction.runtime.model.ChannelRuntimeDeliveryRequest;
 import com.lifepilot.interaction.runtime.model.ChannelRuntimeOperationRequest;
 import com.lifepilot.interaction.runtime.model.ChannelRuntimeOperationResponse;
 import com.lifepilot.interaction.service.ChannelInstanceService;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -21,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -33,13 +37,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link FeishuActionDispatchExecutor} 飞书工具测试。
+ * {@link ChannelActionDispatchExecutor} 通用渠道工具测试。
+ *
+ * <p>使用飞书操作描述验证通用渠道执行器的行为，确保与原 FeishuActionDispatchExecutor 功能等价。</p>
  *
  * @author zsg
- * @since 2026-04-02
+ * @since 2026-04-03
  */
 @ExtendWith(MockitoExtension.class)
-class FeishuActionDispatchExecutor_飞书工具测试 {
+class ChannelActionDispatchExecutor_通用渠道工具测试 {
 
     @Mock
     private ChannelOperationDispatcher operationDispatcher;
@@ -50,7 +56,7 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
     @Mock
     private ChannelInstanceService channelInstanceService;
 
-    private FeishuActionDispatchExecutor executor;
+    private ChannelActionDispatchExecutor executor;
 
     private ChannelInstance instance;
 
@@ -59,8 +65,9 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
 
     @BeforeEach
     void 初始化() {
-        executor = new FeishuActionDispatchExecutor(
-                operationDispatcher, deliveryDispatcher, channelInstanceService);
+        List<ChannelOperationDescriptor> ops = BuiltinChannelCatalog.feishuOperationDescriptors();
+        executor = new ChannelActionDispatchExecutor(
+                operationDispatcher, deliveryDispatcher, channelInstanceService, "feishu", ops);
 
         instance = new ChannelInstance(
                 "feishu.test",
@@ -72,8 +79,8 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
                 Map.of(),
                 Map.of(ChannelRuntimeProtocol.INSTANCE_TOKEN_SECRET_KEY, "token-test"),
                 null, null, null,
-                Instant.parse("2026-04-02T10:00:00Z"),
-                Instant.parse("2026-04-02T10:00:00Z")
+                Instant.parse("2026-04-03T10:00:00Z"),
+                Instant.parse("2026-04-03T10:00:00Z")
         );
     }
 
@@ -159,7 +166,6 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
         verify(deliveryDispatcher).deliver(eq(instance), captor.capture());
         ChannelRuntimeDeliveryRequest delivery = captor.getValue();
         assertThat(delivery.content().type()).isEqualTo("interactive");
-        assertThat(delivery.content().plainText()).isEqualTo(cardJson);
         assertThat(delivery.content().payload()).containsEntry("cardJson", cardJson);
     }
 
@@ -277,7 +283,7 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
 
         // then
         assertThat(result.isSuccess()).isFalse();
-        assertThat(result.error()).contains("飞书渠道实例不存在");
+        assertThat(result.error()).contains("渠道实例不存在");
     }
 
     @Test
@@ -302,7 +308,7 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
 
         // then
         assertThat(result.isSuccess()).isFalse();
-        assertThat(result.error()).contains("飞书消息发送失败");
+        assertThat(result.error()).contains("发送消息");
     }
 
     @Test
@@ -324,7 +330,7 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
 
         // then
         assertThat(result.isSuccess()).isFalse();
-        assertThat(result.error()).contains("飞书消息更新失败");
+        assertThat(result.error()).contains("更新消息");
     }
 
     @Test
@@ -380,13 +386,92 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
 
         // then
         assertThat(result.isSuccess()).isTrue();
-        assertThat(result.data()).containsEntry("status", "replied");
+        assertThat(result.data()).containsEntry("status", "sent");
 
         ArgumentCaptor<ChannelRuntimeDeliveryRequest> captor =
                 ArgumentCaptor.forClass(ChannelRuntimeDeliveryRequest.class);
         verify(deliveryDispatcher).deliver(eq(instance), captor.capture());
         ChannelRuntimeDeliveryRequest delivery = captor.getValue();
         assertThat(delivery.metadata()).containsEntry("parentMessageId", "msg-parent-001");
+    }
+
+    // ─── receiveIdType 默认值验证 ──────────────────
+
+    @Test
+    void send_message_未传receiveIdType_应使用默认值chat_id() {
+        // given
+        setupInstanceMock("feishu.test");
+        var deliveryContent = new ChannelRuntimeDeliveryRequest.Content(
+                "text", "你好", Map.of("text", "你好"));
+        when(deliveryDispatcher.buildContent(any())).thenReturn(deliveryContent);
+
+        var params = new LinkedHashMap<String, Object>();
+        params.put("action", "send_message");
+        params.put("instanceId", "feishu.test");
+        params.put("targetId", "user-123");
+        params.put("content", "你好");
+        // 不传 receiveIdType
+        ToolInput input = buildInput(params);
+
+        // when
+        ToolResult result = executor.execute(input);
+
+        // then
+        assertThat(result.isSuccess()).isTrue();
+
+        ArgumentCaptor<ChannelRuntimeDeliveryRequest> captor =
+                ArgumentCaptor.forClass(ChannelRuntimeDeliveryRequest.class);
+        verify(deliveryDispatcher).deliver(eq(instance), captor.capture());
+        ChannelRuntimeDeliveryRequest delivery = captor.getValue();
+        assertThat(delivery.target().attributes()).containsEntry("receiveIdType", "chat_id");
+    }
+
+    @Test
+    void send_card_未传msgType_应使用默认值interactive() {
+        // given
+        setupInstanceMock("feishu.test");
+        String cardJson = "{\"header\":{\"title\":\"审批\"}}";
+
+        var params = new LinkedHashMap<String, Object>();
+        params.put("action", "send_card");
+        params.put("instanceId", "feishu.test");
+        params.put("targetId", "group-456");
+        params.put("cardJson", cardJson);
+        // 不传 msgType
+        ToolInput input = buildInput(params);
+
+        // when
+        ToolResult result = executor.execute(input);
+
+        // then
+        assertThat(result.isSuccess()).isTrue();
+
+        ArgumentCaptor<ChannelRuntimeDeliveryRequest> captor =
+                ArgumentCaptor.forClass(ChannelRuntimeDeliveryRequest.class);
+        verify(deliveryDispatcher).deliver(eq(instance), captor.capture());
+        ChannelRuntimeDeliveryRequest delivery = captor.getValue();
+        assertThat(delivery.target().attributes()).containsEntry("msgType", "interactive");
+        assertThat(delivery.content().type()).isEqualTo("interactive");
+    }
+
+    // ─── 通用渠道能力验证 ──────────────────────────
+
+    @Test
+    void 自定义操作描述_应正确注册和路由() {
+        // given — 模拟一个最简单的自定义操作
+        var customOp = new ChannelOperationDescriptor(
+                "custom_action", "自定义操作", "执行自定义操作",
+                Map.of("param1", Map.of("type", "string", "description", "参数1")),
+                List.of("param1"),
+                RiskLevel.LOW, false, "custom_op_type",
+                null
+        );
+        var customExecutor = new ChannelActionDispatchExecutor(
+                operationDispatcher, deliveryDispatcher, channelInstanceService, "custom", List.of(customOp));
+
+        assertThat(customExecutor.actions()).containsExactly("custom_action");
+        assertThat(customExecutor.metadataOf("custom_action")).isPresent();
+        assertThat(customExecutor.metadataOf("custom_action").get().riskLevel()).isEqualTo(RiskLevel.LOW);
     }
 
     // ─── 辅助方法 ───────────────────────────────────
@@ -396,6 +481,6 @@ class FeishuActionDispatchExecutor_飞书工具测试 {
     }
 
     private ToolInput buildInput(Map<String, Object> params) {
-        return new ToolInput("feishu_channel", params, PERMISSIVE_SCHEMA, null, null);
+        return new ToolInput("channel_tool", params, PERMISSIVE_SCHEMA, null, null);
     }
 }

@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Activity, AlertTriangle, BarChart3, Wrench } from 'lucide-vue-next'
 import VChart from 'vue-echarts'
 import { analyticsApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { ToolCallStats, ToolDailyTrend } from '@/types'
 import '@/plugins/echarts'
 import FilterChips from '@/components/common/FilterChips.vue'
@@ -104,7 +105,7 @@ async function loadData() {
     dailyTrend.value = response.dailyTrend
   } catch (requestError: any) {
     error.value = requestError?.message || '加载工具分析失败。'
-    console.error('加载工具分析失败:', requestError)
+    logger.error('加载工具分析失败:', requestError)
     toolStats.value = []
     dailyTrend.value = []
   } finally {
@@ -350,7 +351,7 @@ onMounted(() => {
             <VChart
               :option="trendChartOption"
               :autoresize="true"
-              style="width: 100%; height: 320px;"
+              class="h-80 w-full"
             />
           </div>
         </PageSection>

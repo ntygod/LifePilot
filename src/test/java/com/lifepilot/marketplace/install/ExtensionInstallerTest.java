@@ -213,7 +213,8 @@ class ExtensionInstallerTest {
                         "assets/icon.svg",
                         List.of("examples/webhook.json"),
                         List.of("dist/feishu-connector.jar")
-                )
+                ),
+                null
         );
     }
 

@@ -23,7 +23,8 @@ public record ChannelPluginDescriptor(
         Map<String, Object> configSchema,
         List<String> secretFields,
         @Nullable Map<String, Object> setupGuide,
-        @Nullable ChannelPluginResources resources
+        @Nullable ChannelPluginResources resources,
+        @Nullable List<ChannelOperationDescriptor> operationDescriptors
 ) {
 
     public ChannelPluginDescriptor {
@@ -33,5 +34,6 @@ public record ChannelPluginDescriptor(
         configSchema = configSchema != null ? Map.copyOf(configSchema) : Map.of();
         secretFields = secretFields != null ? List.copyOf(secretFields) : List.of();
         setupGuide = setupGuide != null ? Map.copyOf(setupGuide) : null;
+        operationDescriptors = operationDescriptors != null ? List.copyOf(operationDescriptors) : List.of();
     }
 }

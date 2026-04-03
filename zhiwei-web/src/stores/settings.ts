@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { modelServiceApi, type ModelService } from '@/api/client'
+import { logger } from '@/utils/logger'
 
 type ThemePreference = 'light' | 'dark' | 'system'
 type LayoutDensity = 'compact' | 'standard'
@@ -90,7 +91,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       providers.value = await modelServiceApi.listEnabledServices('GENERATION')
     } catch (error) {
-      console.error('加载生成模型服务失败:', error)
+      logger.error('加载生成模型服务失败:', error)
     }
   }
 

@@ -3,6 +3,7 @@ import { getApiOrigin } from '@/api/config'
 import { useNotificationStore } from '@/stores/notification'
 import { useChatStore } from '@/stores/chat'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import { logger } from '@/utils/logger'
 import { parseNotificationContent } from '@/utils/notificationContent'
 import type { NotificationItem, SseTranscriptionEvent } from '@/types'
 
@@ -38,7 +39,7 @@ export function useNotificationStream() {
           sendDesktopNotification(data as NotificationItem)
         }
       } catch (error) {
-        console.error('通知事件解析失败:', error)
+        logger.error('通知事件解析失败:', error)
       }
     })
 
@@ -60,7 +61,7 @@ export function useNotificationStream() {
 
         chatStore.updateMessage(targetId, { content: data.text })
       } catch (error) {
-        console.error('转录事件解析失败:', error)
+        logger.error('转录事件解析失败:', error)
       }
     })
 

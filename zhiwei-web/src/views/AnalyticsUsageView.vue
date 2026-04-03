@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { AlertTriangle, Calendar, TrendingUp } from 'lucide-vue-next'
 import VChart from 'vue-echarts'
 import { analyticsApi, traceApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { ErrorTrendDaily, UsageStats } from '@/types'
 import '@/plugins/echarts'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -181,7 +182,7 @@ async function loadStats() {
     }
   } catch (requestError: any) {
     error.value = requestError?.message || '加载用量统计失败。'
-    console.error('加载用量统计失败:', requestError)
+    logger.error('加载用量统计失败:', requestError)
     stats.value = null
   } finally {
     loading.value = false
@@ -197,7 +198,7 @@ async function loadErrorTrend() {
       to: `${range.to}T23:59:59Z`,
     })
   } catch (requestError) {
-    console.error('加载错误趋势失败:', requestError)
+    logger.error('加载错误趋势失败:', requestError)
     errorTrend.value = []
   } finally {
     errorTrendLoading.value = false
@@ -633,7 +634,7 @@ onMounted(() => {
                 <VChart
                   :option="errorTrendChartOption"
                   :autoresize="true"
-                  style="width: 100%; height: 320px;"
+                  class="h-80 w-full"
                   @click="onErrorChartClick"
                 />
               </div>

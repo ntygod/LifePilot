@@ -13,6 +13,7 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import { getApiOrigin } from '@/api/config'
+import { logger } from '@/utils/logger'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import type { TraceItem, TraceStep } from '@/types'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -267,7 +268,7 @@ function startLiveStream(traceId: string) {
 
         store.steps.sort((left, right) => left.stepIndex - right.stepIndex)
       } catch (error) {
-        console.warn('Failed to parse trace step event', error)
+        logger.warn('Failed to parse trace step event', error)
       }
     })
 
@@ -897,7 +898,7 @@ async function handleRetryServiceCheck() {
 
               <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-5">
                 <div class="surface-label mb-2 text-[0.68rem]">综合评分</div>
-                <div class="text-4xl font-semibold tracking-tight text-foreground">
+                <div class="text-2xl font-semibold tracking-tight text-foreground">
                   {{ scoreValue(store.evaluation.overallScore) }}
                 </div>
                 <div class="mt-4 space-y-2 text-sm text-muted-foreground">

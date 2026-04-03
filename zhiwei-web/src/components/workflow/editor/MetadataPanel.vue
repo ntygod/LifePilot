@@ -255,6 +255,7 @@ function updateInputField(index: number, field: string, value: unknown) {
             variant="ghost"
             size="icon"
             class="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+            aria-label="删除触发器"
             @click="removeTrigger(idx)"
           >
             <X class="h-3.5 w-3.5" />
@@ -286,6 +287,7 @@ function updateInputField(index: number, field: string, value: unknown) {
               variant="ghost"
               size="icon"
               class="h-6 w-6 text-muted-foreground hover:text-destructive"
+              aria-label="删除参数"
               @click="removeInput(idx)"
             >
               <X class="h-3 w-3" />
@@ -372,6 +374,7 @@ function updateInputField(index: number, field: string, value: unknown) {
               variant="ghost"
               size="icon"
               class="h-6 w-6 text-muted-foreground hover:text-destructive"
+              aria-label="删除变量"
               @click="removeVariable(variable.key)"
             >
               <X class="h-3 w-3" />

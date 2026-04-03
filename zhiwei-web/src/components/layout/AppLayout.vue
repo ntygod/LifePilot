@@ -54,6 +54,7 @@ function closeSidebar() {
       variant="outline"
       size="icon"
       class="fixed left-4 top-4 z-40 rounded-[1rem] border border-border/56 bg-background/88 shadow-[0_12px_22px_-18px_hsl(var(--shadow-color)/0.16)] backdrop-blur-xl md:hidden"
+      aria-label="切换侧边栏"
       @click="toggleSidebar"
     >
       <Menu class="size-5" />

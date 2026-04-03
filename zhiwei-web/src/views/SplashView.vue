@@ -82,12 +82,13 @@ function stopHealthPoller() {
 }
 
 async function resolveDestination(): Promise<string> {
+  const onboardingDone = localStorage.getItem('zhiwei_onboarding_completed') === 'true'
   try {
     const services = await modelServiceApi.listEnabledServices('GENERATION')
-    const onboardingDone = localStorage.getItem('zhiwei_onboarding_completed') === 'true'
     if (services.length === 0 && !onboardingDone) return '/setup'
   } catch {
-    // 查询失败，直接进入主界面
+    // 查询失败且未完成过引导，仍进入引导流程
+    if (!onboardingDone) return '/setup'
   }
   return '/conversations'
 }
@@ -208,7 +209,7 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-screen w-screen items-center justify-center bg-background">
-    <div style="width: 22rem;" class="flex flex-col items-center">
+    <div class="w-[22rem] flex flex-col items-center">
       <!-- Logo -->
       <div class="text-5xl font-bold text-foreground">知微</div>
       <div class="mt-sm text-sm text-muted-foreground">ZhiWei AI Assistant</div>

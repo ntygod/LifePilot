@@ -40,7 +40,7 @@ class InfraToolProviderTest {
                 "general",
                 true
         ));
-        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test

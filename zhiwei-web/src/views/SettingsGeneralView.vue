@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { logger } from '@/utils/logger'
 import { useSettings } from '@/composables/useSettings'
 
 const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
@@ -49,7 +50,7 @@ async function browseDataDir() {
       dataDirChanged.value = true
     }
   } catch (e) {
-    console.error('选择目录失败:', e)
+    logger.error('选择目录失败:', e)
   }
 }
 
@@ -86,7 +87,7 @@ async function applySettings() {
   try {
     await saveSettings({ ...form.value })
   } catch (event) {
-    console.error('Failed to save local preferences:', event)
+    logger.error('Failed to save local preferences:', event)
     saveError.value = '保存本地偏好失败。'
   }
 }

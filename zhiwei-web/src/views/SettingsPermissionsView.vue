@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
 import { Clock3, RefreshCw, ShieldAlert, ShieldCheck, ShieldPlus, Trash2 } from 'lucide-vue-next'
 import { channelApi, permissionApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { PermissionGrant, PermissionGrantCreateRequest } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -21,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type SelectValue = AcceptableValue | undefined
+type SelectValueType = AcceptableValue | undefined
 type SubjectType = 'SESSION' | 'WORKSPACE' | 'TASK' | 'USER'
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
@@ -49,7 +50,7 @@ const form = ref({
   actionType: 'WRITE_FILE',
   riskCeiling: 'HIGH' as RiskLevel,
   autonomousAllowed: false,
-  channels: [defaultSingleChannel()] as string[],
+  channels: ['web'] as string[],
   expiresAt: '',
   reason: '',
   scopeJson: '',
@@ -160,7 +161,7 @@ const filteredGrants = computed(() => {
   return list
 })
 
-function normalizeSelectValue(value: SelectValue): string {
+function normalizeSelectValue(value: SelectValueType): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number') return String(value)
   return ''
@@ -257,7 +258,7 @@ async function loadChannelOptions() {
       form.value.channels = [defaultSingleChannel()]
     }
   } catch (error) {
-    console.error('加载渠道选项失败:', error)
+    logger.error('加载渠道选项失败:', error)
     pluginChannelOptions.value = [{ value: 'web', label: 'Web UI' }]
   }
 }
@@ -271,7 +272,7 @@ async function loadGrants() {
       subjectId: filterSubjectId.value.trim() || undefined,
     })
   } catch (error) {
-    console.error('加载授权记录失败:', error)
+    logger.error('加载授权记录失败:', error)
     uiStore.showToast('error', '加载授权记录失败')
   } finally {
     loading.value = false
@@ -289,7 +290,7 @@ function buildCreatePayload(): PermissionGrantCreateRequest | null {
     try {
       scope = JSON.parse(form.value.scopeJson)
     } catch (error) {
-      console.error('解析授权作用域失败:', error)
+      logger.error('解析授权作用域失败:', error)
       uiStore.showToast('error', '作用域 JSON 格式不合法')
       return null
     }
@@ -322,7 +323,7 @@ async function createGrant() {
     resetForm()
     await loadGrants()
   } catch (error) {
-    console.error('创建授权失败:', error)
+    logger.error('创建授权失败:', error)
     uiStore.showToast('error', '创建授权失败')
   } finally {
     creating.value = false
@@ -339,24 +340,24 @@ async function revokeGrant(grant: PermissionGrant) {
     uiStore.showToast('success', '授权已撤销')
     await loadGrants()
   } catch (error) {
-    console.error('撤销授权失败:', error)
+    logger.error('撤销授权失败:', error)
     uiStore.showToast('error', '撤销授权失败')
   } finally {
     revokingGrantId.value = null
   }
 }
 
-function updateSubjectType(value: SelectValue) {
+function updateSubjectType(value: SelectValueType) {
   const subjectType = (normalizeSelectValue(value) || 'WORKSPACE') as SubjectType
   form.value.subjectType = subjectType
   syncSubjectDefaults(subjectType)
 }
 
-function updateActionType(value: SelectValue) {
+function updateActionType(value: SelectValueType) {
   form.value.actionType = normalizeSelectValue(value) || 'WRITE_FILE'
 }
 
-function updateRiskCeiling(value: SelectValue) {
+function updateRiskCeiling(value: SelectValueType) {
   form.value.riskCeiling = (normalizeSelectValue(value) || 'HIGH') as RiskLevel
 }
 
@@ -369,7 +370,7 @@ function updateActiveOnly(value: boolean | 'indeterminate') {
   void loadGrants()
 }
 
-function updateFilterSubjectType(value: SelectValue) {
+function updateFilterSubjectType(value: SelectValueType) {
   filterSubjectType.value = (normalizeSelectValue(value) || 'ALL') as 'ALL' | SubjectType
 }
 
@@ -402,7 +403,7 @@ onMounted(() => {
           class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4"
         >
           <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">{{ item.label }}</div>
-          <div class="mt-2 text-2xl font-semibold text-foreground">{{ item.value }}</div>
+          <div class="mt-2 text-xl font-semibold text-foreground">{{ item.value }}</div>
           <div class="mt-1 text-sm text-muted-foreground">{{ item.hint }}</div>
         </div>
       </div>
