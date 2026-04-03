@@ -249,7 +249,8 @@ class ExecutionMiddleware_单元测试 {
                         new GatewayProperties.ChannelsProperties.WebChannelProperties(true),
                         new GatewayProperties.ChannelsProperties.WecomChannelProperties(false, null, null, null, null, null),
                         new GatewayProperties.ChannelsProperties.DingtalkChannelProperties(false, null, null, null),
-                        new GatewayProperties.ChannelsProperties.FeishuChannelProperties(false, null, null, null, null, 10000)
+                        new GatewayProperties.ChannelsProperties.FeishuChannelProperties(false, null, null, null, null, 10000),
+                        new GatewayProperties.ChannelsProperties.QqChannelProperties(false, null, null)
                 ),
                 new GatewayProperties.ReconnectProperties(10, 1000, 60000, 2.0),
                 new GatewayProperties.SessionProperties(30, 24, 15),
