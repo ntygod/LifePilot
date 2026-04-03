@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type SelectValue = AcceptableValue | undefined
+type SelectValueType = AcceptableValue | undefined
 type SubjectType = 'SESSION' | 'WORKSPACE' | 'TASK' | 'USER'
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
@@ -160,7 +160,7 @@ const filteredGrants = computed(() => {
   return list
 })
 
-function normalizeSelectValue(value: SelectValue): string {
+function normalizeSelectValue(value: SelectValueType): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number') return String(value)
   return ''
@@ -346,17 +346,17 @@ async function revokeGrant(grant: PermissionGrant) {
   }
 }
 
-function updateSubjectType(value: SelectValue) {
+function updateSubjectType(value: SelectValueType) {
   const subjectType = (normalizeSelectValue(value) || 'WORKSPACE') as SubjectType
   form.value.subjectType = subjectType
   syncSubjectDefaults(subjectType)
 }
 
-function updateActionType(value: SelectValue) {
+function updateActionType(value: SelectValueType) {
   form.value.actionType = normalizeSelectValue(value) || 'WRITE_FILE'
 }
 
-function updateRiskCeiling(value: SelectValue) {
+function updateRiskCeiling(value: SelectValueType) {
   form.value.riskCeiling = (normalizeSelectValue(value) || 'HIGH') as RiskLevel
 }
 
@@ -369,7 +369,7 @@ function updateActiveOnly(value: boolean | 'indeterminate') {
   void loadGrants()
 }
 
-function updateFilterSubjectType(value: SelectValue) {
+function updateFilterSubjectType(value: SelectValueType) {
   filterSubjectType.value = (normalizeSelectValue(value) || 'ALL') as 'ALL' | SubjectType
 }
 
@@ -402,7 +402,7 @@ onMounted(() => {
           class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4"
         >
           <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">{{ item.label }}</div>
-          <div class="mt-2 text-2xl font-semibold text-foreground">{{ item.value }}</div>
+          <div class="mt-2 text-xl font-semibold text-foreground">{{ item.value }}</div>
           <div class="mt-1 text-sm text-muted-foreground">{{ item.hint }}</div>
         </div>
       </div>

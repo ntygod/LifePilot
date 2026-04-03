@@ -13,6 +13,7 @@ import type {
   ExtensionInstallation,
   InstalledExtensionAsset,
 } from '@/types'
+import FormDialogShell from '@/components/common/FormDialogShell.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
@@ -940,7 +941,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
           class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4"
         >
           <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">{{ item.label }}</div>
-          <div class="mt-2 text-2xl font-semibold text-foreground">{{ item.value }}</div>
+          <div class="mt-2 text-xl font-semibold text-foreground">{{ item.value }}</div>
           <div class="mt-1 text-sm leading-6 text-muted-foreground">{{ item.hint }}</div>
         </div>
       </div>
@@ -964,37 +965,46 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
           </div>
         </div>
 
-        <div class="mt-6 grid gap-4 xl:grid-cols-2">
+        <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <article
             v-for="plugin in plugins"
             :key="plugin.pluginId"
-            class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4"
+            class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 px-4 py-3"
           >
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div class="min-w-0 flex-1 space-y-4">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h4 class="text-base font-semibold text-foreground">{{ plugin.name }}</h4>
-                  <Badge :variant="connectorModeVariant(plugin.connectorMode)">
-                    {{ connectorModeLabel(plugin.connectorMode) }}
-                  </Badge>
-                  <Badge variant="outline">{{ plugin.platform }}</Badge>
-                  <Badge variant="outline">{{ plugin.version }}</Badge>
-                </div>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <h4 class="text-sm font-semibold text-foreground">{{ plugin.name }}</h4>
+                <Badge :variant="connectorModeVariant(plugin.connectorMode)" class="text-[0.65rem]">
+                  {{ connectorModeLabel(plugin.connectorMode) }}
+                </Badge>
+                <Badge variant="outline" class="text-[0.65rem]">{{ plugin.platform }}</Badge>
+                <Badge variant="outline" class="text-[0.65rem]">{{ plugin.version }}</Badge>
+              </div>
+              <Button size="sm" class="shrink-0 gap-1.5 text-xs" @click="startCreate(plugin.pluginId)">
+                <Plus class="size-3.5" />
+                创建实例
+              </Button>
+            </div>
 
+            <details class="mt-2">
+              <summary class="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
+                查看详情
+              </summary>
+              <div class="mt-3 space-y-3 border-t border-border/50 pt-3">
                 <p class="text-sm leading-6 text-muted-foreground">
                   {{ connectorHint(plugin) }}
                 </p>
 
-                <div class="space-y-2">
+                <div class="space-y-1.5">
                   <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">能力面</div>
-                  <div class="flex flex-wrap gap-2">
-                    <Badge v-for="capability in plugin.capabilities" :key="capability" variant="outline">
+                  <div class="flex flex-wrap gap-1.5">
+                    <Badge v-for="capability in plugin.capabilities" :key="capability" variant="outline" class="text-[0.65rem]">
                       {{ capability }}
                     </Badge>
                   </div>
                 </div>
 
-                <div v-if="pluginGuideSteps(plugin).length" class="space-y-2">
+                <div v-if="pluginGuideSteps(plugin).length" class="space-y-1.5">
                   <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">{{ pluginGuideTitle(plugin) }}</div>
                   <ol class="space-y-1 text-sm leading-6 text-muted-foreground">
                     <li
@@ -1008,33 +1018,19 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                   </ol>
                 </div>
               </div>
-
-              <div class="flex shrink-0 items-center gap-2">
-                <Button class="gap-2" @click="startCreate(plugin.pluginId)">
-                  <Plus class="size-4" />
-                  创建实例
-                </Button>
-              </div>
-            </div>
+            </details>
           </article>
         </div>
       </section>
 
-      <section v-if="createPlugin" class="detail-card p-6">
-        <SettingSection
-          :title="`新建 ${createPlugin.name} 实例`"
-          :description="connectorHint(createPlugin)"
-        >
-          <template #header-actions>
-            <Badge :variant="connectorModeVariant(createPlugin.connectorMode)">
-              {{ connectorModeLabel(createPlugin.connectorMode) }}
-            </Badge>
-            <Button variant="outline" size="sm" @click="cancelCreate">取消</Button>
-            <Button size="sm" :disabled="creating" @click="createInstance">
-              {{ creating ? '创建中...' : '创建实例' }}
-            </Button>
-          </template>
-
+      <FormDialogShell
+        v-if="createPlugin"
+        :open="!!createPluginId"
+        :title="`新建 ${createPlugin.name} 实例`"
+        :description="connectorHint(createPlugin)"
+        @update:open="value => { if (!value) cancelCreate() }"
+      >
+        <div class="divide-y divide-border/60">
           <SettingItem label="实例名称" description="用于控制面展示和通知路由识别。" required>
             <Input v-model="createDisplayName" class="w-[320px]" placeholder="例如：飞书生产机器人" />
           </SettingItem>
@@ -1124,15 +1120,29 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                   <Textarea
                     v-model="createRoutingPolicyText"
                     rows="5"
-                    class="max-w-[760px] font-mono text-xs"
+                    class="max-w-[680px] font-mono text-xs"
                     placeholder="{&#10;  &quot;defaultAgentId&quot;: &quot;assistant&quot;&#10;}"
                   />
                 </SettingItem>
               </div>
             </details>
           </div>
-        </SettingSection>
-      </section>
+        </div>
+
+        <template #footer>
+          <div class="flex items-center justify-between gap-3">
+            <Badge :variant="connectorModeVariant(createPlugin.connectorMode)">
+              {{ connectorModeLabel(createPlugin.connectorMode) }}
+            </Badge>
+            <div class="flex items-center gap-2">
+              <Button variant="outline" size="sm" @click="cancelCreate">取消</Button>
+              <Button size="sm" :disabled="creating" @click="createInstance">
+                {{ creating ? '创建中...' : '创建实例' }}
+              </Button>
+            </div>
+          </div>
+        </template>
+      </FormDialogShell>
 
       <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <section class="detail-card p-6">
@@ -1144,32 +1154,20 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             <Badge variant="outline">{{ instances.length }} 个实例</Badge>
           </div>
 
-          <div class="mt-6 space-y-4">
+          <div class="mt-4 space-y-1.5">
             <button
               v-for="instance in instances"
               :key="instance.instanceId"
               type="button"
-              class="w-full rounded-[calc(var(--radius)+8px)] border px-4 py-4 text-left transition-colors"
+              class="flex w-full items-center gap-2 rounded-[calc(var(--radius)+6px)] border px-3 py-2.5 text-left transition-colors"
               :class="selectedInstanceId === instance.instanceId
                 ? 'border-primary/30 bg-primary/5'
                 : 'border-border/70 bg-background/70 hover:border-primary/20 hover:bg-muted/20'"
               @click="selectInstance(instance.instanceId)"
             >
-              <div class="flex flex-wrap items-center gap-2">
-                <div class="text-sm font-semibold text-foreground">{{ instance.displayName }}</div>
-                <Badge :variant="statusVariant(instance.status)">{{ statusLabel(instance.status) }}</Badge>
-                <Badge variant="outline">{{ instance.platform }}</Badge>
-              </div>
-              <div class="mt-2 text-sm text-muted-foreground">{{ instance.instanceId }}</div>
-              <div class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                <div>插件：{{ instance.pluginId }}</div>
-                <div>启用：{{ instance.enabled ? '是' : '否' }}</div>
-                <div>最近心跳：{{ formatDateTime(instance.lastHeartbeatAt, '暂无') }}</div>
-                <div>最近更新：{{ formatDateTime(instance.updatedAt) }}</div>
-              </div>
-              <div v-if="instance.lastError" class="mt-4 rounded-[calc(var(--radius)+6px)] border border-destructive/20 bg-destructive/5 px-4 py-2 text-xs text-destructive">
-                {{ instance.lastError }}
-              </div>
+              <div class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{{ instance.displayName }}</div>
+              <Badge :variant="statusVariant(instance.status)" class="shrink-0 text-[0.65rem]">{{ statusLabel(instance.status) }}</Badge>
+              <Badge variant="outline" class="shrink-0 text-[0.65rem]">{{ instance.platform }}</Badge>
             </button>
           </div>
         </section>
