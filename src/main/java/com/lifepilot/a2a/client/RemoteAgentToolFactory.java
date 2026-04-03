@@ -164,26 +164,47 @@ public class RemoteAgentToolFactory {
         }
     }
 
-    /**
-     * 从 A2aTask 的 Artifact 中提取文本内容。
-     */
-    private String extractArtifactText(A2aTask task) {
+    /* visible for testing — 从 A2aTask 的 Artifact 中提取文本内容（支持 Text / File / Data 全部 Part 类型）。 */
+    String extractArtifactText(A2aTask task) {
         if (task.artifacts() == null || task.artifacts().isEmpty()) {
             // 尝试从 status message 提取
             if (task.status().message() != null && !task.status().message().parts().isEmpty()) {
-                return task.status().message().parts().stream()
-                        .filter(p -> p instanceof A2aPart.Text)
-                        .map(p -> ((A2aPart.Text) p).text())
-                        .findFirst()
-                        .orElse("无输出");
+                return extractPartsText(task.status().message().parts());
             }
             return "无输出";
         }
         return task.artifacts().stream()
                 .flatMap(a -> a.parts().stream())
-                .filter(p -> p instanceof A2aPart.Text)
-                .map(p -> ((A2aPart.Text) p).text())
+                .map(this::partToText)
+                .filter(s -> s != null && !s.isBlank())
                 .reduce((a, b) -> a + "\n" + b)
                 .orElse("无输出");
+    }
+
+    /** 从 Parts 列表中提取第一个有效文本。 */
+    private String extractPartsText(java.util.List<A2aPart> parts) {
+        return parts.stream()
+                .map(this::partToText)
+                .filter(s -> s != null && !s.isBlank())
+                .findFirst()
+                .orElse("无输出");
+    }
+
+    /** 将单个 Part 转换为文本表示。 */
+    private String partToText(A2aPart part) {
+        return switch (part) {
+            case A2aPart.Text text -> text.text();
+            case A2aPart.File file -> {
+                var fc = file.file();
+                yield fc != null && fc.name() != null ? "[文件: " + fc.name() + "]" : "[文件]";
+            }
+            case A2aPart.Data data -> {
+                try {
+                    yield objectMapper.writeValueAsString(data.data());
+                } catch (Exception e) {
+                    yield "[结构化数据]";
+                }
+            }
+        };
     }
 }

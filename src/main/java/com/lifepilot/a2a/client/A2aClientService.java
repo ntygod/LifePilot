@@ -1,5 +1,6 @@
 package com.lifepilot.a2a.client;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.a2a.config.A2aProperties;
 import com.lifepilot.a2a.model.*;
@@ -43,12 +44,12 @@ public class A2aClientService {
     private final ObjectMapper objectMapper;
     private final AtomicLong jsonRpcIdGenerator = new AtomicLong(1);
 
-    private final Counter discoverSuccessCounter;
-    private final Counter discoverFailedCounter;
-    private final Counter sendSuccessCounter;
-    private final Counter sendFailedCounter;
-    private final Counter circuitBreakerRejectedCounter;
-    private final Timer requestTimer;
+    private Counter discoverSuccessCounter;
+    private Counter discoverFailedCounter;
+    private Counter sendSuccessCounter;
+    private Counter sendFailedCounter;
+    private Counter circuitBreakerRejectedCounter;
+    private Timer requestTimer;
 
     public A2aClientService(A2aProperties properties,
                             A2aCircuitBreakerRegistry circuitBreakerRegistry,
@@ -63,7 +64,23 @@ public class A2aClientService {
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)
                 .build();
+        initMetrics(meterRegistry);
+    }
 
+    /* visible for testing — 允许注入 RestClient */
+    A2aClientService(RestClient restClient,
+                     A2aProperties properties,
+                     A2aCircuitBreakerRegistry circuitBreakerRegistry,
+                     MeterRegistry meterRegistry,
+                     ObjectMapper objectMapper) {
+        this.restClient = restClient;
+        this.properties = properties;
+        this.circuitBreakerRegistry = circuitBreakerRegistry;
+        this.objectMapper = objectMapper;
+        initMetrics(meterRegistry);
+    }
+
+    private void initMetrics(MeterRegistry meterRegistry) {
         this.discoverSuccessCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "discover", "status", "success");
         this.discoverFailedCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "discover", "status", "failed");
         this.sendSuccessCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "send", "status", "success");
@@ -211,10 +228,17 @@ public class A2aClientService {
                     .body(JsonRpcMessage.class);
 
             if (rpcResponse != null && rpcResponse.result() != null) {
-                A2aTask task = objectMapper.convertValue(rpcResponse.result(), A2aTask.class);
+                // 先序列化为 JSON 字符串再反序列化，确保 @JsonTypeInfo 多态类型正确解析
+                A2aTask task = objectMapper.readValue(
+                        objectMapper.writeValueAsString(rpcResponse.result()),
+                        A2aTask.class);
                 log.info("远程 JSON-RPC 消息发送成功: url={}, taskId={}", agentUrl, task.id());
                 return task;
             }
+            return null;
+        } catch (JsonProcessingException e) {
+            // 反序列化失败后降级到 REST，最终失败由 sendMessage 上层统一 WARN
+            log.debug("JSON-RPC 响应反序列化失败，降级到 REST: url={}, error={}", agentUrl, e.getMessage());
             return null;
         } catch (Exception e) {
             log.debug("JSON-RPC 调用失败，降级到 REST: url={}, error={}", agentUrl, e.getMessage());
