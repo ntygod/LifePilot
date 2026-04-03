@@ -49,7 +49,7 @@ const form = ref({
   actionType: 'WRITE_FILE',
   riskCeiling: 'HIGH' as RiskLevel,
   autonomousAllowed: false,
-  channels: [defaultSingleChannel()] as string[],
+  channels: ['web'] as string[],
   expiresAt: '',
   reason: '',
   scopeJson: '',
