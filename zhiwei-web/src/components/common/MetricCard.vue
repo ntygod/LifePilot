@@ -22,7 +22,7 @@ const slots = useSlots()
           <p class="surface-label">
             {{ props.label }}
           </p>
-          <div class="text-[1.3rem] font-semibold tracking-tight text-foreground sm:text-[1.4rem]">
+          <div class="text-[1.1rem] font-semibold tracking-tight text-foreground sm:text-[1.18rem]">
             {{ props.value }}
           </div>
         </div>

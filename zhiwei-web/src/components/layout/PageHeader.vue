@@ -23,7 +23,7 @@ const slots = useSlots()
             <slot name="eyebrow">{{ props.eyebrow }}</slot>
           </div>
           <div class="space-y-1">
-            <h1 class="text-[1.5rem] font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
+            <h1 class="text-[1.28rem] font-semibold tracking-tight text-foreground sm:text-[1.38rem]">
               {{ props.title }}
             </h1>
             <p v-if="props.description" class="max-w-[42rem] text-sm leading-5 text-muted-foreground">

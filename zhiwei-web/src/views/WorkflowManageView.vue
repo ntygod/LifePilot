@@ -652,7 +652,7 @@ onBeforeUnmount(() => {
                 <div class="surface-label">工作流</div>
                 <div class="space-y-2">
                   <div class="flex flex-wrap items-center gap-2">
-                    <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                    <h1 class="text-2xl font-semibold tracking-tight text-foreground">
                       {{ store.current.name }}
                     </h1>
                     <Badge :variant="store.current.enabled ? 'default' : 'secondary'">

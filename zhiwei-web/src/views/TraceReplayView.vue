@@ -897,7 +897,7 @@ async function handleRetryServiceCheck() {
 
               <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-5">
                 <div class="surface-label mb-2 text-[0.68rem]">综合评分</div>
-                <div class="text-4xl font-semibold tracking-tight text-foreground">
+                <div class="text-2xl font-semibold tracking-tight text-foreground">
                   {{ scoreValue(store.evaluation.overallScore) }}
                 </div>
                 <div class="mt-4 space-y-2 text-sm text-muted-foreground">
