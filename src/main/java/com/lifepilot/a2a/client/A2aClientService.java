@@ -14,6 +14,8 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +65,25 @@ public class A2aClientService {
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)
                 .build();
+
+        this.discoverSuccessCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "discover", "status", "success");
+        this.discoverFailedCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "discover", "status", "failed");
+        this.sendSuccessCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "send", "status", "success");
+        this.sendFailedCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "send", "status", "failed");
+        this.circuitBreakerRejectedCounter = meterRegistry.counter("a2a.client.circuit_breaker.rejected");
+        this.requestTimer = meterRegistry.timer("a2a.client.request.duration");
+    }
+
+    /** 测试友好构造器 — 允许注入 RestClient。 */
+    A2aClientService(RestClient restClient,
+                     A2aProperties properties,
+                     A2aCircuitBreakerRegistry circuitBreakerRegistry,
+                     MeterRegistry meterRegistry,
+                     ObjectMapper objectMapper) {
+        this.restClient = restClient;
+        this.properties = properties;
+        this.circuitBreakerRegistry = circuitBreakerRegistry;
+        this.objectMapper = objectMapper;
 
         this.discoverSuccessCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "discover", "status", "success");
         this.discoverFailedCounter = meterRegistry.counter("a2a.client.requests.total", "operation", "discover", "status", "failed");
@@ -211,10 +232,16 @@ public class A2aClientService {
                     .body(JsonRpcMessage.class);
 
             if (rpcResponse != null && rpcResponse.result() != null) {
-                A2aTask task = objectMapper.convertValue(rpcResponse.result(), A2aTask.class);
+                // 先序列化为 JSON 字符串再反序列化，确保 @JsonTypeInfo 多态类型正确解析
+                A2aTask task = objectMapper.readValue(
+                        objectMapper.writeValueAsString(rpcResponse.result()),
+                        A2aTask.class);
                 log.info("远程 JSON-RPC 消息发送成功: url={}, taskId={}", agentUrl, task.id());
                 return task;
             }
+            return null;
+        } catch (JsonProcessingException e) {
+            log.warn("JSON-RPC 响应反序列化失败: url={}, error={}", agentUrl, e.getMessage());
             return null;
         } catch (Exception e) {
             log.debug("JSON-RPC 调用失败，降级到 REST: url={}, error={}", agentUrl, e.getMessage());
