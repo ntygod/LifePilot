@@ -277,7 +277,8 @@ async function batchDelete() {
           </Button>
         </div>
 
-        <!-- 工具栏 -->
+        <!-- 工具栏（有会话时显示） -->
+        <template v-if="chatStore.sessions.length > 0">
         <div class="flex flex-col gap-sm md:flex-row md:items-center md:justify-between">
           <div class="flex flex-1 items-center gap-sm">
             <div class="relative min-w-[180px] flex-1 md:max-w-[24rem]">
@@ -350,6 +351,7 @@ async function batchDelete() {
           </button>
           <span class="text-xs text-muted-foreground/70">{{ filteredSessions.length }} 条</span>
         </div>
+        </template>
 
         <!-- 内容区域 -->
         <div v-if="loading">

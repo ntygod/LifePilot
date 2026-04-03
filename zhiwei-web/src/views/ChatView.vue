@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  EllipsisVertical,
   LibraryBig,
   Settings2,
   SlidersHorizontal,
@@ -12,6 +13,12 @@ import type { ModelService } from '@/api/client'
 import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import DebugDrawer from '@/components/chat/DebugDrawer.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
@@ -484,39 +491,6 @@ function selectSidebarPanel(panel: SidebarPanel) {
           </div>
 
           <div class="flex items-center gap-2">
-            <div class="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('config')"
-              >
-                <Settings2 class="size-4" />
-                配置
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('sidebar')"
-              >
-                <LibraryBig class="size-4" />
-                信息
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('debug')"
-              >
-                <SlidersHorizontal class="size-4" />
-                调试
-              </Button>
-            </div>
-
             <Button
               v-if="isStreaming"
               type="button"
@@ -528,6 +502,28 @@ function selectSidebarPanel(panel: SidebarPanel) {
               <Square class="size-4" />
               停止
             </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button type="button" variant="outline" size="icon" class="size-8 rounded-full">
+                  <EllipsisVertical class="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-36">
+                <DropdownMenuItem class="gap-2" @click="togglePanel('config')">
+                  <Settings2 class="size-4" />
+                  配置
+                </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="togglePanel('sidebar')">
+                  <LibraryBig class="size-4" />
+                  信息
+                </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="togglePanel('debug')">
+                  <SlidersHorizontal class="size-4" />
+                  调试
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
