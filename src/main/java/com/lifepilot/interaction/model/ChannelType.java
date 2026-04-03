@@ -14,7 +14,8 @@ public enum ChannelType {
     WEB("web", false),
     WECOM("wecom", true),
     DINGTALK("dingtalk", true),
-    FEISHU("feishu", true);
+    FEISHU("feishu", true),
+    QQ("qq", false);
 
     private final String value;
     private final boolean requiresWebhook;
