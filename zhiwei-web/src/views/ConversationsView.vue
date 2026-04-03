@@ -266,7 +266,25 @@ async function batchDelete() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-4 sm:py-5">
+    <!-- 真正的空状态：居中引导 -->
+    <div v-if="!loading && chatStore.sessions.length === 0" class="flex h-full items-center justify-center px-6">
+      <div class="flex max-w-sm flex-col items-center gap-md text-center">
+        <div class="flex size-16 items-center justify-center rounded-2xl border border-border/60 bg-card/90 text-primary">
+          <MessageSquareText class="size-7" />
+        </div>
+        <div class="space-y-2">
+          <h2 class="text-lg font-semibold text-foreground">还没有会话</h2>
+          <p class="text-sm leading-6 text-muted-foreground">开始第一次对话，知微会记住你的偏好和上下文。</p>
+        </div>
+        <Button type="button" size="default" @click="handleNewConversation">
+          <Plus class="size-4" />
+          新建会话
+        </Button>
+      </div>
+    </div>
+
+    <!-- 有会话时：正常列表 -->
+    <PageContainer v-else size="wide" class="py-4 sm:py-5">
       <div class="mx-auto flex max-w-[1180px] flex-col gap-md">
         <!-- 标题行 -->
         <div class="flex items-center justify-between">
@@ -277,7 +295,7 @@ async function batchDelete() {
           </Button>
         </div>
 
-        <!-- 工具栏（有会话时显示） -->
+        <!-- 工具栏 -->
         <template v-if="chatStore.sessions.length > 0">
         <div class="flex flex-col gap-sm md:flex-row md:items-center md:justify-between">
           <div class="flex flex-1 items-center gap-sm">
@@ -364,22 +382,14 @@ async function batchDelete() {
 
         <div v-else-if="filteredSessions.length === 0">
           <StatePanel
-            :title="showArchived ? '暂无归档会话' : searchQuery ? '没有匹配的会话' : '还没有会话'"
-            :description="showArchived
-              ? '归档后的会话会出现在这里。'
-              : searchQuery
-                ? '换个关键词试试。'
-                : '开始第一次对话吧。'"
+            :title="showArchived ? '暂无归档会话' : '没有匹配的会话'"
+            :description="showArchived ? '归档后的会话会出现在这里。' : '换个关键词试试。'"
           >
             <template #icon>
               <MessageSquareText class="size-5" />
             </template>
             <template #actions>
-              <Button v-if="!showArchived && !searchQuery" type="button" @click="handleNewConversation">
-                <Plus class="size-4" />
-                新建会话
-              </Button>
-              <Button v-else type="button" variant="outline" size="sm" @click="clearFilters">
+              <Button type="button" variant="outline" size="sm" @click="clearFilters">
                 清空筛选
               </Button>
             </template>

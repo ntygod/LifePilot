@@ -483,12 +483,9 @@ function selectSidebarPanel(panel: SidebarPanel) {
     <header class="relative shrink-0 px-4 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1180px]">
         <div class="flex min-w-0 items-center justify-between gap-3 px-1 py-1">
-          <div class="min-w-0">
-            <div class="surface-label">当前对话</div>
-            <h1 class="mt-0.5 truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-              {{ headerTitle }}
-            </h1>
-          </div>
+          <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
+            {{ headerTitle }}
+          </h1>
 
           <div class="flex items-center gap-2">
             <Button
