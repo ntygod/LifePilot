@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
@@ -1246,7 +1247,18 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
               </div>
             </div>
 
-            <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
+            <Tabs default-value="config" class="w-full">
+              <TabsList class="w-full justify-start">
+                <TabsTrigger value="config">实例配置</TabsTrigger>
+                <TabsTrigger value="assets">插件资产</TabsTrigger>
+                <TabsTrigger value="events">
+                  最近事件
+                  <Badge v-if="instanceEvents.length > 0" variant="secondary" class="ml-1.5 text-[0.6rem] leading-none">{{ instanceEvents.length }}</Badge>
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="config" class="mt-4">
+              <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
               <SettingSection
                 title="实例配置"
                 description="配置页由插件 schema 自动渲染，主服务不再维护飞书、企微、钉钉的固定表单。"
@@ -1387,7 +1399,9 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
 
               <pre class="mt-4 overflow-x-auto rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/80 px-4 py-4 text-xs text-foreground">{{ JSON.stringify(healthStatus.details ?? {}, null, 2) }}</pre>
             </StatePanel>
+              </TabsContent>
 
+              <TabsContent value="assets" class="mt-4">
             <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
               <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -1527,7 +1541,9 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 </div>
               </div>
             </section>
+              </TabsContent>
 
+              <TabsContent value="events" class="mt-4">
             <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
               <div class="flex items-center justify-between gap-4">
                 <div>
@@ -1595,6 +1611,8 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 当前插件没有额外接入说明。
               </p>
             </section>
+              </TabsContent>
+            </Tabs>
           </div>
 
           <StatePanel
