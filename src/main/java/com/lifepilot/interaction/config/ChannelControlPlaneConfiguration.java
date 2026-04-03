@@ -165,7 +165,8 @@ public class ChannelControlPlaneConfiguration {
                 connectorRuntimeManager,
                 channelInstanceEventService,
                 channelDeliveryDispatcher,
-                connectorManagerProperties.getMaxAttachmentSizeBytes()
+                connectorManagerProperties.getMaxAttachmentSizeBytes(),
+                connectorManagerProperties.getEventDeduplicationCacheSize()
         );
     }
 

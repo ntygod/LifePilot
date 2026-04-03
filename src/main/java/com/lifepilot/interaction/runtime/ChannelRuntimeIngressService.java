@@ -22,6 +22,7 @@ import org.springframework.lang.Nullable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,8 @@ public class ChannelRuntimeIngressService {
     private static final Logger log = LoggerFactory.getLogger(ChannelRuntimeIngressService.class);
     /** 单个附件最大允许大小的默认值：10MB。 */
     private static final long DEFAULT_MAX_ATTACHMENT_SIZE = 10L * 1024 * 1024;
+    /** 事件去重缓存默认容量。 */
+    private static final int DEFAULT_EVENT_CACHE_MAX_SIZE = 10_000;
 
     private final ChannelInstanceService channelInstanceService;
     private final ChannelIngressService channelIngressService;
@@ -47,6 +50,8 @@ public class ChannelRuntimeIngressService {
     private final ChannelInstanceEventService channelInstanceEventService;
     private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
     private final long maxAttachmentSize;
+    /** 事件去重缓存（FIFO，超过容量自动淘汰最早条目）。 */
+    private final Map<String, Boolean> processedEventIds;
 
     public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
                                         ChannelIngressService channelIngressService,
@@ -54,15 +59,42 @@ public class ChannelRuntimeIngressService {
                                         ChannelInstanceEventService channelInstanceEventService,
                                         ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                         long maxAttachmentSize) {
+        this(channelInstanceService, channelIngressService, connectorRuntimeManager,
+                channelInstanceEventService, channelDeliveryDispatcher,
+                maxAttachmentSize, DEFAULT_EVENT_CACHE_MAX_SIZE);
+    }
+
+    public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
+                                        ChannelIngressService channelIngressService,
+                                        ConnectorRuntimeManager connectorRuntimeManager,
+                                        ChannelInstanceEventService channelInstanceEventService,
+                                        ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        long maxAttachmentSize,
+                                        int eventCacheMaxSize) {
         this.channelInstanceService = channelInstanceService;
         this.channelIngressService = channelIngressService;
         this.connectorRuntimeManager = connectorRuntimeManager;
         this.channelInstanceEventService = channelInstanceEventService;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.maxAttachmentSize = maxAttachmentSize > 0 ? maxAttachmentSize : DEFAULT_MAX_ATTACHMENT_SIZE;
+        int cacheSize = eventCacheMaxSize > 0 ? eventCacheMaxSize : DEFAULT_EVENT_CACHE_MAX_SIZE;
+        this.processedEventIds = Collections.synchronizedMap(
+                new LinkedHashMap<>(cacheSize / 4, 0.75f, false) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                        return size() > cacheSize;
+                    }
+                });
     }
 
     public ChannelRuntimeEventResponse processEvent(String instanceId, ChannelRuntimeEventRequest request) {
+        String eventId = request.eventId();
+        if (eventId != null && !eventId.isBlank()) {
+            if (processedEventIds.putIfAbsent(eventId, Boolean.TRUE) != null) {
+                log.info("重复事件已忽略: instanceId={}, eventId={}", instanceId, eventId);
+                return ChannelRuntimeEventResponse.duplicate(eventId);
+            }
+        }
         ChannelInstance instance = requireActiveInstance(instanceId);
         try {
             GatewayMessage message = toGatewayMessage(instance, request);

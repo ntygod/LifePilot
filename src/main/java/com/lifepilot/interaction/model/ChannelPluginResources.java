@@ -27,6 +27,12 @@ public record ChannelPluginResources(
         assetPaths = assetPaths != null ? List.copyOf(assetPaths) : List.of();
     }
 
+    /**
+     * 返回安装阶段需要下载的全部资源路径。
+     *
+     * <p>包括文档、图标、示例和运行时产物（如 connector JAR），
+     * 安装完成后 {@code ConnectorManager} 直接从本地安装目录加载。</p>
+     */
     public List<String> referencedPaths() {
         LinkedHashSet<String> paths = new LinkedHashSet<>();
         addIfPresent(paths, readmePath);

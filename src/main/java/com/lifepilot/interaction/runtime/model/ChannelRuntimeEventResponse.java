@@ -21,4 +21,10 @@ public record ChannelRuntimeEventResponse(
     public ChannelRuntimeEventResponse {
         deliveries = deliveries != null ? List.copyOf(deliveries) : List.of();
     }
+
+    /** 重复事件的快捷响应，connector 收到后应忽略本次投递。 */
+    public static ChannelRuntimeEventResponse duplicate(@Nullable String eventId) {
+        return new ChannelRuntimeEventResponse(
+                true, null, 200, "重复事件已忽略: " + eventId, List.of());
+    }
 }
