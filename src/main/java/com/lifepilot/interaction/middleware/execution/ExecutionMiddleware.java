@@ -22,6 +22,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import com.lifepilot.config.threadpool.MdcPropagatingExecutorService;
+
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -83,9 +85,10 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         this.agentConfigProperties = agentConfigProperties;
         this.properties = properties;
         this.requestFactory = new ExecutionRequestFactory(agentConfigProperties, chatSessionRepository);
-        this.agentExecutor = agentExecutor != null
+        var rawExecutor = agentExecutor != null
                 ? agentExecutor
                 : java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        this.agentExecutor = new MdcPropagatingExecutorService(rawExecutor);
         this.chatTurnService = chatTurnService;
         this.sseSessionManager = sseSessionManager;
     }
@@ -238,7 +241,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                                     ChatTurnStatus.FAILED
                             );
                             manager.sendEvent(streamId, SseEventType.ERROR, errorData);
-                            manager.closeEmitter(streamId);
+                            // 延迟关闭：给 Controller 足够时间将 emitter 返回给客户端
+                            manager.closeEmitterWithDelay(streamId, 500);
                         }
                     }
                     return null;
@@ -289,7 +293,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         }
     }
 
-    /** 统一处理流式执行失败：回写 turn、发送 ERROR 事件并关闭 SSE。 */
+    /** 统一处理流式执行失败：回写 turn、发送 ERROR 事件并延迟关闭 SSE。 */
     private void handleStreamingFailure(AgentRequest agentRequest,
                                         GatewayMessage message,
                                         String streamId,
@@ -308,7 +312,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                 ChatTurnStatus.FAILED
         );
         manager.sendEvent(streamId, SseEventType.ERROR, errorData);
-        manager.closeEmitter(streamId);
+        // 延迟关闭：给 Controller 足够时间将 emitter 返回给客户端
+        manager.closeEmitterWithDelay(streamId, 500);
     }
 
     /** 构造流式 ERROR 事件负载，前端据此恢复 turn 状态与错误展示。 */

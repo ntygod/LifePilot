@@ -155,7 +155,7 @@ public record ReactAgentState(
         var newSteps = new ArrayList<>(steps);
         newSteps.add(step);
         return this.toBuilder()
-                .steps(List.copyOf(newSteps))
+                .steps(newSteps)  // 由 record 构造函数 List.copyOf() 冻结，无需提前拷贝
                 .stepCount(stepCount + 1)
                 .build();
     }
@@ -170,7 +170,7 @@ public record ReactAgentState(
         var newMedia = pendingMedia != null ? new ArrayList<>(pendingMedia) : new ArrayList<MediaContent>();
         newMedia.add(media);
         return this.toBuilder()
-                .pendingMedia(List.copyOf(newMedia))
+                .pendingMedia(newMedia)  // 由 record 构造函数 List.copyOf() 冻结，无需提前拷贝
                 .build();
     }
 

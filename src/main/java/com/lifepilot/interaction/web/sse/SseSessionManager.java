@@ -30,6 +30,8 @@ public class SseSessionManager {
     private final ConcurrentHashMap<String, CancellationToken> cancellationTokens = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> chatSessionStreams = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> streamSessions = new ConcurrentHashMap<>();
+    /** per-streamId 锁，保护 SseEmitter.send() 的线程安全（SseEmitter 非线程安全） */
+    private final ConcurrentHashMap<String, Object> emitterLocks = new ConcurrentHashMap<>();
     private final WebProperties properties;
     private final SharedScheduler sharedScheduler;
 
@@ -62,18 +64,21 @@ public class SseSessionManager {
 
         emitter.onCompletion(() -> {
             emitters.remove(streamId);
+            emitterLocks.remove(streamId);
             cancelToken(streamId);
             clearChatStreamBinding(streamId);
             log.debug("SseEmitter 完成: streamId={}", streamId);
         });
         emitter.onTimeout(() -> {
             emitters.remove(streamId);
+            emitterLocks.remove(streamId);
             cancelToken(streamId);
             clearChatStreamBinding(streamId);
             log.info("SseEmitter 超时: streamId={}", streamId);
         });
         emitter.onError(ex -> {
             emitters.remove(streamId);
+            emitterLocks.remove(streamId);
             cancelToken(streamId);
             clearChatStreamBinding(streamId);
             log.warn("SseEmitter 异常: streamId={}", streamId, ex);
@@ -96,14 +101,17 @@ public class SseSessionManager {
 
         emitter.onCompletion(() -> {
             emitters.remove(notificationStreamId);
+            emitterLocks.remove(notificationStreamId);
             log.debug("通知 SseEmitter 完成: streamId={}", notificationStreamId);
         });
         emitter.onTimeout(() -> {
             emitters.remove(notificationStreamId);
+            emitterLocks.remove(notificationStreamId);
             log.debug("通知 SseEmitter 超时: streamId={}", notificationStreamId);
         });
         emitter.onError(ex -> {
             emitters.remove(notificationStreamId);
+            emitterLocks.remove(notificationStreamId);
             log.warn("通知 SseEmitter 异常: streamId={}", notificationStreamId, ex);
         });
 
@@ -124,7 +132,7 @@ public class SseSessionManager {
                     var event = SseEmitter.event()
                             .name(SseEventType.NOTIFICATION)
                             .data(data);
-                    emitter.send(event);
+                    doSend(streamId, emitter, event);
                 } catch (IOException e) {
                     log.warn("通知广播失败，关闭连接: streamId={}", streamId);
                     closeEmitter(streamId);
@@ -150,7 +158,7 @@ public class SseSessionManager {
                     var event = SseEmitter.event()
                             .name(eventType)
                             .data(data);
-                    emitter.send(event);
+                    doSend(streamId, emitter, event);
                 } catch (IOException e) {
                     log.warn("前缀广播失败，关闭连接: streamId={}, prefix={}", streamId, prefix);
                     closeEmitter(streamId);
@@ -185,6 +193,10 @@ public class SseSessionManager {
         streamSessions.put(streamId, sessionId);
         if (previousStreamId != null && !previousStreamId.equals(streamId)) {
             streamSessions.remove(previousStreamId, sessionId);
+            // 关闭孤立的旧 emitter，释放资源并触发取消信号通知旧 Agent 停止执行
+            closeEmitter(previousStreamId);
+            log.info("会话绑定新流，旧流已关闭: sessionId={}, oldStreamId={}, newStreamId={}",
+                    sessionId, previousStreamId, streamId);
         }
         log.debug("聊天会话已绑定 SSE 流: sessionId={}, streamId={}", sessionId, streamId);
     }
@@ -237,16 +249,45 @@ public class SseSessionManager {
                     eventData = mutableCopy;
                 }
             }
-            
+
             @SuppressWarnings("null")
             var event = SseEmitter.event()
                     .name(eventType)
                     .data(eventData);
-            emitter.send(event);
+            doSend(streamId, emitter, event);
         } catch (IOException e) {
             log.warn("SseEmitter 发送事件失败: streamId={}, eventType={}", streamId, eventType, e);
             closeEmitter(streamId);
         }
+    }
+
+    /**
+     * 线程安全地向 SseEmitter 发送事件。
+     *
+     * <p>SseEmitter.send() 非线程安全，多线程（Reactor 流、虚拟线程、心跳调度、超时处理器）
+     * 可能并发调用同一个 emitter。通过 per-streamId 锁序列化写入。</p>
+     */
+    private void doSend(String streamId, SseEmitter emitter, SseEmitter.SseEventBuilder event) throws IOException {
+        Object lock = emitterLocks.computeIfAbsent(streamId, k -> new Object());
+        synchronized (lock) {
+            emitter.send(event);
+        }
+    }
+
+    /**
+     * 延迟关闭指定 SseEmitter。
+     *
+     * <p>用于流式执行快速失败场景：先发送 ERROR 事件，延迟关闭以确保
+     * Controller 有足够时间将 emitter 返回给客户端。</p>
+     *
+     * @param streamId 流式传输标识
+     * @param delayMs  延迟毫秒数
+     */
+    public void closeEmitterWithDelay(String streamId, long delayMs) {
+        sharedScheduler.cleanup().schedule(
+                () -> closeEmitter(streamId),
+                delayMs, TimeUnit.MILLISECONDS
+        );
     }
 
     /**
@@ -256,6 +297,7 @@ public class SseSessionManager {
      */
     public void closeEmitter(String streamId) {
         var emitter = emitters.remove(streamId);
+        emitterLocks.remove(streamId);
         cancelToken(streamId);
         clearChatStreamBinding(streamId);
         if (emitter != null) {
@@ -277,7 +319,7 @@ public class SseSessionManager {
                     var event = SseEmitter.event()
                             .name(SseEventType.HEARTBEAT)
                             .data("");
-                    emitter.send(event);
+                    doSend(streamId, emitter, event);
                 } catch (IOException e) {
                     log.warn("心跳发送失败，关闭连接: streamId={}", streamId, e);
                     closeEmitter(streamId);
@@ -315,6 +357,7 @@ public class SseSessionManager {
             }
         });
         emitters.clear();
+        emitterLocks.clear();
         cancellationTokens.clear();
         chatSessionStreams.clear();
         streamSessions.clear();
