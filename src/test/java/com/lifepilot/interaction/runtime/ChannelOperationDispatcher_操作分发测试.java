@@ -77,6 +77,7 @@ class ChannelOperationDispatcher_操作分发测试 {
                 Map.of("type", "object"),
                 List.of(),
                 null,
+                null,
                 null
         );
         instance = new ChannelInstance(

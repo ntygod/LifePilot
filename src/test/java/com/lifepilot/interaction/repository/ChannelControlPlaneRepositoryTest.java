@@ -92,6 +92,7 @@ class ChannelControlPlaneRepositoryTest {
                 ),
                 List.of("token"),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
 
@@ -108,7 +109,8 @@ class ChannelControlPlaneRepositoryTest {
                 descriptor.configSchema(),
                 descriptor.secretFields(),
                 descriptor.setupGuide(),
-                descriptor.resources()
+                descriptor.resources(),
+                descriptor.operationDescriptors()
         );
         channelPluginRepository.save(updated);
 
@@ -134,6 +136,7 @@ class ChannelControlPlaneRepositoryTest {
                 Map.of("type", "object", "properties", Map.of()),
                 List.of("appSecret"),
                 Map.of("title", "实例接入"),
+                null,
                 null
         ));
 
@@ -189,6 +192,7 @@ class ChannelControlPlaneRepositoryTest {
                 Map.of("type", "object", "properties", Map.of()),
                 List.of(),
                 Map.of("title", "事件接入"),
+                null,
                 null
         ));
         Instant now = Instant.parse("2026-03-29T12:30:00Z");

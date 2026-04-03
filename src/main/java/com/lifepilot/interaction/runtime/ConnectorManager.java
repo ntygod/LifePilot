@@ -108,7 +108,8 @@ public class ConnectorManager {
                 descriptor.configSchema(),
                 descriptor.secretFields(),
                 descriptor.setupGuide(),
-                descriptor.resources()
+                descriptor.resources(),
+                descriptor.operationDescriptors()
         );
     }
 
