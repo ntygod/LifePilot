@@ -270,6 +270,11 @@ public class SseSessionManager {
     private void doSend(String streamId, SseEmitter emitter, SseEmitter.SseEventBuilder event) throws IOException {
         Object lock = emitterLocks.computeIfAbsent(streamId, k -> new Object());
         synchronized (lock) {
+            // double-check：closeEmitter 可能在获取锁之前已移除 emitter，
+            // 此时 emitter 已 complete()，继续 send 会抛异常
+            if (!emitters.containsKey(streamId)) {
+                return;
+            }
             emitter.send(event);
         }
     }
