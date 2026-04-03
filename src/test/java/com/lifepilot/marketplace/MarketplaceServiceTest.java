@@ -77,7 +77,8 @@ class MarketplaceServiceTest {
                 extensionInstaller,
                 versionResolver,
                 installedExtensionRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                null
         );
         when(installedExtensionRepository.findByPackageId("pkg-1")).thenReturn(Optional.of(installed));
 
@@ -111,7 +112,8 @@ class MarketplaceServiceTest {
                 extensionInstaller,
                 versionResolver,
                 installedExtensionRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                null
         );
         when(installedExtensionRepository.findByPackageId("pkg-1")).thenReturn(Optional.of(installed));
 

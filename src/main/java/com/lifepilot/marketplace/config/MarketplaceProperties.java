@@ -36,6 +36,9 @@ public class MarketplaceProperties {
     /** 是否自动检查更新，默认 true。 */
     private boolean autoCheckUpdates = true;
 
+    /** ClawHub 第三方 Skill 源配置。 */
+    private ClawHub clawHub = new ClawHub();
+
     /** Marketplace 远程访问配置。 */
     private Http http = new Http();
 
@@ -82,6 +85,23 @@ public class MarketplaceProperties {
 
         /** 渠道插件安装目录。 */
         private String channels = "${user.home}/.zhiwei/channels";
+    }
+
+    /**
+     * ClawHub 第三方 Skill 源配置。
+     */
+    @Getter
+    @Setter
+    public static class ClawHub {
+
+        /** ClawHub 集成开关，默认 false。 */
+        private boolean enabled = false;
+
+        /** ClawHub API 基础 URL。 */
+        private String baseUrl = "https://clawhub.ai/api/v1";
+
+        /** 索引刷新时拉取的最大 Skill 数量，默认 50。 */
+        private int maxIndexSize = 50;
     }
 
     /**

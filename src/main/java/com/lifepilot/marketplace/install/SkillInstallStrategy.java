@@ -1,11 +1,15 @@
 package com.lifepilot.marketplace.install;
 
+import com.lifepilot.marketplace.clawhub.ClawHubClient;
+import com.lifepilot.marketplace.clawhub.ClawHubIndexSource;
+import com.lifepilot.marketplace.clawhub.ClawHubZipExtractor;
 import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.InstalledExtension;
 import com.lifepilot.skill.markdown.MarkdownSkillLoader;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
@@ -31,24 +35,34 @@ public final class SkillInstallStrategy implements InstallStrategy {
     private final MarkdownSkillLoader markdownSkillLoader;
     private final SkillRegistry skillRegistry;
     private final Path installDir;
+    @Nullable private final ClawHubClient clawHubClient;
+    @Nullable private final ClawHubZipExtractor clawHubZipExtractor;
 
     /**
      * 构造 Skill 安装策略。
      *
-     * @param markdownSkillLoader Markdown Skill 加载器
-     * @param skillRegistry       Skill 注册中心
-     * @param installDir          Skill 安装目录
+     * @param markdownSkillLoader  Markdown Skill 加载器
+     * @param skillRegistry        Skill 注册中心
+     * @param installDir           Skill 安装目录
+     * @param clawHubClient        ClawHub 客户端（ClawHub 未启用时为 null）
+     * @param clawHubZipExtractor  ClawHub zip 解压器（ClawHub 未启用时为 null）
      */
     public SkillInstallStrategy(MarkdownSkillLoader markdownSkillLoader,
                                 SkillRegistry skillRegistry,
-                                Path installDir) {
+                                Path installDir,
+                                @Nullable ClawHubClient clawHubClient,
+                                @Nullable ClawHubZipExtractor clawHubZipExtractor) {
         this.markdownSkillLoader = markdownSkillLoader;
         this.skillRegistry = skillRegistry;
         this.installDir = installDir;
+        this.clawHubClient = clawHubClient;
+        this.clawHubZipExtractor = clawHubZipExtractor;
     }
 
     /**
-     * 下载 SKILL.md 到本地 {@code installDir/{packageId}/SKILL.md}。
+     * 下载 Skill 到本地 {@code installDir/{packageId}/}。
+     *
+     * <p>ClawHub 来源的包通过 zip 下载并解压，其他来源下载单个 SKILL.md 文件。</p>
      *
      * @param pkg        扩展包元数据
      * @param restClient HTTP 客户端
@@ -57,6 +71,34 @@ public final class SkillInstallStrategy implements InstallStrategy {
      */
     @Override
     public Path download(ExtensionPackage pkg, RestClient restClient) throws IOException {
+        if (isClawHubPackage(pkg)) {
+            return downloadFromClawHub(pkg);
+        }
+        return downloadFromIndex(pkg, restClient);
+    }
+
+    /**
+     * 从 ClawHub 下载 Skill zip 包并解压。
+     */
+    private Path downloadFromClawHub(ExtensionPackage pkg) throws IOException {
+        if (clawHubClient == null || clawHubZipExtractor == null) {
+            throw new IOException("ClawHub 未启用，无法下载: packageId=" + pkg.id());
+        }
+
+        Path skillFolder = installDir.resolve(pkg.id());
+        log.info("从 ClawHub 下载 Skill: slug={}", pkg.id());
+
+        byte[] zipBytes = clawHubClient.downloadZip(pkg.id());
+        clawHubZipExtractor.extract(zipBytes, skillFolder);
+
+        log.info("ClawHub Skill 下载解压完成: slug={}, path={}", pkg.id(), skillFolder);
+        return skillFolder;
+    }
+
+    /**
+     * 从 ZhiWei 自有索引下载单个 SKILL.md 文件。
+     */
+    private Path downloadFromIndex(ExtensionPackage pkg, RestClient restClient) throws IOException {
         Path skillFolder = installDir.resolve(pkg.id());
         Path targetFile = skillFolder.resolve("SKILL.md");
 
@@ -77,6 +119,13 @@ public final class SkillInstallStrategy implements InstallStrategy {
 
         log.info("Skill 下载完成: packageId={}, path={}", pkg.id(), skillFolder);
         return skillFolder;
+    }
+
+    /**
+     * 判断是否为 ClawHub 来源的包。
+     */
+    private boolean isClawHubPackage(ExtensionPackage pkg) {
+        return pkg.tags() != null && pkg.tags().contains(ClawHubIndexSource.CLAWHUB_TAG);
     }
 
     /**

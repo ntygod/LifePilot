@@ -2,6 +2,7 @@ package com.lifepilot.marketplace;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.marketplace.clawhub.ClawHubIndexSource;
 import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.install.ExtensionInstaller;
 import com.lifepilot.marketplace.install.InstalledExtensionRepository;
@@ -45,17 +46,20 @@ public class MarketplaceService {
     private final VersionResolver versionResolver;
     private final InstalledExtensionRepository installedExtensionRepository;
     private final ObjectMapper objectMapper;
+    @Nullable private final ClawHubIndexSource clawHubIndexSource;
 
     public MarketplaceService(IndexManager indexManager,
                               ExtensionInstaller extensionInstaller,
                               VersionResolver versionResolver,
                               InstalledExtensionRepository installedExtensionRepository,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              @Nullable ClawHubIndexSource clawHubIndexSource) {
         this.indexManager = indexManager;
         this.extensionInstaller = extensionInstaller;
         this.versionResolver = versionResolver;
         this.installedExtensionRepository = installedExtensionRepository;
         this.objectMapper = objectMapper;
+        this.clawHubIndexSource = clawHubIndexSource;
     }
 
     /**
@@ -206,6 +210,20 @@ public class MarketplaceService {
         List<InstalledExtension> installed = installedExtensionRepository.findAll();
         List<ExtensionPackage> allPackages = indexManager.getPackages();
         return versionResolver.findUpdates(installed, allPackages);
+    }
+
+    /**
+     * 实时搜索 ClawHub — 不经过索引缓存，直接调用 ClawHub API。
+     *
+     * @param query 搜索关键词
+     * @return 转换后的 ExtensionPackage 列表，ClawHub 未启用时返回空列表
+     */
+    public List<ExtensionPackage> searchClawHub(String query) {
+        if (clawHubIndexSource == null) {
+            return List.of();
+        }
+        log.debug("ClawHub 实时搜索: query={}", query);
+        return clawHubIndexSource.searchAndConvert(query);
     }
 
     /**

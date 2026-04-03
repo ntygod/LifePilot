@@ -175,6 +175,19 @@ public class MarketplaceController {
     }
 
     /**
+     * 实时搜索 ClawHub 第三方 Skill — 不经过索引缓存。
+     *
+     * @param q 搜索关键词
+     * @return ClawHub 搜索结果（转换为 ExtensionPackage 格式）
+     */
+    @GetMapping("/clawhub/search")
+    public ResponseEntity<List<ExtensionPackage>> searchClawHub(@RequestParam String q) {
+        log.debug("ClawHub 实时搜索: q={}", q);
+        var results = marketplaceService.searchClawHub(q);
+        return ResponseEntity.ok(results);
+    }
+
+    /**
      * 索引刷新结果。
      *
      * @param count   成功刷新的索引源数量

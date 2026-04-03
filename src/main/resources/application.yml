@@ -438,7 +438,7 @@ lifepilot:
       timeout-ms: 3000
       max-rewrites: 3
   datasource:
-    busy-timeout: 5000
+    busy-timeout: 30000
   datastore:
     enabled: true
     max-collections: 100
@@ -624,6 +624,10 @@ lifepilot:
         - "(?i)ignore\\s+(all\\s+)?prior"
         - "(?i)disregard\\s+(all\\s+)?(above|previous)"
         - "(?i)forget\\s+(all\\s+)?previous"
+    claw-hub:
+      enabled: false
+      base-url: "https://clawhub.ai/api/v1"
+      max-index-size: 50
     install-dirs:
       skills: "${zhiwei.data-dir}/skills"
       agents: "${zhiwei.data-dir}/agents"

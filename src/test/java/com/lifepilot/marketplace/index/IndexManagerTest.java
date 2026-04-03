@@ -62,7 +62,7 @@ class IndexManagerTest {
         when(builder.build()).thenReturn(restClient);
 
         indexManager = new IndexManager(properties, indexRepository, installedExtensionRepository,
-                versionResolver, builder);
+                versionResolver, builder, null);
     }
 
     // ── refreshAll ─────────────────────────────────────────────

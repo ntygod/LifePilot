@@ -3,6 +3,7 @@ package com.lifepilot.marketplace.index;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.marketplace.clawhub.ClawHubIndexSource;
 import com.lifepilot.marketplace.install.InstalledExtensionRepository;
 import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.InstalledExtension;
@@ -51,6 +52,7 @@ public class IndexManager {
     private final VersionResolver versionResolver;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    @Nullable private final ClawHubIndexSource clawHubIndexSource;
 
     /**
      * 构造索引管理器。
@@ -60,12 +62,14 @@ public class IndexManager {
      * @param installedExtensionRepository 已安装扩展 DAO
      * @param versionResolver              版本解析器
      * @param restClientBuilder            RestClient 构建器
+     * @param clawHubIndexSource           ClawHub 索引源（未启用时为 null）
      */
     public IndexManager(MarketplaceProperties properties,
                         IndexRepository indexRepository,
                         InstalledExtensionRepository installedExtensionRepository,
                         VersionResolver versionResolver,
-                        RestClient.Builder restClientBuilder) {
+                        RestClient.Builder restClientBuilder,
+                        @Nullable ClawHubIndexSource clawHubIndexSource) {
         this.properties = properties;
         this.indexRepository = indexRepository;
         this.installedExtensionRepository = installedExtensionRepository;
@@ -73,6 +77,7 @@ public class IndexManager {
         this.restClient = restClientBuilder.build();
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.clawHubIndexSource = clawHubIndexSource;
     }
 
     /**
@@ -110,7 +115,16 @@ public class IndexManager {
             }
         }
 
-        log.info("索引刷新完成: 成功={}/{}", successCount, sources.size());
+        // ClawHub 补充索引刷新
+        if (clawHubIndexSource != null) {
+            boolean clawHubSuccess = clawHubIndexSource.refreshIndex();
+            if (clawHubSuccess) {
+                successCount++;
+            }
+            log.info("ClawHub 索引刷新: success={}", clawHubSuccess);
+        }
+
+        log.info("索引刷新完成: 成功={}", successCount);
         return successCount;
     }
 
