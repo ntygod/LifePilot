@@ -15,8 +15,10 @@ import {
   X,
 } from 'lucide-vue-next'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -266,40 +268,34 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
   <div class="h-full overflow-y-auto">
     <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
-        <header class="space-y-4 border-b border-border/70 pb-5">
-          <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div class="space-y-3">
-              <div class="surface-label">知识库</div>
-              <div class="space-y-2">
-                <h1 class="text-3xl font-semibold tracking-tight text-foreground">
-                  知识库
-                </h1>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-3">
-              <Button type="button" @click="showCreate = true">
-                <Plus class="size-4" />
-                新建知识库
-              </Button>
-            </div>
-          </div>
-
-          <section class="kb-overview">
-            <div class="kb-overview-item">
-              <div class="surface-label text-[0.68rem]">知识库</div>
-              <div class="kb-overview-value">{{ store.list.length }}</div>
-            </div>
-            <div class="kb-overview-item">
-              <div class="surface-label text-[0.68rem]">文档</div>
-              <div class="kb-overview-value">{{ totalDocuments }}</div>
-            </div>
-            <div class="kb-overview-item">
-              <div class="surface-label text-[0.68rem]">分块</div>
-              <div class="kb-overview-value">{{ totalChunks }}</div>
-            </div>
-          </section>
-        </header>
+        <PageHeader
+          eyebrow="知识库"
+          title="知识库"
+        >
+          <template #actions>
+            <Button type="button" @click="showCreate = true">
+              <Plus class="size-4" />
+              新建知识库
+            </Button>
+          </template>
+          <template #meta>
+            <MetricCard label="知识库" :value="store.list.length" hint="可管理的知识库总数">
+              <template #icon>
+                <Database class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="文档" :value="totalDocuments" hint="所有知识库的文档总数">
+              <template #icon>
+                <Files class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="分块" :value="totalChunks" hint="所有文档的分块总数">
+              <template #icon>
+                <Layers3 class="size-5" />
+              </template>
+            </MetricCard>
+          </template>
+        </PageHeader>
 
         <StatePanel
           v-if="store.error && store.list.length > 0"
@@ -412,7 +408,7 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
 
             <div class="kb-results-summary">
               <div class="surface-label text-[0.68rem]">结果</div>
-              <div class="text-2xl font-semibold tracking-tight text-foreground">
+              <div class="text-xl font-semibold tracking-tight text-foreground">
                 {{ filteredKbs.length }}
               </div>
               <div class="text-xs text-muted-foreground">
@@ -802,28 +798,6 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
 </template>
 
 <style scoped>
-.kb-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  padding-top: 0.25rem;
-}
-
-.kb-overview-item {
-  min-width: 0;
-  border-left: 1px solid hsl(from var(--border) h s l / 0.66);
-  padding-left: 0.95rem;
-}
-
-.kb-overview-value {
-  margin-top: 0.32rem;
-  font-size: clamp(1.75rem, 3vw, 2.1rem);
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: -0.05em;
-  color: var(--foreground);
-}
-
 .kb-filter-panel {
   border-radius: calc(var(--radius) + 4px);
   border: 1px solid hsl(from var(--border) h s l / 0.64);
@@ -895,10 +869,4 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
   }
 }
 
-@media (max-width: 767px) {
-  .kb-overview {
-    grid-template-columns: 1fr;
-    gap: 0.85rem;
-  }
-}
 </style>
