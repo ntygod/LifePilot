@@ -278,6 +278,7 @@ public class ChannelRuntimeIngressService {
             case "wecom" -> ChannelType.WECOM;
             case "dingtalk" -> ChannelType.DINGTALK;
             case "feishu" -> ChannelType.FEISHU;
+            case "qq" -> ChannelType.QQ;
             default -> throw new IllegalArgumentException("当前执行链路尚未支持该渠道平台: " + platform);
         };
     }

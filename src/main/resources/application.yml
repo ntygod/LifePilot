@@ -532,6 +532,10 @@ lifepilot:
         verification-token: ${FEISHU_VERIFICATION_TOKEN:}
         encrypt-key: ${FEISHU_ENCRYPT_KEY:}
         event-cache-max-size: 10000
+      qq:
+        enabled: ${QQ_ENABLED:false}
+        app-id: ${QQ_APP_ID:}
+        app-secret: ${QQ_APP_SECRET:}
     reconnect:
       max-attempts: 10
       initial-delay-ms: 1000
