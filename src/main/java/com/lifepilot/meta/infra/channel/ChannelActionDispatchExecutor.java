@@ -86,10 +86,11 @@ public class ChannelActionDispatchExecutor extends ActionDispatchExecutor {
             var instance = resolveInstance(input);
             String responseId = generateResponseId();
 
-            // 从 input 提取投递目标参数
+            // 从 input 提取投递目标参数（带 schema 默认值回退）
             String targetId = input.getOptionalParam("targetId", String.class).orElse(null);
             String content = input.getOptionalParam("content", String.class).orElse(null);
-            String msgType = input.getOptionalParam("msgType", String.class).orElse("text");
+            String defaultMsgType = descriptor.defaultValue("msgType") instanceof String s ? s : "text";
+            String msgType = input.getOptionalParam("msgType", String.class).orElse(defaultMsgType);
 
             // 检查必填参数
             for (String required : descriptor.requiredParams()) {
@@ -113,10 +114,14 @@ public class ChannelActionDispatchExecutor extends ActionDispatchExecutor {
                 deliveryContent = new ChannelRuntimeDeliveryRequest.Content("text", "", Map.of());
             }
 
-            // 构建目标 attributes
+            // 构建目标 attributes（带 schema 默认值回退）
             var targetAttributes = new LinkedHashMap<String, Object>();
-            input.getOptionalParam("receiveIdType", String.class)
-                    .ifPresent(v -> targetAttributes.put("receiveIdType", v));
+            String defaultReceiveIdType = descriptor.defaultValue("receiveIdType") instanceof String s ? s : null;
+            String receiveIdType = input.getOptionalParam("receiveIdType", String.class)
+                    .orElse(defaultReceiveIdType);
+            if (receiveIdType != null) {
+                targetAttributes.put("receiveIdType", receiveIdType);
+            }
             targetAttributes.put("msgType", msgType);
 
             var target = new ChannelRuntimeDeliveryRequest.Target(

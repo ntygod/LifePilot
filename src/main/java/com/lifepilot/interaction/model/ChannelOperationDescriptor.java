@@ -49,4 +49,19 @@ public record ChannelOperationDescriptor(
         riskLevel = riskLevel != null ? riskLevel : RiskLevel.MEDIUM;
         deliveryMeta = deliveryMeta != null ? Map.copyOf(deliveryMeta) : null;
     }
+
+    /**
+     * 从参数 schema 中提取指定参数的默认值。
+     *
+     * @param paramName 参数名
+     * @return 默认值，不存在则返回 null
+     */
+    @Nullable
+    public Object defaultValue(String paramName) {
+        Object schemaDef = parameterSchema.get(paramName);
+        if (schemaDef instanceof Map<?, ?> map) {
+            return map.get("default");
+        }
+        return null;
+    }
 }

@@ -87,8 +87,8 @@ public final class BuiltinChannelCatalog {
                         Map.ofEntries(
                                 Map.entry("targetId", Map.of("type", "string", "description", "目标用户/群 ID")),
                                 Map.entry("content", Map.of("type", "string", "description", "消息内容（文本或 JSON）")),
-                                Map.entry("msgType", Map.of("type", "string", "enum", List.of("text", "post", "interactive"), "description", "消息类型")),
-                                Map.entry("receiveIdType", Map.of("type", "string", "enum", List.of("chat_id", "open_id", "user_id"), "description", "目标 ID 类型，默认 chat_id"))
+                                Map.entry("msgType", Map.of("type", "string", "enum", List.of("text", "post", "interactive"), "description", "消息类型", "default", "text")),
+                                Map.entry("receiveIdType", Map.of("type", "string", "enum", List.of("chat_id", "open_id", "user_id"), "description", "目标 ID 类型，默认 chat_id", "default", "chat_id"))
                         ),
                         List.of("targetId", "content"),
                         RiskLevel.MEDIUM, true, null,
@@ -100,7 +100,8 @@ public final class BuiltinChannelCatalog {
                         Map.ofEntries(
                                 Map.entry("targetId", Map.of("type", "string", "description", "目标用户/群 ID")),
                                 Map.entry("cardJson", Map.of("type", "string", "description", "飞书交互卡片 JSON")),
-                                Map.entry("receiveIdType", Map.of("type", "string", "enum", List.of("chat_id", "open_id", "user_id"), "description", "目标 ID 类型，默认 chat_id"))
+                                Map.entry("msgType", Map.of("type", "string", "description", "消息类型", "default", "interactive")),
+                                Map.entry("receiveIdType", Map.of("type", "string", "enum", List.of("chat_id", "open_id", "user_id"), "description", "目标 ID 类型，默认 chat_id", "default", "chat_id"))
                         ),
                         List.of("targetId", "cardJson"),
                         RiskLevel.MEDIUM, true, null,

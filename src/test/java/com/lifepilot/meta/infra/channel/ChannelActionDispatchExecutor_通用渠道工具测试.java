@@ -395,6 +395,65 @@ class ChannelActionDispatchExecutor_通用渠道工具测试 {
         assertThat(delivery.metadata()).containsEntry("parentMessageId", "msg-parent-001");
     }
 
+    // ─── receiveIdType 默认值验证 ──────────────────
+
+    @Test
+    void send_message_未传receiveIdType_应使用默认值chat_id() {
+        // given
+        setupInstanceMock("feishu.test");
+        var deliveryContent = new ChannelRuntimeDeliveryRequest.Content(
+                "text", "你好", Map.of("text", "你好"));
+        when(deliveryDispatcher.buildContent(any())).thenReturn(deliveryContent);
+
+        var params = new LinkedHashMap<String, Object>();
+        params.put("action", "send_message");
+        params.put("instanceId", "feishu.test");
+        params.put("targetId", "user-123");
+        params.put("content", "你好");
+        // 不传 receiveIdType
+        ToolInput input = buildInput(params);
+
+        // when
+        ToolResult result = executor.execute(input);
+
+        // then
+        assertThat(result.isSuccess()).isTrue();
+
+        ArgumentCaptor<ChannelRuntimeDeliveryRequest> captor =
+                ArgumentCaptor.forClass(ChannelRuntimeDeliveryRequest.class);
+        verify(deliveryDispatcher).deliver(eq(instance), captor.capture());
+        ChannelRuntimeDeliveryRequest delivery = captor.getValue();
+        assertThat(delivery.target().attributes()).containsEntry("receiveIdType", "chat_id");
+    }
+
+    @Test
+    void send_card_未传msgType_应使用默认值interactive() {
+        // given
+        setupInstanceMock("feishu.test");
+        String cardJson = "{\"header\":{\"title\":\"审批\"}}";
+
+        var params = new LinkedHashMap<String, Object>();
+        params.put("action", "send_card");
+        params.put("instanceId", "feishu.test");
+        params.put("targetId", "group-456");
+        params.put("cardJson", cardJson);
+        // 不传 msgType
+        ToolInput input = buildInput(params);
+
+        // when
+        ToolResult result = executor.execute(input);
+
+        // then
+        assertThat(result.isSuccess()).isTrue();
+
+        ArgumentCaptor<ChannelRuntimeDeliveryRequest> captor =
+                ArgumentCaptor.forClass(ChannelRuntimeDeliveryRequest.class);
+        verify(deliveryDispatcher).deliver(eq(instance), captor.capture());
+        ChannelRuntimeDeliveryRequest delivery = captor.getValue();
+        assertThat(delivery.target().attributes()).containsEntry("msgType", "interactive");
+        assertThat(delivery.content().type()).isEqualTo("interactive");
+    }
+
     // ─── 通用渠道能力验证 ──────────────────────────
 
     @Test
