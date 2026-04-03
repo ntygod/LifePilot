@@ -1034,7 +1034,6 @@ export interface ToolSummary {
   type: 'PLUGIN' | 'SKILL' | 'MCP'
   source: string
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
-  enabled: boolean
   idempotent?: boolean
 }
 

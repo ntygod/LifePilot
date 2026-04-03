@@ -14,6 +14,7 @@ import type {
   ExtensionInstallation,
   InstalledExtensionAsset,
 } from '@/types'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import FormDialogShell from '@/components/common/FormDialogShell.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -55,6 +56,7 @@ const loading = ref(true)
 const refreshing = ref(false)
 const creating = ref(false)
 const instanceAction = ref<'save' | 'start' | 'stop' | 'reload' | 'health' | 'delete' | null>(null)
+const showDeleteConfirm = ref(false)
 const eventsLoading = ref(false)
 const installationLoading = ref(false)
 const assetPreviewLoading = ref(false)
@@ -848,7 +850,8 @@ async function saveSelectedInstance() {
 
 async function runInstanceAction(action: 'start' | 'stop' | 'reload' | 'health' | 'delete') {
   if (!selectedInstance.value) return
-  if (action === 'delete' && !window.confirm(`确定删除渠道实例“${selectedInstance.value.displayName}”吗？`)) {
+  if (action === 'delete') {
+    showDeleteConfirm.value = true
     return
   }
 
@@ -870,20 +873,30 @@ async function runInstanceAction(action: 'start' | 'stop' | 'reload' | 'health' 
     } else if (action === 'reload') {
       await channelApi.reloadInstance(selectedInstance.value.instanceId)
       uiStore.showToast('success', '实例已重载')
-    } else if (action === 'delete') {
-      await channelApi.deleteInstance(selectedInstance.value.instanceId)
-      uiStore.showToast('success', '实例已删除')
     }
 
     const currentInstanceId = selectedInstance.value.instanceId
     await loadData()
-    if (action !== 'delete') {
-      selectedInstanceId.value = currentInstanceId
-      await loadInstanceEvents(currentInstanceId)
-    }
+    selectedInstanceId.value = currentInstanceId
+    await loadInstanceEvents(currentInstanceId)
   } catch (error) {
     logger.error(`执行实例动作失败: ${action}`, error)
     uiStore.showToast('error', getErrorMessage(error, '实例操作失败'))
+  } finally {
+    instanceAction.value = null
+  }
+}
+
+async function confirmDeleteInstance() {
+  if (!selectedInstance.value) return
+  instanceAction.value = 'delete'
+  try {
+    await channelApi.deleteInstance(selectedInstance.value.instanceId)
+    uiStore.showToast('success', '实例已删除')
+    await loadData()
+  } catch (error) {
+    logger.error('删除实例失败', error)
+    uiStore.showToast('error', getErrorMessage(error, '删除实例失败'))
   } finally {
     instanceAction.value = null
   }
@@ -1629,5 +1642,16 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
         </section>
       </div>
     </template>
+    <ConfirmDialog
+      v-if="selectedInstance"
+      :show="showDeleteConfirm"
+      title="删除实例"
+      :message="`确定删除渠道实例「${selectedInstance.displayName}」吗？此操作不可恢复。`"
+      confirm-label="删除"
+      confirm-variant="destructive"
+      @confirm="confirmDeleteInstance"
+      @cancel="showDeleteConfirm = false"
+      @update:show="showDeleteConfirm = $event"
+    />
   </div>
 </template>

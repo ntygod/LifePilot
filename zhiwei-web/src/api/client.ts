@@ -1355,12 +1355,6 @@ export const toolApi = {
   delete(id: string): Promise<void> {
     return request(`/tools/${id}`, { method: 'DELETE' })
   },
-  enable(id: string): Promise<void> {
-    return request(`/tools/${id}/enable`, { method: 'POST' })
-  },
-  disable(id: string): Promise<void> {
-    return request(`/tools/${id}/disable`, { method: 'POST' })
-  },
   test(req: ToolTestRequest): Promise<ToolTestResponse> {
     // 后端使用 /tools/{id}/test，参数字段名为 arguments
     const args = req.input ?? {}

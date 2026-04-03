@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AlertTriangle, ArrowUpRight, FileText, Settings, Wrench } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUpRight, FileText, Wrench } from 'lucide-vue-next'
 import { useToolStore } from '@/stores/tool'
 import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -55,7 +55,6 @@ const filteredTools = computed(() => {
   return result
 })
 
-const enabledCount = computed(() => toolStore.tools.filter(tool => tool.enabled).length)
 const mcpCount = computed(() => toolStore.tools.filter(tool => tool.source === 'mcp').length)
 const highRiskCount = computed(() => toolStore.tools.filter(tool => tool.riskLevel === 'HIGH').length)
 const hasFilters = computed(() => Boolean(searchQuery.value.trim()) || sourceFilter.value !== 'all' || riskFilter.value !== 'all')
@@ -98,11 +97,6 @@ onMounted(() => {
             <MetricCard label="工具总数" :value="toolStore.tools.length" hint="全部可用工具">
               <template #icon>
                 <Wrench class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已启用" :value="enabledCount" hint="可直接调用">
-              <template #icon>
-                <Settings class="size-5" />
               </template>
             </MetricCard>
             <MetricCard label="外部工具" :value="mcpCount" hint="MCP 接入">
@@ -266,14 +260,6 @@ onMounted(() => {
                     </Badge>
                     <Badge variant="outline" :class="riskTone[tool.riskLevel] ?? ''">
                       {{ tool.riskLevel }}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      :class="tool.enabled
-                        ? 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
-                        : 'border-slate-200/80 bg-slate-50/80 text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-200'"
-                    >
-                      {{ tool.enabled ? '已启用' : '已停用' }}
                     </Badge>
                   </div>
 

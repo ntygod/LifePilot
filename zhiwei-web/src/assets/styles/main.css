@@ -148,6 +148,19 @@
   --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 6px);
+
+  /* 显式定义 max-width 断点值，防止被 --spacing-* 同名覆盖 */
+  --max-width-xs: 20rem;
+  --max-width-sm: 24rem;
+  --max-width-md: 28rem;
+  --max-width-lg: 32rem;
+  --max-width-xl: 36rem;
+  --max-width-2xl: 42rem;
+  --max-width-3xl: 48rem;
+  --max-width-4xl: 56rem;
+  --max-width-5xl: 64rem;
+  --max-width-6xl: 72rem;
+  --max-width-7xl: 80rem;
 }
 
 html[data-font-size="small"] {
@@ -215,6 +228,15 @@ html[data-ui-density="compact"] {
   ::selection {
     background: hsl(from var(--primary) h s l / 0.18);
     color: var(--foreground);
+  }
+
+  /* 隐藏滚动条，保留滚动功能 */
+  * {
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
   }
 
   h1,
