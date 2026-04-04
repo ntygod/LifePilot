@@ -111,22 +111,25 @@ final class PlaywrightBridge {
     /**
      * 注入反指纹脚本 — 隐藏 Playwright 自动化特征。
      *
-     * <p>当 stealthMode=true 时由 {@link BrowserSessionManager} 在创建上下文后调用。</p>
+     * <p>当 stealthMode=true 时由 {@link BrowserSessionManager} 在创建上下文后调用。
+     * 仅覆盖 {@code navigator.webdriver} 和 {@code window.chrome}，不 mock
+     * {@code navigator.plugins}（Chromium 已有真实值，mock 反而暴露自动化痕迹）。</p>
      *
      * @param browserContextObj BrowserContext 实例
+     * @param locale            浏览器语言区域（如 zh-CN），用于动态构建 navigator.languages
      */
-    static void injectStealthScripts(Object browserContextObj) {
+    static void injectStealthScripts(Object browserContextObj, String locale) {
         BrowserContext ctx = (BrowserContext) browserContextObj;
         ctx.addInitScript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});");
+        // 根据 locale 构建 languages 数组（如 zh-CN → ['zh-CN', 'zh', 'en-US', 'en']）
+        String lang = locale != null && locale.contains("-") ? locale.split("-")[0] : "zh";
+        String safeLocale = locale != null ? locale : "zh-CN";
         ctx.addInitScript("""
                 window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){} };
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5]
-                });
                 Object.defineProperty(navigator, 'languages', {
-                    get: () => ['zh-CN', 'zh', 'en-US', 'en']
+                    get: () => ['%s', '%s', 'en-US', 'en']
                 });
-                """);
+                """.formatted(safeLocale, lang));
     }
 
     /**

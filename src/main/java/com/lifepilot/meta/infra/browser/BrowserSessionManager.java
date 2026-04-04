@@ -376,7 +376,7 @@ public class BrowserSessionManager {
         );
         // 反检测隐身模式：注入反指纹脚本
         if (browserConfig.isStealthMode()) {
-            browserRuntime.injectStealthScripts(browserContext);
+            browserRuntime.injectStealthScripts(browserContext, browserConfig.getLocale());
         }
         var page = browserRuntime.createPage(browserContext);
         String tabId = UUID.randomUUID().toString().substring(0, 8);
@@ -439,7 +439,9 @@ public class BrowserSessionManager {
         if (dir == null || dir.isBlank()) {
             return null;
         }
-        return Path.of(dir, sessionId + ".json");
+        // 移除路径分隔符和特殊字符，防止路径穿越
+        String safeId = sessionId.replaceAll("[/\\\\:*?\"<>|]", "_");
+        return Path.of(dir, safeId + ".json");
     }
 
     interface BrowserRuntime {
@@ -452,7 +454,7 @@ public class BrowserSessionManager {
                              String locale, String timezoneId,
                              @Nullable Path storageStatePath);
 
-        void injectStealthScripts(Object browserContextObj);
+        void injectStealthScripts(Object browserContextObj, String locale);
 
         void saveStorageState(Object browserContextObj, Path path);
 
@@ -487,8 +489,8 @@ public class BrowserSessionManager {
         }
 
         @Override
-        public void injectStealthScripts(Object browserContextObj) {
-            PlaywrightBridge.injectStealthScripts(browserContextObj);
+        public void injectStealthScripts(Object browserContextObj, String locale) {
+            PlaywrightBridge.injectStealthScripts(browserContextObj, locale);
         }
 
         @Override

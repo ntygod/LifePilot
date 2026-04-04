@@ -61,8 +61,9 @@ public class PlaywrightPageWrapper {
         this.page = (Page) pageObj;
         this.lastAccessTime = System.currentTimeMillis();
         this.closed = false;
-        this.humanDelayMinMs = humanDelayMinMs;
-        this.humanDelayMaxMs = humanDelayMaxMs;
+        // 防御误配：min > max 时交换
+        this.humanDelayMinMs = Math.min(humanDelayMinMs, humanDelayMaxMs);
+        this.humanDelayMaxMs = Math.max(humanDelayMinMs, humanDelayMaxMs);
     }
 
     /** 更新最后访问时间。 */
@@ -86,7 +87,8 @@ public class PlaywrightPageWrapper {
     /**
      * 模拟人工操作延迟 — 在关键操作前引入随机等待。
      *
-     * <p>当 {@code humanDelayMinMs <= 0} 时不产生延迟。</p>
+     * <p>当 {@code humanDelayMinMs <= 0} 时不产生延迟。
+     * 在 virtual thread 环境下 {@code Thread.sleep} 会自动 unmount，不阻塞平台线程。</p>
      */
     private void humanDelay() {
         if (humanDelayMinMs <= 0) return;

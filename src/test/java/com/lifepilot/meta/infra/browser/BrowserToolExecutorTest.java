@@ -129,6 +129,24 @@ class BrowserToolExecutorTest {
         }
 
         @Test
+        void execute_导航超时返回部分内容() {
+            var manager = mockAvailableManager();
+            var page = mock(PlaywrightPageWrapper.class);
+            when(manager.getOrCreatePage("default")).thenReturn(page);
+            when(page.navigateWithResult(eq("https://slow-site.com"), anyInt()))
+                    .thenReturn(new PlaywrightPageWrapper.NavigateResult("Slow Site", "https://slow-site.com", true));
+            when(page.textContent()).thenReturn("部分加载的内容");
+
+            var executor = new BrowserNavigateToolExecutor(manager, null);
+            ToolResult result = executor.execute(buildInput(Map.of("url", "https://slow-site.com")));
+
+            assertThat(result.ok()).isTrue();
+            assertThat(result.data().get("partial")).isEqualTo(true);
+            assertThat(result.data().get("title")).isEqualTo("Slow Site");
+            assertThat(result.data().get("textSnapshot")).isEqualTo("部分加载的内容");
+        }
+
+        @Test
         void execute_导航异常返回错误() {
             var manager = mockAvailableManager();
             when(manager.getOrCreatePage("default")).thenThrow(new RuntimeException("连接超时"));

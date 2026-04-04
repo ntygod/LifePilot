@@ -202,12 +202,17 @@ public class WebFetchToolExecutor {
         try {
             PlaywrightPageWrapper page = browserSessionManager.getOrCreatePage(fetchSessionId);
             int renderTimeoutMs = config.getRenderTimeoutSeconds() * 1000;
-            page.navigate(url, renderTimeoutMs);
+            var navResult = page.navigateWithResult(url, renderTimeoutMs);
+            if (navResult.partial()) {
+                log.info("浏览器渲染导航超时，尝试提取已加载内容: url={}", url);
+            }
 
-            // 等待页面 JS 渲染完成
-            waitForPageReady(page, renderTimeoutMs);
+            // 等待页面 JS 渲染完成（非 partial 时才等待）
+            if (!navResult.partial()) {
+                waitForPageReady(page, renderTimeoutMs);
+            }
 
-            String title = page.title();
+            String title = navResult.title();
             String content;
             boolean truncated = false;
 

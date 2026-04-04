@@ -205,7 +205,7 @@ class BrowserSessionManagerTest {
         }
 
         @Override
-        public void injectStealthScripts(Object browserContextObj) {
+        public void injectStealthScripts(Object browserContextObj, String locale) {
             // no-op
         }
 

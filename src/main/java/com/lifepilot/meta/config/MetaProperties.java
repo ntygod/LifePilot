@@ -221,7 +221,7 @@ public class MetaProperties {
             /** JavaScript 执行超时（秒），默认 10。 */
             private int jsExecutionTimeoutSeconds = 10;
 
-            /** 自定义 User-Agent。 */
+            /** 自定义 User-Agent。版本号需跟随 Chromium 更新，当前基于 Chrome 131。 */
             private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
             /** 视口宽度（像素），默认 1920。 */
@@ -254,8 +254,6 @@ public class MetaProperties {
             /** 操作前最大随机延迟（毫秒），默认 500。 */
             private int humanDelayMaxMs = 500;
 
-            /** 导航失败后最大重试次数，默认 1。 */
-            private int navigationRetryCount = 1;
         }
 
         /**
