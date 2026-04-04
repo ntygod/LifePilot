@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Web 抓取工具执行器 — 使用 Jsoup 解析 HTML 并提取正文内容。
@@ -170,10 +169,25 @@ public class WebFetchToolExecutor {
     }
 
     /**
+     * 根据 URL 域名生成复用会话 ID，同域名共享浏览器上下文。
+     *
+     * @param url 目标 URL
+     * @return 域名级会话 ID
+     */
+    private String fetchSessionId(String url) {
+        try {
+            String host = java.net.URI.create(url).getHost();
+            return "web-fetch-" + (host != null ? host : "default");
+        } catch (Exception e) {
+            return "web-fetch-default";
+        }
+    }
+
+    /**
      * 使用 Playwright 浏览器渲染页面并提取内容。
      *
-     * <p>创建临时浏览器会话，导航到目标 URL，等待页面加载后提取文本内容。
-     * 会话在 finally 块中可靠关闭。</p>
+     * <p>使用域名级会话复用策略，同域名的多次抓取共享浏览器上下文。
+     * 成功时不关闭会话以便后续复用，仅失败时关闭。</p>
      *
      * @param url      目标 URL
      * @param selector CSS 选择器（可选）
@@ -182,16 +196,20 @@ public class WebFetchToolExecutor {
      */
     private ToolResult fetchWithBrowser(String url, @Nullable String selector,
                                         MetaProperties.Infra.WebFetch config) {
-        String fetchSessionId = "web-fetch-" + UUID.randomUUID().toString().substring(0, 8);
+        String fetchSessionId = fetchSessionId(url);
+        boolean success = false;
         try {
             PlaywrightPageWrapper page = browserSessionManager.getOrCreatePage(fetchSessionId);
             int renderTimeoutMs = config.getRenderTimeoutSeconds() * 1000;
-            page.navigate(url, renderTimeoutMs);
+            var navResult = page.navigateWithResult(url, renderTimeoutMs);
+            if (navResult.partial()) {
+                log.info("浏览器渲染导航超时，尝试提取已加载内容: url={}", url);
+            }
+            if (!navResult.partial()) {
+                waitForPageReady(page, renderTimeoutMs);
+            }
 
-            // 等待页面 JS 渲染完成
-            waitForPageReady(page, renderTimeoutMs);
-
-            String title = page.title();
+            String title = navResult.title();
             String content;
             boolean truncated = false;
 
@@ -221,6 +239,7 @@ public class WebFetchToolExecutor {
             }
 
             log.info("浏览器渲染抓取完成: url={}, contentLength={}", url, content.length());
+            success = true;
             return ToolResult.success(Map.of(
                     "title", title != null ? title : "",
                     "url", url,
@@ -234,10 +253,12 @@ public class WebFetchToolExecutor {
             log.error("浏览器渲染抓取失败: url={}, error={}", url, e.getMessage(), e);
             return ToolResult.error("浏览器渲染失败: " + e.getMessage());
         } finally {
-            try {
-                browserSessionManager.closePage(fetchSessionId);
-            } catch (Exception e) {
-                log.warn("关闭浏览器抓取会话失败: sessionId={}, error={}", fetchSessionId, e.getMessage());
+            if (!success) {
+                try {
+                    browserSessionManager.closePage(fetchSessionId);
+                } catch (Exception e) {
+                    log.warn("关闭浏览器抓取会话失败: sessionId={}, error={}", fetchSessionId, e.getMessage());
+                }
             }
         }
     }
