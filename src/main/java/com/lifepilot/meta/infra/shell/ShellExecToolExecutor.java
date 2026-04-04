@@ -386,6 +386,7 @@ public class ShellExecToolExecutor {
         data.put("exitCode", exitCode);
         data.put("stdout", stdout);
         data.put("stderr", stderr);
+        data.put("workingDirectory", workDir.toAbsolutePath().normalize().toString());
 
         log.debug("Shell 命令执行完成: command={}, exitCode={}, stdoutLen={}, stderrLen={}",
                 command, exitCode, stdout.length(), stderr.length());

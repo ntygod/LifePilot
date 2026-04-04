@@ -9,11 +9,22 @@ use java_manager::JavaManager;
 use whisper_manager::WhisperManager;
 use std::path::PathBuf;
 use tauri::Manager;
+use tauri_plugin_autostart::MacosLauncher;
 
 /// Tauri 插件注册入口
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 重复启动时聚焦已有窗口
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        // MacosLauncher 参数仅在 macOS 生效，Windows/Linux 上被忽略
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
