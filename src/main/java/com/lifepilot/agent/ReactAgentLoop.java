@@ -24,6 +24,8 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.workspace.TaskStateItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -67,6 +69,9 @@ public class ReactAgentLoop implements CallbackHelper {
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
     private static final String DEFAULT_MODEL_ID = "ZhiWei";
 
+    /** 停滞检测排除名单 — 这些工具的重复调用（不同参数）是合理的执行模式。 */
+    private static final Set<String> STALL_DETECTION_EXCLUDED_TOOLS = Set.of("web.search");
+
     // ===== 核心依赖 =====
     private final ContextAssembler contextAssembler;
     private final ProviderMessageBuilder providerMessageBuilder;
@@ -87,7 +92,7 @@ public class ReactAgentLoop implements CallbackHelper {
     private final ScheduledExecutorService suspendScheduler;
 
     // ===== 可选依赖（L1 工作区） =====
-    @Nullable private final com.lifepilot.memory.workspace.SessionWorkspaceService workspaceService;
+    @Nullable private final SessionWorkspaceService workspaceService;
 
     // ===== 可选依赖（L4 反馈闭环） =====
     @Nullable private final ProceduralMemory proceduralMemory;
@@ -109,7 +114,7 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable IntentMatcher intentMatcher,
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
-            @Nullable com.lifepilot.memory.workspace.SessionWorkspaceService workspaceService) {
+            @Nullable SessionWorkspaceService workspaceService) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -639,8 +644,7 @@ public class ReactAgentLoop implements CallbackHelper {
         }
         if (recentToolIds.size() < threshold) return false;
         String first = recentToolIds.getFirst();
-        // web.search 重复调用不同关键词是合理的
-        if ("web.search".equals(first)) return false;
+        if (STALL_DETECTION_EXCLUDED_TOOLS.contains(first)) return false;
         return recentToolIds.stream().allMatch(first::equals);
     }
 
@@ -650,7 +654,7 @@ public class ReactAgentLoop implements CallbackHelper {
             return;
         }
         try {
-            workspaceService.saveTaskState(state.sessionId(), new com.lifepilot.memory.workspace.TaskStateItem(
+            workspaceService.saveTaskState(state.sessionId(), new TaskStateItem(
                     "执行进度",
                     ReflectContentBuilder.buildTaskStateSummary(state, iteration),
                     null,

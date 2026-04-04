@@ -53,7 +53,7 @@ public class AgentConfigProperties {
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
 
-        /** 开始周期性回顾的迭代阈值。 */
+        /** 开始周期性回顾的迭代阈值（iteration 从 0 开始计数，默认值 5 表示第 6 轮首次触发）。 */
         private int reflectAfterIterations = 5;
         /** 周期性回顾间隔（每隔 N 轮触发）。 */
         private int reflectInterval = 3;

@@ -5,7 +5,6 @@ import com.lifepilot.agent.model.ReactStep;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
 
 /**
  * 反思内容构建器 — 根据触发原因和当前状态动态拼装反思文本。
@@ -31,7 +30,7 @@ public final class ReflectContentBuilder {
     public static String buildContent(ReactAgentState state, int iteration,
                                       ReactStep.ReflectTrigger trigger) {
         int remaining = state.budget().stepsRemaining();
-        String goal = state.goal();
+        String goal = state.goal() != null ? state.goal() : "未指定";
 
         return switch (trigger) {
             case TOOL_FAILURE -> buildToolFailureContent(state, iteration, remaining);
@@ -50,10 +49,10 @@ public final class ReflectContentBuilder {
     public static String buildTaskStateSummary(ReactAgentState state, int iteration) {
         var steps = state.steps();
         int remaining = state.budget().stepsRemaining();
-        String goal = state.goal();
-        String goalPreview = goal != null && goal.length() > 80
+        String goal = state.goal() != null ? state.goal() : "未指定";
+        String goalPreview = goal.length() > 80
                 ? goal.substring(0, 80) + "..."
-                : (goal != null ? goal : "");
+                : goal;
 
         // 收集成功工具名（去重）
         var successTools = new LinkedHashSet<String>();

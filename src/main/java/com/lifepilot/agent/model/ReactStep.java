@@ -8,7 +8,7 @@ import java.time.Instant;
 /**
  * ReAct 循环步骤类型 — sealed interface。
  *
- * <p>替代原 {@code Action} 的 9 种类型，简化为 6 种步骤类型：
+ * <p>替代原 {@code Action} 的 9 种类型，简化为 8 种步骤类型：
  * <ul>
  *   <li>{@link Progress} — 面向用户展示的执行进度提示，不参与模型上下文回放</li>
  *   <li>{@link Thought} — LLM 的推理思考</li>
@@ -17,6 +17,7 @@ import java.time.Instant;
  *   <li>{@link Answer} — 最终回答（LLM 未调用工具时的纯文本输出）</li>
  *   <li>{@link Suspend} — Agent 挂起步骤（记录挂起原因和时间点）</li>
  *   <li>{@link Resume} — Agent 恢复步骤（记录恢复载荷和挂起时长）</li>
+ *   <li>{@link Reflect} — 执行回顾步骤（系统在特定触发点注入，促使 LLM 评估执行进展并调整策略）</li>
  * </ul>
  *
  * @author zsg
