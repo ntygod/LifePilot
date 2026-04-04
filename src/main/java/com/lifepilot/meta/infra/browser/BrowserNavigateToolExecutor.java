@@ -26,11 +26,19 @@ public class BrowserNavigateToolExecutor {
     private final BrowserSessionManager sessionManager;
     @Nullable
     private final TextSnapshotCleaner textSnapshotCleaner;
+    private final int navigateTimeoutMs;
+
+    public BrowserNavigateToolExecutor(@Nullable BrowserSessionManager sessionManager,
+                                       @Nullable TextSnapshotCleaner textSnapshotCleaner,
+                                       int navigateTimeoutMs) {
+        this.sessionManager = sessionManager;
+        this.textSnapshotCleaner = textSnapshotCleaner;
+        this.navigateTimeoutMs = navigateTimeoutMs;
+    }
 
     public BrowserNavigateToolExecutor(@Nullable BrowserSessionManager sessionManager,
                                        @Nullable TextSnapshotCleaner textSnapshotCleaner) {
-        this.sessionManager = sessionManager;
-        this.textSnapshotCleaner = textSnapshotCleaner;
+        this(sessionManager, textSnapshotCleaner, 30_000);
     }
 
     /**
@@ -60,7 +68,7 @@ public class BrowserNavigateToolExecutor {
 
         try {
             var page = sessionManager.getOrCreatePage(sessionId);
-            String title = page.navigate(url);
+            String title = page.navigate(url, navigateTimeoutMs);
             String textSnapshot = page.textContent();
 
             // 使用 TextSnapshotCleaner 清洗，降级为简单截断

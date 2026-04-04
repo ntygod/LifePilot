@@ -21,8 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>Playwright 未安装时优雅降级</li>
  * </ul>
  *
- * <p>Playwright 是可选依赖，通过反射检测可用性。当 Playwright 不在 classpath 时，
- * {@link #isAvailable()} 返回 false，所有浏览器工具返回优雅降级提示。</p>
+ * <p>通过反射检测 Playwright API 与 driver-bundle 的可用性。任一缺失时
+ * {@link #isAvailable()} 返回 false，所有浏览器工具返回可操作的降级提示。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -31,10 +31,16 @@ public class BrowserSessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(BrowserSessionManager.class);
     private static final String PLAYWRIGHT_CLASS = "com.microsoft.playwright.Playwright";
-    private static final String UNAVAILABLE_MESSAGE = "浏览器功能未配置，请安装 Playwright";
+    private static final String DRIVER_JAR_CLASS = "com.microsoft.playwright.impl.driver.jar.DriverJar";
+    private static final String MSG_NO_API =
+            "浏览器功能未配置，请安装 Playwright（在 pom.xml 中添加 com.microsoft.playwright:playwright 依赖）";
+    private static final String MSG_NO_DRIVER =
+            "Playwright driver-bundle 不在 classpath 中，浏览器自动化不可用。";
 
     private final MetaProperties.Infra.Browser browserConfig;
     private final boolean playwrightAvailable;
+    @Nullable
+    private final String unavailableReason;
     private final BrowserRuntime browserRuntime;
 
     /** Playwright 实例（懒初始化），仅在 Playwright 可用时非 null。 */
@@ -65,29 +71,43 @@ public class BrowserSessionManager {
         this(properties, detectPlaywright(), new DefaultBrowserRuntime());
     }
 
-    BrowserSessionManager(MetaProperties properties, boolean playwrightAvailable, BrowserRuntime browserRuntime) {
+    /**
+     * 包级构造器，供测试注入 BrowserRuntime。
+     *
+     * @param unavailableReason null 表示 Playwright 可用；非 null 为不可用原因
+     */
+    BrowserSessionManager(MetaProperties properties, @Nullable String unavailableReason, BrowserRuntime browserRuntime) {
         this.browserConfig = properties.getInfra().getBrowser();
-        this.playwrightAvailable = playwrightAvailable;
+        this.unavailableReason = unavailableReason;
+        this.playwrightAvailable = unavailableReason == null;
         this.browserRuntime = browserRuntime;
         if (playwrightAvailable) {
             log.info("Playwright 检测成功，浏览器自动化功能可用");
         } else {
-            log.warn("Playwright 未检测到，浏览器自动化功能不可用");
+            log.warn("浏览器自动化功能不可用: {}", unavailableReason);
         }
     }
 
     /**
-     * 检测 Playwright 是否在 classpath 上。
+     * 检测 Playwright 可用性。
      *
-     * @return true 表示 Playwright 可用
+     * <p>分两步：先检测 API JAR，再检测 driver-bundle。两者都存在才视为可用。</p>
+     *
+     * @return null 表示完全可用；非 null 为具体缺失原因，可直接展示给用户
      */
-    private static boolean detectPlaywright() {
+    @Nullable
+    private static String detectPlaywright() {
         try {
             Class.forName(PLAYWRIGHT_CLASS);
-            return true;
         } catch (ClassNotFoundException e) {
-            return false;
+            return MSG_NO_API;
         }
+        try {
+            Class.forName(DRIVER_JAR_CLASS);
+        } catch (ClassNotFoundException e) {
+            return MSG_NO_DRIVER;
+        }
+        return null;
     }
 
     /**
@@ -105,7 +125,7 @@ public class BrowserSessionManager {
      * @return 降级提示消息
      */
     public String getUnavailableMessage() {
-        return UNAVAILABLE_MESSAGE;
+        return unavailableReason != null ? unavailableReason : "浏览器功能未配置";
     }
 
     /**
@@ -120,7 +140,7 @@ public class BrowserSessionManager {
      */
     public PlaywrightPageWrapper getOrCreatePage(String sessionId) {
         if (!isAvailable()) {
-            throw new IllegalStateException(UNAVAILABLE_MESSAGE);
+            throw new IllegalStateException(getUnavailableMessage());
         }
         var sessionPages = sessions.compute(sessionId, this::ensureSessionPages);
         return sessionPages.pages.get(sessionPages.activeTabId);
@@ -147,7 +167,7 @@ public class BrowserSessionManager {
      */
     public String openNewPage(String sessionId, String url) {
         if (!isAvailable()) {
-            throw new IllegalStateException(UNAVAILABLE_MESSAGE);
+            throw new IllegalStateException(getUnavailableMessage());
         }
         var createdSession = new AtomicBoolean(false);
         var sp = sessions.compute(sessionId, (id, existing) -> {

@@ -185,10 +185,10 @@ public class WebFetchToolExecutor {
         String fetchSessionId = "web-fetch-" + UUID.randomUUID().toString().substring(0, 8);
         try {
             PlaywrightPageWrapper page = browserSessionManager.getOrCreatePage(fetchSessionId);
-            page.navigate(url);
+            int renderTimeoutMs = config.getRenderTimeoutSeconds() * 1000;
+            page.navigate(url, renderTimeoutMs);
 
             // 等待页面 JS 渲染完成
-            int renderTimeoutMs = config.getRenderTimeoutSeconds() * 1000;
             waitForPageReady(page, renderTimeoutMs);
 
             String title = page.title();
