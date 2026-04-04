@@ -229,7 +229,7 @@ class ShellExecToolExecutorTest {
 
     @Test
     void execute_yieldMs快速失败时保留真实exitCode与双通道输出() {
-        backgroundProcessManager = new BackgroundProcessManager(properties.getInfra().getProcess());
+        backgroundProcessManager = new BackgroundProcessManager(properties.getInfra().getProcess(), null);
         executor = new ShellExecToolExecutor(properties, backgroundProcessManager);
 
         ToolInput input = buildInput(Map.of(

@@ -70,7 +70,11 @@ public class ShellToolProvider {
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
-                .description("在操作系统中执行 Shell 命令。支持工作目录、超时、后台执行（background/yieldMs）和伪终端（PTY）。" +
+                .description("在操作系统中执行 Shell 命令。" +
+                        "支持 background=true 立即后台执行（返回 sessionId），" +
+                        "yieldMs=N 先同步等 N 毫秒、超时自动转后台（适合不确定时长的命令）。" +
+                        "env 参数可注入环境变量（如 API Key），shell 参数可指定 Unix 解释器（bash/zsh，默认 sh），" +
+                        "pty=true 分配伪终端（交互式 TUI 程序需要，仅 Unix）。" +
                         "简单代码执行请用 code.execute，Git 操作请用 git.query/git.mutate。" +
                         "管理后台进程或持久会话请用 shell.process。")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
@@ -94,6 +98,10 @@ public class ShellToolProvider {
         properties.put("background", Map.of("type", "boolean", "description", "是否立即后台执行"));
         properties.put("yieldMs", Map.of("type", "integer", "description", "同步等待毫秒数，超时后自动转后台"));
         properties.put("pty", Map.of("type", "boolean", "description", "是否分配伪终端（PTY）"));
+        properties.put("shell", Map.of("type", "string", "description",
+                "Shell 解释器（bash/zsh/sh 等），仅 Unix 生效，默认 sh。Windows 固定使用 PowerShell"));
+        properties.put("env", Map.of("type", "object", "description",
+                "额外环境变量键值对，注入到子进程环境中"));
 
         return Map.of(
                 "type", "object",
@@ -128,17 +136,21 @@ public class ShellToolProvider {
     }
 
     private String buildProcessDescription() {
-        var sb = new StringBuilder("管理后台进程和持久终端会话。通过 action 参数支持：");
+        var sb = new StringBuilder("管理通过 shell.exec(background=true/yieldMs) 启动的后台进程，或管理持久终端会话。");
+        sb.append("通过 action 参数支持：");
         if (processManager != null) {
-            sb.append("【后台进程】list=列出后台进程，output=读取进程输出，write=写入 stdin，kill=终止进程");
+            sb.append("【后台进程】list=列出所有后台进程及状态，output=读取增量输出（自上次读取以来的新内容），");
+            sb.append("write=向进程 stdin 写入内容（如回答交互提示），kill=强制终止进程");
         }
         if (sessionManager != null) {
             if (processManager != null) sb.append("；");
-            sb.append("【持久会话】session-create=创建 tmux 会话，session-exec=在会话中执行命令，");
-            sb.append("session-read=读取屏幕，session-write=发送输入，session-signal=发送信号，");
-            sb.append("session-list=列出会话，session-close=关闭会话，session-resize=调整窗口");
+            sb.append("【持久会话（tmux）】适用于需要跨多次调用保持环境状态的场景。");
+            sb.append("session-create=创建会话，session-exec=在会话中执行命令并等待完成，");
+            sb.append("session-read=读取屏幕内容，session-write=发送原始输入（不附加回车），");
+            sb.append("session-signal=发送信号（如 SIGINT 中断），");
+            sb.append("session-list=列出会话，session-close=关闭会话，session-resize=调整窗口大小");
         }
-        sb.append("。执行新命令请用 shell.exec。");
+        sb.append("。要执行新命令请用 shell.exec。");
         return sb.toString();
     }
 

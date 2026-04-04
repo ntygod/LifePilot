@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-02
+> **最后更新**：2026-04-04
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -14,6 +14,7 @@
 - [Permissions（工具授权）](#permissions工具授权)
 - [Agents（多 Agent 管理）](#agents多-agent-管理)
 - [Tools（工具管理）](#tools工具管理)
+- [Processes（后台进程 SSE）](#processes后台进程-sse)
 - [Skills（技能管理）](#skills技能管理)
 - [MCP Servers（MCP 客户端管理）](#mcp-servers)
 - [Knowledge Bases（知识库）](#knowledge-bases知识库)
@@ -185,6 +186,18 @@
 | DELETE | `/api/tools/{id}` | `deleteTool` | 删除 Tool |
 | POST | `/api/tools/{id}/test` | `testTool` | 测试 Tool 执行 |
 | GET | `/api/tools/{id}/usage` | `getToolUsage` | Tool 使用统计 |
+
+---
+
+## Processes（后台进程 SSE）
+
+来源：`ProcessSseController`，Base Path: `/api/processes`
+
+> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。通过 Spring ApplicationEvent 监听 `ProcessOutputEvent`，将后台进程的 stdout/stderr 实时广播到所有已订阅的 SSE 客户端。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/processes/stream` | `processStream` | SSE 订阅后台进程输出流（事件类型：process-output / process-state-change） |
 
 ---
 

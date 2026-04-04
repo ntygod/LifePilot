@@ -23,7 +23,7 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | Web 信息 | `web.fetch` | 抓取网页内容 |
 | 推理辅助 | `reason.think` | 结构化思考（scratchpad） |
 | 推理辅助 | `reason.calculate` | 数学计算 |
-| Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查），支持后台执行和 PTY |
+| Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查），支持后台执行、PTY、环境变量注入（`env`，有安全黑名单过滤）和 Unix Shell 解释器指定（`shell`） |
 | Shell 执行 | `shell.process` | 后台进程管理和持久终端会话（tmux），支持 list/output/write/kill 以及 session-* 操作 |
 | 浏览器自动化 | `browser.navigate` | 导航到 URL |
 | 浏览器自动化 | `browser.click` | 点击页面元素 |
@@ -73,7 +73,8 @@ Agent 在执行任务时，自动使用基础工具完成各类操作：搜索 W
 | `lifepilot.meta.infra.web-search.topic` | `general` | Tavily 搜索主题 |
 | `lifepilot.meta.infra.web-search.include-answer` | `true` | 是否附带 Tavily answer 摘要 |
 | `lifepilot.meta.infra.web-fetch.timeout-seconds` | `10` | Web 抓取超时 |
-| `lifepilot.meta.infra.shell.timeout-seconds` | `30` | Shell 命令超时 |
+| `lifepilot.meta.infra.shell.timeout-seconds` | `120` | Shell 命令超时 |
+| `lifepilot.meta.infra.shell.max-output-length` | `50000` | Shell 输出最大字符数 |
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
 | `lifepilot.meta.infra.browser.headless` | `true` | 无头模式 |
 | `lifepilot.meta.infra.browser.storage-state-dir` | `""` | storageState 持久化目录，空字符串关闭持久化 |

@@ -39,6 +39,9 @@ public class RingBuffer {
     /**
      * 向缓冲区追加内容，超出容量时覆盖最早的内容。
      *
+     * <p>使用 {@link System#arraycopy} 批量拷贝替代逐字符写入，
+     * 对大量输出场景（如持续日志流）有显著性能提升。</p>
+     *
      * @param text 要追加的文本
      */
     public synchronized void append(String text) {
@@ -46,11 +49,26 @@ public class RingBuffer {
             return;
         }
         char[] chars = text.toCharArray();
-        for (char c : chars) {
-            buffer[writePos] = c;
-            writePos = (writePos + 1) % capacity;
-            totalWritten++;
+        int length = chars.length;
+
+        if (length >= capacity) {
+            // 输入超过缓冲区容量，只保留最后 capacity 个字符
+            System.arraycopy(chars, length - capacity, buffer, 0, capacity);
+            writePos = 0;
+            totalWritten += length;
+            return;
         }
+
+        int firstPart = Math.min(length, capacity - writePos);
+        System.arraycopy(chars, 0, buffer, writePos, firstPart);
+
+        if (firstPart < length) {
+            // 环绕写入：剩余部分从缓冲区头部开始
+            System.arraycopy(chars, firstPart, buffer, 0, length - firstPart);
+        }
+
+        writePos = (writePos + length) % capacity;
+        totalWritten += length;
     }
 
     /**
@@ -91,9 +109,8 @@ public class RingBuffer {
         }
         int length = (int) unread;
         var sb = new StringBuilder(length);
-        // 计算起始读取位置
-        int startPos = (int) ((writePos - length + capacity) % capacity);
-        if (startPos < 0) startPos += capacity;
+        // 计算起始读取位置（+ capacity 保证非负后取模）
+        int startPos = (writePos - length + capacity) % capacity;
         for (int i = 0; i < length; i++) {
             sb.append(buffer[(startPos + i) % capacity]);
         }
