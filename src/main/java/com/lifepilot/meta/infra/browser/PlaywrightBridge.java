@@ -202,6 +202,73 @@ final class PlaywrightBridge {
     }
 
     /**
+     * 通过 Chrome DevTools Protocol 连接到已运行的 Chrome 实例。
+     *
+     * <p>用户需预先以 {@code --remote-debugging-port=9222} 启动 Chrome，
+     * Agent 通过 CDP 接管该浏览器，复用其登录态和 Cookie。
+     * 调用 {@code browser.close()} 仅断开连接，不会杀死 Chrome 进程。</p>
+     *
+     * @param playwrightObj Playwright 实例
+     * @param cdpUrl        CDP 端点 URL（如 {@code http://localhost:9222}）
+     * @return Browser 实例（CDP 连接）
+     */
+    static Object connectOverCDP(Object playwrightObj, String cdpUrl) {
+        Playwright playwright = (Playwright) playwrightObj;
+        return playwright.chromium().connectOverCDP(cdpUrl);
+    }
+
+    /**
+     * 启动带持久用户配置文件的 BrowserContext。
+     *
+     * <p>与 {@link #launchBrowser} + {@link #createContext} 不同，此方法返回的
+     * BrowserContext 绑定到磁盘上的 Chrome profile 目录，会持久化 Cookie、
+     * IndexedDB、Service Worker、缓存等完整浏览器状态。</p>
+     *
+     * @param playwrightObj  Playwright 实例
+     * @param userDataDir    用户数据目录路径
+     * @param headless       是否无头模式
+     * @param extraArgs      额外 Chromium 启动参数
+     * @param userAgent      自定义 User-Agent，为 null 或空白时不设置
+     * @param viewportWidth  视口宽度
+     * @param viewportHeight 视口高度
+     * @param locale         浏览器语言区域
+     * @param timezoneId     时区 ID
+     * @return BrowserContext 实例（持久上下文）
+     */
+    static Object launchPersistentContext(Object playwrightObj, Path userDataDir,
+                                          boolean headless, List<String> extraArgs,
+                                          @Nullable String userAgent,
+                                          int viewportWidth, int viewportHeight,
+                                          String locale, String timezoneId) {
+        Playwright playwright = (Playwright) playwrightObj;
+        var args = new ArrayList<>(STEALTH_ARGS);
+        if (extraArgs != null) args.addAll(extraArgs);
+        var options = new BrowserType.LaunchPersistentContextOptions()
+                .setHeadless(headless)
+                .setArgs(args)
+                .setViewportSize(viewportWidth, viewportHeight)
+                .setLocale(locale)
+                .setTimezoneId(timezoneId);
+        if (userAgent != null && !userAgent.isBlank()) {
+            options.setUserAgent(userAgent);
+        }
+        return playwright.chromium().launchPersistentContext(userDataDir, options);
+    }
+
+    /**
+     * 获取 Browser 的所有 BrowserContext 列表。
+     *
+     * <p>CDP 模式下用于获取默认上下文（index 0），该上下文包含用户的登录态。</p>
+     *
+     * @param browserObj Browser 实例
+     * @return BrowserContext 列表（Object 类型以保持抽象层一致）
+     */
+    static List<Object> getContexts(Object browserObj) {
+        Browser browser = (Browser) browserObj;
+        return new ArrayList<>(browser.contexts());
+    }
+
+    /**
      * 保存 BrowserContext 的 storageState 到指定路径。
      *
      * @param browserContextObj BrowserContext 实例

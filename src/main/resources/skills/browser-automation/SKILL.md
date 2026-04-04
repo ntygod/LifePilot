@@ -96,7 +96,7 @@ browser(action="close", sessionId="my-task")
 
 - 可能是 JS 还没渲染完 → 用 `evaluate` 等待特定元素
 - 可能是被反爬拦截 → 换 web.search 获取信息
-- 可能是需要登录 → 告知用户需要先登录
+- 可能是需要登录 → 见下方「登录与持久化」章节
 
 ### 元素未找到
 
@@ -105,10 +105,27 @@ browser(action="close", sessionId="my-task")
 3. 可能在 iframe 中 → 检查页面结构
 4. 可能选择器错误 → 用 `accessibility` 获取元素树
 
+## 登录与持久化
+
+系统支持三种浏览器会话模式（通过 `acquisition-mode` 配置，对工具调用透明）：
+
+| 模式 | 登录态保持 | 适用场景 |
+|------|-----------|----------|
+| **LAUNCH**（默认） | 会话内保持，关闭后丢失；开启 `persist-storage-state` 后可跨会话保留 cookie | 一般抓取和交互 |
+| **CDP** | 复用用户已登录的 Chrome，天然拥有全部登录态 | 需要登录或遇到验证码的站点 |
+| **PERSISTENT** | Chrome 完整 profile 持久化，首次登录后永久保留 | 长期反复访问需登录的站点 |
+
+**遇到登录墙或验证码时的处理策略**：
+
+1. 如果当前是 CDP 模式 — 用户已在浏览器中登录，直接操作即可
+2. 如果当前是 PERSISTENT 模式 — 首次可能需要用户协助登录，之后登录态自动保留
+3. 如果当前是 LAUNCH 模式 — 告知用户切换到 CDP 模式可复用已登录浏览器，或开启 `persist-storage-state` 保留 cookie
+
 ## 会话管理最佳实践
 
 - **同一任务用同一 sessionId**：`browser(sessionId="jd-search")` — cookie 和登录态在会话内保持
-- **不同网站用不同 sessionId**：避免 cookie 污染
+- **不同网站用不同 sessionId**（仅 LAUNCH 模式）：避免 cookie 污染
+- **CDP / PERSISTENT 模式下所有会话共享 cookie**：这是设计意图，方便复用登录态
 - **任务完成后关闭会话**：`browser(action="close", sessionId="...")`
 - **不要创建过多并行会话**：浏览器资源有限
 

@@ -844,6 +844,11 @@ lifepilot:
         wait-timeout-seconds: 10
         accessibility-max-depth: 5
         js-execution-timeout-seconds: 10
+        storage-state-dir: ""
+        persist-storage-state: false
+        acquisition-mode: LAUNCH        # LAUNCH / CDP / PERSISTENT
+        cdp-url: ""                      # CDP 模式的远程调试端口 URL
+        user-data-dir: ""                # PERSISTENT 模式的用户数据目录
       git:
         enabled: true
         timeout-seconds: 30
