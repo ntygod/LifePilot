@@ -176,6 +176,7 @@ public class CodeExecuteToolExecutor {
             data.put("stderr", result.stderr());
             data.put("durationMs", result.durationMs());
             data.put("state", result.state().name());
+            data.put("workingDirectory", booter.workingDirectory().toAbsolutePath().normalize().toString());
 
             // 审计持久化
             persistRecord(sessionId, language, codeHash, code.length(),

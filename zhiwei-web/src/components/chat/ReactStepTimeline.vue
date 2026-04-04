@@ -36,6 +36,14 @@ async function revealInFolder(filePath: string) {
   }
 }
 
+/** 缩短路径显示 — 取最后两级目录 */
+function shortenPath(fullPath: string): string {
+  const sep = fullPath.includes('\\') ? '\\' : '/'
+  const parts = fullPath.split(sep).filter(Boolean)
+  if (parts.length <= 2) return fullPath
+  return '…' + sep + parts.slice(-2).join(sep)
+}
+
 /** 复制文件路径到剪贴板 */
 async function copyPath(filePath: string, stepIndex: number) {
   try {
@@ -363,12 +371,26 @@ function getGroupKey(group: StepGroup): string {
                         </span>
                       </div>
                     </div>
-                    <span
-                      v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
-                      class="react-meta-chip shrink-0"
-                    >
-                      {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
-                    </span>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <button
+                        v-if="(group.steps[1] as ObservationStep).workingDirectory"
+                        type="button"
+                        class="react-workdir-chip"
+                        :title="(group.steps[1] as ObservationStep).workingDirectory"
+                        @click.stop="isTauri
+                          ? revealInFolder((group.steps[1] as ObservationStep).workingDirectory! + '/')
+                          : copyPath((group.steps[1] as ObservationStep).workingDirectory!, (group.steps[1] as ObservationStep).index)"
+                      >
+                        <FolderOpen :size="10" />
+                        <span class="max-w-[120px] truncate">{{ shortenPath((group.steps[1] as ObservationStep).workingDirectory!) }}</span>
+                      </button>
+                      <span
+                        v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
+                        class="react-meta-chip shrink-0"
+                      >
+                        {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
+                      </span>
+                    </div>
                   </div>
                   <p
                     v-if="getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep)"
@@ -639,6 +661,27 @@ function getGroupKey(group: StepGroup): string {
 
 .react-step-move {
   transition: transform 220ms var(--ease-fluid);
+}
+
+.react-workdir-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  background: hsl(from var(--background) h s l / 0.72);
+  padding: 0.14rem 0.48rem;
+  font-size: 10px;
+  line-height: 1.1;
+  color: hsl(from var(--muted-foreground) h s l / 0.84);
+  cursor: pointer;
+  transition: all 140ms var(--ease-fluid);
+}
+
+.react-workdir-chip:hover {
+  background: hsl(from var(--accent) h s l / 0.5);
+  color: hsl(from var(--foreground) h s l / 0.92);
+  border-color: hsl(from var(--border) h s l / 0.6);
 }
 
 .react-file-bar {
