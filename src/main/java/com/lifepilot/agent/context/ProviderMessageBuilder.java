@@ -230,6 +230,7 @@ public class ProviderMessageBuilder {
                                     + "，恢复载荷: " + resume.payload()
                     )))
                     .build();
+            case ReactStep.Reflect(var content, var trigger) -> new AssistantMessage(content);
         };
     }
 

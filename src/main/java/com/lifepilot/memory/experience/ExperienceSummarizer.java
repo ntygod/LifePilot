@@ -225,6 +225,7 @@ public class ExperienceSummarizer {
                 case ReactStep.Answer a -> sb.append("[回答] ").append(a.content()).append("\n");
                 case ReactStep.Suspend s -> sb.append("[挂起] ").append(s.reason()).append("\n");
                 case ReactStep.Resume r -> sb.append("[恢复] ").append(r.payload()).append("\n");
+                case ReactStep.Reflect ref -> sb.append("[回顾] ").append(ref.content()).append("\n");
             }
         }
 

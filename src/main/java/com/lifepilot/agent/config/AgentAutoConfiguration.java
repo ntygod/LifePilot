@@ -283,7 +283,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) ProceduralMemory proceduralMemory,
             @Autowired(required = false) IntentMatcher intentMatcher,
             @Autowired(required = false) CompactionEngine compactionEngine,
-            SharedScheduler sharedScheduler) {
+            SharedScheduler sharedScheduler,
+            @Autowired(required = false) SessionWorkspaceService workspaceService) {
         return new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -299,7 +300,8 @@ public class AgentAutoConfiguration {
                 proceduralMemory,
                 intentMatcher,
                 compactionEngine,
-                sharedScheduler);
+                sharedScheduler,
+                workspaceService);
     }
 
     @Bean
@@ -317,7 +319,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) MediaProcessor mediaProcessor,
             @Autowired(required = false) AgentCheckpointStore checkpointStore,
             @Autowired(required = false) SuspendStore suspendStore,
-            @Autowired(required = false) ChatTurnService chatTurnService) {
+            @Autowired(required = false) ChatTurnService chatTurnService,
+            @Autowired(required = false) SessionWorkspaceService workspaceService) {
         return new AgentOrchestrator(
                 reactAgentLoop,
                 persistenceHandler,
@@ -331,6 +334,7 @@ public class AgentAutoConfiguration {
                 mediaProcessor,
                 checkpointStore,
                 suspendStore,
-                chatTurnService);
+                chatTurnService,
+                workspaceService);
     }
 }

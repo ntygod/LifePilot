@@ -6,6 +6,7 @@ import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
+import com.lifepilot.agent.execution.ReflectContentBuilder;
 import com.lifepilot.agent.execution.ToolExecutionCoordinator;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
@@ -85,6 +86,9 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final ApplicationEventPublisher eventPublisher;
     private final ScheduledExecutorService suspendScheduler;
 
+    // ===== 可选依赖（L1 工作区） =====
+    @Nullable private final com.lifepilot.memory.workspace.SessionWorkspaceService workspaceService;
+
     // ===== 可选依赖（L4 反馈闭环） =====
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
@@ -104,7 +108,8 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
             @Nullable CompactionEngine compactionEngine,
-            SharedScheduler sharedScheduler) {
+            SharedScheduler sharedScheduler,
+            @Nullable com.lifepilot.memory.workspace.SessionWorkspaceService workspaceService) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -128,6 +133,7 @@ public class ReactAgentLoop implements CallbackHelper {
         this.eventPublisher = eventPublisher;
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
+        this.workspaceService = workspaceService;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
 
@@ -335,6 +341,15 @@ public class ReactAgentLoop implements CallbackHelper {
                 // ★ 外层循环挂起检测 — 挂起后跳出主迭代循环
                 if (state.suspended()) break;
                 if (cancellationToken.isCancelled()) break;
+
+                // ★ 执行回顾注入点 — 工具执行完毕且未挂起时评估是否需要反思
+                var maybeReflect = evaluateReflectionTrigger(state, iteration);
+                if (maybeReflect != null) {
+                    state = appendAndPublishStep(state, maybeReflect, loopContext);
+                    persistReflectToWorkspace(state, iteration);
+                    cachedContext = null;
+                    cachedToolCallbacks = null;
+                }
 
                 // 扣减 Token 预算
                 state = state.toBuilder()
@@ -549,6 +564,104 @@ public class ReactAgentLoop implements CallbackHelper {
         state = state.appendStep(step);
         pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
         return state;
+    }
+
+    // ===== 执行回顾（Reflect）=====
+
+    /**
+     * 评估当前迭代是否需要注入反思步骤。
+     *
+     * @return Reflect 步骤（如果应触发），否则 null
+     */
+    @Nullable
+    private ReactStep.Reflect evaluateReflectionTrigger(ReactAgentState state, int iteration) {
+        var loopConfig = config.getLoop();
+
+        // 防重复：上一步已是 Reflect 则跳过
+        if (!state.steps().isEmpty() && state.steps().getLast() instanceof ReactStep.Reflect) {
+            return null;
+        }
+
+        // 1. 工具失败触发（即使预算紧张也触发，失败反思价值高且内容短）
+        if (loopConfig.isReflectOnToolFailure() && hasRecentToolFailure(state)) {
+            return new ReactStep.Reflect(
+                    ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.TOOL_FAILURE),
+                    ReactStep.ReflectTrigger.TOOL_FAILURE);
+        }
+
+        // 预算门控：非 NORMAL 降级时跳过周期性和停滞触发
+        if (state.budget().degradationLevel() != Budget.DegradationLevel.NORMAL) {
+            return null;
+        }
+
+        // 2. 停滞检测
+        if (detectStall(state, loopConfig.getStallDetectionThreshold())) {
+            return new ReactStep.Reflect(
+                    ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.STALL_DETECTED),
+                    ReactStep.ReflectTrigger.STALL_DETECTED);
+        }
+
+        // 3. 周期性触发
+        if (iteration >= loopConfig.getReflectAfterIterations()
+                && (iteration - loopConfig.getReflectAfterIterations()) % loopConfig.getReflectInterval() == 0) {
+            return new ReactStep.Reflect(
+                    ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.PERIODIC),
+                    ReactStep.ReflectTrigger.PERIODIC);
+        }
+
+        return null;
+    }
+
+    /** 检查当前批次（最近连续的 ToolCall/Observation 序列）是否有失败的 Observation。 */
+    private boolean hasRecentToolFailure(ReactAgentState state) {
+        var steps = state.steps();
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            var step = steps.get(i);
+            if (step instanceof ReactStep.Observation obs) {
+                if (!obs.success()) return true;
+            } else if (step instanceof ReactStep.ToolCall) {
+                // 仍在当前批次内，继续
+            } else {
+                break; // 遇到非 ToolCall/Observation 步骤，表示已离开当前批次
+            }
+        }
+        return false;
+    }
+
+    /** 检测是否陷入停滞（最近 N 个 ToolCall 使用相同工具）。 */
+    private boolean detectStall(ReactAgentState state, int threshold) {
+        var steps = state.steps();
+        var recentToolIds = new java.util.ArrayList<String>(threshold);
+        for (int i = steps.size() - 1; i >= 0 && recentToolIds.size() < threshold; i--) {
+            if (steps.get(i) instanceof ReactStep.ToolCall tc) {
+                recentToolIds.add(tc.toolId());
+            }
+        }
+        if (recentToolIds.size() < threshold) return false;
+        String first = recentToolIds.getFirst();
+        // web.search 重复调用不同关键词是合理的
+        if ("web.search".equals(first)) return false;
+        return recentToolIds.stream().allMatch(first::equals);
+    }
+
+    /** 将反思进度快照写入 L1 工作区。 */
+    private void persistReflectToWorkspace(ReactAgentState state, int iteration) {
+        if (workspaceService == null || state.sessionId() == null || state.sessionId().isBlank()) {
+            return;
+        }
+        try {
+            workspaceService.saveTaskState(state.sessionId(), new com.lifepilot.memory.workspace.TaskStateItem(
+                    "执行进度",
+                    ReflectContentBuilder.buildTaskStateSummary(state, iteration),
+                    null,
+                    0,
+                    state.traceId(),
+                    state.traceId(),
+                    null
+            ));
+        } catch (Exception e) {
+            log.debug("写入工作区进度快照失败，降级跳过: error={}", e.getMessage());
+        }
     }
 
     /** 预算检查结果：同时返回新 state 以及是否需要丢弃缓存上下文。 */
@@ -969,6 +1082,11 @@ public class ReactAgentLoop implements CallbackHelper {
             case ReactStep.Resume(var payload, var resumedAt, var duration) -> new String[]{
                     "RESUME", "Agent 恢复",
                     "挂起时长: " + duration.toMillis() + "ms",
+                    null
+            };
+            case ReactStep.Reflect(var content, var trigger) -> new String[]{
+                    "REFLECT", "执行回顾",
+                    content.length() > 100 ? content.substring(0, 100) + "..." : content,
                     null
             };
         };

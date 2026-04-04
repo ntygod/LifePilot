@@ -52,6 +52,24 @@ public class AgentConfigProperties {
         public void setMaxParallelToolCalls(int maxParallelToolCalls) { this.maxParallelToolCalls = maxParallelToolCalls; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
+
+        /** 开始周期性回顾的迭代阈值。 */
+        private int reflectAfterIterations = 5;
+        /** 周期性回顾间隔（每隔 N 轮触发）。 */
+        private int reflectInterval = 3;
+        /** 工具失败时是否触发回顾。 */
+        private boolean reflectOnToolFailure = true;
+        /** 停滞检测阈值：连续相同工具调用次数。 */
+        private int stallDetectionThreshold = 3;
+
+        public int getReflectAfterIterations() { return reflectAfterIterations; }
+        public void setReflectAfterIterations(int reflectAfterIterations) { this.reflectAfterIterations = reflectAfterIterations; }
+        public int getReflectInterval() { return reflectInterval; }
+        public void setReflectInterval(int reflectInterval) { this.reflectInterval = reflectInterval; }
+        public boolean isReflectOnToolFailure() { return reflectOnToolFailure; }
+        public void setReflectOnToolFailure(boolean reflectOnToolFailure) { this.reflectOnToolFailure = reflectOnToolFailure; }
+        public int getStallDetectionThreshold() { return stallDetectionThreshold; }
+        public void setStallDetectionThreshold(int stallDetectionThreshold) { this.stallDetectionThreshold = stallDetectionThreshold; }
     }
 
     /** 预算配置。 */

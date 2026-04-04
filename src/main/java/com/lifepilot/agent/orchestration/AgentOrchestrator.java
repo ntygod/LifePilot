@@ -66,6 +66,7 @@ public class AgentOrchestrator {
     @Nullable private final MediaProcessor mediaProcessor;
     @Nullable private final AgentCheckpointStore checkpointStore;
     @Nullable private final SuspendStore suspendStore;
+    @Nullable private final com.lifepilot.memory.workspace.SessionWorkspaceService workspaceService;
     private final AgentExecutionPersistenceSupport executionPersistence;
 
     public AgentOrchestrator(
@@ -81,7 +82,8 @@ public class AgentOrchestrator {
             @Nullable MediaProcessor mediaProcessor,
             @Nullable AgentCheckpointStore checkpointStore,
             @Nullable SuspendStore suspendStore,
-            @Nullable ChatTurnService chatTurnService) {
+            @Nullable ChatTurnService chatTurnService,
+            @Nullable com.lifepilot.memory.workspace.SessionWorkspaceService workspaceService) {
         this.agentLoop = agentLoop;
         this.streamingEventHandler = streamingEventHandler;
         this.config = config;
@@ -93,6 +95,7 @@ public class AgentOrchestrator {
         this.mediaProcessor = mediaProcessor;
         this.checkpointStore = checkpointStore;
         this.suspendStore = suspendStore;
+        this.workspaceService = workspaceService;
         this.executionPersistence = new AgentExecutionPersistenceSupport(persistenceHandler, chatTurnService);
     }
 
@@ -132,6 +135,14 @@ public class AgentOrchestrator {
                     config, generationRouter, multimodalRouter, effectiveRequest, agentLoop);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, token, loopContext);
+            // 清理 L1 工作区执行进度
+            if (workspaceService != null && state.sessionId() != null) {
+                try {
+                    workspaceService.resolveBySourceTraceId(state.sessionId(), state.traceId());
+                } catch (Exception e) {
+                    log.debug("清理工作区执行进度失败: error={}", e.getMessage());
+                }
+            }
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
                 return handleSuspendSync(state, traceContext, loopContext);
@@ -232,6 +243,14 @@ public class AgentOrchestrator {
                     request.sessionId(), tempTurnId, effectiveRequest);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, cancellationToken, loopContext);
+            // 清理 L1 工作区执行进度
+            if (workspaceService != null && state.sessionId() != null) {
+                try {
+                    workspaceService.resolveBySourceTraceId(state.sessionId(), state.traceId());
+                } catch (Exception e) {
+                    log.debug("清理工作区执行进度失败: error={}", e.getMessage());
+                }
+            }
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
                 handleSuspendStreaming(state, streamId, sseManager, loopContext);
