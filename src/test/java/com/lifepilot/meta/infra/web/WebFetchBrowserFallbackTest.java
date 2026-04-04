@@ -77,7 +77,7 @@ class WebFetchBrowserFallbackTest {
         // 配置浏览器可用
         when(browserSessionManager.isAvailable()).thenReturn(true);
         when(browserSessionManager.getOrCreatePage(anyString())).thenReturn(pageWrapper);
-        when(pageWrapper.navigate(anyString())).thenReturn("JS 渲染页面");
+        when(pageWrapper.navigate(anyString(), anyInt())).thenReturn("JS 渲染页面");
         when(pageWrapper.title()).thenReturn("JS 渲染页面");
         when(pageWrapper.textContent()).thenReturn("这是通过浏览器渲染获取的动态内容，包含 JavaScript 加载的数据。");
         when(pageWrapper.evaluate(anyString())).thenReturn("\"complete\"");
@@ -140,7 +140,7 @@ class WebFetchBrowserFallbackTest {
         // 配置浏览器可用
         when(browserSessionManager.isAvailable()).thenReturn(true);
         when(browserSessionManager.getOrCreatePage(anyString())).thenReturn(pageWrapper);
-        when(pageWrapper.navigate(anyString())).thenReturn("动态页面");
+        when(pageWrapper.navigate(anyString(), anyInt())).thenReturn("动态页面");
         when(pageWrapper.title()).thenReturn("动态页面");
         when(pageWrapper.textContent()).thenReturn("浏览器渲染后获取的完整内容，原静态抓取为空。");
         when(pageWrapper.evaluate(anyString())).thenReturn("\"complete\"");

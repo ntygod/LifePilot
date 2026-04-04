@@ -95,7 +95,7 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             var page = mock(PlaywrightPageWrapper.class);
             when(manager.getOrCreatePage("default")).thenReturn(page);
-            when(page.navigate("https://example.com")).thenReturn("Example Domain");
+            when(page.navigate(eq("https://example.com"), anyInt())).thenReturn("Example Domain");
             when(page.textContent()).thenReturn("Example Domain body text");
             when(page.url()).thenReturn("https://example.com");
 
@@ -113,7 +113,7 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             var page = mock(PlaywrightPageWrapper.class);
             when(manager.getOrCreatePage("my-session")).thenReturn(page);
-            when(page.navigate("https://example.com")).thenReturn("Title");
+            when(page.navigate(eq("https://example.com"), anyInt())).thenReturn("Title");
             when(page.textContent()).thenReturn("Body");
             when(page.url()).thenReturn("https://example.com");
 
