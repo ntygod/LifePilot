@@ -32,6 +32,10 @@ public class MediaDataExtractor {
     /** 媒体字段替换后的占位符。 */
     public static final String PLACEHOLDER = "[截图已成功获取，图片数据已嵌入到本次对话中供视觉分析]";
 
+    /** 无视觉模型时的降级占位符 — 引导 Agent 使用纯文本工具替代。 */
+    public static final String NO_VISION_PLACEHOLDER =
+            "[截图已获取并展示给用户。当前无视觉模型可用，无法分析图片内容。请使用 getText / extractContent 等文本工具获取页面数据]";
+
     private final ObjectMapper objectMapper;
 
     public MediaDataExtractor(ObjectMapper objectMapper) {

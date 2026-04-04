@@ -129,7 +129,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 mediaDataExtractor,
                 proceduralMemory,
                 intentMatcher,
-                config.getLoop().getMaxParallelToolCalls()
+                config.getLoop().getMaxParallelToolCalls(),
+                multimodalRouter
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
@@ -238,6 +239,14 @@ public class ReactAgentLoop implements CallbackHelper {
             boolean firstIteration = iteration == 0;
             // 首轮迭代注入用户上传的媒体内容到上下文
             if (firstIteration && hasMultimodalContent(request)) {
+                if (multimodalRouter == null || !multimodalRouter.isVisionAvailable()) {
+                    log.warn("用户上传了图片但无可用 VISION Provider: traceId={}", state.traceId());
+                    state = DegradedResponseBuilder.terminateWithReason(
+                            state,
+                            "当前没有配置支持图片理解的模型（VISION Provider），无法处理您上传的图片。" +
+                                    "请先在系统设置中配置支持视觉能力的模型提供商，然后重试。");
+                    break;
+                }
                 assembledContext = assembledContext.withMediaContents(request.mediaContents());
             }
             // 非首轮迭代：有 pendingMedia 时注入工具产生的媒体
