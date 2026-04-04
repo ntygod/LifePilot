@@ -4,6 +4,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Listener, Manager,
 };
+use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::java_manager::JavaManager;
 
@@ -20,9 +21,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let restart = MenuItemBuilder::with_id("restart", "重启后端服务").build(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
 
-    // 设置
+    // 设置 — 读取当前自启动状态
+    let autostart_enabled = app.state::<AutoLaunchManager>().is_enabled().unwrap_or(false);
     let autostart = CheckMenuItemBuilder::with_id("autostart", "开机自启动")
-        .checked(false)
+        .checked(autostart_enabled)
         .build(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
 
@@ -52,8 +54,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
             "autostart" => {
-                // Phase 2: 对接 tauri-plugin-autostart
-                log::info!("开机自启动设置变更");
+                let manager = app.state::<AutoLaunchManager>();
+                let enabled = manager.is_enabled().unwrap_or(false);
+                let result = if enabled { manager.disable() } else { manager.enable() };
+                if let Err(e) = result {
+                    log::error!("切换开机自启动失败: {}", e);
+                }
             }
             "quit" => {
                 let manager = app.state::<JavaManager>();
