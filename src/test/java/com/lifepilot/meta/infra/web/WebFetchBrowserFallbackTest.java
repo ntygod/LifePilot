@@ -94,9 +94,9 @@ class WebFetchBrowserFallbackTest {
         assertThat(result.data().get("renderMode")).isEqualTo("browser");
         assertThat((String) result.data().get("content")).contains("浏览器渲染获取的动态内容");
         assertThat(result.data().get("title")).isEqualTo("JS 渲染页面");
-        // 验证浏览器会话创建和关闭
+        // 验证浏览器会话创建（成功时不主动关闭，由空闲超时清理）
         verify(browserSessionManager).getOrCreatePage(anyString());
-        verify(browserSessionManager).closePage(anyString());
+        verify(browserSessionManager, never()).closePage(anyString());
     }
 
     @Test
@@ -163,7 +163,7 @@ class WebFetchBrowserFallbackTest {
         assertThat(result.data().get("renderMode")).isEqualTo("browser");
         assertThat((String) result.data().get("content")).contains("浏览器渲染后获取的完整内容");
         verify(browserSessionManager).getOrCreatePage(anyString());
-        verify(browserSessionManager).closePage(anyString());
+        verify(browserSessionManager, never()).closePage(anyString());
     }
 
     /**

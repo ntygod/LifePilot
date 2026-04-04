@@ -5,6 +5,8 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -186,7 +188,7 @@ public class BrowserSessionManager {
             return sp.activeTabId;
         }
         var page = browserRuntime.createPage(sp.browserContext);
-        var wrapper = new PlaywrightPageWrapper(page);
+        var wrapper = new PlaywrightPageWrapper(page, browserConfig.getHumanDelayMinMs(), browserConfig.getHumanDelayMaxMs());
         wrapper.navigate(url);
         String tabId = UUID.randomUUID().toString().substring(0, 8);
         sp.pages.put(tabId, wrapper);
@@ -322,7 +324,8 @@ public class BrowserSessionManager {
         if (browserInstance == null) {
             playwrightInstance = browserRuntime.createPlaywright();
             try {
-                browserInstance = browserRuntime.launchBrowser(playwrightInstance, browserConfig.isHeadless());
+                browserInstance = browserRuntime.launchBrowser(
+                        playwrightInstance, browserConfig.isHeadless(), browserConfig.getExtraLaunchArgs());
             } catch (Exception e) {
                 // Playwright 浏览器二进制未安装时，launch() 会抛出异常
                 String msg = e.getMessage();
@@ -360,14 +363,42 @@ public class BrowserSessionManager {
 
     private SessionPages createSessionPages(String sessionId) {
         var browser = ensureBrowser();
-        var browserContext = browserRuntime.createContext(browser);
+        // 解析 storageState 持久化路径
+        Path storageStatePath = resolveStorageStatePath(sessionId);
+        var browserContext = browserRuntime.createContext(
+                browser,
+                browserConfig.getUserAgent(),
+                browserConfig.getViewportWidth(),
+                browserConfig.getViewportHeight(),
+                browserConfig.getLocale(),
+                browserConfig.getTimezoneId(),
+                storageStatePath
+        );
+        // 反检测隐身模式：注入反指纹脚本
+        if (browserConfig.isStealthMode()) {
+            browserRuntime.injectStealthScripts(browserContext);
+        }
         var page = browserRuntime.createPage(browserContext);
         String tabId = UUID.randomUUID().toString().substring(0, 8);
-        log.debug("创建浏览器会话上下文: sessionId={}, tabId={}", sessionId, tabId);
-        return new SessionPages(browserContext, tabId, new PlaywrightPageWrapper(page));
+        log.debug("创建浏览器会话上下文: sessionId={}, tabId={}, stealth={}", sessionId, tabId, browserConfig.isStealthMode());
+        return new SessionPages(browserContext, tabId,
+                new PlaywrightPageWrapper(page, browserConfig.getHumanDelayMinMs(), browserConfig.getHumanDelayMaxMs()));
     }
 
     private void closeSessionPages(String sessionId, SessionPages sessionPages) {
+        // 关闭 context 前，如果启用了 storageState 持久化，先导出存储状态
+        if (browserConfig.isPersistStorageState()) {
+            Path storageStatePath = resolveStorageStatePath(sessionId);
+            if (storageStatePath != null) {
+                try {
+                    Files.createDirectories(storageStatePath.getParent());
+                    browserRuntime.saveStorageState(sessionPages.browserContext, storageStatePath);
+                    log.debug("已保存 storageState: sessionId={}, path={}", sessionId, storageStatePath);
+                } catch (Exception e) {
+                    log.warn("保存 storageState 失败: sessionId={}, error={}", sessionId, e.getMessage());
+                }
+            }
+        }
         sessionPages.pages.values().forEach(wrapper -> {
             try {
                 wrapper.close();
@@ -396,12 +427,34 @@ public class BrowserSessionManager {
         return sessions.size();
     }
 
+    /**
+     * 解析 storageState 持久化文件路径。
+     *
+     * @param sessionId 会话 ID
+     * @return 持久化文件路径；storageStateDir 为空时返回 null
+     */
+    @Nullable
+    private Path resolveStorageStatePath(String sessionId) {
+        String dir = browserConfig.getStorageStateDir();
+        if (dir == null || dir.isBlank()) {
+            return null;
+        }
+        return Path.of(dir, sessionId + ".json");
+    }
+
     interface BrowserRuntime {
         Object createPlaywright();
 
-        Object launchBrowser(Object playwrightObj, boolean headless);
+        Object launchBrowser(Object playwrightObj, boolean headless, List<String> extraArgs);
 
-        Object createContext(Object browserObj);
+        Object createContext(Object browserObj, String userAgent,
+                             int viewportWidth, int viewportHeight,
+                             String locale, String timezoneId,
+                             @Nullable Path storageStatePath);
+
+        void injectStealthScripts(Object browserContextObj);
+
+        void saveStorageState(Object browserContextObj, Path path);
 
         Object createPage(Object browserContextObj);
 
@@ -420,13 +473,27 @@ public class BrowserSessionManager {
         }
 
         @Override
-        public Object launchBrowser(Object playwrightObj, boolean headless) {
-            return PlaywrightBridge.launchBrowser(playwrightObj, headless);
+        public Object launchBrowser(Object playwrightObj, boolean headless, List<String> extraArgs) {
+            return PlaywrightBridge.launchBrowser(playwrightObj, headless, extraArgs);
         }
 
         @Override
-        public Object createContext(Object browserObj) {
-            return PlaywrightBridge.createContext(browserObj);
+        public Object createContext(Object browserObj, String userAgent,
+                                    int viewportWidth, int viewportHeight,
+                                    String locale, String timezoneId,
+                                    @Nullable Path storageStatePath) {
+            return PlaywrightBridge.createContext(browserObj, userAgent,
+                    viewportWidth, viewportHeight, locale, timezoneId, storageStatePath);
+        }
+
+        @Override
+        public void injectStealthScripts(Object browserContextObj) {
+            PlaywrightBridge.injectStealthScripts(browserContextObj);
+        }
+
+        @Override
+        public void saveStorageState(Object browserContextObj, Path path) {
+            PlaywrightBridge.saveStorageState(browserContextObj, path);
         }
 
         @Override

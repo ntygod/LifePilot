@@ -8,6 +8,9 @@ import com.microsoft.playwright.options.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import jakarta.annotation.Nullable;
+
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -188,14 +191,27 @@ class BrowserSessionManagerTest {
         }
 
         @Override
-        public Object launchBrowser(Object playwrightObj, boolean headless) {
+        public Object launchBrowser(Object playwrightObj, boolean headless, List<String> extraArgs) {
             return browser;
         }
 
         @Override
-        public Object createContext(Object browserObj) {
+        public Object createContext(Object browserObj, String userAgent,
+                                    int viewportWidth, int viewportHeight,
+                                    String locale, String timezoneId,
+                                    @Nullable Path storageStatePath) {
             createContextCount++;
             return sharedContext;
+        }
+
+        @Override
+        public void injectStealthScripts(Object browserContextObj) {
+            // no-op
+        }
+
+        @Override
+        public void saveStorageState(Object browserContextObj, Path path) {
+            // no-op
         }
 
         @Override

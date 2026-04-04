@@ -14,9 +14,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Web 抓取工具执行器 — 使用 Jsoup 解析 HTML 并提取正文内容。
@@ -170,10 +170,25 @@ public class WebFetchToolExecutor {
     }
 
     /**
+     * 根据 URL 生成基于域名的会话 ID，使同域名请求复用会话。
+     *
+     * @param url 目标 URL
+     * @return 基于域名的会话 ID
+     */
+    private String fetchSessionId(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            return "web-fetch-" + (host != null ? host : "default");
+        } catch (Exception e) {
+            return "web-fetch-default";
+        }
+    }
+
+    /**
      * 使用 Playwright 浏览器渲染页面并提取内容。
      *
-     * <p>创建临时浏览器会话，导航到目标 URL，等待页面加载后提取文本内容。
-     * 会话在 finally 块中可靠关闭。</p>
+     * <p>基于域名复用浏览器会话，正常情况下不主动关闭（由 BrowserSessionManager 空闲超时清理），
+     * 异常时仍关闭会话防止泄漏。</p>
      *
      * @param url      目标 URL
      * @param selector CSS 选择器（可选）
@@ -182,7 +197,8 @@ public class WebFetchToolExecutor {
      */
     private ToolResult fetchWithBrowser(String url, @Nullable String selector,
                                         MetaProperties.Infra.WebFetch config) {
-        String fetchSessionId = "web-fetch-" + UUID.randomUUID().toString().substring(0, 8);
+        String fetchSessionId = fetchSessionId(url);
+        boolean success = false;
         try {
             PlaywrightPageWrapper page = browserSessionManager.getOrCreatePage(fetchSessionId);
             int renderTimeoutMs = config.getRenderTimeoutSeconds() * 1000;
@@ -221,6 +237,7 @@ public class WebFetchToolExecutor {
             }
 
             log.info("浏览器渲染抓取完成: url={}, contentLength={}", url, content.length());
+            success = true;
             return ToolResult.success(Map.of(
                     "title", title != null ? title : "",
                     "url", url,
@@ -234,10 +251,13 @@ public class WebFetchToolExecutor {
             log.error("浏览器渲染抓取失败: url={}, error={}", url, e.getMessage(), e);
             return ToolResult.error("浏览器渲染失败: " + e.getMessage());
         } finally {
-            try {
-                browserSessionManager.closePage(fetchSessionId);
-            } catch (Exception e) {
-                log.warn("关闭浏览器抓取会话失败: sessionId={}, error={}", fetchSessionId, e.getMessage());
+            // 异常时关闭会话防止泄漏，正常情况下由空闲超时自动清理
+            if (!success) {
+                try {
+                    browserSessionManager.closePage(fetchSessionId);
+                } catch (Exception e) {
+                    log.warn("关闭浏览器抓取会话失败: sessionId={}, error={}", fetchSessionId, e.getMessage());
+                }
             }
         }
     }
