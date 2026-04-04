@@ -31,6 +31,8 @@ public class BrowserSessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(BrowserSessionManager.class);
     private static final String PLAYWRIGHT_CLASS = "com.microsoft.playwright.Playwright";
+    // 注意：DriverJar 是 Playwright 内部类，升级 Playwright 版本时需回归验证此路径。
+    // 当前适用版本：playwright 1.58.0
     private static final String DRIVER_JAR_CLASS = "com.microsoft.playwright.impl.driver.jar.DriverJar";
     private static final String MSG_NO_API =
             "浏览器功能未配置，请安装 Playwright（在 pom.xml 中添加 com.microsoft.playwright:playwright 依赖）";

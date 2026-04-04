@@ -12,6 +12,8 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.content.Media;
 import org.springframework.core.io.ByteArrayResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
@@ -27,6 +29,7 @@ import java.util.Objects;
  */
 public class ProviderMessageBuilder {
 
+    private static final Logger log = LoggerFactory.getLogger(ProviderMessageBuilder.class);
     private static final int CURRENT_TURN_DIGEST_MIN_CHARS = 320;
 
     private final TranscriptHygieneEngine hygieneEngine;
@@ -99,6 +102,15 @@ public class ProviderMessageBuilder {
     /** 将累积的 ToolCall 合并为单条 AssistantMessage 并清空缓冲区。 */
     private void flushPendingToolCalls(List<AssistantMessage.ToolCall> pending, List<Message> out) {
         if (pending.isEmpty()) return;
+        // 检查 flush 后的消息序列：紧接的消息应为 ToolResponseMessage，否则 provider 可能拒绝
+        if (!out.isEmpty() && !(out.getLast() instanceof ToolResponseMessage)) {
+            // 合法路径：首次 flush（前面是 UserMessage/SystemMessage）或连续 flush
+            // 但如果上一条是带 tool_calls 的 AssistantMessage 且没有对应 ToolResponseMessage，记录警告
+            if (out.getLast() instanceof AssistantMessage am && am.hasToolCalls()) {
+                log.warn("检测到连续 ToolCall flush：前一条 AssistantMessage 有 {} 个 tool_calls 但缺少对应的 ToolResponseMessage，"
+                        + "provider 可能拒绝此消息序列", am.getToolCalls().size());
+            }
+        }
         out.add(buildAssistantToolCallMessage(List.copyOf(pending)));
         pending.clear();
     }
@@ -262,7 +274,10 @@ public class ProviderMessageBuilder {
                     .build();
             // Reflect 不进入 LLM 消息列表 — 反思内容通过 L1 工作区 TASK_STATE 在下一轮
             // assemble 时注入上下文，避免额外 AssistantMessage 引发 provider 消息序列校验失败。
-            case ReactStep.Reflect ignored -> null;
+            case ReactStep.Reflect reflect -> {
+                log.debug("Reflect 步骤已跳过消息转换（通过 workspace 注入）: trigger={}", reflect.trigger());
+                yield null;
+            }
         };
     }
 

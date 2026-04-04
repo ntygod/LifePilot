@@ -41,7 +41,7 @@ public class BrowserToolProvider {
                 properties.getInfra().getBrowser().getTextSnapshotMaxLength());
         var executor = new BrowserActionDispatchExecutor(
                 new BrowserNavigateToolExecutor(browserSessionManager, textSnapshotCleaner,
-                        properties.getInfra().getBrowser().getToolTimeoutSeconds() * 1000),
+                        (int) Math.min((long) properties.getInfra().getBrowser().getToolTimeoutSeconds() * 1000, Integer.MAX_VALUE)),
                 new BrowserClickToolExecutor(browserSessionManager),
                 new BrowserInputToolExecutor(browserSessionManager),
                 new BrowserScreenshotToolExecutor(browserSessionManager),

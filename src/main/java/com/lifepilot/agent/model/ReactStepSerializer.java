@@ -3,13 +3,13 @@ package com.lifepilot.agent.model;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * ReactStep 序列化工具 — 将 ReAct 步骤序列转为 JSON 友好的 Map 列表。
@@ -32,8 +32,7 @@ public final class ReactStepSerializer {
             "file.write", "file.edit", "file.manage"
     );
 
-    /** 从 JSON 输出中快速提取 "path" 值的正则（避免引入完整 JSON 解析依赖）。 */
-    private static final Pattern PATH_PATTERN = Pattern.compile("\"path\"\\s*:\\s*\"([^\"]+)\"");
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private ReactStepSerializer() {}
 
@@ -137,10 +136,14 @@ public final class ReactStepSerializer {
         if (!FILE_PRODUCING_TOOL_IDS.contains(observation.toolId())) return null;
         String output = observation.output();
         if (output == null || output.isBlank()) return null;
-        Matcher matcher = PATH_PATTERN.matcher(output);
-        if (matcher.find()) {
-            // JSON 中反斜杠被转义为 \\，还原为实际路径
-            return matcher.group(1).replace("\\\\", "\\");
+        try {
+            JsonNode root = MAPPER.readTree(output);
+            JsonNode pathNode = root.get("path");
+            if (pathNode != null && pathNode.isTextual()) {
+                return pathNode.asText();
+            }
+        } catch (JsonProcessingException ignored) {
+            // 输出非 JSON 格式，跳过提取
         }
         return null;
     }

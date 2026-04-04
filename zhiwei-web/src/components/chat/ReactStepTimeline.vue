@@ -16,22 +16,33 @@ const copiedSteps = ref<Set<number>>(new Set())
 /** 在 Tauri 桌面端用系统默认程序打开文件 */
 async function openFile(filePath: string) {
   if (!isTauri) return
-  const { open } = await import('@tauri-apps/plugin-shell')
-  await open(filePath)
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(filePath)
+  } catch (e) {
+    console.warn('打开文件失败:', filePath, e)
+  }
 }
 
 /** 用系统文件管理器打开文件所在目录 */
 async function revealInFolder(filePath: string) {
   if (!isTauri) return
-  // shell.open 对目录路径会打开文件管理器
-  const dir = filePath.replace(/[\\/][^\\/]+$/, '')
-  const { open } = await import('@tauri-apps/plugin-shell')
-  await open(dir)
+  try {
+    const dir = filePath.replace(/[\\/][^\\/]+$/, '')
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(dir)
+  } catch (e) {
+    console.warn('打开目录失败:', filePath, e)
+  }
 }
 
 /** 复制文件路径到剪贴板 */
 async function copyPath(filePath: string, stepIndex: number) {
-  await navigator.clipboard.writeText(filePath)
+  try {
+    await navigator.clipboard.writeText(filePath)
+  } catch {
+    // clipboard API 不可用时（如非 HTTPS 环境）静默忽略
+  }
   copiedSteps.value.add(stepIndex)
   setTimeout(() => copiedSteps.value.delete(stepIndex), 2000)
 }
