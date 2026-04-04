@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +22,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 /**
- * Shell 命令执行工具 — 通过 ProcessBuilder 启动子进程执行命令。
+ * Shell 命令执行工具 — 通过 {@link ShellProcessFactory} 启动子进程执行命令。
  *
  * <p>安全机制：
  * <ul>
@@ -42,24 +41,6 @@ import java.util.regex.Pattern;
 public class ShellExecToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ShellExecToolExecutor.class);
-    private static final String WINDOWS_COMMAND_ENV = "LIFEPILOT_SHELL_COMMAND";
-    private static final String WINDOWS_POWERSHELL_ENCODED_COMMAND = Base64.getEncoder()
-            .encodeToString("""
-                    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-                    $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-                    $ErrorActionPreference = 'Stop'
-                    $command = $env:LIFEPILOT_SHELL_COMMAND
-                    try {
-                        Invoke-Expression $command
-                        if ($null -ne $LASTEXITCODE) {
-                            exit $LASTEXITCODE
-                        }
-                        exit 0
-                    } catch {
-                        [Console]::Error.WriteLine($_.Exception.Message)
-                        exit 1
-                    }
-                    """.getBytes(StandardCharsets.UTF_16LE));
 
     private final MetaProperties.Infra.Shell shellConfig;
     private final List<Pattern> compiledBlacklist;
@@ -79,7 +60,7 @@ public class ShellExecToolExecutor {
     /**
      * 执行 Shell 命令。
      *
-     * @param input 工具输入，必需参数 command，可选 workingDirectory 和 timeoutSeconds
+     * @param input 工具输入，必需参数 command，可选 workingDirectory、timeoutSeconds、env、shell 等
      * @return 包含 stdout、stderr、exitCode 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
@@ -100,6 +81,13 @@ public class ShellExecToolExecutor {
 
         boolean pty = input.getOptionalParam("pty", Boolean.class).orElse(false);
 
+        // 新增参数：Shell 解释器覆盖
+        String shellOverride = input.getOptionalParam("shell", String.class).orElse(null);
+
+        // 新增参数：环境变量注入
+        @SuppressWarnings("unchecked")
+        Map<String, String> env = input.getOptionalParam("env", Map.class).orElse(null);
+
         // 黑名单检查
         var rejection = checkBlacklist(command);
         if (rejection != null) {
@@ -112,10 +100,16 @@ public class ShellExecToolExecutor {
             return ToolResult.error("工作目录不存在: " + workingDirectory);
         }
 
+        // Windows 下 PTY 不支持，降级警告
+        if (pty && ShellProcessFactory.isWindows()) {
+            log.warn("Windows 平台暂不支持 PTY 模式，降级为普通执行: command={}", command);
+            pty = false;
+        }
+
         // 后台执行模式（background=true 立即后台化）
         boolean background = input.getOptionalParam("background", Boolean.class).orElse(false);
         if (background) {
-            return executeBackground(command, workDir, pty);
+            return executeBackground(command, workDir, env);
         }
 
         // yieldMs 模式：同步等待 yieldMs 毫秒，如果进程未结束则自动转后台
@@ -123,12 +117,12 @@ public class ShellExecToolExecutor {
                 .map(Number::intValue)
                 .orElse(-1); // -1 表示不使用 yieldMs，走纯同步模式
         if (yieldMs >= 0) {
-            return executeWithYield(command, workDir, yieldMs, pty);
+            return executeWithYield(command, workDir, yieldMs, env);
         }
 
         // 纯同步执行命令
         try {
-            return executeCommand(command, workDir, timeoutSeconds, pty);
+            return executeCommand(command, workDir, timeoutSeconds, pty, shellOverride, env);
         } catch (IOException e) {
             log.error("Shell 命令执行失败: command={}, error={}", command, e.getMessage(), e);
             return ToolResult.error("命令执行失败: " + e.getMessage());
@@ -169,12 +163,12 @@ public class ShellExecToolExecutor {
         return output.substring(0, maxLength) + "...[输出已截断，原始长度: " + originalLength + " 字符]";
     }
 
-    private ToolResult executeBackground(String command, Path workDir, boolean pty) {
+    private ToolResult executeBackground(String command, Path workDir, @Nullable Map<String, String> env) {
         if (backgroundProcessManager == null) {
             return ToolResult.error("后台进程管理器不可用");
         }
         try {
-            String sessionId = backgroundProcessManager.startProcess(command, workDir);
+            String sessionId = backgroundProcessManager.startProcess(command, workDir, env);
             return ToolResult.success(Map.of(
                     "sessionId", sessionId,
                     "message", "后台进程已启动，使用 process.output 读取输出，process.kill 终止进程"
@@ -197,26 +191,29 @@ public class ShellExecToolExecutor {
      *   <li>N 毫秒后进程仍在运行，则将其转为后台进程并返回 sessionId</li>
      * </ul></p>
      */
-    private ToolResult executeWithYield(String command, Path workDir, int yieldMs, boolean pty) {
+    private ToolResult executeWithYield(String command, Path workDir, int yieldMs,
+                                         @Nullable Map<String, String> env) {
         if (backgroundProcessManager == null) {
             return ToolResult.error("后台进程管理器不可用（yieldMs 模式需要 BackgroundProcessManager）");
         }
 
         // yieldMs=0 等同于 background=true
         if (yieldMs == 0) {
-            return executeBackground(command, workDir, pty);
+            return executeBackground(command, workDir, env);
         }
 
         try {
             // 先启动为后台进程
-            String sessionId = backgroundProcessManager.startProcess(command, workDir);
+            String sessionId = backgroundProcessManager.startProcess(command, workDir, env);
 
-            // 等待 yieldMs 毫秒看进程是否完成
-            Thread.sleep(Math.min(yieldMs, 120_000)); // 上限 120 秒
+            // 等待进程完成或 yieldMs 超时（进程提前退出时立即返回，不浪费等待时间）
+            long cappedYieldMs = Math.min(yieldMs, 120_000L); // 上限 120 秒
+            boolean finished = backgroundProcessManager.awaitCompletion(
+                    sessionId, cappedYieldMs, TimeUnit.MILLISECONDS);
 
-            // 检查进程是否已完成
-            var processInfo = backgroundProcessManager.getProcessInfo(sessionId);
-            if (processInfo.state() != ProcessState.RUNNING) {
+            if (finished) {
+                // 进程已完成，获取最新状态
+                var processInfo = backgroundProcessManager.getProcessInfo(sessionId);
                 // 进程已完成，收集输出并返回同步结果
                 ProcessOutputChunk outputChunk = backgroundProcessManager.readOutputChunk(sessionId);
                 int exitCode = processInfo.exitCode() != null
@@ -230,6 +227,7 @@ public class ShellExecToolExecutor {
                 data.put("stdout", stdout);
                 data.put("stderr", stderr);
                 data.put("output", output);
+                data.put("workingDirectory", workDir.toAbsolutePath().normalize().toString());
 
                 log.debug("yieldMs 模式: 进程在等待期间完成, sessionId={}, state={}", sessionId, processInfo.state());
 
@@ -263,7 +261,9 @@ public class ShellExecToolExecutor {
         }
     }
 
-    private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds, boolean pty)
+    private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds,
+                                       boolean pty, @Nullable String shellOverride,
+                                       @Nullable Map<String, String> env)
             throws IOException, InterruptedException {
 
         int maxRetries = shellConfig.getTransientRetries();
@@ -271,7 +271,7 @@ public class ShellExecToolExecutor {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                return doExecuteCommand(command, workDir, timeoutSeconds, pty);
+                return doExecuteCommand(command, workDir, timeoutSeconds, pty, shellOverride, env);
             } catch (IOException e) {
                 lastException = e;
                 if (attempt < maxRetries && isTransientFailure(e)) {
@@ -300,40 +300,17 @@ public class ShellExecToolExecutor {
                 || msg.contains("No such file or directory"); // shell 可执行文件临时不可用
     }
 
-    private ToolResult doExecuteCommand(String command, Path workDir, int timeoutSeconds, boolean pty)
+    private ToolResult doExecuteCommand(String command, Path workDir, int timeoutSeconds,
+                                         boolean pty, @Nullable String shellOverride,
+                                         @Nullable Map<String, String> env)
             throws IOException, InterruptedException {
 
-        // 根据操作系统选择 Shell
-        ProcessBuilder pb;
-        String osName = System.getProperty("os.name").toLowerCase();
-        if (osName.contains("win")) {
-            if (pty) {
-                // Windows 下 PTY 通过 conpty 或 winpty 实现，当前降级为普通模式并警告
-                log.warn("Windows 平台暂不支持 PTY 模式，降级为普通执行: command={}", command);
-            }
-            pb = new ProcessBuilder(
-                    "powershell",
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-EncodedCommand",
-                    WINDOWS_POWERSHELL_ENCODED_COMMAND
-            );
-            pb.environment().put(WINDOWS_COMMAND_ENV, command);
-        } else {
-            if (pty) {
-                // Unix 下通过 script 命令分配伪终端
-                pb = new ProcessBuilder("script", "-qec", command, "/dev/null");
-            } else {
-                pb = new ProcessBuilder("sh", "-c", command);
-            }
-        }
-        pb.directory(workDir.toFile());
-        pb.redirectErrorStream(false);
+        // 通过工厂创建进程（消除重复的 PowerShell/Unix 构建逻辑）
+        ProcessBuilder pb = ShellProcessFactory.createShellProcess(
+                command, workDir, shellOverride, pty, env);
 
-        log.debug("执行 Shell 命令: command={}, workDir={}, timeout={}s", command, workDir, timeoutSeconds);
+        log.debug("执行 Shell 命令: command={}, workDir={}, timeout={}s, shell={}",
+                command, workDir, timeoutSeconds, shellOverride);
 
         Process process = pb.start();
 
@@ -369,10 +346,7 @@ public class ShellExecToolExecutor {
             return ToolResult.error(msg);
         }
 
-        // 进程已完成，短暂等待让输出流充分刷新
-        Thread.sleep(100);
-
-        // 带超时保护地获取输出
+        // 带超时保护地获取输出（进程已完成，readAllBytes 会等待 EOF 后返回，无需额外 sleep）
         String stdout = getOutputSafe(stdoutFuture, outputReadTimeout);
         String stderr = getOutputSafe(stderrFuture, outputReadTimeout);
         int exitCode = process.exitValue();

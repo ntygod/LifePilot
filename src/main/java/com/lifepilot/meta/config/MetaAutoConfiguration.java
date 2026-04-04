@@ -52,6 +52,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
@@ -90,8 +91,9 @@ public class MetaAutoConfiguration {
      * 注册后台进程管理器 — 管理通过 shell.exec(background=true) 启动的长时间运行进程。
      */
     @Bean
-    BackgroundProcessManager backgroundProcessManager(MetaProperties properties) {
-        return new BackgroundProcessManager(properties.getInfra().getProcess());
+    BackgroundProcessManager backgroundProcessManager(MetaProperties properties,
+                                                       @Nullable ApplicationEventPublisher eventPublisher) {
+        return new BackgroundProcessManager(properties.getInfra().getProcess(), eventPublisher);
     }
 
     /**

@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 后台进程与持久会话 action 路由执行器。
@@ -41,6 +42,8 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
         this.sessionManager = sessionManager;
 
         if (processManager != null) {
+            // 断言：注册了 process action 的分支内 processManager 必然非 null
+            Objects.requireNonNull(processManager, "processManager 在注册 process action 时不应为 null");
             register("list",
                     RiskLevel.LOW,
                     ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
@@ -72,6 +75,8 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
         }
 
         if (sessionManager != null) {
+            // 断言：注册了 session action 的分支内 sessionManager 必然非 null
+            Objects.requireNonNull(sessionManager, "sessionManager 在注册 session action 时不应为 null");
             register("session-create",
                     RiskLevel.HIGH,
                     ToolExecutionSemantics.of(
@@ -140,9 +145,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     // ─────────────────────────────────────────────
 
     private ToolResult executeProcessList(ToolInput input) {
-        if (processManager == null) {
-            return ToolResult.error("后台进程管理器不可用");
-        }
         var processes = processManager.listProcesses();
         var entries = processes.stream().map(p -> {
             var entry = new LinkedHashMap<String, Object>();
@@ -158,7 +160,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeProcessOutput(ToolInput input) {
-        if (processManager == null) return ToolResult.error("后台进程管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             ProcessOutputChunk chunk = processManager.readOutputChunk(sessionId);
@@ -176,7 +177,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeProcessWrite(ToolInput input) {
-        if (processManager == null) return ToolResult.error("后台进程管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             String data = input.getParam("input", String.class);
@@ -191,7 +191,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeProcessKill(ToolInput input) {
-        if (processManager == null) return ToolResult.error("后台进程管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             processManager.killProcess(sessionId);
@@ -206,7 +205,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     // ─────────────────────────────────────────────
 
     private ToolResult executeSessionCreate(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String name = input.getOptionalParam("name", String.class).orElse(null);
             String workDir = input.getOptionalParam("workDir", String.class).orElse(null);
@@ -221,7 +219,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionExec(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             String command = input.getParam("command", String.class);
@@ -236,7 +233,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionWrite(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             String data = input.getParam("input", String.class);
@@ -251,7 +247,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionRead(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             String output = sessionManager.readSession(sessionId);
@@ -265,7 +260,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionSignal(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             String signal = input.getParam("signal", String.class);
@@ -280,7 +274,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionList(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         var sessionList = sessionManager.listSessions();
         var entries = sessionList.stream().map(s -> {
             var entry = new LinkedHashMap<String, Object>();
@@ -296,7 +289,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionClose(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             sessionManager.closeSession(sessionId);
@@ -307,7 +299,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
     }
 
     private ToolResult executeSessionResize(ToolInput input) {
-        if (sessionManager == null) return ToolResult.error("持久会话管理器不可用");
         try {
             String sessionId = input.getParam("sessionId", String.class);
             int cols = input.getParam("cols", Number.class).intValue();

@@ -50,6 +50,8 @@ public class TmuxSessionManager {
         // 按配置间隔定期执行空闲清理
         cleanupScheduler.scheduleAtFixedRate(this::cleanupIdleSessions,
                 config.getCleanupIntervalSeconds(), config.getCleanupIntervalSeconds(), TimeUnit.SECONDS);
+        // 启动时回收上次残留的孤儿 tmux 会话
+        recoverOrphanSessions();
     }
 
     /**
@@ -313,6 +315,34 @@ public class TmuxSessionManager {
     // ─────────────────────────────────────────────
     //  内部方法
     // ─────────────────────────────────────────────
+
+    /**
+     * 回收上次进程残留的孤儿 tmux 会话。
+     *
+     * <p>扫描以 {@link #SESSION_PREFIX} 为前缀的 tmux 会话，
+     * 逐一 kill 并记录日志。防止后端重启后遗留大量无主会话。</p>
+     */
+    private void recoverOrphanSessions() {
+        try {
+            List<String> orphans = tmuxCmd.listSessions(SESSION_PREFIX);
+            if (orphans.isEmpty()) {
+                log.debug("未发现孤儿 tmux 会话");
+                return;
+            }
+            int cleaned = 0;
+            for (String name : orphans) {
+                try {
+                    tmuxCmd.killSession(name);
+                    cleaned++;
+                } catch (IOException e) {
+                    log.debug("清理孤儿 tmux 会话失败: name={}, error={}", name, e.getMessage());
+                }
+            }
+            log.info("孤儿 tmux 会话回收完成: 发现={}, 清理={}", orphans.size(), cleaned);
+        } catch (Exception e) {
+            log.warn("孤儿 tmux 会话回收异常: {}", e.getMessage());
+        }
+    }
 
     /**
      * 获取指定会话，不存在时抛出异常。

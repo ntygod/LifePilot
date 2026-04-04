@@ -94,6 +94,10 @@ public class ShellToolProvider {
         properties.put("background", Map.of("type", "boolean", "description", "是否立即后台执行"));
         properties.put("yieldMs", Map.of("type", "integer", "description", "同步等待毫秒数，超时后自动转后台"));
         properties.put("pty", Map.of("type", "boolean", "description", "是否分配伪终端（PTY）"));
+        properties.put("shell", Map.of("type", "string", "description",
+                "Shell 解释器（bash/zsh/sh 等），仅 Unix 生效，默认 sh。Windows 固定使用 PowerShell"));
+        properties.put("env", Map.of("type", "object", "description",
+                "额外环境变量键值对，注入到子进程环境中"));
 
         return Map.of(
                 "type", "object",

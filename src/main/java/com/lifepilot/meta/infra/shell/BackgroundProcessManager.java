@@ -1,8 +1,10 @@
 package com.lifepilot.meta.infra.shell;
 
 import com.lifepilot.meta.config.MetaProperties;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,8 +14,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -24,7 +26,8 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * 后台进程管理器 — 管理通过 shell.exec(background=true) 启动的长时间运行进程。
  *
- * <p>每个后台进程分配唯一 sessionId，输出存入环形缓冲区，空闲超时自动清理。</p>
+ * <p>每个后台进程分配唯一 sessionId，输出存入环形缓冲区，空闲超时自动清理。
+ * 进程创建委托 {@link ShellProcessFactory}，与同步执行共享一致的 Shell 启动逻辑。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -32,31 +35,17 @@ import java.util.concurrent.atomic.AtomicReference;
 public class BackgroundProcessManager {
 
     private static final Logger log = LoggerFactory.getLogger(BackgroundProcessManager.class);
-    private static final String WINDOWS_COMMAND_ENV = "LIFEPILOT_SHELL_COMMAND";
-    private static final String WINDOWS_POWERSHELL_ENCODED_COMMAND = Base64.getEncoder()
-            .encodeToString("""
-                    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-                    $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-                    $ErrorActionPreference = 'Stop'
-                    $command = $env:LIFEPILOT_SHELL_COMMAND
-                    try {
-                        Invoke-Expression $command
-                        if ($null -ne $LASTEXITCODE) {
-                            exit $LASTEXITCODE
-                        }
-                        exit 0
-                    } catch {
-                        [Console]::Error.WriteLine($_.Exception.Message)
-                        exit 1
-                    }
-                    """.getBytes(StandardCharsets.UTF_16LE));
 
     private final ConcurrentHashMap<String, ManagedProcess> processes = new ConcurrentHashMap<>();
     private final MetaProperties.Infra.Process processConfig;
     private final ScheduledExecutorService cleanupScheduler;
+    @Nullable
+    private final ApplicationEventPublisher eventPublisher;
 
-    public BackgroundProcessManager(MetaProperties.Infra.Process processConfig) {
+    public BackgroundProcessManager(MetaProperties.Infra.Process processConfig,
+                                     @Nullable ApplicationEventPublisher eventPublisher) {
         this.processConfig = processConfig;
+        this.eventPublisher = eventPublisher;
         this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = Thread.ofVirtual().unstarted(r);
             t.setName("process-cleanup");
@@ -71,11 +60,13 @@ public class BackgroundProcessManager {
      *
      * @param command Shell 命令
      * @param workDir 工作目录
+     * @param env     额外环境变量，null 时不注入
      * @return sessionId
      * @throws IllegalStateException 超过最大并发数时
-     * @throws IOException 进程启动失败时
+     * @throws IOException           进程启动失败时
      */
-    public String startProcess(String command, Path workDir) throws IOException {
+    public String startProcess(String command, Path workDir, @Nullable Map<String, String> env)
+            throws IOException {
         processes.values().forEach(this::refreshProcessState);
         // 检查并发限制（只计算 RUNNING 状态的进程）
         long runningCount = processes.values().stream()
@@ -88,26 +79,8 @@ public class BackgroundProcessManager {
 
         String sessionId = UUID.randomUUID().toString().substring(0, 8);
 
-        // 根据操作系统选择 Shell
-        ProcessBuilder pb;
-        String osName = System.getProperty("os.name").toLowerCase();
-        if (osName.contains("win")) {
-            pb = new ProcessBuilder(
-                    "powershell",
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-EncodedCommand",
-                    WINDOWS_POWERSHELL_ENCODED_COMMAND
-            );
-            pb.environment().put(WINDOWS_COMMAND_ENV, command);
-        } else {
-            pb = new ProcessBuilder("sh", "-c", command);
-        }
-        pb.directory(workDir.toFile());
-        pb.redirectErrorStream(false);
+        // 通过工厂创建进程（消除重复的 PowerShell/Unix 构建逻辑）
+        ProcessBuilder pb = ShellProcessFactory.createShellProcess(command, workDir, null, false, env);
 
         Process process = pb.start();
         var stdoutBuffer = new RingBuffer(processConfig.getMaxOutputBufferSize());
@@ -145,6 +118,18 @@ public class BackgroundProcessManager {
     }
 
     /**
+     * 启动后台进程（无额外环境变量的简洁版）。
+     *
+     * @param command Shell 命令
+     * @param workDir 工作目录
+     * @return sessionId
+     * @throws IOException 进程启动失败时
+     */
+    public String startProcess(String command, Path workDir) throws IOException {
+        return startProcess(command, workDir, null);
+    }
+
+    /**
      * 列出所有后台进程。
      *
      * @return 进程摘要列表
@@ -166,6 +151,30 @@ public class BackgroundProcessManager {
         var managed = getProcess(sessionId);
         managed.touch();
         return snapshotProcessInfo(managed);
+    }
+
+    /**
+     * 等待指定进程完成或超时。
+     *
+     * <p>比 {@code Thread.sleep(yieldMs)} 更高效——进程提前退出时立即返回，
+     * 不会浪费剩余等待时间。</p>
+     *
+     * @param sessionId 会话标识
+     * @param timeout   超时时间
+     * @param unit      时间单位
+     * @return true 如果进程在超时前已退出
+     * @throws InterruptedException     等待被中断时
+     * @throws IllegalArgumentException sessionId 不存在时
+     */
+    public boolean awaitCompletion(String sessionId, long timeout, TimeUnit unit)
+            throws InterruptedException {
+        var managed = getProcess(sessionId);
+        managed.touch();
+        boolean finished = managed.process().waitFor(timeout, unit);
+        if (finished) {
+            refreshProcessState(managed);
+        }
+        return finished;
     }
 
     /**
@@ -205,10 +214,10 @@ public class BackgroundProcessManager {
      * 向指定进程的 stdin 写入内容。
      *
      * @param sessionId 会话标识
-     * @param input 要写入的内容
+     * @param input     要写入的内容
      * @throws IllegalArgumentException sessionId 不存在时
-     * @throws IllegalStateException 进程已结束时
-     * @throws IOException 写入失败时
+     * @throws IllegalStateException    进程已结束时
+     * @throws IOException              写入失败时
      */
     public void writeInput(String sessionId, String input) throws IOException {
         var managed = getProcess(sessionId);
@@ -286,7 +295,7 @@ public class BackgroundProcessManager {
         return managed;
     }
 
-    /** 持续读取进程输出到环形缓冲区。 */
+    /** 持续读取进程输出到环形缓冲区，并发布 SSE 推送事件。 */
     private void readProcessOutput(ManagedProcess managed,
                                    InputStream stream,
                                    RingBuffer buffer,
@@ -295,7 +304,13 @@ public class BackgroundProcessManager {
             char[] buf = new char[4096];
             int read;
             while ((read = reader.read(buf)) != -1) {
-                buffer.append(new String(buf, 0, read));
+                String chunk = new String(buf, 0, read);
+                buffer.append(chunk);
+                // 发布进程输出事件，供 SSE 控制器推送到前端
+                if (eventPublisher != null) {
+                    eventPublisher.publishEvent(new ProcessOutputEvent(
+                            this, managed.sessionId(), streamName, chunk, managed.currentState()));
+                }
             }
         } catch (IOException e) {
             log.debug("进程{}读取结束: sessionId={}, reason={}", streamName, managed.sessionId(), e.getMessage());
@@ -312,6 +327,12 @@ public class BackgroundProcessManager {
                 managed.state().set(newState);
                 log.info("后台进程退出: sessionId={}, exitCode={}, state={}",
                         managed.sessionId(), exitCode, newState);
+                // 发布进程状态变化事件
+                if (eventPublisher != null) {
+                    eventPublisher.publishEvent(new ProcessOutputEvent(
+                            this, managed.sessionId(), "state",
+                            "exitCode=" + exitCode, newState));
+                }
             } else {
                 log.info("后台进程退出: sessionId={}, exitCode={}, state={}",
                         managed.sessionId(), exitCode, managed.currentState());

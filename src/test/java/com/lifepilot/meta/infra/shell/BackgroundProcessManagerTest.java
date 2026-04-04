@@ -28,7 +28,7 @@ class BackgroundProcessManagerTest {
         processConfig.setMaxConcurrent(3);
         processConfig.setMaxOutputBufferSize(10000);
         processConfig.setIdleTimeoutMinutes(30);
-        manager = new BackgroundProcessManager(processConfig);
+        manager = new BackgroundProcessManager(processConfig, null);
     }
 
     @AfterEach
