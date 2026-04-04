@@ -95,9 +95,9 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             var page = mock(PlaywrightPageWrapper.class);
             when(manager.getOrCreatePage("default")).thenReturn(page);
-            when(page.navigateWithResult(eq("https://example.com"), anyInt()))
-                    .thenReturn(new PlaywrightPageWrapper.NavigateResult("Example Domain", "https://example.com", false));
+            when(page.navigate(eq("https://example.com"), anyInt())).thenReturn("Example Domain");
             when(page.textContent()).thenReturn("Example Domain body text");
+            when(page.url()).thenReturn("https://example.com");
 
             var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
@@ -106,7 +106,6 @@ class BrowserToolExecutorTest {
             assertThat(result.data().get("title")).isEqualTo("Example Domain");
             assertThat(result.data().get("url")).isEqualTo("https://example.com");
             assertThat(result.data().get("textSnapshot")).isEqualTo("Example Domain body text");
-            assertThat(result.data().get("partial")).isEqualTo(false);
         }
 
         @Test
@@ -114,9 +113,9 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             var page = mock(PlaywrightPageWrapper.class);
             when(manager.getOrCreatePage("my-session")).thenReturn(page);
-            when(page.navigateWithResult(eq("https://example.com"), anyInt()))
-                    .thenReturn(new PlaywrightPageWrapper.NavigateResult("Title", "https://example.com", false));
+            when(page.navigate(eq("https://example.com"), anyInt())).thenReturn("Title");
             when(page.textContent()).thenReturn("Body");
+            when(page.url()).thenReturn("https://example.com");
 
             var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of(
@@ -126,24 +125,6 @@ class BrowserToolExecutorTest {
 
             assertThat(result.ok()).isTrue();
             verify(manager).getOrCreatePage("my-session");
-        }
-
-        @Test
-        void execute_导航超时返回部分内容() {
-            var manager = mockAvailableManager();
-            var page = mock(PlaywrightPageWrapper.class);
-            when(manager.getOrCreatePage("default")).thenReturn(page);
-            when(page.navigateWithResult(eq("https://slow-site.com"), anyInt()))
-                    .thenReturn(new PlaywrightPageWrapper.NavigateResult("Slow Site", "https://slow-site.com", true));
-            when(page.textContent()).thenReturn("部分加载的内容");
-
-            var executor = new BrowserNavigateToolExecutor(manager, null);
-            ToolResult result = executor.execute(buildInput(Map.of("url", "https://slow-site.com")));
-
-            assertThat(result.ok()).isTrue();
-            assertThat(result.data().get("partial")).isEqualTo(true);
-            assertThat(result.data().get("title")).isEqualTo("Slow Site");
-            assertThat(result.data().get("textSnapshot")).isEqualTo("部分加载的内容");
         }
 
         @Test

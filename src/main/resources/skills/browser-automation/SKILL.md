@@ -21,103 +21,108 @@ triggers:
 
 ## 适用场景
 
-- 网页信息抓取和数据采集
+- 需要 JavaScript 渲染的动态页面（SPA、电商搜索结果等）
+- 需要登录后访问的页面
 - 表单自动填写和提交
 - 网页截图和视觉验证
-- Web 应用功能测试
-- 页面无障碍性检查
 
+## 不适用场景
 
-## When NOT to Use
+- 简单的静态页面抓取 → 优先使用 `web.fetch`
+- API 接口测试 → 用 `api-debugger`
+- 桌面应用操作 → 用 `desktop-automation`
 
-- API 接口测试（用 api-debugger）
-- 简单网页内容抓取（用 web.fetch）
-- 桌面应用自动化（用 desktop-automation）
+## 工具选择决策
+
+```
+用户需要网页内容？
+├── 是静态页面（文档、博客、新闻）→ web.fetch
+├── 需要 JS 渲染（电商、SPA）→ browser
+├── 需要搜索多个来源 → web.search
+└── 需要登录/交互 → browser
+```
 
 ## 核心工作流
 
-### 1. 导航到目标页面
+### 导航并获取内容
 
 ```
-browser(url="https://example.com")
+browser(action="navigate", url="https://example.com", sessionId="my-task")
 ```
 
-### 2. 截图确认页面状态
+- `sessionId`：同一任务用相同 sessionId，可复用 cookie 和页面状态
+- 导航可能返回 `partial: true`（超时但已加载部分内容），此时内容仍然可用
+
+### 截图确认
 
 ```
-browser()
-→ 确认页面已加载完成，识别目标元素位置
+browser(action="screenshot", sessionId="my-task")
 ```
 
-**关键原则**：每次操作前后都截图确认，避免盲操作。
+**关键原则**：操作前截图确认页面状态，避免盲操作。
 
-### 3. 分析页面结构
-
-```
-browser()
-→ 获取无障碍树，了解页面元素层次和可交互元素
-```
-
-### 4. 执行交互操作
+### 交互操作
 
 ```
-# 点击元素
-browser(selector="#submit-btn")
-
-# 输入文本
-browser(selector="#search-input", text="搜索内容")
-
-# 滚动页面
-browser(direction="down", pixels=500)
+browser(action="click", selector="#search-btn", sessionId="my-task")
+browser(action="type", selector="#search-input", text="搜索内容", sessionId="my-task")
+browser(action="scroll", direction="down", pixels=500, sessionId="my-task")
 ```
 
-### 5. 提取数据
+### 提取结构化数据
 
 ```
-# 通过 JavaScript 提取结构化数据
-browser(script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, link: el.querySelector('a').href})))")
+browser(action="evaluate", script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))", sessionId="my-task")
 ```
 
-### 6. 清理资源
+### 关闭会话
 
 ```
-browser()
+browser(action="close", sessionId="my-task")
 ```
 
-**务必在完成后关闭浏览器会话，释放资源。**
+完成后务必关闭，释放浏览器资源。
 
-## 操作模式
+## 失败处理策略
 
-### 信息抓取模式
+### 导航失败（ERR_ABORTED、超时、被拦截）
 
-```
-navigate → screenshot → accessibility → evaluate(提取数据) → close
-```
+1. 检查返回的 `partial` 字段——如果有部分内容，直接使用
+2. 第一次失败后换用 `web.fetch` 尝试静态抓取
+3. 静态抓取也不够时，换用 `web.search` 搜索关键信息
+4. **同一工具连续失败 2 次后必须切换策略**，不要反复重试
 
-### 表单填写模式
+### 页面内容为空或过少
 
-```
-navigate → screenshot → type(填写字段) → screenshot(确认) → click(提交) → screenshot(验证结果) → close
-```
+- 可能是 JS 还没渲染完 → 用 `evaluate` 等待特定元素
+- 可能是被反爬拦截 → 换 web.search 获取信息
+- 可能是需要登录 → 告知用户需要先登录
 
-### 多页面采集模式
+### 元素未找到
 
-```
-navigate(列表页) → evaluate(提取链接) → 循环: navigate(详情页) → evaluate(提取数据) → close
-```
+1. 先 `screenshot` 确认页面当前状态
+2. 可能需要滚动页面 → `scroll`
+3. 可能在 iframe 中 → 检查页面结构
+4. 可能选择器错误 → 用 `accessibility` 获取元素树
+
+## 会话管理最佳实践
+
+- **同一任务用同一 sessionId**：`browser(sessionId="jd-search")` — cookie 和登录态在会话内保持
+- **不同网站用不同 sessionId**：避免 cookie 污染
+- **任务完成后关闭会话**：`browser(action="close", sessionId="...")`
+- **不要创建过多并行会话**：浏览器资源有限
 
 ## 元素定位策略
 
 优先级从高到低：
 1. `id` 选择器：`#unique-id`
 2. `data-testid`：`[data-testid="submit"]`
-3. 无障碍角色：通过 accessibility 树定位
+3. 无障碍角色：通过 `accessibility` 获取元素树
 4. CSS 选择器：`.class-name > child`
-5. XPath：复杂结构时使用
 
-## 常见错误处理
+## 抓取数据整理
 
-- **元素未找到**：先 `screenshot` 确认页面状态，可能需要等待加载或滚动
-- **点击无响应**：检查是否有遮罩层，尝试 `evaluate` 直接触发事件
-- **页面加载超时**：检查 URL 是否正确，网络是否可达
-- **动态内容**：使用 `evaluate` 等待特定元素出现后再操作
+提取到数据后：
+1. 使用 `evaluate` 提取结构化 JSON
+2. 多个页面的数据合并整理
+3. 如用户要求表格，用 Markdown 表格或 A2UI Table 组件输出

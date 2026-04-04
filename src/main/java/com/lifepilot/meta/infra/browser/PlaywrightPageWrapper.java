@@ -13,7 +13,6 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Playwright Page 包装器 — 封装 Page 操作并跟踪最后访问时间。
@@ -26,44 +25,14 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class PlaywrightPageWrapper {
 
-    /**
-     * 导航结果 — 包含标题、URL 和是否为部分加载。
-     *
-     * @param title   页面标题
-     * @param url     页面 URL
-     * @param partial 是否因超时仅完成部分加载
-     */
-    public record NavigateResult(String title, String url, boolean partial) {}
-
     private final Page page;
     private volatile long lastAccessTime;
     private volatile boolean closed;
-    private final int humanDelayMinMs;
-    private final int humanDelayMaxMs;
 
-    /**
-     * 构造器（兼容入口，无人工延迟）。
-     *
-     * @param pageObj Page 实例
-     */
     PlaywrightPageWrapper(Object pageObj) {
-        this(pageObj, 0, 0);
-    }
-
-    /**
-     * 构造器，支持人工延迟配置。
-     *
-     * @param pageObj         Page 实例
-     * @param humanDelayMinMs 操作前最小随机延迟（毫秒），0 表示关闭
-     * @param humanDelayMaxMs 操作前最大随机延迟（毫秒）
-     */
-    PlaywrightPageWrapper(Object pageObj, int humanDelayMinMs, int humanDelayMaxMs) {
         this.page = (Page) pageObj;
         this.lastAccessTime = System.currentTimeMillis();
         this.closed = false;
-        // 防御误配：min > max 时交换
-        this.humanDelayMinMs = Math.min(humanDelayMinMs, humanDelayMaxMs);
-        this.humanDelayMaxMs = Math.max(humanDelayMinMs, humanDelayMaxMs);
     }
 
     /** 更新最后访问时间。 */
@@ -83,21 +52,6 @@ public class PlaywrightPageWrapper {
 
     /** 默认导航超时（毫秒）。 */
     private static final int DEFAULT_NAVIGATE_TIMEOUT_MS = 30_000;
-
-    /**
-     * 模拟人工操作延迟 — 在关键操作前引入随机等待。
-     *
-     * <p>当 {@code humanDelayMinMs <= 0} 时不产生延迟。
-     * 在 virtual thread 环境下 {@code Thread.sleep} 会自动 unmount，不阻塞平台线程。</p>
-     */
-    private void humanDelay() {
-        if (humanDelayMinMs <= 0) return;
-        try {
-            Thread.sleep(ThreadLocalRandom.current().nextInt(humanDelayMinMs, humanDelayMaxMs + 1));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
 
     /**
      * 导航到指定 URL（使用默认超时）。
@@ -121,32 +75,10 @@ public class PlaywrightPageWrapper {
      */
     public String navigate(String url, int timeoutMs) {
         touch();
-        humanDelay();
         page.navigate(url, new Page.NavigateOptions()
                 .setTimeout(timeoutMs)
                 .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
         return page.title();
-    }
-
-    /**
-     * 导航到指定 URL 并返回结构化结果，超时时返回部分结果而非抛异常。
-     *
-     * @param url       目标 URL
-     * @param timeoutMs 超时时间（毫秒）
-     * @return 导航结果，包含 partial 标志
-     */
-    public NavigateResult navigateWithResult(String url, int timeoutMs) {
-        touch();
-        humanDelay();
-        boolean partial = false;
-        try {
-            page.navigate(url, new Page.NavigateOptions()
-                    .setTimeout(timeoutMs)
-                    .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
-        } catch (com.microsoft.playwright.TimeoutError e) {
-            partial = true;
-        }
-        return new NavigateResult(page.title(), page.url(), partial);
     }
 
     /**
@@ -176,7 +108,6 @@ public class PlaywrightPageWrapper {
      */
     public void click(String selector) {
         touch();
-        humanDelay();
         page.click(selector);
     }
 
@@ -188,7 +119,6 @@ public class PlaywrightPageWrapper {
      */
     public void fill(String selector, String value) {
         touch();
-        humanDelay();
         page.fill(selector, value);
     }
 
@@ -302,7 +232,6 @@ public class PlaywrightPageWrapper {
      */
     public void typeText(String text) {
         touch();
-        humanDelay();
         ensureOpen();
         page.keyboard().type(text);
     }
