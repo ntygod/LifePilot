@@ -7,6 +7,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * ReactStep 序列化工具 — 将 ReAct 步骤序列转为 JSON 友好的 Map 列表。
@@ -23,6 +26,14 @@ public final class ReactStepSerializer {
     static final int THOUGHT_MAX_LENGTH = 500;
     static final int INPUT_MAX_LENGTH = 200;
     static final int OUTPUT_MAX_LENGTH = 300;
+
+    /** 产出文件的工具 ID 集合 — 成功时 output 中含 "path" 字段。 */
+    private static final Set<String> FILE_PRODUCING_TOOL_IDS = Set.of(
+            "file.write", "file.edit", "file.manage"
+    );
+
+    /** 从 JSON 输出中快速提取 "path" 值的正则（避免引入完整 JSON 解析依赖）。 */
+    private static final Pattern PATH_PATTERN = Pattern.compile("\"path\"\\s*:\\s*\"([^\"]+)\"");
 
     private ReactStepSerializer() {}
 
@@ -81,6 +92,11 @@ public final class ReactStepSerializer {
                 map.put("success", observation.success());
                 map.put("outputSummary", truncate(observation.output(), OUTPUT_MAX_LENGTH));
                 map.put("tokensUsed", observation.tokensUsed());
+                // 文件工具成功时，提取生成文件路径（不受截断影响）
+                String filePath = extractGeneratedFilePath(observation);
+                if (filePath != null) {
+                    map.put("generatedFilePath", filePath);
+                }
                 yield Map.copyOf(map);
             }
             case ReactStep.Answer(var content) -> Map.of(
@@ -107,6 +123,26 @@ public final class ReactStepSerializer {
                     "trigger", trigger.name()
             );
         };
+    }
+
+    /**
+     * 从文件工具的成功输出中提取生成文件的绝对路径。
+     *
+     * @param observation 工具观察步骤
+     * @return 文件路径，非文件工具或提取失败时返回 null
+     */
+    @org.springframework.lang.Nullable
+    static String extractGeneratedFilePath(ReactStep.Observation observation) {
+        if (!observation.success()) return null;
+        if (!FILE_PRODUCING_TOOL_IDS.contains(observation.toolId())) return null;
+        String output = observation.output();
+        if (output == null || output.isBlank()) return null;
+        Matcher matcher = PATH_PATTERN.matcher(output);
+        if (matcher.find()) {
+            // JSON 中反斜杠被转义为 \\，还原为实际路径
+            return matcher.group(1).replace("\\\\", "\\");
+        }
+        return null;
     }
 
     /**
