@@ -209,6 +209,17 @@ public class MarkdownSkillParser {
             result.put("author", authorNode.toString());
         }
 
+        // 从顶层提取 scripts（列表→逗号拼接）
+        var scriptsNode = fm.get("scripts");
+        if (scriptsNode instanceof List<?> scriptsList) {
+            String joined = scriptsList.stream().map(Object::toString).reduce((a, b) -> a + "," + b).orElse("");
+            if (!joined.isEmpty()) {
+                result.put("scripts", joined);
+            }
+        } else if (scriptsNode instanceof String scriptsStr && !scriptsStr.isBlank()) {
+            result.put("scripts", scriptsStr);
+        }
+
         // 从顶层提取 dependencies（列表→逗号拼接）
         var depsNode = fm.get("dependencies");
         if (depsNode instanceof List<?> depsList) {

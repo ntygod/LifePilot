@@ -39,7 +39,8 @@ class SkillActivatorTest {
         stubRegistry = new StubSkillRegistry();
         metricsTracker = new SkillMetricsTracker();
         eventPublisher = new CapturingEventPublisher();
-        activator = new SkillActivator(stubRegistry, metricsTracker, eventPublisher);
+        activator = new SkillActivator(stubRegistry, metricsTracker, eventPublisher,
+                new com.lifepilot.skill.config.SkillConfigProperties());
     }
 
     // ── 激活成功 ──
