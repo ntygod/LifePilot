@@ -77,8 +77,8 @@ class WebFetchBrowserFallbackTest {
         // 配置浏览器可用
         when(browserSessionManager.isAvailable()).thenReturn(true);
         when(browserSessionManager.getOrCreatePage(anyString())).thenReturn(pageWrapper);
-        when(pageWrapper.navigate(anyString(), anyInt())).thenReturn("JS 渲染页面");
-        when(pageWrapper.title()).thenReturn("JS 渲染页面");
+        when(pageWrapper.navigateWithResult(anyString(), anyInt()))
+                .thenReturn(new PlaywrightPageWrapper.NavigateResult("JS 渲染页面", "https://spa-example.com", false));
         when(pageWrapper.textContent()).thenReturn("这是通过浏览器渲染获取的动态内容，包含 JavaScript 加载的数据。");
         when(pageWrapper.evaluate(anyString())).thenReturn("\"complete\"");
 
@@ -94,9 +94,9 @@ class WebFetchBrowserFallbackTest {
         assertThat(result.data().get("renderMode")).isEqualTo("browser");
         assertThat((String) result.data().get("content")).contains("浏览器渲染获取的动态内容");
         assertThat(result.data().get("title")).isEqualTo("JS 渲染页面");
-        // 验证浏览器会话创建和关闭
+        // 验证浏览器会话创建，成功时不关闭（域名级复用）
         verify(browserSessionManager).getOrCreatePage(anyString());
-        verify(browserSessionManager).closePage(anyString());
+        verify(browserSessionManager, never()).closePage(anyString());
     }
 
     @Test
@@ -140,8 +140,8 @@ class WebFetchBrowserFallbackTest {
         // 配置浏览器可用
         when(browserSessionManager.isAvailable()).thenReturn(true);
         when(browserSessionManager.getOrCreatePage(anyString())).thenReturn(pageWrapper);
-        when(pageWrapper.navigate(anyString(), anyInt())).thenReturn("动态页面");
-        when(pageWrapper.title()).thenReturn("动态页面");
+        when(pageWrapper.navigateWithResult(anyString(), anyInt()))
+                .thenReturn(new PlaywrightPageWrapper.NavigateResult("动态页面", "https://spa.example.com", false));
         when(pageWrapper.textContent()).thenReturn("浏览器渲染后获取的完整内容，原静态抓取为空。");
         when(pageWrapper.evaluate(anyString())).thenReturn("\"complete\"");
 
@@ -163,7 +163,8 @@ class WebFetchBrowserFallbackTest {
         assertThat(result.data().get("renderMode")).isEqualTo("browser");
         assertThat((String) result.data().get("content")).contains("浏览器渲染后获取的完整内容");
         verify(browserSessionManager).getOrCreatePage(anyString());
-        verify(browserSessionManager).closePage(anyString());
+        // 成功时不关闭（域名级复用）
+        verify(browserSessionManager, never()).closePage(anyString());
     }
 
     /**

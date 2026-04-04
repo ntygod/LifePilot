@@ -95,9 +95,9 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             var page = mock(PlaywrightPageWrapper.class);
             when(manager.getOrCreatePage("default")).thenReturn(page);
-            when(page.navigate(eq("https://example.com"), anyInt())).thenReturn("Example Domain");
+            when(page.navigateWithResult(eq("https://example.com"), anyInt()))
+                    .thenReturn(new PlaywrightPageWrapper.NavigateResult("Example Domain", "https://example.com", false));
             when(page.textContent()).thenReturn("Example Domain body text");
-            when(page.url()).thenReturn("https://example.com");
 
             var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
@@ -106,6 +106,7 @@ class BrowserToolExecutorTest {
             assertThat(result.data().get("title")).isEqualTo("Example Domain");
             assertThat(result.data().get("url")).isEqualTo("https://example.com");
             assertThat(result.data().get("textSnapshot")).isEqualTo("Example Domain body text");
+            assertThat(result.data().get("partial")).isEqualTo(false);
         }
 
         @Test
@@ -113,9 +114,9 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             var page = mock(PlaywrightPageWrapper.class);
             when(manager.getOrCreatePage("my-session")).thenReturn(page);
-            when(page.navigate(eq("https://example.com"), anyInt())).thenReturn("Title");
+            when(page.navigateWithResult(eq("https://example.com"), anyInt()))
+                    .thenReturn(new PlaywrightPageWrapper.NavigateResult("Title", "https://example.com", false));
             when(page.textContent()).thenReturn("Body");
-            when(page.url()).thenReturn("https://example.com");
 
             var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of(

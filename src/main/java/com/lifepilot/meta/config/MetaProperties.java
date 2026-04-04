@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+
 /**
  * 元能力系统配置属性。
  *
@@ -220,6 +221,39 @@ public class MetaProperties {
 
             /** JavaScript 执行超时（秒），默认 10。 */
             private int jsExecutionTimeoutSeconds = 10;
+
+            /** 自定义 User-Agent。版本号需跟随 Chromium 更新，当前基于 Chrome 131。 */
+            private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+            /** 视口宽度（像素），默认 1920。 */
+            private int viewportWidth = 1920;
+
+            /** 视口高度（像素），默认 1080。 */
+            private int viewportHeight = 1080;
+
+            /** 浏览器语言区域，默认 zh-CN。 */
+            private String locale = "zh-CN";
+
+            /** 时区 ID，默认 Asia/Shanghai。 */
+            private String timezoneId = "Asia/Shanghai";
+
+            /** 是否启用反检测隐身模式，默认 true。 */
+            private boolean stealthMode = true;
+
+            /** 额外 Chromium 启动参数。 */
+            private List<String> extraLaunchArgs = List.of();
+
+            /** storageState 持久化目录，空字符串关闭持久化。 */
+            private String storageStateDir = "";
+
+            /** 是否在会话关闭时自动保存 storageState，默认 false。 */
+            private boolean persistStorageState = false;
+
+            /** 操作前最小随机延迟（毫秒），默认 100。设为 0 关闭。 */
+            private int humanDelayMinMs = 100;
+
+            /** 操作前最大随机延迟（毫秒），默认 500。 */
+            private int humanDelayMaxMs = 500;
         }
 
         /**
