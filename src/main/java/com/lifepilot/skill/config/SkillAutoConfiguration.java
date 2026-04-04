@@ -113,9 +113,10 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public SkillActivator skillActivator(SkillRegistry skillRegistry,
                                          SkillMetricsTracker skillMetricsTracker,
-                                         ApplicationEventPublisher eventPublisher) {
+                                         ApplicationEventPublisher eventPublisher,
+                                         SkillConfigProperties config) {
         log.info("Skill 系统: 注册 SkillActivator");
-        return new SkillActivator(skillRegistry, skillMetricsTracker, eventPublisher);
+        return new SkillActivator(skillRegistry, skillMetricsTracker, eventPublisher, config);
     }
 
     @Bean

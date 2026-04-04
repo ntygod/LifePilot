@@ -38,7 +38,8 @@ class SkillActivator属性测试 {
         // 构建测试环境
         var registry = new StubSkillRegistry();
         registry.addSkill(definition);
-        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher());
+        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher(),
+                new com.lifepilot.skill.config.SkillConfigProperties());
 
         // 激活
         SkillActivation activation = activator.activate(definition.id());
@@ -58,7 +59,8 @@ class SkillActivator属性测试 {
 
         var registry = new StubSkillRegistry();
         registry.addSkill(definition);
-        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher());
+        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher(),
+                new com.lifepilot.skill.config.SkillConfigProperties());
 
         // 多次激活
         SkillActivation first = activator.activate(definition.id());
