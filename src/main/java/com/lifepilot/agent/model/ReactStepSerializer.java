@@ -100,6 +100,12 @@ public final class ReactStepSerializer {
                     "resumedAt", resumedAt.toString(),
                     "suspendDurationMs", duration.toMillis()
             );
+            case ReactStep.Reflect(var content, var trigger) -> Map.of(
+                    "type", "REFLECT",
+                    "index", index,
+                    "content", truncate(content, THOUGHT_MAX_LENGTH),
+                    "trigger", trigger.name()
+            );
         };
     }
 

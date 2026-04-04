@@ -230,6 +230,10 @@ public class ProviderMessageBuilder {
                                     + "，恢复载荷: " + resume.payload()
                     )))
                     .build();
+            // Reflect 注入在 Observation (ToolResponseMessage) 之后，序列为
+            // ToolCall (AssistantMessage) → Observation (ToolResponseMessage) → Reflect (AssistantMessage)，
+            // 不会产生连续 AssistantMessage。TranscriptHygieneEngine 会兜底处理异常序列。
+            case ReactStep.Reflect(var content, var trigger) -> new AssistantMessage(content);
         };
     }
 

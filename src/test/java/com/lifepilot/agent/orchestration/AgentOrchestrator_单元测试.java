@@ -115,7 +115,8 @@ class AgentOrchestrator_单元测试 {
                 mediaProcessor,
                 null,
                 suspendStore,
-                chatTurnService
+                chatTurnService,
+                null  // workspaceService
         );
     }
 
