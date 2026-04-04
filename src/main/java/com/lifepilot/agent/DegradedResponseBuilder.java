@@ -45,7 +45,9 @@ public final class DegradedResponseBuilder {
      */
     static String buildDegradedResponse(ReactAgentState state, String reason) {
         String visibleNarrative = extractVisibleNarrative(state);
-        String note = buildTerminalNote(reason);
+        String toolFailure = extractRecentToolFailure(state.steps());
+        String displayReason = toolFailure != null ? toolFailure : reason;
+        String note = buildTerminalNote(displayReason);
 
         if (!visibleNarrative.isBlank()) {
             return mergeNarrativeWithNote(visibleNarrative, note);
@@ -130,5 +132,24 @@ public final class DegradedResponseBuilder {
                 .replaceAll("\\s+", " ")
                 .trim()
                 .toLowerCase();
+    }
+
+    /** 工具失败输出的最大截断长度。 */
+    private static final int TOOL_FAILURE_OUTPUT_MAX_LENGTH = 200;
+
+    @Nullable
+    static String extractRecentToolFailure(List<ReactStep> steps) {
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            if (steps.get(i) instanceof ReactStep.Observation obs && !obs.success()
+                    && !"llm".equals(obs.toolId())) {
+                String toolDisplay = obs.toolName() != null ? obs.toolName() : obs.toolId();
+                String output = obs.output() != null ? obs.output().strip() : "";
+                if (output.length() > TOOL_FAILURE_OUTPUT_MAX_LENGTH) {
+                    output = output.substring(0, TOOL_FAILURE_OUTPUT_MAX_LENGTH);
+                }
+                return toolDisplay + ": " + output;
+            }
+        }
+        return null;
     }
 }

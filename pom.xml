@@ -257,13 +257,6 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <excludes>
-                        <!-- Playwright driver-bundle (~189MB) 不打入 fat JAR；
-                             运行时如需浏览器自动化，用户自行将 JAR 放入 classpath。
-                             BrowserSessionManager 已有反射检测 + 优雅降级。 -->
-                        <exclude>
-                            <groupId>com.microsoft.playwright</groupId>
-                            <artifactId>driver-bundle</artifactId>
-                        </exclude>
                         <!-- Lombok 仅编译期使用，运行时不需要 -->
                         <exclude>
                             <groupId>org.projectlombok</groupId>

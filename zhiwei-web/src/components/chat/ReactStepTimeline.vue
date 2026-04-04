@@ -4,9 +4,48 @@ import type { ReactStepDto, ToolCallStep, ObservationStep } from '@/types'
 import {
   Lightbulb, Wrench, Eye, PenLine, Pause, Play,
   ChevronDown, ChevronRight, Loader2,
-  CircleDot
+  CircleDot, FileText, FolderOpen, Copy, Check,
 } from 'lucide-vue-next'
 import WorkerResultCard from './WorkerResultCard.vue'
+
+const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
+
+/** 复制路径的状态追踪（按 step index） */
+const copiedSteps = ref<Set<number>>(new Set())
+
+/** 在 Tauri 桌面端用系统默认程序打开文件 */
+async function openFile(filePath: string) {
+  if (!isTauri) return
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(filePath)
+  } catch (e) {
+    console.warn('打开文件失败:', filePath, e)
+  }
+}
+
+/** 用系统文件管理器打开文件所在目录 */
+async function revealInFolder(filePath: string) {
+  if (!isTauri) return
+  try {
+    const dir = filePath.replace(/[\\/][^\\/]+$/, '')
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(dir)
+  } catch (e) {
+    console.warn('打开目录失败:', filePath, e)
+  }
+}
+
+/** 复制文件路径到剪贴板 */
+async function copyPath(filePath: string, stepIndex: number) {
+  try {
+    await navigator.clipboard.writeText(filePath)
+  } catch {
+    // clipboard API 不可用时（如非 HTTPS 环境）静默忽略
+  }
+  copiedSteps.value.add(stepIndex)
+  setTimeout(() => copiedSteps.value.delete(stepIndex), 2000)
+}
 
 const props = defineProps<{
   /** ReAct 步骤序列 */
@@ -360,6 +399,47 @@ function getGroupKey(group: StepGroup): string {
                       </div>
                     </template>
                   </div>
+                  <!-- 生成文件路径 -->
+                  <div
+                    v-if="(group.steps[1] as ObservationStep).generatedFilePath"
+                    class="react-file-bar mt-2"
+                  >
+                    <FileText :size="12" class="shrink-0 text-emerald-500" />
+                    <span class="min-w-0 truncate text-[10px] text-foreground/84">
+                      {{ (group.steps[1] as ObservationStep).generatedFilePath }}
+                    </span>
+                    <div class="ml-auto flex shrink-0 items-center gap-1">
+                      <button
+                        v-if="isTauri"
+                        type="button"
+                        class="react-file-action"
+                        title="用默认程序打开"
+                        @click.stop="openFile((group.steps[1] as ObservationStep).generatedFilePath!)"
+                      >
+                        <FileText :size="10" />
+                        <span>打开</span>
+                      </button>
+                      <button
+                        v-if="isTauri"
+                        type="button"
+                        class="react-file-action"
+                        title="在文件夹中显示"
+                        @click.stop="revealInFolder((group.steps[1] as ObservationStep).generatedFilePath!)"
+                      >
+                        <FolderOpen :size="10" />
+                        <span>文件夹</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="react-file-action"
+                        title="复制路径"
+                        @click.stop="copyPath((group.steps[1] as ObservationStep).generatedFilePath!, (group.steps[1] as ObservationStep).index)"
+                      >
+                        <component :is="copiedSteps.has((group.steps[1] as ObservationStep).index) ? Check : Copy" :size="10" />
+                        <span>{{ copiedSteps.has((group.steps[1] as ObservationStep).index) ? '已复制' : '复制路径' }}</span>
+                      </button>
+                    </div>
+                  </div>
                 </template>
 
                 <template v-else>
@@ -559,5 +639,36 @@ function getGroupKey(group: StepGroup): string {
 
 .react-step-move {
   transition: transform 220ms var(--ease-fluid);
+}
+
+.react-file-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.7rem;
+  border: 1px solid hsl(160 56% 78% / 0.5);
+  background: hsl(160 56% 96% / 0.5);
+  padding: 0.45rem 0.6rem;
+}
+
+.react-file-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  background: hsl(from var(--background) h s l / 0.8);
+  padding: 0.2rem 0.45rem;
+  font-size: 10px;
+  line-height: 1.1;
+  color: hsl(from var(--foreground) h s l / 0.72);
+  cursor: pointer;
+  transition: all 140ms var(--ease-fluid);
+}
+
+.react-file-action:hover {
+  background: hsl(from var(--accent) h s l / 0.5);
+  color: hsl(from var(--foreground) h s l / 0.92);
+  border-color: hsl(from var(--border) h s l / 0.6);
 }
 </style>

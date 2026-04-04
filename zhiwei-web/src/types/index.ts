@@ -263,6 +263,8 @@ export interface ObservationStep extends ReactStepBase {
   success: boolean
   outputSummary: string
   tokensUsed: number
+  /** 文件工具成功时提取的生成文件绝对路径 */
+  generatedFilePath?: string
 }
 
 /** 回答步骤 */

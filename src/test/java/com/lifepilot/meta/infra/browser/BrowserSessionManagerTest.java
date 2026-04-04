@@ -49,9 +49,21 @@ class BrowserSessionManagerTest {
     }
 
     @Test
-    void getUnavailableMessage_返回中文提示() {
-        var manager = new BrowserSessionManager(properties);
+    void getUnavailableMessage_API缺失时提示安装Playwright() {
+        var manager = new BrowserSessionManager(properties,
+                "浏览器功能未配置，请安装 Playwright",
+                mock(BrowserSessionManager.BrowserRuntime.class));
+        assertThat(manager.isAvailable()).isFalse();
         assertThat(manager.getUnavailableMessage()).contains("Playwright");
+    }
+
+    @Test
+    void getUnavailableMessage_缺少驱动包时包含安装指引() {
+        String driverMissingReason = "Playwright API 已就绪，但缺少浏览器驱动包（driver-bundle）";
+        var manager = new BrowserSessionManager(properties, driverMissingReason,
+                mock(BrowserSessionManager.BrowserRuntime.class));
+        assertThat(manager.isAvailable()).isFalse();
+        assertThat(manager.getUnavailableMessage()).contains("driver-bundle");
     }
 
     @Test
@@ -101,7 +113,7 @@ class BrowserSessionManagerTest {
                 stubPage(sharedContext, sharedLocalStorage, "https://example.com/first", "First"),
                 stubPage(sharedContext, sharedLocalStorage, "https://example.com/second", "Second")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, true, runtime);
+        var manager = new BrowserSessionManager(properties, null, runtime);
 
         var firstPage = manager.getOrCreatePage("session-1");
         firstPage.setCookie("token", "abc", null, null);

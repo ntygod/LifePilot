@@ -3,10 +3,13 @@ package com.lifepilot.agent.model;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * ReactStep 序列化工具 — 将 ReAct 步骤序列转为 JSON 友好的 Map 列表。
@@ -23,6 +26,13 @@ public final class ReactStepSerializer {
     static final int THOUGHT_MAX_LENGTH = 500;
     static final int INPUT_MAX_LENGTH = 200;
     static final int OUTPUT_MAX_LENGTH = 300;
+
+    /** 产出文件的工具 ID 集合 — 成功时 output 中含 "path" 字段。 */
+    private static final Set<String> FILE_PRODUCING_TOOL_IDS = Set.of(
+            "file.write", "file.edit", "file.manage"
+    );
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private ReactStepSerializer() {}
 
@@ -81,6 +91,11 @@ public final class ReactStepSerializer {
                 map.put("success", observation.success());
                 map.put("outputSummary", truncate(observation.output(), OUTPUT_MAX_LENGTH));
                 map.put("tokensUsed", observation.tokensUsed());
+                // 文件工具成功时，提取生成文件路径（不受截断影响）
+                String filePath = extractGeneratedFilePath(observation);
+                if (filePath != null) {
+                    map.put("generatedFilePath", filePath);
+                }
                 yield Map.copyOf(map);
             }
             case ReactStep.Answer(var content) -> Map.of(
@@ -107,6 +122,30 @@ public final class ReactStepSerializer {
                     "trigger", trigger.name()
             );
         };
+    }
+
+    /**
+     * 从文件工具的成功输出中提取生成文件的绝对路径。
+     *
+     * @param observation 工具观察步骤
+     * @return 文件路径，非文件工具或提取失败时返回 null
+     */
+    @org.springframework.lang.Nullable
+    static String extractGeneratedFilePath(ReactStep.Observation observation) {
+        if (!observation.success()) return null;
+        if (!FILE_PRODUCING_TOOL_IDS.contains(observation.toolId())) return null;
+        String output = observation.output();
+        if (output == null || output.isBlank()) return null;
+        try {
+            JsonNode root = MAPPER.readTree(output);
+            JsonNode pathNode = root.get("path");
+            if (pathNode != null && pathNode.isTextual()) {
+                return pathNode.asText();
+            }
+        } catch (JsonProcessingException ignored) {
+            // 输出非 JSON 格式，跳过提取
+        }
+        return null;
     }
 
     /**

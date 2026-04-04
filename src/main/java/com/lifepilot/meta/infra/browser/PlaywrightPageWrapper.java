@@ -6,6 +6,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.Cookie;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
+import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.Nullable;
 
 import java.util.Base64;
@@ -49,15 +50,34 @@ public class PlaywrightPageWrapper {
         return closed;
     }
 
+    /** 默认导航超时（毫秒）。 */
+    private static final int DEFAULT_NAVIGATE_TIMEOUT_MS = 30_000;
+
     /**
-     * 导航到指定 URL。
+     * 导航到指定 URL（使用默认超时）。
      *
      * @param url 目标 URL
      * @return 页面标题
      */
     public String navigate(String url) {
+        return navigate(url, DEFAULT_NAVIGATE_TIMEOUT_MS);
+    }
+
+    /**
+     * 导航到指定 URL。
+     *
+     * <p>使用 {@code domcontentloaded} 等待策略，避免等待所有资源（图片、广告脚本等）
+     * 加载完成导致超时，尤其对电商等 JS 重度页面更可靠。</p>
+     *
+     * @param url       目标 URL
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 页面标题
+     */
+    public String navigate(String url, int timeoutMs) {
         touch();
-        page.navigate(url);
+        page.navigate(url, new Page.NavigateOptions()
+                .setTimeout(timeoutMs)
+                .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
         return page.title();
     }
 
