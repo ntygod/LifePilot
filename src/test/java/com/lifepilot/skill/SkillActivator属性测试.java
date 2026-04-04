@@ -96,7 +96,9 @@ class SkillActivator属性测试 {
 
         var nameArb = safeString(1, 30);
         var descArb = safeString(1, 50);
-        var instructionsArb = safeString(1, 100);
+        // 排除含 {skill_scripts_dir} 占位符的字符串，避免 activate() 替换后断言失败
+        var instructionsArb = safeString(1, 100)
+                .filter(s -> !s.contains("{skill_scripts_dir}"));
 
         var toolArb = Arbitraries.strings()
                 .withCharRange('a', 'z')

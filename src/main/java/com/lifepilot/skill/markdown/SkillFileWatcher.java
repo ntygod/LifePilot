@@ -201,11 +201,12 @@ public class SkillFileWatcher {
      * @param skillsDir  Skill 根目录
      */
     void handleEvent(WatchEvent.Kind<?> kind, Path fullPath, Path watchedDir, Path skillsDir) {
-        if (watchedDir.equals(skillsDir)) {
-            // 根目录事件：子目录的 CREATE/DELETE
+        Path autoDir = skillsDir.resolve("auto");
+        if (watchedDir.equals(skillsDir) || watchedDir.equals(autoDir)) {
+            // 根目录或 auto/ 目录事件：子目录的 CREATE/DELETE
             handleRootDirEvent(kind, fullPath, skillsDir);
         } else {
-            // 子目录事件：SKILL.md 的 CREATE/MODIFY
+            // Skill 子目录事件：SKILL.md / 脚本文件的 CREATE/MODIFY
             handleSubDirEvent(kind, fullPath, watchedDir);
         }
     }
