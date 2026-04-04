@@ -49,7 +49,7 @@ Key source files:
 - `src/main/java/com/lifepilot/embedding/router/EmbeddingRouter.java` — embedding routing
 - `src/main/java/com/lifepilot/rerank/router/RerankRouter.java` — rerank routing
 - `src/main/resources/application.yml` — all runtime configuration
-- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V10)
+- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V11)
 - `src/main/resources/prompts/` — StringTemplate prompt files
 - `src/main/resources/skills/` — built-in skill definitions (33 skills)
 - `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
@@ -60,6 +60,7 @@ Detailed conventions are in `.claude/rules/` (auto-loaded by file type):
 - **Java**: Java 22 features required, Chinese comments/logs, `record` over Lombok — see `java-conventions.md`
 - **Frontend**: Reka UI 2.x (not shadcn-vue), Tailwind named scales only — see `frontend-conventions.md`
 - **Database**: Flyway naming, SQLite dialect, parameterized queries — see `database-rules.md`
+- **Tauri/Rust**: Tauri 2.x API, Chinese comments, `Result` + `?` error handling — see `tauri-conventions.md`
 
 ## Common Workflows
 

@@ -18,14 +18,24 @@
     ]
   },
   "hooks": {
-    "PostToolUse": [
+    "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c \"cd $CLAUDE_PROJECT_DIR && changed=$(git diff --name-only 2>/dev/null); if echo \\\"$changed\\\" | grep -q '\\.java$'; then mvn compile -q -DskipTests 2>&1 | tail -20; fi\"",
-            "timeout": 120000
+            "command": "bash -c \"input=$CLAUDE_TOOL_INPUT; if echo \\\"$input\\\" | grep -qE 'git\\s+push'; then echo '⚠️ 即将 push 代码。建议先运行 /ship 完成完整交付流程（测试→审查→提交→PR）。如果确认要直接 push，请继续。'; fi\"",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c \"input=$CLAUDE_TOOL_INPUT; if echo \\\"$input\\\" | grep -qE 'db/migration/V[0-9]+__.*\\\\.sql'; then echo '⛔ 警告：正在编辑已有的 Flyway 迁移文件！已执行的迁移不可修改（会导致 checksum 不匹配）。如需变更请新建下一个版本的迁移文件。'; fi\"",
+            "timeout": 5000
           }
         ]
       }
