@@ -1,5 +1,6 @@
 package com.lifepilot.meta.config;
 
+import com.lifepilot.meta.infra.browser.BrowserAcquisitionMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -254,6 +255,15 @@ public class MetaProperties {
 
             /** 操作前最大随机延迟（毫秒），默认 500。 */
             private int humanDelayMaxMs = 500;
+
+            /** 浏览器获取模式，默认 LAUNCH。可选 CDP（连接已有 Chrome）、PERSISTENT（持久化 profile）。 */
+            private BrowserAcquisitionMode acquisitionMode = BrowserAcquisitionMode.LAUNCH;
+
+            /** CDP 端点 URL，仅 CDP 模式使用（如 http://localhost:9222）。 */
+            private String cdpUrl = "";
+
+            /** Chrome 用户数据目录，仅 PERSISTENT 模式使用。 */
+            private String userDataDir = "";
         }
 
         /**

@@ -82,6 +82,11 @@ graph TB
 
 - 职责：管理 Playwright 浏览器实例的生命周期
 - 条件注册：仅在 `com.microsoft.playwright.Playwright` 类可用时注册（`@ConditionalOnClass`）
+- 支持三种浏览器获取模式（`BrowserAcquisitionMode`）：
+  - **LAUNCH**（默认）— Playwright 自行启动并管理 Chromium 实例，每个会话独立 BrowserContext
+  - **CDP** — 通过 Chrome DevTools Protocol 连接到用户预先启动的 Chrome，所有会话共享 CDP 默认上下文
+  - **PERSISTENT** — 使用 `userDataDir` 启动带完整用户配置文件的 Chromium（无独立 Browser 对象），所有会话共享持久上下文
+- storageState 持久化：LAUNCH 模式下可配置 `storage-state-dir` + `persist-storage-state`，在会话关闭时保存/恢复 Cookie 和 localStorage
 - 支持无头模式、空闲超时自动关闭、安装超时控制
 
 ### 3.4 CapabilityAggregator — 能力聚合器
@@ -207,6 +212,11 @@ sequenceDiagram
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
 | `lifepilot.meta.infra.browser.headless` | `true` | 无头模式 |
 | `lifepilot.meta.infra.browser.idle-timeout-seconds` | `300` | 浏览器空闲超时 |
+| `lifepilot.meta.infra.browser.storage-state-dir` | `""` | storageState 持久化目录，空字符串关闭持久化 |
+| `lifepilot.meta.infra.browser.persist-storage-state` | `false` | 是否在会话关闭时自动保存 storageState |
+| `lifepilot.meta.infra.browser.acquisition-mode` | `LAUNCH` | 浏览器获取模式（LAUNCH / CDP / PERSISTENT） |
+| `lifepilot.meta.infra.browser.cdp-url` | `""` | CDP 模式的远程调试端口 URL |
+| `lifepilot.meta.infra.browser.user-data-dir` | `""` | PERSISTENT 模式的用户数据目录 |
 | `lifepilot.meta.infra.code-execute.enabled` | `true` | 代码执行开关 |
 | `lifepilot.meta.infra.code-execute.default-language` | `python` | 默认执行语言 |
 | `lifepilot.meta.infra.file.max-read-size` | `1048576` | 文件最大读取字节数（1MB） |

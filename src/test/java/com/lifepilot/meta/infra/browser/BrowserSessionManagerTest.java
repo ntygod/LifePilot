@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -134,6 +135,128 @@ class BrowserSessionManagerTest {
         assertThat(runtime.closeContextCount).isEqualTo(1);
     }
 
+    // ==================== CDP 模式测试 ====================
+
+    @Test
+    void CDP模式_多会话共享Context_关闭会话不关闭Context() {
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.CDP);
+        properties.getInfra().getBrowser().setCdpUrl("http://localhost:9222");
+
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://a.com", "A"),
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://b.com", "B")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        // 创建两个会话
+        manager.getOrCreatePage("s1");
+        manager.getOrCreatePage("s2");
+        assertThat(manager.getActiveSessionCount()).isEqualTo(2);
+
+        // 关闭 s1 — 上下文不应被关闭
+        manager.closePage("s1");
+        assertThat(runtime.closeContextCount).isZero();
+        assertThat(manager.getActiveSessionCount()).isEqualTo(1);
+
+        // 关闭 s2 — 上下文仍不关闭（由 close() 统一清理）
+        manager.closePage("s2");
+        assertThat(runtime.closeContextCount).isZero();
+
+        // 创建上下文次数应为 0（使用共享上下文）
+        assertThat(runtime.createContextCount).isZero();
+    }
+
+    @Test
+    void CDP模式_cdpUrl为空时抛异常() {
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.CDP);
+        properties.getInfra().getBrowser().setCdpUrl("");
+
+        BrowserContext ctx = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(), ctx);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        assertThatThrownBy(() -> manager.getOrCreatePage("s1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cdp-url");
+    }
+
+    // ==================== PERSISTENT 模式测试 ====================
+
+    @Test
+    void PERSISTENT模式_使用持久上下文_关闭会话不关闭Context() {
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
+        properties.getInfra().getBrowser().setUserDataDir("/tmp/test-profile");
+
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://c.com", "C"),
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://d.com", "D")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        manager.getOrCreatePage("s1");
+        manager.getOrCreatePage("s2");
+
+        // 关闭会话不关闭上下文
+        manager.closePage("s1");
+        manager.closePage("s2");
+        assertThat(runtime.closeContextCount).isZero();
+
+        // launchPersistentContext 应被调用，而非 launchBrowser
+        assertThat(runtime.launchPersistentContextCount).isEqualTo(1);
+        assertThat(runtime.launchBrowserCount).isZero();
+
+        // close() 统一清理持久上下文
+        manager.close();
+        assertThat(runtime.closeContextCount).isEqualTo(1);
+    }
+
+    @Test
+    void PERSISTENT模式_userDataDir为空时抛异常() {
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
+        properties.getInfra().getBrowser().setUserDataDir("");
+
+        BrowserContext ctx = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(), ctx);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        assertThatThrownBy(() -> manager.getOrCreatePage("s1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("user-data-dir");
+    }
+
+    // ==================== 共享上下文标签页保护测试 ====================
+
+    @Test
+    void 共享Context模式_关闭最后标签页不关闭Context() {
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.CDP);
+        properties.getInfra().getBrowser().setCdpUrl("http://localhost:9222");
+
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://e.com", "E"),
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://f.com", "F")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        manager.getOrCreatePage("s1");
+        String tab2 = manager.openNewPage("s1", "https://f.com");
+        assertThat(manager.listPages("s1")).hasSize(2);
+
+        // 关闭两个标签页
+        String firstTabId = manager.listPages("s1").stream()
+                .filter(t -> !t.tabId().equals(tab2)).findFirst().get().tabId();
+        manager.closeTab("s1", firstTabId);
+        manager.closeTab("s1", tab2);
+
+        // 所有标签页关闭后，会话移除但上下文不关闭
+        assertThat(manager.getActiveSessionCount()).isZero();
+        assertThat(runtime.closeContextCount).isZero();
+    }
+
+    // ==================== 辅助方法 ====================
+
     private Page stubPage(BrowserContext browserContext,
                           Map<String, String> localStorage,
                           String initialUrl,
@@ -175,6 +298,8 @@ class BrowserSessionManagerTest {
         private final BrowserContext sharedContext;
         private int createContextCount;
         private int closeContextCount;
+        private int launchBrowserCount;
+        private int launchPersistentContextCount;
 
         private StubBrowserRuntime(List<Page> pages, BrowserContext sharedContext) {
             this.pages = new ArrayDeque<>(pages);
@@ -190,7 +315,27 @@ class BrowserSessionManagerTest {
 
         @Override
         public Object launchBrowser(Object playwrightObj, boolean headless, List<String> extraArgs) {
+            launchBrowserCount++;
             return browser;
+        }
+
+        @Override
+        public Object connectOverCDP(Object playwrightObj, String cdpUrl) {
+            return browser;
+        }
+
+        @Override
+        public Object launchPersistentContext(Object playwrightObj, Path userDataDir, boolean headless,
+                                              List<String> extraArgs, String userAgent,
+                                              int viewportWidth, int viewportHeight,
+                                              String locale, String timezoneId) {
+            launchPersistentContextCount++;
+            return sharedContext;
+        }
+
+        @Override
+        public List<Object> getContexts(Object browserObj) {
+            return List.of(sharedContext);
         }
 
         @Override

@@ -187,12 +187,12 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V10）"
+    subgraph "Flyway 迁移（V1~V11）"
         V1["V1~V4: 核心表 + 通知 + 知识库/数据存储 + 记忆空间"]
         V5["V5: 语义记忆实体模型"]
         V6["V6: 数据存储工作区"]
         V7["V7: 渠道插件控制面"]
-        V8["V8~V10: 市场资产 + Provider 规范化 + 模型服务模板"]
+        V8["V8~V11: 市场资产 + Provider 规范化 + 模型服务模板 + Skill 嵌入缓存"]
     end
 
     V1 --> SQL
