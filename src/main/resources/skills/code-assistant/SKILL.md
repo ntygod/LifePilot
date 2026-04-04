@@ -46,8 +46,8 @@ triggers:
 ### Codex CLI
 
 ```bash
-# 后台启动 Codex（需要 PTY 模式）
-shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true)
+# 后台启动 Codex（交互式应用需要 PTY 模式）
+shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true, pty=true)
 ```
 
 | 标志 | 效果 |
@@ -60,14 +60,27 @@ shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirecto
 ```bash
 # 后台启动 Claude Code（使用 --print 模式，无需 PTY）
 shell.exec(command="claude --permission-mode bypassPermissions --print '你的任务描述'", workingDirectory="/path/to/project", background=true)
+
+# 需要自定义 API Key 时，使用 env 参数注入环境变量
+shell.exec(command="claude --print '任务描述'", workingDirectory="/path/to/project", background=true, env={"ANTHROPIC_API_KEY": "sk-xxx"})
 ```
 
 ### Pi / OpenCode
 
 ```bash
-# 后台启动（交互式终端应用）
-shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true)
+# 后台启动（交互式终端应用，建议开 PTY）
+shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true, pty=true)
 ```
+
+### shell.exec 高级参数
+
+| 参数 | 说明 |
+|------|------|
+| `background=true` | 立即后台化，返回 sessionId |
+| `yieldMs=5000` | 同步等待 5 秒，若进程未结束自动转后台（适合快速任务） |
+| `pty=true` | 分配伪终端（仅 Unix，交互式 TUI 应用需要） |
+| `env={...}` | 注入额外环境变量（`PATH`/`LD_PRELOAD` 等危险 key 会被安全拦截） |
+| `shell="bash"` | 指定 Unix 解释器（默认 sh，Windows 固定 PowerShell） |
 
 ## 核心工作流
 
@@ -85,7 +98,11 @@ shell.process(action=output, sessionId="abc123")
 → 返回增量输出，查看编码进展
 ```
 
-定期轮询输出，关注：
+**两种监控方式：**
+- **主动轮询**：定期调用 `shell.process(action=output)` 获取增量输出
+- **SSE 实时推送**：前端可订阅 `GET /api/processes/stream`，后台进程输出会通过 `process-output` 和 `process-state-change` 事件自动推送
+
+关注：
 - 编译错误或测试失败
 - Agent 请求确认或输入
 - 任务完成信号
