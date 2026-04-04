@@ -151,9 +151,24 @@ public final class ReactStepSerializer {
      * @param observation 工具观察步骤
      * @return 工作目录路径，非相关工具或提取失败时返回 null
      */
+    /**
+     * 从 Shell / 代码执行工具的输出中提取工作目录（成功和失败均提取，方便调试失败命令）。
+     */
     @org.springframework.lang.Nullable
     static String extractWorkingDirectory(ReactStep.Observation observation) {
-        return extractJsonField(observation, WORKDIR_TOOL_IDS, "workingDirectory");
+        if (!WORKDIR_TOOL_IDS.contains(observation.toolId())) return null;
+        String output = observation.output();
+        if (output == null || output.isBlank()) return null;
+        try {
+            JsonNode root = MAPPER.readTree(output);
+            JsonNode node = root.get("workingDirectory");
+            if (node != null && node.isTextual()) {
+                return node.asText();
+            }
+        } catch (JsonProcessingException ignored) {
+            // 输出非 JSON 格式，跳过提取
+        }
+        return null;
     }
 
     /**

@@ -373,7 +373,7 @@ function getGroupKey(group: StepGroup): string {
                     </div>
                     <div class="flex shrink-0 items-center gap-1">
                       <button
-                        v-if="(group.steps[1] as ObservationStep).workingDirectory"
+                        v-if="group.steps.length > 1 && (group.steps[1] as ObservationStep).workingDirectory"
                         type="button"
                         class="react-workdir-chip"
                         :title="(group.steps[1] as ObservationStep).workingDirectory"
