@@ -11,6 +11,24 @@
       "args": ["-y", "computer-use-mcp"],
       "autoConnect": false,
       "_description": "桌面控制 MCP 服务器，提供屏幕截图、鼠标键盘操作等桌面自动化能力"
+    },
+    "kuaidi100": {
+      "command": "npx",
+      "args": ["-y", "kuaidi100-mcp"],
+      "autoConnect": false,
+      "_description": "快递100 物流查询，支持按手机号查询近3个月全量包裹、按运单号追踪物流轨迹、运费预估"
+    },
+    "12306": {
+      "command": "npx",
+      "args": ["-y", "12306-mcp"],
+      "autoConnect": false,
+      "_description": "12306 铁路查询，支持余票查询、车次时刻、经停站、中转换乘方案"
+    },
+    "variflight": {
+      "command": "npx",
+      "args": ["-y", "@variflight-ai/variflight-mcp"],
+      "autoConnect": false,
+      "_description": "飞常准航班查询，支持航班动态、延误预测、实时位置、机场天气、中转方案"
     }
   }
 }

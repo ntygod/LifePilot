@@ -7,7 +7,6 @@ com.lifepilot.tool.config.ToolAutoConfiguration
 com.lifepilot.agent.config.AgentAutoConfiguration
 com.lifepilot.agent.task.config.TaskAutoConfiguration
 com.lifepilot.agent.task.config.ReminderAutoConfiguration
-com.lifepilot.agent.task.config.TrackingAutoConfiguration
 com.lifepilot.agent.suspend.config.SuspendAutoConfiguration
 com.lifepilot.mcp.config.McpAutoConfiguration
 com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
