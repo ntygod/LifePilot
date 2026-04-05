@@ -176,9 +176,12 @@ async function sendMsg() {
   if (!text) return
   chatMessages.value.push({ role: 'user', text })
   chatInput.value = ''
+  chatMessages.value.push({ role: 'assistant', text: '思考中...' })
+  const thinkingIdx = chatMessages.value.length - 1
+
   try {
     const port = await getPort()
-    const resp = await fetch(`http://localhost:${port}/api/chat/messages`, {
+    const resp = await fetch(`http://localhost:${port}/api/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -186,13 +189,51 @@ async function sendMsg() {
         sessionId: chatSessionId.value,
       }),
     })
-    const data = await resp.json()
-    // 记住 sessionId 保持对话连续性
-    if (data.sessionId) chatSessionId.value = data.sessionId
-    const reply = data.content ?? data.data?.content ?? data.message ?? '暂时无法回复'
-    chatMessages.value.push({ role: 'assistant', text: reply })
-  } catch {
-    chatMessages.value.push({ role: 'assistant', text: '网络异常，请稍后重试' })
+    if (!resp.ok || !resp.body) {
+      const err = await resp.text().catch(() => '未知错误')
+      chatMessages.value[thinkingIdx] = { role: 'assistant', text: `请求失败: ${resp.status}` }
+      console.error('对话请求失败:', resp.status, err)
+      return
+    }
+
+    // 读取 SSE 流
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let fullText = ''
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const json = line.slice(5).trim()
+        if (!json || json === '[DONE]') continue
+        try {
+          const event = JSON.parse(json)
+          // 提取 sessionId
+          if (event.sessionId) chatSessionId.value = event.sessionId
+          // 提取文本内容
+          if (event.type === 'content' && event.content) {
+            fullText += event.content
+            chatMessages.value[thinkingIdx] = { role: 'assistant', text: fullText }
+          } else if (event.type === 'done' && event.content) {
+            fullText = event.content
+            chatMessages.value[thinkingIdx] = { role: 'assistant', text: fullText }
+          }
+        } catch { /* 非 JSON 行，跳过 */ }
+      }
+    }
+
+    if (!fullText) {
+      chatMessages.value[thinkingIdx] = { role: 'assistant', text: '没有收到回复' }
+    }
+  } catch (e) {
+    chatMessages.value[thinkingIdx] = { role: 'assistant', text: '网络异常，请稍后重试' }
+    console.error('对话异常:', e)
   }
 }
 
