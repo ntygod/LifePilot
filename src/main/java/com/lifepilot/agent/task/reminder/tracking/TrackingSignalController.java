@@ -1,10 +1,10 @@
 package com.lifepilot.agent.task.reminder.tracking;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -44,16 +44,16 @@ public class TrackingSignalController {
      * 短信转发 Webhook — 接收手机端 Tasker/快捷指令转发来的短信。
      */
     @PostMapping("/sms")
-    public ResponseEntity<Map<String, Object>> receiveSms(@RequestBody SmsSignalRequest request) {
+    public ApiResponse<Map<String, Object>> receiveSms(@RequestBody SmsSignalRequest request) {
         String userId = notificationProperties.getDefaultUserId();
         var result = smsSignalExtractor.extract(request, userId);
         if (result.isEmpty()) {
             log.debug("短信信号未识别: sender={}", request.sender());
-            return ResponseEntity.ok(Map.of("recognized", false));
+            return ApiResponse.ok(Map.of("recognized", false));
         }
         var extraction = result.get();
         log.info("短信信号已接收: type={}, key={}", extraction.type(), extraction.trackingKey());
-        return ResponseEntity.ok(Map.of(
+        return ApiResponse.ok(Map.of(
                 "recognized", true,
                 "type", extraction.type().name(),
                 "trackingKey", extraction.trackingKey(),
@@ -66,7 +66,7 @@ public class TrackingSignalController {
      * 查询用户的活跃追踪条目。
      */
     @GetMapping("/tracking")
-    public ResponseEntity<List<TrackingEntry>> listTracking(
+    public ApiResponse<List<TrackingEntry>> listTracking(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String type) {
         String effectiveUserId = userId != null ? userId : notificationProperties.getDefaultUserId();
@@ -75,11 +75,11 @@ public class TrackingSignalController {
             try {
                 entries = trackingRegistry.findActiveByType(TrackingType.valueOf(type.toUpperCase()));
             } catch (IllegalArgumentException e) {
-                return ResponseEntity.badRequest().build();
+                return ApiResponse.error(400, "无效的追踪类型: " + type);
             }
         } else {
             entries = trackingRegistry.findActiveByUserId(effectiveUserId);
         }
-        return ResponseEntity.ok(entries);
+        return ApiResponse.ok(entries);
     }
 }

@@ -1,4 +1,4 @@
-package com.lifepilot.eval.web;
+package com.lifepilot.interaction.web.model;
 
 import org.springframework.lang.Nullable;
 
