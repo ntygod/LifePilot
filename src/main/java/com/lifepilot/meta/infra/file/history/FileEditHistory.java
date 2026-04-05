@@ -151,23 +151,10 @@ public class FileEditHistory {
             return Optional.empty();
         }
 
-        // 保存当前文件内容到 undo 栈（注意：这里直接操作底层栈，不能用 pushUndo 因为它会清空 redo）
+        // 保存当前文件内容到 undo 栈，但保留 redo 栈（redo 时不能清空后续 redo 记录）
         if (Files.exists(normalized)) {
             byte[] currentContent = Files.readAllBytes(normalized);
-            // 直接压入 undo 栈，不清空 redo 栈
-            var undoSnapshot = new FileSnapshot(normalized, currentContent, Instant.now());
-            // 用一个临时引用来实现"只压入 undo 不清空 redo"
-            // 我们先 pop 所有 redo，pushUndo 后再恢复 redo
-            var redoBackup = new java.util.ArrayDeque<FileSnapshot>();
-            Optional<FileSnapshot> r;
-            while ((r = stack.popRedo()).isPresent()) {
-                redoBackup.push(r.get());
-            }
-            stack.pushUndo(undoSnapshot); // 这会清空 redo
-            // 恢复 redo 栈
-            while (!redoBackup.isEmpty()) {
-                stack.pushRedo(redoBackup.pop());
-            }
+            stack.pushUndoKeepRedo(new FileSnapshot(normalized, currentContent, Instant.now()));
         }
 
         // 写回快照内容

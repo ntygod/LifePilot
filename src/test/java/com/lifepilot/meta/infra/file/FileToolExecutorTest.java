@@ -446,7 +446,7 @@ class FileToolExecutorTest {
 
         @Test
         @SuppressWarnings("unchecked")
-        void execute_offsetLimit与上下文行应正确生效() throws IOException {
+        void execute_offset与上下文行应正确生效() throws IOException {
             Files.writeString(tempDir.resolve("context.txt"), """
                     alpha
                     hit one
@@ -459,7 +459,7 @@ class FileToolExecutorTest {
                     "path", tempDir.toString(),
                     "pattern", "hit",
                     "offset", 1,
-                    "limit", 1,
+                    "maxResults", 1,
                     "contextLines", 1)));
 
             assertThat(result.ok()).isTrue();

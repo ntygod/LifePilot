@@ -10,7 +10,7 @@ import com.lifepilot.tool.semantics.ToolScopeResolvers;
 /**
  * 文件管理 action 路由执行器。
  *
- * <p>统一承接 move / copy / delete 三类文件管理动作。</p>
+ * <p>统一承接 move / copy / delete / mkdir 四类文件管理动作。</p>
  *
  * @author zsg
  * @since 2026-03-31
@@ -19,7 +19,8 @@ public class FileManageActionDispatchExecutor extends ActionDispatchExecutor {
 
     public FileManageActionDispatchExecutor(FileMoveToolExecutor moveExecutor,
                                             FileCopyToolExecutor copyExecutor,
-                                            FileDeleteToolExecutor deleteExecutor) {
+                                            FileDeleteToolExecutor deleteExecutor,
+                                            FileMkdirToolExecutor mkdirExecutor) {
         register("move",
                 RiskLevel.HIGH,
                 ToolExecutionSemantics.of(
@@ -44,5 +45,13 @@ public class FileManageActionDispatchExecutor extends ActionDispatchExecutor {
                         ToolScopeResolvers.pathTrees("path")
                 ),
                 deleteExecutor::execute);
+        register("mkdir",
+                RiskLevel.LOW,
+                ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ),
+                mkdirExecutor::execute);
     }
 }

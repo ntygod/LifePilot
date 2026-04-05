@@ -41,10 +41,25 @@ public class UndoRedoStack {
     public void pushUndo(FileSnapshot snapshot) {
         if (undoStack.size() >= maxDepth) {
             // 移除最底部（最早）的快照 — push 在头部，最早的在尾部
-            ((ArrayDeque<FileSnapshot>) undoStack).removeLast();
+            undoStack.removeLast();
         }
         undoStack.push(snapshot);
         redoStack.clear();
+    }
+
+    /**
+     * 将快照压入 undo 栈，但保留 redo 栈不变。
+     *
+     * <p>专为 redo 操作设计 — redo 时需要把当前内容压入 undo 以便再次撤销，
+     * 但不能清空 redo 栈（否则连续 redo 会中断）。</p>
+     *
+     * @param snapshot 文件快照
+     */
+    public void pushUndoKeepRedo(FileSnapshot snapshot) {
+        if (undoStack.size() >= maxDepth) {
+            undoStack.removeLast();
+        }
+        undoStack.push(snapshot);
     }
 
     /**

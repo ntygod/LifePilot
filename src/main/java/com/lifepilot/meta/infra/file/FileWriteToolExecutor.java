@@ -66,13 +66,21 @@ public class FileWriteToolExecutor {
     }
 
     /**
-     * 构造函数 — 允许注入自定义 PathSecurityChecker（用于测试）。
+     * 构造函数 — 共享 PathSecurityChecker 实例。
+     *
+     * @param securityChecker 路径安全检查器（共享）
+     * @param editHistory     文件编辑历史（可为 null）
+     * @param lintHook        lint 钩子执行器（可为 null）
+     * @param fileEditConfig  文件编辑配置（可为 null）
      */
-    FileWriteToolExecutor(PathSecurityChecker securityChecker) {
+    FileWriteToolExecutor(PathSecurityChecker securityChecker,
+                          @Nullable FileEditHistory editHistory,
+                          @Nullable LintHookExecutor lintHook,
+                          @Nullable MetaProperties.Infra.FileEdit fileEditConfig) {
         this.securityChecker = securityChecker;
-        this.editHistory = null;
-        this.lintHook = null;
-        this.fileEditConfig = null;
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
+        this.fileEditConfig = fileEditConfig;
     }
 
     /**

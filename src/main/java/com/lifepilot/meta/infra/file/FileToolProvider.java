@@ -21,7 +21,8 @@ import java.util.Map;
 /**
  * 文件工具提供者。
  *
- * <p>集中管理文件系统元能力工具：read / write / list / edit / manage。</p>
+ * <p>集中管理文件系统元能力工具：read / write / list / edit / manage。
+ * 所有 Executor 共享同一个 {@link PathSecurityChecker} 实例。</p>
  *
  * @author zsg
  * @since 2026-03-16
@@ -58,18 +59,27 @@ public class FileToolProvider {
     public List<BuiltinTool> buildFileTools() {
         var tools = new ArrayList<BuiltinTool>();
 
-        tools.add(buildFileReadTool(new FileReadToolExecutor(properties)));
-        tools.add(buildFileWriteTool(new FileWriteToolExecutor(properties, editHistory, lintHook)));
+        // 创建共享的 PathSecurityChecker，避免每个 Executor 重复创建
+        var fileConfig = properties.getInfra().getFile();
+        var securityChecker = new PathSecurityChecker(fileConfig);
+        var fileEditConfig = properties.getInfra().getFileEdit();
+
+        tools.add(buildFileReadTool(
+                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars())));
+        tools.add(buildFileWriteTool(
+                new FileWriteToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
         tools.add(buildFileListTool(new FileListActionDispatchExecutor(
-                new FileListToolExecutor(properties),
-                new FileSearchToolExecutor(properties),
-                new FileInfoToolExecutor(properties)
+                new FileListToolExecutor(securityChecker, fileConfig.getDefaultMaxEntries()),
+                new FileSearchToolExecutor(securityChecker),
+                new FileInfoToolExecutor(securityChecker)
         )));
-        tools.add(buildFileEditTool(new FilePatchToolExecutor(properties, editHistory, lintHook)));
+        tools.add(buildFileEditTool(
+                new FilePatchToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
         tools.add(buildFileManageTool(new FileManageActionDispatchExecutor(
-                new FileMoveToolExecutor(properties),
-                new FileCopyToolExecutor(properties),
-                new FileDeleteToolExecutor(properties)
+                new FileMoveToolExecutor(securityChecker),
+                new FileCopyToolExecutor(securityChecker),
+                new FileDeleteToolExecutor(securityChecker),
+                new FileMkdirToolExecutor(securityChecker)
         )));
 
         return List.copyOf(tools);
@@ -166,7 +176,7 @@ public class FileToolProvider {
                                         "description", "目标路径；三种动作都需要")),
                                 Map.entry("maxDepth", Map.of(
                                         "type", "integer",
-                                        "description", "action=list 时的最大遍历深度，默认 3")),
+                                        "description", "action=list/search 时的最大遍历深度，默认 list=3, search=无限制")),
                                 Map.entry("pattern", Map.of(
                                         "type", "string",
                                         "description", "action=list 时表示 glob 过滤模式；action=search 时表示内容正则表达式")),
@@ -182,9 +192,6 @@ public class FileToolProvider {
                                 Map.entry("offset", Map.of(
                                         "type", "integer",
                                         "description", "action=search 时分页偏移量，默认 0")),
-                                Map.entry("limit", Map.of(
-                                        "type", "integer",
-                                        "description", "action=search 时分页每页数量，默认等于 maxResults")),
                                 Map.entry("contextLines", Map.of(
                                         "type", "integer",
                                         "description", "action=search 时匹配行前后上下文行数，默认 0"))
@@ -202,29 +209,35 @@ public class FileToolProvider {
                 .build();
     }
 
-    /** 构建统一文件编辑工具。 */
+    /** 构建统一文件编辑工具（支持行级操作和文本匹配替换）。 */
     private BuiltinTool buildFileEditTool(FilePatchToolExecutor executor) {
         var itemProperties = new LinkedHashMap<String, Object>();
         itemProperties.put("type", Map.of("type", "string",
-                "description", "操作类型: insert / replace / delete"));
+                "description", "操作类型: insert / replace / delete（行级）或 search_replace（文本匹配）"));
         itemProperties.put("line", Map.of("type", "integer",
-                "description", "目标行号（1-based）"));
+                "description", "目标行号（1-based），行级操作时必需，所有行号基于原始文件"));
         itemProperties.put("endLine", Map.of("type", "integer",
                 "description", "结束行号（replace/delete 时可选，默认等于 line）"));
         itemProperties.put("content", Map.of("type", "string",
                 "description", "插入或替换的内容（insert/replace 时必需）"));
+        itemProperties.put("oldText", Map.of("type", "string",
+                "description", "要查找的文本（search_replace 时必需）"));
+        itemProperties.put("newText", Map.of("type", "string",
+                "description", "替换后的文本（search_replace 时必需）"));
 
         var itemSchema = new LinkedHashMap<String, Object>();
         itemSchema.put("type", "object");
-        itemSchema.put("required", List.of("type", "line"));
+        itemSchema.put("required", List.of("type"));
         itemSchema.put("properties", itemProperties);
 
         return BuiltinTool.builder()
                 .id("file.edit")
                 .category(ToolCategory.ACTION)
                 .name("编辑文件")
-                .description("对现有文件执行精确的行级修改（insert/replace/delete），原子写入。" +
-                        "当需要修改文件中的特定几行代码或文本时使用，比 file.write 更安全（不会意外覆盖整个文件）")
+                .description("对现有文件执行精确修改，原子写入。支持两种模式：" +
+                        "行级操作（insert/replace/delete，自动按行号倒序执行避免漂移）和" +
+                        "文本匹配（search_replace，通过 oldText/newText 定位替换，更鲁棒）。" +
+                        "比 file.write 更安全（不会意外覆盖整个文件）")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "operations"),
@@ -232,7 +245,7 @@ public class FileToolProvider {
                                 "path", Map.of("type", "string",
                                         "description", "目标文件路径"),
                                 "operations", Map.of("type", "array",
-                                        "description", "行级操作列表",
+                                        "description", "编辑操作列表",
                                         "items", itemSchema)
                         )
                 )))
@@ -254,15 +267,15 @@ public class FileToolProvider {
                 .id("file.manage")
                 .category(ToolCategory.ACTION)
                 .name("文件管理")
-                .description("管理文件与目录。通过 action 参数支持三类操作：" +
-                        "move=移动文件或目录，copy=复制文件，delete=删除文件或目录。")
+                .description("管理文件与目录。通过 action 参数支持四类操作：" +
+                        "move=移动文件或目录，copy=复制文件或目录，delete=删除文件或目录，mkdir=创建目录。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
-                                        "enum", List.of("move", "copy", "delete"),
+                                        "enum", List.of("move", "copy", "delete", "mkdir"),
                                         "description", "文件管理动作类型")),
                                 Map.entry("source", Map.of(
                                         "type", "string",
@@ -272,13 +285,13 @@ public class FileToolProvider {
                                         "description", "目标路径；action=move/copy 时必填")),
                                 Map.entry("path", Map.of(
                                         "type", "string",
-                                        "description", "目标文件或目录路径；action=delete 时必填")),
+                                        "description", "目标文件或目录路径；action=delete/mkdir 时必填")),
                                 Map.entry("overwrite", Map.of(
                                         "type", "boolean",
                                         "description", "action=move/copy 时目标已存在是否覆盖，默认 false")),
                                 Map.entry("recursive", Map.of(
                                         "type", "boolean",
-                                        "description", "action=delete 时是否递归删除目录内容，默认 false"))
+                                        "description", "action=delete 时递归删除目录，action=copy 时递归复制目录，默认 false"))
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)
