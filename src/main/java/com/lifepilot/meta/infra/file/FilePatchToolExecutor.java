@@ -51,29 +51,6 @@ public class FilePatchToolExecutor {
     @Nullable
     private final MetaProperties.Infra.FileEdit fileEditConfig;
 
-    public FilePatchToolExecutor(MetaProperties properties) {
-        this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
-        this.editHistory = null;
-        this.lintHook = null;
-        this.fileEditConfig = null;
-    }
-
-    /**
-     * 构造函数 — 支持注入文件编辑历史和 lint 钩子。
-     *
-     * @param properties   元能力配置
-     * @param editHistory  文件编辑历史（可为 null）
-     * @param lintHook     lint 钩子执行器（可为 null）
-     */
-    public FilePatchToolExecutor(MetaProperties properties,
-                                 @Nullable FileEditHistory editHistory,
-                                 @Nullable LintHookExecutor lintHook) {
-        this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
-        this.editHistory = editHistory;
-        this.lintHook = lintHook;
-        this.fileEditConfig = properties.getInfra().getFileEdit();
-    }
-
     /**
      * 构造函数 — 共享 PathSecurityChecker 实例。
      *

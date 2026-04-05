@@ -28,7 +28,7 @@ import java.util.stream.Stream;
  *
  * <p>安全机制：通过 {@link PathSecurityChecker} 校验路径白名单/黑名单。</p>
  *
- * <p>性能优化：收集够 maxResults 条匹配后，额外扫描有限文件获取 totalEstimate 估算值，
+ * <p>性能优化：收集够 maxResults 条匹配后，额外扫描有限文件获取 totalMatches 估算值，
  * 而非遍历全部文件精确计数。</p>
  *
  * @author zsg

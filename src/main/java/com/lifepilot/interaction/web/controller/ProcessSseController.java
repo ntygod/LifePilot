@@ -32,6 +32,8 @@ public class ProcessSseController {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessSseController.class);
     private static final String STREAM_ID_PREFIX = "process-";
+    /** SSE 连接超时（5 分钟）。客户端应实现心跳检测与断线自动重连。 */
+    private static final long SSE_TIMEOUT_MS = 300_000L;
 
     private final SseSessionManager sseSessionManager;
 
@@ -49,7 +51,7 @@ public class ProcessSseController {
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter processStream() {
         String streamId = STREAM_ID_PREFIX + UUID.randomUUID().toString().substring(0, 8);
-        var emitter = sseSessionManager.createNotificationEmitter(streamId, 0L);
+        var emitter = sseSessionManager.createNotificationEmitter(streamId, SSE_TIMEOUT_MS);
         log.info("后台进程 SSE 订阅建立: streamId={}", streamId);
         return emitter;
     }

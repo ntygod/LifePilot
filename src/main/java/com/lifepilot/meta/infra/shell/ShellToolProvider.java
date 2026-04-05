@@ -97,9 +97,10 @@ public class ShellToolProvider {
         properties.put("timeoutSeconds", Map.of("type", "integer", "description", "命令超时时间（秒）"));
         properties.put("background", Map.of("type", "boolean", "description", "是否立即后台执行"));
         properties.put("yieldMs", Map.of("type", "integer", "description", "同步等待毫秒数，超时后自动转后台"));
-        properties.put("pty", Map.of("type", "boolean", "description", "是否分配伪终端（PTY）"));
+        properties.put("pty", Map.of("type", "boolean", "description",
+                "分配伪终端（仅 Unix），仅在同步模式下生效"));
         properties.put("shell", Map.of("type", "string", "description",
-                "Shell 解释器（bash/zsh/sh 等），仅 Unix 生效，默认 sh。Windows 固定使用 PowerShell"));
+                "指定 Unix 解释器（如 bash/zsh），仅在同步模式下生效，background 和 yieldMs 模式下使用默认 sh。Windows 固定使用 PowerShell"));
         properties.put("env", Map.of("type", "object", "description",
                 "额外环境变量键值对，注入到子进程环境中"));
 

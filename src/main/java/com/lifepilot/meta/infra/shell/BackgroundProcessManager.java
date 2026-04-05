@@ -295,25 +295,50 @@ public class BackgroundProcessManager {
         return managed;
     }
 
-    /** 持续读取进程输出到环形缓冲区，并发布 SSE 推送事件。 */
+    /** SSE 事件 debounce 间隔（毫秒） — 攒批发送，减少高频推送。 */
+    private static final long SSE_DEBOUNCE_INTERVAL_MS = 200;
+    /** SSE 事件 debounce 缓冲区上限（字节） — 超过此值立即 flush。 */
+    private static final int SSE_DEBOUNCE_BUFFER_LIMIT = 4096;
+
+    /** 持续读取进程输出到环形缓冲区，并通过 debounce 攒批发布 SSE 推送事件。 */
     private void readProcessOutput(ManagedProcess managed,
                                    InputStream stream,
                                    RingBuffer buffer,
                                    String streamName) {
+        var sseBuffer = new StringBuilder();
+        long lastFlushTime = System.currentTimeMillis();
+
         try (var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             char[] buf = new char[4096];
             int read;
             while ((read = reader.read(buf)) != -1) {
                 String chunk = new String(buf, 0, read);
                 buffer.append(chunk);
-                // 发布进程输出事件，供 SSE 控制器推送到前端
+
+                // 将输出追加到 debounce 缓冲区
                 if (eventPublisher != null) {
-                    eventPublisher.publishEvent(new ProcessOutputEvent(
-                            this, managed.sessionId(), streamName, chunk, managed.currentState()));
+                    sseBuffer.append(chunk);
+                    long now = System.currentTimeMillis();
+                    // 缓冲区超过 4KB 或距上次 flush 超过 200ms 时发布事件
+                    if (sseBuffer.length() >= SSE_DEBOUNCE_BUFFER_LIMIT
+                            || (now - lastFlushTime) >= SSE_DEBOUNCE_INTERVAL_MS) {
+                        eventPublisher.publishEvent(new ProcessOutputEvent(
+                                this, managed.sessionId(), streamName,
+                                sseBuffer.toString(), managed.currentState()));
+                        sseBuffer.setLength(0);
+                        lastFlushTime = now;
+                    }
                 }
             }
         } catch (IOException e) {
             log.debug("进程{}读取结束: sessionId={}, reason={}", streamName, managed.sessionId(), e.getMessage());
+        }
+
+        // 进程结束时 flush 剩余缓冲
+        if (eventPublisher != null && !sseBuffer.isEmpty()) {
+            eventPublisher.publishEvent(new ProcessOutputEvent(
+                    this, managed.sessionId(), streamName,
+                    sseBuffer.toString(), managed.currentState()));
         }
     }
 

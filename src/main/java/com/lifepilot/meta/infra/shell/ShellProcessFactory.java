@@ -31,8 +31,11 @@ public final class ShellProcessFactory {
      * <p>覆盖这些 key 可绕过命令黑名单或注入恶意库。</p>
      */
     private static final Set<String> BLOCKED_ENV_KEYS = Set.of(
+            // Unix 通用
             "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH",
             "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+            // Windows 特有：命令解释器、可执行扩展名、PowerShell 模块路径
+            "COMSPEC", "PATHEXT", "PSMODULEPATH",
             WINDOWS_COMMAND_ENV
     );
 

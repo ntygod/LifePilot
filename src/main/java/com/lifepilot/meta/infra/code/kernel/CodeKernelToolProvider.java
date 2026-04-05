@@ -135,9 +135,17 @@ public class CodeKernelToolProvider {
     private ToolResult executeList(ToolInput input) {
         try {
             var kernelList = kernelManager.listKernels();
+            // 将 KernelInfo record 转为 Map 给 ToolResult
+            var kernelMaps = kernelList.stream()
+                    .map(info -> Map.<String, Object>of(
+                            "kernelId", info.kernelId(),
+                            "state", info.state(),
+                            "idleSeconds", info.idleSeconds()
+                    ))
+                    .toList();
             return ToolResult.success(Map.of(
-                    "kernels", kernelList,
-                    "total", kernelList.size()
+                    "kernels", kernelMaps,
+                    "total", kernelMaps.size()
             ));
         } catch (Exception e) {
             log.error("列出内核失败: error={}", e.getMessage(), e);
