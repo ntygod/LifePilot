@@ -1,5 +1,7 @@
 package com.lifepilot.interaction.web.model;
 
+import com.lifepilot.agent.task.reminder.ReminderFeedbackType;
+import com.lifepilot.agent.task.reminder.ReminderNotificationFeedbackView;
 import com.lifepilot.notification.NotificationRecord;
 import org.springframework.lang.Nullable;
 
@@ -17,6 +19,10 @@ import java.time.Instant;
  * @param status       发送状态（SENT / FAILED）
  * @param metadataJson 扩展元数据 JSON
  * @param sentAt       发送时间
+ * @param feedbackType 主动提醒反馈类型
+ * @param feedbackComment 主动提醒反馈备注
+ * @param feedbackAt   主动提醒反馈时间
+ * @param topicMuted   该提醒主题是否已静默
  * @author zsg
  * @since 2026-03-13
  */
@@ -29,7 +35,11 @@ public record NotificationDto(
         String readStatus,
         String status,
         @Nullable String metadataJson,
-        Instant sentAt
+        Instant sentAt,
+        @Nullable ReminderFeedbackType feedbackType,
+        @Nullable String feedbackComment,
+        @Nullable Instant feedbackAt,
+        @Nullable Boolean topicMuted
 ) {
 
     /**
@@ -39,6 +49,18 @@ public record NotificationDto(
      * @return 通知 DTO
      */
     public static NotificationDto from(NotificationRecord record) {
+        return from(record, null);
+    }
+
+    /**
+     * 从 {@link NotificationRecord} 和主动提醒反馈视图转换为 DTO。
+     *
+     * @param record       通知记录
+     * @param feedbackView 主动提醒反馈视图
+     * @return 通知 DTO
+     */
+    public static NotificationDto from(NotificationRecord record,
+                                       @Nullable ReminderNotificationFeedbackView feedbackView) {
         return new NotificationDto(
                 record.id(),
                 record.userId(),
@@ -48,7 +70,11 @@ public record NotificationDto(
                 record.readStatus(),
                 record.status(),
                 record.metadataJson(),
-                record.sentAt()
+                record.sentAt(),
+                feedbackView != null ? feedbackView.feedbackType() : null,
+                feedbackView != null ? feedbackView.comment() : null,
+                feedbackView != null ? feedbackView.feedbackAt() : null,
+                feedbackView != null ? feedbackView.topicMuted() : null
         );
     }
 }

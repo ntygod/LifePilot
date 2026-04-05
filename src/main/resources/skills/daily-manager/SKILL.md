@@ -34,7 +34,7 @@ triggers:
 ## When NOT to Use
 
 - 定时任务管理（用 cron-scheduler）
-- 心跳巡检配置（用 heartbeat-checklist）
+- 模糊持续关注类需求（直接记录到记忆或工作区，交由主动提醒引擎后续判断）
 - 单一领域的深度任务（用对应专业 Skill）
 
 ## 工作模式

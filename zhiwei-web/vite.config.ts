@@ -10,6 +10,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  // 多页面入口：主应用 + 浮窗
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        float: path.resolve(__dirname, 'float.html'),
+      },
+    },
+  },
   // Monaco Editor Web Worker 配置，避免编辑器语法解析阻塞主线程
   worker: {
     format: 'es'

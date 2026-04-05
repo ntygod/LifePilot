@@ -6,25 +6,32 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.agent.task.HeartbeatRunner;
+import com.lifepilot.agent.task.reminder.ProactiveReminderService;
+import com.lifepilot.agent.task.reminder.ReminderReplayEvaluationScheduler;
+import com.lifepilot.agent.task.reminder.ReminderRetentionScheduler;
+import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * 自主任务执行 Spring Boot 自动配置。
  *
- * <p>注册 Cron 定时调度和心跳巡检相关 Bean。
- * 在 {@link ApplicationReadyEvent} 时恢复所有 active 定时任务并启动心跳。</p>
+ * <p>注册 Cron 定时调度与心跳唤醒相关 Bean。
+ * 主动提醒引擎的 Bean 注册委托给 {@link ReminderAutoConfiguration}。
+ * 在 {@link ApplicationReadyEvent} 时恢复所有 active 定时任务并启动心跳唤醒。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -33,6 +40,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 @ConditionalOnBean(AgentOrchestrator.class)
+@Import(ReminderAutoConfiguration.class)
 public class TaskAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(TaskAutoConfiguration.class);
@@ -64,21 +72,17 @@ public class TaskAutoConfiguration {
     @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "heartbeat-enabled",
             havingValue = "true", matchIfMissing = true)
     public HeartbeatRunner heartbeatRunner(SharedScheduler sharedScheduler,
-                                           AgentOrchestrator agentOrchestrator,
-                                           NotificationService notificationService,
                                            AgentConfigProperties config,
-                                           NotificationProperties notificationProperties) {
+                                           @Autowired(required = false) ProactiveReminderService proactiveReminderService) {
         return new HeartbeatRunner(
                 sharedScheduler.heartbeat(),
-                agentOrchestrator,
-                notificationService,
                 config,
-                notificationProperties
+                proactiveReminderService
         );
     }
 
     /**
-     * 应用就绪后恢复 Cron 定时任务并启动心跳。
+     * 应用就绪后恢复 Cron 定时任务并启动心跳唤醒。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
@@ -91,11 +95,29 @@ public class TaskAutoConfiguration {
             log.info("自主任务系统就绪: Cron 定时任务已恢复");
         }
 
-        // 启动心跳
+        // 启动心跳唤醒
         if (context.containsBean("heartbeatRunner")) {
             var heartbeatRunner = context.getBean(HeartbeatRunner.class);
             heartbeatRunner.start();
-            log.info("自主任务系统就绪: 心跳巡检已启动");
+            log.info("自主任务系统就绪: 心跳唤醒已启动");
+        }
+
+        if (context.containsBean("reminderWakeupScheduler")) {
+            var reminderWakeupScheduler = context.getBean(ReminderWakeupScheduler.class);
+            reminderWakeupScheduler.start();
+            log.info("自主任务系统就绪: 主动提醒延后唤醒已启动");
+        }
+
+        if (context.containsBean("reminderReplayEvaluationScheduler")) {
+            var reminderReplayEvaluationScheduler = context.getBean(ReminderReplayEvaluationScheduler.class);
+            reminderReplayEvaluationScheduler.start();
+            log.info("自主任务系统就绪: 主动提醒离线回放评估已启动");
+        }
+
+        if (context.containsBean("reminderRetentionScheduler")) {
+            var reminderRetentionScheduler = context.getBean(ReminderRetentionScheduler.class);
+            reminderRetentionScheduler.start();
+            log.info("自主任务系统就绪: 主动提醒样本治理已启动");
         }
     }
 }

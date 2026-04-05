@@ -17,9 +17,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Flyway V8 知识库迁移脚本集成测试。
+ * Flyway V15 迁移脚本集成测试。
  *
- * <p>使用 @SpringBootTest + 内存 SQLite 验证 V8 迁移脚本执行成功，
+ * <p>使用 @SpringBootTest + 内存 SQLite 验证迁移脚本执行成功，
  * 表和索引正确创建。</p>
  *
  * @author zsg
@@ -45,7 +45,7 @@ class FlywayMigrationTest {
     JdbcTemplate jdbcTemplate;
 
     @Test
-    void V8迁移_knowledge_bases表存在() {
+    void V15迁移_knowledge_bases表存在() {
         var count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='knowledge_bases'",
                 Integer.class);
@@ -53,7 +53,7 @@ class FlywayMigrationTest {
     }
 
     @Test
-    void V8迁移_documents表存在() {
+    void V15迁移_documents表存在() {
         var count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'",
                 Integer.class);
@@ -61,7 +61,7 @@ class FlywayMigrationTest {
     }
 
     @Test
-    void V8迁移_document_chunks表存在() {
+    void V15迁移_document_chunks表存在() {
         var count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='document_chunks'",
                 Integer.class);
@@ -69,7 +69,29 @@ class FlywayMigrationTest {
     }
 
     @Test
-    void V8迁移_所有索引存在() {
+    void V15迁移_proactive_reminder_replay_reports表存在() {
+        var count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='proactive_reminder_replay_reports'",
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void V15迁移_proactive_reminder_topic_aliases表存在() {
+        var count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='proactive_reminder_topic_aliases'",
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void V15迁移_proactive_reminder_inferred_outcomes包含attribution字段() {
+        var columns = jdbcTemplate.queryForList("PRAGMA table_info('proactive_reminder_inferred_outcomes')");
+        assertThat(columns).anyMatch(column -> "attribution_score".equals(column.get("name")));
+    }
+
+    @Test
+    void V15迁移_所有索引存在() {
         var expectedIndexes = List.of(
                 "idx_knowledge_bases_name",
                 "idx_documents_kb_id",
@@ -77,7 +99,16 @@ class FlywayMigrationTest {
                 "idx_documents_content_hash",
                 "idx_document_chunks_doc_id",
                 "idx_document_chunks_kb_id",
-                "idx_document_chunks_hash"
+                "idx_document_chunks_hash",
+                "idx_proactive_reminder_decisions_action_next_eval",
+                "idx_proactive_reminder_decisions_policy_version",
+                "idx_proactive_reminder_policy_traces_final_action",
+                "idx_proactive_reminder_policy_versions_user_version",
+                "idx_proactive_reminder_policy_versions_signature",
+                "idx_proactive_reminder_inferred_outcomes_topic",
+                "idx_proactive_reminder_inferred_outcomes_decision",
+                "idx_proactive_reminder_replay_reports_user_generated_at",
+                "idx_proactive_reminder_topic_aliases_canonical"
         );
 
         var actualIndexes = jdbcTemplate.queryForList(
@@ -88,7 +119,7 @@ class FlywayMigrationTest {
     }
 
     @Test
-    void V8迁移_knowledge_bases表结构正确() {
+    void V15迁移_knowledge_bases表结构正确() {
         // 验证可以执行 INSERT + SELECT，确认列存在
         jdbcTemplate.update("""
                 INSERT INTO knowledge_bases (id, name, description, embedding_model, reranker_model,
@@ -107,7 +138,7 @@ class FlywayMigrationTest {
     }
 
     @Test
-    void V8迁移_documents外键级联删除() {
+    void V15迁移_documents外键级联删除() {
         // 插入知识库
         jdbcTemplate.update("""
                 INSERT INTO knowledge_bases (id, name, description, embedding_model, chunking_strategy,

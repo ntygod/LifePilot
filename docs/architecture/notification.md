@@ -16,7 +16,7 @@
 
 对自主任务而言，“无结果静默”不在通知模块内部实现，而由上游协议保证：
 - cron 无结果时返回 `TASK_SILENT`
-- heartbeat 正常时返回 `HEARTBEAT_OK`
+- 主动提醒内部评估无结果时保持静默
 
 ## 2. 架构图
 
@@ -24,7 +24,7 @@
 graph TB
     subgraph "通知消费方"
         CRON["CronScheduler"]
-        HEARTBEAT["HeartbeatRunner"]
+        HEARTBEAT["HeartbeatRunner<br/>唤醒主动提醒"]
         WF["StepExecutor / NotifyStep"]
         META["NotifyToolExecutor"]
         FUTURE["未来模块"]
@@ -191,7 +191,7 @@ sequenceDiagram
 
 | 方向 | 模块 | 交互方式 |
 |------|------|---------|
-| 被依赖 | `agent.task` | cron / heartbeat 通过 `NotificationService` 发送结果 |
+| 被依赖 | `agent.task` | cron / 主动提醒通过 `NotificationService` 发送结果 |
 | 被依赖 | `workflow` | `NotifyStep` 通过 `NotificationService` 投递通知 |
 | 被依赖 | `meta` | `interact.notify` 通过 `NotifyToolExecutor` 调用通知服务 |
 | 依赖 | `interaction.channel` | 通过插件架构向外部渠道发送（具体渠道适配器由插件提供） |
@@ -212,7 +212,7 @@ sequenceDiagram
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 通知模型 | 直接投递 | 个人助手场景下，“有结果就通知”比多级通知更清晰 |
-| 无结果处理 | 上游静默协议 | 让 cron / heartbeat 自己决定是否需要打扰用户 |
+| 无结果处理 | 上游静默协议 | 让 cron / 主动提醒自己决定是否需要打扰用户 |
 | 路由策略 | 默认广播，可选定向渠道 | 既保留多渠道能力，也允许 notify 工具回到当前会话 |
 | 历史存储 | 仅保留 `notification_history` | 删除无效复杂度，保留用户可见的结果记录 |
 | Web 推送 | SSE 广播 | 与现有 Web 前端通知中心直接对接，成本最低 |

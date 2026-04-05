@@ -234,7 +234,7 @@ class ShellExecToolExecutorTest {
 
         ToolInput input = buildInput(Map.of(
                 "command", buildStdoutStderrFailCommand(7),
-                "yieldMs", 1000
+                "yieldMs", 3000
         ));
 
         ToolResult result = executor.execute(input);

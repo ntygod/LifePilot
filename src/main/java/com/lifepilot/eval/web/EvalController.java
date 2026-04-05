@@ -1,5 +1,6 @@
 package com.lifepilot.eval.web;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.eval.engine.EvalEngine;
 import com.lifepilot.eval.feedback.EvalFeedback;
 import com.lifepilot.eval.feedback.EvalFeedback.FeedbackType;

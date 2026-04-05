@@ -27,7 +27,7 @@ triggers:
 
 ## When NOT to Use
 
-- 模糊关注类需求（用 heartbeat-checklist）
+- 模糊关注类需求（不要强行创建 cron，优先记录为记忆或工作区信号，交由主动提醒引擎后续判断）
 - 一次性任务（直接执行，不创建定时任务）
 - 工作流编排（用 workflow-creator）
 
