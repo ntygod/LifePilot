@@ -36,7 +36,12 @@ export function useNotificationStream() {
           notificationStore.setUnreadCount(data.unreadCount)
         } else {
           notificationStore.addNotification(data as NotificationItem)
-          sendDesktopNotification(data as NotificationItem)
+          const item = data as NotificationItem
+          if (item.typeId === 'proactive_reminder') {
+            sendToFloatWindow(item)
+          } else {
+            sendDesktopNotification(item)
+          }
         }
       } catch (error) {
         logger.error('通知事件解析失败:', error)
@@ -94,6 +99,30 @@ export function useNotificationStream() {
       connected.value = false
     }
     reconnectAttempts = MAX_RECONNECT_ATTEMPTS
+  }
+
+  /** 主动提醒通知 → 投递到浮窗 */
+  async function sendToFloatWindow(item: NotificationItem) {
+    if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) {
+      // 非 Tauri 环境，降级为桌面通知
+      sendDesktopNotification(item)
+      return
+    }
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const { summary } = parseNotificationContent(item.contentJson)
+      const metadata = item.metadataJson ? JSON.parse(item.metadataJson) : {}
+      const pushLevel = metadata.action ?? 'NORMAL_PUSH'
+      await invoke('show_reminder_bubble', {
+        notificationId: item.id,
+        title: metadata.topicKey ?? '主动提醒',
+        content: summary,
+        pushLevel,
+      })
+    } catch {
+      // 浮窗不可用时降级为系统通知
+      sendDesktopNotification(item)
+    }
   }
 
   /** Tauri 桌面端收到通知时推送系统级桌面通知 */
