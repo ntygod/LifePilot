@@ -199,7 +199,8 @@ class FileToolExecutorTest {
 
         @BeforeEach
         void setUp() {
-            executor = new FileWriteToolExecutor(properties);
+            var securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+            executor = new FileWriteToolExecutor(securityChecker, null, null, null);
         }
 
         @Test
@@ -469,6 +470,257 @@ class FileToolExecutorTest {
             assertThat(matches.getFirst().get("content")).isEqualTo("hit two");
             assertThat(matches.getFirst().get("beforeContext")).isEqualTo(List.of("beta"));
             assertThat(matches.getFirst().get("afterContext")).isEqualTo(List.of("gamma"));
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  FileMkdirToolExecutor 测试
+    // ─────────────────────────────────────────────
+
+    @Nested
+    class FileMkdirTest {
+
+        private FileMkdirToolExecutor executor;
+
+        @BeforeEach
+        void setUp() {
+            var securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+            executor = new FileMkdirToolExecutor(securityChecker);
+        }
+
+        @Test
+        void execute_创建新目录成功() {
+            Path newDir = tempDir.resolve("new-dir");
+
+            ToolResult result = executor.execute(buildInput(Map.of("path", newDir.toString())));
+
+            assertThat(result.ok()).isTrue();
+            assertThat((boolean) result.data().get("created")).isTrue();
+            assertThat(Files.isDirectory(newDir)).isTrue();
+        }
+
+        @Test
+        void execute_目录已存在时返回created为false() throws IOException {
+            Path existingDir = tempDir.resolve("existing-dir");
+            Files.createDirectory(existingDir);
+
+            ToolResult result = executor.execute(buildInput(Map.of("path", existingDir.toString())));
+
+            assertThat(result.ok()).isTrue();
+            assertThat((boolean) result.data().get("created")).isFalse();
+        }
+
+        @Test
+        void execute_路径已存在且是文件时返回错误() throws IOException {
+            Path file = tempDir.resolve("a-file.txt");
+            Files.writeString(file, "content");
+
+            ToolResult result = executor.execute(buildInput(Map.of("path", file.toString())));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("不是目录");
+        }
+
+        @Test
+        void execute_递归创建嵌套目录成功() {
+            Path nestedDir = tempDir.resolve("a/b/c");
+
+            ToolResult result = executor.execute(buildInput(Map.of("path", nestedDir.toString())));
+
+            assertThat(result.ok()).isTrue();
+            assertThat((boolean) result.data().get("created")).isTrue();
+            assertThat(Files.isDirectory(nestedDir)).isTrue();
+        }
+
+        @Test
+        void execute_缺少path参数返回错误() {
+            ToolResult result = executor.execute(buildInput(Map.of()));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("path");
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  FileCopyToolExecutor 测试
+    // ─────────────────────────────────────────────
+
+    @Nested
+    class FileCopyTest {
+
+        private FileCopyToolExecutor executor;
+
+        @BeforeEach
+        void setUp() {
+            var securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+            executor = new FileCopyToolExecutor(securityChecker);
+        }
+
+        @Test
+        void execute_递归复制目录成功() throws IOException {
+            // 构建源目录结构
+            Path srcDir = tempDir.resolve("src-dir");
+            Files.createDirectories(srcDir.resolve("sub"));
+            Files.writeString(srcDir.resolve("a.txt"), "aaa");
+            Files.writeString(srcDir.resolve("sub/b.txt"), "bbb");
+
+            Path destDir = tempDir.resolve("dest-dir");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "source", srcDir.toString(),
+                    "destination", destDir.toString(),
+                    "recursive", true)));
+
+            assertThat(result.ok()).isTrue();
+            assertThat((int) result.data().get("filesCopied")).isEqualTo(2);
+            assertThat(Files.readString(destDir.resolve("a.txt"))).isEqualTo("aaa");
+            assertThat(Files.readString(destDir.resolve("sub/b.txt"))).isEqualTo("bbb");
+        }
+
+        @Test
+        void execute_目录复制不传recursive时报错() throws IOException {
+            Path srcDir = tempDir.resolve("src-dir2");
+            Files.createDirectory(srcDir);
+
+            Path destDir = tempDir.resolve("dest-dir2");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "source", srcDir.toString(),
+                    "destination", destDir.toString())));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("recursive=true");
+        }
+
+        @Test
+        void execute_源目录和目标目录互为父子时报错() throws IOException {
+            Path srcDir = tempDir.resolve("parent");
+            Files.createDirectory(srcDir);
+            Path destDir = srcDir.resolve("child");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "source", srcDir.toString(),
+                    "destination", destDir.toString(),
+                    "recursive", true)));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("互为父子");
+        }
+
+        @Test
+        void execute_单文件复制成功() throws IOException {
+            Path srcFile = tempDir.resolve("source.txt");
+            Files.writeString(srcFile, "hello");
+
+            Path destFile = tempDir.resolve("dest.txt");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "source", srcFile.toString(),
+                    "destination", destFile.toString())));
+
+            assertThat(result.ok()).isTrue();
+            assertThat(Files.readString(destFile)).isEqualTo("hello");
+        }
+
+        @Test
+        void execute_源路径不存在返回错误() {
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "source", tempDir.resolve("nonexistent.txt").toString(),
+                    "destination", tempDir.resolve("dest.txt").toString())));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("源路径不存在");
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  FilePatchToolExecutor 测试
+    // ─────────────────────────────────────────────
+
+    @Nested
+    class FilePatchTest {
+
+        private FilePatchToolExecutor executor;
+
+        @BeforeEach
+        void setUp() {
+            var securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+            executor = new FilePatchToolExecutor(securityChecker, null, null, null);
+        }
+
+        @Test
+        void execute_search_replace替换成功() throws IOException {
+            Path file = tempDir.resolve("patch.txt");
+            Files.writeString(file, "hello world\nfoo bar\n");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", file.toString(),
+                    "operations", List.of(Map.of(
+                            "type", "search_replace",
+                            "oldText", "foo bar",
+                            "newText", "baz qux")))));
+
+            assertThat(result.ok()).isTrue();
+            String content = Files.readString(file);
+            assertThat(content).contains("baz qux");
+            assertThat(content).doesNotContain("foo bar");
+        }
+
+        @Test
+        void execute_search_replace_oldText不存在时报错() throws IOException {
+            Path file = tempDir.resolve("no-match.txt");
+            Files.writeString(file, "hello world\n");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", file.toString(),
+                    "operations", List.of(Map.of(
+                            "type", "search_replace",
+                            "oldText", "nonexistent text",
+                            "newText", "replacement")))));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("未找到匹配文本");
+        }
+
+        @Test
+        void execute_search_replace与行级操作混用时报错() throws IOException {
+            Path file = tempDir.resolve("mixed.txt");
+            Files.writeString(file, "line1\nline2\nline3\n");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", file.toString(),
+                    "operations", List.of(
+                            Map.of("type", "search_replace", "oldText", "line1", "newText", "LINE1"),
+                            Map.of("type", "insert", "line", 2, "content", "inserted")))));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("混用");
+        }
+
+        @Test
+        void execute_文件不存在时报错() {
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", tempDir.resolve("missing.txt").toString(),
+                    "operations", List.of(Map.of(
+                            "type", "search_replace",
+                            "oldText", "a",
+                            "newText", "b")))));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("文件不存在");
+        }
+
+        @Test
+        void execute_operations为空时报错() throws IOException {
+            Path file = tempDir.resolve("empty-ops.txt");
+            Files.writeString(file, "content\n");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", file.toString(),
+                    "operations", List.of())));
+
+            assertThat(result.ok()).isFalse();
+            assertThat(result.error()).contains("不能为空");
         }
     }
 

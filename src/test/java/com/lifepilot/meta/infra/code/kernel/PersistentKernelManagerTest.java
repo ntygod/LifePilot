@@ -122,4 +122,47 @@ class PersistentKernelManagerTest {
         var kernel = manager.getOrCreate("kernel-1", "shell");
         assertThat(kernel).isNotNull();
     }
+
+    // ─────────────────────────────────────────────
+    //  listKernels 测试
+    // ─────────────────────────────────────────────
+
+    @Test
+    void listKernels_空时返回空列表() {
+        manager = new PersistentKernelManager(config, null);
+
+        var list = manager.listKernels();
+        assertThat(list).isEmpty();
+    }
+
+    @Test
+    void listKernels_有内核时返回正确信息() {
+        manager = new PersistentKernelManager(config, null);
+
+        manager.getOrCreate("kernel-1", "shell");
+        manager.getOrCreate("kernel-2", "shell");
+
+        var list = manager.listKernels();
+        assertThat(list).hasSize(2);
+        assertThat(list).extracting(PersistentKernelManager.KernelInfo::kernelId)
+                .containsExactlyInAnyOrder("kernel-1", "kernel-2");
+        // 所有内核的 idleSeconds 应非负（刚创建，应接近 0）
+        assertThat(list).allSatisfy(info -> {
+            assertThat(info.idleSeconds()).isGreaterThanOrEqualTo(0);
+            assertThat(info.state()).isNotNull();
+        });
+    }
+
+    @Test
+    void listKernels_关闭内核后列表减少() {
+        manager = new PersistentKernelManager(config, null);
+
+        manager.getOrCreate("kernel-1", "shell");
+        manager.getOrCreate("kernel-2", "shell");
+        manager.closeKernel("kernel-1");
+
+        var list = manager.listKernels();
+        assertThat(list).hasSize(1);
+        assertThat(list.getFirst().kernelId()).isEqualTo("kernel-2");
+    }
 }

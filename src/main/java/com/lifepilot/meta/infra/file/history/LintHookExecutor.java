@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 public class LintHookExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(LintHookExecutor.class);
+    private static final boolean IS_WINDOWS = System.getProperty("os.name", "").toLowerCase().contains("win");
 
     /**
      * 对文件执行 lint 检查。
@@ -91,8 +92,7 @@ public class LintHookExecutor {
      * <p>包级可见，便于测试时 mock。</p>
      */
     ProcessBuilder buildProcess(String command) {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win")) {
+        if (IS_WINDOWS) {
             return new ProcessBuilder("cmd", "/c", command);
         } else {
             return new ProcessBuilder("sh", "-c", command);
@@ -105,8 +105,7 @@ public class LintHookExecutor {
      * <p>Windows 使用双引号包裹，Unix 使用单引号包裹并转义内部单引号。</p>
      */
     private static String quoteForShell(String path) {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win")) {
+        if (IS_WINDOWS) {
             // Windows cmd: 双引号包裹，内部双引号用 "" 转义
             return "\"" + path.replace("\"", "\"\"") + "\"";
         } else {

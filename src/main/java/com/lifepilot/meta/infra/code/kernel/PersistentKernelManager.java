@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -159,20 +158,19 @@ public class PersistentKernelManager {
      *
      * @return 内核信息列表，每个条目包含 kernelId、state、idleSeconds
      */
-    public List<Map<String, Object>> listKernels() {
+    public List<KernelInfo> listKernels() {
         var now = Instant.now();
         return kernels.entrySet().stream()
                 .map(e -> {
-                    var info = new LinkedHashMap<String, Object>();
-                    info.put("kernelId", e.getKey());
                     var kernel = e.getValue().kernel();
-                    info.put("state", kernel.state().name());
                     long idleSeconds = Duration.between(e.getValue().lastAccessTime().get(), now).toSeconds();
-                    info.put("idleSeconds", idleSeconds);
-                    return (Map<String, Object>) info;
+                    return new KernelInfo(e.getKey(), kernel.state().name(), idleSeconds);
                 })
                 .toList();
     }
+
+    /** 内核摘要信息 — 用于 listKernels() 返回。 */
+    public record KernelInfo(String kernelId, String state, long idleSeconds) {}
 
     /**
      * 获取内核配置。

@@ -1,6 +1,5 @@
 package com.lifepilot.meta.infra.file;
 
-import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import org.slf4j.Logger;
@@ -14,6 +13,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -31,12 +31,9 @@ import java.util.Map;
 public class FileCopyToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(FileCopyToolExecutor.class);
+    private static final boolean IS_WINDOWS = java.io.File.separatorChar == '\\';
 
     private final PathSecurityChecker securityChecker;
-
-    public FileCopyToolExecutor(MetaProperties properties) {
-        this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
-    }
 
     /** 构造函数 — 允许注入自定义 PathSecurityChecker（用于测试）。 */
     FileCopyToolExecutor(PathSecurityChecker securityChecker) {
@@ -128,7 +125,7 @@ public class FileCopyToolExecutor {
     private ToolResult copyDirectory(Path sourcePath, Path destPath, boolean overwrite,
                                      String sourceStr, String destStr) {
         // 防止将目录复制到自身内部，或复制到自身的祖先目录（可能覆盖源文件）
-        if (destPath.startsWith(sourcePath) || sourcePath.startsWith(destPath)) {
+        if (pathStartsWith(destPath, sourcePath) || pathStartsWith(sourcePath, destPath)) {
             return ToolResult.error("源目录和目标目录不能互为父子关系: " + sourceStr + " → " + destStr);
         }
 
@@ -175,5 +172,16 @@ public class FileCopyToolExecutor {
                     sourceStr, destStr, e.getMessage(), e);
             return ToolResult.error("目录复制失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 父子路径判断 — Windows 下忽略大小写。
+     */
+    private boolean pathStartsWith(Path path, Path prefix) {
+        if (IS_WINDOWS) {
+            return Path.of(path.toString().toLowerCase(Locale.ROOT))
+                    .startsWith(Path.of(prefix.toString().toLowerCase(Locale.ROOT)));
+        }
+        return path.startsWith(prefix);
     }
 }
