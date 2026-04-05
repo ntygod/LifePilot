@@ -134,7 +134,11 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                     "Provider 不支持 STREAMING 能力: id=" + config.id());
         }
         return chatModel.stream(buildPrompt(prompt, null, true))
-                .mapNotNull(response -> response.getResult().getOutput().getText())
+                .mapNotNull(response -> {
+                    var result = response.getResult();
+                    if (result == null || result.getOutput() == null) return null;
+                    return result.getOutput().getText();
+                })
                 .filter(text -> text != null && !text.isEmpty());
     }
 

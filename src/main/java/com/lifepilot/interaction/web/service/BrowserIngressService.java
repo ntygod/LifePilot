@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 /**
  * 浏览器入站组装服务。
@@ -51,17 +52,36 @@ public class BrowserIngressService {
     @Nullable private final SseSessionManager sseSessionManager;
     @Nullable private final AudioTranscriber audioTranscriber;
     private final MediaProperties mediaProperties;
+    private final BooleanSupplier nativeAudioProbe;
 
     public BrowserIngressService(AttachmentRepository attachmentRepository,
                                  ChatTurnService chatTurnService,
                                  @Nullable SseSessionManager sseSessionManager,
                                  @Nullable AudioTranscriber audioTranscriber,
-                                 MediaProperties mediaProperties) {
+                                 MediaProperties mediaProperties,
+                                 BooleanSupplier nativeAudioProbe) {
         this.attachmentRepository = attachmentRepository;
         this.chatTurnService = chatTurnService;
         this.sseSessionManager = sseSessionManager;
         this.audioTranscriber = audioTranscriber;
         this.mediaProperties = mediaProperties;
+        this.nativeAudioProbe = nativeAudioProbe;
+    }
+
+    /**
+     * 语音输入能力摘要。
+     *
+     * @param nativeAudio  是否有原生音频 Provider（如 Qwen3-Omni）
+     * @param stt          是否有 STT 转录能力（Whisper CLI 或云端）
+     * @param supported    语音输入是否可用（任一为 true 即可）
+     */
+    public record VoiceCapability(boolean nativeAudio, boolean stt, boolean supported) {}
+
+    /** 查询当前语音输入能力。 */
+    public VoiceCapability voiceCapability() {
+        boolean nativeAudio = nativeAudioProbe.getAsBoolean();
+        boolean stt = audioTranscriber != null && audioTranscriber.isAvailable();
+        return new VoiceCapability(nativeAudio, stt, nativeAudio || stt);
     }
 
     public GatewayMessage buildChatMessage(ChatRequest request,
@@ -82,13 +102,21 @@ public class BrowserIngressService {
         String messageContent = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
         var content = new MessageContent.TextMessage(messageContent);
 
+        // 转录成功后移除已转录的音频附件，避免它们作为 mediaContents 触发多模态路由
+        boolean audioTranscribed = !messageContent.equals(normalizedRequest.content());
+        List<GatewayMessage.Attachment> effectiveAttachments = audioTranscribed
+                ? attachments.stream()
+                    .filter(att -> att.mimeType() == null || !att.mimeType().startsWith("audio/"))
+                    .toList()
+                : attachments;
+
         return GatewayMessage.builder()
                 .messageId(resolved.turnId())
                 .channelType(ChannelType.WEB)
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(sessionId)
                 .content(content)
-                .attachments(attachments)
+                .attachments(effectiveAttachments)
                 .channelMetadata(buildWebMetadata(
                         httpRequest,
                         deliveryMode,
@@ -160,9 +188,12 @@ public class BrowserIngressService {
         if (mediaProperties.getNativeAudio().isEnabled()) {
             boolean hasAudio = attachments.stream()
                     .anyMatch(att -> att.mimeType() != null && att.mimeType().startsWith("audio/"));
-            if (hasAudio) {
-                log.info("原生音频路由已启用，跳过 STT 转录: sessionId={}", sessionId);
+            if (hasAudio && nativeAudioProbe.getAsBoolean()) {
+                log.info("原生音频路由已启用且有可用 Provider，跳过 STT 转录: sessionId={}", sessionId);
                 return originalContent;
+            }
+            if (hasAudio) {
+                log.info("原生音频路由已启用但无可用 Provider，降级到 STT 转录: sessionId={}", sessionId);
             }
         }
         if (audioTranscriber == null) {

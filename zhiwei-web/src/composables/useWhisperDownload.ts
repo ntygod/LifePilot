@@ -1,5 +1,6 @@
 import { ref, readonly } from 'vue'
 import type { Ref } from 'vue'
+import { chatApi } from '@/api/client'
 import { logger } from '@/utils/logger'
 
 /**
@@ -104,17 +105,36 @@ async function ensureListeners() {
 }
 
 /**
- * 检查 Whisper 是否可用
+ * 检查语音输入是否可用。
+ *
+ * 优先查询后端能力（原生音频 Provider / STT 转录），
+ * 后端已支持则无需本地 Whisper；后端不支持时 Tauri 桌面端
+ * 再检查本地 Whisper CLI 是否就绪。
  */
 async function checkAvailability(): Promise<boolean> {
-  if (!isTauri()) {
-    available.value = true
-    return true
-  }
-
-  await ensureListeners()
   status.value = 'checking'
 
+  // 1. 后端能力查询（原生音频 / 云端 STT / 本地 Whisper）
+  try {
+    const capability = await chatApi.getVoiceCapability()
+    if (capability.supported) {
+      available.value = true
+      status.value = 'idle'
+      return true
+    }
+  } catch (e) {
+    logger.warn('后端语音能力查询失败，回退本地检测:', e)
+  }
+
+  // 2. 非 Tauri 环境没有本地 Whisper 可下载，直接返回不可用
+  if (!isTauri()) {
+    available.value = false
+    status.value = 'idle'
+    return false
+  }
+
+  // 3. Tauri 桌面端：检查本地 Whisper CLI 是否就绪
+  await ensureListeners()
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     const result = await invoke<WhisperAvailability>('check_whisper_status')

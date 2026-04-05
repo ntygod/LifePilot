@@ -129,9 +129,14 @@ public class StreamingCallback implements IterationCallback {
         var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
                 ? req.mediaContents()
                 : helper.extractMediaContentsFromMessages(messages);
+        String conversationText = helper.buildConversationContextText(messages);
         var multimodalRequest = new MultimodalRequest(
-                scene, helper.buildConversationContextText(messages),
+                scene, conversationText,
                 mediaContents, null, req.preferredProvider(), null);
+
+        // 多模态路径也输出调试日志（无 toolCallbacks，传 null）
+        helper.logLlmPromptIfEnabled(scene, messages, null);
+
         StreamingLlmResponse streamingResponse = multimodalRouter.streamWithInfo(multimodalRequest);
         this.providerId = streamingResponse.providerId();
         this.modelId = streamingResponse.modelId();
@@ -283,7 +288,6 @@ public class StreamingCallback implements IterationCallback {
             .doOnNext(chunk -> {
                 try {
                     lastChunk[0] = chunk;
-                    var output = chunk.getResult().getOutput();
 
                     // 累加每个 chunk 的 usage（取最大值，兼容增量和累计两种模式）
                     var chunkUsage = chunk.getMetadata().getUsage();
@@ -293,6 +297,11 @@ public class StreamingCallback implements IterationCallback {
                         accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0],
                                 chunkUsage.getCompletionTokens());
                     }
+
+                    // 部分 Provider 最后一个 chunk 仅含 usage 不含 generation，跳过
+                    var result = chunk.getResult();
+                    if (result == null || result.getOutput() == null) return;
+                    var output = result.getOutput();
 
                     String text = output.getText();
                     if (text != null && !text.isEmpty()) {

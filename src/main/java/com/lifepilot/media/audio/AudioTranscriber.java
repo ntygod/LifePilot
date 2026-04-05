@@ -59,6 +59,15 @@ public class AudioTranscriber {
     }
 
     /**
+     * 检查是否有任一转录方式可用（本地 Whisper CLI 或云端 TranscriptionModel）。
+     *
+     * @return 至少一种转录方式可用返回 true
+     */
+    public boolean isAvailable() {
+        return (whisperCli != null && whisperCli.isAvailable()) || transcriptionModel != null;
+    }
+
+    /**
      * 将音频转录为文本。
      *
      * <p>采用"本地优先"级联策略：
@@ -133,6 +142,11 @@ public class AudioTranscriber {
             return ".wav";
         }
         String subType = mimeType.substring(mimeType.indexOf('/') + 1);
+        // 剥离 MIME 参数（如 "webm;codecs=opus" → "webm"）
+        int semicolon = subType.indexOf(';');
+        if (semicolon >= 0) {
+            subType = subType.substring(0, semicolon).strip();
+        }
         return switch (subType) {
             case "mpeg" -> ".mp3";
             case "x-wav", "wav" -> ".wav";

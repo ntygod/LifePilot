@@ -88,17 +88,21 @@ const {
 /** Whisper 下载确认弹窗 */
 const showWhisperConfirm = ref(false)
 
-/** 麦克风按钮点击：桌面端检测 Whisper 可用性，不可用则弹窗确认后下载 */
+/** 麦克风按钮点击：检测语音能力，不可用则 Tauri 端弹下载确认，Web 端提示 */
 async function handleMicClick() {
-  if ('__TAURI_INTERNALS__' in window) {
+  if (!whisperAvailable.value) {
+    await checkWhisper()
     if (!whisperAvailable.value) {
-      await checkWhisper()
-      if (!whisperAvailable.value) {
+      if ('__TAURI_INTERNALS__' in window) {
+        // 桌面端：可以下载 Whisper
         if (whisperStatus.value !== 'downloading') {
           showWhisperConfirm.value = true
         }
-        return
+      } else {
+        // Web 端：无法本地下载，提示配置
+        voiceError.value = '语音功能暂不可用，请在设置中配置语音模型'
       }
+      return
     }
   }
   startRecording()
@@ -421,7 +425,8 @@ watch(audioBlob, async (blob) => {
   voiceError.value = null
 
   try {
-    const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type })
+    const ext = blob.type.includes('wav') ? 'wav' : 'webm'
+    const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type })
     const sessionId = chatStore.activeSessionId ?? undefined
     const uploaded = await chatApi.uploadAttachment(file, sessionId)
     const sessionConfig = buildTemporarySessionConfig()
