@@ -6,11 +6,11 @@
 
 ## 1. 功能概述
 
-元能力系统为 Agent 提供开箱即用的通用执行能力和系统自省能力。通过 21 个基础工具，Agent 可以感知环境、搜索 Web 信息、执行 Shell 命令、操控浏览器、运行代码、读写文件、与用户交互；通过 4 个自省工具，Agent 可以查询自身已注册的所有能力并按需推荐。此外，模块还提供 Skill 发现和 MCP Server 自动安装能力，帮助 Agent 动态扩展工具集。
+元能力系统为 Agent 提供开箱即用的通用执行能力和系统自省能力。通过 22 个基础工具，Agent 可以感知环境、搜索 Web 信息、执行 Shell 命令、操控浏览器、运行代码、读写文件、与用户交互；通过 4 个自省工具，Agent 可以查询自身已注册的所有能力并按需推荐。此外，模块还提供 Skill 发现和 MCP Server 自动安装能力，帮助 Agent 动态扩展工具集。
 
 ## 2. 核心特性
 
-### 2.1 基础工具集（21 个工具）
+### 2.1 基础工具集（22 个工具）
 
 Agent 的通用执行基础设施，按功能域分为 8 类：
 
@@ -30,10 +30,11 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 浏览器自动化 | `browser.input` | 输入文本 |
 | 浏览器自动化 | `browser.screenshot` | 截取页面截图 |
 | 代码执行 | `code.execute` | 在沙箱中执行代码 |
-| 文件系统 | `file.read` | 读取文件内容 |
-| 文件系统 | `file.write` | 写入文件 |
-| 文件系统 | `file.list` | 列出目录内容 |
-| 文件系统 | `file.search` | 搜索文件 |
+| 文件系统 | `file.read` | 读取文件内容（支持行范围和字符截断） |
+| 文件系统 | `file.write` | 写入文件（write 覆写 / append 追加） |
+| 文件系统 | `file.list` | 文件查询（list 列目录 / search 搜索内容 / info 元数据） |
+| 文件系统 | `file.edit` | 编辑文件（行级 insert/replace/delete + 文本匹配 search_replace） |
+| 文件系统 | `file.manage` | 文件管理（move / copy / delete / mkdir） |
 | 交互控制 | `interact.choose` | 请求用户选择（多选项） |
 | 交互控制 | `interact.input` | 请求用户输入文本 |
 | 交互控制 | `interact.notify` | 向用户推送结果通知（非阻塞，默认回到当前会话渠道） |

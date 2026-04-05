@@ -28,7 +28,7 @@ graph TB
                 SHELL["Shell 执行<br/>shell.exec + shell.process"]
                 BROWSER["浏览器自动化<br/>navigate / click / input / screenshot"]
                 CODE["代码执行<br/>code-execute"]
-                FILE["文件系统<br/>read / write / list / search"]
+                FILE["文件系统<br/>read / write / list / edit / manage"]
                 INTERACT["交互控制<br/>confirm / choose / input / notify"]
                 GIT["Git 操作<br/>git.query / git.mutate"]
             end
@@ -76,7 +76,7 @@ graph TB
 
 - 职责：注册内置工具到 `DynamicToolRegistry`，按功能域委托给各子 Provider
 - Skill ID：`builtin.infrastructure`
-- 工具按功能域分类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell.exec 命令执行 + shell.process 后台进程与持久会话管理，由 `ShellToolProvider` 构建）、文件系统（file-read/file-write/file-list/file-search/file-copy/file-move/file-delete/file-append/file-patch/file-info）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）、Git 操作（git.query/git.mutate 等）、工作流管理、自主任务（cron）、渠道操作
+- 工具按功能域分类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell.exec 命令执行 + shell.process 后台进程与持久会话管理，由 `ShellToolProvider` 构建）、文件系统（file.read / file.write / file.list / file.edit / file.manage，由 `FileToolProvider` 构建）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）、Git 操作（git.query/git.mutate 等）、工作流管理、自主任务（cron）、渠道操作
 - Shell 工具特别说明：`shell.exec` 支持 `env`（环境变量注入，有安全黑名单过滤）和 `shell`（Unix 解释器指定，仅 Unix 生效）两个参数；进程创建统一通过 `ShellProcessFactory`（消除 Windows PowerShell / Unix shell 的重复构建逻辑）
 - 可选依赖：`SandboxBooter`（代码执行）、`InteractionBridge`（交互控制）、`BrowserSessionManager`（浏览器自动化，需 Playwright）、`BackgroundProcessManager`（后台进程）、`TmuxSessionManager`（持久会话，需 tmux）
 
