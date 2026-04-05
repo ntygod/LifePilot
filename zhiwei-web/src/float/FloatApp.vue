@@ -354,40 +354,39 @@ onUnmounted(() => {
 <style>
 /* ─── CSS 变量 ─────────────────────────────────────────── */
 :root {
-  --glass-bg: rgba(255, 255, 255, 0.78);
-  --glass-border: rgba(255, 255, 255, 0.45);
-  --glass-blur: blur(20px) saturate(1.5);
-  --shadow-idle: 0 2px 12px rgba(0, 0, 0, 0.08);
-  --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.12);
-  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.03);
+  --orb-bg: #ffffff;
+  --card-bg: #ffffff;
+  --shadow-idle: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.04);
   --primary: hsl(224 78% 56%);
-  --primary-fg: hsl(0 0% 100%);
+  --primary-fg: #ffffff;
   --danger: hsl(2 72% 58%);
   --fg: hsl(221 28% 11%);
   --fg-muted: hsl(220 10% 46%);
-  --border: rgba(0, 0, 0, 0.06);
-  --bg-hover: rgba(0, 0, 0, 0.04);
+  --border: hsl(220 16% 90%);
+  --bg-hover: hsl(220 20% 96%);
   --orb-icon: hsl(224 60% 48%);
   --status-green: hsl(142 60% 48%);
   --status-blue: hsl(224 78% 56%);
   --status-gray: hsl(220 10% 70%);
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --radius: 16px;
+  --radius: 14px;
   --font: 'Segoe UI Variable', 'SF Pro Display', 'Noto Sans SC', system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --glass-bg: rgba(30, 30, 30, 0.78);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --shadow-idle: 0 2px 12px rgba(0, 0, 0, 0.24);
-    --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.32);
-    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --orb-bg: hsl(220 16% 18%);
+    --card-bg: hsl(220 16% 16%);
+    --shadow-idle: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
     --fg: hsl(220 16% 90%);
     --fg-muted: hsl(220 10% 58%);
-    --border: rgba(255, 255, 255, 0.06);
-    --bg-hover: rgba(255, 255, 255, 0.06);
+    --border: hsl(220 12% 24%);
+    --bg-hover: hsl(220 14% 22%);
     --orb-icon: hsl(224 68% 72%);
   }
 }
@@ -416,10 +415,7 @@ html, body { background: transparent; overflow: hidden; font-family: var(--font)
   align-items: center;
   justify-content: center;
   position: relative;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--orb-bg);
   box-shadow: var(--shadow-idle);
   transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
@@ -446,7 +442,7 @@ html, body { background: transparent; overflow: hidden; font-family: var(--font)
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  border: 1.5px solid var(--glass-bg);
+  border: 1.5px solid var(--orb-bg);
   transition: background 0.3s var(--ease);
 }
 
@@ -470,10 +466,7 @@ html, body { background: transparent; overflow: hidden; font-family: var(--font)
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--card-bg);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   overflow: hidden;
