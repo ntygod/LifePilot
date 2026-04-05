@@ -14,6 +14,8 @@ export const useChatStore = defineStore('chat', () => {
   const isStreaming = ref(false)
   // 当前流式增量内容
   const streamingContent = ref('')
+  // 首屏输入的待发送消息（HomeView → ChatView 传递）
+  const pendingFirstMessage = ref<string | null>(null)
 
   /** 加载会话列表。 */
   async function loadSessions() {
@@ -122,6 +124,7 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     isStreaming,
     streamingContent,
+    pendingFirstMessage,
     loadSessions,
     loadMessages,
     addMessage,

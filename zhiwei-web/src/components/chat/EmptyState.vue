@@ -1,114 +1,105 @@
 <script setup lang="ts">
-import { ArrowRight, LibraryBig, MessageSquare, Puzzle, Workflow } from 'lucide-vue-next'
+import { computed, onMounted } from 'vue'
+import {
+  Clock3,
+  Sparkles,
+} from 'lucide-vue-next'
+import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
+import { useChatStore } from '@/stores/chat'
+import { useSkillStore } from '@/stores/skill'
 
 const emit = defineEmits<{
   (e: 'send', content: string): void
 }>()
 
-const examples = [
-  {
-    label: '判断方向',
-    title: '评估项目可行性',
-    description: '先判断方向。',
-    prompt: '帮我快速判断这个项目现在适合做什么、不适合做什么',
-  },
-  {
-    label: '搭知识库',
-    title: '整理知识库',
-    description: '先列步骤。',
-    prompt: '我想把一批内部文档接成知识库，先帮我列出实施步骤',
-  },
-  {
-    label: '同步进展',
-    title: '整理摘要',
-    description: '快速出一版摘要。',
-    prompt: '结合最近几条对话，整理一份能直接发给同事的进展摘要',
-  },
-]
+const chatStore = useChatStore()
+const skillStore = useSkillStore()
 
-const signals = [
-  {
-    icon: LibraryBig,
-    title: '可加资料',
-    description: '需要时再加。',
-  },
-  {
-    icon: Puzzle,
-    title: '可用技能',
-    description: '常用能力都在。',
-  },
-  {
-    icon: Workflow,
-    title: '可继续聊',
-    description: '上下文会接上。',
-  },
-] as const
+onMounted(async () => {
+  if (skillStore.skills.length === 0) {
+    await skillStore.fetchSkills()
+  }
+})
+
+/** 取前 4 个内置技能作为快捷入口 */
+const quickSkills = computed(() =>
+  skillStore.skills
+    .filter(s => s.source.type === 'Builtin')
+    .slice(0, 4),
+)
+
+/** 最近 3 条对话 */
+const recentSessions = computed(() =>
+  [...chatStore.sessions]
+    .filter(s => !s.archived && s.lastMessagePreview)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 3),
+)
+
+function formatRelativeTime(isoString?: string) {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  const diffMs = Date.now() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffHour = Math.floor(diffMs / 3600000)
+  const diffDay = Math.floor(diffMs / 86400000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  if (diffHour < 24) return `${diffHour} 小时前`
+  if (diffDay === 1) return '昨天'
+  if (diffDay < 7) return `${diffDay} 天前`
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
 </script>
 
 <template>
-  <div class="h-full px-md md:px-lg">
-    <div class="mx-auto grid max-w-[1040px] gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center">
-      <div class="space-y-6 text-left">
-        <div class="flex size-16 items-center justify-center rounded-[1.15rem] border border-border/56 bg-background/86 text-primary shadow-[0_12px_20px_-18px_hsl(var(--shadow-color)/0.14)]">
-          <MessageSquare :size="30" />
+  <div class="w-full max-w-[480px] animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <!-- 问候区 -->
+      <div class="mb-xl text-center">
+        <div class="mb-lg inline-flex items-center justify-center rounded-2xl bg-primary/8 p-md animate-in zoom-in-75 duration-400 delay-100">
+          <ZhiweiMark class="size-8 text-primary" />
         </div>
+        <h1 class="text-2xl font-semibold tracking-tight text-foreground animate-in fade-in slide-in-from-bottom-2 duration-400 delay-150">
+          你好，有什么需要帮忙的？
+        </h1>
+        <p class="mt-sm text-sm text-muted-foreground animate-in fade-in duration-400 delay-250">
+          直接输入问题，或选择一个技能开始
+        </p>
+      </div>
 
-        <div class="space-y-3">
-          <div class="surface-label">新对话</div>
-          <p class="max-w-[16ch] text-3xl font-semibold leading-tight tracking-tight text-foreground">
-            想聊什么？
-          </p>
-          <p class="max-w-[32rem] text-sm leading-7 text-muted-foreground">
-            直接输入问题，或贴一段资料。
-          </p>
-        </div>
-
-        <div class="grid gap-3 sm:grid-cols-3">
-          <article
-            v-for="signal in signals"
-            :key="signal.title"
-            class="section-panel px-4 py-4"
+      <!-- 快捷技能 -->
+      <div v-if="quickSkills.length > 0" class="mb-xl animate-in fade-in slide-in-from-bottom-2 duration-400 delay-300">
+        <div class="grid grid-cols-2 gap-sm sm:grid-cols-4">
+          <button
+            v-for="(skill, idx) in quickSkills"
+            :key="skill.id"
+            type="button"
+            class="flex items-center gap-sm rounded-2xl border border-border/40 bg-card/60 px-md py-sm text-left text-xs text-foreground transition-all hover:-translate-y-px hover:border-primary/30 hover:bg-card/90 hover:shadow-[0_6px_16px_-8px_hsl(var(--shadow-color)/0.1)] animate-in fade-in zoom-in-95 duration-300"
+            :style="{ animationDelay: `${350 + idx * 60}ms` }"
+            @click="emit('send', `使用技能「${skill.name}」`)"
           >
-            <component :is="signal.icon" class="size-4 text-primary" />
-            <div class="mt-4 text-sm font-semibold text-foreground">{{ signal.title }}</div>
-            <p class="mt-2 text-xs leading-6 text-muted-foreground">
-              {{ signal.description }}
-            </p>
-          </article>
+            <Sparkles class="size-3.5 shrink-0 text-primary/70" />
+            <span class="truncate">{{ skill.name }}</span>
+          </button>
         </div>
       </div>
 
-      <div class="space-y-3 text-left">
-        <div class="flex items-center justify-between gap-3">
-          <div class="surface-label">常见起手</div>
-          <span class="text-xs text-muted-foreground">点一下发送</span>
-        </div>
-
-        <button
-          v-for="example in examples"
-          :key="example.title"
-          type="button"
-          class="list-card group w-full px-4 py-4 text-left"
-          @click="emit('send', example.prompt)"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 space-y-2">
-              <span class="surface-chip">{{ example.label }}</span>
-              <div class="text-sm font-semibold text-foreground sm:text-[0.98rem]">
-                {{ example.title }}
-              </div>
-              <p class="text-sm leading-6 text-muted-foreground">
-                {{ example.description }}
-              </p>
-            </div>
-
-            <div class="hidden items-center gap-1 pt-1 text-xs font-medium text-primary sm:flex sm:translate-x-1 sm:opacity-0 sm:transition-all sm:duration-150 sm:group-hover:translate-x-0 sm:group-hover:opacity-100">
-              <span>直接发送</span>
-              <ArrowRight class="size-3.5" />
+      <!-- 最近对话 -->
+      <div v-if="recentSessions.length > 0">
+        <div class="mb-sm text-xs font-medium text-muted-foreground">最近对话</div>
+        <div class="space-y-xs">
+          <div
+            v-for="session in recentSessions"
+            :key="session.id"
+            class="flex items-center justify-between rounded-xl px-md py-sm text-left opacity-60"
+          >
+            <div class="truncate text-sm text-foreground">{{ session.title || '新对话' }}</div>
+            <div class="ml-md flex shrink-0 items-center gap-xs text-[11px] text-muted-foreground">
+              <Clock3 class="size-3" />
+              {{ formatRelativeTime(session.updatedAt) }}
             </div>
           </div>
-        </button>
+        </div>
       </div>
-    </div>
   </div>
 </template>

@@ -60,7 +60,6 @@ const uploadError = ref<string | null>(null)
 const dragDepth = ref(0)
 const dragActive = computed(() => dragDepth.value > 0)
 
-const showTemplates = ref(false)
 const voiceSending = ref(false)
 const voiceError = ref<string | null>(null)
 const manualContextPickerOpen = ref(false)
@@ -110,14 +109,6 @@ function confirmWhisperDownload() {
   downloadWhisper()
 }
 
-const promptTemplates = [
-  { name: '整理要点', content: '请帮我整理以下内容的重点、结论和待办：\n\n' },
-  { name: '翻译成英文', content: '请将以下内容翻译成英文，保留原意和结构：\n\n' },
-  { name: '重写表达', content: '请帮我改写以下内容，让表达更清楚、更精炼：\n\n' },
-  { name: '代码审查', content: '请审查以下代码，指出潜在问题和改进建议：\n\n' },
-  { name: '解释概念', content: '请解释以下概念，并补充一个贴近实际的例子：\n\n' },
-] as const
-
 const sendDisabled = computed(() => props.disabled || isUploading.value || (!input.value.trim() && attachments.value.length === 0))
 const mentionQuery = computed(() => {
   const match = input.value.match(/(?:^|\s)@([^\s@]*)$/)
@@ -127,6 +118,16 @@ const contextQuery = computed(() => (
   manualContextPickerOpen.value ? manualContextQuery.value.trim() : (mentionQuery.value ?? '').trim()
 ))
 const showContextPicker = computed(() => manualContextPickerOpen.value || mentionQuery.value !== null)
+
+// 输入 @ 时自动同步到手动选择器，保证两种触发方式表现一致
+watch(mentionQuery, (query) => {
+  if (query !== null && !manualContextPickerOpen.value) {
+    manualContextPickerOpen.value = true
+  }
+  if (query !== null) {
+    manualContextQuery.value = query
+  }
+})
 const allContextOptions = computed(() => [
   ...(props.datastores ?? []).map(datastore => ({
     id: datastore.id,
@@ -256,7 +257,6 @@ async function submit() {
   input.value = ''
   attachments.value = []
   uploadError.value = null
-  showTemplates.value = false
   resetTemporaryContextSelection()
 }
 
@@ -298,11 +298,6 @@ function handleDrop(event: DragEvent) {
 
 function removeAttachment(index: number) {
   attachments.value.splice(index, 1)
-}
-
-function insertTemplate(template: (typeof promptTemplates)[number]) {
-  input.value = template.content + input.value
-  showTemplates.value = false
 }
 
 function toggleManualContextPicker() {
@@ -514,151 +509,77 @@ defineExpose({
         </div>
       </div>
 
+      <!-- 上下文选择面板 -->
       <Transition
-        enter-active-class="transition-all duration-150 ease-out"
-        enter-from-class="translate-y-1 opacity-0"
+        enter-active-class="transition-all duration-200 ease-out"
+        enter-from-class="translate-y-2 opacity-0"
         enter-to-class="translate-y-0 opacity-100"
-        leave-active-class="transition-all duration-100 ease-in"
+        leave-active-class="transition-all duration-150 ease-in"
         leave-from-class="translate-y-0 opacity-100"
-        leave-to-class="translate-y-1 opacity-0"
+        leave-to-class="translate-y-2 opacity-0"
       >
         <div
           v-if="showContextPicker"
-          class="chat-context-panel context-picker-panel rounded-[1.05rem] border border-border/58 bg-card/92 p-3 shadow-[0_14px_24px_-22px_hsl(var(--shadow-color)/0.12)]"
+          class="rounded-2xl border border-border/60 bg-card p-sm shadow-[0_4px_16px_-6px_hsl(var(--shadow-color)/0.1)]"
         >
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div class="flex min-w-0 items-center gap-3">
-              <div class="flex size-8 shrink-0 items-center justify-center rounded-[0.9rem] bg-primary/8 text-primary">
-                <AtSign class="size-4" />
-              </div>
-              <div class="min-w-0">
-                <div class="text-sm font-medium text-foreground">{{ pickerTitle }}</div>
-                <div class="text-[11px] text-muted-foreground">
-                  {{ contextPickerDescription }}
-                </div>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <span
-                v-if="selectedContextCount > 0"
-                class="inline-flex items-center gap-1 rounded-full bg-primary/8 px-2 py-1 text-[10px] font-semibold text-primary"
-              >
-                <Sparkles class="size-3" />
-                {{ selectedContextCount }}
-              </span>
-              <button
-                v-if="manualContextPickerOpen"
-                type="button"
-                class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-                @click="toggleManualContextPicker"
-              >
-                <X class="size-3.5" />
-              </button>
-            </div>
-          </div>
-
-          <div v-if="manualContextPickerOpen" class="mb-3">
+          <!-- 搜索框 -->
+          <div class="mb-sm">
             <div class="relative">
-              <Search class="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 v-model="manualContextQuery"
-                placeholder="搜索资料"
-                class="h-9 rounded-full bg-background/70 pl-9 text-sm"
+                placeholder="搜索知识库或资料仓库..."
+                class="h-8 rounded-xl bg-background/60 pl-8 text-xs"
               />
             </div>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <section class="space-y-2">
-              <div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                Datastore
-              </div>
-              <TransitionGroup
-                v-if="filteredDatastores.length > 0"
-                name="context-option"
-                tag="div"
-                class="space-y-1.5"
-              >
-                <button
-                  v-for="option in filteredDatastores"
-                  :key="`${option.kind}:${option.id}`"
-                  type="button"
-                  class="context-option-card"
-                  @click="selectContext(option)"
-                >
-                  <div class="flex min-w-0 items-start gap-3">
-                    <span class="context-option-icon bg-sky-500/12 text-sky-600">
-                      <Database class="size-4" />
-                    </span>
-                    <div class="min-w-0">
-                      <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
-                      <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                        {{ option.description }}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="shrink-0 text-right">
-                    <div class="text-[10px] font-semibold text-sky-600">Datastore</div>
-                    <div class="text-[10px] text-muted-foreground">{{ option.id }}</div>
-                  </div>
-                </button>
-              </TransitionGroup>
-              <div v-else class="rounded-xl border border-dashed border-border/60 px-3 py-4 text-xs text-muted-foreground">
-                没有结果。
-              </div>
-            </section>
+          <!-- 列表 -->
+          <div class="max-h-[240px] space-y-0.5 overflow-y-auto scrollbar-thin">
+            <button
+              v-for="option in [...filteredDatastores, ...filteredKnowledgeBases]"
+              :key="`${option.kind}:${option.id}`"
+              type="button"
+              class="flex w-full items-center gap-sm rounded-xl px-sm py-xs text-left transition-colors hover:bg-accent/50"
+              @click="selectContext(option)"
+            >
+              <component
+                :is="option.kind === 'datastore' ? Database : LibraryBig"
+                class="size-4 shrink-0 text-muted-foreground"
+              />
+              <span class="truncate text-sm text-foreground">{{ option.name }}</span>
+              <span class="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                {{ option.kind === 'datastore' ? '资料仓库' : '知识库' }}
+              </span>
+            </button>
 
-            <section class="space-y-2">
-              <div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                Knowledge Base
-              </div>
-              <TransitionGroup
-                v-if="filteredKnowledgeBases.length > 0"
-                name="context-option"
-                tag="div"
-                class="space-y-1.5"
-              >
-                <button
-                  v-for="option in filteredKnowledgeBases"
-                  :key="`${option.kind}:${option.id}`"
-                  type="button"
-                  class="context-option-card"
-                  @click="selectContext(option)"
-                >
-                  <div class="flex min-w-0 items-start gap-3">
-                    <span class="context-option-icon bg-primary/12 text-primary">
-                      <LibraryBig class="size-4" />
-                    </span>
-                    <div class="min-w-0">
-                      <div class="truncate text-sm font-medium text-foreground">{{ option.name }}</div>
-                      <div v-if="option.description" class="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                        {{ option.description }}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="shrink-0 text-right">
-                    <div class="text-[10px] font-semibold text-primary">知识库</div>
-                    <div class="text-[10px] text-muted-foreground">{{ option.id }}</div>
-                  </div>
-                </button>
-              </TransitionGroup>
-              <div v-else class="rounded-xl border border-dashed border-border/60 px-3 py-4 text-xs text-muted-foreground">
-                没有结果。
-              </div>
-            </section>
+            <div
+              v-if="filteredDatastores.length === 0 && filteredKnowledgeBases.length === 0"
+              class="px-sm py-md text-center text-xs text-muted-foreground"
+            >
+              {{ manualContextQuery ? '没有匹配结果' : '还没有知识库或资料仓库' }}
+            </div>
           </div>
 
-          <div v-if="!manualContextPickerOpen" class="mt-3 rounded-[0.95rem] bg-background/74 px-3 py-2 text-[11px] text-muted-foreground">
-            输入 <span class="font-semibold text-foreground">@</span> 可快速引用资料，也可以直接点下面的“上下文”按钮选择。
+          <!-- 关闭 -->
+          <div class="mt-sm flex justify-end">
+            <button
+              type="button"
+              class="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              @click="manualContextPickerOpen = false; manualContextQuery = ''"
+            >
+              关闭
+            </button>
           </div>
         </div>
       </Transition>
 
       <div
-        class="chat-composer-shell overflow-hidden rounded-[1.35rem] border border-border/52 bg-card/82 transition-all duration-200"
+        class="chat-composer-shell overflow-hidden rounded-2xl border bg-card shadow-[0_2px_12px_-4px_hsl(var(--shadow-color)/0.08)] transition-all duration-200"
         :class="[
-          sendDisabled ? '' : 'focus-within:border-primary/24 focus-within:shadow-[0_16px_26px_-22px_hsl(var(--shadow-color)/0.12)]',
-          dragActive ? 'border-primary/60 bg-primary/[0.04] shadow-[0_14px_24px_-18px_hsl(var(--primary)/0.14)]' : '',
+          dragActive
+            ? 'border-primary/60 bg-primary/[0.04] shadow-[0_4px_20px_-6px_hsl(from_var(--primary)_h_s_l/0.14)]'
+            : 'border-border/70 focus-within:border-primary/35 focus-within:shadow-[0_4px_20px_-6px_hsl(from_var(--primary)_h_s_l/0.1)]',
         ]"
         @dragenter="handleDragEnter"
         @dragover.prevent
@@ -694,11 +615,10 @@ defineExpose({
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            :placeholder="placeholder || '输入问题或贴资料…'"
+            :placeholder="placeholder || '直接说，知微来做...'"
             rows="1"
             class="min-h-[56px] max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
             @keydown="handleKeydown"
-            @click="showTemplates = false"
             @paste="handlePaste"
           />
           <!-- 字数统计：输入区右下角 -->
@@ -711,60 +631,23 @@ defineExpose({
         </div>
 
         <!-- 工具栏 -->
-        <div class="flex items-center justify-between gap-2 border-t border-border/45 px-3 pb-2.5 pt-2.5">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <!-- 模板 -->
-            <div class="relative">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-full border border-border/55 bg-background/68 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
-                :disabled="disabled"
-                @click="showTemplates = !showTemplates"
-              >
-                <FileText class="size-3.5" />
-                模板
-              </button>
-
-              <Transition
-                enter-active-class="transition-all duration-200 ease-out"
-                enter-from-class="translate-y-2 scale-95 opacity-0"
-                enter-to-class="translate-y-0 scale-100 opacity-100"
-                leave-active-class="transition-all duration-150 ease-in"
-                leave-from-class="translate-y-0 scale-100 opacity-100"
-                leave-to-class="translate-y-2 scale-95 opacity-0"
-              >
-                <div
-                  v-if="showTemplates"
-                  class="absolute bottom-full left-0 z-10 mb-2 w-48 rounded-[0.95rem] border border-border/58 bg-card/96 p-1.5 shadow-[0_16px_28px_-20px_hsl(var(--shadow-color)/0.16)]"
-                >
-                  <div class="mb-1 px-2 pt-1 text-[10px] font-medium tracking-wider text-muted-foreground/70">
-                    模板
-                  </div>
-                  <button
-                    v-for="template in promptTemplates"
-                    :key="template.name"
-                    type="button"
-                    class="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent/60"
-                    @click="insertTemplate(template)"
-                  >
-                    {{ template.name }}
-                  </button>
-                </div>
-              </Transition>
-            </div>
-
+        <div class="flex items-center justify-between gap-2 px-3 pb-2.5 pt-1">
+          <div class="flex flex-wrap items-center gap-0.5">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors disabled:opacity-40"
+              class="relative flex size-8 items-center justify-center rounded-xl transition-colors disabled:opacity-30"
               :class="selectedContextCount > 0 || showContextPicker
-                ? 'border-primary/22 bg-primary/8 text-primary hover:bg-primary/10'
-                : 'border-border/55 bg-background/72 text-muted-foreground hover:bg-accent/56 hover:text-foreground'"
+                ? 'text-primary hover:bg-primary/8'
+                : 'text-muted-foreground/70 hover:bg-accent/50 hover:text-foreground'"
               :disabled="disabled"
+              title="上下文"
               @click="toggleManualContextPicker"
             >
-              <AtSign class="size-3.5" />
-              上下文
-              <span v-if="selectedContexts.length > 0" class="ml-0.5 rounded-full bg-primary/12 px-1.5 text-[10px] font-medium text-primary">
+              <AtSign class="size-4" />
+              <span
+                v-if="selectedContexts.length > 0"
+                class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground"
+              >
                 {{ selectedContexts.length }}
               </span>
             </button>
@@ -772,13 +655,16 @@ defineExpose({
             <!-- 附件 -->
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/56 hover:text-foreground disabled:opacity-40"
+              class="relative flex size-8 items-center justify-center rounded-xl text-muted-foreground/70 transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-30"
               :disabled="disabled"
+              title="附件"
               @click="handleFileSelect"
             >
-              <Paperclip class="size-3.5" />
-              附件
-              <span v-if="attachments.length > 0" class="ml-0.5 rounded-full bg-primary/12 px-1.5 text-[10px] font-medium text-primary">
+              <Paperclip class="size-4" />
+              <span
+                v-if="attachments.length > 0"
+                class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground"
+              >
                 {{ attachments.length }}
               </span>
             </button>
@@ -813,20 +699,20 @@ defineExpose({
                 v-if="voiceSupported"
                 type="button"
                 :disabled="disabled || isUploading || voiceSending"
-                class="flex size-9 items-center justify-center rounded-[1rem] border border-border/55 bg-background/76 text-muted-foreground/70 transition-all duration-150 hover:bg-accent/48 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                class="flex size-8 items-center justify-center rounded-xl text-muted-foreground/60 transition-all duration-150 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
                 @click="handleMicClick"
               >
-                <Mic class="size-4" />
+                <Mic class="size-[18px]" />
               </button>
 
               <!-- 发送按钮 -->
               <button
                 type="button"
                 :disabled="sendDisabled"
-                class="flex size-10 items-center justify-center rounded-[1rem] transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-30"
+                class="flex size-8 items-center justify-center rounded-full transition-all duration-150 disabled:cursor-not-allowed"
                 :class="sendDisabled
-                  ? 'border border-border/55 bg-muted/60 text-muted-foreground/40'
-                  : 'chat-send-ready bg-primary text-primary-foreground shadow-[0_12px_22px_-14px_hsl(var(--shadow-color)/0.2)] hover:brightness-105 active:scale-95'"
+                  ? 'bg-muted/50 text-muted-foreground/30'
+                  : 'bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95'"
                 @click="submit"
               >
                 <ArrowUp class="size-4" :stroke-width="2.5" />

@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 /** 不需要引导拦截的白名单路由 */
-const ONBOARDING_WHITELIST = new Set(['/', '/splash', '/setup'])
+const ONBOARDING_WHITELIST = new Set(['/', '/splash', '/setup', '/home'])
 
 const router = createRouter({
   history: createWebHistory(),
@@ -34,12 +34,28 @@ const router = createRouter({
     },
 
     /**
+     * 首屏入口：创建新会话并进入对话
+     */
+    {
+      path: '/home',
+      name: 'home',
+      redirect: () => {
+        return { name: 'newConversation' }
+      },
+    },
+
+    /**
      * 对话 / 会话模块
      */
     {
       path: '/conversations',
       name: 'conversations',
       component: () => import('@/views/ConversationsView.vue')
+    },
+    {
+      path: '/conversations/new',
+      name: 'newConversation',
+      component: () => import('@/views/ChatView.vue')
     },
     {
       path: '/conversations/:sessionId',
@@ -145,22 +161,22 @@ const router = createRouter({
     },
 
     /**
-     * Analytics / 用量
+     * Analytics / 用量（挂在 SettingsView 壳子下，保留左侧导航）
      */
     {
       path: '/analytics/usage',
       name: 'analyticsUsage',
-      component: () => import('@/views/AnalyticsUsageView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
     {
       path: '/analytics/agents',
       name: 'analyticsAgents',
-      component: () => import('@/views/AnalyticsAgentsView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
     {
       path: '/analytics/tools',
       name: 'analyticsTools',
-      component: () => import('@/views/AnalyticsToolsView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
 
     /**
@@ -199,12 +215,12 @@ const router = createRouter({
     },
 
     /**
-     * Eval / 评估
+     * Eval / 评估（挂在 SettingsView 壳子下）
      */
     {
       path: '/eval',
       name: 'eval',
-      component: () => import('@/views/eval/EvalView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
     {
       path: '/eval/:evalRunId',
@@ -218,7 +234,7 @@ const router = createRouter({
     {
       path: '/traces',
       name: 'traces',
-      component: () => import('@/views/TraceReplayView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
 
     /**

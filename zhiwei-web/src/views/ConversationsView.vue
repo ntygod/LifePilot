@@ -10,6 +10,7 @@ import {
   Pin,
   Plus,
   Search,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-vue-next'
 import { logger } from '@/utils/logger'
@@ -31,6 +32,7 @@ const showArchived = ref(false)
 const filterPinned = ref<'all' | 'pinned' | 'unpinned'>('all')
 const timeRange = ref<'all' | '7d' | '30d'>('all')
 
+const showFilterPanel = ref(false)
 const renamingId = ref<string | null>(null)
 const renameTitle = ref('')
 const selectedIds = ref<Set<string>>(new Set())
@@ -41,6 +43,11 @@ onMounted(async () => {
   loading.value = true
   try {
     await chatStore.loadSessions()
+    // 无会话时跳转新建对话
+    if (chatStore.sessions.length === 0) {
+      router.replace({ name: 'newConversation' })
+      return
+    }
   } finally {
     loading.value = false
   }
@@ -268,15 +275,12 @@ async function batchDelete() {
 <template>
   <div class="h-full overflow-y-auto">
     <!-- 真正的空状态：居中引导 -->
-    <div v-if="!loading && chatStore.sessions.length === 0" class="flex h-full items-center justify-center px-6">
-      <div class="flex max-w-sm flex-col items-center gap-md text-center">
-        <div class="flex size-16 items-center justify-center rounded-2xl border border-border/60 bg-card/90 text-primary">
+    <div v-if="!loading && chatStore.sessions.length === 0" class="flex h-full items-center justify-center px-xl">
+      <div class="flex max-w-sm flex-col items-center gap-lg text-center">
+        <div class="flex size-16 items-center justify-center rounded-2xl bg-primary/8 text-primary">
           <MessageSquareText class="size-7" />
         </div>
-        <div class="space-y-2">
-          <h2 class="text-lg font-semibold text-foreground">还没有会话</h2>
-          <p class="text-sm leading-6 text-muted-foreground">开始第一次对话，知微会记住你的偏好和上下文。</p>
-        </div>
+        <h2 class="text-lg font-semibold text-foreground">还没有会话</h2>
         <Button type="button" size="default" @click="handleNewConversation">
           <Plus class="size-4" />
           新建会话
@@ -298,51 +302,54 @@ async function batchDelete() {
 
         <!-- 工具栏 -->
         <template v-if="chatStore.sessions.length > 0">
-        <div class="flex flex-col gap-sm md:flex-row md:items-center md:justify-between">
-          <div class="flex flex-1 items-center gap-sm">
-            <div class="relative min-w-[180px] flex-1 md:max-w-[24rem]">
-              <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                v-model="searchQuery"
-                type="search"
-                placeholder="搜索会话…"
-                class="h-8 pl-9 text-sm"
-              />
-            </div>
-            <Select v-model="filterPinned">
-              <SelectTrigger class="h-8 w-[120px] text-sm">
-                <SelectValue placeholder="置顶" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部</SelectItem>
-                <SelectItem value="pinned">仅置顶</SelectItem>
-                <SelectItem value="unpinned">未置顶</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select v-model="timeRange">
-              <SelectTrigger class="h-8 w-[120px] text-sm">
-                <SelectValue placeholder="时间" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部时间</SelectItem>
-                <SelectItem value="7d">近 7 天</SelectItem>
-                <SelectItem value="30d">近 30 天</SelectItem>
-              </SelectContent>
-            </Select>
+        <div class="flex items-center gap-sm">
+          <div class="relative min-w-[180px] flex-1 md:max-w-[24rem]">
+            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              v-model="searchQuery"
+              type="search"
+              placeholder="搜索会话…"
+              class="h-8 pl-9 text-sm"
+            />
           </div>
+          <Button variant="outline" size="sm" @click="showFilterPanel = !showFilterPanel">
+            <SlidersHorizontal class="size-4" />
+            筛选
+          </Button>
+          <Button v-if="hasFilters" type="button" variant="ghost" size="sm" class="text-xs" @click="clearFilters">
+            清空
+          </Button>
+        </div>
 
-          <div class="flex items-center gap-sm">
-            <label class="flex cursor-pointer items-center gap-xs text-sm text-muted-foreground">
-              <Checkbox
-                :model-value="showArchived"
-                @update:model-value="showArchived = Boolean($event)"
-              />
-              <span>归档</span>
-            </label>
-            <Button v-if="hasFilters" type="button" variant="ghost" size="sm" class="text-xs" @click="clearFilters">
-              清空筛选
-            </Button>
-          </div>
+        <!-- 折叠筛选面板 -->
+        <div v-if="showFilterPanel" class="flex flex-wrap items-center gap-sm rounded-xl border border-border/40 bg-card/60 p-md">
+          <Select v-model="filterPinned">
+            <SelectTrigger class="h-8 w-[120px] text-sm">
+              <SelectValue placeholder="置顶" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="pinned">仅置顶</SelectItem>
+              <SelectItem value="unpinned">未置顶</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="timeRange">
+            <SelectTrigger class="h-8 w-[120px] text-sm">
+              <SelectValue placeholder="时间" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部时间</SelectItem>
+              <SelectItem value="7d">近 7 天</SelectItem>
+              <SelectItem value="30d">近 30 天</SelectItem>
+            </SelectContent>
+          </Select>
+          <label class="flex cursor-pointer items-center gap-xs text-sm text-muted-foreground">
+            <Checkbox
+              :model-value="showArchived"
+              @update:model-value="showArchived = Boolean($event)"
+            />
+            <span>归档</span>
+          </label>
         </div>
 
         <!-- 批量操作栏 -->

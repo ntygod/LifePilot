@@ -82,6 +82,9 @@ const activeSessionConfig = ref<SessionConfig>({
 })
 const currentSessionDetail = ref<ChatSessionDetail | null>(null)
 
+/** 空状态：无消息且非流式中 */
+const isEmptyChat = computed(() => chatStore.messages.length === 0 && !isStreaming.value)
+
 const CHAT_SCENES = new Set([
   'chat',
   'agent_react',
@@ -261,6 +264,13 @@ onMounted(async () => {
     providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch {
     // Provider 列表拉取失败不阻塞页面。
+  }
+
+  // 处理首屏传递的待发送消息
+  if (chatStore.pendingFirstMessage) {
+    const content = chatStore.pendingFirstMessage
+    chatStore.pendingFirstMessage = null
+    await sendMessage(content)
   }
 })
 
@@ -483,8 +493,8 @@ function selectSidebarPanel(panel: SidebarPanel) {
 
     <header class="relative shrink-0 px-4 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1180px]">
-        <div class="flex min-w-0 items-center justify-between gap-3 px-1 py-1">
-          <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
+        <div class="flex min-w-0 items-center gap-3 px-1 py-1" :class="isEmptyChat ? 'justify-end' : 'justify-between'">
+          <h1 v-if="!isEmptyChat" class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
             {{ headerTitle }}
           </h1>
 
@@ -533,15 +543,31 @@ function selectSidebarPanel(panel: SidebarPanel) {
           ref="scrollContainer"
           class="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
-          <div
-            v-if="chatStore.messages.length === 0 && !isStreaming"
-            class="mx-auto flex h-full w-full max-w-[1180px] items-center justify-center px-4 py-4 sm:px-6"
+          <Transition
+            enter-active-class="transition-all duration-300 ease-out"
+            enter-from-class="opacity-0 scale-[0.98]"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition-all duration-200 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-[0.98]"
+            mode="out-in"
           >
-            <div class="shell-card w-full border-border/52 bg-card/84 px-4 py-6 sm:px-6 sm:py-8">
-              <EmptyState @send="handleEmptyStateSend" />
+          <!-- 空状态：问候 + 输入框居中 -->
+          <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center justify-center px-4 sm:px-6">
+            <EmptyState @send="handleEmptyStateSend" />
+            <div class="w-full max-w-[480px] mt-xl">
+              <ChatInput
+                :placeholder="inputPlaceholder"
+                :knowledge-bases="kbStore.list"
+                :datastores="datastoreStore.list"
+                :base-session-config="activeSessionConfig"
+                @send="handleSend"
+              />
             </div>
           </div>
-          <div v-else class="mx-auto w-full max-w-[1180px] px-4 py-4 sm:px-6">
+
+          <!-- 有消息：正常消息列表 -->
+          <div v-else key="messages" class="mx-auto w-full max-w-[1180px] px-4 py-4 sm:px-6">
             <MessageList
               :messages="chatStore.messages"
               :is-streaming="isStreaming"
@@ -563,9 +589,16 @@ function selectSidebarPanel(panel: SidebarPanel) {
               @permission-approval-resolve="resolvePermissionApproval"
             />
           </div>
+          </Transition>
         </div>
 
-        <div class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
+        <!-- 底部输入框：仅有消息时显示 -->
+        <Transition
+          enter-active-class="transition-all duration-300 ease-out"
+          enter-from-class="translate-y-4 opacity-0"
+          enter-to-class="translate-y-0 opacity-100"
+        >
+        <div v-if="!isEmptyChat" class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
           <div class="mx-auto w-full max-w-[1180px]">
             <StatePanel
               v-if="showGlobalErrorPanel"
@@ -592,6 +625,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
             />
           </div>
         </div>
+        </Transition>
       </section>
 
       <Transition
