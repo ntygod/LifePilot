@@ -113,8 +113,9 @@ public class PathSecurityChecker {
      */
     private boolean pathStartsWith(Path path, Path prefix) {
         if (IS_WINDOWS) {
-            return path.toString().toLowerCase(Locale.ROOT)
-                    .startsWith(prefix.toString().toLowerCase(Locale.ROOT));
+            // 必须用 Path.startsWith() 做组件级比较，避免 "foobar" 匹配 "foo" 前缀
+            return Path.of(path.toString().toLowerCase(Locale.ROOT))
+                    .startsWith(Path.of(prefix.toString().toLowerCase(Locale.ROOT)));
         }
         return path.startsWith(prefix);
     }

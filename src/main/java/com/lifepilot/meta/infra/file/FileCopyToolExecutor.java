@@ -7,15 +7,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 文件复制工具 — 复制文件到目标路径，支持覆盖控制。
+ * 文件复制工具 — 复制文件或目录到目标路径，支持覆盖控制和递归目录复制。
  *
  * <p>安全机制：
  * <ul>
@@ -42,10 +44,10 @@ public class FileCopyToolExecutor {
     }
 
     /**
-     * 复制文件。
+     * 复制文件或目录。
      *
-     * @param input 工具输入，必需参数 source 和 destination，可选 overwrite
-     * @return 包含 source、destination 和 bytesWritten 的结构化结果
+     * @param input 工具输入，必需参数 source 和 destination，可选 overwrite、recursive
+     * @return 包含 source、destination 和 filesCopied 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
         String sourceStr;
@@ -58,6 +60,8 @@ public class FileCopyToolExecutor {
         }
 
         boolean overwrite = input.getOptionalParam("overwrite", Boolean.class)
+                .orElse(false);
+        boolean recursive = input.getOptionalParam("recursive", Boolean.class)
                 .orElse(false);
 
         Path sourcePath = Path.of(sourceStr).toAbsolutePath().normalize();
@@ -75,21 +79,24 @@ public class FileCopyToolExecutor {
             return ToolResult.error(destRejection.get());
         }
 
-        // 源文件存在性检查
         if (!Files.exists(sourcePath)) {
-            return ToolResult.error("源文件不存在: " + sourceStr);
-        }
-        if (!Files.isRegularFile(sourcePath)) {
-            return ToolResult.error("源路径不是普通文件: " + sourceStr);
+            return ToolResult.error("源路径不存在: " + sourceStr);
         }
 
-        // 目标已存在且未指定覆盖
+        // 目录复制需要 recursive=true
+        if (Files.isDirectory(sourcePath)) {
+            if (!recursive) {
+                return ToolResult.error("源路径是目录，需指定 recursive=true 才能递归复制: " + sourceStr);
+            }
+            return copyDirectory(sourcePath, destPath, overwrite, sourceStr, destStr);
+        }
+
+        // 单文件复制
         if (Files.exists(destPath) && !overwrite) {
             return ToolResult.error("目标文件已存在，需指定 overwrite=true 才能覆盖: " + destStr);
         }
 
         try {
-            // 确保目标父目录存在
             Path parentDir = destPath.getParent();
             if (parentDir != null && !Files.exists(parentDir)) {
                 Files.createDirectories(parentDir);
@@ -101,21 +108,72 @@ public class FileCopyToolExecutor {
                 Files.copy(sourcePath, destPath);
             }
 
-            long bytesWritten = Files.size(destPath);
-
             var data = new LinkedHashMap<String, Object>();
             data.put("source", sourcePath.toString());
             data.put("destination", destPath.toString());
-            data.put("bytesWritten", bytesWritten);
+            data.put("filesCopied", 1);
+            data.put("bytesWritten", Files.size(destPath));
 
-            log.debug("文件复制成功: source={}, destination={}, bytesWritten={}",
-                    sourceStr, destStr, bytesWritten);
+            log.debug("文件复制成功: source={}, destination={}", sourceStr, destStr);
             return ToolResult.success(Map.copyOf(data));
 
         } catch (IOException e) {
             log.error("文件复制失败: source={}, destination={}, error={}",
                     sourceStr, destStr, e.getMessage(), e);
             return ToolResult.error("文件复制失败: " + e.getMessage());
+        }
+    }
+
+    /** 递归复制目录。 */
+    private ToolResult copyDirectory(Path sourcePath, Path destPath, boolean overwrite,
+                                     String sourceStr, String destStr) {
+        // 防止将目录复制到自身内部，或复制到自身的祖先目录（可能覆盖源文件）
+        if (destPath.startsWith(sourcePath) || sourcePath.startsWith(destPath)) {
+            return ToolResult.error("源目录和目标目录不能互为父子关系: " + sourceStr + " → " + destStr);
+        }
+
+        try {
+            int[] filesCopied = {0};
+
+            Files.walkFileTree(sourcePath, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                    Path targetDir = destPath.resolve(sourcePath.relativize(dir));
+                    if (!Files.exists(targetDir)) {
+                        Files.createDirectories(targetDir);
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    Path targetFile = destPath.resolve(sourcePath.relativize(file));
+                    if (overwrite) {
+                        Files.copy(file, targetFile, StandardCopyOption.REPLACE_EXISTING);
+                    } else {
+                        if (Files.exists(targetFile)) {
+                            throw new IOException("目标文件已存在: " + targetFile);
+                        }
+                        Files.copy(file, targetFile);
+                    }
+                    filesCopied[0]++;
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+
+            var data = new LinkedHashMap<String, Object>();
+            data.put("source", sourcePath.toString());
+            data.put("destination", destPath.toString());
+            data.put("filesCopied", filesCopied[0]);
+
+            log.debug("目录复制成功: source={}, destination={}, filesCopied={}",
+                    sourceStr, destStr, filesCopied[0]);
+            return ToolResult.success(Map.copyOf(data));
+
+        } catch (IOException e) {
+            log.error("目录复制失败: source={}, destination={}, error={}",
+                    sourceStr, destStr, e.getMessage(), e);
+            return ToolResult.error("目录复制失败: " + e.getMessage());
         }
     }
 }

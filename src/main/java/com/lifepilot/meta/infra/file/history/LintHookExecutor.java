@@ -47,7 +47,9 @@ public class LintHookExecutor {
             return "";
         }
 
-        String command = commandTemplate.replace("{file}", filePath.toAbsolutePath().normalize().toString());
+        // 对文件路径进行 shell 转义，防止路径中的空格或特殊字符导致命令注入
+        String safePath = quoteForShell(filePath.toAbsolutePath().normalize().toString());
+        String command = commandTemplate.replace("{file}", safePath);
 
         try {
             ProcessBuilder pb = buildProcess(command);
@@ -94,6 +96,22 @@ public class LintHookExecutor {
             return new ProcessBuilder("cmd", "/c", command);
         } else {
             return new ProcessBuilder("sh", "-c", command);
+        }
+    }
+
+    /**
+     * 对路径进行 shell 安全转义 — 防止空格、分号等元字符导致命令注入。
+     *
+     * <p>Windows 使用双引号包裹，Unix 使用单引号包裹并转义内部单引号。</p>
+     */
+    private static String quoteForShell(String path) {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) {
+            // Windows cmd: 双引号包裹，内部双引号用 "" 转义
+            return "\"" + path.replace("\"", "\"\"") + "\"";
+        } else {
+            // Unix sh: 单引号包裹，内部单引号用 '\'' 转义（结束引用 → 转义单引号 → 重新引用）
+            return "'" + path.replace("'", "'\\''") + "'";
         }
     }
 }

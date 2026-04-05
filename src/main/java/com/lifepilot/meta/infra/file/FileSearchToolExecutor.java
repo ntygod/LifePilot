@@ -24,9 +24,12 @@ import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
 
 /**
- * 文件搜索工具 — 递归搜索文件内容，支持正则、glob 过滤、上下文行和二进制检测。
+ * 文件搜索工具 — 递归搜索文件内容，支持正则、glob 过滤、深度限制、上下文行和二进制检测。
  *
  * <p>安全机制：通过 {@link PathSecurityChecker} 校验路径白名单/黑名单。</p>
+ *
+ * <p>性能优化：收集够 maxResults 条匹配后，额外扫描有限文件获取 totalEstimate 估算值，
+ * 而非遍历全部文件精确计数。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -35,6 +38,9 @@ public class FileSearchToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(FileSearchToolExecutor.class);
     private static final int BINARY_CHECK_SIZE = 512;
+
+    /** 结果满后额外扫描的文件数上限，用于估算 totalEstimate。 */
+    private static final int EXTRA_SCAN_FILES = 20;
 
     private final PathSecurityChecker securityChecker;
 
@@ -52,8 +58,8 @@ public class FileSearchToolExecutor {
     /**
      * 递归搜索文件内容。
      *
-     * @param input 工具输入，必需参数 path 和 pattern，可选 filePattern、maxResults、contextLines
-     * @return 包含 matches 和 totalMatches 的结构化结果
+     * @param input 工具输入，必需参数 path 和 pattern，可选 filePattern、maxResults、offset、maxDepth、contextLines
+     * @return 包含 matches、totalMatches、hasMore 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
         String pathStr;
@@ -69,15 +75,16 @@ public class FileSearchToolExecutor {
                 .orElse(null);
         int maxResults = input.getOptionalParam("maxResults", Number.class)
                 .map(Number::intValue)
+                .map(v -> Math.max(1, v))
                 .orElse(50);
         int offset = input.getOptionalParam("offset", Number.class)
                 .map(Number::intValue)
                 .map(o -> Math.max(o, 0))
                 .orElse(0);
-        int limit = input.getOptionalParam("limit", Number.class)
+        int maxDepth = input.getOptionalParam("maxDepth", Number.class)
                 .map(Number::intValue)
-                .filter(l -> l >= 1)
-                .orElse(maxResults);
+                .map(d -> Math.max(1, d))
+                .orElse(Integer.MAX_VALUE);
         int contextLines = input.getOptionalParam("contextLines", Number.class)
                 .map(Number::intValue)
                 .orElse(0);
@@ -111,33 +118,41 @@ public class FileSearchToolExecutor {
             List<Map<String, Object>> matches = new ArrayList<>();
             int totalMatches = 0;
             int skipped = 0;
+            int extraFilesScanned = 0;
+            boolean resultsFull = false;
 
-            try (Stream<Path> walk = Files.walk(dirPath)) {
+            try (Stream<Path> walk = Files.walk(dirPath, maxDepth)) {
                 var files = walk
                         .filter(Files::isRegularFile)
                         .filter(p -> fileMatcher == null || fileMatcher.matches(p.getFileName()));
 
                 for (Iterator<Path> iterator = files.iterator(); iterator.hasNext(); ) {
+                    // 提前终止：结果已满且额外扫描文件数已达上限
+                    if (resultsFull && extraFilesScanned >= EXTRA_SCAN_FILES) {
+                        break;
+                    }
+
                     Path file = iterator.next();
-                    // 二进制文件预检测：前 512 字节含 NUL 则跳过
                     if (isBinaryFile(file)) {
                         log.debug("跳过二进制文件: path={}", file);
                         continue;
                     }
 
+                    if (resultsFull) {
+                        extraFilesScanned++;
+                    }
+
                     SearchStats stats = searchInFile(
-                            dirPath,
-                            file,
-                            regex,
-                            contextLines,
-                            offset,
-                            limit,
-                            matches,
-                            totalMatches,
-                            skipped
+                            dirPath, file, regex, contextLines,
+                            offset, maxResults,
+                            matches, totalMatches, skipped
                     );
                     totalMatches = stats.totalMatches();
                     skipped = stats.skipped();
+
+                    if (!resultsFull && matches.size() >= maxResults && skipped >= offset) {
+                        resultsFull = true;
+                    }
                 }
             }
 
@@ -146,7 +161,6 @@ public class FileSearchToolExecutor {
             var data = new LinkedHashMap<String, Object>();
             data.put("matches", matches);
             data.put("totalMatches", totalMatches);
-            data.put("totalEstimate", totalMatches);
             data.put("hasMore", totalMatches > offset + matches.size());
 
             log.debug("文件搜索完成: path={}, pattern={}, totalMatches={}", pathStr, patternStr, totalMatches);
@@ -163,7 +177,7 @@ public class FileSearchToolExecutor {
                                      Pattern regex,
                                      int contextLines,
                                      int offset,
-                                     int limit,
+                                     int maxResults,
                                      List<Map<String, Object>> matches,
                                      int totalMatches,
                                      int skipped) {
@@ -191,7 +205,7 @@ public class FileSearchToolExecutor {
                     totalMatches++;
                     if (skipped < offset) {
                         skipped++;
-                    } else if (matches.size() < limit) {
+                    } else if (matches.size() < maxResults) {
                         var match = new LinkedHashMap<String, Object>();
                         match.put("file", rootDir.relativize(file).toString());
                         match.put("line", lineNumber);
@@ -249,7 +263,6 @@ public class FileSearchToolExecutor {
             }
             return false;
         } catch (IOException e) {
-            // 无法读取时视为二进制，跳过
             return true;
         }
     }
