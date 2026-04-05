@@ -5,97 +5,96 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: hsl(214 24% 97%);
-  --foreground: hsl(221 28% 11%);
-  --card: hsl(210 22% 99%);
-  --card-foreground: hsl(221 28% 11%);
-  --popover: hsl(210 22% 99%);
-  --popover-foreground: hsl(221 28% 11%);
+  --background: hsl(180 6% 97%);
+  --foreground: hsl(200 18% 10%);
+  --card: hsl(180 6% 99%);
+  --card-foreground: hsl(200 18% 10%);
+  --popover: hsl(180 6% 99%);
+  --popover-foreground: hsl(200 18% 10%);
 
-  --primary: hsl(224 78% 56%);
+  --primary: hsl(160 30% 42%);
   --primary-foreground: hsl(0 0% 100%);
 
-  --secondary: hsl(220 20% 95%);
-  --secondary-foreground: hsl(220 21% 18%);
-  --muted: hsl(220 17% 94%);
-  --muted-foreground: hsl(220 10% 41%);
-  --accent: hsl(221 40% 93%);
-  --accent-foreground: hsl(220 21% 18%);
+  --secondary: hsl(160 8% 95%);
+  --secondary-foreground: hsl(200 14% 18%);
+  --muted: hsl(160 5% 94%);
+  --muted-foreground: hsl(200 6% 44%);
+  --accent: hsl(160 12% 93%);
+  --accent-foreground: hsl(200 14% 18%);
 
   --destructive: hsl(2 78% 58%);
   --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(220 16% 84%);
-  --input: hsl(220 16% 88%);
-  --ring: hsl(224 78% 56%);
-  --ring-offset-background: hsl(214 24% 97%);
+  --border: hsl(200 8% 85%);
+  --input: hsl(200 8% 88%);
+  --ring: hsl(160 30% 42%);
+  --ring-offset-background: hsl(180 6% 97%);
 
-  --radius: 0.9rem;
+  --radius: 1.1rem;
 
-  --sidebar-background: hsl(216 20% 95%);
-  --sidebar-foreground: hsl(221 28% 11%);
-  --sidebar-border: hsl(220 15% 82%);
-  --sidebar-accent: hsl(221 34% 91%);
-  --sidebar-accent-foreground: hsl(220 21% 18%);
-  --sidebar-width: 240px;
-  --app-rail-width: 60px;
+  --sidebar-background: hsl(160 6% 95%);
+  --sidebar-foreground: hsl(200 18% 10%);
+  --sidebar-border: hsl(200 8% 84%);
+  --sidebar-accent: hsl(160 10% 92%);
+  --sidebar-accent-foreground: hsl(200 14% 18%);
+  --sidebar-width: 260px;
 
-  --chart-1: hsl(224 78% 56%);
-  --chart-2: hsl(232 66% 60%);
-  --chart-3: hsl(31 84% 58%);
-  --chart-4: hsl(193 66% 46%);
+  --chart-1: hsl(160 30% 42%);
+  --chart-2: hsl(200 56% 50%);
+  --chart-3: hsl(28 88% 58%);
+  --chart-4: hsl(280 46% 56%);
   --chart-5: hsl(342 72% 57%);
 
-  --shadow-color: 221 36% 10%;
+  --shadow-color: 200 20% 10%;
   --ease-fluid: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-snappy: cubic-bezier(0.2, 0.9, 0.2, 1);
-  --page-stack-gap: 0.6rem;
-  --metric-card-padding-y: 0.6rem;
-  --metric-card-padding-x: 0.72rem;
-  --stat-block-padding: 0.58rem;
-  --session-item-padding-y: 0.42rem;
-  --session-item-padding-x: 0.54rem;
-  --nav-link-padding-y: 0.54rem;
-  --nav-link-padding-x: 0.7rem;
+  --page-stack-gap: 1rem;
+  --metric-card-padding-y: 0.85rem;
+  --metric-card-padding-x: 1rem;
+  --stat-block-padding: 0.8rem;
+  --session-item-padding-y: 0.6rem;
+  --session-item-padding-x: 0.72rem;
+  --nav-link-padding-y: 0.65rem;
+  --nav-link-padding-x: 0.85rem;
 }
 
 .dark {
-  --background: hsl(222 20% 8%);
-  --foreground: hsl(214 28% 94%);
-  --card: hsl(221 18% 11%);
-  --card-foreground: hsl(214 28% 94%);
-  --popover: hsl(221 18% 11%);
-  --popover-foreground: hsl(214 28% 94%);
+  --background: hsl(200 12% 8%);
+  --foreground: hsl(180 10% 94%);
+  --card: hsl(200 10% 12%);
+  --card-foreground: hsl(180 10% 94%);
+  --popover: hsl(200 10% 12%);
+  --popover-foreground: hsl(180 10% 94%);
 
-  --primary: hsl(221 88% 67%);
-  --primary-foreground: hsl(223 29% 10%);
+  --primary: hsl(160 32% 56%);
+  --primary-foreground: hsl(200 20% 8%);
 
-  --secondary: hsl(223 13% 16%);
-  --secondary-foreground: hsl(214 28% 94%);
-  --muted: hsl(223 14% 14%);
-  --muted-foreground: hsl(216 12% 71%);
-  --accent: hsl(222 18% 18%);
-  --accent-foreground: hsl(214 28% 94%);
+  --secondary: hsl(200 8% 16%);
+  --secondary-foreground: hsl(180 10% 94%);
+  --muted: hsl(200 8% 14%);
+  --muted-foreground: hsl(200 6% 64%);
+  --accent: hsl(160 10% 18%);
+  --accent-foreground: hsl(180 10% 94%);
 
   --destructive: hsl(2 68% 44%);
   --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(223 12% 22%);
-  --input: hsl(223 12% 18%);
-  --ring: hsl(221 88% 67%);
-  --ring-offset-background: hsl(222 20% 8%);
+  --border: hsl(200 8% 22%);
+  --input: hsl(200 8% 18%);
+  --ring: hsl(160 32% 56%);
+  --ring-offset-background: hsl(200 12% 8%);
 
-  --sidebar-background: hsl(222 18% 9%);
-  --sidebar-foreground: hsl(214 28% 94%);
-  --sidebar-border: hsl(223 12% 18%);
-  --sidebar-accent: hsl(222 16% 17%);
-  --sidebar-accent-foreground: hsl(214 28% 94%);
+  --sidebar-background: hsl(200 10% 9%);
+  --sidebar-foreground: hsl(180 10% 94%);
+  --sidebar-border: hsl(200 8% 18%);
+  --sidebar-accent: hsl(160 8% 16%);
+  --sidebar-accent-foreground: hsl(180 10% 94%);
 
-  --chart-1: hsl(221 88% 67%);
-  --chart-2: hsl(232 74% 68%);
-  --chart-3: hsl(31 88% 66%);
-  --chart-4: hsl(193 64% 54%);
+  --chart-1: hsl(160 32% 56%);
+  --chart-2: hsl(200 64% 60%);
+  --chart-3: hsl(28 88% 66%);
+  --chart-4: hsl(280 52% 64%);
   --chart-5: hsl(342 74% 65%);
 
-  --shadow-color: 224 34% 3%;
+  --shadow-color: 200 20% 3%;
 }
 
 @theme inline {
@@ -176,14 +175,14 @@ html[data-font-size="large"] {
 }
 
 html[data-ui-density="compact"] {
-  --page-stack-gap: 0.42rem;
-  --metric-card-padding-y: 0.46rem;
-  --metric-card-padding-x: 0.58rem;
-  --stat-block-padding: 0.44rem;
-  --session-item-padding-y: 0.36rem;
-  --session-item-padding-x: 0.46rem;
-  --nav-link-padding-y: 0.42rem;
-  --nav-link-padding-x: 0.56rem;
+  --page-stack-gap: 0.6rem;
+  --metric-card-padding-y: 0.6rem;
+  --metric-card-padding-x: 0.72rem;
+  --stat-block-padding: 0.58rem;
+  --session-item-padding-y: 0.42rem;
+  --session-item-padding-x: 0.54rem;
+  --nav-link-padding-y: 0.5rem;
+  --nav-link-padding-x: 0.68rem;
 }
 
 @layer base {
@@ -196,8 +195,8 @@ html[data-ui-density="compact"] {
     line-height: 1.5;
     color: var(--foreground);
     background:
-      radial-gradient(circle at top right, hsl(from var(--primary) h s l / 0.05), transparent 26%),
-      linear-gradient(180deg, hsl(212 24% 98.8%) 0%, hsl(219 18% 96.6%) 100%);
+      radial-gradient(circle at top right, hsl(from var(--primary) h s l / 0.04), transparent 26%),
+      linear-gradient(180deg, hsl(180 6% 98%) 0%, hsl(180 4% 96.5%) 100%);
     background-color: var(--background);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -207,8 +206,8 @@ html[data-ui-density="compact"] {
   .dark html,
   html.dark {
     background:
-      radial-gradient(circle at top right, hsl(from var(--primary) h s l / 0.1), transparent 24%),
-      linear-gradient(180deg, hsl(222 20% 9.5%) 0%, hsl(222 18% 7.6%) 100%);
+      radial-gradient(circle at top right, hsl(from var(--primary) h s l / 0.08), transparent 24%),
+      linear-gradient(180deg, hsl(200 12% 9.5%) 0%, hsl(200 10% 7.6%) 100%);
     background-color: var(--background);
   }
 
@@ -346,98 +345,7 @@ html[data-ui-density="compact"] {
     color: var(--sidebar-foreground);
   }
 
-  .app-rail {
-    position: relative;
-    width: var(--app-rail-width);
-    flex-shrink: 0;
-    border-right: 1px solid hsl(from var(--sidebar-border) h s l / 0.6);
-    background: linear-gradient(180deg, hsl(from var(--sidebar-background) h s l / 0.995), hsl(from var(--sidebar-background) h s l / 0.958));
-  }
-
-  .app-rail-brand {
-    display: inline-flex;
-    height: 2.5rem;
-    width: 2.5rem;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid hsl(from var(--border) h s l / 0.54);
-    border-radius: 0.875rem;
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.98), hsl(from var(--background) h s l / 0.92));
-    color: var(--foreground);
-    box-shadow:
-      0 10px 18px -24px hsl(var(--shadow-color) / 0.12),
-      inset 0 1px 0 hsl(from var(--card) h s l / 0.7);
-    transition:
-      border-color 160ms var(--ease-fluid),
-      box-shadow 160ms var(--ease-fluid),
-      transform 160ms var(--ease-fluid);
-  }
-
-  .app-rail-brand:hover {
-    border-color: hsl(from var(--primary) h s l / 0.24);
-    box-shadow:
-      0 18px 30px -28px hsl(from var(--primary) h s l / 0.24),
-      inset 0 1px 0 hsl(from var(--card) h s l / 0.78);
-  }
-
-  .app-rail-brand svg {
-    transition: transform 160ms var(--ease-fluid);
-  }
-
-  .app-rail-brand:hover svg {
-    transform: translateY(-0.5px);
-  }
-
-  .app-rail-link {
-    position: relative;
-    display: inline-flex;
-    height: 2.5rem;
-    width: 2.5rem;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    border-radius: 0.875rem;
-    color: hsl(from var(--muted-foreground) h s l / 0.94);
-    background: transparent;
-  }
-
-  .app-rail-link:hover {
-    border-color: hsl(from var(--border) h s l / 0.34);
-    background: hsl(from var(--card) h s l / 0.56);
-    color: var(--foreground);
-  }
-
-  .app-rail-link-active {
-    border-color: hsl(from var(--primary) h s l / 0.24);
-    background: hsl(from var(--primary) h s l / 0.08);
-    color: hsl(from var(--primary) h s l / 0.96);
-    box-shadow: inset 0 0 0 1px hsl(from var(--primary) h s l / 0.08);
-  }
-
-  .app-rail-link-active::before {
-    content: "";
-    position: absolute;
-    inset: 8px auto 8px -9px;
-    width: 2px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, hsl(from var(--primary) h s l), hsl(from var(--primary) h s l / 0.28));
-  }
-
-  .app-rail-utility :where(button, [role="button"]) {
-    height: 2.25rem;
-    width: 2.25rem;
-    border: 1px solid hsl(from var(--border) h s l / 0.42);
-    border-radius: 0.75rem;
-    background: hsl(from var(--card) h s l / 0.8);
-    color: var(--muted-foreground);
-    box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.52);
-  }
-
-  .app-rail-utility :where(button, [role="button"]):hover {
-    border-color: hsl(from var(--primary) h s l / 0.2);
-    background: hsl(from var(--card) h s l / 0.92);
-    color: var(--foreground);
-  }
+  /* AppRail 已移除，使用 UnifiedSidebar 单栏导航 */
 
   .sidebar-panel {
     position: relative;
