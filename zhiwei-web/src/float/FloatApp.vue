@@ -2,39 +2,51 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 
 /**
- * 浮窗主组件 — 知微桌面端主动提醒投递终端
+ * 知微桌面浮窗 — 主动提醒投递终端
  *
- * 四种状态：
- * - idle: 64x64 小圆点图标，可拖拽
- * - glow: 圆点加呼吸光效动画（有新提醒待展示）
- * - bubble: 展开为卡片，显示提醒文字 + 反馈按钮
- * - chat: 展开为 320x480 迷你对话窗口
+ * 五种状态：idle / soft / bubble / panel / chat
+ * 设计语言：毛玻璃 Acrylic + 弹簧动效 + 变形展开
  */
 
 // ─── 类型定义 ────────────────────────────────────────────
-type FloatState = 'idle' | 'glow' | 'bubble' | 'chat'
-type PushLevel = 'SOFT_PUSH' | 'NORMAL_PUSH' | 'URGENT_PUSH'
+type FloatState = 'idle' | 'soft' | 'bubble' | 'panel' | 'chat'
 type FeedbackType = 'ACTED' | 'SNOOZED' | 'NOT_RELEVANT'
 
 interface ReminderData {
   notificationId: string
   title: string
   content: string
-  pushLevel: PushLevel
+  pushLevel: string
+}
+
+interface QuickPanelData {
+  todayReminders: number
+  trackingCount: number
+  weather: string | null
+  backendStatus: 'running' | 'stopped' | 'unknown'
 }
 
 // ─── 状态 ────────────────────────────────────────────────
 const state = ref<FloatState>('idle')
 const reminder = ref<ReminderData | null>(null)
+const panelData = ref<QuickPanelData>({
+  todayReminders: 0, trackingCount: 0, weather: null, backendStatus: 'unknown'
+})
 const chatMessages = ref<Array<{ role: 'user' | 'assistant'; text: string }>>([])
 const chatInput = ref('')
 const autoDismissTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const isHovering = ref(false)
+const hasPendingReminder = ref(false)
 
 // ─── 计算属性 ────────────────────────────────────────────
-const isExpanded = computed(() => state.value === 'bubble' || state.value === 'chat')
+const isExpanded = computed(() => state.value === 'bubble' || state.value === 'panel' || state.value === 'chat')
+const statusColor = computed(() => {
+  if (hasPendingReminder.value) return 'var(--status-blue)'
+  if (panelData.value.backendStatus === 'running') return 'var(--status-green)'
+  return 'var(--status-gray)'
+})
 
 // ─── Tauri IPC ───────────────────────────────────────────
-/** 动态导入 Tauri API（仅在 Tauri 环境下可用） */
 async function invokeCommand(cmd: string, args?: Record<string, unknown>) {
   try {
     const { invoke } = await import('@tauri-apps/api/core')
@@ -44,7 +56,6 @@ async function invokeCommand(cmd: string, args?: Record<string, unknown>) {
   }
 }
 
-/** 监听 Tauri 事件 */
 async function listenEvent(event: string, handler: (payload: unknown) => void) {
   try {
     const { listen } = await import('@tauri-apps/api/event')
@@ -54,8 +65,7 @@ async function listenEvent(event: string, handler: (payload: unknown) => void) {
   }
 }
 
-// ─── 后端 API ────────────────────────────────────────────
-/** 获取后端端口（通过 Tauri command） */
+// ─── 后端通信 ────────────────────────────────────────────
 async function getBackendPort(): Promise<number> {
   try {
     const { invoke } = await import('@tauri-apps/api/core')
@@ -65,7 +75,6 @@ async function getBackendPort(): Promise<number> {
   }
 }
 
-/** 提交提醒反馈 */
 async function submitFeedback(notificationId: string, feedbackType: FeedbackType) {
   try {
     const port = await getBackendPort()
@@ -80,53 +89,25 @@ async function submitFeedback(notificationId: string, feedbackType: FeedbackType
 }
 
 // ─── 状态切换 ────────────────────────────────────────────
-/** 调用 Rust 端调整窗口尺寸 */
 async function switchMode(mode: FloatState) {
   state.value = mode
-  await invokeCommand('resize_float_window', { mode })
+  // idle 和 soft 共用小窗口尺寸
+  const tauriMode = mode === 'soft' ? 'idle' : mode === 'panel' ? 'bubble' : mode
+  await invokeCommand('resize_float_window', { mode: tauriMode })
 }
 
-/** 展示气泡 */
-function showBubble(data: ReminderData) {
-  reminder.value = data
-  switchMode('bubble')
-
-  // 自动收起逻辑
-  clearAutoDismiss()
-  if (data.pushLevel === 'SOFT_PUSH') {
-    // SOFT_PUSH: 3 秒后自动回到 idle
-    autoDismissTimer.value = setTimeout(() => {
-      dismissBubble()
-    }, 3000)
-  }
-  // NORMAL_PUSH: 保持到用户交互
-  // URGENT_PUSH: 保持到用户交互
-}
-
-/** 收起气泡 */
-async function dismissBubble() {
-  clearAutoDismiss()
-  reminder.value = null
-  await switchMode('idle')
-}
-
-/** 清除自动收起定时器 */
-function clearAutoDismiss() {
-  if (autoDismissTimer.value) {
-    clearTimeout(autoDismissTimer.value)
-    autoDismissTimer.value = null
+// ─── 单击处理 ────────────────────────────────────────────
+function handleClick() {
+  if (state.value === 'idle' || state.value === 'soft') {
+    if (hasPendingReminder.value && reminder.value) {
+      showBubble(reminder.value)
+    } else {
+      switchMode('panel')
+    }
   }
 }
 
-// ─── 反馈按钮处理 ────────────────────────────────────────
-async function handleFeedback(type: FeedbackType) {
-  if (!reminder.value) return
-  const id = reminder.value.notificationId
-  await submitFeedback(id, type)
-  dismissBubble()
-}
-
-// ─── 双击打开对话 ──────────────────────────────────────
+// ─── 双击处理 ────────────────────────────────────────────
 function handleDoubleClick() {
   if (state.value === 'chat') {
     switchMode('idle')
@@ -135,25 +116,75 @@ function handleDoubleClick() {
   }
 }
 
-// ─── 拖拽支持 ────────────────────────────────────────────
-async function startDrag() {
-  try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    await getCurrentWindow().startDragging()
-  } catch {
-    // 非 Tauri 环境忽略
+// ─── 气泡展示 ────────────────────────────────────────────
+function showBubble(data: ReminderData) {
+  reminder.value = data
+  hasPendingReminder.value = false
+  switchMode('bubble')
+  clearAutoDismiss()
+  // NORMAL_PUSH: 10 秒后自动收起（hover 时暂停）
+  startAutoDismiss(10000)
+}
+
+function startAutoDismiss(ms: number) {
+  autoDismissTimer.value = setTimeout(() => {
+    if (!isHovering.value) {
+      dismissToIdle()
+    } else {
+      // hover 中，延迟重试
+      startAutoDismiss(3000)
+    }
+  }, ms)
+}
+
+function dismissToIdle() {
+  clearAutoDismiss()
+  reminder.value = null
+  switchMode('idle')
+}
+
+function clearAutoDismiss() {
+  if (autoDismissTimer.value) {
+    clearTimeout(autoDismissTimer.value)
+    autoDismissTimer.value = null
   }
 }
 
-// ─── 迷你对话（简化版） ──────────────────────────────────
+// ─── 反馈处理 ────────────────────────────────────────────
+async function handleFeedback(type: FeedbackType) {
+  if (!reminder.value) return
+  await submitFeedback(reminder.value.notificationId, type)
+  dismissToIdle()
+}
+
+// ─── 拖拽 ────────────────────────────────────────────────
+async function startDrag(e: MouseEvent) {
+  // 只响应左键
+  if (e.button !== 0) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().startDragging()
+  } catch { /* 非 Tauri 环境 */ }
+}
+
+// ─── 快捷面板 ────────────────────────────────────────────
+function openChat() {
+  switchMode('chat')
+}
+
+function openSettings() {
+  // 打开主窗口设置页面
+  invokeCommand('show_reminder_bubble', {
+    notificationId: '', title: '', content: '', pushLevel: ''
+  })
+}
+
+// ─── 对话 ────────────────────────────────────────────────
 async function sendChatMessage() {
   const text = chatInput.value.trim()
   if (!text) return
-
   chatMessages.value.push({ role: 'user', text })
   chatInput.value = ''
-
-  // 调用后端对话 API
   try {
     const port = await getBackendPort()
     const resp = await fetch(`http://localhost:${port}/api/chat/quick`, {
@@ -168,27 +199,36 @@ async function sendChatMessage() {
   }
 }
 
-function closeChat() {
-  chatMessages.value = []
-  switchMode('idle')
-}
-
 // ─── 生命周期 ────────────────────────────────────────────
 let unlistenBubble: (() => void) | undefined
 let unlistenDismiss: (() => void) | undefined
 
 onMounted(async () => {
-  // 监听 Rust 端发来的气泡事件
   const unlisten1 = await listenEvent('reminder-bubble', (payload) => {
     const data = payload as ReminderData
-    showBubble(data)
+    if (data.pushLevel === 'SOFT_PUSH') {
+      // 轻提醒：不展开，只标记状态
+      reminder.value = data
+      hasPendingReminder.value = true
+      if (state.value === 'idle') state.value = 'soft'
+    } else {
+      showBubble(data)
+    }
   })
   if (unlisten1) unlistenBubble = unlisten1 as () => void
 
-  const unlisten2 = await listenEvent('reminder-dismiss', () => {
-    dismissBubble()
-  })
+  const unlisten2 = await listenEvent('reminder-dismiss', () => dismissToIdle())
   if (unlisten2) unlistenDismiss = unlisten2 as () => void
+
+  // 定期检查后端状态
+  setInterval(async () => {
+    try {
+      const running = await invokeCommand('is_backend_running') as boolean
+      panelData.value.backendStatus = running ? 'running' : 'stopped'
+    } catch {
+      panelData.value.backendStatus = 'unknown'
+    }
+  }, 10000)
 })
 
 onUnmounted(() => {
@@ -196,76 +236,90 @@ onUnmounted(() => {
   unlistenBubble?.()
   unlistenDismiss?.()
 })
-
-// 状态变化时输出日志
-watch(state, (newState) => {
-  console.log(`浮窗状态切换: ${newState}`)
-})
 </script>
 
 <template>
   <div class="float-root">
-    <!-- idle / glow 状态：小圆点 -->
+    <!-- ═══ idle / soft：小圆点 ═══ -->
     <div
       v-if="!isExpanded"
-      class="float-dot"
-      :class="{ 'float-dot--glow': state === 'glow' }"
+      class="float-orb"
+      :class="{ 'float-orb--soft': state === 'soft' }"
       @mousedown="startDrag"
-      @dblclick="handleDoubleClick"
+      @click.prevent="handleClick"
+      @dblclick.prevent="handleDoubleClick"
+      @mouseenter="isHovering = true"
+      @mouseleave="isHovering = false"
     >
-      <div class="float-dot__icon">
-        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="16" cy="16" r="14" fill="var(--primary, hsl(224 78% 56%))" />
-          <path
-            d="M10 16.5C10 13.5 12.5 11 16 11C19.5 11 22 13.5 22 16.5C22 18.5 20.5 20 19 21L17 22.5V23H15V22L13 20.5C11.5 19.5 10 18 10 16.5Z"
-            fill="white"
-            opacity="0.9"
-          />
-          <circle cx="14" cy="15.5" r="1.2" fill="var(--primary, hsl(224 78% 56%))" />
-          <circle cx="18" cy="15.5" r="1.2" fill="var(--primary, hsl(224 78% 56%))" />
-        </svg>
-      </div>
+      <!-- 知微 logo -->
+      <svg class="float-orb__icon" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="11" stroke="var(--orb-icon)" stroke-width="1.5" fill="none" />
+        <circle cx="13" cy="14.5" r="1.2" fill="var(--orb-icon)" />
+        <circle cx="19" cy="14.5" r="1.2" fill="var(--orb-icon)" />
+        <path d="M12.5 19.5C13.5 21 15 21.5 16 21.5C17 21.5 18.5 21 19.5 19.5"
+              stroke="var(--orb-icon)" stroke-width="1.2" stroke-linecap="round" fill="none" />
+      </svg>
+      <!-- 状态指示点 -->
+      <div class="float-orb__status" :style="{ background: statusColor }" />
     </div>
 
-    <!-- bubble 状态：提醒气泡卡片 -->
-    <div v-if="state === 'bubble' && reminder" class="float-bubble">
-      <div class="float-bubble__header">
-        <span class="float-bubble__title">{{ reminder.title }}</span>
-        <button class="float-bubble__close" @click="dismissBubble">&times;</button>
+    <!-- ═══ bubble：提醒气泡 ═══ -->
+    <div
+      v-if="state === 'bubble' && reminder"
+      class="float-card float-card--bubble"
+      @mouseenter="isHovering = true"
+      @mouseleave="isHovering = false"
+    >
+      <div class="float-card__header" @mousedown="startDrag">
+        <span class="float-card__badge">主动提醒</span>
+        <button class="float-card__close" @click="dismissToIdle">&times;</button>
       </div>
-      <div class="float-bubble__content">
+      <div class="float-card__body">
         {{ reminder.content }}
       </div>
-      <div class="float-bubble__actions">
-        <button
-          class="float-bubble__btn float-bubble__btn--acted"
-          @click="handleFeedback('ACTED')"
-        >
-          <span class="float-bubble__btn-icon">&#x1F44D;</span>
-          <span>有用</span>
+      <div class="float-card__actions">
+        <button class="float-pill float-pill--primary" @click="handleFeedback('ACTED')">
+          有用
         </button>
-        <button
-          class="float-bubble__btn float-bubble__btn--snoozed"
-          @click="handleFeedback('SNOOZED')"
-        >
-          <span class="float-bubble__btn-icon">&#x1F44B;</span>
-          <span>知道了</span>
+        <button class="float-pill" @click="handleFeedback('SNOOZED')">
+          知道了
         </button>
-        <button
-          class="float-bubble__btn float-bubble__btn--dismiss"
-          @click="handleFeedback('NOT_RELEVANT')"
-        >
-          <span class="float-bubble__btn-icon">&#x2715;</span>
-          <span>不需要</span>
+        <button class="float-pill float-pill--danger" @click="handleFeedback('NOT_RELEVANT')">
+          不需要
         </button>
       </div>
     </div>
 
-    <!-- chat 状态：迷你对话窗口 -->
-    <div v-if="state === 'chat'" class="float-chat">
-      <div class="float-chat__header">
-        <span class="float-chat__title">知微助手</span>
-        <button class="float-chat__close" @click="closeChat">&times;</button>
+    <!-- ═══ panel：快捷面板 ═══ -->
+    <div
+      v-if="state === 'panel'"
+      class="float-card float-card--panel"
+    >
+      <div class="float-card__header" @mousedown="startDrag">
+        <span class="float-card__title">知微 · {{ panelData.backendStatus === 'running' ? '运行中' : '已断开' }}</span>
+        <button class="float-card__close" @click="switchMode('idle')">&times;</button>
+      </div>
+      <div class="float-panel__list">
+        <div class="float-panel__item">
+          <span>📋</span><span>今日提醒 {{ panelData.todayReminders }} 条</span>
+        </div>
+        <div v-if="panelData.trackingCount > 0" class="float-panel__item">
+          <span>📦</span><span>追踪中 {{ panelData.trackingCount }} 项</span>
+        </div>
+        <div v-if="panelData.weather" class="float-panel__item">
+          <span>🌤️</span><span>{{ panelData.weather }}</span>
+        </div>
+      </div>
+      <div class="float-panel__footer">
+        <button class="float-panel__action" @click="openChat">💬 打开对话</button>
+      </div>
+    </div>
+
+    <!-- ═══ chat：迷你对话 ═══ -->
+    <div v-if="state === 'chat'" class="float-card float-card--chat">
+      <div class="float-card__header float-card__header--drag" @mousedown="startDrag">
+        <span class="float-card__title">知微助手</span>
+        <button class="float-card__close" @click="switchMode('idle')">&times;</button>
       </div>
       <div class="float-chat__messages">
         <div v-if="chatMessages.length === 0" class="float-chat__empty">
@@ -280,7 +334,7 @@ watch(state, (newState) => {
           {{ msg.text }}
         </div>
       </div>
-      <div class="float-chat__input-area">
+      <div class="float-chat__input-wrap">
         <input
           v-model="chatInput"
           class="float-chat__input"
@@ -288,7 +342,7 @@ watch(state, (newState) => {
           @keydown.enter="sendChatMessage"
         />
         <button class="float-chat__send" @click="sendChatMessage">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
             <path d="M2.94 5.34l13.69 4.56a.5.5 0 010 .95L2.94 15.41a.5.5 0 01-.68-.56l1.3-4.48a.5.5 0 01.4-.37l5.6-.75a.25.25 0 000-.5l-5.6-.75a.5.5 0 01-.4-.37l-1.3-4.48a.5.5 0 01.68-.56z" />
           </svg>
         </button>
@@ -297,8 +351,51 @@ watch(state, (newState) => {
   </div>
 </template>
 
-<style scoped>
-/* ─── 根容器 ─────────────────────────────────────────── */
+<style>
+/* ─── CSS 变量 ─────────────────────────────────────────── */
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-blur: blur(20px) saturate(1.5);
+  --shadow-idle: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.12);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.03);
+  --primary: hsl(224 78% 56%);
+  --primary-fg: hsl(0 0% 100%);
+  --danger: hsl(2 72% 58%);
+  --fg: hsl(221 28% 11%);
+  --fg-muted: hsl(220 10% 46%);
+  --border: rgba(0, 0, 0, 0.06);
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --orb-icon: hsl(224 60% 48%);
+  --status-green: hsl(142 60% 48%);
+  --status-blue: hsl(224 78% 56%);
+  --status-gray: hsl(220 10% 70%);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius: 16px;
+  --font: 'Segoe UI Variable', 'SF Pro Display', 'Noto Sans SC', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-bg: rgba(30, 30, 30, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --shadow-idle: 0 2px 12px rgba(0, 0, 0, 0.24);
+    --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.32);
+    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --fg: hsl(220 16% 90%);
+    --fg-muted: hsl(220 10% 58%);
+    --border: rgba(255, 255, 255, 0.06);
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --orb-icon: hsl(224 68% 72%);
+  }
+}
+
+/* ─── 全局 ─────────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: transparent; overflow: hidden; font-family: var(--font); }
+
 .float-root {
   width: 100%;
   height: 100%;
@@ -309,234 +406,234 @@ watch(state, (newState) => {
   -webkit-user-select: none;
 }
 
-/* ─── 小圆点（idle / glow） ─────────────────────────── */
-.float-dot {
-  width: 52px;
-  height: 52px;
+/* ─── 小圆点（idle / soft） ────────────────────────────── */
+.float-orb {
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  cursor: grab;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--card, hsl(210 22% 99%));
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.12),
-    0 0 0 1px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.3s var(--ease-fluid, cubic-bezier(0.22, 1, 0.36, 1));
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-idle);
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
-.float-dot:hover {
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.16),
-    0 0 0 1px rgba(0, 0, 0, 0.06);
+.float-orb:hover {
+  transform: scale(1.08);
+  box-shadow: var(--shadow-hover);
 }
 
-.float-dot:active {
+.float-orb:active {
+  cursor: grabbing;
+  transform: scale(1.02);
+}
+
+.float-orb__icon {
+  width: 28px;
+  height: 28px;
+}
+
+.float-orb__status {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--glass-bg);
+  transition: background 0.3s var(--ease);
+}
+
+/* 轻提醒光晕 */
+.float-orb--soft {
+  animation: soft-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes soft-glow {
+  0%, 100% {
+    box-shadow: var(--shadow-idle), 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: var(--shadow-idle), 0 0 16px 3px color-mix(in srgb, var(--primary) 30%, transparent);
+  }
+}
+
+/* ─── 卡片通用 ─────────────────────────────────────────── */
+.float-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  animation: card-enter 0.3s var(--spring);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@keyframes card-enter {
+  from { opacity: 0; transform: scale(0.92) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.float-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+.float-card__header--drag {
+  cursor: grab;
+}
+.float-card__header--drag:active {
   cursor: grabbing;
 }
 
-.float-dot__icon {
-  width: 32px;
-  height: 32px;
-}
-
-.float-dot__icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-/* 呼吸光效动画 */
-.float-dot--glow {
-  animation: glow-pulse 2s ease-in-out infinite;
-}
-
-@keyframes glow-pulse {
-  0%, 100% {
-    box-shadow:
-      0 2px 8px rgba(0, 0, 0, 0.12),
-      0 0 0 1px rgba(0, 0, 0, 0.04),
-      0 0 0 0 var(--primary, hsl(224 78% 56%));
-  }
-  50% {
-    box-shadow:
-      0 2px 8px rgba(0, 0, 0, 0.12),
-      0 0 0 1px rgba(0, 0, 0, 0.04),
-      0 0 16px 4px color-mix(in srgb, var(--primary, hsl(224 78% 56%)) 40%, transparent);
-  }
-}
-
-/* ─── 气泡卡片（bubble） ────────────────────────────── */
-.float-bubble {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--card, hsl(210 22% 99%));
-  border-radius: var(--radius, 0.9rem);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.14),
-    0 0 0 1px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
-  animation: bubble-enter 0.3s var(--ease-fluid, cubic-bezier(0.22, 1, 0.36, 1));
-}
-
-@keyframes bubble-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.float-bubble__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.875rem;
-  border-bottom: 1px solid var(--border, hsl(220 16% 84%));
-}
-
-.float-bubble__title {
-  font-size: 0.875rem;
+.float-card__badge {
+  font-size: 11px;
   font-weight: 600;
-  color: var(--foreground, hsl(221 28% 11%));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
-.float-bubble__close {
-  width: 1.5rem;
-  height: 1.5rem;
+.float-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.float-card__close {
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--muted-foreground, hsl(220 10% 41%));
+  color: var(--fg-muted);
   cursor: pointer;
-  border-radius: 0.25rem;
-  font-size: 1.1rem;
+  border-radius: 6px;
+  font-size: 15px;
   line-height: 1;
-  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
 }
 
-.float-bubble__close:hover {
-  background: var(--accent, hsl(221 40% 93%));
-  color: var(--foreground, hsl(221 28% 11%));
+.float-card__close:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
 }
 
-.float-bubble__content {
+/* ─── 气泡 ─────────────────────────────────────────────── */
+.float-card__body {
   flex: 1;
-  padding: 0.5rem 0.875rem;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--foreground, hsl(221 28% 11%));
+  padding: 10px 14px;
+  color: var(--fg);
   overflow-y: auto;
-}
-
-.float-bubble__actions {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.5rem 0.875rem;
-  border-top: 1px solid var(--border, hsl(220 16% 84%));
-}
-
-.float-bubble__btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  padding: 0.375rem 0;
-  border: 1px solid var(--border, hsl(220 16% 84%));
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--foreground, hsl(221 28% 11%));
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.float-bubble__btn:hover {
-  background: var(--accent, hsl(221 40% 93%));
-}
-
-.float-bubble__btn--acted:hover {
-  border-color: var(--primary, hsl(224 78% 56%));
-  color: var(--primary, hsl(224 78% 56%));
-}
-
-.float-bubble__btn--dismiss:hover {
-  border-color: var(--destructive, hsl(2 78% 58%));
-  color: var(--destructive, hsl(2 78% 58%));
-}
-
-.float-bubble__btn-icon {
-  font-size: 0.875rem;
-}
-
-/* ─── 迷你对话（chat） ──────────────────────────────── */
-.float-chat {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--card, hsl(210 22% 99%));
-  border-radius: var(--radius, 0.9rem);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.14),
-    0 0 0 1px rgba(0, 0, 0, 0.04);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  animation: bubble-enter 0.3s var(--ease-fluid, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
-.float-chat__header {
+.float-card__actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.875rem;
-  border-bottom: 1px solid var(--border, hsl(220 16% 84%));
-  cursor: grab;
+  gap: 6px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border);
 }
 
-.float-chat__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--foreground, hsl(221 28% 11%));
-}
-
-.float-chat__close {
-  width: 1.5rem;
-  height: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
+.float-pill {
+  flex: 1;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 20px;
   background: transparent;
-  color: var(--muted-foreground, hsl(220 10% 41%));
+  color: var(--fg);
+  font-size: 12px;
+  font-family: var(--font);
   cursor: pointer;
-  border-radius: 0.25rem;
-  font-size: 1.1rem;
-  line-height: 1;
+  transition: all 0.15s var(--ease);
 }
 
-.float-chat__close:hover {
-  background: var(--accent, hsl(221 40% 93%));
-  color: var(--foreground, hsl(221 28% 11%));
+.float-pill:hover {
+  background: var(--bg-hover);
 }
 
+.float-pill--primary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.float-pill--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+/* ─── 快捷面板 ─────────────────────────────────────────── */
+.float-panel__list {
+  flex: 1;
+  padding: 6px 14px;
+}
+
+.float-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: var(--fg);
+  font-size: 12.5px;
+}
+
+.float-panel__footer {
+  padding: 6px 14px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.float-panel__action {
+  width: 100%;
+  padding: 7px 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--fg);
+  font-size: 12.5px;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.float-panel__action:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+
+/* ─── 迷你对话 ─────────────────────────────────────────── */
 .float-chat__messages {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem 0.875rem;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .float-chat__empty {
@@ -544,76 +641,77 @@ watch(state, (newState) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--muted-foreground, hsl(220 10% 41%));
-  font-size: 0.875rem;
+  color: var(--fg-muted);
+  font-size: 13px;
 }
 
 .float-chat__msg {
-  max-width: 85%;
-  padding: 0.5rem 0.875rem;
-  border-radius: 0.75rem;
-  font-size: 0.8125rem;
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
 }
 
 .float-chat__msg--user {
   align-self: flex-end;
-  background: var(--primary, hsl(224 78% 56%));
-  color: var(--primary-foreground, hsl(0 0% 100%));
-  border-bottom-right-radius: 0.25rem;
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-bottom-right-radius: 4px;
 }
 
 .float-chat__msg--assistant {
   align-self: flex-start;
-  background: var(--secondary, hsl(220 20% 95%));
-  color: var(--secondary-foreground, hsl(220 21% 18%));
-  border-bottom-left-radius: 0.25rem;
+  background: var(--bg-hover);
+  color: var(--fg);
+  border-bottom-left-radius: 4px;
 }
 
-.float-chat__input-area {
+.float-chat__input-wrap {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.5rem 0.875rem;
-  border-top: 1px solid var(--border, hsl(220 16% 84%));
+  gap: 8px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border);
 }
 
 .float-chat__input {
   flex: 1;
-  padding: 0.375rem 0.5rem;
-  border: 1px solid var(--input, hsl(220 16% 88%));
-  border-radius: 0.5rem;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: transparent;
-  color: var(--foreground, hsl(221 28% 11%));
-  font-size: 0.8125rem;
+  color: var(--fg);
+  font-size: 13px;
+  font-family: var(--font);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s;
 }
 
 .float-chat__input:focus {
-  border-color: var(--ring, hsl(224 78% 56%));
+  border-color: var(--primary);
 }
 
 .float-chat__input::placeholder {
-  color: var(--muted-foreground, hsl(220 10% 41%));
+  color: var(--fg-muted);
 }
 
 .float-chat__send {
-  width: 2rem;
-  height: 2rem;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 0.5rem;
-  background: var(--primary, hsl(224 78% 56%));
-  color: var(--primary-foreground, hsl(0 0% 100%));
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--primary-fg);
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s;
   flex-shrink: 0;
 }
 
 .float-chat__send:hover {
-  opacity: 0.9;
+  opacity: 0.88;
 }
 </style>

@@ -3,17 +3,17 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 /// 浮窗窗口标签常量
 const FLOAT_WINDOW_LABEL: &str = "float";
 
-/// 浮窗默认尺寸（小圆点状态）
+/// 浮窗默认尺寸（小圆点，含阴影 padding）
 const IDLE_WIDTH: f64 = 64.0;
 const IDLE_HEIGHT: f64 = 64.0;
 
-/// 气泡展开尺寸
-const BUBBLE_WIDTH: f64 = 320.0;
-const BUBBLE_HEIGHT: f64 = 160.0;
+/// 气泡 / 快捷面板展开尺寸
+const BUBBLE_WIDTH: f64 = 316.0;
+const BUBBLE_HEIGHT: f64 = 220.0;
 
 /// 迷你对话窗口尺寸
-const CHAT_WIDTH: f64 = 320.0;
-const CHAT_HEIGHT: f64 = 480.0;
+const CHAT_WIDTH: f64 = 376.0;
+const CHAT_HEIGHT: f64 = 496.0;
 
 /// 任务栏预留高度（像素）
 const TASKBAR_MARGIN: f64 = 80.0;
