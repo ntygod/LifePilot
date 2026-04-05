@@ -1,5 +1,7 @@
+mod clipboard_monitor;
 mod commands;
 mod float_window;
+mod focus_monitor;
 mod health_check;
 mod java_manager;
 mod port_finder;
@@ -58,12 +60,17 @@ pub fn run() {
             // 创建桌面浮窗（初始隐藏，等后端就绪后显示）
             float_window::create_float_window(app.handle())?;
 
-            // 后端就绪后自动显示浮窗
-            let float_handle = app.handle().clone();
+            // 后端就绪后：显示浮窗 + 启动环境感知监控
+            let ready_handle = app.handle().clone();
             app.listen("backend-ready", move |_| {
-                if let Err(e) = float_window::show_float_window(&float_handle) {
+                // 显示浮窗
+                if let Err(e) = float_window::show_float_window(&ready_handle) {
                     log::warn!("浮窗显示失败: {}", e);
                 }
+                // 获取后端端口，启动焦点和剪贴板监控
+                let port = ready_handle.state::<JavaManager>().port();
+                focus_monitor::start_focus_monitor(ready_handle.clone(), port);
+                clipboard_monitor::start_clipboard_monitor(ready_handle.clone(), port);
             });
 
             Ok(())
