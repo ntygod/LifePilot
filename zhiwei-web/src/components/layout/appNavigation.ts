@@ -7,7 +7,6 @@ import {
   MessageSquare,
   Puzzle,
   Server,
-  Settings,
   ShoppingBag,
   Wrench,
   Workflow,
@@ -49,11 +48,6 @@ export const sidebarNavGroups: NavGroup[] = [
       { label: '记忆', path: '/memories', icon: Brain, matchPrefixes: ['/memories'] },
     ],
   },
-]
-
-/** 底部快捷入口 */
-export const bottomNavItems: NavItem[] = [
-  { label: '设置', path: '/settings/general', icon: Settings, matchPrefixes: ['/settings', '/analytics', '/eval', '/traces'] },
 ]
 
 /** 对话入口 */

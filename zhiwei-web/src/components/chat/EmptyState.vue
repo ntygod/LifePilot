@@ -4,6 +4,7 @@ import {
   Clock3,
   Sparkles,
 } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSkillStore } from '@/stores/skill'
@@ -11,6 +12,8 @@ import { useSkillStore } from '@/stores/skill'
 const emit = defineEmits<{
   (e: 'send', content: string): void
 }>()
+
+const router = useRouter()
 
 const chatStore = useChatStore()
 const skillStore = useSkillStore()
@@ -88,17 +91,19 @@ function formatRelativeTime(isoString?: string) {
       <div v-if="recentSessions.length > 0">
         <div class="mb-sm text-xs font-medium text-muted-foreground">最近对话</div>
         <div class="space-y-xs">
-          <div
+          <button
             v-for="session in recentSessions"
             :key="session.id"
-            class="flex items-center justify-between rounded-xl px-md py-sm text-left opacity-60"
+            type="button"
+            class="flex w-full items-center justify-between rounded-xl px-md py-sm text-left opacity-60 transition-colors hover:bg-accent/50 hover:opacity-100"
+            @click="router.push({ name: 'conversationDetail', params: { sessionId: session.id } })"
           >
             <div class="truncate text-sm text-foreground">{{ session.title || '新对话' }}</div>
             <div class="ml-md flex shrink-0 items-center gap-xs text-[11px] text-muted-foreground">
               <Clock3 class="size-3" />
               {{ formatRelativeTime(session.updatedAt) }}
             </div>
-          </div>
+          </button>
         </div>
       </div>
   </div>
