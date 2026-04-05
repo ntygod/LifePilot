@@ -27,6 +27,8 @@ const chatInput = ref('')
 const hasPending = ref(false)
 const isHovering = ref(false)
 const backendOk = ref(false)
+const todayReminders = ref(0)
+const memoryCount = ref(0)
 let dismissTimer: ReturnType<typeof setTimeout> | null = null
 
 const isExpanded = computed(() => ['bubble', 'panel', 'chat'].includes(state.value))
@@ -115,6 +117,18 @@ async function switchTo(mode: FloatState) {
   state.value = mode
   const tauriMode = mode === 'soft' ? 'idle' : mode === 'panel' ? 'bubble' : mode
   await invoke('resize_float_window', { mode: tauriMode })
+  if (mode === 'panel') fetchPanelData()
+}
+
+async function fetchPanelData() {
+  try {
+    const port = await getPort()
+    const resp = await fetch(`http://localhost:${port}/api/notifications?userId=default&page=0&size=1`)
+    if (resp.ok) {
+      const data = await resp.json()
+      todayReminders.value = data.total ?? 0
+    }
+  } catch { /* 静默 */ }
 }
 
 // ─── 气泡 ────────────────────────────────────────────────
@@ -155,6 +169,8 @@ async function feedback(type: FeedbackType) {
 }
 
 // ─── 对话 ────────────────────────────────────────────────
+const chatSessionId = ref<string | null>(null)
+
 async function sendMsg() {
   const text = chatInput.value.trim()
   if (!text) return
@@ -162,15 +178,21 @@ async function sendMsg() {
   chatInput.value = ''
   try {
     const port = await getPort()
-    const resp = await fetch(`http://localhost:${port}/api/chat/quick`, {
+    const resp = await fetch(`http://localhost:${port}/api/chat/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({
+        content: text,
+        sessionId: chatSessionId.value,
+      }),
     })
     const data = await resp.json()
-    chatMessages.value.push({ role: 'assistant', text: data.data?.reply ?? '暂时无法回复' })
+    // 记住 sessionId 保持对话连续性
+    if (data.sessionId) chatSessionId.value = data.sessionId
+    const reply = data.content ?? data.data?.content ?? data.message ?? '暂时无法回复'
+    chatMessages.value.push({ role: 'assistant', text: reply })
   } catch {
-    chatMessages.value.push({ role: 'assistant', text: '网络异常' })
+    chatMessages.value.push({ role: 'assistant', text: '网络异常，请稍后重试' })
   }
 }
 
@@ -255,8 +277,18 @@ onUnmounted(() => { clearDismiss(); cleanups.forEach(f => f()) })
         <button class="card__x" @click="switchTo('idle')">&times;</button>
       </header>
       <div class="panel__body">
-        <div class="panel__row"><span>📋</span> 单击浮球展开提醒</div>
-        <div class="panel__row"><span>💬</span> 双击浮球打开对话</div>
+        <div class="panel__row">
+          <span class="panel__icon">🔔</span>
+          <span>今日提醒 {{ todayReminders }} 条</span>
+        </div>
+        <div class="panel__row">
+          <span class="panel__icon">📝</span>
+          <span>记忆中有 {{ memoryCount }} 条记录</span>
+        </div>
+        <div class="panel__row panel__row--hint">
+          <span class="panel__icon">💡</span>
+          <span>双击浮球可打开对话</span>
+        </div>
       </div>
       <footer class="card__foot">
         <button class="pill pill--ok" style="flex:1" @click="switchTo('chat')">💬 打开对话</button>
@@ -371,7 +403,9 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 
 /* ─── 面板 ─────────────────────────────────────────────── */
 .panel__body{flex:1;padding:8px 14px}
-.panel__row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;color:var(--fg2)}
+.panel__row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12.5px}
+.panel__row--hint{color:var(--fg2);font-size:11.5px;opacity:.7}
+.panel__icon{width:18px;text-align:center;font-size:13px}
 
 /* ─── 对话 ─────────────────────────────────────────────── */
 .chat__msgs{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px}
