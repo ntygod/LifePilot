@@ -29,21 +29,24 @@ class CodeKernelToolProviderTest {
     }
 
     @Test
-    void buildKernelTools_应返回2个工具() {
+    void buildKernelTools_应返回3个工具() {
         var tools = provider.buildKernelTools();
-        assertThat(tools).hasSize(2);
+        assertThat(tools).hasSize(3);
     }
 
     @Test
     void 每个工具的id和schema应正确() {
         var tools = provider.buildKernelTools();
-        var expectedIds = List.of("code.kernel.reset", "code.kernel.inspect");
+        var expectedIds = List.of("code.kernel.list", "code.kernel.reset", "code.kernel.inspect");
 
         var actualIds = tools.stream().map(t -> t.id()).toList();
         assertThat(actualIds).containsExactlyInAnyOrderElementsOf(expectedIds);
 
-        // 验证每个工具都有 kernelId 参数
+        // 验证 reset 和 inspect 工具都有 kernelId 必需参数
         for (var tool : tools) {
+            if ("code.kernel.list".equals(tool.id())) {
+                continue; // list 工具无必需参数
+            }
             var schema = tool.inputSchema();
             assertThat(schema).isNotNull();
             var schemaMap = schema.toMap();

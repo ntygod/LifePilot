@@ -69,7 +69,7 @@ public class SandboxRepository {
      */
     public List<ExecutionRecord> findBySessionId(String sessionId) {
         return jdbcTemplate.query(
-            "SELECT * FROM sandbox_executions WHERE session_id = ? ORDER BY created_at DESC",
+            "SELECT id, session_id, language, code_hash, code_length, booter_type, validation_passed, violation_count, exit_code, stdout_length, stderr_length, duration_ms, state, error_message, created_at, updated_at FROM sandbox_executions WHERE session_id = ? ORDER BY created_at DESC",
             rowMapper, sessionId);
     }
 
@@ -81,7 +81,7 @@ public class SandboxRepository {
      */
     public List<ExecutionRecord> findByState(String state) {
         return jdbcTemplate.query(
-            "SELECT * FROM sandbox_executions WHERE state = ? ORDER BY created_at DESC",
+            "SELECT id, session_id, language, code_hash, code_length, booter_type, validation_passed, violation_count, exit_code, stdout_length, stderr_length, duration_ms, state, error_message, created_at, updated_at FROM sandbox_executions WHERE state = ? ORDER BY created_at DESC",
             rowMapper, state);
     }
 
@@ -94,7 +94,7 @@ public class SandboxRepository {
      */
     public List<ExecutionRecord> findByTimeRange(Instant from, Instant to) {
         return jdbcTemplate.query(
-            "SELECT * FROM sandbox_executions WHERE created_at BETWEEN ? AND ? ORDER BY created_at DESC",
+            "SELECT id, session_id, language, code_hash, code_length, booter_type, validation_passed, violation_count, exit_code, stdout_length, stderr_length, duration_ms, state, error_message, created_at, updated_at FROM sandbox_executions WHERE created_at BETWEEN ? AND ? ORDER BY created_at DESC",
             rowMapper, from.toString(), to.toString());
     }
 

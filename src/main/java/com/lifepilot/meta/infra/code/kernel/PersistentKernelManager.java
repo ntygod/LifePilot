@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,9 +45,10 @@ public class PersistentKernelManager {
                                    @Nullable TmuxSessionManager tmuxSessionManager) {
         this.config = config;
         this.tmuxSessionManager = tmuxSessionManager;
+        // ScheduledExecutorService 的调度线程必须使用平台线程，不能用虚拟线程
         this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            var t = Thread.ofVirtual().unstarted(r);
-            t.setName("kernel-cleanup");
+            var t = new Thread(r, "kernel-cleanup");
+            t.setDaemon(true);
             return t;
         });
 
@@ -72,12 +75,22 @@ public class PersistentKernelManager {
         var existing = kernels.get(kernelId);
         if (existing != null) {
             var kernel = existing.kernel();
-            if (kernel.state() != KernelState.CLOSED) {
+            if (kernel.state() == KernelState.CLOSED) {
+                // 已关闭，移除后重新创建
+                kernels.remove(kernelId);
+            } else if (kernel.state() == KernelState.ERROR && kernel instanceof ProcessKernelBase processKernel) {
+                // ERROR 态尝试自动重启
+                log.info("检测到内核 ERROR 态，尝试自动重启: kernelId={}", kernelId);
+                if (processKernel.tryRestart()) {
+                    existing.touch();
+                    return kernel;
+                }
+                // 重启失败，移除后重新创建
+                kernels.remove(kernelId);
+            } else {
                 existing.touch();
                 return kernel;
             }
-            // 已关闭，移除后重新创建
-            kernels.remove(kernelId);
         }
 
         // 检查并发限制
@@ -139,6 +152,26 @@ public class PersistentKernelManager {
         }
         entry.touch();
         return entry.kernel().inspect();
+    }
+
+    /**
+     * 列出所有活跃内核信息。
+     *
+     * @return 内核信息列表，每个条目包含 kernelId、state、idleSeconds
+     */
+    public List<Map<String, Object>> listKernels() {
+        var now = Instant.now();
+        return kernels.entrySet().stream()
+                .map(e -> {
+                    var info = new LinkedHashMap<String, Object>();
+                    info.put("kernelId", e.getKey());
+                    var kernel = e.getValue().kernel();
+                    info.put("state", kernel.state().name());
+                    long idleSeconds = Duration.between(e.getValue().lastAccessTime().get(), now).toSeconds();
+                    info.put("idleSeconds", idleSeconds);
+                    return (Map<String, Object>) info;
+                })
+                .toList();
     }
 
     /**

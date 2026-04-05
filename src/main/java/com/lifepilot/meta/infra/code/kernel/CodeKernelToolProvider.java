@@ -16,10 +16,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 代码内核工具提供者 — 构建 2 个 code.kernel.* 工具。
+ * 代码内核工具提供者 — 构建 3 个 code.kernel.* 工具。
  *
  * <p>工具列表：
  * <ul>
+ *   <li>{@code code.kernel.list} — 列出所有活跃内核（LOW，幂等）</li>
  *   <li>{@code code.kernel.reset} — 重置内核状态（LOW）</li>
  *   <li>{@code code.kernel.inspect} — 检查内核变量（LOW，幂等）</li>
  * </ul>
@@ -41,13 +42,37 @@ public class CodeKernelToolProvider {
     /**
      * 构建所有代码内核管理工具。
      *
-     * @return 2 个内核工具列表
+     * @return 3 个内核工具列表
      */
     public List<BuiltinTool> buildKernelTools() {
         return List.of(
+                buildListTool(),
                 buildResetTool(),
                 buildInspectTool()
         );
+    }
+
+    /** 构建列出内核工具。 */
+    private BuiltinTool buildListTool() {
+        return BuiltinTool.builder()
+                .id("code.kernel.list")
+                .category(ToolCategory.PERCEPTION)
+                .name("列出代码内核")
+                .description("列出所有活跃的持久代码内核，显示每个内核的 ID、状态和空闲时间")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of()
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.none()
+                ))
+                .tags(INFRA_TAGS)
+                .executor(this::executeList)
+                .build();
     }
 
     /** 构建重置内核工具。 */
@@ -106,6 +131,19 @@ public class CodeKernelToolProvider {
     // ─────────────────────────────────────────────
     //  工具执行方法
     // ─────────────────────────────────────────────
+
+    private ToolResult executeList(ToolInput input) {
+        try {
+            var kernelList = kernelManager.listKernels();
+            return ToolResult.success(Map.of(
+                    "kernels", kernelList,
+                    "total", kernelList.size()
+            ));
+        } catch (Exception e) {
+            log.error("列出内核失败: error={}", e.getMessage(), e);
+            return ToolResult.error("列出内核失败: " + e.getMessage());
+        }
+    }
 
     private ToolResult executeReset(ToolInput input) {
         try {

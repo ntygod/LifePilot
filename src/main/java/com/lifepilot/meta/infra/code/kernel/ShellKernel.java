@@ -68,7 +68,8 @@ public final class ShellKernel implements PersistentKernel {
         long startMs = System.currentTimeMillis();
 
         try {
-            String output = tmuxManager.execInSession(sessionId, code);
+            String rawOutput = tmuxManager.execInSession(sessionId, code);
+            String output = ProcessKernelBase.truncate(rawOutput, maxOutputChars);
             int durationMs = (int) (System.currentTimeMillis() - startMs);
             stateRef.set(KernelState.READY);
             return new KernelExecutionResult(output, "", null, durationMs);

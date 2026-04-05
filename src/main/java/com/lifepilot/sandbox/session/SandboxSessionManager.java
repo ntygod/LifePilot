@@ -189,10 +189,9 @@ public class SandboxSessionManager {
      * 根据 booterTemplate 类型创建新的 booter 实例。
      */
     private SandboxBooter createBooter() {
-        return switch (booterTemplate.type()) {
-            case "process" -> new ProcessBooter(config);
-            case "docker" -> new DockerBooter(config);
-            default -> throw new IllegalStateException("不支持的沙箱类型: " + booterTemplate.type());
+        return switch (booterTemplate) {
+            case ProcessBooter _ -> new ProcessBooter(config);
+            case DockerBooter _ -> new DockerBooter(config);
         };
     }
 
