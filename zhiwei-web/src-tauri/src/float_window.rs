@@ -67,6 +67,7 @@ pub fn show_float_window(app: &AppHandle) -> Result<(), String> {
 }
 
 /// 隐藏浮窗
+#[allow(dead_code)]
 pub fn hide_float_window(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(FLOAT_WINDOW_LABEL)

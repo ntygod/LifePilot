@@ -37,14 +37,8 @@ fn collect_focus_state() -> Option<FocusState> {
 #[cfg(target_os = "windows")]
 fn collect_focus_state_windows() -> Option<FocusState> {
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowTextW, IsZoomed,
+        GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, IsZoomed,
     };
-    use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
-    use windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
-    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
     use windows::Win32::System::SystemInformation::GetTickCount;
 
