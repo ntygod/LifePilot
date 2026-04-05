@@ -93,6 +93,7 @@ graph TB
 - 通过 VectorSearcher 进行向量相似度匹配，返回最佳匹配的 ProcedureTemplate
 - 匹配结果包含模板信息、匹配分数、成功率，供 HybridRetriever 作为 ReasoningSlot 返回
 - 匹配失败时静默返回空，不影响主检索流程
+- 在 `ToolExecutionCoordinator` 中以 `Thread.startVirtualThread` 异步调用，不阻塞主 Agent 循环
 
 ### 3.3 EpisodicToSemanticConsolidator（情景→语义巩固器）
 

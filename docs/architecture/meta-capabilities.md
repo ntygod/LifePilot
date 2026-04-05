@@ -76,7 +76,8 @@ graph TB
 
 - 职责：注册内置工具到 `DynamicToolRegistry`，按功能域委托给各子 Provider
 - Skill ID：`builtin.infrastructure`
-- 工具按功能域分类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell.exec 命令执行 + shell.process 后台进程与持久会话管理，由 `ShellToolProvider` 构建）、文件系统（file.read / file.write / file.list / file.edit / file.manage，由 `FileToolProvider` 构建）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）、Git 操作（git.query/git.mutate 等）、工作流管理、自主任务（cron）、渠道操作
+- 工具按功能域分类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell.exec 命令执行 + shell.process 后台进程与持久会话管理，由 `ShellToolProvider` 构建）、文件系统（file.read / file.write / file.list / file.edit / file.manage，由 `FileToolProvider` 构建）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/evaluate/accessibility/close，由 `BrowserToolProvider` 构建）、代码执行（code-execute）、Git 操作（git.query/git.mutate 等）、工作流管理、自主任务（cron）、渠道操作
+- 浏览器工具特别说明：`browser` 工具的 `action` 参数决定操作类型；支持通过 `acquisitionMode`（LAUNCH/CDP/PERSISTENT）、`cdpUrl`、`userDataDir` 三个可选参数在工具调用时动态指定浏览器获取模式，仅首次创建会话时生效，优先级高于 `application.yml` 静态配置
 - Shell 工具特别说明：`shell.exec` 支持 `env`（环境变量注入，有安全黑名单过滤）和 `shell`（Unix 解释器指定，仅 Unix 生效）两个参数；进程创建统一通过 `ShellProcessFactory`（消除 Windows PowerShell / Unix shell 的重复构建逻辑）
 - 可选依赖：`SandboxBooter`（代码执行）、`InteractionBridge`（交互控制）、`BrowserSessionManager`（浏览器自动化，需 Playwright）、`BackgroundProcessManager`（后台进程）、`TmuxSessionManager`（持久会话，需 tmux）
 
@@ -96,6 +97,7 @@ graph TB
   - **LAUNCH**（默认）— Playwright 自行启动并管理 Chromium 实例，每个会话独立 BrowserContext
   - **CDP** — 通过 Chrome DevTools Protocol 连接到用户预先启动的 Chrome，所有会话共享 CDP 默认上下文
   - **PERSISTENT** — 使用 `userDataDir` 启动带完整用户配置文件的 Chromium（无独立 Browser 对象），所有会话共享持久上下文
+- 获取模式可在两个层级指定：`application.yml` 全局配置（静态默认值）和 `browser` 工具输入参数 `acquisitionMode`/`cdpUrl`/`userDataDir`（动态覆盖，仅首次创建会话时生效）
 - storageState 持久化：LAUNCH 模式下可配置 `storage-state-dir` + `persist-storage-state`，在会话关闭时保存/恢复 Cookie 和 localStorage
 - 支持无头模式、空闲超时自动关闭、安装超时控制
 

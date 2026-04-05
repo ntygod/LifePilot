@@ -62,7 +62,7 @@ graph TB
   - `resumeFromSuspend(traceId, ResumePayload)`（从挂起点恢复执行）
 - `ReactAgentLoop`：ReAct 循环核心，仅暴露 `coreLoop()` 方法，由 AgentOrchestrator 调用
 - 关键协作组件：
-  - `ToolExecutionCoordinator` — 波次并行工具执行协调器，同一轮多个 tool call 并行执行
+  - `ToolExecutionCoordinator` — 波次并行工具执行协调器，同一轮多个 tool call 并行执行；L4 程序记忆反馈（IntentMatcher）在工具执行成功后异步触发（虚拟线程），不阻塞主循环
   - `ExecutionCompletionPolicy` — 任务完成判定策略，基于 `<completion_control>` 和 `<await_user_input>` 协议判断循环是否结束
   - `CompactionEngine` — 循环中途上下文压缩，防止长对话超出上下文窗口
 
@@ -154,7 +154,7 @@ sequenceDiagram
 - **工具系统**（`tool`）：通过 `AgentToolProvider` 获取工具回调，执行计划步骤
 - **记忆系统**（`memory`）：通过 `ContextAssembler` 读取最近完整轮次、工作区、画像和经验
 - **可观测性**（`observability`）：TraceRecorder 记录每步执行轨迹
-- **程序记忆反馈**（`memory.procedural`）：L4 反馈闭环，通过 `ProceduralMemory` + `IntentMatcher` 在工具执行后记录经验
+- **程序记忆反馈**（`memory.procedural`）：L4 反馈闭环，通过 `ProceduralMemory` + `IntentMatcher` 在工具执行成功后异步记录经验（`Thread.startVirtualThread`），不阻塞主 Agent 循环
 - **多 Agent**（`multiagent`）：通过 `spawn_workers` 并行 Worker 执行，结果回传到主循环
 
 ## 7. 配置参考

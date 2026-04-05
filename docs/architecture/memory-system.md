@@ -97,7 +97,7 @@ graph TB
 - `SessionWorkspaceService` 负责持久化跨轮临时状态，底层表为 `session_workspace_items`
 - 当前定义三类工作区条目：
   - `PendingDecisionItem`：等待用户确认
-  - `TaskStateItem`：未完成任务的进度状态
+  - `TaskStateItem`：未完成任务的进度状态（由 `ReflectContentBuilder.buildTaskStateSummary()` 生成逐步执行明细，包含每步工具的关键参数和结果摘要，超过 10 步时折叠早期步骤为统计汇总）
   - `WorkingSetItem`：供下一轮继续使用的中间结果摘要
 - 工作区明确不保存原始 user/assistant 消息、思维链和原始工具大结果
 - `WorkspaceCleanupJob` 按 TTL 过期活动项，并清理终态条目

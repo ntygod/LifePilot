@@ -28,7 +28,7 @@
 L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 - `PendingDecisionItem`：等待用户确认
-- `TaskStateItem`：任务挂起后的进度状态
+- `TaskStateItem`：任务执行的进度状态（逐步记录每个工具调用的关键参数和结果摘要，超过 10 步时折叠早期步骤为统计汇总）
 - `WorkingSetItem`：下一轮还要继续使用的中间摘要
 
 这些数据会落到 `session_workspace_items`，有 TTL 和清理任务，但不会进入长期记忆。

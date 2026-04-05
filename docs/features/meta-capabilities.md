@@ -25,10 +25,7 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 推理辅助 | `reason.calculate` | 数学计算 |
 | Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查），支持后台执行、PTY、环境变量注入（`env`，有安全黑名单过滤）和 Unix Shell 解释器指定（`shell`） |
 | Shell 执行 | `shell.process` | 后台进程管理和持久终端会话（tmux），支持 list/output/write/kill 以及 session-* 操作 |
-| 浏览器自动化 | `browser.navigate` | 导航到 URL |
-| 浏览器自动化 | `browser.click` | 点击页面元素 |
-| 浏览器自动化 | `browser.input` | 输入文本 |
-| 浏览器自动化 | `browser.screenshot` | 截取页面截图 |
+| 浏览器自动化 | `browser` | 统一浏览器操作（通过 `action` 参数选择：navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/close），支持通过 `acquisitionMode`/`cdpUrl`/`userDataDir` 动态指定浏览器获取模式 |
 | 代码执行 | `code.execute` | 在沙箱中执行代码（支持持久内核） |
 | 代码执行 | `code.kernel.list` | 列出所有活跃的持久代码内核 |
 | 代码执行 | `code.kernel.reset` | 重置内核状态（清空变量） |
