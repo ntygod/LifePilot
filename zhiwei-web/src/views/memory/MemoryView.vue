@@ -2,22 +2,15 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  Brain,
-  GitFork,
-  MessageSquare,
-  FileCode2,
-  Heart,
   Search,
   RefreshCw,
   AlertTriangle,
 } from 'lucide-vue-next'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useMemoryStore } from '@/stores/memory'
 import type { MemorySearchResult } from '@/types'
@@ -134,7 +127,7 @@ function formatSpaceId(spaceId?: string | null) {
           <PageHeader
             eyebrow="记忆管理"
             title="记忆数据"
-            description="浏览、搜索和管理记忆系统中的实体、关系、对话、模板和偏好数据。"
+            :description="store.statsLoading ? '加载统计中...' : store.stats ? `${store.stats.entityCount} 个实体，${store.stats.relationCount} 个关系，${store.stats.conversationCount} 条对话，${store.stats.templateCount} 个模板，${store.stats.preferenceCount} 条偏好` : '浏览、搜索和管理记忆系统中的实体、关系、对话、模板和偏好数据。'"
           >
             <template #actions>
               <Button
@@ -145,53 +138,6 @@ function formatSpaceId(spaceId?: string | null) {
                 <RefreshCw class="mr-2 size-4" :class="{ 'animate-spin': store.consolidating }" />
                 {{ store.consolidating ? '巩固中...' : '手动巩固' }}
               </Button>
-            </template>
-
-            <template #meta>
-              <!-- 统计卡片：加载中展示 Skeleton -->
-              <template v-if="store.statsLoading">
-                <div v-for="i in 5" :key="i" class="detail-card p-4 space-y-3">
-                  <Skeleton class="h-3 w-16" />
-                  <Skeleton class="h-7 w-20" />
-                </div>
-              </template>
-              <template v-else-if="store.stats">
-                <MetricCard
-                  label="实体"
-                  :value="store.stats.entityCount"
-                  hint="L3 语义记忆中的知识实体总数"
-                >
-                  <template #icon><Brain class="size-4" /></template>
-                </MetricCard>
-                <MetricCard
-                  label="关系"
-                  :value="store.stats.relationCount"
-                  hint="实体之间的关联关系总数"
-                >
-                  <template #icon><GitFork class="size-4" /></template>
-                </MetricCard>
-                <MetricCard
-                  label="对话"
-                  :value="store.stats.conversationCount"
-                  hint="L2 情景记忆中的对话记录总数"
-                >
-                  <template #icon><MessageSquare class="size-4" /></template>
-                </MetricCard>
-                <MetricCard
-                  label="模板"
-                  :value="store.stats.templateCount"
-                  hint="L4 程序记忆中的操作模板总数"
-                >
-                  <template #icon><FileCode2 class="size-4" /></template>
-                </MetricCard>
-                <MetricCard
-                  label="偏好"
-                  :value="store.stats.preferenceCount"
-                  hint="L4 程序记忆中的偏好规则总数"
-                >
-                  <template #icon><Heart class="size-4" /></template>
-                </MetricCard>
-              </template>
             </template>
           </PageHeader>
 

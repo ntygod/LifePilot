@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
   Database,
-  FileJson2,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -16,7 +15,6 @@ import { useUiStore } from '@/stores/ui'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -170,61 +168,32 @@ function summarizeProperties(datastore: Datastore) {
         <PageHeader
           eyebrow="Datastore"
           title="Datastore"
-          description="查看领域数据容器的结构、投影配置和更新时间。每个 Datastore 都会自动维护内部知识库，用来承载文档和语义检索。"
+          :description="`${datastoreStore.list.length} 个 Datastore，${totalPropertyCount} 个结构字段，${projectionEnabledCount} 个已配置投影`"
         >
           <template #actions>
-            <Button type="button" variant="outline" @click="showFilters = !showFilters">
-              <SlidersHorizontal class="size-4" />
-              {{ showFilters ? '收起筛选' : '筛选' }}
-            </Button>
             <Button type="button" variant="outline" @click="refreshDatastores">
               <RefreshCw class="size-4" />
               刷新
             </Button>
           </template>
-
-          <template #meta>
-            <MetricCard label="Datastore 数量" :value="datastoreStore.list.length" hint="当前可浏览的领域数据容器数量。">
-              <template #icon>
-                <Database class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="结构字段" :value="totalPropertyCount" hint="所有 Datastore 已声明字段总数。">
-              <template #icon>
-                <FileJson2 class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="投影配置" :value="projectionEnabledCount" hint="已启用自定义 projectionConfig 的 Datastore 数量。">
-              <template #icon>
-                <ArrowUpRight class="size-5" />
-              </template>
-            </MetricCard>
-          </template>
         </PageHeader>
 
-        <section v-if="showFilters || hasFilters" class="toolbar-strip">
+        <section class="toolbar-strip">
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
-              <div class="min-w-[240px] flex-1">
-                <div class="relative">
-                  <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    v-model="searchQuery"
-                    class="pl-9"
-                    placeholder="按名称或描述搜索 Datastore"
-                  />
-                </div>
+            <div class="flex flex-1 items-center gap-3">
+              <div class="relative min-w-[240px] flex-1">
+                <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  v-model="searchQuery"
+                  class="pl-9"
+                  placeholder="按名称或描述搜索 Datastore"
+                />
               </div>
 
-              <div class="w-full md:w-40">
-                <select
-                  v-model="typeFilter"
-                  class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="all">全部类型</option>
-                  <option v-for="type in allTypes" :key="type" :value="type">{{ type }}</option>
-                </select>
-              </div>
+              <Button variant="outline" size="sm" @click="showFilters = !showFilters">
+                <SlidersHorizontal class="size-4" />
+                筛选
+              </Button>
             </div>
 
             <div class="flex items-center gap-3">
@@ -233,6 +202,18 @@ function summarizeProperties(datastore: Datastore) {
                 <div class="toolbar-counter-value">{{ filteredDatastores.length }}</div>
               </div>
               <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">清空</Button>
+            </div>
+          </div>
+
+          <div v-if="showFilters" class="mt-sm rounded-xl border border-border/40 bg-card/60 p-md">
+            <div class="w-full md:w-40">
+              <select
+                v-model="typeFilter"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="all">全部类型</option>
+                <option v-for="type in allTypes" :key="type" :value="type">{{ type }}</option>
+              </select>
             </div>
           </div>
         </section>

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Cable, Plug, RefreshCw, Server, ServerOff } from 'lucide-vue-next'
+import { RefreshCw, Server, ServerOff } from 'lucide-vue-next'
 import { useSkillStore } from '@/stores/skill'
 import { useMcpStatusStream } from '@/composables/useMcpStatusStream'
-import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -102,7 +101,7 @@ onMounted(() => {
         <PageHeader
           eyebrow="MCP 服务器"
           title="外部连接"
-          description="管理外部 MCP 服务器连接。"
+          :description="`${connectedCount} 个服务已连接，${reconnectingCount} 个重连中，共 ${totalToolCount} 个可用工具`"
         >
           <template #actions>
             <Button variant="outline" @click="refreshData">
@@ -113,29 +112,6 @@ onMounted(() => {
               <Server class="size-4" />
               新建服务器
             </Button>
-          </template>
-
-          <template #meta>
-            <MetricCard label="当前可见" :value="filteredServers.length" hint="当前搜索条件下能直接继续处理的连接数。">
-              <template #icon>
-                <Server class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已连接" :value="connectedCount" hint="当前已经连通并可对外提供工具的服务器。">
-              <template #icon>
-                <Cable class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="重连中" :value="reconnectingCount" hint="正在尝试恢复连接、值得关注的服务器。">
-              <template #icon>
-                <RefreshCw class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="可用工具数" :value="totalToolCount" hint="所有 MCP 服务器上报的工具总量。">
-              <template #icon>
-                <Plug class="size-5" />
-              </template>
-            </MetricCard>
           </template>
         </PageHeader>
 

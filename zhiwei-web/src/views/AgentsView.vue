@@ -8,22 +8,15 @@ import {
   Database,
   Plus,
   Search,
+  SlidersHorizontal,
   Workflow,
 } from 'lucide-vue-next'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import FormSheetShell from '@/components/common/FormSheetShell.vue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -46,6 +39,7 @@ const searchQuery = ref('')
 const typeFilter = ref<string>('all')
 const statusFilter = ref<string>('all')
 const showCreateDialog = ref(false)
+const showFilters = ref(false)
 
 const newAgent = ref({
   name: '',
@@ -167,6 +161,7 @@ function formatDate(dateStr: string) {
         <PageHeader
           eyebrow="智能体"
           title="智能体目录"
+          :description="`${enabledAgents} 个启用中，共 ${totalAgents} 个`"
         >
           <template #actions>
             <Button type="button" @click="showCreateDialog = true">
@@ -174,33 +169,11 @@ function formatDate(dateStr: string) {
               新建智能体
             </Button>
           </template>
-          <template #meta>
-            <MetricCard label="智能体总数" :value="totalAgents" hint="可维护的智能体">
-              <template #icon>
-                <Bot class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已启用" :value="enabledAgents" hint="可直接使用">
-              <template #icon>
-                <Cpu class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="工作流型" :value="workflowAgents" hint="支持流程编排">
-              <template #icon>
-                <Workflow class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="知识库连接" :value="linkedKnowledgeBases" hint="已连接知识库">
-              <template #icon>
-                <Database class="size-5" />
-              </template>
-            </MetricCard>
-          </template>
         </PageHeader>
 
         <section class="toolbar-strip">
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
+            <div class="flex flex-1 items-center gap-3">
               <div class="relative min-w-[240px] flex-1 xl:max-w-[28rem]">
                 <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -211,30 +184,10 @@ function formatDate(dateStr: string) {
                 />
               </div>
 
-              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
-                <Select v-model="typeFilter">
-                  <SelectTrigger class="w-full lg:w-[150px]">
-                    <SelectValue placeholder="全部类型" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部类型</SelectItem>
-                    <SelectItem value="default">默认</SelectItem>
-                    <SelectItem value="custom">自定义</SelectItem>
-                    <SelectItem value="workflow">工作流</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select v-model="statusFilter">
-                  <SelectTrigger class="w-full lg:w-[150px]">
-                    <SelectValue placeholder="全部状态" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部状态</SelectItem>
-                    <SelectItem value="enabled">已启用</SelectItem>
-                    <SelectItem value="disabled">已禁用</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <Button variant="outline" size="sm" @click="showFilters = !showFilters">
+                <SlidersHorizontal class="size-4" />
+                筛选
+              </Button>
             </div>
 
             <div class="flex items-center gap-3">
@@ -245,6 +198,33 @@ function formatDate(dateStr: string) {
               <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
                 清空筛选
               </Button>
+            </div>
+          </div>
+
+          <div v-if="showFilters" class="mt-sm rounded-xl border border-border/40 bg-card/60 p-md">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
+              <Select v-model="typeFilter">
+                <SelectTrigger class="w-full lg:w-[150px]">
+                  <SelectValue placeholder="全部类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部类型</SelectItem>
+                  <SelectItem value="default">默认</SelectItem>
+                  <SelectItem value="custom">自定义</SelectItem>
+                  <SelectItem value="workflow">工作流</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select v-model="statusFilter">
+                <SelectTrigger class="w-full lg:w-[150px]">
+                  <SelectValue placeholder="全部状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="enabled">已启用</SelectItem>
+                  <SelectItem value="disabled">已禁用</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -388,47 +368,45 @@ function formatDate(dateStr: string) {
       </div>
     </PageContainer>
 
-    <Dialog v-model:open="showCreateDialog">
-      <DialogContent class="sm:max-w-[540px]">
-        <DialogHeader>
-          <DialogTitle>新建智能体</DialogTitle>
-          <DialogDescription>
-            填写名称、描述和类型。
-          </DialogDescription>
-        </DialogHeader>
-
-        <div class="grid gap-4 py-2">
-          <div class="space-y-2">
-            <Label for="agent-name">名称 *</Label>
-            <Input
-              id="agent-name"
-              v-model="newAgent.name"
-              placeholder="输入智能体名称"
-            />
-          </div>
-
-          <div class="space-y-2">
-            <Label for="agent-desc">描述</Label>
-            <Textarea
-              id="agent-desc"
-              v-model="newAgent.description"
-              placeholder="简要描述它负责的工作"
-              :rows="4"
-              class="resize-none"
-            />
-          </div>
-
+    <FormSheetShell
+      :open="showCreateDialog"
+      title="新建智能体"
+      description="填写名称、描述和类型。"
+      @update:open="value => showCreateDialog = value"
+      @close="showCreateDialog = false"
+    >
+      <div class="grid gap-4">
+        <div class="space-y-2">
+          <Label for="agent-name">名称 *</Label>
+          <Input
+            id="agent-name"
+            v-model="newAgent.name"
+            placeholder="输入智能体名称"
+          />
         </div>
 
-        <DialogFooter>
+        <div class="space-y-2">
+          <Label for="agent-desc">描述</Label>
+          <Textarea
+            id="agent-desc"
+            v-model="newAgent.description"
+            placeholder="简要描述它负责的工作"
+            :rows="4"
+            class="resize-none"
+          />
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
           <Button variant="outline" @click="showCreateDialog = false">
             取消
           </Button>
           <Button @click="handleCreate">
             创建
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </template>
+    </FormSheetShell>
   </div>
 </template>

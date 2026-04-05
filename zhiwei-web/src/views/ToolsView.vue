@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AlertTriangle, ArrowUpRight, FileText, Wrench } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUpRight, FileText, SlidersHorizontal, Wrench } from 'lucide-vue-next'
 import { useToolStore } from '@/stores/tool'
-import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -19,6 +18,7 @@ const toolStore = useToolStore()
 const searchQuery = ref('')
 const sourceFilter = ref('all')
 const riskFilter = ref('all')
+const showFilters = ref(false)
 
 const sourceLabel: Record<string, string> = {
   builtin: 'Java 原生',
@@ -91,80 +91,55 @@ onMounted(() => {
         <PageHeader
           eyebrow="工具"
           title="工具目录"
-          description="查看和管理所有可用的工具。"
-        >
-          <template #meta>
-            <MetricCard label="工具总数" :value="toolStore.tools.length" hint="全部可用工具">
-              <template #icon>
-                <Wrench class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="外部工具" :value="mcpCount" hint="MCP 接入">
-              <template #icon>
-                <FileText class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="高风险" :value="highRiskCount" hint="需确认权限">
-              <template #icon>
-                <AlertTriangle class="size-5" />
-              </template>
-            </MetricCard>
-          </template>
-        </PageHeader>
+          :description="`${mcpCount} 个外部工具，共 ${toolStore.tools.length} 个`"
+        />
 
-        <section class="detail-card p-4">
-          <div class="space-y-4">
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-              <div class="space-y-1">
-                <div class="surface-label">筛选与检查</div>
-                <p class="text-sm leading-6 text-muted-foreground">
-                  按来源和风险级别筛选。
-                </p>
-              </div>
-
-              <div class="flex flex-wrap gap-2 text-xs">
-                <span class="filter-pill">来源：{{ sourceFilterLabel }}</span>
-                <span class="filter-pill">风险：{{ riskFilterLabel }}</span>
-                <span class="filter-pill">当前结果：{{ filteredTools.length }}</span>
-              </div>
+        <section class="toolbar-strip">
+          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div class="flex flex-1 items-center gap-3">
+              <SearchBar
+                v-model="searchQuery"
+                placeholder="按工具名、显示名或描述搜索"
+                class="flex-1"
+              />
+              <Button variant="outline" size="sm" @click="showFilters = !showFilters">
+                <SlidersHorizontal class="size-4" />
+                筛选
+              </Button>
             </div>
 
-            <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div class="grid flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
-                <SearchBar
-                  v-model="searchQuery"
-                  placeholder="按工具名、显示名或描述搜索"
-                />
-                <Select v-model="sourceFilter">
-                  <SelectTrigger>
-                    <SelectValue placeholder="来源" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部来源</SelectItem>
-                    <SelectItem value="builtin">Java 原生</SelectItem>
-                    <SelectItem value="yaml">YAML 工具</SelectItem>
-                    <SelectItem value="mcp">MCP 工具</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select v-model="riskFilter">
-                  <SelectTrigger>
-                    <SelectValue placeholder="风险" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部风险</SelectItem>
-                    <SelectItem value="LOW">低风险</SelectItem>
-                    <SelectItem value="MEDIUM">中风险</SelectItem>
-                    <SelectItem value="HIGH">高风险</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div class="flex items-center gap-3 text-sm text-muted-foreground">
+              <span>结果 {{ filteredTools.length }}</span>
+              <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
+                清空筛选
+              </Button>
+            </div>
+          </div>
 
-              <div class="flex items-center gap-3 text-sm text-muted-foreground">
-                <span>结果 {{ filteredTools.length }}</span>
-                <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
-                  清空筛选
-                </Button>
-              </div>
+          <div v-if="showFilters" class="mt-sm rounded-xl border border-border/40 bg-card/60 p-md">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
+              <Select v-model="sourceFilter">
+                <SelectTrigger class="w-full lg:w-[180px]">
+                  <SelectValue placeholder="来源" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部来源</SelectItem>
+                  <SelectItem value="builtin">Java 原生</SelectItem>
+                  <SelectItem value="yaml">YAML 工具</SelectItem>
+                  <SelectItem value="mcp">MCP 工具</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select v-model="riskFilter">
+                <SelectTrigger class="w-full lg:w-[180px]">
+                  <SelectValue placeholder="风险" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部风险</SelectItem>
+                  <SelectItem value="LOW">低风险</SelectItem>
+                  <SelectItem value="MEDIUM">中风险</SelectItem>
+                  <SelectItem value="HIGH">高风险</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </section>

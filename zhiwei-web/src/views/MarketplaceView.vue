@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Download, RefreshCw, ServerOff, ShieldCheck, Store } from 'lucide-vue-next'
+import { RefreshCw, ServerOff, Store } from 'lucide-vue-next'
 import type { ExtensionInstallation, ExtensionPackage, InstalledExtensionAsset } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
-import MetricCard from '@/components/common/MetricCard.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -264,36 +263,13 @@ onMounted(() => {
         <PageHeader
           eyebrow="市场"
           title="扩展市场"
-          description="浏览和安装技能、智能体、工作流与渠道插件。"
+          :description="`共 ${totalElements} 个扩展，${installedCount} 个已安装，${updates.length} 个可更新，${verifiedCount} 个已验证`"
         >
           <template #actions>
             <Button variant="outline" :disabled="refreshing" @click="handleRefresh">
               <RefreshCw class="size-4" :class="refreshing ? 'animate-spin' : ''" />
               {{ refreshing ? '刷新中...' : '刷新索引' }}
             </Button>
-          </template>
-
-          <template #meta>
-            <MetricCard label="当前可见" :value="totalElements" hint="当前搜索和筛选条件下返回的扩展包数量。">
-              <template #icon>
-                <Store class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已安装" :value="installedCount" hint="当前结果集中本地已经接入的扩展包。">
-              <template #icon>
-                <Download class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="可更新" :value="updates.length" hint="市场中存在新版本、值得回头处理的扩展。">
-              <template #icon>
-                <RefreshCw class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已验证" :value="verifiedCount" hint="当前筛选结果中已通过验证的扩展数量。">
-              <template #icon>
-                <ShieldCheck class="size-5" />
-              </template>
-            </MetricCard>
           </template>
         </PageHeader>
 
