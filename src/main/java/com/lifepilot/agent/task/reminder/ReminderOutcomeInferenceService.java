@@ -22,6 +22,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import com.lifepilot.memory.semantic.EntityType;
+
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -50,6 +53,19 @@ public class ReminderOutcomeInferenceService {
     );
     private static final List<String> TERMINAL_STATUS_VALUES = List.of(
             "DONE", "COMPLETED", "RESOLVED", "CLOSED", "PAID", "SUBMITTED", "FINISHED"
+    );
+
+    /** 反事实样本的 reward 折扣系数，避免合成数据主导真实反馈。 */
+    private static final float COUNTERFACTUAL_DISCOUNT = 0.7f;
+
+    /** 可用于反事实推断的实体类型。 */
+    private static final List<EntityType> COUNTERFACTUAL_ENTITY_TYPES = List.of(
+            EntityType.EVENT, EntityType.GOAL, EntityType.HABIT, EntityType.PROJECT
+    );
+
+    /** 动作意图正则 — 复用 DefaultReminderSignalCollector 的模式。 */
+    private static final Pattern ACTION_CUE_PATTERN = Pattern.compile(
+            "提醒|记得|别忘|待办|安排|准备|处理|提交|缴费|报销|整理|复盘|预约|确认|推进|跟进|打卡|买|出发|会议|计划"
     );
 
     @Nullable
@@ -121,6 +137,171 @@ public class ReminderOutcomeInferenceService {
                     userId, candidates.size(), inferredCount);
         }
         return inferredCount;
+    }
+
+    /**
+     * 反事实样本预热 — 从历史记忆中合成"假如当时发了提醒"的训练样本。
+     *
+     * <p>扫描 L3 中近期的 EVENT/GOAL/HABIT/PROJECT 实体，结合 L2 对话中的完成线索，
+     * 推断事项是否被完成（正样本）或可能被遗忘（负样本），生成 Bandit 训练数据。</p>
+     *
+     * <p>反事实样本的 reward 打折（×{@code COUNTERFACTUAL_DISCOUNT}），
+     * 避免合成数据主导真实反馈。</p>
+     *
+     * @param userId 用户 ID
+     * @param since  回溯起始时间
+     * @return 合成的训练样本列表
+     */
+    public List<ReminderActionTrainingExample> inferCounterfactualExamples(String userId, Instant since) {
+        if (semanticMemory == null) {
+            return List.of();
+        }
+        Instant now = Instant.now();
+        List<ReminderActionTrainingExample> examples = new ArrayList<>();
+
+        for (EntityType type : COUNTERFACTUAL_ENTITY_TYPES) {
+            try {
+                List<TemporalEntity> entities = semanticMemory.findCurrentByType(type);
+                for (TemporalEntity entity : entities) {
+                    if (entity.createdAt().isBefore(since)) {
+                        continue;
+                    }
+                    inferCounterfactualFromEntity(entity, now).ifPresent(examples::add);
+                }
+            } catch (Exception e) {
+                log.debug("反事实样本推断跳过: entityType={}, error={}", type, e.getMessage());
+            }
+        }
+
+        // 从近期对话中补充提取
+        if (episodicMemory != null) {
+            try {
+                var conversations = episodicMemory.getRecent(Duration.between(since, now));
+                for (var conversation : conversations) {
+                    inferCounterfactualFromConversation(conversation, now).ifPresent(examples::add);
+                }
+            } catch (Exception e) {
+                log.debug("反事实样本推断跳过对话扫描: error={}", e.getMessage());
+            }
+        }
+
+        int maxExamples = config.getTask().getProactiveReminderBanditMaxExamples();
+        if (examples.size() > maxExamples) {
+            examples = new ArrayList<>(examples.subList(0, maxExamples));
+        }
+
+        if (!examples.isEmpty()) {
+            log.info("反事实样本预热完成: userId={}, examples={}", userId, examples.size());
+        }
+        return examples;
+    }
+
+    private Optional<ReminderActionTrainingExample> inferCounterfactualFromEntity(TemporalEntity entity, Instant now) {
+        boolean completed = isEntityCompleted(entity);
+        boolean expired = entity.isExpired();
+        boolean hasRelevantTime = entity.validTo() != null;
+
+        // 跳过：没有时间维度的实体无法做时机推断
+        if (!hasRelevantTime && !expired && !completed) {
+            return Optional.empty();
+        }
+
+        // 计算假设的候选类型和分数
+        ReminderCandidateType candidateType = inferCandidateType(entity);
+        float urgency = calcCounterfactualUrgency(entity, now);
+        float importance = Math.min(1.0f, entity.importanceScore());
+        float confidence = Math.min(1.0f, entity.extractionConfidence());
+
+        // 正样本：事项最终完成了 → 如果当时提醒，可能帮助更好地完成
+        // 负样本：事项过期且未完成 → 如果当时提醒，可能避免遗忘
+        float reward;
+        if (completed) {
+            // 完成了：中等正向奖励（因为不确定是否因提醒而完成）
+            reward = COUNTERFACTUAL_DISCOUNT * 0.72f;
+        } else if (expired) {
+            // 过期未完成：如果提醒了可能就不会遗忘 → 给高奖励以鼓励提醒
+            reward = COUNTERFACTUAL_DISCOUNT * 0.88f;
+        } else {
+            return Optional.empty();
+        }
+
+        return Optional.of(new ReminderActionTrainingExample(
+                candidateType.name(),
+                urgency >= 0.85f ? ReminderAction.NORMAL_PUSH : ReminderAction.SOFT_PUSH,
+                COUNTERFACTUAL_DISCOUNT * (0.30f * confidence + 0.25f * 0.78f + 0.20f * urgency + 0.15f * 0.5f + 0.10f * 0.8f),
+                confidence,
+                0.78f,
+                urgency,
+                0.5f,
+                0.8f,
+                0.0f,
+                0.0f,
+                0, 0, completed ? 1 : 0, 0, 0, expired ? 1 : 0,
+                reward
+        ));
+    }
+
+    private Optional<ReminderActionTrainingExample> inferCounterfactualFromConversation(ConversationRecord conversation,
+                                                                                         Instant now) {
+        // 在用户消息中寻找包含时间线索和动作线索的内容
+        boolean hasActionCue = false;
+        boolean hasCompletionCue = false;
+
+        for (MessageRecord message : conversation.messages()) {
+            if (!"user".equalsIgnoreCase(message.role())) {
+                continue;
+            }
+            String content = message.effectiveContent();
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            if (COMPLETION_CUE_PATTERN.matcher(content).find()) {
+                hasCompletionCue = true;
+            }
+            if (ACTION_CUE_PATTERN.matcher(content).find()) {
+                hasActionCue = true;
+            }
+        }
+
+        // 只有同时出现动作意图和完成线索时才生成正样本
+        if (!hasActionCue) {
+            return Optional.empty();
+        }
+
+        float reward = hasCompletionCue
+                ? COUNTERFACTUAL_DISCOUNT * 0.68f   // 提到了要做且后来说完成了
+                : COUNTERFACTUAL_DISCOUNT * 0.45f;  // 提到了要做但没看到完成信号
+
+        return Optional.of(new ReminderActionTrainingExample(
+                ReminderCandidateType.COMMITMENT_GAP.name(),
+                ReminderAction.SOFT_PUSH,
+                COUNTERFACTUAL_DISCOUNT * 0.60f,
+                0.55f, 0.65f, 0.50f, 0.50f, 0.70f,
+                0.0f, 0.0f,
+                0, 0, hasCompletionCue ? 1 : 0, 0, 0, 0,
+                reward
+        ));
+    }
+
+    private ReminderCandidateType inferCandidateType(TemporalEntity entity) {
+        return switch (entity.type()) {
+            case EVENT -> ReminderCandidateType.PREPARATION_WINDOW;
+            case HABIT -> ReminderCandidateType.HABIT_WINDOW;
+            case GOAL, PROJECT -> ReminderCandidateType.COMMITMENT_GAP;
+            default -> ReminderCandidateType.DUE_SOON;
+        };
+    }
+
+    private float calcCounterfactualUrgency(TemporalEntity entity, Instant now) {
+        if (entity.validTo() == null) {
+            return 0.50f;
+        }
+        Duration remaining = Duration.between(now, entity.validTo());
+        if (remaining.isNegative() || remaining.isZero()) {
+            return 1.0f;
+        }
+        float hours = remaining.toMinutes() / 60.0f;
+        return Math.max(0.0f, Math.min(1.0f, 1.0f - hours / 24.0f));
     }
 
     private Optional<ReminderInferredOutcomeRecord> inferCandidate(ReminderOutcomeInferenceCandidate candidate,

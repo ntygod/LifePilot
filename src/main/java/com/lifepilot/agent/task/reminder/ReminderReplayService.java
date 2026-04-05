@@ -214,7 +214,8 @@ public class ReminderReplayService {
     }
 
     private boolean isPushAction(ReminderAction action) {
-        return action == ReminderAction.SOFT_PUSH || action == ReminderAction.NORMAL_PUSH;
+        return action == ReminderAction.SOFT_PUSH || action == ReminderAction.NORMAL_PUSH
+                || action == ReminderAction.PREPARE || action == ReminderAction.AUTO_EXECUTE;
     }
 
     private float divide(float total, int count) {

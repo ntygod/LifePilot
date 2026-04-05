@@ -26,6 +26,12 @@ public enum ReminderSkipReason {
     /** 已达到今日主动提醒上限 */
     DAILY_LIMIT("已达到今日主动提醒上限"),
 
+    /** 用户正在全屏使用应用 */
+    FULLSCREEN_APP("用户正在全屏使用应用"),
+
+    /** 信任等级不足 */
+    TRUST_LEVEL_INSUFFICIENT("信任等级不足"),
+
     /** 当前没有足够理由打扰用户 */
     INSUFFICIENT_REASON("当前没有足够理由打扰用户");
 

@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * 主动提醒执行仓储。
@@ -702,6 +703,59 @@ public class ReminderExecutionRepository {
             return number.floatValue();
         }
         return Float.parseFloat(value.toString());
+    }
+
+    /**
+     * 保存反事实合成的训练样本到决策表，以便 Bandit 后续读取。
+     *
+     * <p>每条样本作为一条虚拟决策记录写入，action 标记为实际推荐动作，
+     * run_id 使用特殊前缀 {@code counterfactual:} 以区分真实执行记录。</p>
+     */
+    public void saveCounterfactualExamples(String userId, List<ReminderActionTrainingExample> examples) {
+        Instant now = Instant.now();
+        String runId = "counterfactual:" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO proactive_reminder_runs (
+                    id, user_id, started_at, finished_at,
+                    topics_collected, decisions_evaluated, reminders_sent,
+                    context_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                runId, userId, now.toString(), now.toString(),
+                examples.size(), examples.size(), 0,
+                "{\"source\":\"counterfactual_warmup\"}", now.toString(), now.toString()
+        );
+        for (ReminderActionTrainingExample example : examples) {
+            jdbcTemplate.update("""
+                    INSERT INTO proactive_reminder_decisions (
+                        id, run_id, topic_key, title, signal_id, candidate_type,
+                        action, decision_reason, rationale,
+                        final_score, evidence_score, timing_score, urgency_score,
+                        user_fit_score, actionability_score, duplicate_penalty, fatigue_penalty,
+                        topic_reminders_sent_today, topic_read_count_30d, topic_acted_count_30d,
+                        topic_dismissed_count_30d, topic_snoozed_count_30d, topic_not_relevant_count_30d,
+                        topic_muted, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    UUID.randomUUID().toString(), runId,
+                    "counterfactual:" + example.candidateType(),
+                    "反事实合成样本",
+                    "counterfactual:" + UUID.randomUUID(),
+                    example.candidateType(),
+                    example.action().name(),
+                    "反事实样本预热",
+                    "从历史记忆合成的训练样本",
+                    example.finalScore(), example.evidenceScore(),
+                    example.timingScore(), example.urgencyScore(),
+                    example.userFitScore(), example.actionabilityScore(),
+                    example.duplicatePenalty(), example.fatiguePenalty(),
+                    example.topicRemindersSentToday(), example.topicReadCount30d(),
+                    example.topicActedCount30d(), example.topicDismissedCount30d(),
+                    example.topicSnoozedCount30d(), example.topicNotRelevantCount30d(),
+                    0,
+                    now.toString(), now.toString()
+            );
+        }
     }
 
     private static float rewardFor(String feedbackType, String readStatus, float inferredActedAttribution) {

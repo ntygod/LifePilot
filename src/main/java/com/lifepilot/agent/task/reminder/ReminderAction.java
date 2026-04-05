@@ -10,5 +10,7 @@ public enum ReminderAction {
     SKIP,
     SOFT_PUSH,
     NORMAL_PUSH,
-    DEFER_TO_WINDOW
+    DEFER_TO_WINDOW,
+    PREPARE,
+    AUTO_EXECUTE
 }

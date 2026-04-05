@@ -301,6 +301,10 @@ public class AgentConfigProperties {
         private String proactiveReminderLlmScene = "proactive_reminder";
         /** 主动提醒文案生成超时（秒）。 */
         private int proactiveReminderLlmTimeoutSeconds = 15;
+        /** 和风天气 API key。 */
+        private String weatherApiKey;
+        /** 天气查询城市 ID 或经纬度。 */
+        private String weatherLocation;
         /** 单次执行超时（秒）。 */
         private int executionTimeoutSeconds = 300;
         /** 活跃时段开始（HH:mm，null 表示全天）。 */

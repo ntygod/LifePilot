@@ -184,6 +184,8 @@ public class ReminderActionPolicySelector {
         return switch (action) {
             case SOFT_PUSH -> "轻提醒";
             case NORMAL_PUSH -> "标准提醒";
+            case PREPARE -> "预备执行";
+            case AUTO_EXECUTE -> "自动执行";
             case DEFER_TO_WINDOW -> "延后提醒";
             case SKIP -> "跳过";
         };

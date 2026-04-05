@@ -55,6 +55,10 @@ public class ProactiveReminderService {
     private final ReminderOpportunityPolicySelector opportunityPolicySelector;
     private final ReminderActionPolicySelector actionPolicySelector;
     private final ReminderMessageGenerator messageGenerator;
+    @Nullable
+    private final ReminderSituationSynthesizer situationSynthesizer;
+    @Nullable
+    private final ReminderFocusStateHolder focusStateHolder;
     private final AgentConfigProperties config;
     private final NotificationProperties notificationProperties;
 
@@ -74,7 +78,7 @@ public class ProactiveReminderService {
         this(signalCollector, decisionEngine, notificationService, notificationRepository,
                 executionRepository, feedbackRepository, new ReminderPolicyTuner(),
                 new ReminderOpportunityPolicySelector(config), new ReminderActionPolicySelector(),
-                messageGenerator, outcomeInferenceService, null, null, config, notificationProperties);
+                messageGenerator, outcomeInferenceService, null, null, null, null, config, notificationProperties);
     }
 
     public ProactiveReminderService(ReminderSignalCollector signalCollector,
@@ -90,6 +94,8 @@ public class ProactiveReminderService {
                                     @Nullable ReminderOutcomeInferenceService outcomeInferenceService,
                                     @Nullable ReminderReplayService replayService,
                                     @Nullable ReminderPolicyVersionService policyVersionService,
+                                    @Nullable ReminderSituationSynthesizer situationSynthesizer,
+                                    @Nullable ReminderFocusStateHolder focusStateHolder,
                                     AgentConfigProperties config,
                                     NotificationProperties notificationProperties) {
         this.signalCollector = signalCollector;
@@ -105,6 +111,8 @@ public class ProactiveReminderService {
         this.opportunityPolicySelector = opportunityPolicySelector;
         this.actionPolicySelector = actionPolicySelector;
         this.messageGenerator = messageGenerator;
+        this.situationSynthesizer = situationSynthesizer;
+        this.focusStateHolder = focusStateHolder;
         this.config = config;
         this.notificationProperties = notificationProperties;
     }
@@ -117,6 +125,38 @@ public class ProactiveReminderService {
             return new ProactiveReminderRunResult(0, 0, 0);
         }
         return execute(notificationProperties.getDefaultUserId(), "periodic", null, null);
+    }
+
+    /**
+     * 反事实样本预热 — 从历史记忆合成训练样本以缓解冷启动。
+     *
+     * <p>在系统启动或 Bandit 样本不足时调用。</p>
+     *
+     * @return 合成的训练样本数量
+     */
+    public int warmupCounterfactualExamples() {
+        if (!config.getTask().isProactiveReminderEnabled() || outcomeInferenceService == null) {
+            return 0;
+        }
+        try {
+            String userId = notificationProperties.getDefaultUserId();
+            Instant since = Instant.now().minusSeconds(30L * 24 * 3600);
+            List<ReminderActionTrainingExample> examples =
+                    outcomeInferenceService.inferCounterfactualExamples(userId, since);
+            if (examples.isEmpty()) {
+                log.debug("反事实样本预热: 无可用样本");
+                return 0;
+            }
+            // 将合成样本持久化到执行仓储，供 Bandit 后续读取
+            if (executionRepository != null) {
+                executionRepository.saveCounterfactualExamples(userId, examples);
+            }
+            log.info("反事实样本预热完成: userId={}, examples={}", userId, examples.size());
+            return examples.size();
+        } catch (Exception e) {
+            log.warn("反事实样本预热失败: {}", e.getMessage());
+            return 0;
+        }
     }
 
     /**
@@ -180,24 +220,32 @@ public class ProactiveReminderService {
         Map<String, ReminderTopicSnapshot> topicIndex = indexTopics(topics);
         List<ReminderDecisionOutcome> outcomes = applyLearningPolicies(
                 userId, decisions, topicIndex, context, policyConfig);
+
+        // 情境合成：将多个相关主题合并为情境化建议
+        List<ReminderSituation> situations = synthesizeSituations(outcomes, topicIndex, context);
+
         int sent = 0;
         for (ReminderDecisionOutcome outcome : outcomes) {
             ReminderDecision decision = outcome.decision();
             String notificationId = null;
             if (decision.action() != ReminderAction.SOFT_PUSH
-                    && decision.action() != ReminderAction.NORMAL_PUSH) {
+                    && decision.action() != ReminderAction.NORMAL_PUSH
+                    && decision.action() != ReminderAction.PREPARE
+                    && decision.action() != ReminderAction.AUTO_EXECUTE) {
                 persistDecision(runId, decision, topicIndex.get(decision.candidate().topicKey()),
                         null, outcome.policyTrace(), resolvedPolicy);
                 continue;
             }
             ReminderTopicSnapshot snapshot = topicIndex.get(decision.candidate().topicKey());
+            // 如果该决策属于某个合成情境，使用情境文案替代
+            String situationMessage = findSituationMessage(decision.candidate().topicKey(), situations);
             notificationId = sendReminder(userId, decision, snapshot != null ? snapshot :
                     new ReminderTopicSnapshot(
                             decision.candidate().topicKey(),
                             decision.candidate().title(),
                             List.of(),
                             ReminderTopicState.empty()
-                    ), context, resolvedPolicy);
+                    ), context, resolvedPolicy, situationMessage);
             persistDecision(runId, decision, snapshot, notificationId, outcome.policyTrace(), resolvedPolicy);
             if (notificationId != null) {
                 sent++;
@@ -233,12 +281,14 @@ public class ProactiveReminderService {
         Instant startOfDay = LocalDate.now(zoneId).atStartOfDay(zoneId).toInstant();
         long remindersSentToday = notificationRepository.countSentByUserIdAndTypeSince(
                 userId, REMINDER_TYPE, startOfDay);
+        ReminderFocusState focusState = focusStateHolder != null ? focusStateHolder.get() : null;
         return new ReminderRuntimeContext(
                 now,
                 zoneId,
                 parseTime(config.getTask().getProactiveReminderQuietHoursStart()),
                 parseTime(config.getTask().getProactiveReminderQuietHoursEnd()),
-                (int) remindersSentToday
+                (int) remindersSentToday,
+                focusState
         );
     }
 
@@ -434,7 +484,8 @@ public class ProactiveReminderService {
                                 ReminderDecision decision,
                                 ReminderTopicSnapshot snapshot,
                                 ReminderRuntimeContext context,
-                                ReminderResolvedPolicy resolvedPolicy) {
+                                ReminderResolvedPolicy resolvedPolicy,
+                                @Nullable String situationMessage) {
         ReminderCandidate candidate = decision.candidate();
         ReminderMessage message = messageGenerator.generate(userId, decision, snapshot, context);
         Map<String, String> metadata = new LinkedHashMap<>();
@@ -443,7 +494,7 @@ public class ProactiveReminderService {
         metadata.put("action", decision.action().name());
         metadata.put("finalScore", String.format("%.3f", decision.finalScore()));
         metadata.put("deliveryKey", UUID.randomUUID().toString());
-        metadata.put("messageMode", message.mode());
+        metadata.put("messageMode", situationMessage != null ? "situation" : message.mode());
         if (resolvedPolicy.policyVersionId() != null) {
             metadata.put("policyVersionId", resolvedPolicy.policyVersionId());
         }
@@ -457,8 +508,14 @@ public class ProactiveReminderService {
             metadata.put("messageModel", message.modelName());
         }
 
-        String title = decision.action() == ReminderAction.NORMAL_PUSH ? "【主动提醒】" : "【轻提醒】";
-        String body = message.body();
+        String title = switch (decision.action()) {
+            case NORMAL_PUSH -> "【主动提醒】";
+            case PREPARE -> "【预备执行】";
+            case AUTO_EXECUTE -> "【自动执行】";
+            default -> "【轻提醒】";
+        };
+        // 情境合成文案优先于单条文案
+        String body = situationMessage != null ? situationMessage : message.body();
         if (body.isBlank()) {
             String reason = candidate.rationale().isBlank() ? decision.reason() : candidate.rationale();
             body = candidate.title() + "\n" + "原因：" + reason;
@@ -473,6 +530,37 @@ public class ProactiveReminderService {
                 metadata
         ));
         return notificationIds.isEmpty() ? null : notificationIds.getFirst();
+    }
+
+    private List<ReminderSituation> synthesizeSituations(List<ReminderDecisionOutcome> outcomes,
+                                                         Map<String, ReminderTopicSnapshot> topicIndex,
+                                                         ReminderRuntimeContext context) {
+        if (situationSynthesizer == null) {
+            return List.of();
+        }
+        try {
+            return situationSynthesizer.synthesize(outcomes, topicIndex, context);
+        } catch (Exception e) {
+            log.debug("情境合成跳过: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 查找某个 topicKey 所属的情境合成文案（仅当该情境包含多个主题时有效）。
+     * 单主题情境返回 null，沿用原有的 MessageGenerator 路径。
+     */
+    @Nullable
+    private String findSituationMessage(String topicKey, List<ReminderSituation> situations) {
+        for (ReminderSituation situation : situations) {
+            if (situation.topicKeys().contains(topicKey)
+                    && situation.topicKeys().size() > 1
+                    && situation.message() != null
+                    && !situation.message().isBlank()) {
+                return situation.message();
+            }
+        }
+        return null;
     }
 
     private Map<String, ReminderTopicSnapshot> indexTopics(List<ReminderTopicSnapshot> topics) {

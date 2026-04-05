@@ -211,6 +211,8 @@ class ProactiveReminderService_单元测试 {
                 outcomeInferenceService,
                 null,
                 policyVersionService,
+                null,
+                null,
                 config,
                 notificationProperties
         );
@@ -299,6 +301,8 @@ class ProactiveReminderService_单元测试 {
                 ),
                 messageGenerator,
                 outcomeInferenceService,
+                null,
+                null,
                 null,
                 null,
                 config,

@@ -69,6 +69,7 @@ public final class ReminderRewardModel {
             case TRACE_TOOL_OUTPUT -> 0.74f;
             case SEMANTIC_STATE -> 0.68f;
             case CONVERSATION_MESSAGE -> 0.62f;
+            case COUNTERFACTUAL -> 0.50f;
         };
         long minutes = 0L;
         if (decidedAt != null && inferredAt != null && !inferredAt.isBefore(decidedAt)) {

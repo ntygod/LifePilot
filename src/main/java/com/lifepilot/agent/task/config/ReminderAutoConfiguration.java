@@ -19,10 +19,14 @@ import com.lifepilot.agent.task.reminder.ReminderReplayService;
 import com.lifepilot.agent.task.reminder.ReminderActionPolicySelector;
 import com.lifepilot.agent.task.reminder.ReminderOpportunityPolicySelector;
 import com.lifepilot.agent.task.reminder.ReminderMessageGenerator;
+import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.agent.task.reminder.ReminderSignalCollector;
+import com.lifepilot.agent.task.reminder.ReminderSituationSynthesizer;
 import com.lifepilot.agent.task.reminder.ReminderRetentionScheduler;
 import com.lifepilot.agent.task.reminder.ReminderTopicAliasRepository;
+import com.lifepilot.agent.task.reminder.ReminderTrustGradient;
 import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
+import com.lifepilot.agent.task.reminder.WeatherSignalSource;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -42,7 +46,9 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -134,8 +140,28 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ReminderDecisionEngine reminderDecisionEngine() {
-        return new ReminderDecisionEngine();
+    public ReminderTrustGradient reminderTrustGradient(JdbcTemplate jdbcTemplate) {
+        return new ReminderTrustGradient(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReminderDecisionEngine reminderDecisionEngine(
+            @Autowired(required = false) ReminderTrustGradient reminderTrustGradient) {
+        return new ReminderDecisionEngine(new com.lifepilot.agent.task.reminder.ReminderCandidateDetector(),
+                reminderTrustGradient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WeatherSignalSource weatherSignalSource() {
+        return new WeatherSignalSource();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReminderFocusStateHolder reminderFocusStateHolder() {
+        return new ReminderFocusStateHolder();
     }
 
     @Bean
@@ -205,6 +231,14 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public ReminderSituationSynthesizer reminderSituationSynthesizer(
+            @Autowired(required = false) GenerationRouter generationRouter,
+            @Autowired(required = false) PromptRegistry promptRegistry) {
+        return new ReminderSituationSynthesizer(generationRouter, promptRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ProactiveReminderService proactiveReminderService(ReminderSignalCollector reminderSignalCollector,
                                                              ReminderDecisionEngine reminderDecisionEngine,
                                                              ReminderPolicyTuner reminderPolicyTuner,
@@ -218,6 +252,8 @@ public class ReminderAutoConfiguration {
                                                              @Autowired(required = false) ReminderOutcomeInferenceService reminderOutcomeInferenceService,
                                                              @Autowired(required = false) ReminderReplayService reminderReplayService,
                                                              @Autowired(required = false) ReminderPolicyVersionService reminderPolicyVersionService,
+                                                             @Autowired(required = false) ReminderSituationSynthesizer reminderSituationSynthesizer,
+                                                             @Autowired(required = false) ReminderFocusStateHolder reminderFocusStateHolder,
                                                              AgentConfigProperties config,
                                                              NotificationProperties notificationProperties) {
         return new ProactiveReminderService(
@@ -234,9 +270,50 @@ public class ReminderAutoConfiguration {
                 reminderOutcomeInferenceService,
                 reminderReplayService,
                 reminderPolicyVersionService,
+                reminderSituationSynthesizer,
+                reminderFocusStateHolder,
                 config,
                 notificationProperties
         );
+    }
+
+    // ===== 启动预热 =====
+
+    /**
+     * 应用启动后异步执行反事实样本预热，缓解 Bandit 冷启动问题。
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "proactive-reminder-enabled",
+            havingValue = "true", matchIfMissing = true)
+    ReminderCounterfactualWarmupListener reminderCounterfactualWarmupListener(
+            ProactiveReminderService proactiveReminderService) {
+        return new ReminderCounterfactualWarmupListener(proactiveReminderService);
+    }
+
+    /**
+     * 内部监听器 — 在应用就绪后触发反事实预热。
+     */
+    static class ReminderCounterfactualWarmupListener {
+        private static final Logger warmupLog = LoggerFactory.getLogger(ReminderCounterfactualWarmupListener.class);
+        private final ProactiveReminderService proactiveReminderService;
+
+        ReminderCounterfactualWarmupListener(ProactiveReminderService proactiveReminderService) {
+            this.proactiveReminderService = proactiveReminderService;
+        }
+
+        @EventListener(ApplicationReadyEvent.class)
+        public void onApplicationReady() {
+            Thread.ofVirtual().name("reminder-counterfactual-warmup").start(() -> {
+                try {
+                    int count = proactiveReminderService.warmupCounterfactualExamples();
+                    if (count > 0) {
+                        warmupLog.info("主动提醒反事实预热完成: examples={}", count);
+                    }
+                } catch (Exception e) {
+                    warmupLog.debug("主动提醒反事实预热跳过: {}", e.getMessage());
+                }
+            });
+        }
     }
 
     // ===== 调度器层 =====

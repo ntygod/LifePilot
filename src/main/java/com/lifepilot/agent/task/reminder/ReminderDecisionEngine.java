@@ -1,5 +1,7 @@
 package com.lifepilot.agent.task.reminder;
 
+import org.springframework.lang.Nullable;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,13 +20,21 @@ import java.util.Optional;
 public class ReminderDecisionEngine {
 
     private final ReminderCandidateDetector candidateDetector;
+    @Nullable
+    private final ReminderTrustGradient trustGradient;
 
     public ReminderDecisionEngine() {
-        this(new ReminderCandidateDetector());
+        this(new ReminderCandidateDetector(), null);
     }
 
     public ReminderDecisionEngine(ReminderCandidateDetector candidateDetector) {
+        this(candidateDetector, null);
+    }
+
+    public ReminderDecisionEngine(ReminderCandidateDetector candidateDetector,
+                                  @Nullable ReminderTrustGradient trustGradient) {
         this.candidateDetector = candidateDetector;
+        this.trustGradient = trustGradient;
     }
 
     /**
@@ -100,6 +110,12 @@ public class ReminderDecisionEngine {
         if (context.isWithinQuietHours()) {
             return skipDecision(candidate, ReminderSkipReason.QUIET_HOURS);
         }
+
+        // --- 焦点状态检查（在静默检查之后、冷却检查之前） ---
+        if (context.isFullscreenApp()) {
+            return skipDecision(candidate, ReminderSkipReason.FULLSCREEN_APP);
+        }
+
         if (isWithinCooldown(state, context, config)) {
             return skipDecision(candidate, ReminderSkipReason.COOLDOWN);
         }
@@ -110,13 +126,53 @@ public class ReminderDecisionEngine {
             return new ReminderDecision(candidate, ReminderAction.DEFER_TO_WINDOW,
                     candidate.suggestedAt(), "更适合在预测窗口提醒");
         }
+
+        // --- 基础动作推断 ---
+        ReminderAction baseAction;
+        String baseReason;
         if (candidate.finalScore() >= config.strongPushThreshold() || candidate.urgencyScore() >= 0.85f) {
-            return new ReminderDecision(candidate, ReminderAction.NORMAL_PUSH, null, "命中高优先级提醒条件");
+            baseAction = ReminderAction.NORMAL_PUSH;
+            baseReason = "命中高优先级提醒条件";
+        } else if (candidate.finalScore() >= config.softPushThreshold()) {
+            baseAction = ReminderAction.SOFT_PUSH;
+            baseReason = "适合发送轻提醒";
+        } else {
+            return skipDecision(candidate, ReminderSkipReason.INSUFFICIENT_REASON);
         }
-        if (candidate.finalScore() >= config.softPushThreshold()) {
-            return new ReminderDecision(candidate, ReminderAction.SOFT_PUSH, null, "适合发送轻提醒");
+
+        // --- 焦点编码降级：NORMAL_PUSH → SOFT_PUSH ---
+        if (context.isFocusedCoding() && baseAction == ReminderAction.NORMAL_PUSH) {
+            baseAction = ReminderAction.SOFT_PUSH;
+            baseReason = "用户正在编码中，降级为轻提醒";
         }
-        return skipDecision(candidate, ReminderSkipReason.INSUFFICIENT_REASON);
+
+        // --- 信任等级约束 ---
+        baseAction = applyTrustConstraint(candidate, baseAction);
+
+        return new ReminderDecision(candidate, baseAction, null, baseReason);
+    }
+
+    /**
+     * 根据信任等级约束最大允许动作。
+     *
+     * <p>如果信任等级不足以执行当前动作则逐级降级。</p>
+     */
+    private ReminderAction applyTrustConstraint(ReminderCandidate candidate, ReminderAction action) {
+        if (trustGradient == null) {
+            return action;
+        }
+        ReminderTrustLevel trust = trustGradient.getTrustLevel("default", candidate.type());
+        return switch (action) {
+            case AUTO_EXECUTE -> trust.isAtLeast(ReminderTrustLevel.AUTO_EXECUTE)
+                    ? action : applyTrustConstraint(candidate, ReminderAction.PREPARE);
+            case PREPARE -> trust.isAtLeast(ReminderTrustLevel.PREPARE)
+                    ? action : applyTrustConstraint(candidate, ReminderAction.NORMAL_PUSH);
+            case NORMAL_PUSH -> trust.isAtLeast(ReminderTrustLevel.NOTIFY)
+                    ? action : ReminderAction.SOFT_PUSH;
+            case SOFT_PUSH -> trust.isAtLeast(ReminderTrustLevel.OBSERVE)
+                    ? action : ReminderAction.SKIP;
+            default -> action;
+        };
     }
 
     private static ReminderDecision skipDecision(ReminderCandidate candidate, ReminderSkipReason skipReason) {
@@ -134,16 +190,20 @@ public class ReminderDecisionEngine {
     }
 
     private boolean isPushAction(ReminderDecision decision) {
-        return decision.action() == ReminderAction.SOFT_PUSH
-                || decision.action() == ReminderAction.NORMAL_PUSH;
+        return switch (decision.action()) {
+            case SOFT_PUSH, NORMAL_PUSH, PREPARE, AUTO_EXECUTE -> true;
+            case SKIP, DEFER_TO_WINDOW -> false;
+        };
     }
 
     private int actionPriority(ReminderDecision decision) {
         return switch (decision.action()) {
-            case NORMAL_PUSH -> 0;
-            case SOFT_PUSH -> 1;
-            case DEFER_TO_WINDOW -> 2;
-            case SKIP -> 3;
+            case AUTO_EXECUTE -> 0;
+            case PREPARE -> 1;
+            case NORMAL_PUSH -> 2;
+            case SOFT_PUSH -> 3;
+            case DEFER_TO_WINDOW -> 4;
+            case SKIP -> 5;
         };
     }
 }

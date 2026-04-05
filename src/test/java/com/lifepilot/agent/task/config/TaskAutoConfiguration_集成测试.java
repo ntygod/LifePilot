@@ -152,6 +152,8 @@ class TaskAutoConfiguration_集成测试 {
                 reminderOutcomeInferenceService,
                 reminderReplayService,
                 reminderPolicyVersionService,
+                null,
+                null,
                 config,
                 notificationProperties
         );

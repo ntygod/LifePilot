@@ -12,5 +12,7 @@ public enum ReminderOutcomeEvidenceSource {
     WORKFLOW_STEP_LOG,
     TRACE_TOOL_OUTPUT,
     SEMANTIC_STATE,
-    CONVERSATION_MESSAGE
+    CONVERSATION_MESSAGE,
+    /** 反事实推断：从历史记忆合成的假设样本。 */
+    COUNTERFACTUAL
 }
