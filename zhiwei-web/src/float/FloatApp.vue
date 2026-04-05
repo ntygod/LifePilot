@@ -157,16 +157,6 @@ async function handleFeedback(type: FeedbackType) {
   dismissToIdle()
 }
 
-// ─── 拖拽 ────────────────────────────────────────────────
-async function startDrag(e: MouseEvent) {
-  // 只响应左键
-  if (e.button !== 0) return
-  try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    await getCurrentWindow().startDragging()
-  } catch { /* 非 Tauri 环境 */ }
-}
-
 // ─── 快捷面板 ────────────────────────────────────────────
 function openChat() {
   switchMode('chat')
@@ -245,14 +235,14 @@ onUnmounted(() => {
       v-if="!isExpanded"
       class="float-orb"
       :class="{ 'float-orb--soft': state === 'soft' }"
-      @mousedown="startDrag"
-      @click.prevent="handleClick"
-      @dblclick.prevent="handleDoubleClick"
+      data-tauri-drag-region
+      @click="handleClick"
+      @dblclick="handleDoubleClick"
       @mouseenter="isHovering = true"
       @mouseleave="isHovering = false"
     >
-      <!-- 知微 logo -->
-      <svg class="float-orb__icon" viewBox="0 0 32 32" fill="none">
+      <!-- 知微 logo（不加 drag-region，确保 SVG 上的点击能冒泡） -->
+      <svg class="float-orb__icon" viewBox="0 0 32 32" fill="none" style="pointer-events: none">
         <circle cx="16" cy="16" r="11" stroke="var(--orb-icon)" stroke-width="1.5" fill="none" />
         <circle cx="13" cy="14.5" r="1.2" fill="var(--orb-icon)" />
         <circle cx="19" cy="14.5" r="1.2" fill="var(--orb-icon)" />
@@ -270,7 +260,7 @@ onUnmounted(() => {
       @mouseenter="isHovering = true"
       @mouseleave="isHovering = false"
     >
-      <div class="float-card__header" @mousedown="startDrag">
+      <div class="float-card__header" data-tauri-drag-region>
         <span class="float-card__badge">主动提醒</span>
         <button class="float-card__close" @click="dismissToIdle">&times;</button>
       </div>
@@ -295,7 +285,7 @@ onUnmounted(() => {
       v-if="state === 'panel'"
       class="float-card float-card--panel"
     >
-      <div class="float-card__header" @mousedown="startDrag">
+      <div class="float-card__header" data-tauri-drag-region>
         <span class="float-card__title">知微 · {{ panelData.backendStatus === 'running' ? '运行中' : '已断开' }}</span>
         <button class="float-card__close" @click="switchMode('idle')">&times;</button>
       </div>
@@ -317,7 +307,7 @@ onUnmounted(() => {
 
     <!-- ═══ chat：迷你对话 ═══ -->
     <div v-if="state === 'chat'" class="float-card float-card--chat">
-      <div class="float-card__header float-card__header--drag" @mousedown="startDrag">
+      <div class="float-card__header float-card__header--drag" data-tauri-drag-region>
         <span class="float-card__title">知微助手</span>
         <button class="float-card__close" @click="switchMode('idle')">&times;</button>
       </div>
@@ -407,43 +397,42 @@ html, body { background: transparent; overflow: hidden; font-family: var(--font)
 
 /* ─── 小圆点（idle / soft） ────────────────────────────── */
 .float-orb {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   background: var(--orb-bg);
-  box-shadow: var(--shadow-idle);
   transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
 .float-orb:hover {
-  transform: scale(1.08);
-  box-shadow: var(--shadow-hover);
+  background: var(--bg-hover);
 }
 
 .float-orb:active {
   cursor: grabbing;
-  transform: scale(1.02);
 }
 
 .float-orb__icon {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
 }
 
 .float-orb__status {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
+  bottom: 6px;
+  right: 6px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   border: 1.5px solid var(--orb-bg);
   transition: background 0.3s var(--ease);
+  pointer-events: none;
 }
 
 /* 轻提醒光晕 */

@@ -3,9 +3,9 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 /// 浮窗窗口标签常量
 const FLOAT_WINDOW_LABEL: &str = "float";
 
-/// 浮窗默认尺寸（小圆点，含阴影 padding）
-const IDLE_WIDTH: f64 = 64.0;
-const IDLE_HEIGHT: f64 = 64.0;
+/// 浮窗默认尺寸（圆角小方块）
+const IDLE_WIDTH: f64 = 52.0;
+const IDLE_HEIGHT: f64 = 52.0;
 
 /// 气泡 / 快捷面板展开尺寸
 const BUBBLE_WIDTH: f64 = 316.0;
@@ -38,17 +38,12 @@ pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
     .title("知微助手")
     .inner_size(IDLE_WIDTH, IDLE_HEIGHT)
     .position(x, y)
-    .transparent(true)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
     .visible(false)
     .build()?;
-
-    // WebView2 默认有白色背景，必须显式设为全透明（RGBA 0,0,0,0）
-    float_window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))
-        .unwrap_or_else(|e| log::warn!("设置浮窗背景透明失败: {}", e));
 
     log::info!(
         "浮窗已创建: 位置=({}, {}), 尺寸={}x{}",
