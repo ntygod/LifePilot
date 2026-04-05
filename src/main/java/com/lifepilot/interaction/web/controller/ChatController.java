@@ -127,8 +127,8 @@ public class ChatController {
      * @return nativeAudio、stt、supported 三个布尔值
      */
     @GetMapping("/voice-capability")
-    public ResponseEntity<BrowserIngressService.VoiceCapability> getVoiceCapability() {
-        return ResponseEntity.ok(browserIngressService.voiceCapability());
+    public ApiResponse<BrowserIngressService.VoiceCapability> getVoiceCapability() {
+        return ApiResponse.ok(browserIngressService.voiceCapability());
     }
 
     /**

@@ -58,6 +58,7 @@ const visible = ref(false)
 
 let listenersRegistered = false
 let dismissTimer: ReturnType<typeof setTimeout> | null = null
+let pendingCheck: Promise<boolean> | null = null
 
 /**
  * 检查当前环境是否为 Tauri 桌面端
@@ -112,6 +113,13 @@ async function ensureListeners() {
  * 再检查本地 Whisper CLI 是否就绪。
  */
 async function checkAvailability(): Promise<boolean> {
+  // 复用正在进行的检查，避免连点重复请求
+  if (pendingCheck) return pendingCheck
+  pendingCheck = doCheckAvailability().finally(() => { pendingCheck = null })
+  return pendingCheck
+}
+
+async function doCheckAvailability(): Promise<boolean> {
   status.value = 'checking'
 
   // 1. 后端能力查询（原生音频 / 云端 STT / 本地 Whisper）

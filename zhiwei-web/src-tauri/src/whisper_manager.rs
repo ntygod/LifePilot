@@ -382,10 +382,13 @@ fn extract_cli_from_zip(zip_path: &Path, target: &Path) -> Result<(), String> {
 
         // 精确匹配 CLI
         let is_cli = file_name == cli_name;
-        // 匹配配套动态库（.dll / .so / .dylib）
-        let is_lib = file_name.ends_with(".dll")
+        // 匹配 whisper.cpp 配套动态库（仅允许已知前缀，防止提取无关 DLL）
+        let is_lib = (file_name.ends_with(".dll")
             || file_name.ends_with(".so")
-            || file_name.ends_with(".dylib");
+            || file_name.ends_with(".dylib"))
+            && (file_name.starts_with("ggml")
+                || file_name.starts_with("whisper")
+                || file_name.starts_with("llama"));
 
         if !is_cli && !is_lib {
             continue;

@@ -243,8 +243,6 @@ export function useVoice(maxRecordingSeconds = 120) {
   onUnmounted(cleanup)
 
   return {
-    // 暴露转换函数供外部判断是否 WAV
-    convertToWav,
     // 录音状态
     isRecording,
     recordingDuration,

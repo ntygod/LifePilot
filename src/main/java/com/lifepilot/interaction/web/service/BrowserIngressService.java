@@ -99,12 +99,11 @@ public class BrowserIngressService {
         );
 
         List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
-        String messageContent = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
-        var content = new MessageContent.TextMessage(messageContent);
+        var transcription = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
+        var content = new MessageContent.TextMessage(transcription.content());
 
         // 转录成功后移除已转录的音频附件，避免它们作为 mediaContents 触发多模态路由
-        boolean audioTranscribed = !messageContent.equals(normalizedRequest.content());
-        List<GatewayMessage.Attachment> effectiveAttachments = audioTranscribed
+        List<GatewayMessage.Attachment> effectiveAttachments = transcription.transcribed()
                 ? attachments.stream()
                     .filter(att -> att.mimeType() == null || !att.mimeType().startsWith("audio/"))
                     .toList()
@@ -179,25 +178,28 @@ public class BrowserIngressService {
         );
     }
 
-    private String transcribeAudioAttachments(List<GatewayMessage.Attachment> attachments,
-                                              String originalContent,
-                                              String sessionId) {
+    /** 转录结果：内容文本 + 是否实际完成了转录。 */
+    private record TranscriptionResult(String content, boolean transcribed) {}
+
+    private TranscriptionResult transcribeAudioAttachments(List<GatewayMessage.Attachment> attachments,
+                                                           String originalContent,
+                                                           String sessionId) {
         if (attachments.isEmpty()) {
-            return originalContent;
+            return new TranscriptionResult(originalContent, false);
         }
         if (mediaProperties.getNativeAudio().isEnabled()) {
             boolean hasAudio = attachments.stream()
                     .anyMatch(att -> att.mimeType() != null && att.mimeType().startsWith("audio/"));
             if (hasAudio && nativeAudioProbe.getAsBoolean()) {
                 log.info("原生音频路由已启用且有可用 Provider，跳过 STT 转录: sessionId={}", sessionId);
-                return originalContent;
+                return new TranscriptionResult(originalContent, false);
             }
             if (hasAudio) {
                 log.info("原生音频路由已启用但无可用 Provider，降级到 STT 转录: sessionId={}", sessionId);
             }
         }
         if (audioTranscriber == null) {
-            return originalContent;
+            return new TranscriptionResult(originalContent, false);
         }
 
         for (var attachment : attachments) {
@@ -211,15 +213,15 @@ public class BrowserIngressService {
                 log.info("音频转录成功: fileName={}, textLength={}",
                         attachment.fileName(), transcribedText.length());
                 pushTranscriptionEvent(sessionId, transcribedText);
-                if (originalContent == null || originalContent.isBlank() || "[语音消息]".equals(originalContent)) {
-                    return transcribedText;
-                }
-                return originalContent + "\n\n[语音转录] " + transcribedText;
+                String content = (originalContent == null || originalContent.isBlank() || "[语音消息]".equals(originalContent))
+                        ? transcribedText
+                        : originalContent + "\n\n[语音转录] " + transcribedText;
+                return new TranscriptionResult(content, true);
             } catch (AudioTranscriptionException e) {
                 log.warn("音频转录失败: fileName={}, error={}", attachment.fileName(), e.getMessage());
             }
         }
-        return originalContent;
+        return new TranscriptionResult(originalContent, false);
     }
 
     private void pushTranscriptionEvent(String sessionId, String transcribedText) {

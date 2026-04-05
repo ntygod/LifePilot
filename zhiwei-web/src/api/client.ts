@@ -414,8 +414,9 @@ export const chatApi = {
   },
 
   /** 查询后端语音输入能力（原生音频 / STT 转录） */
-  getVoiceCapability(): Promise<{ nativeAudio: boolean; stt: boolean; supported: boolean }> {
-    return request('/chat/voice-capability')
+  async getVoiceCapability(): Promise<{ nativeAudio: boolean; stt: boolean; supported: boolean }> {
+    const res = await request<{ code: number; data: { nativeAudio: boolean; stt: boolean; supported: boolean } }>('/chat/voice-capability')
+    return res.data
   }
 }
 
