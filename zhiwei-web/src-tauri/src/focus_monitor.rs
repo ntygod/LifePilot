@@ -2,19 +2,25 @@ use std::time::Duration;
 
 use tauri::AppHandle;
 
-/// 焦点状态上报间隔（秒）
-const REPORT_INTERVAL_SECS: u64 = 10;
+/// 焦点状态采样间隔（秒）
+const POLL_INTERVAL_SECS: u64 = 30;
 
-/// 启动焦点监控 — 定期采样前台窗口信息并上报给后端。
+/// 启动焦点监控 — 定期采样前台窗口信息，仅在状态变化时上报。
 pub fn start_focus_monitor(_app: AppHandle, backend_port: u16) {
     std::thread::Builder::new()
         .name("focus-monitor".to_string())
         .spawn(move || {
-            log::info!("焦点监控启动: interval={}s, port={}", REPORT_INTERVAL_SECS, backend_port);
+            log::info!("焦点监控启动: interval={}s, port={}", POLL_INTERVAL_SECS, backend_port);
+            let mut last_key = String::new();
             loop {
-                std::thread::sleep(Duration::from_secs(REPORT_INTERVAL_SECS));
+                std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
                 if let Some(state) = collect_focus_state() {
-                    report_to_backend(backend_port, &state);
+                    // 只在焦点应用或全屏状态变化时才上报
+                    let key = format!("{}|{}|{}", state.focus_app, state.fullscreen, state.idle_minutes / 5);
+                    if key != last_key {
+                        last_key = key;
+                        report_to_backend(backend_port, &state);
+                    }
                 }
             }
         })
