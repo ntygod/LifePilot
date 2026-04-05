@@ -31,7 +31,7 @@ public class BrowserTabToolExecutor {
     /**
      * 执行标签页管理操作。
      *
-     * @param input 工具输入，必需参数 action（open/switch/close/list），可选 url、tabId
+     * @param input 工具输入，必需参数 tabAction（open/switch/close/list），兼容旧参数 action；可选 url、tabId
      * @return 包含操作结果的结构化结果
      */
     public ToolResult execute(ToolInput input) {
@@ -41,11 +41,11 @@ public class BrowserTabToolExecutor {
             return ToolResult.error(msg);
         }
 
-        String action;
-        try {
-            action = input.getParam("action", String.class);
-        } catch (IllegalArgumentException e) {
-            return ToolResult.error("缺少必需参数: action");
+        String action = input.getOptionalParam("tabAction", String.class)
+                .or(() -> input.getOptionalParam("action", String.class))
+                .orElse(null);
+        if (action == null || action.isBlank()) {
+            return ToolResult.error("缺少必需参数: tabAction");
         }
 
         String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");

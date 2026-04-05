@@ -21,7 +21,7 @@ import static org.mockito.Mockito.*;
 /**
  * TaskToolProvider 单元测试。
  *
- * <p>验证 Cron 工具（create/list/update/remove）的行为。</p>
+ * <p>验证 Cron 统一工具（create/list/update/remove action）的行为。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -44,20 +44,24 @@ class TaskToolProvider_单元测试 {
         return new ToolInput("test", params, JsonSchema.empty(), null, null);
     }
 
+    // ─────────────────────────────────────────────
+    //  Cron 工具测试
+    // ─────────────────────────────────────────────
+
     @Test
-    void buildCronTools_返回4个工具() {
+    void buildCronTools_返回1个统一工具() {
         List<BuiltinTool> tools = provider.buildCronTools();
-        assertThat(tools).hasSize(4);
+        assertThat(tools).hasSize(1);
         assertThat(tools.stream().map(BuiltinTool::id).toList())
-                .containsExactly("cron.create", "cron.list",
-                        "cron.update", "cron.remove");
+                .containsExactly("cron");
     }
 
     @Test
     void cronCreate_有效表达式_保存并调度() {
-        BuiltinTool createTool = findTool(provider.buildCronTools(), "cron.create");
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
 
-        ToolResult result = createTool.execute(input(Map.of(
+        ToolResult result = cronTool.execute(input(Map.of(
+                "action", "create",
                 "name", "每日AI资讯",
                 "schedule", "0 0 8 * * *",
                 "instruction", "搜索最新AI新闻"
@@ -70,9 +74,10 @@ class TaskToolProvider_单元测试 {
 
     @Test
     void cronCreate_无效表达式_返回错误() {
-        BuiltinTool createTool = findTool(provider.buildCronTools(), "cron.create");
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
 
-        ToolResult result = createTool.execute(input(Map.of(
+        ToolResult result = cronTool.execute(input(Map.of(
+                "action", "create",
                 "name", "测试",
                 "schedule", "invalid-cron",
                 "instruction", "测试"
@@ -88,8 +93,8 @@ class TaskToolProvider_单元测试 {
                 "2026-03-20T00:00:00Z", "2026-03-20T00:00:00Z");
         when(cronTaskRepository.findAll()).thenReturn(List.of(entry));
 
-        BuiltinTool listTool = findTool(provider.buildCronTools(), "cron.list");
-        ToolResult result = listTool.execute(input(Map.of()));
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
+        ToolResult result = cronTool.execute(input(Map.of("action", "list")));
 
         assertThat(result.isSuccess()).isTrue();
         verify(cronTaskRepository, times(1)).findAll();
@@ -101,8 +106,8 @@ class TaskToolProvider_单元测试 {
                 "2026-03-20T00:00:00Z", "2026-03-20T00:00:00Z");
         when(cronTaskRepository.findById("id1")).thenReturn(Optional.of(existing));
 
-        BuiltinTool updateTool = findTool(provider.buildCronTools(), "cron.update");
-        ToolResult result = updateTool.execute(input(Map.of("taskId", "id1", "status", "paused")));
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
+        ToolResult result = cronTool.execute(input(Map.of("action", "update", "taskId", "id1", "status", "paused")));
 
         assertThat(result.isSuccess()).isTrue();
         verify(cronScheduler, times(1)).cancel("id1");
@@ -116,8 +121,8 @@ class TaskToolProvider_单元测试 {
                 "2026-03-20T00:00:00Z", "2026-03-20T00:00:00Z");
         when(cronTaskRepository.findById("id1")).thenReturn(Optional.of(existing));
 
-        BuiltinTool updateTool = findTool(provider.buildCronTools(), "cron.update");
-        ToolResult result = updateTool.execute(input(Map.of("taskId", "id1", "status", "active")));
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
+        ToolResult result = cronTool.execute(input(Map.of("action", "update", "taskId", "id1", "status", "active")));
 
         assertThat(result.isSuccess()).isTrue();
         verify(cronScheduler, times(1)).cancel("id1");
@@ -128,22 +133,26 @@ class TaskToolProvider_单元测试 {
     void cronUpdate_任务不存在_返回错误() {
         when(cronTaskRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
-        BuiltinTool updateTool = findTool(provider.buildCronTools(), "cron.update");
-        ToolResult result = updateTool.execute(input(Map.of("taskId", "nonexistent", "status", "paused")));
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
+        ToolResult result = cronTool.execute(input(Map.of("action", "update", "taskId", "nonexistent", "status", "paused")));
 
         assertThat(result.isSuccess()).isFalse();
     }
 
     @Test
     void cronRemove_先取消再删除() {
-        BuiltinTool removeTool = findTool(provider.buildCronTools(), "cron.remove");
-        ToolResult result = removeTool.execute(input(Map.of("taskId", "id1")));
+        BuiltinTool cronTool = findTool(provider.buildCronTools(), "cron");
+        ToolResult result = cronTool.execute(input(Map.of("action", "remove", "taskId", "id1")));
 
         assertThat(result.isSuccess()).isTrue();
         var inOrder = inOrder(cronScheduler, cronTaskRepository);
         inOrder.verify(cronScheduler).cancel("id1");
         inOrder.verify(cronTaskRepository).deleteById("id1");
     }
+
+    // ─────────────────────────────────────────────
+    //  辅助方法
+    // ─────────────────────────────────────────────
 
     private BuiltinTool findTool(List<BuiltinTool> tools, String id) {
         return tools.stream()

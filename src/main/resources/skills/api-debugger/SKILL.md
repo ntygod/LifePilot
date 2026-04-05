@@ -1,7 +1,7 @@
 ---
 id: api-debugger
 name: "API 调试"
-description: "API 接口调试：REST/GraphQL 请求测试、响应分析、Mock 数据生成、接口文档验证。"
+description: "REST/GraphQL 请求测试、响应分析、Mock 生成"
 version: "1.0.0"
 suggested-tools:
   - shell.exec

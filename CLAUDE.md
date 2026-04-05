@@ -24,7 +24,6 @@ npm install
 npm run dev          # Vite dev server (port 5173)
 npm run build        # Production build → dist/
 npm run test:run     # Vitest single run
-npm run lint         # ESLint
 ```
 
 ### Docker
@@ -37,7 +36,7 @@ docker compose up -d   # Start full stack
 
 The system is layered: **Interaction → Gateway → Agent Engine → Capability Layer → Knowledge/Memory → Infrastructure → Storage**.
 
-- **Interaction**: Web UI (Vue 3 SSE), Channel adapters (Feishu/DingTalk/WeChat Work)
+- **Interaction**: Web UI (Vue 3 SSE), Tauri 2.x desktop app, Channel adapters (Feishu/DingTalk/WeChat Work)
 - **Gateway**: `MessageGateway` with 6-stage middleware pipeline (Auth → RateLimit → Security → Router → Execution → Audit)
 - **Agent Engine**: `ReactAgentLoop` — ReAct-style control loop with suspend/resume, retry, and breakpoint recovery
 - **Capability Layer**: Skill system, Tool system, MCP protocol, Workflow engine, Code sandbox, Datastore
@@ -46,34 +45,35 @@ The system is layered: **Interaction → Gateway → Agent Engine → Capability
 
 Key source files:
 - `src/main/java/com/lifepilot/agent/ReactAgentLoop.java` — core agent loop
-- `src/main/java/com/lifepilot/llm/LlmRouter.java` — multi-model routing with circuit breaker
+- `src/main/java/com/lifepilot/generation/router/GenerationRouter.java` — text generation routing with circuit breaker
+- `src/main/java/com/lifepilot/embedding/router/EmbeddingRouter.java` — embedding routing
+- `src/main/java/com/lifepilot/rerank/router/RerankRouter.java` — rerank routing
 - `src/main/resources/application.yml` — all runtime configuration
-- `src/main/resources/db/migration/` — Flyway migration scripts (naming: `V{n}__{desc}.sql`)
+- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V11)
 - `src/main/resources/prompts/` — StringTemplate prompt files
-- `src/main/resources/skills/` — built-in skill definitions
+- `src/main/resources/skills/` — built-in skill definitions (33 skills)
+- `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
 
 ## Coding Conventions
 
-### Java
-- **Java 22 features are required**: use `record` for DTOs, `sealed interface` for state machines, pattern matching for switch, virtual threads for I/O-heavy operations
-- **No Lombok `@Data`** — use `record` or explicit accessors
-- All comments, Javadoc, log messages, exception messages, and test method names must be in **Chinese**
-- Identifiers, config keys, REST paths, and Skill IDs stay in English
-- Class-level Javadoc must include `@author zsg` and `@since yyyy-MM-dd`
-- Log levels: `ERROR` for intervention-needed failures, `WARN` for recoverable issues, `INFO` for key business flows, `DEBUG` for dev tracing
-- API responses use `ApiResponse<T>` with `{ code, message, data }` structure; paginated responses use `{ items, total, page, pageSize }`
-- Business-tunable values go in `@ConfigurationProperties` + `application.yml`, not hardcoded
+Detailed conventions are in `.claude/rules/` (auto-loaded by file type):
+- **Java**: Java 22 features required, Chinese comments/logs, `record` over Lombok — see `java-conventions.md`
+- **Frontend**: Reka UI 2.x (not shadcn-vue), Tailwind named scales only — see `frontend-conventions.md`
+- **Database**: Flyway naming, SQLite dialect, parameterized queries — see `database-rules.md`
+- **Tauri/Rust**: Tauri 2.x API, Chinese comments, `Result` + `?` error handling — see `tauri-conventions.md`
 
-### Frontend
-- UI library is **Reka UI 2.x** — not shadcn-vue
-- Use `<script setup lang="ts">` with typed `defineProps` / `defineEmits`
-- Tailwind spacing uses named scales only: `xs`(4px) `sm`(8px) `md`(16px) `lg`(24px) `xl`(32px) `2xl`(48px) — no arbitrary values like `p-3` or `px-5`
-- State management via Pinia stores in `src/stores/`; composables in `src/composables/useX.ts`
-- Component filenames: PascalCase; route pages in `src/views/`
+## Common Workflows
 
-### Database
-- Flyway scripts in `src/main/resources/db/migration/`, named `V{n}__{description}.sql`
-- SQL keywords uppercase; table/column names snake_case; no `SELECT *`; always use parameterized queries
+1. **新增 API 端点**: 在对应包下创建 `@RestController` → 编写 Service → 添加测试 → 如需建表则新建 Flyway 迁移 `V{n+1}__desc.sql`
+2. **新增 Flyway 迁移**: 查看 `db/migration/` 最新版本号 → 创建 `V{n+1}__{description}.sql` → `mvn compile` 验证
+3. **新增工具/技能**: 在 `tool/` 或 `skill/` 包下实现 → 注册到对应 Registry → 添加测试
+4. **前端新页面**: `src/views/` 下创建页面组件 → 添加路由 → 使用 Reka UI 组件 + Tailwind 命名尺度
+
+## Troubleshooting
+
+- **SQLite 锁**: WAL 模式下只允许单写入者，长事务会阻塞其他写入，保持事务短小
+- **Flyway 校验失败**: 已有迁移文件被修改会导致 checksum 不匹配，永远不要修改已执行的迁移
+- **端口 8080 占用**: `netstat -ano | findstr :8080` 找到进程，或修改 `application.yml` 中的 `server.port`
 
 ## Git Conventions
 
@@ -85,5 +85,5 @@ Key source files:
 
 - `docs/ARCHITECTURE.md` — system architecture overview
 - `docs/API_STANDARD.md` — API design standard
-- `docs/architecture/` — 38 detailed module design docs
+- `docs/architecture/` — 31 detailed module design docs
 - `docs/guides/` — usage guides (workflow, Feishu integration)

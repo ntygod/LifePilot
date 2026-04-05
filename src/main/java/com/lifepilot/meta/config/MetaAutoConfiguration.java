@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.interaction.registry.ChannelRegistry;
+import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
+import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -48,6 +52,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
@@ -86,8 +91,9 @@ public class MetaAutoConfiguration {
      * 注册后台进程管理器 — 管理通过 shell.exec(background=true) 启动的长时间运行进程。
      */
     @Bean
-    BackgroundProcessManager backgroundProcessManager(MetaProperties properties) {
-        return new BackgroundProcessManager(properties.getInfra().getProcess());
+    BackgroundProcessManager backgroundProcessManager(MetaProperties properties,
+                                                       @Nullable ApplicationEventPublisher eventPublisher) {
+        return new BackgroundProcessManager(properties.getInfra().getProcess(), eventPublisher);
     }
 
     /**
@@ -125,8 +131,12 @@ public class MetaAutoConfiguration {
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
                                         @Nullable NotificationProperties notificationProperties,
-                                        @Nullable BackgroundProcessManager backgroundProcessManager) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager);
+                                        @Nullable BackgroundProcessManager backgroundProcessManager,
+                                        @Nullable ChannelRegistry channelRegistry,
+                                        @Nullable ChannelOperationDispatcher channelOperationDispatcher,
+                                        @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        @Nullable ChannelInstanceService channelInstanceService) {
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
     }
 
     /**
@@ -160,15 +170,12 @@ public class MetaAutoConfiguration {
      */
     @Bean
     IntrospectionToolProvider introspectionToolProvider(CapabilityAggregator aggregator,
-                                                          SkillRegistry skillRegistry,
-                                                          AgentRegistry agentRegistry,
                                                           DynamicToolRegistry toolRegistry,
                                                           WorkflowRegistry workflowRegistry,
                                                           @Nullable WorkflowRepository workflowRepository,
                                                           @Nullable McpServerRegistry mcpServerRegistry) {
-        return new IntrospectionToolProvider(aggregator, skillRegistry,
-                agentRegistry, toolRegistry, workflowRegistry,
-                workflowRepository, mcpServerRegistry);
+        return new IntrospectionToolProvider(aggregator, toolRegistry,
+                workflowRegistry, workflowRepository, mcpServerRegistry);
     }
 
     /**
@@ -233,7 +240,7 @@ public class MetaAutoConfiguration {
 
         ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
         ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
-        ctx.getBean(StorageToolProvider.class).registerTools(toolRegistry);
+        ctx.getBean(StorageToolProvider.class).buildStorageTools().forEach(toolRegistry::registerBuiltinTool);
         if (ctx.containsBean("memoryToolProvider")) {
             ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
         }

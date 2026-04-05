@@ -18,11 +18,14 @@ import {
   X,
 } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import { useChatStore } from '@/stores/chat'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useVoice } from '@/composables/useVoice'
+import { useWhisperDownload } from '@/composables/useWhisperDownload'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { ChatAttachment, Datastore, KnowledgeBase, SessionConfig } from '@/types'
 
 const props = defineProps<{
@@ -74,6 +77,38 @@ const {
   isRecording, recordingDuration, audioBlob, isSupported: voiceSupported, analyserNode,
   startRecording, stopRecording,
 } = useVoice()
+
+// Whisper 自动下载（桌面端）
+const {
+  available: whisperAvailable,
+  status: whisperStatus,
+  checkAvailability: checkWhisper,
+  triggerDownload: downloadWhisper,
+} = useWhisperDownload()
+
+/** Whisper 下载确认弹窗 */
+const showWhisperConfirm = ref(false)
+
+/** 麦克风按钮点击：桌面端检测 Whisper 可用性，不可用则弹窗确认后下载 */
+async function handleMicClick() {
+  if ('__TAURI_INTERNALS__' in window) {
+    if (!whisperAvailable.value) {
+      await checkWhisper()
+      if (!whisperAvailable.value) {
+        if (whisperStatus.value !== 'downloading') {
+          showWhisperConfirm.value = true
+        }
+        return
+      }
+    }
+  }
+  startRecording()
+}
+
+function confirmWhisperDownload() {
+  showWhisperConfirm.value = false
+  downloadWhisper()
+}
 
 const promptTemplates = [
   { name: '整理要点', content: '请帮我整理以下内容的重点、结论和待办：\n\n' },
@@ -199,7 +234,7 @@ async function submit() {
       attachmentIds = uploaded.map(item => item.fileId)
       uploadedAttachments = uploaded
     } catch (error) {
-      console.error('附件上传失败:', error)
+      logger.error('附件上传失败:', error)
       uploadError.value = error instanceof Error ? error.message : '附件上传失败，请重试或移除附件'
       return
     } finally {
@@ -406,7 +441,7 @@ watch(audioBlob, async (blob) => {
     })
     resetTemporaryContextSelection()
   } catch (error) {
-    console.error('语音消息上传失败:', error)
+    logger.error('语音消息上传失败:', error)
     voiceError.value = error instanceof Error ? error.message : '语音消息上传失败，请重试'
   } finally {
     voiceSending.value = false
@@ -654,14 +689,14 @@ defineExpose({
         </div>
 
         <!-- 输入区 -->
-        <div class="relative px-4 pb-1 pt-4">
+        <div class="relative px-4 pb-1 pt-3">
           <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
             :placeholder="placeholder || '输入问题或贴资料…'"
             rows="1"
-            class="min-h-[104px] max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
+            class="min-h-[56px] max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
             @keydown="handleKeydown"
             @click="showTemplates = false"
             @paste="handlePaste"
@@ -676,7 +711,7 @@ defineExpose({
         </div>
 
         <!-- 工具栏 -->
-        <div class="flex items-center justify-between gap-2 border-t border-border/45 px-3 pb-3 pt-3">
+        <div class="flex items-center justify-between gap-2 border-t border-border/45 px-3 pb-2.5 pt-2.5">
           <div class="flex flex-wrap items-center gap-1.5">
             <!-- 模板 -->
             <div class="relative">
@@ -779,7 +814,7 @@ defineExpose({
                 type="button"
                 :disabled="disabled || isUploading || voiceSending"
                 class="flex size-9 items-center justify-center rounded-[1rem] border border-border/55 bg-background/76 text-muted-foreground/70 transition-all duration-150 hover:bg-accent/48 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
-                @click="startRecording"
+                @click="handleMicClick"
               >
                 <Mic class="size-4" />
               </button>
@@ -821,6 +856,16 @@ defineExpose({
         <span v-if="voiceSending">正在发送语音…</span>
       </div>
     </div>
+
+    <!-- Whisper 语音引擎下载确认弹窗 -->
+    <ConfirmDialog
+      v-model:show="showWhisperConfirm"
+      title="需要下载语音引擎"
+      message="语音输入功能需要 Whisper 语音识别引擎（约 200 MB），是否立即下载？"
+      confirm-label="开始下载"
+      cancel-label="暂不需要"
+      @confirm="confirmWhisperDownload"
+    />
   </div>
 </template>
 

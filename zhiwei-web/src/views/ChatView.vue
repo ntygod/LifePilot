@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  EllipsisVertical,
   LibraryBig,
   Settings2,
   SlidersHorizontal,
@@ -10,8 +11,15 @@ import {
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
 import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
+import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import DebugDrawer from '@/components/chat/DebugDrawer.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
@@ -58,7 +66,6 @@ type SidebarPanel = 'session' | 'config' | 'debug'
 const scrollContainer = ref<HTMLElement | null>(null)
 const searchQuery = ref('')
 const activeSidebarPanel = ref<SidebarPanel>('session')
-const showDesktopSidebar = ref(false)
 const showMobileSidebar = ref(false)
 const providers = ref<ModelService[]>([])
 
@@ -130,7 +137,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
       datastoreIds: detail.datastoreIds ?? [],
     }
   } catch (event) {
-    console.warn('加载会话配置失败:', event)
+    logger.warn('加载会话配置失败:', event)
     if (chatStore.activeSessionId === sessionId) {
       currentSessionDetail.value = null
       resetActiveSessionConfig()
@@ -242,7 +249,7 @@ onMounted(async () => {
     try {
       await chatStore.startNewSession()
     } catch (event) {
-      console.error('创建新会话失败:', event)
+      logger.error('创建新会话失败:', event)
     }
   }
 
@@ -265,7 +272,7 @@ watch(
       try {
         await chatStore.startNewSession()
       } catch (event) {
-        console.error('创建新会话失败:', event)
+        logger.error('创建新会话失败:', event)
       }
       return
     }
@@ -284,8 +291,14 @@ watch(
   { immediate: true },
 )
 
+/* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次，
+   避免 token 到达时（~24ms）与 DOM 重排交叉触发导致滚动抖动 */
+let scrollRaf: number | null = null
+
 function scrollToBottom() {
-  nextTick(() => {
+  if (scrollRaf !== null) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = null
     if (scrollContainer.value) {
       scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
     }
@@ -376,7 +389,7 @@ async function handleFork(message: Message) {
     router.push({ name: 'conversationDetail', params: { sessionId: newSession.id } })
   } catch (event) {
     uiStore.showToast('error', '分叉会话失败，请稍后重试')
-    console.error('分叉会话失败:', event)
+    logger.error('分叉会话失败:', event)
   }
 }
 
@@ -442,21 +455,13 @@ async function handleUpdateSessionTitle(title: string) {
 }
 
 function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
-  activeSidebarPanel.value = panel === 'sidebar' ? 'session' : panel
-  showMobileSidebar.value = true
-}
-
-function toggleDesktopSidebar(panel: SidebarPanel) {
-  if (showDesktopSidebar.value && activeSidebarPanel.value === panel) {
-    showDesktopSidebar.value = false
+  const mapped: SidebarPanel = panel === 'sidebar' ? 'session' : panel
+  if (showMobileSidebar.value && activeSidebarPanel.value === mapped) {
+    showMobileSidebar.value = false
     return
   }
-  activeSidebarPanel.value = panel
-  showDesktopSidebar.value = true
-}
-
-function closeDesktopSidebar() {
-  showDesktopSidebar.value = false
+  activeSidebarPanel.value = mapped
+  showMobileSidebar.value = true
 }
 
 function closeMobileSidebar() {
@@ -476,50 +481,14 @@ function selectSidebarPanel(panel: SidebarPanel) {
       <div class="absolute left-[-10rem] bottom-[-8rem] h-[20rem] w-[20rem] rounded-full bg-[radial-gradient(circle,rgba(15,23,42,0.08),transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(148,163,184,0.1),transparent_72%)]" />
     </div>
 
-    <header class="relative shrink-0 px-4 pt-3 sm:px-6">
+    <header class="relative shrink-0 px-4 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1180px]">
-        <div class="flex min-w-0 items-start justify-between gap-3 px-1 py-1">
-          <div class="min-w-0">
-            <div class="surface-label">当前对话</div>
-            <h1 class="mt-1 truncate text-xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
-              {{ headerTitle }}
-            </h1>
-          </div>
+        <div class="flex min-w-0 items-center justify-between gap-3 px-1 py-1">
+          <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
+            {{ headerTitle }}
+          </h1>
 
           <div class="flex items-center gap-2">
-            <div class="flex items-center gap-2 xl:hidden">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('config')"
-              >
-                <Settings2 class="size-4" />
-                配置
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('sidebar')"
-              >
-                <LibraryBig class="size-4" />
-                信息
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="rounded-full"
-                @click="togglePanel('debug')"
-              >
-                <SlidersHorizontal class="size-4" />
-                调试
-              </Button>
-            </div>
-
             <Button
               v-if="isStreaming"
               type="button"
@@ -531,6 +500,28 @@ function selectSidebarPanel(panel: SidebarPanel) {
               <Square class="size-4" />
               停止
             </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button type="button" variant="outline" size="icon" class="size-9 rounded-full" aria-label="更多操作">
+                  <EllipsisVertical class="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-36">
+                <DropdownMenuItem class="gap-2" @click="togglePanel('config')">
+                  <Settings2 class="size-4" />
+                  配置
+                </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="togglePanel('sidebar')">
+                  <LibraryBig class="size-4" />
+                  信息
+                </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="togglePanel('debug')">
+                  <SlidersHorizontal class="size-4" />
+                  调试
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
@@ -574,7 +565,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
           </div>
         </div>
 
-        <div class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-4 pt-3 sm:px-6">
+        <div class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
           <div class="mx-auto w-full max-w-[1180px]">
             <StatePanel
               v-if="showGlobalErrorPanel"
@@ -603,115 +594,6 @@ function selectSidebarPanel(panel: SidebarPanel) {
         </div>
       </section>
 
-      <div class="pointer-events-none absolute inset-y-3 right-3 z-30 hidden items-center justify-end xl:flex">
-        <div class="pointer-events-auto flex items-center gap-3">
-          <Transition
-            enter-active-class="transition-all duration-250 ease-out"
-            enter-from-class="opacity-0 translate-x-3"
-            enter-to-class="opacity-100 translate-x-0"
-            leave-active-class="transition-all duration-180 ease-in"
-            leave-from-class="opacity-100 translate-x-0"
-            leave-to-class="opacity-0 translate-x-3"
-          >
-            <div
-              v-if="showDesktopSidebar"
-              class="h-[min(760px,100%)] max-h-full w-[340px] rounded-[1.2rem] border border-border/58 bg-background/94 p-3 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)]"
-            >
-              <div class="h-full overflow-hidden">
-                <div v-if="activeSidebarPanel === 'config'" class="h-full overflow-y-auto pr-1 scrollbar-thin">
-                  <SessionConfigPanel
-                    :preferred-provider-id="activeSessionConfig.preferredProviderId"
-                    :temperature="activeSessionConfig.temperature"
-                    :max-steps="activeSessionConfig.maxSteps"
-                    :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
-                    :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
-                    :datastore-ids="activeSessionConfig.datastoreIds"
-                    :providers="chatProviders"
-                    :knowledge-bases="kbStore.list"
-                    :datastores="datastoreStore.list"
-                    @close="closeDesktopSidebar"
-                    @update="handleConfigUpdate"
-                  />
-                </div>
-                <SessionSidebar
-                  v-else-if="activeSidebarPanel === 'session'"
-                  :session="currentSessionDetail"
-                  :knowledge-bases="kbStore.list"
-                  v-model:search-query="searchQuery"
-                  :message-count="chatStore.messages.length"
-                  :status-text="sessionStatusText"
-                  :context-count="activeContextCount"
-                  :matched-message-count="matchedMessageCount"
-                  @close="closeDesktopSidebar"
-                  @clear="handleClearSession"
-                  @update-title="handleUpdateSessionTitle"
-                />
-                <DebugDrawer
-                  v-else
-                  :token-usage="lastTokenUsage"
-                  :model-id="lastModelId"
-                  :prompt="lastPrompt"
-                  :reasoning-events="reasoningEvents"
-                  :tools-summary="lastToolsSummary"
-                  :kb-sources="lastKbSources"
-                  :trace-id="lastAssistantMessage?.traceId"
-                  @close="closeDesktopSidebar"
-                />
-              </div>
-            </div>
-          </Transition>
-
-          <div class="shell-card border-border/52 bg-card/86 p-2 shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.12)]">
-            <div class="flex flex-col gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px]"
-                :class="showDesktopSidebar && activeSidebarPanel === 'session' && 'status-btn-active'"
-                @click="toggleDesktopSidebar('session')"
-              >
-                <LibraryBig class="size-4" />
-                信息
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px]"
-                :class="showDesktopSidebar && activeSidebarPanel === 'config' && 'status-btn-active'"
-                @click="toggleDesktopSidebar('config')"
-              >
-                <Settings2 class="size-4" />
-                配置
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px]"
-                :class="showDesktopSidebar && activeSidebarPanel === 'debug' && 'status-btn-active'"
-                @click="toggleDesktopSidebar('debug')"
-              >
-                <SlidersHorizontal class="size-4" />
-                调试
-              </Button>
-              <Button
-                v-if="isStreaming"
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-auto w-14 flex-col gap-1 rounded-2xl px-2 py-3 text-[10px] text-destructive hover:text-destructive"
-                @click="abort"
-              >
-                <Square class="size-4" />
-                停止
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <Transition
         enter-active-class="transition-all duration-250 ease-out"
         enter-from-class="opacity-0 translate-x-4"
@@ -722,7 +604,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
       >
         <div
           v-if="showMobileSidebar"
-          class="absolute inset-y-4 right-4 z-30 w-[340px] rounded-[1.2rem] border border-border/58 bg-background/94 p-3 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)] xl:hidden"
+          class="absolute inset-y-4 right-4 z-30 w-[340px] rounded-[1.2rem] border border-border/58 bg-background/94 p-3 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)]"
         >
           <div class="flex h-full min-h-0 flex-col gap-3">
             <div class="shell-card border-border/52 bg-card/86 p-1">

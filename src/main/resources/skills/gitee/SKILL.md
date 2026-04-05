@@ -1,11 +1,13 @@
 ---
 id: gitee
 name: "Gitee 代码托管"
-description: "Gitee 操作：管理仓库、PR、Issue、CI/CD。"
+description: "Gitee 仓库/PR/Issue/CI 管理"
 version: "1.0.0"
 suggested-tools:
-  - http.request
+  - web.fetch
   - shell.exec
+  - git.query
+  - git.mutate
 triggers:
   - "Gitee"
   - "码云"
@@ -38,7 +40,7 @@ triggers:
 
 ### 查看仓库列表
 ```
-http.request(
+web.fetch(
   url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20",
   method="GET"
 )
@@ -46,7 +48,7 @@ http.request(
 
 ### 创建 Issue
 ```
-http.request(
+web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/issues",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -56,7 +58,7 @@ http.request(
 
 ### 创建 Pull Request
 ```
-http.request(
+web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls",
   method="POST",
   headers={"Content-Type": "application/json"},
@@ -66,7 +68,7 @@ http.request(
 
 ### 查看 PR 列表
 ```
-http.request(
+web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls?access_token=${GITEE_TOKEN}&state=open",
   method="GET"
 )

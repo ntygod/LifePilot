@@ -1,5 +1,6 @@
 package com.lifepilot.agent.context;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
@@ -11,6 +12,8 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.content.Media;
 import org.springframework.core.io.ByteArrayResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
@@ -26,7 +29,11 @@ import java.util.Objects;
  */
 public class ProviderMessageBuilder {
 
+    private static final Logger log = LoggerFactory.getLogger(ProviderMessageBuilder.class);
+    private static final int CURRENT_TURN_DIGEST_MIN_CHARS = 320;
+
     private final TranscriptHygieneEngine hygieneEngine;
+    private final SessionPruningEngine pruningEngine;
 
     public record BuildResult(
             List<Message> messages,
@@ -38,7 +45,13 @@ public class ProviderMessageBuilder {
     }
 
     public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine) {
+        this(hygieneEngine, new SessionPruningEngine(new com.lifepilot.agent.config.AgentConfigProperties(), new ObjectMapper()));
+    }
+
+    public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine,
+                                  SessionPruningEngine pruningEngine) {
         this.hygieneEngine = Objects.requireNonNull(hygieneEngine);
+        this.pruningEngine = Objects.requireNonNull(pruningEngine);
     }
 
     public BuildResult build(AssembledContext context, ReactAgentState state) {
@@ -46,15 +59,60 @@ public class ProviderMessageBuilder {
         rawMessages.add(new SystemMessage(context.systemPrompt()));
         rawMessages.add(buildUserMessage(buildStructuredPrompt(context), context.mediaContents()));
 
-        for (ReactStep step : state.steps()) {
-            Message message = toMessage(step);
-            if (message != null) {
-                rawMessages.add(message);
-            }
-        }
+        convertStepsToMessages(state.steps(), rawMessages);
 
         TranscriptHygieneEngine.HygieneResult hygieneResult = hygieneEngine.clean(rawMessages);
         return new BuildResult(hygieneResult.messages(), hygieneResult.report());
+    }
+
+    /**
+     * 将 ReactStep 列表转换为 LLM 消息列表，连续的 ToolCall 步骤合并为单条 AssistantMessage。
+     *
+     * <p>provider（如 DeepSeek）要求同一轮 tool_calls 必须在一条 AssistantMessage 中，
+     * 且紧跟对应数量的 ToolResponseMessage。逐个 ToolCall 生成独立 AssistantMessage
+     * 会导致消息序列校验失败。</p>
+     */
+    private void convertStepsToMessages(List<ReactStep> steps, List<Message> out) {
+        var pendingToolCalls = new ArrayList<AssistantMessage.ToolCall>();
+
+        for (ReactStep step : steps) {
+            if (step instanceof ReactStep.ToolCall tc) {
+                pendingToolCalls.add(new AssistantMessage.ToolCall(
+                        tc.callId() != null ? tc.callId() : tc.toolId(),
+                        "function",
+                        tc.toolId(),
+                        tc.inputJson()
+                ));
+                continue;
+            }
+
+            // 遇到非 ToolCall 步骤时，先刷出累积的 ToolCall 批次
+            flushPendingToolCalls(pendingToolCalls, out);
+
+            Message message = toMessage(step);
+            if (message != null) {
+                out.add(message);
+            }
+        }
+
+        // 尾部可能还有未刷出的 ToolCall
+        flushPendingToolCalls(pendingToolCalls, out);
+    }
+
+    /** 将累积的 ToolCall 合并为单条 AssistantMessage 并清空缓冲区。 */
+    private void flushPendingToolCalls(List<AssistantMessage.ToolCall> pending, List<Message> out) {
+        if (pending.isEmpty()) return;
+        // 检查 flush 后的消息序列：紧接的消息应为 ToolResponseMessage，否则 provider 可能拒绝
+        if (!out.isEmpty() && !(out.getLast() instanceof ToolResponseMessage)) {
+            // 合法路径：首次 flush（前面是 UserMessage/SystemMessage）或连续 flush
+            // 但如果上一条是带 tool_calls 的 AssistantMessage 且没有对应 ToolResponseMessage，记录警告
+            if (out.getLast() instanceof AssistantMessage am && am.hasToolCalls()) {
+                log.warn("检测到连续 ToolCall flush：前一条 AssistantMessage 有 {} 个 tool_calls 但缺少对应的 ToolResponseMessage，"
+                        + "provider 可能拒绝此消息序列", am.getToolCalls().size());
+            }
+        }
+        out.add(buildAssistantToolCallMessage(List.copyOf(pending)));
+        pending.clear();
     }
 
     public String serializeForMultimodal(@Nullable List<Message> messages) {
@@ -194,19 +252,13 @@ public class ProviderMessageBuilder {
         return switch (step) {
             case ReactStep.Progress ignored -> null;
             case ReactStep.Thought thought -> new AssistantMessage(thought.content());
-            case ReactStep.ToolCall toolCall -> buildAssistantToolCallMessage(List.of(
-                    new AssistantMessage.ToolCall(
-                            toolCall.callId() != null ? toolCall.callId() : toolCall.toolId(),
-                            "function",
-                            toolCall.toolId(),
-                            toolCall.inputJson()
-                    )
-            ));
+            // ToolCall 由 convertStepsToMessages 批量合并处理，不在此单独转换
+            case ReactStep.ToolCall ignored -> null;
             case ReactStep.Observation observation -> ToolResponseMessage.builder()
                     .responses(List.of(new ToolResponseMessage.ToolResponse(
                             observation.callId() != null ? observation.callId() : observation.toolId(),
                             observation.toolId(),
-                            observation.output()
+                            formatObservationForPrompt(observation)
                     )))
                     .build();
             case ReactStep.Answer answer -> new AssistantMessage(answer.content());
@@ -220,6 +272,34 @@ public class ProviderMessageBuilder {
                                     + "，恢复载荷: " + resume.payload()
                     )))
                     .build();
+            // Reflect 不进入 LLM 消息列表 — 反思内容通过 L1 工作区 TASK_STATE 在下一轮
+            // assemble 时注入上下文，避免额外 AssistantMessage 引发 provider 消息序列校验失败。
+            case ReactStep.Reflect reflect -> {
+                log.debug("Reflect 步骤已跳过消息转换（通过 workspace 注入）: trigger={}", reflect.trigger());
+                yield null;
+            }
+        };
+    }
+
+    private String formatObservationForPrompt(ReactStep.Observation observation) {
+        if (!shouldUseObservationPreview(observation)) {
+            return observation.output();
+        }
+        String preview = pruningEngine.formatCurrentObservationPreview(
+                observation.toolId(),
+                observation.success(),
+                observation.output()
+        );
+        return preview.isBlank() ? observation.output() : preview;
+    }
+
+    private boolean shouldUseObservationPreview(ReactStep.Observation observation) {
+        if (observation.output() == null || observation.output().length() < CURRENT_TURN_DIGEST_MIN_CHARS) {
+            return false;
+        }
+        return switch (observation.toolId()) {
+            case "web.search", "web.fetch" -> true;
+            default -> false;
         };
     }
 

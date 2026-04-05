@@ -29,7 +29,8 @@ public final class StepEfficiencyEvaluator implements DimensionEvaluator {
         int actualStepCount = steps.size();
         int expectedStepCount = scenario.expectedStepCount();
 
-        if (actualStepCount == 0) {
+        // 无步骤或无期望值约束时，评分为 1.0
+        if (actualStepCount == 0 || expectedStepCount <= 0) {
             return new DimensionScore(DIMENSION_NAME, 1.0, List.of(), List.of());
         }
 

@@ -72,7 +72,7 @@ public class SkillGenerationTool {
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .category(ToolCategory.EXTENSION)
-                .tags(List.of("skill", "generation"))
+                .tags(List.of("skill", "generation", "discovery"))
                 .executor(this::handleGenerateSkill)
                 .build();
 

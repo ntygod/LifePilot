@@ -147,6 +147,23 @@ class FileToolExecutorTest {
         }
 
         @Test
+        void execute_按行范围读取并保留总行数() throws IOException {
+            Path file = tempDir.resolve("range.txt");
+            Files.writeString(file, "line1\nline2\nline3\nline4");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", file.toString(),
+                    "startLine", 2,
+                    "endLine", 3)));
+
+            assertThat(result.ok()).isTrue();
+            assertThat(result.data().get("content")).isEqualTo("line2\nline3");
+            assertThat(result.data().get("totalLines")).isEqualTo(4);
+            assertThat(result.data().get("startLine")).isEqualTo(2);
+            assertThat(result.data().get("endLine")).isEqualTo(3);
+        }
+
+        @Test
         void execute_路径安全拒绝() {
             ToolResult result = executor.execute(buildInput(Map.of("path", "/etc/passwd")));
 
@@ -319,6 +336,26 @@ class FileToolExecutorTest {
             assertThat(result.ok()).isFalse();
             assertThat(result.error()).contains("安全策略拒绝");
         }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void execute_maxEntries截断时仍保持目录优先排序() throws IOException {
+            Files.createDirectory(tempDir.resolve("dir-b"));
+            Files.createDirectory(tempDir.resolve("dir-a"));
+            Files.writeString(tempDir.resolve("c.txt"), "c");
+            Files.writeString(tempDir.resolve("a.txt"), "a");
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", tempDir.toString(),
+                    "maxEntries", 2)));
+
+            assertThat(result.ok()).isTrue();
+            assertThat(result.data().get("totalEntries")).isEqualTo(4);
+            assertThat(result.data().get("truncated")).isEqualTo(true);
+            List<Map<String, Object>> entries = (List<Map<String, Object>>) result.data().get("entries");
+            assertThat(entries).extracting(entry -> entry.get("name"))
+                    .containsExactly("dir-a", "dir-b");
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -405,6 +442,33 @@ class FileToolExecutorTest {
 
             assertThat(result.ok()).isFalse();
             assertThat(result.error()).contains("安全策略拒绝");
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void execute_offset与上下文行应正确生效() throws IOException {
+            Files.writeString(tempDir.resolve("context.txt"), """
+                    alpha
+                    hit one
+                    beta
+                    hit two
+                    gamma
+                    """);
+
+            ToolResult result = executor.execute(buildInput(Map.of(
+                    "path", tempDir.toString(),
+                    "pattern", "hit",
+                    "offset", 1,
+                    "maxResults", 1,
+                    "contextLines", 1)));
+
+            assertThat(result.ok()).isTrue();
+            assertThat(result.data().get("totalMatches")).isEqualTo(2);
+            List<Map<String, Object>> matches = (List<Map<String, Object>>) result.data().get("matches");
+            assertThat(matches).hasSize(1);
+            assertThat(matches.getFirst().get("content")).isEqualTo("hit two");
+            assertThat(matches.getFirst().get("beforeContext")).isEqualTo(List.of("beta"));
+            assertThat(matches.getFirst().get("afterContext")).isEqualTo(List.of("gamma"));
         }
     }
 

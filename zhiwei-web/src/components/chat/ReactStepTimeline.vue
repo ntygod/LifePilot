@@ -4,9 +4,56 @@ import type { ReactStepDto, ToolCallStep, ObservationStep } from '@/types'
 import {
   Lightbulb, Wrench, Eye, PenLine, Pause, Play,
   ChevronDown, ChevronRight, Loader2,
-  CircleDot
+  CircleDot, FileText, FolderOpen, Copy, Check,
 } from 'lucide-vue-next'
 import WorkerResultCard from './WorkerResultCard.vue'
+
+const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
+
+/** 复制路径的状态追踪（按 step index） */
+const copiedSteps = ref<Set<number>>(new Set())
+
+/** 在 Tauri 桌面端用系统默认程序打开文件 */
+async function openFile(filePath: string) {
+  if (!isTauri) return
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(filePath)
+  } catch (e) {
+    console.warn('打开文件失败:', filePath, e)
+  }
+}
+
+/** 用系统文件管理器打开文件所在目录 */
+async function revealInFolder(filePath: string) {
+  if (!isTauri) return
+  try {
+    const dir = filePath.replace(/[\\/][^\\/]+$/, '')
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(dir)
+  } catch (e) {
+    console.warn('打开目录失败:', filePath, e)
+  }
+}
+
+/** 缩短路径显示 — 取最后两级目录 */
+function shortenPath(fullPath: string): string {
+  const sep = fullPath.includes('\\') ? '\\' : '/'
+  const parts = fullPath.split(sep).filter(Boolean)
+  if (parts.length <= 2) return fullPath
+  return '…' + sep + parts.slice(-2).join(sep)
+}
+
+/** 复制文件路径到剪贴板 */
+async function copyPath(filePath: string, stepIndex: number) {
+  try {
+    await navigator.clipboard.writeText(filePath)
+  } catch {
+    // clipboard API 不可用时（如非 HTTPS 环境）静默忽略
+  }
+  copiedSteps.value.add(stepIndex)
+  setTimeout(() => copiedSteps.value.delete(stepIndex), 2000)
+}
 
 const props = defineProps<{
   /** ReAct 步骤序列 */
@@ -213,38 +260,37 @@ function getGroupKey(group: StepGroup): string {
 <template>
   <div
     v-if="summary || hasSteps"
-    class="react-panel mt-3 overflow-hidden rounded-[1.15rem] border text-xs transition-all duration-300"
+    class="react-panel mt-2 overflow-hidden rounded-xl border text-xs transition-all duration-300"
     :class="streaming ? 'react-panel-streaming' : 'react-panel-idle'"
   >
     <button
       type="button"
-      class="react-trigger flex w-full items-center justify-between gap-3 px-3 py-3 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+      class="react-trigger flex w-full items-center justify-between gap-2 px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       @click="expanded = !expanded"
     >
-      <div class="flex min-w-0 flex-1 items-center gap-3">
+      <div class="flex min-w-0 flex-1 items-center gap-2">
         <div
           class="react-icon-shell relative shrink-0"
           :class="streaming ? 'react-icon-shell-streaming' : ''"
         >
           <component
             :is="latestStep ? getStepIcon(latestStep.type) : CircleDot"
-            :size="14"
+            :size="12"
             class="transition-colors duration-300"
             :class="streaming
               ? 'text-primary'
               : latestStep ? getStepColor(latestStep.type) : 'text-muted-foreground'"
           />
         </div>
-        <div class="min-w-0 space-y-1">
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">执行轨迹</span>
-            <span v-if="toolCallCount > 0" class="react-chip">
-              <Wrench :size="10" />
-              {{ toolCallCount }}
-            </span>
-          </div>
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <span class="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">执行轨迹</span>
+          <span v-if="toolCallCount > 0" class="react-chip">
+            <Wrench :size="10" />
+            {{ toolCallCount }}
+          </span>
+          <span class="text-muted-foreground/30">·</span>
           <p
-            class="truncate text-[11px] font-medium"
+            class="min-w-0 truncate text-[11px] font-medium"
             :class="streaming ? 'text-primary' : 'text-foreground/84'"
           >
             {{ triggerLabel }}
@@ -325,12 +371,26 @@ function getGroupKey(group: StepGroup): string {
                         </span>
                       </div>
                     </div>
-                    <span
-                      v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
-                      class="react-meta-chip shrink-0"
-                    >
-                      {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
-                    </span>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <button
+                        v-if="group.steps.length > 1 && (group.steps[1] as ObservationStep).workingDirectory"
+                        type="button"
+                        class="react-workdir-chip"
+                        :title="(group.steps[1] as ObservationStep).workingDirectory"
+                        @click.stop="isTauri
+                          ? revealInFolder((group.steps[1] as ObservationStep).workingDirectory! + '/')
+                          : copyPath((group.steps[1] as ObservationStep).workingDirectory!, (group.steps[1] as ObservationStep).index)"
+                      >
+                        <FolderOpen :size="10" />
+                        <span class="max-w-[120px] truncate">{{ shortenPath((group.steps[1] as ObservationStep).workingDirectory!) }}</span>
+                      </button>
+                      <span
+                        v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
+                        class="react-meta-chip shrink-0"
+                      >
+                        {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
+                      </span>
+                    </div>
                   </div>
                   <p
                     v-if="getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep)"
@@ -360,6 +420,47 @@ function getGroupKey(group: StepGroup): string {
                         </p>
                       </div>
                     </template>
+                  </div>
+                  <!-- 生成文件路径 -->
+                  <div
+                    v-if="(group.steps[1] as ObservationStep).generatedFilePath"
+                    class="react-file-bar mt-2"
+                  >
+                    <FileText :size="12" class="shrink-0 text-emerald-500" />
+                    <span class="min-w-0 truncate text-[10px] text-foreground/84">
+                      {{ (group.steps[1] as ObservationStep).generatedFilePath }}
+                    </span>
+                    <div class="ml-auto flex shrink-0 items-center gap-1">
+                      <button
+                        v-if="isTauri"
+                        type="button"
+                        class="react-file-action"
+                        title="用默认程序打开"
+                        @click.stop="openFile((group.steps[1] as ObservationStep).generatedFilePath!)"
+                      >
+                        <FileText :size="10" />
+                        <span>打开</span>
+                      </button>
+                      <button
+                        v-if="isTauri"
+                        type="button"
+                        class="react-file-action"
+                        title="在文件夹中显示"
+                        @click.stop="revealInFolder((group.steps[1] as ObservationStep).generatedFilePath!)"
+                      >
+                        <FolderOpen :size="10" />
+                        <span>文件夹</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="react-file-action"
+                        title="复制路径"
+                        @click.stop="copyPath((group.steps[1] as ObservationStep).generatedFilePath!, (group.steps[1] as ObservationStep).index)"
+                      >
+                        <component :is="copiedSteps.has((group.steps[1] as ObservationStep).index) ? Check : Copy" :size="10" />
+                        <span>{{ copiedSteps.has((group.steps[1] as ObservationStep).index) ? '已复制' : '复制路径' }}</span>
+                      </button>
+                    </div>
                   </div>
                 </template>
 
@@ -441,11 +542,11 @@ function getGroupKey(group: StepGroup): string {
 
 .react-icon-shell {
   display: inline-flex;
-  height: 2rem;
-  width: 2rem;
+  height: 1.5rem;
+  width: 1.5rem;
   align-items: center;
   justify-content: center;
-  border-radius: 1rem;
+  border-radius: 0.625rem;
   border: 1px solid hsl(from var(--border) h s l / 0.46);
   background: hsl(from var(--background) h s l / 0.8);
   box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.32);
@@ -560,5 +661,57 @@ function getGroupKey(group: StepGroup): string {
 
 .react-step-move {
   transition: transform 220ms var(--ease-fluid);
+}
+
+.react-workdir-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  background: hsl(from var(--background) h s l / 0.72);
+  padding: 0.14rem 0.48rem;
+  font-size: 10px;
+  line-height: 1.1;
+  color: hsl(from var(--muted-foreground) h s l / 0.84);
+  cursor: pointer;
+  transition: all 140ms var(--ease-fluid);
+}
+
+.react-workdir-chip:hover {
+  background: hsl(from var(--accent) h s l / 0.5);
+  color: hsl(from var(--foreground) h s l / 0.92);
+  border-color: hsl(from var(--border) h s l / 0.6);
+}
+
+.react-file-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.7rem;
+  border: 1px solid hsl(160 56% 78% / 0.5);
+  background: hsl(160 56% 96% / 0.5);
+  padding: 0.45rem 0.6rem;
+}
+
+.react-file-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  background: hsl(from var(--background) h s l / 0.8);
+  padding: 0.2rem 0.45rem;
+  font-size: 10px;
+  line-height: 1.1;
+  color: hsl(from var(--foreground) h s l / 0.72);
+  cursor: pointer;
+  transition: all 140ms var(--ease-fluid);
+}
+
+.react-file-action:hover {
+  background: hsl(from var(--accent) h s l / 0.5);
+  color: hsl(from var(--foreground) h s l / 0.92);
+  border-color: hsl(from var(--border) h s l / 0.6);
 }
 </style>

@@ -148,7 +148,7 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant AL as AgentLoop
+    participant AL as AgentOrchestrator
     participant TR as TraceRecorder
     participant TA as TraceAdvisor
     participant GA as GuardrailAdvisor
@@ -178,7 +178,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Caller as AgentLoop / Advisor
+    participant Caller as ReactAgentLoop / Advisor
     participant GE as GuardrailEngine
     participant P1 as ToolRiskPolicy
     participant P2 as ContentSafetyPolicy
@@ -218,10 +218,10 @@ sequenceDiagram
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| agent（AgentLoop） | agent → observability | 调用 TraceRecorder 记录 Trace 生命周期和步骤 |
+| agent（AgentOrchestrator / ReactAgentLoop） | agent → observability | 调用 TraceRecorder 记录 Trace 生命周期和步骤 |
 | agent（ContextAssembler） | agent → observability | 通过 TraceContextPropagator 获取当前 Trace 上下文 |
 | tool（DynamicToolRegistry） | tool → observability | 工具执行前调用 GuardrailEngine.checkToolCall() |
-| llm（LlmRouter） | llm → observability | LLM 调用前通过 DataRedactor 脱敏 |
+| llm（GenerationRouter） | llm → observability | LLM 调用前通过 DataRedactor 脱敏 |
 | interaction（Web Controller） | interaction → observability | 调用 TraceQuery 提供轨迹查询 API |
 | eval（Agentic Evals） | eval → observability | 使用 TrajectoryEvaluator 进行评估 |
 

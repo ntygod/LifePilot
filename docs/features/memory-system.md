@@ -62,7 +62,11 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 - `memory.query-at-time`
 - `memory.search-experience`
 
-主上下文负责“当前会话连续性”，工具负责“按需回忆和检索”，职责比旧方案更清楚。
+主上下文负责”当前会话连续性”，工具负责”按需回忆和检索”，职责比旧方案更清楚。
+
+`HybridRetriever` 支持可选的 `RerankRouter` 精排步骤和 `knownEmpty` 短路优化。
+
+`EntityType` 枚举包含 12 种类型：PERSON、ORGANIZATION、PLACE、EVENT、PROJECT、TOPIC、PREFERENCE、HABIT、GOAL、SKILL、EXPERIENCE、CUSTOM。
 
 ### 2.6 巩固与遗忘不再依赖 L1 flush
 

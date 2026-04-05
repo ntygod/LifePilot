@@ -5,6 +5,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.execution.ExecutionRetrySupport;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -21,12 +22,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import com.lifepilot.config.threadpool.MdcPropagatingExecutorService;
+
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -45,6 +49,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     private final AgentConfigProperties agentConfigProperties;
     private final GatewayProperties properties;
     private final ExecutionRequestFactory requestFactory;
+    /** 使用 virtual thread 执行 Agent 任务，避免阻塞 ForkJoinPool.commonPool() */
+    private final ExecutorService agentExecutor;
     @Nullable
     private final ChatTurnService chatTurnService;
     @Nullable
@@ -55,7 +61,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                                GatewayProperties properties,
                                ChatSessionRepository chatSessionRepository,
                                @Nullable SseSessionManager sseSessionManager) {
-        this(agentOrchestrator, agentConfigProperties, properties, chatSessionRepository, null, sseSessionManager);
+        this(agentOrchestrator, agentConfigProperties, properties, chatSessionRepository, null, sseSessionManager, null);
     }
 
     public ExecutionMiddleware(AgentOrchestrator agentOrchestrator,
@@ -64,10 +70,25 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                                ChatSessionRepository chatSessionRepository,
                                ChatTurnService chatTurnService,
                                @Nullable SseSessionManager sseSessionManager) {
+        this(agentOrchestrator, agentConfigProperties, properties, chatSessionRepository,
+                chatTurnService, sseSessionManager, null);
+    }
+
+    public ExecutionMiddleware(AgentOrchestrator agentOrchestrator,
+                               AgentConfigProperties agentConfigProperties,
+                               GatewayProperties properties,
+                               ChatSessionRepository chatSessionRepository,
+                               @Nullable ChatTurnService chatTurnService,
+                               @Nullable SseSessionManager sseSessionManager,
+                               @Nullable ExecutorService agentExecutor) {
         this.agentOrchestrator = agentOrchestrator;
         this.agentConfigProperties = agentConfigProperties;
         this.properties = properties;
         this.requestFactory = new ExecutionRequestFactory(agentConfigProperties, chatSessionRepository);
+        var rawExecutor = agentExecutor != null
+                ? agentExecutor
+                : java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        this.agentExecutor = new MdcPropagatingExecutorService(rawExecutor);
         this.chatTurnService = chatTurnService;
         this.sseSessionManager = sseSessionManager;
     }
@@ -121,7 +142,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             CompletableFuture<AgentResponse> future = null;
             try {
-                future = CompletableFuture.supplyAsync(() -> agentOrchestrator.run(agentRequest));
+                future = CompletableFuture.supplyAsync(() -> agentOrchestrator.run(agentRequest), agentExecutor);
                 AgentResponse agentResponse = future.get(properties.execution().timeoutSeconds(), TimeUnit.SECONDS);
 
                 if (shouldRetrySyncResponse(agentResponse) && attempt < maxAttempts) {
@@ -204,7 +225,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         int timeoutSeconds = properties.execution().timeoutSeconds();
         AgentRequest agentRequest = requestFactory.build(message);
 
-        CompletableFuture.runAsync(() -> runStreaming(agentRequest, message, streamId, manager, cancellationToken))
+        CompletableFuture.runAsync(() -> runStreaming(agentRequest, message, streamId, manager, cancellationToken), agentExecutor)
                 .orTimeout(timeoutSeconds, TimeUnit.SECONDS)
                 .exceptionally(ex -> {
                     if (ex instanceof TimeoutException || ex.getCause() instanceof TimeoutException) {
@@ -220,7 +241,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                                     ChatTurnStatus.FAILED
                             );
                             manager.sendEvent(streamId, SseEventType.ERROR, errorData);
-                            manager.closeEmitter(streamId);
+                            // 延迟关闭：给 Controller 足够时间将 emitter 返回给客户端
+                            manager.closeEmitterWithDelay(streamId, 500);
                         }
                     }
                     return null;
@@ -271,7 +293,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         }
     }
 
-    /** 统一处理流式执行失败：回写 turn、发送 ERROR 事件并关闭 SSE。 */
+    /** 统一处理流式执行失败：回写 turn、发送 ERROR 事件并延迟关闭 SSE。 */
     private void handleStreamingFailure(AgentRequest agentRequest,
                                         GatewayMessage message,
                                         String streamId,
@@ -290,7 +312,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                 ChatTurnStatus.FAILED
         );
         manager.sendEvent(streamId, SseEventType.ERROR, errorData);
-        manager.closeEmitter(streamId);
+        // 延迟关闭：给 Controller 足够时间将 emitter 返回给客户端
+        manager.closeEmitterWithDelay(streamId, 500);
     }
 
     /** 构造流式 ERROR 事件负载，前端据此恢复 turn 状态与错误展示。 */
@@ -316,7 +339,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         Map<String, Object> metadata = buildResponseMetadata(agentResponse);
         if (agentResponse.completionMode() == CompletionMode.NORMAL
                 && agentResponse.terminationReason() != null
-                && !agentResponse.terminationReason().isBlank()) {
+                && !agentResponse.terminationReason().isBlank()
+                && agentResponse.completionReason() != CompletionReason.EXPLICIT_BLOCKED) {
             return GatewayResponse.error(message.channelType(), agentResponse.content(), 500)
                     .toBuilder()
                     .responseId(agentResponse.assistantEntryId())

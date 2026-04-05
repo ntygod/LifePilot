@@ -20,9 +20,9 @@ const slots = useSlots()
 </script>
 
 <template>
-  <section :class="cn('space-y-3', props.class)">
-    <div v-if="props.title || props.description || props.eyebrow || slots.actions || slots.eyebrow" class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-5">
-      <div class="min-w-0 flex-1 space-y-1.5">
+  <section :class="cn('space-y-2', props.class)">
+    <div v-if="props.title || props.description || props.eyebrow || slots.actions || slots.eyebrow" class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
+      <div class="min-w-0 flex-1 space-y-1">
         <div v-if="props.eyebrow || slots.eyebrow" class="surface-label">
           <slot name="eyebrow">{{ props.eyebrow }}</slot>
         </div>
@@ -41,7 +41,7 @@ const slots = useSlots()
 
     <div
       :class="cn(
-        props.variant === 'card' && 'section-panel p-3.5 sm:p-4',
+        props.variant === 'card' && 'section-panel p-3 sm:p-3.5',
         props.contentClass,
       )"
     >

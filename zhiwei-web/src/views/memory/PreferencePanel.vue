@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Trash2, RotateCcw } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { PreferenceRule } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -59,7 +60,7 @@ async function loadPreferences() {
   try {
     allItems.value = await memoryApi.listPreferences()
   } catch (e: any) {
-    console.error('加载偏好规则失败:', e)
+    logger.error('加载偏好规则失败:', e)
     error.value = e?.message || '加载偏好规则失败，请稍后重试。'
   } finally {
     loading.value = false
@@ -82,7 +83,7 @@ async function handleDelete() {
     deleteOpen.value = false
     loadPreferences()
   } catch (e: any) {
-    console.error('删除偏好规则失败:', e)
+    logger.error('删除偏好规则失败:', e)
     alert(e?.message || '删除偏好规则失败')
   } finally {
     deleting.value = false
@@ -202,7 +203,7 @@ function formatConfidence(confidence: number) {
 
     <!-- 删除确认对话框 -->
     <Dialog v-model:open="deleteOpen">
-      <DialogContent class="sm:max-w-sm">
+      <DialogContent class="sm:max-w-[384px]">
         <DialogHeader>
           <DialogTitle>确认删除</DialogTitle>
           <DialogDescription>

@@ -1,47 +1,44 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs grep:*)",
-      "Bash(xargs ls:*)",
-      "Bash(git:*)",
-      "Bash(find D:WorkSpaceProjectNews/src/main/java/com/lifepilot/skill -type f -name *.java)",
       "Bash(*)",
-      "WebFetch(domain:skillhub.tencent.com)",
-      "WebFetch(domain:github.com)",
       "WebSearch",
-      "WebFetch(domain:claudeskill.site)",
-      "WebFetch(domain:support.claude.com)",
-      "WebFetch(domain:dotclaude.com)",
-      "WebFetch(domain:fp8.co)",
-      "WebFetch(domain:www.datacamp.com)",
-      "WebFetch(domain:meshworld.in)",
-      "WebFetch(domain:sherlock.xyz)",
-      "WebFetch(domain:claudefa.st)",
-      "WebFetch(domain:www.digitalapplied.com)",
-      "WebFetch(domain:claude.com)",
-      "WebFetch(domain:blog.laozhang.ai)",
-      "WebFetch(domain:www.anthropic.com)",
-      "WebFetch(domain:playbooks.com)",
-      "WebFetch(domain:docs.bswen.com)",
-      "WebFetch(domain:juri.dev)",
-      "WebFetch(domain:apidog.com)",
-      "WebFetch(domain:travis.media)",
-      "WebFetch(domain:macaron.im)",
-      "WebFetch(domain:www.teamday.ai)",
-      "WebFetch(domain:brightdata.com)",
-      "WebFetch(domain:yyiki.org)",
-      "WebFetch(domain:www.makr.io)",
-      "WebFetch(domain:www.verdent.ai)",
-      "WebFetch(domain:lobehub.com)",
+      "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:promptforward.dev)",
-      "WebFetch(domain:zenvanriel.nl)",
-      "WebFetch(domain:www.zeik0.com)",
-      "WebFetch(domain:squadofagents.substack.com)",
-      "WebFetch(domain:markaicode.com)",
-      "WebFetch(domain:www.shareuhack.com)",
-      "WebFetch(domain:www.innobu.com)",
-      "WebFetch(domain:boilerplatehub.com)"
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:claude.com)",
+      "WebFetch(domain:support.claude.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:docs.all-hands.dev)",
+      "WebFetch(domain:lobehub.com)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "Skill(update-config)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c \"input=$CLAUDE_TOOL_INPUT; if echo \\\"$input\\\" | grep -qE 'git\\s+push'; then echo '⚠️ 即将 push 代码。建议先运行 /ship 完成完整交付流程（测试→审查→提交→PR）。如果确认要直接 push，请继续。'; fi\"",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c \"input=$CLAUDE_TOOL_INPUT; if echo \\\"$input\\\" | grep -qE 'db/migration/V[0-9]+__.*\\\\.sql'; then echo '⛔ 警告：正在编辑已有的 Flyway 迁移文件！已执行的迁移不可修改（会导致 checksum 不匹配）。如需变更请新建下一个版本的迁移文件。'; fi\"",
+            "timeout": 5000
+          }
+        ]
+      }
     ]
   }
 }

@@ -443,8 +443,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
                 v-if="attachment.type?.startsWith('video/')"
                 :src="attachment.url"
                 controls
-                class="mt-1 w-full max-w-full rounded-lg"
-                style="max-height: 360px;"
+                class="mt-1 w-full max-w-full max-h-[360px] rounded-lg"
               >
                 当前浏览器不支持视频播放
               </video>

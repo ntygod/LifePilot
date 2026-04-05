@@ -226,7 +226,7 @@ onMounted(() => {
     </div>
 
     <!-- 编辑器 + 预览分栏 -->
-    <div class="flex" style="height: 480px;">
+    <div class="flex h-[480px]">
       <!-- 左侧：Monaco Editor -->
       <div class="flex-1 min-w-0 border-r border-border">
         <VueMonacoEditor

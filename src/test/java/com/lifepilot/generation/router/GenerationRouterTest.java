@@ -139,9 +139,9 @@ class GenerationRouterTest {
                 .thenReturn(true);
         when(clientFactory.getOrCreate(first)).thenReturn(firstClient);
         when(clientFactory.getOrCreate(second)).thenReturn(secondClient);
-        when(firstClient.callEntity("prompt", String.class, null))
+        when(firstClient.callEntity(eq("prompt"), eq(String.class), any()))
                 .thenThrow(new IllegalStateException("first failed"));
-        when(secondClient.callEntity("prompt", String.class, null)).thenReturn("done");
+        when(secondClient.callEntity(eq("prompt"), eq(String.class), any())).thenReturn("done");
 
         var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager);
         var actual = router.callEntity("memory_extract", "prompt", String.class, null, null, null);

@@ -1,7 +1,10 @@
 import { onMounted, onUnmounted, ref } from 'vue'
+import { getApiOrigin } from '@/api/config'
 import { useNotificationStore } from '@/stores/notification'
 import { useChatStore } from '@/stores/chat'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import { logger } from '@/utils/logger'
+import { parseNotificationContent } from '@/utils/notificationContent'
 import type { NotificationItem, SseTranscriptionEvent } from '@/types'
 
 /**
@@ -21,7 +24,7 @@ export function useNotificationStream() {
   function connect() {
     if (eventSource) return
 
-    eventSource = new EventSource('/api/notifications/stream?userId=default')
+    eventSource = new EventSource(`${getApiOrigin()}/api/notifications/stream?userId=default`)
     const notificationStore = useNotificationStore()
     const chatStore = useChatStore()
 
@@ -33,9 +36,10 @@ export function useNotificationStream() {
           notificationStore.setUnreadCount(data.unreadCount)
         } else {
           notificationStore.addNotification(data as NotificationItem)
+          sendDesktopNotification(data as NotificationItem)
         }
       } catch (error) {
-        console.error('通知事件解析失败:', error)
+        logger.error('通知事件解析失败:', error)
       }
     })
 
@@ -57,7 +61,7 @@ export function useNotificationStream() {
 
         chatStore.updateMessage(targetId, { content: data.text })
       } catch (error) {
-        console.error('转录事件解析失败:', error)
+        logger.error('转录事件解析失败:', error)
       }
     })
 
@@ -90,6 +94,27 @@ export function useNotificationStream() {
       connected.value = false
     }
     reconnectAttempts = MAX_RECONNECT_ATTEMPTS
+  }
+
+  /** Tauri 桌面端收到通知时推送系统级桌面通知 */
+  async function sendDesktopNotification(item: NotificationItem) {
+    if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return
+    try {
+      const { sendNotification, isPermissionGranted, requestPermission } =
+        await import('@tauri-apps/plugin-notification')
+      let permitted = await isPermissionGranted()
+      if (!permitted) {
+        const result = await requestPermission()
+        permitted = result === 'granted'
+      }
+      if (!permitted) return
+
+      const { summary } = parseNotificationContent(item.contentJson)
+      const typeLabel = item.typeId ?? '通知'
+      sendNotification({ title: `知微 · ${typeLabel}`, body: summary })
+    } catch {
+      // 非 Tauri 环境或插件不可用，静默忽略
+    }
   }
 
   onMounted(() => connect())

@@ -39,14 +39,14 @@ function isActive(id: string) {
 
 <template>
   <aside class="app-rail">
-    <div class="flex h-full flex-col items-center gap-4 px-3 py-4">
+    <div class="flex h-full flex-col items-center gap-3 px-2 py-3">
       <RouterLink
         :to="resolvePrimaryTarget('/conversations', 'conversations')"
         class="app-rail-brand group"
         title="知微"
         @click="emitNavigate"
       >
-        <ZhiweiMark class="size-[1.3rem]" />
+        <ZhiweiMark class="size-[1.15rem]" />
       </RouterLink>
 
       <div class="soft-divider opacity-70" />

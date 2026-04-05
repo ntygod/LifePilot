@@ -1,8 +1,8 @@
 # Web UI 架构设计
 
 > **文档性质**：架构设计文档
-> **模块归属**：`com.lifepilot.interaction.web`（后端）+ `lifepilot-web`（前端）
-> **最后更新**：2026-03
+> **模块归属**：`com.lifepilot.interaction.web`（后端）+ `zhiwei-web`（前端）
+> **最后更新**：2026-04
 
 ---
 
@@ -12,10 +12,10 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 
 **核心架构决策：前后端彻底分离。**
 
-- **后端 API 层**（本 Java 项目内）：Spring Boot REST Controller + SSE 流式端点 + WebChannelAdapter，复用 MessageGateway 中间件管道。后端是纯 Server 端逻辑，不包含任何前端构建集成。
+- **后端 API 层**（本 Java 项目内）：Spring Boot REST Controller + SSE 流式端点，复用 MessageGateway 中间件管道。后端是纯 Server 端逻辑，不包含任何前端构建集成。
 - **前端 SPA 层**（独立项目）：Vue 3 + Vite + Pinia 单页应用，独立仓库、独立构建、独立部署。通过 HTTP/SSE 调用后端 API。
 
-这种分离为 Phase 6 的多端接入（CLI HTTP 客户端、移动端、桌面端）奠定基础，所有客户端共享同一套 REST/SSE API。
+这种分离已实现多端接入：Tauri 2.x 桌面客户端通过 WebView 加载同一套前端 SPA，共享 REST/SSE API。桌面端额外包含 SplashView（启动等待页）和 SetupWizard（首次配置引导）。
 
 ### 职责边界
 
@@ -23,7 +23,7 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 |-------------------|--------------------------|------------|
 | REST API 端点（对话、设置、信号） | Vue 3 SPA 应用框架 | 知识库管理页面（模块 19） |
 | SSE 流式对话传输 | 对话页 + 设置页 | Skill/MCP 管理页面（模块 19） |
-| WebChannelAdapter 通道适配器 | A2UI 渲染器 + 组件目录 | 轨迹回放页面（模块 19） |
+| BrowserIngressService 通道适配 | A2UI 渲染器 + 组件目录 | 轨迹回放页面（模块 19） |
 | A2UI 后端数据模型 + 序列化 | 流式 Markdown 渲染 | 工作流管理页面（模块 19） |
 | Web 配置属性 | 状态管理、路由 | CLI HTTP 客户端迁移（Phase 6） |
 | CORS 配置 | SSE 客户端封装 | |
@@ -37,9 +37,9 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 | A2UI (Agent-to-UI) | Google 提出的声明式 Generative UI 协议（v0.8 Public Preview），Agent 以 JSON 描述 UI 组件树，客户端渲染为原生控件 |
 | SSE (Server-Sent Events) | 服务端向客户端单向推送事件的 HTTP 协议，用于流式传输 LLM 生成的 Token 和 A2UI 组件描述 |
 | SseEmitter | Spring MVC 提供的 SSE 发射器，支持异步逐块发送事件到客户端 |
-| WebChannelAdapter | Web 通道适配器，实现 `ChannelAdapter` 接口，桥接 REST 请求与 MessageGateway |
+| BrowserIngressService | Web 通道适配器，桥接 REST 请求与 MessageGateway |
 | Pinia | Vue 3 官方状态管理库，管理对话列表、消息流、用户设置等全局状态 |
-| shadcn-vue | 基于 Radix Vue 的 Vue 3 组件库，提供无样式（headless）UI 原语 + Tailwind CSS 样式 |
+| Reka UI 2.x | Vue 3 UI 组件库 |
 
 ---
 
@@ -49,7 +49,7 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 
 ```mermaid
 graph TB
-    subgraph Frontend["前端独立项目 (lifepilot-web) — 浏览器"]
+    subgraph Frontend["前端独立项目 (zhiwei-web) — 浏览器"]
         CV["ChatView<br/>对话页面"]
         SV["SettingsView<br/>设置页面"]
         ST["StreamingText<br/>Markdown 渲染"]
@@ -62,7 +62,7 @@ graph TB
 
     subgraph Backend["后端 (lifepilot Java 项目)"]
         CC["ChatController / SettingsController<br/>REST + SSE 端点"]
-        WA["WebChannelAdapter<br/>ChannelAdapter 实现"]
+        WA["BrowserIngressService<br/>Web 通道适配"]
         MG["MessageGateway<br/>Auth → RateLimit → Security → Router → Execution → Audit"]
         CC --> WA --> MG
     end
@@ -111,21 +111,9 @@ data: {"code": 500, "message": "LLM 服务不可用"}
 - `done`：流式传输完成，携带完整消息 ID 和 Token 统计
 - `error`：处理过程中发生错误
 
-#### 3.2.3 WebChannelAdapter
+#### 3.2.3 REST Controller
 
-```java
-// 实现 ChannelAdapter 接口，桥接 REST 请求与 MessageGateway
-public class WebChannelAdapter extends AbstractChannelAdapter {
-    // channelType() → ChannelType.WEB
-    // normalize() → 将 REST 请求体转换为 GatewayMessage
-    // sendResponse() → 通过 SseEmitter 推送响应（流式场景）
-}
-```
-
-WebChannelAdapter 的核心职责：
-1. 将 HTTP 请求转换为 `GatewayMessage`（`channelType = WEB`）
-2. 调用 `MessageGateway.process()` 走完整中间件管道
-3. 流式场景下，通过 `SseEmitter` 逐 Token 推送响应
+REST Controller 将 HTTP 请求转换为 `GatewayMessage`（`channelType = WEB`），调用 `MessageGateway.process()` 走完整中间件管道。流式场景下，通过 `SseEmitter` 逐 Token 推送响应。
 
 #### 3.2.4 SSE 实现方案选型
 
@@ -164,7 +152,7 @@ public WebMvcConfigurer corsConfigurer(WebProperties properties) {
 
 ### 3.3 前端 SPA 层设计（独立项目）
 
-前端作为独立项目（`lifepilot-web`），不在 Java 项目内，拥有独立的 `package.json`、构建流程和部署方式。
+前端作为独立项目（`zhiwei-web`），不在 Java 项目内，拥有独立的 `package.json`、构建流程和部署方式。
 
 #### 3.3.1 技术选型
 
@@ -174,7 +162,7 @@ public WebMvcConfigurer corsConfigurer(WebProperties properties) {
 | Vite | 6.x | 开发服务器 + 构建工具 |
 | Pinia | 3.x | 状态管理 |
 | Vue Router | 4.x | 前端路由 |
-| shadcn-vue | latest | UI 组件库（基于 Radix Vue + Tailwind CSS） |
+| Reka UI | 2.x | UI 组件库（基于 Reka UI + Tailwind CSS） |
 | Tailwind CSS | 4.x | 原子化 CSS |
 | vue-markdown-renderer | latest | AI 流式 Markdown 渲染（高性能增量 DOM 更新） |
 | TypeScript | 5.x | 类型安全 |
@@ -182,7 +170,7 @@ public WebMvcConfigurer corsConfigurer(WebProperties properties) {
 #### 3.3.2 前端项目结构
 
 ```
-lifepilot-web/                  # 独立前端项目根目录
+zhiwei-web/                    # 独立前端项目根目录
 ├── index.html
 ├── package.json
 ├── vite.config.ts
@@ -215,7 +203,7 @@ lifepilot-web/                  # 独立前端项目根目录
 │   │   │   ├── A2uiButton.vue      # 按钮组件
 │   │   │   ├── A2uiList.vue        # 列表组件
 │   │   │   └── componentCatalog.ts # 组件目录注册表
-│   │   └── ui/                     # shadcn-vue 组件
+│   │   └── ui/                     # Reka UI 组件
 │   ├── composables/
 │   │   ├── useChat.ts          # 对话 composable（SSE 连接管理）
 │   │   ├── useA2uiSignal.ts    # A2UI 信号 composable
@@ -426,7 +414,7 @@ A2UI JSON → a2uiStore (Pinia) → A2uiRenderer.vue → <component :is> → 原
 用户点击按钮 → A2uiButton 触发 signal
     → useA2uiSignal composable
     → POST /api/chat/signals { name: "todo.complete", payload: { todoId: "123" }, sessionId: "..." }
-    → ChatController → WebChannelAdapter → MessageGateway
+    → ChatController → BrowserIngressService → MessageGateway
     → Agent 处理信号 → 返回新的文本/A2UI 响应
 ```
 
@@ -463,11 +451,11 @@ interface Message {
 |---|------|---------|---------|
 | 1 | 前后端彻底分离 | frontend-maven-plugin 打包进 JAR | 后端纯 Server 逻辑，为 Phase 6 多端接入（CLI HTTP、移动端）奠定基础；前端独立构建部署，开发体验更好 |
 | 2 | SSE 流式传输（SseEmitter） | WebSocket / WebFlux Flux | SSE 是 AI 对话流式响应的行业标准；与现有 Spring MVC 栈一致；单向推送足够 |
-| 3 | Vue 3 + shadcn-vue | React + shadcn/ui | Phase 5 评估结论：中文社区生态强、Vercel AI SDK v6 支持 Vue composables、生态成熟 |
+| 3 | Vue 3 + Reka UI | React + shadcn/ui | Phase 5 评估结论：中文社区生态强、Vercel AI SDK v6 支持 Vue composables、生态成熟 |
 | 4 | vue-markdown-renderer | markdown-it / marked | 专为 AI 流式 Markdown 设计，增量 DOM 更新性能极优，Vue 3 原生支持 |
 | 5 | fetch + ReadableStream | EventSource API | EventSource 只支持 GET，无法携带 POST 请求体；fetch 支持自定义请求头和 POST |
 | 6 | Pinia 状态管理 | Vuex / 组件本地状态 | Vue 3 官方推荐、TypeScript 友好、Composition API 原生支持 |
-| 7 | Tailwind CSS 4 | 传统 CSS / CSS Modules | 原子化 CSS 开发效率高、与 shadcn-vue 天然配合、构建产物体积小 |
+| 7 | Tailwind CSS 4 | 传统 CSS / CSS Modules | 原子化 CSS 开发效率高、与 Reka UI 天然配合、构建产物体积小 |
 | 8 | A2UI 协议 + 自建 Vue 渲染器 | 纯文本 SSE / 自定义 JSON 协议 | A2UI 是 Google 标准化方案（v0.8），邻接表模型简洁；Vue `<component :is>` 天然适配；组件目录可扩展 |
 | 9 | A2UI 组件内嵌 SSE 流 | 独立 WebSocket 通道 / 轮询 | 复用已有 SSE 通道，`ui` 事件与 `token` 事件交替传输，无需额外连接 |
 | 10 | 后端 CORS 配置 | Nginx 反向代理统一入口 | 开发阶段最简方案；生产环境可选择 Nginx 代理替代 CORS |
@@ -478,7 +466,7 @@ interface Message {
 
 ### 6.1 MessageGateway 集成
 
-Web UI 的 REST Controller 通过 `WebChannelAdapter` 接入 `MessageGateway`，复用完整的中间件管道（Auth → RateLimit → Security → Router → Execution → Audit）。这意味着 Web UI 自动获得：
+Web UI 的 REST Controller 通过 `BrowserIngressService` 接入 `MessageGateway`，复用完整的中间件管道（Auth → RateLimit → Security → Router → Execution → Audit）。这意味着 Web UI 自动获得：
 
 - 认证鉴权（Session 模式，`lifepilot.gateway.auth.web.session`）
 - 请求限流
@@ -488,7 +476,7 @@ Web UI 的 REST Controller 通过 `WebChannelAdapter` 接入 `MessageGateway`，
 
 ### 6.2 ChannelType.WEB
 
-`ChannelType` 枚举已包含 `WEB("web", false)`，无需修改。`WebChannelAdapter` 实现 `ChannelAdapter` 接口，注册到 `MessageGateway`。
+`ChannelType` 枚举已包含 `WEB("web", false)`，无需修改。`BrowserIngressService` 桥接 Web 请求到 `MessageGateway`。
 
 ### 6.3 ResponseContent 流式支持
 
@@ -588,7 +576,7 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 
 **与 ZhiWei 的差异**：
 - OpenClaw Web UI 内嵌于 Gateway，非独立前端项目；ZhiWei 采用前后端彻底分离
-- OpenClaw 使用 Lit Web Components；ZhiWei 使用 Vue 3 + shadcn-vue
+- OpenClaw 使用 Lit Web Components；ZhiWei 使用 Vue 3 + Reka UI
 - OpenClaw A2UI 是 HTML 属性方案；ZhiWei 采用 Google A2UI JSON 协议（更标准化、更易扩展）
 
 > 参考来源：[OpenClaw Architecture Overview](https://ppaolo.substack.com/p/openclaw-system-architecture-overview)、[OpenClaw Deployment Architectures](https://flowzap.xyz/blog/every-way-to-deploy-openclaw)、[OpenClaw Source Code Review](https://www.moely.ai/resources/openclaw-framework-source-code-review)。内容已重新组织表述。
@@ -682,7 +670,7 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 | **前端框架** | Lit Web Components | SvelteKit | React + Next.js | Vue 3 + Vite |
 | **后端框架** | Node.js (Gateway) | Python FastAPI | Next.js API + tRPC | Java Spring Boot |
 | **前后端分离** | 内嵌于 Gateway | 同仓库分层 | Monorepo 全栈 | 彻底分离（独立项目） |
-| **组件库** | 自建 Lit 组件 | TailwindCSS 原子组件 | Ant Design + @lobehub/ui | shadcn-vue + Tailwind |
+| **组件库** | 自建 Lit 组件 | TailwindCSS 原子组件 | Ant Design + @lobehub/ui | Reka UI + Tailwind |
 | **状态管理** | 无（Web Components 内部状态） | Svelte Stores | zustand | Pinia |
 | **流式响应** | WebSocket 推送 | SSE（LLM）+ WebSocket（事件） | SSE | SSE（SseEmitter） |
 | **Generative UI** | A2UI HTML 属性 + Canvas | 无 | Artifacts（代码沙箱） | A2UI JSON 协议 |
@@ -698,4 +686,4 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 
 3. **SSE 是 AI 流式响应的行业共识**：Open WebUI 和 LobeChat 均使用 SSE 传输 LLM 响应，OpenClaw 使用 WebSocket（因其 Gateway 架构天然基于 WebSocket）。ZhiWei 选择 SSE 符合行业主流。
 
-4. **专用 AI 组件库值得借鉴**：LobeChat 的 `@lobehub/ui` 证明了 AI 对话场景需要专用组件（ChatItem、Markdown 渲染、Thinking UI 等）。ZhiWei 的 A2UI 组件目录 + shadcn-vue 基础组件可以形成类似的专用组件体系。
+4. **专用 AI 组件库值得借鉴**：LobeChat 的 `@lobehub/ui` 证明了 AI 对话场景需要专用组件（ChatItem、Markdown 渲染、Thinking UI 等）。ZhiWei 的 A2UI 组件目录 + Reka UI 基础组件可以形成类似的专用组件体系。

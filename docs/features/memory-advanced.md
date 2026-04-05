@@ -29,11 +29,15 @@
 
 ### 2.3 记忆巩固管线
 
-自动将短期记忆沉淀为长期知识：
+自动将短期记忆沉淀为长期知识，包含 5 个阶段：
 
-- 情景→语义巩固：分析近期对话，提取新实体写入知识图谱，提升高频实体的重要度评分
-- 情景→程序巩固：识别对话中的重复行为模式，聚类生成操作模板，提取用户偏好规则
-- 定时执行（Cron 可配置），两个巩固器故障隔离，互不影响
+1. **语义巩固**（EpisodicToSemanticConsolidator）：分析近期对话，提取新实体写入知识图谱，提升高频实体的重要度评分
+2. **程序巩固**（EpisodicToProceduralConsolidator）：识别对话中的重复行为模式，聚类生成操作模板，提取用户偏好规则
+3. **偏好同步**（PreferenceConsolidator）：将 L3 的 PREFERENCE 实体同步为 L4 的 PreferenceRule
+4. **经验合并**（ExperienceMerger）：将语义相似的 EXPERIENCE 实体合并为泛化的元经验
+5. **高频经验提升**（promoteHighFrequencyExperiences）：将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 ProcedureTemplate
+
+- 定时执行（Cron 可配置），各阶段故障隔离，互不影响
 - 返回统计信息（分析对话数、提升实体数、创建模板数），支持可观测性
 
 ### 2.4 MaRS 认知遗忘
@@ -51,8 +55,8 @@
 
 确保用户核心知识不被误遗忘：
 
-- 类型保护：PREFERENCE（偏好）、HABIT（习惯）、GOAL（目标）类型的实体永不遗忘
-- 重要度保护：importanceScore ≥ 0.9 的实体永不遗忘
+- 类型保护：受保护类型可配置（`config.getProtectedTypes()`，默认 PREFERENCE / HABIT / GOAL）类型的实体永不遗忘
+- 重要度保护：importanceScore ≥ 保护阈值（可配置，`config.getProtectionThreshold()`，默认 0.9）的实体永不遗忘
 - 保护机制在遗忘流程最前端执行，受保护实体不进入候选列表
 
 ### 2.6 遗忘审计日志

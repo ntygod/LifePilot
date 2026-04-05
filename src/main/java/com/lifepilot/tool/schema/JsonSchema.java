@@ -1,9 +1,12 @@
 package com.lifepilot.tool.schema;
 
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.tool.model.ValidationError;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,6 +21,8 @@ import java.util.Set;
  * @since 2026-02-24
  */
 public class JsonSchema {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /** Schema 定义（Map 表示）。 */
     private final Map<String, Object> schema;
@@ -34,6 +39,94 @@ public class JsonSchema {
     /** 从 Map 创建 Schema。 */
     public static JsonSchema of(Map<String, Object> schema) {
         return new JsonSchema(schema);
+    }
+
+    /**
+     * 根据 Schema 对参数做类型强转。
+     *
+     * <p>LLM 经常将整数传为字符串（如 {@code "5"} 而非 {@code 5}），
+     * 或将数组/对象传为 JSON 字符串。此方法根据 Schema 定义的类型自动尝试转换，
+     * 转换失败则保留原值，由后续 {@link #validate} 报错。</p>
+     *
+     * @param parameters 原始参数
+     * @return 强转后的参数副本（不修改原 Map）
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> coerceParameters(Map<String, Object> parameters) {
+        if (schema.isEmpty() || !schema.containsKey("properties")) {
+            return parameters;
+        }
+
+        var properties = (Map<String, Object>) schema.get("properties");
+        var result = new LinkedHashMap<>(parameters);
+        boolean changed = false;
+
+        for (var entry : properties.entrySet()) {
+            String field = entry.getKey();
+            Object value = result.get(field);
+            if (value == null) {
+                continue;
+            }
+            if (entry.getValue() instanceof Map<?, ?> propSchema) {
+                String expectedType = (String) propSchema.get("type");
+                if (expectedType != null && !matchesType(value, expectedType)) {
+                    Object coerced = tryCoerce(value, expectedType);
+                    if (coerced != value) {
+                        result.put(field, coerced);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        return changed ? Map.copyOf(result) : parameters;
+    }
+
+    /**
+     * 尝试将值强转为目标 JSON Schema 类型。
+     *
+     * @param value 原始值
+     * @param targetType 目标类型名
+     * @return 转换后的值，转换失败则返回原值
+     */
+    @SuppressWarnings("unchecked")
+    private Object tryCoerce(Object value, String targetType) {
+        if (!(value instanceof String str)) {
+            return value;
+        }
+        try {
+            return switch (targetType) {
+                case "integer" -> {
+                    // 去除首尾空格后尝试解析
+                    String trimmed = str.strip();
+                    yield trimmed.contains(".") ? Long.parseLong(trimmed.split("\\.")[0])
+                            : Long.parseLong(trimmed);
+                }
+                case "number" -> Double.parseDouble(str.strip());
+                case "boolean" -> switch (str.strip().toLowerCase()) {
+                    case "true" -> Boolean.TRUE;
+                    case "false" -> Boolean.FALSE;
+                    default -> value; // 无法转换，保留原值
+                };
+                case "array" -> {
+                    String trimmed = str.strip();
+                    if (trimmed.startsWith("[")) {
+                        yield OBJECT_MAPPER.readValue(trimmed, List.class);
+                    }
+                    yield value;
+                }
+                case "object" -> {
+                    String trimmed = str.strip();
+                    if (trimmed.startsWith("{")) {
+                        yield OBJECT_MAPPER.readValue(trimmed, Map.class);
+                    }
+                    yield value;
+                }
+                default -> value;
+            };
+        } catch (NumberFormatException | JsonProcessingException _) {
+            return value; // 转换失败，保留原值交给 validate 报错
+        }
     }
 
     /**

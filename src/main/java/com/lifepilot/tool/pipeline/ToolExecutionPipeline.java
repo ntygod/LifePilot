@@ -135,8 +135,9 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                     buildMeta(toolId, start, 0, false, idempotencyKey));
         }
 
-        // 2. 参数预处理与校验
+        // 2. 参数预处理、类型强转与校验
         Map<String, Object> effectiveParameters = prepareParameters(toolId, parameters);
+        effectiveParameters = tool.inputSchema().coerceParameters(effectiveParameters);
         ToolInput input = new ToolInput(toolId, effectiveParameters, tool.inputSchema(), idempotencyKey, context);
         ValidationResult validation = input.validate();
         if (!validation.isValid()) {
@@ -264,7 +265,11 @@ public class ToolExecutionPipeline implements java.io.Closeable {
     }
 
     private Map<String, Object> prepareParameters(String toolId, Map<String, Object> parameters) {
-        if (!"cron.create".equals(toolId) || parameters.containsKey("taskId")) {
+        if (!"cron".equals(toolId) || parameters.containsKey("taskId")) {
+            return parameters;
+        }
+        Object action = parameters.get("action");
+        if (!(action instanceof String actionName) || !"create".equals(actionName)) {
             return parameters;
         }
         Map<String, Object> enriched = new LinkedHashMap<>(parameters);

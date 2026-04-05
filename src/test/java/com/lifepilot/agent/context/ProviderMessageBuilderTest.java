@@ -1,5 +1,6 @@
 package com.lifepilot.agent.context;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
@@ -318,5 +319,156 @@ class ProviderMessageBuilderTest {
         assertThat(toolResponse.getResponses()).singleElement()
                 .extracting(ToolResponseMessage.ToolResponse::id)
                 .isEqualTo("call-123");
+    }
+
+    @Test
+    void build_webSearch长Observation应回灌结构化摘要而不是原始长Json() {
+        var config = new AgentConfigProperties();
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(config),
+                new SessionPruningEngine(config, new ObjectMapper())
+        );
+        String longSearchOutput = """
+                {
+                  "provider":"tavily",
+                  "query":"如何编写项目复盘",
+                  "resultCount":2,
+                  "answer":"项目复盘通常包括目标回顾、结果对比、根因分析和改进动作。",
+                  "results":[
+                    {
+                      "title":"项目复盘模板",
+                      "snippet":"这是一篇很长的模板说明，包含背景、过程、问题、改进建议等多个章节。为了触发当前轮摘要逻辑，这里继续补充一段较长文本，确保整体长度明显超过阈值。",
+                      "url":"https://example.com/postmortem-template"
+                    },
+                    {
+                      "title":"复盘会议引导词",
+                      "snippet":"帮助团队围绕事实、影响和后续行动展开讨论，同样补充一些较长文本以触发摘要。",
+                      "url":"https://example.com/postmortem-meeting"
+                    }
+                  ]
+                }
+                """;
+        var context = new AssembledContext(
+                "system prompt",
+                List.of(),
+                List.of(),
+                "<current_request>继续</current_request>",
+                List.of(),
+                TokenBudget.allocateDefault(4096),
+                0,
+                0.0f,
+                0,
+                false,
+                List.of(),
+                null
+        );
+        var state = ReactAgentState.builder()
+                .traceId("trace-search-digest")
+                .sessionId("session-search-digest")
+                .goal("test")
+                .channel("web")
+                .steps(List.of(
+                        new ReactStep.ToolCall("web.search", "Web 搜索", "{\"query\":\"如何编写项目复盘\"}", 10, "call-search"),
+                        new ReactStep.Observation("web.search", "Web 搜索", true, longSearchOutput, 12, "call-search")
+                ))
+                .stepCount(2)
+                .shortTermMemory(List.of())
+                .mentionedEntities(List.of())
+                .budget(Budget.builder()
+                        .maxTokens(4000)
+                        .tokensUsed(0)
+                        .tokensReserved(0)
+                        .maxSteps(10)
+                        .stepsUsed(0)
+                        .maxDuration(Duration.ofMinutes(1))
+                        .elapsed(Duration.ZERO)
+                        .build())
+                .parentTraceId(null)
+                .depth(0)
+                .preferredProvider(null)
+                .done(false)
+                .finalOutput(null)
+                .terminationReason(null)
+                .completionReason(null)
+                .reasoningSummary(null)
+                .completionMode(CompletionMode.NORMAL)
+                .allowedToolIds(null)
+                .pendingMedia(null)
+                .earlyStopRejectCount(0)
+                .suspended(false)
+                .suspendReason(null)
+                .build();
+
+        var result = builder.build(context, state);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+        String responseData = toolResponse.getResponses().getFirst().responseData();
+
+        assertThat(responseData)
+                .contains("搜索“如何编写项目复盘”")
+                .contains("项目复盘模板")
+                .doesNotContain("\"results\"");
+    }
+
+    @Test
+    void build_fileRead长Observation不应被当前轮摘要化() {
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(new AgentConfigProperties())
+        );
+        String rawOutput = "{\"content\":\"" + "a".repeat(360) + "\"}";
+        var context = new AssembledContext(
+                "system prompt",
+                List.of(),
+                List.of(),
+                "<current_request>继续</current_request>",
+                List.of(),
+                TokenBudget.allocateDefault(4096),
+                0,
+                0.0f,
+                0,
+                false,
+                List.of(),
+                null
+        );
+        var state = ReactAgentState.builder()
+                .traceId("trace-file-read")
+                .sessionId("session-file-read")
+                .goal("test")
+                .channel("web")
+                .steps(List.of(
+                        new ReactStep.ToolCall("file.read", "读取文件", "{\"path\":\"demo.txt\"}", 10, "call-file"),
+                        new ReactStep.Observation("file.read", "读取文件", true, rawOutput, 12, "call-file")
+                ))
+                .stepCount(2)
+                .shortTermMemory(List.of())
+                .mentionedEntities(List.of())
+                .budget(Budget.builder()
+                        .maxTokens(4000)
+                        .tokensUsed(0)
+                        .tokensReserved(0)
+                        .maxSteps(10)
+                        .stepsUsed(0)
+                        .maxDuration(Duration.ofMinutes(1))
+                        .elapsed(Duration.ZERO)
+                        .build())
+                .parentTraceId(null)
+                .depth(0)
+                .preferredProvider(null)
+                .done(false)
+                .finalOutput(null)
+                .terminationReason(null)
+                .completionReason(null)
+                .reasoningSummary(null)
+                .completionMode(CompletionMode.NORMAL)
+                .allowedToolIds(null)
+                .pendingMedia(null)
+                .earlyStopRejectCount(0)
+                .suspended(false)
+                .suspendReason(null)
+                .build();
+
+        var result = builder.build(context, state);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+
+        assertThat(toolResponse.getResponses().getFirst().responseData()).isEqualTo(rawOutput);
     }
 }

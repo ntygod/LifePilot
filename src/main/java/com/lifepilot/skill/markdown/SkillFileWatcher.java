@@ -201,11 +201,12 @@ public class SkillFileWatcher {
      * @param skillsDir  Skill 根目录
      */
     void handleEvent(WatchEvent.Kind<?> kind, Path fullPath, Path watchedDir, Path skillsDir) {
-        if (watchedDir.equals(skillsDir)) {
-            // 根目录事件：子目录的 CREATE/DELETE
+        Path autoDir = skillsDir.resolve("auto");
+        if (watchedDir.equals(skillsDir) || watchedDir.equals(autoDir)) {
+            // 根目录或 auto/ 目录事件：子目录的 CREATE/DELETE
             handleRootDirEvent(kind, fullPath, skillsDir);
         } else {
-            // 子目录事件：SKILL.md 的 CREATE/MODIFY
+            // Skill 子目录事件：SKILL.md / 脚本文件的 CREATE/MODIFY
             handleSubDirEvent(kind, fullPath, watchedDir);
         }
     }
@@ -235,23 +236,30 @@ public class SkillFileWatcher {
     }
 
     /**
-     * 处理子目录事件 — SKILL.md 的创建和修改。
+     * 处理子目录事件 — SKILL.md 和脚本文件的创建/修改。
      */
     private void handleSubDirEvent(WatchEvent.Kind<?> kind, Path fullPath, Path watchedDir) {
+        String fileName = fullPath.getFileName().toString();
         String skillFilename = config.getSkillFilename();
 
-        // 只处理 SKILL.md 文件
-        if (!fullPath.getFileName().toString().equals(skillFilename)) {
+        // 处理 SKILL.md 和 scripts/ 下的脚本文件
+        boolean isSkillFile = fileName.equals(skillFilename);
+        boolean isScriptFile = fileName.endsWith(".py") || fileName.endsWith(".sh");
+        if (!isSkillFile && !isScriptFile) {
             return;
         }
 
+        // 脚本文件变更时，需要定位到 Skill 文件夹（scripts/ 的父目录）
+        Path skillFolder = isScriptFile && watchedDir.getFileName().toString().equals("scripts")
+                ? watchedDir.getParent()
+                : watchedDir;
+
         if (kind == StandardWatchEventKinds.ENTRY_CREATE
                 || kind == StandardWatchEventKinds.ENTRY_MODIFY) {
-            // SKILL.md 创建或修改 — 防抖后重新加载
-            scheduleDebounced(watchedDir);
-        } else if (kind == StandardWatchEventKinds.ENTRY_DELETE) {
-            // SKILL.md 被删除 — 注销对应 Skill
-            handleFolderDelete(watchedDir);
+            scheduleDebounced(skillFolder);
+        } else if (kind == StandardWatchEventKinds.ENTRY_DELETE && isSkillFile) {
+            // 仅 SKILL.md 被删除时注销 Skill，脚本删除不触发注销
+            handleFolderDelete(skillFolder);
         }
     }
 
@@ -261,6 +269,9 @@ public class SkillFileWatcher {
     private void handleNewSubdirectory(Path subDir) {
         // 注册子目录的 WatchService
         registerWatch(subDir);
+
+        // 注册 scripts/ 子目录监听（脚本资产变更触发热重载）
+        registerScriptsSubdirectory(subDir);
 
         Path skillFile = subDir.resolve(config.getSkillFilename());
         if (Files.exists(skillFile)) {
@@ -355,9 +366,22 @@ public class SkillFileWatcher {
     private void registerExistingSubdirectories(Path skillsDir) {
         try (var entries = Files.list(skillsDir)) {
             entries.filter(Files::isDirectory)
-                    .forEach(this::registerWatch);
+                    .forEach(dir -> {
+                        registerWatch(dir);
+                        registerScriptsSubdirectory(dir);
+                    });
         } catch (IOException e) {
             log.warn("扫描子目录失败: path={}, error={}", skillsDir, e.getMessage());
+        }
+    }
+
+    /**
+     * 注册 Skill 子目录下的 scripts/ 目录到 WatchService（脚本资产变更触发热重载）。
+     */
+    private void registerScriptsSubdirectory(Path skillDir) {
+        Path scriptsDir = skillDir.resolve("scripts");
+        if (Files.exists(scriptsDir) && Files.isDirectory(scriptsDir)) {
+            registerWatch(scriptsDir);
         }
     }
 

@@ -111,4 +111,11 @@ public final class SseEventType {
 
     /** Agent 恢复事件 */
     public static final String AGENT_RESUMED = "agent-resumed";
+
+    // Process 模块事件类型
+    /** 后台进程输出事件 */
+    public static final String PROCESS_OUTPUT = "process-output";
+
+    /** 后台进程状态变化事件 */
+    public static final String PROCESS_STATE_CHANGE = "process-state-change";
 }

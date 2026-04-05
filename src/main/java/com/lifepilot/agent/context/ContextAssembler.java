@@ -32,6 +32,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -139,10 +140,21 @@ public class ContextAssembler {
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
-            ContextEngine.ContextSnapshot contextSnapshot = safeLoadContextSnapshot(state, totalContextTokens);
+            // 三路独立检索并行化：contextSnapshot、userProfile、experiences 互不依赖
+            var contextFuture = CompletableFuture.supplyAsync(
+                    () -> safeLoadContextSnapshot(state, totalContextTokens));
+            var profileFuture = mediaPlaceholder
+                    ? CompletableFuture.completedFuture("")
+                    : CompletableFuture.supplyAsync(() -> safeGetUserProfile(state.goal()));
+            var experiencesFuture = mediaPlaceholder
+                    ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
+                    : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()));
+            CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture).join();
+
+            ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
             List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
-            String userProfile = mediaPlaceholder ? "" : safeGetUserProfile(state.goal());
-            List<TemporalEntity> experiences = mediaPlaceholder ? List.of() : safeRetrieveExperiences(state.goal());
+            String userProfile = profileFuture.join();
+            List<TemporalEntity> experiences = experiencesFuture.join();
             List<String> injectedIds = recordExperienceInjection(state, experiences);
             String profileSection = safeRedact(formatUserProfileSection(userProfile));
             String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
@@ -515,25 +527,23 @@ public class ContextAssembler {
             return "";
         }
         StringBuilder sb = new StringBuilder("""
-                <execution_completion_contract>
-                - 你需要根据当前请求自行判断这是普通问答，还是需要持续执行的多步任务
-                - 普通问答、解释、分析、总结类请求：可以直接正常回答并结束，不需要任何特殊前缀
-                - 多步执行类请求：如果还有必要步骤未完成，不要用阶段性总结结束本轮，应该继续调用工具
-                - 如果只是缺少用户补充的信息、确认结果或外部回传结果，不要把这种可恢复阻塞包装成已经失败或已经完成
-                - 在 Web 对话中，需要用户补充信息时，直接把整段面向用户的追问包在 <await_user_input>...</await_user_input> 中
-                - <await_user_input> 标签内的文本要明确说明缺什么、为什么缺，以及补充后会继续做什么
-                - 如果这轮没有调用工具、但你已经能够给出终态文本，请在自然语言正文后追加一个隐藏控制标签：
-                  1. `<completion_control>done</completion_control>` 表示任务已完成
-                  2. `<completion_control>blocked</completion_control>` 表示任务明确阻塞
-                  3. `<completion_control>continue</completion_control>` 表示这段文字只是阶段说明，不是终态
-                - `completion_control` 只给系统判断使用，不会展示给用户；用户看到的仍应是自然语言正文
-                - 如果用户明确要求结束对话，且当前目标已经满足，可以直接自然收尾
-                - 需要补充信息直接追问即可
+                <completion_contract>
+                - 自行判断当前请求是普通问答还是多步任务
+                - 普通问答/解释/分析/总结：直接回答并结束
+                - 多步任务：有必要步骤未完成时继续调用工具，不要用阶段性总结结束本轮
+                - 可恢复阻塞（缺用户补充信息/等待确认/外部回传）不要包装成失败或完成
+                - 需要用户补充信息时，把追问包在 <await_user_input>...</await_user_input> 中，说清：缺什么、为什么缺、补充后会继续做什么
+                - 这轮没调用工具但已能给出终态时，正文后追加隐藏标签：
+                  · `<completion_control>done</completion_control>` — 任务已完成
+                  · `<completion_control>blocked</completion_control>` — 任务明确阻塞
+                  · `<completion_control>continue</completion_control>` — 阶段说明，非终态
+                - `completion_control` 仅供系统判定，不展示给用户
+                - 用户明确要求结束且目标已满足时，直接自然收尾
                 """);
         if (state.earlyStopRejectCount() > 0) {
             sb.append("- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n");
         }
-        sb.append("</execution_completion_contract>");
+        sb.append("</completion_contract>");
         return sb.toString();
     }
 

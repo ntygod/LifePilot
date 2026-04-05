@@ -125,7 +125,7 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
           { label: '通用', path: '/settings/general', icon: Settings },
           { label: '模型与推理', path: '/settings/models', icon: Bot },
           { label: '知识与检索', path: '/settings/knowledge', icon: BookOpen },
-          { label: '集成渠道', path: '/settings/channels', icon: MessageSquare },
+          { label: '集成渠道（高级）', path: '/settings/channels', icon: MessageSquare },
         ],
       },
     ],

@@ -229,7 +229,7 @@ public class MemoryAutoConfiguration {
         var config = new SQLiteConfig();
         config.setJournalMode(SQLiteConfig.JournalMode.WAL);
         config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
-        config.setBusyTimeout(5000);
+        config.setBusyTimeout(properties.getBusyTimeoutMs());
         config.enableLoadExtension(true);
         var dataSource = new SQLiteDataSource(config);
         dataSource.setUrl(url);

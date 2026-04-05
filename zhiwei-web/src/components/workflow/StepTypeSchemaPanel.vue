@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { workflowApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { StepTypeSchema } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -54,7 +55,7 @@ async function loadSchemas() {
   try {
     schemas.value = await workflowApi.getStepTypes()
   } catch (e) {
-    console.error('加载步骤类型失败:', e)
+    logger.error('加载步骤类型失败:', e)
   } finally {
     loading.value = false
   }

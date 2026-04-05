@@ -106,6 +106,17 @@ public class MultimodalRouter {
                 mediaProperties.getNativeAudio().isEnabled() ? "已启用" : "未启用");
     }
 
+    /**
+     * 检查是否有可用的 VISION Provider（至少一个已启用且熔断器放行）。
+     *
+     * <p>供上游组件在注入媒体或路由多模态请求之前做前置检查，
+     * 避免无可用 Provider 时走入必然失败的视觉路由。</p>
+     */
+    public boolean isVisionAvailable() {
+        return providerRegistry.findByCapability(ProviderCapability.VISION).stream()
+                .anyMatch(config -> circuitBreakerManager.isCallPermitted(config.id(), "VISION"));
+    }
+
     public LlmResponse call(MultimodalRequest request) {
         return call(request, null);
     }

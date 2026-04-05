@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
@@ -12,7 +12,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { logger } from '@/utils/logger'
 import { useSettings } from '@/composables/useSettings'
+
+const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
 
 const { settings, saveSettings } = useSettings()
 
@@ -22,6 +25,48 @@ const form = ref({
   fontSize: 'medium' as 'small' | 'medium' | 'large',
   showTokenUsage: true,
 })
+
+// ---- 数据目录（仅 Tauri 桌面端） ----
+const dataDir = ref('')
+const dataDirChanged = ref(false)
+const showRestartForDataDir = ref(false)
+
+async function loadDataDir() {
+  if (!isTauri) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    dataDir.value = await invoke<string>('get_data_dir')
+  } catch { /* 非桌面端 */ }
+}
+
+async function browseDataDir() {
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({ directory: true, title: '选择数据目录' })
+    if (selected && typeof selected === 'string') {
+      dataDir.value = selected
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('set_data_dir', { path: selected })
+      dataDirChanged.value = true
+    }
+  } catch (e) {
+    logger.error('选择目录失败:', e)
+  }
+}
+
+async function resetDataDir() {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('set_data_dir', { path: '' })
+    dataDir.value = await invoke<string>('get_data_dir')
+    dataDirChanged.value = true
+  } catch { /* ignore */ }
+}
+
+function confirmRestartForDataDir() {
+  showRestartForDataDir.value = false
+  window.location.reload()
+}
 
 const saveError = ref<string | null>(null)
 const showRestartOnboardingConfirm = ref(false)
@@ -33,6 +78,7 @@ onMounted(() => {
     fontSize: settings.value.fontSize,
     showTokenUsage: settings.value.showTokenUsage,
   }
+  loadDataDir()
 })
 
 async function applySettings() {
@@ -41,7 +87,7 @@ async function applySettings() {
   try {
     await saveSettings({ ...form.value })
   } catch (event) {
-    console.error('Failed to save local preferences:', event)
+    logger.error('Failed to save local preferences:', event)
     saveError.value = '保存本地偏好失败。'
   }
 }
@@ -149,6 +195,19 @@ const fontSizeOptions = [
         </SettingItem>
       </SettingSection>
 
+      <SettingSection v-if="isTauri" title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。修改后需重启应用。">
+        <SettingItem label="数据目录" :description="dataDir || '加载中...'">
+          <div class="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" @click="browseDataDir">选择目录</Button>
+            <Button type="button" variant="ghost" size="sm" @click="resetDataDir">恢复默认</Button>
+          </div>
+        </SettingItem>
+        <div v-if="dataDirChanged" class="flex items-center gap-3 rounded-md bg-warning/10 px-4 py-2.5 text-sm text-warning-foreground">
+          <span>数据目录已修改，重启应用后生效。</span>
+          <Button type="button" variant="outline" size="sm" @click="showRestartForDataDir = true">立即重启</Button>
+        </div>
+      </SettingSection>
+
       <SettingSection title="辅助操作" description="管理只在当前浏览器中生效的引导状态。">
         <SettingItem label="重新开始引导" description="清除本地引导完成标记，刷新后重新进入引导流程。">
           <Button type="button" variant="outline" @click="restartOnboarding">重新开始</Button>
@@ -164,6 +223,14 @@ const fontSizeOptions = [
       message="这会清除本地引导完成标记，并在刷新后重新打开引导流程。"
       confirm-label="重新开始"
       @confirm="confirmRestartOnboarding"
+    />
+
+    <ConfirmDialog
+      v-model:show="showRestartForDataDir"
+      title="重启应用"
+      message="数据目录已修改，需要重启应用才能生效。注意：原目录中的数据不会自动迁移。"
+      confirm-label="重启"
+      @confirm="confirmRestartForDataDir"
     />
   </div>
 </template>

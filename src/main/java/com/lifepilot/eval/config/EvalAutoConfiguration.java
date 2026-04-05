@@ -7,6 +7,12 @@ import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.eval.engine.EvalEngine;
 import com.lifepilot.eval.evaluator.DiagnosticEnricher;
+import com.lifepilot.eval.evaluator.DimensionEvaluator;
+import com.lifepilot.eval.evaluator.ParameterValidityEvaluator;
+import com.lifepilot.eval.evaluator.PolicyComplianceEvaluator;
+import com.lifepilot.eval.evaluator.StepEfficiencyEvaluator;
+import com.lifepilot.eval.evaluator.TokenEfficiencyEvaluator;
+import com.lifepilot.eval.evaluator.ToolSelectionEvaluator;
 import com.lifepilot.eval.feedback.FeedbackStore;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.report.EvalReport;
@@ -32,9 +38,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -91,14 +99,17 @@ public class EvalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EvalStore evalStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        return new EvalStore(jdbcTemplate, objectMapper);
+    public EvalStore evalStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+                               ExecutorService evalExecutor,
+                               PlatformTransactionManager transactionManager) {
+        return new EvalStore(jdbcTemplate, objectMapper, evalExecutor, transactionManager);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public EvalReport evalReport(EvalStore evalStore, EvalConfigProperties config) {
-        return new EvalReport(evalStore, config);
+    public EvalReport evalReport(EvalStore evalStore, EvalConfigProperties config,
+                                  ObjectMapper objectMapper) {
+        return new EvalReport(evalStore, config, objectMapper);
     }
 
     @Bean
@@ -118,6 +129,55 @@ public class EvalAutoConfiguration {
                                           FeedbackStore feedbackStore) {
         log.info("注册 EvalController Bean");
         return new EvalController(scenarioLoader, evalEngine, evalStore, evalReport, feedbackStore);
+    }
+
+    // ==================== 维度评估器 ====================
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ToolSelectionEvaluator toolSelectionEvaluator() {
+        return new ToolSelectionEvaluator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ParameterValidityEvaluator parameterValidityEvaluator(DynamicToolRegistry toolRegistry) {
+        return new ParameterValidityEvaluator(toolRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public StepEfficiencyEvaluator stepEfficiencyEvaluator() {
+        return new StepEfficiencyEvaluator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PolicyComplianceEvaluator policyComplianceEvaluator() {
+        return new PolicyComplianceEvaluator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public TokenEfficiencyEvaluator tokenEfficiencyEvaluator() {
+        return new TokenEfficiencyEvaluator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "dimensionEvaluators")
+    public List<DimensionEvaluator> dimensionEvaluators(
+            ToolSelectionEvaluator toolSelectionEvaluator,
+            ParameterValidityEvaluator parameterValidityEvaluator,
+            StepEfficiencyEvaluator stepEfficiencyEvaluator,
+            PolicyComplianceEvaluator policyComplianceEvaluator,
+            TokenEfficiencyEvaluator tokenEfficiencyEvaluator) {
+        return List.of(
+                toolSelectionEvaluator,
+                parameterValidityEvaluator,
+                stepEfficiencyEvaluator,
+                policyComplianceEvaluator,
+                tokenEfficiencyEvaluator
+        );
     }
 
     // ==================== 评估引擎 ====================
@@ -149,10 +209,13 @@ public class EvalAutoConfiguration {
                                   ExecutorService evalExecutor,
                                   DiagnosticEnricher diagnosticEnricher,
                                   ObjectMapper objectMapper,
+                                  List<DimensionEvaluator> dimensionEvaluators,
+                                  FeedbackStore feedbackStore,
                                   @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new EvalEngine(scenarioLoader, agentOrchestrator, traceQuery,
                 evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config,
-                evalExecutor, diagnosticEnricher, objectMapper, experienceSummarizer);
+                evalExecutor, diagnosticEnricher, objectMapper, dimensionEvaluators,
+                feedbackStore, experienceSummarizer);
     }
 
     // ==================== 内置场景同步 ====================

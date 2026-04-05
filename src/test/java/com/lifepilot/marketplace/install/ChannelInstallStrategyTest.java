@@ -21,10 +21,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -73,6 +72,7 @@ class ChannelInstallStrategyTest {
                 ),
                 List.of("botToken"),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
         Path manifest = tempDir.resolve("channel-plugin.json");
@@ -113,20 +113,17 @@ class ChannelInstallStrategyTest {
                 ),
                 List.of(),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
         Path manifest = tempDir.resolve("channel-plugin.json");
         Files.writeString(manifest, new ObjectMapper().writeValueAsString(descriptor));
 
-        assertThatThrownBy(() -> strategy.register(manifest, pkg))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("注册渠道插件失败")
-                .rootCause()
-                .hasMessageContaining("运行时模式")
-                .hasMessageContaining("只允许 EXTERNAL connector");
+        // register 阶段对校验问题仅记录警告，不再阻断注册
+        strategy.register(manifest, pkg);
 
-        verify(channelPluginRepository, never()).save(descriptor);
-        verify(channelRegistry, never()).register(descriptor);
+        verify(channelPluginRepository).save(descriptor);
+        verify(channelRegistry).register(descriptor);
     }
 
     @Test
@@ -165,7 +162,8 @@ class ChannelInstallStrategyTest {
                         "assets/icon.svg",
                         List.of("examples/default.json"),
                         List.of("assets/schema.json")
-                )
+                ),
+                null
         );
         RestClient restClient = mock(RestClient.class);
         mockResponses(restClient, Map.of(
@@ -221,6 +219,7 @@ class ChannelInstallStrategyTest {
                 Map.of("type", "object", "properties", Map.of()),
                 List.of(),
                 Map.of("title", "接入说明"),
+                null,
                 null
         );
         RestClient restClient = mock(RestClient.class);
@@ -245,6 +244,7 @@ class ChannelInstallStrategyTest {
             Object response = responses.get(url);
             RestClient.RequestHeadersSpec headerSpec = mock(RestClient.RequestHeadersSpec.class);
             RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+            org.mockito.Mockito.when(headerSpec.headers(any())).thenReturn(headerSpec);
             org.mockito.Mockito.when(headerSpec.retrieve()).thenReturn(responseSpec);
             org.mockito.Mockito.when(responseSpec.body(String.class))
                     .thenAnswer(ignored -> {

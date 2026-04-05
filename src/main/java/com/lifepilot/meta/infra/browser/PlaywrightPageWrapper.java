@@ -6,6 +6,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.Cookie;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
+import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.Nullable;
 
 import java.util.Base64;
@@ -27,11 +28,19 @@ public class PlaywrightPageWrapper {
     private final Page page;
     private volatile long lastAccessTime;
     private volatile boolean closed;
+    private final int humanDelayMinMs;
+    private final int humanDelayMaxMs;
 
-    PlaywrightPageWrapper(Object pageObj) {
+    PlaywrightPageWrapper(Object pageObj, int humanDelayMinMs, int humanDelayMaxMs) {
         this.page = (Page) pageObj;
         this.lastAccessTime = System.currentTimeMillis();
         this.closed = false;
+        this.humanDelayMinMs = Math.min(humanDelayMinMs, humanDelayMaxMs);
+        this.humanDelayMaxMs = Math.max(humanDelayMinMs, humanDelayMaxMs);
+    }
+
+    PlaywrightPageWrapper(Object pageObj) {
+        this(pageObj, 0, 0);
     }
 
     /** 更新最后访问时间。 */
@@ -50,15 +59,74 @@ public class PlaywrightPageWrapper {
     }
 
     /**
-     * 导航到指定 URL。
+     * 模拟人工操作延迟 — 在关键操作前引入随机等待。
+     * 在 virtual thread 环境下 Thread.sleep 会自动 unmount，不阻塞平台线程。
+     */
+    private void humanDelay() {
+        if (humanDelayMinMs <= 0) return;
+        try {
+            Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextInt(humanDelayMinMs, humanDelayMaxMs + 1));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** 默认导航超时（毫秒）。 */
+    private static final int DEFAULT_NAVIGATE_TIMEOUT_MS = 30_000;
+
+    /**
+     * 导航到指定 URL（使用默认超时）。
      *
      * @param url 目标 URL
      * @return 页面标题
      */
     public String navigate(String url) {
+        return navigate(url, DEFAULT_NAVIGATE_TIMEOUT_MS);
+    }
+
+    /**
+     * 导航到指定 URL。
+     *
+     * <p>使用 {@code domcontentloaded} 等待策略，避免等待所有资源（图片、广告脚本等）
+     * 加载完成导致超时，尤其对电商等 JS 重度页面更可靠。</p>
+     *
+     * @param url       目标 URL
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 页面标题
+     */
+    public String navigate(String url, int timeoutMs) {
         touch();
-        page.navigate(url);
+        humanDelay();
+        page.navigate(url, new Page.NavigateOptions()
+                .setTimeout(timeoutMs)
+                .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
         return page.title();
+    }
+
+    /** 导航结果 — 包含标题、URL 和是否部分加载。 */
+    public record NavigateResult(String title, String url, boolean partial) {}
+
+    /**
+     * 导航到指定 URL，返回包含部分加载信息的结构化结果。
+     *
+     * <p>超时时捕获 {@link com.microsoft.playwright.TimeoutError}，标记为部分加载而非失败。</p>
+     *
+     * @param url       目标 URL
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 导航结果
+     */
+    public NavigateResult navigateWithResult(String url, int timeoutMs) {
+        touch();
+        humanDelay();
+        boolean partial = false;
+        try {
+            page.navigate(url, new Page.NavigateOptions()
+                    .setTimeout(timeoutMs)
+                    .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+        } catch (com.microsoft.playwright.TimeoutError e) {
+            partial = true;
+        }
+        return new NavigateResult(page.title(), page.url(), partial);
     }
 
     /**
@@ -88,6 +156,7 @@ public class PlaywrightPageWrapper {
      */
     public void click(String selector) {
         touch();
+        humanDelay();
         page.click(selector);
     }
 
@@ -99,6 +168,7 @@ public class PlaywrightPageWrapper {
      */
     public void fill(String selector, String value) {
         touch();
+        humanDelay();
         page.fill(selector, value);
     }
 
@@ -212,6 +282,7 @@ public class PlaywrightPageWrapper {
      */
     public void typeText(String text) {
         touch();
+        humanDelay();
         ensureOpen();
         page.keyboard().type(text);
     }

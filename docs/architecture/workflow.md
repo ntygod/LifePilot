@@ -33,7 +33,7 @@ flowchart TD
     subgraph "外部依赖"
         SKILL["SkillActivator"]
         TOOL["DynamicToolRegistry"]
-        LLM["LlmRouter"]
+        LLM["GenerationRouter"]
         SCHED["TaskScheduler"]
     end
 
@@ -223,7 +223,7 @@ stateDiagram-v2
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 工作流定义格式 | YAML 声明式 | 用户友好、可读性强、易于版本控制 |
-| 步骤类型层次 | sealed interface + 10 个 record | 编译期穷举匹配，新增步骤类型时编译器强制处理 |
+| 步骤类型层次 | sealed interface + 11 个 record | 编译期穷举匹配，新增步骤类型时编译器强制处理 |
 | DAG 调度算法 | Kahn 拓扑排序 | 同时完成排序和环检测，时间复杂度 O(V+E) |
 | 触发器类型 | sealed interface（Cron/Event/Manual） | 三种触发方式覆盖定时、事件驱动和手动场景 |
 | 错误处理 | sealed interface（Retry/Skip/Fail/Compensate） | 每步独立策略，Compensate 借鉴 Saga Pattern |
@@ -237,7 +237,7 @@ stateDiagram-v2
 |---------|------|---------|
 | workflow → skill | `com.lifepilot.skill` | SkillStep 通过 SkillActivator 激活 Skill |
 | workflow → tool | `com.lifepilot.tool` | ToolStep 通过 DynamicToolRegistry 查找并执行工具 |
-| workflow → llm | `com.lifepilot.llm` | LlmStep 通过 LlmRouter 调用 LLM 生成内容 |
+| workflow → llm | `com.lifepilot.llm` | LlmStep 通过 GenerationRouter 调用 LLM 生成内容 |
 | workflow → Spring | TaskScheduler | CronTrigger 通过 Spring TaskScheduler 注册定时任务 |
 | workflow → Spring | ApplicationEvent | EventTrigger 通过 GenericApplicationListener 监听事件 |
 | agent → workflow | `com.lifepilot.agent` | 主动推理引擎可触发工作流执行 |

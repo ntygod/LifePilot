@@ -13,6 +13,7 @@ import {
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -161,22 +162,19 @@ function formatDate(dateStr: string) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
-      <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
-        <header class="space-y-4 border-b border-border/70 pb-5">
-          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div class="max-w-3xl space-y-2">
-              <div class="surface-label">智能体</div>
-              <h1 class="text-3xl font-semibold tracking-tight text-foreground">智能体目录</h1>
-            </div>
-
+    <PageContainer size="wide" class="py-4 sm:py-5">
+      <div class="page-stack">
+        <PageHeader
+          eyebrow="智能体"
+          title="智能体目录"
+        >
+          <template #actions>
             <Button type="button" @click="showCreateDialog = true">
               <Plus class="size-4" />
               新建智能体
             </Button>
-          </div>
-
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          </template>
+          <template #meta>
             <MetricCard label="智能体总数" :value="totalAgents" hint="可维护的智能体">
               <template #icon>
                 <Bot class="size-5" />
@@ -197,8 +195,8 @@ function formatDate(dateStr: string) {
                 <Database class="size-5" />
               </template>
             </MetricCard>
-          </div>
-        </header>
+          </template>
+        </PageHeader>
 
         <section class="toolbar-strip">
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -258,16 +256,13 @@ function formatDate(dateStr: string) {
         </section>
 
         <section class="space-y-4">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="text-lg font-semibold text-foreground">全部智能体</h2>
-            <div class="text-sm text-muted-foreground">{{ filteredAgents.length }} 个结果</div>
-          </div>
+          <h2 class="text-lg font-semibold text-foreground">全部智能体</h2>
 
           <div v-if="agentStore.loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
               v-for="index in 6"
               :key="index"
-              class="rounded-[calc(var(--radius)+1px)] border border-border/64 bg-card/90 p-5"
+              class="rounded-[calc(var(--radius)+1px)] border border-border/64 bg-card/90 p-4"
             >
               <div class="flex items-center justify-between gap-3">
                 <div class="space-y-2">
@@ -322,7 +317,7 @@ function formatDate(dateStr: string) {
             <article
               v-for="agent in filteredAgents"
               :key="agent.id"
-              class="list-card group cursor-pointer p-5"
+              class="list-card group cursor-pointer p-4"
               @click="openAgent(agent.id)"
             >
               <div class="flex items-start justify-between gap-3">

@@ -43,7 +43,7 @@ class SkillGenerationToolTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void registerTools_注册generate_skill为HIGH风险() {
+    void registerTools_注册generate_skill且HIGH风险() {
         var tool = new SkillGenerationTool(toolRegistry, skillGenerator);
         tool.registerTools();
 

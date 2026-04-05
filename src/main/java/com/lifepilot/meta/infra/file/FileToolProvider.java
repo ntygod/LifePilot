@@ -1,6 +1,8 @@
 package com.lifepilot.meta.infra.file;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.file.history.FileEditHistory;
+import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -9,6 +11,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
+import jakarta.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -16,10 +19,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 文件工具提供者 — 构建所有文件系统工具的 {@link BuiltinTool} 列表。
+ * 文件工具提供者。
  *
- * <p>从 {@link com.lifepilot.meta.infra.InfraToolProvider} 中拆分出来，
- * 集中管理文件工具的注册逻辑，便于后续新增文件工具。</p>
+ * <p>集中管理文件系统元能力工具：read / write / list / edit / manage。
+ * 所有 Executor 共享同一个 {@link PathSecurityChecker} 实例。</p>
  *
  * @author zsg
  * @since 2026-03-16
@@ -29,9 +32,23 @@ public class FileToolProvider {
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final MetaProperties properties;
+    @Nullable
+    private final FileEditHistory editHistory;
+    @Nullable
+    private final LintHookExecutor lintHook;
 
     public FileToolProvider(MetaProperties properties) {
         this.properties = properties;
+        this.editHistory = null;
+        this.lintHook = null;
+    }
+
+    public FileToolProvider(MetaProperties properties,
+                            @Nullable FileEditHistory editHistory,
+                            @Nullable LintHookExecutor lintHook) {
+        this.properties = properties;
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
     }
 
     /**
@@ -42,19 +59,28 @@ public class FileToolProvider {
     public List<BuiltinTool> buildFileTools() {
         var tools = new ArrayList<BuiltinTool>();
 
-        tools.add(buildFileReadTool(new FileReadToolExecutor(properties)));
-        tools.add(buildFileWriteTool(new FileWriteToolExecutor(properties)));
-        tools.add(buildFileListTool(new FileListToolExecutor(properties)));
-        tools.add(buildFileSearchTool(new FileSearchToolExecutor(properties)));
-        tools.add(buildFileDeleteTool(new FileDeleteToolExecutor(properties)));
-        tools.add(buildFileCopyTool(new FileCopyToolExecutor(properties)));
-        tools.add(buildFileMoveTool(new FileMoveToolExecutor(properties)));
-        tools.add(buildFileInfoTool(new FileInfoToolExecutor(properties)));
-        tools.add(buildFilePatchTool(new FilePatchToolExecutor(properties)));
-        // file.grep 是 file.search 的别名，对标 OpenClaw grep 工具
-        tools.add(buildFileGrepTool(new FileSearchToolExecutor(properties)));
-        // file.find 按条件查找文件（glob/大小/时间），对标 OpenClaw find 工具
-        tools.add(buildFileFindTool(new FileListToolExecutor(properties)));
+        // 创建共享的 PathSecurityChecker，避免每个 Executor 重复创建
+        var fileConfig = properties.getInfra().getFile();
+        var securityChecker = new PathSecurityChecker(fileConfig);
+        var fileEditConfig = properties.getInfra().getFileEdit();
+
+        tools.add(buildFileReadTool(
+                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars())));
+        tools.add(buildFileWriteTool(
+                new FileWriteToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
+        tools.add(buildFileListTool(new FileListActionDispatchExecutor(
+                new FileListToolExecutor(securityChecker, fileConfig.getDefaultMaxEntries()),
+                new FileSearchToolExecutor(securityChecker),
+                new FileInfoToolExecutor(securityChecker)
+        )));
+        tools.add(buildFileEditTool(
+                new FilePatchToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
+        tools.add(buildFileManageTool(new FileManageActionDispatchExecutor(
+                new FileMoveToolExecutor(securityChecker),
+                new FileCopyToolExecutor(securityChecker),
+                new FileDeleteToolExecutor(securityChecker),
+                new FileMkdirToolExecutor(securityChecker)
+        )));
 
         return List.copyOf(tools);
     }
@@ -65,7 +91,9 @@ public class FileToolProvider {
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
-                .description("读取指定路径的文件内容，支持行范围读取、maxChars 截断和编码指定。返回 totalLines 字段")
+                .description("读取指定路径的单个文件内容。当你知道文件路径并需要查看其内容时使用。" +
+                        "支持行范围读取、maxChars 截断和编码指定，返回 totalLines 字段。" +
+                        "若需列出目录内容或跨文件搜索，请使用 file.list")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -99,7 +127,8 @@ public class FileToolProvider {
                 .id("file.write")
                 .category(ToolCategory.ACTION)
                 .name("写入文件")
-                .description("写入文件内容。mode=write（默认）原子覆写，mode=append 追加到末尾。支持自动创建父目录")
+                .description("创建新文件或覆盖/追加内容到现有文件。mode=write（默认）原子覆写，mode=append 追加到末尾。" +
+                        "支持自动创建父目录。若需精确修改文件中的某几行，请使用 file.edit")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "content"),
@@ -126,25 +155,46 @@ public class FileToolProvider {
                 .build();
     }
 
-    /** 构建文件列表工具。 */
-    private BuiltinTool buildFileListTool(FileListToolExecutor executor) {
+    /** 构建统一文件查询工具。 */
+    private BuiltinTool buildFileListTool(FileListActionDispatchExecutor executor) {
         return BuiltinTool.builder()
                 .id("file.list")
                 .category(ToolCategory.PERCEPTION)
-                .name("列出目录")
-                .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序")
+                .name("文件查询")
+                .description("查询文件系统信息。通过 action 参数支持三类操作：" +
+                        "list=列出目录内容，search=递归搜索文件内容，info=查询文件或目录元数据。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "目录路径"),
-                                "maxDepth", Map.of("type", "integer",
-                                        "description", "最大遍历深度，默认 3"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "glob 过滤模式（如 *.java），可选"),
-                                "maxEntries", Map.of("type", "integer",
-                                        "description", "最大返回条目数，默认 200")
+                        "required", List.of("action", "path"),
+                        "properties", Map.ofEntries(
+                                Map.entry("action", Map.of(
+                                        "type", "string",
+                                        "enum", List.of("list", "search", "info"),
+                                        "description", "文件查询动作类型")),
+                                Map.entry("path", Map.of(
+                                        "type", "string",
+                                        "description", "目标路径；三种动作都需要")),
+                                Map.entry("maxDepth", Map.of(
+                                        "type", "integer",
+                                        "description", "action=list/search 时的最大遍历深度，默认 list=3, search=无限制")),
+                                Map.entry("pattern", Map.of(
+                                        "type", "string",
+                                        "description", "action=list 时表示 glob 过滤模式；action=search 时表示内容正则表达式")),
+                                Map.entry("maxEntries", Map.of(
+                                        "type", "integer",
+                                        "description", "action=list 时最大返回条目数，默认 200")),
+                                Map.entry("filePattern", Map.of(
+                                        "type", "string",
+                                        "description", "action=search 时的文件名 glob 过滤模式（如 *.java）")),
+                                Map.entry("maxResults", Map.of(
+                                        "type", "integer",
+                                        "description", "action=search 时最大返回结果数，默认 50")),
+                                Map.entry("offset", Map.of(
+                                        "type", "integer",
+                                        "description", "action=search 时分页偏移量，默认 0")),
+                                Map.entry("contextLines", Map.of(
+                                        "type", "integer",
+                                        "description", "action=search 时匹配行前后上下文行数，默认 0"))
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -154,71 +204,40 @@ public class FileToolProvider {
                         ToolScopeResolvers.pathTrees("path")
                 ))
                 .tags(INFRA_TAGS)
-                .executor(executor::execute)
+                .actionMetadataFrom(executor)
+                .executor(executor)
                 .build();
     }
 
-    /** 构建文件搜索工具。 */
-    private BuiltinTool buildFileSearchTool(FileSearchToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.search")
-                .category(ToolCategory.PERCEPTION)
-                .name("搜索文件内容")
-                .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "pattern"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "搜索起始目录路径"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "搜索内容的正则表达式"),
-                                "filePattern", Map.of("type", "string",
-                                        "description", "文件名 glob 过滤模式（如 *.java），可选"),
-                                "maxResults", Map.of("type", "integer",
-                                        "description", "最大返回结果数，默认 50"),
-                                "offset", Map.of("type", "integer",
-                                        "description", "分页偏移量，跳过前 offset 条匹配，默认 0"),
-                                "limit", Map.of("type", "integer",
-                                        "description", "分页每页数量，默认等于 maxResults"),
-                                "contextLines", Map.of("type", "integer",
-                                        "description", "匹配行前后上下文行数，默认 0")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件补丁工具。 */
-    private BuiltinTool buildFilePatchTool(FilePatchToolExecutor executor) {
-        // operations 数组项的 schema
+    /** 构建统一文件编辑工具（支持行级操作和文本匹配替换）。 */
+    private BuiltinTool buildFileEditTool(FilePatchToolExecutor executor) {
         var itemProperties = new LinkedHashMap<String, Object>();
         itemProperties.put("type", Map.of("type", "string",
-                "description", "操作类型: insert / replace / delete"));
+                "description", "操作类型: insert / replace / delete（行级）或 search_replace（文本匹配）"));
         itemProperties.put("line", Map.of("type", "integer",
-                "description", "目标行号（1-based）"));
+                "description", "目标行号（1-based），行级操作时必需，所有行号基于原始文件"));
         itemProperties.put("endLine", Map.of("type", "integer",
                 "description", "结束行号（replace/delete 时可选，默认等于 line）"));
         itemProperties.put("content", Map.of("type", "string",
                 "description", "插入或替换的内容（insert/replace 时必需）"));
+        itemProperties.put("oldText", Map.of("type", "string",
+                "description", "要查找的文本（search_replace 时必需）"));
+        itemProperties.put("newText", Map.of("type", "string",
+                "description", "替换后的文本（search_replace 时必需）"));
 
         var itemSchema = new LinkedHashMap<String, Object>();
         itemSchema.put("type", "object");
-        itemSchema.put("required", List.of("type", "line"));
+        itemSchema.put("required", List.of("type"));
         itemSchema.put("properties", itemProperties);
 
         return BuiltinTool.builder()
-                .id("file.patch")
+                .id("file.edit")
                 .category(ToolCategory.ACTION)
-                .name("补丁文件")
-                .description("对文件执行行级 insert/replace/delete 操作，原子写入。MEDIUM 风险")
+                .name("编辑文件")
+                .description("对现有文件执行精确修改，原子写入。支持两种模式：" +
+                        "行级操作（insert/replace/delete，自动按行号倒序执行避免漂移）和" +
+                        "文本匹配（search_replace，通过 oldText/newText 定位替换，更鲁棒）。" +
+                        "比 file.write 更安全（不会意外覆盖整个文件）")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "operations"),
@@ -226,7 +245,7 @@ public class FileToolProvider {
                                 "path", Map.of("type", "string",
                                         "description", "目标文件路径"),
                                 "operations", Map.of("type", "array",
-                                        "description", "行级操作列表",
+                                        "description", "编辑操作列表",
                                         "items", itemSchema)
                         )
                 )))
@@ -242,50 +261,37 @@ public class FileToolProvider {
                 .build();
     }
 
-    /** 构建文件信息工具。 */
-    private BuiltinTool buildFileInfoTool(FileInfoToolExecutor executor) {
+    /** 构建统一文件管理工具。 */
+    private BuiltinTool buildFileManageTool(FileManageActionDispatchExecutor executor) {
         return BuiltinTool.builder()
-                .id("file.info")
-                .category(ToolCategory.PERCEPTION)
-                .name("文件信息")
-                .description("查询文件或目录的元数据，包括大小、修改时间、权限和 MIME 类型")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "文件或目录路径")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件移动工具。 */
-    private BuiltinTool buildFileMoveTool(FileMoveToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.move")
+                .id("file.manage")
                 .category(ToolCategory.ACTION)
-                .name("移动文件")
-                .description("原子移动文件到目标路径，支持覆盖控制。HIGH 风险，每次执行需用户确认")
+                .name("文件管理")
+                .description("管理文件与目录。通过 action 参数支持四类操作：" +
+                        "move=移动文件或目录，copy=复制文件或目录，delete=删除文件或目录，mkdir=创建目录。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("source", "destination"),
-                        "properties", Map.of(
-                                "source", Map.of("type", "string",
-                                        "description", "源文件路径"),
-                                "destination", Map.of("type", "string",
-                                        "description", "目标路径"),
-                                "overwrite", Map.of("type", "boolean",
-                                        "description", "目标已存在时是否覆盖，默认 false")
+                        "required", List.of("action"),
+                        "properties", Map.ofEntries(
+                                Map.entry("action", Map.of(
+                                        "type", "string",
+                                        "enum", List.of("move", "copy", "delete", "mkdir"),
+                                        "description", "文件管理动作类型")),
+                                Map.entry("source", Map.of(
+                                        "type", "string",
+                                        "description", "源路径；action=move/copy 时必填")),
+                                Map.entry("destination", Map.of(
+                                        "type", "string",
+                                        "description", "目标路径；action=move/copy 时必填")),
+                                Map.entry("path", Map.of(
+                                        "type", "string",
+                                        "description", "目标文件或目录路径；action=delete/mkdir 时必填")),
+                                Map.entry("overwrite", Map.of(
+                                        "type", "boolean",
+                                        "description", "action=move/copy 时目标已存在是否覆盖，默认 false")),
+                                Map.entry("recursive", Map.of(
+                                        "type", "boolean",
+                                        "description", "action=delete 时递归删除目录，action=copy 时递归复制目录，默认 false"))
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)
@@ -293,136 +299,11 @@ public class FileToolProvider {
                 .executionSemantics(ToolExecutionSemantics.of(
                         PermissionActionType.WRITE_FILE,
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("source", "destination")
+                        ToolScopeResolvers.pathTrees("source", "destination", "path")
                 ))
                 .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件复制工具。 */
-    private BuiltinTool buildFileCopyTool(FileCopyToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.copy")
-                .category(ToolCategory.ACTION)
-                .name("复制文件")
-                .description("复制文件到目标路径，支持覆盖控制。MEDIUM 风险")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("source", "destination"),
-                        "properties", Map.of(
-                                "source", Map.of("type", "string",
-                                        "description", "源文件路径"),
-                                "destination", Map.of("type", "string",
-                                        "description", "目标路径"),
-                                "overwrite", Map.of("type", "boolean",
-                                        "description", "目标已存在时是否覆盖，默认 false")
-                        )
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("source", "destination")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件删除工具。 */
-    private BuiltinTool buildFileDeleteTool(FileDeleteToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.delete")
-                .category(ToolCategory.ACTION)
-                .name("删除文件")
-                .description("删除文件或目录，支持递归删除非空目录。HIGH 风险，每次执行需用户确认")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "目标文件或目录路径"),
-                                "recursive", Map.of("type", "boolean",
-                                        "description", "是否递归删除目录内容，默认 false")
-                        )
-                )))
-                .riskLevel(RiskLevel.HIGH)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.DELETE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件内容搜索工具（grep 别名，对标 OpenClaw grep）。 */
-    private BuiltinTool buildFileGrepTool(FileSearchToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.grep")
-                .category(ToolCategory.PERCEPTION)
-                .name("搜索文件内容（grep）")
-                .description("递归搜索目录下文件内容，支持正则表达式。等同于 file.search，对标 Unix grep")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "pattern"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "搜索起始目录路径"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "搜索内容的正则表达式"),
-                                "filePattern", Map.of("type", "string",
-                                        "description", "文件名 glob 过滤模式（如 *.java），可选"),
-                                "maxResults", Map.of("type", "integer",
-                                        "description", "最大返回结果数，默认 50"),
-                                "contextLines", Map.of("type", "integer",
-                                        "description", "匹配行前后上下文行数，默认 0")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件查找工具（对标 OpenClaw find）。 */
-    private BuiltinTool buildFileFindTool(FileListToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.find")
-                .category(ToolCategory.PERCEPTION)
-                .name("查找文件（find）")
-                .description("按名称 glob 模式递归查找文件，对标 Unix find。比 file.list 更适合按条件搜索文件")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "pattern"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "搜索起始目录路径"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "文件名 glob 模式（如 *.java、**/*.md）"),
-                                "maxDepth", Map.of("type", "integer",
-                                        "description", "最大遍历深度，默认 10"),
-                                "maxEntries", Map.of("type", "integer",
-                                        "description", "最大返回条目数，默认 200")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
+                .actionMetadataFrom(executor)
+                .executor(executor)
                 .build();
     }
 }

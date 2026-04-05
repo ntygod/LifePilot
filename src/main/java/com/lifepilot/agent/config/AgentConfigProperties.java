@@ -52,6 +52,24 @@ public class AgentConfigProperties {
         public void setMaxParallelToolCalls(int maxParallelToolCalls) { this.maxParallelToolCalls = maxParallelToolCalls; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
+
+        /** 开始周期性回顾的迭代阈值（iteration 从 0 开始计数，默认值 5 表示第 6 轮首次触发）。 */
+        private int reflectAfterIterations = 5;
+        /** 周期性回顾间隔（每隔 N 轮触发）。 */
+        private int reflectInterval = 3;
+        /** 工具失败时是否触发回顾。 */
+        private boolean reflectOnToolFailure = true;
+        /** 停滞检测阈值：连续相同工具调用次数。 */
+        private int stallDetectionThreshold = 3;
+
+        public int getReflectAfterIterations() { return reflectAfterIterations; }
+        public void setReflectAfterIterations(int reflectAfterIterations) { this.reflectAfterIterations = reflectAfterIterations; }
+        public int getReflectInterval() { return reflectInterval; }
+        public void setReflectInterval(int reflectInterval) { this.reflectInterval = reflectInterval; }
+        public boolean isReflectOnToolFailure() { return reflectOnToolFailure; }
+        public void setReflectOnToolFailure(boolean reflectOnToolFailure) { this.reflectOnToolFailure = reflectOnToolFailure; }
+        public int getStallDetectionThreshold() { return stallDetectionThreshold; }
+        public void setStallDetectionThreshold(int stallDetectionThreshold) { this.stallDetectionThreshold = stallDetectionThreshold; }
     }
 
     /** 预算配置。 */
@@ -59,7 +77,7 @@ public class AgentConfigProperties {
     @Getter
     public static class BudgetConfig {
         /** 对话总 Token 预算（整个对话允许消耗的总 Token）。 */
-        private int defaultMaxTokens = 131072;
+        private int defaultMaxTokens = 20000000;
         private int defaultMaxSteps = 30;
         private int defaultMaxDurationSeconds = 300;
 
@@ -73,7 +91,7 @@ public class AgentConfigProperties {
          * <p>实际使用时取 min(此值, 模型的 maxContextWindow)。</p>
          */
         @Setter
-        private int maxContextTokens = 131072;
+        private int maxContextTokens = 2000000;
         @Setter
         private int outputReservedTokens = 8192;
         /** 成功步骤输出截断长度。 */

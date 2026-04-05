@@ -82,9 +82,6 @@ public record GatewayProperties(
 
     /** 限流配置。 */
     public record RateLimitProperties(
-            @DefaultValue("100000") int maxTokensPerHour,
-            @DefaultValue("500000") int maxTokensPerDay,
-            @DefaultValue("2000") int estimatedTokensPerRequest,
             @DefaultValue("30") int maxRequestsPerMinute
     ) {}
 
@@ -172,7 +169,8 @@ public record GatewayProperties(
             @DefaultValue WebChannelProperties web,
             @DefaultValue WecomChannelProperties wecom,
             @DefaultValue DingtalkChannelProperties dingtalk,
-            @DefaultValue FeishuChannelProperties feishu
+            @DefaultValue FeishuChannelProperties feishu,
+            @DefaultValue QqChannelProperties qq
     ) {
         /** CLI 通道配置。 */
         public record CliChannelProperties(
@@ -235,6 +233,19 @@ public record GatewayProperties(
                 @Nullable String verificationToken,
                 @Nullable String encryptKey,
                 @DefaultValue("10000") int eventCacheMaxSize
+        ) {}
+
+        /**
+         * QQ 机器人通道配置。
+         *
+         * @param enabled   是否启用
+         * @param appId     QQ 机器人 AppID
+         * @param appSecret QQ 机器人 AppSecret
+         */
+        public record QqChannelProperties(
+                @DefaultValue("false") boolean enabled,
+                @Nullable String appId,
+                @Nullable String appSecret
         ) {}
     }
 

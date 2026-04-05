@@ -45,7 +45,8 @@ public class ConnectorManager {
     private static final Map<String, ManagedConnectorDefaults> OFFICIAL_DEFAULTS = Map.of(
             "feishu", new ManagedConnectorDefaults("dist/feishu-connector.jar", "connectors/feishu-connector", 19091, "/actuator/health"),
             "wecom", new ManagedConnectorDefaults("dist/wecom-connector.jar", "connectors/wecom-connector", 19092, "/actuator/health"),
-            "dingtalk", new ManagedConnectorDefaults("dist/dingtalk-connector.jar", "connectors/dingtalk-connector", 19093, "/actuator/health")
+            "dingtalk", new ManagedConnectorDefaults("dist/dingtalk-connector.jar", "connectors/dingtalk-connector", 19093, "/actuator/health"),
+            "qq", new ManagedConnectorDefaults("dist/qq-connector.jar", "connectors/qq-connector", 19094, "/actuator/health")
     );
 
     /** 已安装 JAR 启动策略。 */
@@ -108,7 +109,8 @@ public class ConnectorManager {
                 descriptor.configSchema(),
                 descriptor.secretFields(),
                 descriptor.setupGuide(),
-                descriptor.resources()
+                descriptor.resources(),
+                descriptor.operationDescriptors()
         );
     }
 

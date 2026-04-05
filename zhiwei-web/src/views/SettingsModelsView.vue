@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Cpu, Plus, RefreshCw } from 'lucide-vue-next'
 import { modelServiceApi, type ModelService } from '@/api/client'
+import { logger } from '@/utils/logger'
 import ModelServiceManager from '@/components/settings/ModelServiceManager.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { useUiStore } from '@/stores/ui'
@@ -44,7 +45,7 @@ async function loadData() {
   try {
     services.value = await modelServiceApi.listServices()
   } catch (error) {
-    console.error('加载模型服务失败:', error)
+    logger.error('加载模型服务失败:', error)
     uiStore.showToast('error', '加载模型服务失败')
   } finally {
     loading.value = false

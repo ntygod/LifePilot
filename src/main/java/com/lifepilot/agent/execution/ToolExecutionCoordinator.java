@@ -12,6 +12,7 @@ import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -24,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;
@@ -57,6 +59,8 @@ public class ToolExecutionCoordinator {
     private final ProceduralMemory proceduralMemory;
     @Nullable
     private final IntentMatcher intentMatcher;
+    @Nullable
+    private final MultimodalRouter multimodalRouter;
     private final int maxParallelToolCalls;
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -67,7 +71,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable ProceduralMemory proceduralMemory,
                                     @Nullable IntentMatcher intentMatcher) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
-                mediaDataExtractor, proceduralMemory, intentMatcher, 4);
+                mediaDataExtractor, proceduralMemory, intentMatcher, 4, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -78,6 +82,19 @@ public class ToolExecutionCoordinator {
                                     @Nullable ProceduralMemory proceduralMemory,
                                     @Nullable IntentMatcher intentMatcher,
                                     int maxParallelToolCalls) {
+        this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
+                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls, null);
+    }
+
+    public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
+                                    ObjectMapper objectMapper,
+                                    @Nullable TraceRecorder traceRecorder,
+                                    @Nullable TranscriptStore transcriptStore,
+                                    @Nullable MediaDataExtractor mediaDataExtractor,
+                                    @Nullable ProceduralMemory proceduralMemory,
+                                    @Nullable IntentMatcher intentMatcher,
+                                    int maxParallelToolCalls,
+                                    @Nullable MultimodalRouter multimodalRouter) {
         this.agentToolProvider = agentToolProvider;
         this.objectMapper = objectMapper;
         this.traceRecorder = traceRecorder;
@@ -86,6 +103,7 @@ public class ToolExecutionCoordinator {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.maxParallelToolCalls = Math.max(1, maxParallelToolCalls);
+        this.multimodalRouter = multimodalRouter;
     }
 
     /**
@@ -163,10 +181,17 @@ public class ToolExecutionCoordinator {
         for (ToolCallback callback : toolCallbacks) {
             if (callback == null) {
                 continue;
-            } else {
-                callback.getToolDefinition();
             }
-            index.putIfAbsent(callback.getToolDefinition().name(), callback);
+            ToolDefinition definition = callback.getToolDefinition();
+            if (definition == null || definition.name() == null || definition.name().isBlank()) {
+                continue;
+            }
+            index.putIfAbsent(definition.name(), callback);
+
+            String canonicalToolId = agentToolProvider.resolveCanonicalToolId(definition.name());
+            if (canonicalToolId != null && !canonicalToolId.isBlank()) {
+                index.putIfAbsent(canonicalToolId, callback);
+            }
         }
         return Map.copyOf(index);
     }
@@ -495,11 +520,20 @@ public class ToolExecutionCoordinator {
             state = replayExtractedMedia(state, planned.toolId(), outcome.mediaItems(), loopContext);
         }
 
+        // 无 VISION Provider 时修改 observation 文本，引导 Agent 使用纯文本工具
+        String observationOutput = outcome.observationOutput();
+        if (!outcome.mediaItems().isEmpty()
+                && (multimodalRouter == null || !multimodalRouter.isVisionAvailable())) {
+            observationOutput = observationOutput.replace(
+                    MediaDataExtractor.PLACEHOLDER,
+                    MediaDataExtractor.NO_VISION_PLACEHOLDER);
+        }
+
         state = stepAppender.append(state, new ReactStep.Observation(
                 planned.toolId(),
                 planned.toolDisplayName(),
                 outcome.success(),
-                outcome.observationOutput(),
+                observationOutput,
                 outcome.observationTokens(),
                 planned.toolCall().id()
         ), loopContext);
@@ -541,6 +575,15 @@ public class ToolExecutionCoordinator {
         }
 
         loopContext.addAllToolMedia(mediaItems);
+
+        // VISION 不可用时跳过 pendingMedia 注入，避免后续迭代强制走视觉路由
+        boolean visionAvailable = multimodalRouter != null && multimodalRouter.isVisionAvailable();
+        if (!visionAvailable) {
+            log.info("VISION Provider 不可用，跳过工具截图的 pendingMedia 注入: toolId={}, mediaCount={}",
+                    toolId, mediaItems.size());
+            return state;
+        }
+
         for (var mediaItem : mediaItems) {
             if (!mediaItem.mediaType().startsWith("image/")) {
                 continue;
@@ -706,7 +749,7 @@ public class ToolExecutionCoordinator {
         }
     }
 
-    /** 将 tool_call 记录到 transcript，便于后续回放和历史审计。 */
+    /** 异步将 tool_call 记录到 transcript，不阻塞工具执行主路径。 */
     private void persistTranscriptToolCall(ReactAgentState state,
                                            AssistantMessage.ToolCall toolCall,
                                            String toolId,
@@ -716,24 +759,26 @@ public class ToolExecutionCoordinator {
         if (transcriptStore == null) {
             return;
         }
-        try {
-            transcriptStore.appendToolCall(
-                    state.sessionId(),
-                    state.traceId(),
-                    state.traceId(),
-                    toolId,
-                    toolCall.id(),
-                    toolDisplayName,
-                    inputJson,
-                    createdAt
-            );
-        } catch (Exception e) {
-            log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
-                    state.sessionId(), toolId, e.getMessage());
-        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                transcriptStore.appendToolCall(
+                        state.sessionId(),
+                        state.traceId(),
+                        state.traceId(),
+                        toolId,
+                        toolCall.id(),
+                        toolDisplayName,
+                        inputJson,
+                        createdAt
+                );
+            } catch (Exception e) {
+                log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
+                        state.sessionId(), toolId, e.getMessage());
+            }
+        });
     }
 
-    /** 将 tool_result 记录到 transcript，与 tool_call 组成完整工具轨迹。 */
+    /** 异步将 tool_result 记录到 transcript，不阻塞工具执行主路径。 */
     private void persistTranscriptToolResult(ReactAgentState state,
                                              AssistantMessage.ToolCall toolCall,
                                              String toolId,
@@ -744,24 +789,26 @@ public class ToolExecutionCoordinator {
         if (transcriptStore == null) {
             return;
         }
-        try {
-            transcriptStore.appendToolResult(
-                    state.sessionId(),
-                    state.traceId(),
-                    state.traceId(),
-                    toolId,
-                    toolCall.id(),
-                    success,
-                    outputJson != null ? outputJson : "",
-                    artifactId,
-                    true,
-                    false,
-                    createdAt
-            );
-        } catch (Exception e) {
-            log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
-                    state.sessionId(), toolId, e.getMessage());
-        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                transcriptStore.appendToolResult(
+                        state.sessionId(),
+                        state.traceId(),
+                        state.traceId(),
+                        toolId,
+                        toolCall.id(),
+                        success,
+                        outputJson != null ? outputJson : "",
+                        artifactId,
+                        true,
+                        false,
+                        createdAt
+                );
+            } catch (Exception e) {
+                log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
+                        state.sessionId(), toolId, e.getMessage());
+            }
+        });
     }
 
     /** 将工具执行结果写入 Trace，保证后续诊断能看到输入、输出和耗时。 */

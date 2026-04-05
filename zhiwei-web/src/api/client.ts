@@ -106,9 +106,11 @@
   UpdateChannelInstanceRequest
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
+import { logger } from '@/utils/logger'
+import { getApiOrigin } from '@/api/config'
 
-// API 基础路径（开发环境通过 Vite proxy 转发）
-const BASE = '/api'
+// API 基础路径（运行时求值，Tauri 桌面端使用绝对路径，浏览器环境通过 Vite proxy 转发）
+const getBase = () => getApiOrigin() + '/api'
 
 /** 网络错误类 */
 export class NetworkError extends Error {
@@ -129,7 +131,7 @@ export class TimeoutError extends Error {
 /** 统一 HTTP 请求封装，非 2xx 抛出包含 ErrorResponse 的异常 */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   try {
-    const res = await fetch(`${BASE}${url}`, {
+    const res = await fetch(`${getBase()}${url}`, {
       headers: { 'Content-Type': 'application/json' },
       ...options
     })
@@ -173,7 +175,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     try {
       return JSON.parse(text) as T
     } catch (e) {
-      console.error('JSON 解析失败:', e, '响应内容:', text)
+      logger.error('JSON 解析失败:', e, '响应内容:', text)
       throw { code: res.status, message: '响应解析失败', timestamp: new Date().toISOString() }
     }
   } catch (error) {
@@ -212,7 +214,7 @@ export const chatApi = {
     action: ChatTurnAction = 'SEND',
     signal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array>> {
-    const res = await fetch(`${BASE}/chat/messages/stream`, {
+    const res = await fetch(`${getBase()}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action }),
@@ -376,7 +378,7 @@ export const chatApi = {
       form.append('sessionId', sessionId)
     }
 
-    const res = await fetch(`${BASE}/chat/messages/upload`, {
+    const res = await fetch(`${getBase()}/chat/messages/upload`, {
       method: 'POST',
       body: form
     })
@@ -868,7 +870,7 @@ export const knowledgeBaseApi = {
     if (datastoreId) {
       formData.append('datastoreId', datastoreId)
     }
-    const res = await fetch(`${BASE}/knowledge-bases/${kbId}/documents`, {
+    const res = await fetch(`${getBase()}/knowledge-bases/${kbId}/documents`, {
       method: 'POST',
       body: formData
     })
@@ -905,7 +907,7 @@ export const knowledgeBaseApi = {
     return request(`/knowledge-bases/${kbId}/documents/${docId}/rechunk`, { method: 'POST' })
   },
   downloadDocument(kbId: string, docId: string): Promise<Blob> {
-    return fetch(`${BASE}/knowledge-bases/${kbId}/documents/${docId}/download`).then(res => {
+    return fetch(`${getBase()}/knowledge-bases/${kbId}/documents/${docId}/download`).then(res => {
       if (!res.ok) throw new Error('下载失败')
       return res.blob()
     })
@@ -958,7 +960,7 @@ export const datastoreApi = {
   async uploadDocument(id: string, file: File): Promise<{ message: string; fileName: string; datastoreId: string; knowledgeBaseId: string }> {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(`${BASE}/datastores/${id}/documents`, {
+    const res = await fetch(`${getBase()}/datastores/${id}/documents`, {
       method: 'POST',
       body: form
     })
@@ -1010,7 +1012,7 @@ export const skillApi = {
   },
   /** 获取 Skill Markdown 定义 */
   getSkillMarkdown(skillId: string): Promise<string> {
-    return fetch(`${BASE}/skills/${skillId}/markdown`).then(res => {
+    return fetch(`${getBase()}/skills/${skillId}/markdown`).then(res => {
       if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
@@ -1353,12 +1355,6 @@ export const toolApi = {
   delete(id: string): Promise<void> {
     return request(`/tools/${id}`, { method: 'DELETE' })
   },
-  enable(id: string): Promise<void> {
-    return request(`/tools/${id}/enable`, { method: 'POST' })
-  },
-  disable(id: string): Promise<void> {
-    return request(`/tools/${id}/disable`, { method: 'POST' })
-  },
   test(req: ToolTestRequest): Promise<ToolTestResponse> {
     // 后端使用 /tools/{id}/test，参数字段名为 arguments
     const args = req.input ?? {}
@@ -1374,7 +1370,7 @@ export const toolApi = {
   },
   /** 获取 Tool YAML 定义 */
   getToolYaml(toolId: string): Promise<string> {
-    return fetch(`${BASE}/tools/${toolId}/yaml`).then(res => {
+    return fetch(`${getBase()}/tools/${toolId}/yaml`).then(res => {
       if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
@@ -1434,7 +1430,7 @@ export const agentApi = {
   },
   /** 流式测试聊天 */
   async testChatStream(id: string, message: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
-    const res = await fetch(`${BASE}/agents/${id}/test-chat/stream`, {
+    const res = await fetch(`${getBase()}/agents/${id}/test-chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
@@ -1454,7 +1450,7 @@ export const agentApi = {
   },
   /** 获取 Agent Markdown 定义 */
   getAgentMarkdown(agentId: string): Promise<string> {
-    return fetch(`${BASE}/agents/${agentId}/markdown`).then(res => {
+    return fetch(`${getBase()}/agents/${agentId}/markdown`).then(res => {
       if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
@@ -1550,8 +1546,8 @@ export const memoryApi = {
   getStats: () => request<MemoryStats>('/memories/stats'),
 
   /** 统一搜索 */
-  search: (q: string, topK = 10) =>
-    request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&topK=${topK}`),
+  search: (q: string, top_k = 10) =>
+    request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&top_k=${top_k}`),
 
   /** 手动巩固 */
   triggerConsolidation: () =>

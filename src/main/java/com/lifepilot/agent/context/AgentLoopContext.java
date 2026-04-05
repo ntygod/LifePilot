@@ -5,8 +5,12 @@ import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.springframework.lang.Nullable;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 循环请求作用域上下文 — 替代单例 Bean 上的可变实例字段。
@@ -21,8 +25,13 @@ public class AgentLoopContext {
 
     private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
     private final List<String> injectedEntityIds = new ArrayList<>();
+    private final Instant requestReceivedAt;
     private volatile @Nullable A2uiComponentTree lastCollectedA2uiTree;
     private volatile boolean visibleOutputEmitted;
+    private volatile @Nullable Instant firstReasoningEventAt;
+    private volatile @Nullable Instant modelStreamStartAt;
+    private volatile @Nullable Instant firstModelTokenAt;
+    private volatile @Nullable Instant firstTokenSseAt;
 
     // 流式模式下的 SSE 上下文（非流式模式为 null）
     @Nullable private final SseSessionManager sseManager;
@@ -31,6 +40,7 @@ public class AgentLoopContext {
 
     /** 非流式模式构造。 */
     public AgentLoopContext() {
+        this.requestReceivedAt = Instant.now();
         this.sseManager = null;
         this.streamId = null;
         this.turnId = null;
@@ -39,6 +49,7 @@ public class AgentLoopContext {
     /** 流式模式构造。 */
     public AgentLoopContext(@Nullable SseSessionManager sseManager,
                             @Nullable String streamId) {
+        this.requestReceivedAt = Instant.now();
         this.sseManager = sseManager;
         this.streamId = streamId;
         this.turnId = null;
@@ -48,6 +59,7 @@ public class AgentLoopContext {
     public AgentLoopContext(@Nullable SseSessionManager sseManager,
                             @Nullable String streamId,
                             @Nullable String turnId) {
+        this.requestReceivedAt = Instant.now();
         this.sseManager = sseManager;
         this.streamId = streamId;
         this.turnId = turnId;
@@ -106,9 +118,70 @@ public class AgentLoopContext {
         return lastCollectedA2uiTree;
     }
 
+    /** 获取请求进入主链路的时间点。 */
+    public Instant getRequestReceivedAt() {
+        return requestReceivedAt;
+    }
+
     /** 设置最近收集的 A2UI 组件树。 */
     public void setLastCollectedA2uiTree(@Nullable A2uiComponentTree tree) {
         this.lastCollectedA2uiTree = tree;
+    }
+
+    /** 记录首个真实推理事件发送时间。 */
+    public void markFirstReasoningEvent(Instant instant) {
+        if (firstReasoningEventAt == null) {
+            synchronized (this) {
+                if (firstReasoningEventAt == null) {
+                    firstReasoningEventAt = instant;
+                }
+            }
+        }
+    }
+
+    /** 在首次用户可见 token 到来前，记录当前模型流开始时间。 */
+    public void markModelStreamStarted(Instant instant) {
+        if (modelStreamStartAt == null) {
+            synchronized (this) {
+                if (modelStreamStartAt == null) {
+                    modelStreamStartAt = instant;
+                }
+            }
+        }
+    }
+
+    /** 记录模型侧首个 token 到达时间。 */
+    public void markFirstModelToken(Instant instant) {
+        if (firstModelTokenAt == null) {
+            synchronized (this) {
+                if (firstModelTokenAt == null) {
+                    firstModelTokenAt = instant;
+                }
+            }
+        }
+    }
+
+    /** 记录首个 SSE TOKEN 事件实际发出时间。 */
+    public void markFirstTokenSse(Instant instant) {
+        if (firstTokenSseAt == null) {
+            synchronized (this) {
+                if (firstTokenSseAt == null) {
+                    firstTokenSseAt = instant;
+                }
+            }
+        }
+    }
+
+    /** 构建流式体验时序指标（毫秒）。 */
+    public Map<String, Long> streamingTimingsMs() {
+        var timings = new LinkedHashMap<String, Long>();
+        putTimingMs(timings, "requestReceivedToFirstReasoningEventMs",
+                requestReceivedAt, firstReasoningEventAt);
+        putTimingMs(timings, "requestReceivedToFirstTokenSseMs",
+                requestReceivedAt, firstTokenSseAt);
+        putTimingMs(timings, "modelStreamStartToFirstTokenMs",
+                modelStreamStartAt, firstModelTokenAt);
+        return timings.isEmpty() ? Map.of() : Map.copyOf(timings);
     }
 
     /** 标记已向前端发出用户可见输出。 */
@@ -119,5 +192,15 @@ public class AgentLoopContext {
     /** 是否已经向前端发出用户可见输出。 */
     public boolean hasVisibleOutputEmitted() {
         return visibleOutputEmitted;
+    }
+
+    private void putTimingMs(Map<String, Long> timings,
+                             String key,
+                             @Nullable Instant start,
+                             @Nullable Instant end) {
+        if (start == null || end == null || end.isBefore(start)) {
+            return;
+        }
+        timings.put(key, Duration.between(start, end).toMillis());
     }
 }

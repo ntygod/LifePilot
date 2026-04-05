@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,7 +63,9 @@ class EvalStore_SQLite_集成测试 {
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_eval_results_scenario_id ON eval_results(scenario_id)");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_eval_results_eval_run_id ON eval_results(eval_run_id)");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_eval_results_evaluated_at ON eval_results(evaluated_at)");
-        evalStore = new EvalStore(jdbcTemplate, new ObjectMapper());
+        var transactionManager = new DataSourceTransactionManager(dataSource);
+        evalStore = new EvalStore(jdbcTemplate, new ObjectMapper(),
+                Executors.newVirtualThreadPerTaskExecutor(), transactionManager);
     }
 
     @AfterEach

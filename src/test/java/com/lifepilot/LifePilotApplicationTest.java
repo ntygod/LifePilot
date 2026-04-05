@@ -172,10 +172,10 @@ class LifePilotApplicationTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt(1)).isEqualTo(1);
 
-            // 验证 busy_timeout=5000
+            // 验证 busy_timeout=30000（application.yml 中配置）
             rs = stmt.executeQuery("PRAGMA busy_timeout");
             assertThat(rs.next()).isTrue();
-            assertThat(rs.getInt(1)).isEqualTo(5000);
+            assertThat(rs.getInt(1)).isEqualTo(30000);
         }
     }
 }

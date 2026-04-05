@@ -11,7 +11,9 @@ defineProps<{
     <div class="flex items-start justify-between gap-3 border-b border-border/70 pb-3">
       <div class="min-w-0 space-y-1">
         <div class="flex items-center gap-2">
-          <span v-if="icon" class="text-base text-muted-foreground">{{ icon }}</span>
+          <slot name="icon">
+            <span v-if="icon" class="text-base text-muted-foreground">{{ icon }}</span>
+          </slot>
           <h3 class="text-base font-semibold text-foreground">{{ title }}</h3>
         </div>
         <p v-if="description" class="text-sm leading-6 text-muted-foreground">

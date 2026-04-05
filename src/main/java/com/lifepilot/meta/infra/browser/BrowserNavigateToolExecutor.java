@@ -26,11 +26,19 @@ public class BrowserNavigateToolExecutor {
     private final BrowserSessionManager sessionManager;
     @Nullable
     private final TextSnapshotCleaner textSnapshotCleaner;
+    private final int navigateTimeoutMs;
+
+    public BrowserNavigateToolExecutor(@Nullable BrowserSessionManager sessionManager,
+                                       @Nullable TextSnapshotCleaner textSnapshotCleaner,
+                                       int navigateTimeoutMs) {
+        this.sessionManager = sessionManager;
+        this.textSnapshotCleaner = textSnapshotCleaner;
+        this.navigateTimeoutMs = navigateTimeoutMs;
+    }
 
     public BrowserNavigateToolExecutor(@Nullable BrowserSessionManager sessionManager,
                                        @Nullable TextSnapshotCleaner textSnapshotCleaner) {
-        this.sessionManager = sessionManager;
-        this.textSnapshotCleaner = textSnapshotCleaner;
+        this(sessionManager, textSnapshotCleaner, 30_000);
     }
 
     /**
@@ -60,7 +68,10 @@ public class BrowserNavigateToolExecutor {
 
         try {
             var page = sessionManager.getOrCreatePage(sessionId);
-            String title = page.navigate(url);
+            var navResult = page.navigateWithResult(url, navigateTimeoutMs);
+            if (navResult.partial()) {
+                log.warn("浏览器导航超时（部分加载）: url={}, sessionId={}", url, sessionId);
+            }
             String textSnapshot = page.textContent();
 
             // 使用 TextSnapshotCleaner 清洗，降级为简单截断
@@ -71,11 +82,12 @@ public class BrowserNavigateToolExecutor {
             }
 
             var data = new LinkedHashMap<String, Object>();
-            data.put("title", title != null ? title : "");
-            data.put("url", page.url());
+            data.put("title", navResult.title() != null ? navResult.title() : "");
+            data.put("url", navResult.url());
             data.put("textSnapshot", textSnapshot != null ? textSnapshot : "");
+            data.put("partial", navResult.partial());
 
-            log.debug("浏览器导航完成: url={}, title={}, sessionId={}", url, title, sessionId);
+            log.debug("浏览器导航完成: url={}, title={}, sessionId={}", url, navResult.title(), sessionId);
             return ToolResult.success(Map.copyOf(data));
         } catch (Exception e) {
             log.error("浏览器导航失败: url={}, sessionId={}, error={}", url, sessionId, e.getMessage(), e);

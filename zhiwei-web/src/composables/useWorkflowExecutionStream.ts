@@ -1,4 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue'
+import { getApiOrigin } from '@/api/config'
+import { logger } from '@/utils/logger'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import { useWorkflowStore } from '@/stores/workflow'
 import type {
@@ -50,7 +52,7 @@ export function useWorkflowExecutionStream() {
 
     disconnectWorkflow()
     currentWorkflowId = workflowId
-    workflowSource = new EventSource(`/api/workflows/${workflowId}/executions/stream`)
+    workflowSource = new EventSource(`${getApiOrigin()}/api/workflows/${workflowId}/executions/stream`)
 
     workflowSource.onopen = () => {
       workflowConnected.value = true
@@ -70,7 +72,7 @@ export function useWorkflowExecutionStream() {
         store.setExecutions(payload.executions ?? [])
         workflowConnected.value = true
       } catch (error) {
-        console.warn('Failed to parse workflow executions snapshot', error)
+        logger.warn('Failed to parse workflow executions snapshot', error)
       }
     })
 
@@ -79,7 +81,7 @@ export function useWorkflowExecutionStream() {
         const execution = JSON.parse((event as MessageEvent).data) as WorkflowExecution
         store.upsertExecution(execution)
       } catch (error) {
-        console.warn('Failed to parse workflow execution update', error)
+        logger.warn('Failed to parse workflow execution update', error)
       }
     })
   }
@@ -91,7 +93,7 @@ export function useWorkflowExecutionStream() {
 
     disconnectInstance()
     currentInstanceId = instanceId
-    instanceSource = new EventSource(`/api/workflows/executions/${instanceId}/stream`)
+    instanceSource = new EventSource(`${getApiOrigin()}/api/workflows/executions/${instanceId}/stream`)
 
     instanceSource.onopen = () => {
       instanceConnected.value = true
@@ -111,7 +113,7 @@ export function useWorkflowExecutionStream() {
         store.setCurrentInstance(execution)
         instanceConnected.value = true
       } catch (error) {
-        console.warn('Failed to parse workflow execution snapshot', error)
+        logger.warn('Failed to parse workflow execution snapshot', error)
       }
     })
 
@@ -120,7 +122,7 @@ export function useWorkflowExecutionStream() {
         const execution = JSON.parse((event as MessageEvent).data) as WorkflowExecution
         store.setCurrentInstance(execution)
       } catch (error) {
-        console.warn('Failed to parse workflow execution update', error)
+        logger.warn('Failed to parse workflow execution update', error)
       }
     })
 
@@ -129,7 +131,7 @@ export function useWorkflowExecutionStream() {
         const payload = JSON.parse((event as MessageEvent).data) as WorkflowTimelineSnapshot
         store.setEventTimeline(instanceId, payload.events ?? [])
       } catch (error) {
-        console.warn('Failed to parse workflow timeline snapshot', error)
+        logger.warn('Failed to parse workflow timeline snapshot', error)
       }
     })
 
@@ -138,7 +140,7 @@ export function useWorkflowExecutionStream() {
         const workflowEvent = JSON.parse((event as MessageEvent).data) as WorkflowEvent
         store.appendEventTimeline(instanceId, workflowEvent)
       } catch (error) {
-        console.warn('Failed to parse workflow event update', error)
+        logger.warn('Failed to parse workflow event update', error)
       }
     })
 
@@ -147,7 +149,7 @@ export function useWorkflowExecutionStream() {
         const payload = JSON.parse((event as MessageEvent).data) as WorkflowStepLogsSnapshot
         store.setStepLogs(instanceId, payload.stepLogs ?? [])
       } catch (error) {
-        console.warn('Failed to parse workflow step log snapshot', error)
+        logger.warn('Failed to parse workflow step log snapshot', error)
       }
     })
 
@@ -156,7 +158,7 @@ export function useWorkflowExecutionStream() {
         const stepLog = JSON.parse((event as MessageEvent).data) as StepLog
         store.appendStepLog(instanceId, stepLog)
       } catch (error) {
-        console.warn('Failed to parse workflow step log update', error)
+        logger.warn('Failed to parse workflow step log update', error)
       }
     })
   }

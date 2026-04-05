@@ -25,6 +25,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class DynamicToolRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicToolRegistry.class);
+    private static final Comparator<ToolContract> SNAPSHOT_ORDER =
+            Comparator.comparing(ToolContract::id);
 
     /** 工具存储：toolId → ToolContract。 */
     private final ConcurrentHashMap<String, ToolContract> tools = new ConcurrentHashMap<>();
@@ -200,7 +202,7 @@ public class DynamicToolRegistry {
 
     /** 获取所有可用工具（不可变列表）。 */
     public List<ToolContract> getAllTools() {
-        return List.copyOf(tools.values());
+        return buildStableSnapshot();
     }
 
     /**
@@ -215,7 +217,7 @@ public class DynamicToolRegistry {
             try {
                 snapshot = cachedSnapshot;
                 if (snapshot.isEmpty() && !tools.isEmpty()) {
-                    snapshot = List.copyOf(tools.values());
+                    snapshot = buildStableSnapshot();
                     cachedSnapshot = snapshot;
                 }
             } finally {
@@ -290,5 +292,11 @@ public class DynamicToolRegistry {
     /** 使快照缓存失效。 */
     private void invalidateSnapshot() {
         cachedSnapshot = List.of();
+    }
+
+    private List<ToolContract> buildStableSnapshot() {
+        return tools.values().stream()
+                .sorted(SNAPSHOT_ORDER)
+                .toList();
     }
 }

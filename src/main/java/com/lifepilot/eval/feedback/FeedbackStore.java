@@ -28,11 +28,15 @@ public class FeedbackStore {
             """;
 
     private static final String FIND_BY_EVAL_ID_SQL = """
-            SELECT * FROM eval_feedback WHERE eval_id = ? ORDER BY created_at DESC
+            SELECT feedback_id, eval_id, scenario_id, feedback_type,
+                   comment, golden_answer, created_by, created_at
+            FROM eval_feedback WHERE eval_id = ? ORDER BY created_at DESC
             """;
 
     private static final String FIND_GOLDEN_ANSWERS_SQL = """
-            SELECT * FROM eval_feedback
+            SELECT feedback_id, eval_id, scenario_id, feedback_type,
+                   comment, golden_answer, created_by, created_at
+            FROM eval_feedback
             WHERE scenario_id = ? AND feedback_type = 'GOLDEN_ANSWER'
             ORDER BY created_at DESC
             """;

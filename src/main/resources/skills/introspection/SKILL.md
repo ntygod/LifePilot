@@ -1,7 +1,7 @@
 ---
 id: introspection
 name: "系统自省"
-description: "查看系统能力、状态和运行时信息：列出已注册能力、查看能力详情、系统状态概览、智能推荐、运行时动态信息"
+description: "查看系统能力、状态、运行时信息"
 version: "1.0.0"
 suggested-tools:
   - system.list-capabilities

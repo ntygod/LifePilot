@@ -2,7 +2,7 @@
 
 > **文档性质**：架构可视化文档（Developer-Facing）
 > **目标读者**：架构师、开发者、技术评审者
-> **最后更新**：2026-03-17
+> **最后更新**：2026-03-31
 > **关联文档**：[ARCHITECTURE.md](./docs/ARCHITECTURE.md)、[memory-system.md](./docs/architecture/memory-system.md)、[skill-system.md](./docs/architecture/skill-system.md)
 
 ---
@@ -58,10 +58,10 @@ graph TB
     end
 
     subgraph "基础设施层 (Infrastructure)"
-        LlmRouter[LlmRouter<br/>场景路由 + 熔断 + 缓存]
+        LlmRouter[GenerationRouter<br/>生成路由 + 熔断 + 缓存]
         Observability[可观测性<br/>Trace / Guardrail / DataRedactor]
         Workflow[工作流引擎<br/>DAG 调度 / 表达式]
-        MultiAgent[多 Agent<br/>Handoff / A2A]
+        MultiAgent[多 Agent<br/>spawn_workers / A2A]
     end
 
     subgraph "存储层 (Storage)"
@@ -93,7 +93,6 @@ graph TB
     ReactLoop --> ToolEco
     ReactLoop --> SkillSystem
     ReactLoop --> LlmRouter
-
     ToolEco --> McpServers
     LlmRouter --> DeepSeek
     LlmRouter --> OpenAI
@@ -114,7 +113,7 @@ graph TB
 graph LR
     subgraph "核心引擎"
         agent[agent<br/>ReactAgentLoop]
-        llm[llm<br/>LlmRouter]
+        llm[llm<br/>GenerationRouter]
     end
 
     subgraph "能力模块"
@@ -179,12 +178,12 @@ graph LR
 ```mermaid
 sequenceDiagram
     participant User as 用户
-    participant CH as ChannelAdapter
+    participant CH as 渠道插件
     participant GW as MessageGateway
     participant MW as 中间件管道
     participant Agent as ReactAgentLoop
     participant Ctx as ContextAssembler
-    participant LLM as LlmRouter
+    participant LLM as GenerationRouter
     participant Tool as ToolExecutionPipeline
     participant Mem as Memory
     participant Trace as TraceRecorder
@@ -287,7 +286,7 @@ graph TB
     end
 
     subgraph "LLM 调用"
-        Router[LlmRouter]
+        Router[GenerationRouter]
         ChatModel[ChatModel<br/>手动 tool calling]
         Streaming[StreamingLlmResponse]
     end
@@ -329,7 +328,7 @@ graph TB
 ```mermaid
 graph LR
     subgraph "Skill 注册"
-        BuiltinRegistrar[BuiltinSkillRegistrar<br/>内置 Skill 扫描]
+        SkillLoader[MarkdownSkillLoader<br/>内置 Skill 加载]
         SkillRegistry[SkillRegistry<br/>运行时注册表]
         Marketplace[SkillMarketplace<br/>市场安装]
     end
@@ -352,7 +351,7 @@ graph LR
         BuiltinTool[BuiltinTool<br/>Layer 2]
     end
 
-    BuiltinRegistrar --> SkillRegistry
+    SkillLoader --> SkillRegistry
     Marketplace --> SkillRegistry
     SkillRegistry --> Format
     Format --> Security
@@ -432,9 +431,8 @@ ZhiWei/
 │   ├── prompt/                     # Prompt 模板管理
 │   ├── datastore/                  # 通用数据存储
 │   ├── eval/                       # Agent 评估框架
-│   ├── sync/                       # 外部数据同步
 │   ├── sandbox/                    # 沙箱执行
-│   ├── marketplace/                # Skill 市场
+│   ├── marketplace/                # 扩展市场
 │   ├── a2a/                        # Agent-to-Agent 协议
 │   └── config/                     # 全局配置
 ├── zhiwei-web/                     # 前端独立项目（Vue 3）
@@ -538,7 +536,7 @@ sequenceDiagram
     participant SM as SemanticMemory
     participant PM as ProceduralMemory
     participant Procedural as EpisodicToProceduralConsolidator
-    participant LLM as LlmRouter
+    participant LLM as GenerationRouter
 
     Cron->>Pipeline: scheduledConsolidate()
     
@@ -661,7 +659,7 @@ flowchart LR
 sequenceDiagram
     participant Agent as ReactAgentLoop
     participant Ctx as ContextAssembler
-    participant LLM as LlmRouter.getChatModelWithInfo()
+    participant LLM as GenerationRouter
     participant Tool as ToolExecutionPipeline
     participant Guard as GuardrailEngine
     participant Trace as TraceRecorder
@@ -705,7 +703,7 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Running: ReactAgentLoop.run()
+    [*] --> Running: AgentOrchestrator.run()
     
     Running --> Suspended: 触发挂起条件
     
@@ -733,6 +731,7 @@ graph TB
     RS --> Answer[Answer<br/>content: String]
     RS --> Suspend[Suspend<br/>reason: SuspendReason + suspendedAt]
     RS --> Resume[Resume<br/>payload: ResumePayload + suspendDuration]
+    RS --> Progress[Progress<br/>content: String（执行进度提示）]
 ```
 
 ---
@@ -746,7 +745,7 @@ sequenceDiagram
     participant Scheduler as ProactiveScheduler
     participant Analyzer as ProactiveAnalyzer
     participant Memory as MemoryRetrieval
-    participant LLM as LlmRouter
+    participant LLM as GenerationRouter
     participant Skill as SkillActivator
     participant Notify as NotificationService
 
@@ -912,7 +911,7 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    participant CH as ChannelAdapter<br/>(CLI / Web / 飞书 / 钉钉 / 企微)
+    participant CH as 渠道插件<br/>(Web / 飞书 / 钉钉 / 企微)
     participant GW as MessageGateway
     participant AUTH as AuthMiddleware<br/>order=100
     participant RL as RateLimitMiddleware<br/>order=200
@@ -977,13 +976,13 @@ flowchart LR
 flowchart TD
     Req[LlmRequest] --> ModelName{指定 modelName?}
     
-    ModelName -->|是| ByModel[ProviderRegistry.findByModelName<br/>精确匹配 → 包含匹配]
-    ModelName -->|否| ByScene[ProviderRegistry.findByScene<br/>场景匹配]
+    ModelName -->|是| ByModel[ModelServiceRegistry.findByModelName<br/>精确匹配 → 包含匹配]
+    ModelName -->|否| ByScene[ModelServiceRegistry.findByScene<br/>场景匹配]
     
     ByModel --> Filter[能力过滤<br/>+ 熔断器过滤]
     ByScene --> Filter
     
-    ByScene -->|场景无匹配| Fallback[回退: findByCapability<br/>按能力查找]
+    ByScene -->|场景无匹配| Fallback[回退: ModelServiceRegistry.findByCapability<br/>按能力查找]
     Fallback --> Filter
     
     Filter --> Preferred{有 preferredProviderId?}
@@ -1185,7 +1184,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Call[LlmRouter.callWithFailover] --> Select[选择候选 Provider 列表<br/>按 priority 排序 + 熔断器过滤]
+    Call[GenerationRouter.callWithFailover] --> Select[选择候选 Provider 列表<br/>按 priority 排序 + 熔断器过滤]
     Select --> Loop[故障转移循环]
 
     Loop --> CB{CircuitBreaker<br/>isCallPermitted?}
@@ -1217,7 +1216,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant Client as LlmRouter
+    participant Client as GenerationRouter
     participant CB as CircuitBreaker
     participant Provider as ProviderAdapter
 

@@ -27,6 +27,10 @@ public class ConnectorManagerProperties {
     private String workspaceRoot;
     @Nullable
     private String zhiweiBaseUrl;
+    /** 单个入站附件最大允许字节数，默认 10MB。 */
+    private long maxAttachmentSizeBytes = 10L * 1024 * 1024;
+    /** 事件去重缓存容量上限，用于防止平台重试导致重复处理。 */
+    private int eventDeduplicationCacheSize = 10_000;
 
     public boolean isEnabled() {
         return enabled;
@@ -92,5 +96,21 @@ public class ConnectorManagerProperties {
 
     public void setZhiweiBaseUrl(@Nullable String zhiweiBaseUrl) {
         this.zhiweiBaseUrl = zhiweiBaseUrl;
+    }
+
+    public long getMaxAttachmentSizeBytes() {
+        return maxAttachmentSizeBytes;
+    }
+
+    public void setMaxAttachmentSizeBytes(long maxAttachmentSizeBytes) {
+        this.maxAttachmentSizeBytes = maxAttachmentSizeBytes;
+    }
+
+    public int getEventDeduplicationCacheSize() {
+        return eventDeduplicationCacheSize;
+    }
+
+    public void setEventDeduplicationCacheSize(int eventDeduplicationCacheSize) {
+        this.eventDeduplicationCacheSize = eventDeduplicationCacheSize;
     }
 }

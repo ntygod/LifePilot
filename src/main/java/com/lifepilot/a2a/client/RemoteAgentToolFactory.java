@@ -1,6 +1,8 @@
 package com.lifepilot.a2a.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.a2a.model.*;
+import com.lifepilot.agent.suspend.event.A2aTaskCompletedEvent;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolSchedulingMode;
@@ -9,6 +11,7 @@ import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Map;
@@ -31,10 +34,17 @@ public class RemoteAgentToolFactory {
 
     private final A2aClientService clientService;
     private final DynamicToolRegistry toolRegistry;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ObjectMapper objectMapper;
 
-    public RemoteAgentToolFactory(A2aClientService clientService, DynamicToolRegistry toolRegistry) {
+    public RemoteAgentToolFactory(A2aClientService clientService,
+                                   DynamicToolRegistry toolRegistry,
+                                   ApplicationEventPublisher eventPublisher,
+                                   ObjectMapper objectMapper) {
         this.clientService = clientService;
         this.toolRegistry = toolRegistry;
+        this.eventPublisher = eventPublisher;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -82,6 +92,11 @@ public class RemoteAgentToolFactory {
 
                     // 调用远程 Agent
                     A2aTask result = clientService.sendMessage(agentUrl, message);
+
+                    // 发布 A2aTaskCompletedEvent 以恢复挂起的 Agent
+                    if (result.status().state().isTerminal()) {
+                        publishTaskCompletedEvent(result);
+                    }
 
                     // 提取 Artifact 文本作为结果
                     String output = extractArtifactText(result);
@@ -138,26 +153,58 @@ public class RemoteAgentToolFactory {
         return TOOL_ID_PREFIX + result;
     }
 
-    /**
-     * 从 A2aTask 的 Artifact 中提取文本内容。
-     */
-    private String extractArtifactText(A2aTask task) {
+    /** 发布远程 Task 完成事件，用于恢复挂起等待结果的 Agent。 */
+    private void publishTaskCompletedEvent(A2aTask result) {
+        try {
+            String resultJson = objectMapper.writeValueAsString(result);
+            eventPublisher.publishEvent(new A2aTaskCompletedEvent(result.id(), resultJson));
+            log.debug("A2A 远程任务完成事件已发布: taskId={}", result.id());
+        } catch (Exception e) {
+            log.warn("A2A 远程任务完成事件发布失败: taskId={}, error={}", result.id(), e.getMessage());
+        }
+    }
+
+    /* visible for testing — 从 A2aTask 的 Artifact 中提取文本内容（支持 Text / File / Data 全部 Part 类型）。 */
+    String extractArtifactText(A2aTask task) {
         if (task.artifacts() == null || task.artifacts().isEmpty()) {
             // 尝试从 status message 提取
             if (task.status().message() != null && !task.status().message().parts().isEmpty()) {
-                return task.status().message().parts().stream()
-                        .filter(p -> p instanceof A2aPart.Text)
-                        .map(p -> ((A2aPart.Text) p).text())
-                        .findFirst()
-                        .orElse("无输出");
+                return extractPartsText(task.status().message().parts());
             }
             return "无输出";
         }
         return task.artifacts().stream()
                 .flatMap(a -> a.parts().stream())
-                .filter(p -> p instanceof A2aPart.Text)
-                .map(p -> ((A2aPart.Text) p).text())
+                .map(this::partToText)
+                .filter(s -> s != null && !s.isBlank())
                 .reduce((a, b) -> a + "\n" + b)
                 .orElse("无输出");
+    }
+
+    /** 从 Parts 列表中提取第一个有效文本。 */
+    private String extractPartsText(java.util.List<A2aPart> parts) {
+        return parts.stream()
+                .map(this::partToText)
+                .filter(s -> s != null && !s.isBlank())
+                .findFirst()
+                .orElse("无输出");
+    }
+
+    /** 将单个 Part 转换为文本表示。 */
+    private String partToText(A2aPart part) {
+        return switch (part) {
+            case A2aPart.Text text -> text.text();
+            case A2aPart.File file -> {
+                var fc = file.file();
+                yield fc != null && fc.name() != null ? "[文件: " + fc.name() + "]" : "[文件]";
+            }
+            case A2aPart.Data data -> {
+                try {
+                    yield objectMapper.writeValueAsString(data.data());
+                } catch (Exception e) {
+                    yield "[结构化数据]";
+                }
+            }
+        };
     }
 }

@@ -2,11 +2,11 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.interaction`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
-Gateway 是知微（ZhiWei）所有交互通道的统一消息入口。它将来自 Web UI、企业微信、钉钉、飞书等不同通道的消息标准化为 `GatewayMessage`，经过 6 层中间件管道（认证 → 限流 → 安全 → 路由 → 执行 → 审计）处理后，交由 Agent 引擎执行。通道差异在 `ChannelAdapter` 层完全消化，中间件和业务逻辑与通道无关。
+Gateway 是知微（ZhiWei）所有交互通道的统一消息入口。它将来自 Web UI、企业微信、钉钉、飞书等不同通道的消息标准化为 `GatewayMessage`，经过 6 层中间件管道（认证 → 限流 → 安全 → 路由 → 执行 → 审计）处理后，交由 Agent 引擎执行。通道差异在适配层完全消化，中间件和业务逻辑与通道无关。
 
 核心包结构：
 
@@ -15,19 +15,17 @@ Gateway 是知微（ZhiWei）所有交互通道的统一消息入口。它将来
 | `gateway` | `MessageGateway` 接口与默认实现 |
 | `middleware` | 中间件接口、管道、责任链、6 个中间件实现 |
 | `model` | 统一消息模型（GatewayMessage、GatewayResponse、MessageContent 等） |
-| `channel` | 通道适配器接口、抽象基类、企业 IM 适配器 |
-| `web` | Web 通道（REST Controller、SSE 流式端点、WebChannelAdapter） |
+| `channel` | 通道类型枚举与消息模型 |
+| `web` | Web 通道（REST Controller、SSE 流式端点） |
 | `config` | AutoConfiguration、GatewayProperties |
 
 ## 2. 架构图
 
 ```mermaid
 flowchart TD
-    subgraph "通道适配层"
-        WEB["WebChannelAdapter<br/>REST + SSE"]
-        WECOM["WecomChannelAdapter<br/>加密 XML Webhook"]
-        DING["DingtalkChannelAdapter<br/>签名 JSON Webhook"]
-        FEISHU["FeishuChannelAdapter<br/>加密 JSON 事件订阅"]
+    subgraph "通道适配层（插件架构）"
+        WEB["Web 通道<br/>REST + SSE"]
+        IM["企业 IM 通道<br/>插件式加载"]
     end
 
     subgraph "统一消息模型"
@@ -44,14 +42,12 @@ flowchart TD
     end
 
     subgraph "业务执行层"
-        AGENT["AgentLoop"]
+        AGENT["AgentOrchestrator"]
         SKILL["SkillRegistry"]
     end
 
     WEB --> GM
-    WECOM --> GM
-    DING --> GM
-    FEISHU --> GM
+    IM --> GM
     GM --> AUTH --> RL --> SEC --> ROUTER --> EXEC --> AUDIT
     EXEC --> AGENT
     ROUTER -.->|"快速路径"| SKILL
@@ -63,9 +59,9 @@ flowchart TD
 ### 3.1 MessageGateway / DefaultMessageGateway
 
 - 职责：消息网关核心，管理通道注册表和生命周期，将消息推入中间件管道
-- 关键接口：`process(GatewayMessage)` → `GatewayResponse`、`registerChannel(ChannelAdapter)`、`start()`/`stop()`
-- 实现细节：`ConcurrentHashMap<ChannelType, ChannelAdapter>` 存储通道注册表，`AtomicBoolean` 管理运行状态
-- 集成：可选注入 `ResponseTracker`（主动推理模块），对文本消息通知用户交互事件
+- 关键接口：`process(GatewayMessage)` → `GatewayResponse`、`start()`/`stop()`
+- 实现细节：`AtomicBoolean` 管理运行状态
+- 集成：纯消息分发，不含主动推理集成
 - MDC 注入：每条消息处理时将 `messageId` 注入 SLF4J MDC，整条链路日志可关联
 
 ### 3.2 MiddlewarePipeline
@@ -124,18 +120,7 @@ flowchart TD
 | `DINGTALK` | `"dingtalk"` | 是 |
 | `FEISHU` | `"feishu"` | 是 |
 
-> 注意：当前 `ChannelType` 枚举中没有 `CLI` 值。CLI 交互层尚未实现，规划中 CLI 直接调用 AgentLoop，不经过 Gateway。
-
-### 3.9 ChannelAdapter / AbstractChannelAdapter
-
-- `ChannelAdapter` 接口：`channelType()`、`normalize(Object)`、`sendResponse(String, GatewayResponse)`、`start()`、`stop()`
-- `AbstractChannelAdapter` 抽象基类封装通用逻辑：
-  - 状态机管理（`ChannelState` 枚举：CREATED → STARTING → RUNNING → STOPPING → STOPPED，ERROR 可重连）
-  - 指数退避重连（`initialDelayMs * multiplier^(attempt-1)`，上限 `maxDelayMs`）
-  - 失败消息队列（`ConcurrentLinkedQueue<FailedMessage>`）
-  - 模板方法：子类实现 `doStart()`、`doStop()`、`doSendResponse()`
-  - 异步提交：`submitAsync()` 在 Virtual Thread 上执行 Gateway 处理
-  - 同步提交：`submitSync()` 直接调用 Gateway
+> 注意：当前 `ChannelType` 枚举中没有 `CLI` 值。CLI 交互层尚未实现，规划中 CLI 直接调用 AgentOrchestrator，不经过 Gateway。
 
 ## 4. 核心流程
 
@@ -143,7 +128,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant CH as ChannelAdapter
+    participant CH as ChannelDeliveryDispatcher
     participant GW as DefaultMessageGateway
     participant PP as MiddlewarePipeline
     participant AUTH as AuthMiddleware
@@ -152,11 +137,10 @@ sequenceDiagram
     participant RT as RouterMiddleware
     participant EX as ExecutionMiddleware
     participant AD as AuditMiddleware
-    participant AL as AgentLoop
+    participant AL as AgentOrchestrator
 
     CH->>GW: process(GatewayMessage)
     GW->>GW: MDC.put("messageId")
-    GW->>GW: notifyResponseTracker()
     GW->>PP: execute(message)
     PP->>PP: new MiddlewareContext()
     PP->>PP: new MiddlewareChain()
@@ -165,7 +149,7 @@ sequenceDiagram
     RL->>SEC: chain.next(message)
     SEC->>RT: chain.next(message)
     RT->>EX: chain.next(message)
-    EX->>AL: AgentLoop.run(request)
+    EX->>AL: AgentOrchestrator.run(request)
     AL-->>EX: AgentResponse
     EX->>AD: chain.next(message)
     AD-->>GW: GatewayResponse
@@ -173,7 +157,9 @@ sequenceDiagram
     GW-->>CH: GatewayResponse
 ```
 
-### 4.2 通道适配器生命周期
+### 4.2 通道生命周期
+
+> ⚠️ 渠道适配层已重构为插件架构，具体通道适配器的生命周期管理详见 [channel-plugin-architecture.md](channel-plugin-architecture.md)。
 
 ```mermaid
 stateDiagram-v2
@@ -194,7 +180,6 @@ stateDiagram-v2
 | 统一消息模型 | `GatewayMessage` record + sealed interface | 通道差异在适配器层消化，中间件和业务层只处理一种格式 |
 | 中间件排序 | `order()` 数值排序 | 简单直观，可通过配置调整顺序 |
 | 请求隔离 | 每次请求新建 MiddlewareContext | 避免跨请求数据污染 |
-| 通道注册表 | ConcurrentHashMap | 线程安全，支持运行时动态注册/注销 |
 | 中间件列表 | CopyOnWriteArrayList | 读多写少场景优化，动态增删中间件 |
 | 通道重连 | 指数退避 | 避免重连风暴，配置化上限和延迟参数 |
 | 失败消息 | ConcurrentLinkedQueue + 重试调度 | 企业 IM 推送失败时入队重试，不丢消息 |
@@ -204,13 +189,12 @@ stateDiagram-v2
 
 | 依赖方向 | 模块 | 交互方式 |
 |---------|------|---------|
-| Gateway → Agent | `com.lifepilot.agent` | `ExecutionMiddleware` 调用 `AgentLoop.run()` |
-| Gateway → Guardrail | `com.lifepilot.guardrail` | `SecurityMiddleware` 调用 `GuardrailEngine` 进行安全检查 |
+| Gateway → Agent | `com.lifepilot.agent` | `ExecutionMiddleware` 调用 `AgentOrchestrator.run()` / `runStreaming()` |
+| Gateway → Guardrail | `com.lifepilot.observability.guardrail` | `SecurityMiddleware` 调用 `GuardrailEngine` 进行安全检查 |
 | Gateway → Skill | `com.lifepilot.skill` | `RouterMiddleware` 快速路径直接调用 Skill |
 | Gateway → Observability | `com.lifepilot.observability` | `AuditMiddleware` 记录审计日志 |
-| Gateway → 主动推理 | `com.lifepilot.agent.proactive` | `DefaultMessageGateway` 通知 `ResponseTracker` 用户交互 |
-| Web UI → Gateway | 前端 Vue 3 SPA | 通过 REST Controller + SSE 端点接入 |
-| 企业 IM → Gateway | Webhook 回调 | 各 IM 平台通过 Webhook Controller 接入 |
+| Web UI → Gateway | 前端 Vue 3 SPA（Web / Tauri 桌面） | 通过 REST Controller + SSE 端点接入 |
+| 企业 IM → Gateway | Webhook 回调 | 各 IM 平台通过插件式通道适配器接入（详见 [channel-plugin-architecture.md](channel-plugin-architecture.md)） |
 
 ## 7. 配置参考
 
@@ -236,10 +220,9 @@ stateDiagram-v2
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.gateway.rate-limit.max-tokens-per-hour` | `100000` | 每用户每小时最大 Token 消耗 |
-| `lifepilot.gateway.rate-limit.max-tokens-per-day` | `500000` | 每用户每天最大 Token 消耗 |
 | `lifepilot.gateway.rate-limit.max-requests-per-minute` | `30` | 每用户每分钟最大请求数 |
-| `lifepilot.gateway.rate-limit.estimated-tokens-per-request` | `2000` | 预估每请求 Token 消耗 |
+
+> **变更说明**：Token 配额限流（`max-tokens-per-hour`、`max-tokens-per-day`、`estimated-tokens-per-request`）已移除。个人助手场景下不做 Token 配额限流，费用由用户自行承担。
 
 ### 7.3 通道配置
 
@@ -269,3 +252,5 @@ stateDiagram-v2
 | `lifepilot.gateway.audit.request-summary-max-length` | `200` | 请求摘要最大长度 |
 | `lifepilot.gateway.webhook.timestamp-tolerance-seconds` | `300` | 签名时间戳容忍窗口 |
 | `lifepilot.gateway.webhook.max-retry-count` | `3` | 失败消息最大重试次数 |
+
+> ⚠️ 渠道适配层已重构为插件架构，详见 [channel-plugin-architecture.md](channel-plugin-architecture.md)。

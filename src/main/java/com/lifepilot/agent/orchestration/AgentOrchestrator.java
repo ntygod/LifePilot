@@ -29,6 +29,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.MediaValidationException;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -66,6 +67,7 @@ public class AgentOrchestrator {
     @Nullable private final MediaProcessor mediaProcessor;
     @Nullable private final AgentCheckpointStore checkpointStore;
     @Nullable private final SuspendStore suspendStore;
+    @Nullable private final SessionWorkspaceService workspaceService;
     private final AgentExecutionPersistenceSupport executionPersistence;
 
     public AgentOrchestrator(
@@ -81,7 +83,8 @@ public class AgentOrchestrator {
             @Nullable MediaProcessor mediaProcessor,
             @Nullable AgentCheckpointStore checkpointStore,
             @Nullable SuspendStore suspendStore,
-            @Nullable ChatTurnService chatTurnService) {
+            @Nullable ChatTurnService chatTurnService,
+            @Nullable SessionWorkspaceService workspaceService) {
         this.agentLoop = agentLoop;
         this.streamingEventHandler = streamingEventHandler;
         this.config = config;
@@ -93,6 +96,7 @@ public class AgentOrchestrator {
         this.mediaProcessor = mediaProcessor;
         this.checkpointStore = checkpointStore;
         this.suspendStore = suspendStore;
+        this.workspaceService = workspaceService;
         this.executionPersistence = new AgentExecutionPersistenceSupport(persistenceHandler, chatTurnService);
     }
 
@@ -132,6 +136,7 @@ public class AgentOrchestrator {
                     config, generationRouter, multimodalRouter, effectiveRequest, agentLoop);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, token, loopContext);
+            cleanupWorkspaceProgress(state);
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
                 return handleSuspendSync(state, traceContext, loopContext);
@@ -228,10 +233,11 @@ public class AgentOrchestrator {
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
             var callback = new StreamingCallback(config, generationRouter, multimodalRouter, agentLoop,
-                    cancellationToken, null, sseManager, streamId,
+                    cancellationToken, loopContext, sseManager, streamId,
                     request.sessionId(), tempTurnId, effectiveRequest);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, cancellationToken, loopContext);
+            cleanupWorkspaceProgress(state);
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
                 handleSuspendStreaming(state, streamId, sseManager, loopContext);
@@ -328,7 +334,8 @@ public class AgentOrchestrator {
                 var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
                         state.steps(), reasoningSummary, finalContent, assistantEntryId,
-                        loopContext.getLastCollectedA2uiTree());
+                        loopContext.getLastCollectedA2uiTree(),
+                        loopContext.streamingTimingsMs());
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 sseManager.closeEmitter(streamId);
             }
@@ -344,7 +351,8 @@ public class AgentOrchestrator {
         if (suspendStore == null) {
             throw new IllegalStateException("SuspendStore 未配置，无法恢复挂起的 Agent");
         }
-        SuspendedAgent suspended = suspendStore.load(traceId)
+        // 原子加载并删除挂起状态，防止并发恢复同一个 Agent
+        SuspendedAgent suspended = suspendStore.loadAndDelete(traceId)
                 .orElseThrow(() -> new IllegalStateException("找不到挂起的 Agent: " + traceId));
         agentLoop.validateResumePayload(suspended.suspendReason(), payload);
 
@@ -354,20 +362,19 @@ public class AgentOrchestrator {
         String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
         state = state.appendStep(new ReactStep.Observation(
                 resumeToolId, null, true, agentLoop.formatResumeObservation(payload), 0, null));
-        suspendStore.delete(traceId);
-
         log.info("Agent 从挂起状态恢复执行：traceId={}, reasonType={}, payloadType={}",
                 traceId, suspended.suspendReason().getClass().getSimpleName(),
                 payload.getClass().getSimpleName());
 
         final ReactAgentState resumedState = state;
-        Thread.startVirtualThread(() -> runResume(resumedState));
+        Thread.startVirtualThread(() -> runResume(traceId, resumedState, suspended));
     }
 
     /** 在虚拟线程中异步执行恢复后的 Agent 逻辑
         避免阻塞调用方（通常是 Web 请求线程），让恢复操作在后台运行
      */
-    private void runResume(ReactAgentState state) {
+    private void runResume(String suspendedTraceId, ReactAgentState state,
+                           SuspendedAgent originalSuspend) {
         var token = new CancellationToken();
         var loopStart = Instant.now();
         var loopContext = new AgentLoopContext();
@@ -395,16 +402,35 @@ public class AgentOrchestrator {
                     config, generationRouter, multimodalRouter, request, agentLoop);
             state = agentLoop.coreLoop(state, request, null, loopStart, callback, token, loopContext);
 
+            if (state.suspended() && state.suspendReason() != null) {
+                handleSuspendSync(state, null, loopContext);
+                log.info("Agent 从挂起恢复后再次进入挂起态：traceId={}, reasonType={}",
+                        state.traceId(), state.suspendReason().getClass().getSimpleName());
+                return;
+            }
+
             boolean testSession = isTestSession(state.sessionId());
             if (!testSession) {
                 String reactStepsJson = serializeReactStepsJson(state.steps());
                 String assistantEntryId = executionPersistence.persistAssistantSync(state, reactStepsJson, loopContext);
                 executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
             }
+            // 挂起状态已在 resumeFromSuspend 中原子删除，无需再次清理
             log.info("Agent 从挂起恢复完成：traceId={}, stepCount={}", state.traceId(), state.stepCount());
         } catch (Exception e) {
             executionPersistence.markTurnFailed(state, e);
-            log.error("Agent 从挂起恢复失败：traceId={}, error={}", state.traceId(), e.getMessage(), e);
+            // 恢复失败时重新保存挂起快照，允许后续重试恢复
+            if (suspendStore != null) {
+                try {
+                    suspendStore.save(originalSuspend);
+                    log.warn("恢复失败，已重新保存挂起快照以允许重试：traceId={}", suspendedTraceId);
+                } catch (Exception saveEx) {
+                    log.error("重新保存挂起快照也失败，状态已丢失：traceId={}, error={}",
+                            suspendedTraceId, saveEx.getMessage());
+                }
+            }
+            log.error("Agent 从挂起恢复失败：traceId={}, suspendedTraceId={}, error={}",
+                    state.traceId(), suspendedTraceId, e.getMessage(), e);
         }
     }
     /**
@@ -450,6 +476,7 @@ public class AgentOrchestrator {
         } catch (MediaValidationException e) {
             log.warn("媒体内容校验失败：sessionId={}, error={}", request.sessionId(), e.getMessage());
             if (sseManager != null && streamId != null) {
+                executionPersistence.markTurnFailed(state, e);
                 streamingEventHandler.sendStreamError(
                         sseManager,
                         streamId,
@@ -555,6 +582,18 @@ public class AgentOrchestrator {
         }
     }
 
+    /** 清理 L1 工作区中的执行进度快照。 */
+    private void cleanupWorkspaceProgress(ReactAgentState state) {
+        if (workspaceService == null || state.sessionId() == null || state.sessionId().isBlank()) {
+            return;
+        }
+        try {
+            workspaceService.resolveBySourceTraceId(state.sessionId(), state.traceId());
+        } catch (Exception e) {
+            log.debug("清理工作区执行进度失败: error={}", e.getMessage());
+        }
+    }
+
     /** 删除指定 session 的 checkpoint，通常在正常完成后调用以清理临时状态 */
     private void clearCheckpoint(AgentRequest request) {
         if (!checkpointEnabled()) {
@@ -569,7 +608,14 @@ public class AgentOrchestrator {
 
     /** 判断是否应该对异常进行降级处理而不是直接抛出 */
     private boolean shouldDegradeUnexpectedException(ReactAgentState state) {
-        return state.stepCount() > 0 || !state.steps().isEmpty();
+        if (state.finalOutput() != null && !state.finalOutput().isBlank()) {
+            return true;
+        }
+        return state.steps().stream().anyMatch(this::isSubstantiveStep);
+    }
+
+    private boolean isSubstantiveStep(ReactStep step) {
+        return !(step instanceof ReactStep.Progress);
     }
 
     /** 构造一个可接受的降级状态，将异常转换为终止原因并保留已有输出 */

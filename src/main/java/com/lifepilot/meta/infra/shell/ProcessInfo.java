@@ -1,5 +1,7 @@
 package com.lifepilot.meta.infra.shell;
 
+import jakarta.annotation.Nullable;
+
 import java.time.Instant;
 
 /**
@@ -8,6 +10,7 @@ import java.time.Instant;
  * @param sessionId 会话标识
  * @param command 启动命令
  * @param state 当前状态
+ * @param exitCode 真实退出码，运行中时为 null
  * @param startTime 启动时间
  * @param workDir 工作目录
  * @author zsg
@@ -17,6 +20,7 @@ public record ProcessInfo(
         String sessionId,
         String command,
         ProcessState state,
+        @Nullable Integer exitCode,
         Instant startTime,
         String workDir
 ) {}

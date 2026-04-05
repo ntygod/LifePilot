@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.model;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -92,5 +93,25 @@ public record GatewayMessage(
             String mimeType,
             byte[] data,
             long size
-    ) {}
+    ) {
+        /** 覆盖 equals — byte[] 需要内容比较而非引用比较。 */
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Attachment other)) return false;
+            return size == other.size
+                    && java.util.Objects.equals(attachmentId, other.attachmentId)
+                    && java.util.Objects.equals(fileName, other.fileName)
+                    && java.util.Objects.equals(mimeType, other.mimeType)
+                    && Arrays.equals(data, other.data);
+        }
+
+        /** 覆盖 hashCode — 与 equals 一致，使用 Arrays.hashCode 处理 byte[]。 */
+        @Override
+        public int hashCode() {
+            int result = java.util.Objects.hash(attachmentId, fileName, mimeType, size);
+            result = 31 * result + Arrays.hashCode(data);
+            return result;
+        }
+    }
 }

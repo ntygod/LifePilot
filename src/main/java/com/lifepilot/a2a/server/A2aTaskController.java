@@ -15,13 +15,15 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * A2A Task 管理 REST 端点。
+ * A2A Task 管理 REST 端点（已废弃，请使用 JSON-RPC 端点 {@code POST /api/a2a}）。
  *
  * <p>提供 Task 状态查询和取消功能。</p>
  *
  * @author zsg
  * @since 2026-02-28
+ * @deprecated 请使用 {@link A2aJsonRpcController} 的 JSON-RPC 2.0 端点
  */
+@Deprecated
 @RestController
 @RequestMapping("/api/a2a/tasks")
 @ConditionalOnProperty(prefix = "lifepilot.a2a.server", name = "enabled", havingValue = "true", matchIfMissing = true)

@@ -7,6 +7,7 @@ import com.lifepilot.a2a.model.A2aAgentSkill;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * A2A Agent Card 生成器。
@@ -43,6 +44,16 @@ public class AgentCardGenerator {
 
         var capabilities = new A2aAgentCapabilities(server.isStreamingEnabled());
 
+        // 配置了 API Key 时声明认证方式
+        Map<String, Object> securitySchemes = null;
+        String apiKey = server.getApiKey();
+        if (apiKey != null && !apiKey.isBlank()) {
+            securitySchemes = Map.of("apiKey", Map.of(
+                    "type", "apiKey",
+                    "in", "header",
+                    "name", "X-API-Key"));
+        }
+
         return new A2aAgentCard(
                 server.getAgentName(),
                 server.getAgentDescription(),
@@ -53,6 +64,6 @@ public class AgentCardGenerator {
                 capabilities,
                 List.of("text"),
                 List.of("text"),
-                null);
+                securitySchemes);
     }
 }

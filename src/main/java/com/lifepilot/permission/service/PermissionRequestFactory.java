@@ -44,7 +44,7 @@ public class PermissionRequestFactory {
     }
 
     public PermissionRequest create(ToolContract tool, ToolInput input, String fallbackTraceId) {
-        ToolExecutionSemantics semantics = tool.executionSemantics();
+        ToolExecutionSemantics semantics = resolveExecutionSemantics(tool, input);
         PermissionActionType actionType = semantics.actionType();
         ToolScopeResolution scopeResolution = semantics.scopeResolver().resolve(input);
         ExecutionGrantScope resourceScope = scopeResolution.scope();
@@ -100,10 +100,26 @@ public class PermissionRequestFactory {
         RiskLevel baseRiskLevel = resolveConfiguredRiskLevel(tool);
         if (baseRiskLevel == null) {
             String defaultRisk = observabilityProperties.getGuardrail().getToolRisk().getDefaultRiskLevel();
-            baseRiskLevel = tool.riskLevel() != null ? tool.riskLevel()
-                    : RiskLevel.valueOf(defaultRisk.toUpperCase(Locale.ROOT));
+            baseRiskLevel = resolveDeclaredRiskLevel(tool, input);
+            if (baseRiskLevel == null) {
+                baseRiskLevel = RiskLevel.valueOf(defaultRisk.toUpperCase(Locale.ROOT));
+            }
         }
         return applyTrustedWorkspaceDowngrade(tool.id(), baseRiskLevel, input);
+    }
+
+    private ToolExecutionSemantics resolveExecutionSemantics(ToolContract tool, ToolInput input) {
+        if (tool instanceof com.lifepilot.tool.BuiltinTool builtinTool) {
+            return builtinTool.resolveExecutionSemantics(input);
+        }
+        return tool.executionSemantics();
+    }
+
+    private RiskLevel resolveDeclaredRiskLevel(ToolContract tool, ToolInput input) {
+        if (tool instanceof com.lifepilot.tool.BuiltinTool builtinTool) {
+            return builtinTool.resolveRiskLevel(input);
+        }
+        return tool.riskLevel();
     }
 
     private SourceKind resolveSourceKind(String raw) {
@@ -127,7 +143,7 @@ public class PermissionRequestFactory {
         if (!"shell.exec".equals(toolId) && !"code.execute".equals(toolId)) {
             return originalLevel;
         }
-        String execPath = firstNonBlankParam(input, "workingDirectory", "cwd");
+        String execPath = firstNonBlankParam(input, "workingDirectory", "workDir", "cwd");
         if (execPath == null || toolConfigProperties.getTrustedWorkspace().getPaths().isEmpty()) {
             return originalLevel;
         }

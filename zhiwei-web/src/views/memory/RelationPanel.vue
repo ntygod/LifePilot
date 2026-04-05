@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RotateCcw } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { RelationItem, RelationListParams } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -75,7 +76,7 @@ async function loadRelations() {
     items.value = result.items
     total.value = result.total
   } catch (e: any) {
-    console.error('加载关系列表失败:', e)
+    logger.error('加载关系列表失败:', e)
     error.value = e?.message || '加载关系列表失败，请稍后重试。'
   } finally {
     loading.value = false

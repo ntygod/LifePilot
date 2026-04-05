@@ -1,17 +1,17 @@
 ---
 id: code-assistant
 name: "编码代理"
-description: "调度外部编码 Agent（Codex/Claude Code/Pi）执行编码任务：新功能开发、PR 审查、大规模重构、迭代式编码。不适用于：简单单行修改（直接编辑）、仅读取代码（用 file.read）"
+description: "调度外部编码 Agent 执行开发/重构/PR 审查（简单修改直接编辑）"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
-  - process.list
-  - process.output
-  - process.write
-  - process.kill
+  - shell.process
   - file.read
   - file.write
   - file.list
+  - git.query
+  - git.mutate
+  - code.execute
 triggers:
   - "写代码"
   - "编程"
@@ -46,8 +46,8 @@ triggers:
 ### Codex CLI
 
 ```bash
-# 后台启动 Codex（需要 PTY 模式）
-shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true)
+# 后台启动 Codex（交互式应用需要 PTY 模式）
+shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true, pty=true)
 ```
 
 | 标志 | 效果 |
@@ -60,14 +60,27 @@ shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirecto
 ```bash
 # 后台启动 Claude Code（使用 --print 模式，无需 PTY）
 shell.exec(command="claude --permission-mode bypassPermissions --print '你的任务描述'", workingDirectory="/path/to/project", background=true)
+
+# 需要自定义 API Key 时，使用 env 参数注入环境变量
+shell.exec(command="claude --print '任务描述'", workingDirectory="/path/to/project", background=true, env={"ANTHROPIC_API_KEY": "sk-xxx"})
 ```
 
 ### Pi / OpenCode
 
 ```bash
-# 后台启动（交互式终端应用）
-shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true)
+# 后台启动（交互式终端应用，建议开 PTY）
+shell.exec(command="pi '你的任务描述'", workingDirectory="/path/to/project", background=true, pty=true)
 ```
+
+### shell.exec 高级参数
+
+| 参数 | 说明 |
+|------|------|
+| `background=true` | 立即后台化，返回 sessionId |
+| `yieldMs=5000` | 同步等待 5 秒，若进程未结束自动转后台（适合快速任务） |
+| `pty=true` | 分配伪终端（仅 Unix，交互式 TUI 应用需要） |
+| `env={...}` | 注入额外环境变量（`PATH`/`LD_PRELOAD` 等危险 key 会被安全拦截） |
+| `shell="bash"` | 指定 Unix 解释器（默认 sh，Windows 固定 PowerShell） |
 
 ## 核心工作流
 
@@ -81,11 +94,15 @@ shell.exec(command="...", workingDirectory="项目路径", background=true)
 ### 2. 监控进度
 
 ```
-process.output(sessionId="abc123")
+shell.process(action=output, sessionId="abc123")
 → 返回增量输出，查看编码进展
 ```
 
-定期轮询输出，关注：
+**两种监控方式：**
+- **主动轮询**：定期调用 `shell.process(action=output)` 获取增量输出
+- **SSE 实时推送**：前端可订阅 `GET /api/processes/stream`，后台进程输出会通过 `process-output` 和 `process-state-change` 事件自动推送
+
+关注：
 - 编译错误或测试失败
 - Agent 请求确认或输入
 - 任务完成信号
@@ -93,7 +110,7 @@ process.output(sessionId="abc123")
 ### 3. 交互（按需）
 
 ```
-process.write(sessionId="abc123", input="yes\n")
+shell.process(action=write, sessionId="abc123", input="yes\n")
 → 向 Agent 发送确认或输入
 ```
 
@@ -101,10 +118,10 @@ process.write(sessionId="abc123", input="yes\n")
 
 ```
 # 查看最终输出
-process.output(sessionId="abc123")
+shell.process(action=output, sessionId="abc123")
 
 # 如需终止
-process.kill(sessionId="abc123")
+shell.process(action=kill, sessionId="abc123")
 ```
 
 ## 并行任务模式
@@ -121,8 +138,8 @@ shell.exec(command="codex exec --full-auto 'Fix issue #78'", workingDirectory="/
 # 同时启动另一个任务
 shell.exec(command="codex exec --full-auto 'Fix issue #79'", workingDirectory="/tmp/issue-79", background=true)
 
-# 用 process.list 查看所有进程
-process.list()
+# 查看所有后台进程
+shell.process(action=list)
 ```
 
 ## 进度更新规则
@@ -135,6 +152,6 @@ process.list()
 ## 常见错误处理
 
 - **Agent 未安装**：提示用户安装对应 CLI（`npm install -g @openai/codex`、`npm install -g @anthropic-ai/claude-code` 等）
-- **进程超时**：检查 `process.output` 确认是否卡住，必要时 `process.kill` 后重试
+- **进程超时**：用 `shell.process(action=output)` 确认是否卡住，必要时 `shell.process(action=kill)` 后重试
 - **权限错误**：确认工作目录权限，Claude Code 需要 `--permission-mode bypassPermissions`
-- **并发限制**：`process.list` 查看当前进程数，必要时先终止空闲进程
+- **并发限制**：用 `shell.process(action=list)` 查看当前进程数，必要时先终止空闲进程

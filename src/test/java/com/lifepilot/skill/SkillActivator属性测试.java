@@ -38,7 +38,8 @@ class SkillActivator属性测试 {
         // 构建测试环境
         var registry = new StubSkillRegistry();
         registry.addSkill(definition);
-        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher());
+        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher(),
+                new com.lifepilot.skill.config.SkillConfigProperties());
 
         // 激活
         SkillActivation activation = activator.activate(definition.id());
@@ -58,7 +59,8 @@ class SkillActivator属性测试 {
 
         var registry = new StubSkillRegistry();
         registry.addSkill(definition);
-        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher());
+        var activator = new SkillActivator(registry, new SkillMetricsTracker(), new NoOpEventPublisher(),
+                new com.lifepilot.skill.config.SkillConfigProperties());
 
         // 多次激活
         SkillActivation first = activator.activate(definition.id());
@@ -94,7 +96,9 @@ class SkillActivator属性测试 {
 
         var nameArb = safeString(1, 30);
         var descArb = safeString(1, 50);
-        var instructionsArb = safeString(1, 100);
+        // 排除含 {skill_scripts_dir} 占位符的字符串，避免 activate() 替换后断言失败
+        var instructionsArb = safeString(1, 100)
+                .filter(s -> !s.contains("{skill_scripts_dir}"));
 
         var toolArb = Arbitraries.strings()
                 .withCharRange('a', 'z')

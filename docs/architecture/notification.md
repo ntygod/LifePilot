@@ -41,11 +41,11 @@ graph TB
     subgraph "渠道层"
         CFG["ChannelConfigProvider（可选）"]
         MC["MessageConverter"]
-        WEB["WebChannelAdapter / SSE"]
-        WECOM["WecomChannelAdapter"]
-        FEISHU["FeishuChannelAdapter"]
-        DT["DingtalkChannelAdapter"]
         SSE["SseSessionManager"]
+    end
+
+    subgraph "插件化渠道投递"
+        PLUGIN_NOTE["渠道投递已改为插件架构<br/>（具体渠道适配器由插件提供）"]
     end
 
     subgraph "Web 管理接口"
@@ -63,10 +63,7 @@ graph TB
     IMPL --> REPO
     IMPL --> CFG
     IMPL --> MC
-    MC --> WEB
-    MC --> WECOM
-    MC --> FEISHU
-    MC --> DT
+    MC --> PLUGIN_NOTE
     IMPL --> SSE
     NC --> REPO
     NSC --> REPO
@@ -84,7 +81,7 @@ graph TB
 通知模块的核心实现，职责包括：
 1. 解析请求中的目标用户、内容和渠道
 2. 将 `ResponseContent` 转换成各渠道可发送格式
-3. 调用对应 `ChannelAdapter` 发送
+3. 调用渠道插件发送（渠道投递已改为插件架构，具体渠道适配器由插件提供）
 4. 针对 Web 渠道广播 SSE 通知事件
 5. 将 `SENT / FAILED` 结果持久化到 `notification_history`
 
@@ -147,7 +144,7 @@ sequenceDiagram
     participant Caller as 调用方
     participant Service as DefaultNotificationService
     participant Converter as MessageConverter
-    participant Adapter as ChannelAdapter
+    participant Adapter as 渠道插件
     participant Repo as NotificationRepository
     participant SSE as SseSessionManager
 
@@ -197,7 +194,7 @@ sequenceDiagram
 | 被依赖 | `agent.task` | cron / 主动提醒通过 `NotificationService` 发送结果 |
 | 被依赖 | `workflow` | `NotifyStep` 通过 `NotificationService` 投递通知 |
 | 被依赖 | `meta` | `interact.notify` 通过 `NotifyToolExecutor` 调用通知服务 |
-| 依赖 | `interaction.channel` | 通过 `ChannelAdapter` 向外部渠道发送 |
+| 依赖 | `interaction.channel` | 通过插件架构向外部渠道发送（具体渠道适配器由插件提供） |
 | 依赖 | `interaction.web.sse` | 通过 `SseSessionManager` 实时广播 Web 通知 |
 | 依赖 | SQLite | 持久化通知历史 |
 

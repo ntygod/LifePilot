@@ -6,6 +6,7 @@ import { workflowApi } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUiStore } from '@/stores/ui'
 import type { WorkflowDetail, WorkflowInputParam, WorkflowItem } from '@/types'
+import { logger } from '@/utils/logger'
 import { stateConfig } from '@/constants/workflowState'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -90,7 +91,7 @@ async function handleExport(workflowId: string) {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    console.error('导出失败:', e)
+    logger.error('导出失败:', e)
   } finally {
     exportLoading.value = false
   }
@@ -111,7 +112,7 @@ async function handleBatchExport() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    console.error('批量导出失败:', e)
+    logger.error('批量导出失败:', e)
   } finally {
     exportLoading.value = false
   }
@@ -155,7 +156,7 @@ async function handleImport(event: Event) {
     await workflowApi.importWorkflow(yamlContent)
     await store.fetchList()
   } catch (e) {
-    console.error('导入失败:', e)
+    logger.error('导入失败:', e)
   } finally {
     importLoading.value = false
     input.value = ''
@@ -437,7 +438,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <template v-if="!store.current">
           <PageHeader
@@ -585,7 +586,7 @@ onBeforeUnmount(() => {
               <article
                 v-for="workflow in filteredList"
                 :key="workflow.id"
-                class="list-card cursor-pointer p-5"
+                class="list-card cursor-pointer p-4"
                 @click="selectWorkflow(workflow)"
               >
                 <div class="flex items-start justify-between gap-4">
@@ -652,7 +653,7 @@ onBeforeUnmount(() => {
                 <div class="surface-label">工作流</div>
                 <div class="space-y-2">
                   <div class="flex flex-wrap items-center gap-2">
-                    <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                    <h1 class="text-2xl font-semibold tracking-tight text-foreground">
                       {{ store.current.name }}
                     </h1>
                     <Badge :variant="store.current.enabled ? 'default' : 'secondary'">

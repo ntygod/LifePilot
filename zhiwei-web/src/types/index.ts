@@ -263,6 +263,10 @@ export interface ObservationStep extends ReactStepBase {
   success: boolean
   outputSummary: string
   tokensUsed: number
+  /** 文件工具成功时提取的生成文件绝对路径 */
+  generatedFilePath?: string
+  /** Shell / 代码执行的工作目录 */
+  workingDirectory?: string
 }
 
 /** 回答步骤 */
@@ -967,7 +971,7 @@ export interface AgentLlmConfig {
 export interface AgentKnowledgeBaseBinding {
   id: string
   name: string
-  topK?: number
+  top_k?: number
   maxContextTokens?: number
 }
 
@@ -1034,7 +1038,6 @@ export interface ToolSummary {
   type: 'PLUGIN' | 'SKILL' | 'MCP'
   source: string
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
-  enabled: boolean
   idempotent?: boolean
 }
 

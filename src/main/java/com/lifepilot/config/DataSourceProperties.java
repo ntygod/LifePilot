@@ -15,7 +15,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "lifepilot.datasource")
 public class DataSourceProperties {
 
-    /** SQLite busy_timeout（毫秒），默认 5000。 */
-    private int busyTimeout = 5000;
+    /** SQLite busy_timeout（毫秒），默认 30000。 */
+    private int busyTimeout = 30000;
 
 }

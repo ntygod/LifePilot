@@ -26,7 +26,7 @@ import org.springframework.context.event.EventListener;
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.REGEX,
                 pattern = {
-                        "com\\.lifepilot\\.a2a\\.server\\.(AgentCardController|A2aTaskController|A2aMessageController)",
+                        "com\\.lifepilot\\.a2a\\.server\\.(AgentCardController|A2aTaskController|A2aMessageController|A2aJsonRpcController)",
                         ".*Test\\$.*Config"
                 }
         )

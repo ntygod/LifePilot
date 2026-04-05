@@ -40,17 +40,6 @@ class GuardrailEngineTest {
     }
 
     @Test
-    void 注册预算策略后_工具调用通过该策略检查() {
-        engine.registerPolicy(GuardrailPolicy.budgetLimitPolicy("budget", true, 10, 99999));
-
-        var tool = 创建工具("test.echo");
-        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
-
-        assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
-        assertThat(((GuardrailResult.Passed) result).policyId()).isEqualTo("all_policies");
-    }
-
-    @Test
     void 内容安全策略命中阻断模式_返回Blocked() {
         engine.registerPolicy(new ContentSafetyPolicy(
                 "content-safety", true, 1, List.of("危险操作"), List.of()));

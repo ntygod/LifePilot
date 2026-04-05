@@ -43,7 +43,52 @@ npm run test:run
 npm run build
 ```
 
-## 4. 推荐发版方式
+## 4. 桌面端发版检查
+
+桌面客户端随 tag 推送自动构建（`.github/workflows/build-desktop.yml`），发版前额外确认：
+
+### 版本号同步
+
+确保以下 4 处版本号一致：
+
+- `pom.xml` → `<version>`（如 `0.2.0-SNAPSHOT` → `0.2.0`）
+- `zhiwei-web/package.json` → `version`
+- `zhiwei-web/src-tauri/tauri.conf.json` → `version`
+- `zhiwei-web/src-tauri/Cargo.toml` → `version`
+
+### 构建前测试
+
+```bash
+# 1. 后端 JAR
+mvn clean package -DskipTests
+
+# 2. 前端
+cd zhiwei-web && npm run build
+
+# 3. 本地桌面端启动验证（需要 Rust 工具链）
+cd zhiwei-web && npx tauri build
+```
+
+### 发布前 Checklist
+
+- [ ] 版本号 4 处已同步
+- [ ] 本地 `npx tauri build` 可以成功打包
+- [ ] 安装包可正常安装并启动
+- [ ] 首次引导向导（SetupWizard）流程正常
+- [ ] 后端健康检查通过，对话功能可用
+- [ ] 系统托盘图标显示正常
+
+### 自动发布
+
+推送 `v*` 标签后，GitHub Actions 会自动：
+
+1. 在 Windows x64 / macOS ARM64 / Linux x64 上并行构建
+2. 每个平台打包 JRE + JAR + 前端 + Tauri 安装包
+3. 创建 GitHub Release 草稿并附加安装包
+
+确认草稿内容后手动发布即可。
+
+## 5. 推荐发版方式
 
 ### 方式一：GitHub 网页
 
@@ -67,7 +112,7 @@ gh release create v0.2.0 --draft --generate-notes --target develop --title "v0.2
 
 确认草稿内容后，再到网页上补充说明并发布。
 
-## 5. Release Notes 建议结构
+## 6. Release Notes 建议结构
 
 每次发版正文尽量保持这 4 段：
 
@@ -78,14 +123,14 @@ gh release create v0.2.0 --draft --generate-notes --target develop --title "v0.2
 
 如果没有破坏性变更，也建议明确写一句“本版本无破坏性变更”。
 
-## 6. 发版后要做什么
+## 7. 发版后要做什么
 
 - 检查 Release 页是否显示正确
 - 确认 tag 指向预期提交
 - 如有安装说明变化，同步更新 README
 - 如这是一个重要版本，可新增一个置顶 Issue 或 Discussion 介绍变化
 
-## 7. 当前仓库建议
+## 8. 当前仓库建议
 
 对 ZhiWei 来说，当前最合适的习惯是：
 

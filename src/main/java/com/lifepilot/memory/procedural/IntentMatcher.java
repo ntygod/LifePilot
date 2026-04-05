@@ -17,6 +17,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 意图匹配器，结合向量检索与 FTS 检索为用户意图匹配最合适的操作模板。
@@ -30,6 +32,7 @@ public class IntentMatcher {
     private static final float SEMANTIC_WEIGHT = 0.7f;
     private static final float KEYWORD_WEIGHT = 0.3f;
     private static final int SEARCH_TOP_K = 10;
+    private static final long SEARCH_TIMEOUT_SECONDS = 5;
 
     private final ProceduralMemory proceduralMemory;
     private final VectorSearcher vectorSearcher;
@@ -139,7 +142,11 @@ public class IntentMatcher {
 
     private <T> List<T> safeGet(CompletableFuture<List<T>> future, String label) {
         try {
-            return future.join();
+            return future.get(SEARCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.warn("意图匹配超时，跳过: label={}, timeout={}s", label, SEARCH_TIMEOUT_SECONDS);
+            return List.of();
         } catch (Exception e) {
             log.warn("意图匹配异步执行失败: label={}, error={}", label, e.getMessage());
             return List.of();

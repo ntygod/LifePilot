@@ -1,0 +1,174 @@
+package com.lifepilot.meta.infra.git;
+
+import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Git 工具提供者。
+ *
+ * <p>集中管理 Git 元能力工具：query / mutate。</p>
+ *
+ * @author zsg
+ * @since 2026-03-31
+ */
+public class GitToolProvider {
+
+    private static final List<String> INFRA_TAGS = List.of("infrastructure");
+
+    private final GitCommandExecutor gitCmd;
+    private final MetaProperties.Infra.Git gitConfig;
+
+    public GitToolProvider(GitCommandExecutor gitCmd, MetaProperties.Infra.Git gitConfig) {
+        this.gitCmd = gitCmd;
+        this.gitConfig = gitConfig;
+    }
+
+    /**
+     * 构建所有 Git 工具的 BuiltinTool 列表。
+     *
+     * @return Git 工具列表
+     */
+    public List<BuiltinTool> buildGitTools() {
+        var queryExecutor = new GitQueryActionDispatchExecutor(
+                new GitStatusToolExecutor(gitCmd),
+                new GitDiffToolExecutor(gitCmd, gitConfig),
+                new GitLogToolExecutor(gitCmd, gitConfig),
+                new GitBlameToolExecutor(gitCmd, gitConfig)
+        );
+        var mutateExecutor = new GitMutateActionDispatchExecutor(
+                new GitCommitToolExecutor(gitCmd),
+                new GitStashToolExecutor(gitCmd),
+                new GitBranchToolExecutor(gitCmd)
+        );
+        return List.of(
+                buildGitQueryTool(queryExecutor),
+                buildGitMutateTool(mutateExecutor)
+        );
+    }
+
+    /** 构建统一 Git 查询工具。 */
+    private BuiltinTool buildGitQueryTool(GitQueryActionDispatchExecutor executor) {
+        return BuiltinTool.builder()
+                .id("git.query")
+                .category(ToolCategory.PERCEPTION)
+                .name("Git 查询")
+                .description("查询 Git 仓库信息。通过 action 参数支持四类只读操作：" +
+                        "status=查看仓库状态，diff=查看差异，log=查看提交历史，blame=逐行追溯文件。")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("action"),
+                        "properties", Map.ofEntries(
+                                Map.entry("action", Map.of(
+                                        "type", "string",
+                                        "enum", List.of("status", "diff", "log", "blame"),
+                                        "description", "Git 查询动作类型")),
+                                Map.entry("path", Map.of(
+                                        "type", "string",
+                                        "description", "Git 仓库路径，默认为当前工作目录")),
+                                Map.entry("staged", Map.of(
+                                        "type", "boolean",
+                                        "description", "action=diff 时是否查看暂存区差异（--staged），默认 false")),
+                                Map.entry("filePath", Map.of(
+                                        "type", "string",
+                                        "description", "action=diff/log/blame 时限定查看的文件路径")),
+                                Map.entry("count", Map.of(
+                                        "type", "integer",
+                                        "description", "action=log 时返回的提交数量，默认 10，最大 " + gitConfig.getMaxLogEntries())),
+                                Map.entry("startLine", Map.of(
+                                        "type", "integer",
+                                        "description", "action=blame 时起始行号（1-based），默认 1")),
+                                Map.entry("endLine", Map.of(
+                                        "type", "integer",
+                                        "description", "action=blame 时结束行号（1-based），默认 startLine + " + gitConfig.getMaxBlameLines()))
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
+                .tags(INFRA_TAGS)
+                .actionMetadataFrom(executor)
+                .executor(executor)
+                .build();
+    }
+
+    /** 构建统一 Git 变更工具。 */
+    private BuiltinTool buildGitMutateTool(GitMutateActionDispatchExecutor executor) {
+        return BuiltinTool.builder()
+                .id("git.mutate")
+                .category(ToolCategory.ACTION)
+                .name("Git 变更")
+                .description("执行 Git 写操作。通过 action 参数支持三类操作：" +
+                        "commit=提交暂存区变更，stash=管理暂存区，branch=管理分支。")
+                .inputSchema(JsonSchema.of(buildMutateSchema()))
+                .riskLevel(RiskLevel.HIGH)
+                .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.EXECUTE_SHELL,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
+                .tags(INFRA_TAGS)
+                .actionMetadataFrom(executor)
+                .executor(executor)
+                .build();
+    }
+
+    private Map<String, Object> buildMutateSchema() {
+        var properties = new LinkedHashMap<String, Object>();
+        properties.put("action", Map.of(
+                "type", "string",
+                "enum", List.of("commit", "stash", "branch"),
+                "description", "Git 写操作类型"
+        ));
+        properties.put("path", Map.of(
+                "type", "string",
+                "description", "Git 仓库路径，默认为当前工作目录"
+        ));
+        properties.put("message", Map.of(
+                "type", "string",
+                "description", "action=commit 时的提交信息；action=stash 时可作为 stash 描述"
+        ));
+        properties.put("files", Map.of(
+                "type", "array",
+                "description", "action=commit 时要先暂存的文件路径列表（可选）",
+                "items", Map.of("type", "string")
+        ));
+        properties.put("stashAction", Map.of(
+                "type", "string",
+                "description", "action=stash 时的具体操作：push / pop / list / drop"
+        ));
+        properties.put("index", Map.of(
+                "type", "integer",
+                "description", "action=stash 且 stashAction=drop 时的 stash 索引号，默认 0"
+        ));
+        properties.put("branchAction", Map.of(
+                "type", "string",
+                "description", "action=branch 时的具体操作：list / create / switch / delete"
+        ));
+        properties.put("name", Map.of(
+                "type", "string",
+                "description", "action=branch 时的分支名称；create/switch/delete 时必填"
+        ));
+
+        var schema = new LinkedHashMap<String, Object>();
+        schema.put("type", "object");
+        schema.put("required", List.of("action"));
+        schema.put("properties", properties);
+        return schema;
+    }
+}

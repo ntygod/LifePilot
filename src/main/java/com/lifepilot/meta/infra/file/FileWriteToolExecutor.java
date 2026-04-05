@@ -1,8 +1,11 @@
 package com.lifepilot.meta.infra.file;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.file.history.FileEditHistory;
+import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,16 +35,52 @@ public class FileWriteToolExecutor {
     private static final Logger log = LoggerFactory.getLogger(FileWriteToolExecutor.class);
 
     private final PathSecurityChecker securityChecker;
+    @Nullable
+    private final FileEditHistory editHistory;
+    @Nullable
+    private final LintHookExecutor lintHook;
+    @Nullable
+    private final MetaProperties.Infra.FileEdit fileEditConfig;
 
     public FileWriteToolExecutor(MetaProperties properties) {
         this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+        this.editHistory = null;
+        this.lintHook = null;
+        this.fileEditConfig = null;
     }
 
     /**
-     * 构造函数 — 允许注入自定义 PathSecurityChecker（用于测试）。
+     * 构造函数 — 支持注入文件编辑历史和 lint 钩子。
+     *
+     * @param properties   元能力配置
+     * @param editHistory  文件编辑历史（可为 null）
+     * @param lintHook     lint 钩子执行器（可为 null）
      */
-    FileWriteToolExecutor(PathSecurityChecker securityChecker) {
+    public FileWriteToolExecutor(MetaProperties properties,
+                                 @Nullable FileEditHistory editHistory,
+                                 @Nullable LintHookExecutor lintHook) {
+        this.securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
+        this.fileEditConfig = properties.getInfra().getFileEdit();
+    }
+
+    /**
+     * 构造函数 — 共享 PathSecurityChecker 实例。
+     *
+     * @param securityChecker 路径安全检查器（共享）
+     * @param editHistory     文件编辑历史（可为 null）
+     * @param lintHook        lint 钩子执行器（可为 null）
+     * @param fileEditConfig  文件编辑配置（可为 null）
+     */
+    FileWriteToolExecutor(PathSecurityChecker securityChecker,
+                          @Nullable FileEditHistory editHistory,
+                          @Nullable LintHookExecutor lintHook,
+                          @Nullable MetaProperties.Infra.FileEdit fileEditConfig) {
         this.securityChecker = securityChecker;
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
+        this.fileEditConfig = fileEditConfig;
     }
 
     /**
@@ -83,8 +122,14 @@ public class FileWriteToolExecutor {
                 }
             }
 
-            byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
             Path normalizedPath = filePath.toAbsolutePath().normalize();
+
+            // 修改前捕获快照（仅对已存在的文件）
+            if (editHistory != null && Files.exists(normalizedPath)) {
+                editHistory.captureBeforeModify(normalizedPath);
+            }
+
+            byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
 
             if ("append".equalsIgnoreCase(mode)) {
                 // 追加模式
@@ -110,6 +155,16 @@ public class FileWriteToolExecutor {
             data.put("path", normalizedPath.toString());
             data.put("bytesWritten", bytes.length);
             data.put("mode", mode);
+
+            // 写入成功后执行 lint 检查
+            if (lintHook != null && fileEditConfig != null && fileEditConfig.isAutoLint()) {
+                String lintOutput = lintHook.runLint(normalizedPath,
+                        fileEditConfig.getLintCommands(),
+                        fileEditConfig.getLintTimeoutSeconds());
+                if (!lintOutput.isEmpty()) {
+                    data.put("lintWarning", lintOutput);
+                }
+            }
 
             return ToolResult.success(Map.copyOf(data));
 

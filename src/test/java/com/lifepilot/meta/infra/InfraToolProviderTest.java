@@ -40,7 +40,7 @@ class InfraToolProviderTest {
                 "general",
                 true
         ));
-        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null);
+        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -59,48 +59,33 @@ class InfraToolProviderTest {
         verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
-        var expectedToolIds = List.of(
-                // 信息获取（3）
+        // 基础工具（始终注册，不依赖外部环境）
+        var alwaysExpected = List.of(
+                // 信息获取（2）
                 "web.search",
                 "web.fetch",
-                "http.request",
-                // 推理辅助（1）
-                "reason.calculate",
-                // Shell 执行（1）
+                // Shell（1，shell.exec 始终注册；shell.process 仅当 processManager/sessionManager 可用时注册）
                 "shell.exec",
-                // 浏览器自动化（14）
-                "browser.navigate",
-                "browser.click",
-                "browser.input",
-                "browser.screenshot",
-                "browser.scroll",
-                "browser.wait",
-                "browser.hover",
-                "browser.select",
-                "browser.keyboard",
-                "browser.evaluate",
-                "browser.accessibility",
-                "browser.tab",
-                "browser.storage",
-                "browser.close",
+                // 浏览器自动化（1）
+                "browser",
                 // 代码执行（1）
                 "code.execute",
-                // 文件系统（11）
+                // 文件系统（5）
                 "file.read",
                 "file.write",
                 "file.list",
-                "file.search",
-                "file.delete",
-                "file.copy",
-                "file.move",
-                "file.info",
-                "file.patch",
-                "file.grep",
-                "file.find"
+                "file.edit",
+                "file.manage",
+                // Git 工具（2）
+                "git.query",
+                "git.mutate"
         );
-        assertThat(tools).hasSize(expectedToolIds.size());
-        assertThat(tools).extracting(BuiltinTool::id)
-                .containsExactlyInAnyOrderElementsOf(expectedToolIds);
+        var toolIds = tools.stream().map(BuiltinTool::id).toList();
+        assertThat(toolIds).containsAll(alwaysExpected);
+        // shell.process 工具只在 processManager 或 sessionManager 可用时注册，不强制断言
+        int expectedMin = alwaysExpected.size();
+        int expectedMax = alwaysExpected.size() + 1; // shell.process
+        assertThat(tools.size()).isBetween(expectedMin, expectedMax);
     }
 
     @Test
@@ -131,20 +116,16 @@ class InfraToolProviderTest {
             toolMap.put(tool.id(), tool.riskLevel());
         }
 
-        // 信息获取 / 推理 → LOW
+        // 信息获取 → LOW
         assertThat(toolMap.get("web.search")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
         assertThat(toolMap.get("web.fetch")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
-        assertThat(toolMap.get("reason.calculate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
 
         // Shell / 代码执行 → HIGH
         assertThat(toolMap.get("shell.exec")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
         assertThat(toolMap.get("code.execute")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
 
-        // 浏览器导航/点击/输入 → MEDIUM，截图 → LOW
-        assertThat(toolMap.get("browser.navigate")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-        assertThat(toolMap.get("browser.click")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-        assertThat(toolMap.get("browser.input")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
-        assertThat(toolMap.get("browser.screenshot")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+        // 浏览器 → HIGH（包含 evaluate 等高风险 action）
+        assertThat(toolMap.get("browser")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
     }
 
     @Test
@@ -163,8 +144,7 @@ class InfraToolProviderTest {
 
         assertThat(toolMap.get("file.read").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
         assertThat(toolMap.get("file.write").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("file.search").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("file.patch").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
-        assertThat(toolMap.get("file.find").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.edit").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("file.manage").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
     }
 }

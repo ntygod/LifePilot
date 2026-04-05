@@ -1,0 +1,30 @@
+# ZhiWei 桌面端所需的 Java 模块列表
+# 用于 jlink 构建精简 JRE
+#
+# 基础模块
+java.base
+java.logging
+java.xml
+java.sql
+java.naming
+java.management
+java.instrument
+java.net.http
+java.prefs
+java.scripting
+java.security.jgss
+java.security.sasl
+java.transaction.xa
+java.compiler
+java.datatransfer
+java.desktop
+#
+# JDK 工具模块
+jdk.crypto.ec
+jdk.crypto.cryptoki
+jdk.httpserver
+jdk.unsupported
+jdk.zipfs
+jdk.jdwp.agent
+jdk.management
+jdk.net

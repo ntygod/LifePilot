@@ -100,9 +100,11 @@ class ExperienceSummarizerTest {
                 .channel("web")
                 .steps(List.of(
                         new ReactStep.ToolCall("shell.exec", "执行 Shell 命令", "{\"command\":\"echo hi\"}", 10),
-                        new ReactStep.Observation("shell.exec", "执行 Shell 命令", true, "hi", 0)
+                        new ReactStep.Observation("shell.exec", "执行 Shell 命令", true, "hi", 0),
+                        new ReactStep.ToolCall("shell.exec", "执行 Shell 命令", "{\"command\":\"echo done\"}", 10),
+                        new ReactStep.Observation("shell.exec", "执行 Shell 命令", true, "done", 0)
                 ))
-                .stepCount(2)
+                .stepCount(4)
                 .shortTermMemory(List.of())
                 .mentionedEntities(List.of())
                 .budget(Budget.builder()

@@ -1,12 +1,16 @@
 package com.lifepilot.a2a.server;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.a2a.model.*;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
-import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.registry.AgentRegistry;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -32,15 +36,31 @@ public class A2aAgentExecutor {
     private final AgentExecutor agentExecutor;
     private final AgentOrchestrator agentOrchestrator;
     private final A2aTaskStore taskStore;
+    private final ObjectMapper objectMapper;
+
+    private final Counter syncSuccessCounter;
+    private final Counter syncFailedCounter;
+    private final Counter streamSuccessCounter;
+    private final Counter streamFailedCounter;
+    private final Timer executionTimer;
 
     public A2aAgentExecutor(AgentRegistry agentRegistry,
                             AgentExecutor agentExecutor,
                             AgentOrchestrator agentOrchestrator,
-                            A2aTaskStore taskStore) {
+                            A2aTaskStore taskStore,
+                            MeterRegistry meterRegistry,
+                            ObjectMapper objectMapper) {
         this.agentRegistry = agentRegistry;
         this.agentExecutor = agentExecutor;
         this.agentOrchestrator = agentOrchestrator;
         this.taskStore = taskStore;
+        this.objectMapper = objectMapper;
+
+        this.syncSuccessCounter = meterRegistry.counter("a2a.server.messages.total", "method", "sync", "status", "success");
+        this.syncFailedCounter = meterRegistry.counter("a2a.server.messages.total", "method", "sync", "status", "failed");
+        this.streamSuccessCounter = meterRegistry.counter("a2a.server.messages.total", "method", "stream", "status", "success");
+        this.streamFailedCounter = meterRegistry.counter("a2a.server.messages.total", "method", "stream", "status", "failed");
+        this.executionTimer = meterRegistry.timer("a2a.server.execution.duration");
     }
 
     /**
@@ -51,64 +71,39 @@ public class A2aAgentExecutor {
      * @return 执行完成的 A2aTask
      */
     public A2aTask execute(A2aMessage message, @Nullable String skillId) {
-        // 检查是否引用已有 Task
-        A2aTask task;
-        if (message.taskId() != null) {
-            var existing = taskStore.find(message.taskId());
-            if (existing.isPresent()) {
-                task = taskStore.appendHistory(message.taskId(), message);
-            } else {
-                task = taskStore.create(message);
-            }
-        } else {
-            task = taskStore.create(message);
-        }
-
+        A2aTask task = taskStore.resolveOrCreate(message);
         String taskId = task.id();
         taskStore.updateStatus(taskId, A2aTaskState.WORKING, null);
 
-        try {
-            // 提取文本内容
-            String textContent = extractText(message);
-
-            String result;
-            if (skillId != null && !skillId.isBlank()) {
-                // 路由到指定 Agent
-                var definition = agentRegistry.find(skillId);
-                if (definition.isEmpty()) {
-                    taskStore.updateStatus(taskId, A2aTaskState.FAILED, "未知 Skill: " + skillId);
+        return executionTimer.record(() -> {
+            try {
+                String result = doExecute(extractText(message), taskId, skillId);
+                if (result == null) {
+                    // 确保 FAILED 状态已设置（doExecute 中 skillId 未找到时已设置，其他情况兜底）
+                    var current = taskStore.find(taskId).orElseThrow();
+                    if (current.status().state() != A2aTaskState.FAILED) {
+                        taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行返回空结果");
+                    }
+                    syncFailedCounter.increment();
                     return taskStore.find(taskId).orElseThrow();
                 }
-                // 使用 AgentExecutor 执行子 Agent（A2A 目前不携带多模态媒体）
-                var subRequest = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"),
-                        null,
-                        definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
-                        null, 0, definition.get().preferredProvider(), null, null, null);
-                var subResult = agentExecutor.execute(definition.get(), subRequest);
-                result = subResult.output();
-                } else {
-                    // 路由到主 AgentOrchestrator（A2A 目前不携带多模态媒体）
-                    var request = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"));
-                AgentResponse response = agentOrchestrator.run(request);
-                result = response.content();
+
+                var artifact = new A2aArtifact(
+                        UUID.randomUUID().toString(),
+                        List.of(new A2aPart.Text(result, null)),
+                        null, null);
+                taskStore.addArtifact(taskId, artifact);
+                taskStore.updateStatus(taskId, A2aTaskState.COMPLETED, null);
+
+                syncSuccessCounter.increment();
+                log.info("A2A 任务执行完成: taskId={}, skillId={}", taskId, skillId);
+            } catch (Exception e) {
+                log.warn("A2A 任务执行异常: taskId={}, error={}", taskId, e.getMessage(), e);
+                taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行异常: " + e.getMessage());
+                syncFailedCounter.increment();
             }
-
-            // 封装 Artifact
-            var artifact = new A2aArtifact(
-                    UUID.randomUUID().toString(),
-                    List.of(new A2aPart.Text(result, null)),
-                    null, null);
-            taskStore.addArtifact(taskId, artifact);
-            taskStore.updateStatus(taskId, A2aTaskState.COMPLETED, null);
-
-            log.info("A2A 任务执行完成: taskId={}, skillId={}", taskId, skillId);
-
-        } catch (Exception e) {
-            log.warn("A2A 任务执行异常: taskId={}, error={}", taskId, e.getMessage(), e);
-            taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行异常: " + e.getMessage());
-        }
-
-        return taskStore.find(taskId).orElseThrow();
+            return taskStore.find(taskId).orElseThrow();
+        });
     }
 
     /**
@@ -124,35 +119,24 @@ public class A2aAgentExecutor {
                                 @Nullable String skillId,
                                 Consumer<A2aTask> listener) {
         Thread.startVirtualThread(() -> {
-            // 创建 Task
-            A2aTask task = taskStore.create(message);
+            try {
+            A2aTask task = taskStore.resolveOrCreate(message);
             String taskId = task.id();
-            listener.accept(task);
+            safeNotify(listener, task);
 
             taskStore.updateStatus(taskId, A2aTaskState.WORKING, null);
-            listener.accept(taskStore.find(taskId).orElseThrow());
+            safeNotify(listener, taskStore.find(taskId).orElseThrow());
 
             try {
-                String textContent = extractText(message);
-                String result;
-
-                if (skillId != null && !skillId.isBlank()) {
-                    var definition = agentRegistry.find(skillId);
-                    if (definition.isEmpty()) {
-                        taskStore.updateStatus(taskId, A2aTaskState.FAILED, "未知 Skill: " + skillId);
-                        listener.accept(taskStore.find(taskId).orElseThrow());
-                        return;
+                String result = doExecute(extractText(message), taskId, skillId);
+                if (result == null) {
+                    var current = taskStore.find(taskId).orElseThrow();
+                    if (current.status().state() != A2aTaskState.FAILED) {
+                        taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行返回空结果");
                     }
-                    var subRequest = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"),
-                            null,
-                            definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
-                            null, 0, definition.get().preferredProvider(), null, null, null);
-                    var subResult = agentExecutor.execute(definition.get(), subRequest);
-                    result = subResult.output();
-                } else {
-                    var request = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"));
-                    AgentResponse response = agentOrchestrator.run(request);
-                    result = response.content();
+                    streamFailedCounter.increment();
+                    safeNotify(listener, taskStore.find(taskId).orElseThrow());
+                    return;
                 }
 
                 var artifact = new A2aArtifact(
@@ -160,30 +144,98 @@ public class A2aAgentExecutor {
                         List.of(new A2aPart.Text(result, null)),
                         null, null);
                 taskStore.addArtifact(taskId, artifact);
-                listener.accept(taskStore.find(taskId).orElseThrow());
+                safeNotify(listener, taskStore.find(taskId).orElseThrow());
 
                 taskStore.updateStatus(taskId, A2aTaskState.COMPLETED, null);
-                listener.accept(taskStore.find(taskId).orElseThrow());
+                safeNotify(listener, taskStore.find(taskId).orElseThrow());
 
+                streamSuccessCounter.increment();
                 log.info("A2A 流式任务执行完成: taskId={}, skillId={}", taskId, skillId);
-
             } catch (Exception e) {
                 log.warn("A2A 流式任务执行异常: taskId={}, error={}", taskId, e.getMessage(), e);
                 taskStore.updateStatus(taskId, A2aTaskState.FAILED, "执行异常: " + e.getMessage());
-                listener.accept(taskStore.find(taskId).orElseThrow());
+                streamFailedCounter.increment();
+                safeNotify(listener, taskStore.find(taskId).orElseThrow());
+            }
+            } catch (Exception outerEx) {
+                // 最外层防护：resolveOrCreate 等初始化步骤异常时不让 Virtual Thread 静默终止
+                log.error("A2A 流式任务初始化异常: error={}", outerEx.getMessage(), outerEx);
+                streamFailedCounter.increment();
             }
         });
     }
 
-    /** 从 A2aMessage 中提取文本内容。 */
-    private String extractText(A2aMessage message) {
+    /**
+     * 核心执行逻辑 — 根据 skillId 路由到子 Agent 或主 Orchestrator。
+     *
+     * @return 执行结果文本，skillId 无效时返回 null（已设置 FAILED 状态）
+     */
+    @Nullable
+    private String doExecute(String textContent, String taskId, @Nullable String skillId) {
+        if (skillId != null && !skillId.isBlank()) {
+            var definition = agentRegistry.find(skillId);
+            if (definition.isEmpty()) {
+                taskStore.updateStatus(taskId, A2aTaskState.FAILED, "未知 Skill: " + skillId);
+                return null;
+            }
+            var subRequest = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"),
+                    null,
+                    definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
+                    null, 0, definition.get().preferredProvider(), null, null, null);
+            var subResult = agentExecutor.execute(definition.get(), subRequest);
+            return subResult.output();
+        } else {
+            var request = new AgentRequest(textContent, taskId, InteractionSource.system("a2a"));
+            var response = agentOrchestrator.run(request);
+            return response.content();
+        }
+    }
+
+    /* visible for testing — 从 A2aMessage 中提取文本内容（支持 Text / File / Data 三种 Part 类型）。 */
+    String extractText(A2aMessage message) {
         var sb = new StringBuilder();
         for (A2aPart part : message.parts()) {
-            if (part instanceof A2aPart.Text text) {
+            String segment = switch (part) {
+                case A2aPart.Text text -> text.text();
+                case A2aPart.File file -> formatFilePart(file);
+                case A2aPart.Data data -> formatDataPart(data);
+            };
+            if (segment != null && !segment.isBlank()) {
                 if (!sb.isEmpty()) sb.append("\n");
-                sb.append(text.text());
+                sb.append(segment);
             }
         }
         return sb.toString();
+    }
+
+    /** 将 File Part 格式化为文本描述。 */
+    private String formatFilePart(A2aPart.File file) {
+        var fc = file.file();
+        if (fc == null) return null;
+        var desc = new StringBuilder("[文件");
+        if (fc.name() != null) desc.append(": ").append(fc.name());
+        if (fc.mimeType() != null) desc.append(" (").append(fc.mimeType()).append(")");
+        if (fc.uri() != null) desc.append(" → ").append(fc.uri());
+        desc.append("]");
+        return desc.toString();
+    }
+
+    /** 将 Data Part 格式化为 JSON 文本描述。 */
+    private String formatDataPart(A2aPart.Data data) {
+        if (data.data() == null) return null;
+        try {
+            return "[结构化数据: " + objectMapper.writeValueAsString(data.data()) + "]";
+        } catch (JsonProcessingException e) {
+            return "[结构化数据: 序列化失败]";
+        }
+    }
+
+    /** 安全回调 — 捕获 listener 异常，避免 Virtual Thread 静默终止。 */
+    private void safeNotify(Consumer<A2aTask> listener, A2aTask task) {
+        try {
+            listener.accept(task);
+        } catch (Exception e) {
+            log.warn("A2A SSE 回调失败: taskId={}, error={}", task.id(), e.getMessage());
+        }
     }
 }

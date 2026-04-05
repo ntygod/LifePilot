@@ -1,13 +1,13 @@
 ---
 id: research-assistant
 name: "信息调研"
-description: "多源信息调研：Web 搜索、网页抓取、交叉验证、结构化输出。"
+description: "Web 搜索、网页抓取、交叉验证、结构化输出"
 version: "1.0.0"
 suggested-tools:
   - web.search
   - web.fetch
   - knowledge.search
-  - memory.search
+  - memory
   - file.write
 triggers:
   - "调研"
@@ -41,7 +41,7 @@ triggers:
 ### 1. 明确调研目标
 
 - 确认用户的核心问题和关注维度
-- 如果问题模糊，用 `interact.ask` 澄清范围
+- 如果问题模糊，用 `interact(action="input")` 向用户澄清范围
 
 ### 2. 多源搜索
 

@@ -1,19 +1,16 @@
 ---
 id: session-logs
 name: "会话日志分析"
-description: "回顾和分析历史会话日志，提取关键决策、未完成事项和模式。"
+description: "历史会话日志分析、关键决策提取"
 version: "1.0.0"
 suggested-tools:
-  - memory.recall
-  - memory.search
-  - memory.search-experience
+  - memory
   - file.read
 triggers:
   - "回顾对话"
   - "上次讨论"
-  - "之前说过"
-  - "历史记录"
   - "会话日志"
+  - "对话历史"
 ---
 
 # 会话日志分析指南
@@ -36,8 +33,8 @@ triggers:
 ### 1. 搜索相关记忆
 
 ```
-memory.recall(query="用户描述的主题")
-memory.search-experience(query="相关经验")
+memory(action=recall, query="用户描述的主题")
+memory(action=search-experience, query="相关经验")
 ```
 
 ### 2. 分析和整理

@@ -21,10 +21,15 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -39,6 +44,8 @@ import java.util.UUID;
 public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ToolBridgeAgentToolProvider.class);
+    private static final Set<String> IDEMPOTENCY_KEY_WHITELIST =
+            Set.of("web.search", "web.fetch", "reason.calculate");
 
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;
@@ -119,6 +126,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
             int totalCount = tools.size();
             tools = tools.stream()
+                    // 当前仍是单 Agent 全能模式，基础设施工具默认透传；
+                    // allowedToolIds 主要用于未来多 Agent / 受限代理场景预留。
                     .filter(t -> allowedToolIds.contains(t.id())
                                  || t.tags().contains("infrastructure"))
                     .toList();
@@ -137,10 +146,9 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         return state.channelPlatform() != null && "web".equalsIgnoreCase(state.channelPlatform());
     }
 
-    /** 这两类工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
+    /** 统一交互工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
     private boolean isUserPromptInteractionTool(String toolId) {
-        return "interact.input".equals(toolId)
-                || "interact.choose".equals(toolId);
+        return "interact".equals(toolId);
     }
 
     /**
@@ -200,7 +208,15 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             public String call(@NonNull String toolInput) {
                 Map<String, Object> params = parseInput(toolInput);
                 String traceId = UUID.randomUUID().toString();
-                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, Map.copyOf(context));
+                String idempotencyKey = buildIdempotencyKey(tool, params, context);
+                ToolResult result = pipeline.execute(
+                        tool.id(),
+                        params,
+                        traceId,
+                        idempotencyKey,
+                        streamId,
+                        Map.copyOf(context)
+                );
                 String output = formatOutput(result);
 
                 return output;
@@ -242,6 +258,21 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     private String resolveModelToolName(String toolId) {
         return toolIdToModelName.getOrDefault(toolId, sanitizeToolName(toolId));
+    }
+
+    @Nullable
+    private String buildIdempotencyKey(ToolContract tool,
+                                       Map<String, Object> params,
+                                       Map<String, Object> context) {
+        if (!tool.idempotent() || !IDEMPOTENCY_KEY_WHITELIST.contains(tool.id())) {
+            return null;
+        }
+        Object traceIdValue = context.get(ToolContextKeys.CALLER_TRACE_ID);
+        if (!(traceIdValue instanceof String callerTraceId) || callerTraceId.isBlank()) {
+            return null;
+        }
+        String canonicalParams = toJsonValue(canonicalizeValue(params));
+        return "trace:" + callerTraceId + ":" + tool.id() + ":" + sha256Hex(canonicalParams);
     }
 
     private java.util.Optional<ToolContract> resolveTool(String toolIdOrAlias) {
@@ -372,6 +403,22 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         return "\"" + escapeJson(value.toString()) + "\"";
     }
 
+    private Object canonicalizeValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            var ordered = new TreeMap<String, Object>();
+            for (var entry : map.entrySet()) {
+                ordered.put(String.valueOf(entry.getKey()), canonicalizeValue(entry.getValue()));
+            }
+            return ordered;
+        }
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(this::canonicalizeValue)
+                    .toList();
+        }
+        return value;
+    }
+
     /** 转义 JSON 特殊字符。 */
     private String escapeJson(String s) {
         if (s == null) return "";
@@ -397,6 +444,17 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             return List.of();
         }
         return resolution.normalizedResources();
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(value.getBytes(StandardCharsets.UTF_8))
+            );
+        } catch (Exception e) {
+            throw new IllegalStateException("生成幂等键哈希失败", e);
+        }
     }
 
     private record ParsedToolInput(boolean success, ToolInputEnvelope envelope) {}

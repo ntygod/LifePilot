@@ -12,7 +12,7 @@ import java.util.List;
  * @since 2026-02-27
  */
 public sealed interface GuardrailPolicy
-        permits BudgetLimitPolicy, ContentSafetyPolicy, RateLimitPolicy, DataRedactionPolicy {
+        permits ContentSafetyPolicy, RateLimitPolicy, DataRedactionPolicy {
 
     /**
      * 策略 ID。
@@ -28,38 +28,6 @@ public sealed interface GuardrailPolicy
      * 优先级（数值越小优先级越高）。
      */
     int priority();
-
-    /**
-     * 创建预算限制策略实例。
-     *
-     * @param policyId        策略 ID
-     * @param enabled         是否启用
-     * @param priority        优先级
-     * @param dailyTokenLimit 每日 Token 上限
-     * @return 预算限制策略
-     */
-    static GuardrailPolicy budgetLimitPolicy(String policyId, boolean enabled, int priority,
-                                             int dailyTokenLimit) {
-        return new BudgetLimitPolicy(policyId, enabled, priority, dailyTokenLimit);
-    }
-}
-
-/**
- * 预算限制策略 — 限制每日 Token 消耗上限。
- *
- * @param policyId        策略 ID
- * @param enabled         是否启用
- * @param priority        优先级
- * @param dailyTokenLimit 每日 Token 上限
- * @author zsg
- * @since 2026-02-27
- */
-record BudgetLimitPolicy(
-        String policyId,
-        boolean enabled,
-        int priority,
-        int dailyTokenLimit
-) implements GuardrailPolicy {
 }
 
 /**
@@ -97,7 +65,6 @@ record ContentSafetyPolicy(
  * @param enabled           是否启用
  * @param priority          优先级
  * @param maxCallsPerMinute 每分钟最大调用次数
- * @param maxCallsPerHour   每小时最大调用次数
  * @author zsg
  * @since 2026-02-27
  */
@@ -105,8 +72,7 @@ record RateLimitPolicy(
         String policyId,
         boolean enabled,
         int priority,
-        int maxCallsPerMinute,
-        int maxCallsPerHour
+        int maxCallsPerMinute
 ) implements GuardrailPolicy {
 }
 

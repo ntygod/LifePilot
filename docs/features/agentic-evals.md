@@ -66,7 +66,7 @@ Agentic Evals 提供系统化的 Agent 行为评估能力，帮助开发者量�
 | `lifepilot.eval.default-pass-threshold` | `0.7` | 默认通过阈值（0.0~1.0） |
 | `lifepilot.eval.degradation-threshold` | `0.1` | 退化检测阈值 |
 | `lifepilot.eval.execution.default-timeout-seconds` | `60` | Agent 执行默认超时（秒） |
-| `lifepilot.eval.llm-judge.scene` | `eval-judge` | LLM Judge 使用的 LlmRouter 场景 |
+| `lifepilot.eval.llm-judge.scene` | `eval-judge` | LLM Judge 使用的 GenerationRouter 场景 |
 | `lifepilot.eval.llm-judge.timeout-seconds` | `30` | LLM 调用超时（秒） |
 | `lifepilot.eval.llm-judge.fallback-score` | `0.5` | LLM 降级时的默认评分 |
 | `lifepilot.eval.llm-judge.max-retries` | `1` | LLM 调用最大重试次数 |

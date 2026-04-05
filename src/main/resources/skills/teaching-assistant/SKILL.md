@@ -1,7 +1,7 @@
 ---
 id: teaching-assistant
 name: "教学辅助"
-description: "教学辅助：概念解释、代码示例演示、学习路径规划、练习题生成、知识点回顾。"
+description: "概念解释、代码示例、学习路径、练习题生成"
 version: "1.0.0"
 suggested-tools:
   - web.search
@@ -9,7 +9,7 @@ suggested-tools:
   - file.write
   - file.read
   - knowledge.search
-  - memory.create
+  - memory
 triggers:
   - "教学"
   - "学习"
@@ -99,7 +99,7 @@ print(f'结果相同: {squares_traditional == squares_comprehension}')
 
 ```
 # 记录学习进度到记忆
-memory.create(name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
+memory(name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
 ```
 
 ## 学习路径规划

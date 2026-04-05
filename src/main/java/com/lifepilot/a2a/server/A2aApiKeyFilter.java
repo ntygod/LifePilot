@@ -9,13 +9,16 @@ import org.springframework.lang.NonNull;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 /**
  * A2A API Key 认证过滤器。
  *
  * <p>拦截 /api/a2a/** 路径的请求，校验 X-API-Key Header。
  * /.well-known/agent.json 不拦截（公开发现端点）。
- * api-key 配置为空时不启用认证。</p>
+ * api-key 配置为空时不启用认证。
+ * 使用恒定时间比较防止时序攻击。</p>
  *
  * @author zsg
  * @since 2026-02-28
@@ -37,7 +40,9 @@ public class A2aApiKeyFilter extends OncePerRequestFilter {
         String apiKey = properties.getServer().getApiKey();
         String providedKey = request.getHeader(API_KEY_HEADER);
 
-        if (providedKey == null || !providedKey.equals(apiKey)) {
+        if (providedKey == null || !MessageDigest.isEqual(
+                providedKey.getBytes(StandardCharsets.UTF_8),
+                apiKey.getBytes(StandardCharsets.UTF_8))) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("""

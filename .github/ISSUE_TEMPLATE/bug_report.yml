@@ -8,11 +8,22 @@ body:
     attributes:
       value: |
         感谢反馈。请尽量提供最小可复现信息，方便快速定位。
+  - type: dropdown
+    id: client
+    attributes:
+      label: 客户端类型
+      options:
+        - Web（浏览器）
+        - 桌面端（Windows）
+        - 桌面端（macOS）
+        - 桌面端（Linux）
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
       label: 版本 / 提交
-      description: 如果知道，请填写版本号或 commit hash
+      description: 桌面端可在标题栏或"关于"中查看版本号
       placeholder: 例如 0.2.0 / a1b2c3d
     validations:
       required: false
@@ -20,11 +31,10 @@ body:
     id: environment
     attributes:
       label: 环境信息
-      description: 操作系统、Java、Node、浏览器等
+      description: 操作系统版本、Java、Node、浏览器等
       placeholder: |
-        Windows 11
-        Java 22
-        Node 22
+        Windows 11 24H2
+        Java 22（桌面端可忽略，已内嵌 JRE）
         Chrome 136
     validations:
       required: true

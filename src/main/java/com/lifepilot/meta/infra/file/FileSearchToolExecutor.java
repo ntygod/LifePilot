@@ -8,11 +8,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,9 +24,12 @@ import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
 
 /**
- * 文件搜索工具 — 递归搜索文件内容，支持正则、glob 过滤、上下文行和二进制检测。
+ * 文件搜索工具 — 递归搜索文件内容，支持正则、glob 过滤、深度限制、上下文行和二进制检测。
  *
  * <p>安全机制：通过 {@link PathSecurityChecker} 校验路径白名单/黑名单。</p>
+ *
+ * <p>性能优化：收集够 maxResults 条匹配后，额外扫描有限文件获取 totalEstimate 估算值，
+ * 而非遍历全部文件精确计数。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -32,6 +38,9 @@ public class FileSearchToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(FileSearchToolExecutor.class);
     private static final int BINARY_CHECK_SIZE = 512;
+
+    /** 结果满后额外扫描的文件数上限，用于估算 totalEstimate。 */
+    private static final int EXTRA_SCAN_FILES = 20;
 
     private final PathSecurityChecker securityChecker;
 
@@ -49,8 +58,8 @@ public class FileSearchToolExecutor {
     /**
      * 递归搜索文件内容。
      *
-     * @param input 工具输入，必需参数 path 和 pattern，可选 filePattern、maxResults、contextLines
-     * @return 包含 matches 和 totalMatches 的结构化结果
+     * @param input 工具输入，必需参数 path 和 pattern，可选 filePattern、maxResults、offset、maxDepth、contextLines
+     * @return 包含 matches、totalMatches、hasMore 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
         String pathStr;
@@ -66,15 +75,16 @@ public class FileSearchToolExecutor {
                 .orElse(null);
         int maxResults = input.getOptionalParam("maxResults", Number.class)
                 .map(Number::intValue)
+                .map(v -> Math.max(1, v))
                 .orElse(50);
         int offset = input.getOptionalParam("offset", Number.class)
                 .map(Number::intValue)
                 .map(o -> Math.max(o, 0))
                 .orElse(0);
-        int limit = input.getOptionalParam("limit", Number.class)
+        int maxDepth = input.getOptionalParam("maxDepth", Number.class)
                 .map(Number::intValue)
-                .filter(l -> l >= 1)
-                .orElse(maxResults);
+                .map(d -> Math.max(1, d))
+                .orElse(Integer.MAX_VALUE);
         int contextLines = input.getOptionalParam("contextLines", Number.class)
                 .map(Number::intValue)
                 .orElse(0);
@@ -107,62 +117,50 @@ public class FileSearchToolExecutor {
         try {
             List<Map<String, Object>> matches = new ArrayList<>();
             int totalMatches = 0;
-            // 已跳过的匹配数（用于 offset 分页）
             int skipped = 0;
+            int extraFilesScanned = 0;
+            boolean resultsFull = false;
 
-            try (Stream<Path> walk = Files.walk(dirPath)) {
+            try (Stream<Path> walk = Files.walk(dirPath, maxDepth)) {
                 var files = walk
                         .filter(Files::isRegularFile)
-                        .filter(p -> fileMatcher == null || fileMatcher.matches(p.getFileName()))
-                        .toList();
+                        .filter(p -> fileMatcher == null || fileMatcher.matches(p.getFileName()));
 
-                for (Path file : files) {
-                    // 二进制文件预检测：前 512 字节含 NUL 则跳过
+                for (Iterator<Path> iterator = files.iterator(); iterator.hasNext(); ) {
+                    // 提前终止：结果已满且额外扫描文件数已达上限
+                    if (resultsFull && extraFilesScanned >= EXTRA_SCAN_FILES) {
+                        break;
+                    }
+
+                    Path file = iterator.next();
                     if (isBinaryFile(file)) {
                         log.debug("跳过二进制文件: path={}", file);
                         continue;
                     }
 
-                    try {
-                        List<String> lines = Files.readAllLines(file);
-                        for (int i = 0; i < lines.size(); i++) {
-                            if (regex.matcher(lines.get(i)).find()) {
-                                totalMatches++;
-                                // 跳过前 offset 条匹配
-                                if (skipped < offset) {
-                                    skipped++;
-                                    continue;
-                                }
-                                // 收集 limit 条后停止收集（但继续计数 totalMatches）
-                                if (matches.size() < limit) {
-                                    var match = new LinkedHashMap<String, Object>();
-                                    match.put("file", dirPath.relativize(file).toString());
-                                    match.put("line", i + 1);
-                                    match.put("content", lines.get(i));
+                    if (resultsFull) {
+                        extraFilesScanned++;
+                    }
 
-                                    if (contextLines > 0) {
-                                        int beforeStart = Math.max(0, i - contextLines);
-                                        int afterEnd = Math.min(lines.size() - 1, i + contextLines);
-                                        match.put("beforeContext",
-                                                List.copyOf(lines.subList(beforeStart, i)));
-                                        match.put("afterContext",
-                                                List.copyOf(lines.subList(i + 1, afterEnd + 1)));
-                                    }
+                    SearchStats stats = searchInFile(
+                            dirPath, file, regex, contextLines,
+                            offset, maxResults,
+                            matches, totalMatches, skipped
+                    );
+                    totalMatches = stats.totalMatches();
+                    skipped = stats.skipped();
 
-                                    matches.add(match);
-                                }
-                            }
-                        }
-                    } catch (IOException e) {
-                        log.debug("跳过无法读取的文件: path={}, error={}", file, e.getMessage());
+                    if (!resultsFull && matches.size() >= maxResults && skipped >= offset) {
+                        resultsFull = true;
                     }
                 }
             }
 
+            freezeContextLists(matches);
+
             var data = new LinkedHashMap<String, Object>();
             data.put("matches", matches);
             data.put("totalMatches", totalMatches);
-            data.put("totalEstimate", totalMatches);
             data.put("hasMore", totalMatches > offset + matches.size());
 
             log.debug("文件搜索完成: path={}, pattern={}, totalMatches={}", pathStr, patternStr, totalMatches);
@@ -171,6 +169,80 @@ public class FileSearchToolExecutor {
         } catch (IOException e) {
             log.error("文件搜索失败: path={}, error={}", pathStr, e.getMessage(), e);
             return ToolResult.error("文件搜索失败: " + e.getMessage());
+        }
+    }
+
+    private SearchStats searchInFile(Path rootDir,
+                                     Path file,
+                                     Pattern regex,
+                                     int contextLines,
+                                     int offset,
+                                     int maxResults,
+                                     List<Map<String, Object>> matches,
+                                     int totalMatches,
+                                     int skipped) {
+        ArrayDeque<String> previousLines = contextLines > 0 ? new ArrayDeque<>(contextLines) : null;
+        List<PendingAfterContext> pendingMatches = contextLines > 0 ? new ArrayList<>() : List.of();
+
+        try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            String line;
+            int lineNumber = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+
+                if (contextLines > 0) {
+                    for (Iterator<PendingAfterContext> iterator = pendingMatches.iterator(); iterator.hasNext(); ) {
+                        PendingAfterContext pending = iterator.next();
+                        pending.afterContext().add(line);
+                        pending.remainingAfterLines--;
+                        if (pending.remainingAfterLines <= 0) {
+                            iterator.remove();
+                        }
+                    }
+                }
+
+                if (regex.matcher(line).find()) {
+                    totalMatches++;
+                    if (skipped < offset) {
+                        skipped++;
+                    } else if (matches.size() < maxResults) {
+                        var match = new LinkedHashMap<String, Object>();
+                        match.put("file", rootDir.relativize(file).toString());
+                        match.put("line", lineNumber);
+                        match.put("content", line);
+
+                        if (contextLines > 0 && previousLines != null) {
+                            match.put("beforeContext", List.copyOf(previousLines));
+                            var afterContext = new ArrayList<String>();
+                            match.put("afterContext", afterContext);
+                            pendingMatches.add(new PendingAfterContext(afterContext, contextLines));
+                        }
+
+                        matches.add(match);
+                    }
+                }
+
+                if (contextLines > 0 && previousLines != null) {
+                    if (previousLines.size() == contextLines) {
+                        previousLines.removeFirst();
+                    }
+                    previousLines.addLast(line);
+                }
+            }
+        } catch (IOException e) {
+            log.debug("跳过无法读取的文件: path={}, error={}", file, e.getMessage());
+        }
+
+        return new SearchStats(totalMatches, skipped);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void freezeContextLists(List<Map<String, Object>> matches) {
+        for (Map<String, Object> match : matches) {
+            Object afterContext = match.get("afterContext");
+            if (afterContext instanceof List<?> list) {
+                match.put("afterContext", List.copyOf((List<String>) list));
+            }
         }
     }
 
@@ -191,8 +263,23 @@ public class FileSearchToolExecutor {
             }
             return false;
         } catch (IOException e) {
-            // 无法读取时视为二进制，跳过
             return true;
+        }
+    }
+
+    private record SearchStats(int totalMatches, int skipped) {}
+
+    private static final class PendingAfterContext {
+        private final List<String> afterContext;
+        private int remainingAfterLines;
+
+        private PendingAfterContext(List<String> afterContext, int remainingAfterLines) {
+            this.afterContext = afterContext;
+            this.remainingAfterLines = remainingAfterLines;
+        }
+
+        private List<String> afterContext() {
+            return afterContext;
         }
     }
 }

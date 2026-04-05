@@ -20,9 +20,9 @@ public final class ToolContextKeys {
     public static final String CALLER_TRACE_ID = "callerTraceId";
     public static final String CALLER_DEPTH = "callerDepth";
     public static final String CALLER_BUDGET = "callerBudget";
+    public static final String ALLOWED_TOOL_IDS = "allowedToolIds";
     public static final String TASK_ID = "taskId";
     public static final String WORKSPACE_ID = "workspaceId";
-
     private ToolContextKeys() {
     }
 }

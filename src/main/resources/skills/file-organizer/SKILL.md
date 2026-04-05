@@ -1,13 +1,13 @@
 ---
 id: file-organizer
 name: "文件管理"
-description: "文件整理和管理：批量重命名、目录结构优化、文件分类归档、重复文件检测、磁盘空间分析"
+description: "批量重命名、目录优化、分类归档、重复检测"
 version: "1.0.0"
 suggested-tools:
   - file.list
   - file.read
   - file.write
-  - file.search
+  - file.manage
   - shell.exec
 triggers:
   - "文件整理"
@@ -44,7 +44,10 @@ triggers:
 # 列出目标目录
 file.list(path="目标目录", recursive=true)
 
-# 分析文件分布
+# 分析文件类型分布
+# Windows
+shell.exec(command="powershell -c \"Get-ChildItem -Path 'path' -Recurse -File | Group-Object Extension | Sort-Object Count -Descending | Format-Table Count,Name\"")
+# Linux
 shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
 ```
 
@@ -74,15 +77,15 @@ shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort
 
 ### 4. 执行操作
 
-```
-# 批量重命名
-shell.exec(command="mv old_name new_name")
+```bash
+# 使用 file.manage 工具执行移动/重命名（推荐，跨平台）
+file.manage(action="move", source="old_name", target="new_name")
 
-# 创建目录结构
-shell.exec(command="mkdir -p docs/2026 images/2026")
-
-# 移动文件
-shell.exec(command="mv file.pdf docs/2026/")
+# 或通过 shell 命令
+# Windows
+shell.exec(command="mkdir docs\\2026 && move file.pdf docs\\2026\\")
+# Linux
+shell.exec(command="mkdir -p docs/2026 && mv file.pdf docs/2026/")
 ```
 
 ### 5. 验证结果

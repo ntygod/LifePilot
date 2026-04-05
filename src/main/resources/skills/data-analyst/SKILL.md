@@ -1,7 +1,7 @@
 ---
 id: data-analyst
 name: "数据分析"
-description: "数据分析助手：数据加载、探索性分析（EDA）、清洗转换、统计分析、可视化图表生成。"
+description: "数据加载、EDA、清洗、统计分析、可视化"
 version: "1.0.0"
 suggested-tools:
   - code.execute
@@ -35,7 +35,7 @@ triggers:
 
 - 数据库 SQL 查询（用 database-query）
 - 日志文件分析（用 log-analyzer）
-- 简单计算（用 reason.calculate 工具）
+- 简单数学计算（直接回答，无需加载本 Skill）
 
 ## 分析工作流
 

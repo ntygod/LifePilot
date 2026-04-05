@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：跨模块（部署基础设施）
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -20,7 +20,7 @@
 - GraalVM native image（探索性任务，SQLite JNI + sqlite-vec native 兼容性问题尚未解决，归入远期）
 - 多设备数据同步（需要独立的同步协议设计）
 - CI/CD 流水线（GitHub Actions 等，归入运维层面）
-- 桌面客户端（Electron / Tauri，远期需求；如需桌面体验，Tauri 包一个 WebView 指向本地 Web UI 即可）
+- ~~桌面客户端~~（已通过 Tauri 2.x 实现，详见 3.7 节）
 
 ---
 
@@ -29,7 +29,7 @@
 | 术语 | 定义 |
 |------|------|
 | 后端服务 | Spring Boot JAR，提供 REST/SSE API，内嵌 SQLite + sqlite-vec native |
-| 前端应用 | Vue 3 SPA（lifepilot-web），独立构建为静态资源，通过 Nginx 部署 |
+| 前端应用 | Vue 3 SPA（zhiwei-web），独立构建为静态资源，通过 Nginx 部署 |
 | 数据目录 | `~/.zhiwei/`（本地）或 Docker Volume 挂载点，存放 SQLite 数据库、配置、日志 |
 | 配置版本 | `application.yml` 中的 `lifepilot.config-version` 字段，标识当前配置格式版本 |
 | 配置迁移器 | 启动时自动检测配置版本并执行迁移链的组件 |
@@ -53,14 +53,14 @@ graph TB
         Webhook["/webhook/* → IM Webhook"]
     end
 
-    subgraph Backend["Spring Boot 后端 (lifepilot.jar)"]
+    subgraph Backend["Spring Boot 后端 (zhiwei.jar)"]
         Controller["REST Controller 层"]
         Gateway["MessageGateway + 中间件管道"]
         Engine["Agent 引擎 + 工具系统 + 记忆系统"]
         DB["SQLite + sqlite-vec<br/>数据目录: ~/.zhiwei/"]
     end
 
-    subgraph Frontend["前端 (lifepilot-web)"]
+    subgraph Frontend["前端 (zhiwei-web)"]
         SPA["Vue 3 SPA<br/>Vite + Pinia"]
     end
 
@@ -85,7 +85,6 @@ graph TB
 | `AppConfigProperties` | `com.lifepilot.app` | 包含 launch-mode 配置，不再需要 |
 | `interaction/cli/*` | 整个包 | CLI 交互层全部删除（CliShell / CommandRouter / ChatCommand 等） |
 | `CliAutoConfiguration` | `interaction/cli/config` | CLI 自动配置 |
-| `CliChannelAdapter` | `interaction/channel` | CLI Channel 适配器 |
 | `CliAuthStrategy` | `interaction/middleware/auth` | CLI 认证策略 |
 | `CliUserConfirmationService` | `interaction/cli` | CLI 用户确认服务 |
 | `CliConfigProperties` | `interaction/cli` | CLI 配置属性 |
@@ -120,12 +119,12 @@ public static void main(String[] args) {
 阶段 1: builder（Maven + JDK 22）
   - 复制 pom.xml，下载依赖（利用 Docker 层缓存）
   - 复制源码，mvn package -DskipTests
-  - 产出：target/lifepilot.jar
+  - 产出：target/zhiwei.jar
 
 阶段 2: runtime（JRE 22 slim）
-  - 复制 lifepilot.jar
+  - 复制 zhiwei.jar
   - 创建数据目录 /data
-  - ENTRYPOINT: java -jar lifepilot.jar
+  - ENTRYPOINT: java -jar zhiwei.jar
   - EXPOSE 8080
 ```
 
@@ -166,7 +165,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./lifepilot-web
+    build: ./zhiwei-web
     ports:
       - "80:80"
     depends_on:
@@ -181,7 +180,7 @@ volumes:
 
 - 数据目录指向 `/data`（Volume 挂载点）
 - 日志输出到 stdout（容器日志收集友好）
-- SQLite 数据库路径：`/data/lifepilot.db`
+- SQLite 数据库路径：`/data/zhiwei.db`
 
 ### 3.5 启动脚本
 
@@ -192,7 +191,7 @@ volumes:
 1. **Java 环境检测**：检查 `java` 命令是否可用，版本是否 ≥ 22
 2. **JVM 参数调优**：根据可用内存自动设置 `-Xmx`（默认取系统内存的 50%，上限 2G）
 3. **数据目录初始化**：首次运行时创建 `~/.zhiwei/` 目录结构
-4. **启动后端服务**：`java $JVM_OPTS -jar lifepilot.jar`
+4. **启动后端服务**：`java $JVM_OPTS -jar zhiwei.jar`
 5. **友好错误提示**：Java 未安装或版本不对时，输出清晰的安装指引
 
 **不包含的功能：**
@@ -201,7 +200,27 @@ volumes:
 - 不做进程守护（用户可自行配置 systemd / launchd / Windows Service）
 - 不做自动更新
 
-### 3.6 配置版本迁移
+### 3.6 Tauri 2.x 桌面客户端
+
+位于 `zhiwei-web/src-tauri/`，使用 Tauri 2.x（Rust）构建桌面客户端，通过 WebView 加载前端 Vue 3 SPA，并内嵌管理 Java 后端进程的生命周期。
+
+**核心架构：**
+
+- **JavaManager**（`src/java_manager.rs`）：负责查找 Java 运行时、动态寻找可用端口、启动/停止 `zhiwei.jar` 后端进程
+- **PortFinder**（`src/port_finder.rs`）：自动查找可用端口，避免端口冲突
+- **HealthCheck**（`src/health_check.rs`）：后端就绪检测，轮询直到 API 可用
+- **TrayIcon**（`src/tray.rs`）：系统托盘图标，关闭窗口时隐藏到托盘而非退出
+- **Tauri Commands**（`src/commands.rs`）：暴露给前端的 Tauri IPC 命令（`get_backend_port`、`is_backend_running`、`restart_backend`、`get_backend_status`）
+
+**前端桌面适配：**
+
+- **SplashView**（`src/views/SplashView.vue`）：启动页，等待后端就绪后自动跳转；非 Tauri 环境直接跳过
+- **SetupWizard**（`src/components/desktop/SetupWizard.vue`）：首次启动引导向导，引导用户选择 LLM Provider 并配置 API Key
+- 启动流程：`/splash` → 等待后端 → 检查是否已配置模型服务 → 有则进入 `/conversations`，无则进入 `/setup`
+
+**打包目标：** NSIS（Windows）、DMG（macOS）、DEB/AppImage（Linux）
+
+### 3.7 配置版本迁移
 
 应用升级时，配置格式可能发生变化（如配置键重命名、结构调整）。配置版本迁移机制确保旧配置自动适配新版本。
 
@@ -242,7 +261,7 @@ public interface ConfigMigration {
 | 前后端分离部署 | 是 | 前端 Nginx 静态部署，后端纯 API 服务，职责清晰，可独立扩展 |
 | Docker 多阶段构建 | 是 | 分离编译和运行环境，最小化镜像体积 |
 | 不做 GraalVM native | 是 | SQLite JNI + sqlite-vec native 兼容性问题未解决，归入远期 |
-| 不做桌面客户端 | 是 | 浏览器即客户端，远期如需可用 Tauri WebView 包装 |
+| 桌面客户端用 Tauri 2.x | 是 | Tauri WebView 包装本地 Web UI + Rust 管理 Java 后端进程，安装包体积小 |
 | 配置迁移用代码而非脚本 | 是 | Java 代码可测试、可调试，比 shell 脚本可靠 |
 
 ---

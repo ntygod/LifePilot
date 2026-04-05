@@ -1,8 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+/** 不需要引导拦截的白名单路由 */
+const ONBOARDING_WHITELIST = new Set(['/', '/splash', '/setup'])
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    /**
+     * 桌面端启动页（Tauri 环境下等待后端就绪）
+     */
+    {
+      path: '/splash',
+      name: 'splash',
+      component: () => import('@/views/SplashView.vue')
+    },
+
+    /**
+     * 桌面端首次启动引导（配置 AI 模型服务）
+     */
+    {
+      path: '/setup',
+      name: 'setup',
+      component: () => import('@/components/desktop/SetupWizard.vue')
+    },
+
     /**
      * 根路由：产品介绍页（登录前）
      */
@@ -209,6 +230,15 @@ const router = createRouter({
       component: () => import('@/views/NotFoundView.vue')
     }
   ]
+})
+
+/**
+ * 首次启动引导守卫：未完成引导时强制跳转到 /setup
+ */
+router.beforeEach((to) => {
+  if (ONBOARDING_WHITELIST.has(to.path)) return
+  if (localStorage.getItem('zhiwei_onboarding_completed') === 'true') return
+  return '/setup'
 })
 
 export default router

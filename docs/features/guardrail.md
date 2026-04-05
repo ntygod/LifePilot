@@ -1,12 +1,12 @@
 # 安全护栏 — 特性说明
 
 > **文档性质**：特性说明文档
-> **模块归属**：`com.lifepilot.guardrail` + `com.lifepilot.observability.guardrail`
-> **最后更新**：2026-03
+> **模块归属**：`com.lifepilot.observability.guardrail`
+> **最后更新**：2026-04
 
 ## 1. 功能概述
 
-安全护栏系统在 LLM 之外强制执行工具调用的安全策略。当前它主要负责风险识别、内容安全和阻断；高风险工具的“是否授权”已经由 `permission` 模块负责，护栏层不再直接弹用户确认。
+安全护栏系统在 LLM 之外强制执行工具调用的安全策略。当前它通过三种策略类型实现保护：内容安全（ContentSafetyPolicy）、速率限制（RateLimitPolicy）和数据脱敏（DataRedactionPolicy）。高风险工具的”是否授权”由 `permission` 模块负责，预算限制已移除（个人助手场景下费用由用户自行承担）。
 
 ## 2. 核心特性
 
@@ -17,9 +17,15 @@
 - **HIGH**：高风险动作，进入授权模型控制（如删除数据）
 - **CRITICAL**：关键风险动作，进入更严格的授权模型控制（如执行系统命令）
 
-### 2.2 可插拔策略
+### 2.2 可插拔策略（sealed interface）
 
-通过 GuardrailPolicy 接口定义安全策略，支持运行时动态注册和注销。每个策略有独立的优先级，按优先级顺序执行。
+通过 `GuardrailPolicy` sealed interface 定义三种安全策略类型，支持运行时动态注册和注销：
+
+- **ContentSafetyPolicy**：阻断正则模式匹配 + 敏感话题检测
+- **RateLimitPolicy**：每分钟工具调用次数限制
+- **DataRedactionPolicy**：数据脱敏标记
+
+每个策略有独立的优先级（数值越小越先执行），按优先级顺序依次检查。
 
 ### 2.3 Spring AI Advisor 集成
 
@@ -43,7 +49,7 @@ Agent 在执行工具调用前，系统会先根据风险等级和作用域检�
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.guardrail.enabled` | `true` | 是否启用护栏系统 |
+| `lifepilot.observability.guardrail.enabled` | `true` | 是否启用护栏引擎 |
 
 ## 5. 限制与未来方向
 

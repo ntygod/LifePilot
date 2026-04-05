@@ -1,19 +1,18 @@
 ---
 id: log-analyzer
 name: "日志分析"
-description: "分析应用日志、系统日志，追踪错误、识别模式、生成统计报告"
+description: "应用/系统日志分析、错误追踪、统计报告"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
   - file.read
-  - file.grep
-  - file.find
+  - file.list
 triggers:
   - "分析日志"
   - "查看日志"
   - "错误日志"
   - "日志统计"
-  - "排查问题"
+  - "日志排查"
 ---
 
 # 日志分析指南
@@ -28,35 +27,38 @@ triggers:
 
 ## When NOT to Use
 - 系统级健康检查（用 healthcheck）
-- 实时监控告警（用 shell 命令 + cron）
+- 实时监控告警（用 shell.exec + cron）
 - 代码级调试（用 code-assistant）
 
 ## 分析流程
 
 ### 1. 定位日志文件
 ```
-file.find(path="/var/log", pattern="*.log")
-file.find(path="~/.zhiwei/logs", pattern="*.log")
+file.list(action="search", path="/var/log", pattern="*.log")
+file.list(action="search", path="~/.zhiwei/logs", pattern="*.log")
 ```
 
 ### 2. 快速扫描错误
-```
-file.grep(path="/path/to/logs", pattern="ERROR|FATAL|Exception", contextLines=3)
+```bash
+shell.exec(command="findstr /S /I \"ERROR FATAL Exception\" path\\to\\logs\\*.log")
+# 或 Linux 环境：
+shell.exec(command="grep -rn -E 'ERROR|FATAL|Exception' /path/to/logs/ -C 3")
 ```
 
 ### 3. 时间范围过滤
 ```bash
-# 最近1小时的错误
-grep -E "ERROR|Exception" app.log | awk -v d="$(date -d '1 hour ago' '+%Y-%m-%d %H')" '$0 >= d'
+# Windows — 先读取最近日志，再由 Agent 筛选时间范围
+shell.exec(command="powershell -c \"Get-Content app.log -Tail 500 | Select-String 'ERROR|Exception'\"")
+# Linux
+shell.exec(command="grep -E 'ERROR|Exception' app.log | awk -v d=\"$(date -d '1 hour ago' '+%Y-%m-%d %H')\" '$0 >= d'")
 ```
 
 ### 4. 统计分析
 ```bash
-# 错误类型分布
-grep "ERROR" app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20
-
-# 每小时错误数
-grep "ERROR" app.log | awk '{print substr($1,1,13)}' | uniq -c
+# Windows — 通过 PowerShell 统计错误
+shell.exec(command="powershell -c \"Get-Content app.log | Select-String 'ERROR' | Group-Object { ($_ -split '\\s+')[-1] } | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
+# Linux
+shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20")
 ```
 
 ### 5. 生成报告
@@ -71,12 +73,13 @@ grep "ERROR" app.log | awk '{print substr($1,1,13)}' | uniq -c
 ## 常用日志路径
 
 - 知微应用日志：`~/.zhiwei/logs/lifepilot.log`
-- 系统日志：`/var/log/syslog` 或 `/var/log/messages`
+- Windows 事件日志：通过 `powershell -c "Get-EventLog -LogName Application -Newest 50"` 查看
+- Linux 系统日志：`/var/log/syslog` 或 `/var/log/messages`
 - Nginx：`/var/log/nginx/error.log`
 - Java 应用：`./logs/` 或 `./target/logs/`
 
 ## 注意事项
 
-- 大日志文件先用 `tail -n 1000` 取最近部分，避免全量读取
+- 大日志文件先用 `file.read` 读取末尾部分，避免全量读取
 - 敏感信息（IP、用户名、密码）在输出时脱敏
 - 二进制日志文件跳过，只处理文本日志

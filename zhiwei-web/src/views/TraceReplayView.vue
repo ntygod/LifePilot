@@ -12,6 +12,8 @@ import {
   Shield,
   Wrench,
 } from 'lucide-vue-next'
+import { getApiOrigin } from '@/api/config'
+import { logger } from '@/utils/logger'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import type { TraceItem, TraceStep } from '@/types'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -247,7 +249,7 @@ function startLiveStream(traceId: string) {
   stopLiveStream()
 
   try {
-    liveSource = new EventSource(`/api/traces/${traceId}/stream`)
+    liveSource = new EventSource(`${getApiOrigin()}/api/traces/${traceId}/stream`)
 
     liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_START, () => {
       liveConnected.value = true
@@ -266,7 +268,7 @@ function startLiveStream(traceId: string) {
 
         store.steps.sort((left, right) => left.stepIndex - right.stepIndex)
       } catch (error) {
-        console.warn('Failed to parse trace step event', error)
+        logger.warn('Failed to parse trace step event', error)
       }
     })
 
@@ -420,7 +422,7 @@ async function handleRetryServiceCheck() {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <template v-if="!store.current">
           <PageHeader
@@ -468,7 +470,7 @@ async function handleRetryServiceCheck() {
           </StatePanel>
 
           <template v-else>
-            <section class="detail-card p-5">
+            <section class="detail-card p-4">
               <div class="flex flex-col gap-5">
                 <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                   <div class="space-y-1">
@@ -643,7 +645,7 @@ async function handleRetryServiceCheck() {
                   v-for="trace in filteredTraces"
                   :key="trace.id"
                   type="button"
-                  class="list-card w-full p-5 text-left"
+                  class="list-card w-full p-4 text-left"
                   @click="selectTrace(trace.id)"
                 >
                   <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -776,7 +778,7 @@ async function handleRetryServiceCheck() {
             </PageHeader>
 
             <section class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-              <article class="detail-card p-5">
+              <article class="detail-card p-4">
                 <div class="surface-label mb-3">执行摘要</div>
                 <div class="grid gap-3 md:grid-cols-2">
                   <div
@@ -855,7 +857,7 @@ async function handleRetryServiceCheck() {
               </div>
             </div>
 
-            <div class="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div class="grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
               <div class="space-y-4">
                 <div
                   v-for="item in evaluationItems"
@@ -896,7 +898,7 @@ async function handleRetryServiceCheck() {
 
               <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-5">
                 <div class="surface-label mb-2 text-[0.68rem]">综合评分</div>
-                <div class="text-4xl font-semibold tracking-tight text-foreground">
+                <div class="text-2xl font-semibold tracking-tight text-foreground">
                   {{ scoreValue(store.evaluation.overallScore) }}
                 </div>
                 <div class="mt-4 space-y-2 text-sm text-muted-foreground">

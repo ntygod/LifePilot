@@ -1,19 +1,19 @@
 # 安全护栏 — 架构设计
 
 > **文档性质**：架构设计文档
-> **模块归属**：`com.lifepilot.observability.guardrail`（所有护栏类均位于此包，`com.lifepilot.guardrail` 独立包已不存在）
-> **最后更新**：2026-03
+> **模块归属**：`com.lifepilot.observability.guardrail`
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
-安全护栏系统负责在 LLM 之外强制执行工具调用的安全策略。`guardrail` 包定义策略标记和职责边界，实际引擎实现位于 `observability.guardrail` 包中。当前它主要负责风险分级、内容安全、预算限制和阻断决策；交互式授权与自主任务预授权已经下沉到 `permission` 模块。
+安全护栏系统负责在 LLM 之外强制执行工具调用的安全策略，所有护栏类均位于 `observability.guardrail` 包中。当前它主要负责内容安全（ContentSafetyPolicy）、速率限制（RateLimitPolicy）、数据脱敏（DataRedactionPolicy）和审计日志；工具权限、风险判定、用户授权和白名单控制均由 `permission` 模块负责，预算限制已移除（个人助手场景下费用由用户自行承担）。
 
 ## 2. 架构图
 
 ```mermaid
 graph TB
     subgraph "调用链"
-        AGENT["AgentLoop"]
+        AGENT["ReactAgentLoop"]
         PIPE["ToolExecutionPipeline"]
     end
 
@@ -23,15 +23,23 @@ graph TB
     end
 
     subgraph "策略模型"
-        POLICY["GuardrailPolicy（interface）<br/>可插拔策略"]
+        POLICY["GuardrailPolicy（sealed interface）<br/>3 permits"]
+        CSP["ContentSafetyPolicy<br/>阻断模式 + 敏感话题"]
+        RLP["RateLimitPolicy<br/>每分钟最大调用次数"]
+        DRP["DataRedactionPolicy<br/>脱敏标记"]
         RISK["RiskLevel（enum）<br/>LOW/MEDIUM/HIGH/CRITICAL"]
         APPROVAL["ApprovalMode（enum）<br/>风险语义映射"]
-        RESULT["GuardrailResult（sealed interface）<br/>检查结果"]
+        RESULT["GuardrailResult（sealed interface）<br/>Passed/Blocked/NeedsConfirmation"]
     end
 
     subgraph "异常"
         BLOCKED["GuardrailBlockedException"]
+        CONFIRM["GuardrailConfirmationRequiredException"]
     end
+
+    POLICY --> CSP
+    POLICY --> RLP
+    POLICY --> DRP
 
     AGENT --> PIPE --> ENGINE
     ADVISOR -->|"Advisor 注入"| AGENT
@@ -47,11 +55,12 @@ graph TB
 ### 3.1 GuardrailEngine
 
 - 职责：策略注册表 + 执行引擎，按优先级顺序执行所有已注册策略
-- 关键接口：`registerPolicy(GuardrailPolicy)`、`unregisterPolicy(policyId)`、`addAllowedTools(toolIds)`
+- 关键接口：`registerPolicy(GuardrailPolicy)`、`unregisterPolicy(policyId)`、`checkToolCall(tool, input)`、`checkInput(content)`、`checkOutput(content)`
 
-### 3.2 GuardrailPolicy（interface）
+### 3.2 GuardrailPolicy（sealed interface）
 
 - 职责：可插拔的安全策略定义
+- 三个 permits：`ContentSafetyPolicy`（内容安全，阻断模式 + 敏感话题）、`RateLimitPolicy`（速率限制，每分钟最大调用次数）、`DataRedactionPolicy`（数据脱敏标记）
 - 关键属性：`policyId()`、`enabled()`、`priority()`
 
 ### 3.3 RiskLevel（enum）
@@ -89,10 +98,10 @@ sequenceDiagram
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 策略模式 | 可插拔 GuardrailPolicy 接口 | 支持运行时动态注册/注销策略，不同场景可定制 |
+| 策略模式 | GuardrailPolicy sealed interface（3 permits） | 编译时穷举策略类型，支持运行时动态注册/注销 |
 | 风险分级 | 四级枚举 | 为权限系统和护栏阻断提供统一风险语义 |
 | 注入方式 | Spring AI Advisor | 复用 Spring AI 生态，无侵入式横切注入 |
-| 包分离 | guardrail 包（标记）+ observability.guardrail（实现） | 策略定义与执行引擎解耦 |
+| 包归属 | 全部位于 `observability.guardrail` 包 | 护栏是可观测性的子能力，不再独立成包 |
 
 ## 6. 集成点
 
@@ -105,4 +114,4 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.guardrail.enabled` | `true` | 是否启用护栏系统 |
+| `lifepilot.observability.guardrail.enabled` | `true` | 是否启用护栏引擎（GuardrailEngine + GuardrailAdvisor） |

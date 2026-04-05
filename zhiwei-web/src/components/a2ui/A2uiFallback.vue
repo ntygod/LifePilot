@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { logger } from '@/utils/logger'
+
 const props = defineProps<{
   type?: string
 }>()
 
 if (props.type) {
-  console.warn(`[A2UI] 未注册的组件类型: ${props.type}`)
+  logger.warn(`[A2UI] 未注册的组件类型: ${props.type}`)
 }
 </script>
 

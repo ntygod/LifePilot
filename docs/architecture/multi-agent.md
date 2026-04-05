@@ -31,17 +31,20 @@ Agent 蓝图，包含：
 
 负责从 Markdown 定义文件加载 Agent、热更新，以及序列化回磁盘。
 
-### 2.4 AgentExecutor
-
-执行独立 Agent 请求的隔离执行器，当前主要被 A2A 入口复用。
-
-### 2.5 SpawnWorkersToolFactory
+### 2.4 SpawnWorkersToolFactory
 
 提供 `spawn_workers` 工具，负责：
 - 校验并行任务列表
-- 从父预算剩余额度派生 Worker 池预算
-- 为每个 Worker 分配预算并并行执行
+- 通过 `SubAgentBudgetAllocator` 从父预算剩余额度派生 Worker 池预算，支持 per-task 预算覆盖上限
+- 直接调用 `AgentOrchestrator.run()` 为每个 Worker 分配预算并并行执行（不经过 AgentExecutor）
+- Worker 继承父 Agent 完整工具集，但排除 `spawn_workers` 自身（防止递归）
 - 聚合结果返回主 Agent
+
+### 2.5 SubAgentBudgetAllocator
+
+负责 Worker 预算分配：
+- 从父请求剩余额度切分 Worker 池预算
+- 支持任务级预算覆盖上限（per-task budget override）
 
 ### 2.6 ToolDiscoveryService
 
@@ -59,8 +62,8 @@ Agent 蓝图，包含：
 
 1. 主 Agent 调用 `spawn_workers`
 2. 工具读取父请求上下文中的预算、深度、trace 信息
-3. 按剩余额度切分 Worker 池预算
-4. 并发执行多个 Worker `AgentRequest`
+3. `SubAgentBudgetAllocator` 按剩余额度切分 Worker 池预算，应用 per-task 覆盖上限
+4. 通过 `AgentOrchestrator.run()` 并发执行多个 Worker（Worker 继承完整工具集但排除 `spawn_workers`）
 5. 聚合输出并返回主 Agent
 
 ## 4. 设计约束

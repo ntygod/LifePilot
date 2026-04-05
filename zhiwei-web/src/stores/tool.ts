@@ -129,28 +129,6 @@ export const useToolStore = defineStore('tool', () => {
     }
   }
 
-  async function enableTool(id: string) {
-    error.value = null
-    try {
-      await toolApi.enable(id)
-      await fetchTools() // 刷新列表
-    } catch (e: any) {
-      error.value = e.message ?? '启用 Tool 失败'
-      throw e
-    }
-  }
-
-  async function disableTool(id: string) {
-    error.value = null
-    try {
-      await toolApi.disable(id)
-      await fetchTools() // 刷新列表
-    } catch (e: any) {
-      error.value = e.message ?? '禁用 Tool 失败'
-      throw e
-    }
-  }
-
   return {
     tools,
     currentTool,
@@ -162,8 +140,6 @@ export const useToolStore = defineStore('tool', () => {
     fetchToolUsage,
     createTool,
     updateTool,
-    deleteTool,
-    enableTool,
-    disableTool
+    deleteTool
   }
 })

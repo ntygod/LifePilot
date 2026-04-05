@@ -22,6 +22,7 @@ import org.springframework.lang.Nullable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,28 +39,62 @@ import java.util.UUID;
 public class ChannelRuntimeIngressService {
 
     private static final Logger log = LoggerFactory.getLogger(ChannelRuntimeIngressService.class);
-    /** 单个附件最大允许大小：10MB。 */
-    private static final long MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+    /** 单个附件最大允许大小的默认值：10MB。 */
+    private static final long DEFAULT_MAX_ATTACHMENT_SIZE = 10L * 1024 * 1024;
+    /** 事件去重缓存默认容量。 */
+    private static final int DEFAULT_EVENT_CACHE_MAX_SIZE = 10_000;
 
     private final ChannelInstanceService channelInstanceService;
     private final ChannelIngressService channelIngressService;
     private final ConnectorRuntimeManager connectorRuntimeManager;
     private final ChannelInstanceEventService channelInstanceEventService;
     private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
+    private final long maxAttachmentSize;
+    /** 事件去重缓存（FIFO，超过容量自动淘汰最早条目）。 */
+    private final Map<String, Boolean> processedEventIds;
 
     public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
                                         ChannelIngressService channelIngressService,
                                         ConnectorRuntimeManager connectorRuntimeManager,
                                         ChannelInstanceEventService channelInstanceEventService,
-                                        ChannelDeliveryDispatcher channelDeliveryDispatcher) {
+                                        ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        long maxAttachmentSize) {
+        this(channelInstanceService, channelIngressService, connectorRuntimeManager,
+                channelInstanceEventService, channelDeliveryDispatcher,
+                maxAttachmentSize, DEFAULT_EVENT_CACHE_MAX_SIZE);
+    }
+
+    public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
+                                        ChannelIngressService channelIngressService,
+                                        ConnectorRuntimeManager connectorRuntimeManager,
+                                        ChannelInstanceEventService channelInstanceEventService,
+                                        ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        long maxAttachmentSize,
+                                        int eventCacheMaxSize) {
         this.channelInstanceService = channelInstanceService;
         this.channelIngressService = channelIngressService;
         this.connectorRuntimeManager = connectorRuntimeManager;
         this.channelInstanceEventService = channelInstanceEventService;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
+        this.maxAttachmentSize = maxAttachmentSize > 0 ? maxAttachmentSize : DEFAULT_MAX_ATTACHMENT_SIZE;
+        int cacheSize = eventCacheMaxSize > 0 ? eventCacheMaxSize : DEFAULT_EVENT_CACHE_MAX_SIZE;
+        this.processedEventIds = Collections.synchronizedMap(
+                new LinkedHashMap<>(cacheSize / 4, 0.75f, false) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                        return size() > cacheSize;
+                    }
+                });
     }
 
     public ChannelRuntimeEventResponse processEvent(String instanceId, ChannelRuntimeEventRequest request) {
+        String eventId = request.eventId();
+        if (eventId != null && !eventId.isBlank()) {
+            if (processedEventIds.putIfAbsent(eventId, Boolean.TRUE) != null) {
+                log.info("重复事件已忽略: instanceId={}, eventId={}", instanceId, eventId);
+                return ChannelRuntimeEventResponse.duplicate(eventId);
+            }
+        }
         ChannelInstance instance = requireActiveInstance(instanceId);
         try {
             GatewayMessage message = toGatewayMessage(instance, request);
@@ -119,7 +154,7 @@ public class ChannelRuntimeIngressService {
                 .channelType(resolveChannelType(instance.platform()))
                 .userId(request.userId().trim())
                 .sessionId(sessionId)
-                .content(buildContent(request.content()))
+                .content(buildContent(request.content(), request.attachments()))
                 .attachments(buildAttachments(request.attachments()))
                 .channelMetadata(null)
                 .timestamp(timestamp)
@@ -127,12 +162,15 @@ public class ChannelRuntimeIngressService {
                 .build();
     }
 
-    private MessageContent buildContent(ChannelRuntimeEventRequest.Content content) {
+    private MessageContent buildContent(ChannelRuntimeEventRequest.Content content,
+                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
         String type = content.type() != null ? content.type().trim().toLowerCase() : "text";
         return switch (type) {
             case "command" -> buildCommandContent(content);
             case "event" -> buildEventContent(content);
             case "text" -> new MessageContent.TextMessage(requireText(content.text(), "text"));
+            case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments);
+            case "card_action" -> buildCardActionContent(content);
             default -> throw new IllegalArgumentException("不支持的 connector 内容类型: " + type);
         };
     }
@@ -156,6 +194,59 @@ public class ChannelRuntimeIngressService {
         );
     }
 
+    private MessageContent.FileMessage buildFileContent(ChannelRuntimeEventRequest.Content content,
+                                                         String type,
+                                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
+        Map<String, Object> payload = content.payload();
+        String fileName = payload != null && payload.get("fileName") instanceof String fn && !fn.isBlank()
+                ? fn.trim()
+                : defaultFileName(type);
+        String mimeType = payload != null && payload.get("mimeType") instanceof String mt && !mt.isBlank()
+                ? mt.trim()
+                : defaultMimeType(type);
+        String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : null;
+
+        byte[] data;
+        if (attachments != null && !attachments.isEmpty()) {
+            ChannelRuntimeEventRequest.Attachment first = attachments.getFirst();
+            try {
+                data = Base64.getDecoder().decode(first.base64Data());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("富媒体附件 Base64 解码失败: " + fileName, e);
+            }
+        } else {
+            // 没有附件数据，可能只有 fileToken 引用，Agent 后续通过工具下载
+            data = new byte[0];
+        }
+        return new MessageContent.FileMessage(fileName, mimeType, data, caption);
+    }
+
+    private String defaultFileName(String type) {
+        return switch (type) {
+            case "image" -> "image.png";
+            case "audio" -> "audio.mp3";
+            case "video" -> "video.mp4";
+            default -> "file.bin";
+        };
+    }
+
+    private String defaultMimeType(String type) {
+        return switch (type) {
+            case "image" -> "image/png";
+            case "audio" -> "audio/mpeg";
+            case "video" -> "video/mp4";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private MessageContent.EventMessage buildCardActionContent(ChannelRuntimeEventRequest.Content content) {
+        String eventType = content.name() != null && !content.name().isBlank()
+                ? content.name().trim()
+                : "card_action";
+        Map<String, Object> payload = content.payload() != null ? content.payload() : Map.of();
+        return new MessageContent.EventMessage(eventType, payload);
+    }
+
     private List<GatewayMessage.Attachment> buildAttachments(List<ChannelRuntimeEventRequest.Attachment> attachments) {
         if (attachments == null || attachments.isEmpty()) {
             return List.of();
@@ -171,10 +262,10 @@ public class ChannelRuntimeIngressService {
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("附件 Base64 解码失败: " + attachment.fileName(), e);
             }
-            if (data.length > MAX_ATTACHMENT_SIZE) {
+            if (data.length > maxAttachmentSize) {
                 throw new IllegalArgumentException(
                         "附件大小超出限制（最大 %dMB）: fileName=%s, size=%d"
-                                .formatted(MAX_ATTACHMENT_SIZE / 1024 / 1024, attachment.fileName(), data.length));
+                                .formatted(maxAttachmentSize / 1024 / 1024, attachment.fileName(), data.length));
             }
             String attachmentId = attachment.attachmentId() != null && !attachment.attachmentId().isBlank()
                     ? attachment.attachmentId().trim()
@@ -219,6 +310,7 @@ public class ChannelRuntimeIngressService {
             case "wecom" -> ChannelType.WECOM;
             case "dingtalk" -> ChannelType.DINGTALK;
             case "feishu" -> ChannelType.FEISHU;
+            case "qq" -> ChannelType.QQ;
             default -> throw new IllegalArgumentException("当前执行链路尚未支持该渠道平台: " + platform);
         };
     }

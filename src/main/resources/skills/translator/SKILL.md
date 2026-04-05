@@ -1,14 +1,14 @@
 ---
 id: translator
 name: "翻译助手"
-description: "多语言翻译：文本翻译、文档本地化、术语一致性管理、国际化支持。"
+description: "多语言文本翻译、文档本地化、术语管理"
 version: "1.0.0"
 suggested-tools:
   - file.read
   - file.write
   - web.search
   - knowledge.search
-  - memory.search
+  - memory
 triggers:
   - "翻译"
   - "中译英"
@@ -49,7 +49,7 @@ triggers:
 
 ```
 # 检查已有术语记忆
-memory.search(query="术语表 翻译")
+memory(query="术语表 翻译")
 
 # 搜索领域术语标准
 web.search(query="XX领域 术语 中英对照")

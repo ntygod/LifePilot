@@ -6,7 +6,7 @@
 
 ## 1. 功能概述
 
-知微支持两种 Skill 扩展方式：Markdown 声明式 Skill（推荐）和 Java 原生内置 Skill。用户通过在 `~/.zhiwei/skills/` 目录下创建 SKILL.md 文件夹即可定义自定义 Skill，系统自动热加载。此外，系统还能通过 LLM 自动检测能力缺口并生成新 Skill。
+知微支持两种 Skill 扩展方式：Markdown 声明式 Skill（推荐，已实现）和 Java 原生内置 Skill（📋 规划中）。用户通过在 `~/.zhiwei/skills/` 目录下创建 SKILL.md 文件夹即可定义自定义 Skill，系统自动热加载。此外，系统还能通过 LLM 自动检测能力缺口并生成新 Skill。
 
 ## 2. 核心特性
 
@@ -23,7 +23,8 @@
 ```
 
 `SKILL.md` 采用 YAML Frontmatter + Markdown Body 格式：
-- YAML Frontmatter 定义元数据（id、name、description、version、suggestedTools 等）
+- YAML Frontmatter 定义元数据（id、name、description、version、suggestedTools、triggers 等）
+- `triggers` 字段为 `List<String>`，用于系统提示词中的关键词匹配，帮助 Agent 快速发现相关 Skill
 - Markdown Body 定义 Skill 指令（instructions），即激活后注入 Agent 上下文的专业指导
 
 ### 2.2 热加载
@@ -42,7 +43,9 @@
 2. **安全验证**（SecurityValidator）：校验 suggestedTools 白名单、风险等级、预算上限，检测 Prompt 注入
 3. **沙箱验证**（SandboxValidator）：在隔离环境中验证 Skill 定义的内部一致性
 
-### 2.4 Java 原生内置 Skill
+### 2.4 Java 原生内置 Skill — 📋 规划中（尚未实现）
+
+> 以下 `BuiltinSkillProvider`、`@BuiltinSkill` 注解和 `BuiltinSkillRegistrar` 均为设计规划，当前版本尚未实现。
 
 需要直接访问 Spring 生态、数据库操作或复杂业务逻辑时，可实现 `BuiltinSkillProvider` 接口：
 
@@ -56,7 +59,7 @@
 当用户请求超出现有 Skill 能力范围时，系统可自动生成新 Skill：
 
 1. `SkillGapDetector` 检测能力缺口
-2. `SkillGenerator` 调用 LLM 生成 SKILL.md 内容
+2. `SkillGenerator` 调用 LLM 生成 SKILL.md 内容（利用 `SkillTemplateLibrary` 提供模板参考，`ToolCapabilityManifest` 提供可用工具清单）
 3. 生成的 Skill 经过三重验证
 4. 用户确认后持久化到 `~/.zhiwei/skills/auto/{skill-id}/SKILL.md`
 
@@ -72,9 +75,9 @@
 
 用户请求"帮我分析这份财务报表"，系统检测到没有匹配的 Skill，自动生成财务分析 Skill。经验证和用户确认后，Skill 持久化并可在后续对话中复用。
 
-**场景三：开发内置 Skill 插件**
+**场景三：开发内置 Skill 插件（📋 规划中）**
 
-开发者实现 `BuiltinSkillProvider` 接口，注册专业工具和 Skill 定义。通过 `@BuiltinSkill` 注解控制注册顺序，系统启动时自动加载。
+开发者实现 `BuiltinSkillProvider` 接口，注册专业工具和 Skill 定义。通过 `@BuiltinSkill` 注解控制注册顺序，系统启动时自动加载。（此功能尚未实现）
 
 ## 4. 配置项
 

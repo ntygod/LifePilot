@@ -5,7 +5,7 @@ description: "邮件收发、模板管理、批量发送。"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
-  - http.request
+  - web.fetch
   - file.read
   - file.write
 triggers:
@@ -28,14 +28,14 @@ triggers:
 
 ## When NOT to Use
 - 即时消息发送（用飞书/钉钉 Skill）
-- 系统通知推送（用 interact.notify）
+- 系统通知推送（用 interact）
 - 文档协作（用对应的文档 Skill）
 
 ## 发送方式
 
 ### 方式1：通过 HTTP API（推荐）
 ```
-http.request(
+web.fetch(
   url="https://api.sendgrid.com/v3/mail/send",
   method="POST",
   headers={"Authorization": "Bearer ${API_KEY}", "Content-Type": "application/json"},

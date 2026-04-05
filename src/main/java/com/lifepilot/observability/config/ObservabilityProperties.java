@@ -72,9 +72,6 @@ public class ObservabilityProperties {
         /** 内容安全配置。 */
         private ContentSafety contentSafety = new ContentSafety();
 
-        /** 预算限制配置。 */
-        private BudgetLimit budgetLimit = new BudgetLimit();
-
         /** 速率限制配置。 */
         private RateLimit rateLimit = new RateLimit();
 
@@ -112,18 +109,6 @@ public class ObservabilityProperties {
         }
 
         /**
-         * 预算限制配置。
-         */
-        @Setter
-        @Getter
-        public static class BudgetLimit {
-
-            /** 每日 Token 上限，默认 1000000。 */
-            private int dailyTokenLimit = 1000000;
-
-        }
-
-        /**
          * 速率限制配置。
          */
         @Setter
@@ -132,9 +117,6 @@ public class ObservabilityProperties {
 
             /** 每分钟最大调用次数，默认 60。 */
             private int maxCallsPerMinute = 60;
-
-            /** 每小时最大调用次数，默认 1000。 */
-            private int maxCallsPerHour = 1000;
 
         }
     }

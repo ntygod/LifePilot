@@ -17,6 +17,7 @@ import {
   Workflow,
 } from 'lucide-vue-next'
 import { workflowApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { useWorkflowExecutionStream } from '@/composables/useWorkflowExecutionStream'
@@ -86,7 +87,7 @@ async function loadStats() {
     workflowStats.value = stats
     stepStats.value = steps
   } catch (e) {
-    console.error('加载统计失败:', e)
+    logger.error('加载统计失败:', e)
   } finally {
     statsLoading.value = false
   }
@@ -462,7 +463,7 @@ async function handleExport() {
     URL.revokeObjectURL(url)
     uiStore.showToast('success', '已导出工作流')
   } catch (e) {
-    console.error('导出失败:', e)
+    logger.error('导出失败:', e)
     uiStore.showToast('error', '导出失败')
   } finally {
     exportLoading.value = false
@@ -489,7 +490,7 @@ async function handleImportFile(event: Event) {
     await workflowStore.fetchDetail(created.id)
     router.push({ name: 'workflowDetail', params: { id: created.id } })
   } catch (e) {
-    console.error('导入失败:', e)
+    logger.error('导入失败:', e)
     uiStore.showToast('error', '导入失败')
   } finally {
     importLoading.value = false
@@ -528,7 +529,7 @@ watch(() => route.params.id, async () => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />

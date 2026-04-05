@@ -97,7 +97,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <PageHeader
           eyebrow="MCP 服务器"
@@ -264,7 +264,7 @@ onMounted(() => {
             <article
               v-for="server in filteredServers"
               :key="server.name"
-              class="list-card cursor-pointer p-5"
+              class="list-card cursor-pointer p-4"
               @click="router.push(`/mcp-servers/${server.name}`)"
             >
               <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">

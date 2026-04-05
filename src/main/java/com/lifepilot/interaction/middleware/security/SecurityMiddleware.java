@@ -70,6 +70,9 @@ public class SecurityMiddleware implements GatewayMiddleware {
         allViolations.addAll(injectionViolations);
 
         // 2. 敏感数据检测与脱敏
+        // 注意：脱敏内容仅用于审计记录（SecurityCheckResult），
+        // 不替换原始 message 内容 — Agent 需要完整语义上下文才能正确理解用户意图。
+        // 敏感数据的保护通过审计日志脱敏 + 响应后处理实现，而非输入截断。
         var sensitiveResult = sensitiveDataDetector.detect(content);
         allViolations.addAll(sensitiveResult.violations());
         String redactedContent = sensitiveResult.redactedContent();

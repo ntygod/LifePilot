@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { MemoryStats, MemorySearchResult, ErrorResponse } from '@/types'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 
 /**
  * 记忆管理 Pinia Store。
@@ -64,11 +65,11 @@ export const useMemoryStore = defineStore('memory', () => {
    * 跨层记忆搜索。
    *
    * @param query 搜索关键词
-   * @param topK 返回结果数量，默认 10
+   * @param top_k 返回结果数量，默认 10
    * @returns 搜索结果列表
    */
-  async function search(query: string, topK?: number): Promise<MemorySearchResult[]> {
-    return memoryApi.search(query, topK)
+  async function search(query: string, top_k?: number): Promise<MemorySearchResult[]> {
+    return memoryApi.search(query, top_k)
   }
 
   /**
@@ -84,9 +85,9 @@ export const useMemoryStore = defineStore('memory', () => {
       const error = err as ErrorResponse
       if (error.code === 409) {
         // 巩固已在执行中，保持 consolidating 状态
-        console.warn('记忆巩固已在执行中')
+        logger.warn('记忆巩固已在执行中')
       } else {
-        console.error('触发巩固失败:', error.message)
+        logger.error('触发巩固失败:', error.message)
       }
     } finally {
       consolidating.value = false

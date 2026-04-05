@@ -44,6 +44,12 @@ flowchart TD
 
 ## 3. 核心组件
 
+### 3.0 MultimodalRouter 与 Gemini 集成
+
+- `MultimodalRouter`（`com.lifepilot.llm.multimodal`）负责将媒体内容路由到支持多模态的 LLM 提供商
+- `GeminiFileApiClient` 集成 Gemini File API，支持大文件上传和处理
+- `MediaContent` 是统一的媒体内容模型类，承载图片、文档、音频、视频等预处理后的数据
+
 ### 3.1 MediaType
 
 - 职责：基于 Apache Tika 的 MIME 类型检测与分类

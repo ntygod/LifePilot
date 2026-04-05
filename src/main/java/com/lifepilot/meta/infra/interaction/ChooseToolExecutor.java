@@ -41,7 +41,7 @@ public class ChooseToolExecutor {
             String streamId = input.getContextValue(ToolContextKeys.STREAM_ID, String.class).orElse(null);
             List<String> options = input.getParam("options", List.class);
 
-            if (options == null || options.isEmpty()) {
+            if (options.isEmpty()) {
                 return ToolResult.error("选项列表不能为空");
             }
 

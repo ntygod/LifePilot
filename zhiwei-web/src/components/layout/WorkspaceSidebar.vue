@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import ConversationListPane from '@/components/chat/ConversationListPane.vue'
+import WhisperDownloadCard from '@/components/global/WhisperDownloadCard.vue'
 import { isPathActive, resolvePrimaryNavigation } from './appNavigation'
 
 interface Props {
@@ -23,6 +24,10 @@ const currentSection = computed(() => resolvePrimaryNavigation(route.path))
 
 <template>
   <div class="sidebar-panel h-full w-[var(--sidebar-width)]">
+    <!-- Whisper 语音引擎下载进度（非阻塞，仅下载时显示） -->
+    <WhisperDownloadCard />
+
+
     <ConversationListPane v-if="currentSection.mode === 'conversation-list'" @close="emit('close')" />
 
     <template v-else>

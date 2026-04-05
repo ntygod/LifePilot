@@ -46,6 +46,9 @@ public class MemoryProperties {
     /** 向量数据库 JDBC URL，默认 jdbc:sqlite:${user.home}/.zhiwei/vectors.db。 */
     private String vectorDbUrl = "jdbc:sqlite:" + System.getProperty("user.home") + "/.zhiwei/vectors.db";
 
+    /** 向量数据库 busy_timeout（毫秒），默认 30000。 */
+    private int busyTimeoutMs = 30000;
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -75,6 +78,9 @@ public class MemoryProperties {
 
     public String getVectorDbUrl() { return vectorDbUrl; }
     public void setVectorDbUrl(String vectorDbUrl) { this.vectorDbUrl = vectorDbUrl; }
+
+    public int getBusyTimeoutMs() { return busyTimeoutMs; }
+    public void setBusyTimeoutMs(int busyTimeoutMs) { this.busyTimeoutMs = busyTimeoutMs; }
 
     /** 历史预算配置，当前主链路仅保留兼容字段。 */
     private TokenBudget tokenBudget = new TokenBudget();

@@ -6,6 +6,7 @@ import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
+import com.lifepilot.agent.execution.ReflectContentBuilder;
 import com.lifepilot.agent.execution.ToolExecutionCoordinator;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
@@ -23,6 +24,8 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.workspace.TaskStateItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -66,6 +69,9 @@ public class ReactAgentLoop implements CallbackHelper {
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
     private static final String DEFAULT_MODEL_ID = "ZhiWei";
 
+    /** 停滞检测排除名单 — 这些工具的重复调用（不同参数）是合理的执行模式。 */
+    private static final Set<String> STALL_DETECTION_EXCLUDED_TOOLS = Set.of("web.search");
+
     // ===== 核心依赖 =====
     private final ContextAssembler contextAssembler;
     private final ProviderMessageBuilder providerMessageBuilder;
@@ -85,6 +91,9 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final ApplicationEventPublisher eventPublisher;
     private final ScheduledExecutorService suspendScheduler;
 
+    // ===== 可选依赖（L1 工作区） =====
+    @Nullable private final SessionWorkspaceService workspaceService;
+
     // ===== 可选依赖（L4 反馈闭环） =====
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
@@ -103,42 +112,9 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable ApplicationEventPublisher eventPublisher,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
-            SharedScheduler sharedScheduler) {
-        this(
-                contextAssembler,
-                providerMessageBuilder,
-                agentToolProvider,
-                config,
-                objectMapper,
-                traceRecorder,
-                a2uiProperties,
-                transcriptStore,
-                multimodalRouter,
-                mediaDataExtractor,
-                eventPublisher,
-                proceduralMemory,
-                intentMatcher,
-                null,
-                sharedScheduler
-        );
-    }
-
-    public ReactAgentLoop(
-            ContextAssembler contextAssembler,
-            ProviderMessageBuilder providerMessageBuilder,
-            AgentToolProvider agentToolProvider,
-            AgentConfigProperties config,
-            ObjectMapper objectMapper,
-            @Nullable TraceRecorder traceRecorder,
-            @Nullable A2uiProperties a2uiProperties,
-            @Nullable TranscriptStore transcriptStore,
-            @Nullable MultimodalRouter multimodalRouter,
-            @Nullable MediaDataExtractor mediaDataExtractor,
-            @Nullable ApplicationEventPublisher eventPublisher,
-            @Nullable ProceduralMemory proceduralMemory,
-            @Nullable IntentMatcher intentMatcher,
             @Nullable CompactionEngine compactionEngine,
-            SharedScheduler sharedScheduler) {
+            SharedScheduler sharedScheduler,
+            @Nullable SessionWorkspaceService workspaceService) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -153,7 +129,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 mediaDataExtractor,
                 proceduralMemory,
                 intentMatcher,
-                config.getLoop().getMaxParallelToolCalls()
+                config.getLoop().getMaxParallelToolCalls(),
+                multimodalRouter
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
@@ -162,6 +139,7 @@ public class ReactAgentLoop implements CallbackHelper {
         this.eventPublisher = eventPublisher;
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
+        this.workspaceService = workspaceService;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
 
@@ -211,6 +189,8 @@ public class ReactAgentLoop implements CallbackHelper {
         int consecutiveFailures = 0;
         // 缓存首次组装的上下文 — 记忆检索结果和预算分配在迭代间不变
         AssembledContext cachedContext = null;
+        // 缓存工具回调列表 — 工具集在迭代间不变，仅 TRIM_TOOLS 降级时失效重建
+        List<ToolCallback> cachedToolCallbacks = null;
 
         for (int iteration = 0; !state.isDone(); iteration++) {
             // 1. 取消信号检查
@@ -231,8 +211,12 @@ public class ReactAgentLoop implements CallbackHelper {
             // 3. 预算检查：每轮开始前先刷新 elapsed，并在任一维度超限时统一降级终止
             var startBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
             state = startBudgetCheck.state();
-            if (startBudgetCheck.invalidateCachedContext()) {
-                cachedContext = null;
+            if (startBudgetCheck.invalidateCachedContext() && cachedContext != null) {
+                // 增量降级：基于已缓存的上下文裁剪，避免重新检索记忆和知识
+                cachedContext = cachedContext.degrade(startBudgetCheck.degradationLevel());
+                if (startBudgetCheck.degradationLevel() == Budget.DegradationLevel.TRIM_TOOLS) {
+                    cachedToolCallbacks = null;
+                }
             }
             if (state.isDone()) {
                 break;
@@ -252,8 +236,17 @@ public class ReactAgentLoop implements CallbackHelper {
                 }
             }
             var assembledContext = cachedContext;
+            boolean firstIteration = iteration == 0;
             // 首轮迭代注入用户上传的媒体内容到上下文
-            if (state.steps().isEmpty() && hasMultimodalContent(request)) {
+            if (firstIteration && hasMultimodalContent(request)) {
+                if (multimodalRouter == null || !multimodalRouter.isVisionAvailable()) {
+                    log.warn("用户上传了图片但无可用 VISION Provider: traceId={}", state.traceId());
+                    state = DegradedResponseBuilder.terminateWithReason(
+                            state,
+                            "当前没有配置支持图片理解的模型（VISION Provider），无法处理您上传的图片。" +
+                                    "请先在系统设置中配置支持视觉能力的模型提供商，然后重试。");
+                    break;
+                }
                 assembledContext = assembledContext.withMediaContents(request.mediaContents());
             }
             // 非首轮迭代：有 pendingMedia 时注入工具产生的媒体
@@ -272,7 +265,10 @@ public class ReactAgentLoop implements CallbackHelper {
                         messageBuildResult.hygieneReport().droppedOrphanToolResponses(),
                         messageBuildResult.hygieneReport().droppedAdditionalSystemMessages());
             }
-            var toolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
+            if (cachedToolCallbacks == null) {
+                cachedToolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
+            }
+            var toolCallbacks = cachedToolCallbacks;
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
@@ -284,12 +280,7 @@ public class ReactAgentLoop implements CallbackHelper {
 
             // 构造有效请求：将当前迭代的媒体内容传递给 callLlm
             var effectiveRequest = assembledContext.mediaContents() != null && !assembledContext.mediaContents().isEmpty()
-                    ? new AgentRequest(request.message(), request.sessionId(), request.source(),
-                        request.userId(),
-                        request.turnId(), request.action(), request.taskMode(),
-                        request.systemPrompt(), request.budget(), request.parentTraceId(),
-                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        assembledContext.mediaContents(), request.temperature(), request.resumePolicy())
+                    ? request.withMediaContents(assembledContext.mediaContents())
                     : request;
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
@@ -364,6 +355,15 @@ public class ReactAgentLoop implements CallbackHelper {
                 // ★ 外层循环挂起检测 — 挂起后跳出主迭代循环
                 if (state.suspended()) break;
                 if (cancellationToken.isCancelled()) break;
+
+                // ★ 执行回顾注入点 — 工具执行完毕且未挂起时评估是否需要反思
+                var maybeReflect = evaluateReflectionTrigger(state, iteration);
+                if (maybeReflect != null) {
+                    state = appendAndPublishStep(state, maybeReflect, loopContext);
+                    persistReflectToWorkspace(state, iteration);
+                    cachedContext = null;
+                    cachedToolCallbacks = null;
+                }
 
                 // 扣减 Token 预算
                 state = state.toBuilder()
@@ -440,6 +440,7 @@ public class ReactAgentLoop implements CallbackHelper {
                                 .build();
                         consecutiveFailures = 0;
                         cachedContext = null;
+                        cachedToolCallbacks = null;
                     } else {
                         String visibleContent = completionEvaluation.userVisibleContent() != null
                                 ? completionEvaluation.userVisibleContent()
@@ -480,11 +481,15 @@ public class ReactAgentLoop implements CallbackHelper {
                             loopContext
                     );
                     cachedContext = null;
+                    cachedToolCallbacks = null;
                 }
                 var endBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
                 state = endBudgetCheck.state();
-                if (endBudgetCheck.invalidateCachedContext()) {
-                    cachedContext = null;
+                if (endBudgetCheck.invalidateCachedContext() && cachedContext != null) {
+                    cachedContext = cachedContext.degrade(endBudgetCheck.degradationLevel());
+                    if (endBudgetCheck.degradationLevel() == Budget.DegradationLevel.TRIM_TOOLS) {
+                        cachedToolCallbacks = null;
+                    }
                 }
                 if (state.isDone()) {
                     break;
@@ -505,14 +510,16 @@ public class ReactAgentLoop implements CallbackHelper {
         state = refreshBudgetElapsed(state, loopStart);
 
         boolean invalidateCachedContext = false;
-        var degradation = state.budget().degradationLevel();
-        if ((degradation == com.lifepilot.agent.model.Budget.DegradationLevel.COMPRESS_HISTORY
-                || degradation == com.lifepilot.agent.model.Budget.DegradationLevel.TRIM_TOOLS
-                || degradation == com.lifepilot.agent.model.Budget.DegradationLevel.SKIP_MEMORY)
+        Budget.DegradationLevel degradation = state.budget().degradationLevel();
+        Budget.DegradationLevel reportedLevel = null;
+        if ((degradation == Budget.DegradationLevel.COMPRESS_HISTORY
+                || degradation == Budget.DegradationLevel.TRIM_TOOLS
+                || degradation == Budget.DegradationLevel.SKIP_MEMORY)
                 && hasCachedContext) {
             log.info("预算渐进式降级: traceId={}, level={}, tokenUtilization={}%",
                     state.traceId(), degradation, (int) (state.budget().tokenUtilization() * 100));
             invalidateCachedContext = true;
+            reportedLevel = degradation;
         }
 
         if (state.budget().exceeded()) {
@@ -520,7 +527,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     state.traceId(), state.budget().exceedReason());
             state = DegradedResponseBuilder.terminateWithReason(state, state.budget().exceedReason());
         }
-        return new BudgetCheckResult(state, invalidateCachedContext);
+        return new BudgetCheckResult(state, invalidateCachedContext, reportedLevel);
     }
 
     private boolean maybeCompactMidLoop(ReactAgentState state, int iteration, boolean hasCachedContext) {
@@ -573,10 +580,108 @@ public class ReactAgentLoop implements CallbackHelper {
         return state;
     }
 
+    // ===== 执行回顾（Reflect）=====
+
+    /**
+     * 评估当前迭代是否需要注入反思步骤。
+     *
+     * @return Reflect 步骤（如果应触发），否则 null
+     */
+    @Nullable
+    private ReactStep.Reflect evaluateReflectionTrigger(ReactAgentState state, int iteration) {
+        var loopConfig = config.getLoop();
+
+        // 防重复：上一步已是 Reflect 则跳过
+        if (!state.steps().isEmpty() && state.steps().getLast() instanceof ReactStep.Reflect) {
+            return null;
+        }
+
+        // 1. 工具失败触发（即使预算紧张也触发，失败反思价值高且内容短）
+        if (loopConfig.isReflectOnToolFailure() && hasRecentToolFailure(state)) {
+            return new ReactStep.Reflect(
+                    ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.TOOL_FAILURE),
+                    ReactStep.ReflectTrigger.TOOL_FAILURE);
+        }
+
+        // 预算门控：非 NORMAL 降级时跳过周期性和停滞触发
+        if (state.budget().degradationLevel() != Budget.DegradationLevel.NORMAL) {
+            return null;
+        }
+
+        // 2. 停滞检测
+        if (detectStall(state, loopConfig.getStallDetectionThreshold())) {
+            return new ReactStep.Reflect(
+                    ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.STALL_DETECTED),
+                    ReactStep.ReflectTrigger.STALL_DETECTED);
+        }
+
+        // 3. 周期性触发
+        if (iteration >= loopConfig.getReflectAfterIterations()
+                && (iteration - loopConfig.getReflectAfterIterations()) % loopConfig.getReflectInterval() == 0) {
+            return new ReactStep.Reflect(
+                    ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.PERIODIC),
+                    ReactStep.ReflectTrigger.PERIODIC);
+        }
+
+        return null;
+    }
+
+    /** 检查当前批次（最近连续的 ToolCall/Observation 序列）是否有失败的 Observation。 */
+    private boolean hasRecentToolFailure(ReactAgentState state) {
+        var steps = state.steps();
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            var step = steps.get(i);
+            if (step instanceof ReactStep.Observation obs) {
+                if (!obs.success()) return true;
+            } else if (step instanceof ReactStep.ToolCall) {
+                // 仍在当前批次内，继续
+            } else {
+                break; // 遇到非 ToolCall/Observation 步骤，表示已离开当前批次
+            }
+        }
+        return false;
+    }
+
+    /** 检测是否陷入停滞（最近 N 个 ToolCall 使用相同工具）。 */
+    private boolean detectStall(ReactAgentState state, int threshold) {
+        var steps = state.steps();
+        var recentToolIds = new java.util.ArrayList<String>(threshold);
+        for (int i = steps.size() - 1; i >= 0 && recentToolIds.size() < threshold; i--) {
+            if (steps.get(i) instanceof ReactStep.ToolCall tc) {
+                recentToolIds.add(tc.toolId());
+            }
+        }
+        if (recentToolIds.size() < threshold) return false;
+        String first = recentToolIds.getFirst();
+        if (STALL_DETECTION_EXCLUDED_TOOLS.contains(first)) return false;
+        return recentToolIds.stream().allMatch(first::equals);
+    }
+
+    /** 将反思进度快照写入 L1 工作区。 */
+    private void persistReflectToWorkspace(ReactAgentState state, int iteration) {
+        if (workspaceService == null || state.sessionId() == null || state.sessionId().isBlank()) {
+            return;
+        }
+        try {
+            workspaceService.saveTaskState(state.sessionId(), new TaskStateItem(
+                    "执行进度",
+                    ReflectContentBuilder.buildTaskStateSummary(state, iteration),
+                    null,
+                    0,
+                    state.traceId(),
+                    state.traceId(),
+                    null
+            ));
+        } catch (Exception e) {
+            log.debug("写入工作区进度快照失败，降级跳过: error={}", e.getMessage());
+        }
+    }
+
     /** 预算检查结果：同时返回新 state 以及是否需要丢弃缓存上下文。 */
     private record BudgetCheckResult(
             ReactAgentState state,
-            boolean invalidateCachedContext
+            boolean invalidateCachedContext,
+            @Nullable Budget.DegradationLevel degradationLevel
     ) {
     }
 
@@ -687,7 +792,6 @@ public class ReactAgentLoop implements CallbackHelper {
         };
     }
 
-    /** 从 ChatResponse 估算 Token 消耗。 */
     /** 从 ChatResponse 中提取 prompt + completion token 总量。 */
     private int estimateTokens(ChatResponse chatResponse) {
         if (chatResponse == null) return 0;
@@ -762,7 +866,6 @@ public class ReactAgentLoop implements CallbackHelper {
         }
     }
 
-    /** 记录工具调用步骤到 Trace。 */
     /** 对纯文本做轻量 token 估算，主要用于日志和预算兜底。 */
     private int estimateTextTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
@@ -773,7 +876,6 @@ public class ReactAgentLoop implements CallbackHelper {
         return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
-    /** 判断请求是否包含多模态内容。 */
     /** 生成日志预览文本，避免把长回答整段打到日志里。 */
     private String previewForLog(@Nullable String content) {
         if (content == null || content.isBlank()) {
@@ -995,6 +1097,11 @@ public class ReactAgentLoop implements CallbackHelper {
                     "挂起时长: " + duration.toMillis() + "ms",
                     null
             };
+            case ReactStep.Reflect(var content, var trigger) -> new String[]{
+                    "REFLECT", "执行回顾",
+                    content.length() > 100 ? content.substring(0, 100) + "..." : content,
+                    null
+            };
         };
 
         var extra = new HashMap<String, Object>();
@@ -1003,6 +1110,7 @@ public class ReactAgentLoop implements CallbackHelper {
         if (info.length > 4 && info[4] != null) {
             extra.put("toolId", info[4]);
         }
+        loopContext.markFirstReasoningEvent(Instant.now());
         sendReasoningEvent(sseManager, streamId, state.sessionId(), turnId,
                 info[0], info[1], info[2], info[3], extra);
     }

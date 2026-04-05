@@ -1,3 +1,7 @@
+# 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.data-dir=xxx 覆盖）
+zhiwei:
+  data-dir: "${user.home}/.zhiwei"
+
 spring:
   application:
     name: zhiwei
@@ -5,7 +9,7 @@ spring:
     serialization:
       write-dates-as-timestamps: false
   datasource:
-    url: "jdbc:sqlite:${user.home}/.zhiwei/zhiwei.db?enable_load_extension=true"
+    url: "jdbc:sqlite:${zhiwei.data-dir}/zhiwei.db?enable_load_extension=true"
     driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true
@@ -56,12 +60,16 @@ lifepilot:
       max-consecutive-failures: 3
       max-parallel-tool-calls: 4
       llm-scene: agent_react
+      # reflect-after-iterations: 5    # 开始周期性回顾的迭代阈值
+      # reflect-interval: 3            # 周期性回顾间隔
+      # reflect-on-tool-failure: true  # 工具失败时触发回顾
+      # stall-detection-threshold: 3   # 停滞检测阈值
     budget:
-      default-max-tokens: 131072
+      default-max-tokens: 20000000
       default-max-steps: 60
       default-max-duration-seconds: 300
     context:
-      max-context-tokens: 131072
+      max-context-tokens: 2000000
       output-reserved-tokens: 8192
       success-step-max-length: 200
       failed-step-max-length: 80
@@ -86,45 +94,11 @@ lifepilot:
       max-recent-turns: 10
       cleanup-interval-ms: 300000
     task:
-      # ===== 自主任务配置（Cron + 主动提醒） =====
+      # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
       enabled: true
       heartbeat-enabled: true
-      proactive-reminder-enabled: true
       heartbeat-interval-seconds: 1800
-      proactive-reminder-daily-max-reminders: 3
-      proactive-reminder-cooldown-hours: 24
-      proactive-reminder-quiet-hours-start: "23:00"
-      proactive-reminder-quiet-hours-end: "08:00"
-      proactive-reminder-wakeup-scan-interval-seconds: 60
-      proactive-reminder-wakeup-batch-size: 20
-      proactive-reminder-outcome-inference-lookback-days: 30
-      proactive-reminder-outcome-inference-batch-size: 60
-      proactive-reminder-bandit-enabled: true
-      proactive-reminder-bandit-exploration-alpha: 0.18
-      proactive-reminder-bandit-min-examples: 16
-      proactive-reminder-bandit-min-action-samples: 3
-      proactive-reminder-bandit-lookback-days: 30
-      proactive-reminder-bandit-max-examples: 400
-      proactive-reminder-replay-tuning-enabled: true
-      proactive-reminder-replay-min-samples: 12
-      proactive-reminder-replay-evaluation-enabled: true
-      proactive-reminder-replay-evaluation-interval-seconds: 21600
-      proactive-reminder-replay-evaluation-user-batch-size: 8
-      proactive-reminder-retention-days: 180
-      proactive-reminder-cleanup-interval-seconds: 21600
-      proactive-reminder-safe-tuning-enabled: true
-      proactive-reminder-tuning-max-score-delta: 0.04
-      proactive-reminder-tuning-max-hour-delta: 6
-      proactive-reminder-tuning-max-lookahead-minutes-delta: 45
-      proactive-reminder-tuning-max-daily-reminder-delta: 1
-      proactive-reminder-tuning-replay-rollback-delta: 0.05
-      proactive-reminder-tuning-require-consistent-replay-direction: true
-      proactive-reminder-opportunity-learning-enabled: true
-      proactive-reminder-opportunity-promote-threshold: 0.72
-      proactive-reminder-opportunity-suppress-threshold: 0.34
-      proactive-reminder-opportunity-promotion-margin: 0.08
-      proactive-reminder-llm-scene: "proactive_reminder"
-      proactive-reminder-llm-timeout-seconds: 15
+      heartbeat-file: "${zhiwei.data-dir}/HEARTBEAT.md"
       execution-timeout-seconds: 300
       # active-hours-start: "08:00"
       # active-hours-end: "22:00"
@@ -132,7 +106,7 @@ lifepilot:
     multi-agent:
       enabled: true
       max-delegation-depth: 2
-      agent-definitions-path: "${user.home}/.zhiwei/agents/"
+      agent-definitions-path: "${zhiwei.data-dir}/agents/"
       hot-reload:
         enabled: true
         scan-interval-seconds: 5
@@ -154,12 +128,17 @@ lifepilot:
       agent-version: 1.0.0
       protocol-version: 0.2.5
       streaming-enabled: true
+      sse-timeout-seconds: 120
     client:
       enabled: true
       remote-agents: []
       connect-timeout-seconds: 10
       read-timeout-seconds: 60
       card-cache-ttl-minutes: 30
+      remote-agent-keys: {}
+      circuit-breaker-failure-threshold: 3
+      circuit-breaker-reset-timeout-seconds: 60
+      circuit-breaker-half-open-max-attempts: 1
     task:
       ttl-minutes: 60
       max-history-length: 50
@@ -209,7 +188,7 @@ lifepilot:
     max-retention-days: 180
     embedding-dimensions: 1024
     semantic-match-threshold: 0.92
-    vector-db-url: "jdbc:sqlite:${user.home}/.zhiwei/vectors.db"
+    vector-db-url: "jdbc:sqlite:${zhiwei.data-dir}/vectors.db"
     token-budget:
       system-prompt-ratio: 0.10
       user-message-ratio: 0.15
@@ -369,7 +348,7 @@ lifepilot:
     # LLM 不可用时 Skill 搜索降级为关键词匹配模式
     enabled: true
     max-concurrent-activations: 5
-    directory: "${user.home}/.zhiwei/skills"
+    directory: "${zhiwei.data-dir}/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
     builtin: {}
@@ -397,7 +376,7 @@ lifepilot:
       default-top-k: 10
   knowledge:
     enabled: true
-    data-dir: "${user.home}/.zhiwei/data"
+    data-dir: "${zhiwei.data-dir}/data"
     max-file-size: 104857600
     chunking:
       default-strategy: smart
@@ -463,7 +442,7 @@ lifepilot:
       timeout-ms: 3000
       max-rewrites: 3
   datasource:
-    busy-timeout: 5000
+    busy-timeout: 30000
   datastore:
     enabled: true
     max-collections: 100
@@ -497,9 +476,6 @@ lifepilot:
         enabled: true
         order: 600
     rate-limit:
-      max-tokens-per-hour: 100000
-      max-tokens-per-day: 500000
-      estimated-tokens-per-request: 2000
       max-requests-per-minute: 30
     security:
       prompt-injection:
@@ -523,7 +499,7 @@ lifepilot:
         - mcp
         - skill
     execution:
-      timeout-seconds: 120
+      timeout-seconds: 6000
       streaming-enabled: true
     audit:
       enabled: true
@@ -538,6 +514,7 @@ lifepilot:
         port-range-start: 19091
         port-range-end: 19120
         startup-timeout: 45s
+        max-attachment-size-bytes: 10485760  # 10MB，单个入站附件最大字节数
       web:
         enabled: true
       wecom:
@@ -559,6 +536,10 @@ lifepilot:
         verification-token: ${FEISHU_VERIFICATION_TOKEN:}
         encrypt-key: ${FEISHU_ENCRYPT_KEY:}
         event-cache-max-size: 10000
+      qq:
+        enabled: ${QQ_ENABLED:false}
+        app-id: ${QQ_APP_ID:}
+        app-secret: ${QQ_APP_SECRET:}
     reconnect:
       max-attempts: 10
       initial-delay-ms: 1000
@@ -578,11 +559,15 @@ lifepilot:
       heartbeat-interval: 30000
       mcp-status-timeout: 1800000
     cors:
-      # CORS 跨域配置：开发环境（5173）和 Docker 部署（80/同源）
+      # CORS 跨域配置：开发环境（5173）、Docker 部署（80/同源）和 Tauri 桌面端
       allowed-origins:
         - "http://localhost:5173"
+        - "http://localhost:1420"
         - "http://localhost:80"
         - "http://localhost"
+        - "tauri://localhost"
+        - "https://tauri.localhost"
+        - "http://tauri.localhost"
       allow-credentials: true
   a2ui:
     # A2UI（Agent-to-UI）生成功能配置
@@ -643,10 +628,14 @@ lifepilot:
         - "(?i)ignore\\s+(all\\s+)?prior"
         - "(?i)disregard\\s+(all\\s+)?(above|previous)"
         - "(?i)forget\\s+(all\\s+)?previous"
+    claw-hub:
+      enabled: false
+      base-url: "https://clawhub.ai/api/v1"
+      max-index-size: 50
     install-dirs:
-      skills: "${user.home}/.zhiwei/skills"
-      agents: "${user.home}/.zhiwei/agents"
-      workflows: "${user.home}/.zhiwei/workflows"
+      skills: "${zhiwei.data-dir}/skills"
+      agents: "${zhiwei.data-dir}/agents"
+      workflows: "${zhiwei.data-dir}/workflows"
   mcp:
     enabled: true
     server:
@@ -675,7 +664,7 @@ lifepilot:
     # 最大循环迭代次数（LoopStep）
     max-loop-iterations: 100
     # 工作流 YAML 定义文件目录
-    definitions-dir: "${user.home}/.zhiwei/workflows"
+    definitions-dir: "${zhiwei.data-dir}/workflows"
     # 崩溃恢复开关
     crash-recovery-enabled: true
     # YAML 文件扫描间隔（秒）
@@ -773,11 +762,8 @@ lifepilot:
       content-safety:
         blocked-patterns: []
         sensitive-topics: []
-      budget-limit:
-        daily-token-limit: 1000000
       rate-limit:
         max-calls-per-minute: 60
-        max-calls-per-hour: 1000
     redaction:
       enabled: true
       redact-before-llm: true
@@ -799,7 +785,7 @@ lifepilot:
       max-latency-samples: 1000
   eval:
     enabled: true
-    scenario-directory: "${user.home}/.zhiwei/eval/scenarios"
+    scenario-directory: "${zhiwei.data-dir}/eval/scenarios"
     default-pass-threshold: 0.7
     degradation-threshold: 0.1
     llm-judge:
@@ -827,6 +813,8 @@ lifepilot:
       web-fetch:
         max-content-length: 50000
         timeout-seconds: 10
+        min-static-content-length: 100
+        render-timeout-seconds: 15
       user-profile:
         timezone: ""
         cache-ttl-seconds: 300
@@ -856,6 +844,18 @@ lifepilot:
         wait-timeout-seconds: 10
         accessibility-max-depth: 5
         js-execution-timeout-seconds: 10
+        storage-state-dir: ""
+        persist-storage-state: false
+        acquisition-mode: LAUNCH        # LAUNCH / CDP / PERSISTENT
+        cdp-url: ""                      # CDP 模式的远程调试端口 URL
+        user-data-dir: ""                # PERSISTENT 模式的用户数据目录
+      git:
+        enabled: true
+        timeout-seconds: 30
+        max-diff-lines: 500
+        max-log-entries: 50
+        max-blame-lines: 200
+        max-output-chars: 50000
       code-execute:
         enabled: true
         default-language: python
@@ -868,12 +868,39 @@ lifepilot:
           - "/etc"
           - "/var"
           - "C:\\Windows"
+      file-edit:
+        undo-max-depth: 50
+        auto-lint: false
+        lint-commands:
+          ".py": "python3 -m py_compile {file}"
+          ".js": "node --check {file}"
+        lint-timeout-seconds: 10
+        max-snapshot-size-bytes: 5242880
       interaction:
         response-timeout-seconds: 120
       process:
         max-concurrent: 5
         max-output-buffer-size: 100000
         idle-timeout-minutes: 30
+      shell-session:
+        enabled: true
+        max-concurrent-sessions: 5
+        ttl-minutes: 30
+        default-cols: 120
+        default-rows: 40
+        history-lines: 2000
+        exec-timeout-seconds: 120
+        output-max-chars: 50000
+        cleanup-interval-seconds: 60
+      kernel:
+        enabled: true
+        max-concurrent-kernels: 3
+        ttl-minutes: 30
+        cleanup-interval-seconds: 60
+        execution-timeout-seconds: 60
+        python-runtime: "python3"
+        node-runtime: "node"
+        max-output-chars: 50000
     introspection:
       cache-ttl-seconds: 60
       debounce-millis: 500

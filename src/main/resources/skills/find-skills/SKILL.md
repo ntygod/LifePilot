@@ -1,7 +1,7 @@
 ---
 id: find-skills
 name: "Skill 发现与安装"
-description: "搜索和安装 Skill 扩展包。"
+description: "Skill 扩展包搜索与安装"
 version: "1.2.0"
 suggested-tools:
   - shell.exec

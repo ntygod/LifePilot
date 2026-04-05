@@ -3,6 +3,7 @@ import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
 import { chatApi } from '@/api/client'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import { logger } from '@/utils/logger'
 import type {
   A2uiComponent,
   ChatAttachment,
@@ -30,6 +31,9 @@ type ExecuteTurnOptions = {
   userMessageId?: string | null
 }
 
+const TOKEN_FLUSH_INTERVAL_MS = 24
+const TOKEN_FLUSH_CHAR_THRESHOLD = 96
+
 export function useChat() {
   const chatStore = useChatStore()
   const a2uiStore = useA2uiStore()
@@ -53,6 +57,50 @@ export function useChat() {
   let currentTurnId: string | null = null
   let currentUserMessageId: string | null = null
   let currentExecutionSeq = 0
+  let pendingStreamingText = ''
+  let pendingStreamingFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+  function flushStreamingText() {
+    if (pendingStreamingFlushTimer !== null) {
+      clearTimeout(pendingStreamingFlushTimer)
+      pendingStreamingFlushTimer = null
+    }
+    if (!pendingStreamingText) {
+      return
+    }
+    chatStore.streamingContent += pendingStreamingText
+    pendingStreamingText = ''
+  }
+
+  function clearStreamingTextBuffer() {
+    if (pendingStreamingFlushTimer !== null) {
+      clearTimeout(pendingStreamingFlushTimer)
+      pendingStreamingFlushTimer = null
+    }
+    pendingStreamingText = ''
+  }
+
+  function scheduleStreamingFlush() {
+    if (pendingStreamingFlushTimer !== null) {
+      return
+    }
+    pendingStreamingFlushTimer = setTimeout(() => {
+      pendingStreamingFlushTimer = null
+      flushStreamingText()
+    }, TOKEN_FLUSH_INTERVAL_MS)
+  }
+
+  function queueStreamingText(content: string) {
+    if (!content) {
+      return
+    }
+    pendingStreamingText += content
+    if (pendingStreamingText.length >= TOKEN_FLUSH_CHAR_THRESHOLD) {
+      flushStreamingText()
+      return
+    }
+    scheduleStreamingFlush()
+  }
 
   async function sendMessage(
     content: string,
@@ -144,7 +192,7 @@ export function useChat() {
       try {
         await chatApi.updateSessionConfig(chatStore.activeSessionId, options.sessionConfig)
       } catch (e) {
-        console.warn('更新会话配置失败，将继续发送消息', e)
+        logger.warn('更新会话配置失败，将继续发送消息', e)
       }
     }
 
@@ -169,6 +217,7 @@ export function useChat() {
       if (e instanceof DOMException && e.name === 'AbortError') {
         return
       }
+      clearStreamingTextBuffer()
       markCurrentTurnFailed(e instanceof Error ? e.message : '请求失败')
       activeInteraction.value = null
       interactionSubmitting.value = false
@@ -180,7 +229,7 @@ export function useChat() {
         try {
           await chatApi.updateSessionConfig(chatStore.activeSessionId, restoreSessionConfig)
         } catch (restoreError) {
-          console.warn('恢复会话配置失败', restoreError)
+          logger.warn('恢复会话配置失败', restoreError)
         }
       }
       if (currentExecutionSeq === executionSeq) {
@@ -240,6 +289,7 @@ export function useChat() {
   }
 
   function resetStreamingState(content: string) {
+    clearStreamingTextBuffer()
     isStreaming.value = true
     chatStore.isStreaming = true
     chatStore.streamingContent = ''
@@ -310,6 +360,7 @@ export function useChat() {
         handleSseEvent(currentEvent, currentData)
       }
     } catch (e) {
+      clearStreamingTextBuffer()
       markCurrentTurnFailed(e instanceof Error ? e.message : 'SSE 解析失败')
       activeInteraction.value = null
       interactionSubmitting.value = false
@@ -355,7 +406,7 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.TOKEN: {
           const event: SseTokenEvent = JSON.parse(data)
-          chatStore.streamingContent += event.content
+          queueStreamingText(event.content)
           break
         }
         case SSE_EVENT_TYPES.UI: {
@@ -376,6 +427,7 @@ export function useChat() {
             chatStore.activeSessionId = event.sessionId
           }
 
+          flushStreamingText()
           const finalContent = resolveDoneContent(event)
           const attachments = buildStreamingAttachments(event.contents)
           const assistantMessage = {
@@ -447,6 +499,7 @@ export function useChat() {
           const event: SseAgentSuspendedEvent = JSON.parse(data)
           currentTurnId = event.turnId ?? currentTurnId
           const suspendReasonDetail = event.reasonDetail?.trim() || event.terminationReason?.trim()
+          flushStreamingText()
           const suspendedContent = event.content?.trim()
             || buildInterruptedAssistantContent('SUSPENDED', suspendReasonDetail)
 
@@ -471,6 +524,7 @@ export function useChat() {
           const event: SseErrorEvent = JSON.parse(data)
           currentTurnId = event.turnId ?? currentTurnId
 
+          flushStreamingText()
           if (!finalizeInterruptedTurn({
             id: buildTerminalAssistantId(event.turnId, event.traceId, 'error'),
             turnId: event.turnId ?? currentTurnId ?? undefined,
@@ -505,7 +559,7 @@ export function useChat() {
           break
         }
         default:
-          console.warn('未知的 SSE 事件类型:', eventType)
+          logger.warn('未知的 SSE 事件类型:', eventType)
       }
     } catch (e) {
       if (
@@ -513,6 +567,7 @@ export function useChat() {
         || eventType === SSE_EVENT_TYPES.ERROR
         || eventType === SSE_EVENT_TYPES.AGENT_SUSPENDED
       ) {
+        clearStreamingTextBuffer()
         markCurrentTurnFailed(e instanceof Error ? e.message : '事件解析失败')
         activeInteraction.value = null
         interactionSubmitting.value = false
@@ -520,7 +575,7 @@ export function useChat() {
         chatStore.resetStreaming()
         a2uiStore.clearComponents()
       }
-      console.error('SSE 事件解析失败:', eventType, data, e)
+      logger.error('SSE 事件解析失败:', eventType, data, e)
     }
   }
 
@@ -603,7 +658,7 @@ export function useChat() {
       })
       activeInteraction.value = null
     } catch (submitError) {
-      console.error('回传交互失败:', submitError)
+      logger.error('回传交互失败:', submitError)
       interactionError.value = submitError instanceof Error
         ? submitError.message
         : '交互回传失败，请重试'
@@ -1039,6 +1094,7 @@ export function useChat() {
 
   function abort() {
     abortController?.abort()
+    clearStreamingTextBuffer()
     activeInteraction.value = null
     interactionSubmitting.value = false
     interactionError.value = null

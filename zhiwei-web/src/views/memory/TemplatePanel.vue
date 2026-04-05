@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Search, Trash2, RotateCcw } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type {
   ProcedureTemplate,
   TemplateListParams,
@@ -88,7 +89,7 @@ async function loadTemplates() {
     items.value = result.items
     total.value = result.total
   } catch (e: any) {
-    console.error('加载模板列表失败:', e)
+    logger.error('加载模板列表失败:', e)
     error.value = e?.message || '加载模板列表失败，请稍后重试。'
   } finally {
     loading.value = false
@@ -122,7 +123,7 @@ async function openDetail(template: ProcedureTemplate) {
   try {
     detailTemplate.value = await memoryApi.getTemplate(template.templateId)
   } catch (e: any) {
-    console.error('加载模板详情失败:', e)
+    logger.error('加载模板详情失败:', e)
   } finally {
     detailLoading.value = false
   }
@@ -143,7 +144,7 @@ async function handleDelete() {
     detailOpen.value = false
     loadTemplates()
   } catch (e: any) {
-    console.error('删除模板失败:', e)
+    logger.error('删除模板失败:', e)
     alert(e?.message || '删除模板失败')
   } finally {
     deleting.value = false
@@ -298,7 +299,7 @@ function formatPercent(rate: number) {
 
     <!-- 详情 Sheet -->
     <Sheet v-model:open="detailOpen">
-      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+      <SheetContent class="w-full max-w-xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>{{ detailTemplate?.name || '模板详情' }}</SheetTitle>
           <SheetDescription>
@@ -443,7 +444,7 @@ function formatPercent(rate: number) {
 
     <!-- 删除确认对话框 -->
     <Dialog v-model:open="deleteOpen">
-      <DialogContent class="sm:max-w-sm">
+      <DialogContent class="sm:max-w-[384px]">
         <DialogHeader>
           <DialogTitle>确认删除</DialogTitle>
           <DialogDescription>

@@ -1,7 +1,7 @@
 ---
 id: database-query
 name: "数据库查询"
-description: "连接数据库执行 SQL 查询、生成 SQL、导出数据。"
+description: "数据库连接、SQL 查询/生成、数据导出"
 version: "1.0.0"
 suggested-tools:
   - shell.exec

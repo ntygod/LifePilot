@@ -114,7 +114,7 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
         <div class="surface-label text-[0.68rem]">配置</div>
         <span class="text-sm font-medium text-foreground">会话配置</span>
       </div>
-      <Button v-if="props.showClose" variant="ghost" size="icon-sm" @click="emit('close')">
+      <Button v-if="props.showClose" variant="ghost" size="icon-sm" aria-label="关闭配置面板" @click="emit('close')">
         <X :size="14" />
       </Button>
     </div>

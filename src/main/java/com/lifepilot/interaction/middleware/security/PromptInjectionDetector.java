@@ -23,7 +23,7 @@ public class PromptInjectionDetector {
 
     private static final Logger log = LoggerFactory.getLogger(PromptInjectionDetector.class);
 
-    /** 预编译的注入检测模式列表 */
+    /** 预编译的注入检测模式列表（英文 + 中文） */
     private static final List<InjectionPattern> PATTERNS = List.of(
             // ── 直接注入模式（CRITICAL） ──
             new InjectionPattern(
@@ -32,14 +32,29 @@ public class PromptInjectionDetector {
                     "直接注入"
             ),
             new InjectionPattern(
+                    Pattern.compile("(?:忽略|无视|忘记|丢弃).*(?:之前|以上|所有|上面|上述).*(?:指令|指示|要求|规则|设定|约束)"),
+                    "CRITICAL",
+                    "直接注入（中文）"
+            ),
+            new InjectionPattern(
                     Pattern.compile("(?:system|initial)\\s*prompt", Pattern.CASE_INSENSITIVE),
                     "CRITICAL",
                     "系统提示词探测"
             ),
             new InjectionPattern(
+                    Pattern.compile("(?:系统|初始)\\s*(?:提示词|指令|prompt)"),
+                    "CRITICAL",
+                    "系统提示词探测（中文）"
+            ),
+            new InjectionPattern(
                     Pattern.compile("(?:reveal|show|print|output).*(?:system|hidden|secret).*(?:prompt|instructions)", Pattern.CASE_INSENSITIVE),
                     "CRITICAL",
                     "提示词泄露"
+            ),
+            new InjectionPattern(
+                    Pattern.compile("(?:输出|显示|打印|泄露|告诉我).*(?:系统|隐藏|内部|原始).*(?:提示词|指令|prompt)"),
+                    "CRITICAL",
+                    "提示词泄露（中文）"
             ),
 
             // ── 越狱尝试模式（HIGH） ──
@@ -49,14 +64,29 @@ public class PromptInjectionDetector {
                     "角色覆盖"
             ),
             new InjectionPattern(
+                    Pattern.compile("你现在是|从现在起你是|你的新身份是"),
+                    "HIGH",
+                    "角色覆盖（中文）"
+            ),
+            new InjectionPattern(
                     Pattern.compile("(?:DAN|jailbreak|bypass)\\s*mode", Pattern.CASE_INSENSITIVE),
                     "HIGH",
                     "越狱尝试"
             ),
             new InjectionPattern(
+                    Pattern.compile("(?:越狱|解锁|破解).*(?:模式|限制)"),
+                    "HIGH",
+                    "越狱尝试（中文）"
+            ),
+            new InjectionPattern(
                     Pattern.compile("(?:pretend|act)\\s+(?:as|like)\\s+(?:a|an)", Pattern.CASE_INSENSITIVE),
                     "HIGH",
                     "角色扮演注入"
+            ),
+            new InjectionPattern(
+                    Pattern.compile("(?:假装|扮演|模拟|充当)\\s*(?:你是|自己是|一个)"),
+                    "HIGH",
+                    "角色扮演注入（中文）"
             )
     );
 

@@ -44,6 +44,7 @@ public class DataSourceConfig {
      * @return 配置完成的数据源
      */
     @Bean
+    @Primary
     public DataSource dataSource(@Value("${spring.datasource.url}") String url,
                                  DataSourceProperties dsProperties,
                                  ObjectProvider<SqliteVecInitializer> sqliteVecInitializerProvider) {

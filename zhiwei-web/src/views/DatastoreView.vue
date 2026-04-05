@@ -165,7 +165,7 @@ function summarizeProperties(datastore: Datastore) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <PageHeader
           eyebrow="Datastore"
@@ -294,6 +294,7 @@ function summarizeProperties(datastore: Datastore) {
                   variant="ghost"
                   size="icon"
                   title="删除 Datastore"
+                  aria-label="删除 Datastore"
                   data-test="delete-datastore-button"
                   @click.stop="openDeleteDialog(datastore, $event)"
                 >

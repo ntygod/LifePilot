@@ -213,7 +213,7 @@ watch(
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
@@ -235,7 +235,7 @@ watch(
             <div class="surface-label">知识库文档</div>
             <div class="space-y-2">
               <div class="flex flex-wrap items-center gap-2">
-                <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                <h1 class="text-2xl font-semibold tracking-tight text-foreground">
                   {{ documentItem?.fileName ?? '文档加载中...' }}
                 </h1>
                 <Badge
@@ -265,7 +265,7 @@ watch(
               class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3"
             >
               <div class="text-sm font-medium text-foreground">{{ item.label }}</div>
-              <div class="text-2xl font-semibold tracking-tight text-foreground">{{ item.value }}</div>
+              <div class="text-xl font-semibold tracking-tight text-foreground">{{ item.value }}</div>
               <p class="text-sm text-muted-foreground">{{ item.description }}</p>
             </article>
           </section>
@@ -425,7 +425,7 @@ watch(
             </div>
 
             <template v-else>
-              <section class="detail-card p-5">
+              <section class="detail-card p-4">
                 <div class="surface-label mb-3">文档信息</div>
                 <div class="space-y-3 text-sm text-muted-foreground">
                   <div class="flex items-center justify-between gap-3">

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AlertTriangle, ArrowUpRight, FileText, Settings, Wrench } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUpRight, FileText, Wrench } from 'lucide-vue-next'
 import { useToolStore } from '@/stores/tool'
 import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -54,7 +55,6 @@ const filteredTools = computed(() => {
   return result
 })
 
-const enabledCount = computed(() => toolStore.tools.filter(tool => tool.enabled).length)
 const mcpCount = computed(() => toolStore.tools.filter(tool => tool.source === 'mcp').length)
 const highRiskCount = computed(() => toolStore.tools.filter(tool => tool.riskLevel === 'HIGH').length)
 const hasFilters = computed(() => Boolean(searchQuery.value.trim()) || sourceFilter.value !== 'all' || riskFilter.value !== 'all')
@@ -86,26 +86,17 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
-      <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
-        <header class="space-y-4 border-b border-border/70 pb-5">
-          <div class="max-w-3xl space-y-2">
-            <div class="surface-label">工具</div>
-            <h1 class="text-3xl font-semibold tracking-tight text-foreground">工具目录</h1>
-            <p class="text-sm leading-6 text-muted-foreground">
-              查看和管理所有可用的工具。
-            </p>
-          </div>
-
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <PageContainer size="wide" class="py-4 sm:py-5">
+      <div class="page-stack">
+        <PageHeader
+          eyebrow="工具"
+          title="工具目录"
+          description="查看和管理所有可用的工具。"
+        >
+          <template #meta>
             <MetricCard label="工具总数" :value="toolStore.tools.length" hint="全部可用工具">
               <template #icon>
                 <Wrench class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="已启用" :value="enabledCount" hint="可直接调用">
-              <template #icon>
-                <Settings class="size-5" />
               </template>
             </MetricCard>
             <MetricCard label="外部工具" :value="mcpCount" hint="MCP 接入">
@@ -118,10 +109,10 @@ onMounted(() => {
                 <AlertTriangle class="size-5" />
               </template>
             </MetricCard>
-          </div>
-        </header>
+          </template>
+        </PageHeader>
 
-        <section class="detail-card p-5">
+        <section class="detail-card p-4">
           <div class="space-y-4">
             <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div class="space-y-1">
@@ -193,7 +184,7 @@ onMounted(() => {
             <div
               v-for="index in 6"
               :key="index"
-              class="list-card p-5"
+              class="list-card p-4"
             >
               <div class="space-y-4">
                 <div class="flex items-center justify-between gap-2">
@@ -255,7 +246,7 @@ onMounted(() => {
               v-for="tool in filteredTools"
               :key="tool.id"
               type="button"
-              class="list-card group flex w-full flex-col gap-4 p-5 text-left"
+              class="list-card group flex w-full flex-col gap-4 p-4 text-left"
               @click="openTool(tool.id)"
             >
               <div class="flex items-start justify-between gap-4">
@@ -269,14 +260,6 @@ onMounted(() => {
                     </Badge>
                     <Badge variant="outline" :class="riskTone[tool.riskLevel] ?? ''">
                       {{ tool.riskLevel }}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      :class="tool.enabled
-                        ? 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
-                        : 'border-slate-200/80 bg-slate-50/80 text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-200'"
-                    >
-                      {{ tool.enabled ? '已启用' : '已停用' }}
                     </Badge>
                   </div>
 

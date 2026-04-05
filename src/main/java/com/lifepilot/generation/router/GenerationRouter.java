@@ -84,7 +84,7 @@ public class GenerationRouter {
             }
         }
 
-        List<ModelServiceEntity> candidates = selectCandidates(scene, serviceId, modelName, requiredCapability);
+        List<ModelServiceEntity> candidates = selectCandidates(normalizedScene, serviceId, modelName, requiredCapability);
         if (candidates.isEmpty()) {
             throw new LlmUnavailableException("无可用生成服务: scene=" + scene, scene, List.of());
         }
@@ -103,7 +103,7 @@ public class GenerationRouter {
                     : Duration.ofSeconds(candidate.timeoutSeconds());
             try {
                 LlmResponse response = clientFactory.getOrCreate(candidate)
-                        .call(prompt, outputSchema, timeoutOverride);
+                        .call(prompt, outputSchema, effectiveTimeout);
                 circuitBreakerManager.recordSuccess(candidate.id(), requiredCapability.name());
                 if (cacheable) {
                     putCachedResponse(normalizedScene, responseFormatKey, prompt, response);
@@ -157,7 +157,7 @@ public class GenerationRouter {
                     ? timeoutOverride
                     : Duration.ofSeconds(candidate.timeoutSeconds());
             try {
-                T result = clientFactory.getOrCreate(candidate).callEntity(prompt, responseType, timeoutOverride);
+                T result = clientFactory.getOrCreate(candidate).callEntity(prompt, responseType, effectiveTimeout);
                 circuitBreakerManager.recordSuccess(candidate.id(), GenerationCapability.STRUCTURED_OUTPUT.name());
                 return result;
             } catch (Exception e) {

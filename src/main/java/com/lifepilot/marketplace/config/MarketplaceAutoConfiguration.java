@@ -5,6 +5,9 @@ import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.interaction.repository.ChannelPluginRepository;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.marketplace.MarketplaceService;
+import com.lifepilot.marketplace.clawhub.ClawHubClient;
+import com.lifepilot.marketplace.clawhub.ClawHubIndexSource;
+import com.lifepilot.marketplace.clawhub.ClawHubZipExtractor;
 import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.index.IndexRepository;
 import com.lifepilot.marketplace.install.*;
@@ -27,6 +30,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
 
 import java.nio.file.Path;
@@ -91,6 +95,34 @@ public class MarketplaceAutoConfiguration {
     }
 
     // ─────────────────────────────────────────────
+    //  ClawHub 第三方 Skill 源
+    // ─────────────────────────────────────────────
+
+    @Bean
+    @ConditionalOnProperty(name = "lifepilot.marketplace.claw-hub.enabled", havingValue = "true")
+    public ClawHubClient clawHubClient(RestClient.Builder restClientBuilder,
+                                       MarketplaceProperties properties) {
+        log.info("扩展市场: 注册 ClawHubClient, baseUrl={}", properties.getClawHub().getBaseUrl());
+        return new ClawHubClient(restClientBuilder, properties);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "lifepilot.marketplace.claw-hub.enabled", havingValue = "true")
+    public ClawHubZipExtractor clawHubZipExtractor() {
+        log.info("扩展市场: 注册 ClawHubZipExtractor");
+        return new ClawHubZipExtractor();
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "lifepilot.marketplace.claw-hub.enabled", havingValue = "true")
+    public ClawHubIndexSource clawHubIndexSource(ClawHubClient clawHubClient,
+                                                  IndexRepository indexRepository,
+                                                  MarketplaceProperties properties) {
+        log.info("扩展市场: 注册 ClawHubIndexSource, maxIndexSize={}", properties.getClawHub().getMaxIndexSize());
+        return new ClawHubIndexSource(clawHubClient, indexRepository, properties);
+    }
+
+    // ─────────────────────────────────────────────
     //  索引管理
     // ─────────────────────────────────────────────
 
@@ -100,10 +132,11 @@ public class MarketplaceAutoConfiguration {
                                      IndexRepository indexRepository,
                                      InstalledExtensionRepository installedExtensionRepository,
                                      VersionResolver versionResolver,
-                                     RestClient.Builder restClientBuilder) {
-        log.info("扩展市场: 注册 IndexManager");
+                                     RestClient.Builder restClientBuilder,
+                                     @Nullable ClawHubIndexSource clawHubIndexSource) {
+        log.info("扩展市场: 注册 IndexManager, clawHub={}", clawHubIndexSource != null);
         return new IndexManager(properties, indexRepository, installedExtensionRepository,
-                versionResolver, restClientBuilder);
+                versionResolver, restClientBuilder, clawHubIndexSource);
     }
 
     // ─────────────────────────────────────────────
@@ -114,11 +147,15 @@ public class MarketplaceAutoConfiguration {
     @ConditionalOnMissingBean
     public SkillInstallStrategy skillInstallStrategy(MarkdownSkillLoader markdownSkillLoader,
                                                      SkillRegistry skillRegistry,
-                                                     MarketplaceProperties properties) {
+                                                     MarketplaceProperties properties,
+                                                     @Nullable ClawHubClient clawHubClient,
+                                                     @Nullable ClawHubZipExtractor clawHubZipExtractor) {
         Path installDir = Path.of(properties.getInstallDirs().getSkills()
                 .replace("${user.home}", System.getProperty("user.home")));
-        log.info("扩展市场: 注册 SkillInstallStrategy, installDir={}", installDir);
-        return new SkillInstallStrategy(markdownSkillLoader, skillRegistry, installDir);
+        log.info("扩展市场: 注册 SkillInstallStrategy, installDir={}, clawHub={}",
+                installDir, clawHubClient != null);
+        return new SkillInstallStrategy(markdownSkillLoader, skillRegistry, installDir,
+                clawHubClient, clawHubZipExtractor);
     }
 
     @Bean
@@ -202,9 +239,10 @@ public class MarketplaceAutoConfiguration {
                                                   ExtensionInstaller extensionInstaller,
                                                   VersionResolver versionResolver,
                                                   InstalledExtensionRepository installedExtensionRepository,
-                                                  ObjectMapper objectMapper) {
-        log.info("扩展市场: 注册 MarketplaceService");
+                                                  ObjectMapper objectMapper,
+                                                  @Nullable ClawHubIndexSource clawHubIndexSource) {
+        log.info("扩展市场: 注册 MarketplaceService, clawHub={}", clawHubIndexSource != null);
         return new MarketplaceService(indexManager, extensionInstaller, versionResolver,
-                installedExtensionRepository, objectMapper);
+                installedExtensionRepository, objectMapper, clawHubIndexSource);
     }
 }

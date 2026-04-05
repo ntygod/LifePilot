@@ -1,13 +1,15 @@
 ---
 id: github-workflow
 name: "GitHub 协作"
-description: "GitHub 协作流程：PR 管理、Issue 处理、代码审查、CI/CD 诊断。"
+description: "GitHub PR/Issue 管理、代码审查、CI/CD 诊断"
 version: "1.1.0"
 suggested-tools:
   - shell.exec
   - web.fetch
   - file.read
   - file.write
+  - git.query
+  - git.mutate
 triggers:
   - "GitHub"
   - "Git"

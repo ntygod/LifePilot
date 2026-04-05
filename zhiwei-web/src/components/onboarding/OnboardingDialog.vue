@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, Check, X } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, MessageCircle, X } from 'lucide-vue-next'
+import type { Component } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 
@@ -16,24 +18,29 @@ const chatStore = useChatStore()
 const currentStep = ref(1)
 const totalSteps = 4
 
-const steps = [
+const steps: Array<{
+  id: number
+  title: string
+  description: string
+  content?: Array<{ icon: Component; title: string; description: string }>
+}> = [
   {
     id: 1,
     title: '先看一圈这套工作台',
     description: '先从对话开始就够了，后面再把资料、知识库和流程慢慢接进来，不需要一次配齐。',
     content: [
       {
-        icon: '💬',
+        icon: MessageCircle,
         title: '从对话起步',
         description: '把问题、材料或排障记录先放进来，沿着同一段上下文继续往下做。',
       },
       {
-        icon: '📚',
+        icon: BookOpen,
         title: '把资料接进来',
         description: '常用文档接进来以后，后面的检索、摘录和追问都会更顺手。',
       },
       {
-        icon: '🤖',
+        icon: Bot,
         title: '再交给流程承接',
         description: '等规则稳定下来，再把重复步骤交给智能体和流程长期处理。',
       },
@@ -98,7 +105,7 @@ async function createFirstSession() {
       nextStep()
     }
   } catch (error) {
-    console.error('Failed to create session:', error)
+    logger.error('Failed to create session:', error)
   }
 }
 
@@ -174,8 +181,8 @@ function completeOnboarding() {
                 :key="item.title"
                 class="list-card flex h-full flex-col items-start p-5 text-left sm:p-6"
               >
-                <div class="mb-4 flex size-12 items-center justify-center rounded-2xl border border-border/70 bg-background/82 text-2xl shadow-sm">
-                  {{ item.icon }}
+                <div class="mb-4 flex size-12 items-center justify-center rounded-2xl border border-border/70 bg-background/82 shadow-sm">
+                  <component :is="item.icon" class="size-5 text-muted-foreground" />
                 </div>
                 <h3 class="text-base font-semibold text-foreground sm:text-lg">
                   {{ item.title }}

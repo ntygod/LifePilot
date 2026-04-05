@@ -3,8 +3,8 @@
 > 见微知著，你的 AI 伙伴
 
 [![Java](https://img.shields.io/badge/Java-22-orange.svg)](https://adoptium.net/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.2-blue.svg)](https://spring.io/projects/spring-ai)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.12-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.3-blue.svg)](https://spring.io/projects/spring-ai)
 [![CI](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml/badge.svg)](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -43,21 +43,20 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 手动 tool calling（internalToolExecutionEnabled=false），完全控制工具执行流程
 - ContextAssembler 上下文组装（记忆检索 + Token 预算动态分配）
 - 5 种挂起/恢复场景（WorkflowWait / UserConfirmation / RemoteDelegation / ScheduledWakeup / ExternalDataWait）
-- ReactStep sealed interface 6 种步骤类型 + 不可变状态快照
+- ReactStep sealed interface 7 种步骤类型（Progress / Thought / ToolCall / Observation / Answer / Suspend / Resume） + 不可变状态快照
 
 ### 🔀 多 LLM 智能路由
-- LlmRouter 场景路由：按 scene / modelName / capability 三级匹配
-- ProviderRegistry 运行时动态管理，Web UI 可视化配置
+- GenerationRouter / EmbeddingRouter / RerankRouter / MultimodalRouter 按能力分离路由
+- ModelServiceRegistry DB 持久化模型服务注册 + Web UI 可视化配置
 - CircuitBreaker 熔断器（Closed → Open → HalfOpen 三态）+ ExponentialBackoff 故障转移
 - SemanticCache 语义缓存（scene + responseFormatKey + prompt 三维匹配）
-- 支持 DeepSeek / OpenAI / Anthropic Claude / 通义千问 / Ollama（本地）等多家服务商
 
 ### 🎯 Skill 技能系统
 - 两层工具架构（ToolContract sealed interface）：BuiltinTool（Java Native）→ McpTool（External）
 - 7 大元能力维度（ToolCategory）：感知 / 行动 / 认知 / 存储 / 交互 / 自省 / 扩展
 - Skill 验证三阶段管线：FormatValidator → SecurityValidator → SandboxValidator
-- Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 YAML Skill
-- 内置 Skill：通用数据存储 / 定时任务 / 记忆管理
+- Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 Markdown SKILL.md
+- 内置 33 个 Skill：记忆管理 / 定时任务 / 浏览器自动化 / 代码助手 / 数据分析 等
 - DynamicToolRegistry 运行时工具注册表，支持热加载
 
 ### 📚 知识库管理
@@ -72,8 +71,8 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ### 🤝 多 Agent 协作
 - AgentRegistry + AgentDefinition 注册管理
-- HandoffTool 委托工具模式，SubAgent 独立预算和上下文
-- 预设专家 Agent（写作 / 分析 / 调研）
+- spawn_workers 并行 Worker 派发，SubAgent 独立预算和上下文
+- AgentDefinition Markdown 定义，支持自定义 Agent 蓝图
 
 ### 🔄 工作流引擎
 - YAML 声明式工作流定义
@@ -95,7 +94,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ### 🌐 Gateway 中间件
 - 6 层可插拔中间件管道（Auth=100 → RateLimit=200 → Security=300 → Router=400 → Execution=500 → Audit=600）
-- ChannelAdapter 适配器：Web / CLI / 企业微信 / 钉钉 / 飞书
+- 渠道插件架构：Web / 企业微信 / 钉钉 / 飞书（插件式加载）
 - SecurityMiddleware：PromptInjectionDetector + SensitiveDataDetector + TrustScoreCalculator
 - AuditMiddleware：DataRedactor 自动脱敏 + 审计日志
 
@@ -104,10 +103,10 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - MultimodalRouter 自动路由到支持多模态的 LLM
 
 ### 🛡️ 护栏与安全
-- GuardrailEngine 护栏引擎：5 种策略类型（ToolRiskPolicy / BudgetLimitPolicy / ContentSafetyPolicy / RateLimitPolicy / DataRedactionPolicy）
+- GuardrailEngine 护栏引擎：3 种策略类型（ContentSafetyPolicy / RateLimitPolicy / DataRedactionPolicy）
 - GuardrailResult 三态决策：Passed / Blocked / NeedsConfirmation
 - RiskLevel 四级风险分级（LOW → MEDIUM → HIGH → CRITICAL）
-- 高风险工具改为作用域授权模型，Web 聊天可授权，Cron / Heartbeat / 自主工作流只认预授权
+- 高风险工具采用作用域授权模型，Web 聊天可授权，Cron / Heartbeat / 自主工作流只认预授权
 - DataRedactor 敏感信息脱敏：6 条内置规则（API 密钥 / 手机号 / 身份证 / 银行卡 / 邮箱 / IP）+ 自定义规则扩展
 - 代码执行沙箱：Process / Docker 双模式 + CodeValidator 危险操作预检
 
@@ -118,17 +117,18 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ### 🔗 协议支持
 - A2A 协议：Agent Card 能力声明 + 跨系统 Agent 互操作
-- 插件市场：Skill / Agent / Workflow 发布与安装
+- 扩展市场：Skill / Agent / Workflow / Channel 发布与安装
 
-### 🔄 外部数据源同步
+### 🔄 外部数据源同步（📋 规划中）
 - CalDAV / Todoist / 滴答清单 / Obsidian 连接器
 - 冲突解决策略（Last-Write-Wins / 用户确认）
 
-### 🖥️ Web UI
+### 🖥️ Web UI & 桌面端
 - Vue 3 SPA，30+ 页面视图
 - SSE 流式对话 + 实时通知推送
 - 记忆管理（实体 / 关系 / 对话 / 模板 / 偏好 / 遗忘日志）
 - 评估管理（场景 / 运行历史 / 评分趋势）
+- Tauri 2.x 桌面客户端：内嵌 JRE 运行时管理、系统托盘、开机引导向导、跨平台安装包（Windows / macOS / Linux）
 
 ### 📦 通用数据存储
 - Schema-Free JSON 文档持久化，三种集合类型（Document / Note / Metric）
@@ -203,7 +203,13 @@ docker compose up -d
 # 访问 http://localhost
 ```
 
-### 方式二：JAR 包手动启动
+### 方式二：桌面客户端（Windows / macOS / Linux）
+
+从 [Releases](https://github.com/ntygod/ZhiWei/releases) 下载对应平台安装包，双击安装即可。桌面客户端内嵌 JRE，自动管理后端进程，无需手动配置 Java 环境。
+
+首次启动会进入设置向导，引导配置 LLM 服务商。
+
+### 方式三：JAR 包手动启动
 
 前置条件：Java 22+（[下载地址](https://adoptium.net/)）
 
@@ -273,8 +279,8 @@ Docker Compose 使用 `.env` 文件管理环境变量，参考 `.env.example` �
 | 层级 | 技术 | 版本 | 说明 |
 |------|------|------|------|
 | 语言 | Java | 22 | Record / Sealed / Pattern Matching / Virtual Thread |
-| 框架 | Spring Boot | 3.5.3 | Web、自动配置、Actuator |
-| AI 集成 | Spring AI | 1.1.2 | Advisor 模式、MCP 支持、结构化输出 |
+| 框架 | Spring Boot | 3.5.12 | Web、自动配置、Actuator |
+| AI 集成 | Spring AI | 1.1.3 | Advisor 模式、MCP 支持、结构化输出 |
 | 构建 | Maven | 3.9.x | 依赖管理 |
 | 数据库 | SQLite (xerial) | 3.49+ | WAL 模式、FTS5 全文索引 |
 | 向量存储 | sqlite-vec | 0.1.x | SQLite 原生向量扩展 |
@@ -287,13 +293,14 @@ Docker Compose 使用 `.env` 文件管理环境变量，参考 `.env.example` �
 | 多媒体 | JavaCV + FFmpeg | 1.5.13 / 6.1.1 | 视频帧提取 / 音轨分离 |
 | 文档与内容解析 | PDFBox + POI + Tika + Jsoup | 3.0.7 / 5.3.0 / 3.3.0 / 1.22.1 | PDF / Word / MIME / HTML 解析 |
 | 测试 | JUnit 5 + jqwik | 5.11+ / 1.9.2 | 单元测试 + 属性测试 |
+| 桌面端 | Tauri | 2.x | Rust 驱动的跨平台桌面壳，内嵌 JRE 管理 |
 | 前端测试 | Vitest + fast-check | 3.x / 4.x | 前端单元测试 + 属性测试 |
 
 ## 📁 项目结构
 
 ```
 ZhiWei/
-├── .github/                         # GitHub Actions、Issue/PR 模板、Dependabot
+├── .github/                         # GitHub Actions（CI / 桌面端构建）、Issue/PR 模板、Dependabot
 ├── src/main/java/com/lifepilot/     # 按领域拆分的后端模块
 │   ├── a2a/             # A2A 协议（Agent-to-Agent 互操作）
 │   ├── agent/           # Agent 引擎（ReactAgentLoop / ContextAssembler / 挂起恢复）
@@ -303,13 +310,17 @@ ZhiWei/
 │   ├── eval/            # Agentic Evals 评估框架
 │   ├── interaction/     # 交互层（Web API / CLI / Gateway 中间件）
 │   ├── knowledge/       # 知识库管理（文档解析 / 分块 / 检索 / Reranker）
-│   ├── llm/             # LLM 路由（ProviderRegistry / CircuitBreaker / SemanticCache）
-│   ├── marketplace/     # 插件市场
+│   ├── llm/             # LLM 基础设施（CircuitBreaker / SemanticCache / Provider 适配）
+│   ├── generation/      # 生成路由（GenerationRouter）
+│   ├── embedding/       # 向量嵌入路由（EmbeddingRouter）
+│   ├── rerank/          # 重排序路由（RerankRouter）
+│   ├── modelservice/    # 模型服务注册（ModelServiceRegistry）
+│   ├── marketplace/     # 扩展市场（Extension Marketplace）
 │   ├── mcp/             # MCP 协议（McpServerRegistry / McpServerDiscovery）
 │   ├── media/           # 多模态处理（图片 / 音频 / 视频）
 │   ├── memory/          # 四层记忆系统（Working / Episodic / Semantic / Procedural / 经验学习）
 │   ├── meta/            # 元能力（文件工具 / 浏览器工具 / 基础设施工具 / 交互工具）
-│   ├── multiagent/      # 多 Agent 协作（Handoff / SubAgent）
+│   ├── multiagent/      # 多 Agent 协作（spawn_workers / AgentExecutor）
 │   ├── notification/    # 统一通知系统（直接投递 / 历史 / SSE）
 │   ├── observability/   # 可观测性（TraceRecorder / GuardrailEngine / DataRedactor）
 │   ├── permission/      # 工具授权（作用域匹配 / 预授权 / 授权记录）
@@ -332,9 +343,15 @@ ZhiWei/
 │   ├── src/components/          # Vue 组件
 │   ├── src/stores/              # Pinia 状态管理
 │   ├── src/composables/         # 组合式函数
-│   └── src/api/                 # 前端 API 客户端
+│   ├── src/api/                 # 前端 API 客户端
+│   └── src-tauri/               # Tauri 2.x 桌面端（Rust）
+│       ├── src/                 # Rust 源码（JavaManager / HealthCheck / Tray / Commands）
+│       ├── capabilities/        # Tauri 权限声明
+│       ├── icons/               # 各平台应用图标
+│       └── tauri.conf.json      # Tauri 配置
 ├── docker-compose.yml           # Docker Compose 编排
 ├── Dockerfile                   # 后端 Docker 构建（多阶段）
+├── scripts/                     # 构建脚本（桌面端打包 / jlink 模块列表）
 ├── start.sh / start.bat         # 一键启动脚本
 ├── .env.example                 # 环境变量模板
 ├── CONTRIBUTING.md              # 贡献指南
@@ -367,7 +384,7 @@ ZhiWei/
 
 - [ ] 性能优化：缓存机制优化，缩短首字响应时间（TTFT）
 - [ ] 移动端适配
-- [ ] 系统设置管理（Web UI 可视化配置，替代手动编辑 application.yml）
+- [x] ~~桌面客户端：Tauri 2.x 跨平台桌面端（已完成）~~
 
 ### 中期目标
 
@@ -425,6 +442,10 @@ mvn clean package -DskipTests
 # 构建前端（产出 zhiwei-web/dist/）
 cd zhiwei-web
 npm run build
+
+# 构建桌面安装包（需要 Rust 工具链）
+scripts/build-desktop.sh     # Linux / macOS
+scripts\build-desktop.bat    # Windows
 ```
 
 ### 编码规范
@@ -471,7 +492,7 @@ ZhiWei 本身免费开源，但需要自备 LLM API Key（如 DeepSeek、OpenAI 
 
 ### 支持哪些 LLM？
 
-支持 DeepSeek、OpenAI、Anthropic Claude、通义千问、Ollama（本地）等多种 LLM Provider。通过 ProviderRegistry 运行时动态管理，Web UI 可视化配置。
+支持 DeepSeek、OpenAI、Anthropic Claude、通义千问、Ollama（本地）等多种 LLM Provider。通过 ModelServiceRegistry 数据库管理，Web UI 可视化配置。
 
 ### 如何自定义 Skill？
 

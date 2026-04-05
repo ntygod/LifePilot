@@ -20,6 +20,8 @@ import java.util.Map;
  * @param degraded            是否退化
  * @param regressedScenarios  退化场景列表
  * @param newRegressions      新增退化场景列表
+ * @param baselineRunId       对比使用的基线运行 ID（无基线时为 null）
+ * @param driftingScenarios   渐进漂移场景列表（连续 3 次评分下降）
  * @param evaluatedAt         评估时间
  * @param experienceInjected  是否注入了经验上下文
  * @param metadata            运行元数据
@@ -37,6 +39,8 @@ public record ReportSummary(
         boolean degraded,
         List<String> regressedScenarios,
         List<String> newRegressions,
+        @Nullable String baselineRunId,
+        List<String> driftingScenarios,
         Instant evaluatedAt,
         boolean experienceInjected,
         @Nullable RunMetadata metadata
@@ -45,5 +49,6 @@ public record ReportSummary(
         dimensionAverages = dimensionAverages != null ? Map.copyOf(dimensionAverages) : Map.of();
         regressedScenarios = regressedScenarios != null ? List.copyOf(regressedScenarios) : List.of();
         newRegressions = newRegressions != null ? List.copyOf(newRegressions) : List.of();
+        driftingScenarios = driftingScenarios != null ? List.copyOf(driftingScenarios) : List.of();
     }
 }

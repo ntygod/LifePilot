@@ -50,12 +50,12 @@ public class SlidingWindowCounter {
     /**
      * 尝试获取一次请求许可。
      *
-     * <p>先清除过期时间戳，再判断窗口内请求数是否已达上限。
-     * 未超限则记录当前时间戳并返回 true，超限返回 false。
+     * <p>使用 synchronized 保证 evict + size 检查 + add 的原子性，
+     * 避免并发下超过 maxRequests 的请求通过。
      *
      * @return true 如果获取成功，false 如果窗口内请求数已达上限
      */
-    public boolean tryAcquire() {
+    public synchronized boolean tryAcquire() {
         long now = System.currentTimeMillis();
         evictExpired(now);
         if (timestamps.size() >= maxRequests) {
@@ -70,7 +70,7 @@ public class SlidingWindowCounter {
      *
      * @return 当前窗口内的请求数
      */
-    public int currentCount() {
+    public synchronized int currentCount() {
         evictExpired(System.currentTimeMillis());
         return timestamps.size();
     }

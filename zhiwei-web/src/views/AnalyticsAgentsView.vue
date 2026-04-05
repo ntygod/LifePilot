@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { AlertCircle, BarChart3, BookOpen, Bot, Clock3 } from 'lucide-vue-next'
 import { analyticsApi } from '@/api/client'
+import { logger } from '@/utils/logger'
 import type { AgentStats, KnowledgeBaseStats } from '@/types'
 import FilterChips from '@/components/common/FilterChips.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -210,7 +211,7 @@ async function loadStats() {
       agentStats.value = await analyticsApi.getAgentStats(params)
     } catch (requestError: any) {
       if (requestError.status !== 404 && !requestError.message?.includes('404')) {
-        console.error('加载智能体统计失败:', requestError)
+        logger.error('加载智能体统计失败:', requestError)
       }
       agentStats.value = []
     }
@@ -219,13 +220,13 @@ async function loadStats() {
       kbStats.value = await analyticsApi.getKnowledgeBaseStats(params)
     } catch (requestError: any) {
       if (requestError.status !== 404 && !requestError.message?.includes('404')) {
-        console.error('加载知识库统计失败:', requestError)
+        logger.error('加载知识库统计失败:', requestError)
       }
       kbStats.value = []
     }
   } catch (requestError: any) {
     error.value = requestError?.message || '加载分析数据失败。'
-    console.error('加载分析数据失败:', requestError)
+    logger.error('加载分析数据失败:', requestError)
   } finally {
     loading.value = false
   }
@@ -263,7 +264,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-6 sm:py-8">
+    <PageContainer size="wide" class="py-4 sm:py-5">
       <div class="page-stack">
         <PageHeader
           eyebrow="分析"
@@ -296,7 +297,7 @@ onMounted(() => {
           </template>
         </PageHeader>
 
-        <section class="detail-card p-5">
+        <section class="detail-card p-4">
           <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
             <div class="flex flex-wrap items-center gap-3">
               <span class="text-sm font-medium text-foreground">时间范围</span>

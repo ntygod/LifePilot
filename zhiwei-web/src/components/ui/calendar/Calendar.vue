@@ -41,13 +41,15 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
   >
     <CalendarHeader class="relative flex w-full items-center justify-between pb-1">
       <CalendarPrev
-        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-7 w-7 bg-transparent p-0 text-muted-foreground hover:text-foreground"
+        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-9 w-9 bg-transparent p-0 text-muted-foreground hover:text-foreground"
+        aria-label="上一月"
       >
         <ChevronLeft class="h-4 w-4" />
       </CalendarPrev>
       <CalendarHeading class="text-sm font-semibold text-foreground" />
       <CalendarNext
-        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-7 w-7 bg-transparent p-0 text-muted-foreground hover:text-foreground"
+        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-9 w-9 bg-transparent p-0 text-muted-foreground hover:text-foreground"
+        aria-label="下一月"
       >
         <ChevronRight class="h-4 w-4" />
       </CalendarNext>

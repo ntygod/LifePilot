@@ -28,6 +28,7 @@ import org.springframework.lang.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -331,68 +332,86 @@ public class AgentPersistenceHandler {
 
     public void asyncPostProcess(ReactAgentState finalState) {
         Thread.startVirtualThread(() -> {
-            try {
-                if (compactionEngine != null) {
-                    compactionEngine.compactIfNeeded(
-                            finalState.sessionId(),
-                            finalState.traceId(),
-                            finalState.preferredProvider()
-                    );
+            // 互相独立的后处理步骤并行执行，减少总耗时
+            var compactionFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    if (compactionEngine != null) {
+                        compactionEngine.compactIfNeeded(
+                                finalState.sessionId(),
+                                finalState.traceId(),
+                                finalState.preferredProvider()
+                        );
+                    }
+                } catch (Exception e) {
+                    log.warn("会话压缩后处理失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("会话压缩后处理失败：sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
+            });
 
-            try {
-                if (realtimeExtractor != null && finalState.finalOutput() != null) {
-                    realtimeExtractor.extractAsync(
-                            finalState.sessionId(),
-                            finalState.turnId(),
-                            finalState.goal(),
-                            finalState.finalOutput());
+            var extractionFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                        realtimeExtractor.extractAsync(
+                                finalState.sessionId(),
+                                finalState.turnId(),
+                                finalState.goal(),
+                                finalState.finalOutput());
+                    }
+                } catch (Exception e) {
+                    log.warn("实时记忆抽取失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("实时记忆抽取失败：sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
+            });
 
-            TemporalEntity newExperience = null;
-            try {
-                if (experienceSummarizer != null) {
-                    newExperience = experienceSummarizer.summarize(finalState);
+            // experienceSummarizer 产出 newExperience，contrastiveLearner 依赖它，用 thenAccept 串联
+            var experienceFuture = CompletableFuture.supplyAsync(() -> {
+                try {
+                    if (experienceSummarizer != null) {
+                        return experienceSummarizer.summarize(finalState);
+                    }
+                } catch (Exception e) {
+                    log.warn("经验总结失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("经验总结失败：sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
+                return (TemporalEntity) null;
+            }).thenAccept(newExperience -> {
+                try {
+                    if (contrastiveLearner != null && newExperience != null) {
+                        contrastiveLearner.learn(newExperience);
+                    }
+                } catch (Exception e) {
+                    log.warn("对比学习失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
+                }
+            });
 
-            try {
-                if (effectivenessTracker != null) {
-                    effectivenessTracker.evaluate(finalState, finalState.traceId());
+            var effectivenessFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    if (effectivenessTracker != null) {
+                        effectivenessTracker.evaluate(finalState, finalState.traceId());
+                    }
+                } catch (Exception e) {
+                    log.warn("效果评估失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("效果评估失败：sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
+            });
 
-            try {
-                if (contrastiveLearner != null && newExperience != null) {
-                    contrastiveLearner.learn(newExperience);
+            var reflectionFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    if (subtaskReflector != null) {
+                        subtaskReflector.reflect(finalState);
+                    }
+                } catch (Exception e) {
+                    log.warn("子任务反思失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("对比学习失败：sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
+            });
 
-            try {
-                if (subtaskReflector != null) {
-                    subtaskReflector.reflect(finalState);
-                }
-            } catch (Exception e) {
-                log.warn("子任务反思失败：sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
+            // 等待所有并行任务完成（fire-and-forget 语义不变，但内部并行化）
+            CompletableFuture.allOf(
+                    compactionFuture, extractionFuture, experienceFuture,
+                    effectivenessFuture, reflectionFuture
+            ).join();
         });
     }
 

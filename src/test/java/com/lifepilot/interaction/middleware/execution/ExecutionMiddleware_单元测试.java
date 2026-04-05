@@ -4,6 +4,8 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.AgentTaskMode;
+import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.MiddlewareChain;
@@ -164,6 +166,41 @@ class ExecutionMiddleware_单元测试 {
         assertThat(requestCaptor.getValue().taskMode()).isEqualTo(AgentTaskMode.AUTO);
     }
 
+    @Test
+    void 显式Blocked终态在同步链路不应映射为Http500() {
+        when(chatSessionRepository.getConfig("session-6")).thenReturn(Map.of());
+        when(agentOrchestrator.run(any()))
+                .thenReturn(new AgentResponse(
+                        "trace-6",
+                        "session-6",
+                        "turn-6",
+                        AgentTaskMode.AUTO,
+                        "当前请求无法继续执行，需要额外授权",
+                        15,
+                        2,
+                        "需要额外授权",
+                        CompletionReason.EXPLICIT_BLOCKED,
+                        "assistant-6",
+                        null,
+                        null,
+                        CompletionMode.NORMAL,
+                        null,
+                        com.lifepilot.interaction.web.model.ChatTurnStatus.DEGRADED
+                ));
+
+        var response = executionMiddleware.process(
+                buildMessage("session-6", "继续执行受限操作", ChatTurnAction.SEND),
+                new MiddlewareChain(List.of(), new MiddlewareContext())
+        );
+
+        assertThat(response.isSuccess()).isTrue();
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.errorMessage()).isNull();
+        assertThat(response.metadata())
+                .containsEntry("completionReason", "EXPLICIT_BLOCKED")
+                .containsEntry("completionMode", "NORMAL");
+    }
+
     private GatewayMessage buildMessage(String sessionId) {
         return buildMessage(sessionId, "测试消息", ChatTurnAction.SEND);
     }
@@ -192,7 +229,7 @@ class ExecutionMiddleware_单元测试 {
         return new GatewayProperties(
                 true,
                 middleware,
-                new GatewayProperties.RateLimitProperties(100000, 500000, 2000, 30),
+                new GatewayProperties.RateLimitProperties(30),
                 new GatewayProperties.SecurityProperties(
                         new GatewayProperties.SecurityProperties.PromptInjectionProperties(true),
                         new GatewayProperties.SecurityProperties.SensitiveDataProperties(true),
@@ -212,7 +249,8 @@ class ExecutionMiddleware_单元测试 {
                         new GatewayProperties.ChannelsProperties.WebChannelProperties(true),
                         new GatewayProperties.ChannelsProperties.WecomChannelProperties(false, null, null, null, null, null),
                         new GatewayProperties.ChannelsProperties.DingtalkChannelProperties(false, null, null, null),
-                        new GatewayProperties.ChannelsProperties.FeishuChannelProperties(false, null, null, null, null, 10000)
+                        new GatewayProperties.ChannelsProperties.FeishuChannelProperties(false, null, null, null, null, 10000),
+                        new GatewayProperties.ChannelsProperties.QqChannelProperties(false, null, null)
                 ),
                 new GatewayProperties.ReconnectProperties(10, 1000, 60000, 2.0),
                 new GatewayProperties.SessionProperties(30, 24, 15),

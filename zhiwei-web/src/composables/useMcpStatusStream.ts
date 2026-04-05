@@ -1,5 +1,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
+import { getApiOrigin } from '@/api/config'
 import { useSkillStore } from '@/stores/skill'
+import { logger } from '@/utils/logger'
 import type { McpStatusSnapshot, McpStatusChange } from '@/types'
 
 /**
@@ -17,7 +19,7 @@ export function useMcpStatusStream() {
   function connect() {
     if (eventSource) return
 
-    eventSource = new EventSource('/api/mcp/servers/status-stream')
+    eventSource = new EventSource(`${getApiOrigin()}/api/mcp/servers/status-stream`)
     const skillStore = useSkillStore()
 
     eventSource.addEventListener('mcp-status-snapshot', (e: MessageEvent) => {
@@ -33,7 +35,7 @@ export function useMcpStatusStream() {
         }
         connected.value = true
       } catch (err) {
-        console.error('MCP 状态快照解析失败:', err)
+        logger.error('MCP 状态快照解析失败:', err)
       }
     })
 
@@ -47,7 +49,7 @@ export function useMcpStatusStream() {
           server.lastError = change.error
         }
       } catch (err) {
-        console.error('MCP 状态变化解析失败:', err)
+        logger.error('MCP 状态变化解析失败:', err)
       }
     })
 
