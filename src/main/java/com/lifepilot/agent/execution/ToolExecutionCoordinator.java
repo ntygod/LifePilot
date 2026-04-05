@@ -540,13 +540,17 @@ public class ToolExecutionCoordinator {
         persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
                 outcome.success(), outcome.rawOutput(), null, outcome.startedAt());
 
+        // L4 程序记忆：异步记录意图匹配，不阻塞主链路
         if (outcome.success() && proceduralMemory != null && intentMatcher != null) {
-            try {
-                var match = intentMatcher.match(buildIntentMatchQuery(planned.toolId(), planned.inputJson()));
-                match.ifPresent(m -> proceduralMemory.recordExecution(m.template().templateId(), true));
-            } catch (Exception e) {
-                log.warn("L4 执行结果记录失败: toolId={}, error={}", planned.toolId(), e.getMessage());
-            }
+            String intentQuery = buildIntentMatchQuery(planned.toolId(), planned.inputJson());
+            Thread.startVirtualThread(() -> {
+                try {
+                    var match = intentMatcher.match(intentQuery);
+                    match.ifPresent(m -> proceduralMemory.recordExecution(m.template().templateId(), true));
+                } catch (Exception e) {
+                    log.warn("L4 执行结果记录失败: toolId={}, error={}", planned.toolId(), e.getMessage());
+                }
+            });
         }
 
         recordToolCallStep(traceContext, state.stepCount() - 1, outcome.startedAt(),

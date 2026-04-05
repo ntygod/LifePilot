@@ -95,7 +95,14 @@ public class BrowserToolProvider {
                                 Map.entry("maxDepth", Map.of("type", "integer", "description", "action=accessibility 时的最大深度")),
                                 Map.entry("tabAction", Map.of("type", "string", "description", "action=tab 时的具体操作: open/switch/close/list")),
                                 Map.entry("tabId", Map.of("type", "string", "description", "action=tab 时 switch/close 的标签页 ID")),
-                                Map.entry("sessionId", Map.of("type", "string", "description", "浏览器会话 ID，默认 default"))
+                                Map.entry("sessionId", Map.of("type", "string", "description", "浏览器会话 ID，默认 default")),
+                                Map.entry("acquisitionMode", Map.of("type", "string",
+                                        "enum", List.of("LAUNCH", "CDP", "PERSISTENT"),
+                                        "description", "浏览器获取模式。LAUNCH=启动新浏览器（默认）；CDP=连接用户已打开的 Chrome（需配合 cdpUrl）；PERSISTENT=使用磁盘 profile 保留登录态（需配合 userDataDir）。仅首次创建会话时生效")),
+                                Map.entry("cdpUrl", Map.of("type", "string",
+                                        "description", "CDP 模式的远程调试端口 URL，如 http://localhost:9222。用户需先用 --remote-debugging-port=9222 启动 Chrome")),
+                                Map.entry("userDataDir", Map.of("type", "string",
+                                        "description", "PERSISTENT 模式的 Chrome 用户数据目录路径，如 ~/.zhiwei/chrome-profile"))
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

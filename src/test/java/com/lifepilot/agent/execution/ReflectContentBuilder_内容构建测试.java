@@ -199,7 +199,7 @@ class ReflectContentBuilder_内容构建测试 {
     class 任务状态摘要 {
 
         @Test
-        void 正常场景包含目标和工具统计() {
+        void 正常场景包含目标和逐步进度() {
             var steps = new ArrayList<>(含成功观察步骤());
             steps.addAll(含失败观察步骤());
             var state = 构建状态("搜索新闻并整理", steps);
@@ -208,34 +208,33 @@ class ReflectContentBuilder_内容构建测试 {
 
             assertThat(summary)
                     .contains("目标：搜索新闻并整理")
-                    .contains("已完成：")
-                    .contains("网页搜索")
-                    .contains("创建待办")
-                    .contains("失败：")
-                    .contains("网页抓取")
+                    .contains("✓")           // 成功步骤标记
+                    .contains("web.search")  // 工具 ID
+                    .contains("✗")           // 失败步骤标记
+                    .contains("web.fetch")   // 失败工具 ID
                     .contains("当前轮次：4");
         }
 
         @Test
-        void 空步骤列表时已完成显示无() {
+        void 空步骤列表时显示尚未执行() {
             var state = 空步骤状态("测试目标");
 
             String summary = ReflectContentBuilder.buildTaskStateSummary(state, 0);
 
             assertThat(summary)
-                    .contains("已完成：无")
-                    .doesNotContain("失败：");
+                    .contains("尚未执行工具")
+                    .doesNotContain("✗");
         }
 
         @Test
-        void 仅成功步骤时不包含失败行() {
+        void 仅成功步骤时不包含失败标记() {
             var state = 构建状态("测试目标", 含成功观察步骤());
 
             String summary = ReflectContentBuilder.buildTaskStateSummary(state, 1);
 
             assertThat(summary)
-                    .contains("已完成：")
-                    .doesNotContain("失败：");
+                    .contains("✓")
+                    .doesNotContain("✗");
         }
 
         @Test

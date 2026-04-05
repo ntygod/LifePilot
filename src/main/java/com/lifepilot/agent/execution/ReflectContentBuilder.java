@@ -1,10 +1,15 @@
 package com.lifepilot.agent.execution;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 
 /**
  * 反思内容构建器 — 根据触发原因和当前状态动态拼装反思文本。
@@ -16,6 +21,11 @@ import java.util.LinkedHashSet;
  * @since 2026-04-04
  */
 public final class ReflectContentBuilder {
+
+    private static final Logger log = LoggerFactory.getLogger(ReflectContentBuilder.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** 进度明细最多保留最近 N 条 */
+    private static final int MAX_DETAIL_STEPS = 10;
 
     private ReflectContentBuilder() {}
 
@@ -54,34 +64,181 @@ public final class ReflectContentBuilder {
                 ? goal.substring(0, 80) + "..."
                 : goal;
 
-        // 收集成功工具名（去重）
-        var successTools = new LinkedHashSet<String>();
-        // 收集失败工具名和错误摘要
-        var failedEntries = new ArrayList<String>();
-
-        for (var step : steps) {
-            if (step instanceof ReactStep.Observation obs) {
-                String toolDisplay = obs.toolName() != null ? obs.toolName() : obs.toolId();
-                if (obs.success()) {
-                    successTools.add(toolDisplay);
-                } else {
-                    String errorPreview = obs.output() != null && obs.output().length() > 60
-                            ? obs.output().substring(0, 60) + "..."
-                            : (obs.output() != null ? obs.output() : "");
-                    failedEntries.add(toolDisplay + ": " + errorPreview);
-                }
-            }
-        }
+        // 配对 ToolCall + Observation 生成逐步进度
+        var detailLines = buildStepDetails(steps);
+        int totalToolSteps = detailLines.size();
 
         var sb = new StringBuilder();
         sb.append("目标：").append(goalPreview).append('\n');
-        sb.append("已完成：").append(successTools.isEmpty() ? "无" : String.join(", ", successTools)).append('\n');
-        if (!failedEntries.isEmpty()) {
-            sb.append("失败：").append(String.join("; ", failedEntries)).append('\n');
-        }
-        sb.append("当前轮次：").append(iteration + 1).append("，剩余步骤预算：").append(remaining);
 
+        if (!detailLines.isEmpty()) {
+            // 超过上限时，前面的步骤折叠为统计摘要
+            if (totalToolSteps > MAX_DETAIL_STEPS) {
+                int hidden = totalToolSteps - MAX_DETAIL_STEPS;
+                long hiddenSuccess = detailLines.subList(0, hidden).stream()
+                        .filter(l -> l.startsWith("✓")).count();
+                long hiddenFail = hidden - hiddenSuccess;
+                sb.append("前 ").append(hidden).append(" 步：")
+                        .append(hiddenSuccess).append(" 成功");
+                if (hiddenFail > 0) {
+                    sb.append("，").append(hiddenFail).append(" 失败");
+                }
+                sb.append('\n');
+                detailLines = detailLines.subList(hidden, totalToolSteps);
+            }
+            for (var line : detailLines) {
+                sb.append("  ").append(line).append('\n');
+            }
+        } else {
+            sb.append("进度：尚未执行工具\n");
+        }
+
+        sb.append("当前轮次：").append(iteration + 1)
+                .append("，剩余步骤预算：").append(remaining);
         return sb.toString();
+    }
+
+    /**
+     * 配对 ToolCall 和 Observation，生成每步进度明细。
+     *
+     * <p>格式示例：
+     * <pre>
+     * ✓ load_skill(browser-automation, data-analyst)
+     * ✓ browser: navigate(京东搜索) → 触发风控验证
+     * ✗ browser: wait(.J_MouserOnverReq) → 超时
+     * </pre>
+     */
+    private static List<String> buildStepDetails(List<ReactStep> steps) {
+        var result = new ArrayList<String>();
+        ReactStep.ToolCall pendingCall = null;
+
+        for (var step : steps) {
+            if (step instanceof ReactStep.ToolCall tc) {
+                pendingCall = tc;
+            } else if (step instanceof ReactStep.Observation obs) {
+                String marker = obs.success() ? "✓" : "✗";
+                String callDesc = pendingCall != null
+                        ? buildCallDescription(pendingCall.toolId(), pendingCall.inputJson())
+                        : (obs.toolName() != null ? obs.toolName() : obs.toolId());
+                String resultBrief = buildResultBrief(obs.success(), obs.output());
+                String line = resultBrief.isEmpty()
+                        ? marker + " " + callDesc
+                        : marker + " " + callDesc + " → " + resultBrief;
+                result.add(line);
+                pendingCall = null;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 从工具 ID 和输入 JSON 提取简要调用描述。
+     */
+    private static String buildCallDescription(String toolId, String inputJson) {
+        try {
+            JsonNode root = MAPPER.readTree(inputJson);
+            return switch (toolId) {
+                case "browser" -> {
+                    String action = textField(root, "action");
+                    String detail = switch (action != null ? action : "") {
+                        case "navigate" -> truncate(textField(root, "url"), 40);
+                        case "click", "input", "wait", "hover", "select" ->
+                                truncate(textField(root, "selector"), 30);
+                        case "evaluate" -> "JS";
+                        case "screenshot" -> "截图";
+                        case "accessibility" -> "无障碍树";
+                        case "tab" -> truncate(textField(root, "tabAction"), 20);
+                        case "close" -> "关闭";
+                        default -> "";
+                    };
+                    yield detail.isEmpty()
+                            ? "browser: " + (action != null ? action : "?")
+                            : "browser: " + action + "(" + detail + ")";
+                }
+                case "load_skill" -> {
+                    JsonNode ids = root.path("skill_ids");
+                    if (ids.isArray()) {
+                        var names = new ArrayList<String>();
+                        ids.forEach(n -> names.add(n.asText()));
+                        yield "load_skill(" + String.join(", ", names) + ")";
+                    }
+                    yield "load_skill";
+                }
+                case "web.search" -> "web.search(" + truncate(textField(root, "query"), 30) + ")";
+                case "web.fetch" -> "web.fetch(" + truncate(textField(root, "url"), 40) + ")";
+                case "code.execute" -> "code.execute(" + textFieldOr(root, "language", "python") + ")";
+                case "file.write" -> "file.write(" + truncate(textField(root, "path"), 30) + ")";
+                case "file.read" -> "file.read(" + truncate(textField(root, "path"), 30) + ")";
+                case "memory" -> "memory: " + textFieldOr(root, "action", "?");
+                case "shell.exec" -> "shell.exec";
+                default -> toolId;
+            };
+        } catch (Exception e) {
+            return toolId;
+        }
+    }
+
+    /**
+     * 从工具输出提取简要结果描述。
+     */
+    private static String buildResultBrief(boolean success, String output) {
+        if (output == null || output.isBlank()) {
+            return "";
+        }
+        if (!success) {
+            // 失败时提取关键错误信息
+            if (output.contains("Timeout") || output.contains("超时")) return "超时";
+            if (output.contains("验证") || output.contains("verify")) return "需要验证";
+            if (output.contains("登录") || output.contains("login")) return "需要登录";
+            return truncate(output, 40);
+        }
+        // 成功时提取关键结果信号
+        try {
+            JsonNode root = MAPPER.readTree(output);
+            // 浏览器工具常见字段
+            String title = textField(root, "title");
+            if (title != null && !title.isBlank()) {
+                String textSnapshot = textField(root, "textSnapshot");
+                if (textSnapshot != null && textSnapshot.contains("验证")) return title + " → 触发验证";
+                if (textSnapshot != null && textSnapshot.contains("登录")) return title + " → 需要登录";
+                if (textSnapshot != null && textSnapshot.isEmpty()) return title + " → 内容为空";
+                return title;
+            }
+            // 无障碍树
+            String tree = textField(root, "tree");
+            if (tree != null) {
+                if (tree.contains("登录") || tree.contains("login")) return "页面需要登录";
+                return "已获取(" + tree.length() + "字符)";
+            }
+            // 截图
+            if (root.has("screenshot")) return "截图已获取";
+            // 文件操作
+            String path = textField(root, "path");
+            if (path != null) return path;
+        } catch (Exception ignored) {
+            // 非 JSON 输出
+        }
+        // 文本摘要输出
+        if (output.length() > 60) {
+            return truncate(output, 40);
+        }
+        return "";
+    }
+
+    @org.springframework.lang.Nullable
+    private static String textField(JsonNode root, String field) {
+        JsonNode node = root.path(field);
+        return node.isTextual() ? node.asText() : null;
+    }
+
+    private static String textFieldOr(JsonNode root, String field, String fallback) {
+        String val = textField(root, field);
+        return val != null ? val : fallback;
+    }
+
+    private static String truncate(@org.springframework.lang.Nullable String s, int maxLen) {
+        if (s == null) return "";
+        return s.length() > maxLen ? s.substring(0, maxLen) + "…" : s;
     }
 
     // ===== 私有方法 =====

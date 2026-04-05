@@ -66,6 +66,21 @@ public class BrowserSessionManager {
     /** 会话级多标签页管理：sessionId → SessionPages。 */
     private final ConcurrentHashMap<String, SessionPages> sessions = new ConcurrentHashMap<>();
 
+    /** 会话级模式覆盖：首次创建会话时使用，后续复用已有会话。 */
+    private final ConcurrentHashMap<String, SessionModeOverride> sessionModeOverrides = new ConcurrentHashMap<>();
+
+    /**
+     * 会话级浏览器模式覆盖参数。
+     *
+     * @param mode        浏览器获取模式
+     * @param cdpUrl      CDP 模式的远程调试端口 URL（仅 CDP 模式需要）
+     * @param userDataDir PERSISTENT 模式的用户数据目录（仅 PERSISTENT 模式需要）
+     */
+    public record SessionModeOverride(BrowserAcquisitionMode mode,
+                                      @Nullable String cdpUrl,
+                                      @Nullable String userDataDir) {}
+
+
     /** 会话内多标签页容器。 */
     private static class SessionPages {
         final Object browserContext;
@@ -160,6 +175,21 @@ public class BrowserSessionManager {
         }
         var sessionPages = sessions.compute(sessionId, this::ensureSessionPages);
         return sessionPages.pages.get(sessionPages.activeTabId);
+    }
+
+    /**
+     * 注册会话级模式覆盖（不立即创建会话）。
+     *
+     * <p>下次为该 sessionId 创建新会话时使用指定模式；会话已存在时忽略。
+     * 使用 putIfAbsent 避免 check-then-act 竞态。</p>
+     *
+     * @param sessionId    会话 ID
+     * @param modeOverride 模式覆盖参数
+     */
+    public void registerSessionMode(String sessionId, SessionModeOverride modeOverride) {
+        if (!sessions.containsKey(sessionId)) {
+            sessionModeOverrides.putIfAbsent(sessionId, modeOverride);
+        }
     }
 
     /**
@@ -458,10 +488,88 @@ public class BrowserSessionManager {
     }
 
     private SessionPages createSessionPages(String sessionId) {
-        return switch (acquisitionMode) {
+        var override = sessionModeOverrides.remove(sessionId);
+        var effectiveMode = override != null ? override.mode() : acquisitionMode;
+        return switch (effectiveMode) {
             case LAUNCH -> createLaunchSessionPages(sessionId);
-            case CDP, PERSISTENT -> createSharedContextSessionPages(sessionId);
+            case CDP -> {
+                ensureCdpBrowserForSession(override);
+                yield createSharedContextSessionPages(sessionId);
+            }
+            case PERSISTENT -> {
+                ensurePersistentContextForSession(override);
+                yield createSharedContextSessionPages(sessionId);
+            }
         };
+    }
+
+    /**
+     * CDP 模式初始化 — 支持会话级覆盖参数。
+     * 直接使用覆盖参数连接，不修改共享 browserConfig。
+     */
+    private synchronized void ensureCdpBrowserForSession(@Nullable SessionModeOverride override) {
+        if (browserInstance != null) {
+            return;
+        }
+        String cdpUrl = (override != null && override.cdpUrl() != null && !override.cdpUrl().isBlank())
+                ? override.cdpUrl()
+                : browserConfig.getCdpUrl();
+        if (cdpUrl == null || cdpUrl.isBlank()) {
+            throw new IllegalStateException("CDP 模式需要配置 cdp-url（如 http://localhost:9222）");
+        }
+        playwrightInstance = browserRuntime.createPlaywright();
+        try {
+            browserInstance = browserRuntime.connectOverCDP(playwrightInstance, cdpUrl);
+        } catch (Exception e) {
+            browserRuntime.closePlaywright(playwrightInstance);
+            playwrightInstance = null;
+            throw new IllegalStateException("CDP 连接失败: " + cdpUrl + " — " + e.getMessage(), e);
+        }
+        var contexts = browserRuntime.getContexts(browserInstance);
+        if (!contexts.isEmpty()) {
+            sharedBrowserContext = contexts.getFirst();
+        } else {
+            sharedBrowserContext = browserRuntime.createContext(browserInstance,
+                    browserConfig.getUserAgent(), browserConfig.getViewportWidth(),
+                    browserConfig.getViewportHeight(), browserConfig.getLocale(),
+                    browserConfig.getTimezoneId(), null);
+        }
+        log.info("已通过 CDP 连接到浏览器（会话级覆盖）: cdpUrl={}", cdpUrl);
+    }
+
+    /**
+     * PERSISTENT 模式初始化 — 支持会话级覆盖参数。
+     * 直接使用覆盖参数创建持久化上下文，不修改共享 browserConfig。
+     */
+    private synchronized void ensurePersistentContextForSession(@Nullable SessionModeOverride override) {
+        if (sharedBrowserContext != null) {
+            return;
+        }
+        String dir = (override != null && override.userDataDir() != null && !override.userDataDir().isBlank())
+                ? override.userDataDir()
+                : browserConfig.getUserDataDir();
+        if (dir == null || dir.isBlank()) {
+            throw new IllegalStateException("PERSISTENT 模式需要配置 user-data-dir");
+        }
+        playwrightInstance = browserRuntime.createPlaywright();
+        try {
+            sharedBrowserContext = browserRuntime.launchPersistentContext(
+                    playwrightInstance, Path.of(dir), browserConfig.isHeadless(),
+                    browserConfig.getExtraLaunchArgs(), browserConfig.getUserAgent(),
+                    browserConfig.getViewportWidth(), browserConfig.getViewportHeight(),
+                    browserConfig.getLocale(), browserConfig.getTimezoneId());
+        } catch (Exception e) {
+            browserRuntime.closePlaywright(playwrightInstance);
+            playwrightInstance = null;
+            String msg = e.getMessage();
+            if (msg != null && (msg.contains("install") || msg.contains("executable doesn't exist"))) {
+                throw new BrowserNotInstalledException(
+                        "Playwright 浏览器二进制未安装，请运行安装命令", e);
+            }
+            throw e;
+        }
+        log.info("持久化浏览器上下文已创建（会话级覆盖）: userDataDir={}, headless={}",
+                dir, browserConfig.isHeadless());
     }
 
     /** LAUNCH 模式 — 每个会话独立 BrowserContext（原有逻辑）。 */

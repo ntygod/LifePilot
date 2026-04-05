@@ -131,7 +131,7 @@ class ToolExecutionCoordinatorTest {
     }
 
     @Test
-    void 记录程序记忆时不应把大段JSON正文直接送入意图匹配() {
+    void 记录程序记忆时不应把大段JSON正文直接送入意图匹配() throws InterruptedException {
         AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
         when(agentToolProvider.resolveToolDisplayName("file.write")).thenReturn("写入文件");
         ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
@@ -221,6 +221,8 @@ class ToolExecutionCoordinatorTest {
                 (currentState, step, loopContext) -> currentState.appendStep(step)
         );
 
+        // IntentMatcher 已异步化，等待虚拟线程完成
+        Thread.sleep(200);
         verify(intentMatcher).match(argThat(query ->
                 query.contains("file write")
                         && query.contains("path")
