@@ -30,10 +30,17 @@ pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
     let x = screen_width - IDLE_WIDTH - RIGHT_MARGIN;
     let y = screen_height - IDLE_HEIGHT - TASKBAR_MARGIN;
 
+    // dev 模式用完整 URL 避免 SPA 回退拦截，生产模式用 App 相对路径
+    let float_url = if cfg!(debug_assertions) {
+        WebviewUrl::External("http://localhost:1420/float.html".parse().unwrap())
+    } else {
+        WebviewUrl::App("float.html".into())
+    };
+
     let float_window = WebviewWindowBuilder::new(
         app,
         FLOAT_WINDOW_LABEL,
-        WebviewUrl::App("float.html".into()),
+        float_url,
     )
     .title("知微助手")
     .inner_size(IDLE_WIDTH, IDLE_HEIGHT)
