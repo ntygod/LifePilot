@@ -30,17 +30,10 @@ pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
     let x = screen_width - IDLE_WIDTH - RIGHT_MARGIN;
     let y = screen_height - IDLE_HEIGHT - TASKBAR_MARGIN;
 
-    // dev 模式用完整 URL 避免 SPA 回退拦截，生产模式用 App 相对路径
-    let float_url = if cfg!(debug_assertions) {
-        WebviewUrl::External("http://localhost:1420/float.html".parse().unwrap())
-    } else {
-        WebviewUrl::App("float.html".into())
-    };
-
     let float_window = WebviewWindowBuilder::new(
         app,
         FLOAT_WINDOW_LABEL,
-        float_url,
+        WebviewUrl::App("float.html".into()),
     )
     .title("知微助手")
     .inner_size(IDLE_WIDTH, IDLE_HEIGHT)
@@ -50,8 +43,12 @@ pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
-    .visible(false) // 初始隐藏，等后端就绪后再显示
+    .visible(false)
     .build()?;
+
+    // WebView2 默认有白色背景，必须显式设为全透明（RGBA 0,0,0,0）
+    float_window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))
+        .unwrap_or_else(|e| log::warn!("设置浮窗背景透明失败: {}", e));
 
     log::info!(
         "浮窗已创建: 位置=({}, {}), 尺寸={}x{}",
