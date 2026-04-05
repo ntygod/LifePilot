@@ -5,6 +5,7 @@ import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import org.slf4j.Logger;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.slf4j.LoggerFactory;
 import com.lifepilot.interaction.web.model.ApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/context")
+@ConditionalOnBean(ReminderFocusStateHolder.class)
 public class ContextController {
 
     private static final Logger log = LoggerFactory.getLogger(ContextController.class);

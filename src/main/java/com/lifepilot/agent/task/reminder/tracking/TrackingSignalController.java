@@ -23,7 +23,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/signals")
-@ConditionalOnBean(TrackingRegistry.class)
+@ConditionalOnBean({TrackingRegistry.class, NotificationProperties.class})
 public class TrackingSignalController {
 
     private static final Logger log = LoggerFactory.getLogger(TrackingSignalController.class);
