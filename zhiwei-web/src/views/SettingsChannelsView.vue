@@ -15,7 +15,7 @@ import type {
   InstalledExtensionAsset,
 } from '@/types'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import FormDialogShell from '@/components/common/FormDialogShell.vue'
+import FormSheetShell from '@/components/common/FormSheetShell.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
@@ -1038,7 +1038,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
         </div>
       </section>
 
-      <FormDialogShell
+      <FormSheetShell
         v-if="createPlugin"
         :open="!!createPluginId"
         :title="`新建 ${createPlugin.name} 实例`"
@@ -1157,7 +1157,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             </div>
           </div>
         </template>
-      </FormDialogShell>
+      </FormSheetShell>
 
       <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <section class="detail-card p-6">

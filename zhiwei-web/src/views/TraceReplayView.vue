@@ -10,6 +10,7 @@ import {
   MessageCircle,
   ServerOff,
   Shield,
+  SlidersHorizontal,
   Wrench,
 } from 'lucide-vue-next'
 import { getApiOrigin } from '@/api/config'
@@ -18,7 +19,6 @@ import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import type { TraceItem, TraceStep } from '@/types'
 import SearchBar from '@/components/common/SearchBar.vue'
 import FilterChips from '@/components/common/FilterChips.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -98,6 +98,7 @@ const lastSearchedKeyword = ref('')
 const statusFilter = ref<StatusFilter>('all')
 const timeRangeFilter = ref<TimeRangeFilter>('all')
 const timeWindow = ref<OverviewWindow>('7d')
+const showFilters = ref(false)
 const exporting = ref(false)
 const serviceUnavailable = ref(false)
 const liveConnected = ref(false)
@@ -428,7 +429,7 @@ async function handleRetryServiceCheck() {
           <PageHeader
             eyebrow="运行轨迹"
             title="最近运行记录"
-            description="查看运行记录和详情。"
+            :description="`${store.overviewStats?.totalTraces ?? store.total} 条轨迹，成功率 ${successLabel}，平均耗时 ${avgDurationLabel}`"
           >
             <template #actions>
               <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm">
@@ -440,16 +441,6 @@ async function handleRetryServiceCheck() {
                   统计窗口 {{ currentOverviewLabel }}，可继续用筛选条件收窄列表。
                 </p>
               </div>
-            </template>
-            <template #meta>
-              <MetricCard
-                v-for="item in overviewItems"
-                :key="item.label"
-                :label="item.label"
-                :value="item.value"
-                :hint="item.description"
-                class="h-full"
-              />
             </template>
           </PageHeader>
 
@@ -508,52 +499,60 @@ async function handleRetryServiceCheck() {
                       >
                         清空
                       </Button>
+                      <Button variant="outline" size="sm" @click="showFilters = !showFilters">
+                        <SlidersHorizontal class="size-4" />
+                        筛选
+                      </Button>
                     </div>
-                  </div>
-
-                  <div class="flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      :variant="statusFilter === 'all' ? 'secondary' : 'ghost'"
-                      @click="statusFilter = 'all'"
-                    >
-                      全部
-                    </Button>
-                    <Button
-                      size="sm"
-                      :variant="statusFilter === 'success' ? 'secondary' : 'ghost'"
-                      @click="statusFilter = 'success'"
-                    >
-                      成功
-                    </Button>
-                    <Button
-                      size="sm"
-                      :variant="statusFilter === 'failure' ? 'secondary' : 'ghost'"
-                      @click="statusFilter = 'failure'"
-                    >
-                      失败
-                    </Button>
                   </div>
                 </div>
 
-                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div class="flex flex-wrap items-center gap-3">
-                    <span class="surface-label text-[0.68rem]">筛选范围</span>
-                    <FilterChips v-model="timeRangeFilter" :options="TIME_RANGE_OPTIONS" />
-                  </div>
+                <div v-if="showFilters" class="mt-sm rounded-xl border border-border/40 bg-card/60 p-md">
+                  <div class="flex flex-col gap-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        :variant="statusFilter === 'all' ? 'secondary' : 'ghost'"
+                        @click="statusFilter = 'all'"
+                      >
+                        全部
+                      </Button>
+                      <Button
+                        size="sm"
+                        :variant="statusFilter === 'success' ? 'secondary' : 'ghost'"
+                        @click="statusFilter = 'success'"
+                      >
+                        成功
+                      </Button>
+                      <Button
+                        size="sm"
+                        :variant="statusFilter === 'failure' ? 'secondary' : 'ghost'"
+                        @click="statusFilter = 'failure'"
+                      >
+                        失败
+                      </Button>
+                    </div>
 
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="surface-label text-[0.68rem]">统计范围</span>
-                    <Button
-                      v-for="option in OVERVIEW_WINDOW_OPTIONS"
-                      :key="option.value"
-                      size="sm"
-                      :variant="timeWindow === option.value ? 'secondary' : 'ghost'"
-                      class="rounded-full"
-                      @click="handleChangeTimeWindow(option.value)"
-                    >
-                      {{ option.label }}
-                    </Button>
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div class="flex flex-wrap items-center gap-3">
+                        <span class="surface-label text-[0.68rem]">筛选范围</span>
+                        <FilterChips v-model="timeRangeFilter" :options="TIME_RANGE_OPTIONS" />
+                      </div>
+
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="surface-label text-[0.68rem]">统计范围</span>
+                        <Button
+                          v-for="option in OVERVIEW_WINDOW_OPTIONS"
+                          :key="option.value"
+                          size="sm"
+                          :variant="timeWindow === option.value ? 'secondary' : 'ghost'"
+                          class="rounded-full"
+                          @click="handleChangeTimeWindow(option.value)"
+                        >
+                          {{ option.label }}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -722,7 +721,7 @@ async function handleRetryServiceCheck() {
             <PageHeader
               eyebrow="运行轨迹"
               :title="detailTitle"
-              description="查看这次运行的状态、步骤、评估结果和最终输出。"
+              :description="`${detailStatus}，${currentStepCount} 步，${currentTokens.toLocaleString()} token，耗时 ${currentDuration}`"
               class="border-b-0 pb-0"
             >
               <template #actions>
@@ -763,17 +762,6 @@ async function handleRetryServiceCheck() {
                     </Button>
                   </div>
                 </div>
-              </template>
-
-              <template #meta>
-                <MetricCard
-                  v-for="item in detailItems"
-                  :key="item.label"
-                  :label="item.label"
-                  :value="item.value"
-                  :hint="item.description"
-                  class="h-full"
-                />
               </template>
             </PageHeader>
 

@@ -6,31 +6,23 @@ import {
   Database,
   Edit2,
   Files,
-  Filter,
   Layers3,
   Plus,
   Search,
+  SlidersHorizontal,
   Tag,
   Trash2,
   X,
 } from 'lucide-vue-next'
 import { logger } from '@/utils/logger'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import FormSheetShell from '@/components/common/FormSheetShell.vue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -272,29 +264,13 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
         <PageHeader
           eyebrow="知识库"
           title="知识库"
+          :description="`${store.list.length} 个知识库，${totalDocuments} 篇文档，${totalChunks} 个分块`"
         >
           <template #actions>
             <Button type="button" @click="showCreate = true">
               <Plus class="size-4" />
               新建知识库
             </Button>
-          </template>
-          <template #meta>
-            <MetricCard label="知识库" :value="store.list.length" hint="可管理的知识库总数">
-              <template #icon>
-                <Database class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="文档" :value="totalDocuments" hint="所有知识库的文档总数">
-              <template #icon>
-                <Files class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard label="分块" :value="totalChunks" hint="所有文档的分块总数">
-              <template #icon>
-                <Layers3 class="size-5" />
-              </template>
-            </MetricCard>
           </template>
         </PageHeader>
 
@@ -341,7 +317,17 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                   />
                 </div>
 
-                <div class="flex flex-wrap items-center gap-3">
+                <Button variant="outline" size="sm" @click="showFilters = !showFilters">
+                  <SlidersHorizontal class="size-4" />
+                  筛选
+                </Button>
+              </div>
+
+              <div
+                v-if="showFilters"
+                class="mt-sm rounded-xl border border-border/40 bg-card/60 p-md"
+              >
+                <div class="mb-4">
                   <Select v-model="timeRange">
                     <SelectTrigger class="w-full sm:w-[180px]">
                       <SelectValue placeholder="更新时间" />
@@ -352,23 +338,8 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                       <SelectItem value="30d">最近 30 天</SelectItem>
                     </SelectContent>
                   </Select>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    :class="showFilters ? 'bg-accent text-accent-foreground' : ''"
-                    @click="showFilters = !showFilters"
-                  >
-                    <Filter class="size-4" />
-                    {{ showFilters ? '收起筛选' : '更多筛选' }}
-                  </Button>
                 </div>
-              </div>
 
-              <div
-                v-if="showFilters"
-                class="kb-filter-panel grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_220px]"
-              >
                 <div class="space-y-3">
                   <div class="surface-label text-[0.68rem]">标签</div>
                   <div v-if="allTags.length > 0" class="flex flex-wrap gap-2">
@@ -613,180 +584,178 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
       </div>
     </PageContainer>
 
-    <Dialog v-model:open="showCreate">
-      <DialogContent class="shell-card border-border/70 sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>新建知识库</DialogTitle>
-          <DialogDescription>
-            创建新的知识库容器，用来托管文档、分块和检索测试。
-          </DialogDescription>
-        </DialogHeader>
+    <FormSheetShell
+      :open="showCreate"
+      title="新建知识库"
+      description="创建新的知识库容器，用来托管文档、分块和检索测试。"
+      @update:open="value => showCreate = value"
+      @close="showCreate = false"
+    >
+      <form class="grid gap-4" @submit.prevent="handleCreate">
+        <div class="space-y-2">
+          <Label for="kb-name">名称</Label>
+          <Input
+            id="kb-name"
+            v-model="createForm.name"
+            placeholder="输入知识库名称"
+          />
+        </div>
 
-        <form class="grid gap-4 py-2" @submit.prevent="handleCreate">
-          <div class="space-y-2">
-            <Label for="kb-name">名称</Label>
-            <Input
-              id="kb-name"
-              v-model="createForm.name"
-              placeholder="输入知识库名称"
-            />
-          </div>
+        <div class="space-y-2">
+          <Label for="kb-desc">描述</Label>
+          <Textarea
+            id="kb-desc"
+            v-model="createForm.description"
+            :rows="4"
+            placeholder="输入知识库描述"
+            class="resize-none"
+          />
+        </div>
 
-          <div class="space-y-2">
-            <Label for="kb-desc">描述</Label>
-            <Textarea
-              id="kb-desc"
-              v-model="createForm.description"
-              :rows="4"
-              placeholder="输入知识库描述"
-              class="resize-none"
-            />
-          </div>
-
-          <div class="space-y-2">
-            <Label>向量模型</Label>
-            <Select v-model="createForm.embeddingModel">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="使用系统默认" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="p in embeddingProviders"
-                  :key="p.id"
-                  :value="p.modelName"
-                >
-                  {{ p.displayName || p.modelName }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p class="text-xs text-muted-foreground">不选择则使用系统默认的 Embedding 模型</p>
-          </div>
-
-          <div class="space-y-2">
-            <div class="flex items-center justify-between gap-3">
-              <Label>关联 Datastore</Label>
-              <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
-                刷新
-              </Button>
-            </div>
-            <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-              正在加载 Datastore 列表...
-            </div>
-            <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
-              Datastore 列表加载失败：{{ datastoreStore.error }}
-            </div>
-            <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
-              <label
-                v-for="datastore in datastoreStore.list"
-                :key="datastore.id"
-                class="kb-dialog-option"
+        <div class="space-y-2">
+          <Label>向量模型</Label>
+          <Select v-model="createForm.embeddingModel">
+            <SelectTrigger class="w-full">
+              <SelectValue placeholder="使用系统默认" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="p in embeddingProviders"
+                :key="p.id"
+                :value="p.modelName"
               >
-                <Checkbox
-                  :model-value="createForm.datastoreIds.includes(datastore.id)"
-                  @update:model-value="toggleCreateDatastore(datastore.id, $event)"
-                />
-                <div class="min-w-0">
-                  <div class="text-sm text-foreground">{{ datastore.name }}</div>
-                  <div v-if="datastore.description" class="text-xs text-muted-foreground">
-                    {{ datastore.description }}
-                  </div>
+                {{ p.displayName || p.modelName }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs text-muted-foreground">不选择则使用系统默认的 Embedding 模型</p>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <Label>关联 Datastore</Label>
+            <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
+              刷新
+            </Button>
+          </div>
+          <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
+            正在加载 Datastore 列表...
+          </div>
+          <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+            Datastore 列表加载失败：{{ datastoreStore.error }}
+          </div>
+          <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
+            <label
+              v-for="datastore in datastoreStore.list"
+              :key="datastore.id"
+              class="kb-dialog-option"
+            >
+              <Checkbox
+                :model-value="createForm.datastoreIds.includes(datastore.id)"
+                @update:model-value="toggleCreateDatastore(datastore.id, $event)"
+              />
+              <div class="min-w-0">
+                <div class="text-sm text-foreground">{{ datastore.name }}</div>
+                <div v-if="datastore.description" class="text-xs text-muted-foreground">
+                  {{ datastore.description }}
                 </div>
-              </label>
-            </div>
-            <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-              当前没有可关联的 Datastore。知识库可以先创建，后续再补充关联。
-            </div>
-            <p class="text-xs text-muted-foreground">绑定后，datastore 结构化数据会同步到该知识库。</p>
+              </div>
+            </label>
           </div>
+          <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
+            当前没有可关联的 Datastore。知识库可以先创建，后续再补充关联。
+          </div>
+          <p class="text-xs text-muted-foreground">绑定后，datastore 结构化数据会同步到该知识库。</p>
+        </div>
+      </form>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="showCreate = false">
-              取消
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" @click="showCreate = false">
+            取消
+          </Button>
+          <Button @click="handleCreate">
+            创建
+          </Button>
+        </div>
+      </template>
+    </FormSheetShell>
+
+    <FormSheetShell
+      :open="!!editingKb"
+      title="编辑知识库"
+      description="补充描述和标签，方便后续查找和整理。"
+      @update:open="(value: boolean) => { if (!value) closeEditDialog() }"
+      @close="closeEditDialog"
+    >
+      <form class="grid gap-4" @submit.prevent="handleUpdate">
+        <div class="space-y-2">
+          <Label>描述</Label>
+          <Textarea
+            v-model="editForm.description"
+            :rows="4"
+            placeholder="输入知识库描述"
+            class="resize-none"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <Label>标签</Label>
+          <Input
+            :model-value="editForm.tags.join(', ')"
+            placeholder="输入标签，使用逗号分隔"
+            @update:model-value="editForm.tags = ($event as string).split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag)"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <Label>关联 Datastore</Label>
+            <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
+              刷新
             </Button>
-            <Button type="submit">
-              创建
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-
-    <Dialog :open="!!editingKb" @update:open="(value: boolean) => { if (!value) closeEditDialog() }">
-      <DialogContent class="shell-card border-border/70 sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>编辑知识库</DialogTitle>
-          <DialogDescription>
-            补充描述和标签，方便后续查找和整理。
-          </DialogDescription>
-        </DialogHeader>
-
-        <form class="grid gap-4 py-2" @submit.prevent="handleUpdate">
-          <div class="space-y-2">
-            <Label>描述</Label>
-            <Textarea
-              v-model="editForm.description"
-              :rows="4"
-              placeholder="输入知识库描述"
-              class="resize-none"
-            />
           </div>
-
-          <div class="space-y-2">
-            <Label>标签</Label>
-            <Input
-              :model-value="editForm.tags.join(', ')"
-              placeholder="输入标签，使用逗号分隔"
-              @update:model-value="editForm.tags = ($event as string).split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag)"
-            />
+          <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
+            正在加载 Datastore 列表...
           </div>
-
-          <div class="space-y-2">
-            <div class="flex items-center justify-between gap-3">
-              <Label>关联 Datastore</Label>
-              <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
-                刷新
-              </Button>
-            </div>
-            <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-              正在加载 Datastore 列表...
-            </div>
-            <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
-              Datastore 列表加载失败：{{ datastoreStore.error }}
-            </div>
-            <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
-              <label
-                v-for="datastore in datastoreStore.list"
-                :key="datastore.id"
-                class="kb-dialog-option"
-              >
-                <Checkbox
-                  :model-value="editForm.datastoreIds.includes(datastore.id)"
-                  @update:model-value="toggleEditDatastore(datastore.id, $event)"
-                />
-                <div class="min-w-0">
-                  <div class="text-sm text-foreground">{{ datastore.name }}</div>
-                  <div v-if="datastore.description" class="text-xs text-muted-foreground">
-                    {{ datastore.description }}
-                  </div>
+          <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+            Datastore 列表加载失败：{{ datastoreStore.error }}
+          </div>
+          <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
+            <label
+              v-for="datastore in datastoreStore.list"
+              :key="datastore.id"
+              class="kb-dialog-option"
+            >
+              <Checkbox
+                :model-value="editForm.datastoreIds.includes(datastore.id)"
+                @update:model-value="toggleEditDatastore(datastore.id, $event)"
+              />
+              <div class="min-w-0">
+                <div class="text-sm text-foreground">{{ datastore.name }}</div>
+                <div v-if="datastore.description" class="text-xs text-muted-foreground">
+                  {{ datastore.description }}
                 </div>
-              </label>
-            </div>
-            <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-              当前没有可关联的 Datastore。
-            </div>
+              </div>
+            </label>
           </div>
+          <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
+            当前没有可关联的 Datastore。
+          </div>
+        </div>
+      </form>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="closeEditDialog()">
-              取消
-            </Button>
-            <Button type="submit">
-              保存
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" @click="closeEditDialog()">
+            取消
+          </Button>
+          <Button @click="handleUpdate">
+            保存
+          </Button>
+        </div>
+      </template>
+    </FormSheetShell>
 
     <ConfirmDialog
       v-model:show="showDeleteConfirm"
@@ -801,12 +770,6 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
 </template>
 
 <style scoped>
-.kb-filter-panel {
-  border-radius: calc(var(--radius) + 4px);
-  border: 1px solid hsl(from var(--border) h s l / 0.64);
-  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.84), hsl(from var(--background) h s l / 0.72));
-}
-
 .kb-results-summary {
   border-left: 1px solid hsl(from var(--border) h s l / 0.58);
   padding-left: 1rem;

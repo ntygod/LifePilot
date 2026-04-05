@@ -1,17 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import {
-  Play,
-  FlaskConical,
-  ListChecks,
-  History,
-  TrendingDown,
-} from 'lucide-vue-next'
+import { Play } from 'lucide-vue-next'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import MetricCard from '@/components/common/MetricCard.vue'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useEvalStore } from '@/stores/eval'
 import ScenarioPanel from './ScenarioPanel.vue'
@@ -51,48 +43,13 @@ function openRunDialog() {
         <!-- 页面头部 -->
         <PageHeader
           title="评估管理"
-          description="运行 Benchmark 场景评估，追踪 Agent 质量变化"
+          :description="`${store.scenarios.length} 个场景，${store.runs.length} 次运行，最新平均分 ${latestAvgScore}，${latestDegraded ? '已退化' : '状态正常'}`"
         >
           <template #actions>
             <Button @click="openRunDialog">
               <Play class="mr-1.5 size-4" />
               运行评估
             </Button>
-          </template>
-
-          <template #meta>
-            <template v-if="store.loading && store.scenarios.length === 0">
-              <div v-for="i in 4" :key="i" class="detail-card space-y-3 p-5">
-                <Skeleton class="h-3 w-16" />
-                <Skeleton class="h-7 w-20" />
-              </div>
-            </template>
-            <template v-else>
-              <MetricCard
-                label="场景总数"
-                :value="store.scenarios.length"
-              >
-                <template #icon><ListChecks class="size-4" /></template>
-              </MetricCard>
-              <MetricCard
-                label="运行总数"
-                :value="store.runs.length"
-              >
-                <template #icon><History class="size-4" /></template>
-              </MetricCard>
-              <MetricCard
-                label="最新平均分"
-                :value="latestAvgScore"
-              >
-                <template #icon><FlaskConical class="size-4" /></template>
-              </MetricCard>
-              <MetricCard
-                label="退化状态"
-                :value="latestDegraded ? '已退化' : '正常'"
-              >
-                <template #icon><TrendingDown class="size-4" /></template>
-              </MetricCard>
-            </template>
           </template>
         </PageHeader>
 

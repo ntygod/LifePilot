@@ -239,7 +239,8 @@ public class ReactAgentLoop implements CallbackHelper {
             boolean firstIteration = iteration == 0;
             // 首轮迭代注入用户上传的媒体内容到上下文
             if (firstIteration && hasMultimodalContent(request)) {
-                if (multimodalRouter == null || !multimodalRouter.isVisionAvailable()) {
+                // 仅图片需要 VISION Provider，音频由 MultimodalRouter 的原生音频路由或 STT 处理
+                if (hasImageContent(request) && (multimodalRouter == null || !multimodalRouter.isVisionAvailable())) {
                     log.warn("用户上传了图片但无可用 VISION Provider: traceId={}", state.traceId());
                     state = DegradedResponseBuilder.terminateWithReason(
                             state,
@@ -888,6 +889,13 @@ public class ReactAgentLoop implements CallbackHelper {
     /** 判断当前请求是否带有多模态媒体输入。 */
     private boolean hasMultimodalContent(AgentRequest request) {
         return request.mediaContents() != null && !request.mediaContents().isEmpty();
+    }
+
+    /** 判断当前请求是否含有图片附件（需要 VISION Provider）。 */
+    private boolean hasImageContent(AgentRequest request) {
+        if (request.mediaContents() == null) return false;
+        return request.mediaContents().stream()
+                .anyMatch(mc -> mc.mimeType() != null && mc.mimeType().startsWith("image/"));
     }
 
     /**

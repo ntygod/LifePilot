@@ -3,23 +3,11 @@ import { useRouter } from 'vue-router'
 import { ArrowRight } from 'lucide-vue-next'
 import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import { Button } from '@/components/ui/button'
-import { useChatStore } from '@/stores/chat'
 
 const router = useRouter()
-const chatStore = useChatStore()
 
-async function startUsing() {
-  if (chatStore.sessions.length === 0) {
-    await chatStore.loadSessions()
-  }
-
-  if (chatStore.activeSessionId) {
-    router.push({ name: 'conversationDetail', params: { sessionId: chatStore.activeSessionId } })
-    return
-  }
-
-  const session = await chatStore.startNewSession()
-  router.push({ name: 'conversationDetail', params: { sessionId: session.id } })
+function startUsing() {
+  router.push({ name: 'newConversation' })
 }
 
 const features = [
