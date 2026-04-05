@@ -1,5 +1,8 @@
 package com.lifepilot.interaction.model;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 import java.util.List;
 
 import org.springframework.lang.Nullable;
@@ -13,6 +16,14 @@ import org.springframework.lang.Nullable;
  * @author zsg
  * @since 2026-02-25
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ResponseContent.TextContent.class, name = "TEXT"),
+        @JsonSubTypes.Type(value = ResponseContent.MarkdownContent.class, name = "MARKDOWN"),
+        @JsonSubTypes.Type(value = ResponseContent.CardContent.class, name = "CARD"),
+        @JsonSubTypes.Type(value = ResponseContent.ImageContent.class, name = "IMAGE"),
+        @JsonSubTypes.Type(value = ResponseContent.StreamingContent.class, name = "STREAMING"),
+})
 public sealed interface ResponseContent
         permits ResponseContent.TextContent,
                 ResponseContent.MarkdownContent,
