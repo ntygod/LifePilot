@@ -81,11 +81,12 @@ public final class DockerBooter implements SandboxBooter {
                 return false;
             }
             return process.exitValue() == 0;
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (IOException e) {
             log.debug("Docker 可用性检测失败: error={}", e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("Docker 可用性检测被中断: error={}", e.getMessage());
             return false;
         }
     }
@@ -285,11 +286,11 @@ public final class DockerBooter implements SandboxBooter {
             } else {
                 log.debug("容器已终止: container={}", containerName);
             }
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (IOException e) {
             log.warn("终止容器失败: container={}, error={}", containerName, e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("终止容器被中断: container={}, error={}", containerName, e.getMessage());
         }
     }
 }

@@ -11,7 +11,7 @@ import java.util.Map;
  * @author zsg
  * @since 2026-03-31
  */
-public sealed interface PersistentKernel permits PythonKernel, JavaScriptKernel, ShellKernel {
+public sealed interface PersistentKernel permits ProcessKernelBase, ShellKernel {
 
     /**
      * 获取内核唯一标识。

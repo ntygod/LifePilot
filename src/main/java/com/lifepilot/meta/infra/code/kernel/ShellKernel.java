@@ -68,7 +68,8 @@ public final class ShellKernel implements PersistentKernel {
         long startMs = System.currentTimeMillis();
 
         try {
-            String output = tmuxManager.execInSession(sessionId, code);
+            String rawOutput = tmuxManager.execInSession(sessionId, code);
+            String output = truncate(rawOutput, maxOutputChars);
             int durationMs = (int) (System.currentTimeMillis() - startMs);
             stateRef.set(KernelState.READY);
             return new KernelExecutionResult(output, "", null, durationMs);
@@ -180,5 +181,12 @@ public final class ShellKernel implements PersistentKernel {
         if (currentState == KernelState.CLOSED) {
             throw new IllegalStateException("Shell 内核已关闭: kernelId=" + id);
         }
+    }
+
+    /** 截断超长输出。 */
+    private static String truncate(String text, int maxChars) {
+        if (text == null) return "";
+        if (text.length() <= maxChars) return text;
+        return text.substring(0, maxChars) + "...[输出已截断]";
     }
 }

@@ -151,13 +151,15 @@ public class CodeValidator {
                 "os.spawn*", Pattern.compile("\\bos\\.spawn[a-z]*\\s*\\("),
                 "调用 os.spawn*() 执行子进程", "CRITICAL"));
         patterns.add(new DangerousPattern(
-                "eval", Pattern.compile("\\beval\\s*\\("),
+                "eval", Pattern.compile("(?<!\\.)\\beval\\s*\\("),
                 "调用 eval() 动态执行代码", "CRITICAL"));
+        // 排除 cursor.exec()、conn.exec() 等 ORM/DB 方法调用
         patterns.add(new DangerousPattern(
-                "exec", Pattern.compile("\\bexec\\s*\\("),
+                "exec", Pattern.compile("(?<!\\w\\.)\\bexec\\s*\\("),
                 "调用 exec() 动态执行代码", "CRITICAL"));
+        // 排除 re.compile()、regex.compile() 等正则编译调用
         patterns.add(new DangerousPattern(
-                "compile", Pattern.compile("\\bcompile\\s*\\("),
+                "compile", Pattern.compile("(?<!re\\.)(?<!regex\\.)(?<!pattern\\.)\\bcompile\\s*\\("),
                 "调用 compile() 编译动态代码", "CRITICAL"));
         patterns.add(new DangerousPattern(
                 "__import__", Pattern.compile("__import__\\s*\\("),
