@@ -1,4 +1,5 @@
 mod commands;
+mod float_window;
 mod health_check;
 mod java_manager;
 mod port_finder;
@@ -8,7 +9,7 @@ mod whisper_manager;
 use java_manager::JavaManager;
 use whisper_manager::WhisperManager;
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Listener, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 
 /// Tauri 插件注册入口
@@ -54,6 +55,17 @@ pub fn run() {
             // 初始化系统托盘
             tray::setup_tray(app.handle())?;
 
+            // 创建桌面浮窗（初始隐藏，等后端就绪后显示）
+            float_window::create_float_window(app.handle())?;
+
+            // 后端就绪后自动显示浮窗
+            let float_handle = app.handle().clone();
+            app.listen("backend-ready", move |_| {
+                if let Err(e) = float_window::show_float_window(&float_handle) {
+                    log::warn!("浮窗显示失败: {}", e);
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -64,12 +76,17 @@ pub fn run() {
             commands::check_whisper_status,
             commands::start_whisper_download,
             commands::cancel_whisper_download,
+            float_window::show_reminder_bubble,
+            float_window::hide_reminder_bubble,
+            float_window::resize_float_window,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // 关闭窗口时隐藏到托盘，而不是退出
-                let _ = window.hide();
-                api.prevent_close();
+                // 只对主窗口拦截关闭（隐藏到托盘），浮窗不拦截
+                if window.label() == "main" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
             }
         })
         .run(tauri::generate_context!())
