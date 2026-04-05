@@ -85,6 +85,6 @@ public final class JavaScriptKernel extends ProcessKernelBase {
      * @param maxOutputChars 输出最大字符数
      */
     public JavaScriptKernel(String kernelId, String nodeRuntime, int maxOutputChars) {
-        super(kernelId, maxOutputChars, nodeRuntime, ".js", "JavaScript", NODE_KERNEL_SCRIPT);
+        super(kernelId, maxOutputChars, nodeRuntime, java.util.List.of(), ".js", "JavaScript", NODE_KERNEL_SCRIPT);
     }
 }

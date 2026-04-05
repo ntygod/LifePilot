@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,6 +37,7 @@ public sealed class ProcessKernelBase implements PersistentKernel
     private final String id;
     private final int maxOutputChars;
     private final String runtimeCmd;
+    private final List<String> runtimeArgs;
     private final String scriptSuffix;
     private final String langName;
     private final String script;
@@ -58,16 +60,19 @@ public sealed class ProcessKernelBase implements PersistentKernel
      * @param kernelId       内核唯一标识
      * @param maxOutputChars 输出最大字符数
      * @param runtimeCmd     启动命令（如 "python3" / "node"）
+     * @param runtimeArgs    额外运行时参数（如 Python 的 "-u"），脚本路径会自动追加
      * @param scriptSuffix   临时文件后缀（如 ".py" / ".js"）
      * @param langName       语言名称（用于日志）
      * @param script         REPL 脚本内容
      */
     protected ProcessKernelBase(String kernelId, int maxOutputChars,
-                                String runtimeCmd, String scriptSuffix,
+                                String runtimeCmd, List<String> runtimeArgs,
+                                String scriptSuffix,
                                 String langName, String script) {
         this.id = kernelId;
         this.maxOutputChars = maxOutputChars;
         this.runtimeCmd = runtimeCmd;
+        this.runtimeArgs = runtimeArgs;
         this.scriptSuffix = scriptSuffix;
         this.langName = langName;
         this.script = script;
@@ -171,7 +176,7 @@ public sealed class ProcessKernelBase implements PersistentKernel
         }
     }
 
-    // ───────────────────────���─────────────────────
+    // ─────────────────────────────────────────────
     //  内部方法
     // ─────────────────────────────────────────────
 
@@ -182,7 +187,11 @@ public sealed class ProcessKernelBase implements PersistentKernel
             Files.writeString(tempScriptFile, script, StandardCharsets.UTF_8);
             tempScriptFile.toFile().deleteOnExit();
 
-            var pb = new ProcessBuilder(runtimeCmd, "-u", tempScriptFile.toString());
+            var command = new java.util.ArrayList<String>();
+            command.add(runtimeCmd);
+            command.addAll(runtimeArgs);
+            command.add(tempScriptFile.toString());
+            var pb = new ProcessBuilder(command);
             // 合并 stderr 到 stdout，避免 stderr 管道缓冲区满导致进程死锁
             pb.redirectErrorStream(true);
             process = pb.start();

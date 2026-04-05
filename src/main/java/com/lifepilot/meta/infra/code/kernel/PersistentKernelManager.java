@@ -157,7 +157,7 @@ public class PersistentKernelManager {
     /**
      * 列出所有活跃内核信息。
      *
-     * @return 内核信息列表，每个条目包含 kernelId、language、state、idleSeconds
+     * @return 内核信息列表，每个条目包含 kernelId、state、idleSeconds
      */
     public List<Map<String, Object>> listKernels() {
         var now = Instant.now();

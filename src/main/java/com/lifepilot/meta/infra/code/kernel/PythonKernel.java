@@ -1,10 +1,10 @@
 package com.lifepilot.meta.infra.code.kernel;
 
 /**
- * Python 持久内��� — 通过长驻 python3 进程实��跨调用状态保持。
+ * Python 持久内核 — 通过长驻 python3 进程实现跨调用状态保持。
  *
- * <p>内部启动一个 {@code python3 -u} 进程运行嵌��式 REPL 脚本，
- * 通过 stdin/stdout ���行行级 JSON 通信。支持 execute、inspect、reset 三种操作，
+ * <p>内部启动一个 {@code python3 -u} 进程运行嵌入式 REPL 脚本，
+ * 通过 stdin/stdout 进行行级 JSON 通信。支持 execute、inspect、reset 三种操作，
  * 以及 {@code %pip} 魔法命令安装包。</p>
  *
  * @author zsg
@@ -15,7 +15,7 @@ public final class PythonKernel extends ProcessKernelBase {
     /**
      * 嵌入式 Python REPL 脚本 — 部署时无需外部文件。
      *
-     * <p>通信协议：每行一个 JSON 请求，返���每行一个 JSON 响��。
+     * <p>通信协议：每行一个 JSON 请求，返回每行一个 JSON 响应。
      * 支持 execute / inspect / reset 三种 action。</p>
      */
     private static final String PYTHON_KERNEL_SCRIPT = """
@@ -71,6 +71,6 @@ public final class PythonKernel extends ProcessKernelBase {
      * @param maxOutputChars 输出最大字符数
      */
     public PythonKernel(String kernelId, String pythonRuntime, int maxOutputChars) {
-        super(kernelId, maxOutputChars, pythonRuntime, ".py", "Python", PYTHON_KERNEL_SCRIPT);
+        super(kernelId, maxOutputChars, pythonRuntime, java.util.List.of("-u"), ".py", "Python", PYTHON_KERNEL_SCRIPT);
     }
 }
