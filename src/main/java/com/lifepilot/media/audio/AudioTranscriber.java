@@ -59,6 +59,15 @@ public class AudioTranscriber {
     }
 
     /**
+     * 检查是否有任一转录方式可用（本地 Whisper CLI 或云端 TranscriptionModel）。
+     *
+     * @return 至少一种转录方式可用返回 true
+     */
+    public boolean isAvailable() {
+        return (whisperCli != null && whisperCli.isAvailable()) || transcriptionModel != null;
+    }
+
+    /**
      * 将音频转录为文本。
      *
      * <p>采用"本地优先"级联策略：
@@ -110,7 +119,7 @@ public class AudioTranscriber {
      * @throws IOException 临时文件操作失败
      */
     private String transcribeWithSpringAi(byte[] audioData, String mimeType) throws IOException {
-        Path tempFile = Files.createTempFile("audio-transcribe-", extractExtension(mimeType));
+        Path tempFile = Files.createTempFile("audio-transcribe-", AudioMimeUtils.extractExtension(mimeType));
         try {
             Files.write(tempFile, audioData);
             var resource = new FileSystemResource(tempFile.toFile());
@@ -122,27 +131,6 @@ public class AudioTranscriber {
         }
     }
 
-    /**
-     * 从 MIME 类型提取文件扩展名。
-     *
-     * @param mimeType MIME 类型（如 "audio/wav"）
-     * @return 文件扩展名（如 ".wav"）
-     */
-    private String extractExtension(String mimeType) {
-        if (mimeType == null || !mimeType.contains("/")) {
-            return ".wav";
-        }
-        String subType = mimeType.substring(mimeType.indexOf('/') + 1);
-        return switch (subType) {
-            case "mpeg" -> ".mp3";
-            case "x-wav", "wav" -> ".wav";
-            case "x-flac", "flac" -> ".flac";
-            case "ogg" -> ".ogg";
-            case "mp4", "x-m4a", "m4a" -> ".m4a";
-            case "webm" -> ".webm";
-            default -> "." + subType;
-        };
-    }
 
     /**
      * 静默删除文件，忽略异常。

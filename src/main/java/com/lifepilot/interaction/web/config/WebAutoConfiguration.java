@@ -10,6 +10,8 @@ import com.lifepilot.interaction.web.service.WebPermissionApprovalService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.permission.service.PermissionService;
+import com.lifepilot.llm.config.ProviderCapability;
+import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.config.MediaProperties;
 import org.slf4j.Logger;
@@ -55,14 +57,17 @@ public class WebAutoConfiguration {
                                                        ChatTurnService chatTurnService,
                                                        SseSessionManager sseSessionManager,
                                                        @Nullable AudioTranscriber audioTranscriber,
-                                                       MediaProperties mediaProperties) {
+                                                       MediaProperties mediaProperties,
+                                                       @Nullable ProviderRegistry providerRegistry) {
         log.info("注册 BrowserIngressService");
         return new BrowserIngressService(
                 attachmentRepository,
                 chatTurnService,
                 sseSessionManager,
                 audioTranscriber,
-                mediaProperties
+                mediaProperties,
+                () -> providerRegistry != null
+                        && !providerRegistry.findByCapability(ProviderCapability.NATIVE_AUDIO).isEmpty()
         );
     }
 

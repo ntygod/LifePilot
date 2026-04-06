@@ -76,8 +76,15 @@ export function useVoice(maxRecordingSeconds = 120) {
       }
 
       mediaRecorder.onstop = () => {
-        audioBlob.value = new Blob(chunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
+        const rawBlob = new Blob(chunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
         chunks = []
+        // webm → 16kHz 单声道 WAV（whisper.cpp 兼容格式）
+        convertToWav(rawBlob).then((wav) => {
+          audioBlob.value = wav
+        }).catch(() => {
+          // 转换失败则保留原始格式
+          audioBlob.value = rawBlob
+        })
       }
 
       mediaRecorder.start(250) // 每 250ms 收集一次数据
@@ -254,5 +261,79 @@ export function useVoice(maxRecordingSeconds = 120) {
     stopTts,
     // 资源清理
     cleanup,
+  }
+}
+
+// ── webm → WAV 转换（whisper.cpp 兼容格式） ──────────────
+
+const WAV_SAMPLE_RATE = 16000
+
+/**
+ * 将任意浏览器音频 Blob 转为 16kHz 单声道 16-bit PCM WAV。
+ * 利用 OfflineAudioContext 完成重采样和声道混缩，零外部依赖。
+ */
+async function convertToWav(blob: Blob): Promise<Blob> {
+  const arrayBuffer = await blob.arrayBuffer()
+
+  // 1. 解码原始音频
+  const tempCtx = new AudioContext()
+  let decoded: AudioBuffer
+  try {
+    decoded = await tempCtx.decodeAudioData(arrayBuffer)
+  } finally {
+    await tempCtx.close().catch(() => {})
+  }
+
+  // 2. 重采样到 16kHz 单声道
+  const numSamples = Math.ceil(decoded.duration * WAV_SAMPLE_RATE)
+  const offlineCtx = new OfflineAudioContext(1, numSamples, WAV_SAMPLE_RATE)
+  const source = offlineCtx.createBufferSource()
+  source.buffer = decoded
+  source.connect(offlineCtx.destination)
+  source.start()
+  const resampled = await offlineCtx.startRendering()
+
+  // 3. 编码 WAV
+  return encodeWavBlob(resampled.getChannelData(0), WAV_SAMPLE_RATE)
+}
+
+/** 将 Float32 PCM 数据编码为 WAV Blob。 */
+function encodeWavBlob(samples: Float32Array, sampleRate: number): Blob {
+  const numSamples = samples.length
+  const buffer = new ArrayBuffer(44 + numSamples * 2)
+  const view = new DataView(buffer)
+
+  // RIFF 头
+  writeAscii(view, 0, 'RIFF')
+  view.setUint32(4, 36 + numSamples * 2, true)
+  writeAscii(view, 8, 'WAVE')
+
+  // fmt 子块
+  writeAscii(view, 12, 'fmt ')
+  view.setUint32(16, 16, true)                // 子块大小
+  view.setUint16(20, 1, true)                 // PCM 格式
+  view.setUint16(22, 1, true)                 // 单声道
+  view.setUint32(24, sampleRate, true)        // 采样率
+  view.setUint32(28, sampleRate * 2, true)    // 字节率
+  view.setUint16(32, 2, true)                 // 块对齐
+  view.setUint16(34, 16, true)                // 位深度
+
+  // data 子块
+  writeAscii(view, 36, 'data')
+  view.setUint32(40, numSamples * 2, true)
+
+  // Float32 → Int16
+  let offset = 44
+  for (let i = 0; i < numSamples; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+function writeAscii(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i))
   }
 }

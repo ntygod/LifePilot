@@ -87,25 +87,31 @@ public class WhisperCliTranscriber {
             throw new AudioTranscriptionException("Whisper CLI 不可用");
         }
 
-        String extension = extractExtension(mimeType);
+        String extension = AudioMimeUtils.extractExtension(mimeType);
         Path tempFile = null;
-        Path outputFile = null;
         try {
             // 写入临时文件
             tempFile = Files.createTempFile("whisper-input-", extension);
             Files.write(tempFile, audioData);
 
-            // 构建 CLI 命令
+            // 直接从 stdout 读取转录结果，不依赖文件输出
+            // --no-prints: 只打印转录结果，不打印模型加载日志
+            // --no-timestamps: 输出纯文本，不含时间戳
             ProcessBuilder pb = new ProcessBuilder(
                     resolvedCliPath,
                     "--model", whisperModel,
-                    "--output-txt",
-                    tempFile.toAbsolutePath().toString()
+                    "--language", "auto",
+                    "--no-prints",
+                    "--no-timestamps",
+                    "--file", tempFile.toAbsolutePath().toString()
             );
+            // 合并 stderr 到 stdout 避免管道死锁（--no-prints 已压制诊断输出）
             pb.redirectErrorStream(true);
 
             log.debug("执行 Whisper CLI: {}", pb.command());
             Process process = pb.start();
+
+            String output = new String(process.getInputStream().readAllBytes()).trim();
 
             boolean finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!finished) {
@@ -114,21 +120,16 @@ public class WhisperCliTranscriber {
             }
 
             if (process.exitValue() != 0) {
-                String errorOutput = new String(process.getInputStream().readAllBytes());
                 throw new AudioTranscriptionException(
-                        "Whisper CLI 转录失败，退出码: " + process.exitValue() + "，输出: " + errorOutput);
+                        "Whisper CLI 转录失败，退出码: " + process.exitValue() + "，输出: " + output);
             }
 
-            // 解析输出文本文件（与输入同名但扩展名为 .txt）
-            String tempFileName = tempFile.toAbsolutePath().toString();
-            outputFile = Path.of(tempFileName + ".txt");
-            if (!Files.exists(outputFile)) {
-                throw new AudioTranscriptionException("Whisper CLI 输出文件不存在: " + outputFile);
+            if (output.isEmpty()) {
+                throw new AudioTranscriptionException("Whisper CLI 转录结果为空");
             }
 
-            String transcript = Files.readString(outputFile).trim();
-            log.debug("Whisper CLI 转录完成，文本长度: {}", transcript.length());
-            return transcript;
+            log.debug("Whisper CLI 转录完成，文本长度: {}", output.length());
+            return output;
 
         } catch (AudioTranscriptionException e) {
             throw e;
@@ -139,32 +140,9 @@ public class WhisperCliTranscriber {
             throw new AudioTranscriptionException("Whisper CLI 转录被中断", e);
         } finally {
             deleteSilently(tempFile);
-            deleteSilently(outputFile);
         }
     }
 
-    /**
-     * 从 MIME 类型提取文件扩展名。
-     *
-     * @param mimeType MIME 类型（如 "audio/wav"）
-     * @return 文件扩展名（如 ".wav"）
-     */
-    private String extractExtension(String mimeType) {
-        if (mimeType == null || !mimeType.contains("/")) {
-            return ".wav";
-        }
-        String subType = mimeType.substring(mimeType.indexOf('/') + 1);
-        // 处理常见的 MIME 子类型映射
-        return switch (subType) {
-            case "mpeg" -> ".mp3";
-            case "x-wav", "wav" -> ".wav";
-            case "x-flac", "flac" -> ".flac";
-            case "ogg" -> ".ogg";
-            case "mp4", "x-m4a", "m4a" -> ".m4a";
-            case "webm" -> ".webm";
-            default -> "." + subType;
-        };
-    }
 
     /**
      * 在系统 PATH 中查找指定命令。

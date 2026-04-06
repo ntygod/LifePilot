@@ -354,58 +354,100 @@ async fn download_file_with_progress(
     Ok(())
 }
 
-/// 从 zip 压缩包中提取 whisper-cli 二进制
+/// 从 zip 压缩包中提取 whisper-cli 二进制及配套 DLL
 fn extract_cli_from_zip(zip_path: &Path, target: &Path) -> Result<(), String> {
     let file =
         std::fs::File::open(zip_path).map_err(|e| format!("打开 zip 文件失败: {}", e))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("解析 zip 文件失败: {}", e))?;
 
+    let bin_dir = target
+        .parent()
+        .ok_or_else(|| "无法获取目标目录".to_string())?;
     let cli_name = cli_filename();
+    let mut cli_found = false;
 
-    // 第一轮：精确匹配文件名
+    // 提取 CLI 和所有配套 DLL（ggml.dll、whisper.dll 等）
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
             .map_err(|e| format!("读取 zip 条目失败: {}", e))?;
 
-        let name = entry.name().to_string();
-        if name.ends_with(&cli_name) || name.ends_with(&format!("/{}", cli_name)) {
-            let mut out =
-                std::fs::File::create(target).map_err(|e| format!("创建目标文件失败: {}", e))?;
-            std::io::copy(&mut entry, &mut out).map_err(|e| format!("提取文件失败: {}", e))?;
-            log::info!("已提取 whisper-cli 到: {}", target.display());
-            return Ok(());
+        if entry.is_dir() {
+            continue;
         }
-    }
-
-    // 第二轮：模糊匹配含 "whisper" 的可执行文件
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("读取 zip 条目失败: {}", e))?;
 
         let name = entry.name().to_string();
-        let is_executable = if cfg!(target_os = "windows") {
-            name.ends_with(".exe")
+        let file_name = name.rsplit('/').next().unwrap_or(&name);
+
+        // 精确匹配 CLI
+        let is_cli = file_name == cli_name;
+        // 匹配 whisper.cpp 配套动态库（仅允许已知前缀，防止提取无关 DLL）
+        let is_lib = (file_name.ends_with(".dll")
+            || file_name.ends_with(".so")
+            || file_name.ends_with(".dylib"))
+            && (file_name.starts_with("ggml")
+                || file_name.starts_with("whisper")
+                || file_name.starts_with("llama"));
+
+        if !is_cli && !is_lib {
+            continue;
+        }
+
+        let out_path = if is_cli {
+            target.to_path_buf()
         } else {
-            !name.contains('.') || name.ends_with("/whisper")
+            bin_dir.join(file_name)
         };
 
-        if name.contains("whisper") && is_executable && !entry.is_dir() {
-            let mut out =
-                std::fs::File::create(target).map_err(|e| format!("创建目标文件失败: {}", e))?;
-            std::io::copy(&mut entry, &mut out).map_err(|e| format!("提取文件失败: {}", e))?;
-            log::info!(
-                "已提取 whisper 可执行文件 '{}' 到: {}",
-                name,
-                target.display()
-            );
-            return Ok(());
+        let mut out =
+            std::fs::File::create(&out_path).map_err(|e| format!("创建文件失败: {}", e))?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| format!("提取文件失败: {}", e))?;
+
+        if is_cli {
+            cli_found = true;
+            log::info!("已提取 whisper-cli 到: {}", out_path.display());
+        } else {
+            log::info!("已提取配套库 '{}' 到: {}", file_name, out_path.display());
         }
     }
 
-    Err("zip 压缩包中未找到 whisper-cli 可执行文件".into())
+    if !cli_found {
+        // 回退：模糊匹配含 "whisper" 的可执行文件
+        let file = std::fs::File::open(zip_path)
+            .map_err(|e| format!("打开 zip 文件失败: {}", e))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("解析 zip 文件失败: {}", e))?;
+
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| format!("读取 zip 条目失败: {}", e))?;
+
+            let name = entry.name().to_string();
+            let is_executable = if cfg!(target_os = "windows") {
+                name.ends_with(".exe")
+            } else {
+                !name.contains('.') || name.ends_with("/whisper")
+            };
+
+            if name.contains("whisper") && is_executable && !entry.is_dir() {
+                let mut out = std::fs::File::create(target)
+                    .map_err(|e| format!("创建目标文件失败: {}", e))?;
+                std::io::copy(&mut entry, &mut out)
+                    .map_err(|e| format!("提取文件失败: {}", e))?;
+                log::info!(
+                    "已提取 whisper 可执行文件 '{}' 到: {}",
+                    name,
+                    target.display()
+                );
+                return Ok(());
+            }
+        }
+        return Err("zip 压缩包中未找到 whisper-cli 可执行文件".into());
+    }
+
+    Ok(())
 }
 
 /// 验证 CLI 可执行

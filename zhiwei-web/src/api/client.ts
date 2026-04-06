@@ -411,6 +411,12 @@ export const chatApi = {
       type: data.type,
       isImage
     }
+  },
+
+  /** 查询后端语音输入能力（原生音频 / STT 转录） */
+  async getVoiceCapability(): Promise<{ nativeAudio: boolean; stt: boolean; supported: boolean }> {
+    const res = await request<{ code: number; data: { nativeAudio: boolean; stt: boolean; supported: boolean } }>('/chat/voice-capability')
+    return res.data
   }
 }
 

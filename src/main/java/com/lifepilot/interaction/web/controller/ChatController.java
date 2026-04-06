@@ -122,6 +122,16 @@ public class ChatController {
     }
 
     /**
+     * 查询语音输入能力（原生音频 Provider / STT 转录）。
+     *
+     * @return nativeAudio、stt、supported 三个布尔值
+     */
+    @GetMapping("/voice-capability")
+    public ApiResponse<BrowserIngressService.VoiceCapability> getVoiceCapability() {
+        return ApiResponse.ok(browserIngressService.voiceCapability());
+    }
+
+    /**
      * 非流式发送消息。
      *
      * <p>将消息提交到 MessageGateway 中间件管道，同步等待响应后返回完整结果。
