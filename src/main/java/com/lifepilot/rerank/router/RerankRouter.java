@@ -146,13 +146,14 @@ public class RerankRouter {
             DocumentSearchResult original = candidates.get(score.index());
             ScoreBreakdown breakdown = original.scoreBreakdown()
                     .map(existing -> new ScoreBreakdown(
-                            existing.vectorScore(), existing.ftsScore(), existing.rrfFusedScore(), Optional.of(score.score())))
-                    .orElse(new ScoreBreakdown(0.0, 0.0, 0.0, Optional.of(score.score())));
+                            existing.vectorScore(), existing.ftsScore(), existing.graphScore(), existing.rrfFusedScore(), Optional.of(score.score())))
+                    .orElse(new ScoreBreakdown(0.0, 0.0, 0.0, 0.0, Optional.of(score.score())));
             reranked.add(new DocumentSearchResult(
                     original.chunkId(), original.documentId(), original.knowledgeBaseId(),
                     original.content(), original.contextPrefix(), original.headingHierarchy(),
                     score.score(), "reranked", original.metadata(),
-                    Optional.of(breakdown), original.expandedContent()));
+                    Optional.of(breakdown), original.expandedContent(),
+                    original.sourceType(), original.sourceDatastoreId(), original.sourceCollectionId()));
         }
         return reranked.isEmpty() ? candidates.stream().limit(topK).toList() : reranked;
     }

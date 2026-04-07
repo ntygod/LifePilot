@@ -6,13 +6,16 @@ import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.eval.RetrievalEvaluator;
 import com.lifepilot.knowledge.chunking.ChunkingConfig;
 import com.lifepilot.knowledge.chunking.ChunkingStrategy;
 import com.lifepilot.knowledge.chunking.FixedSizeChunker;
 import com.lifepilot.knowledge.chunking.HeadingChunker;
+import com.lifepilot.knowledge.chunking.ParentChildChunker;
 import com.lifepilot.knowledge.chunking.RecursiveChunker;
 import com.lifepilot.knowledge.chunking.SemanticChunker;
 import com.lifepilot.knowledge.chunking.SmartChunker;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
 import com.lifepilot.knowledge.enricher.ChunkContextEnricher;
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
@@ -24,14 +27,19 @@ import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeSyncJobRepository;
+import com.lifepilot.knowledge.retrieve.ChunkDeduplicator;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.knowledge.retrieve.GraphKnowledgeSearcher;
 import com.lifepilot.knowledge.retrieve.QueryEnhancer;
+import com.lifepilot.knowledge.retrieve.RetrievalQualityEvaluator;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.knowledge.sync.DataStoreKnowledgeSyncJobPublisher;
 import com.lifepilot.knowledge.sync.DefaultDatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.knowledge.sync.DatastoreDocumentProjector;
 import com.lifepilot.knowledge.sync.KnowledgeSyncWorker;
 import com.lifepilot.rerank.router.RerankRouter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -84,22 +92,70 @@ public class KnowledgeRuntimeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public ParentChildChunker parentChildChunker(SmartChunker smartChunker,
+                                                  FixedSizeChunker fixedSizeChunker,
+                                                  KnowledgeBaseProperties props,
+                                                  TokenCounter tokenCounter) {
+        // parent 使用 SmartChunker（大块），child 使用独立的小块 FixedSizeChunker
+        var childConfig = new ChunkingConfig(
+                props.chunking().parentChild().childMaxTokens() * 4,  // token→字符粗略转换
+                50,
+                props.chunking().parentChild().childOverlap(),
+                props.chunking().parentChild().childMaxTokens(),
+                true, true, true);
+        var childChunker = new FixedSizeChunker(childConfig, tokenCounter);
+        return new ParentChildChunker(smartChunker, childChunker);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public GraphKnowledgeSearcher graphKnowledgeSearcher(SemanticMemory semanticMemory,
+                                                          DocumentChunkRepository chunkRepository,
+                                                          DocumentRepository docRepository) {
+        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ChunkDeduplicator chunkDeduplicator(KnowledgeBaseProperties props) {
+        return new ChunkDeduplicator(props.retrieval().deduplicationThreshold());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public DocumentRetriever documentRetriever(@Nullable VectorIndexer vectorIndexer,
                                                FtsIndexer ftsIndexer,
                                                @Nullable RerankRouter rerankRouter,
                                                @Nullable QueryEnhancer queryEnhancer,
+                                               @Nullable GraphKnowledgeSearcher graphSearcher,
+                                               @Nullable RetrievalQualityEvaluator qualityEvaluator,
                                                DocumentChunkRepository chunkRepository,
                                                KnowledgeBaseRepository kbRepository,
-                                               KnowledgeBaseProperties props) {
+                                               KnowledgeBaseProperties props,
+                                               ChunkDeduplicator chunkDeduplicator,
+                                               MeterRegistry meterRegistry,
+                                               ApplicationEventPublisher eventPublisher) {
         return new DocumentRetriever(
                 vectorIndexer,
                 ftsIndexer,
                 rerankRouter,
                 queryEnhancer,
+                graphSearcher,
+                qualityEvaluator,
                 chunkRepository,
                 kbRepository,
-                props.retrieval()
+                props.retrieval(),
+                chunkDeduplicator,
+                meterRegistry,
+                eventPublisher
         );
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public RetrievalEvaluator retrievalEvaluator(DocumentRetriever documentRetriever) {
+        return new RetrievalEvaluator(documentRetriever);
     }
 
     @Bean
@@ -127,6 +183,7 @@ public class KnowledgeRuntimeAutoConfiguration {
     @ConditionalOnMissingBean
     public DocumentIngester documentIngester(com.lifepilot.knowledge.parser.FormatDetector formatDetector,
                                              SmartChunker smartChunker,
+                                             ParentChildChunker parentChildChunker,
                                              FixedSizeChunker fixedSizeChunker,
                                              RecursiveChunker recursiveChunker,
                                              HeadingChunker headingChunker,
@@ -141,19 +198,24 @@ public class KnowledgeRuntimeAutoConfiguration {
                                              KnowledgeBaseRepository kbRepository,
                                              ApplicationEventPublisher eventPublisher,
                                              KnowledgeBaseProperties props,
-                                             ChunkingConfig chunkingConfig) {
+                                             ChunkingConfig chunkingConfig,
+                                             TokenCounter tokenCounter) {
+        // Parent-Child 启用时，默认分块器使用 ParentChildChunker
+        ChunkingStrategy defaultChunker = props.chunking().parentChild().enabled()
+                ? parentChildChunker : smartChunker;
         var registry = new HashMap<String, ChunkingStrategy>();
         registry.put(fixedSizeChunker.strategyName(), fixedSizeChunker);
         registry.put(recursiveChunker.strategyName(), recursiveChunker);
         registry.put(headingChunker.strategyName(), headingChunker);
         registry.put(smartChunker.strategyName(), smartChunker);
+        registry.put(parentChildChunker.strategyName(), parentChildChunker);
         if (semanticChunker != null) {
             registry.put(semanticChunker.strategyName(), semanticChunker);
         }
-        log.info("分块器注册表: {}", registry.keySet());
+        log.info("分块器注册表: {}, 默认策略={}", registry.keySet(), defaultChunker.strategyName());
         return new DocumentIngester(
                 formatDetector,
-                smartChunker,
+                defaultChunker,
                 Map.copyOf(registry),
                 contextEnricher,
                 vectorIndexer,
@@ -165,7 +227,8 @@ public class KnowledgeRuntimeAutoConfiguration {
                 kbRepository,
                 eventPublisher,
                 props,
-                chunkingConfig
+                chunkingConfig,
+                tokenCounter
         );
     }
 

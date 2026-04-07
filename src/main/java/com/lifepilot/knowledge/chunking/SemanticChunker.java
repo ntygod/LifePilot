@@ -3,13 +3,12 @@ package com.lifepilot.knowledge.chunking;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.util.TextUtils;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.llm.LlmUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -38,13 +37,16 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
     private final EmbeddingRouter embeddingRouter;
     private final RecursiveChunker fallbackChunker;
     private final KnowledgeBaseProperties.Chunking.SemanticChunking config;
+    private final TokenCounter tokenCounter;
 
     public SemanticChunker(EmbeddingRouter embeddingRouter,
                            RecursiveChunker fallbackChunker,
-                           KnowledgeBaseProperties.Chunking.SemanticChunking config) {
+                           KnowledgeBaseProperties.Chunking.SemanticChunking config,
+                           TokenCounter tokenCounter) {
         this.embeddingRouter = embeddingRouter;
         this.fallbackChunker = fallbackChunker;
         this.config = config;
+        this.tokenCounter = tokenCounter;
         log.debug("初始化 SemanticChunker: breakpointThreshold={}, bufferSize={}, minChunkSize={}, maxChunkSize={}",
                 config.breakpointThreshold(), config.bufferSize(), config.minChunkSize(), config.maxChunkSize());
     }
@@ -104,11 +106,8 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
     }
 
     private List<float[]> computeEmbeddings(List<String> sentences) {
-        List<float[]> embeddings = new ArrayList<>(sentences.size());
-        for (String sentence : sentences) {
-            embeddings.add(embeddingRouter.embed(sentence, EmbeddingUseCase.KNOWLEDGE_BASE, null, null));
-        }
-        return embeddings;
+        float[][] batch = embeddingRouter.embedBatch(sentences, EmbeddingUseCase.KNOWLEDGE_BASE, null, null);
+        return Arrays.asList(batch);
     }
 
     private List<Double> smoothSimilarities(List<float[]> embeddings) {
@@ -210,14 +209,19 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
         return result;
     }
 
+    /**
+     * 对超长分块委托 fallbackChunker 做句子级二次切分，保持语义完整性。
+     */
     private List<String> splitLargeChunks(List<String> chunks) {
         List<String> result = new ArrayList<>();
         for (String chunk : chunks) {
             if (chunk.length() <= config.maxChunkSize()) {
                 result.add(chunk);
             } else {
-                for (int i = 0; i < chunk.length(); i += config.maxChunkSize()) {
-                    result.add(chunk.substring(i, Math.min(i + config.maxChunkSize(), chunk.length())));
+                // 委托 RecursiveChunker 按句子边界切分，而非硬切字符
+                List<DocumentChunk> subChunks = fallbackChunker.chunk(chunk, Map.of());
+                for (DocumentChunk sub : subChunks) {
+                    result.add(sub.content());
                 }
             }
         }
@@ -239,8 +243,8 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
                     i,
                     offset,
                     offset + content.length(),
-                    estimateTokens(content),
-                    sha256(content),
+                    tokenCounter.countTokens(content),
+                    TextUtils.sha256(content),
                     List.of(),
                     0,
                     metadata
@@ -248,27 +252,5 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
             offset += content.length();
         }
         return List.copyOf(result);
-    }
-
-    private static int estimateTokens(String text) {
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - chineseChars;
-        return (int) (chineseChars + otherChars / 4);
-    }
-
-    private static String sha256(String text) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(64);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 算法不可用", e);
-        }
     }
 }

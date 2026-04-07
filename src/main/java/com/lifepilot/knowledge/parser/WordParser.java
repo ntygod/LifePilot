@@ -1,14 +1,15 @@
 package com.lifepilot.knowledge.parser;
 
+import com.lifepilot.knowledge.util.TextUtils;
 import org.apache.poi.xwpf.usermodel.*;
 import org.apache.poi.ooxml.POIXMLProperties;
 import org.openxmlformats.schemas.officeDocument.x2006.extendedProperties.CTProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
@@ -37,7 +38,7 @@ public non-sealed class WordParser implements DocumentParser {
     public ParseResult parse(Path filePath) throws DocumentParseException {
         validateFormat(filePath);
 
-        try (InputStream is = new FileInputStream(filePath.toFile());
+        try (InputStream is = Files.newInputStream(filePath);
              XWPFDocument document = new XWPFDocument(is)) {
 
             StringBuilder fullText = new StringBuilder();
@@ -72,7 +73,7 @@ public non-sealed class WordParser implements DocumentParser {
             }
 
             String text = fullText.toString();
-            long wordCount = estimateWordCount(text);
+            long wordCount = TextUtils.estimateWordCount(text);
             DocumentMetadata metadata = extractMetadataFromDocument(document, filePath, wordCount);
 
             log.info("DOCX 解析完成: file={}, elements={}, wordCount={}",
@@ -99,7 +100,7 @@ public non-sealed class WordParser implements DocumentParser {
     @Override
     public DocumentMetadata extractMetadata(Path filePath) {
         validateFormat(filePath);
-        try (InputStream is = new FileInputStream(filePath.toFile());
+        try (InputStream is = Files.newInputStream(filePath);
              XWPFDocument document = new XWPFDocument(is)) {
             return extractMetadataFromDocument(document, filePath, 0);
         } catch (IOException e) {
@@ -128,16 +129,20 @@ public non-sealed class WordParser implements DocumentParser {
 
     /**
      * 通过段落样式检测标题级别，返回 1-6，非标题返回 0。
+     *
+     * <p>支持英文（Heading1 / heading 1）和中文（标题1 / 标题 1）样式名。
      */
     private int detectHeadingLevel(XWPFParagraph paragraph) {
         String style = paragraph.getStyle();
         if (style == null) {
             return 0;
         }
-        // Word 内置标题样式：Heading1 ~ Heading6 或 heading 1 ~ heading 6
         String lower = style.toLowerCase();
         for (int level = 1; level <= 6; level++) {
-            if (lower.equals("heading" + level) || lower.equals("heading " + level)) {
+            if (lower.equals("heading" + level)
+                    || lower.equals("heading " + level)
+                    || style.equals("标题" + level)
+                    || style.equals("标题 " + level)) {
                 return level;
             }
         }
@@ -225,21 +230,5 @@ public non-sealed class WordParser implements DocumentParser {
                 Optional.empty(),
                 Map.of()
         );
-    }
-
-    /**
-     * 估算字数：中文按字符数，英文按空格分词。
-     */
-    private long estimateWordCount(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long totalWords = Arrays.stream(text.split("\\s+"))
-                .filter(w -> !w.isEmpty())
-                .count();
-        return chineseChars + Math.max(0, totalWords - chineseChars);
     }
 }

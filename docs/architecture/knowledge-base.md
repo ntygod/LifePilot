@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-知识库管理模块为知微提供文档级知识管理能力，支持多格式文档导入（PDF / Word / Markdown / TXT）、智能分块、向量索引、混合检索和可选精排。用户可创建多个独立知识库，每个知识库独立配置 Embedding 模型和分块策略。模块通过 `DocumentIngester` 实现完整的文档摄入管线，通过 `DocumentRetriever` 实现双路检索 + RRF 融合，为 Agent 的上下文增强提供知识库片段。
+知识库管理模块为知微提供文档级知识管理能力，支持多格式文档导入（PDF / Word / Markdown / TXT）、智能分块（含 Parent-Child 两级分块）、向量索引、三路混合检索（向量 + FTS5 + 知识图谱）和可选精排。用户可创建多个独立知识库，每个知识库独立配置 Embedding 模型和分块策略。模块通过 `DocumentIngester` 实现完整的文档摄入管线，通过 `DocumentRetriever` 实现三路检索 + 自适应 RRF 融合 + 去重 + Corrective RAG，为 Agent 的上下文增强提供知识库片段。Token 计数基于 jtokkit（兼容 tiktoken 编码），FTS5 使用 trigram tokenizer 天然支持 CJK 子串匹配。
 
 在当前实现中，知识库还承担 datastore 领域知识容器的角色：
 
@@ -33,28 +33,49 @@ graph TB
         DI["DocumentIngester<br/>(异步管线编排)"]
         FD["FormatDetector<br/>(Apache Tika)"]
         DP["DocumentParser<br/>(sealed, 4 实现)"]
-        CS["ChunkingStrategy<br/>(sealed, 5 实现)"]
+        CS["ChunkingStrategy<br/>(sealed, 6 实现)"]
         SC["SmartChunker<br/>(策略自动选择)"]
+        PC["ParentChildChunker<br/>(两级分块)"]
         CE["ChunkContextEnricher<br/>(LLM 上下文增强)"]
         DD["DuplicateDetector<br/>(重复检测)"]
+        TC["TokenCounter<br/>(jtokkit / 启发式)"]
         DI --> FD
         DI --> DP
         DI --> CS
         DI --> CE
         DI --> DD
+        CS --> PC
+        CS --> TC
     end
 
     subgraph "索引层"
         VI["VectorIndexer<br/>(sqlite-vec)"]
-        FI["FtsIndexer<br/>(FTS5)"]
+        FI["FtsIndexer<br/>(FTS5 trigram)"]
     end
 
     subgraph "检索层"
-        DR["DocumentRetriever<br/>(双路 RRF 融合)"]
+        DR["DocumentRetriever<br/>(三路 RRF 融合)"]
         QE["QueryEnhancer<br/>(rewrite / HyDE / none)"]
+        GS["GraphKnowledgeSearcher<br/>(知识图谱 2-hop)"]
+        CD["ChunkDeduplicator<br/>(Jaccard trigram 去重)"]
+        RQE["RetrievalQualityEvaluator<br/>(Corrective RAG)"]
         RR["RerankRouter<br/>(com.lifepilot.rerank.router)"]
         DR --> QE
+        DR --> GS
+        DR --> CD
+        DR --> RQE
         DR --> RR
+    end
+
+    subgraph "评估层"
+        RE["RetrievalEvaluator<br/>(Recall@k / MRR / NDCG)"]
+        REC["RetrievalEvalController<br/>(评估 API)"]
+        REC --> RE
+    end
+
+    subgraph "工具层"
+        TU["TextUtils<br/>(Token 估算 / SHA-256)"]
+        KQU["KnowledgeQueryUtils<br/>(SQL / 类型解析)"]
     end
 
     subgraph "知识提取"
@@ -72,6 +93,8 @@ graph TB
     DI -->|"可选提取"| KEP
     DR -->|"向量检索"| VI
     DR -->|"全文检索"| FI
+    DR -->|"图谱检索"| KEP
+    RE -->|"执行检索"| DR
     KBM --> KBR
     KBM --> DOCR
     KBM --> DCR
@@ -106,13 +129,15 @@ graph TB
 
 ### 3.4 ChunkingStrategy（分块策略体系）
 
-- 通过 sealed interface 定义，当前 5 种实现：
+- 通过 sealed interface 定义，当前 6 种实现：
   - `FixedSizeChunker`：固定大小分块，支持重叠和句子边界尊重
   - `RecursiveChunker`：递归分块，按分隔符层次递归切分
   - `HeadingChunker`：标题分块，按 Markdown 标题层级切分
   - `SemanticChunker`：语义分块，基于 Embedding 相似度检测语义断点
   - `SmartChunker`：智能策略选择器，根据文档特征自动选择最佳分块策略
-- `SmartChunker` 决策逻辑：短文档 → FixedSize；标题密度高 → Heading；代码密度高 → Recursive；长文档 + 语义分块启用 → Semantic；默认 → Recursive
+  - `ParentChildChunker`：两级分块器，生成 parent（大块，用于返回给 LLM）和 child（小块，用于向量检索）
+- `SmartChunker` 决策逻辑（优先级从高到低）：代码块密度高 → Recursive；标题密度高 → Heading；语义分块可用且文档足够长 → Semantic；长文档 → Recursive；默认 → FixedSize
+- `ParentChildChunker` 工作方式：先用 parentChunker 切出大块（level=0），再对每个 parent 用 childChunker 切出小块（level=1）；向量索引只索引 child 块，检索命中后返回对应 parent 块
 
 ### 3.5 ChunkContextEnricher（分块上下文增强）
 
@@ -122,12 +147,16 @@ graph TB
 
 ### 3.6 DocumentRetriever（文档检索器）
 
-- 职责：双路检索 + 自适应 RRF 融合，返回最相关的文档分块
-- 双路检索：`VectorIndexer`（向量语义检索）+ `FtsIndexer`（FTS5 全文搜索）
-- 自适应 RRF 融合：向量置信度低时自动调整权重
+- 职责：三路检索 + 自适应 RRF 融合 + 去重 + Corrective RAG，返回最相关的文档分块
+- 三路检索：`VectorIndexer`（向量语义检索）+ `FtsIndexer`（FTS5 全文搜索）+ `GraphKnowledgeSearcher`（知识图谱遍历），三路并行执行
+- 自适应 RRF 融合：向量 Top-1 分数低于阈值时提升 FTS 权重；图谱检索权重独立配置
+- 检索结果去重：`ChunkDeduplicator` 基于 Jaccard trigram 相似度移除内容高度重叠的分块
+- Parent-Child 解析：命中 child 块时自动查找并返回对应 parent 块（大块上下文完整）
+- Corrective RAG（可选）：`RetrievalQualityEvaluator` 评估检索质量（HIGH / LOW / VERY_LOW），LOW 时使用建议改写查询重试，VERY_LOW 时标记低置信度
 - 可选查询增强（`QueryEnhancer`）：rewrite 模式生成查询改写变体，HyDE 模式生成假设文档 Embedding
 - 可选精排（`Reranker`）：对初步检索结果进行二次排序
 - 支持上下文窗口扩展：将命中分块的前后相邻分块也纳入结果
+- 完整检索管线顺序：查询增强 → 三路并行检索 → RRF 融合 → 去重 → Parent-Child 解析 → 最低分阈值过滤 → 上下文窗口扩展 → 精排 → Corrective RAG
 
 ### 3.7 QueryEnhancer（查询增强器）
 

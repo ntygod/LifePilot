@@ -59,6 +59,7 @@ class KnowledgeBaseControllerUploadTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
         var controller = new KnowledgeBaseController(

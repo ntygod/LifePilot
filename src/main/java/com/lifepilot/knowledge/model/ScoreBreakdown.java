@@ -7,6 +7,7 @@ import java.util.Optional;
  *
  * @param vectorScore   向量检索分数
  * @param ftsScore      FTS5 全文检索分数
+ * @param graphScore    图谱检索分数
  * @param rrfFusedScore RRF 融合后分数
  * @param rerankerScore 精排分数（可选）
  * @author zsg
@@ -15,6 +16,7 @@ import java.util.Optional;
 public record ScoreBreakdown(
         double vectorScore,
         double ftsScore,
+        double graphScore,
         double rrfFusedScore,
         Optional<Double> rerankerScore
 ) {

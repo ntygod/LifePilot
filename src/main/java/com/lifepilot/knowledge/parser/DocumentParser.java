@@ -6,8 +6,7 @@ import java.util.List;
 /**
  * 文档解析器 sealed interface — 定义文档解析的统一契约。
  *
- * <p>当前仅 permit {@link MarkdownParser} 和 {@link PlainTextParser}，
- * 后续 spec 可扩展 permits 列表添加 PdfParser、WordParser 等实现。
+ * <p>permit MarkdownParser、PlainTextParser、PdfParser、WordParser。
  *
  * @author zsg
  * @since 2026-02-25

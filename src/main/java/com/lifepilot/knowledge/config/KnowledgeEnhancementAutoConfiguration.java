@@ -5,9 +5,11 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.knowledge.chunking.RecursiveChunker;
 import com.lifepilot.knowledge.chunking.SemanticChunker;
 import com.lifepilot.knowledge.enricher.ChunkContextEnricher;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.retrieve.QueryEnhancer;
+import com.lifepilot.knowledge.retrieve.RetrievalQualityEvaluator;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -16,6 +18,7 @@ import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.prompt.config.PromptAutoConfiguration;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -44,18 +47,17 @@ public class KnowledgeEnhancementAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.chunking.semantic-chunking", name = "enabled",
             havingValue = "true")
-    @ConditionalOnProperty(prefix = "lifepilot.llm", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(EmbeddingRouter.class)
     public SemanticChunker semanticChunker(EmbeddingRouter embeddingRouter,
                                            RecursiveChunker recursiveChunker,
-                                           KnowledgeBaseProperties props) {
-        return new SemanticChunker(embeddingRouter, recursiveChunker, props.chunking().semanticChunking());
+                                           KnowledgeBaseProperties props,
+                                           TokenCounter tokenCounter) {
+        return new SemanticChunker(embeddingRouter, recursiveChunker, props.chunking().semanticChunking(), tokenCounter);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.llm", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(EmbeddingRouter.class)
     @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
             havingValue = "true", matchIfMissing = true)
     public VectorIndexer vectorIndexer(EmbeddingRouter embeddingRouter,
@@ -67,20 +69,32 @@ public class KnowledgeEnhancementAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.llm", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(GenerationRouter.class)
     public ChunkContextEnricher chunkContextEnricher(GenerationRouter generationRouter,
                                                      KnowledgeBaseProperties props,
-                                                     PromptRegistry promptRegistry) {
-        return new ChunkContextEnricher(generationRouter, props.contextEnricher(), promptRegistry);
+                                                     PromptRegistry promptRegistry,
+                                                     TokenCounter tokenCounter) {
+        return new ChunkContextEnricher(generationRouter, props.contextEnricher(), promptRegistry, tokenCounter);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.knowledge.retrieval", name = "correction-enabled",
+            havingValue = "true")
+    @ConditionalOnBean(GenerationRouter.class)
+    public RetrievalQualityEvaluator retrievalQualityEvaluator(GenerationRouter generationRouter,
+                                                                PromptRegistry promptRegistry,
+                                                                KnowledgeBaseProperties props) {
+        return new RetrievalQualityEvaluator(generationRouter, promptRegistry,
+                props.retrieval().correctionHighThreshold(),
+                props.retrieval().correctionTimeoutMs());
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.query-enhancer", name = "mode",
             matchIfMissing = false)
-    @ConditionalOnProperty(prefix = "lifepilot.llm", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(GenerationRouter.class)
     public QueryEnhancer queryEnhancer(GenerationRouter generationRouter,
                                        EmbeddingRouter embeddingRouter,
                                        KnowledgeBaseProperties props,
@@ -93,8 +107,7 @@ public class KnowledgeEnhancementAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.llm", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(GenerationRouter.class)
     @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
             havingValue = "true", matchIfMissing = true)
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,

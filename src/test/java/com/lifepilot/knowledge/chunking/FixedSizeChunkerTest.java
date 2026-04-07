@@ -1,5 +1,6 @@
 package com.lifepilot.knowledge.chunking;
 
+import com.lifepilot.knowledge.util.TokenCounter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -19,14 +20,14 @@ class FixedSizeChunkerTest {
 
     @Test
     void 空输入_null文本返回空列表() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         List<DocumentChunk> chunks = chunker.chunk(null, Map.of());
         assertTrue(chunks.isEmpty());
     }
 
     @Test
     void 空输入_空白文本返回空列表() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         assertTrue(chunker.chunk("", Map.of()).isEmpty());
         assertTrue(chunker.chunk("   ", Map.of()).isEmpty());
         assertTrue(chunker.chunk("\n\t\n", Map.of()).isEmpty());
@@ -36,7 +37,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void strategyName_返回fixedSize() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         assertEquals("fixed-size", chunker.strategyName());
     }
 
@@ -44,7 +45,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 非空文本_至少产生一个分块() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         List<DocumentChunk> chunks = chunker.chunk("Hello", Map.of());
         assertFalse(chunks.isEmpty());
     }
@@ -52,7 +53,7 @@ class FixedSizeChunkerTest {
     @Test
     void 非空文本_短于maxChunkSize产生一个分块() {
         var config = new ChunkingConfig(100, 10, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         List<DocumentChunk> chunks = chunker.chunk("短文本", Map.of());
         assertEquals(1, chunks.size());
     }
@@ -62,7 +63,7 @@ class FixedSizeChunkerTest {
     @Test
     void 分块大小边界_每个分块内容长度不超过maxChunkSize() {
         var config = new ChunkingConfig(50, 5, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "a".repeat(200);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -75,7 +76,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 分块大小边界_使用SMALL配置() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.SMALL);
+        var chunker = new FixedSizeChunker(ChunkingConfig.SMALL, new TokenCounter.Heuristic());
         // 生成超过 SMALL.maxChunkSize(512) 的文本
         String text = "这是一段测试文本。".repeat(100);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
@@ -90,7 +91,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 分块大小边界_使用LARGE配置() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.LARGE);
+        var chunker = new FixedSizeChunker(ChunkingConfig.LARGE, new TokenCounter.Heuristic());
         String text = "Hello world. ".repeat(500);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -107,7 +108,7 @@ class FixedSizeChunkerTest {
     void 重叠_连续分块共享重叠内容() {
         // 关闭句子边界对齐，确保精确切分
         var config = new ChunkingConfig(50, 5, 10, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "a".repeat(150);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -125,7 +126,7 @@ class FixedSizeChunkerTest {
     @Test
     void 重叠_overlapSize为0时无重叠() {
         var config = new ChunkingConfig(50, 5, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "a".repeat(150);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -144,7 +145,7 @@ class FixedSizeChunkerTest {
     @Test
     void 句子边界对齐_respectSentences为true时在句子边界切分() {
         var config = new ChunkingConfig(50, 5, 0, 50, true, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         // 构造包含句子边界的文本，每句约 20 字符
         String text = "这是第一个句子内容。这是第二个句子内容。这是第三个句子内容。这是第四个句子内容。";
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
@@ -161,7 +162,7 @@ class FixedSizeChunkerTest {
     @Test
     void 句子边界对齐_英文句子边界() {
         var config = new ChunkingConfig(60, 5, 0, 50, true, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "This is sentence one. This is sentence two. This is sentence three. This is the end.";
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -179,7 +180,7 @@ class FixedSizeChunkerTest {
     @Test
     void 句子边界对齐_respectSentences为false时不对齐() {
         var config = new ChunkingConfig(50, 5, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "a".repeat(120);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -193,7 +194,7 @@ class FixedSizeChunkerTest {
     void 最小分块合并_最后分块过小时与前一个合并() {
         // maxChunkSize=50, minChunkSize=20, 文本长度 60 → 第一块 50，剩余 10 < 20 → 合并
         var config = new ChunkingConfig(50, 20, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "x".repeat(60);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -205,7 +206,7 @@ class FixedSizeChunkerTest {
     void 最小分块合并_最后分块足够大时不合并() {
         // maxChunkSize=50, minChunkSize=10, 文本长度 80 → 第一块 50，剩余 30 >= 10 → 不合并
         var config = new ChunkingConfig(50, 10, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "x".repeat(80);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -216,7 +217,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 分块元数据_每个分块有非空UUID_id() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         List<DocumentChunk> chunks = chunker.chunk("测试文本内容", Map.of());
 
         for (DocumentChunk chunk : chunks) {
@@ -227,7 +228,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 分块元数据_contentHash为64字符十六进制SHA256() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         List<DocumentChunk> chunks = chunker.chunk("测试文本内容", Map.of());
 
         for (DocumentChunk chunk : chunks) {
@@ -241,7 +242,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 分块元数据_tokenCount非负() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         List<DocumentChunk> chunks = chunker.chunk("测试文本内容 with English", Map.of());
 
         for (DocumentChunk chunk : chunks) {
@@ -253,7 +254,7 @@ class FixedSizeChunkerTest {
     @Test
     void 分块元数据_多个分块id各不相同() {
         var config = new ChunkingConfig(50, 5, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "a".repeat(200);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -264,7 +265,7 @@ class FixedSizeChunkerTest {
     @Test
     void 分块元数据_chunkIndex从0递增() {
         var config = new ChunkingConfig(50, 5, 0, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "a".repeat(200);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -279,7 +280,7 @@ class FixedSizeChunkerTest {
     @Test
     void 分块内容_是原文子串() {
         var config = new ChunkingConfig(100, 10, 20, 50, false, false, false);
-        var chunker = new FixedSizeChunker(config);
+        var chunker = new FixedSizeChunker(config, new TokenCounter.Heuristic());
         String text = "这是一段包含中文和English的混合文本，用于测试分块内容是否为原文子串。" +
                 "第二段内容继续扩展文本长度，确保产生多个分块。" +
                 "第三段内容进一步增加长度，验证所有分块都是原文的子串。";
@@ -294,7 +295,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void 分块内容_使用SMALL配置也是原文子串() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.SMALL);
+        var chunker = new FixedSizeChunker(ChunkingConfig.SMALL, new TokenCounter.Heuristic());
         String text = "Hello world. ".repeat(100);
         List<DocumentChunk> chunks = chunker.chunk(text, Map.of());
 
@@ -309,7 +310,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void estimateChunkCount_返回合理估算值() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         // DEFAULT: maxChunkSize=1024, overlapSize=128, effectiveStep=896
         int textLength = 5000;
         int estimate = chunker.estimateChunkCount(textLength);
@@ -325,19 +326,19 @@ class FixedSizeChunkerTest {
 
     @Test
     void estimateChunkCount_文本长度为0返回0() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         assertEquals(0, chunker.estimateChunkCount(0));
     }
 
     @Test
     void estimateChunkCount_负数文本长度返回0() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         assertEquals(0, chunker.estimateChunkCount(-1));
     }
 
     @Test
     void estimateChunkCount_短文本返回1() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         assertEquals(1, chunker.estimateChunkCount(100));
     }
 
@@ -345,7 +346,7 @@ class FixedSizeChunkerTest {
 
     @Test
     void metadata_传递给分块() {
-        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT);
+        var chunker = new FixedSizeChunker(ChunkingConfig.DEFAULT, new TokenCounter.Heuristic());
         Map<String, String> metadata = Map.of("source", "test", "lang", "zh");
         List<DocumentChunk> chunks = chunker.chunk("测试文本", metadata);
 

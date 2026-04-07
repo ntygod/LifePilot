@@ -1,12 +1,11 @@
 package com.lifepilot.knowledge.chunking;
 
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.util.TextUtils;
+import com.lifepilot.knowledge.util.TokenCounter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,6 +24,7 @@ public non-sealed class HeadingChunker implements ChunkingStrategy {
     private static final Logger log = LoggerFactory.getLogger(HeadingChunker.class);
 
     private final RecursiveChunker fallbackChunker;
+    private final TokenCounter tokenCounter;
     private final int maxHeadingLevel;
     private final int maxChunkSize;
     private final Pattern headingPattern;
@@ -32,13 +32,15 @@ public non-sealed class HeadingChunker implements ChunkingStrategy {
     /**
      * 构造标题层级分块器。
      *
-     * @param config          通用分块配置
      * @param fallbackChunker 超长节回退用的递归分块器
      * @param headingConfig   标题分块专用配置
+     * @param tokenCounter    Token 计数器
      */
-    public HeadingChunker(ChunkingConfig config, RecursiveChunker fallbackChunker,
-                          KnowledgeBaseProperties.Chunking.Heading headingConfig) {
+    public HeadingChunker(RecursiveChunker fallbackChunker,
+                          KnowledgeBaseProperties.Chunking.Heading headingConfig,
+                          TokenCounter tokenCounter) {
         this.fallbackChunker = fallbackChunker;
+        this.tokenCounter = tokenCounter;
         this.maxHeadingLevel = headingConfig.maxHeadingLevel();
         this.maxChunkSize = headingConfig.maxChunkSize();
         this.headingPattern = Pattern.compile(
@@ -97,8 +99,8 @@ public non-sealed class HeadingChunker implements ChunkingStrategy {
                         chunkIndex++,
                         section.startOffset,
                         section.endOffset,
-                        estimateTokens(section.content),
-                        sha256(section.content),
+                        tokenCounter.countTokens(section.content),
+                        TextUtils.sha256(section.content),
                         List.copyOf(section.headingHierarchy),
                         0, metadata
                 ));
@@ -188,25 +190,4 @@ public non-sealed class HeadingChunker implements ChunkingStrategy {
     private record Section(String content, int startOffset, int endOffset,
                            List<String> headingHierarchy) {}
 
-    private static int estimateTokens(String text) {
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - chineseChars;
-        return (int) (chineseChars + otherChars / 4);
-    }
-
-    private static String sha256(String text) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(64);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 算法不可用", e);
-        }
-    }
 }

@@ -1,12 +1,11 @@
 package com.lifepilot.knowledge.chunking;
 
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.util.TextUtils;
+import com.lifepilot.knowledge.util.TokenCounter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 /**
@@ -27,19 +26,21 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
     private final int maxChunkSize;
     private final int minChunkSize;
     private final int overlapSize;
+    private final TokenCounter tokenCounter;
 
     /**
      * 构造递归语义分块器。
      *
-     * @param config          通用分块配置
      * @param recursiveConfig 递归分块专用配置
+     * @param tokenCounter    Token 计数器
      */
-    public RecursiveChunker(ChunkingConfig config,
-                            KnowledgeBaseProperties.Chunking.Recursive recursiveConfig) {
+    public RecursiveChunker(KnowledgeBaseProperties.Chunking.Recursive recursiveConfig,
+                            TokenCounter tokenCounter) {
         this.separators = List.copyOf(recursiveConfig.separators());
         this.maxChunkSize = recursiveConfig.maxChunkSize();
         this.minChunkSize = recursiveConfig.minChunkSize();
         this.overlapSize = recursiveConfig.overlapSize();
+        this.tokenCounter = tokenCounter;
         log.debug("初始化 RecursiveChunker: maxChunkSize={}, minChunkSize={}, overlapSize={}, separators={}",
                 maxChunkSize, minChunkSize, overlapSize, separators.size());
     }
@@ -139,16 +140,13 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
     }
 
     /**
-     * 按分隔符切分文本，保留分隔符在前一个片段末尾。
+     * 按分隔符切分文本。
+     *
+     * <p>统一使用 Pattern.quote 处理所有分隔符（包括空格），
+     * 不再对中文字符边界做逐字拆分 — 中文文本通过标点分隔符层级（。！？；，）切分。
      */
     private String[] splitBySeparator(String text, String separator) {
-        if (separator.equals(" ")) {
-            // 空格分隔：同时处理中文字符边界
-            return text.split("(?<=\\s)|(?=\\s)|(?<=[\u4e00-\u9fff])|(?=[\u4e00-\u9fff])");
-        }
-        // 使用 split 但保留非空片段
         String[] raw = text.split(java.util.regex.Pattern.quote(separator), -1);
-        // 过滤空字符串
         return Arrays.stream(raw).filter(s -> !s.isEmpty()).toArray(String[]::new);
     }
 
@@ -199,27 +197,37 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
 
     /**
      * 构建带重叠的 DocumentChunk 列表。
+     *
+     * <p>使用 indexOf 在原始文本中定位每个分块的实际偏移量，
+     * 替代之前的累加长度近似计算，避免分隔符丢失导致的偏移漂移。
      */
     private List<DocumentChunk> buildChunksWithOverlap(String originalText,
                                                         List<String> textChunks,
                                                         Map<String, String> metadata) {
         List<DocumentChunk> result = new ArrayList<>();
         int chunkIndex = 0;
+        int searchFrom = 0;
 
         for (int i = 0; i < textChunks.size(); i++) {
-            String content = textChunks.get(i);
+            String rawContent = textChunks.get(i);
+
+            // 在原始文本中查找分块的实际位置
+            int startOffset = originalText.indexOf(rawContent, searchFrom);
+            if (startOffset < 0) {
+                // 回退：找不到精确匹配时使用当前搜索位置
+                startOffset = searchFrom;
+            }
+            int endOffset = startOffset + rawContent.length();
+            searchFrom = startOffset + 1; // 下一次从当前位置之后搜索
 
             // 应用重叠：从前一个分块尾部取 overlapSize 字符作为当前分块前缀
+            String content = rawContent;
             if (i > 0 && overlapSize > 0) {
                 String prevChunk = textChunks.get(i - 1);
                 int overlapStart = Math.max(0, prevChunk.length() - overlapSize);
                 String overlap = prevChunk.substring(overlapStart);
-                content = overlap + content;
+                content = overlap + rawContent;
             }
-
-            // 计算在原始文本中的偏移量（近似）
-            int startOffset = findApproximateOffset(originalText, textChunks.get(i), i, textChunks);
-            int endOffset = startOffset + textChunks.get(i).length();
 
             DocumentChunk chunk = new DocumentChunk(
                     UUID.randomUUID().toString(),
@@ -230,8 +238,8 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
                     chunkIndex,
                     startOffset,
                     endOffset,
-                    estimateTokens(content),
-                    sha256(content),
+                    tokenCounter.countTokens(content),
+                    TextUtils.sha256(content),
                     List.of(),
                     0,
                     metadata
@@ -243,43 +251,4 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
         return result;
     }
 
-    /**
-     * 近似查找文本片段在原始文本中的偏移量。
-     */
-    private int findApproximateOffset(String original, String chunk, int index,
-                                       List<String> allChunks) {
-        int offset = 0;
-        for (int i = 0; i < index; i++) {
-            offset += allChunks.get(i).length();
-        }
-        return Math.min(offset, original.length());
-    }
-
-    /**
-     * 估算 Token 数量。
-     */
-    private static int estimateTokens(String text) {
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - chineseChars;
-        return (int) (chineseChars + otherChars / 4);
-    }
-
-    /**
-     * 计算 SHA-256 哈希。
-     */
-    private static String sha256(String text) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(64);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 算法不可用", e);
-        }
-    }
 }

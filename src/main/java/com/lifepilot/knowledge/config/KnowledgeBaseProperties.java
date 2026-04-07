@@ -19,19 +19,21 @@ public record KnowledgeBaseProperties(
         ContextEnricher contextEnricher,
         Extraction extraction,
         Reranker reranker,
-        QueryEnhancer queryEnhancer
+        QueryEnhancer queryEnhancer,
+        Tokenizer tokenizer
 ) {
 
     public KnowledgeBaseProperties {
         if (dataDir == null) dataDir = System.getProperty("user.home") + "/.zhiwei/data";
         if (maxFileSize <= 0) maxFileSize = 104857600L;
-        if (chunking == null) chunking = new Chunking(null, null, null, null, null, null);
+        if (chunking == null) chunking = new Chunking(null, null, null, null, null, null, null);
         if (vectorIndexer == null) vectorIndexer = new VectorIndexer(0, 0, 0);
-        if (retrieval == null) retrieval = new Retrieval(0, 0.0, 0.0, 0, 0.0, 0.0, 0);
+        if (retrieval == null) retrieval = new Retrieval(0, 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, true, 0.0, false, 0.0, 0);
         if (contextEnricher == null) contextEnricher = new ContextEnricher(true, 0, false, 0, 0);
         if (extraction == null) extraction = new Extraction(true, 0);
         if (reranker == null) reranker = new Reranker(false, null, null, 0, null, 0, null, null, null, 0);
         if (queryEnhancer == null) queryEnhancer = new QueryEnhancer(null, 0, 0);
+        if (tokenizer == null) tokenizer = new Tokenizer(null);
     }
 
     /**
@@ -43,7 +45,8 @@ public record KnowledgeBaseProperties(
             Recursive recursive,
             Heading heading,
             SmartChunker smartChunker,
-            SemanticChunking semanticChunking
+            SemanticChunking semanticChunking,
+            ParentChild parentChild
     ) {
         public Chunking {
             if (defaultStrategy == null) defaultStrategy = "smart";
@@ -52,6 +55,7 @@ public record KnowledgeBaseProperties(
             if (heading == null) heading = new Heading(0, 0);
             if (smartChunker == null) smartChunker = new SmartChunker(0.0, 0, 0.0, 0);
             if (semanticChunking == null) semanticChunking = new SemanticChunking(false, 0.0, 0, 0, 0);
+            if (parentChild == null) parentChild = new ParentChild(true, 0, 0, 0);
         }
 
         /** 固定大小分块配置。 */
@@ -72,7 +76,7 @@ public record KnowledgeBaseProperties(
         ) {
             public Recursive {
                 if (separators == null || separators.isEmpty()) {
-                    separators = java.util.List.of("\n\n", "\n", "。", "！", "？", ".", "!", "?", " ");
+                    separators = java.util.List.of("\n\n", "\n", "。", "！", "？", "；", "，", ".", "!", "?", " ");
                 }
                 if (maxChunkSize <= 0) maxChunkSize = 1024;
                 if (minChunkSize <= 0) minChunkSize = 100;
@@ -118,6 +122,15 @@ public record KnowledgeBaseProperties(
                 if (maxChunkSize <= 0) maxChunkSize = 1024;
             }
         }
+
+        /** Parent-Child 分块配置。 */
+        public record ParentChild(boolean enabled, int parentMaxTokens, int childMaxTokens, int childOverlap) {
+            public ParentChild {
+                if (parentMaxTokens <= 0) parentMaxTokens = 1024;
+                if (childMaxTokens <= 0) childMaxTokens = 256;
+                if (childOverlap < 0) childOverlap = 64;
+            }
+        }
     }
 
     /** 向量索引配置。 */
@@ -137,7 +150,13 @@ public record KnowledgeBaseProperties(
             int rrfK,
             double lowConfidenceThreshold,
             double minRelevanceScore,
-            int contextWindowSize
+            int contextWindowSize,
+            double graphWeight,
+            boolean graphEnabled,
+            double deduplicationThreshold,
+            boolean correctionEnabled,
+            double correctionHighThreshold,
+            int correctionTimeoutMs
     ) {
         public Retrieval {
             if (defaultTopK <= 0) defaultTopK = 10;
@@ -147,6 +166,10 @@ public record KnowledgeBaseProperties(
             if (lowConfidenceThreshold <= 0.0) lowConfidenceThreshold = 0.5;
             if (minRelevanceScore < 0.0) minRelevanceScore = 0.0;
             if (contextWindowSize < 0) contextWindowSize = 0;
+            if (graphWeight <= 0.0) graphWeight = 0.2;
+            if (deduplicationThreshold <= 0.0) deduplicationThreshold = 0.85;
+            if (correctionHighThreshold <= 0.0) correctionHighThreshold = 0.7;
+            if (correctionTimeoutMs <= 0) correctionTimeoutMs = 3000;
         }
     }
 
@@ -208,6 +231,13 @@ public record KnowledgeBaseProperties(
             if (mode == null) mode = "none";
             if (timeoutMs <= 0) timeoutMs = 3000;
             if (maxRewrites <= 0) maxRewrites = 3;
+        }
+    }
+
+    /** Token 计数器配置。 */
+    public record Tokenizer(String encoding) {
+        public Tokenizer {
+            if (encoding == null || encoding.isBlank()) encoding = "cl100k_base";
         }
     }
 }

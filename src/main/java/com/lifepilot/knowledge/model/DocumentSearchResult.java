@@ -46,27 +46,4 @@ public record DocumentSearchResult(
         if (sourceCollectionId == null) sourceCollectionId = Optional.empty();
     }
 
-    /**
-     * 兼容旧签名的构造函数 — 不含 scoreBreakdown 和 expandedContent。
-     */
-    public DocumentSearchResult(String chunkId, String documentId, String knowledgeBaseId,
-                                 String content, Optional<String> contextPrefix,
-                                 List<String> headingHierarchy, double score,
-                                 String sourcePath, Map<String, String> metadata) {
-        this(chunkId, documentId, knowledgeBaseId, content, contextPrefix,
-             headingHierarchy, score, sourcePath, metadata,
-             Optional.empty(), Optional.empty(), DocumentSourceType.FILE,
-             Optional.empty(), Optional.empty());
-    }
-
-    public DocumentSearchResult(String chunkId, String documentId, String knowledgeBaseId,
-                                 String content, Optional<String> contextPrefix,
-                                 List<String> headingHierarchy, double score,
-                                 String sourcePath, Map<String, String> metadata,
-                                 Optional<ScoreBreakdown> scoreBreakdown,
-                                 Optional<String> expandedContent) {
-        this(chunkId, documentId, knowledgeBaseId, content, contextPrefix,
-                headingHierarchy, score, sourcePath, metadata, scoreBreakdown,
-                expandedContent, DocumentSourceType.FILE, Optional.empty(), Optional.empty());
-    }
 }

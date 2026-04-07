@@ -1,6 +1,7 @@
 package com.lifepilot.rerank.router;
 
 import com.lifepilot.knowledge.model.DocumentSearchResult;
+import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.llm.config.ProviderType;
@@ -184,7 +185,10 @@ class RerankRouterTest {
                 score,
                 "fused",
                 Map.of(),
-                Optional.of(new ScoreBreakdown(0.1, 0.2, score, Optional.empty())),
+                Optional.of(new ScoreBreakdown(0.1, 0.2, 0.0, score, Optional.empty())),
+                Optional.empty(),
+                DocumentSourceType.FILE,
+                Optional.empty(),
                 Optional.empty()
         );
     }

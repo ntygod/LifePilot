@@ -130,7 +130,9 @@ class FtsIndexer集成测试 {
                 Map.of("section", "storage"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "ds-dev",
-                null
+                null,
+                Optional.empty(),
+                0
         );
         var otherChunk = new DocumentChunk(
                 UUID.randomUUID().toString(),
@@ -148,7 +150,9 @@ class FtsIndexer集成测试 {
                 Map.of("section", "deploy"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "ds-other",
-                null
+                null,
+                Optional.empty(),
+                0
         );
         chunkRepository.saveAll(List.of(targetChunk, otherChunk));
 
@@ -230,7 +234,9 @@ class FtsIndexer集成测试 {
                 Map.of("topic", "power"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "ds-a",
-                null
+                null,
+                Optional.empty(),
+                0
         );
         var chunkB = new DocumentChunk(
                 UUID.randomUUID().toString(),
@@ -248,7 +254,9 @@ class FtsIndexer集成测试 {
                 Map.of("topic", "power"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "ds-b",
-                null
+                null,
+                Optional.empty(),
+                0
         );
         chunkRepository.saveAll(List.of(chunkA, chunkB));
 

@@ -2,6 +2,7 @@ package com.lifepilot.knowledge.enricher;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -14,7 +15,6 @@ import com.lifepilot.llm.LlmResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * 分块上下文增强器 — 为每个分块生成文档级上下文前缀。
@@ -35,20 +35,24 @@ public class ChunkContextEnricher {
     private final GenerationRouter generationRouter;
     private final KnowledgeBaseProperties.ContextEnricher config;
     private final PromptRegistry promptRegistry;
+    private final TokenCounter tokenCounter;
 
     /**
      * 构造分块上下文增强器。
      *
-     * @param llmRouter      LLM 路由器
-     * @param config         上下文增强配置
-     * @param promptRegistry 提示词注册中心
+     * @param generationRouter LLM 路由器
+     * @param config           上下文增强配置
+     * @param promptRegistry   提示词注册中心
+     * @param tokenCounter     Token 计数器
      */
     public ChunkContextEnricher(GenerationRouter generationRouter,
                                 KnowledgeBaseProperties.ContextEnricher config,
-                                PromptRegistry promptRegistry) {
+                                PromptRegistry promptRegistry,
+                                TokenCounter tokenCounter) {
         this.generationRouter = generationRouter;
         this.config = config;
         this.promptRegistry = promptRegistry;
+        this.tokenCounter = tokenCounter;
         log.info("ChunkContextEnricher 初始化完成: enabled={}, maxPrefixTokens={}",
                 config.enabled(), config.maxPrefixTokens());
     }
@@ -88,7 +92,7 @@ public class ChunkContextEnricher {
         for (var chunk : chunks) {
             try {
                 var prefix = generatePrefix(chunk, documentSummary);
-                enriched.add(withContextPrefix(chunk, prefix));
+                enriched.add(chunk.withContextPrefix(prefix));
                 successCount++;
             } catch (LlmUnavailableException e) {
                 log.warn("LLM 不可用，跳过剩余分块上下文增强: {}", e.getMessage());
@@ -153,7 +157,7 @@ public class ChunkContextEnricher {
                         for (var chunk : subBatch) {
                             try {
                                 var prefix = generatePrefix(chunk, documentSummary);
-                                enriched.add(withContextPrefix(chunk, prefix));
+                                enriched.add(chunk.withContextPrefix(prefix));
                                 llmCallCount++;
                                 successCount++;
                             } catch (Exception e) {
@@ -168,7 +172,7 @@ public class ChunkContextEnricher {
                             if (prefix.length() > maxChars) {
                                 prefix = prefix.substring(0, maxChars);
                             }
-                            enriched.add(withContextPrefix(subBatch.get(i), prefix));
+                            enriched.add(subBatch.get(i).withContextPrefix(prefix));
                             successCount++;
                         }
                     }
@@ -181,7 +185,7 @@ public class ChunkContextEnricher {
                 for (var chunk : batch) {
                     try {
                         var prefix = generatePrefix(chunk, documentSummary);
-                        enriched.add(withContextPrefix(chunk, prefix));
+                        enriched.add(chunk.withContextPrefix(prefix));
                         llmCallCount++;
                         successCount++;
                     } catch (Exception ex) {
@@ -202,7 +206,7 @@ public class ChunkContextEnricher {
      */
     private List<List<DocumentChunk>> splitIfTokenExceeded(List<DocumentChunk> batch) {
         int estimatedTokens = batch.stream()
-                .mapToInt(c -> estimateTokens(c.content()))
+                .mapToInt(c -> tokenCounter.countTokens(c.content()))
                 .sum() + 200; // 200 Token 用于 Prompt 模板开销
 
         if (estimatedTokens <= config.maxPromptTokens()) {
@@ -215,7 +219,7 @@ public class ChunkContextEnricher {
         int start = 0;
 
         for (int i = 0; i < batch.size(); i++) {
-            int chunkTokens = estimateTokens(batch.get(i).content());
+            int chunkTokens = tokenCounter.countTokens(batch.get(i).content());
             if (currentTokens + chunkTokens > config.maxPromptTokens() && i > start) {
                 subBatches.add(batch.subList(start, i));
                 start = i;
@@ -292,17 +296,6 @@ public class ChunkContextEnricher {
     }
 
     /**
-     * 估算文本 Token 数量。
-     */
-    private static int estimateTokens(String text) {
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - chineseChars;
-        return (int) (chineseChars + otherChars / 4);
-    }
-
-    /**
      * 调用 LLM 为单个分块生成上下文前缀。
      */
     private String generatePrefix(DocumentChunk chunk, String documentSummary) {
@@ -333,29 +326,5 @@ public class ChunkContextEnricher {
                 "maxPrefixTokens", String.valueOf(config.maxPrefixTokens()),
                 "documentSummary", documentSummary,
                 "chunkContent", chunk.content()));
-    }
-
-    /**
-     * 创建带有上下文前缀的新 DocumentChunk 实例。
-     */
-    private DocumentChunk withContextPrefix(DocumentChunk chunk, String prefix) {
-        return new DocumentChunk(
-                chunk.id(),
-                chunk.documentId(),
-                chunk.knowledgeBaseId(),
-                chunk.content(),
-                Optional.of(prefix),
-                chunk.chunkIndex(),
-                chunk.startOffset(),
-                chunk.endOffset(),
-                chunk.tokenCount(),
-                chunk.contentHash(),
-                chunk.headingHierarchy(),
-                chunk.pageNumber(),
-                chunk.metadata(),
-                chunk.sourceType(),
-                chunk.sourceDatastoreId(),
-                chunk.sourceCollectionId()
-        );
     }
 }

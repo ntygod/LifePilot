@@ -44,6 +44,7 @@ class KnowledgeAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
+                    TokenCounterAutoConfiguration.class,
                     KnowledgeAutoConfiguration.class,
                     KnowledgeEnhancementAutoConfiguration.class,
                     KnowledgeRuntimeAutoConfiguration.class))
@@ -169,6 +170,10 @@ class KnowledgeAutoConfigurationTest {
         JdbcTemplate vectorJdbcTemplate() { return mock(JdbcTemplate.class); }
         @Bean(name = "knowledgeTestObjectMapper")
         ObjectMapper objectMapper() { return new ObjectMapper(); }
+        @Bean
+        io.micrometer.core.instrument.MeterRegistry meterRegistry() {
+            return new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        }
     }
 
     @Configuration

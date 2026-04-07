@@ -387,7 +387,7 @@ lifepilot:
         max-chunk-tokens: 512
         respect-sentences: true
       recursive:
-        separators: ["\n\n", "\n", "。", "！", "？", ".", "!", "?", " "]
+        separators: ["\n\n", "\n", "。", "！", "？", "；", "，", ".", "!", "?", " "]
         max-chunk-size: 1024
         min-chunk-size: 100
         overlap-size: 128
@@ -405,6 +405,11 @@ lifepilot:
         buffer-size: 1
         min-chunk-size: 100
         max-chunk-size: 1024
+      parent-child:
+        enabled: true
+        parent-max-tokens: 1024
+        child-max-tokens: 256
+        child-overlap: 64
     vector-indexer:
       batch-size: 32
       max-retries: 2
@@ -417,6 +422,12 @@ lifepilot:
       low-confidence-threshold: 0.5
       min-relevance-score: 0.0
       context-window-size: 0
+      graph-weight: 0.2
+      graph-enabled: true
+      deduplication-threshold: 0.85
+      correction-enabled: false
+      correction-high-threshold: 0.7
+      correction-timeout-ms: 3000
     context-enricher:
       enabled: true
       max-prefix-tokens: 100
@@ -441,6 +452,8 @@ lifepilot:
       mode: rewrite
       timeout-ms: 3000
       max-rewrites: 3
+    tokenizer:
+      encoding: cl100k_base    # cl100k_base | o200k_base | heuristic
   datasource:
     busy-timeout: 30000
   datastore:
