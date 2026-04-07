@@ -6,14 +6,13 @@ import java.util.Map;
 /**
  * 分块策略 — 将文档文本切分为 {@link DocumentChunk} 列表的策略接口。
  *
- * <p>sealed interface，当前仅允许 {@link FixedSizeChunker} 实现。
- * 后续 spec 扩展 permits 列表添加 RecursiveChunker、HeadingChunker、SmartChunker。
+ * <p>sealed interface，允许 FixedSizeChunker、RecursiveChunker、HeadingChunker、SmartChunker、SemanticChunker 实现。
  *
  * @author zsg
  * @since 2026-02-25
  */
 public sealed interface ChunkingStrategy
-        permits FixedSizeChunker, RecursiveChunker, HeadingChunker, SmartChunker, SemanticChunker {
+        permits FixedSizeChunker, RecursiveChunker, HeadingChunker, SmartChunker, SemanticChunker, ParentChildChunker {
 
     /**
      * 将文本切分为文档分块列表。

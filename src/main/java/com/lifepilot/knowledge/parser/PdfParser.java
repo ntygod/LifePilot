@@ -1,5 +1,6 @@
 package com.lifepilot.knowledge.parser;
 
+import com.lifepilot.knowledge.util.TextUtils;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
@@ -78,7 +79,7 @@ public non-sealed class PdfParser implements DocumentParser {
             }
 
             String text = fullText.toString();
-            long wordCount = estimateWordCount(text);
+            long wordCount = TextUtils.estimateWordCount(text);
             DocumentMetadata metadata = extractMetadataFromDocument(document, filePath, wordCount);
 
             log.info("PDF 解析完成: file={}, pages={}, elements={}, warnings={}",
@@ -202,21 +203,5 @@ public non-sealed class PdfParser implements DocumentParser {
         }
 
         return 0;
-    }
-
-    /**
-     * 估算字数：中文按字符数，英文按空格分词。
-     */
-    private long estimateWordCount(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long totalWords = Arrays.stream(text.split("\\s+"))
-                .filter(w -> !w.isEmpty())
-                .count();
-        return chineseChars + Math.max(0, totalWords - chineseChars);
     }
 }

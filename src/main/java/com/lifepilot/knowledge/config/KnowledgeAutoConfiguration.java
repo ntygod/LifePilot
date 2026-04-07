@@ -6,6 +6,7 @@ import com.lifepilot.knowledge.chunking.FixedSizeChunker;
 import com.lifepilot.knowledge.chunking.HeadingChunker;
 import com.lifepilot.knowledge.chunking.RecursiveChunker;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.parser.FormatDetector;
 import com.lifepilot.knowledge.parser.MarkdownParser;
@@ -101,23 +102,24 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public FixedSizeChunker fixedSizeChunker(ChunkingConfig chunkingConfig) {
-        return new FixedSizeChunker(chunkingConfig);
+    public FixedSizeChunker fixedSizeChunker(ChunkingConfig chunkingConfig,
+                                                TokenCounter tokenCounter) {
+        return new FixedSizeChunker(chunkingConfig, tokenCounter);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public RecursiveChunker recursiveChunker(ChunkingConfig chunkingConfig,
-                                             KnowledgeBaseProperties props) {
-        return new RecursiveChunker(chunkingConfig, props.chunking().recursive());
+    public RecursiveChunker recursiveChunker(KnowledgeBaseProperties props,
+                                                TokenCounter tokenCounter) {
+        return new RecursiveChunker(props.chunking().recursive(), tokenCounter);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public HeadingChunker headingChunker(ChunkingConfig chunkingConfig,
-                                         RecursiveChunker recursiveChunker,
-                                         KnowledgeBaseProperties props) {
-        return new HeadingChunker(chunkingConfig, recursiveChunker, props.chunking().heading());
+    public HeadingChunker headingChunker(RecursiveChunker recursiveChunker,
+                                         KnowledgeBaseProperties props,
+                                         TokenCounter tokenCounter) {
+        return new HeadingChunker(recursiveChunker, props.chunking().heading(), tokenCounter);
     }
 
     // ---- Repository ----

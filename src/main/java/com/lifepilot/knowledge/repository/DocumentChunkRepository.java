@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
+import com.lifepilot.knowledge.util.KnowledgeQueryUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
@@ -17,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * 分块数据访问层 - 基于 JdbcTemplate 操作 document_chunks 表。
@@ -36,8 +38,9 @@ public class DocumentChunkRepository {
                 id, document_id, knowledge_base_id, content, context_prefix,
                 chunk_index, start_offset, end_offset, token_count, content_hash,
                 heading_hierarchy_json, page_number, metadata_json,
-                source_type, source_datastore_id, source_collection_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_type, source_datastore_id, source_collection_id,
+                parent_chunk_id, chunk_level, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -83,7 +86,9 @@ public class DocumentChunkRepository {
                 ps.setString(14, chunk.sourceType().name());
                 ps.setString(15, chunk.sourceDatastoreId());
                 ps.setString(16, chunk.sourceCollectionId());
-                ps.setString(17, now.toString());
+                ps.setString(17, chunk.parentChunkId().orElse(null));
+                ps.setInt(18, chunk.chunkLevel());
+                ps.setString(19, now.toString());
             }
 
             @Override
@@ -101,7 +106,13 @@ public class DocumentChunkRepository {
      */
     public List<DocumentChunk> findByDocumentId(String documentId) {
         return jdbcTemplate.query(
-                "SELECT * FROM document_chunks WHERE document_id = ? ORDER BY chunk_index",
+                """
+                SELECT id, document_id, knowledge_base_id, content, context_prefix,
+                       chunk_index, start_offset, end_offset, token_count, content_hash,
+                       heading_hierarchy_json, page_number, metadata_json,
+                       source_type, source_datastore_id, source_collection_id,
+                       parent_chunk_id, chunk_level
+                FROM document_chunks WHERE document_id = ? ORDER BY chunk_index""",
                 rowMapper, documentId);
     }
 
@@ -152,10 +163,80 @@ public class DocumentChunkRepository {
     public List<DocumentChunk> findByDocumentIdAndChunkIndexRange(String documentId,
                                                                    int fromIndex, int toIndex) {
         return jdbcTemplate.query(
-                "SELECT * FROM document_chunks WHERE document_id = ? AND chunk_index BETWEEN ? AND ? ORDER BY chunk_index",
+                """
+                SELECT id, document_id, knowledge_base_id, content, context_prefix,
+                       chunk_index, start_offset, end_offset, token_count, content_hash,
+                       heading_hierarchy_json, page_number, metadata_json,
+                       source_type, source_datastore_id, source_collection_id,
+                       parent_chunk_id, chunk_level
+                FROM document_chunks WHERE document_id = ? AND chunk_index BETWEEN ? AND ? ORDER BY chunk_index""",
                 rowMapper, documentId, fromIndex, toIndex);
     }
 
+
+    /**
+     * 根据分块 ID 查询其 chunkIndex（用于上下文窗口扩展）。
+     *
+     * <p>仅查询单个字段，避免加载同文档的所有分块。</p>
+     *
+     * @param chunkId 分块 ID
+     * @return chunkIndex，不存在时返回 empty
+     */
+    public OptionalInt findChunkIndexById(String chunkId) {
+        List<Integer> results = jdbcTemplate.queryForList(
+                "SELECT chunk_index FROM document_chunks WHERE id = ?",
+                Integer.class, chunkId);
+        return results.isEmpty() ? OptionalInt.empty() : OptionalInt.of(results.getFirst());
+    }
+
+    /**
+     * 根据分块 ID 查询其父分块 ID。
+     *
+     * @param chunkId 分块 ID
+     * @return 父分块 ID，不存在或为空时返回 empty
+     */
+    public Optional<String> findParentChunkId(String chunkId) {
+        List<String> results = jdbcTemplate.queryForList(
+                "SELECT parent_chunk_id FROM document_chunks WHERE id = ?",
+                String.class, chunkId);
+        return results.stream().filter(s -> s != null && !s.isBlank()).findFirst();
+    }
+
+    /**
+     * 根据分块 ID 列表批量查询分块，按 chunk_index 升序排列。
+     *
+     * @param ids 分块 ID 列表
+     * @return 分块列表（按 chunk_index 排序）
+     */
+    public List<DocumentChunk> findByIds(List<String> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        var placeholders = ids.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+        return jdbcTemplate.query(
+                "SELECT id, document_id, knowledge_base_id, content, context_prefix, " +
+                "chunk_index, start_offset, end_offset, token_count, content_hash, " +
+                "heading_hierarchy_json, page_number, metadata_json, " +
+                "source_type, source_datastore_id, source_collection_id, " +
+                "parent_chunk_id, chunk_level " +
+                "FROM document_chunks WHERE id IN (" + placeholders + ") ORDER BY chunk_index",
+                rowMapper, ids.toArray());
+    }
+
+    /**
+     * 根据分块 ID 列表批量查询各分块的父分块 ID。
+     *
+     * @param chunkIds 分块 ID 列表
+     * @return chunkId → parentChunkId 的映射（仅包含有父分块的条目）
+     */
+    public Map<String, String> findParentChunkIdsByChunkIds(List<String> chunkIds) {
+        if (chunkIds == null || chunkIds.isEmpty()) return Map.of();
+        var placeholders = chunkIds.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+        var sql = "SELECT id, parent_chunk_id FROM document_chunks WHERE id IN (" + placeholders + ") AND parent_chunk_id IS NOT NULL";
+        var result = new java.util.HashMap<String, String>();
+        jdbcTemplate.query(sql, rs -> {
+            result.put(rs.getString("id"), rs.getString("parent_chunk_id"));
+        }, chunkIds.toArray());
+        return result;
+    }
 
     // ---- 内部方法 ----
 
@@ -175,9 +256,11 @@ public class DocumentChunkRepository {
                 deserializeList(rs.getString("heading_hierarchy_json")),
                 rs.getInt("page_number"),
                 deserializeMetadata(rs.getString("metadata_json")),
-                parseSourceType(rs.getString("source_type")),
+                KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
                 rs.getString("source_datastore_id"),
-                rs.getString("source_collection_id")
+                rs.getString("source_collection_id"),
+                Optional.ofNullable(rs.getString("parent_chunk_id")),
+                rs.getInt("chunk_level")
         );
     }
 
@@ -232,18 +315,6 @@ public class DocumentChunkRepository {
         } catch (JsonProcessingException e) {
             log.warn("JSON 反序列化失败，返回空 Map: json={}, error={}", json, e.getMessage());
             return Map.of();
-        }
-    }
-
-    private com.lifepilot.knowledge.model.DocumentSourceType parseSourceType(String rawValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return com.lifepilot.knowledge.model.DocumentSourceType.FILE;
-        }
-        try {
-            return com.lifepilot.knowledge.model.DocumentSourceType.valueOf(rawValue);
-        } catch (IllegalArgumentException e) {
-            log.warn("未知分块来源类型，回退 FILE: value={}", rawValue);
-            return com.lifepilot.knowledge.model.DocumentSourceType.FILE;
         }
     }
 }

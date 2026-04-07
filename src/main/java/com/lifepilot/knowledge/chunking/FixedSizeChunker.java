@@ -1,11 +1,10 @@
 package com.lifepilot.knowledge.chunking;
 
+import com.lifepilot.knowledge.util.TextUtils;
+import com.lifepilot.knowledge.util.TokenCounter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -34,14 +33,17 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
     private static final String SENTENCE_ENDINGS = "。！？；.!?\n";
 
     private final ChunkingConfig config;
+    private final TokenCounter tokenCounter;
 
     /**
      * 构造固定大小分块器。
      *
-     * @param config 分块配置
+     * @param config       分块配置
+     * @param tokenCounter Token 计数器
      */
-    public FixedSizeChunker(ChunkingConfig config) {
+    public FixedSizeChunker(ChunkingConfig config, TokenCounter tokenCounter) {
         this.config = config;
+        this.tokenCounter = tokenCounter;
         log.debug("初始化 FixedSizeChunker: maxChunkSize={}, minChunkSize={}, overlapSize={}, respectSentences={}",
                 config.maxChunkSize(), config.minChunkSize(), config.overlapSize(), config.respectSentences());
     }
@@ -90,8 +92,8 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
                         chunkIndex,
                         position,
                         end,
-                        estimateTokens(chunkContent),
-                        sha256(chunkContent),
+                        tokenCounter.countTokens(chunkContent),
+                        TextUtils.sha256(chunkContent),
                         List.of(),                      // headingHierarchy
                         0,                              // pageNumber
                         metadata
@@ -149,40 +151,4 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
         return end;
     }
 
-    /**
-     * 估算文本的 Token 数量。
-     *
-     * <p>中文字符按 1 Token/字符计算，其他字符按 4 字符/Token 计算。
-     *
-     * @param text 文本内容
-     * @return 估算 Token 数
-     */
-    private static int estimateTokens(String text) {
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - chineseChars;
-        return (int) (chineseChars + otherChars / 4);
-    }
-
-    /**
-     * 计算文本的 SHA-256 哈希值。
-     *
-     * @param text 文本内容
-     * @return 小写十六进制哈希字符串（64 字符）
-     */
-    private static String sha256(String text) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(64);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 是 JDK 必须支持的算法，不应发生
-            throw new IllegalStateException("SHA-256 算法不可用", e);
-        }
-    }
 }

@@ -4,6 +4,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.DocumentSourceType;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
@@ -53,7 +54,8 @@ class ChunkContextEnricherTest {
         var enricher = new ChunkContextEnricher(
                 generationRouter,
                 new KnowledgeBaseProperties.ContextEnricher(true, 64, false, 1, 2000),
-                promptRegistry
+                promptRegistry,
+                new TokenCounter.Heuristic()
         );
 
         var chunk = new DocumentChunk(
@@ -72,7 +74,9 @@ class ChunkContextEnricherTest {
                 Map.of("category", "travel"),
                 DocumentSourceType.DATASTORE_DOCUMENT,
                 "ds-1",
-                "collection-1"
+                "collection-1",
+                Optional.empty(),
+                0
         );
 
         var enriched = enricher.enrich(List.of(chunk), "春季旅游摘要");

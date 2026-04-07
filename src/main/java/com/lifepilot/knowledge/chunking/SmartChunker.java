@@ -147,9 +147,6 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
     }
 
     /**
-     * 统计文本中的 Markdown 围栏代码块数量。
-     */
-    /**
      * 计算代码块字符数占总字符数的比例。
      */
     private double calcCodeBlockDensity(String text) {

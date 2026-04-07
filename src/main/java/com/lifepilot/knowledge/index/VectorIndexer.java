@@ -3,10 +3,10 @@ package com.lifepilot.knowledge.index;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.exception.IndexingException;
-import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.IndexingResult;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
+import com.lifepilot.knowledge.util.KnowledgeQueryUtils;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import org.slf4j.Logger;
@@ -120,19 +120,26 @@ public class VectorIndexer {
      * @throws IndexingException 所有重试均失败
      */
     public IndexingResult indexChunks(List<DocumentChunk> chunks, @Nullable String embeddingModel) {
-        if (chunks.isEmpty()) {
+        // Parent-Child 架构：只对 child 块（level=1）建向量索引；parent 块（level=0）不索引
+        // 如果没有 child 块（非 Parent-Child 模式），则索引所有块
+        boolean hasChildren = chunks.stream().anyMatch(c -> c.chunkLevel() == 1);
+        var indexable = hasChildren
+                ? chunks.stream().filter(c -> c.chunkLevel() == 1).toList()
+                : chunks;
+
+        if (indexable.isEmpty()) {
             return new IndexingResult(0, 0, 0);
         }
 
         long startTime = System.currentTimeMillis();
         int totalIndexed = 0;
 
-        for (int i = 0; i < chunks.size(); i += config.batchSize()) {
-            int end = Math.min(i + config.batchSize(), chunks.size());
-            var batch = chunks.subList(i, end);
+        for (int i = 0; i < indexable.size(); i += config.batchSize()) {
+            int end = Math.min(i + config.batchSize(), indexable.size());
+            var batch = indexable.subList(i, end);
             indexBatchWithRetry(batch, embeddingModel);
             totalIndexed += batch.size();
-            log.debug("向量索引批次完成: {}/{}", totalIndexed, chunks.size());
+            log.debug("向量索引批次完成: {}/{}", totalIndexed, indexable.size());
         }
 
         long durationMs = System.currentTimeMillis() - startTime;
@@ -255,7 +262,7 @@ public class VectorIndexer {
         }
 
         var chunkPlaceholders = chunkIds.stream().map(id -> "?").collect(Collectors.joining(","));
-        ScopeSql scopeSql = buildScopeSql("knowledge_base_id", "source_datastore_id", scopes);
+        KnowledgeQueryUtils.ScopeSql scopeSql = KnowledgeQueryUtils.buildScopeSql("knowledge_base_id", "source_datastore_id", scopes);
         var sql = """
                 SELECT id, document_id, knowledge_base_id, content, context_prefix,
                        heading_hierarchy_json, metadata_json,
@@ -273,7 +280,7 @@ public class VectorIndexer {
             double distance = distanceMap.getOrDefault(chunkId, 1.0);
             String headingJson = rs.getString("heading_hierarchy_json");
             List<String> headings = headingJson != null && !headingJson.isBlank()
-                    ? parseJsonList(headingJson) : List.of();
+                    ? KnowledgeQueryUtils.parseJsonList(headingJson) : List.of();
             return new DocumentSearchResult(
                     chunkId,
                     rs.getString("document_id"),
@@ -286,7 +293,7 @@ public class VectorIndexer {
                     Map.of(),
                     Optional.empty(),
                     Optional.empty(),
-                    parseSourceType(rs.getString("source_type")),
+                    KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
                     Optional.ofNullable(rs.getString("source_datastore_id")),
                     Optional.ofNullable(rs.getString("source_collection_id"))
             );
@@ -328,16 +335,27 @@ public class VectorIndexer {
     }
 
     /**
-     * 执行单批次向量索引。
+     * 执行单批次向量索引 — 批量 Embedding + 批量 INSERT。
      */
     private void indexBatch(List<DocumentChunk> batch, @Nullable String embeddingModel) {
+        // 批量 Embedding
+        List<String> texts = batch.stream().map(DocumentChunk::embeddingText).toList();
+        float[][] embeddings = embeddingRouter.embedBatch(texts, EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
+
+        // 批量 INSERT
         var sql = "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)";
-        for (var chunk : batch) {
-            float[] embedding = embeddingRouter.embed(
-                    chunk.embeddingText(), EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
-            var vectorStr = vectorToString(embedding);
-            vectorJdbcTemplate.update(sql, chunk.id(), vectorStr);
-        }
+        vectorJdbcTemplate.batchUpdate(sql, new org.springframework.jdbc.core.BatchPreparedStatementSetter() {
+            @Override
+            public void setValues(java.sql.PreparedStatement ps, int i) throws java.sql.SQLException {
+                ps.setString(1, batch.get(i).id());
+                ps.setString(2, vectorToString(embeddings[i]));
+            }
+
+            @Override
+            public int getBatchSize() {
+                return batch.size();
+            }
+        });
     }
 
     /**
@@ -353,18 +371,6 @@ public class VectorIndexer {
         return sb.toString();
     }
 
-    /**
-     * 简单 JSON 数组解析（用于 heading_hierarchy_json）。
-     */
-    private List<String> parseJsonList(String json) {
-        if (json == null || json.equals("[]")) return List.of();
-        var content = json.substring(1, json.length() - 1);
-        if (content.isBlank()) return List.of();
-        return Arrays.stream(content.split(","))
-                .map(s -> s.trim().replaceAll("^\"|\"$", ""))
-                .toList();
-    }
-
     private void sleep(long ms) {
         try {
             Thread.sleep(ms);
@@ -373,36 +379,4 @@ public class VectorIndexer {
         }
     }
 
-    private ScopeSql buildScopeSql(String kbColumn, String datastoreColumn, List<KnowledgeSearchScope> scopes) {
-        var sqlParts = new ArrayList<String>();
-        var params = new ArrayList<Object>();
-        for (KnowledgeSearchScope scope : scopes) {
-            if (scope == null || scope.knowledgeBaseId() == null || scope.knowledgeBaseId().isBlank()) {
-                continue;
-            }
-            if (scope.datastoreId() == null || scope.datastoreId().isBlank()) {
-                sqlParts.add(kbColumn + " = ?");
-                params.add(scope.knowledgeBaseId());
-            } else {
-                sqlParts.add("(" + kbColumn + " = ? AND " + datastoreColumn + " = ?)");
-                params.add(scope.knowledgeBaseId());
-                params.add(scope.datastoreId());
-            }
-        }
-        return new ScopeSql(String.join(" OR ", sqlParts), params);
-    }
-
-    private DocumentSourceType parseSourceType(String rawValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return DocumentSourceType.FILE;
-        }
-        try {
-            return DocumentSourceType.valueOf(rawValue);
-        } catch (IllegalArgumentException e) {
-            log.warn("未知向量检索来源类型，回退 FILE: value={}", rawValue);
-            return DocumentSourceType.FILE;
-        }
-    }
-
-    private record ScopeSql(String sql, List<Object> params) {}
 }

@@ -50,16 +50,11 @@ public class DuplicateDetector {
     public DuplicateCheckResult check(String kbId, Path filePath) {
         String contentHash = computeHash(filePath);
 
-        // 在同一知识库内查找相同哈希的文档
-        var existingDocs = docRepository.findByKnowledgeBaseId(kbId);
-        var duplicate = existingDocs.stream()
-                .filter(doc -> contentHash.equals(doc.contentHash()))
-                .findFirst();
-
-        if (duplicate.isPresent()) {
-            log.info("检测到重复文档: kbId={}, hash={}, existingDocId={}",
-                    kbId, contentHash, duplicate.get().id());
-            return new DuplicateCheckResult(true, contentHash, Optional.of(duplicate.get().id()));
+        // 在同一知识库内按哈希精确查找，避免加载全部文档
+        var duplicateId = docRepository.findIdByKnowledgeBaseIdAndContentHash(kbId, contentHash);
+        if (duplicateId.isPresent()) {
+            log.info("检测到重复文档: kbId={}, hash={}, existingDocId={}", kbId, contentHash, duplicateId.get());
+            return new DuplicateCheckResult(true, contentHash, duplicateId);
         }
 
         return new DuplicateCheckResult(false, contentHash, Optional.empty());
@@ -74,11 +69,13 @@ public class DuplicateDetector {
     public String computeHash(Path filePath) {
         try {
             var digest = MessageDigest.getInstance("SHA-256");
-            byte[] fileBytes = Files.readAllBytes(filePath);
-            byte[] hashBytes = digest.digest(fileBytes);
-            return HexFormat.of().formatHex(hashBytes);
+            try (var is = Files.newInputStream(filePath);
+                 var dis = new java.security.DigestInputStream(is, digest)) {
+                byte[] buf = new byte[8192];
+                while (dis.read(buf) != -1) { /* 消费流 */ }
+            }
+            return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {
-            // SHA-256 是 JDK 内置算法，不应发生
             throw new IllegalStateException("SHA-256 算法不可用", e);
         } catch (IOException e) {
             throw new RuntimeException("文件读取失败: " + filePath, e);

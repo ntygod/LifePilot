@@ -1,5 +1,6 @@
 package com.lifepilot.knowledge.parser;
 
+import com.lifepilot.knowledge.util.TextUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +64,7 @@ public non-sealed class PlainTextParser implements DocumentParser {
         List<DocumentElement> elements = identifyParagraphs(content);
 
         // 构建元数据
-        long wordCount = estimateWordCount(content);
+        long wordCount = TextUtils.estimateWordCount(content);
         DocumentMetadata metadata = DocumentMetadata.fromFile(filePath, wordCount);
 
         log.info("纯文本解析完成: file={}, paragraphs={}, wordCount={}",
@@ -215,29 +216,5 @@ public non-sealed class PlainTextParser implements DocumentParser {
         }
 
         return elements;
-    }
-
-    /**
-     * 估算字数：中文按字符数，英文按空格分词。
-     *
-     * @param text 文本内容
-     * @return 估算字数
-     */
-    private long estimateWordCount(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        String[] words = text.split("\\s+");
-        long totalWords = 0;
-        for (String word : words) {
-            if (!word.isEmpty()) {
-                totalWords++;
-            }
-        }
-        // 中文字符 + 英文单词（减去中文字符已计入的部分）
-        return chineseChars + Math.max(0, totalWords - chineseChars);
     }
 }

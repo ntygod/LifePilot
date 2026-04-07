@@ -1,5 +1,7 @@
 package com.lifepilot.knowledge.parser;
 
+import com.lifepilot.knowledge.util.TextUtils;
+
 import java.util.List;
 
 /**
@@ -23,14 +25,10 @@ public record ParseResult(
     }
 
     /**
-     * 估算 Token 数量：中文按字符数，英文按空格分词。
+     * 估算 Token 数量：中文按字符数，其他字符按 4 字符/Token 计算。
      */
     public int estimateTokenCount() {
         if (isEmpty()) return 0;
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long englishWords = text.split("\\s+").length - chineseChars;
-        return (int) (chineseChars + Math.max(0, englishWords));
+        return TextUtils.estimateTokens(text);
     }
 }

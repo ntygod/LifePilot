@@ -126,13 +126,14 @@ public class LlmPointwiseRerankStrategy {
     private DocumentSearchResult withRerankerScore(DocumentSearchResult original, double rerankerScore) {
         ScoreBreakdown breakdown = original.scoreBreakdown()
                 .map(existing -> new ScoreBreakdown(
-                        existing.vectorScore(), existing.ftsScore(), existing.rrfFusedScore(), java.util.Optional.of(rerankerScore)))
-                .orElse(new ScoreBreakdown(0.0, 0.0, 0.0, java.util.Optional.of(rerankerScore)));
+                        existing.vectorScore(), existing.ftsScore(), existing.graphScore(), existing.rrfFusedScore(), java.util.Optional.of(rerankerScore)))
+                .orElse(new ScoreBreakdown(0.0, 0.0, 0.0, 0.0, java.util.Optional.of(rerankerScore)));
         return new DocumentSearchResult(
                 original.chunkId(), original.documentId(), original.knowledgeBaseId(),
                 original.content(), original.contextPrefix(), original.headingHierarchy(),
                 rerankerScore, "reranked", original.metadata(),
-                java.util.Optional.of(breakdown), original.expandedContent());
+                java.util.Optional.of(breakdown), original.expandedContent(),
+                original.sourceType(), original.sourceDatastoreId(), original.sourceCollectionId());
     }
 
     private double clampScore(double score) {

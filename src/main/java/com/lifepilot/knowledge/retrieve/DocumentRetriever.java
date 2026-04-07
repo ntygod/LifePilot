@@ -1,5 +1,6 @@
 package com.lifepilot.knowledge.retrieve;
 
+import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
@@ -10,13 +11,19 @@ import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.rerank.router.RerankRouter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.Nullable;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+
 
 /**
  * 文档混合检索服务 — 向量 + FTS5 + 自适应 RRF 融合 + 上下文窗口扩展 + 可选 Reranker。
@@ -38,40 +45,66 @@ public class DocumentRetriever {
     private final RerankRouter rerankRouter;
     @Nullable
     private final QueryEnhancer queryEnhancer;
+    @Nullable
+    private final GraphKnowledgeSearcher graphSearcher;
+    @Nullable
+    private final RetrievalQualityEvaluator qualityEvaluator;
     private final DocumentChunkRepository chunkRepository;
     private final KnowledgeBaseRepository kbRepository;
     private final KnowledgeBaseProperties.Retrieval config;
+    private final ChunkDeduplicator chunkDeduplicator;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Timer retrievalTimer;
+    private final DistributionSummary topScoreSummary;
 
     /**
      * 构造文档混合检索服务。
      *
      * @param vectorIndexer          向量索引服务
      * @param ftsIndexer             FTS5 索引服务
-     * @param reranker               可选 Reranker（精排）
      * @param rerankRouter           精排路由器（可选）
      * @param queryEnhancer          查询增强器（可选）
+     * @param graphSearcher          图谱检索服务（可选）
+     * @param qualityEvaluator       检索质量评估器（可选，Corrective RAG）
      * @param chunkRepository        分块数据访问层（上下文窗口扩展）
      * @param kbRepository           知识库数据访问层（per-KB 模型解析）
      * @param config                 检索配置
+     * @param chunkDeduplicator      检索结果去重器
+     * @param meterRegistry          Micrometer 指标注册器
+     * @param eventPublisher         Spring 事件发布器
      */
     public DocumentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                               @Nullable RerankRouter rerankRouter,
                               @Nullable QueryEnhancer queryEnhancer,
+                              @Nullable GraphKnowledgeSearcher graphSearcher,
+                              @Nullable RetrievalQualityEvaluator qualityEvaluator,
                               DocumentChunkRepository chunkRepository,
                               KnowledgeBaseRepository kbRepository,
-                              KnowledgeBaseProperties.Retrieval config) {
+                              KnowledgeBaseProperties.Retrieval config,
+                              ChunkDeduplicator chunkDeduplicator,
+                              MeterRegistry meterRegistry,
+                              ApplicationEventPublisher eventPublisher) {
         this.vectorIndexer = vectorIndexer;
         this.ftsIndexer = ftsIndexer;
         this.rerankRouter = rerankRouter;
         this.queryEnhancer = queryEnhancer;
+        this.graphSearcher = graphSearcher;
+        this.qualityEvaluator = qualityEvaluator;
         this.chunkRepository = chunkRepository;
         this.kbRepository = kbRepository;
         this.config = config;
-        log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}, queryEnhancer={}, contextWindowSize={}",
+        this.chunkDeduplicator = chunkDeduplicator;
+        this.eventPublisher = eventPublisher;
+        this.retrievalTimer = meterRegistry.timer("knowledge.retrieval.duration");
+        this.topScoreSummary = meterRegistry.summary("knowledge.retrieval.top_score");
+        log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}, queryEnhancer={}, graph={}, correction={}, contextWindowSize={}, dedup={}",
                 config.defaultTopK(), config.rrfK(),
                 rerankRouter != null ? "启用" : "未启用",
                 queryEnhancer != null ? "启用" : "未启用",
-                config.contextWindowSize());
+                graphSearcher != null && config.graphEnabled() ? "启用" : "未启用",
+                qualityEvaluator != null && config.correctionEnabled() ? "启用" : "未启用",
+                config.contextWindowSize(),
+                config.deduplicationThreshold());
     }
 
     /**
@@ -99,7 +132,28 @@ public class DocumentRetriever {
             return List.of();
         }
 
-        long startTime = System.currentTimeMillis();
+        return retrievalTimer.record(() -> doRetrieveByScopes(query, scopes, topK));
+    }
+
+    /**
+     * 实际检索逻辑 — 被 Micrometer Timer 包裹。
+     */
+    private List<DocumentSearchResult> doRetrieveByScopes(String query, List<KnowledgeSearchScope> scopes, int topK) {
+        return doRetrieveByScopes(query, scopes, topK, false);
+    }
+
+    /**
+     * 核心检索逻辑，支持跳过 Corrective RAG 以避免递归。
+     *
+     * @param query          查询文本
+     * @param scopes         知识域范围
+     * @param topK           返回数量
+     * @param skipCorrection 是否跳过 Corrective RAG（重试时为 true）
+     */
+    private List<DocumentSearchResult> doRetrieveByScopes(String query, List<KnowledgeSearchScope> scopes,
+                                                           int topK, boolean skipCorrection) {
+        var startTime = Instant.now();
+        long startMs = System.currentTimeMillis();
         int effectiveTopK = topK > 0 ? topK : config.defaultTopK();
         int candidateK = effectiveTopK * 3;
 
@@ -110,23 +164,56 @@ public class DocumentRetriever {
         // 1. 查询增强
         QueryEnhancer.EnhancedQuery enhanced = enhanceQuery(query);
 
-        // 2. 并行执行向量搜索和 FTS5 搜索
+        // 2. 并行执行向量搜索、FTS5 搜索和图谱搜索（逐路计时）
         List<DocumentSearchResult> vectorResults;
         List<DocumentSearchResult> ftsResults;
+        List<DocumentSearchResult> graphResults;
+        long vectorMs, ftsMs, graphMs;
+
+        record Timed<T>(T result, long durationMs) {}
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            // HyDE 模式使用假设文档 Embedding 进行向量搜索
-            var vectorFuture = CompletableFuture.supplyAsync(
-                    () -> safeVectorSearch(enhanced, scopes, candidateK, embeddingModel), executor);
-            var ftsFuture = CompletableFuture.supplyAsync(
-                    () -> safeFtsSearch(enhanced, scopes, candidateK), executor);
+            var vectorFuture = CompletableFuture.supplyAsync(() -> {
+                long t0 = System.currentTimeMillis();
+                var r = safeVectorSearch(enhanced, scopes, candidateK, embeddingModel);
+                return new Timed<>(r, System.currentTimeMillis() - t0);
+            }, executor);
+            var ftsFuture = CompletableFuture.supplyAsync(() -> {
+                long t0 = System.currentTimeMillis();
+                var r = safeFtsSearch(enhanced, scopes, candidateK);
+                return new Timed<>(r, System.currentTimeMillis() - t0);
+            }, executor);
+            var graphFuture = CompletableFuture.supplyAsync(() -> {
+                long t0 = System.currentTimeMillis();
+                var r = safeGraphSearch(enhanced, scopes, candidateK);
+                return new Timed<>(r, System.currentTimeMillis() - t0);
+            }, executor);
 
-            vectorResults = vectorFuture.join();
-            ftsResults = ftsFuture.join();
+            var vectorTimed = vectorFuture.join();
+            vectorResults = vectorTimed.result();
+            vectorMs = vectorTimed.durationMs();
+
+            var ftsTimed = ftsFuture.join();
+            ftsResults = ftsTimed.result();
+            ftsMs = ftsTimed.durationMs();
+
+            var graphTimed = graphFuture.join();
+            graphResults = graphTimed.result();
+            graphMs = graphTimed.durationMs();
         }
 
-        // 3. 自适应 RRF 融合
-        var fused = adaptiveRrfFusion(vectorResults, ftsResults, effectiveTopK);
+        // 3. 自适应 RRF 融合（向量 + FTS + 图谱三路）
+        long fusionStart = System.currentTimeMillis();
+        var fused = adaptiveRrfFusion(vectorResults, ftsResults, graphResults, effectiveTopK);
+        long fusionMs = System.currentTimeMillis() - fusionStart;
+
+        // 3.3 检索结果去重
+        var beforeDedup = fused.size();
+        fused = chunkDeduplicator.deduplicate(fused);
+        int deduplicatedCount = beforeDedup - fused.size();
+
+        // 3.5 Parent-Child 解析：如果命中的是 child 块，解析并返回对应 parent 块
+        fused = resolveParentChunks(fused);
 
         // 4. 最低相关性阈值过滤
         if (config.minRelevanceScore() > 0.0) {
@@ -141,7 +228,9 @@ public class DocumentRetriever {
         }
 
         // 6. 可选精排（检查运行时 enabled 状态）
+        long rerankMs = 0;
         if (rerankRouter != null && rerankRouter.isKnowledgeRerankEnabled() && !fused.isEmpty()) {
+            long rerankStart = System.currentTimeMillis();
             try {
                 var reranked = rerankRouter.rerankDocuments(query, fused, effectiveTopK, rerankerModel);
                 log.debug("精排完成: input={}, output={}", fused.size(), reranked.size());
@@ -149,12 +238,44 @@ public class DocumentRetriever {
             } catch (Exception e) {
                 log.warn("Reranker 不可用，跳过精排: {}", e.getMessage());
             }
+            rerankMs = System.currentTimeMillis() - rerankStart;
         }
 
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.debug("检索完成: vector={}, fts={}, 融合后={}, 最终={}, 耗时={}ms",
-                vectorResults.size(), ftsResults.size(),
-                fused.size(), fused.size(), elapsed);
+        // 7. Corrective RAG（可选）— 评估检索质量，必要时改写查询重试
+        if (!skipCorrection && qualityEvaluator != null && config.correctionEnabled() && !fused.isEmpty()) {
+            var eval = qualityEvaluator.evaluate(query, fused);
+            if (eval.quality() == RetrievalQualityEvaluator.Quality.LOW
+                    && eval.suggestedRewrite().isPresent()) {
+                log.info("Corrective RAG: quality={}, rewrite={}", eval.quality(), eval.suggestedRewrite().get());
+                // 使用改写查询重试检索（skipCorrection=true 避免递归）
+                fused = doRetrieveByScopes(eval.suggestedRewrite().get(), scopes, topK, true);
+            } else if (eval.quality() == RetrievalQualityEvaluator.Quality.VERY_LOW) {
+                log.info("Corrective RAG: quality=VERY_LOW, 标记低置信度");
+                // 标记所有结果为低置信度
+                fused = fused.stream().map(r -> new DocumentSearchResult(
+                        r.chunkId(), r.documentId(), r.knowledgeBaseId(),
+                        r.content(), r.contextPrefix(), r.headingHierarchy(),
+                        r.score(), r.sourcePath(),
+                        mergeMeta(r.metadata(), "retrieval_confidence", "very_low"),
+                        r.scoreBreakdown(), r.expandedContent(),
+                        r.sourceType(), r.sourceDatastoreId(), r.sourceCollectionId()
+                )).toList();
+            }
+        }
+
+        // 8. 构建并发布 RetrievalTrace
+        long elapsed = System.currentTimeMillis() - startMs;
+        double topScore = fused.isEmpty() ? 0.0 : fused.getFirst().score();
+        var trace = RetrievalTrace.of(UUID.randomUUID().toString(), query, startTime,
+                elapsed, vectorMs, ftsMs, graphMs, fusionMs, rerankMs,
+                vectorResults.size(), ftsResults.size(), graphResults.size(),
+                deduplicatedCount, fused.size(), fused.size(), topScore);
+        eventPublisher.publishEvent(trace);
+        topScoreSummary.record(topScore);
+
+        log.debug("检索完成: vector={}, fts={}, graph={}, 去重移除={}, 融合后={}, 最终={}, 耗时={}ms",
+                vectorResults.size(), ftsResults.size(), graphResults.size(),
+                deduplicatedCount, fused.size(), fused.size(), elapsed);
 
         return List.copyOf(fused);
     }
@@ -204,18 +325,21 @@ public class DocumentRetriever {
     }
 
     /**
-     * 自适应 RRF 融合 — 根据向量 Top-1 分数动态调整权重。
+     * 自适应 RRF 融合 — 根据向量 Top-1 分数动态调整权重，支持三路融合（向量 + FTS + 图谱）。
      *
      * <p>向量 Top-1 分数 &lt; lowConfidenceThreshold 时提升 FTS 权重。
+     * 图谱检索权重独立于向量/FTS 自适应调整，始终使用配置值。
      */
     List<DocumentSearchResult> adaptiveRrfFusion(List<DocumentSearchResult> vectorResults,
                                                   List<DocumentSearchResult> ftsResults,
+                                                  List<DocumentSearchResult> graphResults,
                                                   int topK) {
         int k = config.rrfK();
 
         // 自适应权重调整
         double vectorWeight = config.vectorWeight();
         double ftsWeight = config.ftsWeight();
+        double graphWeight = config.graphEnabled() ? config.graphWeight() : 0.0;
         if (!vectorResults.isEmpty()) {
             double topVectorScore = vectorResults.getFirst().score();
             if (topVectorScore < config.lowConfidenceThreshold()) {
@@ -226,9 +350,10 @@ public class DocumentRetriever {
             }
         }
 
-        // chunkId → 各路原始分数
+        // chunkId -> 各路原始分数
         var vectorScoreMap = new HashMap<String, Double>();
         var ftsScoreMap = new HashMap<String, Double>();
+        var graphScoreMap = new HashMap<String, Double>();
         var rrfScoreMap = new LinkedHashMap<String, Double>();
         var resultMap = new HashMap<String, DocumentSearchResult>();
 
@@ -250,6 +375,17 @@ public class DocumentRetriever {
             ftsScoreMap.put(result.chunkId(), result.score());
         }
 
+        // 图谱搜索 RRF 分数
+        if (graphWeight > 0.0) {
+            for (int rank = 0; rank < graphResults.size(); rank++) {
+                var result = graphResults.get(rank);
+                double rrfScore = graphWeight / (k + rank + 1);
+                rrfScoreMap.merge(result.chunkId(), rrfScore, Double::sum);
+                resultMap.putIfAbsent(result.chunkId(), result);
+                graphScoreMap.put(result.chunkId(), result.score());
+            }
+        }
+
         // 按 RRF 分数降序排序，构建 ScoreBreakdown
         return rrfScoreMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
@@ -259,6 +395,7 @@ public class DocumentRetriever {
                     var breakdown = new ScoreBreakdown(
                             vectorScoreMap.getOrDefault(entry.getKey(), 0.0),
                             ftsScoreMap.getOrDefault(entry.getKey(), 0.0),
+                            graphScoreMap.getOrDefault(entry.getKey(), 0.0),
                             entry.getValue(),
                             Optional.empty()
                     );
@@ -283,6 +420,75 @@ public class DocumentRetriever {
     }
 
     /**
+     * Parent-Child 解析 — 如果命中的是 child 块，查找并返回对应 parent 块。
+     *
+     * <p>同一 parent 下多个 child 命中时，取最高分 child 的分数，只返回一次 parent。
+     * 非 child 块（level=0 或无 parentChunkId）直接保留。
+     */
+    private List<DocumentSearchResult> resolveParentChunks(List<DocumentSearchResult> results) {
+        // 收集需要解析 parent 的 child 结果
+        var parentScoreMap = new LinkedHashMap<String, Double>();    // parentId → 最高分
+        var parentSourceMap = new LinkedHashMap<String, DocumentSearchResult>(); // parentId → 最高分的 child result
+        var directResults = new ArrayList<DocumentSearchResult>();
+
+        var parentIdMap = chunkRepository.findParentChunkIdsByChunkIds(
+                results.stream().map(DocumentSearchResult::chunkId).toList());
+        for (var result : results) {
+            var parentId = parentIdMap.get(result.chunkId());
+            if (parentId != null) {
+                if (!parentScoreMap.containsKey(parentId) || result.score() > parentScoreMap.get(parentId)) {
+                    parentScoreMap.put(parentId, result.score());
+                    parentSourceMap.put(parentId, result);
+                }
+            } else {
+                directResults.add(result);
+            }
+        }
+
+        if (parentScoreMap.isEmpty()) {
+            return results; // 无 child 块，直接返回
+        }
+
+        // 批量查询 parent 块
+        var parentChunks = chunkRepository.findByIds(new ArrayList<>(parentScoreMap.keySet()));
+        var parentMap = new LinkedHashMap<String, DocumentChunk>();
+        for (var chunk : parentChunks) {
+            parentMap.put(chunk.id(), chunk);
+        }
+
+        // 构建 parent 结果
+        var resolved = new ArrayList<DocumentSearchResult>(directResults);
+        for (var entry : parentScoreMap.entrySet()) {
+            var parentChunk = parentMap.get(entry.getKey());
+            var childResult = parentSourceMap.get(entry.getKey());
+            if (parentChunk != null) {
+                resolved.add(new DocumentSearchResult(
+                        parentChunk.id(),
+                        childResult.documentId(),
+                        childResult.knowledgeBaseId(),
+                        parentChunk.content(),
+                        parentChunk.contextPrefix(),
+                        parentChunk.headingHierarchy(),
+                        entry.getValue(),
+                        childResult.sourcePath(),
+                        childResult.metadata(),
+                        childResult.scoreBreakdown(),
+                        Optional.empty(),
+                        childResult.sourceType(),
+                        childResult.sourceDatastoreId(),
+                        childResult.sourceCollectionId()
+                ));
+            }
+        }
+
+        // 按分数降序排列
+        resolved.sort(Comparator.comparingDouble(DocumentSearchResult::score).reversed());
+        log.debug("Parent-Child 解析: child命中={}, 解析后parent={}, 直接结果={}",
+                parentScoreMap.size(), parentMap.size(), directResults.size());
+        return resolved;
+    }
+
+    /**
      * 上下文窗口扩展 — 对每个命中分块，查询同文档的相邻分块并拼接。
      */
     private List<DocumentSearchResult> expandContextWindow(List<DocumentSearchResult> results) {
@@ -291,20 +497,13 @@ public class DocumentRetriever {
 
         for (var result : results) {
             try {
-                // 需要知道命中分块的 chunkIndex，从 metadata 或 chunkRepository 获取
-                var chunks = chunkRepository.findByDocumentId(result.documentId());
-                int hitIndex = -1;
-                for (var chunk : chunks) {
-                    if (chunk.id().equals(result.chunkId())) {
-                        hitIndex = chunk.chunkIndex();
-                        break;
-                    }
-                }
-
-                if (hitIndex < 0) {
+                // 按分块 ID 精确查询 chunkIndex，避免加载同文档所有分块
+                var hitIndexOpt = chunkRepository.findChunkIndexById(result.chunkId());
+                if (hitIndexOpt.isEmpty()) {
                     expanded.add(result);
                     continue;
                 }
+                int hitIndex = hitIndexOpt.getAsInt();
 
                 int fromIndex = Math.max(0, hitIndex - windowSize);
                 int toIndex = hitIndex + windowSize;
@@ -411,11 +610,36 @@ public class DocumentRetriever {
         }
     }
 
+    /**
+     * 安全执行图谱搜索。
+     */
+    private List<DocumentSearchResult> safeGraphSearch(QueryEnhancer.EnhancedQuery enhanced,
+                                                        List<KnowledgeSearchScope> scopes, int topK) {
+        if (graphSearcher == null || !config.graphEnabled()) {
+            return List.of();
+        }
+        try {
+            return graphSearcher.search(enhanced.primaryQuery(), scopes, topK);
+        } catch (Exception e) {
+            log.warn("图谱搜索失败，降级跳过: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     private List<String> extractKnowledgeBaseIds(List<KnowledgeSearchScope> scopes) {
         return scopes.stream()
                 .map(KnowledgeSearchScope::knowledgeBaseId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
+    }
+
+    /**
+     * 合并元数据 — 在原有 metadata 基础上追加一个键值对。
+     */
+    private Map<String, String> mergeMeta(Map<String, String> original, String key, String value) {
+        var merged = new HashMap<>(original);
+        merged.put(key, value);
+        return Map.copyOf(merged);
     }
 }

@@ -76,10 +76,6 @@ public class KnowledgeExtractionPipeline {
      * @param documentId 文档 ID（用作 conversationId）
      * @return 提取结果
      */
-    public ExtractionResult extract(List<DocumentChunk> chunks, String documentId) {
-        throw new IllegalStateException("请使用 extract(Document, List<DocumentChunk>) 传入完整文档上下文");
-    }
-
     public ExtractionResult extract(Document doc, List<DocumentChunk> chunks) {
         if (!config.enabled() || chunks.isEmpty()) {
             return new ExtractionResult(0, 0, List.of());

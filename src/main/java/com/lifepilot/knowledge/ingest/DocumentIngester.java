@@ -5,6 +5,7 @@ import com.lifepilot.knowledge.chunking.ChunkingStrategy;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.chunking.FixedSizeChunker;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
 import com.lifepilot.knowledge.enricher.ChunkContextEnricher;
 import com.lifepilot.knowledge.exception.DuplicateDocumentException;
@@ -63,6 +64,7 @@ public class DocumentIngester {
     private final ApplicationEventPublisher eventPublisher;
     private final KnowledgeBaseProperties props;
     private final ChunkingConfig defaultChunkingConfig;
+    private final TokenCounter tokenCounter;
 
     /**
      * 构造文档导入管线。
@@ -80,7 +82,8 @@ public class DocumentIngester {
                             KnowledgeBaseRepository kbRepository,
                             ApplicationEventPublisher eventPublisher,
                             KnowledgeBaseProperties props,
-                            ChunkingConfig defaultChunkingConfig) {
+                            ChunkingConfig defaultChunkingConfig,
+                            TokenCounter tokenCounter) {
         this.formatDetector = formatDetector;
         this.smartChunker = smartChunker;
         this.chunkerRegistry = chunkerRegistry;
@@ -95,6 +98,7 @@ public class DocumentIngester {
         this.eventPublisher = eventPublisher;
         this.props = props;
         this.defaultChunkingConfig = defaultChunkingConfig;
+        this.tokenCounter = tokenCounter;
         log.info("DocumentIngester 初始化完成: vectorIndexer={}, contextEnricher={}, extractionPipeline={}, chunkerRegistry={}",
                 vectorIndexer != null ? "启用" : "未启用",
                 contextEnricher != null ? "可用" : "不可用",
@@ -351,11 +355,7 @@ public class DocumentIngester {
         var rawChunks = selectedChunker.chunk(parseResult.text(), metadata);
         // 填充 documentId 和 knowledgeBaseId
         return rawChunks.stream()
-                .map(c -> new DocumentChunk(
-                        c.id(), doc.id(), doc.knowledgeBaseId(), c.content(),
-                        c.contextPrefix(), c.chunkIndex(), c.startOffset(), c.endOffset(),
-                        c.tokenCount(), c.contentHash(), c.headingHierarchy(),
-                        c.pageNumber(), c.metadata(),
+                .map(c -> c.withDocumentContext(doc.id(), doc.knowledgeBaseId(),
                         doc.sourceType(), doc.sourceDatastoreId(), doc.sourceCollectionId()))
                 .toList();
     }
@@ -424,7 +424,7 @@ public class DocumentIngester {
             // 仅 fixed-size 策略支持临时配置覆盖（其他策略需要额外构造参数）
             if ("fixed-size".equals(strategy)) {
                 log.debug("使用自定义 ChunkingConfig 构造临时 FixedSizeChunker: config={}", kbConfig);
-                return new FixedSizeChunker(customConfig);
+                return new FixedSizeChunker(customConfig, tokenCounter);
             }
 
             // 其他策略暂不支持临时配置覆盖，使用全局实例
@@ -529,11 +529,9 @@ public class DocumentIngester {
      */
     private void refreshKnowledgeBaseCounts(String kbId) {
         try {
-            var docs = docRepository.findByKnowledgeBaseId(kbId);
-            int docCount = docs.size();
-            int totalChunks = docs.stream().mapToInt(Document::chunkCount).sum();
-            kbRepository.updateDocumentCount(kbId, docCount, totalChunks);
-            log.debug("知识库统计已更新: kbId={}, docCount={}, totalChunks={}", kbId, docCount, totalChunks);
+            var stats = docRepository.countByKnowledgeBaseId(kbId);
+            kbRepository.updateDocumentCount(kbId, stats.documentCount(), stats.totalChunks());
+            log.debug("知识库统计已更新: kbId={}, docCount={}, totalChunks={}", kbId, stats.documentCount(), stats.totalChunks());
         } catch (Exception e) {
             log.warn("知识库统计更新失败（不影响文档导入）: kbId={}, error={}", kbId, e.getMessage());
         }

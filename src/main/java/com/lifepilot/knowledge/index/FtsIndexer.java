@@ -1,16 +1,15 @@
 package com.lifepilot.knowledge.index;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
-import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.IndexingResult;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
+import com.lifepilot.knowledge.util.KnowledgeQueryUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * FTS5 全文索引服务 — 构建和维护 SQLite FTS5 全文索引。
@@ -66,8 +65,12 @@ public class FtsIndexer {
                 jdbcTemplate.update(sql, chunk.id());
                 indexed++;
             } catch (Exception e) {
-                // FTS5 重复插入会报错，跳过已存在的
-                log.debug("FTS5 索引跳过（可能已存在）: chunkId={}, error={}", chunk.id(), e.getMessage());
+                String msg = e.getMessage() != null ? e.getMessage() : "";
+                if (msg.contains("UNIQUE") || msg.contains("constraint") || msg.contains("already exists")) {
+                    log.debug("FTS5 索引跳过（已存在）: chunkId={}", chunk.id());
+                } else {
+                    log.warn("FTS5 索引失败: chunkId={}, error={}", chunk.id(), msg);
+                }
             }
         }
 
@@ -121,7 +124,7 @@ public class FtsIndexer {
             return List.of();
         }
 
-        ScopeSql scopeSql = buildScopeSql("dc.knowledge_base_id", "dc.source_datastore_id", scopes);
+        KnowledgeQueryUtils.ScopeSql scopeSql = KnowledgeQueryUtils.buildScopeSql("dc.knowledge_base_id", "dc.source_datastore_id", scopes);
         var sql = """
                 SELECT dc.id AS chunk_id, dc.document_id, dc.knowledge_base_id, dc.content,
                        dc.context_prefix, dc.heading_hierarchy_json, dc.metadata_json,
@@ -142,7 +145,7 @@ public class FtsIndexer {
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
             String headingJson = rs.getString("heading_hierarchy_json");
             List<String> headings = headingJson != null && !headingJson.isBlank()
-                    ? parseJsonList(headingJson) : List.of();
+                    ? KnowledgeQueryUtils.parseJsonList(headingJson) : List.of();
             return new DocumentSearchResult(
                     rs.getString("chunk_id"),
                     rs.getString("document_id"),
@@ -155,7 +158,7 @@ public class FtsIndexer {
                     Map.of(),
                     Optional.empty(),
                     Optional.empty(),
-                    parseSourceType(rs.getString("source_type")),
+                    KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
                     Optional.ofNullable(rs.getString("source_datastore_id")),
                     Optional.ofNullable(rs.getString("source_collection_id"))
             );
@@ -165,55 +168,14 @@ public class FtsIndexer {
     // ---- 内部方法 ----
 
     /**
-     * 转义 FTS5 查询中的特殊字符。
+     * 构建 FTS5 MATCH 查询表达式。
+     *
+     * <p>使用 trigram tokenizer 后，双引号包裹的查询执行**子串匹配**
+     * （而非 unicode61 的 token 序列匹配），天然支持 CJK 和混合语言。
+     * 搜索 "Spring 配置" 会匹配任何包含该子串的文档。
      */
     private String escapeFtsQuery(String query) {
-        // FTS5 特殊字符：双引号包裹整个查询以避免语法错误
         return "\"" + query.replace("\"", "\"\"") + "\"";
     }
 
-    /**
-     * 简单 JSON 数组解析。
-     */
-    private List<String> parseJsonList(String json) {
-        if (json == null || json.equals("[]")) return List.of();
-        var content = json.substring(1, json.length() - 1);
-        if (content.isBlank()) return List.of();
-        return Arrays.stream(content.split(","))
-                .map(s -> s.trim().replaceAll("^\"|\"$", ""))
-                .toList();
-    }
-
-    private ScopeSql buildScopeSql(String kbColumn, String datastoreColumn, List<KnowledgeSearchScope> scopes) {
-        var sqlParts = new ArrayList<String>();
-        var params = new ArrayList<Object>();
-        for (KnowledgeSearchScope scope : scopes) {
-            if (scope == null || scope.knowledgeBaseId() == null || scope.knowledgeBaseId().isBlank()) {
-                continue;
-            }
-            if (scope.datastoreId() == null || scope.datastoreId().isBlank()) {
-                sqlParts.add(kbColumn + " = ?");
-                params.add(scope.knowledgeBaseId());
-            } else {
-                sqlParts.add("(" + kbColumn + " = ? AND " + datastoreColumn + " = ?)");
-                params.add(scope.knowledgeBaseId());
-                params.add(scope.datastoreId());
-            }
-        }
-        return new ScopeSql(String.join(" OR ", sqlParts), params);
-    }
-
-    private DocumentSourceType parseSourceType(String rawValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return DocumentSourceType.FILE;
-        }
-        try {
-            return DocumentSourceType.valueOf(rawValue);
-        } catch (IllegalArgumentException e) {
-            log.warn("未知检索来源类型，回退 FILE: value={}", rawValue);
-            return DocumentSourceType.FILE;
-        }
-    }
-
-    private record ScopeSql(String sql, List<Object> params) {}
 }

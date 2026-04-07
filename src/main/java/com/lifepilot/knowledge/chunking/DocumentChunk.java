@@ -30,7 +30,9 @@ public record DocumentChunk(
         Map<String, String> metadata,
         DocumentSourceType sourceType,
         String sourceDatastoreId,
-        String sourceCollectionId
+        String sourceCollectionId,
+        Optional<String> parentChunkId,     // 父分块 ID（child 指向 parent）
+        int chunkLevel                      // 分块层级：0=父块, 1=子块
 ) {
 
     public DocumentChunk {
@@ -38,6 +40,7 @@ public record DocumentChunk(
         headingHierarchy = headingHierarchy != null ? List.copyOf(headingHierarchy) : List.of();
         metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
         sourceType = sourceType != null ? sourceType : DocumentSourceType.FILE;
+        parentChunkId = parentChunkId != null ? parentChunkId : Optional.empty();
     }
 
     public DocumentChunk(
@@ -57,7 +60,7 @@ public record DocumentChunk(
     ) {
         this(id, documentId, knowledgeBaseId, content, contextPrefix, chunkIndex, startOffset,
                 endOffset, tokenCount, contentHash, headingHierarchy, pageNumber, metadata,
-                DocumentSourceType.FILE, null, null);
+                DocumentSourceType.FILE, null, null, Optional.empty(), 0);
     }
 
     /**
@@ -87,5 +90,55 @@ public record DocumentChunk(
      */
     public int contentLength() {
         return content.length();
+    }
+
+    /**
+     * 创建填充了文档上下文信息的新分块实例。
+     *
+     * @param documentId        文档 ID
+     * @param knowledgeBaseId   知识库 ID
+     * @param sourceType        来源类型
+     * @param sourceDatastoreId 数据源 ID
+     * @param sourceCollectionId 集合 ID
+     * @return 新的 DocumentChunk 实例
+     */
+    public DocumentChunk withDocumentContext(String documentId, String knowledgeBaseId,
+                                             DocumentSourceType sourceType,
+                                             String sourceDatastoreId,
+                                             String sourceCollectionId) {
+        return new DocumentChunk(id(), documentId, knowledgeBaseId, content(), contextPrefix(),
+                chunkIndex(), startOffset(), endOffset(), tokenCount(), contentHash(),
+                headingHierarchy(), pageNumber(), metadata(),
+                sourceType, sourceDatastoreId, sourceCollectionId,
+                parentChunkId(), chunkLevel());
+    }
+
+    /**
+     * 创建带上下文前缀的新分块实例。
+     *
+     * @param prefix 上下文前缀文本
+     * @return 新的 DocumentChunk 实例
+     */
+    public DocumentChunk withContextPrefix(String prefix) {
+        return new DocumentChunk(id(), documentId(), knowledgeBaseId(), content(), Optional.of(prefix),
+                chunkIndex(), startOffset(), endOffset(), tokenCount(), contentHash(),
+                headingHierarchy(), pageNumber(), metadata(),
+                sourceType(), sourceDatastoreId(), sourceCollectionId(),
+                parentChunkId(), chunkLevel());
+    }
+
+    /**
+     * 创建带父子关系的新分块实例。
+     *
+     * @param parentChunkId 父分块 ID
+     * @param chunkLevel    分块层级（0=父块, 1=子块）
+     * @return 新的 DocumentChunk 实例
+     */
+    public DocumentChunk withParentContext(String parentChunkId, int chunkLevel) {
+        return new DocumentChunk(id(), documentId(), knowledgeBaseId(), content(), contextPrefix(),
+                chunkIndex(), startOffset(), endOffset(), tokenCount(), contentHash(),
+                headingHierarchy(), pageNumber(), metadata(),
+                sourceType(), sourceDatastoreId(), sourceCollectionId(),
+                Optional.ofNullable(parentChunkId), chunkLevel);
     }
 }

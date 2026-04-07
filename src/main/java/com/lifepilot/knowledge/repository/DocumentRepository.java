@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
+import com.lifepilot.knowledge.util.KnowledgeQueryUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -212,6 +213,45 @@ public class DocumentRepository {
                 stage, Instant.now().toString(), id);
     }
 
+    /**
+     * 按知识库 ID 和内容哈希查找文档 ID（用于重复检测）。
+     *
+     * <p>仅返回第一条匹配的文档 ID，避免加载完整文档对象。</p>
+     *
+     * @param kbId        知识库 ID
+     * @param contentHash SHA-256 内容哈希
+     * @return 匹配的文档 ID，不存在时返回 empty
+     */
+    public Optional<String> findIdByKnowledgeBaseIdAndContentHash(String kbId, String contentHash) {
+        List<String> results = jdbcTemplate.queryForList(
+                "SELECT id FROM documents WHERE knowledge_base_id = ? AND content_hash = ? LIMIT 1",
+                String.class, kbId, contentHash);
+        return results.stream().findFirst();
+    }
+
+    /**
+     * 知识库统计结果 — 文档数和分块总数。
+     *
+     * @param documentCount 文档数量
+     * @param totalChunks   分块总数
+     */
+    public record KnowledgeBaseStats(int documentCount, int totalChunks) {}
+
+    /**
+     * 按知识库 ID 统计文档数量和分块总数（聚合查询）。
+     *
+     * <p>使用 SQL 聚合函数避免加载全部文档对象到内存。</p>
+     *
+     * @param kbId 知识库 ID
+     * @return 统计结果
+     */
+    public KnowledgeBaseStats countByKnowledgeBaseId(String kbId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*), COALESCE(SUM(chunk_count), 0) FROM documents WHERE knowledge_base_id = ?",
+                (rs, rowNum) -> new KnowledgeBaseStats(rs.getInt(1), rs.getInt(2)),
+                kbId);
+    }
+
     // ---- 内部方法 ----
 
     /** RowMapper：将 ResultSet 行映射为 Document record。 */
@@ -232,7 +272,7 @@ public class DocumentRepository {
                 deserializeMetadata(rs.getString("metadata_json")),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at")),
-                parseSourceType(rs.getString("source_type")),
+                KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
                 rs.getString("source_key"),
                 rs.getString("source_datastore_id"),
                 rs.getString("source_collection_id"),
@@ -290,18 +330,6 @@ public class DocumentRepository {
         } catch (JsonProcessingException e) {
             log.warn("JSON 反序列化失败，返回空 Map: json={}, error={}", json, e.getMessage());
             return Map.of();
-        }
-    }
-
-    private DocumentSourceType parseSourceType(String rawValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return DocumentSourceType.FILE;
-        }
-        try {
-            return DocumentSourceType.valueOf(rawValue);
-        } catch (IllegalArgumentException e) {
-            log.warn("未知文档来源类型，回退 FILE: value={}", rawValue);
-            return DocumentSourceType.FILE;
         }
     }
 }

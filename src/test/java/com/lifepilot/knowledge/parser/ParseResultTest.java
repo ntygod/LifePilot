@@ -63,11 +63,10 @@ class ParseResultTest {
 
     @Test
     void estimateTokenCount_中英混合() {
-        // "hello 你好 world" → 2 个中文字符，split("\\s+") 产生 3 个元素
-        // englishWords = 3 - 2 = 1
-        // total = 2 + 1 = 3
+        // "hello 你好 world"（14 字符）→ 中文 2 个(2 token) + 其他 12 个 / 4 = 3 token
+        // total = 2 + 3 = 5（使用 TextUtils.estimateTokens 字符级估算，修复旧算法 bug）
         var result = new ParseResult("hello 你好 world", List.of(), DocumentMetadata.empty(), List.of());
-        assertEquals(3, result.estimateTokenCount());
+        assertEquals(5, result.estimateTokenCount());
     }
 
     @Test

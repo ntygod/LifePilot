@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -295,7 +296,8 @@ class KnowledgeBaseManagerTest {
         var chunk = new DocumentChunk(
                 UUID.randomUUID().toString(), docId, kb.id(),
                 "content", null, 0, 0, 100, 10, "hash",
-                List.of(), 0, Map.of(), DocumentSourceType.FILE, null, null
+                List.of(), 0, Map.of(), DocumentSourceType.FILE, null, null,
+                Optional.empty(), 0
         );
         chunkRepository.saveAll(List.of(chunk));
 

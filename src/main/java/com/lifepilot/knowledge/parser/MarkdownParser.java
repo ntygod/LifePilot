@@ -1,5 +1,6 @@
 package com.lifepilot.knowledge.parser;
 
+import com.lifepilot.knowledge.util.TextUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,6 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,9 +35,9 @@ public non-sealed class MarkdownParser implements DocumentParser {
     private static final Pattern ATX_HEADING = Pattern.compile(
             "^(#{1,6})\\s+(.+)", Pattern.MULTILINE);
 
-    // 围栏代码块：```language ... ```
+    // 围栏代码块：```language ... ``` 或 ~~~language ... ~~~
     private static final Pattern FENCED_CODE_BLOCK = Pattern.compile(
-            "```(\\w*)\\n([\\s\\S]*?)```", Pattern.MULTILINE);
+            "(?:```|~~~)(\\w*)\\n([\\s\\S]*?)(?:```|~~~)", Pattern.MULTILINE);
 
     // GFM 表格：表头行 + 分隔行 + 数据行
     private static final Pattern GFM_TABLE = Pattern.compile(
@@ -54,30 +58,38 @@ public non-sealed class MarkdownParser implements DocumentParser {
         List<DocumentElement> elements = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
-        // 解析 YAML Front Matter
+        // 解析 YAML Front Matter 并从正文中剥离（避免元数据文本污染分块和 embedding）
         Map<String, String> frontMatter = parseFrontMatter(content);
+        Matcher fmMatcher = YAML_FRONT_MATTER.matcher(content);
+        int fmEndOffset = 0;
+        String textContent = content;
+        if (fmMatcher.find()) {
+            fmEndOffset = fmMatcher.end();
+            textContent = content.substring(fmEndOffset);
+        }
 
+        // 以下解析基于剥离 Front Matter 后的 textContent
         // 解析围栏代码块（先于标题，避免代码块内的 # 被误识别）
-        parseCodeBlocks(content, elements);
+        parseCodeBlocks(textContent, elements);
 
         // 解析 GFM 表格
-        parseTables(content, elements);
+        parseTables(textContent, elements);
 
         // 解析 ATX 标题（排除代码块内的标题）
-        parseHeadings(content, elements);
+        parseHeadings(textContent, elements);
 
         // 按 startOffset 升序排列
         elements.sort(Comparator.comparingInt(DocumentElement::startOffset));
 
         // 构建元数据
-        long wordCount = estimateWordCount(content);
+        long wordCount = TextUtils.estimateWordCount(textContent);
         DocumentMetadata metadata = buildMetadata(filePath, frontMatter, elements, wordCount);
 
         log.info("Markdown 解析完成: file={}, elements={}, wordCount={}",
                 filePath, elements.size(), wordCount);
 
         return new ParseResult(
-                content,
+                textContent,
                 List.copyOf(elements),
                 metadata,
                 List.copyOf(warnings)
@@ -288,35 +300,22 @@ public non-sealed class MarkdownParser implements DocumentParser {
 
     /**
      * 尝试将日期字符串解析为 Instant。
-     * 支持 ISO 8601 格式，解析失败返回 empty。
+     * 依次尝试 ISO Instant（2026-02-25T10:15:30Z）→ LocalDate（2026-02-25）→ LocalDateTime。
      */
     private Optional<Instant> parseInstant(String dateStr) {
+        // 1. ISO Instant 格式
         try {
             return Optional.of(Instant.parse(dateStr));
-        } catch (Exception e) {
-            log.debug("日期解析失败，忽略: value={}", dateStr);
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * 估算字数：中文按字符数，英文按空格分词。
-     */
-    private long estimateWordCount(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long chineseChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        String[] words = text.split("\\s+");
-        long totalWords = 0;
-        for (String word : words) {
-            if (!word.isEmpty()) {
-                totalWords++;
-            }
-        }
-        // 中文字符 + 英文单词（减去中文字符已计入的部分）
-        return chineseChars + Math.max(0, totalWords - chineseChars);
+        } catch (Exception ignored) {}
+        // 2. LocalDate 格式（Front Matter 最常见的日期格式）
+        try {
+            return Optional.of(LocalDate.parse(dateStr).atStartOfDay(ZoneOffset.UTC).toInstant());
+        } catch (Exception ignored) {}
+        // 3. LocalDateTime 格式
+        try {
+            return Optional.of(LocalDateTime.parse(dateStr).toInstant(ZoneOffset.UTC));
+        } catch (Exception ignored) {}
+        log.debug("日期解析失败，忽略: value={}", dateStr);
+        return Optional.empty();
     }
 }
