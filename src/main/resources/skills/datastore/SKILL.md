@@ -40,7 +40,18 @@ triggers:
 | NOTE | 笔记内容 | 会议记录、学习笔记、灵感记录 |
 | METRIC | 时序指标数据 | 运动记录、体重追踪、支出统计 |
 
-## 工具使用最佳实践
+## 检索决策
+
+拿到用户问题后，按以下顺序判断：
+
+1. **用户给出了明确字段值？**（如"状态为已读的""评分大于8分""分类是科幻"）
+   → `datastore` action=query，精确结构化查询
+2. **用户在做主题检索/资料问答？**（如"关于春季旅游的""架构是什么""帮我找和火系魔法相关的"）
+   → `knowledge.search`（传 datastoreId 可限定范围），语义检索会覆盖 Datastore 投影内容和上传文档
+3. **不确定？**
+   → 优先 `knowledge.search`，覆盖面更广；如果结果不够精确再补一次 `datastore` action=query
+4. **完整列表或统计？**（如"列出所有书""这个月的运动统计"）
+   → 列表用 `datastore` action=query，统计用 `datastore` action=aggregate
 
 ### 检索类型总览
 
@@ -56,6 +67,7 @@ triggers:
 - 可通过 `properties` 参数定义集合的属性结构（数组，每项包含 name/type/required 字段）
 - 可通过 `projectionConfig` 参数声明集合级向量投影规则；省略时系统会自动保存 `{}` 并使用默认通用投影
 - 使用 `datastore` 查看所有集合，支持按类型过滤
+- 使用 `datastore` action=update-collection 可修改集合的描述、元数据和投影配置
 - 使用 `datastore` 删除整个集合前，先确认目标名称无误；该操作会同时删除集合内全部文档
 
 ### 文档 CRUD

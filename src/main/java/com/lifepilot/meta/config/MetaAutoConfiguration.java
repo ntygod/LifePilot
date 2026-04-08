@@ -21,6 +21,9 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionToolProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
+import com.lifepilot.meta.convenience.ToolSearchToolProvider;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.meta.infra.memory.MemoryToolProvider;
 import com.lifepilot.meta.infra.storage.StorageToolProvider;
@@ -176,6 +179,21 @@ public class MetaAutoConfiguration {
     }
 
     /**
+     * 注册工具搜索元工具提供者 — 实现延迟工具加载。
+     *
+     * <p>通过语义向量搜索实现按需工具发现，减少每次 LLM 调用的工具定义 token 开销。
+     * EmbeddingRouter 为可选依赖，不可用时回退到子串匹配。</p>
+     */
+    @Bean
+    ToolSearchToolProvider toolSearchToolProvider(DynamicToolRegistry toolRegistry,
+                                                  MetaProperties properties,
+                                                  @Nullable EmbeddingRouter embeddingRouter,
+                                                  @Nullable SkillRegistry skillRegistry) {
+        return new ToolSearchToolProvider(toolRegistry, properties.getDeferredToolLoading(),
+                embeddingRouter, skillRegistry);
+    }
+
+    /**
      * 注册存储工具提供者 — 注册 8 个数据存储 CRUD 工具。
      *
      * <p>依赖 DataStoreManager（来自 datastore 模块）。</p>
@@ -228,6 +246,7 @@ public class MetaAutoConfiguration {
         if (ctx.containsBean("memoryToolProvider")) {
             ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
         }
+        ctx.getBean(ToolSearchToolProvider.class).registerTool(toolRegistry);
 
         log.info("元能力模块工具注册完成");
     }

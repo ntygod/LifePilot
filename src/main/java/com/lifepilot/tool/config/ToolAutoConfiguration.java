@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * 工具系统 Spring Boot 自动配置。
@@ -103,8 +104,11 @@ public class ToolAutoConfiguration {
         int maxToolOutputChars = metaProperties != null
                 ? metaProperties.getInfra().getMaxToolOutputChars()
                 : new MetaProperties().getInfra().getMaxToolOutputChars();
+        Set<String> alwaysLoadedToolIds = metaProperties != null
+                ? Set.copyOf(metaProperties.getDeferredToolLoading().getAlwaysLoadedToolIds())
+                : Set.of();
         return new ToolBridgeAgentToolProvider(
-                toolRegistry, pipeline, objectMapper, maxToolOutputChars);
+                toolRegistry, pipeline, objectMapper, maxToolOutputChars, alwaysLoadedToolIds);
     }
 
     /**

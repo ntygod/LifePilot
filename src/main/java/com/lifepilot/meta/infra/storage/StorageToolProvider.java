@@ -74,7 +74,7 @@ public class StorageToolProvider {
         var properties = new LinkedHashMap<String, Object>();
         properties.put("action", Map.of(
                 "type", "string",
-                "enum", List.of("create-collection", "list-collections", "delete-collection", "insert", "query", "update", "delete", "aggregate"),
+                "enum", List.of("create-collection", "list-collections", "update-collection", "delete-collection", "insert", "query", "update", "delete", "aggregate"),
                 "description", "数据存储操作类型"
         ));
         properties.put("name", Map.of("type", "string", "description", "action=create-collection 时的集合名称（唯一）"));

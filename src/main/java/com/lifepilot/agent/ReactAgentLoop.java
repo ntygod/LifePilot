@@ -72,6 +72,10 @@ public class ReactAgentLoop implements CallbackHelper {
     /** 停滞检测排除名单 — 这些工具的重复调用（不同参数）是合理的执行模式。 */
     private static final Set<String> STALL_DETECTION_EXCLUDED_TOOLS = Set.of("web.search");
 
+    /** 延迟工具发现触发源 — 这些工具的执行结果中可能包含待发现的工具 ID。 */
+    private static final String TOOL_SEARCH_ID = "meta.search_tools";
+    private static final String SKILL_LOAD_ID = "load_skill";
+
     // ===== 核心依赖 =====
     private final ContextAssembler contextAssembler;
     private final ProviderMessageBuilder providerMessageBuilder;
@@ -332,6 +336,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
+                int stepCountBeforeExec = state.stepCount();
                 state = toolExecutionCoordinator.executeBatch(
                         state,
                         toolCalls,
@@ -340,6 +345,14 @@ public class ReactAgentLoop implements CallbackHelper {
                         cancellationToken,
                         loopContext,
                         this::appendAndPublishStep);
+
+                // ★ 延迟工具发现检测 — 若本轮执行了 meta.search_tools，提取发现的工具 ID 并扩展可用集
+                var newlyDiscovered = extractDiscoveredToolIds(state, stepCountBeforeExec);
+                if (!newlyDiscovered.isEmpty()) {
+                    state = state.addDiscoveredToolIds(newlyDiscovered);
+                    cachedToolCallbacks = null;
+                    log.info("延迟工具发现: traceId={}, newTools={}", state.traceId(), newlyDiscovered);
+                }
 
                 // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
                 if (state.suspended()) {
@@ -579,6 +592,79 @@ public class ReactAgentLoop implements CallbackHelper {
         state = state.appendStep(step);
         pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
         return state;
+    }
+
+    // ===== 延迟工具发现 =====
+
+    /**
+     * 从本轮工具执行结果中提取延迟发现的工具 ID。
+     *
+     * <p>扫描 executeBatch 新增的 Observation 步骤，从两类来源提取工具 ID：
+     * <ul>
+     *   <li>{@code meta.search_tools} — 工具搜索结果中的 {@code tools[].tool_id}</li>
+     *   <li>{@code load_skill} — Skill 激活结果中的 {@code all_suggested_tools[]}</li>
+     * </ul>
+     * 确保 Skill 建议的工具在下次迭代中自动可用，避免 Skill 指令与工具可见性脱节。</p>
+     */
+    private List<String> extractDiscoveredToolIds(ReactAgentState state, int stepCountBefore) {
+        var steps = state.steps();
+        if (steps.size() <= stepCountBefore) {
+            return List.of();
+        }
+        var discovered = new ArrayList<String>();
+        for (int i = stepCountBefore; i < steps.size(); i++) {
+            if (steps.get(i) instanceof ReactStep.Observation obs && obs.success()) {
+                if (TOOL_SEARCH_ID.equals(obs.toolId())) {
+                    discovered.addAll(parseToolIdsFromJson(obs.output(), "tools", "tool_id"));
+                } else if (SKILL_LOAD_ID.equals(obs.toolId())) {
+                    discovered.addAll(parseStringArrayFromJson(obs.output(), "all_suggested_tools"));
+                }
+            }
+        }
+        return discovered;
+    }
+
+    /** 从 JSON 输出的对象数组中解析指定字段值（用于 meta.search_tools 的 tools[].tool_id）。 */
+    private List<String> parseToolIdsFromJson(String output, String arrayField, String idField) {
+        try {
+            var node = objectMapper.readTree(output);
+            var arrayNode = node.get(arrayField);
+            if (arrayNode == null || !arrayNode.isArray()) {
+                return List.of();
+            }
+            var ids = new ArrayList<String>();
+            for (var item : arrayNode) {
+                var idNode = item.get(idField);
+                if (idNode != null && idNode.isTextual()) {
+                    ids.add(idNode.textValue());
+                }
+            }
+            return ids;
+        } catch (Exception e) {
+            log.warn("解析工具发现结果失败: field={}, error={}", arrayField, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** 从 JSON 输出的字符串数组中解析值（用于 load_skill 的 all_suggested_tools）。 */
+    private List<String> parseStringArrayFromJson(String output, String arrayField) {
+        try {
+            var node = objectMapper.readTree(output);
+            var arrayNode = node.get(arrayField);
+            if (arrayNode == null || !arrayNode.isArray()) {
+                return List.of();
+            }
+            var ids = new ArrayList<String>();
+            for (var item : arrayNode) {
+                if (item.isTextual()) {
+                    ids.add(item.textValue());
+                }
+            }
+            return ids;
+        } catch (Exception e) {
+            log.warn("解析工具发现结果失败: field={}, error={}", arrayField, e.getMessage());
+            return List.of();
+        }
     }
 
     // ===== 执行回顾（Reflect）=====

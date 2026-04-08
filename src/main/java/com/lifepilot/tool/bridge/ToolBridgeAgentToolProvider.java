@@ -23,6 +23,7 @@ import org.springframework.lang.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +52,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
     private final int maxToolOutputChars;
+    private final Set<String> alwaysLoadedToolIds;
     private volatile Map<String, String> toolIdToModelName = Map.of();
     private volatile Map<String, String> modelNameToToolId = Map.of();
 
@@ -58,11 +60,13 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
-            int maxToolOutputChars) {
+            int maxToolOutputChars,
+            Set<String> alwaysLoadedToolIds) {
         this.toolRegistry = toolRegistry;
         this.pipeline = pipeline;
         this.objectMapper = objectMapper;
         this.maxToolOutputChars = maxToolOutputChars;
+        this.alwaysLoadedToolIds = Set.copyOf(alwaysLoadedToolIds);
     }
 
     @Override
@@ -130,6 +134,22 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else {
             log.debug("生成 ToolCallback: count={}", tools.size());
         }
+
+        // 延迟加载过滤：仅加载核心集 + 已发现工具 + infrastructure 标签工具
+        if (!alwaysLoadedToolIds.isEmpty()) {
+            Set<String> visibleIds = new HashSet<>(alwaysLoadedToolIds);
+            if (state.discoveredToolIds() != null) {
+                visibleIds.addAll(state.discoveredToolIds());
+            }
+            int beforeFilter = tools.size();
+            tools = tools.stream()
+                    .filter(t -> visibleIds.contains(t.id()) || t.tags().contains("infrastructure"))
+                    .toList();
+            log.debug("延迟工具加载过滤: total={}, visible={}, always={}, discovered={}",
+                    beforeFilter, tools.size(), alwaysLoadedToolIds.size(),
+                    state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0);
+        }
+
         refreshToolNameMappings(tools);
         return tools.stream()
                 .map(t -> toToolCallback(t, streamId, state))
