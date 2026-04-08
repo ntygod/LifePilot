@@ -64,7 +64,7 @@ web.fetch(url="目标URL", selector="article, .content, main")
 file.read(path="文件路径")
 
 # 2. 大文件分段读取
-file.read(path="文件路径", offset=0, maxChars=10000)
+file.read(path="文件路径", maxChars=10000)
 ```
 
 ### 多文档对比

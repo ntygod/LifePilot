@@ -42,7 +42,7 @@ triggers:
 
 ```
 # 列出目标目录
-file.list(path="目标目录", recursive=true)
+file.list(action="list", path="目标目录", maxDepth=5)
 
 # 分析文件类型分布
 # Windows
@@ -91,7 +91,7 @@ shell.exec(command="mkdir -p docs/2026 && mv file.pdf docs/2026/")
 ### 5. 验证结果
 
 ```
-file.list(path="目标目录", recursive=true)
+file.list(action="list", path="目标目录", maxDepth=5)
 ```
 
 ## 安全原则

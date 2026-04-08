@@ -45,7 +45,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ToolBridgeAgentToolProvider.class);
     private static final Set<String> IDEMPOTENCY_KEY_WHITELIST =
-            Set.of("web.search", "web.fetch", "reason.calculate");
+            Set.of("web.search", "web.fetch");
 
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;

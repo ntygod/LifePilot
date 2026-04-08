@@ -34,8 +34,8 @@ triggers:
 
 ### 1. 定位日志文件
 ```
-file.list(action="search", path="/var/log", pattern="*.log")
-file.list(action="search", path="~/.zhiwei/logs", pattern="*.log")
+file.list(action="list", path="/var/log", pattern="*.log", maxDepth=3)
+file.list(action="list", path="~/.zhiwei/logs", pattern="*.log")
 ```
 
 ### 2. 快速扫描错误
@@ -80,6 +80,6 @@ shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | 
 
 ## 注意事项
 
-- 大日志文件先用 `file.read` 读取末尾部分，避免全量读取
+- 大日志文件用 `file.read` 的 `startLine`/`endLine` 读取指定范围，或用 `maxChars` 限制返回大小
 - 敏感信息（IP、用户名、密码）在输出时脱敏
 - 二进制日志文件跳过，只处理文本日志
