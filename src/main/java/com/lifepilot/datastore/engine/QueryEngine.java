@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.lifepilot.datastore.config.DataStoreProperties;
+import com.lifepilot.datastore.model.FieldNames;
 import com.lifepilot.datastore.model.QueryFilter;
 import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.model.SqlWithParams;
@@ -20,8 +21,6 @@ import com.lifepilot.datastore.model.SqlWithParams;
  * @since 2026-03-10
  */
 public class QueryEngine {
-
-    private static final String TIME_FIELD_EXPR = "COALESCE(recorded_at, created_at)";
 
     private final DataStoreProperties properties;
 
@@ -40,20 +39,34 @@ public class QueryEngine {
     public SqlWithParams buildQuery(QueryRequest request,
                                     Set<String> indexedFields,
                                     String collectionIdPrefix) {
-        var sql = new StringBuilder("SELECT * FROM ds_documents WHERE collection_id = ?");
+        var sql = new StringBuilder(
+                "SELECT id, collection_id, data_json, recorded_at, source_type, knowledge_document_id, created_at, updated_at" +
+                " FROM ds_documents WHERE collection_id = ?");
         var params = new ArrayList<>();
         params.add(request.collectionId());
 
         // 过滤条件
         if (request.filters() != null) {
             for (QueryFilter filter : request.filters()) {
+                FieldNames.validate(filter.field());
                 String fieldExpr = resolveFieldExpression(filter.field(), indexedFields, collectionIdPrefix);
                 appendFilter(sql, params, fieldExpr, filter);
             }
         }
 
+        // 时间范围过滤
+        if (request.startTime() != null) {
+            sql.append(" AND COALESCE(recorded_at, created_at) >= ?");
+            params.add(request.startTime());
+        }
+        if (request.endTime() != null) {
+            sql.append(" AND COALESCE(recorded_at, created_at) < ?");
+            params.add(request.endTime());
+        }
+
         // 排序
         if (request.sortField() != null) {
+            FieldNames.validate(request.sortField());
             String sortExpr = resolveFieldExpression(request.sortField(), indexedFields, collectionIdPrefix);
             var direction = request.sortDirection();
             sql.append(" ORDER BY ").append(sortExpr)
@@ -82,7 +95,7 @@ public class QueryEngine {
     /**
      * 解析字段表达式 — 索引字段使用索引列名，非索引字段使用 json_extract。
      *
-     * @param field              字段名称
+     * @param field              字段名称（已通过 {@link FieldNames#validate} 校验）
      * @param indexedFields      已索引字段集合
      * @param collectionIdPrefix 集合 ID 前缀
      * @return SQL 字段表达式

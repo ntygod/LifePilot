@@ -250,9 +250,9 @@ class ContextAssemblerSkillCatalogTest {
 
         assertThat(result)
                 .contains("<active_knowledge_bindings>")
-                .contains("小红书集合 (ds-xhs)")
+                .contains("小红书集合 [DOCUMENT] (ds-xhs)")
                 .contains("小红书资料库 (kb-xhs)")
-                .doesNotContain("knowledge.search");
+                .contains("knowledge.search");
     }
 
     @Test

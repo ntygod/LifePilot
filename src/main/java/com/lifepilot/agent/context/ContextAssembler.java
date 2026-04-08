@@ -440,8 +440,47 @@ public class ContextAssembler {
             return datastoreId;
         }
         return collectionRepository.findById(datastoreId)
-                .map(collection -> "%s (%s)".formatted(collection.name(), collection.id()))
+                .map(this::buildDatastoreBindingSummary)
                 .orElse(datastoreId);
+    }
+
+    /**
+     * 构建 Datastore 绑定摘要 — 包含集合类型、描述和字段定义，
+     * 让 Agent 能精准判断该用结构化查询还是语义检索。
+     */
+    private String buildDatastoreBindingSummary(com.lifepilot.datastore.model.Collection collection) {
+        var sb = new StringBuilder();
+        sb.append("%s [%s] (%s)".formatted(collection.name(), collection.type().name(), collection.id()));
+        if (collection.description() != null && !collection.description().isBlank()) {
+            sb.append(" — ").append(collection.description());
+        }
+
+        // 解析并追加字段定义，让 Agent 知道可以按哪些字段做结构化查询
+        if (collection.propertiesJson() != null && !collection.propertiesJson().isBlank()
+                && !"[]".equals(collection.propertiesJson().strip())) {
+            try {
+                var props = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                        collection.propertiesJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<
+                                java.util.List<com.lifepilot.datastore.model.PropertyDefinition>>() {});
+                if (!props.isEmpty()) {
+                    String fieldList = props.stream()
+                            .map(p -> "%s(%s%s)".formatted(
+                                    p.name(), p.type().name(),
+                                    p.required() ? ",必填" : ""))
+                            .collect(java.util.stream.Collectors.joining(", "));
+                    sb.append("\n    字段: ").append(fieldList);
+                }
+            } catch (Exception ignored) {
+                // 属性定义解析失败时静默跳过，不影响绑定展示
+            }
+        }
+
+        // 追加检索提示
+        sb.append("\n    检索: 精确字段查询用 datastore(action=query)，主题/语义检索用 knowledge.search(datastoreId=%s)"
+                .formatted(collection.id()));
+
+        return sb.toString();
     }
 
 

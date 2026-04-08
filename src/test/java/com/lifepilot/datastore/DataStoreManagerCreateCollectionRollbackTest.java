@@ -50,6 +50,8 @@ class DataStoreManagerCreateCollectionRollbackTest {
                     collection_id TEXT NOT NULL,
                     data_json TEXT NOT NULL DEFAULT '{}',
                     recorded_at TEXT,
+                    source_type TEXT NOT NULL DEFAULT 'DATA',
+                    knowledge_document_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -75,6 +77,7 @@ class DataStoreManagerCreateCollectionRollbackTest {
                 new AggregationEngine(),
                 new PropertyValidator(),
                 properties,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
                 null,
                 new DatastoreKnowledgeBaseProvisioner() {
                     @Override

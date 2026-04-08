@@ -196,6 +196,12 @@ public class DatastoreController {
                         Path tempFile = Files.createTempFile("lifepilot-datastore-upload-", suffix);
                         file.transferTo(Objects.requireNonNull(tempFile.toFile()));
                         ingester.ingest(defaultKnowledgeBaseId, tempFile, originalName, collection.id());
+
+                        // 在 Datastore 中创建文件引用元数据记录（knowledgeDocumentId 待异步回填）
+                        String mimeType = file.getContentType() != null ? file.getContentType() : "";
+                        dataStoreManager.addFileReference(
+                                collection.id(), originalName, file.getSize(), mimeType, null);
+
                         log.info("Datastore 文档上传已提交: datastoreId={}, knowledgeBaseId={}, fileName={}",
                                 collection.id(), defaultKnowledgeBaseId, originalName);
                         return ResponseEntity.accepted().body(java.util.Map.of(

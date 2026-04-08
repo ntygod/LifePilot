@@ -38,6 +38,8 @@ public record Collection(
         String updatedAt
 ) {
 
+    private static final String DEFAULT_PROJECTION_CONFIG_JSON = "{}";
+
     public Collection(
             String id,
             String name,
@@ -52,5 +54,15 @@ public record Collection(
     ) {
         this(id, name, description, type, propertiesJson, projectionConfigJson, metadataJson,
                 null, createdBy, createdAt, updatedAt);
+    }
+
+    /**
+     * 归一化投影配置 JSON — null 转为空对象 JSON。
+     *
+     * @param projectionConfigJson 原始投影配置
+     * @return 非 null 的投影配置 JSON
+     */
+    public static String normalizeProjectionConfig(@Nullable String projectionConfigJson) {
+        return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
     }
 }

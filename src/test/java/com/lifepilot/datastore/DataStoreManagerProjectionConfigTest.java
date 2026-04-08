@@ -61,7 +61,9 @@ class DataStoreManagerProjectionConfigTest {
                 new AggregationEngine(),
                 new PropertyValidator(),
                 properties,
-                knowledgeSyncPublisher
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                knowledgeSyncPublisher,
+                null
         );
     }
 

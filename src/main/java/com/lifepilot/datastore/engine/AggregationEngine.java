@@ -3,6 +3,7 @@ package com.lifepilot.datastore.engine;
 import java.util.ArrayList;
 import java.util.Set;
 
+import com.lifepilot.datastore.model.FieldNames;
 import com.lifepilot.datastore.model.AggregationRequest;
 import com.lifepilot.datastore.model.SqlWithParams;
 
@@ -33,6 +34,7 @@ public class AggregationEngine {
                                           Set<String> indexedFields,
                                           String collectionIdPrefix) {
         var params = new ArrayList<>();
+        FieldNames.validate(request.field());
         String fieldExpr = resolveFieldExpression(request.field(), indexedFields, collectionIdPrefix);
         String funcExpr = request.func().name() + "(" + fieldExpr + ")";
         var groupBy = request.groupBy();

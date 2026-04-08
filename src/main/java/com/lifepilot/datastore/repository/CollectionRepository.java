@@ -2,6 +2,7 @@ package com.lifepilot.datastore.repository;
 
 import com.lifepilot.datastore.model.Collection;
 import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.FieldNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,7 +28,10 @@ import java.util.UUID;
 public class CollectionRepository {
 
     private static final Logger log = LoggerFactory.getLogger(CollectionRepository.class);
-    private static final String DEFAULT_PROJECTION_CONFIG_JSON = "{}";
+    /** ds_collections 表的核心列列表，用于所有 SELECT 查询。 */
+    private static final String COLUMNS =
+            "id, name, description, type, properties_json, projection_config_json, " +
+            "metadata_json, default_knowledge_base_id, created_by, created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
     private final RowMapper<Collection> rowMapper;
@@ -57,7 +61,7 @@ public class CollectionRepository {
                 """,
                 id, collection.name(), collection.description(),
                 collection.type().name(), collection.propertiesJson(),
-                normalizeProjectionConfigJson(collection.projectionConfigJson()), collection.metadataJson(),
+                Collection.normalizeProjectionConfig(collection.projectionConfigJson()), collection.metadataJson(),
                 collection.defaultKnowledgeBaseId(), collection.createdBy(), now, now);
 
         log.info("集合创建成功: id={}, name={}", id, collection.name());
@@ -72,7 +76,7 @@ public class CollectionRepository {
      */
     public Optional<Collection> findById(String id) {
         List<Collection> results = jdbcTemplate.query(
-                "SELECT * FROM ds_collections WHERE id = ?", rowMapper, id);
+                "SELECT " + COLUMNS + " FROM ds_collections WHERE id = ?", rowMapper, id);
         return results.stream().findFirst();
     }
 
@@ -84,7 +88,7 @@ public class CollectionRepository {
      */
     public Optional<Collection> findByName(String name) {
         List<Collection> results = jdbcTemplate.query(
-                "SELECT * FROM ds_collections WHERE name = ?", rowMapper, name);
+                "SELECT " + COLUMNS + " FROM ds_collections WHERE name = ?", rowMapper, name);
         return results.stream().findFirst();
     }
 
@@ -96,7 +100,7 @@ public class CollectionRepository {
      */
     public List<Collection> findByType(CollectionType type) {
         return jdbcTemplate.query(
-                "SELECT * FROM ds_collections WHERE type = ? ORDER BY created_at DESC",
+                "SELECT " + COLUMNS + " FROM ds_collections WHERE type = ? ORDER BY created_at DESC",
                 rowMapper, type.name());
     }
 
@@ -107,7 +111,7 @@ public class CollectionRepository {
      */
     public List<Collection> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM ds_collections ORDER BY created_at DESC", rowMapper);
+                "SELECT " + COLUMNS + " FROM ds_collections ORDER BY created_at DESC", rowMapper);
     }
 
     /**
@@ -129,7 +133,7 @@ public class CollectionRepository {
                 SET description = ?, projection_config_json = ?, metadata_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                description, normalizeProjectionConfigJson(projectionConfigJson), metadataJson, now, id);
+                description, Collection.normalizeProjectionConfig(projectionConfigJson), metadataJson, now, id);
 
         if (rows > 0) {
             log.info("集合更新成功: id={}", id);
@@ -200,7 +204,8 @@ public class CollectionRepository {
      * @param collectionId    集合 ID
      */
     public void addGeneratedColumn(String propertyName, String sqliteAffinity, String collectionId) {
-        String prefix = collectionId.substring(0, 8);
+        FieldNames.validate(propertyName);
+        String prefix = safePrefix(collectionId);
         String columnName = "_idx_%s_%s".formatted(prefix, propertyName);
         String indexName = "idx_ds_doc_%s_%s".formatted(prefix, propertyName);
 
@@ -227,7 +232,7 @@ public class CollectionRepository {
      * @param propertyNames 属性名称列表
      */
     public void dropGeneratedColumns(String collectionId, List<String> propertyNames) {
-        String prefix = collectionId.substring(0, 8);
+        String prefix = safePrefix(collectionId);
         for (String propertyName : propertyNames) {
             String indexName = "idx_ds_doc_%s_%s".formatted(prefix, propertyName);
             String dropSql = "DROP INDEX IF EXISTS %s".formatted(indexName);
@@ -246,7 +251,7 @@ public class CollectionRepository {
                 rs.getString("description"),
                 CollectionType.valueOf(rs.getString("type")),
                 rs.getString("properties_json"),
-                normalizeProjectionConfigJson(rs.getString("projection_config_json")),
+                Collection.normalizeProjectionConfig(rs.getString("projection_config_json")),
                 rs.getString("metadata_json"),
                 rs.getString("default_knowledge_base_id"),
                 rs.getString("created_by"),
@@ -255,7 +260,8 @@ public class CollectionRepository {
         );
     }
 
-    private String normalizeProjectionConfigJson(@Nullable String projectionConfigJson) {
-        return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
+    /** 安全截取集合 ID 前缀，防御性长度检查。 */
+    private String safePrefix(String collectionId) {
+        return collectionId.length() >= 8 ? collectionId.substring(0, 8) : collectionId;
     }
 }

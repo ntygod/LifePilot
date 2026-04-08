@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.storage;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
@@ -26,9 +27,11 @@ import java.util.Map;
 public class StorageToolProvider {
 
     private final DataStoreManager dataStoreManager;
+    private final ObjectMapper objectMapper;
 
-    public StorageToolProvider(DataStoreManager dataStoreManager) {
+    public StorageToolProvider(DataStoreManager dataStoreManager, ObjectMapper objectMapper) {
         this.dataStoreManager = dataStoreManager;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -37,7 +40,7 @@ public class StorageToolProvider {
      * @return 数据存储工具列表
      */
     public List<BuiltinTool> buildStorageTools() {
-        var executor = new DatastoreActionDispatchExecutor(dataStoreManager);
+        var executor = new DatastoreActionDispatchExecutor(dataStoreManager, objectMapper);
         return List.of(buildDatastoreTool(executor));
     }
 

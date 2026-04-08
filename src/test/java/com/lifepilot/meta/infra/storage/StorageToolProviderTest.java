@@ -33,7 +33,7 @@ class StorageToolProviderTest {
     void createCollection工具应接受结构化属性并返回默认知识库ID() {
         DataStoreManager dataStoreManager = mock(DataStoreManager.class);
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        StorageToolProvider provider = new StorageToolProvider(dataStoreManager);
+        StorageToolProvider provider = new StorageToolProvider(dataStoreManager, new com.fasterxml.jackson.databind.ObjectMapper());
 
         provider.buildStorageTools().forEach(registry::registerBuiltinTool);
 
@@ -100,7 +100,7 @@ class StorageToolProviderTest {
     void deleteCollection工具应按集合名称删除集合() {
         DataStoreManager dataStoreManager = mock(DataStoreManager.class);
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        StorageToolProvider provider = new StorageToolProvider(dataStoreManager);
+        StorageToolProvider provider = new StorageToolProvider(dataStoreManager, new com.fasterxml.jackson.databind.ObjectMapper());
 
         provider.buildStorageTools().forEach(registry::registerBuiltinTool);
 
