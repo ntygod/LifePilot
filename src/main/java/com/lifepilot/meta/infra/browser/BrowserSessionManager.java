@@ -187,9 +187,7 @@ public class BrowserSessionManager {
      * @param modeOverride 模式覆盖参数
      */
     public void registerSessionMode(String sessionId, SessionModeOverride modeOverride) {
-        if (!sessions.containsKey(sessionId)) {
-            sessionModeOverrides.putIfAbsent(sessionId, modeOverride);
-        }
+        sessionModeOverrides.putIfAbsent(sessionId, modeOverride);
     }
 
     /**
@@ -305,11 +303,9 @@ public class BrowserSessionManager {
     /**
      * 清理所有资源 — 关闭所有 Page、Browser 和 Playwright 实例。
      */
-    public void close() {
+    public synchronized void close() {
         // 关闭所有 Page
-        sessions.forEach((id, sp) -> {
-            closeSessionPages(id, sp);
-        });
+        sessions.forEach(this::closeSessionPages);
         sessions.clear();
 
         // PERSISTENT 模式：关闭持久上下文（包含浏览器进程）
@@ -368,26 +364,23 @@ public class BrowserSessionManager {
     }
 
     /**
-     * 确保浏览器环境已初始化（按获取模式分派）。
+     * 确保浏览器环境已初始化。
      *
-     * <p>LAUNCH 模式返回 Browser 实例；CDP 模式返回 CDP 连接的 Browser 实例；
-     * PERSISTENT 模式无 Browser 对象，返回 null。
-     * 三种模式均保证 {@link #sharedBrowserContext} 或 browserInstance 在调用后可用。</p>
+     * <p>LAUNCH 模式：启动新 Chromium 并返回 Browser 实例。
+     * CDP/PERSISTENT 模式：由 ForSession 变体提前初始化，此处仅作守卫确认。</p>
      *
-     * @return Browser 实例（PERSISTENT 模式下为 null）
+     * @return Browser 实例（CDP/PERSISTENT 模式下为 null）
      */
     private synchronized Object ensureBrowser() {
         return switch (acquisitionMode) {
             case LAUNCH -> ensureLaunchBrowser();
-            case CDP -> ensureCdpBrowser();
-            case PERSISTENT -> {
-                ensurePersistentContext();
-                yield null;
-            }
+            // CDP/PERSISTENT 由 ensureCdpBrowserForSession / ensurePersistentContextForSession 初始化，
+            // createSharedContextSessionPages 调用此方法时实例已就绪
+            case CDP, PERSISTENT -> browserInstance;
         };
     }
 
-    /** LAUNCH 模式 — 启动新 Chromium 实例（原有逻辑）。 */
+    /** LAUNCH 模式 — 启动新 Chromium 实例。 */
     private Object ensureLaunchBrowser() {
         if (browserInstance == null) {
             playwrightInstance = browserRuntime.createPlaywright();
@@ -406,65 +399,6 @@ public class BrowserSessionManager {
             log.info("Playwright Browser 懒初始化完成: mode=LAUNCH, headless={}", browserConfig.isHeadless());
         }
         return browserInstance;
-    }
-
-    /** CDP 模式 — 连接到用户已运行的 Chrome，获取其默认上下文。 */
-    private Object ensureCdpBrowser() {
-        if (browserInstance == null) {
-            String cdpUrl = browserConfig.getCdpUrl();
-            if (cdpUrl == null || cdpUrl.isBlank()) {
-                throw new IllegalStateException("CDP 模式需要配置 cdp-url（如 http://localhost:9222）");
-            }
-            playwrightInstance = browserRuntime.createPlaywright();
-            try {
-                browserInstance = browserRuntime.connectOverCDP(playwrightInstance, cdpUrl);
-            } catch (Exception e) {
-                browserRuntime.closePlaywright(playwrightInstance);
-                playwrightInstance = null;
-                throw new IllegalStateException("CDP 连接失败: " + cdpUrl + " — " + e.getMessage(), e);
-            }
-            var contexts = browserRuntime.getContexts(browserInstance);
-            if (!contexts.isEmpty()) {
-                sharedBrowserContext = contexts.getFirst();
-            } else {
-                // 远程浏览器没有上下文（极端情况），创建一个新的
-                sharedBrowserContext = browserRuntime.createContext(browserInstance,
-                        browserConfig.getUserAgent(), browserConfig.getViewportWidth(),
-                        browserConfig.getViewportHeight(), browserConfig.getLocale(),
-                        browserConfig.getTimezoneId(), null);
-            }
-            log.info("已通过 CDP 连接到浏览器: cdpUrl={}", cdpUrl);
-        }
-        return browserInstance;
-    }
-
-    /** PERSISTENT 模式 — 使用 userDataDir 启动持久化 BrowserContext。 */
-    private void ensurePersistentContext() {
-        if (sharedBrowserContext == null) {
-            String dir = browserConfig.getUserDataDir();
-            if (dir == null || dir.isBlank()) {
-                throw new IllegalStateException("PERSISTENT 模式需要配置 user-data-dir");
-            }
-            playwrightInstance = browserRuntime.createPlaywright();
-            try {
-                sharedBrowserContext = browserRuntime.launchPersistentContext(
-                        playwrightInstance, Path.of(dir), browserConfig.isHeadless(),
-                        browserConfig.getExtraLaunchArgs(), browserConfig.getUserAgent(),
-                        browserConfig.getViewportWidth(), browserConfig.getViewportHeight(),
-                        browserConfig.getLocale(), browserConfig.getTimezoneId());
-            } catch (Exception e) {
-                browserRuntime.closePlaywright(playwrightInstance);
-                playwrightInstance = null;
-                String msg = e.getMessage();
-                if (msg != null && (msg.contains("install") || msg.contains("executable doesn't exist"))) {
-                    throw new BrowserNotInstalledException(
-                            "Playwright 浏览器二进制未安装，请运行安装命令", e);
-                }
-                throw e;
-            }
-            log.info("持久化浏览器上下文已创建: mode=PERSISTENT, userDataDir={}, headless={}",
-                    dir, browserConfig.isHeadless());
-        }
     }
 
     private SessionPages ensureSessionPages(String sessionId, @Nullable SessionPages existing) {

@@ -17,6 +17,9 @@ public enum ToolResultStatus {
     /** 执行失败。 */
     ERROR,
 
+    /** 瞬态失败 — 可识别的临时故障（如网络超时、服务暂不可用），Agent 循环可自动重试。 */
+    TRANSIENT_ERROR,
+
     /** 部分成功 — data 包含已成功部分，error 包含失败描述。 */
     PARTIAL_SUCCESS,
 
@@ -37,10 +40,20 @@ public enum ToolResultStatus {
      * 是否为终态（不可重试）。
      *
      * <p>{@code SUCCESS} 和 {@code ERROR} 为终态；
-     * {@code PARTIAL_SUCCESS}、{@code RATE_LIMITED} 和 {@code SUSPENDED} 为非终态。</p>
+     * {@code TRANSIENT_ERROR}、{@code PARTIAL_SUCCESS}、{@code RATE_LIMITED}
+     * 和 {@code SUSPENDED} 为非终态。</p>
      */
     public boolean isTerminal() {
         return this == SUCCESS || this == ERROR;
+    }
+
+    /**
+     * 是否可由 Agent 循环自动重试（不经过 LLM）。
+     *
+     * <p>{@code TRANSIENT_ERROR} 和 {@code RATE_LIMITED} 为可自动重试状态。</p>
+     */
+    public boolean isRetryable() {
+        return this == TRANSIENT_ERROR || this == RATE_LIMITED;
     }
 
     /**

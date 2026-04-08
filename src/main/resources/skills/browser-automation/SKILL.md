@@ -65,14 +65,32 @@ browser(action="screenshot", sessionId="my-task")
 
 ```
 browser(action="click", selector="#search-btn", sessionId="my-task")
-browser(action="type", selector="#search-input", text="搜索内容", sessionId="my-task")
+browser(action="input", selector="#search-input", value="搜索内容", sessionId="my-task")
 browser(action="scroll", direction="down", pixels=500, sessionId="my-task")
+browser(action="hover", selector=".menu-item", sessionId="my-task")
+browser(action="select", selector="#country", value="CN", sessionId="my-task")
+browser(action="keyboard", key="Enter", type="key", sessionId="my-task")
+```
+
+### 等待元素
+
+```
+browser(action="wait", selector=".result-list", state="visible", timeout=10, sessionId="my-task")
+```
+
+### 标签页管理
+
+```
+browser(action="tab", tabAction="open", url="https://other.com", sessionId="my-task")
+browser(action="tab", tabAction="list", sessionId="my-task")
+browser(action="tab", tabAction="switch", tabId="tab-id", sessionId="my-task")
+browser(action="tab", tabAction="close", tabId="tab-id", sessionId="my-task")
 ```
 
 ### 提取结构化数据
 
 ```
-browser(action="evaluate", script="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))", sessionId="my-task")
+browser(action="evaluate", expression="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))", sessionId="my-task")
 ```
 
 ### 关闭会话
@@ -128,6 +146,25 @@ browser(action="close", sessionId="my-task")
 - **CDP / PERSISTENT 模式下所有会话共享 cookie**：这是设计意图，方便复用登录态
 - **任务完成后关闭会话**：`browser(action="close", sessionId="...")`
 - **不要创建过多并行会话**：浏览器资源有限
+
+## 完整 action 列表
+
+| action | 说明 | 关键参数 |
+|--------|------|---------|
+| `navigate` | 导航到 URL，返回文本快照 | `url` |
+| `click` | 点击元素 | `selector` |
+| `input` | 输入文本到表单元素 | `selector`, `value` |
+| `scroll` | 滚动页面 | `direction`(up/down), `pixels`, 可选 `selector` |
+| `wait` | 等待元素状态变化 | `selector`, `state`(visible/hidden/attached), `timeout` |
+| `hover` | 鼠标悬停 | `selector` |
+| `select` | 选择下拉列表项 | `selector`, `value` 或 `label` |
+| `keyboard` | 键盘操作 | `type`(key/text), `key` 或 `text` |
+| `screenshot` | 截图，返回 Base64 图片 | `fullPage`(可选) |
+| `evaluate` | 执行 JavaScript | `expression` |
+| `accessibility` | 获取无障碍树 | `rootSelector`(可选), `maxDepth`(可选) |
+| `tab` | 标签页管理 | `tabAction`(open/switch/close/list), `tabId`, `url` |
+| `storage` | Cookie/localStorage 操作 | `target`(cookie/localStorage), `storageAction`(get/set/clear), `name` |
+| `close` | 关闭浏览器会话 | `sessionId` |
 
 ## 元素定位策略
 

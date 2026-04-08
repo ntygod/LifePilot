@@ -109,14 +109,18 @@ public class WebSearchConfigProvider {
     @SuppressWarnings("unchecked")
     private <T> T getVal(Map<String, Object> config, String key, Class<T> type, T defaultValue) {
         Object value = config.get(key);
-        if (value == null) {
-            return defaultValue;
-        }
-        if (type == Integer.class && value instanceof Number number) {
-            return (T) Integer.valueOf(number.intValue());
-        }
-        if (type == Boolean.class && value instanceof String s) {
-            return (T) Boolean.valueOf(Boolean.parseBoolean(s));
+        switch (value) {
+            case null -> {
+                return defaultValue;
+            }
+            case Number number when type == Integer.class -> {
+                return (T) Integer.valueOf(number.intValue());
+            }
+            case String s when type == Boolean.class -> {
+                return (T) Boolean.valueOf(Boolean.parseBoolean(s));
+            }
+            default -> {
+            }
         }
         if (type.isInstance(value)) {
             return type.cast(value);

@@ -52,17 +52,6 @@ final class PlaywrightBridge {
     );
 
     /**
-     * 启动 Chromium 浏览器，包含反检测启动参数（兼容入口）。
-     *
-     * @param playwrightObj Playwright 实例
-     * @param headless 是否无头模式
-     * @return Browser 实例
-     */
-    static Object launchBrowser(Object playwrightObj, boolean headless) {
-        return launchBrowser(playwrightObj, headless, null);
-    }
-
-    /**
      * 启动 Chromium 浏览器，包含反检测启动参数和额外自定义参数。
      *
      * @param playwrightObj Playwright 实例
@@ -76,17 +65,6 @@ final class PlaywrightBridge {
         if (extraArgs != null) args.addAll(extraArgs);
         return playwright.chromium().launch(
                 new BrowserType.LaunchOptions().setHeadless(headless).setArgs(args));
-    }
-
-    /**
-     * 创建新 BrowserContext（兼容入口）。
-     *
-     * @param browserObj Browser 实例
-     * @return BrowserContext 实例
-     */
-    static Object createContext(Object browserObj) {
-        Browser browser = (Browser) browserObj;
-        return browser.newContext();
     }
 
     /**
@@ -117,15 +95,6 @@ final class PlaywrightBridge {
             options.setStorageStatePath(storageStatePath);
         }
         return browser.newContext(options);
-    }
-
-    /**
-     * 向 BrowserContext 注入反检测指纹脚本（兼容入口）。
-     *
-     * @param browserContextObj BrowserContext 实例
-     */
-    static void injectStealthScripts(Object browserContextObj) {
-        injectStealthScripts(browserContextObj, "zh-CN");
     }
 
     /**

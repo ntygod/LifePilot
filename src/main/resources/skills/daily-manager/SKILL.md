@@ -5,7 +5,7 @@ description: "多 Skill 协调、任务分解、日程提醒、信息汇总"
 version: "1.0.1"
 suggested-tools:
   - memory
-  - interact
+  - notify
   - web.search
   - file.read
   - file.write
@@ -49,9 +49,7 @@ memory(action=search, query="今日待办")
 
 2. 与用户确认任务列表
 
-```
-interact(action="input", question="今天需要完成哪些任务？")
-```
+直接在回复中向用户询问："今天需要完成哪些任务？"
 
 3. 任务分解和排序
 

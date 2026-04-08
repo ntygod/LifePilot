@@ -73,7 +73,7 @@ public class WebSearchToolExecutor {
             return ToolResult.error("参数错误: " + e.getMessage());
         } catch (Exception e) {
             log.error("Web 搜索失败: {}", e.getMessage(), e);
-            return ToolResult.error("Web 搜索失败: " + e.getMessage());
+            return ToolResult.transientError("Web 搜索失败: " + e.getMessage());
         }
     }
 
@@ -84,7 +84,7 @@ public class WebSearchToolExecutor {
                                     int offset,
                                     int limit) {
         if (config.apiKey() == null || config.apiKey().isBlank()) {
-            return ToolResult.error("Tavily 搜索需要配置 API Key，请在设置页“知识与检索”中填写");
+            return ToolResult.error("Web 搜索未配置 API Key, 改用 web.fetch 直接抓取目标页面");
         }
 
         Map<String, Object> requestBody = new LinkedHashMap<>();
@@ -105,7 +105,7 @@ public class WebSearchToolExecutor {
                 .body(Map.class);
 
         if (response == null) {
-            return ToolResult.error("Tavily API 返回空响应");
+            return ToolResult.transientError("Tavily API 返回空响应");
         }
 
         List<Map<String, Object>> normalizedResults = new ArrayList<>();

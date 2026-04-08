@@ -76,7 +76,6 @@ class ChatController_A2uiContract_测试 {
                 knowledgeBaseProperties,
                 null,
                 null,
-                null,
                 mediaProperties
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();

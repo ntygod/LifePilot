@@ -9,16 +9,7 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
-import com.lifepilot.interaction.web.model.AttachmentInfo;
-import com.lifepilot.interaction.web.model.ChatSession;
-import com.lifepilot.interaction.web.model.ChatTurnRecord;
-import com.lifepilot.interaction.web.model.ChatTurnStatus;
-import com.lifepilot.interaction.web.model.MessageInfo;
-import com.lifepilot.interaction.web.model.SessionCompactionStatusInfo;
-import com.lifepilot.interaction.web.model.SessionConfigKeys;
-import com.lifepilot.interaction.web.model.SessionConfigRequest;
-import com.lifepilot.interaction.web.model.SessionDetailInfo;
-import com.lifepilot.interaction.web.model.SessionInfo;
+import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
@@ -29,14 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 public class ChatSessionService {
@@ -88,7 +72,7 @@ public class ChatSessionService {
     public ChatSession createSession(String title) {
         ChatSession session = ChatSession.create(title);
         sessionRepository.save(session);
-        log.info("\u521b\u5efa\u4f1a\u8bdd: id={}, title={}", session.id(), session.title());
+        log.info("创建会话: id={}, title={}", session.id(), session.title());
         return session;
     }
 
@@ -114,7 +98,7 @@ public class ChatSessionService {
     public ChatSession updateTitle(String id, String title) {
         ChatSession session = requireWebSession(id);
         sessionRepository.updateTitle(id, title);
-        log.info("\u66f4\u65b0\u4f1a\u8bdd\u6807\u9898: id={}, title={}", id, title);
+        log.info("更新会话标题: id={}, title={}", id, title);
         return sessionRepository.findById(id).orElse(session);
     }
 
@@ -122,7 +106,7 @@ public class ChatSessionService {
     public ChatSession updatePinned(String id, boolean isPinned) {
         ChatSession session = requireWebSession(id);
         sessionRepository.updatePinned(id, isPinned);
-        log.info("\u66f4\u65b0\u4f1a\u8bdd\u7f6e\u9876\u72b6\u6001: id={}, pinned={}", id, isPinned);
+        log.info("更新会话置顶状态: id={}, pinned={}", id, isPinned);
         return sessionRepository.findById(id).orElse(session);
     }
 
@@ -131,15 +115,15 @@ public class ChatSessionService {
         ChatSession session = requireWebSession(id);
 
         if (title == null && pinned == null && archived == null) {
-            log.debug("\u8df3\u8fc7\u7a7a\u4f1a\u8bdd\u66f4\u65b0: id={}", id);
+            log.debug("跳过空会话更新: id={}", id);
             return toSessionInfo(session);
         }
 
         sessionRepository.updateFields(id, title, pinned, archived);
-        log.info("\u66f4\u65b0\u4f1a\u8bdd: id={}, title={}, pinned={}, archived={}", id, title, pinned, archived);
+        log.info("更新会话: id={}, title={}, pinned={}, archived={}", id, title, pinned, archived);
 
         ChatSession updatedSession = sessionRepository.findById(id)
-                .orElseThrow(() -> new IllegalStateException("\u4f1a\u8bdd\u66f4\u65b0\u540e\u6d88\u5931: id=" + id));
+                .orElseThrow(() -> new IllegalStateException("会话更新后消失: id=" + id));
         return toSessionInfo(updatedSession);
     }
 
@@ -147,7 +131,7 @@ public class ChatSessionService {
     public void deleteSession(String id) {
         requireWebSession(id);
         sessionRepository.deleteById(id);
-        log.info("\u5220\u9664\u4f1a\u8bdd: id={}", id);
+        log.info("删除会话: id={}", id);
     }
 
     @Transactional
@@ -156,7 +140,7 @@ public class ChatSessionService {
         transcriptRepository.deleteBySessionId(id);
         attachmentRepository.deleteBySessionId(id);
         sessionRepository.clearMessages(id);
-        log.info("\u6e05\u7a7a\u4f1a\u8bdd\u6d88\u606f: id={}", id);
+        log.info("清空会话消息: id={}", id);
     }
 
     @Transactional
@@ -172,37 +156,37 @@ public class ChatSessionService {
     @Transactional
     public int batchUpdateSessions(String action, List<String> sessionIds) {
         if (sessionIds == null || sessionIds.isEmpty()) {
-            log.warn("\u8df3\u8fc7\u6279\u91cf\u4f1a\u8bdd\u66f4\u65b0: ID \u5217\u8868\u4e3a\u7a7a");
+            log.warn("跳过批量会话更新: ID 列表为空");
             return 0;
         }
 
         return switch (action) {
             case "pin" -> {
                 int count = sessionRepository.batchUpdateFields(sessionIds, null, true, null);
-                log.info("\u6279\u91cf\u7f6e\u9876\u4f1a\u8bdd: count={}, ids={}", count, sessionIds);
+                log.info("批量置顶会话: count={}, ids={}", count, sessionIds);
                 yield count;
             }
             case "unpin" -> {
                 int count = sessionRepository.batchUpdateFields(sessionIds, null, false, null);
-                log.info("\u6279\u91cf\u53d6\u6d88\u7f6e\u9876\u4f1a\u8bdd: count={}, ids={}", count, sessionIds);
+                log.info("批量取消置顶会话: count={}, ids={}", count, sessionIds);
                 yield count;
             }
             case "archive" -> {
                 int count = sessionRepository.batchUpdateFields(sessionIds, null, null, true);
-                log.info("\u6279\u91cf\u5f52\u6863\u4f1a\u8bdd: count={}, ids={}", count, sessionIds);
+                log.info("批量归档会话: count={}, ids={}", count, sessionIds);
                 yield count;
             }
             case "unarchive" -> {
                 int count = sessionRepository.batchUpdateFields(sessionIds, null, null, false);
-                log.info("\u6279\u91cf\u53d6\u6d88\u5f52\u6863\u4f1a\u8bdd: count={}, ids={}", count, sessionIds);
+                log.info("批量取消归档会话: count={}, ids={}", count, sessionIds);
                 yield count;
             }
             case "delete" -> {
                 int count = sessionRepository.batchDelete(sessionIds);
-                log.info("\u6279\u91cf\u5220\u9664\u4f1a\u8bdd: count={}, ids={}", count, sessionIds);
+                log.info("批量删除会话: count={}, ids={}", count, sessionIds);
                 yield count;
             }
-            default -> throw new IllegalArgumentException("\u4e0d\u652f\u6301\u7684\u6279\u91cf\u64cd\u4f5c: " + action);
+            default -> throw new IllegalArgumentException("不支持的批量操作: " + action);
         };
     }
 
@@ -253,16 +237,16 @@ public class ChatSessionService {
         config.put(SessionConfigKeys.MAX_DURATION_SECONDS, request.maxDurationSeconds());
 
         sessionRepository.updateConfig(id, config);
-        log.info("\u66f4\u65b0\u4f1a\u8bdd\u914d\u7f6e: sessionId={}, config={}", id, config);
+        log.info("更新会话配置: sessionId={}, config={}", id, config);
 
         if (request.knowledgeBaseIds() != null) {
             sessionKnowledgeBaseRepository.setAssociations(id, request.knowledgeBaseIds());
-            log.info("\u66f4\u65b0\u4f1a\u8bdd\u77e5\u8bc6\u5e93\u5173\u8054: sessionId={}, knowledgeBaseIds={}",
+            log.info("更新会话知识库关联: sessionId={}, knowledgeBaseIds={}",
                     id, request.knowledgeBaseIds());
         }
         if (request.datastoreIds() != null) {
             sessionDatastoreRepository.setAssociations(id, request.datastoreIds());
-            log.info("\u66f4\u65b0\u4f1a\u8bdd datastore \u5173\u8054: sessionId={}, datastoreIds={}",
+            log.info("更新会话 datastore 关联: sessionId={}, datastoreIds={}",
                     id, request.datastoreIds());
         }
     }

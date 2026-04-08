@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra.browser;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.Cookie;
 import com.microsoft.playwright.options.SelectOption;
@@ -24,6 +25,9 @@ import java.util.Map;
  * @since 2026-03-08
  */
 public class PlaywrightPageWrapper {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
 
     private final Page page;
     private volatile long lastAccessTime;
@@ -301,7 +305,7 @@ public class PlaywrightPageWrapper {
             return "null";
         }
         try {
-            return new ObjectMapper().writeValueAsString(result);
+            return OBJECT_MAPPER.writeValueAsString(result);
         } catch (JsonProcessingException e) {
             return result.toString();
         }

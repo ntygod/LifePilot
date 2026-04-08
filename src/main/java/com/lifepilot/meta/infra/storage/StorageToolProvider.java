@@ -75,7 +75,7 @@ public class StorageToolProvider {
                 "description", "数据存储操作类型"
         ));
         properties.put("name", Map.of("type", "string", "description", "action=create-collection 时的集合名称（唯一）"));
-        properties.put("type", Map.of("type", "string", "description", "action=create-collection/list-collections 时的集合类型: DOCUMENT/NOTE/METRIC"));
+        properties.put("type", Map.of("type", "string", "enum", List.of("DOCUMENT", "NOTE", "METRIC"), "description", "action=create-collection/list-collections 时的集合类型"));
         properties.put("properties", Map.of("type", "array", "description", "action=create-collection 时的属性定义数组，每个元素包含 name/type/required 等字段"));
         properties.put("description", Map.of("type", "string", "description", "action=create-collection 时的集合描述"));
         properties.put("projectionConfig", Map.of("type", "string", "description", "action=create-collection 时的向量投影配置 JSON"));
@@ -84,15 +84,15 @@ public class StorageToolProvider {
         properties.put("recordedAt", Map.of("type", "string", "description", "记录时间 ISO 8601（METRIC 类型 insert 时必填）"));
         properties.put("filters", Map.of("type", "array", "description", "action=query 时的过滤条件数组，每个元素包含 field/op/value 字段"));
         properties.put("sortField", Map.of("type", "string", "description", "action=query 时排序字段"));
-        properties.put("sortDirection", Map.of("type", "string", "description", "action=query 时排序方向: ASC/DESC"));
+        properties.put("sortDirection", Map.of("type", "string", "enum", List.of("ASC", "DESC"), "description", "action=query 时排序方向"));
         properties.put("offset", Map.of("type", "integer", "description", "action=query 时分页偏移"));
         properties.put("limit", Map.of("type", "integer", "description", "action=query 时每页数量"));
         properties.put("startTime", Map.of("type", "string", "description", "时间范围起始 ISO 8601；用于 query/aggregate"));
         properties.put("endTime", Map.of("type", "string", "description", "时间范围结束 ISO 8601；用于 query/aggregate"));
         properties.put("documentId", Map.of("type", "string", "description", "文档 ID；用于 update/delete"));
         properties.put("field", Map.of("type", "string", "description", "action=aggregate 时的聚合字段名称"));
-        properties.put("function", Map.of("type", "string", "description", "action=aggregate 时的聚合函数: SUM/AVG/MIN/MAX/COUNT"));
-        properties.put("groupBy", Map.of("type", "string", "description", "action=aggregate 时的时间分组粒度: DAY/WEEK/MONTH"));
+        properties.put("function", Map.of("type", "string", "enum", List.of("SUM", "AVG", "MIN", "MAX", "COUNT"), "description", "action=aggregate 时的聚合函数"));
+        properties.put("groupBy", Map.of("type", "string", "enum", List.of("DAY", "WEEK", "MONTH"), "description", "action=aggregate 时的时间分组粒度"));
 
         var schema = new LinkedHashMap<String, Object>();
         schema.put("type", "object");

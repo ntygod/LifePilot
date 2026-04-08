@@ -2,6 +2,7 @@ package com.lifepilot.knowledge.sync;
 
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.ingest.DocumentIngester;
+import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.repository.DocumentRepository;
@@ -14,13 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * 知识同步任务 worker。
@@ -205,7 +200,7 @@ public class KnowledgeSyncWorker {
                                          String filePath,
                                          String content,
                                          Map<String, Object> sourceRef) {
-        Optional<com.lifepilot.knowledge.model.Document> existingOpt =
+        Optional<Document> existingOpt =
                 knowledgeDocumentRepository.findByKnowledgeBaseIdAndSourceKey(knowledgeBaseId, sourceKey);
         if (existingOpt.isPresent()) {
             var existing = existingOpt.get();
@@ -224,8 +219,8 @@ public class KnowledgeSyncWorker {
         var metadata = new LinkedHashMap<String, String>();
         metadata.put("syncSource", "datastore");
 
-        var doc = new com.lifepilot.knowledge.model.Document(
-                existingOpt.map(com.lifepilot.knowledge.model.Document::id).orElse(UUID.randomUUID().toString()),
+        var doc = new Document(
+                existingOpt.map(Document::id).orElse(UUID.randomUUID().toString()),
                 knowledgeBaseId,
                 fileName,
                 filePath,
@@ -238,7 +233,7 @@ public class KnowledgeSyncWorker {
                 null,
                 null,
                 Map.copyOf(metadata),
-                existingOpt.map(com.lifepilot.knowledge.model.Document::createdAt).orElse(versionTime),
+                existingOpt.map(Document::createdAt).orElse(versionTime),
                 versionTime,
                 DocumentSourceType.DATASTORE_DOCUMENT,
                 sourceKey,
@@ -257,12 +252,12 @@ public class KnowledgeSyncWorker {
                 .contains(datastoreId);
     }
 
-    private boolean isNotOlder(com.lifepilot.knowledge.model.Document existing, String sourceVersion) {
+    private boolean isNotOlder(Document existing, String sourceVersion) {
         Optional<Instant> versionTime = parseInstant(sourceVersion);
         return versionTime.isPresent() && !existing.updatedAt().isBefore(versionTime.get());
     }
 
-    private boolean isNewerThanJob(com.lifepilot.knowledge.model.Document existing, String sourceVersion) {
+    private boolean isNewerThanJob(Document existing, String sourceVersion) {
         Optional<Instant> versionTime = parseInstant(sourceVersion);
         return versionTime.isPresent() && existing.updatedAt().isAfter(versionTime.get());
     }

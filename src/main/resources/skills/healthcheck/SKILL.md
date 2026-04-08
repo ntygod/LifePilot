@@ -62,9 +62,10 @@ shell.exec(command="ss -tlnp | grep -E '(8080|3306|5432|6379|11434)' && jps -l")
 
 ### 4. 日志异常扫描
 ```bash
-# 通过 file.read 读取最近日志
-file.read(path="~/.zhiwei/logs/lifepilot.log", offset=-100)
-# 然后从输出中筛选 ERROR/Exception/FATAL
+# 通过 shell 读取最近日志末尾
+shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 100\"")
+# 或者用 file.list 搜索日志中的错误
+file.list(action="search", path="~/.zhiwei/logs", pattern="ERROR|Exception|FATAL", filePattern="*.log", maxResults=20)
 ```
 
 ### 5. 生成诊断报告

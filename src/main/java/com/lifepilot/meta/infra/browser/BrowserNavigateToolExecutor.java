@@ -48,14 +48,6 @@ public class BrowserNavigateToolExecutor {
      * @return 包含 title、url、textSnapshot 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
-        // 检查 Playwright 可用性
-        if (sessionManager == null || !sessionManager.isAvailable()) {
-            String msg = sessionManager != null ? sessionManager.getUnavailableMessage()
-                    : "浏览器功能未配置，请安装 Playwright";
-            return ToolResult.error(msg);
-        }
-
-        // 提取参数
         String url;
         try {
             url = input.getParam("url", String.class);

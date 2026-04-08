@@ -10,9 +10,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Web \u4f1a\u8bdd\u8bfb\u5199\u4ed3\u5e93\u3002
+ * Web 会话读写仓库。
  *
- * <p>\u5f53\u524d\u5b9e\u73b0\u5b8c\u5168\u57fa\u4e8e {@code session_store}\u3002</p>
+ * <p>当前实现完全基于 {@code session_store}。</p>
  *
  * @author zsg
  * @since 2026-02-27

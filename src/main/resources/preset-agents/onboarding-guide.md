@@ -7,7 +7,7 @@ allowed-tools:
   - system.explain
   - system.suggest
   - system.status
-  - interact.choose
+  - notify
 metadata:
   category: onboarding
   owner: meta
@@ -30,4 +30,4 @@ metadata:
 - 告诉用户当前是否已经就绪。
 - 给出 2 到 3 个合适的下一步选项。
 
-如果用户表达不清，你可以通过 `interact.choose` 提供明确选项，帮助用户继续。
+如果用户表达不清，直接在回复中列出明确选项，帮助用户继续。

@@ -79,12 +79,15 @@ public class HttpRequestToolExecutor {
 
         try {
             return doRequest(url, method, headers, body, timeoutSeconds);
+        } catch (java.net.http.HttpTimeoutException e) {
+            log.warn("HTTP 请求超时: url={}, method={}", url, method);
+            return ToolResult.transientError("HTTP 请求超时: " + url);
         } catch (IOException e) {
             log.error("HTTP 请求失败: url={}, method={}, error={}", url, method, e.getMessage());
-            return ToolResult.error("HTTP 请求失败: " + e.getMessage());
+            return ToolResult.transientError("HTTP 请求失败: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ToolResult.error("HTTP 请求被中断");
+            return ToolResult.transientError("HTTP 请求被中断");
         }
     }
 
@@ -140,6 +143,9 @@ public class HttpRequestToolExecutor {
         log.debug("HTTP 响应: statusCode={}, bodyLen={}", statusCode,
                 responseBody != null ? responseBody.length() : 0);
 
+        if (statusCode >= 500) {
+            return ToolResult.transientError("HTTP " + statusCode + ": " + responseBody);
+        }
         if (statusCode >= 400) {
             return ToolResult.error("HTTP " + statusCode + ": " + responseBody);
         }

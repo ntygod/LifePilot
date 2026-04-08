@@ -34,19 +34,13 @@ public class BrowserStorageToolExecutor {
      * @return 包含操作结果的结构化结果
      */
     public ToolResult execute(ToolInput input) {
-        if (sessionManager == null || !sessionManager.isAvailable()) {
-            String msg = sessionManager != null ? sessionManager.getUnavailableMessage()
-                    : "浏览器功能未配置，请安装 Playwright";
-            return ToolResult.error(msg);
-        }
-
         String target;
         String action;
         try {
             target = input.getParam("target", String.class);
-            action = input.getParam("action", String.class);
+            action = input.getParam("storageAction", String.class);
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("缺少必需参数: target 和 action");
+            return ToolResult.error("缺少必需参数: target 和 storageAction");
         }
 
         String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");

@@ -79,7 +79,7 @@ file.write(path="project/Dockerfile", content="...")
 ### 4. 验证项目结构
 
 ```
-file.list(path="project", recursive=true)
+file.list(action="list", path="project", maxDepth=5)
 ```
 
 ## 技术栈模板

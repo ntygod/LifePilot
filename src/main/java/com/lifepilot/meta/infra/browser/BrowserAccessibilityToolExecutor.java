@@ -39,12 +39,6 @@ public class BrowserAccessibilityToolExecutor {
      * @return 包含无障碍树 JSON 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
-        if (sessionManager == null || !sessionManager.isAvailable()) {
-            String msg = sessionManager != null ? sessionManager.getUnavailableMessage()
-                    : "浏览器功能未配置，请安装 Playwright";
-            return ToolResult.error(msg);
-        }
-
         var rootSelector = input.getOptionalParam("rootSelector", String.class).orElse(null);
         int maxDepth = input.getOptionalParam("maxDepth", Integer.class)
                 .orElse(browserConfig.getAccessibilityMaxDepth());

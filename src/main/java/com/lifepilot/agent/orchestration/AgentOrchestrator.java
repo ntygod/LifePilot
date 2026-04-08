@@ -4,10 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.DegradedResponseBuilder;
 import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.callback.NonStreamingCallback;
+import com.lifepilot.agent.callback.StreamingCallback;
 import com.lifepilot.agent.checkpoint.AgentCheckpoint;
 import com.lifepilot.agent.checkpoint.AgentCheckpointFingerprinter;
 import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
-import com.lifepilot.agent.callback.StreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.*;
@@ -27,8 +28,8 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
-import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.MediaValidationException;
+import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
@@ -132,7 +133,7 @@ public class AgentOrchestrator {
             executionPersistence.persistUserTurn(state, effectiveRequest);
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
-            var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
+            var callback = new NonStreamingCallback(
                     config, generationRouter, multimodalRouter, effectiveRequest, agentLoop);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, token, loopContext);

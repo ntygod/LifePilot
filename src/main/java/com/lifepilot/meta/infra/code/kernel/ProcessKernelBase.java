@@ -9,6 +9,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -187,7 +188,7 @@ public sealed class ProcessKernelBase implements PersistentKernel
             Files.writeString(tempScriptFile, script, StandardCharsets.UTF_8);
             tempScriptFile.toFile().deleteOnExit();
 
-            var command = new java.util.ArrayList<String>();
+            var command = new ArrayList<String>();
             command.add(runtimeCmd);
             command.addAll(runtimeArgs);
             command.add(tempScriptFile.toString());
