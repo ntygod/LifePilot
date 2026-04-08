@@ -94,8 +94,15 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
                 RiskLevel.LOW,
                 browserSessionSemantics,
                 input -> {
+                    if (browserSessionManager == null) {
+                        return ToolResult.error("浏览器功能未配置");
+                    }
                     String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");
-                    browserSessionManager.closePage(sessionId);
+                    try {
+                        browserSessionManager.closePage(sessionId);
+                    } catch (Exception e) {
+                        return ToolResult.error("关闭浏览器会话失败: " + e.getMessage());
+                    }
                     return ToolResult.success(Map.of("message", "浏览器会话已关闭: " + sessionId));
                 });
     }

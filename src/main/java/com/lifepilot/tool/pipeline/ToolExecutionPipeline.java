@@ -317,8 +317,8 @@ public class ToolExecutionPipeline implements java.io.Closeable {
         if (result.ok()) {
             return false;
         }
-        // RATE_LIMITED 始终可重试
-        if (result.status() == ToolResultStatus.RATE_LIMITED) {
+        // 语义状态优先：TRANSIENT_ERROR / RATE_LIMITED 始终可重试
+        if (result.status().isRetryable()) {
             return true;
         }
         String error = result.error();

@@ -300,6 +300,7 @@ public class StreamingCallback implements IterationCallback {
 
                     // 部分 Provider 最后一个 chunk 仅含 usage 不含 generation，跳过
                     var result = chunk.getResult();
+                    if (result == null || result.getOutput() == null) return;
                     var output = result.getOutput();
 
                     String text = output.getText();
