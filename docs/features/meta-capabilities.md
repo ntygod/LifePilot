@@ -6,7 +6,7 @@
 
 ## 1. 功能概述
 
-元能力系统为 Agent 提供开箱即用的通用执行能力和系统自省能力。通过 25 个基础工具，Agent 可以感知环境、搜索 Web 信息、执行 Shell 命令、操控浏览器、运行代码、读写文件、与用户交互；通过 4 个自省工具，Agent 可以查询自身已注册的所有能力并按需推荐。此外，模块还提供 Skill 发现和 MCP Server 自动安装能力，帮助 Agent 动态扩展工具集。
+元能力系统为 Agent 提供开箱即用的通用执行能力和系统自省能力。通过 25 个基础工具，Agent 可以感知环境、搜索 Web 信息、执行 Shell 命令、操控浏览器、运行代码、读写文件、与用户交互；通过 4 个自省工具，Agent 可以查询自身已注册的所有能力并按需推荐。延迟工具加载机制通过 `meta.search_tools` 工具实现按需工具发现，仅向 LLM 暴露核心工具集和已发现工具，减少每次调用的 token 开销。此外，模块还提供 Skill 发现和 MCP Server 自动安装能力，帮助 Agent 动态扩展工具集。
 
 ## 2. 核心特性
 
@@ -25,7 +25,7 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 推理辅助 | `reason.calculate` | 数学计算 |
 | Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查），支持后台执行、PTY、环境变量注入（`env`，有安全黑名单过滤）和 Unix Shell 解释器指定（`shell`） |
 | Shell 执行 | `shell.process` | 后台进程管理和持久终端会话（tmux），支持 list/output/write/kill 以及 session-* 操作 |
-| 浏览器自动化 | `browser` | 统一浏览器操作（通过 `action` 参数选择：navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/close），支持通过 `acquisitionMode`/`cdpUrl`/`userDataDir` 动态指定浏览器获取模式 |
+| 浏览器自动化 | `browser` | 统一浏览器操作（通过 `action` 参数选择：navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/storage/close），支持通过 `acquisitionMode`/`cdpUrl`/`userDataDir` 动态指定浏览器获取模式 |
 | 代码执行 | `code.execute` | 在沙箱中执行代码（支持持久内核） |
 | 代码执行 | `code.kernel.list` | 列出所有活跃的持久代码内核 |
 | 代码执行 | `code.kernel.reset` | 重置内核状态（清空变量） |
@@ -48,15 +48,29 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 - **status**：系统状态概览，包括各注册中心计数、工具层次分布和 JVM 内存使用
 - **suggest**：根据需求描述推荐匹配能力，结合关键词匹配和语义搜索
 
-### 2.3 Skill 发现
+### 2.3 延迟工具加载
+
+工具系统支持按需发现机制，减少每次 LLM 调用发送的工具定义 token 开销：
+
+- **核心集始终加载**：`alwaysLoadedToolIds` 配置的工具（默认 10 个：web.search、web.fetch、file.read、file.write、file.list、shell.exec、memory、system.status、load_skill、generate_skill）在每次 LLM 调用时都包含完整定义
+- **按需发现**：LLM 调用 `meta.search_tools` 工具，通过自然语言描述搜索所需能力。搜索基于向量语义匹配（通过 EmbeddingRouter），EmbeddingRouter 不可用时回退到子串匹配
+- **自动扩展**：搜索返回匹配的工具列表后，ReactAgentLoop 自动将发现的工具 ID 加入可见集，下一轮迭代即可使用完整工具定义
+- **关联 Skill**：搜索结果同时包含相关 Skill 摘要，引导 LLM 调用 `load_skill` 获取使用指导
+- **infrastructure 透传**：带 `infrastructure` 标签的工具（如 `meta.search_tools` 自身）始终可见，不受延迟加载过滤影响
+
+| 工具 ID | 说明 |
+|---------|------|
+| `meta.search_tools` | 搜索可用工具（参数：`query`，自然语言描述所需能力） |
+
+### 2.4 Skill 发现
 
 启动时自动将内置 `find-skills` Skill 提取到用户 Skill 目录（`~/.zhiwei/skills/builtin.find-skills/`）。该 Skill 帮助 Agent 在开源生态中搜索和发现新的 Skill，扩展自身能力。已存在的文件不会被覆盖，保留用户自定义内容。
 
-### 2.4 MCP Server 自动安装
+### 2.5 MCP Server 自动安装
 
 启动时检查 npx 可用性，可用时自动注册 `mcp-installer` MCP Server（通过 STDIO 传输）。用户可通过 Agent 对话安装新的 MCP Server，无需手动配置。Node.js 不可用时优雅降级，不影响其他功能。
 
-### 2.5 交互桥接
+### 2.6 交互桥接
 
 Agent 执行过程中需要用户输入时（确认、选择、文本输入），通过 InteractionBridge 发起阻塞式交互请求。请求通过 SSE 推送到 Web 前端或 CLI，用户响应后 Agent 继续执行。支持超时控制（默认 120 秒）。
 
@@ -89,6 +103,9 @@ Agent 在执行任务时，自动使用基础工具完成各类操作：搜索 W
 | `lifepilot.meta.introspection.cache-ttl-seconds` | `60` | 能力聚合缓存 TTL |
 | `lifepilot.meta.skill-discovery.enabled` | `true` | find-skills 提取开关 |
 | `lifepilot.meta.mcp-installer.enabled` | `true` | mcp-installer 注册开关 |
+| `lifepilot.meta.deferred-tool-loading.always-loaded-tool-ids` | `[web.search, web.fetch, file.read, file.write, file.list, shell.exec, memory, system.status, load_skill, generate_skill]` | 始终加载的核心工具 ID 列表 |
+| `lifepilot.meta.deferred-tool-loading.max-search-results` | `5` | 工具搜索最大返回数量 |
+| `lifepilot.meta.deferred-tool-loading.min-score-threshold` | `0.3` | 工具搜索最低相似度阈值（0.0-1.0） |
 
 ## 5. 限制与未来方向
 

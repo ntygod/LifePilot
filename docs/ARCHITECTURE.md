@@ -128,7 +128,7 @@ graph TB
 | `rerank` | 精排路由（RerankRouter）、原生/LLM Pointwise/Listwise 策略 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `modelservice` | DB 驱动模型服务注册表（ModelServiceRegistry）、厂商模板管理 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `agent` | Agent ReAct 循环、不可变状态管理、上下文组装、挂起恢复、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
-| `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
+| `tool` | 工具契约、动态注册、执行管道、延迟加载、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
 | `mcp` | Model Context Protocol 客户端、工具桥接、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
@@ -146,7 +146,7 @@ graph TB
 | `multiagent` | 多 Agent 协作、AgentRegistry、spawn_workers 并行 Worker 执行 | [架构](architecture/multi-agent.md) · [特性](features/multi-agent.md) |
 | `a2a` | Agent-to-Agent 协议、Client/Server 实现、Agent Card | [架构](architecture/a2a-protocol.md) · [特性](features/a2a-protocol.md) |
 | `marketplace` | 插件市场、Skill 发布/发现/安装、安全审核 | [架构](architecture/skill-marketplace.md) · [特性](features/skill-marketplace.md) |
-| `meta` | 元能力（便捷指令、基础设施工具） | [架构](architecture/meta-capabilities.md) · [特性](features/meta-capabilities.md) |
+| `meta` | 元能力（便捷指令、基础设施工具、延迟工具加载） | [架构](architecture/meta-capabilities.md) · [特性](features/meta-capabilities.md) |
 | `prompt` | Prompt 模板注册与管理 | [架构](architecture/prompt-management.md) · [特性](features/prompt-management.md) |
 | `notification` | 统一通知服务、直接投递、多渠道广播、通知历史与 SSE 推送 API | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | `observability` | 轨迹记录/查询、GuardrailAdvisor、数据脱敏、轨迹评估 | [架构](architecture/observability.md) · [特性](features/observability.md) |

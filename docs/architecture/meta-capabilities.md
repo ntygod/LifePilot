@@ -17,6 +17,7 @@ graph TB
             CA["CapabilityAggregator<br/>能力聚合器"]
             ISP["IntrospectionSkillProvider<br/>系统自省 Skill"]
             SDR["SkillDiscoveryRegistrar<br/>find-skills 提取器"]
+            TSTP["ToolSearchToolProvider<br/>延迟工具发现（meta.search_tools）"]
         end
 
         subgraph infra["infra — 基础工具集"]
@@ -39,6 +40,10 @@ graph TB
         end
     end
 
+    subgraph toolsearch["tool.search"]
+        TSI["ToolSearchIndex<br/>向量语义搜索引擎"]
+    end
+
     subgraph external["外部依赖"]
         SR["SkillRegistry"]
         AR["AgentRegistry"]
@@ -46,6 +51,7 @@ graph TB
         WR["WorkflowRegistry"]
         SB["SandboxSessionManager"]
         SSE["SseSessionManager"]
+        ER["EmbeddingRouter"]
     end
 
     CA --> SR
@@ -54,6 +60,9 @@ graph TB
     CA --> WR
     ISP --> CA
     ISP --> DTR
+    TSTP --> DTR
+    TSTP --> TSI
+    TSI --> ER
     ITP --> DTR
     ITP --> STP
     ITP --> WTP
@@ -153,21 +162,33 @@ graph TB
 - 不覆盖策略：目标文件已存在时跳过，保留用户自定义内容
 - 后续由 `MarkdownSkillLoader` 在 `ApplicationReadyEvent` 时作为 UserDefined Skill 加载
 
-### 3.9 ShellToolProvider — Shell 工具构建
+### 3.9 ToolSearchToolProvider — 延迟工具发现
+
+- 职责：构建并注册 `meta.search_tools` 工具，实现延迟工具加载的核心机制
+- 工具 ID：`meta.search_tools`（标签：`infrastructure`，分类：`INTROSPECTION`）
+- 工具参数：`query`（必需，自然语言描述所需的工具能力）
+- 搜索引擎：内部创建 `ToolSearchIndex` 实例，通过 `EmbeddingRouter` 做向量语义搜索；`EmbeddingRouter` 不可用时回退到子串匹配
+- 索引懒构建：首次调用时从 `DynamicToolRegistry` 获取工具快照并构建向量索引，后续搜索直接查询
+- 搜索排除：始终加载的工具和 `meta.search_tools` 自身被排除在搜索结果之外
+- 关联 Skill 搜索：搜索结果同时包含匹配的 Skill（最多 3 个），引导 LLM 调用 `load_skill` 获取使用指导
+- 工具发现闭环：搜索结果返回后，`ReactAgentLoop` 从输出中提取 `tools[].tool_id`，自动扩展 `ReactAgentState.discoveredToolIds`，下一轮迭代中 `ToolBridgeAgentToolProvider` 即可暴露新工具的完整定义
+- 配置：`lifepilot.meta.deferred-tool-loading.*`（详见配置参考表）
+
+### 3.10 ShellToolProvider — Shell 工具构建
 
 - 职责：按领域边界将 Shell 能力拆分为 `shell.exec`（命令执行）和 `shell.process`（后台进程与持久会话管理）两个工具
 - `shell.exec` 参数：`command`（必需）、`workingDirectory`、`timeoutSeconds`、`background`、`yieldMs`、`pty`、`shell`（Unix 解释器覆盖）、`env`（环境变量注入）
 - `shell.process` 根据运行时可用组件动态生成 action 枚举：`BackgroundProcessManager` 提供 list/output/write/kill，`TmuxSessionManager` 提供 session-create/session-exec/session-write/session-read/session-signal/session-list/session-close/session-resize
 - 当 `processManager` 和 `sessionManager` 均不可用时，仅注册 `shell.exec`
 
-### 3.10 ShellProcessFactory — 进程创建工厂
+### 3.11 ShellProcessFactory — 进程创建工厂
 
 - 职责：统一 Windows/Unix 下的 `ProcessBuilder` 创建逻辑，消除 `ShellExecToolExecutor` 和 `BackgroundProcessManager` 中重复的进程构建代码
 - Windows：PowerShell + `EncodedCommand`，通过环境变量 `LIFEPILOT_SHELL_COMMAND` 传递命令（避免参数转义问题）
 - Unix：默认 `sh -c`，支持通过 `shellOverride` 指定 bash/zsh 等解释器；PTY 模式下通过 `script -qec` 分配伪终端
 - 环境变量安全黑名单：`PATH`、`LD_PRELOAD`、`LD_LIBRARY_PATH`、`DYLD_INSERT_LIBRARIES`、`DYLD_LIBRARY_PATH`、`LIFEPILOT_SHELL_COMMAND` 禁止通过 `env` 参数覆盖
 
-### 3.11 BackgroundProcessManager — 后台进程管理
+### 3.12 BackgroundProcessManager — 后台进程管理
 
 - 职责：管理通过 `shell.exec(background=true)` 或 `yieldMs` 启动的长时间运行进程
 - 输出存储：每个进程 stdout/stderr 分别存入独立的 `RingBuffer`（环形缓冲区，`System.arraycopy` 批量拷贝优化），支持增量读取
@@ -175,14 +196,14 @@ graph TB
 - `awaitCompletion()` 方法替代 `Thread.sleep(yieldMs)` — 进程提前退出时立即返回，不浪费等待时间
 - 空闲清理：每分钟检查一次，超过 `idle-timeout-minutes` 的进程自动终止并移除
 
-### 3.12 TmuxSessionManager — 持久会话管理
+### 3.13 TmuxSessionManager — 持久会话管理
 
 - 职责：管理 tmux 持久终端会话的完整生命周期
 - 启动时孤儿回收：扫描以 `zhiwei-` 为前缀的 tmux 会话，逐一 kill，防止后端重启后遗留无主会话
 - 命令执行机制：发送命令 + 唯一结束标记 → 轮询 `capture-pane` 直到标记出现 → 提取命令输出
 - 空闲清理：按配置间隔（`cleanup-interval-seconds`）定期检查，超过 `ttl-minutes` 的会话自动关闭
 
-### 3.13 内置 MCP 服务器（JSON 发现机制）
+### 3.14 内置 MCP 服务器（JSON 发现机制）
 
 - 职责：通过 `classpath:mcp/servers.json` 定义内置 MCP 服务器（mcp-installer、desktop-control 等）
 - 启动时由 `McpServerDiscovery.seedBuiltinServers()` 将内置配置合并到用户目录 `~/.zhiwei/mcp/servers.json`
@@ -258,6 +279,8 @@ sequenceDiagram
 | tmux 孤儿回收 | 启动时扫描 zhiwei-* 前缀会话 | 防止后端重启后遗留无主 tmux 会话 |
 | find-skills 提取 | classpath → 用户目录 | 提取后作为 UserDefined Skill 加载，用户可查看和编辑 |
 | 内置 MCP 服务器 | JSON 配置 + 启动时 seed | 内置 MCP 定义在 classpath JSON 中，启动时合并到用户目录，由 McpServerDiscovery 统一发现 |
+| 延迟工具加载 | 核心集始终加载 + 按需语义发现 | 减少每次 LLM 调用发送的工具定义 token 数，仅暴露核心集和已发现工具 |
+| 工具搜索索引 | ToolSearchIndex + EmbeddingRouter + 子串回退 | 向量语义搜索提供高质量匹配，EmbeddingRouter 不可用时降级到子串匹配保证可用性 |
 
 ## 6. 集成点
 
@@ -272,6 +295,8 @@ sequenceDiagram
 | sandbox（SandboxSessionManager） | meta ← sandbox | 代码执行工具委托沙箱执行 |
 | notification（NotificationService） | meta → notification | notify 工具通过 NotificationService 推送通知 |
 | interaction（ProcessSseController） | meta → interaction | 后台进程输出通过 `/api/processes/stream` SSE 端点实时推送到前端 |
+| embedding（EmbeddingRouter） | meta ← embedding | ToolSearchIndex 通过 EmbeddingRouter 做工具描述向量化和查询向量化 |
+| agent（ReactAgentLoop） | meta ← agent | ReactAgentLoop 从 meta.search_tools 输出中提取发现的工具 ID，扩展可见工具集 |
 
 ## 7. 配置参考
 
@@ -310,3 +335,6 @@ sequenceDiagram
 | `lifepilot.meta.introspection.debounce-millis` | `500` | 事件防抖窗口 |
 | `lifepilot.meta.skill-discovery.enabled` | `true` | find-skills 提取开关 |
 | `lifepilot.meta.onboarding.auto-trigger` | `true` | 引导 Agent 自动触发 |
+| `lifepilot.meta.deferred-tool-loading.always-loaded-tool-ids` | `[web.search, web.fetch, file.read, file.write, file.list, shell.exec, memory, system.status, load_skill, generate_skill]` | 始终加载的核心工具 ID 列表 |
+| `lifepilot.meta.deferred-tool-loading.max-search-results` | `5` | 工具搜索最大返回数量 |
+| `lifepilot.meta.deferred-tool-loading.min-score-threshold` | `0.3` | 工具搜索最低相似度阈值（0.0-1.0） |

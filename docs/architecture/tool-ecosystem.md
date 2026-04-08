@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -17,12 +17,16 @@
 graph TB
     subgraph "Agent 引擎"
         AGENT["ReactAgentLoop"]
-        BRIDGE["ToolBridgeAgentToolProvider<br/>工具回调桥接"]
+        BRIDGE["ToolBridgeAgentToolProvider<br/>工具回调桥接 + 延迟加载过滤"]
     end
 
     subgraph "工具注册"
         REG["DynamicToolRegistry<br/>动态工具注册表"]
         BUILTIN_REG["BuiltinToolRegistrar<br/>内置工具注册"]
+    end
+
+    subgraph "工具搜索"
+        SEARCH["ToolSearchIndex<br/>向量语义搜索引擎"]
     end
 
     subgraph "工具契约（sealed interface）"
@@ -45,7 +49,9 @@ graph TB
     end
 
     AGENT --> BRIDGE --> REG
+    AGENT -->|"发现工具 ID"| BRIDGE
     BUILTIN_REG --> REG
+    SEARCH --> REG
     REG --> BUILTIN
     REG --> MCP_TOOL
     BRIDGE --> PIPE
@@ -82,6 +88,15 @@ graph TB
 ### 3.4 ToolBridgeAgentToolProvider
 
 - 职责：将 ToolContract 转换为 Spring AI 的 ToolCallback，桥接 Agent 引擎和工具系统
+- 延迟加载过滤：当 `alwaysLoadedToolIds` 非空时，`getToolCallbacks()` 仅向 LLM 暴露三类工具：始终加载的核心工具集（由 `lifepilot.meta.deferred-tool-loading.always-loaded-tool-ids` 配置）、本轮已发现的工具（`ReactAgentState.discoveredToolIds`）、带 `infrastructure` 标签的工具。其余工具定义不发送给 LLM，减少每次调用的 token 开销
+- 工具发现闭环：`ReactAgentLoop` 在每轮工具执行后检测 `meta.search_tools` 和 `load_skill` 的输出，提取发现的工具 ID 并通过 `state.addDiscoveredToolIds()` 扩展可见集，下一轮迭代自动包含新工具的完整定义
+
+### 3.5 ToolSearchIndex
+
+- 职责：基于向量相似度的工具语义搜索引擎，为延迟工具发现提供搜索能力
+- 索引构建：启动时对所有工具的 `name + description` 做向量化（通过 `EmbeddingRouter`），懒构建，首次搜索时触发
+- 搜索策略：优先使用余弦相似度（cosine similarity）匹配，`EmbeddingRouter` 不可用时回退到子串分词匹配
+- 关键接口：`buildIndex(List<ToolContract>)` 构建索引、`search(query, maxResults, minScore, excludeIds)` 搜索、`invalidate()` 使索引失效
 
 ## 4. 核心流程
 
@@ -124,11 +139,12 @@ sequenceDiagram
 
 ## 6. 集成点
 
-- **Agent 引擎**（`agent`）：通过 ToolBridgeAgentToolProvider 提供工具回调
+- **Agent 引擎**（`agent`）：通过 ToolBridgeAgentToolProvider 提供工具回调；ReactAgentLoop 检测 `meta.search_tools` / `load_skill` 输出并扩展可见工具集
 - **MCP 协议**（`mcp`）：McpTool 桥接 MCP 服务器提供的外部工具
 - **Skill 系统**（`skill`）：通过 `load_skill` / `generate_skill` BuiltinTool 实现渐进式 Skill 发现与激活
 - **护栏系统**（`guardrail` / `observability`）：执行管道中集成风险等级检查
 - **可观测性**（`observability`）：工具执行轨迹记录
+- **Embedding 路由**（`embedding`）：ToolSearchIndex 通过 EmbeddingRouter 做工具描述向量化，支持语义工具发现
 
 ## 7. 配置参考
 
@@ -136,3 +152,6 @@ sequenceDiagram
 |--------|--------|------|
 | `lifepilot.tool.enabled` | `true` | 是否启用工具系统 |
 | `lifepilot.tool.pipeline.*` | — | 执行管道配置（超时、重试等） |
+| `lifepilot.meta.deferred-tool-loading.always-loaded-tool-ids` | `[web.search, ...]` | 始终加载的核心工具 ID 列表（每次 LLM 调用都包含完整定义） |
+| `lifepilot.meta.deferred-tool-loading.max-search-results` | `5` | `meta.search_tools` 搜索最大返回数量 |
+| `lifepilot.meta.deferred-tool-loading.min-score-threshold` | `0.3` | `meta.search_tools` 最低相似度阈值（0.0-1.0） |
