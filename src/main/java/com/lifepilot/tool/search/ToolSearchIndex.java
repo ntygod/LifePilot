@@ -50,9 +50,12 @@ public class ToolSearchIndex {
     /**
      * 从工具列表构建搜索索引。
      *
+     * <p>synchronized 防止并发构建导致重复 embedding 调用。
+     * 构建结果赋值到 volatile 字段，search 方法读取无需同步。</p>
+     *
      * @param tools 工具列表
      */
-    public void buildIndex(List<ToolContract> tools) {
+    public synchronized void buildIndex(List<ToolContract> tools) {
         List<String> searchTexts = tools.stream()
                 .map(t -> t.name() + " — " + t.description())
                 .toList();

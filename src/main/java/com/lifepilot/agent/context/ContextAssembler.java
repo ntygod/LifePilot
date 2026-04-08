@@ -41,6 +41,8 @@ import java.util.stream.Collectors;
 public class ContextAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
+    private static final com.fasterxml.jackson.databind.ObjectMapper SHARED_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
     private final AgentConfigProperties config;
@@ -459,7 +461,7 @@ public class ContextAssembler {
         if (collection.propertiesJson() != null && !collection.propertiesJson().isBlank()
                 && !"[]".equals(collection.propertiesJson().strip())) {
             try {
-                var props = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                var props = SHARED_MAPPER.readValue(
                         collection.propertiesJson(),
                         new com.fasterxml.jackson.core.type.TypeReference<
                                 java.util.List<com.lifepilot.datastore.model.PropertyDefinition>>() {});
