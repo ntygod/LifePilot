@@ -68,6 +68,26 @@ public record ToolResult(
         return new ToolResult(ToolResultStatus.ERROR, Map.of(), message, ToolResultMeta.empty());
     }
 
+    // ==================== 瞬态失败工厂方法 ====================
+
+    /**
+     * 创建瞬态失败结果 — 可识别的临时故障，Agent 循环可自动重试。
+     *
+     * <p>仅用于明确可识别的瞬态场景（网络超时、HTTP 502/503、服务暂不可用）。
+     * 不确定是否瞬态的 generic Exception 应使用 {@link #error(String)}。</p>
+     *
+     * @param message 失败描述
+     * @param meta 执行元信息
+     */
+    public static ToolResult transientError(String message, ToolResultMeta meta) {
+        return new ToolResult(ToolResultStatus.TRANSIENT_ERROR, Map.of(), message, meta);
+    }
+
+    /** 创建简单瞬态失败结果（无元信息）。 */
+    public static ToolResult transientError(String message) {
+        return new ToolResult(ToolResultStatus.TRANSIENT_ERROR, Map.of(), message, ToolResultMeta.empty());
+    }
+
     // ==================== 部分成功工厂方法 ====================
 
     /**

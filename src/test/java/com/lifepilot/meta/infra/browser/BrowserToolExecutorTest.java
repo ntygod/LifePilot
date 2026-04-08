@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -26,52 +27,25 @@ class BrowserToolExecutorTest {
     class 优雅降级 {
 
         @Test
-        void navigate_sessionManager为null时返回降级提示() {
-            var executor = new BrowserNavigateToolExecutor(null, null);
-            ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
+        void sessionManagerNull时dispatch层统一返回降级提示() {
+            var executor = new BrowserActionDispatchExecutor(null, mockMetaProperties(), new TextSnapshotCleaner(10000));
+            ToolResult result = executor.execute(buildInput(Map.of("action", "navigate", "url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("Playwright");
+            assertThat(result.error()).contains("web.fetch");
         }
 
         @Test
-        void click_sessionManager为null时返回降级提示() {
-            var executor = new BrowserClickToolExecutor(null);
-            ToolResult result = executor.execute(buildInput(Map.of("selector", "#btn")));
-
-            assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("Playwright");
-        }
-
-        @Test
-        void input_sessionManager为null时返回降级提示() {
-            var executor = new BrowserInputToolExecutor(null);
-            ToolResult result = executor.execute(buildInput(Map.of("selector", "#name", "value", "test")));
-
-            assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("Playwright");
-        }
-
-        @Test
-        void screenshot_sessionManager为null时返回降级提示() {
-            var executor = new BrowserScreenshotToolExecutor(null);
-            ToolResult result = executor.execute(buildInput(Map.of()));
-
-            assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("Playwright");
-        }
-
-        @Test
-        void navigate_sessionManager不可用时返回降级提示() {
+        void sessionManager不可用时dispatch层统一返回降级提示() {
             var manager = mock(BrowserSessionManager.class);
             when(manager.isAvailable()).thenReturn(false);
-            when(manager.getUnavailableMessage()).thenReturn("浏览器功能未配置，请安装 Playwright");
+            when(manager.getUnavailableMessage()).thenReturn("浏览器功能未配置");
 
-            var executor = new BrowserNavigateToolExecutor(manager, null);
-            ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
+            var executor = new BrowserActionDispatchExecutor(manager, mockMetaProperties(), new TextSnapshotCleaner(10000));
+            ToolResult result = executor.execute(buildInput(Map.of("action", "navigate", "url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("Playwright");
+            assertThat(result.error()).contains("web.fetch");
         }
     }
     // ─────────────────────────────────────────────
@@ -276,5 +250,18 @@ class BrowserToolExecutorTest {
 
     private static ToolInput buildInput(Map<String, Object> params) {
         return new ToolInput("test.browser", params, JsonSchema.empty(), null, null);
+    }
+
+    private static MetaProperties mockMetaProperties() {
+        var props = mock(MetaProperties.class, RETURNS_DEEP_STUBS);
+        when(props.getInfra().getBrowser().getToolTimeoutSeconds()).thenReturn(30);
+        when(props.getInfra().getBrowser().getTextSnapshotMaxLength()).thenReturn(10000);
+        when(props.getInfra().getBrowser().getDefaultScrollPixels()).thenReturn(500);
+        when(props.getInfra().getBrowser().getWaitTimeoutSeconds()).thenReturn(10);
+        when(props.getInfra().getBrowser().getAccessibilityMaxDepth()).thenReturn(10);
+        when(props.getInfra().getBrowser().getJsExecutionTimeoutSeconds()).thenReturn(10);
+        when(props.getInfra().getBrowser().getHumanDelayMinMs()).thenReturn(0);
+        when(props.getInfra().getBrowser().getHumanDelayMaxMs()).thenReturn(0);
+        return props;
     }
 }

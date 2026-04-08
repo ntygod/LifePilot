@@ -26,8 +26,6 @@ import com.lifepilot.meta.infra.memory.MemoryToolProvider;
 import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
-import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
-import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
@@ -62,8 +60,7 @@ import org.springframework.core.annotation.Order;
  * 元能力系统 Spring Boot 自动配置。
  *
  * <p>注册元能力模块所有核心 Bean：InfraToolProvider、BrowserSessionManager、
- * InteractionBridge、CapabilityAggregator、IntrospectionToolProvider、
- * SkillDiscoveryRegistrar。</p>
+ * CapabilityAggregator、IntrospectionToolProvider、SkillDiscoveryRegistrar。</p>
  *
  * @author zsg
  * @since 2026-03-10
@@ -74,18 +71,6 @@ import org.springframework.core.annotation.Order;
 public class MetaAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(MetaAutoConfiguration.class);
-
-    /**
-     * 注册交互桥接器 — 管理 Agent 与用户之间的交互请求/响应生命周期。
-     *
-     * <p>SseSessionManager 为可选依赖（Web Channel），CliInteractionHandler 为可选依赖（CLI Channel）。</p>
-     */
-    @Bean
-    InteractionBridge interactionBridge(MetaProperties properties,
-                                        @Nullable SseSessionManager sseSessionManager,
-                                        @Nullable CliInteractionHandler cliInteractionHandler) {
-        return new InteractionBridge(properties, sseSessionManager, cliInteractionHandler);
-    }
 
     /**
      * 注册后台进程管理器 — 管理通过 shell.exec(background=true) 启动的长时间运行进程。
@@ -113,7 +98,6 @@ public class MetaAutoConfiguration {
      * 注册基础工具提供者。
      *
      * <p>SandboxSessionManager、CodeValidator、SandboxRepository 为可选依赖，仅在沙箱模块可用时注入。
-     * InteractionBridge 注入交互桥接器。
      * BrowserSessionManager 为可选依赖，仅在 Playwright 可用时注入。
      * NotificationService 注入统一通知服务，供 notify 工具使用。</p>
      */
@@ -123,7 +107,6 @@ public class MetaAutoConfiguration {
                                         @Nullable SandboxSessionManager sandboxSessionManager,
                                         @Nullable CodeValidator codeValidator,
                                         @Nullable SandboxRepository sandboxRepository,
-                                        @Nullable InteractionBridge interactionBridge,
                                         @Nullable BrowserSessionManager browserSessionManager,
                                         @Nullable NotificationService notificationService,
                                         @Nullable WorkflowRegistry workflowRegistry,
@@ -136,7 +119,7 @@ public class MetaAutoConfiguration {
                                         @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                                         @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                         @Nullable ChannelInstanceService channelInstanceService) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
     }
 
     /**

@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.knowledge`
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-07
 
 ## 1. 模块概述
 
@@ -176,7 +176,49 @@ graph TB
 - 可选启用，在文档摄入管线的最后阶段执行
 - 为记忆系统的巩固管线提供知识提取能力
 
-### 3.10 Datastore 领域扩展
+### 3.10 GraphKnowledgeSearcher（图谱检索服务）
+
+- 职责：通过知识图谱遍历找到与查询相关的文档分块
+- 算法：从查询中提取候选实体名 → 匹配 `SemanticMemory`（L3 语义记忆）中的实体 → 2-hop 图遍历 → 通过实体的 `sourceConversationId` 定位文档 → 返回该文档的 parent 分块（chunkLevel=0）
+- 评分规则：直接命中实体 → 基础分 1.0 * importanceScore；1-hop 关联 → 0.5 * importanceScore；2-hop 关联 → 0.3 * importanceScore
+- importanceScore 归一化到 [0.3, 1.0] 区间，避免低分实体被完全忽略
+- 匹配的实体类型：PERSON、ORGANIZATION、TOPIC、PROJECT、EVENT、PLACE
+- 可选启用，通过 `lifepilot.knowledge.retrieval.graph-enabled` 配置
+
+### 3.11 ChunkDeduplicator（检索结果去重器）
+
+- 职责：基于 Jaccard trigram 相似度移除内容高度重叠的分块
+- 算法：按分数降序遍历，对每个候选检查与已保留结果的 trigram Jaccard 相似度，超过阈值的低分结果被移除
+- 时间复杂度 O(n²)，但 n 一般 < 50，性能无瓶颈
+- 阈值通过 `lifepilot.knowledge.retrieval.deduplication-threshold` 配置，设为 0 禁用去重
+
+### 3.12 RetrievalQualityEvaluator（检索质量评估 / Corrective RAG）
+
+- 职责：在检索完成后评估结果与查询的相关性，支持三级判定：HIGH（直接命中）、LOW（需改写重试）、VERY_LOW（全部不相关）
+- 快速路径：Top-1 分数高于 `correction-high-threshold` 时直接返回 HIGH，跳过 LLM 调用
+- LLM 调用失败时降级为 HIGH（fail-open 策略），不阻塞主检索流程
+- LOW 时返回建议改写查询，由 `DocumentRetriever` 使用改写查询重试（单次重试，避免递归）
+- 可选启用，通过 `lifepilot.knowledge.retrieval.correction-enabled` 配置
+
+### 3.13 TokenCounter（Token 计数器）
+
+- sealed interface，两种实现：
+  - `Jtokkit`：基于 jtokkit 的精确 Token 计数器，兼容 tiktoken 编码（cl100k_base / o200k_base）
+  - `Heuristic`：启发式估算兜底（中文 1 Token/字符，其他 4 字符/Token）
+- 编码类型通过 `lifepilot.knowledge.tokenizer.encoding` 配置
+
+### 3.14 RetrievalEvaluator（检索质量离线评估）
+
+- 职责：基于 golden test set 计算 Recall@k / MRR / NDCG 指标
+- 接收测试用例列表（查询 + 期望命中 chunkId），逐条执行混合检索并对比
+- 通过 `RetrievalEvalController` 暴露评估 API
+
+### 3.15 工具类
+
+- `TextUtils`：Token 估算、SHA-256 哈希、字数统计等共享方法，统一替代各模块重复实现
+- `KnowledgeQueryUtils`：SQL 构建、类型解析、JSON 解析等共享方法，统一替代 FtsIndexer / VectorIndexer / Repository 中的重复工具方法
+
+### 3.16 Datastore 领域扩展
 
 - `KnowledgeBaseDatastoreRepository`：维护知识库与 datastore 的显式挂载关系
 - `KnowledgeSyncWorker`：消费 `knowledge_sync_jobs`，把 datastore 文档同步成 `DATASTORE_DOCUMENT`
@@ -241,6 +283,9 @@ sequenceDiagram
     participant QE as QueryEnhancer
     participant VI as VectorIndexer
     participant FI as FtsIndexer
+    participant GS as GraphKnowledgeSearcher
+    participant CD as ChunkDeduplicator
+    participant RQE as RetrievalQualityEvaluator
     participant RR as Reranker
 
     CA->>DR: retrieve(query, kbIds, topK)
@@ -250,12 +295,16 @@ sequenceDiagram
         QE-->>DR: EnhancedQuery（改写/HyDE）
     end
 
-    par 双路检索
+    par 三路并行检索
         DR->>VI: search(query, kbIds, topK)
         DR->>FI: search(query, kbIds, topK)
+        DR->>GS: search(query, scopes, topK)
     end
 
-    Note over DR: 自适应 RRF 融合
+    Note over DR: 自适应 RRF 三路融合（向量 + FTS + 图谱）
+
+    DR->>CD: deduplicate(fused)
+    Note over DR: Parent-Child 解析（child→parent）
 
     opt 上下文窗口扩展
         DR->>DR: expandContextWindow(results)
@@ -263,6 +312,16 @@ sequenceDiagram
 
     opt 精排启用
         DR->>RR: rerank(query, candidates, topK)
+    end
+
+    opt Corrective RAG 启用
+        DR->>RQE: evaluate(query, results)
+        RQE-->>DR: EvaluationResult（HIGH/LOW/VERY_LOW）
+        alt LOW + 有改写建议
+            DR->>DR: 使用改写查询重试检索
+        else VERY_LOW
+            Note over DR: 标记所有结果为低置信度
+        end
     end
 
     DR-->>CA: List<DocumentSearchResult>
@@ -300,9 +359,14 @@ sequenceDiagram
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 多知识库实例 | 每个知识库独立配置 | 不同知识域可能需要不同的 Embedding 模型和分块策略 |
-| 分块策略 sealed interface | 5 种策略 + SmartChunker 自动选择 | 不同文档结构适合不同分块方式，SmartChunker 降低用户配置负担 |
+| 分块策略 sealed interface | 6 种策略 + SmartChunker 自动选择 | 不同文档结构适合不同分块方式，SmartChunker 降低用户配置负担 |
+| Parent-Child 分块 | 大块（parent）用于返回，小块（child）用于检索 | 兼顾检索精度（小块匹配更精准）和上下文完整性（返回大块） |
 | 文档解析 | Apache Tika 格式检测 + 4 种解析器 | Tika 提供可靠的格式检测，sealed interface 保证类型安全 |
-| 双路检索融合 | 向量 + FTS5 + 自适应 RRF | 语义检索和关键词检索互补，自适应权重处理低置信度场景 |
+| 三路检索融合 | 向量 + FTS5 + 知识图谱 + 自适应 RRF | 语义检索、关键词检索、图谱检索三路互补，自适应权重处理低置信度场景 |
+| FTS5 tokenizer | trigram tokenizer | 天然支持 CJK 子串匹配，无需外部中文分词器 |
+| 检索结果去重 | Jaccard trigram 相似度 | 多路融合后可能产生内容重叠的分块，去重后减少冗余 |
+| Corrective RAG | LLM 评估 + 查询改写重试 | 当检索结果质量不足时自动纠正，fail-open 降级确保不阻塞 |
+| Token 计数 | jtokkit（精确）+ 启发式（兜底） | jtokkit 兼容 tiktoken 编码，提供精确 Token 计数；启发式兜底确保可用性 |
 | 查询增强 | rewrite / HyDE / none 三模式 | rewrite 适合模糊查询，HyDE 适合专业领域，none 适合精确查询 |
 | 精排器 | RerankRouter 统一路由 | 通过路由器统一接入不同精排后端（LLM / API），调用方无需关心实现细节 |
 | 断点续传 | DocumentStatus 阶段记录 | 大文档摄入可能耗时较长，断点续传避免重复处理 |
@@ -312,8 +376,9 @@ sequenceDiagram
 
 | 依赖模块 | 交互方式 | 说明 |
 |---------|---------|------|
-| LLM Router (`com.lifepilot.llm`) | 构造函数注入 | 向量化（embed）、查询增强、LLM 精排、上下文增强、知识提取 |
+| LLM Router (`com.lifepilot.llm`) | 构造函数注入 | 向量化（embed）、查询增强、LLM 精排、上下文增强、知识提取、Corrective RAG 质量评估 |
 | Memory (`com.lifepilot.memory`) | 通过 KnowledgeExtractionPipeline | 提取的实体写入 L3 语义记忆 |
+| Memory (`com.lifepilot.memory.semantic`) | 通过 GraphKnowledgeSearcher | 图谱检索读取 SemanticMemory 中的实体和关系 |
 | Agent Engine (`com.lifepilot.agent`) | ContextAssembler 调用 DocumentRetriever | 为 Agent 上下文提供知识库片段 |
 
 ## 7. 配置参考
@@ -328,8 +393,19 @@ sequenceDiagram
 | `lifepilot.knowledge.chunking.recursive.*` | — | 递归分块参数 |
 | `lifepilot.knowledge.chunking.heading.*` | — | 标题分块参数 |
 | `lifepilot.knowledge.chunking.semantic-chunking.*` | — | 语义分块参数 |
+| `lifepilot.knowledge.chunking.parent-child.enabled` | `true` | 是否启用 Parent-Child 两级分块 |
+| `lifepilot.knowledge.chunking.parent-child.parent-max-tokens` | `1024` | Parent 分块最大 Token 数 |
+| `lifepilot.knowledge.chunking.parent-child.child-max-tokens` | `256` | Child 分块最大 Token 数 |
+| `lifepilot.knowledge.chunking.parent-child.child-overlap` | `64` | Child 分块之间的重叠 Token 数 |
+| `lifepilot.knowledge.tokenizer.encoding` | `cl100k_base` | Token 编码类型（cl100k_base / o200k_base / heuristic） |
 | `lifepilot.knowledge.vector-indexer.*` | — | 向量索引参数（批量大小、维度等） |
 | `lifepilot.knowledge.retrieval.*` | — | 检索参数（topK、权重、RRF K 等） |
+| `lifepilot.knowledge.retrieval.graph-weight` | `0.2` | 图谱检索在 RRF 融合中的权重 |
+| `lifepilot.knowledge.retrieval.graph-enabled` | `true` | 是否启用图谱检索 |
+| `lifepilot.knowledge.retrieval.deduplication-threshold` | `0.85` | Jaccard trigram 去重阈值（0~1，设为 0 禁用） |
+| `lifepilot.knowledge.retrieval.correction-enabled` | `false` | 是否启用 Corrective RAG |
+| `lifepilot.knowledge.retrieval.correction-high-threshold` | `0.7` | Top-1 分数高于此阈值时跳过 LLM 评估 |
+| `lifepilot.knowledge.retrieval.correction-timeout-ms` | `3000` | Corrective RAG LLM 调用超时毫秒数 |
 | `lifepilot.knowledge.context-enricher.*` | — | 上下文增强参数 |
 | `lifepilot.knowledge.extraction.*` | — | 知识提取参数 |
 | `lifepilot.knowledge.reranker.*` | — | 精排参数（类型、模型、topK 等） |

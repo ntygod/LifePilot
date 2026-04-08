@@ -127,7 +127,7 @@ public class CodeExecuteToolExecutor {
         // ── 沙箱路径（原有逻辑） ──
         // 检查 SessionManager 可用性
         if (sessionManager == null) {
-            return ToolResult.error("沙箱运行时不可用，请检查沙箱配置");
+            return ToolResult.error("沙箱运行时不可用（需管理员配置），改用 shell.exec 执行命令");
         }
 
         // 解析语言枚举
@@ -249,24 +249,20 @@ public class CodeExecuteToolExecutor {
                 data.put("error", result.error());
                 // 审计持久化（内核执行失败）
                 var languageOpt = Language.fromString(language);
-                if (languageOpt.isPresent()) {
-                    persistRecord(kernelId, languageOpt.get(), codeHash, code.length(),
-                            "kernel", true, 0, 1, null, null,
-                            (long) result.durationMs(), "FAILED", result.error());
-                }
+                languageOpt.ifPresent(value -> persistRecord(kernelId, value, codeHash, code.length(),
+                        "kernel", true, 0, 1, null, null,
+                        (long) result.durationMs(), "FAILED", result.error()));
                 return new ToolResult(ToolResultStatus.ERROR, Map.copyOf(data),
                         "内核执行失败: " + result.error(), ToolResultMeta.empty());
             }
 
             // 审计持久化（内核执行成功）
             var languageOpt = Language.fromString(language);
-            if (languageOpt.isPresent()) {
-                persistRecord(kernelId, languageOpt.get(), codeHash, code.length(),
-                        "kernel", true, 0, 0,
-                        result.stdout().getBytes(StandardCharsets.UTF_8).length,
-                        result.stderr().getBytes(StandardCharsets.UTF_8).length,
-                        (long) result.durationMs(), "COMPLETED", null);
-            }
+            languageOpt.ifPresent(value -> persistRecord(kernelId, value, codeHash, code.length(),
+                    "kernel", true, 0, 0,
+                    result.stdout().getBytes(StandardCharsets.UTF_8).length,
+                    result.stderr().getBytes(StandardCharsets.UTF_8).length,
+                    (long) result.durationMs(), "COMPLETED", null));
 
             log.debug("内核代码执行完成: kernelId={}, language={}, durationMs={}",
                     kernelId, language, result.durationMs());

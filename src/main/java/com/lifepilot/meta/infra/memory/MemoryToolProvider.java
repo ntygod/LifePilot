@@ -46,6 +46,8 @@ import java.util.*;
 public class MemoryToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryToolProvider.class);
+    private static final String VALID_ENTITY_TYPES = Arrays.stream(EntityType.values())
+            .map(Enum::name).collect(java.util.stream.Collectors.joining(", "));
 
     private final HybridRetriever hybridRetriever;
     private final SemanticMemory semanticMemory;
@@ -72,8 +74,9 @@ public class MemoryToolProvider {
     }
 
     public void registerTools(DynamicToolRegistry toolRegistry) {
-        buildMemoryTools().forEach(toolRegistry::registerBuiltinTool);
-        log.info("记忆/资料检索工具注册完成: count={}", buildMemoryTools().size());
+        var tools = buildMemoryTools();
+        tools.forEach(toolRegistry::registerBuiltinTool);
+        log.info("记忆/资料检索工具注册完成: count={}", tools.size());
     }
 
     public List<BuiltinTool> buildMemoryTools() {
@@ -99,9 +102,6 @@ public class MemoryToolProvider {
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
                 .description("管理用户的长期记忆。用户透露身份、偏好、习惯等持久性信息时应主动调用写入。" +
-                        "action: search=搜索知识实体, recall=回忆历史对话(跨会话), " +
-                        "create=新建实体, update=更新实体, delete=归档, tag=建立关系, " +
-                        "query-at-time=时间点查询, search-experience=检索执行经验。" +
                         "资料文档用 knowledge.search，精确字段用 datastore。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -110,20 +110,22 @@ public class MemoryToolProvider {
                                 Map.entry("action", Map.of(
                                         "type", "string",
                                         "enum", List.of("search", "recall", "create", "update", "delete", "tag", "query-at-time", "search-experience"),
-                                        "description", "记忆操作类型")),
-                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词、语义描述或经验检索场景")),
-                                Map.entry("top_k", Map.of("type", "integer", "description", "返回数量，search/recall/search-experience 使用")),
-                                Map.entry("name", Map.of("type", "string", "description", "action=create 时的实体名称")),
-                                Map.entry("entityType", Map.of("type", "string", "description", "实体类型或 query-at-time 的类型过滤")),
+                                        "description", "记忆操作类型。search=搜索知识实体, recall=回忆历史对话, " +
+                                                "create/update/delete=实体 CRUD, tag=建立关系, " +
+                                                "query-at-time=时间点查询, search-experience=检索执行经验")),
+                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 使用")),
+                                Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
+                                Map.entry("name", Map.of("type", "string", "description", "实体名称；create 必填")),
+                                Map.entry("entityType", Map.of("type", "string", "description", "实体类型；create 必填，query-at-time 时可选过滤", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM"))),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
-                                Map.entry("entityId", Map.of("type", "string", "description", "action=update/delete 时的实体 ID")),
-                                Map.entry("sourceEntityId", Map.of("type", "string", "description", "action=tag 时的源实体 ID")),
-                                Map.entry("targetEntityId", Map.of("type", "string", "description", "action=tag 时的目标实体 ID")),
-                                Map.entry("relationType", Map.of("type", "string", "description", "action=tag 时的关系类型")),
-                                Map.entry("strength", Map.of("type", "number", "description", "action=tag 时的关系强度 0.0-1.0，默认 0.5")),
-                                Map.entry("timestamp", Map.of("type", "string", "description", "action=query-at-time 时的 ISO 8601 时间戳")),
-                                Map.entry("successOnly", Map.of("type", "boolean", "description", "action=search-experience 时是否仅返回成功经验，默认 false"))
+                                Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete 必填")),
+                                Map.entry("sourceEntityId", Map.of("type", "string", "description", "tag 源实体 ID")),
+                                Map.entry("targetEntityId", Map.of("type", "string", "description", "tag 目标实体 ID")),
+                                Map.entry("relationType", Map.of("type", "string", "description", "tag 关系类型")),
+                                Map.entry("strength", Map.of("type", "number", "description", "tag 关系强度 0.0-1.0，默认 0.5")),
+                                Map.entry("timestamp", Map.of("type", "string", "description", "query-at-time 的 ISO 8601 时间戳")),
+                                Map.entry("successOnly", Map.of("type", "boolean", "description", "search-experience 仅返回成功经验，默认 false"))
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
@@ -199,7 +201,7 @@ public class MemoryToolProvider {
 
     ToolResult executeRecall(ToolInput input) {
         if (episodicMemory == null) {
-            return ToolResult.error("回忆对话功能不可用");
+            return ToolResult.error("回忆对话功能不可用，改用 search 搜索知识实体");
         }
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
@@ -232,7 +234,7 @@ public class MemoryToolProvider {
             return ToolResult.success(Map.of(
                     "id", created.id(), "name", created.name(), "type", created.type().name(), "version", created.version()));
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("无效的实体类型: " + e.getMessage());
+            return ToolResult.error("无效的实体类型 '" + input.getOptionalParam("entityType", String.class).orElse("") + "'，有效值: " + VALID_ENTITY_TYPES);
         } catch (Exception e) {
             log.error("创建记忆失败: {}", e.getMessage(), e);
             return ToolResult.error("创建记忆失败: " + e.getMessage());
@@ -244,7 +246,7 @@ public class MemoryToolProvider {
             String entityId = input.getParam("entityId", String.class);
             var existing = semanticMemory.findById(entityId);
             if (existing.isEmpty()) {
-                return ToolResult.error("实体不存在: " + entityId);
+                return ToolResult.error("实体不存在: " + entityId + "，请用 search 查找正确 ID");
             }
             var entity = existing.get();
             String newDesc = input.getOptionalParam("description", String.class).orElse(entity.description());
@@ -260,7 +262,7 @@ public class MemoryToolProvider {
                     "id", result.id(), "name", result.name(), "type", result.type().name(),
                     "version", result.version(), "description", result.description() != null ? result.description() : ""));
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("无效的实体类型: " + e.getMessage());
+            return ToolResult.error("无效的实体类型 '" + input.getOptionalParam("entityType", String.class).orElse("") + "'，有效值: " + VALID_ENTITY_TYPES);
         } catch (Exception e) {
             log.error("更新记忆失败: {}", e.getMessage(), e);
             return ToolResult.error("更新记忆失败: " + e.getMessage());
@@ -272,7 +274,7 @@ public class MemoryToolProvider {
             String entityId = input.getParam("entityId", String.class);
             var existing = semanticMemory.findById(entityId);
             if (existing.isEmpty()) {
-                return ToolResult.error("实体不存在: " + entityId);
+                return ToolResult.error("实体不存在: " + entityId + "，请用 search 查找正确 ID");
             }
             var entity = existing.get();
             retryOnBusy(() -> { semanticMemory.archive(entity); return null; });
@@ -319,7 +321,7 @@ public class MemoryToolProvider {
                     EntityType filterType = EntityType.valueOf(typeFilter.get().toUpperCase());
                     entities = entities.stream().filter(e -> e.type() == filterType).toList();
                 } catch (IllegalArgumentException e) {
-                    return ToolResult.error("无效的实体类型: " + typeFilter.get());
+                    return ToolResult.error("无效的实体类型 '" + typeFilter.get() + "'，有效值: " + VALID_ENTITY_TYPES);
                 }
             }
             List<Map<String, Object>> items = entities.stream().map(e -> {

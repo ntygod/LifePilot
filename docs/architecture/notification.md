@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.notification`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -26,7 +26,7 @@ graph TB
         CRON["CronScheduler"]
         HEARTBEAT["HeartbeatRunner<br/>唤醒主动提醒"]
         WF["StepExecutor / NotifyStep"]
-        META["NotifyToolExecutor"]
+        META["NotifyToolProvider<br/>notify 工具"]
         FUTURE["未来模块"]
     end
 
@@ -193,7 +193,7 @@ sequenceDiagram
 |------|------|---------|
 | 被依赖 | `agent.task` | cron / 主动提醒通过 `NotificationService` 发送结果 |
 | 被依赖 | `workflow` | `NotifyStep` 通过 `NotificationService` 投递通知 |
-| 被依赖 | `meta` | `interact.notify` 通过 `NotifyToolExecutor` 调用通知服务 |
+| 被依赖 | `meta` | 独立的 `notify` 工具（`NotifyToolProvider` → `NotifyToolExecutor`）直接调用通知服务 |
 | 依赖 | `interaction.channel` | 通过插件架构向外部渠道发送（具体渠道适配器由插件提供） |
 | 依赖 | `interaction.web.sse` | 通过 `SseSessionManager` 实时广播 Web 通知 |
 | 依赖 | SQLite | 持久化通知历史 |

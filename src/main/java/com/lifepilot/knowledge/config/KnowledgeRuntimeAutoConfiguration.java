@@ -3,41 +3,24 @@ package com.lifepilot.knowledge.config;
 import com.lifepilot.datastore.config.DataStoreAutoConfiguration;
 import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
-import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.knowledge.eval.RetrievalEvaluator;
-import com.lifepilot.knowledge.chunking.ChunkingConfig;
-import com.lifepilot.knowledge.chunking.ChunkingStrategy;
-import com.lifepilot.knowledge.chunking.FixedSizeChunker;
-import com.lifepilot.knowledge.chunking.HeadingChunker;
-import com.lifepilot.knowledge.chunking.ParentChildChunker;
-import com.lifepilot.knowledge.chunking.RecursiveChunker;
-import com.lifepilot.knowledge.chunking.SemanticChunker;
-import com.lifepilot.knowledge.chunking.SmartChunker;
-import com.lifepilot.knowledge.util.TokenCounter;
+import com.lifepilot.knowledge.chunking.*;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
 import com.lifepilot.knowledge.enricher.ChunkContextEnricher;
+import com.lifepilot.knowledge.eval.RetrievalEvaluator;
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.ingest.DocumentIngester;
-import com.lifepilot.knowledge.repository.DocumentChunkRepository;
-import com.lifepilot.knowledge.repository.DocumentRepository;
-import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
-import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
-import com.lifepilot.knowledge.repository.KnowledgeSyncJobRepository;
-import com.lifepilot.knowledge.retrieve.ChunkDeduplicator;
-import com.lifepilot.knowledge.retrieve.DocumentRetriever;
-import com.lifepilot.knowledge.retrieve.GraphKnowledgeSearcher;
-import com.lifepilot.knowledge.retrieve.QueryEnhancer;
-import com.lifepilot.knowledge.retrieve.RetrievalQualityEvaluator;
-import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.knowledge.parser.FormatDetector;
+import com.lifepilot.knowledge.repository.*;
+import com.lifepilot.knowledge.retrieve.*;
 import com.lifepilot.knowledge.sync.DataStoreKnowledgeSyncJobPublisher;
-import com.lifepilot.knowledge.sync.DefaultDatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.knowledge.sync.DatastoreDocumentProjector;
+import com.lifepilot.knowledge.sync.DefaultDatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.knowledge.sync.KnowledgeSyncWorker;
+import com.lifepilot.knowledge.util.TokenCounter;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.rerank.router.RerankRouter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -181,7 +164,7 @@ public class KnowledgeRuntimeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DocumentIngester documentIngester(com.lifepilot.knowledge.parser.FormatDetector formatDetector,
+    public DocumentIngester documentIngester(FormatDetector formatDetector,
                                              SmartChunker smartChunker,
                                              ParentChildChunker parentChildChunker,
                                              FixedSizeChunker fixedSizeChunker,

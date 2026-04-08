@@ -213,7 +213,8 @@ public class FileToolProvider {
     private BuiltinTool buildFileEditTool(FilePatchToolExecutor executor) {
         var itemProperties = new LinkedHashMap<String, Object>();
         itemProperties.put("type", Map.of("type", "string",
-                "description", "操作类型: insert / replace / delete（行级）或 search_replace（文本匹配）"));
+                "enum", List.of("insert", "replace", "delete", "search_replace"),
+                "description", "操作类型: insert/replace/delete（行级）或 search_replace（文本匹配）"));
         itemProperties.put("line", Map.of("type", "integer",
                 "description", "目标行号（1-based），行级操作时必需，所有行号基于原始文件"));
         itemProperties.put("endLine", Map.of("type", "integer",

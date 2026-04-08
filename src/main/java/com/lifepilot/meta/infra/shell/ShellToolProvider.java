@@ -71,11 +71,7 @@ public class ShellToolProvider {
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
                 .description("在操作系统中执行 Shell 命令。" +
-                        "支持 background=true 立即后台执行（返回 sessionId），" +
-                        "yieldMs=N 先同步等 N 毫秒、超时自动转后台（适合不确定时长的命令）。" +
-                        "env 参数可注入环境变量（如 API Key），shell 参数可指定 Unix 解释器（bash/zsh，默认 sh），" +
-                        "pty=true 分配伪终端（交互式 TUI 程序需要，仅 Unix）。" +
-                        "简单代码执行请用 code.execute，Git 操作请用 git.query/git.mutate。" +
+                        "简单代码执行请用 code.execute，Git 操作请用 git。" +
                         "管理后台进程或持久会话请用 shell.process。")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
@@ -137,21 +133,14 @@ public class ShellToolProvider {
     }
 
     private String buildProcessDescription() {
-        var sb = new StringBuilder("管理通过 shell.exec(background=true/yieldMs) 启动的后台进程，或管理持久终端会话。");
-        sb.append("通过 action 参数支持：");
+        var sb = new StringBuilder("管理后台进程或持久终端会话。");
         if (processManager != null) {
-            sb.append("【后台进程】list=列出所有后台进程及状态，output=读取增量输出（自上次读取以来的新内容），");
-            sb.append("write=向进程 stdin 写入内容（如回答交互提示），kill=强制终止进程");
+            sb.append("后台进程：list/output/write/kill。");
         }
         if (sessionManager != null) {
-            if (processManager != null) sb.append("；");
-            sb.append("【持久会话（tmux）】适用于需要跨多次调用保持环境状态的场景。");
-            sb.append("session-create=创建会话，session-exec=在会话中执行命令并等待完成，");
-            sb.append("session-read=读取屏幕内容，session-write=发送原始输入（不附加回车），");
-            sb.append("session-signal=发送信号（如 SIGINT 中断），");
-            sb.append("session-list=列出会话，session-close=关闭会话，session-resize=调整窗口大小");
+            sb.append("持久会话（tmux）：session-create/exec/read/write/signal/list/close/resize，跨调用保持环境状态。");
         }
-        sb.append("。要执行新命令请用 shell.exec。");
+        sb.append("执行新命令请用 shell.exec。");
         return sb.toString();
     }
 
@@ -173,18 +162,18 @@ public class ShellToolProvider {
         ));
         properties.put("sessionId", Map.of("type", "string", "description", "进程或持久会话的 sessionId"));
         if (processManager != null) {
-            properties.put("input", Map.of("type", "string", "description", "action=write/session-write 时写入的输入内容"));
+            properties.put("input", Map.of("type", "string", "description", "write/session-write 时写入的内容"));
         }
         if (sessionManager != null) {
-            properties.put("command", Map.of("type", "string", "description", "action=session-exec 时的 Shell 命令"));
+            properties.put("command", Map.of("type", "string", "description", "session-exec 的 Shell 命令"));
             if (processManager == null) {
-                properties.put("input", Map.of("type", "string", "description", "action=session-write 时写入的输入内容"));
+                properties.put("input", Map.of("type", "string", "description", "session-write 时写入的内容"));
             }
-            properties.put("name", Map.of("type", "string", "description", "action=session-create 时的会话名称"));
-            properties.put("workDir", Map.of("type", "string", "description", "action=session-create 时的初始工作目录"));
-            properties.put("signal", Map.of("type", "string", "description", "action=session-signal 时的信号名称，如 SIGINT、SIGTERM"));
-            properties.put("cols", Map.of("type", "integer", "description", "action=session-resize 时的终端列数"));
-            properties.put("rows", Map.of("type", "integer", "description", "action=session-resize 时的终端行数"));
+            properties.put("name", Map.of("type", "string", "description", "session-create 会话名称"));
+            properties.put("workDir", Map.of("type", "string", "description", "session-create 初始工作目录"));
+            properties.put("signal", Map.of("type", "string", "description", "session-signal 信号名，如 SIGINT、SIGTERM"));
+            properties.put("cols", Map.of("type", "integer", "description", "session-resize 终端列数"));
+            properties.put("rows", Map.of("type", "integer", "description", "session-resize 终端行数"));
         }
 
         return Map.of(

@@ -18,8 +18,6 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.audio.SpeechSynthesizer;
 import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
-import com.lifepilot.meta.infra.interaction.InteractionBridge;
-import com.lifepilot.meta.infra.interaction.InteractionResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
@@ -86,8 +84,6 @@ public class ChatController {
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     @Nullable
-    private final InteractionBridge interactionBridge;
-    @Nullable
     private final FeedbackProcessor feedbackProcessor;
     @Nullable
     private final SpeechSynthesizer speechSynthesizer;
@@ -100,7 +96,6 @@ public class ChatController {
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
-                          @Nullable InteractionBridge interactionBridge,
                           @Nullable FeedbackProcessor feedbackProcessor,
                           @Nullable SpeechSynthesizer speechSynthesizer,
                           MediaProperties mediaProperties) {
@@ -111,7 +106,6 @@ public class ChatController {
         this.feedbackRepository = feedbackRepository;
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
-        this.interactionBridge = interactionBridge;
         this.feedbackProcessor = feedbackProcessor;
         this.speechSynthesizer = speechSynthesizer;
         this.mediaProperties = mediaProperties;
@@ -490,23 +484,6 @@ public class ChatController {
             return ResponseEntity.internalServerError().body(
                     new ErrorResponse(500, "分叉会话失败: " + e.getMessage(), Instant.now()));
         }
-    }
-
-    @PostMapping("/interactions/{interactionId}")
-    public ResponseEntity<?> handleInteractionResponse(
-            @PathVariable String interactionId,
-            @RequestBody InteractionResponseRequest request) {
-        if (interactionBridge == null) {
-            log.debug("InteractionBridge 未注入，交互回传端点不可用");
-            return ResponseEntity.notFound().build();
-        }
-        interactionBridge.resolve(interactionId, new InteractionResponse(
-                interactionId,
-                request.value(),
-                request.confirmed(),
-                request.timedOut()
-        ));
-        return ResponseEntity.ok().build();
     }
 
     /**

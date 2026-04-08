@@ -12,6 +12,7 @@ import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.support.CronExpression;
 
 import java.time.Instant;
 import java.util.Map;
@@ -52,7 +53,7 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         String schedule = input.getParam("schedule", String.class);
                         String instruction = input.getParam("instruction", String.class);
 
-                        org.springframework.scheduling.support.CronExpression.parse(schedule);
+                        CronExpression.parse(schedule);
 
                         String now = Instant.now().toString();
                         var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now);
@@ -113,7 +114,7 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         String taskId = input.getParam("taskId", String.class);
                         var existing = cronTaskRepository.findById(taskId);
                         if (existing.isEmpty()) {
-                            return ToolResult.error("任务不存在: id=" + taskId);
+                            return ToolResult.error("任务不存在: id=" + taskId + "，请用 list 查看可用任务");
                         }
                         var old = existing.get();
 
@@ -122,8 +123,9 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         String instruction = input.getOptionalParam("instruction", String.class).orElse(old.instruction());
                         String status = input.getOptionalParam("status", String.class).orElse(old.status());
 
-                        if (!schedule.equals(old.schedule())) {
-                            org.springframework.scheduling.support.CronExpression.parse(schedule);
+                        boolean scheduleChanged = !schedule.equals(old.schedule());
+                        if (scheduleChanged) {
+                            CronExpression.parse(schedule);
                         }
 
                         var updated = new CronTaskEntry(
@@ -132,7 +134,6 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         );
                         cronTaskRepository.update(updated);
 
-                        boolean scheduleChanged = !schedule.equals(old.schedule());
                         boolean statusChanged = !status.equals(old.status());
                         if (scheduleChanged || statusChanged) {
                             cronScheduler.cancel(taskId);

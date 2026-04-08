@@ -35,12 +35,6 @@ public class BrowserKeyboardToolExecutor {
      * @return 包含操作结果的结构化结果
      */
     public ToolResult execute(ToolInput input) {
-        if (sessionManager == null || !sessionManager.isAvailable()) {
-            String msg = sessionManager != null ? sessionManager.getUnavailableMessage()
-                    : "浏览器功能未配置，请安装 Playwright";
-            return ToolResult.error(msg);
-        }
-
         var keyOpt = input.getOptionalParam("key", String.class);
         var textOpt = input.getOptionalParam("text", String.class);
 

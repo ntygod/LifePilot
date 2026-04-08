@@ -1,5 +1,6 @@
 package com.lifepilot.agent.context;
 
+import com.lifepilot.agent.model.Budget;
 import com.lifepilot.llm.multimodal.MediaContent;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.lang.Nullable;
@@ -98,7 +99,7 @@ public record AssembledContext(
      * TRIM_TOOLS 和 COMPRESS_HISTORY 清空上下文消息（减少 token 占用），
      * 标记 degraded=true。</p>
      */
-    public AssembledContext degrade(com.lifepilot.agent.model.Budget.DegradationLevel level) {
+    public AssembledContext degrade(Budget.DegradationLevel level) {
         return switch (level) {
             case SKIP_MEMORY -> new AssembledContext(
                     systemPrompt, List.of(), historyMessages, userPrompt,

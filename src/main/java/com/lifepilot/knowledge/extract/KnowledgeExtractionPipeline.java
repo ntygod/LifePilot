@@ -47,7 +47,7 @@ public class KnowledgeExtractionPipeline {
     /**
      * 构造知识提取管线。
      *
-     * @param llmRouter      LLM 路由器
+     * @param generationRouter LLM 路由器
      * @param semanticMemory 语义记忆
      * @param config         提取配置
      * @param promptRegistry 提示词模板注册表
@@ -73,7 +73,7 @@ public class KnowledgeExtractionPipeline {
      * 通过 SemanticMemory 写入知识图谱。LLM 不可用时返回空结果。
      *
      * @param chunks     文档分块列表
-     * @param documentId 文档 ID（用作 conversationId）
+     * @param doc 文档
      * @return 提取结果
      */
     public ExtractionResult extract(Document doc, List<DocumentChunk> chunks) {

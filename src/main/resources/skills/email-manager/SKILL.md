@@ -28,7 +28,7 @@ triggers:
 
 ## When NOT to Use
 - 即时消息发送（用飞书/钉钉 Skill）
-- 系统通知推送（用 interact）
+- 系统通知推送（用 notify）
 - 文档协作（用对应的文档 Skill）
 
 ## 发送方式

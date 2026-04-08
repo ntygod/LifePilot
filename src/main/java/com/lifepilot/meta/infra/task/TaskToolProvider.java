@@ -52,9 +52,7 @@ public class TaskToolProvider {
                 .id("cron")
                 .category(ToolCategory.ACTION)
                 .name("定时任务")
-                .description("管理 Cron 定时任务。通过 action 参数支持四类操作：" +
-                        "create=创建定时任务，list=查询任务列表，" +
-                        "update=更新已有任务，remove=删除任务。")
+                .description("管理定时任务，支持创建、查询、更新和删除操作。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -62,22 +60,23 @@ public class TaskToolProvider {
                                 Map.entry("action", Map.of(
                                         "type", "string",
                                         "enum", List.of("create", "list", "update", "remove"),
-                                        "description", "Cron 操作类型")),
+                                        "description", "操作类型：create=创建, list=查询, update=更新（未传字段保持不变）, remove=删除")),
                                 Map.entry("taskId", Map.of(
                                         "type", "string",
-                                        "description", "任务 ID；create 时可省略由系统生成，update/remove 时必填")),
+                                        "description", "任务 ID；create 时可省略由系统生成，update/remove 必填")),
                                 Map.entry("name", Map.of(
                                         "type", "string",
-                                        "description", "任务名称；action=create/update 时使用")),
+                                        "description", "任务名称；create 必填")),
                                 Map.entry("schedule", Map.of(
                                         "type", "string",
-                                        "description", "Cron 表达式（6 位：秒 分 时 日 月 周）；action=create/update 时使用")),
+                                        "description", "6 位 Cron 表达式（秒 分 时 日 月 周），如 0 30 9 * * MON-FRI；create 必填")),
                                 Map.entry("instruction", Map.of(
                                         "type", "string",
-                                        "description", "Agent 执行时的 prompt 指令；action=create/update 时使用")),
+                                        "description", "任务触发时 Agent 执行的 prompt 指令；create 必填")),
                                 Map.entry("status", Map.of(
                                         "type", "string",
-                                        "description", "任务状态过滤或更新值：active / paused / completed"))
+                                        "enum", List.of("active", "paused", "completed"),
+                                        "description", "list 时作为筛选条件，update 时作为目标状态"))
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)

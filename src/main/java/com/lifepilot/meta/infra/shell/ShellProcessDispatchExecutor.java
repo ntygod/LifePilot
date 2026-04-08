@@ -16,7 +16,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * 后台进程与持久会话 action 路由执行器。
@@ -42,8 +41,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
         this.sessionManager = sessionManager;
 
         if (processManager != null) {
-            // 断言：注册了 process action 的分支内 processManager 必然非 null
-            Objects.requireNonNull(processManager, "processManager 在注册 process action 时不应为 null");
             register("list",
                     RiskLevel.LOW,
                     ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
@@ -75,8 +72,6 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
         }
 
         if (sessionManager != null) {
-            // 断言：注册了 session action 的分支内 sessionManager 必然非 null
-            Objects.requireNonNull(sessionManager, "sessionManager 在注册 session action 时不应为 null");
             register("session-create",
                     RiskLevel.HIGH,
                     ToolExecutionSemantics.of(

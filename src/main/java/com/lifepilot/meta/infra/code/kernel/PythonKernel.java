@@ -1,5 +1,7 @@
 package com.lifepilot.meta.infra.code.kernel;
 
+import java.util.List;
+
 /**
  * Python 持久内核 — 通过长驻 python3 进程实现跨调用状态保持。
  *
@@ -71,6 +73,6 @@ public final class PythonKernel extends ProcessKernelBase {
      * @param maxOutputChars 输出最大字符数
      */
     public PythonKernel(String kernelId, String pythonRuntime, int maxOutputChars) {
-        super(kernelId, maxOutputChars, pythonRuntime, java.util.List.of("-u"), ".py", "Python", PYTHON_KERNEL_SCRIPT);
+        super(kernelId, maxOutputChars, pythonRuntime, List.of("-u"), ".py", "Python", PYTHON_KERNEL_SCRIPT);
     }
 }

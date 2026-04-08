@@ -40,21 +40,7 @@ public class BrowserToolProvider {
         var textSnapshotCleaner = new TextSnapshotCleaner(
                 properties.getInfra().getBrowser().getTextSnapshotMaxLength());
         var executor = new BrowserActionDispatchExecutor(
-                new BrowserNavigateToolExecutor(browserSessionManager, textSnapshotCleaner,
-                        (int) Math.min((long) properties.getInfra().getBrowser().getToolTimeoutSeconds() * 1000, Integer.MAX_VALUE)),
-                new BrowserClickToolExecutor(browserSessionManager),
-                new BrowserInputToolExecutor(browserSessionManager),
-                new BrowserScreenshotToolExecutor(browserSessionManager),
-                new BrowserScrollToolExecutor(browserSessionManager, properties),
-                new BrowserWaitToolExecutor(browserSessionManager, properties),
-                new BrowserHoverToolExecutor(browserSessionManager),
-                new BrowserSelectToolExecutor(browserSessionManager),
-                new BrowserKeyboardToolExecutor(browserSessionManager),
-                new BrowserEvaluateToolExecutor(browserSessionManager, properties),
-                new BrowserAccessibilityToolExecutor(browserSessionManager, properties),
-                new BrowserTabToolExecutor(browserSessionManager),
-                browserSessionManager
-        );
+                browserSessionManager, properties, textSnapshotCleaner);
         return List.of(buildBrowserTool(executor));
     }
 
@@ -63,46 +49,73 @@ public class BrowserToolProvider {
                 .id("browser")
                 .category(ToolCategory.ACTION)
                 .name("浏览器自动化")
-                .description("控制浏览器进行网页交互，适用于需要 JavaScript 渲染的动态页面或多步交互操作。" +
-                        "简单抓取静态网页内容请用 web.fetch。通过 action 参数支持：" +
-                        "navigate=导航到 URL 并获取文本快照，" +
-                        "click=点击页面元素，input=填写表单，scroll=滚动页面，" +
-                        "wait=等待元素出现或消失，hover=悬停，select=下拉选择，keyboard=按键或文本输入，" +
-                        "screenshot=截取页面截图，evaluate=执行 JavaScript，" +
-                        "accessibility=获取无障碍树，tab=管理多标签页，close=关闭会话。")
+                .description("控制浏览器进行网页交互。适用于 JS 动态页面或多步交互操作，" +
+                        "简单抓取静态内容请用 web.fetch。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
-                                        "enum", List.of("navigate", "click", "input", "scroll", "wait", "hover", "select", "keyboard", "screenshot", "evaluate", "accessibility", "tab", "close"),
-                                        "description", "浏览器操作类型")),
-                                Map.entry("url", Map.of("type", "string", "description", "action=navigate 时的目标 URL；action=tab 且 open 时的目标 URL")),
-                                Map.entry("selector", Map.of("type", "string", "description", "click/input/scroll/wait/hover/select 时的 CSS 选择器")),
-                                Map.entry("value", Map.of("type", "string", "description", "action=input/select 时的输入值或 option value")),
-                                Map.entry("label", Map.of("type", "string", "description", "action=select 时的 option 可见文本")),
-                                Map.entry("direction", Map.of("type", "string", "description", "action=scroll 时的滚动方向: up/down")),
-                                Map.entry("pixels", Map.of("type", "integer", "description", "action=scroll 时的滚动像素数")),
-                                Map.entry("state", Map.of("type", "string", "description", "action=wait 时的目标状态: visible/hidden/attached")),
-                                Map.entry("timeout", Map.of("type", "integer", "description", "action=wait 时的超时秒数")),
-                                Map.entry("key", Map.of("type", "string", "description", "action=keyboard 时的键名或组合键")),
-                                Map.entry("text", Map.of("type", "string", "description", "action=keyboard 时逐字符输入的文本")),
-                                Map.entry("type", Map.of("type", "string", "description", "action=keyboard 时的操作类型: key/text")),
-                                Map.entry("fullPage", Map.of("type", "boolean", "description", "action=screenshot 时是否截取整页")),
-                                Map.entry("expression", Map.of("type", "string", "description", "action=evaluate 时的 JavaScript 表达式")),
-                                Map.entry("rootSelector", Map.of("type", "string", "description", "action=accessibility 时的子树根节点 CSS 选择器")),
-                                Map.entry("maxDepth", Map.of("type", "integer", "description", "action=accessibility 时的最大深度")),
-                                Map.entry("tabAction", Map.of("type", "string", "description", "action=tab 时的具体操作: open/switch/close/list")),
-                                Map.entry("tabId", Map.of("type", "string", "description", "action=tab 时 switch/close 的标签页 ID")),
-                                Map.entry("sessionId", Map.of("type", "string", "description", "浏览器会话 ID，默认 default")),
+                                        "enum", List.of("navigate", "click", "input", "scroll", "wait", "hover",
+                                                "select", "keyboard", "screenshot", "evaluate", "accessibility",
+                                                "tab", "storage", "close"),
+                                        "description", "浏览器操作类型。navigate 返回文本快照，screenshot 返回 Base64 图片")),
+                                Map.entry("url", Map.of("type", "string",
+                                        "description", "navigate 时的目标 URL；tab open 时的目标 URL")),
+                                Map.entry("selector", Map.of("type", "string",
+                                        "description", "CSS 选择器；click/input/scroll/wait/hover/select 使用")),
+                                Map.entry("value", Map.of("type", "string",
+                                        "description", "input/select 时的输入值或 option value")),
+                                Map.entry("label", Map.of("type", "string",
+                                        "description", "select 时按可见文本匹配")),
+                                Map.entry("direction", Map.of("type", "string",
+                                        "enum", List.of("up", "down"),
+                                        "description", "scroll 方向")),
+                                Map.entry("pixels", Map.of("type", "integer",
+                                        "description", "scroll 像素数")),
+                                Map.entry("state", Map.of("type", "string",
+                                        "enum", List.of("visible", "hidden", "attached"),
+                                        "description", "wait 目标状态")),
+                                Map.entry("timeout", Map.of("type", "integer",
+                                        "description", "wait 超时秒数")),
+                                Map.entry("key", Map.of("type", "string",
+                                        "description", "keyboard 键名或组合键（如 Enter、Control+A）")),
+                                Map.entry("text", Map.of("type", "string",
+                                        "description", "keyboard 逐字符输入文本")),
+                                Map.entry("type", Map.of("type", "string",
+                                        "enum", List.of("key", "text"),
+                                        "description", "keyboard 操作类型")),
+                                Map.entry("fullPage", Map.of("type", "boolean",
+                                        "description", "screenshot 是否截取整页")),
+                                Map.entry("expression", Map.of("type", "string",
+                                        "description", "evaluate 时的 JavaScript 表达式")),
+                                Map.entry("rootSelector", Map.of("type", "string",
+                                        "description", "accessibility 子树根节点 CSS 选择器")),
+                                Map.entry("maxDepth", Map.of("type", "integer",
+                                        "description", "accessibility 最大深度")),
+                                Map.entry("tabAction", Map.of("type", "string",
+                                        "enum", List.of("open", "switch", "close", "list"),
+                                        "description", "tab 具体操作")),
+                                Map.entry("tabId", Map.of("type", "string",
+                                        "description", "tab switch/close 的标签页 ID")),
+                                Map.entry("target", Map.of("type", "string",
+                                        "enum", List.of("cookie", "localStorage"),
+                                        "description", "storage 操作目标")),
+                                Map.entry("storageAction", Map.of("type", "string",
+                                        "enum", List.of("get", "set", "clear"),
+                                        "description", "storage 操作类型")),
+                                Map.entry("name", Map.of("type", "string",
+                                        "description", "storage set/get 时的键名")),
+                                Map.entry("sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")),
                                 Map.entry("acquisitionMode", Map.of("type", "string",
                                         "enum", List.of("LAUNCH", "CDP", "PERSISTENT"),
-                                        "description", "浏览器获取模式。LAUNCH=启动新浏览器（默认）；CDP=连接用户已打开的 Chrome（需配合 cdpUrl）；PERSISTENT=使用磁盘 profile 保留登录态（需配合 userDataDir）。仅首次创建会话时生效")),
+                                        "description", "浏览器模式。LAUNCH=启动新浏览器（默认），CDP=连接已运行的 Chrome（需 cdpUrl），PERSISTENT=持久 profile（需 userDataDir）。仅首次创建会话生效")),
                                 Map.entry("cdpUrl", Map.of("type", "string",
-                                        "description", "CDP 模式的远程调试端口 URL，如 http://localhost:9222。用户需先用 --remote-debugging-port=9222 启动 Chrome")),
+                                        "description", "CDP 模式的调试端口 URL，如 http://localhost:9222")),
                                 Map.entry("userDataDir", Map.of("type", "string",
-                                        "description", "PERSISTENT 模式的 Chrome 用户数据目录路径，如 ~/.zhiwei/chrome-profile"))
+                                        "description", "PERSISTENT 模式的用户数据目录路径"))
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

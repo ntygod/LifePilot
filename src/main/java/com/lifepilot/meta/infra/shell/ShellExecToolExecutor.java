@@ -128,7 +128,7 @@ public class ShellExecToolExecutor {
             return ToolResult.error("命令执行失败: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ToolResult.error("命令执行被中断");
+            return ToolResult.transientError("命令执行被中断");
         }
     }
 
@@ -165,7 +165,7 @@ public class ShellExecToolExecutor {
 
     private ToolResult executeBackground(String command, Path workDir, @Nullable Map<String, String> env) {
         if (backgroundProcessManager == null) {
-            return ToolResult.error("后台进程管理器不可用");
+            return ToolResult.error("后台进程管理器不可用，改用同步模式（不传 background）");
         }
         try {
             String sessionId = backgroundProcessManager.startProcess(command, workDir, env);
@@ -194,7 +194,7 @@ public class ShellExecToolExecutor {
     private ToolResult executeWithYield(String command, Path workDir, int yieldMs,
                                          @Nullable Map<String, String> env) {
         if (backgroundProcessManager == null) {
-            return ToolResult.error("后台进程管理器不可用（yieldMs 模式需要 BackgroundProcessManager）");
+            return ToolResult.error("后台进程管理器不可用，改用同步模式（不传 yieldMs）");
         }
 
         // yieldMs=0 等同于 background=true
@@ -257,7 +257,7 @@ public class ShellExecToolExecutor {
             return ToolResult.error("命令启动失败: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ToolResult.error("命令执行被中断");
+            return ToolResult.transientError("命令执行被中断");
         }
     }
 

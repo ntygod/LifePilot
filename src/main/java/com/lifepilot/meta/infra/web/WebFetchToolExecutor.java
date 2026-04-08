@@ -109,7 +109,7 @@ public class WebFetchToolExecutor {
                     .get();
         } catch (SocketTimeoutException e) {
             log.warn("Web 抓取超时: {}", e.getMessage());
-            return ToolResult.error("请求超时（%d 秒），请稍后重试"
+            return ToolResult.transientError("请求超时（%d 秒）"
                     .formatted(config.getTimeoutSeconds()));
         }
 
