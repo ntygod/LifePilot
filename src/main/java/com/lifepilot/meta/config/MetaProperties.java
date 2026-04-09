@@ -522,17 +522,12 @@ public class MetaProperties {
     public static class DeferredToolLoading {
 
         /**
-         * 始终加载的工具 ID 列表（核心工具集，每次 LLM 调用都包含完整定义）。
+         * 始终加载的工具 ID 列表。
          *
-         * <p>仅保留最高频工具，其余通过 meta.search_tools 按需发现。
-         * infrastructure 标签工具（meta.search_tools 等）始终可用，无需列入。</p>
+         * <p>为空时所有工具全量加载（当前默认行为）。
+         * 当 MCP 外部工具数量增长到需要按需发现时，配置此列表启用延迟加载。</p>
          */
-        private List<String> alwaysLoadedToolIds = List.of(
-            "web.search",
-            "file.read", "file.write",
-            "memory",
-            "load_skill"
-        );
+        private List<String> alwaysLoadedToolIds = List.of();
 
         /** 搜索结果最大返回数量，默认 5。 */
         private int maxSearchResults = 5;

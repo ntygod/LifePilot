@@ -853,12 +853,6 @@ public class ContextAssembler {
         return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
-    /**
-     * 构建技能目录摘要 — 用分类概览替代完整列表，节省 ~1700 token/次。
-     *
-     * <p>不再将 33 个 skill 的完整 XML 摘要塞入 system prompt，
-     * 改为生成一行分类概览。LLM 通过 meta.search_tools 按需发现具体 skill。</p>
-     */
     private String buildSkillCatalog() {
         if (skillRegistry == null) {
             return "";
@@ -868,16 +862,16 @@ public class ContextAssembler {
             return "";
         }
 
-        // 提取所有 skill 名称，按逗号分隔生成紧凑概览
-        String nameList = skills.stream()
-                .map(skill -> skill.name())
-                .collect(Collectors.joining("、"));
+        String skillEntries = skills.stream()
+                .map(skill -> skill.toDiscoverySummary())
+                .collect(Collectors.joining("\n"));
 
-        return """
-            <skill_overview>
-            你有 %d 个技能可用，覆盖：%s。
-            重要：不要猜测 skill ID，先调用 meta_search_tools 搜索，从返回结果中获取准确的 skill_id 后再 load_skill。
-            </skill_overview>""".formatted(skills.size(), nameList);
+        try {
+            return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
+        } catch (Exception e) {
+            log.warn("渲染技能目录失败: error={}", e.getMessage());
+            return "";
+        }
     }
 
     private String safeRenderToolGuide() {
