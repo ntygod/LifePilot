@@ -44,7 +44,6 @@ public record ReactAgentState(
         @Nullable String reasoningSummary,
         CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
-        @Nullable List<String> discoveredToolIds,
         @Nullable List<MediaContent> pendingMedia,
         int earlyStopRejectCount,
         boolean suspended,
@@ -58,7 +57,6 @@ public record ReactAgentState(
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
-        discoveredToolIds = discoveredToolIds != null ? List.copyOf(discoveredToolIds) : null;
         pendingMedia = pendingMedia != null ? List.copyOf(pendingMedia) : null;
     }
 
@@ -93,7 +91,6 @@ public record ReactAgentState(
                 .completionReason(null)
                 .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
-                .discoveredToolIds(null)
                 .pendingMedia(null)
                 .earlyStopRejectCount(0)
                 .suspended(false)
@@ -185,20 +182,6 @@ public record ReactAgentState(
     public ReactAgentState clearPendingMedia() {
         return this.toBuilder()
                 .pendingMedia(null)
-                .build();
-    }
-
-    /**
-     * 追加运行时发现的延迟工具 ID。
-     *
-     * @param newToolIds 新发现的工具 ID 列表
-     * @return 新状态（去重合并）
-     */
-    public ReactAgentState addDiscoveredToolIds(List<String> newToolIds) {
-        var merged = new java.util.LinkedHashSet<>(discoveredToolIds != null ? discoveredToolIds : List.of());
-        merged.addAll(newToolIds);
-        return this.toBuilder()
-                .discoveredToolIds(List.copyOf(merged))
                 .build();
     }
 

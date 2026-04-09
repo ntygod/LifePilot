@@ -34,9 +34,6 @@ public class MetaProperties {
     /** 引导 Agent 配置。 */
     private Onboarding onboarding = new Onboarding();
 
-    /** 延迟工具加载配置。 */
-    private DeferredToolLoading deferredToolLoading = new DeferredToolLoading();
-
     /**
      * 基础工具配置 — 包含 Web 搜索、Web 抓取、Shell、浏览器、代码执行、文件访问和交互控制。
      *
@@ -512,27 +509,4 @@ public class MetaProperties {
         private String agentDefinition = "preset-agents/onboarding-guide.md";
     }
 
-    /**
-     * 延迟工具加载配置 — 控制工具按需发现行为。
-     *
-     * @author zsg
-     * @since 2026-04-09
-     */
-    @Data
-    public static class DeferredToolLoading {
-
-        /**
-         * 始终加载的工具 ID 列表。
-         *
-         * <p>为空时所有工具全量加载（当前默认行为）。
-         * 当 MCP 外部工具数量增长到需要按需发现时，配置此列表启用延迟加载。</p>
-         */
-        private List<String> alwaysLoadedToolIds = List.of();
-
-        /** 搜索结果最大返回数量，默认 5。 */
-        private int maxSearchResults = 5;
-
-        /** 最低相似度阈值（0.0-1.0），默认 0.3。 */
-        private double minScoreThreshold = 0.3;
-    }
 }
