@@ -25,6 +25,7 @@ import java.util.Map;
  * @param reconnectDelay 重连初始延迟
  * @param maxReconnectAttempts 最大重连次数
  * @param healthCheckInterval 健康检查间隔
+ * @param idleTimeout 空闲超时时间（无工具调用后自动断开）
  * @author zsg
  * @since 2026-02-24
  */
@@ -41,7 +42,8 @@ public record McpServerConfig(
         boolean reconnect,
         Duration reconnectDelay,
         int maxReconnectAttempts,
-        Duration healthCheckInterval
+        Duration healthCheckInterval,
+        Duration idleTimeout
 ) {
 
     /** 默认超时：60 秒。 */
@@ -55,6 +57,9 @@ public record McpServerConfig(
 
     /** 默认健康检查间隔：30 秒。 */
     public static final Duration DEFAULT_HEALTH_CHECK_INTERVAL = Duration.ofSeconds(30);
+
+    /** 默认空闲超时：10 分钟。 */
+    public static final Duration DEFAULT_IDLE_TIMEOUT = Duration.ofMinutes(10);
 
     /** 校验配置合法性并填充默认值。 */
     public McpServerConfig {
@@ -72,6 +77,7 @@ public record McpServerConfig(
         if (reconnectDelay == null) reconnectDelay = DEFAULT_RECONNECT_DELAY;
         if (maxReconnectAttempts <= 0) maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS;
         if (healthCheckInterval == null) healthCheckInterval = DEFAULT_HEALTH_CHECK_INTERVAL;
+        if (idleTimeout == null) idleTimeout = DEFAULT_IDLE_TIMEOUT;
         if (args == null) args = List.of();
         if (env == null) env = Map.of();
     }

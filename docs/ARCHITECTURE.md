@@ -131,7 +131,7 @@ graph TB
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
-| `mcp` | Model Context Protocol 客户端、工具桥接、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
+| `mcp` | Model Context Protocol 客户端、懒连接生命周期、工具缓存、自动发现、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
 | `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
 | `skill` | Skill 注册/激活/热加载、内置 Skill、自扩展（Gap 检测 + YAML 生成） | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |

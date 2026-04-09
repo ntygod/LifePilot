@@ -1,6 +1,8 @@
 package com.lifepilot.mcp.adapter;
 
 import com.lifepilot.mcp.McpClient;
+import com.lifepilot.mcp.config.McpServerConfig;
+import com.lifepilot.mcp.exception.McpServerUnavailableException;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.model.ToolInput;
@@ -13,12 +15,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
- * MCP 工具执行器 — 负责通过 McpServerRegistry 查找 McpClient 并执行 MCP 工具调用。
+ * MCP 工具执行器 — 懒连接 + 超时保护。
  *
- * <p>将执行逻辑从 McpTool record 中抽出，由 Spring 管理生命周期，
- * 避免 record 持有静态可变状态，提升可测试性和多实例兼容性。</p>
+ * <p>通过 {@link McpServerRegistry#ensureConnected} 实现按需连接：
+ * 首次调用某个 MCP Server 的工具时自动连接，后续调用直接复用。</p>
  *
  * @author zsg
  * @since 2026-03-22
@@ -36,21 +40,30 @@ public class McpToolExecutor {
     /**
      * 执行 MCP 工具调用。
      *
+     * <p>流程：懒连接 → 记录调用时间 → 带超时执行 → 解析结果。</p>
+     *
      * @param tool MCP 工具定义
      * @param input 工具输入
      * @return 工具执行结果
      */
     public ToolResult execute(McpTool tool, ToolInput input) {
-        Optional<McpClient> clientOpt = registry.getClient(tool.clientId());
-        if (clientOpt.isEmpty()) {
-            log.warn("MCP 客户端不存在或已断开: clientId={}", tool.clientId());
-            return ToolResult.error("MCP 客户端不存在或已断开: " + tool.clientId());
-        }
-
-        McpClient client = clientOpt.get();
         Instant start = Instant.now();
         try {
-            var mcpResult = client.callTool(tool.mcpToolName(), input.parameters()).join();
+            // 懒连接：Server 未连接时同步连接
+            McpClient client = registry.ensureConnected(tool.clientId());
+
+            // 记录调用时间（空闲超时检测用）
+            registry.recordToolCall(tool.clientId());
+
+            // 获取超时配置
+            Duration timeout = registry.getServer(tool.clientId())
+                    .map(entry -> entry.config().timeout())
+                    .orElse(McpServerConfig.DEFAULT_TIMEOUT);
+
+            // 带超时的工具调用
+            var mcpResult = client.callTool(tool.mcpToolName(), input.parameters())
+                    .orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS)
+                    .join();
 
             var meta = buildMeta(tool, start);
 
@@ -70,9 +83,18 @@ public class McpToolExecutor {
 
             return ToolResult.success(Map.of("result", text), meta);
 
-        } catch (Exception e) {
+        } catch (McpServerUnavailableException e) {
+            log.warn("MCP Server 不可用: clientId={}, error={}", tool.clientId(), e.getMessage());
+            return ToolResult.error(e.getMessage(), buildMeta(tool, start));
+        } catch (java.util.concurrent.CompletionException e) {
             var meta = buildMeta(tool, start);
+            if (e.getCause() instanceof TimeoutException) {
+                log.warn("MCP 工具调用超时: tool={}, server={}", tool.mcpToolName(), tool.serverName());
+                return ToolResult.error("MCP 工具调用超时: " + tool.mcpToolName(), meta);
+            }
             return ToolResult.error("MCP 工具调用异常: " + e.getMessage(), meta);
+        } catch (Exception e) {
+            return ToolResult.error("MCP 工具调用异常: " + e.getMessage(), buildMeta(tool, start));
         }
     }
 

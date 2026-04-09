@@ -1,9 +1,14 @@
 package com.lifepilot.mcp.adapter;
 
 import com.lifepilot.mcp.McpClient;
+import com.lifepilot.mcp.config.McpServerConfig;
+import com.lifepilot.mcp.exception.McpServerUnavailableException;
 import com.lifepilot.mcp.model.McpContent;
 import com.lifepilot.mcp.model.McpToolResult;
+import com.lifepilot.mcp.registry.McpServerEntry;
 import com.lifepilot.mcp.registry.McpServerRegistry;
+import com.lifepilot.mcp.registry.McpServerState;
+import com.lifepilot.mcp.transport.TransportType;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.model.*;
@@ -16,19 +21,20 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * McpToolExecutor 单元测试 — 覆盖正常调用、错误处理、异常映射等核心路径。
+ * McpToolExecutor 单元测试 — 覆盖懒连接、超时保护、工具调用记录、异常映射等核心路径。
  *
  * @author zsg
  * @since 2026-04-03
@@ -104,6 +110,28 @@ class McpToolExecutor_单元测试 {
         );
     }
 
+    /** 创建带超时配置的 McpServerEntry，用于 registry.getServer() mock。 */
+    private McpServerEntry 创建已连接Entry(Duration timeout) {
+        var serverConfig = McpServerConfig.builder()
+                .name("test-server")
+                .transport(TransportType.STDIO)
+                .command("echo")
+                .timeout(timeout)
+                .build();
+        return McpServerEntry.builder()
+                .config(serverConfig)
+                .client(mcpClient)
+                .state(McpServerState.CONNECTED)
+                .build();
+    }
+
+    /** 设置 ensureConnected 和 getServer 的标准 mock。 */
+    private void 设置标准连接Mock() {
+        when(registry.ensureConnected("test-server")).thenReturn(mcpClient);
+        lenient().when(registry.getServer("test-server"))
+                .thenReturn(Optional.of(创建已连接Entry(Duration.ofSeconds(60))));
+    }
+
     // ─────────────────────────────────────────────
     //  正常调用流程
     // ─────────────────────────────────────────────
@@ -118,7 +146,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of("path", "/tmp/test.txt"));
             McpToolResult mcpResult = 创建成功MCP结果("文件内容");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -132,13 +160,49 @@ class McpToolExecutor_单元测试 {
         }
 
         @Test
+        void 调用成功_触发ensureConnected懒连接() {
+            // given
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+            McpToolResult mcpResult = 创建成功MCP结果("ok");
+
+            设置标准连接Mock();
+            when(mcpClient.callTool(eq("read_file"), anyMap()))
+                    .thenReturn(CompletableFuture.completedFuture(mcpResult));
+
+            // when
+            executor.execute(tool, input);
+
+            // then — 验证调用了 ensureConnected 而非 getClient
+            verify(registry).ensureConnected("test-server");
+        }
+
+        @Test
+        void 调用成功_记录工具调用时间() {
+            // given
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+            McpToolResult mcpResult = 创建成功MCP结果("ok");
+
+            设置标准连接Mock();
+            when(mcpClient.callTool(eq("read_file"), anyMap()))
+                    .thenReturn(CompletableFuture.completedFuture(mcpResult));
+
+            // when
+            executor.execute(tool, input);
+
+            // then
+            verify(registry).recordToolCall("test-server");
+        }
+
+        @Test
         void 调用成功_元信息包含正确的工具ID和执行器类型() {
             // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = 创建成功MCP结果("ok");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -166,7 +230,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(params);
             McpToolResult mcpResult = 创建成功MCP结果("csv数据");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), eq(params)))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -192,7 +256,7 @@ class McpToolExecutor_单元测试 {
                     false
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -218,7 +282,7 @@ class McpToolExecutor_单元测试 {
                     false
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -237,7 +301,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = 创建成功MCP结果("结果");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), eq(Map.of())))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -256,7 +320,19 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of("query", "test"));
             McpToolResult mcpResult = 创建成功MCP结果("搜索结果");
 
-            when(registry.getClient("server-alpha")).thenReturn(Optional.of(mcpClient));
+            when(registry.ensureConnected("server-alpha")).thenReturn(mcpClient);
+            var alphaConfig = McpServerConfig.builder()
+                    .name("server-alpha")
+                    .transport(TransportType.STDIO)
+                    .command("echo")
+                    .timeout(Duration.ofSeconds(60))
+                    .build();
+            lenient().when(registry.getServer("server-alpha"))
+                    .thenReturn(Optional.of(McpServerEntry.builder()
+                            .config(alphaConfig)
+                            .client(mcpClient)
+                            .state(McpServerState.CONNECTED)
+                            .build()));
             when(mcpClient.callTool(eq("search"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -265,24 +341,25 @@ class McpToolExecutor_单元测试 {
 
             // then
             assertTrue(result.isSuccess());
-            verify(registry).getClient("server-alpha");
+            verify(registry).ensureConnected("server-alpha");
         }
     }
 
     // ─────────────────────────────────────────────
-    //  客户端不可用
+    //  Server 不可用（McpServerUnavailableException）
     // ─────────────────────────────────────────────
 
     @Nested
-    class 客户端不可用 {
+    class Server不可用 {
 
         @Test
-        void 客户端不存在_返回错误结果() {
+        void ensureConnected抛出不可用异常_返回错误结果() {
             // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
 
-            when(registry.getClient("test-server")).thenReturn(Optional.empty());
+            when(registry.ensureConnected("test-server"))
+                    .thenThrow(new McpServerUnavailableException("test-server", "未注册"));
 
             // when
             ToolResult result = executor.execute(tool, input);
@@ -290,17 +367,17 @@ class McpToolExecutor_单元测试 {
             // then
             assertFalse(result.isSuccess());
             assertEquals(ToolResultStatus.ERROR, result.status());
-            assertTrue(result.error().contains("MCP 客户端不存在或已断开"));
             assertTrue(result.error().contains("test-server"));
         }
 
         @Test
-        void 客户端不存在_不调用callTool() {
+        void ensureConnected抛出不可用异常_不调用callTool() {
             // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
 
-            when(registry.getClient("test-server")).thenReturn(Optional.empty());
+            when(registry.ensureConnected("test-server"))
+                    .thenThrow(new McpServerUnavailableException("test-server", "懒连接失败"));
 
             // when
             executor.execute(tool, input);
@@ -310,18 +387,124 @@ class McpToolExecutor_单元测试 {
         }
 
         @Test
+        void ensureConnected抛出不可用异常_不调用recordToolCall() {
+            // given
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+
+            when(registry.ensureConnected("test-server"))
+                    .thenThrow(new McpServerUnavailableException("test-server"));
+
+            // when
+            executor.execute(tool, input);
+
+            // then
+            verify(registry, never()).recordToolCall(anyString());
+        }
+
+        @Test
         void 错误信息包含clientId方便排查() {
             // given
             McpTool tool = 创建测试工具("my-custom-server", "my_tool", "my-custom-server");
             ToolInput input = 创建测试输入(Map.of());
 
-            when(registry.getClient("my-custom-server")).thenReturn(Optional.empty());
+            when(registry.ensureConnected("my-custom-server"))
+                    .thenThrow(new McpServerUnavailableException("my-custom-server", "连接超时"));
 
             // when
             ToolResult result = executor.execute(tool, input);
 
             // then
             assertTrue(result.error().contains("my-custom-server"));
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  超时保护
+    // ─────────────────────────────────────────────
+
+    @Nested
+    class 超时保护 {
+
+        @Test
+        void callTool超时_返回超时错误结果() {
+            // given
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+
+            设置标准连接Mock();
+
+            // 模拟 orTimeout 触发的 CompletionException(TimeoutException)
+            CompletableFuture<McpToolResult> slowFuture = new CompletableFuture<>();
+            slowFuture.completeExceptionally(new TimeoutException("超时"));
+
+            when(mcpClient.callTool(eq("read_file"), anyMap())).thenReturn(slowFuture);
+
+            // when
+            ToolResult result = executor.execute(tool, input);
+
+            // then
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("超时"));
+        }
+
+        @Test
+        void CompletionException包装TimeoutException_返回特定超时消息() {
+            // given — join() 会把 TimeoutException 包装为 CompletionException
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+
+            设置标准连接Mock();
+
+            // 模拟 callTool 直接抛 CompletionException(TimeoutException)
+            when(mcpClient.callTool(eq("read_file"), anyMap()))
+                    .thenThrow(new CompletionException(new TimeoutException("请求超时")));
+
+            // when
+            ToolResult result = executor.execute(tool, input);
+
+            // then
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("MCP 工具调用超时"));
+            assertTrue(result.error().contains("read_file"));
+        }
+
+        @Test
+        void 超时场景_仍记录recordToolCall() {
+            // given — recordToolCall 在 callTool 之前调用
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+
+            设置标准连接Mock();
+
+            CompletableFuture<McpToolResult> slowFuture = new CompletableFuture<>();
+            slowFuture.completeExceptionally(new TimeoutException("超时"));
+            when(mcpClient.callTool(eq("read_file"), anyMap())).thenReturn(slowFuture);
+
+            // when
+            executor.execute(tool, input);
+
+            // then — recordToolCall 在 callTool 之前执行，所以已记录
+            verify(registry).recordToolCall("test-server");
+        }
+
+        @Test
+        void getServer返回empty时_使用默认超时() {
+            // given
+            McpTool tool = 创建默认测试工具();
+            ToolInput input = 创建测试输入(Map.of());
+            McpToolResult mcpResult = 创建成功MCP结果("ok");
+
+            when(registry.ensureConnected("test-server")).thenReturn(mcpClient);
+            when(registry.getServer("test-server")).thenReturn(Optional.empty());
+            when(mcpClient.callTool(eq("read_file"), anyMap()))
+                    .thenReturn(CompletableFuture.completedFuture(mcpResult));
+
+            // when
+            ToolResult result = executor.execute(tool, input);
+
+            // then — 使用 DEFAULT_TIMEOUT，仍能正常完成
+            assertTrue(result.isSuccess());
         }
     }
 
@@ -339,7 +522,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = 创建错误MCP结果("文件不存在: /tmp/missing.txt");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -359,7 +542,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = 创建错误MCP结果("权限不足");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -379,13 +562,12 @@ class McpToolExecutor_单元测试 {
             // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
-            // isError=true 但 content 中只有 image 类型，无 text
             McpToolResult mcpResult = new McpToolResult(
                     List.of(new McpContent("image", null, "base64", "image/png")),
                     true
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -402,13 +584,12 @@ class McpToolExecutor_单元测试 {
             // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
-            // type 是 text 但 text 字段为 null
             McpToolResult mcpResult = new McpToolResult(
                     List.of(new McpContent("text", null, null, null)),
                     true
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -417,7 +598,6 @@ class McpToolExecutor_单元测试 {
 
             // then
             assertFalse(result.isSuccess());
-            // text 为 null 时 Optional.ofNullable(null).orElse("") 得到空字符串
             assertEquals("", result.error());
         }
 
@@ -428,7 +608,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = new McpToolResult(List.of(), true);
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -449,7 +629,7 @@ class McpToolExecutor_单元测试 {
     class 异常处理 {
 
         @Test
-        void callTool的Future异常_返回错误结果并包含异常信息() {
+        void callTool的Future异常_返回错误结果() {
             // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
@@ -457,7 +637,7 @@ class McpToolExecutor_单元测试 {
             CompletableFuture<McpToolResult> failedFuture = new CompletableFuture<>();
             failedFuture.completeExceptionally(new RuntimeException("连接超时"));
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap())).thenReturn(failedFuture);
 
             // when
@@ -470,23 +650,20 @@ class McpToolExecutor_单元测试 {
         }
 
         @Test
-        void CompletionException包装_异常信息正确传递() {
-            // given — CompletableFuture.join() 会把异常包装为 CompletionException
+        void CompletionException包装非TimeoutException_返回通用异常消息() {
+            // given
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
 
-            CompletableFuture<McpToolResult> failedFuture = new CompletableFuture<>();
-            failedFuture.completeExceptionally(new RuntimeException("网络中断"));
-
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
-            when(mcpClient.callTool(eq("read_file"), anyMap())).thenReturn(failedFuture);
+            设置标准连接Mock();
+            when(mcpClient.callTool(eq("read_file"), anyMap()))
+                    .thenThrow(new CompletionException(new RuntimeException("网络中断")));
 
             // when
             ToolResult result = executor.execute(tool, input);
 
             // then
             assertFalse(result.isSuccess());
-            // join() 包装为 CompletionException，其 message 可能包含原始异常信息
             assertTrue(result.error().contains("MCP 工具调用异常"));
         }
 
@@ -496,7 +673,7 @@ class McpToolExecutor_单元测试 {
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenThrow(new IllegalStateException("客户端未初始化"));
 
@@ -515,7 +692,7 @@ class McpToolExecutor_单元测试 {
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenThrow(new RuntimeException("未知错误"));
 
@@ -537,7 +714,7 @@ class McpToolExecutor_单元测试 {
             McpTool tool = 创建默认测试工具();
             ToolInput input = 创建测试输入(Map.of());
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenThrow(new NullPointerException("参数为 null"));
 
@@ -567,7 +744,7 @@ class McpToolExecutor_单元测试 {
                     false
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -586,7 +763,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = new McpToolResult(List.of(), false);
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -608,7 +785,7 @@ class McpToolExecutor_单元测试 {
                     false
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -617,7 +794,6 @@ class McpToolExecutor_单元测试 {
 
             // then
             assertTrue(result.isSuccess());
-            // text 为 null → Optional.ofNullable(null).orElse("") → ""
             assertEquals("", result.data().get("result"));
         }
 
@@ -635,7 +811,7 @@ class McpToolExecutor_单元测试 {
                     false
             );
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -662,7 +838,7 @@ class McpToolExecutor_单元测试 {
             ToolInput input = 创建测试输入(Map.of());
             McpToolResult mcpResult = 创建成功MCP结果("结果");
 
-            when(registry.getClient("test-server")).thenReturn(Optional.of(mcpClient));
+            设置标准连接Mock();
             when(mcpClient.callTool(eq("read_file"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 
@@ -685,7 +861,19 @@ class McpToolExecutor_单元测试 {
             );
             McpToolResult mcpResult = 创建成功MCP结果("搜索结果");
 
-            when(registry.getClient("special-server")).thenReturn(Optional.of(mcpClient));
+            when(registry.ensureConnected("special-server")).thenReturn(mcpClient);
+            var specialConfig = McpServerConfig.builder()
+                    .name("special-server")
+                    .transport(TransportType.STDIO)
+                    .command("echo")
+                    .timeout(Duration.ofSeconds(60))
+                    .build();
+            lenient().when(registry.getServer("special-server"))
+                    .thenReturn(Optional.of(McpServerEntry.builder()
+                            .config(specialConfig)
+                            .client(mcpClient)
+                            .state(McpServerState.CONNECTED)
+                            .build()));
             when(mcpClient.callTool(eq("web_search"), anyMap()))
                     .thenReturn(CompletableFuture.completedFuture(mcpResult));
 

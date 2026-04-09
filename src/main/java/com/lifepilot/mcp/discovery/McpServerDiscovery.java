@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -261,6 +262,17 @@ public class McpServerDiscovery {
                 ? Boolean.parseBoolean(def.get("autoConnect").toString())
                 : true;
 
+        // 解析 idleTimeout（秒数或 ISO-8601 Duration 字符串，缺省走默认 10 分钟）
+        Duration idleTimeout = null;
+        if (def.containsKey("idleTimeout")) {
+            var raw = def.get("idleTimeout").toString();
+            try {
+                idleTimeout = Duration.ofSeconds(Long.parseLong(raw));
+            } catch (NumberFormatException _) {
+                idleTimeout = Duration.parse(raw);
+            }
+        }
+
         // 推断传输类型
         var transportStr = (String) def.get("transport");
         TransportType transport;
@@ -279,6 +291,7 @@ public class McpServerDiscovery {
                 .env(env)
                 .autoConnect(autoConnect)
                 .reconnect(autoConnect)
+                .idleTimeout(idleTimeout)
                 .build();
     }
 }

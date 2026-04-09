@@ -3,11 +3,15 @@ package com.lifepilot.mcp.registry;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.mcp.McpClient;
 import com.lifepilot.mcp.adapter.McpToolAdapter;
+import com.lifepilot.mcp.cache.McpToolManifestCache;
 import com.lifepilot.mcp.config.McpServerConfig;
+import com.lifepilot.mcp.exception.McpServerUnavailableException;
+import com.lifepilot.mcp.model.McpToolSchema;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.Nullable;
 
@@ -16,21 +20,25 @@ import java.time.Instant;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * MCP Server 注册中心 — 管理所有 MCP Server 连接的完整生命周期。
  *
- * <p>职责：创建、初始化、健康监控、自动重连和关闭。
- * 与 {@link DynamicToolRegistry}（工具层）和 {@link McpToolAdapter}（适配层）协作。</p>
+ * <p>核心设计：</p>
+ * <ul>
+ *   <li><b>懒连接</b>：启动时仅注册配置，首次工具调用时按需连接</li>
+ *   <li><b>工具缓存</b>：连接后缓存工具清单，下次启动时从缓存加载工具桩，LLM 无需连接即可感知工具</li>
+ *   <li><b>单一维护 tick</b>：每个 Server 一个 {@link ScheduledFuture}，合并健康检查和空闲超时检测</li>
+ *   <li><b>per-server 锁</b>：防止同一 Server 并发连接/断开竞态</li>
+ *   <li><b>优雅关闭</b>：实现 {@link DisposableBean}，Spring 关闭时自动清理</li>
+ * </ul>
  *
  * @author zsg
  * @since 2026-02-24
  */
-public class McpServerRegistry {
+public class McpServerRegistry implements DisposableBean {
 
     private static final Logger log = LoggerFactory.getLogger(McpServerRegistry.class);
 
@@ -39,84 +47,150 @@ public class McpServerRegistry {
 
     private final ConcurrentHashMap<String, McpServerEntry> servers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<McpConnectionLogEntry>> connectionLogs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> serverLocks = new ConcurrentHashMap<>();
 
     private final McpToolAdapter toolAdapter;
     private final DynamicToolRegistry toolRegistry;
     private final ApplicationEventPublisher eventPublisher;
     private final SharedScheduler sharedScheduler;
+    private final McpToolManifestCache toolCache;
 
     public McpServerRegistry(
             McpToolAdapter toolAdapter,
             DynamicToolRegistry toolRegistry,
             ApplicationEventPublisher eventPublisher,
-            SharedScheduler sharedScheduler) {
+            SharedScheduler sharedScheduler,
+            McpToolManifestCache toolCache) {
         this.toolAdapter = toolAdapter;
         this.toolRegistry = toolRegistry;
         this.eventPublisher = eventPublisher;
         this.sharedScheduler = sharedScheduler;
+        this.toolCache = toolCache;
     }
 
+    // ─────────────────────────────────────────────
+    //  注册与连接
+    // ─────────────────────────────────────────────
+
     /**
-     * 初始化所有配置的 MCP Server。
+     * 批量注册 MCP Server 配置（仅注册，不连接）。
+     *
+     * <p>对每个 Server，尝试从本地缓存加载工具清单并注册为工具桩。
+     * 这样 LLM 在 Server 未连接时也能感知可用工具，
+     * 首次工具调用时由 {@link #ensureConnected} 触发懒连接。</p>
      *
      * @param configs 服务器配置列表
      */
     public void initializeAll(List<McpServerConfig> configs) {
-        log.info("MCP Server 批量初始化: count={}", configs.size());
+        log.info("MCP Server 批量注册: count={}", configs.size());
+        int cachedToolCount = 0;
         for (McpServerConfig config : configs) {
             servers.put(config.name(), McpServerEntry.initial(config));
-            if (config.autoConnect()) {
-                connectServer(config);
+            serverLocks.putIfAbsent(config.name(), new ReentrantLock());
+
+            // 从缓存加载工具桩
+            List<McpToolSchema> cached = toolCache.load(config.name());
+            if (!cached.isEmpty()) {
+                List<ToolContract> tools = toolAdapter.toToolContracts(config.name(), cached, null);
+                toolRegistry.registerMcpTools(config.name(), tools);
+                cachedToolCount += tools.size();
+                log.debug("从缓存加载工具桩: server={}, tools={}", config.name(), tools.size());
             }
+        }
+        if (cachedToolCount > 0) {
+            log.info("MCP 工具缓存加载完成: {} 个工具桩已注册（Server 未连接，首次调用时懒连接）",
+                    cachedToolCount);
+        }
+    }
+
+    /**
+     * 对无工具缓存且 autoConnect=true 的 Server 启动后台发现。
+     *
+     * <p>仅对显式启用自动连接的 Server 执行后台发现，
+     * autoConnect=false 的 Server 需要用户从前端手动连接或等待工具调用触发懒连接。</p>
+     *
+     * <p>后台连接 → 发现工具 → 写入缓存 → 注册工具 → 空闲超时后自然断开。
+     * 发现失败不影响应用启动。</p>
+     */
+    public void discoverUncached() {
+        var uncached = servers.entrySet().stream()
+                .filter(e -> e.getValue().state() == McpServerState.DISCONNECTED)
+                .filter(e -> e.getValue().config().autoConnect())
+                .filter(e -> toolCache.load(e.getKey()).isEmpty())
+                .map(e -> e.getValue().config())
+                .toList();
+
+        if (uncached.isEmpty()) return;
+
+        log.info("MCP 后台发现: {} 个 Server 无工具缓存，启动后台连接", uncached.size());
+        for (McpServerConfig config : uncached) {
+            connectServer(config).whenComplete((_, ex) -> {
+                if (ex != null) {
+                    log.debug("MCP 后台发现失败（用户可从前端手动连接）: server={}, error={}",
+                            config.name(), ex.getMessage());
+                }
+            });
         }
     }
 
     /**
      * 连接单个 MCP Server。
      *
-     * <p>完整流程：创建 McpClient → 初始化 → 工具发现 → 适配 → 注册到 DynamicToolRegistry。</p>
+     * <p>线程安全：使用 per-server 锁防止并发连接。
+     * 返回 {@link CompletableFuture}，支持懒连接场景同步等待。</p>
      *
      * @param config 服务器配置
+     * @return 连接完成的 Future
      */
-    public void connectServer(McpServerConfig config) {
+    public CompletableFuture<Void> connectServer(McpServerConfig config) {
         String name = config.name();
-        log.info("MCP Server 连接开始: name={}, transport={}", name, config.transport());
-
-        // 确保 entry 存在（外部直接调用 connectServer 时可能未经过 initializeAll）
         servers.putIfAbsent(name, McpServerEntry.initial(config));
+        serverLocks.putIfAbsent(name, new ReentrantLock());
 
-        updateState(name, McpServerState.CONNECTING);
-
-        CompletableFuture.runAsync(() -> {
+        return CompletableFuture.runAsync(() -> {
+            ReentrantLock lock = serverLocks.get(name);
+            lock.lock();
             try {
-                // 创建客户端
-                var client = createClient(config);
-                updateEntry(name, entry -> entry.toBuilder().client(client).build());
+                // 已连接则跳过
+                var entry = servers.get(name);
+                if (entry != null && entry.state().isAvailable()) {
+                    log.debug("MCP Server 已连接，跳过: name={}", name);
+                    return;
+                }
 
-                // 初始化
+                log.info("MCP Server 连接开始: name={}, transport={}", name, config.transport());
+
+                // 取消旧的维护任务
+                cancelMaintenance(name);
+
+                updateState(name, McpServerState.CONNECTING);
+
+                var client = createClient(config);
+                updateEntry(name, e -> e.toBuilder().client(client).build());
+
                 updateState(name, McpServerState.INITIALIZING);
                 client.initialize().join();
 
-                // 工具发现与注册
                 var schemas = client.listTools().join();
                 List<ToolContract> tools = toolAdapter.toToolContracts(name, schemas, client);
                 toolRegistry.registerMcpTools(name, tools);
 
-                // 更新状态为已连接
-                updateEntry(name, entry -> entry.toBuilder()
+                // 刷新工具缓存（下次启动可直接加载工具桩）
+                toolCache.save(name, schemas);
+
+                updateEntry(name, e -> e.toBuilder()
                         .state(McpServerState.CONNECTED)
                         .serverInfo(client.getServerInfo())
                         .connectedSince(Instant.now())
+                        .lastToolCall(Instant.now())
                         .reconnectAttempts(0)
                         .lastError(null)
                         .build());
 
                 log.info("MCP Server 连接成功: name={}, tools={}", name, tools.size());
 
-                // 启动健康检查
-                if (config.reconnect()) {
-                    scheduleHealthCheck(name, config.healthCheckInterval());
-                }
+                // 启动维护任务（合并健康检查和空闲检测）
+                scheduleMaintenance(name, config);
 
             } catch (Exception e) {
                 log.error("MCP Server 连接失败: name={}, error={}", name, e.getMessage());
@@ -124,11 +198,11 @@ public class McpServerRegistry {
                         .state(McpServerState.DISCONNECTED)
                         .lastError(e.getMessage())
                         .build());
-
-                // 尝试重连
                 if (config.reconnect()) {
                     scheduleReconnect(name, config);
                 }
+            } finally {
+                lock.unlock();
             }
         }, command -> Thread.ofVirtual().name("mcp-connect-" + name).start(command));
     }
@@ -139,32 +213,108 @@ public class McpServerRegistry {
      * @param serverName 服务器名称
      */
     public void disconnectServer(String serverName) {
-        var entry = servers.get(serverName);
-        if (entry == null) return;
+        if (!servers.containsKey(serverName)) return;
 
-        updateState(serverName, McpServerState.DISCONNECTING);
+        ReentrantLock lock = serverLocks.get(serverName);
+        if (lock != null) lock.lock();
+        try {
+            // 获锁后重新读取最新状态
+            var entry = servers.get(serverName);
+            if (entry == null || entry.state() == McpServerState.DISCONNECTED) return;
 
-        if (entry.client() != null) {
-            try {
-                entry.client().shutdown().join();
-            } catch (Exception e) {
-                log.warn("MCP Server 关闭异常: name={}, error={}", serverName, e.getMessage());
+            cancelMaintenance(serverName);
+
+            updateState(serverName, McpServerState.DISCONNECTING);
+
+            if (entry.client() != null) {
+                try {
+                    entry.client().shutdown().join();
+                } catch (Exception e) {
+                    log.warn("MCP Server 关闭异常: name={}, error={}", serverName, e.getMessage());
+                }
             }
+
+            toolRegistry.unregisterMcpTools(serverName);
+
+            // 从缓存重新注册工具桩，断开连接不影响 LLM 的工具可见性
+            List<McpToolSchema> cached = toolCache.load(serverName);
+            if (!cached.isEmpty()) {
+                List<ToolContract> stubs = toolAdapter.toToolContracts(serverName, cached, null);
+                toolRegistry.registerMcpTools(serverName, stubs);
+            }
+
+            updateEntry(serverName, e -> e.toBuilder()
+                    .state(McpServerState.DISCONNECTED)
+                    .client(null)
+                    .connectedSince(null)
+                    .maintenanceFuture(null)
+                    .build());
+
+            log.info("MCP Server 已断开: name={}", serverName);
+        } finally {
+            if (lock != null) lock.unlock();
         }
-
-        // 注销工具
-        toolRegistry.unregisterMcpTools(serverName);
-
-        updateEntry(serverName, e -> e.toBuilder()
-                .state(McpServerState.DISCONNECTED)
-                .client(null)
-                .connectedSince(null)
-                .build());
-
-        log.info("MCP Server 已断开: name={}", serverName);
     }
 
-    /** 获取指定 Server 的客户端。 */
+    // ─────────────────────────────────────────────
+    //  懒连接与查询
+    // ─────────────────────────────────────────────
+
+    /**
+     * 确保指定 Server 已连接 — 懒连接的核心入口。
+     *
+     * <p>快速路径：已连接则直接返回 McpClient。
+     * 慢路径：同步连接（阻塞至多 config.timeout()），成功后返回。</p>
+     *
+     * @param serverName 服务器名称
+     * @return McpClient 实例
+     * @throws McpServerUnavailableException 服务器未注册、连接失败或超时
+     */
+    public McpClient ensureConnected(String serverName) {
+        var entry = servers.get(serverName);
+        if (entry == null) {
+            throw new McpServerUnavailableException(serverName, "未注册");
+        }
+
+        // 快速路径：二次读取最新快照，避免 TOCTOU 竞态
+        var latest = servers.get(serverName);
+        if (latest != null && latest.state().isAvailable() && latest.client() != null) {
+            return latest.client();
+        }
+
+        // 慢路径：懒连接
+        log.info("MCP Server 懒连接触发: name={}", serverName);
+        try {
+            connectServer(entry.config())
+                    .orTimeout(entry.config().timeout().toMillis(), TimeUnit.MILLISECONDS)
+                    .join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause();
+            throw new McpServerUnavailableException(serverName,
+                    "懒连接失败: " + (cause != null ? cause.getMessage() : e.getMessage()));
+        } catch (Exception e) {
+            throw new McpServerUnavailableException(serverName, "懒连接失败: " + e.getMessage());
+        }
+
+        var connected = servers.get(serverName);
+        if (connected == null || !connected.state().isAvailable() || connected.client() == null) {
+            throw new McpServerUnavailableException(serverName, "连接后仍不可用");
+        }
+        return connected.client();
+    }
+
+    /**
+     * 记录工具调用时间 — 由 McpToolExecutor 在每次调用时调用，用于空闲超时检测。
+     *
+     * @param serverName 服务器名称
+     */
+    public void recordToolCall(String serverName) {
+        updateEntry(serverName, e -> e.toBuilder()
+                .lastToolCall(Instant.now())
+                .build());
+    }
+
+    /** 获取指定 Server 的客户端（仅在已连接状态下返回）。 */
     public Optional<McpClient> getClient(String serverName) {
         var entry = servers.get(serverName);
         if (entry != null && entry.state().isAvailable() && entry.client() != null) {
@@ -198,17 +348,40 @@ public class McpServerRegistry {
     }
 
     // ─────────────────────────────────────────────
-    //  健康检查与自动重连
+    //  维护 tick（合并健康检查 + 空闲超时检测）
     // ─────────────────────────────────────────────
 
-    /** 定期健康检查（使用轻量级 ping 代替 tools/list）。 */
-    void scheduleHealthCheck(String serverName, Duration interval) {
-        sharedScheduler.heartbeat().scheduleAtFixedRate(() -> {
+    /**
+     * 调度统一维护任务 — 合并健康检查和空闲超时检测。
+     *
+     * <p>单一 {@link ScheduledFuture} 存储在 {@link McpServerEntry#maintenanceFuture()} 中，
+     * 确保 disconnect/reconnect 时可精确取消，从根本上消除任务泄漏和累积问题。</p>
+     */
+    private void scheduleMaintenance(String serverName, McpServerConfig config) {
+        cancelMaintenance(serverName);
+
+        long intervalMs = config.healthCheckInterval().toMillis();
+
+        ScheduledFuture<?> future = sharedScheduler.heartbeat().scheduleAtFixedRate(() -> {
             var entry = servers.get(serverName);
             if (entry == null || !entry.state().isAvailable()) return;
 
-            updateState(serverName, McpServerState.HEALTH_CHECK);
+            // 1. 空闲超时检测
+            if (entry.lastToolCall() != null) {
+                Duration idle = Duration.between(entry.lastToolCall(), Instant.now());
+                if (idle.compareTo(config.idleTimeout()) > 0) {
+                    log.info("MCP Server 空闲超时，自动断开: name={}, idle={}s",
+                            serverName, idle.toSeconds());
+                    CompletableFuture.runAsync(
+                            () -> disconnectServer(serverName),
+                            cmd -> Thread.ofVirtual()
+                                    .name("mcp-idle-disconnect-" + serverName).start(cmd));
+                    return;
+                }
+            }
 
+            // 2. 健康检查
+            updateState(serverName, McpServerState.HEALTH_CHECK);
             try {
                 if (entry.client() != null) {
                     entry.client().ping().join();
@@ -219,16 +392,36 @@ public class McpServerRegistry {
                         .build());
             } catch (Exception e) {
                 log.warn("MCP Server 健康检查失败: name={}, error={}", serverName, e.getMessage());
+                // 先取消维护任务，再触发重连，防止反馈循环
+                cancelMaintenance(serverName);
                 updateEntry(serverName, en -> en.toBuilder()
                         .state(McpServerState.RECONNECTING)
                         .lastError(e.getMessage())
                         .build());
                 scheduleReconnect(serverName, entry.config());
             }
-        }, interval.toMillis(), interval.toMillis(), TimeUnit.MILLISECONDS);
+        }, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
+
+        // 保存 ScheduledFuture，确保可精确取消
+        updateEntry(serverName, e -> e.toBuilder()
+                .maintenanceFuture(future)
+                .build());
     }
 
-    /** 指数退避重连（500ms × 2^(n-1)，上限 5s）。 */
+    /** 取消指定 Server 的维护任务。 */
+    private void cancelMaintenance(String serverName) {
+        var entry = servers.get(serverName);
+        if (entry != null && entry.maintenanceFuture() != null) {
+            entry.maintenanceFuture().cancel(false);
+            log.debug("维护任务已取消: name={}", serverName);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  自动重连
+    // ─────────────────────────────────────────────
+
+    /** 指数退避重连（500ms × 2^n，上限 5s）。 */
     void scheduleReconnect(String serverName, McpServerConfig config) {
         var entry = servers.get(serverName);
         if (entry == null) return;
@@ -242,7 +435,6 @@ public class McpServerRegistry {
             return;
         }
 
-        // 指数退避：500ms × 2^n，上限 5s
         long delayMs = Math.min(
                 config.reconnectDelay().toMillis() * (1L << attempts),
                 5000L
@@ -256,7 +448,56 @@ public class McpServerRegistry {
         log.info("MCP Server 重连调度: name={}, attempt={}, delay={}ms",
                 serverName, attempts + 1, delayMs);
 
-        sharedScheduler.heartbeat().schedule(() -> connectServer(config), delayMs, TimeUnit.MILLISECONDS);
+        sharedScheduler.heartbeat().schedule(() -> {
+            // 检查是否已被手动断开或已连接
+            var current = servers.get(serverName);
+            if (current == null
+                    || current.state() == McpServerState.DISCONNECTED
+                    || current.state().isAvailable()) {
+                log.debug("重连跳过（状态已变化）: name={}, state={}",
+                        serverName, current != null ? current.state() : "null");
+                return;
+            }
+            connectServer(config);
+        }, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    // ─────────────────────────────────────────────
+    //  优雅关闭
+    // ─────────────────────────────────────────────
+
+    /**
+     * 优雅关闭 — 取消所有定时任务，断开所有连接。
+     *
+     * <p>由 Spring 容器关闭时自动调用（{@link DisposableBean}）。</p>
+     */
+    public void shutdown() {
+        log.info("MCP Server 注册中心关闭开始: servers={}", servers.size());
+
+        servers.forEach((name, entry) -> cancelMaintenance(name));
+
+        servers.forEach((name, entry) -> {
+            if (entry.state().isAvailable() && entry.client() != null) {
+                try {
+                    entry.client().shutdown().join();
+                    toolRegistry.unregisterMcpTools(name);
+                    log.debug("MCP Server 已关闭: name={}", name);
+                } catch (Exception e) {
+                    log.warn("MCP Server 关闭异常: name={}, error={}", name, e.getMessage());
+                }
+            }
+        });
+
+        servers.clear();
+        connectionLogs.clear();
+        serverLocks.clear();
+
+        log.info("MCP Server 注册中心关闭完成");
+    }
+
+    @Override
+    public void destroy() {
+        shutdown();
     }
 
     // ─────────────────────────────────────────────
@@ -316,7 +557,7 @@ public class McpServerRegistry {
                                      McpServerState newState, Instant timestamp,
                                      @Nullable String error) {
         String eventType = mapToEventType(newState, error);
-        if (eventType == null) return; // 中间状态不记录
+        if (eventType == null) return;
 
         String description = buildLogDescription(oldState, newState, error);
         var logEntry = new McpConnectionLogEntry(timestamp, eventType, description);
@@ -344,7 +585,6 @@ public class McpServerRegistry {
             case CONNECTED -> "CONNECT";
             case DISCONNECTED -> "DISCONNECT";
             case RECONNECTING -> "RECONNECT";
-            // 中间状态（CONNECTING / INITIALIZING / HEALTH_CHECK / DISCONNECTING）不单独记录
             default -> null;
         };
     }

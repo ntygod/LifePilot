@@ -71,6 +71,7 @@ public class McpConfigProperties {
         private Duration reconnectDelay;
         private int maxReconnectAttempts = 5;
         private Duration healthCheckInterval;
+        private Duration idleTimeout;
 
         /** 转换为 McpServerConfig record。 */
         public McpServerConfig toServerConfig() {
@@ -87,6 +88,7 @@ public class McpConfigProperties {
                     .reconnectDelay(reconnectDelay)
                     .maxReconnectAttempts(maxReconnectAttempts)
                     .healthCheckInterval(healthCheckInterval)
+                    .idleTimeout(idleTimeout)
                     .build();
         }
     }

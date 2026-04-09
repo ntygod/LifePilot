@@ -49,6 +49,7 @@ public class ContextAssembler {
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
     private final AgentConfigProperties config;
+    private final LocationResolver locationResolver;
     private final PromptRegistry promptRegistry;
     @Nullable private final DataRedactor dataRedactor;
     @Nullable private final SemanticMemory semanticMemory;
@@ -123,6 +124,7 @@ public class ContextAssembler {
                             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                             @Nullable CollectionRepository collectionRepository) {
         this.config = config;
+        this.locationResolver = new LocationResolver(config);
         this.promptRegistry = promptRegistry;
         this.dataRedactor = dataRedactor;
         this.semanticMemory = semanticMemory;
@@ -374,6 +376,7 @@ public class ContextAssembler {
         String userPrompt = promptRegistry.render("agent/react-user-prompt", Map.of(
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", now.getZone().getId(),
+                "location", locationResolver.resolve(),
                 "osName", System.getProperty("os.name", "unknown"),
                 "osVersion", System.getProperty("os.version", "unknown"),
                 "channel", state.channel() != null ? state.channel() : "unknown",
