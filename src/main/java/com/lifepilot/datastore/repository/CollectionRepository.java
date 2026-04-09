@@ -205,6 +205,7 @@ public class CollectionRepository {
      */
     public void addGeneratedColumn(String propertyName, String sqliteAffinity, String collectionId) {
         FieldNames.validate(propertyName);
+        FieldNames.validateId(collectionId);
         String prefix = FieldNames.safePrefix(collectionId);
         String columnName = "_idx_%s_%s".formatted(prefix, propertyName);
         String indexName = "idx_ds_doc_%s_%s".formatted(prefix, propertyName);
@@ -216,8 +217,9 @@ public class CollectionRepository {
         jdbcTemplate.execute(alterSql);
 
         // CREATE partial index
-        // 注意：collectionId 通过 FieldNames.validate() 白名单校验（仅字母/数字/下划线/连字符），
-        // 此处字符串拼接安全。SQLite DDL 不支持参数化占位符，只能拼接。
+        // 注意：collectionId 通过 FieldNames.validateId() UUID 格式校验（仅十六进制字符和连字符），
+        // propertyName 通过 FieldNames.validate() 白名单校验，此处字符串拼接安全。
+        // SQLite DDL 不支持参数化占位符，只能拼接。
         String indexSql = "CREATE INDEX %s ON ds_documents(%s) WHERE collection_id = '%s'"
                 .formatted(indexName, columnName, collectionId);
         log.info("创建 partial index: index={}, collection={}", indexName, collectionId);

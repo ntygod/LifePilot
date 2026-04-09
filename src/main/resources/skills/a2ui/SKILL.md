@@ -47,7 +47,7 @@ triggers:
 
 ## 组件树结构
 
-`{"components":[{"id","type","properties","children":[],"signal":null}]}`
+`{"components":[{"id":"string","type":"string","properties":{},"children":[],"signal":null}]}`
 
 ## 示例
 
