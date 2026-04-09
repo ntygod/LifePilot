@@ -48,7 +48,7 @@ public class DocumentIngester {
     private static final Logger log = LoggerFactory.getLogger(DocumentIngester.class);
 
     private final FormatDetector formatDetector;
-    private final ChunkingStrategy smartChunker;
+    private final ChunkingStrategy defaultChunker;
     private final Map<String, ChunkingStrategy> chunkerRegistry;
     @Nullable
     private final ChunkContextEnricher contextEnricher;
@@ -85,7 +85,7 @@ public class DocumentIngester {
                             ChunkingConfig defaultChunkingConfig,
                             TokenCounter tokenCounter) {
         this.formatDetector = formatDetector;
-        this.smartChunker = smartChunker;
+        this.defaultChunker = smartChunker;
         this.chunkerRegistry = chunkerRegistry;
         this.contextEnricher = contextEnricher;
         this.vectorIndexer = vectorIndexer;
@@ -373,22 +373,22 @@ public class DocumentIngester {
     private ChunkingStrategy resolveChunker(String kbId) {
         var kbOpt = kbRepository.findById(kbId);
         if (kbOpt.isEmpty()) {
-            log.warn("知识库不存在，回退到 SmartChunker: kbId={}", kbId);
-            return smartChunker;
+            log.warn("知识库不存在，回退到默认分块器: kbId={}", kbId);
+            return defaultChunker;
         }
         var kb = kbOpt.get();
         String strategy = kb.chunkingStrategy();
 
-        // "smart" 或空策略回退到全局 SmartChunker
+        // "smart" 或空策略 → 从注册表取真正的 SmartChunker（不用 defaultChunker，它可能是 ParentChildChunker）
         if (strategy == null || strategy.isBlank() || "smart".equals(strategy)) {
-            return smartChunker;
+            return chunkerRegistry.getOrDefault("smart", defaultChunker);
         }
 
         // 从注册表查找对应分块器
         var chunker = chunkerRegistry.get(strategy);
         if (chunker == null) {
-            log.warn("未知分块策略，回退到 SmartChunker: strategy={}, kbId={}", strategy, kbId);
-            return smartChunker;
+            log.warn("未知分块策略，回退到默认分块器: strategy={}, kbId={}", strategy, kbId);
+            return defaultChunker;
         }
 
         // 如果知识库有自定义 chunkingConfig，构造临时分块器
