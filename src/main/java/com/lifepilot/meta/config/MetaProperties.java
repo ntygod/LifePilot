@@ -530,7 +530,6 @@ public class MetaProperties {
         private List<String> alwaysLoadedToolIds = List.of(
             "web.search",
             "file.read", "file.write",
-            "shell.exec",
             "memory",
             "load_skill"
         );
