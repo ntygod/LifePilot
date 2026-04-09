@@ -521,12 +521,18 @@ public class MetaProperties {
     @Data
     public static class DeferredToolLoading {
 
-        /** 始终加载的工具 ID 列表（核心工具集，每次 LLM 调用都包含完整定义）。 */
+        /**
+         * 始终加载的工具 ID 列表（核心工具集，每次 LLM 调用都包含完整定义）。
+         *
+         * <p>仅保留最高频工具，其余通过 meta.search_tools 按需发现。
+         * infrastructure 标签工具（meta.search_tools 等）始终可用，无需列入。</p>
+         */
         private List<String> alwaysLoadedToolIds = List.of(
-            "web.search", "web.fetch",
-            "file.read", "file.write", "file.list",
-            "shell.exec", "memory", "system.status",
-            "load_skill", "generate_skill"
+            "web.search",
+            "file.read", "file.write",
+            "shell.exec",
+            "memory",
+            "load_skill"
         );
 
         /** 搜索结果最大返回数量，默认 5。 */
