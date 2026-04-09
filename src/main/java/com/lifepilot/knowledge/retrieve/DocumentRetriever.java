@@ -167,8 +167,14 @@ public class DocumentRetriever {
 
         // 1. 查询增强与搜索并行 — 增强不阻塞主搜索，模型慢（如思考模型）也不影响检索延迟
         var primaryQuery = new QueryEnhancer.EnhancedQuery(query, List.of(), Optional.empty());
-        var enhanceExecutor = Executors.newSingleThreadExecutor(Thread.ofVirtual().factory());
-        var enhanceFuture = CompletableFuture.supplyAsync(() -> enhanceQuery(query), enhanceExecutor);
+        var enhanceFuture = new CompletableFuture<QueryEnhancer.EnhancedQuery>();
+        Thread.ofVirtual().start(() -> {
+            try {
+                enhanceFuture.complete(enhanceQuery(query));
+            } catch (Exception e) {
+                enhanceFuture.complete(primaryQuery);
+            }
+        });
 
         // 2. 用原始查询立即并行搜索（不等待增强结果）
         List<DocumentSearchResult> vectorResults;
