@@ -117,14 +117,14 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
             return semanticChunker;
         }
 
-        // 4. 长文档 → RecursiveChunker
-        if (text.length() > shortDocumentThreshold) {
-            log.debug("选择 RecursiveChunker: textLength={}, threshold={}",
-                    text.length(), shortDocumentThreshold);
+        // 4. 有段落结构或长文档 → RecursiveChunker（尊重 \n\n 段落边界）
+        if (text.length() > shortDocumentThreshold || text.contains("\n\n")) {
+            log.debug("选择 RecursiveChunker: textLength={}, hasParagraphs={}, threshold={}",
+                    text.length(), text.contains("\n\n"), shortDocumentThreshold);
             return recursiveChunker;
         }
 
-        // 5. 默认 → FixedSizeChunker
+        // 5. 无段落结构的短文本 → FixedSizeChunker
         log.debug("选择 FixedSizeChunker: textLength={}", text.length());
         return fixedSizeChunker;
     }
