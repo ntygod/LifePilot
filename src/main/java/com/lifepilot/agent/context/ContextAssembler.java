@@ -865,16 +865,18 @@ public class ContextAssembler {
             return "";
         }
 
-        String skillEntries = skillRegistry.listAll().stream()
-                .map(skill -> skill.toDiscoverySummary())
-                .collect(Collectors.joining("\n"));
+        // L0 紧凑列表 — 仅 id(name)，减少 system prompt token 消耗（~2000 → ~400）
+        String compactList = skills.stream()
+                .map(s -> s.id() + "(" + s.name() + ")")
+                .collect(Collectors.joining(", "));
 
-        try {
-            return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
-        } catch (Exception e) {
-            log.warn("渲染技能目录失败: error={}", e.getMessage());
-            return "";
-        }
+        return """
+                <skill_catalog>
+                可用技能（%d 个）：%s
+                使用方式：
+                - 不确定用哪个 → load_skill(action="search", query="你的需求描述") 搜索匹配
+                - 已知 skill ID → load_skill(skill_ids=["skill-id"]) 直接加载
+                </skill_catalog>""".formatted(skills.size(), compactList);
     }
 
     private String safeRenderToolGuide() {

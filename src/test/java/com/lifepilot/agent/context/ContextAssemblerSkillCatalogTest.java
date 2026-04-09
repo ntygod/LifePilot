@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
 class ContextAssemblerSkillCatalogTest {
 
     @Test
-    void buildReactSystemPrompt_withSkill_appendsCatalog() {
+    void buildReactSystemPrompt_withSkill_appendsCompactCatalog() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var skillRegistry = mock(SkillRegistry.class);
@@ -46,8 +46,6 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
-        when(promptRegistry.render(eq("agent/skill-catalog"), anyMap()))
-                .thenReturn("<skill_catalog>\n- todo: task management\n</skill_catalog>");
 
         var skill = SkillDefinition.builder()
                 .id("todo")
@@ -67,8 +65,12 @@ class ContextAssemblerSkillCatalogTest {
         String result = assembler.buildReactSystemPrompt();
 
         assertThat(result).contains("system prompt");
-        assertThat(result).contains("skill_catalog");
-        verify(promptRegistry).render(eq("agent/skill-catalog"), anyMap());
+        // L0 紧凑格式：skill_catalog 标签 + id(name) 列表
+        assertThat(result).contains("<skill_catalog>");
+        assertThat(result).contains("todo(task management)");
+        assertThat(result).contains("可用技能（1 个）");
+        // 不再使用模板渲染
+        verify(promptRegistry, never()).render(eq("agent/skill-catalog"), anyMap());
     }
 
     @Test
@@ -110,7 +112,7 @@ class ContextAssemblerSkillCatalogTest {
     }
 
     @Test
-    void buildReactSystemPrompt_whenSkillCatalogRenderFails_skipsCatalog() {
+    void buildReactSystemPrompt_withMultipleSkills_appendsCompactCatalogWithAllSkills() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var skillRegistry = mock(SkillRegistry.class);
@@ -119,26 +121,38 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
 
-        var skill = SkillDefinition.builder()
-                .id("test")
-                .name("test")
-                .description("test")
+        var skill1 = SkillDefinition.builder()
+                .id("todo")
+                .name("任务管理")
+                .description("管理待办任务")
                 .version("1.0")
                 .instructions("instructions")
                 .suggestedTools(List.of())
                 .source(new SkillSource.UserDefined("/test", null))
                 .metadata(Map.of())
                 .build();
-        when(skillRegistry.listAll()).thenReturn(List.of(skill));
-        when(promptRegistry.render(eq("agent/skill-catalog"), anyMap()))
-                .thenThrow(new RuntimeException("missing template"));
+        var skill2 = SkillDefinition.builder()
+                .id("search")
+                .name("网页搜索")
+                .description("搜索互联网信息")
+                .version("1.0")
+                .instructions("instructions")
+                .suggestedTools(List.of())
+                .source(new SkillSource.UserDefined("/test", null))
+                .metadata(Map.of())
+                .build();
+        when(skillRegistry.listAll()).thenReturn(List.of(skill1, skill2));
 
         var assembler = new ContextAssembler(config, promptRegistry,
                 null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
-        assertThat(result).isEqualTo("system prompt");
+        // L0 紧凑格式包含所有 skill 的 id(name)
+        assertThat(result).contains("可用技能（2 个）");
+        assertThat(result).contains("todo(任务管理)");
+        assertThat(result).contains("search(网页搜索)");
+        assertThat(result).contains("load_skill");
     }
 
     @Test

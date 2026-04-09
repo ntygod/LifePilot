@@ -122,9 +122,10 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SkillDisclosureTool skillDisclosureTool(DynamicToolRegistry toolRegistry,
-                                                   SkillActivator skillActivator) {
-        log.info("Skill 系统: 注册 SkillDisclosureTool");
-        return new SkillDisclosureTool(toolRegistry, skillActivator);
+                                                   SkillActivator skillActivator,
+                                                   SkillRegistry skillRegistry) {
+        log.info("Skill 系统: 注册 SkillDisclosureTool（L1 搜索 + L2 加载）");
+        return new SkillDisclosureTool(toolRegistry, skillActivator, skillRegistry);
     }
 
     @Bean

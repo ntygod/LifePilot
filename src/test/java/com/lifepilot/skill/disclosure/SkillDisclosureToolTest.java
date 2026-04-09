@@ -3,6 +3,9 @@ package com.lifepilot.skill.disclosure;
 import com.lifepilot.skill.activation.SkillActivationException;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.model.SkillActivation;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.model.SkillSource;
+import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -28,11 +31,13 @@ class SkillDisclosureToolTest {
 
     private DynamicToolRegistry toolRegistry;
     private SkillActivator skillActivator;
+    private SkillRegistry skillRegistry;
 
     @BeforeEach
     void setUp() {
         toolRegistry = mock(DynamicToolRegistry.class);
         skillActivator = mock(SkillActivator.class);
+        skillRegistry = mock(SkillRegistry.class);
     }
 
     // ─────────────────────────────────────────────
@@ -41,7 +46,7 @@ class SkillDisclosureToolTest {
 
     @Test
     void registerTools_注册load_skill到DynamicToolRegistry() {
-        var tool = new SkillDisclosureTool(toolRegistry, skillActivator);
+        var tool = new SkillDisclosureTool(toolRegistry, skillActivator, skillRegistry);
 
         tool.registerTools();
 
@@ -122,21 +127,89 @@ class SkillDisclosureToolTest {
     }
 
     // ─────────────────────────────────────────────
+    //  L1 搜索测试
+    // ─────────────────────────────────────────────
+
+    @Test
+    void searchSkills_正常搜索_返回匹配的技能元数据() {
+        var skill = SkillDefinition.builder()
+                .id("todo-manager")
+                .name("任务管理")
+                .description("管理待办任务和项目跟踪")
+                .version("1.0")
+                .instructions("instructions")
+                .suggestedTools(List.of())
+                .source(new SkillSource.UserDefined("/test", null))
+                .metadata(Map.of())
+                .build();
+        when(skillRegistry.search("任务管理", 5)).thenReturn(List.of(skill));
+
+        ToolResult result = invokeSearch("任务管理");
+
+        assertThat(result.ok()).isTrue();
+        Integer found = result.getData("found");
+        assertThat(found).isEqualTo(1);
+        List<Map<String, Object>> skills = result.getData("skills");
+        assertThat(skills).singleElement().satisfies(s -> {
+            assertThat(s.get("skill_id")).isEqualTo("todo-manager");
+            assertThat(s.get("name")).isEqualTo("任务管理");
+            assertThat(s.get("description")).isEqualTo("管理待办任务和项目跟踪");
+        });
+    }
+
+    @Test
+    void searchSkills_无匹配_返回空结果和提示() {
+        when(skillRegistry.search("不存在的能力", 5)).thenReturn(List.of());
+
+        ToolResult result = invokeSearch("不存在的能力");
+
+        assertThat(result.ok()).isTrue();
+        Integer found = result.getData("found");
+        assertThat(found).isEqualTo(0);
+        String hint = result.getData("hint");
+        assertThat(hint).contains("未找到匹配的技能");
+    }
+
+    @Test
+    void searchSkills_缺少query参数_返回错误() {
+        ToolResult result = invokeWithParams(Map.of("action", "search"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("query");
+    }
+
+    @Test
+    void loadSkill_未知action_返回错误() {
+        ToolResult result = invokeWithParams(Map.of("action", "unknown"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("未知 action");
+    }
+
+    // ─────────────────────────────────────────────
     //  辅助方法
     // ─────────────────────────────────────────────
 
-    /** 创建工具并通过 executor 调用 load_skill。 */
+    /** 创建工具并通过 executor 调用 load_skill（action=load）。 */
     private ToolResult invokeLoadSkill(String... skillIds) {
-        var tool = new SkillDisclosureTool(toolRegistry, skillActivator);
+        return invokeWithParams(Map.of("skill_ids", List.of(skillIds)));
+    }
+
+    /** 创建工具并通过 executor 调用 load_skill（action=search）。 */
+    private ToolResult invokeSearch(String query) {
+        return invokeWithParams(Map.of("action", "search", "query", query));
+    }
+
+    /** 创建工具并通过 executor 以指定参数调用 load_skill。 */
+    private ToolResult invokeWithParams(Map<String, Object> params) {
+        var tool = new SkillDisclosureTool(toolRegistry, skillActivator, skillRegistry);
         tool.registerTools();
 
         var captor = ArgumentCaptor.forClass(BuiltinTool.class);
         verify(toolRegistry, atLeastOnce()).registerBuiltinTool(captor.capture());
         BuiltinTool registered = captor.getValue();
 
-        var input = new ToolInput("load_skill",
-                Map.of("skill_ids", List.of(skillIds)),
-                JsonSchema.empty(), null, null);
+        var input = new ToolInput("load_skill", params, JsonSchema.empty(), null, null);
         return registered.execute(input);
     }
 }
