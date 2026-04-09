@@ -37,7 +37,7 @@
 | 工具系统 | ToolContract 统一契约，支持内置工具、YAML 工具、MCP 工具 | [特性](features/tool-ecosystem.md) |
 | 工具授权 | 高风险工具按会话 / 工作区 / 任务 / 长期授权，自主任务支持任务级预授权 | [特性](features/permission.md) |
 | 安全护栏 | 四级风险分级（LOW/MEDIUM/HIGH/CRITICAL），工具执行前自动检查 | [特性](features/guardrail.md) |
-| MCP 协议支持 | Model Context Protocol 客户端，桥接外部工具生态 | [特性](features/mcp-support.md) |
+| MCP 协议支持 | Model Context Protocol 客户端，懒连接 + 工具缓存 + 自动发现，桥接外部工具生态 | [特性](features/mcp-support.md) |
 
 ### 3.2 记忆与知识
 

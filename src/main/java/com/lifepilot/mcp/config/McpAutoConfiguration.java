@@ -4,6 +4,7 @@ import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.mcp.adapter.McpToolAdapter;
 import com.lifepilot.mcp.adapter.McpToolExecutor;
 import com.lifepilot.mcp.bridge.SkillToMcpBridge;
+import com.lifepilot.mcp.cache.McpToolManifestCache;
 import com.lifepilot.mcp.discovery.McpServerDiscovery;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -23,7 +24,7 @@ import org.springframework.context.event.EventListener;
  *
  * <p>通过 {@code lifepilot.mcp.enabled=true}（默认）激活，
  * 注册 McpToolAdapter、McpServerRegistry、SkillToMcpBridge Bean。
- * 应用启动完成后自动初始化所有配置的 MCP Server 连接。</p>
+ * 应用启动时仅注册 MCP Server 配置，所有连接由懒连接按需触发。</p>
  *
  * @author zsg
  * @since 2026-02-24
@@ -44,12 +45,20 @@ public class McpAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public McpToolManifestCache mcpToolManifestCache() {
+        return new McpToolManifestCache();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public McpServerRegistry mcpServerRegistry(
             McpToolAdapter mcpToolAdapter,
             DynamicToolRegistry dynamicToolRegistry,
             ApplicationEventPublisher eventPublisher,
-            SharedScheduler sharedScheduler) {
-        return new McpServerRegistry(mcpToolAdapter, dynamicToolRegistry, eventPublisher, sharedScheduler);
+            SharedScheduler sharedScheduler,
+            McpToolManifestCache mcpToolManifestCache) {
+        return new McpServerRegistry(mcpToolAdapter, dynamicToolRegistry,
+                eventPublisher, sharedScheduler, mcpToolManifestCache);
     }
 
     @Bean
@@ -77,10 +86,9 @@ public class McpAutoConfiguration {
     }
 
     /**
-     * 应用启动完成后初始化所有配置的 MCP Server 连接。
+     * 应用启动完成后注册所有 MCP Server 配置（仅注册，不连接）。
      *
-     * <p>当 discovery.enabled=true 时，通过 McpServerDiscovery 合并显式配置与自动发现的配置；
-     * 否则仅使用显式配置。</p>
+     * <p>所有连接由懒连接触发：Agent 调用某个 MCP 工具时才按需连接对应的 Server。</p>
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
@@ -89,8 +97,9 @@ public class McpAutoConfiguration {
 
         var configs = discovery.discover();
         if (!configs.isEmpty()) {
-            log.info("MCP 自动配置: 初始化 {} 个 MCP Server（含自动发现）", configs.size());
+            log.info("MCP 自动配置: 注册 {} 个 MCP Server（懒连接模式，按需连接）", configs.size());
             registry.initializeAll(configs);
+            registry.discoverUncached();
         } else {
             log.info("MCP 自动配置: 无 MCP Server 配置");
         }

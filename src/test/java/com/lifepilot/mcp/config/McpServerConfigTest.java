@@ -68,7 +68,33 @@ class McpServerConfigTest {
         assertEquals(Duration.ofMillis(500), config.reconnectDelay());
         assertEquals(5, config.maxReconnectAttempts());
         assertEquals(Duration.ofSeconds(30), config.healthCheckInterval());
+        assertEquals(Duration.ofMinutes(10), config.idleTimeout());
         assertEquals(List.of(), config.args());
+    }
+
+    @Test
+    void 默认值填充_idleTimeout为null时使用默认10分钟() {
+        var config = McpServerConfig.builder()
+                .name("test")
+                .transport(TransportType.STDIO)
+                .command("npx")
+                .idleTimeout(null)
+                .build();
+
+        assertEquals(Duration.ofMinutes(10), config.idleTimeout());
+        assertEquals(McpServerConfig.DEFAULT_IDLE_TIMEOUT, config.idleTimeout());
+    }
+
+    @Test
+    void idleTimeout_自定义值生效() {
+        var config = McpServerConfig.builder()
+                .name("test")
+                .transport(TransportType.STDIO)
+                .command("npx")
+                .idleTimeout(Duration.ofMinutes(30))
+                .build();
+
+        assertEquals(Duration.ofMinutes(30), config.idleTimeout());
     }
 
     @Test

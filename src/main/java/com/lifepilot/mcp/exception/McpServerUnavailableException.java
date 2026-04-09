@@ -15,6 +15,11 @@ public class McpServerUnavailableException extends McpTransportException {
         this.serverName = serverName;
     }
 
+    public McpServerUnavailableException(String serverName, String detail) {
+        super("MCP Server 不可用: %s — %s".formatted(serverName, detail));
+        this.serverName = serverName;
+    }
+
     public String getServerName() {
         return serverName;
     }

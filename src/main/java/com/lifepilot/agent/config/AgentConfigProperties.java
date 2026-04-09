@@ -21,6 +21,8 @@ import java.time.Duration;
 public class AgentConfigProperties {
 
     private boolean enabled = true;
+    /** 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测。 */
+    private String location = "";
     private LoopConfig loop = new LoopConfig();
     private BudgetConfig budget = new BudgetConfig();
     private ContextConfig context = new ContextConfig();
