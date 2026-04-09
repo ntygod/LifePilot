@@ -72,8 +72,6 @@ public class ReactAgentLoop implements CallbackHelper {
     /** 停滞检测排除名单 — 这些工具的重复调用（不同参数）是合理的执行模式。 */
     private static final Set<String> STALL_DETECTION_EXCLUDED_TOOLS = Set.of("web.search");
 
-
-
     // ===== 核心依赖 =====
     private final ContextAssembler contextAssembler;
     private final ProviderMessageBuilder providerMessageBuilder;

@@ -508,5 +508,4 @@ public class MetaProperties {
         /** Agent 定义文件路径，默认 preset-agents/onboarding-guide.md。 */
         private String agentDefinition = "preset-agents/onboarding-guide.md";
     }
-
 }

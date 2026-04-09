@@ -130,7 +130,6 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else {
             log.debug("生成 ToolCallback: count={}", tools.size());
         }
-
         refreshToolNameMappings(tools);
         return tools.stream()
                 .map(t -> toToolCallback(t, streamId, state))
