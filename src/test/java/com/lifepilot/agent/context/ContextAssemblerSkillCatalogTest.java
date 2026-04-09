@@ -68,7 +68,7 @@ class ContextAssemblerSkillCatalogTest {
         assertThat(result).contains("skill_overview");
         assertThat(result).contains("1 个技能可用");
         assertThat(result).contains("task management");
-        assertThat(result).contains("meta.search_tools");
+        assertThat(result).contains("meta_search_tools");
     }
 
     @Test

@@ -876,7 +876,7 @@ public class ContextAssembler {
         return """
             <skill_overview>
             你有 %d 个技能可用，覆盖：%s。
-            使用 meta.search_tools 搜索相关工具和技能，或调用 load_skill 加载已知技能的完整指南。
+            重要：不要猜测 skill ID，先调用 meta_search_tools 搜索，从返回结果中获取准确的 skill_id 后再 load_skill。
             </skill_overview>""".formatted(skills.size(), nameList);
     }
 
