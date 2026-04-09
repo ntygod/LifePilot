@@ -186,10 +186,13 @@ public class RegionChunkingRouter {
     }
 
     /**
-     * 合并过小的 section — 真正微小的 section 视为子标题归入前一个 section。
+     * 合并过小的 section — 尊重标题边界：有标题的 section 只能向前合并（保留标题身份），无标题的优先向后合并。
      *
-     * <p>阈值：section 内容长度 < minSectionSize（默认 200 字）。
-     * 确保合并后不超过 maxChunkSize。</p>
+     * <p>合并规则：
+     * <ul>
+     *   <li>无独立标题的微小 section → 优先向后合并，首 section 向前合并</li>
+     *   <li>有独立标题的微小 section → 仅向前合并（吸收下一个 section 内容，保留自身标题）</li>
+     * </ul>
      */
     private List<StructureRegion> mergeSmallSections(List<StructureRegion> sections, String originalText) {
         if (sections.size() <= 1) return sections;
@@ -197,30 +200,70 @@ public class RegionChunkingRouter {
         var merged = new ArrayList<StructureRegion>();
         int minSectionSize = paragraphMinForRecursive;
 
-        for (var section : sections) {
-            if (!merged.isEmpty() && section.length() < minSectionSize) {
-                var prev = merged.getLast();
-                int combinedLength = prev.length() + section.length();
-                // 合并后不超过 maxChunkSize 时执行合并
-                if (combinedLength <= maxChunkSize) {
-                    int mergedStart = prev.startOffset();
-                    int mergedEnd = section.endOffset();
-                    String mergedContent = originalText.substring(mergedStart,
-                            Math.min(mergedEnd, originalText.length()));
-                    var mergedLines = new ArrayList<>(prev.lines());
-                    mergedLines.addAll(section.lines());
-                    merged.set(merged.size() - 1, new StructureRegion(
-                            StructureType.PARAGRAPH,
-                            mergedStart, mergedEnd, mergedContent,
-                            mergedLines, prev.headingHierarchy()
-                    ));
-                    continue;
-                }
+        for (int i = 0; i < sections.size(); i++) {
+            var section = sections.get(i);
+
+            if (section.length() >= minSectionSize) {
+                merged.add(section);
+                continue;
             }
-            merged.add(section);
+
+            // 判断是否有独立标题
+            boolean hasOwnHeading = !section.headingHierarchy().isEmpty()
+                    && (merged.isEmpty() || !section.headingHierarchy().equals(merged.getLast().headingHierarchy()));
+
+            if (hasOwnHeading) {
+                // 有独立标题 → 只向前合并（吸收下一个 section，保留自身标题）
+                if (i + 1 < sections.size()) {
+                    var next = sections.get(i + 1);
+                    if (section.length() + next.length() <= maxChunkSize) {
+                        sections.set(i + 1, combineSections(section, next, originalText,
+                                section.headingHierarchy()));
+                        continue;
+                    }
+                }
+                // 无法向前合并（已是最后 section 或合并后超限），保留原样
+                merged.add(section);
+            } else {
+                // 无独立标题 → 优先向后合并
+                if (!merged.isEmpty()) {
+                    var prev = merged.getLast();
+                    if (prev.length() + section.length() <= maxChunkSize) {
+                        merged.set(merged.size() - 1,
+                                combineSections(prev, section, originalText, prev.headingHierarchy()));
+                        continue;
+                    }
+                }
+                // 向前合并
+                if (i + 1 < sections.size()) {
+                    var next = sections.get(i + 1);
+                    if (section.length() + next.length() <= maxChunkSize) {
+                        sections.set(i + 1, combineSections(section, next, originalText,
+                                section.headingHierarchy()));
+                        continue;
+                    }
+                }
+                merged.add(section);
+            }
         }
 
         return merged;
+    }
+
+    /** 合并两个相邻 section 为一个。 */
+    private StructureRegion combineSections(StructureRegion a, StructureRegion b,
+                                             String originalText, List<String> headingHierarchy) {
+        int mergedStart = a.startOffset();
+        int mergedEnd = b.endOffset();
+        String mergedContent = originalText.substring(mergedStart,
+                Math.min(mergedEnd, originalText.length()));
+        var mergedLines = new ArrayList<>(a.lines());
+        mergedLines.addAll(b.lines());
+        return new StructureRegion(
+                StructureType.PARAGRAPH,
+                mergedStart, mergedEnd, mergedContent,
+                mergedLines, headingHierarchy
+        );
     }
 
     /**
@@ -245,14 +288,14 @@ public class RegionChunkingRouter {
     }
 
     /**
-     * 段落分块 — 小段落整块保留，大段落委派递归分块器。
+     * 段落分块 — 小段落整块保留，大段落委派递归分块器（不应用重叠，由 ChunkMerger 统一处理）。
      */
     private List<DocumentChunk> chunkParagraph(StructureRegion region, Map<String, String> metadata) {
         if (region.length() <= maxChunkSize) {
             return List.of(createSingleChunk(region, metadata));
         }
-        // 大段落委派递归分块器
-        var subChunks = recursiveChunker.chunk(region.content(), metadata);
+        // 大段落委派递归分块器 — 不应用重叠，避免与 ChunkMerger 双重重叠
+        var subChunks = recursiveChunker.chunkWithoutOverlap(region.content(), metadata);
         return adjustSubChunkOffsets(subChunks, region.startOffset());
     }
 

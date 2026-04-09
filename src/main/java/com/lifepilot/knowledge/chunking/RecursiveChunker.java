@@ -58,9 +58,28 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
         List<String> merged = mergeSmallChunks(rawChunks);
 
         // 应用重叠并构建 DocumentChunk
-        List<DocumentChunk> result = buildChunksWithOverlap(text, merged, metadata);
+        List<DocumentChunk> result = buildChunks(text, merged, metadata, true);
 
         log.debug("递归分块完成: 原始片段={}, 合并后={}, 最终分块={}",
+                rawChunks.size(), merged.size(), result.size());
+        return List.copyOf(result);
+    }
+
+    /**
+     * 切分文本但不应用重叠 — 供三层架构内部使用，重叠由 ChunkMerger 统一处理。
+     *
+     * @param text     待切分文本
+     * @param metadata 文档元数据
+     * @return 无重叠的分块列表
+     */
+    public List<DocumentChunk> chunkWithoutOverlap(String text, Map<String, String> metadata) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        List<String> rawChunks = splitRecursively(text, 0);
+        List<String> merged = mergeSmallChunks(rawChunks);
+        List<DocumentChunk> result = buildChunks(text, merged, metadata, false);
+        log.debug("递归分块（无重叠）完成: 原始片段={}, 合并后={}, 最终分块={}",
                 rawChunks.size(), merged.size(), result.size());
         return List.copyOf(result);
     }
@@ -183,8 +202,10 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
 
         if (!current.isEmpty()) {
             String last = current.toString();
-            // 最后一个片段太小则与前一个合并
-            if (last.length() < minChunkSize && !result.isEmpty()) {
+            // 尾块过小时强制与前一个合并（允许轻微超出 maxChunkSize）
+            // 阈值：小于 maxChunkSize 的 30%，避免产生 embedding 质量差的碎片
+            int mergeThreshold = Math.max(minChunkSize, maxChunkSize * 3 / 10);
+            if (last.length() < mergeThreshold && !result.isEmpty()) {
                 String prev = result.removeLast();
                 result.add(prev + last);
             } else {
@@ -196,14 +217,20 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
     }
 
     /**
-     * 构建带重叠的 DocumentChunk 列表。
+     * 构建 DocumentChunk 列表，可选择是否应用重叠。
      *
      * <p>使用 indexOf 在原始文本中定位每个分块的实际偏移量，
      * 替代之前的累加长度近似计算，避免分隔符丢失导致的偏移漂移。
+     *
+     * @param originalText 原始文本
+     * @param textChunks   文本片段列表
+     * @param metadata     文档元数据
+     * @param applyOverlap 是否应用重叠（三层架构内部调用时传 false，由 ChunkMerger 统一处理）
      */
-    private List<DocumentChunk> buildChunksWithOverlap(String originalText,
-                                                        List<String> textChunks,
-                                                        Map<String, String> metadata) {
+    private List<DocumentChunk> buildChunks(String originalText,
+                                             List<String> textChunks,
+                                             Map<String, String> metadata,
+                                             boolean applyOverlap) {
         List<DocumentChunk> result = new ArrayList<>();
         int chunkIndex = 0;
         int searchFrom = 0;
@@ -222,11 +249,11 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
 
             // 应用重叠：从前一个分块尾部取 overlapSize 字符作为当前分块前缀
             String content = rawContent;
-            if (i > 0 && overlapSize > 0) {
+            if (applyOverlap && i > 0 && overlapSize > 0) {
                 String prevChunk = textChunks.get(i - 1);
                 int overlapStart = Math.max(0, prevChunk.length() - overlapSize);
                 // 向前搜索到最近的句子边界，避免在词语中间截断
-                String sentenceEndings = "。！？；：.!?;\n";
+                String sentenceEndings = "。！？；.!?;\n";
                 for (int j = overlapStart; j < prevChunk.length(); j++) {
                     if (sentenceEndings.indexOf(prevChunk.charAt(j)) >= 0) {
                         overlapStart = j + 1;

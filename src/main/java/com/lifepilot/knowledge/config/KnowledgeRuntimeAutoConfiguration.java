@@ -59,20 +59,12 @@ public class KnowledgeRuntimeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SmartChunker smartChunker(FixedSizeChunker fixedSizeChunker,
-                                     RecursiveChunker recursiveChunker,
-                                     HeadingChunker headingChunker,
-                                     @Nullable SemanticChunker semanticChunker,
-                                     KnowledgeBaseProperties props,
+    public SmartChunker smartChunker(RecursiveChunker recursiveChunker,
                                      DocumentStructureAnalyzer documentStructureAnalyzer,
                                      RegionChunkingRouter regionChunkingRouter,
                                      ChunkMerger chunkMerger) {
         return new SmartChunker(
-                fixedSizeChunker,
                 recursiveChunker,
-                headingChunker,
-                semanticChunker,
-                props.chunking().smartChunker(),
                 documentStructureAnalyzer,
                 regionChunkingRouter,
                 chunkMerger
@@ -81,19 +73,32 @@ public class KnowledgeRuntimeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ParentChildChunker parentChildChunker(SmartChunker smartChunker,
-                                                  FixedSizeChunker fixedSizeChunker,
+    public ParentChildChunker parentChildChunker(RecursiveChunker recursiveChunker,
+                                                  DocumentStructureAnalyzer documentStructureAnalyzer,
+                                                  RegionChunkingRouter regionChunkingRouter,
                                                   KnowledgeBaseProperties props,
                                                   TokenCounter tokenCounter) {
-        // parent 使用 SmartChunker（大块），child 使用独立的小块 FixedSizeChunker
-        var childConfig = new ChunkingConfig(
-                props.chunking().parentChild().childMaxTokens() * 4,  // token→字符粗略转换
-                50,
-                props.chunking().parentChild().childOverlap(),
-                props.chunking().parentChild().childMaxTokens(),
-                true, true, true);
-        var childChunker = new FixedSizeChunker(childConfig, tokenCounter);
-        return new ParentChildChunker(smartChunker, childChunker);
+        // Parent 分块器：独立的 SmartChunker，不应用 overlap
+        // parent-child 模式通过层级关系提供上下文，父块间重叠会导致子块跨章节重复
+        var parentMerger = new ChunkMerger(
+                props.chunking().recursive().maxChunkSize(),
+                props.chunking().recursive().minChunkSize(),
+                0,  // 父块不需要 overlap
+                tokenCounter);
+        var parentChunker = new SmartChunker(
+                recursiveChunker, documentStructureAnalyzer, regionChunkingRouter, parentMerger);
+
+        // Child 分块器：按段落→句子自然边界切分
+        // 中文约 1.5 字符/token，英文约 4 字符/token，取折中值 2 适配中英混合文本
+        int childMaxChunkSize = props.chunking().parentChild().childMaxTokens() * 2;
+        var childRecursiveConfig = new KnowledgeBaseProperties.Chunking.Recursive(
+                props.chunking().recursive().separators(),
+                childMaxChunkSize,
+                80,     // 子块最小字符数，低于此值与相邻块合并
+                0       // 子块不需要 overlap — 精确匹配后返回父块提供完整上下文
+        );
+        var childChunker = new RecursiveChunker(childRecursiveConfig, tokenCounter);
+        return new ParentChildChunker(parentChunker, childChunker);
     }
 
     @Bean

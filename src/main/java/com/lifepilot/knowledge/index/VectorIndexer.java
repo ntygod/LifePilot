@@ -126,12 +126,15 @@ public class VectorIndexer {
             return new IndexingResult(0, 0, 0);
         }
 
-        // Parent-Child 架构：只对 child 块（level=1）建向量索引；parent 块（level=0）不索引
-        // 如果没有 child 块（非 Parent-Child 模式），则索引所有块
-        boolean hasChildren = chunks.stream().anyMatch(c -> c.chunkLevel() == 1);
-        var indexable = hasChildren
-                ? chunks.stream().filter(c -> c.chunkLevel() == 1).toList()
-                : chunks;
+        // Parent-Child 架构：索引 child 块（level=1）+ 没有子块的自包含父块（level=0 且无对应 child）
+        var parentIdsWithChildren = chunks.stream()
+                .filter(c -> c.chunkLevel() == 1 && c.parentChunkId().isPresent())
+                .map(c -> c.parentChunkId().get())
+                .collect(java.util.stream.Collectors.toSet());
+        var indexable = chunks.stream()
+                .filter(c -> c.chunkLevel() == 1                                    // child 块：始终索引
+                        || (c.chunkLevel() == 0 && !parentIdsWithChildren.contains(c.id()))) // 自包含父块：无 child 时索引
+                .toList();
 
         if (indexable.isEmpty()) {
             return new IndexingResult(0, 0, 0);

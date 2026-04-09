@@ -108,6 +108,11 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
                 log.debug("生成分块 #{}: startOffset={}, endOffset={}, 长度={}", chunkIndex - 1, position, end, chunkContent.length());
             }
 
+            // 当前块已覆盖到文本末尾时，不再回溯 — 避免 overlap 产生无意义的尾部碎片
+            if (end >= textLength) {
+                break;
+            }
+
             // 下一个分块起始位置（考虑重叠）
             int nextPosition = end - config.overlapSize();
             if (nextPosition <= position) {

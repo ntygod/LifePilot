@@ -26,7 +26,7 @@ public class ChunkMerger {
     private static final Logger log = LoggerFactory.getLogger(ChunkMerger.class);
 
     /** 句子边界标点（用于重叠截断定位） */
-    private static final String SENTENCE_BOUNDARIES = "。！？.!?\n";
+    private static final String SENTENCE_BOUNDARIES = "。！？；.!?;\n";
 
     private final int maxChunkSize;
     private final int minChunkSize;
@@ -106,8 +106,15 @@ public class ChunkMerger {
             if ("HEADING".equals(chunkType) && i + 1 < chunks.size()) {
                 var next = chunks.get(i + 1);
                 var mergedChunk = mergeTwo(chunk, next);
-                // 跳过被合并的下一个分块
                 chunks.set(i + 1, mergedChunk);
+                continue;
+            }
+
+            // 极小碎片（< 50 字符）强制向后合并，不受 maxChunkSize 限制
+            // 标题单独成块、分隔线等场景会产生这类碎片，独立存在无检索意义
+            if (chunk.content().length() < 50 && i + 1 < chunks.size()) {
+                var next = chunks.get(i + 1);
+                chunks.set(i + 1, mergeTwo(chunk, next));
                 continue;
             }
 

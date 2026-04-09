@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.knowledge`
-> **最后更新**：2026-04-07
+> **最后更新**：2026-04-09
 
 ## 1. 模块概述
 
@@ -34,7 +34,10 @@ graph TB
         FD["FormatDetector<br/>(Apache Tika)"]
         DP["DocumentParser<br/>(sealed, 4 实现)"]
         CS["ChunkingStrategy<br/>(sealed, 6 实现)"]
-        SC["SmartChunker<br/>(策略自动选择)"]
+        SC["SmartChunker<br/>(三层结构分块)"]
+        DSA["DocumentStructureAnalyzer<br/>(Layer 1 逐行结构分类)"]
+        RCR["RegionChunkingRouter<br/>(Layer 2 区域路由)"]
+        CM["ChunkMerger<br/>(Layer 3 合并后处理)"]
         PC["ParentChildChunker<br/>(两级分块)"]
         CE["ChunkContextEnricher<br/>(LLM 上下文增强)"]
         DD["DuplicateDetector<br/>(重复检测)"]
@@ -46,6 +49,9 @@ graph TB
         DI --> DD
         CS --> PC
         CS --> TC
+        SC --> DSA
+        SC --> RCR
+        SC --> CM
     end
 
     subgraph "索引层"
@@ -131,13 +137,40 @@ graph TB
 
 - 通过 sealed interface 定义，当前 6 种实现：
   - `FixedSizeChunker`：固定大小分块，支持重叠和句子边界尊重
-  - `RecursiveChunker`：递归分块，按分隔符层次递归切分
+  - `RecursiveChunker`：递归分块，按分隔符层次递归切分（仅保留句子级及以上分隔符，移除逗号级标点避免碎片化）
   - `HeadingChunker`：标题分块，按 Markdown 标题层级切分
   - `SemanticChunker`：语义分块，基于 Embedding 相似度检测语义断点
-  - `SmartChunker`：智能策略选择器，根据文档特征自动选择最佳分块策略
+  - `SmartChunker`：三层结构分块器，始终通过三层架构处理文档（见下文 3.4a–3.4c）
   - `ParentChildChunker`：两级分块器，生成 parent（大块，用于返回给 LLM）和 child（小块，用于向量检索）
-- `SmartChunker` 决策逻辑（优先级从高到低）：代码块密度高 → Recursive；标题密度高 → Heading；语义分块可用且文档足够长 → Semantic；长文档 → Recursive；默认 → FixedSize
-- `ParentChildChunker` 工作方式：先用 parentChunker 切出大块（level=0），再对每个 parent 用 childChunker 切出小块（level=1）；向量索引只索引 child 块，检索命中后返回对应 parent 块
+- `SmartChunker` 三层管线：DocumentStructureAnalyzer（逐行结构分类）→ RegionChunkingRouter（按区域类型路由）→ ChunkMerger（合并过小分块、应用重叠、重新编号）
+- `ParentChildChunker` 工作方式：先用独立的 SmartChunker（不含 overlap）作为 parentChunker 切出大块（level=0），再对每个 parent 用 RecursiveChunker 切出小块（level=1）；向量索引只索引 child 块，检索命中后返回对应 parent 块；子块继承父块标题层级
+
+#### 3.4a DocumentStructureAnalyzer（Layer 1 — 文档结构分析）
+
+- 职责：对文档逐行进行结构分类，合并连续同类型行为结构区域（`StructureRegion`），维护标题层级堆栈
+- 结构类型（`StructureType`）：HEADING / PARAGRAPH / CODE / LIST / TABLE / BLANK
+- 分析流程：按行拆分 → 解析器元素覆盖行分类（如有）→ 规则分类（围栏代码块 → ATX 标题 → 中文章节标题 → 表格 → 列表 → 缩进代码 → 纯文本标题启发式 → 段落）→ 合并同类型行为区域
+- 纯文本标题启发式：短行 + 不以句末标点/冒号结尾 + 不含逗号 + 不以引号开头 + 前一行为空行/标题/文档开头
+- 通过 `lifepilot.knowledge.chunking.structure-analysis.*` 配置
+
+#### 3.4b RegionChunkingRouter（Layer 2 — 区域分块路由）
+
+- 职责：根据区域结构类型选择最佳分块策略
+- 路由策略：
+  - HEADING → 与后续内容区域合并为逻辑 section，整体分块
+  - PARAGRAPH → 小于阈值整块保留，超过则委派 RecursiveChunker（不应用重叠，由 ChunkMerger 统一处理）
+  - CODE → 小于阈值整块保留，超过则委派 FixedSizeChunker（硬切）
+  - LIST → 小于阈值整块保留，超过则按列表项拆分
+  - TABLE → 始终整块保留（不拆分表格行）
+- section 合并规则：过小的 section 向前/向后合并（有标题的仅向前合并，无标题的优先向后合并）
+- 通过 `lifepilot.knowledge.chunking.region-routing.*` 配置
+
+#### 3.4c ChunkMerger（Layer 3 — 分块合并后处理）
+
+- 职责：合并过小分块、应用重叠、重新编号索引
+- 合并规则：HEADING 始终向后合并；极小碎片（< 50 字符）强制向后合并；同类型同 section 邻居合并（不超限）；不同结构类型（CODE/TABLE vs PARAGRAPH）不合并
+- 重叠规则：从前一个分块尾部取 overlapSize 字符，在句子边界处截断；不同 section 或前一分块为 HEADING 时不应用重叠
+- 使用 RecursiveChunker 的 maxChunkSize / minChunkSize / overlapSize 配置
 
 ### 3.5 ChunkContextEnricher（分块上下文增强）
 
@@ -153,16 +186,18 @@ graph TB
 - 检索结果去重：`ChunkDeduplicator` 基于 Jaccard trigram 相似度移除内容高度重叠的分块
 - Parent-Child 解析：命中 child 块时自动查找并返回对应 parent 块（大块上下文完整）
 - Corrective RAG（可选）：`RetrievalQualityEvaluator` 评估检索质量（HIGH / LOW / VERY_LOW），LOW 时使用建议改写查询重试，VERY_LOW 时标记低置信度
-- 可选查询增强（`QueryEnhancer`）：rewrite 模式生成查询改写变体，HyDE 模式生成假设文档 Embedding
-- 可选精排（`Reranker`）：对初步检索结果进行二次排序
-- 支持上下文窗口扩展：将命中分块的前后相邻分块也纳入结果
-- 完整检索管线顺序：查询增强 → 三路并行检索 → RRF 融合 → 去重 → Parent-Child 解析 → 最低分阈值过滤 → 上下文窗口扩展 → 精排 → Corrective RAG
+- 查询增强与主搜索并行执行（非阻塞）：查询增强（`QueryEnhancer`）使用独立虚拟线程异步运行，不阻塞主搜索；主搜索使用原始查询立即并行检索；主搜索完成后检查增强结果，已完成则用改写查询补充搜索
+- 可选精排（`Reranker`）：在上下文扩展之前基于原始匹配内容评分排序
+- 支持上下文窗口扩展：在精排之后执行，将命中分块的前后相邻分块纳入结果（展示层增强不影响排序）
+- candidateK 动态调整：有精排时拉取 effectiveTopK * 5 的候选给 Reranker；无精排时拉取 effectiveTopK * 3
+- 完整检索管线顺序：查询增强（并行非阻塞）→ 三路并行检索 → 改写补充搜索（如增强已完成）→ RRF 融合 → 去重 → Parent-Child 解析 → 最低分阈值过滤 → 精排 → 上下文窗口扩展 → Corrective RAG
 
 ### 3.7 QueryEnhancer（查询增强器）
 
 - 职责：通过 LLM 改写或扩展用户查询以提升检索精度
 - 三种模式：`rewrite`（生成查询改写变体）、`hyde`（生成假设文档 Embedding）、`none`（不增强）
-- 带独立超时控制，LLM 不可用时降级返回原始查询
+- 非阻塞并行执行：查询增强在独立虚拟线程中异步运行，主搜索使用原始查询立即开始，不等待增强结果；主搜索完成后检查增强是否也完成了，已完成则用改写查询补充搜索
+- 带独立超时控制（默认 15000ms），LLM 不可用时降级返回原始查询
 
 ### 3.8 Reranker（精排器）
 
@@ -290,28 +325,31 @@ sequenceDiagram
 
     CA->>DR: retrieve(query, kbIds, topK)
 
-    opt 查询增强启用
-        DR->>QE: enhance(query)
-        QE-->>DR: EnhancedQuery（改写/HyDE）
+    par 查询增强与主搜索并行（非阻塞）
+        DR->>QE: enhance(query)（异步虚拟线程）
+        par 三路并行检索（使用原始查询立即开始）
+            DR->>VI: search(query, scopes, candidateK)
+            DR->>FI: search(query, scopes, candidateK)
+            DR->>GS: search(query, scopes, candidateK)
+        end
     end
 
-    par 三路并行检索
-        DR->>VI: search(query, kbIds, topK)
-        DR->>FI: search(query, kbIds, topK)
-        DR->>GS: search(query, scopes, topK)
+    opt 查询增强已完成
+        Note over DR: 用改写查询补充搜索结果
     end
 
     Note over DR: 自适应 RRF 三路融合（向量 + FTS + 图谱）
 
     DR->>CD: deduplicate(fused)
     Note over DR: Parent-Child 解析（child→parent）
-
-    opt 上下文窗口扩展
-        DR->>DR: expandContextWindow(results)
-    end
+    Note over DR: 最低分阈值过滤
 
     opt 精排启用
         DR->>RR: rerank(query, candidates, topK)
+    end
+
+    opt 上下文窗口扩展
+        DR->>DR: expandContextWindow(results)
     end
 
     opt Corrective RAG 启用
@@ -359,7 +397,7 @@ sequenceDiagram
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 多知识库实例 | 每个知识库独立配置 | 不同知识域可能需要不同的 Embedding 模型和分块策略 |
-| 分块策略 sealed interface | 6 种策略 + SmartChunker 自动选择 | 不同文档结构适合不同分块方式，SmartChunker 降低用户配置负担 |
+| 分块策略 sealed interface | 6 种策略 + SmartChunker 三层结构分块 | SmartChunker 通过三层管线（结构分析 → 区域路由 → 合并后处理）自动适配不同文档结构 |
 | Parent-Child 分块 | 大块（parent）用于返回，小块（child）用于检索 | 兼顾检索精度（小块匹配更精准）和上下文完整性（返回大块） |
 | 文档解析 | Apache Tika 格式检测 + 4 种解析器 | Tika 提供可靠的格式检测，sealed interface 保证类型安全 |
 | 三路检索融合 | 向量 + FTS5 + 知识图谱 + 自适应 RRF | 语义检索、关键词检索、图谱检索三路互补，自适应权重处理低置信度场景 |
@@ -390,15 +428,24 @@ sequenceDiagram
 | `lifepilot.knowledge.max-file-size` | `104857600` | 最大文件大小（字节，默认 100MB） |
 | `lifepilot.knowledge.chunking.default-strategy` | `smart` | 默认分块策略 |
 | `lifepilot.knowledge.chunking.fixed-size.*` | — | 固定大小分块参数 |
-| `lifepilot.knowledge.chunking.recursive.*` | — | 递归分块参数 |
+| `lifepilot.knowledge.chunking.recursive.max-chunk-size` | `1536` | 递归分块最大字符数 |
+| `lifepilot.knowledge.chunking.recursive.*` | — | 递归分块其他参数（minChunkSize / overlapSize 等） |
 | `lifepilot.knowledge.chunking.heading.*` | — | 标题分块参数 |
 | `lifepilot.knowledge.chunking.semantic-chunking.*` | — | 语义分块参数 |
 | `lifepilot.knowledge.chunking.parent-child.enabled` | `true` | 是否启用 Parent-Child 两级分块 |
-| `lifepilot.knowledge.chunking.parent-child.parent-max-tokens` | `1024` | Parent 分块最大 Token 数 |
-| `lifepilot.knowledge.chunking.parent-child.child-max-tokens` | `256` | Child 分块最大 Token 数 |
+| `lifepilot.knowledge.chunking.parent-child.parent-max-tokens` | `1536` | Parent 分块最大 Token 数 |
+| `lifepilot.knowledge.chunking.parent-child.child-max-tokens` | `384` | Child 分块最大 Token 数 |
 | `lifepilot.knowledge.chunking.parent-child.child-overlap` | `64` | Child 分块之间的重叠 Token 数 |
+| `lifepilot.knowledge.chunking.structure-analysis.max-heading-length` | `80` | 纯文本标题最大字符数 |
+| `lifepilot.knowledge.chunking.structure-analysis.min-code-indent` | `4` | 缩进代码块最小缩进空格数 |
+| `lifepilot.knowledge.chunking.structure-analysis.min-table-columns` | `2` | 表格最小列数 |
+| `lifepilot.knowledge.chunking.region-routing.max-intact-code-size` | `4096` | 代码块整块保留最大字符数 |
+| `lifepilot.knowledge.chunking.region-routing.max-intact-table-size` | `8192` | 表格整块保留最大字符数 |
+| `lifepilot.knowledge.chunking.region-routing.max-intact-list-size` | `4096` | 列表整块保留最大字符数 |
+| `lifepilot.knowledge.chunking.region-routing.paragraph-min-for-recursive` | `200` | 段落使用递归分块的最小长度 |
 | `lifepilot.knowledge.tokenizer.encoding` | `cl100k_base` | Token 编码类型（cl100k_base / o200k_base / heuristic） |
 | `lifepilot.knowledge.vector-indexer.*` | — | 向量索引参数（批量大小、维度等） |
+| `lifepilot.knowledge.retrieval.context-window-size` | `0` | 上下文窗口扩展大小（0 禁用） |
 | `lifepilot.knowledge.retrieval.*` | — | 检索参数（topK、权重、RRF K 等） |
 | `lifepilot.knowledge.retrieval.graph-weight` | `0.2` | 图谱检索在 RRF 融合中的权重 |
 | `lifepilot.knowledge.retrieval.graph-enabled` | `true` | 是否启用图谱检索 |
@@ -409,4 +456,6 @@ sequenceDiagram
 | `lifepilot.knowledge.context-enricher.*` | — | 上下文增强参数 |
 | `lifepilot.knowledge.extraction.*` | — | 知识提取参数 |
 | `lifepilot.knowledge.reranker.*` | — | 精排参数（类型、模型、topK 等） |
-| `lifepilot.knowledge.query-enhancer.*` | — | 查询增强参数（模式、超时等） |
+| `lifepilot.knowledge.query-enhancer.mode` | `none` | 查询增强模式（rewrite / hyde / none） |
+| `lifepilot.knowledge.query-enhancer.timeout-ms` | `15000` | 查询增强超时毫秒数 |
+| `lifepilot.knowledge.query-enhancer.max-rewrites` | `3` | rewrite 模式最大改写数量 |

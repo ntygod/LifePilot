@@ -80,11 +80,12 @@ public record KnowledgeBaseProperties(
         ) {
             public Recursive {
                 if (separators == null || separators.isEmpty()) {
-                    separators = java.util.List.of("\n\n", "\n", "。", "！", "？", "；", "，", ".", "!", "?", " ");
+                    // 仅保留句子级及以上分隔符，移除逗号级标点（，、：等）避免碎片化
+                    separators = java.util.List.of("\n\n", "\n", "。", "！", "？", ".", "!", "?", "；", ";", " ");
                 }
-                if (maxChunkSize <= 0) maxChunkSize = 1024;
+                if (maxChunkSize <= 0) maxChunkSize = 1536;
                 if (minChunkSize <= 0) minChunkSize = 100;
-                if (overlapSize <= 0) overlapSize = 128;
+                if (overlapSize < 0) overlapSize = 128;  // 允许显式设置 0（无 overlap）
             }
         }
 
@@ -130,8 +131,8 @@ public record KnowledgeBaseProperties(
         /** Parent-Child 分块配置。 */
         public record ParentChild(boolean enabled, int parentMaxTokens, int childMaxTokens, int childOverlap) {
             public ParentChild {
-                if (parentMaxTokens <= 0) parentMaxTokens = 1024;
-                if (childMaxTokens <= 0) childMaxTokens = 256;
+                if (parentMaxTokens <= 0) parentMaxTokens = 1536;
+                if (childMaxTokens <= 0) childMaxTokens = 384;
                 if (childOverlap < 0) childOverlap = 64;
             }
         }
@@ -261,7 +262,7 @@ public record KnowledgeBaseProperties(
     ) {
         public QueryEnhancer {
             if (mode == null) mode = "none";
-            if (timeoutMs <= 0) timeoutMs = 3000;
+            if (timeoutMs <= 0) timeoutMs = 15000;
             if (maxRewrites <= 0) maxRewrites = 3;
         }
     }

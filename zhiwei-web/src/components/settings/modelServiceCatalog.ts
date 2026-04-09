@@ -29,6 +29,7 @@ export const GENERATION_SCENE_OPTIONS = [
   { value: 'chat', label: '通用对话' },
   { value: 'agent_react', label: 'Agent 推理' },
   { value: 'knowledge_extraction', label: '知识提取' },
+  { value: 'query_enhance', label: '查询增强' },
   { value: 'memory_compression', label: '记忆压缩' },
   { value: 'skill_generation', label: '技能生成' },
 ]

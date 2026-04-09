@@ -170,12 +170,31 @@ public class FtsIndexer {
     /**
      * 构建 FTS5 MATCH 查询表达式。
      *
-     * <p>使用 trigram tokenizer 后，双引号包裹的查询执行**子串匹配**
-     * （而非 unicode61 的 token 序列匹配），天然支持 CJK 和混合语言。
-     * 搜索 "Spring 配置" 会匹配任何包含该子串的文档。
+     * <p>使用 trigram tokenizer，将查询按空格拆分为独立片段并用 OR 连接，
+     * 提升多词查询的召回率。例如 "Spring Boot 配置" → {@code "Spring" OR "Boot" OR "配置"}。
+     * 无空格的纯中文查询保持为单个子串匹配。过滤 < 2 字符的碎片避免噪声。
      */
     private String escapeFtsQuery(String query) {
-        return "\"" + query.replace("\"", "\"\"") + "\"";
+        // 先移除所有双引号，后续包裹时不需要再转义
+        String cleaned = query.replace("\"", "").strip();
+        if (cleaned.isEmpty()) {
+            return "\"\"";
+        }
+        String[] parts = cleaned.split("\\s+");
+        if (parts.length <= 1) {
+            return "\"" + cleaned + "\"";
+        }
+        // 多片段：按空格拆分，OR 连接，过滤太短的碎片
+        var terms = new ArrayList<String>();
+        for (String part : parts) {
+            if (part.length() >= 2) {
+                terms.add("\"" + part + "\"");
+            }
+        }
+        if (terms.isEmpty()) {
+            return "\"" + cleaned + "\"";
+        }
+        return String.join(" OR ", terms);
     }
 
 }

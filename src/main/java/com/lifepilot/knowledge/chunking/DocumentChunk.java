@@ -2,6 +2,7 @@ package com.lifepilot.knowledge.chunking;
 
 import com.lifepilot.knowledge.model.DocumentSourceType;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,12 +67,19 @@ public record DocumentChunk(
     /**
      * 生成用于 Embedding 的文本。
      *
-     * <p>当 contextPrefix 存在时，将其与 content 拼接；否则直接返回 content。
+     * <p>按优先级拼接：标题面包屑 → 上下文前缀 → 内容。
+     * 标题面包屑提供章节定位上下文，上下文前缀提供文档级语义补充。
      *
      * @return Embedding 文本
      */
     public String embeddingText() {
-        return contextPrefix.map(prefix -> prefix + "\n\n" + content).orElse(content);
+        var parts = new ArrayList<String>();
+        if (!headingHierarchy.isEmpty()) {
+            parts.add(String.join(" > ", headingHierarchy));
+        }
+        contextPrefix.ifPresent(parts::add);
+        parts.add(content);
+        return String.join("\n\n", parts);
     }
 
     /**

@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 
 /**
@@ -155,16 +156,21 @@ public class DocumentRetriever {
         var startTime = Instant.now();
         long startMs = System.currentTimeMillis();
         int effectiveTopK = topK > 0 ? topK : config.defaultTopK();
-        int candidateK = effectiveTopK * 3;
+        // 有精排时拉取更多候选给 Reranker 重排序
+        int candidateK = (rerankRouter != null && rerankRouter.isKnowledgeRerankEnabled())
+                ? effectiveTopK * 5
+                : effectiveTopK * 3;
 
         // 0. 解析 per-KB 模型配置
         String embeddingModel = resolveEmbeddingModel(scopes);
         String rerankerModel = resolveRerankerModel(scopes);
 
-        // 1. 查询增强
-        QueryEnhancer.EnhancedQuery enhanced = enhanceQuery(query);
+        // 1. 查询增强与搜索并行 — 增强不阻塞主搜索，模型慢（如思考模型）也不影响检索延迟
+        var primaryQuery = new QueryEnhancer.EnhancedQuery(query, List.of(), Optional.empty());
+        var enhanceExecutor = Executors.newSingleThreadExecutor(Thread.ofVirtual().factory());
+        var enhanceFuture = CompletableFuture.supplyAsync(() -> enhanceQuery(query), enhanceExecutor);
 
-        // 2. 并行执行向量搜索、FTS5 搜索和图谱搜索（逐路计时）
+        // 2. 用原始查询立即并行搜索（不等待增强结果）
         List<DocumentSearchResult> vectorResults;
         List<DocumentSearchResult> ftsResults;
         List<DocumentSearchResult> graphResults;
@@ -175,31 +181,47 @@ public class DocumentRetriever {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var vectorFuture = CompletableFuture.supplyAsync(() -> {
                 long t0 = System.currentTimeMillis();
-                var r = safeVectorSearch(enhanced, scopes, candidateK, embeddingModel);
+                var r = safeVectorSearch(primaryQuery, scopes, candidateK, embeddingModel);
                 return new Timed<>(r, System.currentTimeMillis() - t0);
             }, executor);
             var ftsFuture = CompletableFuture.supplyAsync(() -> {
                 long t0 = System.currentTimeMillis();
-                var r = safeFtsSearch(enhanced, scopes, candidateK);
+                var r = safeFtsSearch(primaryQuery, scopes, candidateK);
                 return new Timed<>(r, System.currentTimeMillis() - t0);
             }, executor);
             var graphFuture = CompletableFuture.supplyAsync(() -> {
                 long t0 = System.currentTimeMillis();
-                var r = safeGraphSearch(enhanced, scopes, candidateK);
+                var r = safeGraphSearch(primaryQuery, scopes, candidateK);
                 return new Timed<>(r, System.currentTimeMillis() - t0);
             }, executor);
 
             var vectorTimed = vectorFuture.join();
-            vectorResults = vectorTimed.result();
+            vectorResults = new ArrayList<>(vectorTimed.result());
             vectorMs = vectorTimed.durationMs();
 
             var ftsTimed = ftsFuture.join();
-            ftsResults = ftsTimed.result();
+            ftsResults = new ArrayList<>(ftsTimed.result());
             ftsMs = ftsTimed.durationMs();
 
             var graphTimed = graphFuture.join();
             graphResults = graphTimed.result();
             graphMs = graphTimed.durationMs();
+        }
+
+        // 2.5 主搜索完成后，检查增强是否也完成了（不额外等待）
+        var enhanced = enhanceFuture.getNow(primaryQuery);
+        if (!enhanced.rewrittenQueries().isEmpty()) {
+            log.debug("查询增强已完成，执行补充搜索: rewrites={}", enhanced.rewrittenQueries().size());
+            supplementWithRewrites(enhanced.rewrittenQueries(), scopes, candidateK,
+                    embeddingModel, vectorResults, ftsResults);
+        } else if (enhanced.hydeEmbedding().isPresent() && vectorIndexer != null) {
+            try {
+                var hydeResults = vectorIndexer.searchByEmbeddingByScopes(
+                        enhanced.hydeEmbedding().get(), scopes, candidateK);
+                mergeResults(vectorResults, hydeResults);
+            } catch (Exception e) {
+                log.warn("HyDE 向量搜索失败: {}", e.getMessage());
+            }
         }
 
         // 3. 自适应 RRF 融合（向量 + FTS + 图谱三路）
@@ -222,12 +244,7 @@ public class DocumentRetriever {
                     .toList();
         }
 
-        // 5. 上下文窗口扩展
-        if (config.contextWindowSize() > 0) {
-            fused = expandContextWindow(fused);
-        }
-
-        // 6. 可选精排（检查运行时 enabled 状态）
+        // 5. 可选精排 — 在上下文扩展之前执行，基于原始匹配内容评分
         long rerankMs = 0;
         if (rerankRouter != null && rerankRouter.isKnowledgeRerankEnabled() && !fused.isEmpty()) {
             long rerankStart = System.currentTimeMillis();
@@ -239,6 +256,11 @@ public class DocumentRetriever {
                 log.warn("Reranker 不可用，跳过精排: {}", e.getMessage());
             }
             rerankMs = System.currentTimeMillis() - rerankStart;
+        }
+
+        // 6. 上下文窗口扩展 — 在精排之后执行，扩展是展示层增强不影响排序
+        if (config.contextWindowSize() > 0) {
+            fused = expandContextWindow(fused);
         }
 
         // 7. Corrective RAG（可选）— 评估检索质量，必要时改写查询重试
@@ -640,6 +662,48 @@ public class DocumentRetriever {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
+    }
+
+    /**
+     * 用改写查询补充搜索结果 — 仅搜索改写，去重后合并到主搜索结果中。
+     *
+     * <p>前置条件：主搜索使用的 primaryQuery 不包含 rewrittenQueries（为空列表），
+     * 因此 safeVectorSearch/safeFtsSearch 内部的 rewrite 分支不会被触发，不会双重搜索。
+     */
+    private void supplementWithRewrites(List<String> rewrites, List<KnowledgeSearchScope> scopes,
+                                         int candidateK, @Nullable String embeddingModel,
+                                         List<DocumentSearchResult> vectorResults,
+                                         List<DocumentSearchResult> ftsResults) {
+        var existingVectorIds = vectorResults.stream().map(DocumentSearchResult::chunkId).collect(Collectors.toSet());
+        var existingFtsIds = ftsResults.stream().map(DocumentSearchResult::chunkId).collect(Collectors.toSet());
+
+        for (var rewrite : rewrites) {
+            var rewriteQuery = new QueryEnhancer.EnhancedQuery(rewrite, List.of(), Optional.empty());
+            // 补充向量搜索
+            for (var r : safeVectorSearch(rewriteQuery, scopes, candidateK, embeddingModel)) {
+                if (existingVectorIds.add(r.chunkId())) {
+                    vectorResults.add(r);
+                }
+            }
+            // 补充 FTS 搜索
+            for (var r : safeFtsSearch(rewriteQuery, scopes, candidateK)) {
+                if (existingFtsIds.add(r.chunkId())) {
+                    ftsResults.add(r);
+                }
+            }
+        }
+    }
+
+    /**
+     * 合并搜索结果，去重。
+     */
+    private void mergeResults(List<DocumentSearchResult> target, List<DocumentSearchResult> source) {
+        var existingIds = target.stream().map(DocumentSearchResult::chunkId).collect(Collectors.toSet());
+        for (var r : source) {
+            if (existingIds.add(r.chunkId())) {
+                target.add(r);
+            }
+        }
     }
 
     /**

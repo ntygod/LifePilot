@@ -50,30 +50,36 @@ public non-sealed class ParentChildChunker implements ChunkingStrategy {
         // 1. 用 parentChunker 切出大块（level=0）
         List<DocumentChunk> parentChunks = parentChunker.chunk(text, metadata);
         List<DocumentChunk> result = new ArrayList<>();
-        int globalChildIndex = 0;
+        int globalIndex = 0;
 
         for (var parent : parentChunks) {
-            // 标记为 parent（level=0）
-            var parentWithLevel = parent.withParentContext(null, 0);
-            result.add(parentWithLevel);
-
-            // 2. 对每个 parent 内容用 childChunker 切成小块（level=1）
+            // 2. 对每个 parent 内容用 childChunker 切成小块
             List<DocumentChunk> children = childChunker.chunk(parent.content(), metadata);
 
+            // 子块只有一个且内容与父块相同 → 不拆分，直接保留父块（VectorIndexer 会索引所有 level=0 的无子块块）
+            if (children.size() <= 1) {
+                result.add(withIndex(parent.withParentContext(null, 0), globalIndex++));
+                continue;
+            }
+
+            // 标记为 parent（level=0），使用全局统一编号
+            var parentWithLevel = withIndex(parent.withParentContext(null, 0), globalIndex++);
+            result.add(parentWithLevel);
+
+            // 3. 创建子块（level=1），继承父块标题层级，偏移量调整为原始文档的绝对偏移量
             for (var child : children) {
-                // 调整 child 的偏移量为相对于原始文档的绝对偏移量
                 var adjustedChild = new DocumentChunk(
                         child.id(),
                         child.documentId(),
                         child.knowledgeBaseId(),
                         child.content(),
                         child.contextPrefix(),
-                        globalChildIndex++,
+                        globalIndex++,
                         parent.startOffset() + child.startOffset(),
                         parent.startOffset() + child.endOffset(),
                         child.tokenCount(),
                         child.contentHash(),
-                        child.headingHierarchy(),
+                        parent.headingHierarchy(),
                         child.pageNumber(),
                         child.metadata(),
                         child.sourceType(),
@@ -88,9 +94,23 @@ public non-sealed class ParentChildChunker implements ChunkingStrategy {
 
         long parentCount = result.stream().filter(c -> c.chunkLevel() == 0).count();
         long childCount = result.stream().filter(c -> c.chunkLevel() == 1).count();
-        log.debug("Parent-Child 分块完成: parent={}, child={}, 总计={}", parentCount, childCount, result.size());
+        log.debug("Parent-Child 分块完成: parent={}, child={}, 总计={}",
+                parentCount, childCount, result.size());
 
         return List.copyOf(result);
+    }
+
+    /**
+     * 设置分块的 chunkIndex。
+     */
+    private DocumentChunk withIndex(DocumentChunk chunk, int index) {
+        return new DocumentChunk(
+                chunk.id(), chunk.documentId(), chunk.knowledgeBaseId(),
+                chunk.content(), chunk.contextPrefix(), index,
+                chunk.startOffset(), chunk.endOffset(), chunk.tokenCount(),
+                chunk.contentHash(), chunk.headingHierarchy(), chunk.pageNumber(),
+                chunk.metadata(), chunk.sourceType(), chunk.sourceDatastoreId(),
+                chunk.sourceCollectionId(), chunk.parentChunkId(), chunk.chunkLevel());
     }
 
     @Override

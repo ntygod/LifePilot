@@ -43,6 +43,9 @@ public class DocumentStructureAnalyzer {
     /** 中英文句末标点 */
     private static final String SENTENCE_ENDINGS = "。！？；.!?;,，";
 
+    /** 对话/引用开头字符 — 以这些字符开头的短行是对话而非标题 */
+    private static final String DIALOGUE_OPENERS = "\u201c\u300c\u300e\u2018'\"(";
+
     private final int maxHeadingLength;
     private final int minCodeIndent;
     @SuppressWarnings("unused")
@@ -266,6 +269,8 @@ public class DocumentStructureAnalyzer {
 
     /**
      * 判断是否为缩进代码块（4+ 空格或 tab 缩进，且前一非空行不是列表项）。
+     *
+     * <p>排除中文段首缩进：包含 CJK 字符的缩进行视为段落文本而非代码。</p>
      */
     private boolean isIndentedCode(String line, int lineIndex, StructureType[] lineTypes) {
         // 检查是否有足够缩进
@@ -282,12 +287,27 @@ public class DocumentStructureAnalyzer {
         if (indent < minCodeIndent) {
             return false;
         }
+        // 包含 CJK 字符的缩进行是中文段首缩进，不是代码
+        if (containsCjk(line)) {
+            return false;
+        }
         // 如果前一个非空行是列表项，则可能是列表续行而非代码
         for (int i = lineIndex - 1; i >= 0; i--) {
             if (lineTypes[i] == StructureType.BLANK) continue;
             return lineTypes[i] != StructureType.LIST;
         }
         return true;
+    }
+
+    /** 判断文本是否包含 CJK 统一汉字。 */
+    private boolean containsCjk(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= '\u4e00' && c <= '\u9fff') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -306,6 +326,11 @@ public class DocumentStructureAnalyzer {
         if (trimmed.isEmpty() || trimmed.length() >= maxHeadingLength) {
             return false;
         }
+        // 以引号/括号开头的行是对话或引用内容，不是标题
+        char firstChar = trimmed.charAt(0);
+        if (DIALOGUE_OPENERS.indexOf(firstChar) >= 0) {
+            return false;
+        }
         // 不以句末标点或冒号结尾（冒号表示引导内容，如 "千问系列旗舰模型："）
         char lastChar = trimmed.charAt(trimmed.length() - 1);
         if (SENTENCE_ENDINGS.indexOf(lastChar) >= 0 || lastChar == '：' || lastChar == ':') {
@@ -313,6 +338,14 @@ public class DocumentStructureAnalyzer {
         }
         // 不包含中文逗号（包含逗号的行是句子，不是标题）
         if (trimmed.contains("，") || trimmed.contains(",")) {
+            return false;
+        }
+        // 包含 Markdown 链接语法的行不是标题（如 "[下载地址](https://...)"）
+        if (trimmed.contains("](")) {
+            return false;
+        }
+        // 包含括号说明的行不是标题（如 "前置条件：Java 22+（下载地址）"）
+        if (trimmed.contains("（") && trimmed.contains("）")) {
             return false;
         }
         // 不是列表项
