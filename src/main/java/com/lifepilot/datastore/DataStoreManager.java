@@ -6,10 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.datastore.config.DataStoreProperties;
 import com.lifepilot.datastore.engine.AggregationEngine;
 import com.lifepilot.datastore.engine.QueryEngine;
+import com.lifepilot.datastore.model.AggregationRequest;
+import com.lifepilot.datastore.model.AggregationResult;
 import com.lifepilot.datastore.model.Collection;
 import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.datastore.model.Document;
+import com.lifepilot.datastore.model.FieldNames;
 import com.lifepilot.datastore.model.PropertyDefinition;
+import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
 import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
@@ -28,10 +32,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.lifepilot.datastore.model.AggregationRequest;
-import com.lifepilot.datastore.model.AggregationResult;
-import com.lifepilot.datastore.model.QueryRequest;
-
 /**
  * 数据存储管理门面 — 提供集合和文档的完整 CRUD 操作的统一入口。
  *
@@ -44,8 +44,6 @@ import com.lifepilot.datastore.model.QueryRequest;
 public class DataStoreManager {
 
     private static final Logger log = LoggerFactory.getLogger(DataStoreManager.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String DEFAULT_PROJECTION_CONFIG_JSON = "{}";
     private static final TypeReference<List<PropertyDefinition>> PROP_LIST_TYPE =
             new TypeReference<>() {};
 
@@ -55,6 +53,7 @@ public class DataStoreManager {
     private final AggregationEngine aggregationEngine;
     private final PropertyValidator propertyValidator;
     private final DataStoreProperties properties;
+    private final ObjectMapper objectMapper;
     @Nullable
     private final DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher;
     @Nullable
@@ -65,28 +64,8 @@ public class DataStoreManager {
                             QueryEngine queryEngine,
                             AggregationEngine aggregationEngine,
                             PropertyValidator propertyValidator,
-                            DataStoreProperties properties) {
-        this(collectionRepository, documentRepository, queryEngine, aggregationEngine,
-                propertyValidator, properties, null, null);
-    }
-
-    public DataStoreManager(CollectionRepository collectionRepository,
-                            DocumentRepository documentRepository,
-                            QueryEngine queryEngine,
-                            AggregationEngine aggregationEngine,
-                            PropertyValidator propertyValidator,
                             DataStoreProperties properties,
-                            @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher) {
-        this(collectionRepository, documentRepository, queryEngine, aggregationEngine,
-                propertyValidator, properties, knowledgeSyncPublisher, null);
-    }
-
-    public DataStoreManager(CollectionRepository collectionRepository,
-                            DocumentRepository documentRepository,
-                            QueryEngine queryEngine,
-                            AggregationEngine aggregationEngine,
-                            PropertyValidator propertyValidator,
-                            DataStoreProperties properties,
+                            ObjectMapper objectMapper,
                             @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher,
                             @Nullable DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner) {
         this.collectionRepository = collectionRepository;
@@ -95,27 +74,13 @@ public class DataStoreManager {
         this.aggregationEngine = aggregationEngine;
         this.propertyValidator = propertyValidator;
         this.properties = properties;
+        this.objectMapper = objectMapper;
         this.knowledgeSyncPublisher = knowledgeSyncPublisher;
         this.datastoreKnowledgeBaseProvisioner = datastoreKnowledgeBaseProvisioner;
     }
 
     // ---- 集合操作 ----
 
-    /**
-     * 创建新集合。
-     *
-     * <p>执行限额检查、名称唯一性校验、INSERT 集合记录，
-     * 并为可索引属性创建 Generated Column 和 partial index。</p>
-     *
-     * @param name        集合名称
-     * @param type        集合类型
-     * @param propDefs    属性定义列表（可选）
-     * @param description 集合描述（可选）
-     * @param createdBy   创建者（可选）
-     * @return 创建的集合
-     * @throws IllegalStateException    集合数量已达上限
-     * @throws IllegalArgumentException 集合名称已存在
-     */
     @Transactional
     public Collection createCollection(String name, CollectionType type,
                                        @Nullable List<PropertyDefinition> propDefs,
@@ -124,72 +89,53 @@ public class DataStoreManager {
         return createCollection(name, type, propDefs, description, createdBy, null);
     }
 
-    /**
-     * 创建新集合（支持显式向量投影配置）。
-     */
     @Transactional
     public Collection createCollection(String name, CollectionType type,
                                        @Nullable List<PropertyDefinition> propDefs,
                                        @Nullable String description,
                                        @Nullable String createdBy,
                                        @Nullable String projectionConfigJson) {
-        // 1. 限额检查
         int currentCount = collectionRepository.count();
         if (currentCount >= properties.getMaxCollections()) {
             throw new IllegalStateException("集合数量已达上限: " + properties.getMaxCollections());
         }
-
-        // 2. 名称唯一性检查
-        var existingCollection = collectionRepository.findByName(name);
-        if (existingCollection.isPresent()) {
+        if (collectionRepository.findByName(name).isPresent()) {
             throw new IllegalArgumentException("集合名称已存在: " + name);
         }
 
-        // 3. 序列化属性定义
         String propertiesJson = serializeProperties(propDefs);
-
-        // 4. 构建 Collection 并插入
         var collection = Collection.builder()
-                .name(name)
-                .type(type)
-                .description(description)
+                .name(name).type(type).description(description)
                 .propertiesJson(propertiesJson)
-                .projectionConfigJson(normalizeProjectionConfigJson(projectionConfigJson))
-                .createdBy(createdBy)
-                .build();
+                .projectionConfigJson(Collection.normalizeProjectionConfig(projectionConfigJson))
+                .createdBy(createdBy).build();
 
         String collectionId = collectionRepository.insert(collection);
         try {
             collection = collectionRepository.findById(collectionId).orElseThrow(
                     () -> new IllegalStateException("集合创建后查询失败: id=" + collectionId));
 
-            // 5. 为可索引属性创建 Generated Column
             if (propDefs != null && !propDefs.isEmpty()) {
                 for (var prop : propDefs) {
                     if (prop.type().isIndexable()) {
-                        String affinity = prop.type().toSqliteAffinity();
-                        collectionRepository.addGeneratedColumn(prop.name(), affinity, collectionId);
+                        collectionRepository.addGeneratedColumn(prop.name(), prop.type().toSqliteAffinity(), collectionId);
                     }
                 }
             }
-
             log.info("集合创建完成: id={}, name={}, type={}, 属性数={}", collectionId, name, type,
                     propDefs != null ? propDefs.size() : 0);
 
-            // 6. 自动确保内部知识库
             if (datastoreKnowledgeBaseProvisioner != null) {
-                String defaultKnowledgeBaseId = datastoreKnowledgeBaseProvisioner.ensureDefaultKnowledgeBase(collection);
-                if (defaultKnowledgeBaseId == null || defaultKnowledgeBaseId.isBlank()) {
+                String defaultKbId = datastoreKnowledgeBaseProvisioner.ensureDefaultKnowledgeBase(collection);
+                if (defaultKbId == null || defaultKbId.isBlank()) {
                     throw new IllegalStateException("Datastore 默认知识库创建失败: 未返回知识库 ID");
                 }
-                boolean updated = collectionRepository.updateDefaultKnowledgeBaseId(collectionId, defaultKnowledgeBaseId);
-                if (!updated) {
+                if (!collectionRepository.updateDefaultKnowledgeBaseId(collectionId, defaultKbId)) {
                     throw new IllegalStateException("Datastore 默认知识库回填失败: datastoreId=" + collectionId);
                 }
-                log.info("Datastore 已绑定内部知识库: datastoreId={}, knowledgeBaseId={}", collectionId, defaultKnowledgeBaseId);
+                log.info("Datastore 已绑定内部知识库: datastoreId={}, knowledgeBaseId={}", collectionId, defaultKbId);
             }
 
-            // 7. 返回完整集合
             return collectionRepository.findById(collectionId).orElseThrow(
                     () -> new IllegalStateException("集合创建后查询失败: id=" + collectionId));
         } catch (RuntimeException e) {
@@ -198,78 +144,43 @@ public class DataStoreManager {
         }
     }
 
-    /**
-     * 查询所有集合。
-     *
-     * @return 所有集合列表
-     */
     public List<Collection> listCollections() {
         return List.copyOf(collectionRepository.findAll());
     }
 
-    /**
-     * 按类型查询集合。
-     *
-     * @param type 集合类型
-     * @return 匹配类型的集合列表
-     */
     public List<Collection> listCollections(CollectionType type) {
         return List.copyOf(collectionRepository.findByType(type));
     }
 
-    /**
-     * 按名称查找集合。
-     *
-     * @param name 集合名称
-     * @return 集合 Optional
-     */
     public Optional<Collection> findCollection(String name) {
         return collectionRepository.findByName(name);
     }
 
-    /**
-     * 按 ID 查找集合。
-     *
-     * @param id 集合 ID
-     * @return 集合 Optional
-     */
     public Optional<Collection> getCollection(String id) {
         return collectionRepository.findById(id);
     }
 
-    /**
-     * 更新集合的描述和元数据。
-     *
-     * @param id           集合 ID
-     * @param description  新描述
-     * @param metadataJson 新元数据 JSON
-     * @return 是否更新成功
-     */
     public boolean updateCollection(String id, @Nullable String description,
                                     @Nullable String metadataJson) {
         return updateCollection(id, description, metadataJson, null);
     }
 
-    /**
-     * 更新集合的描述、元数据和投影配置。
-     */
     @Transactional
     public boolean updateCollection(String id, @Nullable String description,
                                     @Nullable String metadataJson,
                                     @Nullable String projectionConfigJson) {
         var existing = collectionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + id));
-        boolean updated = collectionRepository.update(
-                id,
+        boolean updated = collectionRepository.update(id,
                 description != null ? description : existing.description(),
-                normalizeProjectionConfigJson(
+                Collection.normalizeProjectionConfig(
                         projectionConfigJson != null ? projectionConfigJson : existing.projectionConfigJson()),
                 metadataJson != null ? metadataJson : existing.metadataJson());
         if (updated) {
             log.info("集合更新完成: id={}", id);
             if (projectionConfigJson != null
-                    && !normalizeProjectionConfigJson(projectionConfigJson)
-                    .equals(normalizeProjectionConfigJson(existing.projectionConfigJson()))
+                    && !Collection.normalizeProjectionConfig(projectionConfigJson)
+                    .equals(Collection.normalizeProjectionConfig(existing.projectionConfigJson()))
                     && knowledgeSyncPublisher != null) {
                 knowledgeSyncPublisher.publishDatastoreResync(id);
             }
@@ -277,36 +188,22 @@ public class DataStoreManager {
         return updated;
     }
 
-    /**
-     * 删除集合及其关联资源。
-     *
-     * <p>删除顺序：Generated Column 索引 → FTS5 条目 → 集合记录（CASCADE 删除文档）。</p>
-     *
-     * @param id 集合 ID
-     * @return 是否删除成功
-     */
     @Transactional
     public boolean deleteCollection(String id) {
-        // 1. 查找集合
         var collection = collectionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + id));
 
-        // 2. 删除 Generated Column 索引
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         if (!propDefs.isEmpty()) {
-            List<String> propertyNames = propDefs.stream()
-                    .filter(p -> p.type().isIndexable())
-                    .map(PropertyDefinition::name)
-                    .toList();
-            if (!propertyNames.isEmpty()) {
-                collectionRepository.dropGeneratedColumns(id, propertyNames);
+            List<String> indexable = propDefs.stream()
+                    .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).toList();
+            if (!indexable.isEmpty()) {
+                collectionRepository.dropGeneratedColumns(id, indexable);
             }
         }
 
-        // 3. 清理 FTS5 条目（查询该集合所有文档 ID，逐个删除 FTS 记录）
-        cleanupFtsEntries(id);
+        documentRepository.deleteFtsByCollectionId(id);
 
-        // 4. 删除集合（CASCADE 自动删除文档）
         if (knowledgeSyncPublisher != null) {
             knowledgeSyncPublisher.publishDatastorePurge(id);
         }
@@ -324,85 +221,45 @@ public class DataStoreManager {
 
     // ---- 文档操作 ----
 
-    /**
-     * 向集合中添加文档。
-     *
-     * <p>执行集合存在性检查、文档数量限额、文档大小限额、JSON 合法性校验、
-     * 属性定义校验、METRIC recordedAt 校验，然后 INSERT 文档并同步 FTS5（NOTE 类型）。</p>
-     *
-     * @param collectionId 目标集合 ID
-     * @param dataJson     文档数据 JSON
-     * @param recordedAt   记录时间（METRIC 类型必填，ISO 8601）
-     * @return 创建的文档
-     * @throws IllegalArgumentException 集合不存在、JSON 无效、属性校验失败、recordedAt 格式非法
-     * @throws IllegalStateException    文档数量已达上限
-     */
     @Transactional
     public Document addDocument(String collectionId, String dataJson,
                                 @Nullable String recordedAt) {
-        // 1. 集合存在性检查
         var collection = collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
 
-        // 2. 文档数量限额检查
         int docCount = documentRepository.countByCollection(collectionId);
         if (docCount >= properties.getMaxDocumentsPerCollection()) {
-            throw new IllegalStateException(
-                    "集合文档数量已达上限: " + properties.getMaxDocumentsPerCollection());
+            throw new IllegalStateException("集合文档数量已达上限: " + properties.getMaxDocumentsPerCollection());
         }
-
-        // 3. 文档大小限额检查
         if (dataJson.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
-            throw new IllegalArgumentException(
-                    "文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
+            throw new IllegalArgumentException("文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
         }
 
-        // 4. JSON 合法性校验
-        try {
-            MAPPER.readTree(dataJson);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e);
-        }
+        try { objectMapper.readTree(dataJson); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e); }
 
-        // 5. 属性定义校验
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         if (!propDefs.isEmpty()) {
             var errors = propertyValidator.validate(propDefs, dataJson);
-            if (!errors.isEmpty()) {
-                throw new IllegalArgumentException("属性校验失败: " + errors);
-            }
+            if (!errors.isEmpty()) { throw new IllegalArgumentException("属性校验失败: " + errors); }
         }
 
-        // 6. METRIC 类型 recordedAt 校验
         if (collection.type() == CollectionType.METRIC) {
             if (recordedAt == null || recordedAt.isBlank()) {
                 throw new IllegalArgumentException("METRIC 类型文档必须包含 recordedAt 字段");
             }
-            try {
-                DateTimeFormatter.ISO_DATE_TIME.parse(recordedAt);
-            } catch (DateTimeParseException e) {
-                throw new IllegalArgumentException(
-                        "recordedAt 格式非法，期望 ISO 8601: " + recordedAt, e);
-            }
+            try { DateTimeFormatter.ISO_DATE_TIME.parse(recordedAt); }
+            catch (DateTimeParseException e) { throw new IllegalArgumentException("recordedAt 格式非法，期望 ISO 8601: " + recordedAt, e); }
         }
 
-        // 7. 构建 Document 并插入
-        var document = Document.builder()
-                .collectionId(collectionId)
-                .dataJson(dataJson)
-                .recordedAt(recordedAt)
-                .build();
+        var document = Document.builder().collectionId(collectionId).dataJson(dataJson).recordedAt(recordedAt).build();
         String documentId = documentRepository.insert(document);
 
-        // 8. NOTE 类型同步 FTS5
         if (collection.type() == CollectionType.NOTE) {
-            String ftsContent = extractFtsContent(dataJson);
-            documentRepository.insertFts(documentId, ftsContent);
+            documentRepository.insertFts(documentId, extractFtsContent(dataJson));
         }
 
         log.info("文档添加完成: id={}, collectionId={}", documentId, collectionId);
-
-        // 9. 返回创建的文档
         var created = documentRepository.findById(documentId).orElseThrow(
                 () -> new IllegalStateException("文档创建后查询失败: id=" + documentId));
         if (knowledgeSyncPublisher != null) {
@@ -412,78 +269,82 @@ public class DataStoreManager {
     }
 
     /**
-     * 根据 ID 获取文档。
+     * 向集合中添加文件引用文档。
      *
-     * @param id 文档 ID
-     * @return 文档 Optional
+     * <p>当文件上传至知识库后，在 Datastore 中创建一条文件元数据记录，
+     * 使 Datastore 能完整呈现"N 条结构化数据 + M 份参考文档"。</p>
      */
+    @Transactional
+    public Document addFileReference(String collectionId, String fileName, long fileSize,
+                                     String mimeType, @Nullable String knowledgeDocumentId) {
+        collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
+        String dataJson;
+        try {
+            dataJson = objectMapper.writeValueAsString(java.util.Map.of(
+                    "fileName", fileName, "fileSize", fileSize, "mimeType", mimeType));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("文件元数据序列化失败", e);
+        }
+
+        var document = Document.builder()
+                .collectionId(collectionId).dataJson(dataJson)
+                .sourceType(Document.SOURCE_TYPE_FILE_REF)
+                .knowledgeDocumentId(knowledgeDocumentId).build();
+        String documentId = documentRepository.insert(document);
+        log.info("文件引用文档添加完成: id={}, collectionId={}, fileName={}", documentId, collectionId, fileName);
+        return documentRepository.findById(documentId).orElseThrow(
+                () -> new IllegalStateException("文件引用文档创建后查询失败: id=" + documentId));
+    }
+
+    /**
+     * 回填文件引用文档的知识库文档 ID — 异步 ingest 完成后调用。
+     *
+     * @param datastoreDocumentId  Datastore 文档 ID
+     * @param knowledgeDocumentId  知识库文档 ID
+     */
+    public void linkKnowledgeDocument(String datastoreDocumentId, String knowledgeDocumentId) {
+        documentRepository.updateKnowledgeDocumentId(datastoreDocumentId, knowledgeDocumentId);
+    }
+
     public Optional<Document> getDocument(String id) {
         return documentRepository.findById(id);
     }
 
-    /**
-     * 列出集合下的所有原始结构化文档。
-     *
-     * @param collectionId 集合 ID
-     * @return 文档列表
-     */
+    public List<Document> listDocuments(String collectionId, int offset, int limit) {
+        collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
+        return List.copyOf(documentRepository.findByCollectionId(collectionId, offset, limit));
+    }
+
     public List<Document> listDocuments(String collectionId) {
         collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
         return List.copyOf(documentRepository.findByCollectionId(collectionId));
     }
 
-    /**
-     * 更新文档数据。
-     *
-     * <p>执行文档存在性检查、大小限额、JSON 合法性校验、属性定义校验，
-     * 然后更新文档并同步 FTS5（NOTE 类型）。</p>
-     *
-     * @param id       文档 ID
-     * @param dataJson 新的文档数据 JSON
-     * @return 是否更新成功
-     * @throws IllegalArgumentException 文档不存在、JSON 无效、属性校验失败
-     */
     @Transactional
     public boolean updateDocument(String id, String dataJson) {
-        // 1. 文档存在性检查
         var existingDoc = documentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在: id=" + id));
-
-        // 2. 文档大小限额检查
         if (dataJson.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
-            throw new IllegalArgumentException(
-                    "文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
+            throw new IllegalArgumentException("文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
         }
+        try { objectMapper.readTree(dataJson); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e); }
 
-        // 3. JSON 合法性校验
-        try {
-            MAPPER.readTree(dataJson);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e);
-        }
-
-        // 4. 属性定义校验
         var collection = collectionRepository.findById(existingDoc.collectionId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "文档所属集合不存在: collectionId=" + existingDoc.collectionId()));
+                .orElseThrow(() -> new IllegalStateException("文档所属集合不存在: collectionId=" + existingDoc.collectionId()));
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         if (!propDefs.isEmpty()) {
             var errors = propertyValidator.validate(propDefs, dataJson);
-            if (!errors.isEmpty()) {
-                throw new IllegalArgumentException("属性校验失败: " + errors);
-            }
+            if (!errors.isEmpty()) { throw new IllegalArgumentException("属性校验失败: " + errors); }
         }
 
-        // 5. 更新文档
         documentRepository.update(id, dataJson);
-
-        // 6. NOTE 类型同步 FTS5
         if (collection.type() == CollectionType.NOTE) {
-            String ftsContent = extractFtsContent(dataJson);
-            documentRepository.updateFts(id, ftsContent);
+            documentRepository.updateFts(id, extractFtsContent(dataJson));
         }
-
         log.info("文档更新完成: id={}", id);
         if (knowledgeSyncPublisher != null) {
             var updatedDoc = documentRepository.findById(id)
@@ -493,32 +354,15 @@ public class DataStoreManager {
         return true;
     }
 
-    /**
-     * 删除文档。
-     *
-     * <p>删除文档记录，NOTE 类型同步清理 FTS5 索引。</p>
-     *
-     * @param id 文档 ID
-     * @return 是否删除成功
-     * @throws IllegalArgumentException 文档不存在
-     */
     @Transactional
     public boolean deleteDocument(String id) {
-        // 1. 文档存在性检查
         var existingDoc = documentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在: id=" + id));
-
-        // 2. 查找集合以判断类型
         var collection = collectionRepository.findById(existingDoc.collectionId());
-
-        // 3. NOTE 类型清理 FTS5
         if (collection.isPresent() && collection.get().type() == CollectionType.NOTE) {
             documentRepository.deleteFts(id);
         }
-
-        // 4. 删除文档
         documentRepository.delete(id);
-
         log.info("文档删除完成: id={}", id);
         if (knowledgeSyncPublisher != null) {
             knowledgeSyncPublisher.publishDocumentDelete(existingDoc.collectionId(), id, existingDoc.updatedAt());
@@ -528,194 +372,82 @@ public class DataStoreManager {
 
     // ---- 查询操作 ----
 
-    /**
-     * 按条件查询文档。
-     *
-     * <p>委托 QueryEngine 构建参数化 SQL，再由 DocumentRepository 执行查询。
-     * 索引感知：有 Generated Column 的字段走 B-tree 索引，否则走 json_extract。</p>
-     *
-     * @param request 查询请求（包含集合 ID、过滤条件、排序、分页）
-     * @return 匹配的文档列表
-     * @throws IllegalArgumentException 集合不存在
-     */
     public List<Document> queryDocuments(QueryRequest request) {
-        // 1. 集合存在性检查
         var collection = collectionRepository.findById(request.collectionId())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "集合不存在: id=" + request.collectionId()));
-
-        // 2. 获取已索引字段
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + request.collectionId()));
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         Set<String> indexedFields = propDefs.stream()
-                .filter(p -> p.type().isIndexable())
-                .map(PropertyDefinition::name)
-                .collect(Collectors.toSet());
-
-        // 3. 集合 ID 前缀
-        String collectionIdPrefix = request.collectionId().substring(0, 8);
-
-        // 4. 构建 SQL 并执行
-        var sqlWithParams = queryEngine.buildQuery(request, indexedFields, collectionIdPrefix);
+                .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).collect(Collectors.toSet());
+        var sqlWithParams = queryEngine.buildQuery(request, indexedFields, FieldNames.safePrefix(request.collectionId()));
         var results = documentRepository.query(sqlWithParams.sql(), sqlWithParams.params());
-
         log.debug("文档查询完成: collectionId={}, 结果数={}", request.collectionId(), results.size());
         return List.copyOf(results);
     }
 
-    /**
-     * 全文搜索文档。
-     *
-     * <p>仅支持 NOTE 类型集合，委托 DocumentRepository 执行 FTS5 搜索。</p>
-     *
-     * @param collectionId 集合 ID
-     * @param query        搜索关键词
-     * @param limit        返回数量上限
-     * @return 匹配的文档列表，按相关性排序
-     * @throws IllegalArgumentException 集合不存在或非 NOTE 类型
-     */
     public List<Document> searchDocuments(String collectionId, String query, int limit) {
-        // 1. 集合存在性检查
         var collection = collectionRepository.findById(collectionId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "集合不存在: id=" + collectionId));
-
-        // 2. 校验集合类型
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
         if (collection.type() != CollectionType.NOTE) {
             throw new IllegalArgumentException("全文搜索仅支持 NOTE 类型集合");
         }
-
-        // 3. 执行 FTS5 搜索
         var results = documentRepository.searchFts(collectionId, query, limit);
-
-        log.debug("全文搜索完成: collectionId={}, query={}, 结果数={}",
-                collectionId, query, results.size());
+        log.debug("全文搜索完成: collectionId={}, query={}, 结果数={}", collectionId, query, results.size());
         return List.copyOf(results);
     }
 
-    /**
-     * 时序聚合查询。
-     *
-     * <p>仅支持 METRIC 类型集合，委托 AggregationEngine 构建 SQL，
-     * 再由 DocumentRepository 执行聚合查询。</p>
-     *
-     * @param request 聚合请求（包含集合 ID、聚合字段、函数、时间分组和范围）
-     * @return 聚合结果列表
-     * @throws IllegalArgumentException 集合不存在或非 METRIC 类型
-     */
     public List<AggregationResult> aggregate(AggregationRequest request) {
-        // 1. 集合存在性检查
         var collection = collectionRepository.findById(request.collectionId())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "集合不存在: id=" + request.collectionId()));
-
-        // 2. 校验集合类型
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + request.collectionId()));
         if (collection.type() != CollectionType.METRIC) {
             throw new IllegalArgumentException("时序聚合仅支持 METRIC 类型集合");
         }
-
-        // 3. 获取已索引字段
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         Set<String> indexedFields = propDefs.stream()
-                .filter(p -> p.type().isIndexable())
-                .map(PropertyDefinition::name)
-                .collect(Collectors.toSet());
-
-        // 4. 集合 ID 前缀
-        String collectionIdPrefix = request.collectionId().substring(0, 8);
-
-        // 5. 构建 SQL 并执行
-        var sqlWithParams = aggregationEngine.buildAggregation(
-                request, indexedFields, collectionIdPrefix);
+                .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).collect(Collectors.toSet());
+        var sqlWithParams = aggregationEngine.buildAggregation(request, indexedFields, FieldNames.safePrefix(request.collectionId()));
         var results = documentRepository.aggregate(sqlWithParams.sql(), sqlWithParams.params());
-
-        log.debug("时序聚合完成: collectionId={}, func={}, 结果数={}",
-                request.collectionId(), request.func(), results.size());
+        log.debug("时序聚合完成: collectionId={}, func={}, 结果数={}", request.collectionId(), request.func(), results.size());
         return List.copyOf(results);
     }
 
     // ---- 内部方法 ----
 
-    /**
-     * 序列化属性定义列表为 JSON。
-     */
     @Nullable
     private String serializeProperties(@Nullable List<PropertyDefinition> propDefs) {
-        if (propDefs == null || propDefs.isEmpty()) {
-            return null;
-        }
-        try {
-            return MAPPER.writeValueAsString(propDefs);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("属性定义序列化失败: " + e.getMessage(), e);
-        }
+        if (propDefs == null || propDefs.isEmpty()) { return null; }
+        try { return objectMapper.writeValueAsString(propDefs); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("属性定义序列化失败: " + e.getMessage(), e); }
     }
 
-    /**
-     * 反序列化属性定义 JSON 为列表。
-     */
     List<PropertyDefinition> deserializeProperties(@Nullable String propertiesJson) {
-        if (propertiesJson == null || propertiesJson.isBlank()) {
-            return List.of();
-        }
-        try {
-            return MAPPER.readValue(propertiesJson, PROP_LIST_TYPE);
-        } catch (JsonProcessingException e) {
+        if (propertiesJson == null || propertiesJson.isBlank()) { return List.of(); }
+        try { return objectMapper.readValue(propertiesJson, PROP_LIST_TYPE); }
+        catch (JsonProcessingException e) {
             log.warn("属性定义反序列化失败: json={}, error={}", propertiesJson, e.getMessage());
             return List.of();
         }
     }
 
-    private String normalizeProjectionConfigJson(@Nullable String projectionConfigJson) {
-        return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
-    }
-
+    /** 清理创建失败的集合 — 补偿外部系统副作用 + 兜底删除集合记录（防止非事务场景残留）。 */
     private void cleanupFailedCollectionCreation(Collection collection, RuntimeException cause) {
-        log.warn("集合创建失败，开始清理半成品: id={}, name={}", collection.id(), collection.name(), cause);
+        log.warn("集合创建失败，开始清理: id={}, name={}", collection.id(), collection.name(), cause);
         if (datastoreKnowledgeBaseProvisioner != null) {
-            try {
-                datastoreKnowledgeBaseProvisioner.deleteDefaultKnowledgeBase(collection);
-            } catch (Exception cleanupEx) {
+            try { datastoreKnowledgeBaseProvisioner.deleteDefaultKnowledgeBase(collection); }
+            catch (Exception cleanupEx) {
                 log.error("清理 Datastore 默认知识库失败: datastoreId={}", collection.id(), cleanupEx);
                 cause.addSuppressed(cleanupEx);
             }
         }
-        try {
-            collectionRepository.delete(collection.id());
-        } catch (Exception cleanupEx) {
+        try { collectionRepository.delete(collection.id()); }
+        catch (Exception cleanupEx) {
             log.error("清理半成品集合失败: datastoreId={}", collection.id(), cleanupEx);
             cause.addSuppressed(cleanupEx);
         }
     }
 
-    /**
-     * 清理指定集合所有文档的 FTS5 条目。
-     */
-    private void cleanupFtsEntries(String collectionId) {
-        // 查询该集合所有文档的 ID
-        var documents = documentRepository.query(
-                "SELECT * FROM ds_documents WHERE collection_id = ?",
-                new Object[]{collectionId});
-
-        for (var doc : documents) {
-            documentRepository.deleteFts(doc.id());
-        }
-
-        if (!documents.isEmpty()) {
-            log.info("FTS5 条目清理完成: collectionId={}, 文档数={}", collectionId, documents.size());
-        }
-    }
-
-    /**
-     * 从文档 JSON 中提取 FTS5 索引内容。
-     *
-     * <p>优先提取 "content" 字段的文本值，若不存在则使用完整 JSON 字符串。</p>
-     *
-     * @param dataJson 文档数据 JSON
-     * @return 用于 FTS5 索引的文本内容
-     */
     private String extractFtsContent(String dataJson) {
         try {
-            var root = MAPPER.readTree(dataJson);
+            var root = objectMapper.readTree(dataJson);
             if (root != null && root.has("content") && root.get("content").isTextual()) {
                 return root.get("content").asText();
             }
@@ -724,4 +456,5 @@ public class DataStoreManager {
         }
         return dataJson;
     }
+
 }

@@ -336,17 +336,20 @@ public class DocumentRetriever {
                                                   int topK) {
         int k = config.rrfK();
 
-        // 自适应权重调整
+        // 自适应权重调整 — 连续插值，消除阈值跳变
         double vectorWeight = config.vectorWeight();
         double ftsWeight = config.ftsWeight();
         double graphWeight = config.graphEnabled() ? config.graphWeight() : 0.0;
         if (!vectorResults.isEmpty()) {
             double topVectorScore = vectorResults.getFirst().score();
-            if (topVectorScore < config.lowConfidenceThreshold()) {
-                vectorWeight = 0.3;
-                ftsWeight = 0.7;
-                log.debug("向量 Top-1 分数低于阈值，提升 FTS 权重: topScore={}, threshold={}",
-                        topVectorScore, config.lowConfidenceThreshold());
+            double threshold = config.lowConfidenceThreshold();
+            if (topVectorScore < threshold) {
+                // 线性插值: score=0 → vectorWeight=0.3/ftsWeight=0.7, score=threshold → 原始权重
+                double alpha = Math.max(0.0, topVectorScore / threshold);
+                vectorWeight = 0.3 + alpha * (config.vectorWeight() - 0.3);
+                ftsWeight = 0.7 - alpha * (0.7 - config.ftsWeight());
+                log.debug("自适应权重插值: topScore={}, alpha={}, vectorWeight={}, ftsWeight={}",
+                        topVectorScore, alpha, vectorWeight, ftsWeight);
             }
         }
 
@@ -429,6 +432,7 @@ public class DocumentRetriever {
         // 收集需要解析 parent 的 child 结果
         var parentScoreMap = new LinkedHashMap<String, Double>();    // parentId → 最高分
         var parentSourceMap = new LinkedHashMap<String, DocumentSearchResult>(); // parentId → 最高分的 child result
+        var parentChildCountMap = new LinkedHashMap<String, Integer>(); // parentId → child 命中次数
         var directResults = new ArrayList<DocumentSearchResult>();
 
         var parentIdMap = chunkRepository.findParentChunkIdsByChunkIds(
@@ -440,6 +444,7 @@ public class DocumentRetriever {
                     parentScoreMap.put(parentId, result.score());
                     parentSourceMap.put(parentId, result);
                 }
+                parentChildCountMap.merge(parentId, 1, Integer::sum);
             } else {
                 directResults.add(result);
             }
@@ -462,6 +467,9 @@ public class DocumentRetriever {
             var parentChunk = parentMap.get(entry.getKey());
             var childResult = parentSourceMap.get(entry.getKey());
             if (parentChunk != null) {
+                int childHits = parentChildCountMap.getOrDefault(entry.getKey(), 1);
+                double coverageBoost = Math.min(0.2, (childHits - 1) * 0.05);
+                double finalScore = entry.getValue() * (1.0 + coverageBoost);
                 resolved.add(new DocumentSearchResult(
                         parentChunk.id(),
                         childResult.documentId(),
@@ -469,7 +477,7 @@ public class DocumentRetriever {
                         parentChunk.content(),
                         parentChunk.contextPrefix(),
                         parentChunk.headingHierarchy(),
-                        entry.getValue(),
+                        finalScore,
                         childResult.sourcePath(),
                         childResult.metadata(),
                         childResult.scoreBreakdown(),

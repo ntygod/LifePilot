@@ -152,7 +152,8 @@ public class MemoryToolProvider {
                         "required", List.of("query"),
                         "properties", Map.of(
                                 "query", Map.of("type", "string", "description", "搜索关键词或自然语言问题"),
-                                "top_k", Map.of("type", "integer", "description", "返回数量，默认 " + defaultTopK)
+                                "top_k", Map.of("type", "integer", "description", "返回数量，默认 " + defaultTopK),
+                                "datastoreId", Map.of("type", "string", "description", "指定检索的数据空间 ID，不传则检索会话绑定的所有数据空间")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -161,6 +162,7 @@ public class MemoryToolProvider {
                     try {
                         String query = input.getParam("query", String.class);
                         int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
+                        String datastoreId = input.getOptionalParam("datastoreId", String.class).orElse(null);
                         String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
                         if (sessionId == null) {
                             return ToolResult.success(Map.of(
@@ -170,6 +172,15 @@ public class MemoryToolProvider {
                         if (scopes.isEmpty()) {
                             return ToolResult.success(Map.of(
                                     "message", "当前会话未绑定知识库或 datastore", "results", List.of(), "count", 0));
+                        }
+                        if (datastoreId != null && !datastoreId.isBlank()) {
+                            scopes = scopes.stream()
+                                    .filter(s -> datastoreId.equals(s.datastoreId()))
+                                    .toList();
+                            if (scopes.isEmpty()) {
+                                return ToolResult.success(Map.of("results", List.of(),
+                                        "message", "当前会话未绑定指定的数据空间: " + datastoreId));
+                            }
                         }
                         List<DocumentSearchResult> results = documentRetriever.retrieveByScopes(query, scopes, topK);
                         List<Map<String, Object>> items = results.stream().map(this::docSearchResultToMap).toList();

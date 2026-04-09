@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -86,6 +87,7 @@ public class BackgroundProcessManager {
         var stdoutBuffer = new RingBuffer(processConfig.getMaxOutputBufferSize());
         var stderrBuffer = new RingBuffer(processConfig.getMaxOutputBufferSize());
         var now = Instant.now();
+        var outputDrainLatch = new CountDownLatch(2); // stdout + stderr 各一个
 
         var managed = new ManagedProcess(
                 sessionId,
@@ -97,7 +99,8 @@ public class BackgroundProcessManager {
                 now,
                 new AtomicReference<>(now),
                 command,
-                workDir
+                workDir,
+                outputDrainLatch
         );
 
         processes.put(sessionId, managed);
@@ -172,6 +175,8 @@ public class BackgroundProcessManager {
         managed.touch();
         boolean finished = managed.process().waitFor(timeout, unit);
         if (finished) {
+            // 等待输出读取线程排空，确保 readOutputChunk 能拿到完整输出
+            managed.awaitOutputDrain(5, TimeUnit.SECONDS);
             refreshProcessState(managed);
         }
         return finished;
@@ -199,6 +204,15 @@ public class BackgroundProcessManager {
         var managed = getProcess(sessionId);
         managed.touch();
         refreshProcessState(managed);
+        // 进程已退出时，等待 stdout/stderr 读取线程排空缓冲区
+        if (!managed.process().isAlive()) {
+            try {
+                managed.awaitOutputDrain(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.debug("等待输出排空被中断: sessionId={}", sessionId);
+            }
+        }
         String stdout = managed.stdoutBuffer().readIncremental();
         String stderr = managed.stderrBuffer().readIncremental();
         return new ProcessOutputChunk(
@@ -340,6 +354,8 @@ public class BackgroundProcessManager {
                     this, managed.sessionId(), streamName,
                     sseBuffer.toString(), managed.currentState()));
         }
+        // 通知输出排空完成
+        managed.outputDrainLatch().countDown();
     }
 
     /** 监控进程退出并更新状态。 */

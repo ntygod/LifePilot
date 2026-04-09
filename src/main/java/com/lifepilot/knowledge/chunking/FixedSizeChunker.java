@@ -30,7 +30,7 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
     private static final Logger log = LoggerFactory.getLogger(FixedSizeChunker.class);
 
     /** 句子结束标点集合（中文 + 英文 + 换行） */
-    private static final String SENTENCE_ENDINGS = "。！？；.!?\n";
+    private static final String SENTENCE_ENDINGS = "。！？；：，、.!?;:\n";
 
     private final ChunkingConfig config;
     private final TokenCounter tokenCounter;

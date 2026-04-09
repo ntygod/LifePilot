@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 public non-sealed class SemanticChunker implements ChunkingStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticChunker.class);
-    private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[。！？.!?\\n])\\s*");
+    private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[。！？；.!?;\\n])\\s*");
 
     private final EmbeddingRouter embeddingRouter;
     private final RecursiveChunker fallbackChunker;

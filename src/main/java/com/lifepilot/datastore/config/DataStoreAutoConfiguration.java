@@ -1,5 +1,6 @@
 package com.lifepilot.datastore.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.datastore.engine.AggregationEngine;
 import com.lifepilot.datastore.engine.QueryEngine;
@@ -78,12 +79,13 @@ public class DataStoreAutoConfiguration {
                                               AggregationEngine aggregationEngine,
                                               PropertyValidator propertyValidator,
                                               DataStoreProperties properties,
+                                              ObjectMapper objectMapper,
                                               @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher,
                                               @Nullable DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner) {
         log.info("数据存储: 注册 DataStoreManager");
         return new DataStoreManager(collectionRepository, documentRepository,
                 queryEngine, aggregationEngine, propertyValidator, properties,
-                knowledgeSyncPublisher, datastoreKnowledgeBaseProvisioner);
+                objectMapper, knowledgeSyncPublisher, datastoreKnowledgeBaseProvisioner);
     }
 
 }

@@ -387,7 +387,7 @@ lifepilot:
         max-chunk-tokens: 512
         respect-sentences: true
       recursive:
-        separators: ["\n\n", "\n", "。", "！", "？", "；", "，", ".", "!", "?", " "]
+        separators: ["\n\n", "\n", "。", "！", "？", ".", "!", "?", "；", "：", "，", "、", ";", ":", ",", " "]
         max-chunk-size: 1024
         min-chunk-size: 100
         overlap-size: 128

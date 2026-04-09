@@ -78,6 +78,8 @@ class DataStoreManager集成测试 {
                     collection_id TEXT NOT NULL REFERENCES ds_collections(id) ON DELETE CASCADE,
                     data_json     TEXT NOT NULL DEFAULT '{}',
                     recorded_at   TEXT,
+                    source_type   TEXT NOT NULL DEFAULT 'DATA',
+                    knowledge_document_id TEXT,
                     created_at    TEXT NOT NULL,
                     updated_at    TEXT NOT NULL
                 )
@@ -107,7 +109,8 @@ class DataStoreManager集成测试 {
 
         manager = new DataStoreManager(
                 collectionRepo, documentRepo, queryEngine,
-                aggregationEngine, propertyValidator, properties);
+                aggregationEngine, propertyValidator, properties,
+                new com.fasterxml.jackson.databind.ObjectMapper(), null, null);
     }
 
     // ==================== 集合 CRUD ====================

@@ -181,8 +181,9 @@ public class MetaAutoConfiguration {
      * <p>依赖 DataStoreManager（来自 datastore 模块）。</p>
      */
     @Bean
-    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager) {
-        return new StorageToolProvider(dataStoreManager);
+    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager,
+                                              com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+        return new StorageToolProvider(dataStoreManager, objectMapper);
     }
 
     /**

@@ -225,8 +225,18 @@ public non-sealed class RecursiveChunker implements ChunkingStrategy {
             if (i > 0 && overlapSize > 0) {
                 String prevChunk = textChunks.get(i - 1);
                 int overlapStart = Math.max(0, prevChunk.length() - overlapSize);
-                String overlap = prevChunk.substring(overlapStart);
-                content = overlap + rawContent;
+                // 向前搜索到最近的句子边界，避免在词语中间截断
+                String sentenceEndings = "。！？；：.!?;\n";
+                for (int j = overlapStart; j < prevChunk.length(); j++) {
+                    if (sentenceEndings.indexOf(prevChunk.charAt(j)) >= 0) {
+                        overlapStart = j + 1;
+                        break;
+                    }
+                }
+                if (overlapStart < prevChunk.length()) {
+                    String overlap = prevChunk.substring(overlapStart);
+                    content = overlap + rawContent;
+                }
             }
 
             DocumentChunk chunk = new DocumentChunk(

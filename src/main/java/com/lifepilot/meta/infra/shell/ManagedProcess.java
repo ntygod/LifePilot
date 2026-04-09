@@ -2,6 +2,8 @@ package com.lifepilot.meta.infra.shell;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -20,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @param lastAccessTime 最后访问时间（用于空闲超时计算）
  * @param command 启动命令
  * @param workDir 工作目录
+ * @param outputDrainLatch stdout/stderr 读取线程排空信号（count=2）
  * @author zsg
  * @since 2026-03-20
  */
@@ -33,12 +36,21 @@ public record ManagedProcess(
         Instant startTime,
         AtomicReference<Instant> lastAccessTime,
         String command,
-        Path workDir
+        Path workDir,
+        CountDownLatch outputDrainLatch
 ) {
 
     /** 更新最后访问时间为当前时刻。 */
     public void touch() {
         lastAccessTime.set(Instant.now());
+    }
+
+    /**
+     * 等待 stdout/stderr 读取线程排空完成。
+     * 进程退出后调用，确保输出已全部写入 ring buffer。
+     */
+    public void awaitOutputDrain(long timeout, TimeUnit unit) throws InterruptedException {
+        outputDrainLatch.await(timeout, unit);
     }
 
     /** 获取当前进程状态。 */

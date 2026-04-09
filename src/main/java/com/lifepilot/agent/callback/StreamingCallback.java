@@ -216,16 +216,14 @@ public class StreamingCallback implements IterationCallback {
         clearPendingTokenBatch();
         String preferredProviderId = request.preferredProvider();
 
-        // 提取 system 文本，通过 CallbackHelper 集中增强（流式约束 + A2UI）
+        // 提取 system 文本，通过 CallbackHelper 集中增强（流式约束）
+        // A2UI 组件文档已移至 a2ui skill，不再每次注入 system prompt
         String systemText = messages.stream()
                 .filter(m -> m instanceof SystemMessage)
                 .map(m -> ((SystemMessage) m).getText())
                 .findFirst().orElse("");
 
-        String a2uiPrompt = helper.isA2uiEnabled()
-                ? A2uiComponentCatalog.renderPrompt(helper.getA2uiMaxComponents())
-                : null;
-        String streamingSystemPrompt = helper.enhanceSystemPromptForStreaming(systemText, a2uiPrompt);
+        String streamingSystemPrompt = helper.enhanceSystemPromptForStreaming(systemText, null);
 
         // 先尝试用 ChatModel 做一次非流式调用检测 tool call
         var chatModelInfo = generationRouter.getChatModelWithInfo(scene, preferredProviderId, null);
