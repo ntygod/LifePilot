@@ -1,7 +1,10 @@
 package com.lifepilot.agent.context;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.SourceKind;
@@ -41,6 +44,8 @@ import java.util.stream.Collectors;
 public class ContextAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
+    private static final ObjectMapper SHARED_MAPPER =
+            new ObjectMapper();
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
     private final AgentConfigProperties config;
@@ -459,10 +464,9 @@ public class ContextAssembler {
         if (collection.propertiesJson() != null && !collection.propertiesJson().isBlank()
                 && !"[]".equals(collection.propertiesJson().strip())) {
             try {
-                var props = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                var props = SHARED_MAPPER.readValue(
                         collection.propertiesJson(),
-                        new com.fasterxml.jackson.core.type.TypeReference<
-                                java.util.List<com.lifepilot.datastore.model.PropertyDefinition>>() {});
+                        new TypeReference<List<PropertyDefinition>>() {});
                 if (!props.isEmpty()) {
                     String fieldList = props.stream()
                             .map(p -> "%s(%s%s)".formatted(

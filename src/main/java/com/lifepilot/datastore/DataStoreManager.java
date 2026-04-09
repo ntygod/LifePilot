@@ -11,6 +11,7 @@ import com.lifepilot.datastore.model.AggregationResult;
 import com.lifepilot.datastore.model.Collection;
 import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.datastore.model.Document;
+import com.lifepilot.datastore.model.FieldNames;
 import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.repository.CollectionRepository;
@@ -367,7 +368,7 @@ public class DataStoreManager {
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         Set<String> indexedFields = propDefs.stream()
                 .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).collect(Collectors.toSet());
-        var sqlWithParams = queryEngine.buildQuery(request, indexedFields, safePrefix(request.collectionId()));
+        var sqlWithParams = queryEngine.buildQuery(request, indexedFields, FieldNames.safePrefix(request.collectionId()));
         var results = documentRepository.query(sqlWithParams.sql(), sqlWithParams.params());
         log.debug("文档查询完成: collectionId={}, 结果数={}", request.collectionId(), results.size());
         return List.copyOf(results);
@@ -393,7 +394,7 @@ public class DataStoreManager {
         List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
         Set<String> indexedFields = propDefs.stream()
                 .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).collect(Collectors.toSet());
-        var sqlWithParams = aggregationEngine.buildAggregation(request, indexedFields, safePrefix(request.collectionId()));
+        var sqlWithParams = aggregationEngine.buildAggregation(request, indexedFields, FieldNames.safePrefix(request.collectionId()));
         var results = documentRepository.aggregate(sqlWithParams.sql(), sqlWithParams.params());
         log.debug("时序聚合完成: collectionId={}, func={}, 结果数={}", request.collectionId(), request.func(), results.size());
         return List.copyOf(results);
@@ -446,7 +447,4 @@ public class DataStoreManager {
         return dataJson;
     }
 
-    private String safePrefix(String collectionId) {
-        return collectionId.length() >= 8 ? collectionId.substring(0, 8) : collectionId;
-    }
 }
