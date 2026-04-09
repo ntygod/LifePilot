@@ -78,6 +78,9 @@ public class RegionChunkingRouter {
     /**
      * 对所有区域执行分块路由。
      *
+     * <p>先将 HEADING + 其管辖的 PARAGRAPH/LIST 等合并为逻辑 section，
+     * 再对每个 section 整体路由分块，确保标题和内容不被拆散。</p>
+     *
      * @param regions      结构区域列表
      * @param originalText 原始文档全文
      * @param metadata     文档元数据
@@ -85,22 +88,20 @@ public class RegionChunkingRouter {
      */
     public List<DocumentChunk> chunkRegions(List<StructureRegion> regions, String originalText,
                                              Map<String, String> metadata) {
+        // 1. 将 HEADING + 后续内容区域合并为 section
+        var sections = groupIntoSections(regions, originalText);
+
         var allChunks = new ArrayList<DocumentChunk>();
         int tempIndex = 0;
 
-        for (var region : regions) {
-            // 跳过空行区域
-            if (region.type() == StructureType.BLANK) {
-                continue;
-            }
+        for (var section : sections) {
+            // 为每个 section 追加 structureType 元数据
+            var sectionMetadata = new HashMap<>(metadata);
+            sectionMetadata.put("structureType", section.type().name());
 
-            // 为每个区域追加 structureType 元数据
-            var regionMetadata = new HashMap<>(metadata);
-            regionMetadata.put("structureType", region.type().name());
+            var chunks = chunkSingleRegion(section, Map.copyOf(sectionMetadata));
 
-            var chunks = chunkSingleRegion(region, Map.copyOf(regionMetadata));
-
-            // 调整分块的偏移量和标题层级
+            // 设置标题层级和全局索引
             for (var chunk : chunks) {
                 var adjusted = new DocumentChunk(
                         chunk.id(),
@@ -113,7 +114,7 @@ public class RegionChunkingRouter {
                         chunk.endOffset(),
                         chunk.tokenCount(),
                         chunk.contentHash(),
-                        region.headingHierarchy().stream()
+                        section.headingHierarchy().stream()
                                 .map(h -> h.contains(":") ? h.substring(h.indexOf(':') + 1) : h)
                                 .toList(),
                         chunk.pageNumber(),
@@ -123,8 +124,103 @@ public class RegionChunkingRouter {
             }
         }
 
-        log.debug("区域分块路由完成: 区域数={}, 总分块数={}", regions.size(), allChunks.size());
+        log.debug("区域分块路由完成: 区域数={}, section数={}, 总分块数={}",
+                regions.size(), sections.size(), allChunks.size());
         return List.copyOf(allChunks);
+    }
+
+    /**
+     * 将 HEADING 与其管辖的后续内容区域合并为逻辑 section。
+     *
+     * <p>先按每个 HEADING 切分为原始 section，然后合并过小的 section：
+     * 如果某个 section 的内容（不含标题）小于 minSectionSize，
+     * 将其与前一个 section 合并（视为前一 section 的子标题内容）。</p>
+     */
+    private List<StructureRegion> groupIntoSections(List<StructureRegion> regions, String originalText) {
+        // 1. 按 HEADING 分割为原始 section
+        var rawSections = splitByHeading(regions, originalText);
+
+        // 2. 合并过小的 section（子标题归入上级 section）
+        return mergeSmallSections(rawSections, originalText);
+    }
+
+    /** 按每个 HEADING 分割为原始 section。 */
+    private List<StructureRegion> splitByHeading(List<StructureRegion> regions, String originalText) {
+        var sections = new ArrayList<StructureRegion>();
+        int i = 0;
+
+        while (i < regions.size()) {
+            var region = regions.get(i);
+
+            if (region.type() == StructureType.HEADING) {
+                int sectionStart = region.startOffset();
+                var headingHierarchy = region.headingHierarchy();
+                int j = i + 1;
+                while (j < regions.size() && regions.get(j).type() != StructureType.HEADING) {
+                    j++;
+                }
+                int sectionEnd = regions.get(j - 1).endOffset();
+                String sectionContent = originalText.substring(sectionStart,
+                        Math.min(sectionEnd, originalText.length()));
+
+                var allLines = new ArrayList<AnnotatedLine>();
+                for (int k = i; k < j; k++) {
+                    allLines.addAll(regions.get(k).lines());
+                }
+
+                sections.add(new StructureRegion(
+                        StructureType.PARAGRAPH,
+                        sectionStart, sectionEnd, sectionContent,
+                        allLines, headingHierarchy
+                ));
+                i = j;
+            } else if (region.type() == StructureType.BLANK) {
+                i++;
+            } else {
+                sections.add(region);
+                i++;
+            }
+        }
+
+        return sections;
+    }
+
+    /**
+     * 合并过小的 section — 如果 section 内容太短，视为子标题归入前一个 section。
+     *
+     * <p>阈值：section 内容长度 < maxChunkSize / 3（约 340 字），合并到前一个 section。
+     * 确保合并后不超过 maxChunkSize。</p>
+     */
+    private List<StructureRegion> mergeSmallSections(List<StructureRegion> sections, String originalText) {
+        if (sections.size() <= 1) return sections;
+
+        var merged = new ArrayList<StructureRegion>();
+        int minSectionSize = maxChunkSize / 3;
+
+        for (var section : sections) {
+            if (!merged.isEmpty() && section.length() < minSectionSize) {
+                var prev = merged.getLast();
+                int combinedLength = prev.length() + section.length();
+                // 合并后不超过 maxChunkSize 时执行合并
+                if (combinedLength <= maxChunkSize) {
+                    int mergedStart = prev.startOffset();
+                    int mergedEnd = section.endOffset();
+                    String mergedContent = originalText.substring(mergedStart,
+                            Math.min(mergedEnd, originalText.length()));
+                    var mergedLines = new ArrayList<>(prev.lines());
+                    mergedLines.addAll(section.lines());
+                    merged.set(merged.size() - 1, new StructureRegion(
+                            StructureType.PARAGRAPH,
+                            mergedStart, mergedEnd, mergedContent,
+                            mergedLines, prev.headingHierarchy()
+                    ));
+                    continue;
+                }
+            }
+            merged.add(section);
+        }
+
+        return merged;
     }
 
     /**

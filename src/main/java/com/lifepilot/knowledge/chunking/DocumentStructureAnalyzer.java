@@ -129,8 +129,9 @@ public class DocumentStructureAnalyzer {
                 case DocumentElement.CodeBlock _ -> StructureType.CODE;
                 case DocumentElement.Table _ -> StructureType.TABLE;
                 case DocumentElement.ListBlock _ -> StructureType.LIST;
-                case DocumentElement.Paragraph _ -> StructureType.PARAGRAPH;
-                case DocumentElement.Image _ -> null; // 图片不映射行类型
+                // Paragraph 和 Image 不覆盖行分类 — Paragraph 是兜底类型，
+                // 覆盖后会阻止规则分类器的标题启发式等检测逻辑
+                case DocumentElement.Paragraph _, DocumentElement.Image _ -> null;
             };
             if (mappedType == null) continue;
 
@@ -217,8 +218,8 @@ public class DocumentStructureAnalyzer {
             return StructureType.CODE;
         }
 
-        // 6. 纯文本标题启发式
-        if (isPlainTextHeading(line)) {
+        // 6. 纯文本标题启发式（需要上下文辅助判断）
+        if (isPlainTextHeading(line, lineIndex, lineTypes)) {
             return StructureType.HEADING;
         }
 
@@ -281,21 +282,40 @@ public class DocumentStructureAnalyzer {
     }
 
     /**
-     * 纯文本标题启发式：短行 + 不以句末标点结尾 + 不是列表项 + 非空。
+     * 纯文本标题启发式 — 综合短行长度、标点、上下文判断是否为章节标题。
+     *
+     * <p>排除条件（满足任一则不是标题）：
+     * <ul>
+     *   <li>以句末标点结尾（。！？；.!?; 以及中文冒号 ：:）</li>
+     *   <li>包含句内逗号（，,）— 说明是完整句子而非短标题</li>
+     *   <li>是列表项</li>
+     *   <li>前一行不是空行、标题或文档开头 — 标题应出现在段落分隔之后</li>
+     * </ul>
      */
-    private boolean isPlainTextHeading(String line) {
+    private boolean isPlainTextHeading(String line, int lineIndex, StructureType[] lineTypes) {
         String trimmed = line.strip();
         if (trimmed.isEmpty() || trimmed.length() >= maxHeadingLength) {
             return false;
         }
-        // 不以句末标点结尾
+        // 不以句末标点或冒号结尾（冒号表示引导内容，如 "千问系列旗舰模型："）
         char lastChar = trimmed.charAt(trimmed.length() - 1);
-        if (SENTENCE_ENDINGS.indexOf(lastChar) >= 0) {
+        if (SENTENCE_ENDINGS.indexOf(lastChar) >= 0 || lastChar == '：' || lastChar == ':') {
+            return false;
+        }
+        // 不包含中文逗号（包含逗号的行是句子，不是标题）
+        if (trimmed.contains("，") || trimmed.contains(",")) {
             return false;
         }
         // 不是列表项
         if (LIST_MARKER.matcher(trimmed).find()) {
             return false;
+        }
+        // 上下文检查：标题应出现在段落分隔之后（空行、其他标题、或文档开头）
+        if (lineIndex > 0) {
+            StructureType prevType = lineTypes[lineIndex - 1];
+            if (prevType != null && prevType != StructureType.BLANK && prevType != StructureType.HEADING) {
+                return false;
+            }
         }
         return true;
     }

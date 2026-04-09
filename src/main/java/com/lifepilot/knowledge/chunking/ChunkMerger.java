@@ -84,9 +84,11 @@ public class ChunkMerger {
     /**
      * 合并过小分块。
      */
-    private List<DocumentChunk> mergeSmallChunks(List<DocumentChunk> chunks) {
-        if (chunks.size() <= 1) return new ArrayList<>(chunks);
+    private List<DocumentChunk> mergeSmallChunks(List<DocumentChunk> inputChunks) {
+        if (inputChunks.size() <= 1) return new ArrayList<>(inputChunks);
 
+        // 转为可变列表 — 合并过程中需要修改后续元素
+        var chunks = new ArrayList<>(inputChunks);
         var result = new ArrayList<DocumentChunk>();
 
         for (int i = 0; i < chunks.size(); i++) {
@@ -114,6 +116,12 @@ public class ChunkMerger {
                 var prev = result.getLast();
                 String prevType = getStructureType(prev);
 
+                // 不同 section（headingHierarchy 不同）不合并 — 保持 section 边界完整
+                if (!isSameSection(prev, chunk)) {
+                    result.add(chunk);
+                    continue;
+                }
+
                 // 同类型且合并后不超限
                 if (chunkType.equals(prevType)
                         && prev.content().length() + chunk.content().length() + 1 <= maxChunkSize) {
@@ -131,7 +139,7 @@ public class ChunkMerger {
                 if (i + 1 < chunks.size()) {
                     var next = chunks.get(i + 1);
                     String nextType = getStructureType(next);
-                    if (chunkType.equals(nextType)
+                    if (isSameSection(chunk, next) && chunkType.equals(nextType)
                             && chunk.content().length() + next.content().length() + 1 <= maxChunkSize) {
                         chunks.set(i + 1, mergeTwo(chunk, next));
                         continue;
@@ -206,8 +214,8 @@ public class ChunkMerger {
             var current = chunks.get(i);
             var prev = chunks.get(i - 1);
 
-            // 前一个分块是 HEADING 类型时不应用重叠（避免重复标题文本）
-            if ("HEADING".equals(getStructureType(prev))) {
+            // 不同 section 或前一个是 HEADING 类型时不应用重叠（避免跨 section 内容渗透）
+            if ("HEADING".equals(getStructureType(prev)) || !isSameSection(prev, current)) {
                 result.add(current);
                 continue;
             }
@@ -285,6 +293,13 @@ public class ChunkMerger {
             ));
         }
         return result;
+    }
+
+    /**
+     * 判断两个分块是否属于同一 section（标题层级相同）。
+     */
+    private boolean isSameSection(DocumentChunk a, DocumentChunk b) {
+        return a.headingHierarchy().equals(b.headingHierarchy());
     }
 
     /**
