@@ -353,13 +353,10 @@ public class DocumentIngester {
         ChunkingStrategy selectedChunker = resolveChunker(doc.knowledgeBaseId());
         Map<String, String> metadata = resolveChunkingConfigMetadata(doc.knowledgeBaseId());
 
-        // SmartChunker 支持解析器元素辅助三层分块
-        List<DocumentChunk> rawChunks;
-        if (selectedChunker instanceof SmartChunker smart) {
-            rawChunks = smart.chunk(parseResult.text(), metadata, parseResult.elements());
-        } else {
-            rawChunks = selectedChunker.chunk(parseResult.text(), metadata);
-        }
+        // SmartChunker 的三层管线在 chunk(text, metadata) 入口已自动启用，
+        // ParentChildChunker 包装时也能正确调用 SmartChunker.chunk()
+        var rawChunks = selectedChunker.chunk(parseResult.text(), metadata);
+
         // 填充 documentId 和 knowledgeBaseId
         return rawChunks.stream()
                 .map(c -> c.withDocumentContext(doc.id(), doc.knowledgeBaseId(),
@@ -386,9 +383,9 @@ public class DocumentIngester {
         var kb = kbOpt.get();
         String strategy = kb.chunkingStrategy();
 
-        // "smart" 或空策略 → 从注册表取真正的 SmartChunker（不用 defaultChunker，它可能是 ParentChildChunker）
+        // "smart" 或空策略 → 使用 defaultChunker（ParentChild 启用时为 ParentChildChunker(SmartChunker)）
         if (strategy == null || strategy.isBlank() || "smart".equals(strategy)) {
-            return chunkerRegistry.getOrDefault("smart", defaultChunker);
+            return defaultChunker;
         }
 
         // 从注册表查找对应分块器
