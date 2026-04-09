@@ -29,8 +29,13 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(FixedSizeChunker.class);
 
-    /** 句子结束标点集合（中文 + 英文 + 换行） */
-    private static final String SENTENCE_ENDINGS = "。！？；：，、.!?;:\n";
+    /**
+     * 分层句子边界标点 — 优先级从高到低。
+     *
+     * <p>不包含 {@code ，、：:} 等句内标点，避免在逗号处断开导致语义碎片。</p>
+     */
+    private static final String STRONG_BOUNDARIES = "。！？.!?";
+    private static final String WEAK_BOUNDARIES = "；;\n";
 
     private final ChunkingConfig config;
     private final TokenCounter tokenCounter;
@@ -135,7 +140,10 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
     }
 
     /**
-     * 从 end 向前搜索最近的句子结束标点。
+     * 从 end 向前分层搜索最佳句子边界。
+     *
+     * <p>搜索优先级：段落分隔（\n\n）→ 强句子边界（。！？.!?）→ 弱边界（；;\n）。
+     * 高优先级命中后立即返回，不继续搜索低优先级。</p>
      *
      * @param text  原始文本
      * @param start 搜索起始位置
@@ -143,11 +151,28 @@ public non-sealed class FixedSizeChunker implements ChunkingStrategy {
      * @return 句子结束位置（标点后一个字符），未找到则返回 end
      */
     private int findNearestSentenceEnd(String text, int start, int end) {
-        for (int i = end - 1; i >= start + config.minChunkSize(); i--) {
-            if (SENTENCE_ENDINGS.indexOf(text.charAt(i)) >= 0) {
+        int minPos = start + config.minChunkSize();
+
+        // 1. 优先找段落分隔（\n\n）
+        int paraBreak = text.lastIndexOf("\n\n", end - 1);
+        if (paraBreak >= minPos) {
+            return paraBreak + 2; // 跳过 \n\n
+        }
+
+        // 2. 找强句子边界（。！？.!?）
+        for (int i = end - 1; i >= minPos; i--) {
+            if (STRONG_BOUNDARIES.indexOf(text.charAt(i)) >= 0) {
                 return i + 1;
             }
         }
+
+        // 3. 找弱边界（；;\n）
+        for (int i = end - 1; i >= minPos; i--) {
+            if (WEAK_BOUNDARIES.indexOf(text.charAt(i)) >= 0) {
+                return i + 1;
+            }
+        }
+
         return end;
     }
 
