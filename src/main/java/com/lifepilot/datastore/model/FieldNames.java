@@ -30,4 +30,14 @@ public final class FieldNames {
                     "非法字段名: '%s'，仅允许字母、数字和下划线，且不能以数字开头".formatted(fieldName));
         }
     }
+
+    /**
+     * 生成集合 ID 的安全前缀 — 用于 Generated Column 和索引命名。
+     *
+     * @param collectionId 集合 ID
+     * @return 截取前 8 字符的安全前缀
+     */
+    public static String safePrefix(String collectionId) {
+        return collectionId.length() >= 8 ? collectionId.substring(0, 8) : collectionId;
+    }
 }

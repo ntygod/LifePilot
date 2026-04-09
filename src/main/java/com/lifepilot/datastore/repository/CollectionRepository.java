@@ -205,7 +205,7 @@ public class CollectionRepository {
      */
     public void addGeneratedColumn(String propertyName, String sqliteAffinity, String collectionId) {
         FieldNames.validate(propertyName);
-        String prefix = safePrefix(collectionId);
+        String prefix = FieldNames.safePrefix(collectionId);
         String columnName = "_idx_%s_%s".formatted(prefix, propertyName);
         String indexName = "idx_ds_doc_%s_%s".formatted(prefix, propertyName);
 
@@ -216,6 +216,8 @@ public class CollectionRepository {
         jdbcTemplate.execute(alterSql);
 
         // CREATE partial index
+        // 注意：collectionId 通过 FieldNames.validate() 白名单校验（仅字母/数字/下划线/连字符），
+        // 此处字符串拼接安全。SQLite DDL 不支持参数化占位符，只能拼接。
         String indexSql = "CREATE INDEX %s ON ds_documents(%s) WHERE collection_id = '%s'"
                 .formatted(indexName, columnName, collectionId);
         log.info("创建 partial index: index={}, collection={}", indexName, collectionId);
@@ -232,7 +234,7 @@ public class CollectionRepository {
      * @param propertyNames 属性名称列表
      */
     public void dropGeneratedColumns(String collectionId, List<String> propertyNames) {
-        String prefix = safePrefix(collectionId);
+        String prefix = FieldNames.safePrefix(collectionId);
         for (String propertyName : propertyNames) {
             String indexName = "idx_ds_doc_%s_%s".formatted(prefix, propertyName);
             String dropSql = "DROP INDEX IF EXISTS %s".formatted(indexName);
@@ -261,7 +263,4 @@ public class CollectionRepository {
     }
 
     /** 安全截取集合 ID 前缀，防御性长度检查。 */
-    private String safePrefix(String collectionId) {
-        return collectionId.length() >= 8 ? collectionId.substring(0, 8) : collectionId;
-    }
 }

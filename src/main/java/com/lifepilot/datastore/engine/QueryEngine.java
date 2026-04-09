@@ -117,8 +117,8 @@ public class QueryEngine {
         switch (filter.op()) {
             case IN -> appendInFilter(sql, params, fieldExpr, filter.value());
             case CONTAINS -> {
-                sql.append(" AND ").append(fieldExpr).append(" LIKE ?");
-                params.add("%" + filter.value() + "%");
+                sql.append(" AND ").append(fieldExpr).append(" LIKE ? ESCAPE '\\'");
+                params.add("%" + escapeLikeWildcards(String.valueOf(filter.value())) + "%");
             }
             default -> {
                 sql.append(" AND ").append(fieldExpr)
@@ -153,5 +153,12 @@ public class QueryEngine {
             sql.append(" AND ").append(fieldExpr).append(" = ?");
             params.add(value);
         }
+    }
+
+    /** 转义 LIKE 通配符，防止用户输入的 % 和 _ 被当作通配符。 */
+    private static String escapeLikeWildcards(String value) {
+        return value.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_");
     }
 }

@@ -105,7 +105,7 @@ public class ToolSearchIndex {
         if (useEmbedding) {
             return searchByEmbedding(query, maxResults, minScore, excludeIds, tools);
         } else {
-            return searchBySubstring(query, maxResults, excludeIds, tools);
+            return searchBySubstring(query, maxResults, minScore, excludeIds, tools);
         }
     }
 
@@ -118,7 +118,7 @@ public class ToolSearchIndex {
             queryVec = embeddingRouter.embed(query, EmbeddingUseCase.DEFAULT, null, null);
         } catch (Exception e) {
             log.warn("查询向量化失败，回退到子串匹配: {}", e.getMessage());
-            return searchBySubstring(query, maxResults, excludeIds, tools);
+            return searchBySubstring(query, maxResults, minScore, excludeIds, tools);
         }
 
         return tools.stream()
@@ -134,7 +134,7 @@ public class ToolSearchIndex {
 
     /** 子串匹配回退。 */
     private List<SearchResult> searchBySubstring(String query, int maxResults,
-                                                   Set<String> excludeIds,
+                                                   double minScore, Set<String> excludeIds,
                                                    List<IndexedTool> tools) {
         String lowerQuery = query.toLowerCase();
         String[] queryTokens = lowerQuery.split("[\\s.\\-_]+");
@@ -158,7 +158,7 @@ public class ToolSearchIndex {
                     score = Math.min(1.0, score);
                     return new SearchResult(t.toolId(), t.name(), t.description(), t.category(), score);
                 })
-                .filter(r -> r.score() > 0)
+                .filter(r -> r.score() > 0 && r.score() >= minScore)
                 .sorted(Comparator.comparingDouble(SearchResult::score).reversed())
                 .limit(maxResults)
                 .toList();
