@@ -26,7 +26,7 @@ public record KnowledgeBaseProperties(
     public KnowledgeBaseProperties {
         if (dataDir == null) dataDir = System.getProperty("user.home") + "/.zhiwei/data";
         if (maxFileSize <= 0) maxFileSize = 104857600L;
-        if (chunking == null) chunking = new Chunking(null, null, null, null, null, null, null);
+        if (chunking == null) chunking = new Chunking(null, null, null, null, null, null, null, null, null);
         if (vectorIndexer == null) vectorIndexer = new VectorIndexer(0, 0, 0);
         if (retrieval == null) retrieval = new Retrieval(0, 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, true, 0.0, false, 0.0, 0);
         if (contextEnricher == null) contextEnricher = new ContextEnricher(true, 0, false, 0, 0);
@@ -46,7 +46,9 @@ public record KnowledgeBaseProperties(
             Heading heading,
             SmartChunker smartChunker,
             SemanticChunking semanticChunking,
-            ParentChild parentChild
+            ParentChild parentChild,
+            StructureAnalysis structureAnalysis,
+            RegionRouting regionRouting
     ) {
         public Chunking {
             if (defaultStrategy == null) defaultStrategy = "smart";
@@ -56,6 +58,8 @@ public record KnowledgeBaseProperties(
             if (smartChunker == null) smartChunker = new SmartChunker(0.0, 0, 0.0, 0);
             if (semanticChunking == null) semanticChunking = new SemanticChunking(false, 0.0, 0, 0, 0);
             if (parentChild == null) parentChild = new ParentChild(true, 0, 0, 0);
+            if (structureAnalysis == null) structureAnalysis = new StructureAnalysis(0, 0, 0);
+            if (regionRouting == null) regionRouting = new RegionRouting(0, 0, 0, 0);
         }
 
         /** 固定大小分块配置。 */
@@ -129,6 +133,34 @@ public record KnowledgeBaseProperties(
                 if (parentMaxTokens <= 0) parentMaxTokens = 1024;
                 if (childMaxTokens <= 0) childMaxTokens = 256;
                 if (childOverlap < 0) childOverlap = 64;
+            }
+        }
+
+        /** 文档结构分析配置。 */
+        public record StructureAnalysis(
+                int maxHeadingLength,
+                int minCodeIndent,
+                int minTableColumns
+        ) {
+            public StructureAnalysis {
+                if (maxHeadingLength <= 0) maxHeadingLength = 80;
+                if (minCodeIndent <= 0) minCodeIndent = 4;
+                if (minTableColumns <= 0) minTableColumns = 2;
+            }
+        }
+
+        /** 区域分块路由配置。 */
+        public record RegionRouting(
+                int maxIntactCodeSize,
+                int maxIntactTableSize,
+                int maxIntactListSize,
+                int paragraphMinForRecursive
+        ) {
+            public RegionRouting {
+                if (maxIntactCodeSize <= 0) maxIntactCodeSize = 4096;
+                if (maxIntactTableSize <= 0) maxIntactTableSize = 8192;
+                if (maxIntactListSize <= 0) maxIntactListSize = 4096;
+                if (paragraphMinForRecursive <= 0) paragraphMinForRecursive = 200;
             }
         }
     }

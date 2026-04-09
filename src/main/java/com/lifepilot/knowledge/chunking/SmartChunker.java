@@ -1,6 +1,7 @@
 package com.lifepilot.knowledge.chunking;
 
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.knowledge.parser.DocumentElement;
 import org.springframework.lang.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,8 +48,13 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
     private final double codeBlockDensityThreshold;
     private final int semanticChunkingThreshold;
 
+    // 三层分块架构组件
+    private final DocumentStructureAnalyzer structureAnalyzer;
+    private final RegionChunkingRouter regionRouter;
+    private final ChunkMerger chunkMerger;
+
     /**
-     * 构造智能策略选择器。
+     * 构造智能策略选择器（兼容旧版，不含三层分块组件）。
      *
      * @param fixedSizeChunker  固定大小分块器
      * @param recursiveChunker  递归分块器
@@ -61,6 +67,30 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
                         HeadingChunker headingChunker,
                         @Nullable SemanticChunker semanticChunker,
                         KnowledgeBaseProperties.Chunking.SmartChunker smartConfig) {
+        this(fixedSizeChunker, recursiveChunker, headingChunker, semanticChunker, smartConfig,
+                null, null, null);
+    }
+
+    /**
+     * 构造智能策略选择器（含三层分块组件）。
+     *
+     * @param fixedSizeChunker   固定大小分块器
+     * @param recursiveChunker   递归分块器
+     * @param headingChunker     标题分块器
+     * @param semanticChunker    语义分块器（可选）
+     * @param smartConfig        智能选择配置
+     * @param structureAnalyzer  文档结构分析器（可选）
+     * @param regionRouter       区域分块路由器（可选）
+     * @param chunkMerger        分块合并器（可选）
+     */
+    public SmartChunker(FixedSizeChunker fixedSizeChunker,
+                        RecursiveChunker recursiveChunker,
+                        HeadingChunker headingChunker,
+                        @Nullable SemanticChunker semanticChunker,
+                        KnowledgeBaseProperties.Chunking.SmartChunker smartConfig,
+                        @Nullable DocumentStructureAnalyzer structureAnalyzer,
+                        @Nullable RegionChunkingRouter regionRouter,
+                        @Nullable ChunkMerger chunkMerger) {
         this.fixedSizeChunker = fixedSizeChunker;
         this.recursiveChunker = recursiveChunker;
         this.headingChunker = headingChunker;
@@ -69,11 +99,16 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
         this.shortDocumentThreshold = smartConfig.shortDocumentThreshold();
         this.codeBlockDensityThreshold = smartConfig.codeBlockDensityThreshold();
         this.semanticChunkingThreshold = smartConfig.semanticChunkingThreshold();
+        this.structureAnalyzer = structureAnalyzer;
+        this.regionRouter = regionRouter;
+        this.chunkMerger = chunkMerger;
         log.debug("初始化 SmartChunker: headingDensityThreshold={}, shortDocumentThreshold={}, " +
-                        "codeBlockDensityThreshold={}, semanticChunkingThreshold={}, semanticChunker={}",
+                        "codeBlockDensityThreshold={}, semanticChunkingThreshold={}, semanticChunker={}, " +
+                        "三层分块={}",
                 headingDensityThreshold, shortDocumentThreshold,
                 codeBlockDensityThreshold, semanticChunkingThreshold,
-                semanticChunker != null ? "可用" : "不可用");
+                semanticChunker != null ? "可用" : "不可用",
+                structureAnalyzer != null ? "启用" : "未启用");
     }
 
     /**
@@ -129,8 +164,38 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
         return fixedSizeChunker;
     }
 
+    /**
+     * 使用三层分块架构处理文档（携带解析器元素辅助分析）。
+     *
+     * @param text           文档全文
+     * @param metadata       文档元数据
+     * @param parserElements 解析器提取的文档元素（可选）
+     * @return 分块列表
+     */
+    public List<DocumentChunk> chunk(String text, Map<String, String> metadata,
+                                      @Nullable List<DocumentElement> parserElements) {
+        if (text == null || text.isBlank()) return List.of();
+
+        // 三层分块组件可用时走新路径
+        if (structureAnalyzer != null && regionRouter != null && chunkMerger != null) {
+            log.debug("使用三层分块架构处理文档: 文本长度={}, 解析器元素={}", text.length(),
+                    parserElements != null ? parserElements.size() : 0);
+            var regions = structureAnalyzer.analyze(text, parserElements);
+            var rawChunks = regionRouter.chunkRegions(regions, text, metadata);
+            return chunkMerger.merge(rawChunks, text, metadata);
+        }
+
+        // 回退到旧策略选择模式
+        return chunk(text, metadata);
+    }
+
     @Override
     public List<DocumentChunk> chunk(String text, Map<String, String> metadata) {
+        // 三层分块组件可用时委派到新方法
+        if (structureAnalyzer != null && regionRouter != null && chunkMerger != null) {
+            return chunk(text, metadata, null);
+        }
+        // 旧策略选择模式
         ChunkingStrategy selected = selectStrategy(text, metadata);
         return selected.chunk(text, metadata);
     }

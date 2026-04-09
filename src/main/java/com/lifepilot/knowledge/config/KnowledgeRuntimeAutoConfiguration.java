@@ -63,13 +63,19 @@ public class KnowledgeRuntimeAutoConfiguration {
                                      RecursiveChunker recursiveChunker,
                                      HeadingChunker headingChunker,
                                      @Nullable SemanticChunker semanticChunker,
-                                     KnowledgeBaseProperties props) {
+                                     KnowledgeBaseProperties props,
+                                     DocumentStructureAnalyzer documentStructureAnalyzer,
+                                     RegionChunkingRouter regionChunkingRouter,
+                                     ChunkMerger chunkMerger) {
         return new SmartChunker(
                 fixedSizeChunker,
                 recursiveChunker,
                 headingChunker,
                 semanticChunker,
-                props.chunking().smartChunker()
+                props.chunking().smartChunker(),
+                documentStructureAnalyzer,
+                regionChunkingRouter,
+                chunkMerger
         );
     }
 

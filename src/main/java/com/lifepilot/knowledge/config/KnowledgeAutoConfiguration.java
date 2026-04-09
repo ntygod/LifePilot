@@ -2,9 +2,12 @@ package com.lifepilot.knowledge.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.chunking.ChunkingConfig;
+import com.lifepilot.knowledge.chunking.ChunkMerger;
+import com.lifepilot.knowledge.chunking.DocumentStructureAnalyzer;
 import com.lifepilot.knowledge.chunking.FixedSizeChunker;
 import com.lifepilot.knowledge.chunking.HeadingChunker;
 import com.lifepilot.knowledge.chunking.RecursiveChunker;
+import com.lifepilot.knowledge.chunking.RegionChunkingRouter;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
 import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.knowledge.index.FtsIndexer;
@@ -120,6 +123,35 @@ public class KnowledgeAutoConfiguration {
                                          KnowledgeBaseProperties props,
                                          TokenCounter tokenCounter) {
         return new HeadingChunker(recursiveChunker, props.chunking().heading(), tokenCounter);
+    }
+
+    // ---- 三层分块架构 ----
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DocumentStructureAnalyzer documentStructureAnalyzer(KnowledgeBaseProperties props) {
+        var config = props.chunking().structureAnalysis();
+        return new DocumentStructureAnalyzer(config.maxHeadingLength(), config.minCodeIndent(), config.minTableColumns());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public RegionChunkingRouter regionChunkingRouter(
+            RecursiveChunker recursiveChunker,
+            FixedSizeChunker fixedSizeChunker,
+            KnowledgeBaseProperties props,
+            TokenCounter tokenCounter) {
+        var config = props.chunking().regionRouting();
+        return new RegionChunkingRouter(recursiveChunker, fixedSizeChunker, tokenCounter,
+                config.maxIntactCodeSize(), config.maxIntactTableSize(), config.maxIntactListSize(),
+                config.paragraphMinForRecursive(), props.chunking().recursive().maxChunkSize());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ChunkMerger chunkMerger(KnowledgeBaseProperties props, TokenCounter tokenCounter) {
+        var r = props.chunking().recursive();
+        return new ChunkMerger(r.maxChunkSize(), r.minChunkSize(), r.overlapSize(), tokenCounter);
     }
 
     // ---- Repository ----

@@ -4,6 +4,7 @@ import com.lifepilot.knowledge.chunking.ChunkingConfig;
 import com.lifepilot.knowledge.chunking.ChunkingStrategy;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.chunking.FixedSizeChunker;
+import com.lifepilot.knowledge.chunking.SmartChunker;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
@@ -352,7 +353,13 @@ public class DocumentIngester {
         ChunkingStrategy selectedChunker = resolveChunker(doc.knowledgeBaseId());
         Map<String, String> metadata = resolveChunkingConfigMetadata(doc.knowledgeBaseId());
 
-        var rawChunks = selectedChunker.chunk(parseResult.text(), metadata);
+        // SmartChunker 支持解析器元素辅助三层分块
+        List<DocumentChunk> rawChunks;
+        if (selectedChunker instanceof SmartChunker smart) {
+            rawChunks = smart.chunk(parseResult.text(), metadata, parseResult.elements());
+        } else {
+            rawChunks = selectedChunker.chunk(parseResult.text(), metadata);
+        }
         // 填充 documentId 和 knowledgeBaseId
         return rawChunks.stream()
                 .map(c -> c.withDocumentContext(doc.id(), doc.knowledgeBaseId(),
