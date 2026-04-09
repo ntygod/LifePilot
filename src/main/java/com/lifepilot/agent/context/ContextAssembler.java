@@ -475,8 +475,9 @@ public class ContextAssembler {
                             .collect(java.util.stream.Collectors.joining(", "));
                     sb.append("\n    字段: ").append(fieldList);
                 }
-            } catch (Exception ignored) {
-                // 属性定义解析失败时静默跳过，不影响绑定展示
+            } catch (Exception e) {
+                log.debug("Datastore 属性定义解析失败，跳过字段摘要: collectionId={}, error={}",
+                        collection.id(), e.getMessage());
             }
         }
 

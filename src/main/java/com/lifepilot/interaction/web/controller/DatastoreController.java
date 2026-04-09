@@ -195,12 +195,19 @@ public class DatastoreController {
                         String suffix = originalName.substring(originalName.lastIndexOf('.'));
                         Path tempFile = Files.createTempFile("lifepilot-datastore-upload-", suffix);
                         file.transferTo(Objects.requireNonNull(tempFile.toFile()));
-                        ingester.ingest(defaultKnowledgeBaseId, tempFile, originalName, collection.id());
-
-                        // 在 Datastore 中创建文件引用元数据记录（knowledgeDocumentId 待异步回填）
+                        // 先创建文件引用记录，拿到 Datastore 文档 ID
                         String mimeType = file.getContentType() != null ? file.getContentType() : "";
-                        dataStoreManager.addFileReference(
+                        var dsDoc = dataStoreManager.addFileReference(
                                 collection.id(), originalName, file.getSize(), mimeType, null);
+
+                        // 异步 ingest 完成后回填 knowledgeDocumentId
+                        ingester.ingest(defaultKnowledgeBaseId, tempFile, originalName, collection.id())
+                                .thenAccept(knowledgeDoc -> dataStoreManager.linkKnowledgeDocument(
+                                        dsDoc.id(), knowledgeDoc.id()))
+                                .exceptionally(ex -> {
+                                    log.warn("知识库文档 ID 回填失败: dsDocId={}, error={}", dsDoc.id(), ex.getMessage());
+                                    return null;
+                                });
 
                         log.info("Datastore 文档上传已提交: datastoreId={}, knowledgeBaseId={}, fileName={}",
                                 collection.id(), defaultKnowledgeBaseId, originalName);

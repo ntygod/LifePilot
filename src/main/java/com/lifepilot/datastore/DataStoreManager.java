@@ -297,6 +297,16 @@ public class DataStoreManager {
                 () -> new IllegalStateException("文件引用文档创建后查询失败: id=" + documentId));
     }
 
+    /**
+     * 回填文件引用文档的知识库文档 ID — 异步 ingest 完成后调用。
+     *
+     * @param datastoreDocumentId  Datastore 文档 ID
+     * @param knowledgeDocumentId  知识库文档 ID
+     */
+    public void linkKnowledgeDocument(String datastoreDocumentId, String knowledgeDocumentId) {
+        documentRepository.updateKnowledgeDocumentId(datastoreDocumentId, knowledgeDocumentId);
+    }
+
     public Optional<Document> getDocument(String id) {
         return documentRepository.findById(id);
     }

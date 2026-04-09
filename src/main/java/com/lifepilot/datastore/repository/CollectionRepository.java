@@ -236,8 +236,10 @@ public class CollectionRepository {
      * @param propertyNames 属性名称列表
      */
     public void dropGeneratedColumns(String collectionId, List<String> propertyNames) {
+        FieldNames.validateId(collectionId);
         String prefix = FieldNames.safePrefix(collectionId);
         for (String propertyName : propertyNames) {
+            FieldNames.validate(propertyName);
             String indexName = "idx_ds_doc_%s_%s".formatted(prefix, propertyName);
             String dropSql = "DROP INDEX IF EXISTS %s".formatted(indexName);
             log.info("删除 Generated Column 索引: index={}, collection={}", indexName, collectionId);

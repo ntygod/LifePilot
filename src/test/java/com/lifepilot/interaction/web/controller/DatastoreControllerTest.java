@@ -27,6 +27,9 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -275,6 +278,19 @@ class DatastoreControllerTest {
                 collection("ds-1", "知天命素材库", "小说世界观资料", "kb-internal")
         ));
         when(knowledgeBaseProperties.maxFileSize()).thenReturn(10L * 1024 * 1024);
+        // mock addFileReference 返回文件引用文档
+        var dsDoc = com.lifepilot.datastore.model.Document.builder()
+                .id("ds-doc-1").collectionId("ds-1").dataJson("{}").createdAt("now").updatedAt("now").build();
+        when(dataStoreManager.addFileReference(eq("ds-1"), eq("人物设定.md"), anyLong(), anyString(), isNull()))
+                .thenReturn(dsDoc);
+        // mock ingest 返回已完成的 future
+        var knowledgeDoc = new com.lifepilot.knowledge.model.Document(
+                "kb-doc-1", "kb-internal", "人物设定.md", "/tmp/test.md", 6L, "", "",
+                com.lifepilot.knowledge.model.DocumentStatus.READY, 1, 100,
+                null, null, java.util.Map.of(), java.time.Instant.now(), java.time.Instant.now(),
+                com.lifepilot.knowledge.model.DocumentSourceType.FILE, null, "ds-1", null, java.util.Map.of());
+        when(documentIngester.ingest(eq("kb-internal"), any(java.nio.file.Path.class), eq("人物设定.md"), eq("ds-1")))
+                .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(knowledgeDoc));
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -290,6 +306,7 @@ class DatastoreControllerTest {
                 .andExpect(jsonPath("$.fileName").value("人物设定.md"));
 
         verify(documentIngester).ingest(eq("kb-internal"), any(java.nio.file.Path.class), eq("人物设定.md"), eq("ds-1"));
+        verify(dataStoreManager).linkKnowledgeDocument("ds-doc-1", "kb-doc-1");
     }
 
     private Collection collection(String id, String name, String description) {

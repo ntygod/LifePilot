@@ -132,6 +132,26 @@ public class DocumentRepository {
     }
 
     /**
+     * 回填文件引用文档的知识库文档 ID。
+     *
+     * @param id                  Datastore 文档 ID
+     * @param knowledgeDocumentId 知识库文档 ID
+     * @return 是否更新成功
+     */
+    public boolean updateKnowledgeDocumentId(String id, String knowledgeDocumentId) {
+        String now = Instant.now().toString();
+        int rows = jdbcTemplate.update("""
+                UPDATE ds_documents SET knowledge_document_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                knowledgeDocumentId, now, id);
+        if (rows > 0) {
+            log.info("知识库文档 ID 回填成功: id={}, knowledgeDocumentId={}", id, knowledgeDocumentId);
+        }
+        return rows > 0;
+    }
+
+    /**
      * 删除文档。
      *
      * @param id 文档 ID
