@@ -29,9 +29,13 @@ public class DocumentStructureAnalyzer {
     /** ATX 标题正则（1-6 级） */
     private static final Pattern ATX_HEADING = Pattern.compile("^#{1,6}\\s+.+");
 
-    /** 列表项正则（无序/有序/中文序号） */
+    /** 列表项正则（无序/有序/中文序号，不含"第X章/节"式章节标题） */
     private static final Pattern LIST_MARKER = Pattern.compile(
-            "^(\\s*)([-*+]|\\d+[.、)]|[（(]\\d+[)）]|（[一二三四五六七八九十百]+）|第[一二三四五六七八九十百\\d]+[条章节款项])\\s+");
+            "^(\\s*)([-*+]|\\d+[.、)]|[（(]\\d+[)）]|（[一二三四五六七八九十百]+）|第[一二三四五六七八九十百\\d]+[条款项])\\s+");
+
+    /** 中文章节标题正则（第X章/节/篇/卷 + 标题文本） */
+    private static final Pattern CHAPTER_HEADING = Pattern.compile(
+            "^第[一二三四五六七八九十百千零\\d]+[章节篇卷]\\s+.+");
 
     /** 表格分隔行正则 */
     private static final Pattern TABLE_SEPARATOR = Pattern.compile("^[\\s|:+-]+$");
@@ -200,6 +204,11 @@ public class DocumentStructureAnalyzer {
 
         // 2. ATX 标题
         if (ATX_HEADING.matcher(line).matches()) {
+            return StructureType.HEADING;
+        }
+
+        // 2.5 中文章节标题（第X章/节/篇/卷 + 标题，优先于列表检测）
+        if (CHAPTER_HEADING.matcher(line.strip()).matches()) {
             return StructureType.HEADING;
         }
 

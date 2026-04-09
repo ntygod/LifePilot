@@ -186,16 +186,16 @@ public class RegionChunkingRouter {
     }
 
     /**
-     * 合并过小的 section — 如果 section 内容太短，视为子标题归入前一个 section。
+     * 合并过小的 section — 真正微小的 section 视为子标题归入前一个 section。
      *
-     * <p>阈值：section 内容长度 < maxChunkSize / 3（约 340 字），合并到前一个 section。
+     * <p>阈值：section 内容长度 < minSectionSize（默认 200 字）。
      * 确保合并后不超过 maxChunkSize。</p>
      */
     private List<StructureRegion> mergeSmallSections(List<StructureRegion> sections, String originalText) {
         if (sections.size() <= 1) return sections;
 
         var merged = new ArrayList<StructureRegion>();
-        int minSectionSize = maxChunkSize / 3;
+        int minSectionSize = paragraphMinForRecursive;
 
         for (var section : sections) {
             if (!merged.isEmpty() && section.length() < minSectionSize) {
