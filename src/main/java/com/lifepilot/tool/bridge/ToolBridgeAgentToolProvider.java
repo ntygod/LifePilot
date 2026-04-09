@@ -135,15 +135,17 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             log.debug("生成 ToolCallback: count={}", tools.size());
         }
 
-        // 延迟加载过滤：仅加载核心集 + 已发现工具 + infrastructure 标签工具
+        // 延迟加载过滤：仅加载核心集 + 已发现工具 + 搜索元工具
+        // 注意：不能用 infrastructure 标签放行，否则所有基础工具都会绕过过滤
         if (!alwaysLoadedToolIds.isEmpty()) {
             Set<String> visibleIds = new HashSet<>(alwaysLoadedToolIds);
+            visibleIds.add("meta.search_tools");
             if (state.discoveredToolIds() != null) {
                 visibleIds.addAll(state.discoveredToolIds());
             }
             int beforeFilter = tools.size();
             tools = tools.stream()
-                    .filter(t -> visibleIds.contains(t.id()) || t.tags().contains("infrastructure"))
+                    .filter(t -> visibleIds.contains(t.id()))
                     .toList();
             log.debug("延迟工具加载过滤: total={}, visible={}, always={}, discovered={}",
                     beforeFilter, tools.size(), alwaysLoadedToolIds.size(),
