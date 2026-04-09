@@ -72,6 +72,10 @@ class KnowledgeAutoConfigurationTest {
             // 管理服务
             assertThat(context).hasSingleBean(KnowledgeBaseManager.class);
             assertThat(context).hasSingleBean(DocumentIngester.class);
+            // 增强 Bean 始终创建（@Nullable 路由器注入，运行时懒检查）
+            // 注意：VectorIndexer 和 KnowledgeExtractionPipeline 受 lifepilot.memory.enabled 控制，
+            // 测试默认 memory.enabled=false 所以不会创建
+            assertThat(context).hasSingleBean(ChunkContextEnricher.class);
         });
     }
 
@@ -151,6 +155,7 @@ class KnowledgeAutoConfigurationTest {
     @Test
     void 自定义Bean覆盖默认实现() {
         contextRunner
+                .withPropertyValues("lifepilot.memory.enabled=true")
                 .withUserConfiguration(CustomKnowledgeBeansConfig.class)
                 .run(context -> {
                     assertThat(context).hasSingleBean(KnowledgeBaseManager.class);
@@ -174,6 +179,10 @@ class KnowledgeAutoConfigurationTest {
         io.micrometer.core.instrument.MeterRegistry meterRegistry() {
             return new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
         }
+        /** 增强 Bean 始终创建后需要 PromptRegistry，提供 mock。注意：EnhancementBeansConfig 也有同名 bean，使用 @Primary 避免冲突。 */
+        @Bean
+        @Primary
+        PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
     }
 
     @Configuration
@@ -183,9 +192,6 @@ class KnowledgeAutoConfigurationTest {
 
         @Bean
         EmbeddingRouter embeddingRouter() { return mock(EmbeddingRouter.class); }
-
-        @Bean
-        PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
 
         @Bean
         SemanticMemory semanticMemory() { return mock(SemanticMemory.class); }

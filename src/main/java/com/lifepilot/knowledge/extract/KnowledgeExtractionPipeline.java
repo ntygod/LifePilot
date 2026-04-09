@@ -20,6 +20,7 @@ import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.*;
@@ -38,32 +39,35 @@ public class KnowledgeExtractionPipeline {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeExtractionPipeline.class);
     private static final String SCENE = "knowledge_extraction";
 
-    private final GenerationRouter generationRouter;
-    private final SemanticMemory semanticMemory;
+    private final @Nullable GenerationRouter generationRouter;
+    private final @Nullable SemanticMemory semanticMemory;
     private final KnowledgeBaseProperties.Extraction config;
     private final PromptRegistry promptRegistry;
-    private final MemorySpaceRepository memorySpaceRepository;
+    private final @Nullable MemorySpaceRepository memorySpaceRepository;
 
     /**
      * 构造知识提取管线。
      *
-     * @param generationRouter LLM 路由器
-     * @param semanticMemory 语义记忆
-     * @param config         提取配置
-     * @param promptRegistry 提示词模板注册表
+     * @param generationRouter      LLM 路由器（可为 null，运行时动态配置）
+     * @param semanticMemory        语义记忆（可为 null，依赖 EmbeddingRouter）
+     * @param config                提取配置
+     * @param promptRegistry        提示词模板注册表
+     * @param memorySpaceRepository 记忆空间仓储（可为 null）
      */
-    public KnowledgeExtractionPipeline(GenerationRouter generationRouter,
-                                        SemanticMemory semanticMemory,
+    public KnowledgeExtractionPipeline(@Nullable GenerationRouter generationRouter,
+                                        @Nullable SemanticMemory semanticMemory,
                                         KnowledgeBaseProperties.Extraction config,
                                         PromptRegistry promptRegistry,
-                                        MemorySpaceRepository memorySpaceRepository) {
+                                        @Nullable MemorySpaceRepository memorySpaceRepository) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.config = config;
         this.promptRegistry = promptRegistry;
         this.memorySpaceRepository = memorySpaceRepository;
-        log.info("KnowledgeExtractionPipeline 初始化完成: enabled={}, batchSize={}",
-                config.enabled(), config.batchSize());
+        log.info("KnowledgeExtractionPipeline 初始化完成: enabled={}, batchSize={}, generationRouter={}, semanticMemory={}",
+                config.enabled(), config.batchSize(),
+                generationRouter != null ? "已配置" : "未配置",
+                semanticMemory != null ? "已配置" : "未配置");
     }
 
     /**
@@ -79,6 +83,10 @@ public class KnowledgeExtractionPipeline {
     public ExtractionResult extract(Document doc, List<DocumentChunk> chunks) {
         if (!config.enabled() || chunks.isEmpty()) {
             return new ExtractionResult(0, 0, List.of());
+        }
+        if (generationRouter == null || semanticMemory == null || memorySpaceRepository == null) {
+            log.warn("GenerationRouter/SemanticMemory/MemorySpaceRepository 不可用，跳过知识提取: reason=依赖未配置");
+            return new ExtractionResult(0, 0, List.of("依赖组件未配置，跳过知识提取"));
         }
         MemoryWriteContext writeContext = resolveWriteContext(doc);
         if (writeContext == null) {

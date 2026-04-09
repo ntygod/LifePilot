@@ -9,6 +9,7 @@ import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.util.List;
@@ -33,24 +34,44 @@ public class QueryEnhancer {
     private static final Logger log = LoggerFactory.getLogger(QueryEnhancer.class);
     private static final String SCENE = "query_enhance";
 
-    private final GenerationRouter generationRouter;
-    private final EmbeddingRouter embeddingRouter;
+    private final @Nullable GenerationRouter generationRouter;
+    private final @Nullable EmbeddingRouter embeddingRouter;
     private final KnowledgeBaseProperties.QueryEnhancer config;
     private final PromptRegistry promptRegistry;
 
-    public QueryEnhancer(GenerationRouter generationRouter,
-                         EmbeddingRouter embeddingRouter,
+    /**
+     * 构造查询增强器。
+     *
+     * @param generationRouter 生成路由器（可为 null，运行时动态配置）
+     * @param embeddingRouter  向量路由器（可为 null，运行时动态配置）
+     * @param config           查询增强配置
+     * @param promptRegistry   提示词注册中心
+     */
+    public QueryEnhancer(@Nullable GenerationRouter generationRouter,
+                         @Nullable EmbeddingRouter embeddingRouter,
                          KnowledgeBaseProperties.QueryEnhancer config,
                          PromptRegistry promptRegistry) {
         this.generationRouter = generationRouter;
         this.embeddingRouter = embeddingRouter;
         this.config = config;
         this.promptRegistry = promptRegistry;
-        log.debug("初始化 QueryEnhancer: mode={}, timeoutMs={}, maxRewrites={}",
-                config.mode(), config.timeoutMs(), config.maxRewrites());
+        log.debug("初始化 QueryEnhancer: mode={}, timeoutMs={}, maxRewrites={}, generationRouter={}, embeddingRouter={}",
+                config.mode(), config.timeoutMs(), config.maxRewrites(),
+                generationRouter != null ? "已配置" : "未配置",
+                embeddingRouter != null ? "已配置" : "未配置");
     }
 
     public EnhancedQuery enhance(String originalQuery) {
+        // rewrite 模式需要 GenerationRouter，hyde 模式需要 GenerationRouter + EmbeddingRouter
+        if ("rewrite".equals(config.mode()) && generationRouter == null) {
+            log.warn("GenerationRouter 不可用，跳过查询增强: reason=路由器未配置");
+            return new EnhancedQuery(originalQuery, List.of(), Optional.empty());
+        }
+        if ("hyde".equals(config.mode()) && (generationRouter == null || embeddingRouter == null)) {
+            log.warn("GenerationRouter 或 EmbeddingRouter 不可用，跳过查询增强: reason=路由器未配置");
+            return new EnhancedQuery(originalQuery, List.of(), Optional.empty());
+        }
+
         long start = System.currentTimeMillis();
         try {
             EnhancedQuery result = switch (config.mode()) {

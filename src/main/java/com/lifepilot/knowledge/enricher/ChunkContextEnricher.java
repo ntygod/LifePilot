@@ -9,6 +9,7 @@ import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import com.lifepilot.llm.LlmResponse;
 
@@ -32,7 +33,7 @@ public class ChunkContextEnricher {
     /** LLM 调用场景名称 */
     private static final String SCENE = "knowledge_extraction";
 
-    private final GenerationRouter generationRouter;
+    private final @Nullable GenerationRouter generationRouter;
     private final KnowledgeBaseProperties.ContextEnricher config;
     private final PromptRegistry promptRegistry;
     private final TokenCounter tokenCounter;
@@ -40,12 +41,12 @@ public class ChunkContextEnricher {
     /**
      * 构造分块上下文增强器。
      *
-     * @param generationRouter LLM 路由器
+     * @param generationRouter LLM 路由器（可为 null，运行时动态配置）
      * @param config           上下文增强配置
      * @param promptRegistry   提示词注册中心
      * @param tokenCounter     Token 计数器
      */
-    public ChunkContextEnricher(GenerationRouter generationRouter,
+    public ChunkContextEnricher(@Nullable GenerationRouter generationRouter,
                                 KnowledgeBaseProperties.ContextEnricher config,
                                 PromptRegistry promptRegistry,
                                 TokenCounter tokenCounter) {
@@ -53,8 +54,9 @@ public class ChunkContextEnricher {
         this.config = config;
         this.promptRegistry = promptRegistry;
         this.tokenCounter = tokenCounter;
-        log.info("ChunkContextEnricher 初始化完成: enabled={}, maxPrefixTokens={}",
-                config.enabled(), config.maxPrefixTokens());
+        log.info("ChunkContextEnricher 初始化完成: enabled={}, maxPrefixTokens={}, generationRouter={}",
+                config.enabled(), config.maxPrefixTokens(),
+                generationRouter != null ? "已配置" : "未配置");
     }
 
     /**
@@ -70,6 +72,10 @@ public class ChunkContextEnricher {
     public List<DocumentChunk> enrich(List<DocumentChunk> chunks, String documentSummary) {
         if (!config.enabled()) {
             log.debug("上下文增强已禁用，返回原始分块");
+            return chunks;
+        }
+        if (generationRouter == null) {
+            log.warn("GenerationRouter 不可用，跳过上下文增强: reason=路由器未配置");
             return chunks;
         }
         if (chunks.isEmpty()) {

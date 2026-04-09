@@ -32,7 +32,7 @@ public class VectorIndexer {
 
     private static final Logger log = LoggerFactory.getLogger(VectorIndexer.class);
 
-    private final EmbeddingRouter embeddingRouter;
+    private final @Nullable EmbeddingRouter embeddingRouter;
     /** 向量数据库 JdbcTemplate（vectors.db，已加载 sqlite-vec 扩展） */
     private final JdbcTemplate vectorJdbcTemplate;
     /** 主数据库 JdbcTemplate（zhiwei.db，存储 document_chunks 等业务表） */
@@ -42,12 +42,12 @@ public class VectorIndexer {
     /**
      * 构造向量索引服务。
      *
-     * @param embeddingRouter    向量路由器
+     * @param embeddingRouter    向量路由器（可为 null，运行时动态配置）
      * @param vectorJdbcTemplate 向量数据库 JdbcTemplate（vectors.db）
      * @param mainJdbcTemplate   主数据库 JdbcTemplate（zhiwei.db）
      * @param config             向量索引配置
      */
-    public VectorIndexer(EmbeddingRouter embeddingRouter,
+    public VectorIndexer(@Nullable EmbeddingRouter embeddingRouter,
                          JdbcTemplate vectorJdbcTemplate,
                          JdbcTemplate mainJdbcTemplate,
                          KnowledgeBaseProperties.VectorIndexer config) {
@@ -59,8 +59,9 @@ public class VectorIndexer {
         // 在 vectors.db 中创建 chunk_embeddings vec0 虚拟表
         initVec0Table();
 
-        log.info("VectorIndexer 初始化完成: batchSize={}, maxRetries={}, dimension={}, db=vectors.db",
-                config.batchSize(), config.maxRetries(), config.embeddingDimension());
+        log.info("VectorIndexer 初始化完成: batchSize={}, maxRetries={}, dimension={}, db=vectors.db, embeddingRouter={}",
+                config.batchSize(), config.maxRetries(), config.embeddingDimension(),
+                embeddingRouter != null ? "已配置" : "未配置");
     }
 
     /**
@@ -120,6 +121,11 @@ public class VectorIndexer {
      * @throws IndexingException 所有重试均失败
      */
     public IndexingResult indexChunks(List<DocumentChunk> chunks, @Nullable String embeddingModel) {
+        if (embeddingRouter == null) {
+            log.warn("EmbeddingRouter 不可用，跳过向量索引: reason=路由器未配置");
+            return new IndexingResult(0, 0, 0);
+        }
+
         // Parent-Child 架构：只对 child 块（level=1）建向量索引；parent 块（level=0）不索引
         // 如果没有 child 块（非 Parent-Child 模式），则索引所有块
         boolean hasChildren = chunks.stream().anyMatch(c -> c.chunkLevel() == 1);
@@ -194,6 +200,10 @@ public class VectorIndexer {
      */
     public List<DocumentSearchResult> searchSimilar(String query, List<String> kbIds, int topK,
                                                      @Nullable String embeddingModel) {
+        if (embeddingRouter == null) {
+            log.warn("EmbeddingRouter 不可用，跳过向量搜索: reason=路由器未配置");
+            return List.of();
+        }
         float[] queryVector = embeddingRouter.embed(query, EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
         return searchByEmbedding(queryVector, kbIds, topK);
     }
@@ -205,6 +215,10 @@ public class VectorIndexer {
                                                             List<KnowledgeSearchScope> scopes,
                                                             int topK,
                                                             @Nullable String embeddingModel) {
+        if (embeddingRouter == null) {
+            log.warn("EmbeddingRouter 不可用，跳过向量搜索: reason=路由器未配置");
+            return List.of();
+        }
         float[] queryVector = embeddingRouter.embed(query, EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
         return searchByEmbeddingByScopes(queryVector, scopes, topK);
     }

@@ -5,6 +5,7 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.util.List;
@@ -36,7 +37,7 @@ public class RetrievalQualityEvaluator {
     /** 送入评估的最大片段数 */
     private static final int MAX_EVAL_RESULTS = 3;
 
-    private final GenerationRouter generationRouter;
+    private final @Nullable GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final double highThreshold;
     private final int timeoutMs;
@@ -58,12 +59,12 @@ public class RetrievalQualityEvaluator {
     /**
      * 构造检索质量评估器。
      *
-     * @param generationRouter 生成路由器
+     * @param generationRouter 生成路由器（可为 null，运行时动态配置）
      * @param promptRegistry   提示词注册器
      * @param highThreshold    Top-1 分数高于此阈值时跳过 LLM 评估
      * @param timeoutMs        LLM 调用超时毫秒数
      */
-    public RetrievalQualityEvaluator(GenerationRouter generationRouter,
+    public RetrievalQualityEvaluator(@Nullable GenerationRouter generationRouter,
                                      PromptRegistry promptRegistry,
                                      double highThreshold,
                                      int timeoutMs) {
@@ -71,7 +72,9 @@ public class RetrievalQualityEvaluator {
         this.promptRegistry = promptRegistry;
         this.highThreshold = highThreshold;
         this.timeoutMs = timeoutMs;
-        log.info("RetrievalQualityEvaluator 初始化完成: highThreshold={}, timeoutMs={}", highThreshold, timeoutMs);
+        log.info("RetrievalQualityEvaluator 初始化完成: highThreshold={}, timeoutMs={}, generationRouter={}",
+                highThreshold, timeoutMs,
+                generationRouter != null ? "已配置" : "未配置");
     }
 
     /**
@@ -82,6 +85,11 @@ public class RetrievalQualityEvaluator {
      * @return 评估结果
      */
     public EvaluationResult evaluate(String query, List<DocumentSearchResult> results) {
+        if (generationRouter == null) {
+            log.warn("GenerationRouter 不可用，跳过检索质量评估: reason=路由器未配置");
+            return new EvaluationResult(Quality.HIGH, "路由器未配置，降级通过", Optional.empty());
+        }
+
         // 快速路径：Top-1 分数高于阈值，直接返回 HIGH
         if (!results.isEmpty() && results.getFirst().score() >= highThreshold) {
             return new EvaluationResult(Quality.HIGH, "Top-1 分数高于阈值", Optional.empty());

@@ -8,6 +8,7 @@ import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.llm.LlmUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.util.*;
 import java.util.regex.Pattern;
@@ -34,12 +35,20 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
     private static final Logger log = LoggerFactory.getLogger(SemanticChunker.class);
     private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[。！？；.!?;\\n])\\s*");
 
-    private final EmbeddingRouter embeddingRouter;
+    private final @Nullable EmbeddingRouter embeddingRouter;
     private final RecursiveChunker fallbackChunker;
     private final KnowledgeBaseProperties.Chunking.SemanticChunking config;
     private final TokenCounter tokenCounter;
 
-    public SemanticChunker(EmbeddingRouter embeddingRouter,
+    /**
+     * 构造语义分块器。
+     *
+     * @param embeddingRouter 向量路由器（可为 null，运行时动态配置）
+     * @param fallbackChunker 降级使用的递归分块器
+     * @param config          语义分块配置
+     * @param tokenCounter    Token 计数器
+     */
+    public SemanticChunker(@Nullable EmbeddingRouter embeddingRouter,
                            RecursiveChunker fallbackChunker,
                            KnowledgeBaseProperties.Chunking.SemanticChunking config,
                            TokenCounter tokenCounter) {
@@ -47,14 +56,20 @@ public non-sealed class SemanticChunker implements ChunkingStrategy {
         this.fallbackChunker = fallbackChunker;
         this.config = config;
         this.tokenCounter = tokenCounter;
-        log.debug("初始化 SemanticChunker: breakpointThreshold={}, bufferSize={}, minChunkSize={}, maxChunkSize={}",
-                config.breakpointThreshold(), config.bufferSize(), config.minChunkSize(), config.maxChunkSize());
+        log.debug("初始化 SemanticChunker: breakpointThreshold={}, bufferSize={}, minChunkSize={}, maxChunkSize={}, embeddingRouter={}",
+                config.breakpointThreshold(), config.bufferSize(), config.minChunkSize(), config.maxChunkSize(),
+                embeddingRouter != null ? "已配置" : "未配置");
     }
 
     @Override
     public List<DocumentChunk> chunk(String text, Map<String, String> metadata) {
         if (text == null || text.isBlank()) {
             return List.of();
+        }
+
+        if (embeddingRouter == null) {
+            log.warn("EmbeddingRouter 不可用，跳过语义分块: reason=路由器未配置，降级到 RecursiveChunker");
+            return fallbackChunker.chunk(text, metadata);
         }
 
         try {

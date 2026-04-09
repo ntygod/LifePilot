@@ -18,11 +18,11 @@ import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.prompt.config.PromptAutoConfiguration;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 /**
  * 知识库增强能力自动配置。
@@ -47,8 +47,7 @@ public class KnowledgeEnhancementAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.chunking.semantic-chunking", name = "enabled",
             havingValue = "true")
-    @ConditionalOnBean(EmbeddingRouter.class)
-    public SemanticChunker semanticChunker(EmbeddingRouter embeddingRouter,
+    public SemanticChunker semanticChunker(@Nullable EmbeddingRouter embeddingRouter,
                                            RecursiveChunker recursiveChunker,
                                            KnowledgeBaseProperties props,
                                            TokenCounter tokenCounter) {
@@ -57,10 +56,9 @@ public class KnowledgeEnhancementAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(EmbeddingRouter.class)
     @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public VectorIndexer vectorIndexer(EmbeddingRouter embeddingRouter,
+    public VectorIndexer vectorIndexer(@Nullable EmbeddingRouter embeddingRouter,
                                        @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
                                        JdbcTemplate jdbcTemplate,
                                        KnowledgeBaseProperties props) {
@@ -69,8 +67,7 @@ public class KnowledgeEnhancementAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(GenerationRouter.class)
-    public ChunkContextEnricher chunkContextEnricher(GenerationRouter generationRouter,
+    public ChunkContextEnricher chunkContextEnricher(@Nullable GenerationRouter generationRouter,
                                                      KnowledgeBaseProperties props,
                                                      PromptRegistry promptRegistry,
                                                      TokenCounter tokenCounter) {
@@ -81,8 +78,7 @@ public class KnowledgeEnhancementAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.retrieval", name = "correction-enabled",
             havingValue = "true")
-    @ConditionalOnBean(GenerationRouter.class)
-    public RetrievalQualityEvaluator retrievalQualityEvaluator(GenerationRouter generationRouter,
+    public RetrievalQualityEvaluator retrievalQualityEvaluator(@Nullable GenerationRouter generationRouter,
                                                                 PromptRegistry promptRegistry,
                                                                 KnowledgeBaseProperties props) {
         return new RetrievalQualityEvaluator(generationRouter, promptRegistry,
@@ -94,9 +90,8 @@ public class KnowledgeEnhancementAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.query-enhancer", name = "mode",
             matchIfMissing = false)
-    @ConditionalOnBean(GenerationRouter.class)
-    public QueryEnhancer queryEnhancer(GenerationRouter generationRouter,
-                                       EmbeddingRouter embeddingRouter,
+    public QueryEnhancer queryEnhancer(@Nullable GenerationRouter generationRouter,
+                                       @Nullable EmbeddingRouter embeddingRouter,
                                        KnowledgeBaseProperties props,
                                        PromptRegistry promptRegistry) {
         if ("none".equals(props.queryEnhancer().mode())) {
@@ -107,14 +102,13 @@ public class KnowledgeEnhancementAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(GenerationRouter.class)
     @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,
-                                                                   SemanticMemory semanticMemory,
+    public KnowledgeExtractionPipeline knowledgeExtractionPipeline(@Nullable GenerationRouter generationRouter,
+                                                                   @Nullable SemanticMemory semanticMemory,
                                                                    KnowledgeBaseProperties props,
                                                                    PromptRegistry promptRegistry,
-                                                                   MemorySpaceRepository memorySpaceRepository) {
+                                                                   @Nullable MemorySpaceRepository memorySpaceRepository) {
         return new KnowledgeExtractionPipeline(
                 generationRouter,
                 semanticMemory,
