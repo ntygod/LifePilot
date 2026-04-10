@@ -261,7 +261,7 @@ lifepilot:
       existing-entity-summary-limit: 50
     # 混合检索相关性过滤
     retrieval:
-      min-fused-score: 0.08
+      min-fused-score: 0.01
       query-max-length: 100
       query-min-length: 10
       min-cross-session-bm25-score: 1.0

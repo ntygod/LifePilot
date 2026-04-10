@@ -3,6 +3,7 @@ package com.lifepilot.memory.experience;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
@@ -135,7 +136,7 @@ public class ContrastiveLearner {
             log.debug("对比学习: 发起 JSON 分析调用, timeoutSeconds={}, promptChars={}, successId={}, failureId={}",
                     timeout.toSeconds(), prompt.length(), successExp.id(), failureExp.id());
             LlmResponse response = generationRouter.call(
-                    "contrastive-learning",
+                    LlmScene.BACKGROUND_ANALYSIS,
                     prompt,
                     null,
                     null,

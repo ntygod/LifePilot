@@ -318,7 +318,7 @@ public class AgentConfigProperties {
         /** 允许从分数不足补发提醒的安全边距。 */
         private float proactiveReminderOpportunityPromotionMargin = 0.08f;
         /** 主动提醒文案生成场景。 */
-        private String proactiveReminderLlmScene = "proactive_reminder";
+        private String proactiveReminderLlmScene = "chat";
         /** 主动提醒文案生成超时（秒）。 */
         private int proactiveReminderLlmTimeoutSeconds = 15;
         /** 和风天气 API key。 */

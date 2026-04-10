@@ -4,6 +4,7 @@ import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
@@ -31,7 +32,7 @@ public class ChunkContextEnricher {
     private static final Logger log = LoggerFactory.getLogger(ChunkContextEnricher.class);
 
     /** LLM 调用场景名称 */
-    private static final String SCENE = "knowledge_extraction";
+    private static final String SCENE = LlmScene.KNOWLEDGE_EXTRACTION;
 
     private final @Nullable GenerationRouter generationRouter;
     private final KnowledgeBaseProperties.ContextEnricher config;

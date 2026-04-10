@@ -1,7 +1,6 @@
 package com.lifepilot.embedding.router;
 
 import com.lifepilot.embedding.client.EmbeddingClientFactory;
-import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.modelservice.model.EmbeddingSettingsEntity;
@@ -21,6 +20,9 @@ import java.util.List;
  * @since 2026-03-24
  */
 public class EmbeddingRouter {
+
+    /** 向量化场景（不走 GenerationRouter，由 EmbeddingRouter 自身路由）。 */
+    private static final String SCENE = "embedding";
 
     private final ModelServiceRegistry registry;
     private final EmbeddingSettingsRepository settingsRepository;
@@ -52,7 +54,7 @@ public class EmbeddingRouter {
                          @Nullable String modelName) {
         List<ModelServiceEntity> candidates = selectCandidates(useCase, serviceId, modelName);
         if (candidates.isEmpty()) {
-            throw new LlmUnavailableException("无可用向量服务", LlmScene.EMBEDDING, List.of());
+            throw new LlmUnavailableException("无可用向量服务", SCENE, List.of());
         }
         ArrayList<String> attempted = new ArrayList<>();
         Exception lastException = null;
@@ -70,7 +72,7 @@ public class EmbeddingRouter {
                 lastException = e;
             }
         }
-        throw new LlmUnavailableException("所有向量服务调用失败", LlmScene.EMBEDDING, attempted, lastException);
+        throw new LlmUnavailableException("所有向量服务调用失败", SCENE, attempted, lastException);
     }
 
     /**
@@ -88,7 +90,7 @@ public class EmbeddingRouter {
                                 @Nullable String modelName) {
         List<ModelServiceEntity> candidates = selectCandidates(useCase, serviceId, modelName);
         if (candidates.isEmpty()) {
-            throw new LlmUnavailableException("无可用向量服务", LlmScene.EMBEDDING, List.of());
+            throw new LlmUnavailableException("无可用向量服务", SCENE, List.of());
         }
         ArrayList<String> attempted = new ArrayList<>();
         Exception lastException = null;
@@ -106,7 +108,7 @@ public class EmbeddingRouter {
                 lastException = e;
             }
         }
-        throw new LlmUnavailableException("所有向量服务调用失败", LlmScene.EMBEDDING, attempted, lastException);
+        throw new LlmUnavailableException("所有向量服务调用失败", SCENE, attempted, lastException);
     }
 
     private List<ModelServiceEntity> selectCandidates(EmbeddingUseCase useCase,

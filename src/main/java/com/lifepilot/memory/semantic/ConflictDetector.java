@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
@@ -140,7 +141,7 @@ public class ConflictDetector {
                 "entityB", candidate.textRepresentation()
         ));
         var response = generationRouter.call(
-                "knowledge_extraction",
+                LlmScene.KNOWLEDGE_EXTRACTION,
                 prompt,
                 null,
                 null,

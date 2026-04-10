@@ -19,16 +19,12 @@ public final class LlmScene {
     public static final String KNOWLEDGE_EXTRACTION = "knowledge_extraction";
     /** 记忆压缩。 */
     public static final String MEMORY_COMPRESSION = "memory_compression";
-    /** 向量化。 */
-    public static final String EMBEDDING = "embedding";
     /** Skill 自动生成。 */
     public static final String SKILL_GENERATION = "skill_generation";
-    /** 知识精排。 */
-    public static final String KNOWLEDGE_RERANK = "knowledge_rerank";
     /** ReAct Agent 循环。 */
     public static final String AGENT_REACT = "agent_react";
-    /** 主动提醒文案生成。 */
-    public static final String PROACTIVE_REMINDER = "proactive_reminder";
+    /** 后台分析（对比学习、经验合并、子任务反思、经验总结）。 */
+    public static final String BACKGROUND_ANALYSIS = "background_analysis";
 
     private LlmScene() {
     }
@@ -41,11 +37,9 @@ public final class LlmScene {
                 CHAT,
                 KNOWLEDGE_EXTRACTION,
                 MEMORY_COMPRESSION,
-                EMBEDDING,
                 SKILL_GENERATION,
-                KNOWLEDGE_RERANK,
                 AGENT_REACT,
-                PROACTIVE_REMINDER
+                BACKGROUND_ANALYSIS
         );
     }
 }

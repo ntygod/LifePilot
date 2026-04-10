@@ -7,6 +7,8 @@ import com.lifepilot.agent.persistence.AgentPersistenceHandler;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.service.ChatTurnService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
 /**
@@ -19,6 +21,7 @@ import org.springframework.lang.Nullable;
  */
 final class AgentExecutionPersistenceSupport {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentExecutionPersistenceSupport.class);
     private static final String TEST_SESSION_PREFIX = "test:";
     private static final String EVAL_SESSION_PREFIX = "eval-";
 
@@ -136,12 +139,17 @@ final class AgentExecutionPersistenceSupport {
     private void persistAssistantArtifacts(ReactAgentState state,
                                            String assistantEntryId,
                                            AgentLoopContext loopContext) {
+        log.debug("持久化助手产物: sessionId={}, entryId={}, traceId={}",
+                state.sessionId(), assistantEntryId, state.traceId());
         persistenceHandler.persistInjectionRecord(assistantEntryId, state.sessionId(),
                 state.traceId(), loopContext);
-        persistenceHandler.persistToolMediaAttachments(assistantEntryId, state.sessionId(),
-                loopContext.getCollectedToolMedia());
+        var toolMedia = loopContext.getCollectedToolMedia();
+        persistenceHandler.persistToolMediaAttachments(assistantEntryId, state.sessionId(), toolMedia);
+        log.debug("工具媒体附件已持久化: entryId={}, mediaCount={}", assistantEntryId,
+                toolMedia != null ? toolMedia.size() : 0);
         loopContext.clearToolMedia();
         persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
         persistenceHandler.asyncPostProcess(state);
+        log.debug("助手产物持久化完成: entryId={}", assistantEntryId);
     }
 }

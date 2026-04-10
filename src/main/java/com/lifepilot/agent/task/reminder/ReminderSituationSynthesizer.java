@@ -112,7 +112,7 @@ public class ReminderSituationSynthesizer {
 
         String prompt = promptRegistry.render(PROMPT_KEY, variables);
         LlmResponse response = generationRouter.call(
-                LlmScene.PROACTIVE_REMINDER,
+                LlmScene.CHAT,
                 prompt,
                 null, null, null,
                 GenerationCapability.CHAT,

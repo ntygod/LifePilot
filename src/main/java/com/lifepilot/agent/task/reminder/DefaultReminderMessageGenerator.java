@@ -295,6 +295,6 @@ public class DefaultReminderMessageGenerator implements ReminderMessageGenerator
 
     private String resolveScene() {
         String configured = config.getTask().getProactiveReminderLlmScene();
-        return configured == null || configured.isBlank() ? LlmScene.PROACTIVE_REMINDER : configured;
+        return configured == null || configured.isBlank() ? LlmScene.CHAT : configured;
     }
 }

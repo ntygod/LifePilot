@@ -45,7 +45,7 @@ class SubtaskReflectorTest {
         when(promptRegistry.render(eq("memory/subtask-reflection"), anyMap())).thenReturn("prompt");
         when(vectorSearcher.searchEntities(eq("测试子任务: 测试工具策略"), eq(1), eq(0.90f))).thenReturn(List.of());
         when(generationRouter.call(
-                eq(LlmScene.CHAT),
+                eq(LlmScene.BACKGROUND_ANALYSIS),
                 eq("prompt"),
                 isNull(),
                 isNull(),
@@ -79,7 +79,7 @@ class SubtaskReflectorTest {
         reflector.reflect(buildState());
 
         verify(generationRouter).call(
-                eq(LlmScene.CHAT),
+                eq(LlmScene.BACKGROUND_ANALYSIS),
                 eq("prompt"),
                 isNull(),
                 isNull(),
