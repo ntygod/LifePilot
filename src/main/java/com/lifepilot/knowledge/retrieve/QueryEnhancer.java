@@ -4,6 +4,7 @@ import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
@@ -32,7 +33,7 @@ import java.util.Optional;
 public class QueryEnhancer {
 
     private static final Logger log = LoggerFactory.getLogger(QueryEnhancer.class);
-    private static final String SCENE = "query_enhance";
+    private static final String SCENE = LlmScene.KNOWLEDGE_EXTRACTION;
 
     private final @Nullable GenerationRouter generationRouter;
     private final @Nullable EmbeddingRouter embeddingRouter;

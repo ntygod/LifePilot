@@ -3,6 +3,7 @@ package com.lifepilot.memory.retrieval;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -26,7 +27,7 @@ import java.util.Optional;
 public class QueryRewriter {
 
     private static final Logger log = LoggerFactory.getLogger(QueryRewriter.class);
-    private static final String SCENE = "memory_query_rewrite";
+    private static final String SCENE = LlmScene.MEMORY_COMPRESSION;
 
     private final GenerationRouter generationRouter;
     private final EmbeddingRouter embeddingRouter;

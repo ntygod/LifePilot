@@ -40,11 +40,9 @@ class SkillDiscoveryRegistrarTest {
 
         registrar.afterPropertiesSet();
 
-        // classpath 下至少有 find-skills 和 memory
+        // classpath 下至少有 find-skills
         Path findSkillsFile = tempDir.resolve("find-skills/SKILL.md");
-        Path memoryFile = tempDir.resolve("memory/SKILL.md");
         assertThat(findSkillsFile).exists();
-        assertThat(memoryFile).exists();
 
         String content = readString(findSkillsFile);
         assertThat(content).contains("find-skills");

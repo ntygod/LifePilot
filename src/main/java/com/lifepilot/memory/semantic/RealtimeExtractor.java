@@ -3,6 +3,7 @@ package com.lifepilot.memory.semantic;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemoryOriginType;
@@ -162,7 +163,7 @@ public class RealtimeExtractor {
             var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
             var result = CompletableFuture.supplyAsync(() ->
                             generationRouter.call(
-                                    "knowledge_extraction",
+                                    LlmScene.KNOWLEDGE_EXTRACTION,
                                     prompt,
                                     null,
                                     null,

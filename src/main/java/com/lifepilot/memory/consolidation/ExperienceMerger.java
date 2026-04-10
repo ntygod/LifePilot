@@ -3,6 +3,7 @@ package com.lifepilot.memory.consolidation;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.ExperienceRecord;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -174,7 +175,7 @@ public class ExperienceMerger {
             log.debug("经验合并: 发起 JSON 合并调用, timeoutSeconds={}, promptChars={}, entityA={}, entityB={}",
                     timeout.toSeconds(), prompt.length(), entityA.id(), entityB.id());
             LlmResponse response = generationRouter.call(
-                    "experience-merge",
+                    LlmScene.BACKGROUND_ANALYSIS,
                     prompt,
                     null,
                     null,

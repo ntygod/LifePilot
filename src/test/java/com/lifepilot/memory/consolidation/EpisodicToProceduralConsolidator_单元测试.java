@@ -384,7 +384,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
 
             // 向量化抛出 LlmUnavailableException
             when(embeddingRouter.embed(anyString(), eq(EmbeddingUseCase.MEMORY), isNull(), isNull()))
-                    .thenThrow(new LlmUnavailableException("无可用向量服务", LlmScene.EMBEDDING, List.of()));
+                    .thenThrow(new LlmUnavailableException("无可用向量服务", "embedding", List.of()));
 
             // when
             ConsolidationStats stats = consolidator.consolidate();
@@ -582,7 +582,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     .thenReturn(baseVector)
                     .thenReturn(生成相似向量(baseVector))
                     // 去重时 embed triggerIntent 抛异常
-                    .thenThrow(new LlmUnavailableException("无可用向量服务", LlmScene.EMBEDDING, List.of()));
+                    .thenThrow(new LlmUnavailableException("无可用向量服务", "embedding", List.of()));
 
             when(promptRegistry.render(eq("memory/procedural-extraction"), any()))
                     .thenReturn("测试提示词");

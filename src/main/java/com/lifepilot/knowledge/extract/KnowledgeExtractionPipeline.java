@@ -6,6 +6,7 @@ import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.ExtractionResult;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -37,7 +38,7 @@ import java.util.*;
 public class KnowledgeExtractionPipeline {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeExtractionPipeline.class);
-    private static final String SCENE = "knowledge_extraction";
+    private static final String SCENE = LlmScene.KNOWLEDGE_EXTRACTION;
 
     private final @Nullable GenerationRouter generationRouter;
     private final @Nullable SemanticMemory semanticMemory;

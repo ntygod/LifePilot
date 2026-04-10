@@ -27,6 +27,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -101,8 +102,9 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("管理用户的长期记忆。用户透露身份、偏好、习惯等持久性信息时应主动调用写入。" +
-                        "资料文档用 knowledge.search，精确字段用 datastore。")
+                .description("搜索和管理用户的长期记忆。对话中的事实由系统自动提取存储，本工具用于：" +
+                        "检索已有记忆、回忆历史对话、用户明确要求时手动写入、建立实体关系、时间点查询。" +
+                        "资料文档用 knowledge.search，结构化数据用 datastore。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -236,12 +238,13 @@ public class MemoryToolProvider {
             String name = input.getParam("name", String.class);
             String typeStr = input.getParam("entityType", String.class);
             String description = input.getOptionalParam("description", String.class).orElse(null);
-            String conversationId = input.getOptionalParam("conversationId", String.class).orElse(null);
+            String conversationId = input.getOptionalParam("conversationId", String.class)
+                    .orElseGet(() -> input.getContextValue("sessionId", String.class).orElse(null));
             EntityType entityType = EntityType.valueOf(typeStr.toUpperCase());
             var now = Instant.now();
             var incoming = new TemporalEntity(null, entityType, name, description, Map.of(), 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
-            var created = retryOnBusy(() -> semanticMemory.upsertWithConflictDetection(incoming, conversationId));
+            var created = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(incoming, conversationId));
             return ToolResult.success(Map.of(
                     "id", created.id(), "name", created.name(), "type", created.type().name(), "version", created.version()));
         } catch (IllegalArgumentException e) {
@@ -268,7 +271,8 @@ public class MemoryToolProvider {
                     entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
                     entity.extractionConfidence(), entity.importanceScore(),
                     entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-            var result = retryOnBusy(() -> semanticMemory.upsertWithConflictDetection(updated, null));
+            String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+            var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId));
             return ToolResult.success(Map.of(
                     "id", result.id(), "name", result.name(), "type", result.type().name(),
                     "version", result.version(), "description", result.description() != null ? result.description() : ""));
@@ -288,7 +292,7 @@ public class MemoryToolProvider {
                 return ToolResult.error("实体不存在: " + entityId + "，请用 search 查找正确 ID");
             }
             var entity = existing.get();
-            retryOnBusy(() -> { semanticMemory.archive(entity); return null; });
+            SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
             return ToolResult.success(Map.of("id", entity.id(), "name", entity.name(), "archived", true));
         } catch (Exception e) {
             log.error("删除记忆失败: {}", e.getMessage(), e);
@@ -306,7 +310,7 @@ public class MemoryToolProvider {
             var now = Instant.now();
             var relation = new TemporalRelation(UUID.randomUUID().toString(), sourceId, targetId, relationType, strength,
                     null, now, null, conversationId, now);
-            retryOnBusy(() -> { semanticMemory.addRelation(relation); return null; });
+            SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation));
             return ToolResult.success(Map.of(
                     "id", relation.id(), "relationType", relationType,
                     "sourceEntityId", sourceId, "targetEntityId", targetId));
@@ -360,37 +364,51 @@ public class MemoryToolProvider {
             if (query.isBlank()) {
                 return ToolResult.error("query 参数不能为空");
             }
-            var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE, MemoryReadFilter.agentExperience());
-            boolean crossContext = memoryProperties != null && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
-            if (!crossContext) {
-                experiences = experiences.stream().filter(e -> {
-                    var ctx = e.properties().get("executionContext");
-                    return ctx == null || "MAIN_AGENT".equals(ctx.toString());
-                }).toList();
-            }
-            if (successOnly) {
-                experiences = experiences.stream().filter(e -> Boolean.TRUE.equals(e.properties().get("success"))).toList();
-            }
-            var results = experiences.stream()
-                    .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+
+            // 三路混合检索，限定 AGENT_EXPERIENCE scope
+            var filter = MemoryReadFilter.agentExperience();
+            List<RetrievalResult> ranked = hybridRetriever.retrieve(query, topK * 3, RetrievalWeights.DEFAULT, filter);
+
+            // 批量查询完整实体（含 properties: lessons, toolsUsed 等）
+            var hitIds = ranked.stream().map(RetrievalResult::entityId)
+                    .collect(java.util.stream.Collectors.toSet());
+            Map<String, TemporalEntity> entityMap = hitIds.isEmpty()
+                    ? Map.of()
+                    : semanticMemory.findByIds(hitIds, filter);
+
+            // 按检索排序保留语义相关性，过滤后截取 topK
+            boolean crossContext = memoryProperties != null
+                    && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
+            var results = ranked.stream()
+                    .map(r -> entityMap.get(r.entityId()))
+                    .filter(Objects::nonNull)
+                    .filter(e -> crossContext || isMainAgentContext(e))
+                    .filter(e -> !successOnly || Boolean.TRUE.equals(e.properties().get("success")))
                     .limit(topK)
-                    .map(e -> {
-                        var m = new LinkedHashMap<String, Object>();
-                        m.put("entityId", e.id());
-                        m.put("scenario", e.name());
-                        m.put("strategy", e.description() != null ? e.description() : "");
-                        m.put("lessons", e.properties().getOrDefault("lessons", List.of()));
-                        m.put("toolsUsed", e.properties().getOrDefault("toolsUsed", List.of()));
-                        m.put("success", e.properties().getOrDefault("success", false));
-                        m.put("importanceScore", e.importanceScore());
-                        return Map.<String, Object>copyOf(m);
-                    })
+                    .map(this::experienceEntityToMap)
                     .toList();
             return ToolResult.success(Map.of("results", results, "count", results.size()));
         } catch (Exception e) {
             log.error("经验检索工具执行失败: error={}", e.getMessage(), e);
             return ToolResult.error("经验检索失败: " + e.getMessage());
         }
+    }
+
+    private boolean isMainAgentContext(TemporalEntity e) {
+        var ctx = e.properties().get("executionContext");
+        return ctx == null || "MAIN_AGENT".equals(ctx.toString());
+    }
+
+    private Map<String, Object> experienceEntityToMap(TemporalEntity e) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("entityId", e.id());
+        m.put("scenario", e.name());
+        m.put("strategy", e.description() != null ? e.description() : "");
+        m.put("lessons", e.properties().getOrDefault("lessons", List.of()));
+        m.put("toolsUsed", e.properties().getOrDefault("toolsUsed", List.of()));
+        m.put("success", e.properties().getOrDefault("success", false));
+        m.put("importanceScore", e.importanceScore());
+        return Map.copyOf(m);
     }
 
     private Map<String, Object> retrievalResultToMap(RetrievalResult result) {
@@ -451,42 +469,4 @@ public class MemoryToolProvider {
                 .toList();
     }
 
-    /**
-     * SQLite BUSY 重试：指数退避，最多重试 3 次。
-     *
-     * <p>SQLite WAL 模式下并发写入可能触发 SQLITE_BUSY_SNAPSHOT，
-     * 此方法在事务外层重试，确保每次重试使用新的事务和快照。</p>
-     */
-    private <T> T retryOnBusy(java.util.function.Supplier<T> operation) {
-        int maxRetries = 3;
-        long baseDelayMs = 200;
-        for (int attempt = 0; ; attempt++) {
-            try {
-                return operation.get();
-            } catch (Exception e) {
-                if (attempt >= maxRetries || !isSqliteBusy(e)) {
-                    throw e;
-                }
-                long delay = baseDelayMs * (1L << attempt); // 200, 400, 800ms
-                log.debug("SQLite BUSY 重试: attempt={}, delayMs={}", attempt + 1, delay);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw e;
-                }
-            }
-        }
-    }
-
-    /** 判断异常链中是否包含 SQLite BUSY 错误。 */
-    private boolean isSqliteBusy(Throwable e) {
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof org.sqlite.SQLiteException sqliteEx && sqliteEx.getResultCode() != null
-                    && sqliteEx.getResultCode().name().startsWith("SQLITE_BUSY")) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

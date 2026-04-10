@@ -10,6 +10,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -258,7 +259,7 @@ public class ExperienceSummarizer {
             log.debug("经验提炼: 发起 JSON 提炼调用, sessionId={}, timeoutSeconds={}, promptChars={}, stepCount={}",
                     state.sessionId(), timeout.toSeconds(), prompt.length(), state.stepCount());
             LlmResponse response = generationRouter.call(
-                    LlmScene.CHAT,
+                    LlmScene.BACKGROUND_ANALYSIS,
                     prompt,
                     null,
                     null,
@@ -302,7 +303,7 @@ public class ExperienceSummarizer {
                 String existingId = similar.getFirst().entityId();
                 semanticMemory.findById(existingId).ifPresent(existing -> {
                     float boosted = Math.min(existing.importanceScore() + 0.1f, 1.0f);
-                    retryOnBusy(() -> { semanticMemory.updateImportanceScore(existingId, boosted); return null; });
+                    SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(existingId, boosted));
                     log.debug("经验提炼: 去重命中，提升已有经验分数, entityId={}, newScore={}",
                             existingId, boosted);
                 });
@@ -356,7 +357,7 @@ public class ExperienceSummarizer {
                     now
             );
 
-            retryOnBusy(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId));
+            SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId));
 
             // 更新向量索引
             vectorSearcher.upsertEntityVector(entity.id(), experienceText);
@@ -380,42 +381,4 @@ public class ExperienceSummarizer {
         return List.copyOf(result);
     }
 
-    /**
-     * SQLite BUSY 重试：指数退避，最多重试 3 次。
-     *
-     * <p>SQLite WAL 模式下并发写入可能触发 SQLITE_BUSY_SNAPSHOT，
-     * 此方法在事务外层重试，确保每次重试使用新的事务和快照。</p>
-     */
-    private <T> T retryOnBusy(java.util.function.Supplier<T> operation) {
-        int maxRetries = 3;
-        long baseDelayMs = 200;
-        for (int attempt = 0; ; attempt++) {
-            try {
-                return operation.get();
-            } catch (Exception e) {
-                if (attempt >= maxRetries || !isSqliteBusy(e)) {
-                    throw e;
-                }
-                long delay = baseDelayMs * (1L << attempt);
-                log.debug("经验提炼: SQLite BUSY 重试, attempt={}, delayMs={}", attempt + 1, delay);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw e;
-                }
-            }
-        }
-    }
-
-    /** 判断异常链中是否包含 SQLite BUSY 错误。 */
-    private boolean isSqliteBusy(Throwable e) {
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof org.sqlite.SQLiteException sqliteEx && sqliteEx.getResultCode() != null
-                    && sqliteEx.getResultCode().name().startsWith("SQLITE_BUSY")) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

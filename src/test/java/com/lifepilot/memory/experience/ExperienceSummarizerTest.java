@@ -48,7 +48,7 @@ class ExperienceSummarizerTest {
         when(promptRegistry.render(eq("memory/experience-extraction"), anyMap())).thenReturn("prompt");
         when(vectorSearcher.searchEntities(eq("测试场景: 测试策略"), eq(1), eq(0.90f))).thenReturn(List.of());
         when(generationRouter.call(
-                eq(LlmScene.CHAT),
+                eq(LlmScene.BACKGROUND_ANALYSIS),
                 eq("prompt"),
                 isNull(),
                 isNull(),
@@ -82,7 +82,7 @@ class ExperienceSummarizerTest {
 
         assertNotNull(summarizer.summarize(buildState()));
         verify(generationRouter).call(
-                eq(LlmScene.CHAT),
+                eq(LlmScene.BACKGROUND_ANALYSIS),
                 eq("prompt"),
                 isNull(),
                 isNull(),

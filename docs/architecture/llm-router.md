@@ -362,10 +362,11 @@ public record ModelServiceEntity(
 
 | 常量 | 值 | 主要路由器 |
 |------|----|-----------|
-| `CHAT` | `chat` | GenerationRouter |
-| `AGENT_REACT` | `agent_react` | GenerationRouter |
-| `KNOWLEDGE_EXTRACTION` | `knowledge_extraction` | GenerationRouter |
-| `MEMORY_COMPRESSION` | `memory_compression` | GenerationRouter |
-| `EMBEDDING` | `embedding` | EmbeddingRouter |
-| `SKILL_GENERATION` | `skill_generation` | GenerationRouter |
-| `KNOWLEDGE_RERANK` | `knowledge_rerank` | RerankRouter |
+| `CHAT` | `chat` | GenerationRouter | 通用对话（含主动提醒） |
+| `AGENT_REACT` | `agent_react` | GenerationRouter | Agent ReAct 推理 |
+| `KNOWLEDGE_EXTRACTION` | `knowledge_extraction` | GenerationRouter | 知识提取（含查询增强） |
+| `MEMORY_COMPRESSION` | `memory_compression` | GenerationRouter | 记忆压缩（含查询改写） |
+| `BACKGROUND_ANALYSIS` | `background_analysis` | GenerationRouter | 后台分析（经验/反思/对比学习） |
+| `SKILL_GENERATION` | `skill_generation` | GenerationRouter | Skill 自动生成 |
+| — | `embedding` | EmbeddingRouter | 向量化（独立路由） |
+| — | `rerank` | RerankRouter | 精排（独立路由） |

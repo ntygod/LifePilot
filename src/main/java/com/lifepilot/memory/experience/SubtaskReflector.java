@@ -101,7 +101,7 @@ public class SubtaskReflector {
                 log.debug("子任务反思: 发起 JSON 反思调用, sessionId={}, timeoutSeconds={}, promptChars={}, sequenceSize={}",
                         state.sessionId(), timeout.toSeconds(), prompt.length(), pairs.size());
                 LlmResponse response = generationRouter.call(
-                        LlmScene.CHAT,
+                        LlmScene.BACKGROUND_ANALYSIS,
                         prompt,
                         null,
                         null,
