@@ -11,7 +11,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -131,8 +133,8 @@ class SpringAiProviderAdapterTest {
                 "https://api.openai.com/v1"
         );
         OpenAiChatModel chatModel = mock(OpenAiChatModel.class);
-        ChatResponse response = mock(ChatResponse.class, RETURNS_DEEP_STUBS);
-        when(response.getResult().getOutput().getText()).thenReturn("ok");
+        var generation = new Generation(new AssistantMessage("ok"));
+        var response = new ChatResponse(List.of(generation));
         doReturn(Flux.just(response)).when(chatModel).stream(any(Prompt.class));
 
         SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);

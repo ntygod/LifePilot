@@ -6,9 +6,16 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisor;
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.content.Content;
 import org.springframework.core.Ordered;
+import org.springframework.lang.NonNull;
+import reactor.core.publisher.Flux;
+
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 护栏 Advisor — 通过 Spring AI Advisor 模式横切注入内容安全检查。
@@ -27,7 +34,7 @@ import org.springframework.core.Ordered;
  * @author zsg
  * @since 2026-02-27
  */
-public class GuardrailAdvisor implements CallAdvisor {
+public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
 
     private static final Logger log = LoggerFactory.getLogger(GuardrailAdvisor.class);
 
@@ -37,6 +44,7 @@ public class GuardrailAdvisor implements CallAdvisor {
         this.guardrailEngine = guardrailEngine;
     }
 
+    @NonNull
     @Override
     public String getName() {
         return "GuardrailAdvisor";
@@ -47,8 +55,9 @@ public class GuardrailAdvisor implements CallAdvisor {
         return Ordered.HIGHEST_PRECEDENCE;
     }
 
+    @NonNull
     @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+    public ChatClientResponse adviseCall(@NonNull ChatClientRequest request, @NonNull CallAdvisorChain chain) {
         // 请求阶段：检查用户输入内容安全
         checkInputSafety(request);
 
@@ -59,6 +68,15 @@ public class GuardrailAdvisor implements CallAdvisor {
         checkOutputCompliance(response);
 
         return response;
+    }
+
+    @NonNull
+    @Override
+    public Flux<ChatClientResponse> adviseStream(@NonNull ChatClientRequest request, @NonNull StreamAdvisorChain chain) {
+        // 请求阶段：同步检查用户输入内容安全（流开始前执行）
+        checkInputSafety(request);
+        // 流式响应的输出合规检查无法在 Advisor 层实现（需完整响应内容），由上层负责
+        return chain.nextStream(request);
     }
 
     /**
@@ -72,7 +90,8 @@ public class GuardrailAdvisor implements CallAdvisor {
             var userContent = prompt.getInstructions().stream()
                     .filter(msg -> msg.getMessageType() == MessageType.USER)
                     .map(Content::getText)
-                    .reduce("", (a, b) -> a + " " + b)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining(" "))
                     .trim();
 
             if (userContent.isEmpty()) {
@@ -100,8 +119,9 @@ public class GuardrailAdvisor implements CallAdvisor {
             }
 
             var chatResponse = response.chatResponse();
+            var generation = chatResponse.getResult();
 
-            var outputText = chatResponse.getResult().getOutput().getText();
+            var outputText = generation.getOutput().getText();
             if (outputText == null || outputText.isEmpty()) {
                 return;
             }

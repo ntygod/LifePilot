@@ -6,11 +6,17 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisor;
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.core.Ordered;
+import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 追踪 Advisor — 通过 Spring AI Advisor 模式横切注入 LLM 调用追踪。
@@ -24,7 +30,7 @@ import java.time.Instant;
  * @author zsg
  * @since 2026-02-27
  */
-public class TraceAdvisor implements CallAdvisor {
+public class TraceAdvisor implements CallAdvisor, StreamAdvisor {
 
     private static final Logger log = LoggerFactory.getLogger(TraceAdvisor.class);
 
@@ -34,6 +40,7 @@ public class TraceAdvisor implements CallAdvisor {
         this.traceRecorder = traceRecorder;
     }
 
+    @NonNull
     @Override
     public String getName() {
         return "TraceAdvisor";
@@ -44,8 +51,9 @@ public class TraceAdvisor implements CallAdvisor {
         return Ordered.HIGHEST_PRECEDENCE + 100;
     }
 
+    @NonNull
     @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+    public ChatClientResponse adviseCall(@NonNull ChatClientRequest request, @NonNull CallAdvisorChain chain) {
         var startTime = Instant.now();
 
         try {
@@ -58,10 +66,26 @@ public class TraceAdvisor implements CallAdvisor {
         }
     }
 
+    @NonNull
+    @Override
+    public Flux<ChatClientResponse> adviseStream(@NonNull ChatClientRequest request, @NonNull StreamAdvisorChain chain) {
+        var startTime = Instant.now();
+        var lastResponse = new AtomicReference<ChatClientResponse>();
+
+        return chain.nextStream(request)
+                .doOnNext(response -> {
+                    if (response != null && response.chatResponse() != null) {
+                        lastResponse.set(response);
+                    }
+                })
+                .doOnComplete(() -> recordLlmStep(startTime, lastResponse.get(), null))
+                .doOnError(e -> recordLlmStep(startTime, lastResponse.get(), e));
+    }
+
     /**
      * 从 ChatClientResponse 提取信息，构建 LlmCallStep 并记录。
      */
-    private void recordLlmStep(Instant startTime, ChatClientResponse response, Exception error) {
+    private void recordLlmStep(Instant startTime, @Nullable ChatClientResponse response, @Nullable Throwable error) {
         traceRecorder.currentContext().ifPresent(ctx -> {
             try {
                 var now = Instant.now();
@@ -90,7 +114,8 @@ public class TraceAdvisor implements CallAdvisor {
                     }
 
                     // 提取完成原因
-                    finishReason = chatResponse.getResult().getMetadata().getFinishReason();
+                    var result = chatResponse.getResult();
+                    finishReason = result.getMetadata().getFinishReason();
                 }
 
                 // 异常时记录错误信息到 finishReason

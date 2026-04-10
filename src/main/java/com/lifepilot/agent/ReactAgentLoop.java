@@ -309,15 +309,37 @@ public class ReactAgentLoop implements CallbackHelper {
             }
 
             // 6. 解析 LLM 响应
+            if (chatResponse.getResult() == null || chatResponse.getResult().getOutput() == null) {
+                log.warn("LLM 返回空响应: traceId={}, iteration={}", state.traceId(), iteration);
+                consecutiveFailures++;
+                if (consecutiveFailures >= maxConsecutiveFailures) {
+                    state = DegradedResponseBuilder.terminateWithReason(
+                            state, "连续 LLM 空响应达到上限: " + maxConsecutiveFailures);
+                    break;
+                }
+                state = state.appendStep(new ReactStep.Observation(
+                        "llm", null, false, "LLM 返回空响应", 0, null));
+                pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                continue;
+            }
             var assistantMessage = chatResponse.getResult().getOutput();
             int responseTokens = estimateTokens(chatResponse);
             String providerId = callback.getProviderId();
             String modelId = callback.getModelId();
 
+            // 6.5 提取 finishReason，判断响应是否被截断
+            String finishReason = extractFinishReason(chatResponse);
+            boolean truncated = isResponseTruncated(finishReason);
+            if (truncated) {
+                log.warn("LLM 响应被截断（finishReason={}）: traceId={}, iteration={}",
+                        finishReason, state.traceId(), iteration);
+            }
+
             // 记录 LLM 调用到 Trace — 流式回调已在内部记录，跳过避免重复
             if (!callback.recordsLlmStep()) {
                 recordLlmStep(traceContext, state.stepCount(), iterationStart,
-                        iterationDuration, chatResponse, providerId, modelId);
+                        iterationDuration, chatResponse, providerId, modelId,
+                        effectiveRequest.temperature());
             }
 
             // 7. 判断是否有 tool call 请求
@@ -376,6 +398,15 @@ public class ReactAgentLoop implements CallbackHelper {
                 // === ReAct: Answer 阶段 — 纯文本响应 ===
                 String content = assistantMessage.getText();
                 if (content != null && !content.isBlank()) {
+                    // 截断的文本不能当完整答案 — 作为 Thought 记录，让 LLM 在下一轮继续
+                    if (truncated) {
+                        state = state.appendStep(new ReactStep.Thought(content));
+                        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                        state = state.toBuilder()
+                                .budget(state.budget().deductTokens(responseTokens))
+                                .build();
+                        consecutiveFailures = 0;
+                    } else {
                     var completionEvaluation = completionPolicy.evaluate(request, state, content);
                     if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.EXPLICIT_TERMINAL) {
                         String visibleContent = completionEvaluation.userVisibleContent() != null
@@ -460,9 +491,18 @@ public class ReactAgentLoop implements CallbackHelper {
                                 state.budget().tokensUsed(), state.taskMode(), CompletionReason.DIRECT_ANSWER,
                                 previewForLog(visibleContent));
                     }
+                    } // end !truncated
                 } else {
-                    // LLM 返回空内容
-                    log.warn("LLM 返回空内容: traceId={}, iteration={}", state.traceId(), iteration);
+                    // LLM 返回空内容 — 记录 Observation 而非静默跳过
+                    log.warn("LLM 返回空内容: traceId={}, iteration={}, finishReason={}",
+                            state.traceId(), iteration, finishReason);
+                    state = state.appendStep(new ReactStep.Observation(
+                            "llm", null, false,
+                            finishReason != null
+                                    ? "LLM 返回空内容（finishReason=" + finishReason + "）"
+                                    : "LLM 返回空内容",
+                            0, null));
+                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                     consecutiveFailures++;
                     if (consecutiveFailures >= maxConsecutiveFailures) {
                         state = DegradedResponseBuilder.terminateWithReason(
@@ -796,9 +836,28 @@ public class ReactAgentLoop implements CallbackHelper {
     /** 从 ChatResponse 中提取 prompt + completion token 总量。 */
     private int estimateTokens(ChatResponse chatResponse) {
         if (chatResponse == null) return 0;
-        var usage = chatResponse.getMetadata().getUsage();
+        var metadata = chatResponse.getMetadata();
+        if (metadata == null) return 0;
+        var usage = metadata.getUsage();
         if (usage == null) return 0;
-        return (int) (usage.getPromptTokens() + usage.getCompletionTokens());
+        int prompt = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+        int completion = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        return prompt + completion;
+    }
+
+    /** 从 ChatResponse 提取 finishReason（各 provider 字面值不同）。 */
+    @Nullable
+    private String extractFinishReason(ChatResponse chatResponse) {
+        var result = chatResponse.getResult();
+        if (result == null || result.getMetadata() == null) return null;
+        return result.getMetadata().getFinishReason();
+    }
+
+    /** 判断 LLM 响应是否因 output token 耗尽而被截断。 */
+    private boolean isResponseTruncated(@Nullable String finishReason) {
+        if (finishReason == null) return false;
+        // OpenAI: "length", Anthropic: "max_tokens"
+        return "length".equalsIgnoreCase(finishReason) || "max_tokens".equalsIgnoreCase(finishReason);
     }
 
     /**
@@ -815,33 +874,30 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param providerId   LLM 提供商 ID
      * @param modelId      模型 ID
      */
-    /**
-     * 把一次非流式 LLM 调用补记到 Trace。
-     *
-     * <p>优先读取 provider 返回的真实 usage，缺失时再根据输出文本做近似估算。
-     */
     private void recordLlmStep(@Nullable TraceContext traceContext, int stepIndex,
                                Instant timestamp, Duration duration,
                                ChatResponse chatResponse,
-                               String providerId, String modelId) {
+                               String providerId, String modelId,
+                               @Nullable Double temperature) {
         if (traceContext == null) return;
         try {
             // 从 ChatResponse 元数据提取真实 Token 用量
             int inputTokens = 0;
             int outputTokens = 0;
-            var usage = chatResponse.getMetadata().getUsage();
+            var metadata = chatResponse.getMetadata();
+            var usage = metadata.getUsage();
             if (usage != null) {
-                inputTokens = (int) usage.getPromptTokens();
-                outputTokens = (int) usage.getCompletionTokens();
+                inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+                outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
             }
 
             // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算
-            String responseText = chatResponse.getResult().getOutput().getText();
-            // outputTokens 兜底：基于响应文本估算
+            var result = chatResponse.getResult();
+            String responseText = result != null && result.getOutput() != null
+                    ? result.getOutput().getText() : null;
             if (outputTokens == 0 && responseText != null && !responseText.isEmpty()) {
                 outputTokens = estimateTextTokens(responseText);
             }
-            // inputTokens 兜底：Provider 未返回 promptTokens 时按经验比例估算
             if (inputTokens == 0 && outputTokens > 0) {
                 inputTokens = outputTokens * 4;
                 log.debug("Token 兜底估算: inputTokens={} (基于 outputTokens={} × 4)",
@@ -849,8 +905,10 @@ public class ReactAgentLoop implements CallbackHelper {
             }
 
             // 从 Generation 元数据提取完成原因
-            var resultMetadata = chatResponse.getResult().getMetadata();
-            String finishReason = resultMetadata.getFinishReason();
+            String finishReason = null;
+            if (result != null && result.getMetadata() != null) {
+                finishReason = result.getMetadata().getFinishReason();
+            }
 
             var step = new LlmCallStep(
                     stepIndex, timestamp, duration,
@@ -858,8 +916,8 @@ public class ReactAgentLoop implements CallbackHelper {
                     config.getLoop().getLlmScene(),
                     inputTokens, outputTokens,
                     duration,
-                    false,  // cacheHit — Spring AI ChatResponse 不提供此信息
-                    0.0,    // temperature — ChatResponse 不包含请求侧参数
+                    false,
+                    temperature != null ? temperature : 0.0,
                     finishReason);
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {

@@ -68,7 +68,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     public LlmResponse call(String prompt, @Nullable String outputSchema, Duration timeout) {
         long start = System.currentTimeMillis();
         ChatResponse response = executeWithTimeout(
-                () -> chatModel.call(buildPrompt(prompt, outputSchema, false)),
+                () -> callViaClient(buildPrompt(prompt, outputSchema, false)),
                 timeout
         );
         long latencyMs = System.currentTimeMillis() - start;
@@ -133,33 +133,51 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             throw new UnsupportedOperationException(
                     "Provider 不支持 STREAMING 能力: id=" + config.id());
         }
-        return chatModel.stream(buildPrompt(prompt, null, true))
-                .mapNotNull(response -> {
-                    var result = response.getResult();
-                    if (result == null || result.getOutput() == null) return null;
-                    return result.getOutput().getText();
-                })
-                .filter(text -> text != null && !text.isEmpty());
+        return streamViaClient(buildPrompt(prompt, null, true));
     }
 
     @Override
     public Optional<ChatClient> chatClient() {
+        return Optional.of(ensureChatClient());
+    }
+
+    /**
+     * 获取或创建缓存的 ChatClient（已挂载 Advisor 链：Guardrail → Trace → ...）。
+     */
+    private ChatClient ensureChatClient() {
         if (chatClient == null) {
             synchronized (this) {
                 if (chatClient == null) {
-                    chatClient = buildChatClient();
+                    var builder = ChatClient.builder(chatModel);
+                    if (!defaultAdvisors.isEmpty()) {
+                        builder.defaultAdvisors(defaultAdvisors.toArray(new CallAdvisor[0]));
+                    }
+                    chatClient = builder.build();
                 }
             }
         }
-        return Optional.of(chatClient);
+        return chatClient;
     }
 
-    private ChatClient buildChatClient() {
-        var builder = ChatClient.builder(chatModel);
-        if (!defaultAdvisors.isEmpty()) {
-            builder.defaultAdvisors(defaultAdvisors.toArray(new CallAdvisor[0]));
-        }
-        return builder.build();
+    /**
+     * 通过 ChatClient 发起同步调用，确保 Advisor 链生效。
+     */
+    private ChatResponse callViaClient(Prompt prompt) {
+        return ensureChatClient()
+                .prompt(prompt)
+                .call()
+                .chatResponse();
+    }
+
+    /**
+     * 通过 ChatClient 发起流式调用，统一调用路径。
+     */
+    private Flux<String> streamViaClient(Prompt prompt) {
+        return ensureChatClient()
+                .prompt(prompt)
+                .stream()
+                .content()
+                .filter(text -> text != null && !text.isEmpty());
     }
 
     private static final Duration HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(15);
@@ -234,7 +252,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
 
         long start = System.currentTimeMillis();
         ChatResponse response = executeWithTimeout(
-                () -> chatModel.call(buildPrompt(userMessage, outputSchema, false)),
+                () -> callViaClient(buildPrompt(userMessage, outputSchema, false)),
                 timeout
         );
         long latencyMs = System.currentTimeMillis() - start;
@@ -257,13 +275,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         }
         UserMessage userMessage = builder.build();
 
-        return chatModel.stream(buildPrompt(userMessage, null, true))
-                .mapNotNull(response -> {
-                    var result = response.getResult();
-                    if (result == null || result.getOutput() == null) return null;
-                    return result.getOutput().getText();
-                })
-                .filter(text -> !text.isEmpty());
+        return streamViaClient(buildPrompt(userMessage, null, true));
     }
 
     @Override
@@ -283,7 +295,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                     .data(java.net.URI.create(videoUri).toURL())
                     .build();
             var userMessage = UserMessage.builder().text(text).media(media).build();
-            return chatModel.call(buildPrompt(userMessage, outputSchema, false));
+            return callViaClient(buildPrompt(userMessage, outputSchema, false));
         }, timeout);
         long latencyMs = System.currentTimeMillis() - start;
         return toLlmResponse(response, latencyMs);
@@ -314,7 +326,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
 
         long start = System.currentTimeMillis();
         ChatResponse response = executeWithTimeout(
-                () -> chatModel.call(buildPrompt(userMessage, outputSchema, false)),
+                () -> callViaClient(buildPrompt(userMessage, outputSchema, false)),
                 timeout
         );
         long latencyMs = System.currentTimeMillis() - start;
@@ -337,13 +349,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         }
         UserMessage userMessage = builder.build();
 
-        return chatModel.stream(buildPrompt(userMessage, null, true))
-                .mapNotNull(response -> {
-                    var result = response.getResult();
-                    if (result == null || result.getOutput() == null) return null;
-                    return result.getOutput().getText();
-                })
-                .filter(text -> !text.isEmpty());
+        return streamViaClient(buildPrompt(userMessage, null, true));
     }
 
     public ChatModel chatModel() {
@@ -393,7 +399,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             effectivePrompt = prompt + System.lineSeparator() + System.lineSeparator() + converter.getFormat();
         }
         return Optional.ofNullable(
-                buildChatClient()
+                ensureChatClient()
                         .prompt(new Prompt(
                                 effectivePrompt,
                                 ProviderChatOptionsFactory.create(

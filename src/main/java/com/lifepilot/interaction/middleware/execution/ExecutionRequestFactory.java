@@ -184,11 +184,13 @@ public final class ExecutionRequestFactory {
         return ChatTurnAction.SEND;
     }
 
-    /** 读取会话级 temperature，并过滤掉非法负值。 */
-    @Nullable
-    private Double resolveTemperature(Map<String, Object> sessionConfig) {
+    /** 读取会话级 temperature，未配置时回退到全局默认值。 */
+    private double resolveTemperature(Map<String, Object> sessionConfig) {
         Double temperature = SessionConfigKeys.getDouble(sessionConfig, SessionConfigKeys.TEMPERATURE);
-        return temperature != null && temperature >= 0 ? temperature : null;
+        if (temperature != null && temperature >= 0) {
+            return temperature;
+        }
+        return agentConfigProperties.getLoop().getDefaultTemperature();
     }
 
     /**

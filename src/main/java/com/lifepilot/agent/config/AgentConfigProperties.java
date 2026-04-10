@@ -43,6 +43,8 @@ public class AgentConfigProperties {
         private int maxParallelToolCalls = 4;
         /** LLM 调用场景标识。 */
         private String llmScene = "agent_react";
+        /** 默认 temperature（会话未配置时使用）。 */
+        private double defaultTemperature = 0.7;
 
         public int getMaxIterations() { return maxIterations; }
         public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
@@ -54,6 +56,8 @@ public class AgentConfigProperties {
         public void setMaxParallelToolCalls(int maxParallelToolCalls) { this.maxParallelToolCalls = maxParallelToolCalls; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
+        public double getDefaultTemperature() { return defaultTemperature; }
+        public void setDefaultTemperature(double defaultTemperature) { this.defaultTemperature = defaultTemperature; }
 
         /** 开始周期性回顾的迭代阈值（iteration 从 0 开始计数，默认值 5 表示第 6 轮首次触发）。 */
         private int reflectAfterIterations = 5;

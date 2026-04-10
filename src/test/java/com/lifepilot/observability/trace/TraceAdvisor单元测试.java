@@ -57,9 +57,9 @@ class TraceAdvisor单元测试 {
         when(metadata.getModel()).thenReturn("gpt-test-model");
         when(metadata.getUsage()).thenReturn(usage);
 
-        ChatResponse chatResponse = mock(ChatResponse.class);
+        ChatResponse chatResponse = mock(ChatResponse.class, RETURNS_DEEP_STUBS);
         when(chatResponse.getMetadata()).thenReturn(metadata);
-        when(chatResponse.getResult()).thenReturn(null); // 不关心 finishReason，由库内部填充
+        when(chatResponse.getResult().getMetadata().getFinishReason()).thenReturn("stop");
 
         ChatClientResponse clientResponse = mock(ChatClientResponse.class);
         when(clientResponse.chatResponse()).thenReturn(chatResponse);

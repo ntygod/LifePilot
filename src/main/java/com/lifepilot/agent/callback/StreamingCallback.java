@@ -288,12 +288,13 @@ public class StreamingCallback implements IterationCallback {
                     lastChunk[0] = chunk;
 
                     // 累加每个 chunk 的 usage（取最大值，兼容增量和累计两种模式）
-                    var chunkUsage = chunk.getMetadata().getUsage();
+                    var chunkMeta = chunk.getMetadata();
+                    var chunkUsage = chunkMeta != null ? chunkMeta.getUsage() : null;
                     if (chunkUsage != null) {
                         accumulatedPromptTokens[0] = Math.max(accumulatedPromptTokens[0],
-                                chunkUsage.getPromptTokens());
+                                chunkUsage.getPromptTokens() != null ? chunkUsage.getPromptTokens() : 0);
                         accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0],
-                                chunkUsage.getCompletionTokens());
+                                chunkUsage.getCompletionTokens() != null ? chunkUsage.getCompletionTokens() : 0);
                     }
 
                     // 部分 Provider 最后一个 chunk 仅含 usage 不含 generation，跳过
@@ -427,12 +428,16 @@ public class StreamingCallback implements IterationCallback {
         // 合并 lastChunk metadata 与累加 usage，取较大值
         if (lastChunk != null) {
             var baseMeta = lastChunk.getMetadata();
-            var baseUsage = baseMeta.getUsage();
             long finalPrompt = accumulatedPromptTokens;
             long finalCompletion = accumulatedCompletionTokens;
-            if (baseUsage != null) {
-                finalPrompt = Math.max(finalPrompt, baseUsage.getPromptTokens());
-                finalCompletion = Math.max(finalCompletion, baseUsage.getCompletionTokens());
+            if (baseMeta != null) {
+                var baseUsage = baseMeta.getUsage();
+                if (baseUsage != null) {
+                    finalPrompt = Math.max(finalPrompt,
+                            baseUsage.getPromptTokens() != null ? baseUsage.getPromptTokens() : 0);
+                    finalCompletion = Math.max(finalCompletion,
+                            baseUsage.getCompletionTokens() != null ? baseUsage.getCompletionTokens() : 0);
+                }
             }
             // 如果累加 usage 比 lastChunk 更完整，构建新的带 usage 的 metadata
             if (finalPrompt > 0 || finalCompletion > 0) {
@@ -463,7 +468,15 @@ public class StreamingCallback implements IterationCallback {
         String scene = config.getLoop().getLlmScene();
 
         ChatResponse chatResponse = chatModelInfo.chatModel().call(prompt);
-        var assistantMsg = chatResponse.getResult().getOutput();
+        var result = chatResponse.getResult();
+        if (result == null || result.getOutput() == null) {
+            log.warn("非流式降级调用返回空响应: provider={}, model={}",
+                    chatModelInfo.serviceId(), chatModelInfo.modelName());
+            helper.recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
+                    scene, chatResponse, null);
+            return chatResponse;
+        }
+        var assistantMsg = result.getOutput();
 
         if (assistantMsg.hasToolCalls()) {
             // tool call 事件已由 pushReactStepEvent 自动推送

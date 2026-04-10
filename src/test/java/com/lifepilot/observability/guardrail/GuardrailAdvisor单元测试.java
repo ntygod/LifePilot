@@ -42,11 +42,13 @@ class GuardrailAdvisor单元测试 {
     void 输入被阻断_抛出GuardrailBlockedException() {
         // 通过深度 stub 直接在调用点 mock prompt.getInstructions() 相关行为
         ChatClientRequest requestStub = mock(ChatClientRequest.class, RETURNS_DEEP_STUBS);
-        // 使用深度 stub：直接让 stream().filter(...).map(Content::getText)... 返回固定字符串
+        // 构造带正确 MessageType 和 text 的 mock Message
+        var mockMessage = mock(org.springframework.ai.chat.messages.Message.class);
+        when(mockMessage.getMessageType()).thenReturn(org.springframework.ai.chat.messages.MessageType.USER);
+        when(mockMessage.getText()).thenReturn("用户输入包含违规内容");
+
         when(requestStub.prompt().getInstructions().stream())
-                .thenAnswer(invocation -> java.util.stream.Stream.of(
-                        mock(org.springframework.ai.chat.messages.Message.class)
-                ));
+                .thenAnswer(invocation -> java.util.stream.Stream.of(mockMessage));
 
         // GuardrailEngine 返回 BLOCK 决策
         GuardrailResult.Blocked blocked = new GuardrailResult.Blocked(
