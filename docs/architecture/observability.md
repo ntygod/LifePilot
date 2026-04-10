@@ -87,9 +87,10 @@ graph TB
 
 ### 3.3 TraceAdvisor — 追踪 Advisor
 
-- 职责：通过 Spring AI CallAdvisor 横切注入 LLM 调用追踪
+- 职责：通过 Spring AI Advisor（CallAdvisor + StreamAdvisor）横切注入 LLM 调用追踪
 - 优先级：`HIGHEST_PRECEDENCE + 100`（在 GuardrailAdvisor 之后）
-- 记录内容：从 ChatResponse 提取 Token 使用量、模型 ID、完成原因，构建 LlmCallStep
+- 同步调用：从 ChatResponse 提取 Token 使用量、模型 ID、完成原因，构建 LlmCallStep
+- 流式调用：在流完成（`doOnComplete`）或出错（`doOnError`）时记录最后一条 ChatClientResponse 的追踪信息
 
 ### 3.4 TraceQuery — 轨迹查询服务
 
@@ -102,11 +103,9 @@ graph TB
 ### 3.5 GuardrailEngine — 护栏策略引擎
 
 - 职责：管理策略注册表，执行工具调用/输入/输出安全检查
-- 策略类型（sealed interface，5 种）：
-  - `ToolRiskPolicy` — 工具风险等级 → 审批模式映射
-  - `BudgetLimitPolicy` — 每日 Token 消耗上限
+- 策略类型（sealed interface，3 permits）：
   - `ContentSafetyPolicy` — 阻断正则模式 + 敏感话题检测
-  - `RateLimitPolicy` — 调用频率限制（分钟/小时）
+  - `RateLimitPolicy` — 调用频率限制（每分钟最大调用次数）
   - `DataRedactionPolicy` — 数据脱敏标记
 - 执行逻辑：按优先级排序遍历启用策略，短路返回（Blocked/NeedsConfirmation 立即返回）
 - 容错策略：策略执行异常时 fail-open（记录 ERROR 日志，视为 Passed）
@@ -115,10 +114,10 @@ graph TB
 
 ### 3.6 GuardrailAdvisor — 护栏 Advisor
 
-- 职责：通过 Spring AI CallAdvisor 横切注入内容安全检查
+- 职责：通过 Spring AI Advisor（CallAdvisor + StreamAdvisor）横切注入内容安全检查
 - 优先级：`HIGHEST_PRECEDENCE`（在所有 Advisor 之前）
-- 请求阶段：检查用户输入内容安全（checkInput）
-- 响应阶段：检查 LLM 输出内容合规（checkOutput）
+- 同步调用：请求阶段检查用户输入内容安全（checkInput），响应阶段检查 LLM 输出内容合规（checkOutput）
+- 流式调用：流开始前同步检查输入安全，流式响应的输出合规检查由上层负责
 - 异常：Blocked 抛出 `GuardrailBlockedException`，NeedsConfirmation 抛出 `GuardrailConfirmationRequiredException`
 
 ### 3.7 DataRedactor — 数据脱敏引擎
@@ -180,34 +179,28 @@ sequenceDiagram
 sequenceDiagram
     participant Caller as ReactAgentLoop / Advisor
     participant GE as GuardrailEngine
-    participant P1 as ToolRiskPolicy
-    participant P2 as ContentSafetyPolicy
-    participant P3 as RateLimitPolicy
+    participant P1 as ContentSafetyPolicy
+    participant P2 as RateLimitPolicy
     participant DB as guardrail_logs
 
     Caller->>GE: checkToolCall(tool, input)
-    GE->>GE: 检查白名单
-    alt 白名单命中
-        GE-->>Caller: Passed(whitelist)
-    else 非白名单
-        GE->>P1: 评估工具风险
-        P1-->>GE: Passed / NeedsConfirmation
-        GE->>P2: 评估内容安全
+    loop 按优先级遍历策略
+        GE->>P1: 评估内容安全
+        P1-->>GE: Passed / Blocked
+        GE->>P2: 评估速率限制
         P2-->>GE: Passed / Blocked
-        GE->>P3: 评估速率限制
-        P3-->>GE: Passed / Blocked
         alt Blocked 或 NeedsConfirmation
             GE->>DB: 写入审计日志
         end
-        GE-->>Caller: 最终结果
     end
+    GE-->>Caller: 最终结果
 ```
 
 ## 5. 设计决策
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 横切注入方式 | Spring AI Advisor 模式 | 与 Spring AI ChatClient 原生集成，无侵入式拦截 |
+| 横切注入方式 | Spring AI Advisor 模式（CallAdvisor + StreamAdvisor） | 与 Spring AI ChatClient 原生集成，无侵入式拦截，同步和流式调用链均覆盖 |
 | 上下文传播 | ScopedValue（默认）+ ThreadLocal 降级 | ScopedValue 适合 Virtual Thread，ThreadLocal 作为兼容降级 |
 | 策略类型系统 | sealed interface + record | 编译时穷举检查，确保每种策略类型都被正确处理 |
 | 护栏容错 | fail-open | 护栏异常不应阻塞 Agent 正常执行 |
@@ -235,9 +228,6 @@ sequenceDiagram
 | `lifepilot.observability.trace.use-scoped-value` | `true` | 使用 ScopedValue 传播上下文 |
 | `lifepilot.observability.guardrail.enabled` | `true` | 护栏总开关 |
 | `lifepilot.observability.guardrail.tool-risk.default-risk-level` | `LOW` | 默认工具风险等级 |
-| `lifepilot.observability.guardrail.budget-limit.max-tokens-per-request` | `10000` | 单次请求最大 Token |
-| `lifepilot.observability.guardrail.budget-limit.max-steps-per-request` | `20` | 单次请求最大步骤 |
-| `lifepilot.observability.guardrail.budget-limit.daily-token-limit` | `1000000` | 每日 Token 上限 |
 | `lifepilot.observability.guardrail.rate-limit.max-calls-per-minute` | `60` | 每分钟最大调用次数 |
 | `lifepilot.observability.redaction.enabled` | `true` | 脱敏总开关 |
 | `lifepilot.observability.redaction.redact-before-llm` | `true` | LLM 调用前脱敏 |

@@ -49,9 +49,9 @@ Key source files:
 - `src/main/java/com/lifepilot/embedding/router/EmbeddingRouter.java` — embedding routing
 - `src/main/java/com/lifepilot/rerank/router/RerankRouter.java` — rerank routing
 - `src/main/resources/application.yml` — all runtime configuration
-- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V24)
+- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V25)
 - `src/main/resources/prompts/` — StringTemplate prompt files
-- `src/main/resources/skills/` — built-in skill definitions (33 skills)
+- `src/main/resources/skills/` — built-in skill definitions (31 skills)
 - `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
 
 ## Coding Conventions

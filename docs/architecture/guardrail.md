@@ -70,7 +70,8 @@ graph TB
 
 ### 3.4 GuardrailAdvisor
 
-- 职责：作为 Spring AI Advisor 横切注入 ChatClient 调用链，在 LLM 调用前后执行护栏检查
+- 职责：作为 Spring AI Advisor（CallAdvisor + StreamAdvisor）横切注入 ChatClient 调用链，在 LLM 调用前后执行护栏检查
+- 流式支持：`adviseStream()` 在流开始前同步检查输入安全，流式响应的输出合规检查由上层负责
 
 ## 4. 核心流程
 
@@ -100,7 +101,7 @@ sequenceDiagram
 |------|------|------|
 | 策略模式 | GuardrailPolicy sealed interface（3 permits） | 编译时穷举策略类型，支持运行时动态注册/注销 |
 | 风险分级 | 四级枚举 | 为权限系统和护栏阻断提供统一风险语义 |
-| 注入方式 | Spring AI Advisor | 复用 Spring AI 生态，无侵入式横切注入 |
+| 注入方式 | Spring AI Advisor（CallAdvisor + StreamAdvisor） | 复用 Spring AI 生态，无侵入式横切注入，同时支持同步和流式调用链 |
 | 包归属 | 全部位于 `observability.guardrail` 包 | 护栏是可观测性的子能力，不再独立成包 |
 
 ## 6. 集成点

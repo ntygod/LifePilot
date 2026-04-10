@@ -167,6 +167,7 @@ sequenceDiagram
 | `lifepilot.agent.loop.max-early-stop-rejects` | 2 | 疑似提前结束最大拒绝次数 |
 | `lifepilot.agent.loop.max-parallel-tool-calls` | 4 | 单个工具波次最大并发数 |
 | `lifepilot.agent.loop.llm-scene` | `agent_react` | LLM 调用场景标识 |
+| `lifepilot.agent.loop.default-temperature` | `0.7` | 默认 temperature（会话未配置时使用） |
 | `lifepilot.agent.budget.default-max-tokens` | 20000000 | 对话总 Token 预算 |
 | `lifepilot.agent.budget.default-max-steps` | 30 | 步数预算上限 |
 | `lifepilot.agent.budget.default-max-duration-seconds` | 300 | 时间预算上限（秒） |

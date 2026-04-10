@@ -316,7 +316,7 @@ public record ModelServiceEntity(
 - **知识库**（`knowledge`）：通过 `EmbeddingRouter.embedBatch()` 生成文档块向量，通过 `RerankRouter.rerankDocuments()` 执行知识精排
 - **Skill 系统**（`skill`）：通过 `GenerationRouter.call()` / `callEntity()` 执行 Skill 自动生成
 - **语义缓存**（`cache`）：`SemanticCache` 通过 `EmbeddingRouter` 获取 Prompt 向量，`GenerationRouter` 在调用前后自动查询/写入缓存
-- **可观测性**（`observability`）：GuardrailAdvisor 作为 Spring AI Advisor 注入 ChatClient 调用链
+- **可观测性**（`observability`）：GuardrailAdvisor 和 TraceAdvisor 作为 Spring AI Advisor（CallAdvisor + StreamAdvisor）注入 ChatClient 调用链，同步和流式调用均经过护栏检查与追踪记录
 
 ## 8. 配置参考
 
