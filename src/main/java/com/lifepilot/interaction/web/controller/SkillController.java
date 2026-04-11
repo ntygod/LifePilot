@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.registry.McpServerRegistry;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -92,7 +94,7 @@ public class SkillController {
      * @return Skill 定义列表
      */
     @GetMapping("/skills")
-    public ResponseEntity<?> listSkills(
+    public ApiResponse<?> listSkills(
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) String toolName) {
@@ -144,7 +146,7 @@ public class SkillController {
                 })
                 .toList();
 
-        return ResponseEntity.ok(filtered);
+        return ApiResponse.ok(filtered);
     }
 
     /**
@@ -154,11 +156,10 @@ public class SkillController {
      * @return Skill 定义，不存在返回 404
      */
     @GetMapping("/skills/{id}")
-    public ResponseEntity<?> getSkill(@PathVariable String id) {
-        return skillRegistry.find(id)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> getSkill(@PathVariable String id) {
+        var skill = skillRegistry.find(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id));
+        return ApiResponse.ok(skill);
     }
 
     /**
@@ -168,7 +169,7 @@ public class SkillController {
      * @return 201 创建成功，400 参数错误
      */
     @PostMapping("/skills")
-    public ResponseEntity<?> createSkill(@RequestBody Map<String, Object> request) {
+    public ApiResponse<?> createSkill(@RequestBody Map<String, Object> request) {
         log.debug("创建 Skill: request={}", request);
 
         try {
@@ -179,16 +180,14 @@ public class SkillController {
                 var parseResult = markdownParser.parse(markdownContent);
 
                 if (!parseResult.success() || parseResult.definition() == null) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()), Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()));
                 }
 
                 SkillDefinition definition = parseResult.definition();
 
                 // 检查是否已存在
                 if (skillRegistry.find(definition.id()).isPresent()) {
-                    return ResponseEntity.status(HttpStatus.CONFLICT)
-                            .body(new ErrorResponse(409, "Skill ID 已存在: " + definition.id(), Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill ID 已存在: " + definition.id());
                 }
 
                 // 保存到文件系统（文件夹结构）
@@ -203,19 +202,17 @@ public class SkillController {
                 Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
                 if (loaded.isEmpty()) {
                     Files.deleteIfExists(skillFile);
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "Skill 注册失败，请检查定义", Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 注册失败，请检查定义");
                 }
 
                 boolean registered = skillRegistry.register(loaded.get());
                 if (!registered) {
                     Files.deleteIfExists(skillFile);
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "Skill 注册失败，请检查定义", Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 注册失败，请检查定义");
                 }
 
                 log.info("Skill 创建成功: id={}, name={}", definition.id(), definition.name());
-                return ResponseEntity.status(HttpStatus.CREATED).body(loaded.get());
+                return ApiResponse.ok(loaded.get());
             }
 
             // ── 路径 2：Web UI 通过结构化 JSON 创建 Skill ─────────────────
@@ -226,22 +223,18 @@ public class SkillController {
             String instructions = getString(request, "instructions");
 
             if (id == null || id.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Skill ID 不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill ID 不能为空");
             }
             if (name == null || name.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Skill 名称不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 名称不能为空");
             }
             if (instructions == null || instructions.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "instructions 不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "instructions 不能为空");
             }
 
             // 检查是否已存在
             if (skillRegistry.find(id).isPresent()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new ErrorResponse(409, "Skill ID 已存在: " + id, Instant.now()));
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill ID 已存在: " + id);
             }
 
             @SuppressWarnings("unchecked")
@@ -276,20 +269,19 @@ public class SkillController {
             boolean registered = skillRegistry.register(definition);
             if (!registered) {
                 Files.deleteIfExists(skillFile);
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Skill 注册失败，请检查定义", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 注册失败，请检查定义");
             }
 
             log.info("Skill 创建成功: id={}, name={}", definition.id(), definition.name());
-            return ResponseEntity.status(HttpStatus.CREATED).body(definition);
+            return ApiResponse.ok(definition);
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IOException e) {
             log.error("创建 Skill 失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
         } catch (Exception e) {
             log.error("创建 Skill 失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
         }
     }
 
@@ -301,23 +293,21 @@ public class SkillController {
      * @return 200 更新成功，404 不存在，400 参数错误
      */
     @PutMapping("/skills/{id}")
-    public ResponseEntity<?> updateSkill(@PathVariable String id,
+    public ApiResponse<?> updateSkill(@PathVariable String id,
                                          @RequestBody Map<String, Object> request) {
         log.debug("更新 Skill: id={}, request={}", id, request);
         
         // 检查 Skill 是否存在
         Optional<SkillDefinition> existingOpt = skillRegistry.find(id);
         if (existingOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
         }
 
         SkillDefinition existing = existingOpt.get();
 
         // 检查是否为用户定义类型（只有用户定义的 Skill 可以更新）
         if (!(existing.source() instanceof SkillSource.UserDefined)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能更新用户创建的 Skill", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能更新用户创建的 Skill");
         }
 
         try {
@@ -327,16 +317,14 @@ public class SkillController {
                 var parseResult = markdownParser.parse(markdownContent);
 
                 if (!parseResult.success() || parseResult.definition() == null) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()), Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()));
                 }
 
                 SkillDefinition definition = parseResult.definition();
 
                 // 检查 ID 是否匹配
                 if (!definition.id().equals(id)) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "SKILL.md 中的 ID 必须与路径参数一致", Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 中的 ID 必须与路径参数一致");
                 }
 
                 // 更新文件系统（文件夹结构）
@@ -350,18 +338,16 @@ public class SkillController {
                 // 通过 MarkdownSkillLoader 加载（设置正确的 source）
                 Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
                 if (loaded.isEmpty()) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "Skill 更新失败，请检查定义", Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
                 }
 
                 boolean registered = skillRegistry.register(loaded.get());
                 if (!registered) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(new ErrorResponse(400, "Skill 更新失败，请检查定义", Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
                 }
 
                 log.info("Skill 更新成功: id={}", id);
-                return ResponseEntity.ok(loaded.get());
+                return ApiResponse.ok(loaded.get());
             }
 
             // ── 结构化 JSON 更新路径（供 Web UI 使用） ─────────────────
@@ -412,20 +398,19 @@ public class SkillController {
 
             boolean registered = skillRegistry.register(updated);
             if (!registered) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Skill 更新失败，请检查定义", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
             }
 
             log.info("Skill 更新成功: id={}", id);
-            return ResponseEntity.ok(updated);
+            return ApiResponse.ok(updated);
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IOException e) {
             log.error("更新 Skill 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         } catch (Exception e) {
             log.error("更新 Skill 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         }
     }
 
@@ -436,11 +421,10 @@ public class SkillController {
      * @return 204 成功，404 不存在
      */
     @DeleteMapping("/skills/{id}")
-    public ResponseEntity<?> unregisterSkill(@PathVariable String id) {
+    public ApiResponse<?> unregisterSkill(@PathVariable String id) {
         var skillOpt = skillRegistry.find(id);
         if (skillOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
         }
 
         skillRegistry.unregister(id);
@@ -462,7 +446,7 @@ public class SkillController {
         }
         
         log.info("Skill 已注销: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -474,14 +458,13 @@ public class SkillController {
      * @return 204 成功，404 不存在，400 类型不支持
      */
     @PostMapping("/skills/{id}/enable")
-    public ResponseEntity<?> enableSkill(@PathVariable String id) {
+    public ApiResponse<?> enableSkill(@PathVariable String id) {
         log.info("启用 Skill: id={}", id);
 
         Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
         if (skillOpt.isEmpty()) {
             log.warn("Skill 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
         }
 
         SkillDefinition skill = skillOpt.get();
@@ -490,8 +473,7 @@ public class SkillController {
         if (!(skill.source() instanceof SkillSource.UserDefined)
                 && !(skill.source() instanceof SkillSource.Marketplace)) {
             log.warn("尝试启用非用户定义 Skill 被拒绝: id={}", id);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能启用/禁用用户创建或市场安装的 Skill", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能启用/禁用用户创建或市场安装的 Skill");
         }
 
         Map<String, String> metadata = new HashMap<>(skill.metadata() != null ? skill.metadata() : Map.of());
@@ -512,13 +494,12 @@ public class SkillController {
             Files.writeString(skillFile, serializedMarkdown);
         } catch (IOException e) {
             log.error("写回 Skill 文件失败（启用）: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "启用失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "启用失败: " + e.getMessage());
         }
 
         skillRegistry.register(updated);
         log.info("Skill 启用成功: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -530,14 +511,13 @@ public class SkillController {
      * @return 204 成功，404 不存在，400 类型不支持
      */
     @PostMapping("/skills/{id}/disable")
-    public ResponseEntity<?> disableSkill(@PathVariable String id) {
+    public ApiResponse<?> disableSkill(@PathVariable String id) {
         log.info("禁用 Skill: id={}", id);
 
         Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
         if (skillOpt.isEmpty()) {
             log.warn("Skill 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
         }
 
         SkillDefinition skill = skillOpt.get();
@@ -546,8 +526,7 @@ public class SkillController {
         if (!(skill.source() instanceof SkillSource.UserDefined)
                 && !(skill.source() instanceof SkillSource.Marketplace)) {
             log.warn("尝试禁用非用户定义 Skill 被拒绝: id={}", id);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能启用/禁用用户创建或市场安装的 Skill", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能启用/禁用用户创建或市场安装的 Skill");
         }
 
         Map<String, String> metadata = new HashMap<>(skill.metadata() != null ? skill.metadata() : Map.of());
@@ -568,13 +547,12 @@ public class SkillController {
             Files.writeString(skillFile, serializedMarkdown);
         } catch (IOException e) {
             log.error("写回 Skill 文件失败（禁用）: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "禁用失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "禁用失败: " + e.getMessage());
         }
 
         skillRegistry.register(updated);
         log.info("Skill 禁用成功: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     // ── Skill Markdown 端点 ─────────────────────────────────
@@ -586,15 +564,14 @@ public class SkillController {
      * @return Markdown 文本（text/markdown），不存在返回 404
      */
     @GetMapping(value = "/skills/{id}/markdown", produces = "text/markdown")
-    public ResponseEntity<?> getSkillMarkdown(@PathVariable String id) {
+    public ApiResponse<?> getSkillMarkdown(@PathVariable String id) {
         Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
         if (skillOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
         }
 
         String markdown = markdownSerializer.serialize(skillOpt.get());
-        return ResponseEntity.ok(markdown);
+        return ApiResponse.ok(markdown);
     }
 
     /**
@@ -607,34 +584,30 @@ public class SkillController {
      * @return 更新后的 SkillDefinition JSON，解析失败返回 400，不存在返回 404
      */
     @PutMapping(value = "/skills/{id}/markdown", consumes = "text/plain")
-    public ResponseEntity<?> updateSkillMarkdown(@PathVariable String id,
+    public ApiResponse<?> updateSkillMarkdown(@PathVariable String id,
                                                   @RequestBody String content) {
         // 检查 Skill 是否存在
         Optional<SkillDefinition> existingOpt = skillRegistry.find(id);
         if (existingOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
         }
 
         // 仅用户定义的 Skill 可通过 Markdown 更新
         if (!(existingOpt.get().source() instanceof SkillSource.UserDefined)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能更新用户创建的 Skill", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能更新用户创建的 Skill");
         }
 
         // 解析 Markdown 内容
         var parseResult = markdownParser.parse(content);
         if (!parseResult.success() || parseResult.definition() == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()));
         }
 
         SkillDefinition parsed = parseResult.definition();
 
         // 验证 ID 一致性
         if (!parsed.id().equals(id)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "SKILL.md 中的 ID 必须与路径参数一致", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 中的 ID 必须与路径参数一致");
         }
 
         try {
@@ -649,17 +622,15 @@ public class SkillController {
             // 通过 MarkdownSkillLoader 加载（设置正确的 source）
             Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
             if (loaded.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Skill 更新失败，请检查定义", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
             }
 
             skillRegistry.register(loaded.get());
             log.info("Skill Markdown 更新成功: id={}", id);
-            return ResponseEntity.ok(loaded.get());
+            return ApiResponse.ok(loaded.get());
         } catch (IOException e) {
             log.error("Skill Markdown 更新失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         }
     }
 
@@ -680,9 +651,9 @@ public class SkillController {
      * @return 包含 npxAvailable 的状态 Map
      */
     @GetMapping("/mcp/status")
-    public ResponseEntity<?> getMcpStatus() {
+    public ApiResponse<?> getMcpStatus() {
         boolean npxAvailable = checkNpxAvailable();
-        return ResponseEntity.ok(Map.of("npxAvailable", npxAvailable));
+        return ApiResponse.ok(Map.of("npxAvailable", npxAvailable));
     }
 
     /**
@@ -691,12 +662,12 @@ public class SkillController {
      * @return MCP Server 扁平化 DTO 列表
      */
     @GetMapping("/mcp/servers")
-    public ResponseEntity<?> listMcpServers() {
+    public ApiResponse<?> listMcpServers() {
         log.debug("查询 MCP Server 列表");
         var dtos = mcpServerRegistry.listServers().stream()
                 .map(this::toMcpServerDto)
                 .toList();
-        return ResponseEntity.ok(dtos);
+        return ApiResponse.ok(dtos);
     }
 
     /**
@@ -706,12 +677,10 @@ public class SkillController {
      * @return Server 扁平化 DTO，不存在返回 404
      */
     @GetMapping("/mcp/servers/{name}")
-    public ResponseEntity<?> getMcpServer(@PathVariable String name) {
-        return mcpServerRegistry.getServer(name)
-                .map(this::toMcpServerDto)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now())));
+    public ApiResponse<?> getMcpServer(@PathVariable String name) {
+        var server = mcpServerRegistry.getServer(name)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name));
+        return ApiResponse.ok(toMcpServerDto(server));
     }
 
     /**
@@ -721,16 +690,15 @@ public class SkillController {
      * @return 202 已接受，404 不存在
      */
     @PostMapping("/mcp/servers/{name}/connect")
-    public ResponseEntity<?> connectMcpServer(@PathVariable String name) {
+    public ApiResponse<?> connectMcpServer(@PathVariable String name) {
         var serverOpt = mcpServerRegistry.getServer(name);
         if (serverOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
         }
 
         mcpServerRegistry.connectServer(serverOpt.get().config());
         log.info("MCP Server 连接请求已接受: name={}", name);
-        return ResponseEntity.accepted().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -740,16 +708,15 @@ public class SkillController {
      * @return 204 成功，404 不存在
      */
     @PostMapping("/mcp/servers/{name}/disconnect")
-    public ResponseEntity<?> disconnectMcpServer(@PathVariable String name) {
+    public ApiResponse<?> disconnectMcpServer(@PathVariable String name) {
         var serverOpt = mcpServerRegistry.getServer(name);
         if (serverOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
         }
 
         mcpServerRegistry.disconnectServer(name);
         log.info("MCP Server 已断开: name={}", name);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -759,15 +726,14 @@ public class SkillController {
      * @return 工具列表，Server 不存在返回 404
      */
     @GetMapping("/mcp/servers/{name}/tools")
-    public ResponseEntity<?> getMcpServerTools(@PathVariable String name) {
+    public ApiResponse<?> getMcpServerTools(@PathVariable String name) {
         var serverOpt = mcpServerRegistry.getServer(name);
         if (serverOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
         }
 
         List<ToolContract> tools = toolRegistry.getToolsByServer(name);
-        return ResponseEntity.ok(tools);
+        return ApiResponse.ok(tools);
     }
 
     /**
@@ -777,15 +743,14 @@ public class SkillController {
      * @return 连接日志列表（按时间倒序）
      */
     @GetMapping("/mcp/servers/{name}/connection-logs")
-    public ResponseEntity<?> getMcpServerConnectionLogs(@PathVariable String name) {
+    public ApiResponse<?> getMcpServerConnectionLogs(@PathVariable String name) {
         var serverOpt = mcpServerRegistry.getServer(name);
         if (serverOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
         }
 
         var logs = mcpServerRegistry.getConnectionLogs(name);
-        return ResponseEntity.ok(logs);
+        return ApiResponse.ok(logs);
     }
 
     /**
@@ -795,20 +760,18 @@ public class SkillController {
      * @return 201 创建成功，400 参数错误
      */
     @PostMapping("/mcp/servers")
-    public ResponseEntity<?> createMcpServer(@RequestBody Map<String, Object> request) {
+    public ApiResponse<?> createMcpServer(@RequestBody Map<String, Object> request) {
         log.debug("创建 MCP Server: request={}", request);
         
         try {
             String name = getString(request, "name");
             if (name == null || name.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "name 不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "name 不能为空");
             }
 
             // 检查是否已存在
             if (mcpServerRegistry.getServer(name).isPresent()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new ErrorResponse(409, "MCP Server 已存在: name=" + name, Instant.now()));
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "MCP Server 已存在: name=" + name);
             }
 
             // 构建配置
@@ -821,15 +784,12 @@ public class SkillController {
             }
 
             log.info("MCP Server 创建成功: name={}", name);
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(mcpServerRegistry.getServer(name).orElse(null));
+            return ApiResponse.ok(mcpServerRegistry.getServer(name).orElse(null));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("创建 MCP Server 失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
         }
     }
 
@@ -841,15 +801,14 @@ public class SkillController {
      * @return 200 更新成功，404 不存在，400 参数错误
      */
     @PutMapping("/mcp/servers/{name}")
-    public ResponseEntity<?> updateMcpServer(@PathVariable String name,
+    public ApiResponse<?> updateMcpServer(@PathVariable String name,
                                              @RequestBody Map<String, Object> request) {
         log.debug("更新 MCP Server: name={}, request={}", name, request);
         
         // 检查是否存在
         var existingOpt = mcpServerRegistry.getServer(name);
         if (existingOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
         }
 
         try {
@@ -866,14 +825,12 @@ public class SkillController {
             }
 
             log.info("MCP Server 更新成功: name={}", name);
-            return ResponseEntity.ok(mcpServerRegistry.getServer(name).orElse(null));
+            return ApiResponse.ok(mcpServerRegistry.getServer(name).orElse(null));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("更新 MCP Server 失败: name={}", name, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         }
     }
 
@@ -884,13 +841,12 @@ public class SkillController {
      * @return 204 删除成功，404 不存在
      */
     @DeleteMapping("/mcp/servers/{name}")
-    public ResponseEntity<?> deleteMcpServer(@PathVariable String name) {
+    public ApiResponse<?> deleteMcpServer(@PathVariable String name) {
         log.debug("删除 MCP Server: name={}", name);
         
         var serverOpt = mcpServerRegistry.getServer(name);
         if (serverOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
         }
 
         // 断开连接（这会注销工具）
@@ -900,7 +856,7 @@ public class SkillController {
         // 如果需要完全移除注册表条目，需要扩展 McpServerRegistry
         
         log.info("MCP Server 已删除: name={}", name);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     // ── MCP Server 辅助方法 ──────────────────────────────────────────

@@ -22,6 +22,9 @@ import java.util.Optional;
  * 情景记忆的主读路径已经切换到会话层（`session_store/session_transcript_entries`）。
  *
  * <p>当前职责主要是提供对话检索、片段回忆和会话级读取能力。</p>
+ *
+ * @author zsg
+ * @since 2026-02-25
  */
 public class EpisodicMemory {
 

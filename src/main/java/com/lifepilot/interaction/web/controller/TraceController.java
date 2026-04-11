@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.PageResult;
 import com.lifepilot.interaction.web.model.TraceDetailDto;
@@ -28,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -81,7 +83,7 @@ public class TraceController {
      * @return 轨迹摘要列表
      */
     @GetMapping
-    public ResponseEntity<?> listTraces(
+    public ApiResponse<PageResult<TraceItemDto>> listTraces(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         log.debug("查询轨迹列表: page={}, size={}", page, size);
@@ -103,7 +105,7 @@ public class TraceController {
                 ))
                 .toList();
         long total = traceQuery.countAll();
-        return ResponseEntity.ok(new PageResult<>(items, page, size, total));
+        return ApiResponse.ok(new PageResult<>(items, page, size, total));
     }
 
     /**
@@ -113,29 +115,24 @@ public class TraceController {
      * @return 轨迹详情，不存在返回 404
      */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getTrace(@PathVariable String id) {
-        try {
-            var detail = traceQuery.getDetail(id);
-            String modelId = resolveModelId(detail.steps());
-            var dto = new TraceDetailDto(
-                    detail.traceId(),
-                    detail.sessionId(),
-                    detail.goal(),
-                    detail.success(),
-                    detail.totalSteps(),
-                    detail.totalTokens(),
-                    detail.totalDurationMs(),
-                    detail.startTime().toString(),
-                    detail.finalOutput(),
-                    detail.errorMessage(),
-                    detail.terminationReason(),
-                    modelId
-            );
-            return ResponseEntity.ok(dto);
-        } catch (TraceNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, e.getMessage(), Instant.now()));
-        }
+    public ApiResponse<TraceDetailDto> getTrace(@PathVariable String id) {
+        var detail = traceQuery.getDetail(id);
+        String modelId = resolveModelId(detail.steps());
+        var dto = new TraceDetailDto(
+                detail.traceId(),
+                detail.sessionId(),
+                detail.goal(),
+                detail.success(),
+                detail.totalSteps(),
+                detail.totalTokens(),
+                detail.totalDurationMs(),
+                detail.startTime().toString(),
+                detail.finalOutput(),
+                detail.errorMessage(),
+                detail.terminationReason(),
+                modelId
+        );
+        return ApiResponse.ok(dto);
     }
 
     /**
@@ -145,18 +142,13 @@ public class TraceController {
      * @return 回放步骤列表
      */
     @GetMapping("/{id}/steps")
-    public ResponseEntity<?> getTraceSteps(@PathVariable String id) {
-        try {
-            boolean includeContent = properties.getTrace().isRecordPrompts();
-            List<TraceStep> steps = traceQuery.getSteps(id);
-            var dtos = steps.stream()
-                    .map(step -> toStepDto(id, step, includeContent))
-                    .toList();
-            return ResponseEntity.ok(dtos);
-        } catch (TraceNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, e.getMessage(), Instant.now()));
-        }
+    public ApiResponse<List<TraceStepDto>> getTraceSteps(@PathVariable String id) {
+        boolean includeContent = properties.getTrace().isRecordPrompts();
+        List<TraceStep> steps = traceQuery.getSteps(id);
+        var dtos = steps.stream()
+                .map(step -> toStepDto(id, step, includeContent))
+                .toList();
+        return ApiResponse.ok(dtos);
     }
 
     /**
@@ -227,25 +219,14 @@ public class TraceController {
      * @return 概览统计数据
      */
     @GetMapping("/stats/overview")
-    public ResponseEntity<OverviewStats> getOverviewStats(
+    public ApiResponse<OverviewStats> getOverviewStats(
             @RequestParam(defaultValue = "7d") String window) {
         if (!"24h".equals(window) && !"7d".equals(window) && !"30d".equals(window)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new OverviewStats(
-                            0,
-                            0,
-                            0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0L,
-                            0.0
-                    )
-            );
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的时间窗口: " + window);
         }
 
         var stats = traceQuery.getOverviewStats(window);
-        return ResponseEntity.ok(stats);
+        return ApiResponse.ok(stats);
     }
 
     /**
@@ -254,9 +235,9 @@ public class TraceController {
      * @return 工具使用统计列表
      */
     @GetMapping("/stats/tools")
-    public ResponseEntity<List<ToolUsageStats>> getToolUsageStats() {
+    public ApiResponse<List<ToolUsageStats>> getToolUsageStats() {
         var stats = traceQuery.getToolUsageStats();
-        return ResponseEntity.ok(stats);
+        return ApiResponse.ok(stats);
     }
 
     /**
@@ -267,12 +248,11 @@ public class TraceController {
      * @return 匹配的轨迹摘要列表或错误响应
      */
     @GetMapping("/search")
-    public ResponseEntity<?> searchTraces(
+    public ApiResponse<List<TraceItemDto>> searchTraces(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "20") int limit) {
         if (keyword == null || keyword.isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "搜索关键词不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "搜索关键词不能为空");
         }
 
         var results = traceQuery.searchByKeyword(keyword, limit);
@@ -288,7 +268,7 @@ public class TraceController {
                         s.startTime().toString()
                 ))
                 .toList();
-        return ResponseEntity.ok(items);
+        return ApiResponse.ok(items);
     }
 
     /**
@@ -298,18 +278,13 @@ public class TraceController {
      * @return JSON 字符串，包含下载响应头或错误响应
      */
     @GetMapping("/{id}/export")
-    public ResponseEntity<?> exportTrace(@PathVariable String id) {
-        try {
-            String json = traceQuery.exportAsJson(id);
-            String filename = "trace-" + id + ".json";
-            return ResponseEntity.ok()
-                    .header("Content-Type", "application/json")
-                    .header("Content-Disposition", "attachment; filename=" + filename)
-                    .body(json);
-        } catch (TraceNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, e.getMessage(), Instant.now()));
-        }
+    public ResponseEntity<String> exportTrace(@PathVariable String id) {
+        String json = traceQuery.exportAsJson(id);
+        String filename = "trace-" + id + ".json";
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/json")
+                .header("Content-Disposition", "attachment; filename=" + filename)
+                .body(json);
     }
 
     /**
@@ -320,7 +295,7 @@ public class TraceController {
      * @return Token 消耗统计
      */
     @GetMapping("/stats/tokens")
-    public ResponseEntity<?> getTokenStats(
+    public ApiResponse<TokenConsumptionStats> getTokenStats(
             @RequestParam(required = false) String start,
             @RequestParam(required = false) String end) {
         Instant now = Instant.now();
@@ -335,12 +310,11 @@ public class TraceController {
                 endTime = Instant.parse(end);
             }
         } catch (DateTimeParseException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "时间格式非法，必须为 ISO 8601 格式", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "时间格式非法，必须为 ISO 8601 格式");
         }
 
         TokenConsumptionStats stats = traceQuery.getTokenStats(startTime, endTime);
-        return ResponseEntity.ok(stats);
+        return ApiResponse.ok(stats);
     }
 
     /**
@@ -350,14 +324,9 @@ public class TraceController {
      * @return 评估结果，不存在时返回 404
      */
     @GetMapping("/{id}/evaluation")
-    public ResponseEntity<?> getEvaluation(@PathVariable String id) {
-        try {
-            EvaluationResult result = traceQuery.getEvaluation(id);
-            return ResponseEntity.ok(result);
-        } catch (TraceNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, e.getMessage(), Instant.now()));
-        }
+    public ApiResponse<EvaluationResult> getEvaluation(@PathVariable String id) {
+        EvaluationResult result = traceQuery.getEvaluation(id);
+        return ApiResponse.ok(result);
     }
 
     // ────────────────────────────────────────────────

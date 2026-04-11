@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.CreateModelServiceRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.ModelServiceResponse;
@@ -24,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -71,20 +73,20 @@ public class ModelServiceController {
     }
 
     @GetMapping
-    public ResponseEntity<List<ModelServiceResponse>> listServices(@RequestParam(required = false) String kind) {
+    public ApiResponse<List<ModelServiceResponse>> listServices(@RequestParam(required = false) String kind) {
         List<ModelServiceEntity> services = resolveServices(kind, false);
-        return ResponseEntity.ok(services.stream().map(this::toResponse).toList());
+        return ApiResponse.ok(services.stream().map(this::toResponse).toList());
     }
 
     @GetMapping("/enabled")
-    public ResponseEntity<List<ModelServiceResponse>> listEnabledServices(@RequestParam(required = false) String kind) {
+    public ApiResponse<List<ModelServiceResponse>> listEnabledServices(@RequestParam(required = false) String kind) {
         List<ModelServiceEntity> services = resolveServices(kind, true);
-        return ResponseEntity.ok(services.stream().map(this::toResponse).toList());
+        return ApiResponse.ok(services.stream().map(this::toResponse).toList());
     }
 
     @GetMapping("/templates")
-    public ResponseEntity<List<ModelServiceTemplateResponse>> listTemplates() {
-        return ResponseEntity.ok(modelServiceTemplateRepository.findAll().stream()
+    public ApiResponse<List<ModelServiceTemplateResponse>> listTemplates() {
+        return ApiResponse.ok(modelServiceTemplateRepository.findAll().stream()
                 .map(template -> new ModelServiceTemplateResponse(
                         template.vendorKey(),
                         template.displayName(),
@@ -113,55 +115,36 @@ public class ModelServiceController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ModelServiceResponse> getService(@PathVariable String id) {
-        return modelServiceRepository.findById(id)
-                .map(entity -> ResponseEntity.ok(toResponse(entity)))
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ApiResponse<ModelServiceResponse> getService(@PathVariable String id) {
+        var entity = modelServiceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型服务不存在: id=" + id));
+        return ApiResponse.ok(toResponse(entity));
     }
 
     @PostMapping
-    public ResponseEntity<?> createService(@RequestBody CreateModelServiceRequest request) {
-        try {
-            validateCreateRequest(request);
-            ModelServiceEntity entity = toEntity(request);
-            modelServiceRepository.save(entity);
-            registrationService.registerService(entity);
-            return ResponseEntity.ok(toResponse(entity));
-        } catch (IllegalArgumentException e) {
-            log.warn("创建模型服务失败: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(new ErrorResponse(400, e.getMessage(), Instant.now()));
-        } catch (Exception e) {
-            log.error("创建模型服务异常", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建模型服务失败: " + e.getMessage(), Instant.now()));
-        }
+    public ApiResponse<ModelServiceResponse> createService(@RequestBody CreateModelServiceRequest request) {
+        validateCreateRequest(request);
+        ModelServiceEntity entity = toEntity(request);
+        modelServiceRepository.save(entity);
+        registrationService.registerService(entity);
+        return ApiResponse.ok(toResponse(entity));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateService(@PathVariable String id,
+    public ApiResponse<ModelServiceResponse> updateService(@PathVariable String id,
                                            @RequestBody UpdateModelServiceRequest request) {
-        return modelServiceRepository.findById(id)
-                .map(existing -> {
-                    try {
-                        ModelServiceEntity merged = merge(existing, request);
-                        modelServiceRepository.save(merged);
-                        registrationService.registerService(merged);
-                        return ResponseEntity.ok(toResponse(merged));
-                    } catch (IllegalArgumentException e) {
-                        log.warn("更新模型服务失败: {}", e.getMessage());
-                        return ResponseEntity.badRequest()
-                                .body(new ErrorResponse(400, e.getMessage(), Instant.now()));
-                    }
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponse(404, "模型服务不存在: id=" + id, Instant.now())));
+        var existing = modelServiceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型服务不存在: id=" + id));
+        ModelServiceEntity merged = merge(existing, request);
+        modelServiceRepository.save(merged);
+        registrationService.registerService(merged);
+        return ApiResponse.ok(toResponse(merged));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteService(@PathVariable String id) {
+    public ResponseEntity<Void> deleteService(@PathVariable String id) {
         if (modelServiceRepository.findById(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "模型服务不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模型服务不存在: id=" + id);
         }
         clearRoutingReferences(id);
         registrationService.deregisterService(id);
@@ -169,8 +152,7 @@ public class ModelServiceController {
         if (deleted > 0) {
             return ResponseEntity.noContent().build();
         }
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse(500, "删除模型服务失败: id=" + id, Instant.now()));
+        throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "删除模型服务失败: id=" + id);
     }
 
     private List<ModelServiceEntity> resolveServices(@Nullable String kind, boolean enabledOnly) {

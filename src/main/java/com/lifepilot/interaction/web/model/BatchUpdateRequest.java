@@ -7,6 +7,8 @@ import java.util.List;
  *
  * @param action    操作类型（"pin", "unpin", "archive", "unarchive", "delete"）
  * @param sessionIds 会话 ID 列表
+ * @author zsg
+ * @since 2026-03-02
  */
 public record BatchUpdateRequest(
         String action,

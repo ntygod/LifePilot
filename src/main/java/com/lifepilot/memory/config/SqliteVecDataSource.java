@@ -15,6 +15,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>原因：sqlite-vec（以及大多数 SQLite 扩展）是“按连接加载”的。
  * 只在某一条连接中 {@code load_extension} 成功，并不代表其他连接可用。</p>
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 public class SqliteVecDataSource extends AbstractDataSource {
 
@@ -62,7 +65,9 @@ public class SqliteVecDataSource extends AbstractDataSource {
 
         // 尝试在“当前连接”加载扩展，然后再次验证
         try (Statement stmt = con.createStatement()) {
-            String loadSql = "SELECT load_extension('" + extensionPath + "', '" + SqliteVecInitializer.ENTRYPOINT + "')";
+            // extensionPath 来自应用内部（SqliteVecInitializer 解压路径），转义单引号防止意外 SQL 断裂
+            String safePath = extensionPath.replace("'", "''");
+            String loadSql = "SELECT load_extension('" + safePath + "', '" + SqliteVecInitializer.ENTRYPOINT + "')";
             stmt.execute(loadSql);
             String version = queryVecVersion(stmt);
             logReadyOnce(version, extensionPath);

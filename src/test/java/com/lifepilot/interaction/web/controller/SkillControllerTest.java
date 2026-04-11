@@ -92,8 +92,8 @@ class SkillControllerTest {
 
             mockMvc.perform(get("/api/skills").param("toolName", "tool-a"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].id").value("s1"));
+                    .andExpect(jsonPath("$.data", hasSize(1)))
+                    .andExpect(jsonPath("$.data[0].id").value("s1"));
         }
 
         @Test
@@ -103,7 +103,7 @@ class SkillControllerTest {
 
             mockMvc.perform(get("/api/skills").param("toolName", "tool-not-exist"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(0)));
+                    .andExpect(jsonPath("$.data", hasSize(0)));
         }
 
         @Test
@@ -114,7 +114,7 @@ class SkillControllerTest {
 
             mockMvc.perform(get("/api/skills"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(2)));
+                    .andExpect(jsonPath("$.data", hasSize(2)));
         }
     }
 
@@ -141,11 +141,11 @@ class SkillControllerTest {
                                     "metadata": {}
                                 }
                                 """))
-                    .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.id").value("test-skill"))
-                    .andExpect(jsonPath("$.instructions").value("这是指令内容"))
-                    .andExpect(jsonPath("$.suggestedTools", hasSize(2)))
-                    .andExpect(jsonPath("$.suggestedTools[0]").value("tool-a"));
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.id").value("test-skill"))
+                    .andExpect(jsonPath("$.data.instructions").value("这是指令内容"))
+                    .andExpect(jsonPath("$.data.suggestedTools", hasSize(2)))
+                    .andExpect(jsonPath("$.data.suggestedTools[0]").value("tool-a"));
 
             verify(skillRegistry).register(any(SkillDefinition.class));
         }
@@ -160,8 +160,7 @@ class SkillControllerTest {
                                     "name": "测试技能"
                                 }
                                 """))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("instructions 不能为空"));
+                    .andExpect(status().isBadRequest());
         }
     }
 
@@ -196,10 +195,10 @@ class SkillControllerTest {
                                 }
                                 """))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id").value("s1"))
-                    .andExpect(jsonPath("$.instructions").value("新指令内容"))
-                    .andExpect(jsonPath("$.suggestedTools", hasSize(2)))
-                    .andExpect(jsonPath("$.suggestedTools[0]").value("new-tool-a"));
+                    .andExpect(jsonPath("$.data.id").value("s1"))
+                    .andExpect(jsonPath("$.data.instructions").value("新指令内容"))
+                    .andExpect(jsonPath("$.data.suggestedTools", hasSize(2)))
+                    .andExpect(jsonPath("$.data.suggestedTools[0]").value("new-tool-a"));
         }
 
         @Test

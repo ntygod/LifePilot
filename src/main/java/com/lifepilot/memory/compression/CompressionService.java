@@ -27,6 +27,9 @@ import java.util.Map;
  *     <li>将压缩结果回写到 {@link EpisodicMemory}</li>
  * </ul>
  * 压缩失败不会影响主流程，仅记录警告日志。</p>
+ *
+ * @author zsg
+ * @since 2026-03-02
  */
 public class CompressionService {
 

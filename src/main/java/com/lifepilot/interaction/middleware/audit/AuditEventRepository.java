@@ -61,7 +61,13 @@ public class AuditEventRepository {
     public List<AuditEvent> findByFilters(@Nullable String userId, @Nullable String channelType,
                                            @Nullable String routeType,
                                            @Nullable Instant from, @Nullable Instant to) {
-        var sql = new StringBuilder("SELECT * FROM gateway_audit_log WHERE 1=1");
+        var sql = new StringBuilder("""
+                SELECT audit_id, message_id, session_id, channel_type, user_id,
+                       request_content_hash, request_summary, response_status_code,
+                       response_summary, route_type, latency_ms,
+                       prompt_tokens, completion_tokens, total_tokens, model_id,
+                       middleware_results_json, created_at
+                FROM gateway_audit_log WHERE 1=1""");
         var params = new ArrayList<>();
 
         if (userId != null) {

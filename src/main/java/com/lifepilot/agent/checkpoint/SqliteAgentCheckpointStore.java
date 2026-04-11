@@ -59,7 +59,9 @@ public class SqliteAgentCheckpointStore implements AgentCheckpointStore {
     @Transactional
     public Optional<AgentCheckpoint> claim(String sessionId, String channel, String taskFingerprint) {
         List<AgentCheckpoint> results = jdbcTemplate.query("""
-                SELECT * FROM agent_checkpoints
+                SELECT session_id, channel, task_fingerprint, source_trace_id,
+                       state_json, failure_reason, created_at, updated_at
+                FROM agent_checkpoints
                 WHERE session_id = ? AND channel = ? AND task_fingerprint = ?
                 """, rowMapper, sessionId, channel, taskFingerprint);
         if (results.isEmpty()) {

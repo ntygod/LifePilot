@@ -10,6 +10,9 @@ import java.util.UUID;
  * <p>典型事件类型示例：
  * FORMATION / RETRIEVAL / CONSOLIDATION / FORGETTING / COMPRESSION / UPDATING / L1_FLUSH / L1_APPEND。
  * </p>
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 public record MemoryEvent(
         String id,

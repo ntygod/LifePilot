@@ -39,16 +39,21 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
  * 从 transcript、工作区与长期记忆中组装提示词上下文。
+ *
+ * @author zsg
+ * @since 2026-02-24
  */
 public class ContextAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
     private static final ObjectMapper SHARED_MAPPER =
             new ObjectMapper();
+    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
     private final AgentConfigProperties config;
@@ -184,13 +189,13 @@ public class ContextAssembler {
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
             // 三路独立检索并行化：contextSnapshot、userProfile、experiences 互不依赖
             var contextFuture = CompletableFuture.supplyAsync(
-                    () -> safeLoadContextSnapshot(state, totalContextTokens));
+                    () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
             var profileFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture("")
-                    : CompletableFuture.supplyAsync(() -> safeGetUserProfile(state.goal()));
+                    : CompletableFuture.supplyAsync(() -> safeGetUserProfile(state.goal()), VIRTUAL_EXECUTOR);
             var experiencesFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
-                    : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()));
+                    : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()), VIRTUAL_EXECUTOR);
             CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();

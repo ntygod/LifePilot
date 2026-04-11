@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.SearchSettingsRequest;
 import com.lifepilot.interaction.web.model.SearchSettingsResponse;
 import com.lifepilot.interaction.web.model.UserSettings;
@@ -11,8 +12,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -56,12 +57,12 @@ public class SettingsController {
     }
 
     @GetMapping
-    public ResponseEntity<UserSettings> getSettings() {
-        return ResponseEntity.ok(settingsRepository.getSettings());
+    public ApiResponse<UserSettings> getSettings() {
+        return ApiResponse.ok(settingsRepository.getSettings());
     }
 
     @PutMapping
-    public ResponseEntity<UserSettings> updateSettings(@RequestBody UserSettings settings) {
+    public ApiResponse<UserSettings> updateSettings(@RequestBody UserSettings settings) {
         if (settings.theme() == null || settings.theme().isBlank()) {
             throw new IllegalArgumentException("主题不能为空");
         }
@@ -70,11 +71,11 @@ public class SettingsController {
         }
         settingsRepository.save(settings);
         log.debug("用户设置已更新: theme={}, language={}", settings.theme(), settings.language());
-        return ResponseEntity.ok(settingsRepository.getSettings());
+        return ApiResponse.ok(settingsRepository.getSettings());
     }
 
     @GetMapping("/knowledge")
-    public ResponseEntity<Map<String, Object>> getKnowledgeSettings() {
+    public ApiResponse<Map<String, Object>> getKnowledgeSettings() {
         log.debug("获取知识库设置");
         Map<String, Object> config = deserializeJsonConfig(settingsRepository.getKnowledgeConfig());
         KnowledgeBaseProperties properties = knowledgeBaseProperties != null
@@ -118,11 +119,11 @@ public class SettingsController {
                 getConfigValue(config, "vectorBatchSize", Integer.class, vectorIndexer.batchSize()));
         result.put("vectorIndexer", vectorConfig);
 
-        return ResponseEntity.ok(result);
+        return ApiResponse.ok(result);
     }
 
     @PutMapping("/knowledge")
-    public ResponseEntity<Map<String, Object>> updateKnowledgeSettings(@RequestBody Map<String, Object> request) {
+    public ApiResponse<Map<String, Object>> updateKnowledgeSettings(@RequestBody Map<String, Object> request) {
         log.info("更新知识库设置");
         Map<String, Object> config = deserializeJsonConfig(settingsRepository.getKnowledgeConfig());
         for (String key : List.of(
@@ -147,7 +148,7 @@ public class SettingsController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<SearchSettingsResponse> getSearchSettings() {
+    public ApiResponse<SearchSettingsResponse> getSearchSettings() {
         log.debug("获取联网搜索设置");
         Map<String, Object> config = deserializeJsonConfig(settingsRepository.getSearchConfig());
         MetaProperties.Infra.WebSearch defaults = metaProperties != null
@@ -166,7 +167,7 @@ public class SettingsController {
         int readTimeoutSeconds = Math.max(1,
                 getConfigValue(config, "readTimeoutSeconds", Integer.class, defaults.getReadTimeoutSeconds()));
 
-        return ResponseEntity.ok(new SearchSettingsResponse(
+        return ApiResponse.ok(new SearchSettingsResponse(
                 provider,
                 maskApiKey(apiKey),
                 maxResults,
@@ -179,7 +180,7 @@ public class SettingsController {
     }
 
     @PutMapping("/search")
-    public ResponseEntity<SearchSettingsResponse> updateSearchSettings(@RequestBody SearchSettingsRequest request) {
+    public ApiResponse<SearchSettingsResponse> updateSearchSettings(@RequestBody SearchSettingsRequest request) {
         log.info("更新联网搜索设置: provider={}, topic={}, depth={}",
                 request.provider(), request.topic(), request.searchDepth());
 
@@ -216,15 +217,15 @@ public class SettingsController {
     }
 
     @GetMapping("/channels")
-    public ResponseEntity<Map<String, Object>> getChannelConfig() {
+    public ApiResponse<Map<String, Object>> getChannelConfig() {
         Map<String, Object> config = deserializeJsonConfig(settingsRepository.getChannelConfig());
         maskChannelSecrets(config);
-        return ResponseEntity.ok(config);
+        return ApiResponse.ok(config);
     }
 
     @SuppressWarnings("unchecked")
     @PutMapping("/channels")
-    public ResponseEntity<Map<String, Object>> updateChannelConfig(@RequestBody Map<String, Object> request) {
+    public ApiResponse<Map<String, Object>> updateChannelConfig(@RequestBody Map<String, Object> request) {
         Map<String, Object> existing = deserializeJsonConfig(settingsRepository.getChannelConfig());
 
         for (var entry : request.entrySet()) {
@@ -253,7 +254,7 @@ public class SettingsController {
         settingsRepository.saveChannelConfig(writeJson(existing));
         maskChannelSecrets(existing);
         log.info("渠道设置已更新: channels={}", existing.keySet());
-        return ResponseEntity.ok(existing);
+        return ApiResponse.ok(existing);
     }
 
     @SuppressWarnings("unchecked")

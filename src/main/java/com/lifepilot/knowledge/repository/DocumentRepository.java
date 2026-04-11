@@ -109,7 +109,13 @@ public class DocumentRepository {
      */
     public Optional<Document> findById(String id) {
         List<Document> results = jdbcTemplate.query(
-                "SELECT * FROM documents WHERE id = ?",
+                """
+                SELECT id, knowledge_base_id, file_name, file_path, file_size, mime_type,
+                       content_hash, status, chunk_count, entity_count, error_message,
+                       last_processed_stage, metadata_json, created_at, updated_at,
+                       source_type, source_key, source_datastore_id, source_collection_id, source_ref_json
+                FROM documents WHERE id = ?
+                """,
                 rowMapper, id);
         return results.stream().findFirst();
     }
@@ -122,7 +128,13 @@ public class DocumentRepository {
      */
     public List<Document> findByKnowledgeBaseId(String knowledgeBaseId) {
         return jdbcTemplate.query(
-                "SELECT * FROM documents WHERE knowledge_base_id = ?",
+                """
+                SELECT id, knowledge_base_id, file_name, file_path, file_size, mime_type,
+                       content_hash, status, chunk_count, entity_count, error_message,
+                       last_processed_stage, metadata_json, created_at, updated_at,
+                       source_type, source_key, source_datastore_id, source_collection_id, source_ref_json
+                FROM documents WHERE knowledge_base_id = ?
+                """,
                 rowMapper, knowledgeBaseId);
     }
 
@@ -131,7 +143,13 @@ public class DocumentRepository {
      */
     public Optional<Document> findByKnowledgeBaseIdAndSourceKey(String knowledgeBaseId, String sourceKey) {
         List<Document> results = jdbcTemplate.query(
-                "SELECT * FROM documents WHERE knowledge_base_id = ? AND source_key = ?",
+                """
+                SELECT id, knowledge_base_id, file_name, file_path, file_size, mime_type,
+                       content_hash, status, chunk_count, entity_count, error_message,
+                       last_processed_stage, metadata_json, created_at, updated_at,
+                       source_type, source_key, source_datastore_id, source_collection_id, source_ref_json
+                FROM documents WHERE knowledge_base_id = ? AND source_key = ?
+                """,
                 rowMapper, knowledgeBaseId, sourceKey);
         return results.stream().findFirst();
     }
@@ -144,7 +162,11 @@ public class DocumentRepository {
                                                                                   DocumentSourceType sourceType) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM documents
+                SELECT id, knowledge_base_id, file_name, file_path, file_size, mime_type,
+                       content_hash, status, chunk_count, entity_count, error_message,
+                       last_processed_stage, metadata_json, created_at, updated_at,
+                       source_type, source_key, source_datastore_id, source_collection_id, source_ref_json
+                FROM documents
                 WHERE knowledge_base_id = ?
                   AND source_datastore_id = ?
                   AND source_type = ?

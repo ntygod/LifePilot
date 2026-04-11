@@ -7,6 +7,7 @@ import com.lifepilot.interaction.web.model.ErrorTrendDaily;
 import com.lifepilot.interaction.web.model.KnowledgeBaseStats;
 import com.lifepilot.interaction.web.model.ToolAnalyticsResponse;
 import com.lifepilot.interaction.web.model.UsageStats;
+import com.lifepilot.interaction.web.repository.AnalyticsRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.multiagent.registry.AgentRegistry;
@@ -14,8 +15,7 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,7 +43,7 @@ public class AnalyticsController {
 
     private static final Logger log = LoggerFactory.getLogger(AnalyticsController.class);
 
-    private final JdbcTemplate jdbcTemplate;
+    private final AnalyticsRepository analyticsRepository;
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final ObjectMapper objectMapper;
     private final DynamicToolRegistry toolRegistry;
@@ -52,12 +52,12 @@ public class AnalyticsController {
     // Token 成本估算：约 $2 / 1M tokens = $0.000002 per token
     private static final double COST_PER_TOKEN = 0.000002;
 
-    public AnalyticsController(JdbcTemplate jdbcTemplate,
+    public AnalyticsController(AnalyticsRepository analyticsRepository,
                                 KnowledgeBaseManager knowledgeBaseManager,
                                 ObjectMapper objectMapper,
                                 DynamicToolRegistry toolRegistry,
                                 AgentRegistry agentRegistry) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.analyticsRepository = analyticsRepository;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.objectMapper = objectMapper;
         this.toolRegistry = toolRegistry;
@@ -72,7 +72,7 @@ public class AnalyticsController {
      * @return 用量统计
      */
     @GetMapping("/usage")
-    public ResponseEntity<UsageStats> getUsageStats(
+    public ApiResponse<UsageStats> getUsageStats(
             @RequestParam String from,
             @RequestParam String to) {
         log.debug("查询用量统计: from={}, to={}", from, to);
@@ -81,61 +81,26 @@ public class AnalyticsController {
         Instant endTime = Instant.parse(to);
 
         // 查询总体统计
-        var overallStats = jdbcTemplate.queryForObject("""
-                SELECT 
-                    COUNT(*) AS total_requests,
-                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                    COALESCE(SUM(output_tokens), 0) AS output_tokens
-                FROM traces
-                WHERE start_time >= ? AND start_time <= ?
-                """, (rs, rowNum) -> {
-            long totalRequests = rs.getLong("total_requests");
-            long totalTokens = rs.getLong("total_tokens");
-            long inputTokens = rs.getLong("input_tokens");
-            long outputTokens = rs.getLong("output_tokens");
-            return new long[]{totalRequests, totalTokens, inputTokens, outputTokens};
-        }, startTime.toString(), endTime.toString());
-
-        if (overallStats == null) {
-            overallStats = new long[]{0, 0, 0, 0};
-        }
-
+        long[] overallStats = analyticsRepository.queryOverallStats(startTime.toString(), endTime.toString());
         long totalRequests = overallStats[0];
         long totalTokens = overallStats[1];
         long inputTokens = overallStats[2];
         long outputTokens = overallStats[3];
         double estimatedCost = totalTokens * COST_PER_TOKEN;
 
-        // 查询每日统计（使用 SQLite 的 strftime 函数）
-        List<UsageStats.DailyStat> dailyStats = jdbcTemplate.query("""
-                SELECT 
-                    strftime('%Y-%m-%d', start_time) AS date,
-                    COUNT(*) AS requests,
-                    COALESCE(SUM(total_tokens), 0) AS tokens,
-                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                    COALESCE(SUM(output_tokens), 0) AS output_tokens
-                FROM traces
-                WHERE start_time >= ? AND start_time <= ?
-                GROUP BY strftime('%Y-%m-%d', start_time)
-                ORDER BY date
-                """, (rs, rowNum) -> {
-            String dateStr = rs.getString("date");
-            long requests = rs.getLong("requests");
-            long tokens = rs.getLong("tokens");
-            long inputToks = rs.getLong("input_tokens");
-            long outputToks = rs.getLong("output_tokens");
-            double cost = tokens * COST_PER_TOKEN;
-
-            return new UsageStats.DailyStat(
-                    dateStr,
-                    requests,
-                    tokens,
-                    inputToks,
-                    outputToks,
-                    cost
-            );
-        }, startTime.toString(), endTime.toString());
+        // 查询每日统计，转换为 DailyStat（加入 cost 计算）
+        List<UsageStats.DailyStat> dailyStats = analyticsRepository
+                .queryDailyTokenStats(startTime.toString(), endTime.toString())
+                .stream()
+                .map(row -> new UsageStats.DailyStat(
+                        row.date(),
+                        row.requests(),
+                        row.tokens(),
+                        row.inputTokens(),
+                        row.outputTokens(),
+                        row.tokens() * COST_PER_TOKEN
+                ))
+                .toList();
 
         var stats = new UsageStats(
                 totalRequests,
@@ -147,7 +112,7 @@ public class AnalyticsController {
                 dailyStats
         );
 
-        return ResponseEntity.ok(stats);
+        return ApiResponse.ok(stats);
     }
 
     /**
@@ -158,47 +123,23 @@ public class AnalyticsController {
      * @return Agent 统计列表
      */
     @GetMapping("/agents")
-    public ResponseEntity<List<AgentStats>> getAgentStats(
+    public ApiResponse<List<AgentStats>> getAgentStats(
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to) {
         log.debug("查询 Agent 统计: from={}, to={}", from, to);
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT 
-                    t.metadata_json,
-                    COUNT(*) AS call_count,
-                    COALESCE(AVG(t.total_duration_ms), 0) AS avg_response_time,
-                    COALESCE(SUM(CASE WHEN t.success = 0 THEN 1 ELSE 0 END), 0) AS failure_count,
-                    COALESCE(SUM(t.total_tokens), 0) AS total_tokens
-                FROM traces t
-                WHERE 1=1
-                """);
-
-        List<Object> params = new ArrayList<>();
-
-        if (from != null && !from.isBlank()) {
-            sql.append(" AND t.start_time >= ?");
-            params.add(Instant.parse(from).toString());
-        }
-        if (to != null && !to.isBlank()) {
-            sql.append(" AND t.start_time <= ?");
-            params.add(Instant.parse(to).toString());
-        }
-
-        sql.append(" GROUP BY t.metadata_json");
-
         // 查询按 metadata_json 分组的统计
+        List<AnalyticsRepository.AgentGroupRow> rows = analyticsRepository.queryAgentGroupedStats(from, to);
         Map<String, AgentStatsData> agentDataMap = new HashMap<>();
 
-        jdbcTemplate.query(sql.toString(), (rs, rowNum) -> {
-            String metadataJson = rs.getString("metadata_json");
-            long callCount = rs.getLong("call_count");
-            long avgResponseTime = Math.round(rs.getDouble("avg_response_time"));
-            long failureCount = rs.getLong("failure_count");
-            long totalTokens = rs.getLong("total_tokens");
+        for (var row : rows) {
+            long callCount = row.callCount();
+            long avgResponseTime = Math.round(row.avgResponseTime());
+            long failureCount = row.failureCount();
+            long totalTokens = row.totalTokens();
 
             // 从 metadata_json 中提取 agent_id
-            String agentId = extractAgentId(metadataJson);
+            String agentId = extractAgentId(row.metadataJson());
             agentId = (agentId != null && !agentId.isBlank()) ? agentId : "unknown";
 
             agentDataMap.compute(agentId, (key, existing) -> {
@@ -217,9 +158,7 @@ public class AnalyticsController {
                     );
                 }
             });
-
-            return null;
-        }, params.toArray());
+        }
 
         // 获取 Agent 名称
         List<AgentStats> stats = agentDataMap.entrySet().stream()
@@ -243,7 +182,7 @@ public class AnalyticsController {
                 .sorted((a, b) -> Long.compare(b.callCount(), a.callCount())) // 按调用次数降序
                 .collect(Collectors.toList());
 
-        return ResponseEntity.ok(stats);
+        return ApiResponse.ok(stats);
     }
 
     /**
@@ -254,48 +193,23 @@ public class AnalyticsController {
      * @return 知识库统计列表
      */
     @GetMapping("/knowledge-bases")
-    public ResponseEntity<List<KnowledgeBaseStats>> getKnowledgeBaseStats(
+    public ApiResponse<List<KnowledgeBaseStats>> getKnowledgeBaseStats(
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to) {
         log.debug("查询知识库统计: from={}, to={}", from, to);
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT 
-                    ts.detail_json,
-                    COUNT(*) AS retrieval_count,
-                    COALESCE(AVG(ts.duration_ms), 0) AS avg_retrieval_time
-                FROM trace_steps ts
-                JOIN traces t ON ts.trace_id = t.trace_id
-                WHERE ts.step_type = 'tool_call'
-                  AND (ts.detail_json LIKE '%%"toolId":"knowledge_base.%%' 
-                   OR ts.detail_json LIKE '%%"toolId":"kb.%%')
-                """);
-
-        List<Object> params = new ArrayList<>();
-
-        if (from != null && !from.isBlank()) {
-            sql.append(" AND t.start_time >= ?");
-            params.add(Instant.parse(from).toString());
-        }
-        if (to != null && !to.isBlank()) {
-            sql.append(" AND t.start_time <= ?");
-            params.add(Instant.parse(to).toString());
-        }
-
-        sql.append(" GROUP BY ts.detail_json");
-
         // 查询知识库检索统计
+        List<AnalyticsRepository.KbGroupRow> kbRows = analyticsRepository.queryKbGroupedStats(from, to);
         Map<String, KbStatsData> kbDataMap = new HashMap<>();
 
-        jdbcTemplate.query(sql.toString(), (rs, rowNum) -> {
-            String detailJson = rs.getString("detail_json");
-            long retrievalCount = rs.getLong("retrieval_count");
-            long avgRetrievalTime = Math.round(rs.getDouble("avg_retrieval_time"));
+        for (var row : kbRows) {
+            long retrievalCount = row.retrievalCount();
+            long avgRetrievalTime = Math.round(row.avgRetrievalTime());
 
             // 从 detail_json 中提取 toolId
-            String toolId = extractToolIdFromJson(detailJson);
+            String toolId = extractToolIdFromJson(row.detailJson());
             if (toolId == null || toolId.isBlank()) {
-                return null;
+                continue;
             }
 
             // 从 tool_id 中提取知识库 ID（例如：knowledge_base.retrieve.kb-id）
@@ -303,7 +217,7 @@ public class AnalyticsController {
             kbId = (kbId != null && !kbId.isBlank()) ? kbId : "unknown";
 
             // 从 detail_json 中提取 success 状态
-            boolean success = extractSuccessFromJson(detailJson);
+            boolean success = extractSuccessFromJson(row.detailJson());
             long successCount = success ? retrievalCount : 0;
 
             kbDataMap.compute(kbId, (key, existing) -> {
@@ -321,9 +235,7 @@ public class AnalyticsController {
                     );
                 }
             });
-
-            return null;
-        }, params.toArray());
+        }
 
         // 获取知识库名称
         List<KnowledgeBaseStats> stats = kbDataMap.entrySet().stream()
@@ -348,7 +260,7 @@ public class AnalyticsController {
                 .sorted((a, b) -> Long.compare(b.retrievalCount(), a.retrievalCount())) // 按检索次数降序
                 .collect(Collectors.toList());
 
-        return ResponseEntity.ok(stats);
+        return ApiResponse.ok(stats);
     }
 
     // ─── Tool 调用统计 ───
@@ -365,7 +277,7 @@ public class AnalyticsController {
      * @return Tool 调用统计响应
      */
     @GetMapping("/tools")
-    public ResponseEntity<ToolAnalyticsResponse> getToolAnalytics(
+    public ApiResponse<ToolAnalyticsResponse> getToolAnalytics(
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to) {
         log.debug("查询 Tool 调用统计: from={}, to={}", from, to);
@@ -375,24 +287,18 @@ public class AnalyticsController {
         Instant startTime = (from != null && !from.isBlank()) ? Instant.parse(from) : endTime.minus(30, ChronoUnit.DAYS);
 
         // 查询所有 tool_call 类型的步骤
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT ts.detail_json, ts.duration_ms, ts.timestamp
-                FROM trace_steps ts
-                JOIN traces t ON ts.trace_id = t.trace_id
-                WHERE ts.step_type = 'tool_call'
-                  AND t.start_time >= ?
-                  AND t.start_time <= ?
-                """, startTime.toString(), endTime.toString());
+        List<AnalyticsRepository.ToolCallStepRow> toolRows =
+                analyticsRepository.queryToolCallSteps(startTime.toString(), endTime.toString());
 
         // 按 toolId 聚合统计
         Map<String, ToolAggregation> toolAggMap = new HashMap<>();
         // 按天分组聚合
         Map<String, DailyAggregation> dailyAggMap = new TreeMap<>();
 
-        for (Map<String, Object> row : rows) {
-            String detailJson = (String) row.get("detail_json");
-            long durationMs = row.get("duration_ms") instanceof Number n ? n.longValue() : 0L;
-            String timestamp = (String) row.get("timestamp");
+        for (var row : toolRows) {
+            String detailJson = row.detailJson();
+            long durationMs = row.durationMs();
+            String timestamp = row.timestamp();
 
             String toolId = extractToolIdFromJson(detailJson);
             if (toolId == null || toolId.isBlank()) {
@@ -446,7 +352,7 @@ public class AnalyticsController {
                 })
                 .collect(Collectors.toList());
 
-        return ResponseEntity.ok(new ToolAnalyticsResponse(toolStats, dailyTrend));
+        return ApiResponse.ok(new ToolAnalyticsResponse(toolStats, dailyTrend));
     }
 
     // ─── 错误趋势统计 ───
@@ -463,7 +369,7 @@ public class AnalyticsController {
      * @return 每日错误趋势列表
      */
     @GetMapping("/error-trend")
-    public ResponseEntity<List<ErrorTrendDaily>> getErrorTrend(
+    public ApiResponse<List<ErrorTrendDaily>> getErrorTrend(
             @RequestParam String from,
             @RequestParam String to) {
         log.debug("查询错误趋势: from={}, to={}", from, to);
@@ -472,31 +378,10 @@ public class AnalyticsController {
         Instant endTime = Instant.parse(to);
 
         // 查询每日失败 Trace 总数及工具错误数
-        List<ErrorTrendDaily> trend = jdbcTemplate.query("""
-                SELECT 
-                    strftime('%Y-%m-%d', t.start_time) AS date,
-                    COUNT(*) AS total_errors,
-                    COALESCE(SUM(CASE WHEN EXISTS (
-                        SELECT 1 FROM trace_steps ts 
-                        WHERE ts.trace_id = t.trace_id 
-                          AND ts.step_type = 'tool_call'
-                          AND ts.detail_json LIKE '%%"success":false%%'
-                    ) THEN 1 ELSE 0 END), 0) AS tool_errors
-                FROM traces t
-                WHERE t.success = 0
-                  AND t.start_time >= ?
-                  AND t.start_time <= ?
-                GROUP BY strftime('%Y-%m-%d', t.start_time)
-                ORDER BY date
-                """, (rs, rowNum) -> {
-            String date = rs.getString("date");
-            long totalErrors = rs.getLong("total_errors");
-            long toolErrors = rs.getLong("tool_errors");
-            long agentErrors = totalErrors - toolErrors;
-            return new ErrorTrendDaily(date, agentErrors, toolErrors, totalErrors);
-        }, startTime.toString(), endTime.toString());
+        List<ErrorTrendDaily> trend = analyticsRepository.queryErrorTrend(
+                startTime.toString(), endTime.toString());
 
-        return ResponseEntity.ok(trend);
+        return ApiResponse.ok(trend);
     }
 
     // ─── 内部辅助方法 ───

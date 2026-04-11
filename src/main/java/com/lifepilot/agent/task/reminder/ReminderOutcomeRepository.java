@@ -75,7 +75,10 @@ public class ReminderOutcomeRepository {
 
     public Optional<ReminderInferredOutcomeRecord> findByDecisionId(String decisionId) {
         List<ReminderInferredOutcomeRecord> rows = jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_inferred_outcomes
+                SELECT id, decision_id, notification_id, user_id, topic_key, outcome_type,
+                       evidence_source, confidence_score, attribution_score, evidence_json,
+                       inferred_at, created_at, updated_at
+                FROM proactive_reminder_inferred_outcomes
                 WHERE decision_id = ?
                 ORDER BY inferred_at DESC
                 LIMIT 1

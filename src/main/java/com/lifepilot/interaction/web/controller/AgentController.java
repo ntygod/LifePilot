@@ -11,6 +11,7 @@ import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.SegmentInfo;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.TokenBudgetInfo;
@@ -32,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -107,7 +109,7 @@ public class AgentController {
      * @return Agent 列表
      */
     @GetMapping
-    public ResponseEntity<List<AgentSummary>> listAgents(
+    public ApiResponse<List<AgentSummary>> listAgents(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
@@ -127,7 +129,7 @@ public class AgentController {
                 .collect(Collectors.toList());
 
         log.info("返回 Agent 列表: 总数={}, 过滤后={}", allAgents.size(), summaries.size());
-        return ResponseEntity.ok(summaries);
+        return ApiResponse.ok(summaries);
     }
 
     /**
@@ -323,11 +325,10 @@ public class AgentController {
      * @return ChatResponse 包含响应内容和 Token 使用情况
      */
     @PostMapping("/{id}/test-chat")
-    public ResponseEntity<?> testChat(@PathVariable String id,
+    public ApiResponse<?> testChat(@PathVariable String id,
                                        @RequestBody TestChatRequest request) {
         if (agentOrchestrator == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "Agent 引擎未启用（LLM 不可用）", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Agent 引擎未启用（LLM 不可用）");
         }
         log.info("Agent 测试对话请求: agentId={}, messageLength={}", id, request.message().length());
 
@@ -335,8 +336,7 @@ public class AgentController {
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
@@ -344,8 +344,7 @@ public class AgentController {
 
         // 2. 验证消息内容
         if (request.message().isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "消息内容不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "消息内容不能为空");
         }
 
         try {
@@ -390,12 +389,11 @@ public class AgentController {
             log.info("Agent 测试对话完成: agentId={}, entryId={}, tokensUsed={}, steps={}",
                     id, entryId, agentResponse.tokensUsed(), agentResponse.stepCount());
 
-            return ResponseEntity.ok(chatResponse);
+            return ApiResponse.ok(chatResponse);
 
         } catch (Exception e) {
             log.error("Agent 测试对话异常: agentId={}, error={}", id, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(500, "Agent 测试对话失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Agent 测试对话失败: " + e.getMessage());
         }
     }
 
@@ -507,7 +505,7 @@ public class AgentController {
      * @return ContextPreviewResponse 上下文组装结果
      */
     @PostMapping("/{id}/context-preview")
-    public ResponseEntity<?> contextPreview(@PathVariable String id,
+    public ApiResponse<?> contextPreview(@PathVariable String id,
                                             @RequestBody ContextPreviewRequest request) {
         log.info("上下文组装预览请求: agentId={}, messageLength={}", id, request.message().length());
 
@@ -515,8 +513,7 @@ public class AgentController {
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
@@ -577,12 +574,11 @@ public class AgentController {
             log.info("上下文组装预览完成: agentId={}, totalTokens={}, degraded={}",
                     id, assembled.totalTokens(), assembled.degraded());
 
-            return ResponseEntity.ok(response);
+            return ApiResponse.ok(response);
 
         } catch (Exception e) {
             log.error("上下文组装预览异常: agentId={}, error={}", id, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(500, "上下文组装预览失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "上下文组装预览失败: " + e.getMessage());
         }
     }
 
@@ -600,20 +596,19 @@ public class AgentController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getAgent(@PathVariable String id) {
+    public ApiResponse<?> getAgent(@PathVariable String id) {
         log.debug("查询 Agent 详情: id={}", id);
 
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
         AgentDetail detail = toAgentDetail(agent);
 
-        return ResponseEntity.ok(detail);
+        return ApiResponse.ok(detail);
     }
 
     /**
@@ -623,17 +618,15 @@ public class AgentController {
      * @return 创建的 Agent 详情
      */
     @PostMapping
-    public ResponseEntity<?> createAgent(@RequestBody CreateAgentRequest request) {
+    public ApiResponse<?> createAgent(@RequestBody CreateAgentRequest request) {
         log.info("创建 Agent: name={}", request.name());
 
         // 1. 验证必填字段
         if (request.name() == null || request.name().isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "Agent 名称不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 名称不能为空");
         }
         if (request.systemPrompt() != null && request.systemPrompt().isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "System Prompt 不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "System Prompt 不能为空");
         }
 
         // 2. 生成 Agent ID
@@ -662,14 +655,13 @@ public class AgentController {
         boolean registered = agentRegistry.register(agentDef);
         if (!registered) {
             log.error("Agent 注册失败: id={}", agentId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(500, "Agent 注册失败", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Agent 注册失败");
         }
 
         // 6. 返回 Agent 详情
         AgentDetail detail = toAgentDetail(agentDef);
         log.info("Agent 创建成功: id={}, name={}", agentId, request.name());
-        return ResponseEntity.status(HttpStatus.CREATED).body(detail);
+        return ApiResponse.ok(detail);
     }
 
     /**
@@ -680,24 +672,21 @@ public class AgentController {
      * @return 更新后的 Agent 详情
      */
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateAgent(@PathVariable String id, @RequestBody UpdateAgentRequest request) {
+    public ApiResponse<?> updateAgent(@PathVariable String id, @RequestBody UpdateAgentRequest request) {
         log.info("更新 Agent: id={}", id);
 
         // 1. 查找现有 Agent
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         if (request.name() != null && request.name().isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "Agent 名称不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 名称不能为空");
         }
         if (request.systemPrompt() != null && request.systemPrompt().isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "System Prompt 不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "System Prompt 不能为空");
         }
 
         AgentDefinition existing = agentOpt.get();
@@ -736,14 +725,13 @@ public class AgentController {
         }
         if (!registered) {
             log.error("Agent 更新失败: id={}", id);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(500, "Agent 更新失败", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Agent 更新失败");
         }
 
         // 5. 返回更新后的 Agent 详情
         AgentDetail detail = toAgentDetail(updatedDef);
         log.info("Agent 更新成功: id={}", id);
-        return ResponseEntity.ok(detail);
+        return ApiResponse.ok(detail);
     }
 
     /**
@@ -753,15 +741,14 @@ public class AgentController {
      * @return 204 No Content
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteAgent(@PathVariable String id) {
+    public ApiResponse<?> deleteAgent(@PathVariable String id) {
         log.info("删除 Agent: id={}", id);
 
         // 1. 查找现有 Agent
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
@@ -769,8 +756,7 @@ public class AgentController {
         // 2. 检查是否为 Builtin Agent（不允许删除）
         if (agent.source() instanceof AgentSource.Builtin) {
             log.warn("不允许删除 Builtin Agent: id={}", id);
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
-                    new ErrorResponse(403, "不允许删除内置 Agent", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "不允许删除内置 Agent");
         }
 
         // 3. 当前未维护 Agent 的反向引用索引；删除只影响后续新请求，不影响历史 trace。
@@ -779,12 +765,11 @@ public class AgentController {
         boolean unregistered = agentRegistry.unregister(id);
         if (!unregistered) {
             log.error("Agent 删除失败: id={}", id);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(500, "Agent 删除失败", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Agent 删除失败");
         }
 
         log.info("Agent 删除成功: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -794,14 +779,13 @@ public class AgentController {
      * @return 204 No Content
      */
     @PostMapping("/{id}/enable")
-    public ResponseEntity<?> enableAgent(@PathVariable String id) {
+    public ApiResponse<?> enableAgent(@PathVariable String id) {
         log.info("启用 Agent: id={}", id);
 
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
@@ -814,7 +798,7 @@ public class AgentController {
 
         agentRegistry.register(updatedDef);
         log.info("Agent 启用成功: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -824,14 +808,13 @@ public class AgentController {
      * @return 204 No Content
      */
     @PostMapping("/{id}/disable")
-    public ResponseEntity<?> disableAgent(@PathVariable String id) {
+    public ApiResponse<?> disableAgent(@PathVariable String id) {
         log.info("禁用 Agent: id={}", id);
 
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
             log.warn("Agent 不存在: id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
@@ -844,7 +827,7 @@ public class AgentController {
 
         agentRegistry.register(updatedDef);
         log.info("Agent 禁用成功: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -1179,11 +1162,10 @@ public class AgentController {
      * @return Markdown 文本
      */
     @GetMapping(value = "/{id}/markdown", produces = "text/markdown")
-    public ResponseEntity<?> getAgentMarkdown(@PathVariable String id) {
+    public ApiResponse<?> getAgentMarkdown(@PathVariable String id) {
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition agent = agentOpt.get();
@@ -1195,7 +1177,7 @@ public class AgentController {
             if (Files.exists(filePath)) {
                 try {
                     String content = Files.readString(filePath);
-                    return ResponseEntity.ok(content);
+                    return ApiResponse.ok(content);
                 } catch (IOException e) {
                     log.warn("读取 Agent Markdown 文件失败: id={}, path={}", id, filePath);
                 }
@@ -1204,7 +1186,7 @@ public class AgentController {
 
         // 回退：通过序列化器生成
         String markdown = markdownSerializer.serialize(agent);
-        return ResponseEntity.ok(markdown);
+        return ApiResponse.ok(markdown);
     }
 
     /**
@@ -1218,35 +1200,31 @@ public class AgentController {
      * @return 更新后的 Agent 详情
      */
     @PutMapping(value = "/{id}/markdown", consumes = "text/plain")
-    public ResponseEntity<?> updateAgentMarkdown(@PathVariable String id,
+    public ApiResponse<?> updateAgentMarkdown(@PathVariable String id,
                                                   @RequestBody String content) {
         var agentOpt = agentRegistry.find(id);
         if (agentOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在: id=" + id);
         }
 
         AgentDefinition existing = agentOpt.get();
 
         // Builtin Agent 不允许通过 Markdown 更新
         if (existing.source() instanceof AgentSource.Builtin) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "内置 Agent 不支持 Markdown 编辑", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "内置 Agent 不支持 Markdown 编辑");
         }
 
         // 解析 Markdown 内容
         var parsed = markdownParser.parse(content, Path.of(id + ".md"));
         if (parsed.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "Agent Markdown 解析失败，请检查格式", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent Markdown 解析失败，请检查格式");
         }
 
         AgentDefinition parsedDef = parsed.get();
 
         // 验证 ID 一致性
         if (!parsedDef.id().equals(id)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "Markdown 中的 id 必须与路径参数一致", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Markdown 中的 id 必须与路径参数一致");
         }
 
         try {
@@ -1265,19 +1243,17 @@ public class AgentController {
             // 通过 loader 重新加载（设置正确的 source）
             Optional<AgentDefinition> loaded = markdownLoader.loadFromFile(filePath);
             if (loaded.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                        new ErrorResponse(400, "Agent 更新失败，请检查定义", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 更新失败，请检查定义");
             }
 
             agentRegistry.register(loaded.get());
             log.info("Agent Markdown 更新成功: id={}", id);
 
             AgentDetail detail = toAgentDetail(loaded.get());
-            return ResponseEntity.ok(detail);
+            return ApiResponse.ok(detail);
         } catch (IOException e) {
             log.error("Agent Markdown 持久化失败: id={}, error={}", id, e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(500, "保存失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "保存失败: " + e.getMessage());
         }
     }
 }

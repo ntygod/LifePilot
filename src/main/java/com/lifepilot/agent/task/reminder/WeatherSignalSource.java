@@ -36,7 +36,6 @@ public class WeatherSignalSource {
 
     private static final Logger log = LoggerFactory.getLogger(WeatherSignalSource.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String WEATHER_API_BASE = "https://devapi.qweather.com/v7/weather/3d";
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
 
     /** 温差阈值（°C）。 */
@@ -46,8 +45,10 @@ public class WeatherSignalSource {
     private static final int AQI_THRESHOLD = 150;
 
     private final HttpClient httpClient;
+    private final String weatherApiBase;
 
-    public WeatherSignalSource() {
+    public WeatherSignalSource(String weatherApiBase) {
+        this.weatherApiBase = weatherApiBase;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(HTTP_TIMEOUT)
                 .build();
@@ -65,7 +66,7 @@ public class WeatherSignalSource {
         Objects.requireNonNull(location, "location 不能为空");
 
         try {
-            String url = WEATHER_API_BASE + "?key=" + apiKey + "&location=" + location;
+            String url = weatherApiBase + "?key=" + apiKey + "&location=" + location;
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(HTTP_TIMEOUT)

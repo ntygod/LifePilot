@@ -85,7 +85,7 @@ public class WorkflowEventRecorder {
 
     public List<WorkflowEvent> getTimeline(String instanceId) {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_events WHERE instance_id = ? ORDER BY created_at ASC",
+                "SELECT id, instance_id, workflow_id, type, step_id, data_json, created_at FROM workflow_events WHERE instance_id = ? ORDER BY created_at ASC",
                 this::mapEvent,
                 instanceId
         );
@@ -93,7 +93,7 @@ public class WorkflowEventRecorder {
 
     public List<WorkflowEvent> getEventsByType(WorkflowEventType type, Instant since) {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_events WHERE type = ? AND created_at >= ? ORDER BY created_at ASC",
+                "SELECT id, instance_id, workflow_id, type, step_id, data_json, created_at FROM workflow_events WHERE type = ? AND created_at >= ? ORDER BY created_at ASC",
                 this::mapEvent,
                 type.name(),
                 since.toString()

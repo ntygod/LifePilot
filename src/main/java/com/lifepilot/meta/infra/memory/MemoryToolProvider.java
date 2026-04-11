@@ -117,7 +117,7 @@ public class MemoryToolProvider {
                                                 "query-at-time=时间点查询, search-experience=检索执行经验")),
                                 Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 使用")),
                                 Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
-                                Map.entry("name", Map.of("type", "string", "description", "实体名称；create 必填")),
+                                Map.entry("name", Map.of("type", "string", "description", "实体名称；create 必填，update 时可选改名")),
                                 Map.entry("entityType", Map.of("type", "string", "description", "实体类型；create 必填，query-at-time 时可选过滤", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM"))),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
@@ -263,15 +263,32 @@ public class MemoryToolProvider {
                 return ToolResult.error("实体不存在: " + entityId + "，请用 search 查找正确 ID");
             }
             var entity = existing.get();
+            String newName = input.getOptionalParam("name", String.class).orElse(entity.name());
             String newDesc = input.getOptionalParam("description", String.class).orElse(entity.description());
             EntityType newType = input.getOptionalParam("entityType", String.class).map(s -> EntityType.valueOf(s.toUpperCase())).orElse(entity.type());
+            String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
             var now = Instant.now();
+
+            // 改名时 (name, type) 是冲突检测的 identity key，直接 upsert 会被当作新实体
+            // 因此走「归档旧实体 + 创建新实体」路径
+            if (!newName.equals(entity.name())) {
+                SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
+                var renamed = new TemporalEntity(null, newType, newName, newDesc,
+                        entity.properties(), 1, true,
+                        now, null, entity.sourceConversationId(),
+                        entity.extractionConfidence(), entity.importanceScore(),
+                        entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
+                var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(renamed, sessionId));
+                return ToolResult.success(Map.of(
+                        "id", result.id(), "name", result.name(), "type", result.type().name(),
+                        "version", result.version(), "description", result.description() != null ? result.description() : ""));
+            }
+
             var updated = new TemporalEntity(entity.id(), newType, entity.name(), newDesc,
                     entity.properties(), entity.version(), entity.isCurrent(),
                     entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
                     entity.extractionConfidence(), entity.importanceScore(),
                     entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-            String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
             var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId));
             return ToolResult.success(Map.of(
                     "id", result.id(), "name", result.name(), "type", result.type().name(),

@@ -83,9 +83,9 @@ class DatastoreControllerTest {
 
         mockMvc.perform(get("/api/datastores").param("q", "素材"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value("ds-1"))
-                .andExpect(jsonPath("$[0].name").value("知天命素材库"));
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value("ds-1"))
+                .andExpect(jsonPath("$.data[0].name").value("知天命素材库"));
     }
 
     @Test
@@ -96,9 +96,9 @@ class DatastoreControllerTest {
 
         mockMvc.perform(get("/api/datastores/ds-1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("ds-1"))
-                .andExpect(jsonPath("$.name").value("知天命素材库"))
-                .andExpect(jsonPath("$.type").value("DOCUMENT"));
+                .andExpect(jsonPath("$.data.id").value("ds-1"))
+                .andExpect(jsonPath("$.data.name").value("知天命素材库"))
+                .andExpect(jsonPath("$.data.type").value("DOCUMENT"));
     }
 
     @Test
@@ -106,9 +106,7 @@ class DatastoreControllerTest {
         when(dataStoreManager.getCollection("missing")).thenReturn(java.util.Optional.empty());
 
         mockMvc.perform(get("/api/datastores/missing"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value(404))
-                .andExpect(jsonPath("$.message").value("Datastore 不存在: id=missing"));
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -119,7 +117,7 @@ class DatastoreControllerTest {
         when(dataStoreManager.deleteCollection("ds-1")).thenReturn(true);
 
         mockMvc.perform(delete("/api/datastores/ds-1"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk());
 
         verify(dataStoreManager).deleteCollection("ds-1");
     }
@@ -129,9 +127,7 @@ class DatastoreControllerTest {
         when(dataStoreManager.getCollection("missing")).thenReturn(java.util.Optional.empty());
 
         mockMvc.perform(delete("/api/datastores/missing"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value(404))
-                .andExpect(jsonPath("$.message").value("Datastore 不存在: id=missing"));
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -162,10 +158,10 @@ class DatastoreControllerTest {
 
         mockMvc.perform(get("/api/datastores/ds-1/knowledge-bases"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value("kb-1"))
-                .andExpect(jsonPath("$[0].name").value("内部资料库"))
-                .andExpect(jsonPath("$[0].systemManaged").value(true));
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value("kb-1"))
+                .andExpect(jsonPath("$.data[0].name").value("内部资料库"))
+                .andExpect(jsonPath("$.data[0].systemManaged").value(true));
     }
 
     @Test
@@ -186,9 +182,9 @@ class DatastoreControllerTest {
 
         mockMvc.perform(get("/api/datastores/ds-1/records"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value("record-1"))
-                .andExpect(jsonPath("$[0].collectionId").value("ds-1"));
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value("record-1"))
+                .andExpect(jsonPath("$.data[0].collectionId").value("ds-1"));
     }
 
     @Test
@@ -267,9 +263,9 @@ class DatastoreControllerTest {
 
         mockMvc.perform(get("/api/datastores/ds-1/documents"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value("doc-1"))
-                .andExpect(jsonPath("$[0].sourceDatastoreId").value("ds-1"));
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value("doc-1"))
+                .andExpect(jsonPath("$.data[0].sourceDatastoreId").value("ds-1"));
     }
 
     @Test
@@ -300,10 +296,10 @@ class DatastoreControllerTest {
         );
 
         mockMvc.perform(multipart("/api/datastores/ds-1/documents").file(file))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.datastoreId").value("ds-1"))
-                .andExpect(jsonPath("$.knowledgeBaseId").value("kb-internal"))
-                .andExpect(jsonPath("$.fileName").value("人物设定.md"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.datastoreId").value("ds-1"))
+                .andExpect(jsonPath("$.data.knowledgeBaseId").value("kb-internal"))
+                .andExpect(jsonPath("$.data.fileName").value("人物设定.md"));
 
         verify(documentIngester).ingest(eq("kb-internal"), any(java.nio.file.Path.class), eq("人物设定.md"), eq("ds-1"));
         verify(dataStoreManager).linkKnowledgeDocument("ds-doc-1", "kb-doc-1");

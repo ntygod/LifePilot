@@ -78,21 +78,27 @@ public class CronTaskRepository {
 
     /** 按 ID 查询任务。 */
     public Optional<CronTaskEntry> findById(String id) {
-        var results = jdbc.query("SELECT * FROM cron_tasks WHERE id = ?", TASK_MAPPER, id);
+        var results = jdbc.query("""
+                SELECT id, name, schedule, instruction, status, created_at, updated_at
+                FROM cron_tasks WHERE id = ?""", TASK_MAPPER, id);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     /** 按状态查询任务列表。 */
     public List<CronTaskEntry> findByStatus(String status) {
         return List.copyOf(jdbc.query(
-                "SELECT * FROM cron_tasks WHERE status = ? ORDER BY created_at",
+                """
+                SELECT id, name, schedule, instruction, status, created_at, updated_at
+                FROM cron_tasks WHERE status = ? ORDER BY created_at""",
                 TASK_MAPPER, status));
     }
 
     /** 查询所有任务。 */
     public List<CronTaskEntry> findAll() {
         return List.copyOf(jdbc.query(
-                "SELECT * FROM cron_tasks ORDER BY created_at", TASK_MAPPER));
+                """
+                SELECT id, name, schedule, instruction, status, created_at, updated_at
+                FROM cron_tasks ORDER BY created_at""", TASK_MAPPER));
     }
 
     /** 保存执行日志。 */

@@ -8,6 +8,9 @@ import org.springframework.context.annotation.Bean;
 
 /**
  * 配置迁移自动装配。
+ *
+ * @author zsg
+ * @since 2026-03-01
  */
 @AutoConfiguration
 @EnableConfigurationProperties(ConfigMigrationProperties.class)

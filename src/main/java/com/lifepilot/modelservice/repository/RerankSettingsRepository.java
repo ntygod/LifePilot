@@ -46,7 +46,11 @@ public class RerankSettingsRepository {
      */
     public Optional<RerankSettingsEntity> findById(String id) {
         return jdbcTemplate.query(
-                "SELECT * FROM rerank_settings WHERE id = ?",
+                """
+                SELECT id, enabled, mode, native_service_id, llm_service_id,
+                       knowledge_top_k, memory_enabled, memory_top_k
+                FROM rerank_settings WHERE id = ?
+                """,
                 (rs, rowNum) -> new RerankSettingsEntity(
                         rs.getString("id"),
                         rs.getInt("enabled") == 1,
@@ -56,7 +60,8 @@ public class RerankSettingsRepository {
                         rs.getInt("knowledge_top_k"),
                         rs.getInt("memory_enabled") == 1,
                         rs.getInt("memory_top_k")),
-                id).stream().findFirst();
+                id
+        ).stream().findFirst();
     }
 
     /**

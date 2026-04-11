@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.PermissionApprovalResponse;
 import com.lifepilot.interaction.web.model.PermissionGrantCreateRequest;
 import com.lifepilot.interaction.web.model.PermissionGrantInfo;
@@ -12,8 +13,10 @@ import com.lifepilot.permission.service.PermissionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -52,7 +55,7 @@ public class PermissionController {
     }
 
     @GetMapping("/grants")
-    public List<PermissionGrantInfo> listGrants(@RequestParam(defaultValue = "true") boolean activeOnly,
+    public ApiResponse<List<PermissionGrantInfo>> listGrants(@RequestParam(defaultValue = "true") boolean activeOnly,
                                                 @RequestParam(required = false) String subjectType,
                                                 @RequestParam(required = false) String subjectId) {
         List<ExecutionGrant> grants;
@@ -64,11 +67,11 @@ public class PermissionController {
         } else {
             grants = activeOnly ? permissionService.findActiveGrants() : permissionService.findAllGrants();
         }
-        return grants.stream().map(PermissionGrantInfo::from).toList();
+        return ApiResponse.ok(grants.stream().map(PermissionGrantInfo::from).toList());
     }
 
     @PostMapping("/grants")
-    public PermissionGrantInfo createGrant(@RequestBody PermissionGrantCreateRequest request) {
+    public ApiResponse<PermissionGrantInfo> createGrant(@RequestBody PermissionGrantCreateRequest request) {
         Instant now = Instant.now();
         ExecutionGrant grant = permissionService.saveGrant(new ExecutionGrant(
                 null,
@@ -90,25 +93,30 @@ public class PermissionController {
                 now,
                 now
         ));
-        return PermissionGrantInfo.from(grant);
+        return ApiResponse.ok(PermissionGrantInfo.from(grant));
     }
 
     @PostMapping("/approvals/{requestId}")
-    public ResponseEntity<?> resolveApproval(@PathVariable String requestId,
+    public ApiResponse<Void> resolveApproval(@PathVariable String requestId,
                                              @RequestBody PermissionApprovalResponse response) {
         if (permissionApprovalService == null) {
-            log.debug("WebPermissionApprovalService 未注入，审批端点不可用");
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "审批端点不可用");
         }
         boolean resolved = permissionApprovalService.resolveApproval(requestId, response);
-        return resolved ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+        if (!resolved) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "审批请求不存在: id=" + requestId);
+        }
+        return ApiResponse.ok();
     }
 
     @DeleteMapping("/grants/{grantId}")
-    public ResponseEntity<?> revokeGrant(@PathVariable String grantId,
+    public ResponseEntity<Void> revokeGrant(@PathVariable String grantId,
                                          @RequestParam(required = false) String revokedBy,
                                          @RequestParam(required = false) String reason) {
         boolean revoked = permissionService.revokeGrant(grantId, revokedBy, reason);
-        return revoked ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        if (!revoked) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "授权不存在: id=" + grantId);
+        }
+        return ResponseEntity.noContent().build();
     }
 }

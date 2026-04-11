@@ -25,7 +25,6 @@ public class LocationResolver {
 
     private static final Logger log = LoggerFactory.getLogger(LocationResolver.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String IP_API_URL = "http://ip-api.com/json/?fields=city,regionName,country&lang=zh-CN";
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     private final AgentConfigProperties config;
@@ -57,8 +56,9 @@ public class LocationResolver {
             return hit;
         }
 
-        // 3. IP 自动检测（只尝试一次，失败后不再重试）
-        if (!detected) {
+        // 3. IP 自动检测（只尝试一次，失败后不再重试；未配置 URL 时跳过）
+        String ipApiUrl = config.getIpApiUrl();
+        if (!detected && ipApiUrl != null && !ipApiUrl.isBlank()) {
             detected = true;
             String result = detectByIp();
             if (result != null) {
@@ -74,7 +74,7 @@ public class LocationResolver {
     private String detectByIp() {
         try (var client = HttpClient.newBuilder().connectTimeout(TIMEOUT).build()) {
             var request = HttpRequest.newBuilder()
-                    .uri(URI.create(IP_API_URL))
+                    .uri(URI.create(config.getIpApiUrl()))
                     .timeout(TIMEOUT)
                     .GET()
                     .build();

@@ -51,7 +51,7 @@ public class GenerationSettingsRepository {
      */
     public Optional<GenerationSettingsEntity> findById(String id) {
         return jdbcTemplate.query(
-                "SELECT * FROM generation_settings WHERE id = ?",
+                "SELECT id, default_service_id, scene_service_bindings_json FROM generation_settings WHERE id = ?",
                 (rs, rowNum) -> new GenerationSettingsEntity(
                         rs.getString("id"),
                         rs.getString("default_service_id"),

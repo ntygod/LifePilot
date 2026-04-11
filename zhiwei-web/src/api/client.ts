@@ -173,7 +173,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       return undefined as T
     }
     try {
-      return JSON.parse(text) as T
+      const json = JSON.parse(text)
+      // 自动解包 ApiResponse 结构 { code: number, message: string, data: T }
+      if (json && typeof json === 'object' && 'code' in json && typeof json.code === 'number' && 'message' in json && 'data' in json) {
+        return json.data as T
+      }
+      return json as T
     } catch (e) {
       logger.error('JSON 解析失败:', e, '响应内容:', text)
       throw { code: res.status, message: '响应解析失败', timestamp: new Date().toISOString() }
@@ -415,8 +420,7 @@ export const chatApi = {
 
   /** 查询后端语音输入能力（原生音频 / STT 转录） */
   async getVoiceCapability(): Promise<{ nativeAudio: boolean; stt: boolean; supported: boolean }> {
-    const res = await request<{ code: number; data: { nativeAudio: boolean; stt: boolean; supported: boolean } }>('/chat/voice-capability')
-    return res.data
+    return request<{ nativeAudio: boolean; stt: boolean; supported: boolean }>('/chat/voice-capability')
   }
 }
 

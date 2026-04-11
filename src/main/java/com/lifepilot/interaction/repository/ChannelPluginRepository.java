@@ -67,7 +67,7 @@ public class ChannelPluginRepository {
 
     public Optional<ChannelPluginDescriptor> findByPluginId(String pluginId) {
         List<ChannelPluginDescriptor> results = jdbcTemplate.query(
-                "SELECT * FROM channel_plugins WHERE plugin_id = ?",
+                "SELECT descriptor_json FROM channel_plugins WHERE plugin_id = ?",
                 rowMapper,
                 pluginId
         );
@@ -76,7 +76,7 @@ public class ChannelPluginRepository {
 
     public List<ChannelPluginDescriptor> findAll() {
         return List.copyOf(jdbcTemplate.query(
-                "SELECT * FROM channel_plugins ORDER BY installed_at ASC",
+                "SELECT descriptor_json FROM channel_plugins ORDER BY installed_at ASC",
                 rowMapper
         ));
     }

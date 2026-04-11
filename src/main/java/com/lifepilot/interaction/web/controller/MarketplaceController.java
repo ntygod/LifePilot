@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.marketplace.MarketplaceService;
 import com.lifepilot.marketplace.model.ExtensionAssetContent;
 import com.lifepilot.marketplace.model.ExtensionPackage;
@@ -11,8 +12,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -50,7 +53,7 @@ public class MarketplaceController {
      * @return 分页结果
      */
     @GetMapping("/extensions")
-    public ResponseEntity<MarketplaceService.PagedResult<ExtensionPackage>> listExtensions(
+    public ApiResponse<MarketplaceService.PagedResult<ExtensionPackage>> listExtensions(
             @RequestParam(required = false) @Nullable ExtensionType type,
             @RequestParam(required = false) @Nullable String search,
             @RequestParam(required = false) @Nullable String tag,
@@ -58,7 +61,7 @@ public class MarketplaceController {
             @RequestParam(defaultValue = "20") int size) {
         log.debug("查询扩展列表: type={}, search={}, tag={}, page={}, size={}", type, search, tag, page, size);
         var result = marketplaceService.getExtensions(type, search, tag, page, size);
-        return ResponseEntity.ok(result);
+        return ApiResponse.ok(result);
     }
 
     /**
@@ -68,11 +71,11 @@ public class MarketplaceController {
      * @return ExtensionPackage 或 404
      */
     @GetMapping("/extensions/{id}")
-    public ResponseEntity<ExtensionPackage> getExtension(@PathVariable String id) {
+    public ApiResponse<ExtensionPackage> getExtension(@PathVariable String id) {
         log.debug("查询扩展详情: id={}", id);
-        return marketplaceService.getExtension(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        var ext = marketplaceService.getExtension(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "扩展不存在: id=" + id));
+        return ApiResponse.ok(ext);
     }
 
     /**
@@ -82,11 +85,11 @@ public class MarketplaceController {
      * @return 安装快照或 404
      */
     @GetMapping("/extensions/{id}/installation")
-    public ResponseEntity<ExtensionInstallation> getInstallation(@PathVariable String id) {
+    public ApiResponse<ExtensionInstallation> getInstallation(@PathVariable String id) {
         log.debug("查询扩展安装快照: id={}", id);
-        return marketplaceService.getInstallation(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        var inst = marketplaceService.getInstallation(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "扩展安装快照不存在: id=" + id));
+        return ApiResponse.ok(inst);
     }
 
     /**
@@ -100,9 +103,9 @@ public class MarketplaceController {
     public ResponseEntity<byte[]> getInstallationAsset(@PathVariable String id,
                                                        @RequestParam("path") String path) {
         log.debug("读取扩展安装资产: id={}, path={}", id, path);
-        return marketplaceService.getInstallationAsset(id, path)
-                .map(this::assetResponse)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        var asset = marketplaceService.getInstallationAsset(id, path)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "资产文件不存在: id=" + id + ", path=" + path));
+        return assetResponse(asset);
     }
 
     /**
@@ -113,12 +116,12 @@ public class MarketplaceController {
      * @return 安装结果
      */
     @PostMapping("/extensions/{id}/install")
-    public ResponseEntity<InstallResult> installExtension(
+    public ApiResponse<InstallResult> installExtension(
             @PathVariable String id,
             @RequestParam(defaultValue = "false") boolean confirmHighRisk) {
         log.info("安装扩展: id={}, confirmHighRisk={}", id, confirmHighRisk);
         var result = marketplaceService.install(id, confirmHighRisk);
-        return ResponseEntity.ok(result);
+        return ApiResponse.ok(result);
     }
 
     /**
@@ -128,10 +131,10 @@ public class MarketplaceController {
      * @return 卸载结果
      */
     @DeleteMapping("/extensions/{id}")
-    public ResponseEntity<InstallResult> uninstallExtension(@PathVariable String id) {
+    public ApiResponse<InstallResult> uninstallExtension(@PathVariable String id) {
         log.info("卸载扩展: id={}", id);
         var result = marketplaceService.uninstall(id);
-        return ResponseEntity.ok(result);
+        return ApiResponse.ok(result);
     }
 
     /**
@@ -142,12 +145,12 @@ public class MarketplaceController {
      * @return 升级结果
      */
     @PostMapping("/extensions/{id}/upgrade")
-    public ResponseEntity<InstallResult> upgradeExtension(
+    public ApiResponse<InstallResult> upgradeExtension(
             @PathVariable String id,
             @RequestParam(defaultValue = "false") boolean confirmHighRisk) {
         log.info("升级扩展: id={}, confirmHighRisk={}", id, confirmHighRisk);
         var result = marketplaceService.upgrade(id, confirmHighRisk);
-        return ResponseEntity.ok(result);
+        return ApiResponse.ok(result);
     }
 
     /**
@@ -156,10 +159,10 @@ public class MarketplaceController {
      * @return 刷新结果（成功刷新的索引源数量）
      */
     @PostMapping("/index/refresh")
-    public ResponseEntity<RefreshResult> refreshIndex() {
+    public ApiResponse<RefreshResult> refreshIndex() {
         log.info("刷新索引");
         int count = marketplaceService.refreshIndex();
-        return ResponseEntity.ok(new RefreshResult(count, "索引刷新完成，成功刷新 " + count + " 个索引源"));
+        return ApiResponse.ok(new RefreshResult(count, "索引刷新完成，成功刷新 " + count + " 个索引源"));
     }
 
     /**
@@ -168,10 +171,10 @@ public class MarketplaceController {
      * @return 有更新的 ExtensionPackage 列表
      */
     @GetMapping("/updates")
-    public ResponseEntity<List<ExtensionPackage>> getUpdates() {
+    public ApiResponse<List<ExtensionPackage>> getUpdates() {
         log.debug("查询可用更新");
         var updates = marketplaceService.getUpdates();
-        return ResponseEntity.ok(updates);
+        return ApiResponse.ok(updates);
     }
 
     /**
@@ -181,10 +184,10 @@ public class MarketplaceController {
      * @return ClawHub 搜索结果（转换为 ExtensionPackage 格式）
      */
     @GetMapping("/clawhub/search")
-    public ResponseEntity<List<ExtensionPackage>> searchClawHub(@RequestParam String q) {
+    public ApiResponse<List<ExtensionPackage>> searchClawHub(@RequestParam String q) {
         log.debug("ClawHub 实时搜索: q={}", q);
         var results = marketplaceService.searchClawHub(q);
-        return ResponseEntity.ok(results);
+        return ApiResponse.ok(results);
     }
 
     /**

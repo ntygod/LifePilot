@@ -87,11 +87,11 @@ class NotificationControllerTest {
                             .param("userId", "user-1")
                             .param("page", "0"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(2)))
-                    .andExpect(jsonPath("$.items[0].feedbackType", is("ACTED")))
-                    .andExpect(jsonPath("$.items[0].topicMuted", is(true)))
-                    .andExpect(jsonPath("$.total", is(2)))
-                    .andExpect(jsonPath("$.page", is(0)));
+                    .andExpect(jsonPath("$.data.items", hasSize(2)))
+                    .andExpect(jsonPath("$.data.items[0].feedbackType", is("ACTED")))
+                    .andExpect(jsonPath("$.data.items[0].topicMuted", is(true)))
+                    .andExpect(jsonPath("$.data.total", is(2)))
+                    .andExpect(jsonPath("$.data.page", is(0)));
         }
     }
 
@@ -112,8 +112,8 @@ class NotificationControllerTest {
 
             mockMvc.perform(put("/api/notifications/n-1/read"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id", is("n-1")))
-                    .andExpect(jsonPath("$.readStatus", is("READ")));
+                    .andExpect(jsonPath("$.data.id", is("n-1")))
+                    .andExpect(jsonPath("$.data.readStatus", is("READ")));
 
             verify(notificationRepository).markAsRead("n-1");
         }
@@ -139,7 +139,7 @@ class NotificationControllerTest {
             mockMvc.perform(put("/api/notifications/read-all")
                             .param("userId", "user-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.updatedCount", is(5)));
+                    .andExpect(jsonPath("$.data.updatedCount", is(5)));
         }
     }
 
@@ -179,10 +179,10 @@ class NotificationControllerTest {
                                     }
                                     """))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id", is("n-1")))
-                    .andExpect(jsonPath("$.readStatus", is("READ")))
-                    .andExpect(jsonPath("$.feedbackType", is("ACTED")))
-                    .andExpect(jsonPath("$.topicMuted", is(true)));
+                    .andExpect(jsonPath("$.data.id", is("n-1")))
+                    .andExpect(jsonPath("$.data.readStatus", is("READ")))
+                    .andExpect(jsonPath("$.data.feedbackType", is("ACTED")))
+                    .andExpect(jsonPath("$.data.topicMuted", is(true)));
 
             verify(reminderFeedbackRepository).saveFeedback(org.mockito.ArgumentMatchers.any(ReminderFeedbackRecord.class));
             verify(reminderFeedbackRepository).upsertTopicPreference(org.mockito.ArgumentMatchers.any(ReminderTopicPreferenceRecord.class));

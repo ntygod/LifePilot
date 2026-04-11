@@ -374,7 +374,13 @@ public class SessionStoreRepository {
 
     public Optional<SessionStoreRow> findBySessionId(String sessionId) {
         List<SessionStoreRow> rows = jdbcTemplate.query(
-                "SELECT * FROM session_store WHERE session_id = ?",
+                """
+                SELECT session_id, channel, chat_type, title, summary, message_count,
+                       is_pinned, archived, last_message_at, created_at, updated_at,
+                       last_activity_at, config_json, context_tokens_estimate,
+                       compaction_count, memory_flush_at, active_branch_id
+                FROM session_store WHERE session_id = ?
+                """,
                 this::mapRow,
                 sessionId
         );
@@ -384,7 +390,10 @@ public class SessionStoreRepository {
     public List<SessionStoreRow> findWebSessions() {
         return jdbcTemplate.query(
                 """
-                SELECT *
+                SELECT session_id, channel, chat_type, title, summary, message_count,
+                       is_pinned, archived, last_message_at, created_at, updated_at,
+                       last_activity_at, config_json, context_tokens_estimate,
+                       compaction_count, memory_flush_at, active_branch_id
                 FROM session_store
                 WHERE channel = 'web'
                   AND instr(session_id, ':') = 0
@@ -402,7 +411,10 @@ public class SessionStoreRepository {
                                                              @Nullable String sortBy,
                                                              @Nullable String order) {
         StringBuilder sql = new StringBuilder("""
-                SELECT *
+                SELECT session_id, channel, chat_type, title, summary, message_count,
+                       is_pinned, archived, last_message_at, created_at, updated_at,
+                       last_activity_at, config_json, context_tokens_estimate,
+                       compaction_count, memory_flush_at, active_branch_id
                 FROM session_store
                 WHERE channel = 'web'
                   AND instr(session_id, ':') = 0

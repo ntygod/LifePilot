@@ -153,7 +153,10 @@ public class ReminderExecutionRepository {
 
     public Optional<ReminderRunRecord> findRunById(String id) {
         List<ReminderRunRecord> rows = jdbcTemplate.query(
-                "SELECT * FROM proactive_reminder_runs WHERE id = ?",
+                """
+                SELECT id, user_id, started_at, finished_at, topics_collected, decisions_evaluated,
+                       reminders_sent, policy_version_id, policy_version, context_json, created_at, updated_at
+                FROM proactive_reminder_runs WHERE id = ?""",
                 RUN_ROW_MAPPER,
                 id
         );
@@ -211,7 +214,15 @@ public class ReminderExecutionRepository {
 
     public List<ReminderDecisionRecord> findDecisionsByRunId(String runId) {
         return List.copyOf(jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_decisions
+                SELECT id, run_id, topic_key, title, signal_id, candidate_type, action,
+                       decision_reason, rationale, final_score, evidence_score, timing_score,
+                       urgency_score, user_fit_score, actionability_score, duplicate_penalty,
+                       fatigue_penalty, suggested_at, next_evaluation_at, notified, notification_id,
+                       topic_last_reminded_at, topic_reminders_sent_today, topic_read_count_30d,
+                       topic_acted_count_30d, topic_dismissed_count_30d, topic_snoozed_count_30d,
+                       topic_not_relevant_count_30d, topic_muted, policy_version_id, policy_version,
+                       created_at, updated_at
+                FROM proactive_reminder_decisions
                 WHERE run_id = ?
                 ORDER BY created_at ASC
                 """, DECISION_ROW_MAPPER, runId));
@@ -219,7 +230,15 @@ public class ReminderExecutionRepository {
 
     public List<ReminderDecisionRecord> findRecentDecisionsByTopicKey(String topicKey, int limit) {
         return List.copyOf(jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_decisions
+                SELECT id, run_id, topic_key, title, signal_id, candidate_type, action,
+                       decision_reason, rationale, final_score, evidence_score, timing_score,
+                       urgency_score, user_fit_score, actionability_score, duplicate_penalty,
+                       fatigue_penalty, suggested_at, next_evaluation_at, notified, notification_id,
+                       topic_last_reminded_at, topic_reminders_sent_today, topic_read_count_30d,
+                       topic_acted_count_30d, topic_dismissed_count_30d, topic_snoozed_count_30d,
+                       topic_not_relevant_count_30d, topic_muted, policy_version_id, policy_version,
+                       created_at, updated_at
+                FROM proactive_reminder_decisions
                 WHERE topic_key = ?
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -613,7 +632,11 @@ public class ReminderExecutionRepository {
 
     public List<ReminderEvidenceRecord> findEvidenceByDecisionId(String decisionId) {
         return List.copyOf(jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_evidence
+                SELECT id, decision_id, signal_id, signal_kind, confidence_score, importance_score,
+                       evidence_count, observed_at, relevant_at, preparation_lead_minutes,
+                       preferred_window_start_hour, preferred_window_end_hour, anomaly_score,
+                       actionable, resolved, summary, created_at
+                FROM proactive_reminder_evidence
                 WHERE decision_id = ?
                 ORDER BY created_at ASC, id ASC
                 """, EVIDENCE_ROW_MAPPER, decisionId));
@@ -642,7 +665,10 @@ public class ReminderExecutionRepository {
 
     public Optional<ReminderPolicyTraceRecord> findPolicyTraceByDecisionId(String decisionId) {
         List<ReminderPolicyTraceRecord> rows = jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_policy_traces
+                SELECT decision_id, base_action, opportunity_action, final_action,
+                       opportunity_adjusted, action_adjusted, training_example_count,
+                       action_feedback_sample_count, trace_json, created_at
+                FROM proactive_reminder_policy_traces
                 WHERE decision_id = ?
                 """, (rs, _) -> new ReminderPolicyTraceRecord(
                 rs.getString("decision_id"),

@@ -11,6 +11,8 @@ package com.lifepilot.interaction.web.model;
  * @param totalTokens 总 Token 数
  * @param durationMs  总耗时（毫秒）
  * @param createdAt   创建时间（ISO 8601）
+ * @author zsg
+ * @since 2026-03-05
  */
 public record TraceItemDto(
         String id,

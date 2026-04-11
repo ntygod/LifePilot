@@ -7,6 +7,7 @@ import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackType;
 import com.lifepilot.agent.task.reminder.ReminderNotificationFeedbackView;
 import com.lifepilot.agent.task.reminder.ReminderTopicPreferenceRecord;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.NotificationDto;
 import com.lifepilot.interaction.web.model.PageResult;
 import com.lifepilot.interaction.web.model.ReminderFeedbackRequest;
@@ -72,7 +73,7 @@ public class NotificationController {
      * @return 分页通知列表
      */
     @GetMapping
-    public ResponseEntity<PageResult<NotificationDto>> listNotifications(
+    public ApiResponse<PageResult<NotificationDto>> listNotifications(
             @RequestParam String userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(required = false) Integer size) {
@@ -89,7 +90,7 @@ public class NotificationController {
         log.debug("查询通知历史: userId={}, page={}, size={}, total={}",
                 userId, page, effectiveSize, total);
 
-        return ResponseEntity.ok(new PageResult<>(dtos, page, effectiveSize, total));
+        return ApiResponse.ok(new PageResult<>(dtos, page, effectiveSize, total));
     }
 
     /**
@@ -99,7 +100,7 @@ public class NotificationController {
      * @return 更新后的通知记录
      */
     @PutMapping("/{id}/read")
-    public ResponseEntity<NotificationDto> markAsRead(@PathVariable String id) {
+    public ApiResponse<NotificationDto> markAsRead(@PathVariable String id) {
         var record = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "通知不存在: id=" + id));
@@ -109,7 +110,7 @@ public class NotificationController {
 
         // 重新查询获取更新后的记录
         var updated = notificationRepository.findById(id).orElse(record);
-        return ResponseEntity.ok(NotificationDto.from(updated, loadFeedbackView(id)));
+        return ApiResponse.ok(NotificationDto.from(updated, loadFeedbackView(id)));
     }
 
     /**
@@ -119,10 +120,10 @@ public class NotificationController {
      * @return 更新的记录数
      */
     @PutMapping("/read-all")
-    public ResponseEntity<Map<String, Integer>> markAllAsRead(@RequestParam String userId) {
+    public ApiResponse<Map<String, Integer>> markAllAsRead(@RequestParam String userId) {
         int count = notificationRepository.markAllAsRead(userId);
         log.info("批量标记通知已读: userId={}, count={}", userId, count);
-        return ResponseEntity.ok(Map.of("updatedCount", count));
+        return ApiResponse.ok(Map.of("updatedCount", count));
     }
 
     /**
@@ -133,7 +134,7 @@ public class NotificationController {
      * @return 更新后的通知记录
      */
     @PostMapping("/{id}/feedback")
-    public ResponseEntity<NotificationDto> submitReminderFeedback(@PathVariable String id,
+    public ApiResponse<NotificationDto> submitReminderFeedback(@PathVariable String id,
                                                                   @RequestBody ReminderFeedbackRequest request) {
         if (reminderFeedbackRepository == null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "主动提醒反馈未启用");
@@ -186,7 +187,7 @@ public class NotificationController {
                         "主动提醒反馈保存后未能读取"));
         log.info("提交主动提醒反馈: notificationId={}, topicKey={}, feedbackType={}, muteTopic={}",
                 id, topicKey, feedbackType, request.muteTopic());
-        return ResponseEntity.ok(NotificationDto.from(updated, feedbackView));
+        return ApiResponse.ok(NotificationDto.from(updated, feedbackView));
     }
 
     private Map<String, ReminderNotificationFeedbackView> loadFeedbackViews(List<NotificationRecord> records) {

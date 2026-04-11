@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
 import com.lifepilot.interaction.web.model.WorkflowDetailDto;
@@ -115,30 +116,27 @@ public class WorkflowController {
      * @return 201 创建成功，400 参数错误
      */
     @PostMapping
-    public ResponseEntity<?> createWorkflow(@RequestBody Map<String, Object> request) {
+    public ApiResponse<?> createWorkflow(@RequestBody Map<String, Object> request) {
         log.debug("创建 Workflow: request={}", request);
         
         try {
             // 获取 YAML 内容
             String yamlContent = getString(request, "yamlContent");
             if (yamlContent == null || yamlContent.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "yamlContent 不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "yamlContent 不能为空");
             }
 
             // 解析 YAML
             Result<WorkflowDefinition, List<String>> parseResult = yamlParser.parse(yamlContent);
             if (parseResult instanceof Result.Err<WorkflowDefinition, List<String>> err) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "YAML 解析失败: " + String.join(", ", err.error()), Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "YAML 解析失败: " + String.join(", ", err.error()));
             }
 
             WorkflowDefinition definition = ((Result.Ok<WorkflowDefinition, List<String>>) parseResult).value();
 
             // 检查是否已存在
             if (workflowRegistry.find(definition.id()).isPresent()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new ErrorResponse(409, "Workflow ID 已存在: " + definition.id(), Instant.now()));
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Workflow ID 已存在: " + definition.id());
             }
 
             // 保存到文件系统
@@ -153,16 +151,14 @@ public class WorkflowController {
             if (!registered) {
                 // 如果注册失败，删除文件
                 Files.deleteIfExists(workflowFile);
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Workflow 注册失败，请检查定义", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workflow 注册失败，请检查定义");
             }
 
             log.info("Workflow 创建成功: id={}, name={}", definition.id(), definition.name());
-            return ResponseEntity.status(HttpStatus.CREATED).body(WorkflowDetailDto.from(definition));
+            return ApiResponse.ok(WorkflowDetailDto.from(definition));
         } catch (Exception e) {
             log.error("创建 Workflow 失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
         }
     }
 
@@ -174,38 +170,34 @@ public class WorkflowController {
      * @return 200 更新成功，404 不存在，400 参数错误
      */
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateWorkflow(@PathVariable String id,
+    public ApiResponse<?> updateWorkflow(@PathVariable String id,
                                             @RequestBody Map<String, Object> request) {
         log.debug("更新 Workflow: id={}, request={}", id, request);
         
         // 检查 Workflow 是否存在
         var existingOpt = workflowRegistry.find(id);
         if (existingOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Workflow 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow 不存在: id=" + id);
         }
 
         try {
             // 获取 YAML 内容
             String yamlContent = getString(request, "yamlContent");
             if (yamlContent == null || yamlContent.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "yamlContent 不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "yamlContent 不能为空");
             }
 
             // 解析 YAML
             Result<WorkflowDefinition, List<String>> parseResult = yamlParser.parse(yamlContent);
             if (parseResult instanceof Result.Err<WorkflowDefinition, List<String>> err) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "YAML 解析失败: " + String.join(", ", err.error()), Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "YAML 解析失败: " + String.join(", ", err.error()));
             }
 
             WorkflowDefinition definition = ((Result.Ok<WorkflowDefinition, List<String>>) parseResult).value();
 
             // 检查 ID 是否匹配
             if (!definition.id().equals(id)) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "YAML 中的 ID 必须与路径参数一致", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "YAML 中的 ID 必须与路径参数一致");
             }
 
             // 更新文件系统
@@ -215,16 +207,14 @@ public class WorkflowController {
             // 更新注册表
             boolean registered = workflowRegistry.register(definition);
             if (!registered) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Workflow 更新失败，请检查定义", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workflow 更新失败，请检查定义");
             }
 
             log.info("Workflow 更新成功: id={}", id);
-            return ResponseEntity.ok(WorkflowDetailDto.from(definition));
+            return ApiResponse.ok(WorkflowDetailDto.from(definition));
         } catch (Exception e) {
             log.error("更新 Workflow 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         }
     }
 
@@ -238,13 +228,12 @@ public class WorkflowController {
      * @return 204 成功，404 不存在
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteWorkflow(@PathVariable String id) {
+    public ApiResponse<?> deleteWorkflow(@PathVariable String id) {
         log.debug("删除 Workflow: id={}", id);
 
         // 仅允许删除已存在的工作流
         if (workflowRegistry.find(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Workflow 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow 不存在: id=" + id);
         }
 
         try {
@@ -260,11 +249,10 @@ public class WorkflowController {
             workflowRegistry.unregister(id);
 
             log.info("Workflow 删除成功: id={}", id);
-            return ResponseEntity.noContent().build();
+            return ApiResponse.ok();
         } catch (Exception e) {
             log.error("删除 Workflow 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "删除失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "删除失败: " + e.getMessage());
         }
     }
 
@@ -275,7 +263,7 @@ public class WorkflowController {
      * @return 工作流定义列表
      */
     @GetMapping
-    public ResponseEntity<?> listWorkflows(@RequestParam(required = false) String tag) {
+    public ApiResponse<?> listWorkflows(@RequestParam(required = false) String tag) {
         log.debug("查询工作流列表: tag={}", tag);
         var definitions = (tag != null && !tag.isBlank())
                 ? workflowRegistry.findByTag(tag)
@@ -283,7 +271,7 @@ public class WorkflowController {
         var dtos = definitions.stream()
                 .map(WorkflowItemDto::from)
                 .toList();
-        return ResponseEntity.ok(dtos);
+        return ApiResponse.ok(dtos);
     }
 
     /**
@@ -293,12 +281,10 @@ public class WorkflowController {
      * @return 工作流定义，不存在返回 404
      */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getWorkflow(@PathVariable String id) {
-        return workflowRegistry.find(id)
-                .map(WorkflowDetailDto::from)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> getWorkflow(@PathVariable String id) {
+        var wf = workflowRegistry.find(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id));
+        return ApiResponse.ok(WorkflowDetailDto.from(wf));
     }
 
     /**
@@ -308,11 +294,10 @@ public class WorkflowController {
      * @return 200 返回 { yamlContent }，404 不存在
      */
     @GetMapping("/{id}/yaml")
-    public ResponseEntity<?> getWorkflowYaml(@PathVariable String id) {
+    public ApiResponse<?> getWorkflowYaml(@PathVariable String id) {
         // 验证工作流存在（避免读取任意文件）
         if (workflowRegistry.find(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
 
         try {
@@ -327,15 +312,13 @@ public class WorkflowController {
             }
 
             if (yamlContent == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "YAML 文件不存在: id=" + id, Instant.now()));
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "YAML 文件不存在: id=" + id);
             }
 
-            return ResponseEntity.ok(Map.of("yamlContent", yamlContent));
+            return ApiResponse.ok(Map.of("yamlContent", yamlContent));
         } catch (Exception e) {
             log.error("读取 Workflow YAML 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "读取失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "读取失败: " + e.getMessage());
         }
     }
 
@@ -346,13 +329,12 @@ public class WorkflowController {
      * @return 204 成功，404 不存在
      */
     @PostMapping("/{id}/enable")
-    public ResponseEntity<?> enableWorkflow(@PathVariable String id) {
+    public ApiResponse<?> enableWorkflow(@PathVariable String id) {
         if (!workflowRegistry.enable(id)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
         log.info("工作流已启用: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -362,13 +344,12 @@ public class WorkflowController {
      * @return 204 成功，404 不存在
      */
     @PostMapping("/{id}/disable")
-    public ResponseEntity<?> disableWorkflow(@PathVariable String id) {
+    public ApiResponse<?> disableWorkflow(@PathVariable String id) {
         if (!workflowRegistry.disable(id)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
         log.info("工作流已禁用: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -381,18 +362,16 @@ public class WorkflowController {
      * @return 工作流实例，404 不存在，400 已禁用
      */
     @PostMapping("/{id}/trigger")
-    public ResponseEntity<?> triggerWorkflow(@PathVariable String id,
+    public ApiResponse<?> triggerWorkflow(@PathVariable String id,
                                               @RequestBody(required = false) TriggerWorkflowRequest request) {
         var defOpt = workflowRegistry.find(id);
         if (defOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
 
         if (!defOpt.get().enabled()) {
             log.warn("尝试触发禁用工作流被拒绝: id={}", id);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "工作流已禁用，不可触发: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工作流已禁用，不可触发: id=" + id);
         }
 
         Map<String, Object> inputs = (request != null && request.inputs() != null)
@@ -406,15 +385,14 @@ public class WorkflowController {
                 allErrors.add("缺少必填输入参数: " + String.join(", ", validation.missingParams()));
             }
             allErrors.addAll(validation.validationErrors());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, String.join("; ", allErrors), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", allErrors));
         }
 
         String instanceId = workflowCommandService.start(id, validation.mergedInputs());
         var instance = workflowRepository.findInstance(instanceId)
                 .orElseThrow(() -> new IllegalStateException("Workflow instance not found after trigger: id=" + instanceId));
         log.info("工作流触发成功: workflowId={}, instanceId={}", id, instanceId);
-        return ResponseEntity.accepted().body(instance);
+        return ApiResponse.ok(instance);
     }
 
     /**
@@ -425,21 +403,19 @@ public class WorkflowController {
      * @return DryRunResult，404 不存在，400 参数错误
      */
     @PostMapping("/{id}/dry-run")
-    public ResponseEntity<?> dryRun(@PathVariable String id,
+    public ApiResponse<?> dryRun(@PathVariable String id,
                                      @RequestBody(required = false) Map<String, Object> inputs) {
         var defOpt = workflowRegistry.find(id);
         if (defOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
 
         try {
             var result = workflowCommandService.dryRun(id, inputs);
-            return ResponseEntity.ok(result);
+            return ApiResponse.ok(result);
         } catch (Exception e) {
             log.error("试运行失败: workflowId={}", id, e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "试运行失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "试运行失败: " + e.getMessage());
         }
     }
 
@@ -452,19 +428,18 @@ public class WorkflowController {
      * @return ValidationResponse，400 参数错误或语法错误
      */
     @PostMapping("/validate")
-    public ResponseEntity<?> validateYaml(@RequestBody Map<String, Object> request) {
+    public ApiResponse<?> validateYaml(@RequestBody Map<String, Object> request) {
         String yamlContent = getString(request, "yamlContent");
         if (yamlContent == null || yamlContent.isBlank()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "yamlContent 不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "yamlContent 不能为空");
         }
 
         ValidationResponse validationResponse = workflowCommandService.validateYaml(yamlContent);
 
         if (!validationResponse.valid()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validationResponse);
+            return ApiResponse.ok(validationResponse);
         }
-        return ResponseEntity.ok(validationResponse);
+        return ApiResponse.ok(validationResponse);
     }
 
     /**
@@ -479,22 +454,20 @@ public class WorkflowController {
      * @return 202 触发成功，400 已禁用/未配置 Webhook，401 签名验证失败，404 不存在
      */
     @PostMapping("/{id}/webhook")
-    public ResponseEntity<?> webhookTrigger(@PathVariable String id,
+    public ApiResponse<?> webhookTrigger(@PathVariable String id,
                                              @RequestBody(required = false) Map<String, Object> body,
                                              @RequestHeader(value = "X-Webhook-Signature", required = false) String signature) {
         // 1. 检查工作流是否存在
         var defOpt = workflowRegistry.find(id);
         if (defOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
 
         var definition = defOpt.get();
 
         // 2. 检查工作流是否启用
         if (!definition.enabled()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "工作流已禁用，不可通过 Webhook 触发", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工作流已禁用，不可通过 Webhook 触发");
         }
 
         // 3. 检查是否配置了 WebhookTrigger
@@ -504,8 +477,7 @@ public class WorkflowController {
                 .findFirst();
 
         if (webhookTrigger.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, "工作流未配置 Webhook 触发器", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工作流未配置 Webhook 触发器");
         }
 
         // 4. 签名验证（配置了 secret 时）
@@ -515,13 +487,11 @@ public class WorkflowController {
                 String payload = objectMapper.writeValueAsString(body != null ? body : Map.of());
                 if (!verifyWebhookSignature(secret, payload, signature)) {
                     log.warn("Webhook 签名验证失败: workflowId={}", id);
-                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-                            new ErrorResponse(401, "Webhook 签名验证失败", Instant.now()));
+                    throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Webhook 签名验证失败");
                 }
             } catch (Exception e) {
                 log.error("Webhook 签名验证异常: workflowId={}", id, e);
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-                        new ErrorResponse(401, "Webhook 签名验证失败", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Webhook 签名验证失败");
             }
         }
 
@@ -534,8 +504,7 @@ public class WorkflowController {
                 allErrors.add("缺少必填输入参数: " + String.join(", ", validation.missingParams()));
             }
             allErrors.addAll(validation.validationErrors());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400, String.join("; ", allErrors), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", allErrors));
         }
 
         // 6. 触发工作流
@@ -544,7 +513,7 @@ public class WorkflowController {
                 .orElseThrow(() -> new IllegalStateException("Webhook 触发后实例未找到: instanceId=" + instanceId));
 
         log.info("Webhook 触发工作流成功: workflowId={}, instanceId={}", id, instanceId);
-        return ResponseEntity.accepted().body(instance);
+        return ApiResponse.ok(instance);
     }
 
     /**
@@ -554,13 +523,12 @@ public class WorkflowController {
      * @return 执行实例列表（按创建时间倒序）
      */
     @GetMapping("/{id}/executions")
-    public ResponseEntity<?> getWorkflowExecutions(@PathVariable String id) {
+    public ApiResponse<?> getWorkflowExecutions(@PathVariable String id) {
         // 验证工作流存在
         if (workflowRegistry.find(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
-        return ResponseEntity.ok(workflowRepository.findInstancesByWorkflowId(id));
+        return ApiResponse.ok(workflowRepository.findInstancesByWorkflowId(id));
     }
 
     /**
@@ -570,12 +538,11 @@ public class WorkflowController {
      * @return WorkflowStats，不存在返回 404
      */
     @GetMapping("/{id}/stats")
-    public ResponseEntity<?> getWorkflowStats(@PathVariable String id) {
+    public ApiResponse<?> getWorkflowStats(@PathVariable String id) {
         if (workflowRegistry.find(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
-        return ResponseEntity.ok(workflowRepository.queryWorkflowStats(id));
+        return ApiResponse.ok(workflowRepository.queryWorkflowStats(id));
     }
 
     /**
@@ -585,12 +552,11 @@ public class WorkflowController {
      * @return List<StepStats>，不存在返回 404
      */
     @GetMapping("/{id}/step-stats")
-    public ResponseEntity<?> getStepStats(@PathVariable String id) {
+    public ApiResponse<?> getStepStats(@PathVariable String id) {
         if (workflowRegistry.find(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
-        return ResponseEntity.ok(workflowRepository.queryStepStats(id));
+        return ApiResponse.ok(workflowRepository.queryStepStats(id));
     }
 
     /**
@@ -600,11 +566,10 @@ public class WorkflowController {
      * @return context 数据，不存在返回 404
      */
     @GetMapping("/executions/{instanceId}/context")
-    public ResponseEntity<?> getInstanceContext(@PathVariable String instanceId) {
-        return workflowRepository.findInstance(instanceId)
-                .<ResponseEntity<?>>map(instance -> ResponseEntity.ok(instance.context().getData()))
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now())));
+    public ApiResponse<?> getInstanceContext(@PathVariable String instanceId) {
+        var instance = workflowRepository.findInstance(instanceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流实例未找到: id=" + instanceId));
+        return ApiResponse.ok(instance.context().getData());
     }
 
     /**
@@ -615,12 +580,11 @@ public class WorkflowController {
      * @return 步骤输出 Map，实例不存在返回 404
      */
     @GetMapping("/executions/{instanceId}/steps/{stepId}/output")
-    public ResponseEntity<?> getStepOutput(@PathVariable String instanceId,
+    public ApiResponse<?> getStepOutput(@PathVariable String instanceId,
                                            @PathVariable String stepId) {
         var instanceOpt = workflowRepository.findInstance(instanceId);
         if (instanceOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流实例未找到: id=" + instanceId);
         }
 
         var instance = instanceOpt.get();
@@ -651,7 +615,7 @@ public class WorkflowController {
             result.put("errorMessage", lastLog.errorMessage());
         }
 
-        return ResponseEntity.ok(result);
+        return ApiResponse.ok(result);
     }
 
     /**
@@ -661,12 +625,11 @@ public class WorkflowController {
      * @return DagData，不存在返回 404
      */
     @GetMapping("/{id}/dag")
-    public ResponseEntity<?> getDagData(@PathVariable String id) {
+    public ApiResponse<?> getDagData(@PathVariable String id) {
         if (workflowRegistry.find(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
-        return ResponseEntity.ok(workflowCommandService.buildDagData(id));
+        return ApiResponse.ok(workflowCommandService.buildDagData(id));
     }
 
     /**
@@ -678,7 +641,7 @@ public class WorkflowController {
      * @return 201 导入成功，400 解析失败，409 ID 冲突
      */
     @PostMapping("/import")
-    public ResponseEntity<?> importWorkflow(@RequestBody Map<String, Object> request) {
+    public ApiResponse<?> importWorkflow(@RequestBody Map<String, Object> request) {
         log.debug("导入 Workflow: request={}", request);
         return createWorkflow(request);
     }
@@ -690,16 +653,15 @@ public class WorkflowController {
      * @return 包含 id 和 yamlContent 的 JSON，不存在返回 404
      */
     @GetMapping("/{id}/export")
-    public ResponseEntity<?> exportWorkflow(@PathVariable String id) {
+    public ApiResponse<?> exportWorkflow(@PathVariable String id) {
         var defOpt = workflowRegistry.find(id);
         if (defOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
         }
 
         String yamlContent = yamlPrinter.print(defOpt.get());
         log.info("工作流导出成功: id={}", id);
-        return ResponseEntity.ok(Map.of("id", id, "yamlContent", yamlContent));
+        return ApiResponse.ok(Map.of("id", id, "yamlContent", yamlContent));
     }
 
     /**
@@ -711,7 +673,7 @@ public class WorkflowController {
      * @return JSON 数组，每项包含 id 和 yamlContent
      */
     @GetMapping("/export")
-    public ResponseEntity<?> exportWorkflows(@RequestParam List<String> ids) {
+    public ApiResponse<?> exportWorkflows(@RequestParam List<String> ids) {
         var results = ids.stream().map(id -> {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", id);
@@ -721,7 +683,7 @@ public class WorkflowController {
         }).toList();
         log.info("工作流批量导出完成: 请求数={}, 成功数={}", ids.size(),
                 results.stream().filter(r -> r.get("yamlContent") != null).count());
-        return ResponseEntity.ok(results);
+        return ApiResponse.ok(results);
     }
 
     @GetMapping(value = "/{id}/executions/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -758,11 +720,10 @@ public class WorkflowController {
      * @return 实例详情，不存在返回 404
      */
     @GetMapping("/executions/{instanceId}")
-    public ResponseEntity<?> getInstance(@PathVariable String instanceId) {
-        return workflowRepository.findInstance(instanceId)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now())));
+    public ApiResponse<?> getInstance(@PathVariable String instanceId) {
+        var instance = workflowRepository.findInstance(instanceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流实例未找到: id=" + instanceId));
+        return ApiResponse.ok(instance);
     }
 
     /**
@@ -820,7 +781,7 @@ public class WorkflowController {
     }
 
     @PostMapping("/executions/{instanceId}/steps/{stepId}/approve")
-    public ResponseEntity<?> approveStep(@PathVariable String instanceId,
+    public ApiResponse<?> approveStep(@PathVariable String instanceId,
                                          @PathVariable String stepId,
                                          @RequestBody ApproveRequest request) {
         try {
@@ -832,17 +793,14 @@ public class WorkflowController {
             );
             var updated = workflowEngine.approve(instanceId, stepId, decision);
             log.info("审批操作完成: instanceId={}, stepId={}, decision={}", instanceId, stepId, request.decision());
-            return ResponseEntity.ok(updated);
+            return ApiResponse.ok(updated);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("审批操作失败: instanceId={}, stepId={}", instanceId, stepId, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "审批操作失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "审批操作失败: " + e.getMessage());
         }
     }
 
@@ -853,12 +811,11 @@ public class WorkflowController {
      * @return 事件列表（按 createdAt 升序），不存在返回 404
      */
     @GetMapping("/executions/{instanceId}/events")
-    public ResponseEntity<?> getEventTimeline(@PathVariable String instanceId) {
+    public ApiResponse<?> getEventTimeline(@PathVariable String instanceId) {
         if (workflowRepository.findInstance(instanceId).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流实例未找到: id=" + instanceId);
         }
-        return ResponseEntity.ok(workflowEventRecorder.getTimeline(instanceId));
+        return ApiResponse.ok(workflowEventRecorder.getTimeline(instanceId));
     }
 
     /**
@@ -868,12 +825,11 @@ public class WorkflowController {
      * @return 步骤日志列表（按 createdAt 升序），不存在返回 404
      */
     @GetMapping("/executions/{instanceId}/step-logs")
-    public ResponseEntity<?> getStepLogs(@PathVariable String instanceId) {
+    public ApiResponse<?> getStepLogs(@PathVariable String instanceId) {
         if (workflowRepository.findInstance(instanceId).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流实例未找到: id=" + instanceId);
         }
-        return ResponseEntity.ok(workflowRepository.findStepLogsSummary(instanceId));
+        return ApiResponse.ok(workflowRepository.findStepLogsSummary(instanceId));
     }
 
     // ── 步骤类型元数据端点 ────────────────────────────────
@@ -887,9 +843,9 @@ public class WorkflowController {
      * @return 步骤类型元数据（stepTypes + commonParams）
      */
     @GetMapping("/step-types")
-    public ResponseEntity<?> getStepTypes() {
+    public ApiResponse<?> getStepTypes() {
         log.debug("查询步骤类型参数 Schema");
-        return ResponseEntity.ok(Map.of(
+        return ApiResponse.ok(Map.of(
                 "stepTypes", buildStepTypeMetadata(),
                 "commonParams", buildCommonParams()
         ));
