@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.knowledge`
-> **最后更新**：2026-04-09
+> **最后更新**：2026-04-11
 
 ## 1. 模块概述
 
@@ -112,6 +112,9 @@ graph TB
 
 - 职责：提供知识库和文档的基础 CRUD 操作
 - 支持创建、查询（按关键词/标签/时间范围）、更新、删除知识库
+- 列表接口返回包含系统管理的内部知识库（`systemManaged=true`），排序为用户知识库优先、系统知识库在后
+- 知识库模型包含 `systemManaged`（是否系统管理）和 `ownerDatastoreId`（归属 Datastore ID）字段
+- 删除接口对 `systemManaged=true` 的知识库返回 403 拒绝，需从对应 Datastore 侧删除
 - 文档删除时级联清理分块，并刷新知识库统计（文档数、分块数）
 - 写操作标注 `@Transactional`，通过 `@Bean` 注册
 

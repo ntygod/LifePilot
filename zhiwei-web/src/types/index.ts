@@ -512,6 +512,30 @@ export interface Datastore {
   updatedAt: string
 }
 
+/** Datastore 创建请求 */
+export interface CreateDatastoreRequest {
+  name: string
+  type: string
+  description?: string | null
+  properties?: PropertyDefinitionDto[] | null
+  projectionConfigJson?: string | null
+}
+
+/** Datastore 更新请求 */
+export interface UpdateDatastoreRequest {
+  description?: string | null
+  metadataJson?: string | null
+  projectionConfigJson?: string | null
+}
+
+/** 属性定义 DTO */
+export interface PropertyDefinitionDto {
+  name: string
+  type: string
+  required: boolean
+  description?: string | null
+}
+
 /** Datastore 原始结构化文档 */
 export interface DatastoreRecord {
   id: string
@@ -536,6 +560,10 @@ export interface KnowledgeBase {
   createdAt: string
   updatedAt: string
   datastoreIds: string[]
+  /** 是否由系统自动管理（Datastore 内部知识库） */
+  systemManaged?: boolean
+  /** 归属的 Datastore ID（仅系统管理的知识库） */
+  ownerDatastoreId?: string | null
 }
 
 /** 创建知识库请求 */

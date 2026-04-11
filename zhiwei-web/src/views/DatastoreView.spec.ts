@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
     loading: false,
     error: null as string | null,
     fetchList: vi.fn(),
+    createDatastore: vi.fn(),
+    updateDatastore: vi.fn(),
     deleteDatastore: vi.fn(),
   },
   router: {
@@ -71,6 +73,14 @@ function mountView() {
             </div>
           `,
         },
+        FormSheetShell: { template: '<div><slot /><slot name="footer" /></div>' },
+        Label: { template: '<label><slot /></label>' },
+        Select: { template: '<div><slot /></div>' },
+        SelectTrigger: { template: '<div><slot /></div>' },
+        SelectValue: { template: '<span />' },
+        SelectContent: { template: '<div><slot /></div>' },
+        SelectItem: { template: '<div><slot /></div>' },
+        Textarea: { template: '<textarea />' },
         Skeleton: { template: '<div />' },
       },
     },
@@ -108,7 +118,7 @@ describe('DatastoreView', () => {
 
     expect(mocks.datastoreStore.fetchList).toHaveBeenCalled()
     expect(wrapper.text()).toContain('novel-workspace')
-    expect(wrapper.text()).toContain('DOCUMENT')
+    expect(wrapper.text()).toContain('结构化列表')
     expect(wrapper.text()).toContain('title、chapter')
 
     await wrapper.get('article').trigger('click')

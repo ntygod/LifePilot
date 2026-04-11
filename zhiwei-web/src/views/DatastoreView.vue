@@ -4,28 +4,50 @@ import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
   Database,
+  Pencil,
+  Plus,
   RefreshCw,
   Search,
   SlidersHorizontal,
   Trash2,
+  X,
 } from 'lucide-vue-next'
-import type { Datastore } from '@/types'
+import type { Datastore, PropertyDefinitionDto } from '@/types'
 import { useDatastoreStore } from '@/stores/datastore'
 import { useUiStore } from '@/stores/ui'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import FormSheetShell from '@/components/common/FormSheetShell.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 
 type PropertyDefinition = {
   name?: string
   type?: string
   required?: boolean
 }
+
+const COLLECTION_TYPES = [
+  { value: 'DOCUMENT', label: '结构化列表', desc: '书单、购物清单、联系人等' },
+  { value: 'NOTE', label: '非结构化笔记', desc: '日记、灵感，支持全文搜索' },
+  { value: 'METRIC', label: '时序指标', desc: '体重、运动量，支持聚合查询' },
+]
+
+const PROPERTY_TYPES = ['TEXT', 'NUMBER', 'BOOLEAN', 'DATE', 'DATETIME', 'SELECT', 'MULTI_SELECT', 'JSON']
 
 const datastoreStore = useDatastoreStore()
 const uiStore = useUiStore()
@@ -36,6 +58,24 @@ const typeFilter = ref('all')
 const showFilters = ref(false)
 const deleteTarget = ref<Datastore | null>(null)
 const deletingDatastoreId = ref<string | null>(null)
+
+// ─── 新建表单 ───
+const showCreate = ref(false)
+const creating = ref(false)
+const createForm = ref({
+  name: '',
+  type: 'DOCUMENT',
+  description: '',
+  properties: [] as PropertyDefinitionDto[],
+})
+
+// ─── 编辑表单 ───
+const editingDatastore = ref<Datastore | null>(null)
+const updating = ref(false)
+const editForm = ref({
+  description: '',
+  projectionConfigJson: '',
+})
 
 onMounted(() => {
   void datastoreStore.fetchList()
@@ -125,6 +165,77 @@ async function handleDeleteDatastore() {
   }
 }
 
+// ─── 新建 ───
+function resetCreateForm() {
+  createForm.value = { name: '', type: 'DOCUMENT', description: '', properties: [] }
+}
+
+function addProperty() {
+  createForm.value.properties.push({ name: '', type: 'TEXT', required: false, description: null })
+}
+
+function removeProperty(index: number) {
+  createForm.value.properties.splice(index, 1)
+}
+
+async function handleCreate() {
+  if (creating.value) return
+  const form = createForm.value
+  if (!form.name.trim()) {
+    uiStore.showToast('error', '请输入 Datastore 名称')
+    return
+  }
+  creating.value = true
+  try {
+    await datastoreStore.createDatastore({
+      name: form.name.trim(),
+      type: form.type,
+      description: form.description.trim() || null,
+      properties: form.properties.length > 0 ? form.properties.filter(p => p.name.trim()) : null,
+    })
+    uiStore.showToast('success', `Datastore「${form.name}」创建成功`)
+    showCreate.value = false
+    resetCreateForm()
+  } catch (e: any) {
+    uiStore.showToast('error', e?.message ?? '创建 Datastore 失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+// ─── 编辑 ───
+function openEditDialog(datastore: Datastore) {
+  editingDatastore.value = datastore
+  editForm.value = {
+    description: datastore.description ?? '',
+    projectionConfigJson: datastore.projectionConfigJson ?? '',
+  }
+}
+
+function closeEditDialog() {
+  editingDatastore.value = null
+  editForm.value = { description: '', projectionConfigJson: '' }
+}
+
+async function handleUpdate() {
+  if (updating.value || !editingDatastore.value) return
+  updating.value = true
+  try {
+    const desc = editForm.value.description.trim()
+    const projection = editForm.value.projectionConfigJson.trim()
+    await datastoreStore.updateDatastore(editingDatastore.value.id, {
+      description: desc || null,
+      projectionConfigJson: projection || null,
+    })
+    uiStore.showToast('success', `Datastore「${editingDatastore.value.name}」已更新`)
+    closeEditDialog()
+  } catch (e: any) {
+    uiStore.showToast('error', e?.message ?? '更新 Datastore 失败')
+  } finally {
+    updating.value = false
+  }
+}
+
 function formatDate(value?: string | null) {
   if (!value) return '—'
   return new Date(value).toLocaleDateString('zh-CN', {
@@ -159,6 +270,10 @@ function summarizeProperties(datastore: Datastore) {
     ? `${preview} 等 ${properties.length} 个字段`
     : preview
 }
+
+function typeLabel(type: string) {
+  return COLLECTION_TYPES.find(t => t.value === type)?.label ?? type
+}
 </script>
 
 <template>
@@ -174,6 +289,10 @@ function summarizeProperties(datastore: Datastore) {
             <Button type="button" variant="outline" @click="refreshDatastores">
               <RefreshCw class="size-4" />
               刷新
+            </Button>
+            <Button type="button" @click="showCreate = true">
+              <Plus class="size-4" />
+              新建
             </Button>
           </template>
         </PageHeader>
@@ -250,6 +369,12 @@ function summarizeProperties(datastore: Datastore) {
           <template #icon>
             <Database class="size-5" />
           </template>
+          <template v-if="!hasFilters" #actions>
+            <Button type="button" @click="showCreate = true">
+              <Plus class="size-4" />
+              新建 Datastore
+            </Button>
+          </template>
         </StatePanel>
 
         <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -263,13 +388,23 @@ function summarizeProperties(datastore: Datastore) {
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="truncate text-lg font-semibold text-foreground">{{ datastore.name }}</h2>
-                  <Badge variant="outline">{{ datastore.type }}</Badge>
+                  <Badge variant="outline">{{ typeLabel(datastore.type) }}</Badge>
                 </div>
                 <p class="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
                   {{ datastore.description || '暂无描述。' }}
                 </p>
               </div>
               <div class="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="编辑 Datastore"
+                  aria-label="编辑 Datastore"
+                  @click.stop="openEditDialog(datastore)"
+                >
+                  <Pencil class="size-4" />
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -306,6 +441,7 @@ function summarizeProperties(datastore: Datastore) {
       </div>
     </PageContainer>
 
+    <!-- 删除确认 -->
     <ConfirmDialog
       v-model:show="showDeleteConfirm"
       title="确认删除 Datastore"
@@ -315,5 +451,185 @@ function summarizeProperties(datastore: Datastore) {
       @confirm="handleDeleteDatastore"
       @cancel="deleteTarget = null"
     />
+
+    <!-- 新建 Datastore -->
+    <FormSheetShell
+      :open="showCreate"
+      title="新建 Datastore"
+      description="创建一个新的资料仓库来管理结构化数据、笔记或时序指标。"
+      @update:open="(value: boolean) => { showCreate = value; if (!value) resetCreateForm() }"
+      @close="showCreate = false; resetCreateForm()"
+    >
+      <form class="grid gap-4" @submit.prevent="handleCreate">
+        <div class="space-y-2">
+          <Label for="ds-name">名称</Label>
+          <Input
+            id="ds-name"
+            v-model="createForm.name"
+            placeholder="输入 Datastore 名称"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <Label>类型</Label>
+          <Select v-model="createForm.type">
+            <SelectTrigger class="w-full">
+              <SelectValue placeholder="选择类型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="ct in COLLECTION_TYPES"
+                :key="ct.value"
+                :value="ct.value"
+              >
+                {{ ct.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs text-muted-foreground">
+            {{ COLLECTION_TYPES.find(t => t.value === createForm.type)?.desc }}
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <Label for="ds-desc">描述</Label>
+          <Textarea
+            id="ds-desc"
+            v-model="createForm.description"
+            :rows="3"
+            placeholder="输入 Datastore 描述（可选）"
+            class="resize-none"
+          />
+        </div>
+
+        <!-- 属性定义（仅 DOCUMENT 类型有意义） -->
+        <div v-if="createForm.type === 'DOCUMENT'" class="space-y-2">
+          <div class="flex items-center justify-between">
+            <Label>字段定义</Label>
+            <Button type="button" variant="ghost" size="sm" @click="addProperty">
+              <Plus class="size-4" />
+              添加字段
+            </Button>
+          </div>
+          <p class="text-xs text-muted-foreground">定义结构化数据的字段模式，创建后不可修改。</p>
+
+          <div v-if="createForm.properties.length > 0" class="space-y-2">
+            <div
+              v-for="(prop, index) in createForm.properties"
+              :key="index"
+              class="flex items-start gap-2 rounded-lg border border-border/50 bg-background/50 p-sm"
+            >
+              <div class="flex-1 space-y-2">
+                <div class="flex gap-2">
+                  <Input
+                    v-model="prop.name"
+                    placeholder="字段名"
+                    class="flex-1"
+                  />
+                  <Select v-model="prop.type">
+                    <SelectTrigger class="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem
+                        v-for="pt in PROPERTY_TYPES"
+                        :key="pt"
+                        :value="pt"
+                      >
+                        {{ pt }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div class="flex items-center gap-2">
+                  <label class="flex items-center gap-xs text-xs text-muted-foreground">
+                    <Checkbox
+                      :model-value="prop.required"
+                      @update:model-value="(val: boolean | 'indeterminate') => prop.required = val === true"
+                    />
+                    必填
+                  </label>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="shrink-0"
+                @click="removeProperty(index)"
+              >
+                <X class="size-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" @click="showCreate = false; resetCreateForm()">
+            取消
+          </Button>
+          <Button :disabled="creating" @click="handleCreate">
+            {{ creating ? '创建中...' : '创建' }}
+          </Button>
+        </div>
+      </template>
+    </FormSheetShell>
+
+    <!-- 编辑 Datastore -->
+    <FormSheetShell
+      :open="!!editingDatastore"
+      title="编辑 Datastore"
+      description="修改描述和投影配置。名称、类型和字段定义创建后不可更改。"
+      @update:open="(value: boolean) => { if (!value) closeEditDialog() }"
+      @close="closeEditDialog"
+    >
+      <form class="grid gap-4" @submit.prevent="handleUpdate">
+        <div class="space-y-2">
+          <Label>名称</Label>
+          <Input :model-value="editingDatastore?.name" disabled />
+        </div>
+
+        <div class="space-y-2">
+          <Label>类型</Label>
+          <Input :model-value="editingDatastore ? typeLabel(editingDatastore.type) : ''" disabled />
+        </div>
+
+        <div class="space-y-2">
+          <Label for="edit-ds-desc">描述</Label>
+          <Textarea
+            id="edit-ds-desc"
+            v-model="editForm.description"
+            :rows="3"
+            placeholder="输入 Datastore 描述"
+            class="resize-none"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <Label for="edit-ds-projection">投影配置</Label>
+          <Textarea
+            id="edit-ds-projection"
+            v-model="editForm.projectionConfigJson"
+            :rows="4"
+            placeholder="{}"
+            class="resize-none font-mono text-xs"
+          />
+          <p class="text-xs text-muted-foreground">JSON 格式的向量投影配置，留空使用默认规则。</p>
+        </div>
+      </form>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" @click="closeEditDialog">
+            取消
+          </Button>
+          <Button :disabled="updating" @click="handleUpdate">
+            {{ updating ? '保存中...' : '保存' }}
+          </Button>
+        </div>
+      </template>
+    </FormSheetShell>
   </div>
 </template>

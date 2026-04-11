@@ -976,6 +976,18 @@ export const datastoreApi = {
     }
     return res.json()
   },
+  create(data: import('@/types').CreateDatastoreRequest): Promise<import('@/types').Datastore> {
+    return request('/datastores', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  update(id: string, data: import('@/types').UpdateDatastoreRequest): Promise<import('@/types').Datastore> {
+    return request(`/datastores/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
   delete(id: string): Promise<void> {
     return request(`/datastores/${id}`, { method: 'DELETE' })
   },
