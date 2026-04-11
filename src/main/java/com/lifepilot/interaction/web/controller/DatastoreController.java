@@ -2,8 +2,13 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.datastore.model.Collection;
+import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.PropertyDefinition;
+import com.lifepilot.datastore.model.PropertyType;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
+import com.lifepilot.interaction.web.model.CreateDatastoreRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
+import com.lifepilot.interaction.web.model.UpdateDatastoreRequest;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.ingest.DocumentIngester;
@@ -20,6 +25,8 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -222,6 +229,81 @@ public class DatastoreController {
                         return ResponseEntity.internalServerError().body(
                                 new ErrorResponse(500, "文档上传失败: " + e.getMessage(), Instant.now()));
                     }
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+    }
+
+    /**
+     * 创建 datastore。
+     *
+     * @param request 创建请求
+     * @return 201 创建成功；400 参数错误
+     */
+    @PostMapping
+    public ResponseEntity<?> createDatastore(@RequestBody CreateDatastoreRequest request) {
+        if (request.name() == null || request.name().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "Datastore 名称不能为空", Instant.now()));
+        }
+        if (request.type() == null || request.type().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "Datastore 类型不能为空", Instant.now()));
+        }
+
+        CollectionType collectionType;
+        try {
+            collectionType = CollectionType.valueOf(request.type().strip().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "不支持的 Datastore 类型: " + request.type(), Instant.now()));
+        }
+
+        List<PropertyDefinition> propDefs = null;
+        if (request.properties() != null && !request.properties().isEmpty()) {
+            propDefs = request.properties().stream()
+                    .map(dto -> new PropertyDefinition(
+                            dto.name(),
+                            PropertyType.fromValue(dto.type()),
+                            dto.required(),
+                            dto.description()))
+                    .toList();
+        }
+
+        try {
+            var collection = dataStoreManager.createCollection(
+                    request.name().strip(),
+                    collectionType,
+                    propDefs,
+                    request.description(),
+                    null,
+                    request.projectionConfigJson());
+            log.info("Datastore 创建成功: id={}, name={}, type={}", collection.id(), collection.name(), collection.type());
+            return ResponseEntity.status(HttpStatus.CREATED).body(collection);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            log.warn("Datastore 创建失败: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
+     * 更新 datastore。
+     *
+     * @param id      datastore ID
+     * @param request 更新请求
+     * @return 200 更新成功；404 不存在
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateDatastore(@PathVariable String id,
+                                             @RequestBody UpdateDatastoreRequest request) {
+        return dataStoreManager.getCollection(id)
+                .<ResponseEntity<?>>map(existing -> {
+                    dataStoreManager.updateCollection(id, request.description(), request.metadataJson(), request.projectionConfigJson());
+                    log.info("Datastore 更新成功: id={}", id);
+                    return dataStoreManager.getCollection(id)
+                            .<ResponseEntity<?>>map(ResponseEntity::ok)
+                            .orElse(ResponseEntity.ok(existing));
                 })
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                         new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));

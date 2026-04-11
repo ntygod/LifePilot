@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Datastore } from '@/types'
+import type { CreateDatastoreRequest, Datastore, UpdateDatastoreRequest } from '@/types'
 import { datastoreApi } from '@/api/client'
 
 export const useDatastoreStore = defineStore('datastore', () => {
@@ -20,6 +20,21 @@ export const useDatastoreStore = defineStore('datastore', () => {
     }
   }
 
+  async function createDatastore(data: CreateDatastoreRequest): Promise<Datastore> {
+    const created = await datastoreApi.create(data)
+    list.value = [created, ...list.value]
+    return created
+  }
+
+  async function updateDatastore(id: string, data: UpdateDatastoreRequest): Promise<Datastore> {
+    const updated = await datastoreApi.update(id, data)
+    const idx = list.value.findIndex(item => item.id === id)
+    if (idx !== -1) {
+      list.value[idx] = updated
+    }
+    return updated
+  }
+
   async function deleteDatastore(id: string) {
     await datastoreApi.delete(id)
     list.value = list.value.filter(item => item.id !== id)
@@ -30,6 +45,8 @@ export const useDatastoreStore = defineStore('datastore', () => {
     loading,
     error,
     fetchList,
+    createDatastore,
+    updateDatastore,
     deleteDatastore,
   }
 })

@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.datastore`
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-11
 > **实现状态**：✅ 已完成
 
 ## 1. 模块概述
@@ -61,7 +61,7 @@ graph TB
     end
 
     subgraph "工具层"
-        DST["DataStoreTool<br/>(BuiltinTool, 7 个操作)"]
+        DST["DataStoreTool<br/>(BuiltinTool, 8 个操作)"]
     end
 
     subgraph "集成层"
@@ -388,7 +388,7 @@ sequenceDiagram
 | 全文搜索 | FTS5 虚拟表 | json_extract LIKE | FTS5 支持分词、排名、高亮，性能远优于 LIKE 模糊匹配 |
 | 时序聚合 | SQLite strftime 分组 | 应用层聚合 | SQLite 内置时间函数足够，数据量在个人助手场景下不会成为瓶颈 |
 | 与记忆系统关系 | 正交独立 | 复用 L3 语义记忆 | 记忆系统存储 Agent 隐式认知数据，DataStore 存储用户显式管理的领域数据，职责不同 |
-| 工具暴露方式 | BuiltinTool（7 个操作） | 每个集合动态生成工具 | 固定工具集更简单，Agent 通过参数区分集合；动态工具会导致工具注册表膨胀 |
+| 工具暴露方式 | BuiltinTool（8 个操作） | 每个集合动态生成工具 | 固定工具集更简单，Agent 通过参数区分集合；动态工具会导致工具注册表膨胀 |
 
 ### 6.1 调研参考
 

@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-04
+> **最后更新**：2026-04-11
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -236,17 +236,21 @@
 
 来源：`KnowledgeBaseController`，Base Path: `/api/knowledge-bases`
 
+> 列表接口返回包含系统管理的内部知识库（`systemManaged=true`），由 Datastore 自动创建。
+> 删除接口对 `systemManaged=true` 的知识库返回 403，对不存在的知识库返回 404。
+
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
-| GET | `/api/knowledge-bases` | `listKnowledgeBases` | 知识库列表（q/tags 过滤） |
+| GET | `/api/knowledge-bases` | `listKnowledgeBases` | 知识库列表（q/tags/timeRange 过滤，包含系统管理的内部知识库） |
 | POST | `/api/knowledge-bases` | `createKnowledgeBase` | 创建（201） |
 | GET | `/api/knowledge-bases/{id}` | `getKnowledgeBase` | 详情 |
 | PATCH | `/api/knowledge-bases/{id}` | `updateKnowledgeBase` | 更新配置 |
-| DELETE | `/api/knowledge-bases/{id}` | `deleteKnowledgeBase` | 删除（204） |
+| DELETE | `/api/knowledge-bases/{id}` | `deleteKnowledgeBase` | 删除（204；403 系统管理知识库不可删除；404 不存在） |
 | GET | `/api/knowledge-bases/{id}/documents` | `listDocuments` | 文档列表 |
 | POST | `/api/knowledge-bases/{id}/documents` | `uploadDocument` | 上传文档（multipart，可带 `datastoreId`） |
 | PATCH | `/api/knowledge-bases/{id}/documents/{docId}` | `updateDocumentDatastore` | 更新文件文档的 datastore 归属（可设为无归属） |
 | DELETE | `/api/knowledge-bases/{id}/documents/{docId}` | `removeDocument` | 删除文档（204） |
+| GET | `/api/knowledge-bases/{id}/documents/{docId}/chunks` | `listDocumentChunks` | 文档分块列表（offset/limit 分页，返回 `{chunks, total}`） |
 | GET | `/api/knowledge-bases/{id}/documents/{docId}/logs` | `getDocumentLogs` | 文档处理日志 |
 | POST | `/api/knowledge-bases/{id}/documents/{docId}/retry` | `retryDocument` | 重试导入（202） |
 | POST | `/api/knowledge-bases/{id}/documents/{docId}/rechunk` | `rechunkDocument` | 重新分块（202） |
@@ -262,7 +266,14 @@
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | GET | `/api/datastores` | `listDatastores` | datastore 列表（支持 `q` 关键字过滤） |
+| POST | `/api/datastores` | `createDatastore` | 创建 datastore（name/type 必填，properties/description/projectionConfigJson 可选，201） |
 | GET | `/api/datastores/{id}` | `getDatastore` | 单个 datastore 详情 |
+| PUT | `/api/datastores/{id}` | `updateDatastore` | 更新 datastore（description/metadataJson/projectionConfigJson 可选） |
+| DELETE | `/api/datastores/{id}` | `deleteDatastore` | 删除 datastore（204；404 不存在） |
+| GET | `/api/datastores/{id}/records` | `listDatastoreRecords` | 查询 Datastore 下的原始结构化文档 |
+| GET | `/api/datastores/{id}/knowledge-bases` | `listDatastoreKnowledgeBases` | 查询 Datastore 关联的知识库（含系统内部知识库） |
+| GET | `/api/datastores/{id}/documents` | `listDatastoreDomainDocuments` | 查询 Datastore 直管的领域文档（仅 FILE 类型且归属当前 Datastore） |
+| POST | `/api/datastores/{id}/documents` | `uploadDatastoreDocument` | 向 Datastore 上传领域文档（multipart，202；503 文档导入未启用） |
 
 ---
 

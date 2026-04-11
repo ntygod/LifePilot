@@ -143,7 +143,17 @@ public class KnowledgeBaseController {
 
     /** 删除知识库。 */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteKnowledgeBase(@PathVariable String id) {
+    public ResponseEntity<?> deleteKnowledgeBase(@PathVariable String id) {
+        var kb = kbManager.getKnowledgeBase(id);
+        if (kb.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now()));
+        }
+        if (kb.get().systemManaged()) {
+            log.warn("拒绝删除系统管理的内部知识库: id={}, ownerDatastoreId={}", id, kb.get().ownerDatastoreId());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                    new ErrorResponse(403, "该知识库由 Datastore 系统管理，请从对应的 Datastore 删除", Instant.now()));
+        }
         kbManager.deleteKnowledgeBase(id);
         log.info("知识库删除: id={}", id);
         return ResponseEntity.noContent().build();

@@ -30,6 +30,12 @@ public class KnowledgeBaseRepository {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseRepository.class);
 
+    private static final String KB_COLUMNS = """
+            id, name, description, embedding_model, reranker_model,
+            chunking_strategy, chunking_config_json,
+            document_count, total_chunks, tags, created_at, updated_at,
+            system_managed, owner_datastore_id""";
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final RowMapper<KnowledgeBase> rowMapper;
@@ -92,7 +98,7 @@ public class KnowledgeBaseRepository {
      */
     public Optional<KnowledgeBase> findById(String id) {
         List<KnowledgeBase> results = jdbcTemplate.query(
-                "SELECT * FROM knowledge_bases WHERE id = ?",
+                "SELECT " + KB_COLUMNS + " FROM knowledge_bases WHERE id = ?",
                 rowMapper, id);
         return results.stream().findFirst();
     }
@@ -104,7 +110,7 @@ public class KnowledgeBaseRepository {
      */
     public List<KnowledgeBase> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM knowledge_bases WHERE system_managed = 0 ORDER BY created_at DESC",
+                "SELECT " + KB_COLUMNS + " FROM knowledge_bases ORDER BY system_managed ASC, created_at DESC",
                 rowMapper);
     }
 
@@ -117,7 +123,7 @@ public class KnowledgeBaseRepository {
      * @return 知识库列表
      */
     public List<KnowledgeBase> findByConditions(String q, String tags, String timeRange) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM knowledge_bases WHERE system_managed = 0");
+        StringBuilder sql = new StringBuilder("SELECT " + KB_COLUMNS + " FROM knowledge_bases WHERE 1 = 1");
         List<Object> params = new java.util.ArrayList<>();
 
         // 关键词搜索
@@ -160,7 +166,7 @@ public class KnowledgeBaseRepository {
             }
         }
 
-        sql.append(" ORDER BY created_at DESC");
+        sql.append(" ORDER BY system_managed ASC, created_at DESC");
 
         return jdbcTemplate.query(sql.toString(), rowMapper, params.toArray(new Object[0]));
     }
@@ -182,12 +188,7 @@ public class KnowledgeBaseRepository {
      */
     public Optional<KnowledgeBase> findSystemManagedByOwnerDatastoreId(String datastoreId) {
         List<KnowledgeBase> results = jdbcTemplate.query(
-                """
-                SELECT * FROM knowledge_bases
-                WHERE owner_datastore_id = ?
-                  AND system_managed = 1
-                ORDER BY created_at ASC
-                """,
+                "SELECT " + KB_COLUMNS + " FROM knowledge_bases WHERE owner_datastore_id = ? AND system_managed = 1 ORDER BY created_at ASC",
                 rowMapper,
                 datastoreId);
         return results.stream().findFirst();

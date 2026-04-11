@@ -7,6 +7,7 @@ import {
   Edit2,
   Files,
   Layers3,
+  Lock,
   Plus,
   Search,
   SlidersHorizontal,
@@ -255,6 +256,11 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
   const nameMap = new Map(datastoreStore.list.map(datastore => [datastore.id, datastore.name]))
   return datastoreIds.map(id => nameMap.get(id) ?? id)
 }
+
+function resolveOwnerDatastoreName(kb: KnowledgeBase) {
+  if (!kb.ownerDatastoreId) return null
+  return datastoreStore.list.find(d => d.id === kb.ownerDatastoreId)?.name ?? null
+}
 </script>
 
 <template>
@@ -492,20 +498,27 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
                       <h3 class="truncate text-base font-semibold tracking-tight text-foreground">
                         {{ kb.name }}
                       </h3>
+                      <Badge v-if="kb.systemManaged" variant="secondary" class="gap-xs text-xs">
+                        <Lock class="size-3" />
+                        内部
+                      </Badge>
                       <Badge variant="outline" class="text-xs">
                         {{ kb.documentCount }} 篇文档
                       </Badge>
                       <span class="surface-chip">更新于 {{ formatDate(kb.updatedAt) }}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 text-xs">
+                      <span v-if="kb.systemManaged && resolveOwnerDatastoreName(kb)" class="surface-chip">
+                        归属 {{ resolveOwnerDatastoreName(kb) }}
+                      </span>
                       <span class="surface-chip">向量模型 {{ kb.embeddingModel || '未配置' }}</span>
                       <span class="surface-chip">分块 {{ kb.totalChunks }}</span>
-                      <span class="surface-chip">Datastore {{ kb.datastoreIds?.length ?? 0 }}</span>
+                      <span v-if="!kb.systemManaged" class="surface-chip">Datastore {{ kb.datastoreIds?.length ?? 0 }}</span>
                     </div>
                   </div>
                 </div>
 
-                <div class="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div v-if="!kb.systemManaged" class="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                   <Button
                     type="button"
                     variant="ghost"
@@ -572,7 +585,9 @@ function resolveDatastoreNames(datastoreIds: string[] | undefined) {
               </div>
 
               <div class="mt-5 flex items-center justify-between gap-3 text-sm">
-                <span class="text-muted-foreground">适合继续补文档、检查分块和验证检索。</span>
+                <span class="text-muted-foreground">
+                  {{ kb.systemManaged ? '由 Datastore 自动维护，可查看文档和分块状态。' : '适合继续补文档、检查分块和验证检索。' }}
+                </span>
                 <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
                   进入知识库
                   <ArrowUpRight class="size-4" />
