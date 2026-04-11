@@ -25,6 +25,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.memory.workspace.TaskStateItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
@@ -98,6 +99,12 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
 
+    // ===== 可选依赖（Skill 工具激活） =====
+    @Nullable private final com.lifepilot.skill.registry.SkillRegistry skillRegistry;
+
+    // ===== 可选依赖（MCP 工具激活） =====
+    @Nullable private final DynamicToolRegistry toolRegistry;
+
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
             ProviderMessageBuilder providerMessageBuilder,
@@ -114,7 +121,9 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable IntentMatcher intentMatcher,
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
-            @Nullable SessionWorkspaceService workspaceService) {
+            @Nullable SessionWorkspaceService workspaceService,
+            @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
+            @Nullable DynamicToolRegistry toolRegistry) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -140,6 +149,8 @@ public class ReactAgentLoop implements CallbackHelper {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.workspaceService = workspaceService;
+        this.skillRegistry = skillRegistry;
+        this.toolRegistry = toolRegistry;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
 
@@ -354,6 +365,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
+                int preExecStepCount = state.stepCount();
                 state = toolExecutionCoordinator.executeBatch(
                         state,
                         toolCalls,
@@ -362,6 +374,16 @@ public class ReactAgentLoop implements CallbackHelper {
                         cancellationToken,
                         loopContext,
                         this::appendAndPublishStep);
+
+                // ★ Skill 工具激活 — 检测 file.read 返回的 _skillIds 并激活对应工具
+                var newActivatedTools = detectSkillToolActivation(state, preExecStepCount);
+                if (!newActivatedTools.isEmpty()) {
+                    state = state.withActivatedToolIds(newActivatedTools);
+                    cachedToolCallbacks = null;
+                    log.info("Skill 工具已激活: traceId={}, skills={}, totalActivated={}",
+                            state.traceId(), newActivatedTools,
+                            state.activatedToolIds() != null ? state.activatedToolIds().size() : 0);
+                }
 
                 // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
                 if (state.suspended()) {
@@ -1280,5 +1302,63 @@ public class ReactAgentLoop implements CallbackHelper {
                 -------- MESSAGES --------
                 {}========= END PROMPT ==========""",
                 scene, toolNames, messages.size(), sb);
+    }
+
+    /**
+     * 检测 file.read 工具结果中的 _skillIds 字段，合并所有相关 Skill 的 suggestedTools。
+     *
+     * @param state 当前状态（包含新增的 Observation 步骤）
+     * @param fromStepIndex 扫描起始步骤索引
+     * @return 需要激活的工具 ID 集合（可能为空）
+     */
+    private Set<String> detectSkillToolActivation(ReactAgentState state, int fromStepIndex) {
+        if (config.getCoreToolIds().isEmpty()) {
+            return Set.of();
+        }
+        if (skillRegistry == null && toolRegistry == null) {
+            return Set.of();
+        }
+        Set<String> toolIds = new LinkedHashSet<>();
+        for (int i = fromStepIndex; i < state.steps().size(); i++) {
+            if (!(state.steps().get(i) instanceof ReactStep.Observation obs)) continue;
+            if (!obs.success() || obs.output() == null) continue;
+
+            // 尝试解析 _skillIds 字段
+            List<String> skillIds = extractSkillIds(obs.output());
+            for (String skillId : skillIds) {
+                if (skillId.startsWith("mcp:")) {
+                    // MCP server — 从 registry 获取该 server 的所有工具 ID
+                    String serverName = skillId.substring(4);
+                    if (toolRegistry != null) {
+                        toolRegistry.getToolsByServer(serverName)
+                                .forEach(tool -> toolIds.add(tool.id()));
+                    }
+                } else {
+                    // 内置 Skill — 从 SkillRegistry 获取 suggestedTools
+                    if (skillRegistry != null) {
+                        skillRegistry.find(skillId).ifPresent(def -> toolIds.addAll(def.suggestedTools()));
+                    }
+                }
+            }
+        }
+        return toolIds;
+    }
+
+    /** 从工具输出 JSON 中提取 _skillIds 列表。 */
+    @SuppressWarnings("unchecked")
+    private List<String> extractSkillIds(String output) {
+        try {
+            var data = objectMapper.readValue(output, Map.class);
+            Object raw = data.get("_skillIds");
+            if (raw instanceof List<?> list) {
+                return list.stream()
+                        .filter(String.class::isInstance)
+                        .map(String.class::cast)
+                        .toList();
+            }
+        } catch (Exception ignored) {
+            // 非 JSON 或不含 _skillIds — 正常，忽略
+        }
+        return List.of();
     }
 }

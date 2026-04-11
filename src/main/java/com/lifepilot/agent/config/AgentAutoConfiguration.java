@@ -46,7 +46,9 @@ import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -180,7 +182,9 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Autowired(required = false) SessionDatastoreRepository sessionDatastoreRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-            @Autowired(required = false) CollectionRepository collectionRepository) {
+            @Autowired(required = false) CollectionRepository collectionRepository,
+            @Autowired(required = false) DynamicToolRegistry toolRegistry,
+            @Autowired(required = false) McpConfigProperties mcpConfig) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -199,7 +203,9 @@ public class AgentAutoConfiguration {
                 sessionKnowledgeBaseRepository,
                 sessionDatastoreRepository,
                 knowledgeBaseRepository,
-                collectionRepository);
+                collectionRepository,
+                toolRegistry,
+                mcpConfig);
     }
 
     @Bean
@@ -284,7 +290,9 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) IntentMatcher intentMatcher,
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
-            @Autowired(required = false) SessionWorkspaceService workspaceService) {
+            @Autowired(required = false) SessionWorkspaceService workspaceService,
+            @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
+            @Autowired(required = false) DynamicToolRegistry toolRegistry) {
         return new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -301,7 +309,9 @@ public class AgentAutoConfiguration {
                 intentMatcher,
                 compactionEngine,
                 sharedScheduler,
-                workspaceService);
+                workspaceService,
+                skillRegistry,
+                toolRegistry);
     }
 
     @Bean

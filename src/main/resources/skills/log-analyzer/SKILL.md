@@ -1,7 +1,7 @@
 ---
 id: log-analyzer
 name: "日志分析"
-description: "应用/系统日志分析、错误追踪、统计报告"
+description: "应用日志分析与错误追踪"
 version: "1.0.0"
 suggested-tools:
   - shell.exec

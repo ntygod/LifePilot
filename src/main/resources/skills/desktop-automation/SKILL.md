@@ -1,7 +1,7 @@
 ---
 id: desktop-automation
 name: "桌面自动化"
-description: "Windows 桌面 UI 操作、窗口管理、键鼠模拟、截图分析"
+description: "Windows 桌面 UI 自动化操作"
 version: "1.0.1"
 suggested-tools:
   - shell.exec
@@ -13,6 +13,8 @@ triggers:
   - "鼠标操作"
   - "键盘操作"
   - "桌面应用"
+  - "窗口管理"
+  - "桌面操作"
 ---
 
 # 桌面自动化指南
@@ -117,6 +119,16 @@ pyautogui.typewrite('hello', interval=0.05)
 # 快捷键
 pyautogui.hotkey('ctrl', 's')
 ")
+```
+
+### 5. 脚本保存与复用
+
+```
+# 将自动化脚本保存为文件方便复用
+file.write(path="scripts/auto_task.py", content="import pyautogui\n...")
+
+# 读取已有脚本
+file.read(path="scripts/auto_task.py")
 ```
 
 ## 安全原则

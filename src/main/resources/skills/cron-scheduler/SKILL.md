@@ -1,7 +1,7 @@
 ---
 id: cron-scheduler
 name: "定时任务调度"
-description: "Cron 定时任务创建、管理与执行"
+description: "定时任务创建与管理"
 version: "1.0.0"
 suggested-tools:
   - cron
@@ -25,23 +25,25 @@ triggers:
 - 周期性任务："每天搜索最新AI资讯"、"每周生成周报"
 
 
-## When NOT to Use
+## 不适用场景
 
 - 模糊关注类需求（不要强行创建 cron，优先记录为记忆或工作区信号，交由主动提醒引擎后续判断）
 - 一次性任务（直接执行，不创建定时任务）
 - 工作流编排（用 workflow-creator）
 
-## 工具说明
+## 工具调用示例
 
 ### 创建定时任务
 
-使用 `cron(action=create)` 创建任务：
+```
+cron(action="create", name="每日AI资讯", schedule="0 0 8 * * *", instruction="搜索最新AI资讯并发送摘要")
+```
+
 - `name`：任务名称（中文）
 - `schedule`：Spring 6 位 Cron 表达式（秒 分 时 日 月 周）
 - `instruction`：Agent 执行时的 prompt 指令
 
-如果任务后续会自主执行高风险操作（如删文件、改文件、执行命令、联网请求、浏览器自动化），
-创建任务时要让系统触发一次性预授权，避免任务运行时因缺少授权而失败。
+如果任务后续会自主执行高风险操作（如删文件、改文件、执行命令、联网请求、浏览器自动化），创建任务时要让系统触发一次性预授权，避免任务运行时因缺少授权而失败。
 
 ### 常用 Cron 表达式
 
@@ -53,27 +55,40 @@ triggers:
 | `0 0 8 * * MON` | 每周一早上 8 点 |
 | `0 0 8 1 * *` | 每月 1 号早上 8 点 |
 
-### 管理任务
+### 查看任务
 
-- `cron(action=list)`：查看所有任务，可传 `status` 按状态过滤（active / paused / completed）
-- `cron(action=update)`：通过 `taskId` 修改任务的 name、schedule、instruction 或 status
-- `cron(action=remove)`：通过 `taskId` 删除任务（同时删除执行日志）
+```
+cron(action="list")
+cron(action="list", status="active")
+```
+
+可传 `status` 按状态过滤：active / paused / completed
+
+### 修改任务
+
+```
+cron(action="update", taskId="task-xxx", schedule="0 0 9 * * *")
+cron(action="update", taskId="task-xxx", status="paused")
+```
+
+可修改的字段：name、schedule、instruction、status
+
+### 删除任务
+
+```
+cron(action="remove", taskId="task-xxx")
+```
+
+删除任务会同时删除执行日志。
 
 ## 静默协议
 
 任务执行后，如果没有需要汇报的内容（例行检查一切正常），回复 `TASK_SILENT`。
 TASK_SILENT 必须出现在回复的开头或结尾才会被识别。
 
-## 使用流程
-
-1. 用户描述需求（如"帮我每天早上8点搜索AI新闻"）
-2. 确定 Cron 表达式和执行指令
-3. 调用 `cron(action=create)` 创建任务
-4. 告知用户任务已创建，定时器已生效
-
 ## 注意事项
 
 - Cron 表达式使用 Spring 6 位格式（含秒），不是 Linux 5 位格式
 - 任务创建后立即注册精确定时器，无需等待扫描
-- 暂停任务使用 `cron(action=update)` 将 status 设为 `paused`
+- 暂停任务使用 `cron(action="update")` 将 status 设为 `paused`
 - 恢复任务将 status 设回 `active`

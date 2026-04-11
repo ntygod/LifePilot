@@ -60,6 +60,8 @@ public class McpConfigProperties {
     @Getter
     public static class ServerEntry {
         private String name;
+        /** 用户自定义描述，用于 Skill 目录中的 MCP server 展示。为空时从工具描述自动聚合。 */
+        private String description;
         private TransportType transport = TransportType.STDIO;
         private String command;
         private List<String> args = new ArrayList<>();

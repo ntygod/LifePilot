@@ -70,9 +70,7 @@ public class ShellToolProvider {
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
-                .description("在操作系统中执行 Shell 命令。" +
-                        "简单代码执行请用 code.execute，Git 操作请用 git。" +
-                        "管理后台进程或持久会话请用 shell.process。")
+                .description("在操作系统中执行 Shell 命令并返回输出")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -98,7 +96,8 @@ public class ShellToolProvider {
         properties.put("shell", Map.of("type", "string", "description",
                 "指定 Unix 解释器（如 bash/zsh），仅在同步模式下生效，background 和 yieldMs 模式下使用默认 sh。Windows 固定使用 PowerShell"));
         properties.put("env", Map.of("type", "object", "description",
-                "额外环境变量键值对，注入到子进程环境中"));
+                "额外环境变量键值对，注入到子进程环境中",
+                "additionalProperties", Map.of("type", "string")));
 
         return Map.of(
                 "type", "object",
@@ -133,15 +132,7 @@ public class ShellToolProvider {
     }
 
     private String buildProcessDescription() {
-        var sb = new StringBuilder("管理后台进程或持久终端会话。");
-        if (processManager != null) {
-            sb.append("后台进程：list/output/write/kill。");
-        }
-        if (sessionManager != null) {
-            sb.append("持久会话（tmux）：session-create/exec/read/write/signal/list/close/resize，跨调用保持环境状态。");
-        }
-        sb.append("执行新命令请用 shell.exec。");
-        return sb.toString();
+        return "管理后台进程和持久终端会话";
     }
 
     private Map<String, Object> buildProcessSchema() {

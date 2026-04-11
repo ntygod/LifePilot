@@ -1,7 +1,7 @@
 ---
 id: email-manager
 name: "邮件管理"
-description: "邮件收发、模板管理、批量发送。"
+description: "邮件收发与模板管理"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -44,14 +44,8 @@ web.fetch(
 ```
 
 ### 方式2：通过 CLI 工具
-```bash
-# 使用 curl + SMTP
-curl --url "smtp://smtp.example.com:587" \
-  --ssl-reqd \
-  --mail-from "sender@example.com" \
-  --mail-rcpt "recipient@example.com" \
-  --upload-file email.txt \
-  --user "user:password"
+```
+shell.exec(command="curl --url 'smtp://smtp.example.com:587' --ssl-reqd --mail-from 'sender@example.com' --mail-rcpt 'recipient@example.com' --upload-file email.txt --user 'user:password'")
 ```
 
 ## 邮件撰写流程
@@ -63,9 +57,12 @@ curl --url "smtp://smtp.example.com:587" \
 
 ## 邮件模板管理
 
-模板存储在 `~/.zhiwei/templates/email/` 目录：
 ```
+# 读取已有模板
 file.read(path="~/.zhiwei/templates/email/weekly-report.md")
+
+# 保存新模板
+file.write(path="~/.zhiwei/templates/email/meeting-invite.md", content="模板内容")
 ```
 
 ## 注意事项

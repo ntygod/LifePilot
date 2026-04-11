@@ -7,7 +7,9 @@ import lombok.Builder;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -44,6 +46,8 @@ public record ReactAgentState(
         @Nullable String reasoningSummary,
         CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
+        /** 已被 Skill 激活的工具 ID 集合 — 加载 Skill 时动态扩充。 */
+        @Nullable Set<String> activatedToolIds,
         @Nullable List<MediaContent> pendingMedia,
         int earlyStopRejectCount,
         boolean suspended,
@@ -57,6 +61,7 @@ public record ReactAgentState(
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
+        activatedToolIds = activatedToolIds != null ? Set.copyOf(activatedToolIds) : null;
         pendingMedia = pendingMedia != null ? List.copyOf(pendingMedia) : null;
     }
 
@@ -91,6 +96,7 @@ public record ReactAgentState(
                 .completionReason(null)
                 .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
+                .activatedToolIds(null)
                 .pendingMedia(null)
                 .earlyStopRejectCount(0)
                 .suspended(false)
@@ -182,6 +188,26 @@ public record ReactAgentState(
     public ReactAgentState clearPendingMedia() {
         return this.toBuilder()
                 .pendingMedia(null)
+                .build();
+    }
+
+    /**
+     * 合并新激活的工具 ID 到已有集合，返回新状态。
+     *
+     * @param newToolIds 新激活的工具 ID
+     * @return 包含合并后激活工具集的新状态
+     */
+    public ReactAgentState withActivatedToolIds(Set<String> newToolIds) {
+        if (newToolIds == null || newToolIds.isEmpty()) {
+            return this;
+        }
+        var merged = new LinkedHashSet<String>();
+        if (activatedToolIds != null) {
+            merged.addAll(activatedToolIds);
+        }
+        merged.addAll(newToolIds);
+        return this.toBuilder()
+                .activatedToolIds(merged)
                 .build();
     }
 

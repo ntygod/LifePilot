@@ -58,7 +58,7 @@ public class CodeKernelToolProvider {
                 .id("code.kernel.list")
                 .category(ToolCategory.PERCEPTION)
                 .name("列出代码内核")
-                .description("列出所有活跃的持久代码内核，显示每个内核的 ID、状态和空闲时间")
+                .description("列出活跃的代码内核")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of()
@@ -81,7 +81,7 @@ public class CodeKernelToolProvider {
                 .id("code.kernel.reset")
                 .category(ToolCategory.ACTION)
                 .name("重置代码内核")
-                .description("重置指定的持久代码内核，清空所有变量和导入状态，内核进程保持运行。用于在新任务开始前清理内核环境")
+                .description("重置代码内核状态")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("kernelId"),
@@ -108,7 +108,7 @@ public class CodeKernelToolProvider {
                 .id("code.kernel.inspect")
                 .category(ToolCategory.PERCEPTION)
                 .name("检查代码内核")
-                .description("检查指定持久代码内核的当前状态，包括已定义的变量名及其类型。用于了解内核中的上下文信息")
+                .description("检查代码内核变量")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("kernelId"),

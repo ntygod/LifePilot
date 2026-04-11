@@ -596,10 +596,11 @@ public class ContextEngine {
         }
         String callId = sessionPruningEngine.stringValue(payload.get("callId"));
         String inputJson = sessionPruningEngine.stringValue(payload.get("inputJson"));
+        String safeName = toolId != null ? toolId.replaceAll("[^a-zA-Z0-9_-]", "_") : "tool";
         return buildAssistantToolCallMessage(List.of(new AssistantMessage.ToolCall(
                         callId != null ? callId : toolId,
                         "function",
-                        toolId,
+                        safeName,
                         inputJson != null ? inputJson : "{}"
                 )));
     }
@@ -615,10 +616,11 @@ public class ContextEngine {
         if (preview.isBlank()) {
             preview = booleanValue(payload.get("success")) ? "工具执行成功" : "工具执行失败";
         }
+        String safeName = toolId != null ? toolId.replaceAll("[^a-zA-Z0-9_-]", "_") : "tool";
         return ToolResponseMessage.builder()
                 .responses(List.of(new ToolResponseMessage.ToolResponse(
                         callId != null ? callId : toolId,
-                        toolId,
+                        safeName,
                         preview
                 )))
                 .build();

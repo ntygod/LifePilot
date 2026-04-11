@@ -51,7 +51,7 @@ Key source files:
 - `src/main/resources/application.yml` — all runtime configuration
 - `src/main/resources/db/migration/` — Flyway migration scripts (V1–V25)
 - `src/main/resources/prompts/` — StringTemplate prompt files
-- `src/main/resources/skills/` — built-in skill definitions (31 skills)
+- `src/main/resources/skills/` — built-in skill definitions (30 skills)
 - `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
 
 ## Coding Conventions

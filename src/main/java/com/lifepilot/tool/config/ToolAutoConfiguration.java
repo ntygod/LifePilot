@@ -98,13 +98,15 @@ public class ToolAutoConfiguration {
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
-            @Nullable MetaProperties metaProperties) {
+            @Nullable MetaProperties metaProperties,
+            @Nullable com.lifepilot.agent.config.AgentConfigProperties agentConfig) {
         log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider");
         int maxToolOutputChars = metaProperties != null
                 ? metaProperties.getInfra().getMaxToolOutputChars()
                 : new MetaProperties().getInfra().getMaxToolOutputChars();
+        var coreToolIds = agentConfig != null ? agentConfig.getCoreToolIds() : null;
         return new ToolBridgeAgentToolProvider(
-                toolRegistry, pipeline, objectMapper, maxToolOutputChars);
+                toolRegistry, pipeline, objectMapper, maxToolOutputChars, coreToolIds);
     }
 
     /**

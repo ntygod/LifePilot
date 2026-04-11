@@ -1,7 +1,7 @@
 ---
 id: wps-office
 name: "WPS 办公"
-description: "WPS 文档创建、表格编辑、格式转换"
+description: "WPS 文档创建与编辑"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -78,12 +78,24 @@ doc.save('output.docx')
 
 ### 创建在线文档
 ```
-web.fetch(method=POST, 
+web.fetch(
   url="https://openapi.wps.cn/oauthapi/v3/office/file/new",
   method="POST",
   headers={"Content-Type": "application/json"},
   body="{\"name\": \"文档名称\", \"type\": \"writer\"}"
 )
+```
+
+## 本地文件读写
+
+读取已有文件内容（如 CSV、纯文本）：
+```
+file.read(path="/path/to/data.csv")
+```
+
+将生成的文档内容写入本地文件：
+```
+file.write(path="/path/to/output.txt", content="生成的内容")
 ```
 
 ## 注意事项

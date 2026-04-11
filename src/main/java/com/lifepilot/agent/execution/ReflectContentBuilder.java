@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -103,7 +102,7 @@ public final class ReflectContentBuilder {
      *
      * <p>格式示例：
      * <pre>
-     * ✓ load_skill(browser-automation, data-analyst)
+     * ✓ file.read(skill=browser-automation)
      * ✓ browser: navigate(京东搜索) → 触发风控验证
      * ✗ browser: wait(.J_MouserOnverReq) → 超时
      * </pre>
@@ -155,20 +154,17 @@ public final class ReflectContentBuilder {
                             ? "browser: " + (action != null ? action : "?")
                             : "browser: " + action + "(" + detail + ")";
                 }
-                case "load_skill" -> {
-                    JsonNode ids = root.path("skill_ids");
-                    if (ids.isArray()) {
-                        var names = new ArrayList<String>();
-                        ids.forEach(n -> names.add(n.asText()));
-                        yield "load_skill(" + String.join(", ", names) + ")";
-                    }
-                    yield "load_skill";
-                }
                 case "web.search" -> "web.search(" + truncate(textField(root, "query"), 30) + ")";
                 case "web.fetch" -> "web.fetch(" + truncate(textField(root, "url"), 40) + ")";
                 case "code.execute" -> "code.execute(" + textFieldOr(root, "language", "python") + ")";
                 case "file.write" -> "file.write(" + truncate(textField(root, "path"), 30) + ")";
-                case "file.read" -> "file.read(" + truncate(textField(root, "path"), 30) + ")";
+                case "file.read" -> {
+                    String skill = textField(root, "skill");
+                    if (skill != null && !skill.isBlank()) {
+                        yield "file.read(skill=" + truncate(skill, 30) + ")";
+                    }
+                    yield "file.read(path=" + truncate(textField(root, "path"), 30) + ")";
+                }
                 case "memory" -> "memory: " + textFieldOr(root, "action", "?");
                 case "shell.exec" -> "shell.exec";
                 default -> toolId;

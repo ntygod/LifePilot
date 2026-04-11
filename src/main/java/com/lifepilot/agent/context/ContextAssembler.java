@@ -11,6 +11,7 @@ import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.procedural.PreferenceRule;
@@ -23,6 +24,8 @@ import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -63,6 +66,8 @@ public class ContextAssembler {
     @Nullable private final SessionDatastoreRepository sessionDatastoreRepository;
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
     @Nullable private final CollectionRepository collectionRepository;
+    @Nullable private final DynamicToolRegistry toolRegistry;
+    @Nullable private final McpConfigProperties mcpConfig;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -75,7 +80,8 @@ public class ContextAssembler {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null,
+                null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -90,7 +96,8 @@ public class ContextAssembler {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
-                generationRouter, null, null, null, null, null);
+                generationRouter, null, null, null, null, null,
+                null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -106,7 +113,8 @@ public class ContextAssembler {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
-                generationRouter, contextEngine, null, null, null, null);
+                generationRouter, contextEngine, null, null, null, null,
+                null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -123,6 +131,31 @@ public class ContextAssembler {
                             @Nullable SessionDatastoreRepository sessionDatastoreRepository,
                             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                             @Nullable CollectionRepository collectionRepository) {
+        this(config, promptRegistry,
+                dataRedactor, semanticMemory, memoryProperties,
+                proceduralMemory, effectivenessTracker, skillRegistry,
+                generationRouter, contextEngine,
+                sessionKnowledgeBaseRepository, sessionDatastoreRepository,
+                knowledgeBaseRepository, collectionRepository,
+                null, null);
+    }
+
+    public ContextAssembler(AgentConfigProperties config,
+                            PromptRegistry promptRegistry,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable SemanticMemory semanticMemory,
+                            @Nullable MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
+                            @Nullable EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry,
+                            @Nullable GenerationRouter generationRouter,
+                            @Nullable ContextEngine contextEngine,
+                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+                            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                            @Nullable CollectionRepository collectionRepository,
+                            @Nullable DynamicToolRegistry toolRegistry,
+                            @Nullable McpConfigProperties mcpConfig) {
         this.config = config;
         this.locationResolver = new LocationResolver(config);
         this.promptRegistry = promptRegistry;
@@ -138,6 +171,8 @@ public class ContextAssembler {
         this.sessionDatastoreRepository = sessionDatastoreRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.collectionRepository = collectionRepository;
+        this.toolRegistry = toolRegistry;
+        this.mcpConfig = mcpConfig;
     }
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
@@ -343,6 +378,10 @@ public class ContextAssembler {
         String skillCatalog = buildSkillCatalog();
         if (!skillCatalog.isBlank()) {
             systemPrompt = systemPrompt + "\n" + skillCatalog;
+        }
+        String mcpCatalog = buildMcpServerCatalog();
+        if (!mcpCatalog.isBlank()) {
+            systemPrompt = systemPrompt + "\n" + mcpCatalog;
         }
         return systemPrompt;
     }
@@ -868,18 +907,61 @@ public class ContextAssembler {
             return "";
         }
 
-        // L0 紧凑列表 — 仅 id(name)，减少 system prompt token 消耗（~2000 → ~400）
-        String compactList = skills.stream()
-                .map(s -> s.id() + "(" + s.name() + ")")
-                .collect(Collectors.joining(", "));
+        // 两阶段披露 — system prompt 展示 XML 摘要（id + name + description），
+        // LLM 根据 description 匹配意图后通过 file.read(skill=...) 加载完整指南
+        String skillEntries = skills.stream()
+                .map(s -> s.toDiscoverySummary())
+                .collect(Collectors.joining("\n"));
 
-        return """
-                <skill_catalog>
-                可用技能（%d 个）：%s
-                使用方式：
-                - 不确定用哪个 → load_skill(action="search", query="你的需求描述") 搜索匹配
-                - 已知 skill ID → load_skill(skill_ids=["skill-id"]) 直接加载
-                </skill_catalog>""".formatted(skills.size(), compactList);
+        try {
+            return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
+        } catch (Exception e) {
+            log.warn("渲染技能目录失败: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 构建 MCP Server 目录 — 列出所有已连接的 MCP Server 供 LLM 按需加载。
+     */
+    private String buildMcpServerCatalog() {
+        if (toolRegistry == null) return "";
+        var serverNames = toolRegistry.getRegisteredServerNames();
+        if (serverNames.isEmpty()) return "";
+
+        var sb = new StringBuilder();
+        sb.append("\n<available_mcp_servers>\n");
+        for (String serverName : serverNames) {
+            var tools = toolRegistry.getToolsByServer(serverName);
+            if (tools.isEmpty()) continue;
+            String description = getMcpServerDescription(serverName, tools);
+            sb.append("<server id=\"").append(serverName)
+              .append("\" tools=\"").append(tools.size()).append("\">\n");
+            sb.append("  <description>").append(description).append("</description>\n");
+            sb.append("</server>\n");
+        }
+        sb.append("</available_mcp_servers>\n");
+        return sb.toString();
+    }
+
+    /**
+     * 获取 MCP Server 描述 — 优先使用用户配置，否则从工具描述聚合。
+     */
+    private String getMcpServerDescription(String serverName, List<ToolContract> tools) {
+        if (mcpConfig != null) {
+            for (var entry : mcpConfig.getServers()) {
+                if (serverName.equals(entry.getName())
+                        && entry.getDescription() != null
+                        && !entry.getDescription().isBlank()) {
+                    return entry.getDescription();
+                }
+            }
+        }
+        // 没有自定义描述，从工具描述聚合
+        return tools.stream()
+                .map(ToolContract::description)
+                .filter(d -> d != null && !d.isBlank())
+                .collect(Collectors.joining("；"));
     }
 
     private String safeRenderToolGuide() {

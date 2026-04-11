@@ -1,7 +1,7 @@
 ---
 id: file-organizer
 name: "文件管理"
-description: "批量重命名、目录优化、分类归档、重复检测"
+description: "文件批量重命名、分类归档与目录整理"
 version: "1.0.0"
 suggested-tools:
   - file.list
@@ -15,6 +15,7 @@ triggers:
   - "文件分类"
   - "批量重命名"
   - "清理文件"
+  - "文件归档"
 ---
 
 # 文件管理指南
@@ -30,30 +31,80 @@ triggers:
 - 磁盘空间分析
 
 
-## When NOT to Use
+## 不适用场景
 
 - 单个文件读写（用 file.read/write）
 - 代码文件重构（用 code-assistant）
 - 文档格式转换（用 doc-processor）
 
+## 工具使用说明
+
+### file.list — 了解目录结构
+
+```
+# 列出目标目录
+file.list(action="list", path="目标目录", maxDepth=3)
+
+# 按文件名过滤
+file.list(action="list", path="目标目录", pattern="*.pdf")
+
+# 搜索文件内容
+file.list(action="search", path="目标目录", pattern="关键词", filePattern="*.txt", maxResults=50)
+
+# 查看文件元数据（大小、修改时间）
+file.list(action="info", path="目标文件")
+```
+
+### file.read — 预览文件内容
+
+```
+file.read(path="data.csv", maxChars=2000)
+```
+
+### file.manage — 文件操作（推荐，跨平台）
+
+```
+# 移动/重命名
+file.manage(action="move", source="old/path/file.pdf", destination="new/path/file.pdf")
+
+# 复制文件
+file.manage(action="copy", source="src/file.txt", destination="backup/file.txt")
+
+# 复制目录（需 recursive）
+file.manage(action="copy", source="src/dir", destination="backup/dir", recursive=true)
+
+# 创建目录
+file.manage(action="mkdir", path="docs/2026")
+
+# 删除文件
+file.manage(action="delete", path="temp/useless.tmp")
+
+# 删除目录（需 recursive）
+file.manage(action="delete", path="temp/old-dir", recursive=true)
+```
+
+- `overwrite`：move/copy 时目标已存在是否覆盖，默认 false
+
+### file.write — 保存映射记录
+
+```
+file.write(path="rename-log.md", content="# 重命名记录\n- old.jpg → 2026-03-20.jpg")
+```
+
+### shell.exec — 高级批量操作
+
+```
+# 分析文件类型分布（Windows）
+shell.exec(command="powershell -c \"Get-ChildItem -Path 'path' -Recurse -File | Group-Object Extension | Sort-Object Count -Descending | Format-Table Count,Name\"")
+```
+
 ## 工作流
 
 ### 1. 了解当前状态
 
-```
-# 列出目标目录
-file.list(action="list", path="目标目录", maxDepth=5)
-
-# 分析文件类型分布
-# Windows
-shell.exec(command="powershell -c \"Get-ChildItem -Path 'path' -Recurse -File | Group-Object Extension | Sort-Object Count -Descending | Format-Table Count,Name\"")
-# Linux
-shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort -rn")
-```
+用 `file.list(action="list")` 查看目录结构，用 `file.list(action="info")` 查看文件大小。
 
 ### 2. 制定整理方案
-
-根据文件特征制定分类规则：
 
 | 分类依据 | 适用场景 | 示例 |
 |---------|---------|------|
@@ -66,39 +117,21 @@ shell.exec(command="find /path -type f | sed 's/.*\\.//' | sort | uniq -c | sort
 
 **在执行任何文件操作前，先输出变更预览供用户确认。**
 
-```
-即将执行以下操作：
-- 移动 report-2026.pdf → docs/2026/report-2026.pdf
-- 重命名 IMG_001.jpg → 2026-03-20_001.jpg
-- 删除重复文件 copy_of_data.csv
-
-确认执行？
-```
-
 ### 4. 执行操作
 
-```bash
-# 使用 file.manage 工具执行移动/重命名（推荐，跨平台）
-file.manage(action="move", source="old_name", target="new_name")
-
-# 或通过 shell 命令
-# Windows
-shell.exec(command="mkdir docs\\2026 && move file.pdf docs\\2026\\")
-# Linux
-shell.exec(command="mkdir -p docs/2026 && mv file.pdf docs/2026/")
-```
+优先使用 `file.manage` 而非 `shell.exec`，确保跨平台兼容。
 
 ### 5. 验证结果
 
 ```
-file.list(action="list", path="目标目录", maxDepth=5)
+file.list(action="list", path="目标目录", maxDepth=3)
 ```
 
 ## 安全原则
 
 - **永远先预览再执行**，不直接批量操作
 - **移动优先于删除**，先归档到临时目录
-- **保留原始文件名信息**，重命名时记录映射关系
+- **保留原始文件名信息**，重命名时用 `file.write` 记录映射关系
 - **大批量操作分批执行**，每批确认后再继续
 
 ## 常见错误处理

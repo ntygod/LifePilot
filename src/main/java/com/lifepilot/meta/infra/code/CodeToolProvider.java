@@ -69,8 +69,7 @@ public class CodeToolProvider {
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
                 .name("执行代码")
-                .description("在沙箱中执行代码（Python/JavaScript/Shell）。" +
-                        "默认一次性执行，传 kernelId 可跨调用保持变量和导入。")
+                .description("沙箱代码执行")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("code"),

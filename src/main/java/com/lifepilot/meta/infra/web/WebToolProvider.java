@@ -95,7 +95,7 @@ public class WebToolProvider {
                 .name("Web 页面抓取")
                 .description("抓取 URL 内容或调用外部 REST API。" +
                         "默认 GET 并提取正文，支持 CSS 选择器定向提取。" +
-                        "多步 JS 交互请用 browser。禁止访问内网地址。")
+                        "禁止访问内网地址。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -105,7 +105,8 @@ public class WebToolProvider {
                                 Map.entry("method", Map.of("type", "string",
                                         "description", "HTTP 方法（GET/POST/PUT/DELETE/PATCH），默认 GET")),
                                 Map.entry("headers", Map.of("type", "object",
-                                        "description", "请求头 Map")),
+                                        "description", "请求头 Map",
+                                        "additionalProperties", Map.of("type", "string"))),
                                 Map.entry("body", Map.of("type", "string",
                                         "description", "请求体（POST/PUT/PATCH 时使用）")),
                                 Map.entry("selector", Map.of("type", "string",

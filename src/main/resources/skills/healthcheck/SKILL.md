@@ -1,7 +1,7 @@
 ---
 id: healthcheck
 name: "系统健康检查"
-description: "系统状态检查、资源监控、诊断报告"
+description: "系统健康检查与诊断报告"
 version: "1.0.1"
 suggested-tools:
   - shell.exec
@@ -61,10 +61,14 @@ shell.exec(command="ss -tlnp | grep -E '(8080|3306|5432|6379|11434)' && jps -l")
 ```
 
 ### 4. 日志异常扫描
-```bash
-# 通过 shell 读取最近日志末尾
+
+通过 `shell.exec` 读取最近日志末尾：
+```
 shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 100\"")
-# 或者用 file.list 搜索日志中的错误
+```
+
+或通过 `file.list` 搜索日志中的错误关键词：
+```
 file.list(action="search", path="~/.zhiwei/logs", pattern="ERROR|Exception|FATAL", filePattern="*.log", maxResults=20)
 ```
 

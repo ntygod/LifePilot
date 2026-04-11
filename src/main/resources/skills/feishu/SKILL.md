@@ -1,7 +1,7 @@
 ---
 id: feishu
 name: "飞书集成"
-description: "飞书消息、任务、文档、日程管理"
+description: "飞书消息、文档与日程管理"
 version: "2.0.0"
 suggested-tools:
   - channel.feishu

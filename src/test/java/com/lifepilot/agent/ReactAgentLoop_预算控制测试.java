@@ -101,7 +101,9 @@ class ReactAgentLoop_预算控制测试 {
                 null,
                 null,
                 sharedScheduler,
-                null  // workspaceService
+                null,  // workspaceService
+                null,  // skillRegistry
+                null   // toolRegistry
         );
     }
 
@@ -331,7 +333,9 @@ class ReactAgentLoop_预算控制测试 {
                 null,
                 compactionEngine,
                 sharedScheduler,
-                null  // workspaceService
+                null,  // workspaceService
+                null,  // skillRegistry
+                null   // toolRegistry
         );
 
         when(contextAssembler.assemble(any())).thenReturn(baseContext("请执行测试任务"));

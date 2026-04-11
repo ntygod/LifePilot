@@ -55,8 +55,7 @@ public class NotifyToolProvider {
                 .name("推送通知")
                 .description("向用户推送通知消息（非阻塞）。" +
                         "适用于定时任务结果、后台任务完成提醒、告警等场景。" +
-                        "正常对话中直接在回复里说即可，不需要此工具。" +
-                        "向特定渠道/群组发消息请用 channel。")
+                        "正常对话中直接在回复里说即可，不需要此工具。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("message"),

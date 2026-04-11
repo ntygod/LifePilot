@@ -62,7 +62,7 @@ McpServerRegistry 实现 `DisposableBean`，Spring 容器关闭时自动取消�
 
 ## 3. 使用场景
 
-用户通过 `~/.zhiwei/mcp/servers.json`（推荐）或 `application.yml` 配置 MCP 服务器。系统启动后注册所有配置并从缓存加载工具桩。Agent 在对话中选择使用某个 MCP 工具时，系统自动连接对应 Server 并执行调用。长时间无调用后 Server 自动断开，下次调用时再次连接。
+用户通过 `~/.zhiwei/mcp/servers.json`（推荐）或 `application.yml` 配置 MCP 服务器。系统启动后注册所有配置并从缓存加载工具桩。MCP server 条目自动出现在系统提示词的 Skill 目录中（`<available_mcp_servers>` 标签），Agent 根据用户请求调用 `file.read(skill="mcp:server-name")` 加载该 Server 的所有工具。MCP 工具不再全量注入上下文，而是随 Skill 激活动态加载。长时间无调用后 Server 自动断开，下次调用时再次连接。
 
 ## 4. 配置项
 
@@ -72,6 +72,7 @@ McpServerRegistry 实现 `DisposableBean`，Spring 容器关闭时自动取消�
 |--------|--------|------|
 | `lifepilot.mcp.enabled` | `true` | MCP 支持总开关 |
 | `lifepilot.mcp.servers[].name` | — | 服务器名称（唯一标识） |
+| `lifepilot.mcp.servers[].description` | — | 用户自定义描述，用于 Skill 目录中展示；为空时从工具描述自动聚合 |
 | `lifepilot.mcp.servers[].transport` | `STDIO` | 传输类型（STDIO/STREAMABLE_HTTP/SSE_LEGACY） |
 | `lifepilot.mcp.servers[].command` | — | STDIO 模式启动命令 |
 | `lifepilot.mcp.servers[].args` | `[]` | 启动参数列表 |

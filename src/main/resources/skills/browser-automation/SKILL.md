@@ -1,10 +1,12 @@
 ---
 id: browser-automation
 name: "浏览器自动化"
-description: "网页导航、表单填写、信息抓取、截图、无障碍树分析"
+description: "网页交互自动化（导航、点击、填表、截图、信息抓取）"
 version: "1.0.0"
 suggested-tools:
   - browser
+  - web.fetch
+  - web.search
   - file.write
 triggers:
   - "浏览器"
@@ -28,7 +30,7 @@ triggers:
 
 ## 不适用场景
 
-- 简单的静态页面抓取 → 优先使用 `web.fetch`
+- 简单静态页面抓取 → 优先使用 `web.fetch`
 - API 接口测试 → 用 `api-debugger`
 - 桌面应用操作 → 用 `desktop-automation`
 
@@ -179,4 +181,5 @@ browser(action="close", sessionId="my-task")
 提取到数据后：
 1. 使用 `evaluate` 提取结构化 JSON
 2. 多个页面的数据合并整理
-3. 如用户要求表格，用 Markdown 表格或 A2UI Table 组件输出
+3. 用 `file.write(path="output/data.json", content="...")` 保存抓取结果
+4. 如用户要求表格，用 Markdown 表格或 A2UI Table 组件输出

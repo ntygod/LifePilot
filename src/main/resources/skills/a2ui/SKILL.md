@@ -1,7 +1,7 @@
 ---
 id: a2ui
 name: "结构化 UI 输出"
-description: "A2UI 交互式组件输出：表格、列表、卡片、按钮、输入框等"
+description: "将结构化信息渲染为交互式前端组件（表格、列表、卡片、按钮等）"
 version: "1.0.0"
 suggested-tools: []
 triggers:

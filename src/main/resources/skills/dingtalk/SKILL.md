@@ -1,7 +1,7 @@
 ---
 id: dingtalk
 name: "钉钉集成"
-description: "钉钉消息、工作通知、任务创建"
+description: "钉钉消息与工作通知"
 version: "1.0.0"
 suggested-tools:
   - web.fetch
@@ -11,6 +11,7 @@ triggers:
   - "发钉钉消息"
   - "钉钉通知"
   - "钉钉任务"
+  - "钉钉机器人"
 ---
 
 # 钉钉集成指南

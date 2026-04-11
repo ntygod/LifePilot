@@ -1,7 +1,7 @@
 ---
 id: code-assistant
 name: "编码代理"
-description: "调度外部编码 Agent 执行开发/重构/PR 审查（简单修改直接编辑）"
+description: "多文件代码开发、重构与审查"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -9,6 +9,7 @@ suggested-tools:
   - file.read
   - file.write
   - file.list
+  - file.edit
   - git.query
   - git.mutate
   - code.execute
@@ -21,7 +22,6 @@ triggers:
   - "代码生成"
   - "codex"
   - "claude code"
-  - "编码代理"  
 ---
 
 # 编码代理指南
@@ -47,7 +47,7 @@ triggers:
 
 ```bash
 # 后台启动 Codex（交互式应用需要 PTY 模式）
-shell.exec(command="codex exec --full-auto '你的任务描述'", workingDirectory="/path/to/project", background=true, pty=true)
+shell.exec(command="codex exec --full-auto '任务描述'", workingDirectory="/path/to/project", background=true, pty=true)
 ```
 
 | 标志 | 效果 |

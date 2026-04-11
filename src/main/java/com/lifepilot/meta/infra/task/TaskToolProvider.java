@@ -52,7 +52,7 @@ public class TaskToolProvider {
                 .id("cron")
                 .category(ToolCategory.ACTION)
                 .name("定时任务")
-                .description("管理定时任务，支持创建、查询、更新和删除操作。")
+                .description("定时任务管理")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

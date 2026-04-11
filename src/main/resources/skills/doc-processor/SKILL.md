@@ -1,7 +1,7 @@
 ---
 id: doc-processor
 name: "文档处理"
-description: "PDF 解析、格式转换、文档合并、元数据提取"
+description: "文档解析、格式转换与合并"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -14,6 +14,7 @@ triggers:
   - "Word"
   - "文档转换"
   - "提取文本"
+  - "格式转换"
 ---
 
 # 文档处理指南
@@ -103,6 +104,16 @@ shell.exec(command="for f in docs/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" --
 ```bash
 # 合并多个 Markdown 文件
 shell.exec(command="pandoc part1.md part2.md part3.md -o combined.pdf")
+```
+
+## 读取和写入文件
+
+```
+# 读取转换后的文件确认结果
+file.read(path="output.html", maxChars=5000)
+
+# 手动写入文件内容
+file.write(path="output.md", content="转换后的内容")
 ```
 
 ## 常见错误处理

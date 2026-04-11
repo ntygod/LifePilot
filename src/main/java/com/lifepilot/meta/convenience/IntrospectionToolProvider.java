@@ -73,7 +73,7 @@ public class IntrospectionToolProvider {
         return BuiltinTool.builder()
                 .id("system.status")
                 .name("查看系统状态")
-                .description("查看系统当前状态概览，包括各注册中心的能力计数、工具层分布、活跃工作流实例和 MCP Server 连接状态")
+                .description("查看系统状态概览")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))

@@ -54,6 +54,16 @@ lifepilot:
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: true
+    core-tool-ids:
+      - shell.exec
+      - web.search
+      - web.fetch
+      - file.read
+      - file.write
+      - file.list
+      - memory
+      - knowledge.search
+      - notify
     loop:
       # ReAct 循环配置
       max-iterations: 45

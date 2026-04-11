@@ -1,11 +1,11 @@
 ---
 id: gitee
 name: "Gitee 代码托管"
-description: "Gitee 仓库/PR/Issue/CI 管理"
+description: "Gitee 仓库、PR、Issue 管理"
 version: "1.0.0"
 suggested-tools:
-  - web.fetch
   - shell.exec
+  - web.fetch
   - git.query
   - git.mutate
 triggers:
@@ -74,17 +74,28 @@ web.fetch(
 )
 ```
 
-## 结合 Git 命令
+## 结合 Git 工具
 
-```bash
-# 克隆仓库
-git clone https://gitee.com/${owner}/${repo}.git
+本地仓库只读查询使用 `git.query`：
 
-# 推送代码
-git push origin feature-branch
+```
+git.query(action="status")
+git.query(action="log", count=10)
+git.query(action="diff", filePath="src/Main.java")
+```
 
-# 查看远程分支
-git branch -r
+本地仓库写操作使用 `git.mutate`：
+
+```
+git.mutate(action="commit", message="提交信息", files=["file1.java"])
+git.mutate(action="branch", branchAction="create", name="feature-xxx")
+```
+
+克隆和推送等 Git 原生命令通过 `shell.exec` 执行：
+
+```
+shell.exec(command="git clone https://gitee.com/${owner}/${repo}.git")
+shell.exec(command="git push origin feature-branch")
 ```
 
 ## 注意事项

@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.skill`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 功能概述
 
@@ -22,9 +22,11 @@ Skill 系统为知微提供程序性知识管理能力，让 Agent 能够按需�
 
 ### 2.2 渐进式发现与按需激活
 
-系统提示词中包含所有已注册 Skill 的目录摘要（XML 格式，由 `toDiscoverySummary()` 生成），Agent 根据用户请求从目录中选择需要的 Skill，调用 `load_skill(skill_ids=[...])` 一次性加载最多 3 个 Skill，获取完整指令和建议工具列表。
+系统提示词中包含所有已注册 Skill 的目录摘要（XML 格式，由 `toDiscoverySummary()` 生成）和 MCP server 目录（`<available_mcp_servers>`，由 ContextAssembler 生成），Agent 根据用户请求从目录中选择需要的 Skill，调用 `file.read(skill="skill-id")` 加载 Skill 指南并自动激活对应工具。支持逗号分隔多个 Skill ID（最多 3 个），支持 `mcp:server-name` 前缀加载 MCP server 的所有工具。
 
-这种设计避免了将所有 Skill 指令一次性加载到上下文中，节省 Token 预算。
+加载流程：Agent 调用 `file.read(skill="id1,id2")` → FileReadToolExecutor 读取 SKILL.md 并返回含 `_skillIds` 的结果 → ReactAgentLoop 检测 `_skillIds` 字段 → 从 SkillRegistry 获取 suggestedTools → 更新 `activatedToolIds` → 下次迭代时 ToolBridge 过滤器放行已激活工具。
+
+这种设计避免了将所有 Skill 指令和工具一次性加载到上下文中，节省 Token 预算。
 
 ### 2.3 语义搜索与关键词降级
 
@@ -79,7 +81,7 @@ Skill 搜索支持双模式：
 
 **场景一：Agent 按需激活专业 Skill**
 
-用户请求"帮我创建一个每天早上 8 点的提醒任务"，系统提示词中包含 Skill 目录摘要，Agent 识别到 `task` Skill 与请求相关，调用 `load_skill(skill_ids=["task"])` 加载该 Skill，获取任务管理的专业指令和 `task.create`、`task.list` 等工具，从而精准完成任务创建。
+用户请求"帮我创建一个每天早上 8 点的提醒任务"，系统提示词中包含 Skill 目录摘要，Agent 识别到 `cron-scheduler` Skill 与请求相关，调用 `file.read(skill="cron-scheduler")` 加载该 Skill 指南，系统自动激活任务管理相关工具，从而精准完成任务创建。
 
 **场景二：用户自定义领域 Skill**
 

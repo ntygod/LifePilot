@@ -80,7 +80,7 @@ public class ProviderMessageBuilder {
                 pendingToolCalls.add(new AssistantMessage.ToolCall(
                         tc.callId() != null ? tc.callId() : tc.toolId(),
                         "function",
-                        tc.toolId(),
+                        sanitizeToolName(tc.toolId()),
                         tc.inputJson()
                 ));
                 continue;
@@ -257,7 +257,7 @@ public class ProviderMessageBuilder {
             case ReactStep.Observation observation -> ToolResponseMessage.builder()
                     .responses(List.of(new ToolResponseMessage.ToolResponse(
                             observation.callId() != null ? observation.callId() : observation.toolId(),
-                            observation.toolId(),
+                            sanitizeToolName(observation.toolId()),
                             formatObservationForPrompt(observation)
                     )))
                     .build();
@@ -333,5 +333,11 @@ public class ProviderMessageBuilder {
             case SuspendReason.ExternalDataWait externalDataWait ->
                     "等待外部数据: " + externalDataWait.description();
         };
+    }
+
+    /** 将工具 ID 中的非法字符替换为下划线，满足 OpenAI API 名称模式 ^[a-zA-Z0-9_-]+$。 */
+    private static String sanitizeToolName(String toolId) {
+        if (toolId == null || toolId.isBlank()) return "tool";
+        return toolId.replaceAll("[^a-zA-Z0-9_-]", "_");
     }
 }

@@ -8,6 +8,7 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
@@ -36,19 +37,42 @@ public class FileToolProvider {
     private final FileEditHistory editHistory;
     @Nullable
     private final LintHookExecutor lintHook;
+    /** Skill 文件目录路径（如 ~/.zhiwei/skills），为 null 时 file.read 不支持 skill 参数。 */
+    @Nullable
+    private final String skillDirectory;
+    /** 动态工具注册中心，用于 file.read 的 mcp: 前缀解析。 */
+    @Nullable
+    private final DynamicToolRegistry toolRegistry;
 
     public FileToolProvider(MetaProperties properties) {
         this.properties = properties;
         this.editHistory = null;
         this.lintHook = null;
+        this.skillDirectory = null;
+        this.toolRegistry = null;
     }
 
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
-                            @Nullable LintHookExecutor lintHook) {
+                            @Nullable LintHookExecutor lintHook,
+                            @Nullable String skillDirectory) {
         this.properties = properties;
         this.editHistory = editHistory;
         this.lintHook = lintHook;
+        this.skillDirectory = skillDirectory;
+        this.toolRegistry = null;
+    }
+
+    public FileToolProvider(MetaProperties properties,
+                            @Nullable FileEditHistory editHistory,
+                            @Nullable LintHookExecutor lintHook,
+                            @Nullable String skillDirectory,
+                            @Nullable DynamicToolRegistry toolRegistry) {
+        this.properties = properties;
+        this.editHistory = editHistory;
+        this.lintHook = lintHook;
+        this.skillDirectory = skillDirectory;
+        this.toolRegistry = toolRegistry;
     }
 
     /**
@@ -65,7 +89,7 @@ public class FileToolProvider {
         var fileEditConfig = properties.getInfra().getFileEdit();
 
         tools.add(buildFileReadTool(
-                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars())));
+                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars(), skillDirectory, toolRegistry)));
         tools.add(buildFileWriteTool(
                 new FileWriteToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
         tools.add(buildFileListTool(new FileListActionDispatchExecutor(
@@ -91,24 +115,24 @@ public class FileToolProvider {
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
-                .description("读取指定路径的单个文件内容。当你知道文件路径并需要查看其内容时使用。" +
-                        "支持行范围读取、maxChars 截断和编码指定，返回 totalLines 字段。" +
-                        "若需列出目录内容或跨文件搜索，请使用 file.list")
+                .description("读取文件或加载技能指南。path 和 skill 二选一：" +
+                        "path 读取指定文件，skill 加载技能（多个逗号分隔）并自动激活技能工具")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
+                        "properties", new LinkedHashMap<>(Map.of(
                                 "path", Map.of("type", "string",
-                                        "description", "文件路径"),
+                                        "description", "文件路径（与 skill 二选一）"),
+                                "skill", Map.of("type", "string",
+                                        "description", "加载技能指南：传入 skill ID，多个逗号分隔，最多 3 个"),
                                 "encoding", Map.of("type", "string",
                                         "description", "文件编码（如 UTF-8、GBK），默认 UTF-8"),
                                 "startLine", Map.of("type", "integer",
-                                        "description", "起始行号（1-based），超出范围自动调整，可选"),
+                                        "description", "起始行号（1-based），可选"),
                                 "endLine", Map.of("type", "integer",
-                                        "description", "结束行号（1-based），超出范围自动调整，可选"),
+                                        "description", "结束行号（1-based），可选"),
                                 "maxChars", Map.of("type", "integer",
-                                        "description", "最大返回字符数，按完整行截断，默认 30000")
-                        )
+                                        "description", "最大返回字符数，默认 30000")
+                        ))
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.of(
@@ -128,7 +152,7 @@ public class FileToolProvider {
                 .category(ToolCategory.ACTION)
                 .name("写入文件")
                 .description("创建新文件或覆盖/追加内容到现有文件。mode=write（默认）原子覆写，mode=append 追加到末尾。" +
-                        "支持自动创建父目录。若需精确修改文件中的某几行，请使用 file.edit")
+                        "支持自动创建父目录")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "content"),
@@ -235,10 +259,7 @@ public class FileToolProvider {
                 .id("file.edit")
                 .category(ToolCategory.ACTION)
                 .name("编辑文件")
-                .description("对现有文件执行精确修改，原子写入。支持两种模式：" +
-                        "行级操作（insert/replace/delete，自动按行号倒序执行避免漂移）和" +
-                        "文本匹配（search_replace，通过 oldText/newText 定位替换，更鲁棒）。" +
-                        "比 file.write 更安全（不会意外覆盖整个文件）")
+                .description("精确修改文件内容（行级操作或文本匹配替换）")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "operations"),
@@ -268,8 +289,7 @@ public class FileToolProvider {
                 .id("file.manage")
                 .category(ToolCategory.ACTION)
                 .name("文件管理")
-                .description("管理文件与目录。通过 action 参数支持四类操作：" +
-                        "move=移动文件或目录，copy=复制文件或目录，delete=删除文件或目录，mkdir=创建目录。")
+                .description("文件和目录的移动、复制、删除、创建")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

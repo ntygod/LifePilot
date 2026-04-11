@@ -118,8 +118,10 @@ public class MetaAutoConfiguration {
                                         @Nullable ChannelRegistry channelRegistry,
                                         @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                                         @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
-                                        @Nullable ChannelInstanceService channelInstanceService) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService);
+                                        @Nullable ChannelInstanceService channelInstanceService,
+                                        @Nullable com.lifepilot.skill.config.SkillConfigProperties skillConfigProperties) {
+        String skillDir = skillConfigProperties != null ? skillConfigProperties.getDirectory() : null;
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir);
     }
 
     /**

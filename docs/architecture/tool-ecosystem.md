@@ -2,14 +2,14 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
 工具系统是知微 Agent 与外部世界交互的桥梁，定义了统一的工具契约（ToolContract），支持两种工具来源（Java 原生内置工具、MCP 外部工具），并通过执行管道提供护栏检查、幂等控制、超时重试等保障。
 
 > **重要变更**：原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已在渐进式披露重构中移除。
-> Skill 不再注册为独立工具，而是通过 `load_skill` / `generate_skill` 两个 BuiltinTool 按需加载。
+> Skill 不再注册为独立工具。`load_skill` 独立工具已删除，Skill 加载迁移至 `file.read(skill=...)` 参数，ReactAgentLoop 自动检测并激活工具。`generate_skill` 工具保留用于 LLM 驱动的 Skill 自扩展。
 
 ## 2. 架构图
 
@@ -126,7 +126,7 @@ sequenceDiagram
 
 - **Agent 引擎**（`agent`）：通过 ToolBridgeAgentToolProvider 提供工具回调
 - **MCP 协议**（`mcp`）：McpTool 桥接 MCP 服务器提供的外部工具
-- **Skill 系统**（`skill`）：通过 `load_skill` / `generate_skill` BuiltinTool 实现渐进式 Skill 发现与激活
+- **Skill 系统**（`skill`）：通过 `file.read(skill=...)` 和 `generate_skill` BuiltinTool 实现渐进式 Skill 发现与激活；`load_skill` 独立工具已删除
 - **护栏系统**（`guardrail` / `observability`）：执行管道中集成风险等级检查
 - **可观测性**（`observability`）：工具执行轨迹记录
 

@@ -1,36 +1,28 @@
 package com.lifepilot.tool.bridge;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolContextKeys;
-import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.semantics.ToolScopeResolution;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
-
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * 工具桥接层 — 将 ToolContract 转换为 Spring AI ToolCallback。
@@ -51,6 +43,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
     private final int maxToolOutputChars;
+    /** 核心工具 ID 集合 — 非空时启用分层工具注入。 */
+    private final Set<String> coreToolIds;
     private volatile Map<String, String> toolIdToModelName = Map.of();
     private volatile Map<String, String> modelNameToToolId = Map.of();
 
@@ -58,11 +52,14 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
-            int maxToolOutputChars) {
+            int maxToolOutputChars,
+            @Nullable List<String> coreToolIds) {
         this.toolRegistry = toolRegistry;
         this.pipeline = pipeline;
         this.objectMapper = objectMapper;
         this.maxToolOutputChars = maxToolOutputChars;
+        this.coreToolIds = coreToolIds != null && !coreToolIds.isEmpty()
+                ? Set.copyOf(coreToolIds) : Set.of();
     }
 
     @Override
@@ -118,18 +115,31 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
         var allowedToolIds = state.allowedToolIds();
+
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
+            // 多 Agent / 受限代理场景 — 白名单过滤，基础设施工具默认透传
             int totalCount = tools.size();
             tools = tools.stream()
-                    // 当前仍是单 Agent 全能模式，基础设施工具默认透传；
-                    // allowedToolIds 主要用于未来多 Agent / 受限代理场景预留。
                     .filter(t -> allowedToolIds.contains(t.id())
                                  || t.tags().contains("infrastructure"))
                     .toList();
-            log.debug("生成 ToolCallback: total={}, filtered={}", totalCount, tools.size());
+            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", totalCount, tools.size());
+        } else if (!coreToolIds.isEmpty()) {
+            // 分层工具注入 — 核心工具 + 已激活的 Skill/MCP 工具
+            Set<String> activatedIds = state.activatedToolIds() != null
+                    ? state.activatedToolIds() : Set.of();
+            int totalCount = tools.size();
+            tools = tools.stream()
+                    .filter(t -> coreToolIds.contains(t.id())
+                              || activatedIds.contains(t.id()))
+                    .toList();
+            log.debug("ToolCallback 过滤 (分层): total={}, core={}, activated={}, final={}",
+                    totalCount, coreToolIds.size(), activatedIds.size(), tools.size());
         } else {
-            log.debug("生成 ToolCallback: count={}", tools.size());
+            // 全量模式
+            log.debug("ToolCallback 全量: count={}", tools.size());
         }
+
         refreshToolNameMappings(tools);
         return tools.stream()
                 .map(t -> toToolCallback(t, streamId, state))
@@ -260,7 +270,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         return "trace:" + callerTraceId + ":" + tool.id() + ":" + sha256Hex(canonicalParams);
     }
 
-    private java.util.Optional<ToolContract> resolveTool(String toolIdOrAlias) {
+    private Optional<ToolContract> resolveTool(String toolIdOrAlias) {
         String canonicalToolId = resolveCanonicalToolId(toolIdOrAlias);
         return toolRegistry.resolve(canonicalToolId);
     }

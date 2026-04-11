@@ -212,7 +212,8 @@ sequenceDiagram
 ## 6. 集成点
 
 - **工具系统**（`tool`）：McpTool 注册到 DynamicToolRegistry，通过 McpToolExecutor 执行
-- **Skill 系统**（`skill`）：SkillToMcpBridge 暴露 exportable 工具
+- **Skill 系统**（`skill`）：SkillToMcpBridge 暴露 exportable 工具；MCP server 条目出现在 ContextAssembler 生成的 `<available_mcp_servers>` Skill 目录中，Agent 可通过 `file.read(skill="mcp:server-name")` 按需加载 MCP server 的所有工具
+- **Agent 引擎**（`agent`）：MCP 工具不再全量注入上下文，随 Skill 激活或 `file.read(skill="mcp:xxx")` 动态加载；分层工具注入由 `lifepilot.agent.core-tool-ids` 控制
 - **A2A 协议**（`a2a`）：A2A 可通过 MCP 工具桥接实现跨系统工具调用
 - **共享调度器**（`config.threadpool`）：维护 tick 和重连任务通过 SharedScheduler.heartbeat() 调度
 
@@ -224,6 +225,7 @@ sequenceDiagram
 |--------|--------|------|
 | `lifepilot.mcp.enabled` | `true` | MCP 支持总开关 |
 | `lifepilot.mcp.servers[].name` | — | 服务器名称（唯一标识） |
+| `lifepilot.mcp.servers[].description` | — | 用户自定义描述，用于 Skill 目录中的 MCP server 展示；为空时从工具描述自动聚合 |
 | `lifepilot.mcp.servers[].transport` | `STDIO` | 传输类型（STDIO / STREAMABLE_HTTP / SSE_LEGACY） |
 | `lifepilot.mcp.servers[].command` | — | STDIO 模式启动命令 |
 | `lifepilot.mcp.servers[].args` | `[]` | STDIO 模式命令参数 |
@@ -264,7 +266,7 @@ sequenceDiagram
       "args": ["-y", "some-mcp-server"],
       "autoConnect": false,
       "idleTimeout": 600,
-      "_description": "服务器描述（不参与解析）"
+      "description": "服务器功能描述，用于 Skill 目录中展示"
     }
   }
 }

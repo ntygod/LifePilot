@@ -282,7 +282,7 @@ public class SkillAutoConfiguration {
      * 应用启动完成后触发 Markdown Skill 初始加载、文件监听启动和 L2 工具注册。
      *
      * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
-     * 然后启动 WatchService 监听文件变更。之后注册 load_skill 和 generate_skill 工具。</p>
+     * 然后启动 WatchService 监听文件变更。之后注册 disclosure 和 generate_skill 工具。</p>
      *
      * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE - 1)} 确保在各 AutoConfiguration
      * 的 registerTools()（HIGHEST_PRECEDENCE）之后执行，
@@ -310,7 +310,7 @@ public class SkillAutoConfiguration {
         // 注册 L2 渐进式披露工具
         if (ctx.containsBean("skillDisclosureTool")) {
             ctx.getBean(SkillDisclosureTool.class).registerTools();
-            log.info("ApplicationReady: load_skill 工具已注册");
+            log.debug("ApplicationReady: SkillDisclosureTool.registerTools() 已调用");
         }
         if (ctx.containsBean("skillGenerationTool")) {
             ctx.getBean(SkillGenerationTool.class).registerTools();

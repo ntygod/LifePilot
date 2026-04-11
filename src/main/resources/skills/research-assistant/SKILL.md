@@ -1,7 +1,7 @@
 ---
 id: research-assistant
 name: "信息调研"
-description: "Web 搜索、网页抓取、交叉验证、结构化输出"
+description: "多源搜索与信息整合 — 资讯追踪、行业动态、技术调研、竞品分析、事实核查"
 version: "1.0.0"
 suggested-tools:
   - web.search
@@ -15,6 +15,9 @@ triggers:
   - "搜索资料"
   - "信息收集"
   - "深度搜索"
+  - "资讯"
+  - "新闻"
+  - "动态"
 ---
 
 # 信息调研指南
@@ -30,7 +33,7 @@ triggers:
 - 趋势分析和行业动态
 
 
-## When NOT to Use
+## 不适用场景
 
 - 已知答案的简单问题（直接回答）
 - 代码调研（用 code-assistant）
@@ -50,7 +53,7 @@ triggers:
 web.search(query="核心关键词")
 
 # 第二轮：针对性搜索，深入细节
-web.search(query="具体子问题")
+web.search(query="具体子问题", maxResults=10)
 
 # 检查已有知识库
 knowledge.search(query="相关主题")
@@ -60,13 +63,10 @@ knowledge.search(query="相关主题")
 
 ```
 # 对搜索结果中的高质量来源进行深度抓取
-web.fetch(url="目标URL", selector="正文区域CSS选择器")
+web.fetch(url="目标URL", selector="article")
 ```
 
-优先抓取：
-- 官方文档和技术博客
-- 权威机构发布的报告
-- GitHub 仓库的 README 和文档
+优先抓取：官方文档、权威报告、GitHub README。
 
 ### 4. 交叉验证
 
@@ -76,8 +76,6 @@ web.fetch(url="目标URL", selector="正文区域CSS选择器")
 
 ### 5. 结构化输出
 
-根据调研类型选择输出格式：
-
 | 调研类型 | 推荐格式 |
 |---------|---------|
 | 技术选型 | 对比表格 + 推荐理由 |
@@ -85,12 +83,15 @@ web.fetch(url="目标URL", selector="正文区域CSS选择器")
 | 事实核查 | 结论 + 证据链 |
 | 趋势分析 | 时间线 + 关键节点 |
 
-## 质量检查
+### 6. 保存调研结果
 
-- [ ] 所有关键结论有来源支撑
-- [ ] 数据时效性标注（发布日期）
-- [ ] 矛盾信息已标注
-- [ ] 输出格式清晰易读
+```
+# 将调研报告保存为文件
+file.write(path="output/调研报告.md", content="调研内容...")
+
+# 将关键发现存入记忆，便于后续引用
+memory(action="create", name="XX技术调研结论", entityType="KNOWLEDGE", description="关键发现...")
+```
 
 ## 常见错误处理
 

@@ -1,7 +1,7 @@
 ---
 id: api-debugger
 name: "API 调试"
-description: "REST/GraphQL 请求测试、响应分析、Mock 生成"
+description: "REST/GraphQL 接口测试与调试"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -72,18 +72,19 @@ shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"q
 ## Mock 数据生成
 
 ```python
-# 通过 code.execute 生成测试数据
+code.execute(language="python", code="
 import json, random, string
 
 def gen_user():
     return {
-        "id": random.randint(1, 10000),
-        "name": ''.join(random.choices(string.ascii_letters, k=8)),
-        "email": f"{''.join(random.choices(string.ascii_lowercase, k=5))}@example.com"
+        'id': random.randint(1, 10000),
+        'name': ''.join(random.choices(string.ascii_letters, k=8)),
+        'email': f\"{''.join(random.choices(string.ascii_lowercase, k=5))}@example.com\"
     }
 
 mock_data = [gen_user() for _ in range(10)]
 print(json.dumps(mock_data, indent=2))
+")
 ```
 
 ## 批量测试流程

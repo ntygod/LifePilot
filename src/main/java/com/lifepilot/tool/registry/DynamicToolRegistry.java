@@ -187,6 +187,15 @@ public class DynamicToolRegistry {
     }
 
     /**
+     * 获取所有已注册的 MCP Server 名称。
+     *
+     * @return 不可变的 Server 名称集合
+     */
+    public Set<String> getRegisteredServerNames() {
+        return Set.copyOf(serverToolIndex.keySet());
+    }
+
+    /**
      * 获取指定 MCP Server 注册的工具列表。
      *
      * @param serverName MCP 服务器名称

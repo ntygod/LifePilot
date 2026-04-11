@@ -55,7 +55,7 @@ public class FileEditToolProvider {
                 .id("file.undo")
                 .category(ToolCategory.ACTION)
                 .name("撤销文件编辑")
-                .description("撤销对指定文件的最近一次修改，恢复到上一个版本。支持多次撤销直到会话起始状态")
+                .description("撤销文件的最近一次修改")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -82,7 +82,7 @@ public class FileEditToolProvider {
                 .id("file.redo")
                 .category(ToolCategory.ACTION)
                 .name("重做文件编辑")
-                .description("重做对指定文件的最近一次撤销操作，恢复到撤销前的版本")
+                .description("重做最近一次撤销")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -109,7 +109,7 @@ public class FileEditToolProvider {
                 .id("file.diff")
                 .category(ToolCategory.PERCEPTION)
                 .name("文件差异对比")
-                .description("查看文件自本次会话以来的修改差异（unified diff 格式）。不指定 path 时显示所有被修改文件的差异")
+                .description("查看文件修改差异")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(

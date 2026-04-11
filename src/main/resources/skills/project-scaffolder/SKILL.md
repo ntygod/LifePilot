@@ -1,7 +1,7 @@
 ---
 id: project-scaffolder
 name: "项目脚手架"
-description: "项目模板生成、目录搭建、依赖配置"
+description: "项目模板生成与初始化"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -80,6 +80,9 @@ file.write(path="project/Dockerfile", content="...")
 
 ```
 file.list(action="list", path="project", maxDepth=5)
+
+# 检查关键配置文件内容
+file.read(path="project/pom.xml")
 ```
 
 ## 技术栈模板

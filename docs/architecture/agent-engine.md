@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 模块概述
 
@@ -81,6 +81,7 @@ graph TB
 - `ReactAgentState`：不可变状态快照（record），包含预算、步骤记录、响应等
   - `boolean done` — 循环是否结束
   - `boolean suspended` — 是否处于挂起状态
+  - `Set<String> activatedToolIds` — 已被 Skill 激活的工具 ID 集合，`file.read(skill=...)` 加载 Skill 时动态扩充
   - `CompletionMode` — 完成模式（NORMAL / DEGRADED / SUSPENDED）
   - `CompletionReason` — 11 种终止原因
 - `ReactStep`：7 种步骤类型（sealed interface）
@@ -178,4 +179,5 @@ sequenceDiagram
 | `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
 | `lifepilot.agent.execution-retry.max-attempts` | 2 | 最大尝试次数（含首次） |
 | `lifepilot.agent.session.timeout-minutes` | 30 | 会话超时时间（分钟） |
-| `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词（仅限受控环境） |
+| `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完���提示词（仅限受控环境） |
+| `lifepilot.agent.core-tool-ids` | `[]` | 核心工具 ID 列表 — 非空时启用分层工具注入，仅核心工具始终可见，其余工具随 Skill 加载动态激活 |

@@ -49,8 +49,7 @@ public class BrowserToolProvider {
                 .id("browser")
                 .category(ToolCategory.ACTION)
                 .name("浏览器自动化")
-                .description("控制浏览器进行网页交互。适用于 JS 动态页面或多步交互操作，" +
-                        "简单抓取静态内容请用 web.fetch。")
+                .description("浏览器自动化操作")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

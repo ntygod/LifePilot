@@ -1,7 +1,7 @@
 ---
 id: database-query
 name: "数据库查询"
-description: "数据库连接、SQL 查询/生成、数据导出"
+description: "外部数据库 SQL 查询与数据导出"
 version: "1.0.0"
 suggested-tools:
   - shell.exec
@@ -13,6 +13,8 @@ triggers:
   - "查询数据"
   - "数据库查询"
   - "导出数据"
+  - "MySQL"
+  - "PostgreSQL"
 ---
 
 # 数据库查询指南
@@ -30,23 +32,6 @@ triggers:
 - 知微自身的 DataStore 操作（用 datastore Skill）
 - Excel/CSV 文件处理（用 data-analyst）
 
-## 支持的数据库
-
-### SQLite
-```bash
-sqlite3 /path/to/database.db "SELECT * FROM table_name LIMIT 10;"
-```
-
-### MySQL
-```bash
-mysql -h hostname -u username -p'password' database -e "SELECT * FROM table_name LIMIT 10;"
-```
-
-### PostgreSQL
-```bash
-psql -h hostname -U username -d database -c "SELECT * FROM table_name LIMIT 10;"
-```
-
 ## 工作流程
 
 ### 1. 确认连接信息
@@ -56,18 +41,19 @@ psql -h hostname -U username -d database -c "SELECT * FROM table_name LIMIT 10;"
 - 密码（提示用户通过环境变量传递，不要明文输入）
 
 ### 2. 探索数据库结构
-```bash
+
+```
 # SQLite
-sqlite3 db.db ".tables"
-sqlite3 db.db ".schema table_name"
+shell.exec(command="sqlite3 db.db \".tables\"")
+shell.exec(command="sqlite3 db.db \".schema table_name\"")
 
 # MySQL
-mysql -e "SHOW TABLES;" database
-mysql -e "DESCRIBE table_name;" database
+shell.exec(command="mysql -e \"SHOW TABLES;\" database")
+shell.exec(command="mysql -e \"DESCRIBE table_name;\" database")
 
 # PostgreSQL
-psql -c "\dt" database
-psql -c "\d table_name" database
+shell.exec(command="psql -c \"\\dt\" database")
+shell.exec(command="psql -c \"\\d table_name\" database")
 ```
 
 ### 3. 编写和执行查询
@@ -75,10 +61,21 @@ psql -c "\d table_name" database
 - 先用 LIMIT 限制结果集预览
 - 用户确认后执行完整查询
 
-### 4. 导出结果（可选）
-```bash
+```
+shell.exec(command="sqlite3 -header db.db \"SELECT col1, col2 FROM table_name LIMIT 10;\"")
+```
+
+### 4. 导出结果
+
+```
 # 导出为 CSV
-sqlite3 -header -csv db.db "SELECT * FROM table;" > output.csv
+shell.exec(command="sqlite3 -header -csv db.db \"SELECT col1, col2 FROM table_name;\" > output.csv")
+
+# 读取确认导出内容
+file.read(path="output.csv", maxChars=3000)
+
+# 或直接写入文件
+file.write(path="output.csv", content="查询结果内容")
 ```
 
 ## 安全原则

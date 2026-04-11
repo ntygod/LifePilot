@@ -1,7 +1,7 @@
 ---
 id: teaching-assistant
 name: "教学辅助"
-description: "概念解释、代码示例、学习路径、练习题生成"
+description: "知识讲解、学习路径规划与练习生成"
 version: "1.0.0"
 suggested-tools:
   - web.search
@@ -99,7 +99,17 @@ print(f'结果相同: {squares_traditional == squares_comprehension}')
 
 ```
 # 记录学习进度到记忆
-memory(name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
+memory(action="create", name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
+
+# 检索已有学习记录
+memory(action="search", query="Python 学习进度")
+```
+
+### 6. 资料检索
+
+```
+# 从绑定知识库检索参考资料
+knowledge.search(query="Python 列表推导式原理")
 ```
 
 ## 学习路径规划
@@ -110,6 +120,9 @@ web.search(query="Python 入门学习路径 2026")
 
 # 生成个性化学习计划
 file.write(path="learning-plan.md", content="学习计划内容")
+
+# 读取已有学习计划
+file.read(path="learning-plan.md")
 ```
 
 ## 教学风格

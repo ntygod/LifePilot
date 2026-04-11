@@ -1,10 +1,17 @@
 ---
 id: workflow-creator
 name: "工作流创建助手"
-description: "对话式工作流 YAML 创建，保存至 ~/.zhiwei/workflows/"
+description: "对话式工作流 YAML 编排"
 version: "1.1.0"
 suggested-tools:
-  - shell.exec
+  - workflow
+  - file.write
+triggers:
+  - "工作流"
+  - "创建工作流"
+  - "自动化流程"
+  - "编排"
+  - "YAML"
 ---
 
 # 工作流创建指南
@@ -41,26 +48,20 @@ suggested-tools:
 
 ## 保存工作流
 
-生成 YAML 后，使用 `shell` 写入文件：
+生成 YAML 后，使用 `file.write` 写入文件：
 
-```bash
-cat > ~/.zhiwei/workflows/{workflowId}.yml << 'EOF'
-# 生成的 YAML 内容
-EOF
+```
+file.write(path="~/.zhiwei/workflows/{workflowId}.yml", content="生成的 YAML 内容")
 ```
 
 保存后告知用户：知微会在 30 秒内自动检测并注册，无需重启。
 
 ## 保存前校验（推荐）
 
-保存前调用校验接口确认语法正确：
+保存前调用校验接口确认语法正确（请求体为 JSON，包含 `yamlContent` 字段）：
 
-```bash
-curl -s -X POST http://localhost:8080/api/workflows/validate \
-  -H "Content-Type: application/yaml" \
-  -d @- << 'EOF'
-# 生成的 YAML 内容
-EOF
+```
+shell.exec(command="curl -s -X POST http://localhost:8080/api/workflows/validate -H 'Content-Type: application/json' -d '{\"yamlContent\": \"生成的 YAML 内容（需转义）\"}'")
 ```
 
 如果校验返回错误，修正后再保存。

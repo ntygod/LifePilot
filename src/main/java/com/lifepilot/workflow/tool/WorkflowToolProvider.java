@@ -48,9 +48,7 @@ public class WorkflowToolProvider {
         return BuiltinTool.builder()
                 .id("workflow")
                 .name("工作流管理")
-                .description("管理工作流。通过 action 参数支持五类操作：" +
-                        "list=列出可用工作流，start=启动工作流实例，" +
-                        "status=查询实例状态，cancel=取消实例，resume=恢复暂停实例。")
+                .description("工作流管理")
                 .category(ToolCategory.ACTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -68,7 +66,8 @@ public class WorkflowToolProvider {
                                         "description", "工作流实例 ID；action=status/cancel/resume 时必填")),
                                 Map.entry("inputs", Map.of(
                                         "type", "object",
-                                        "description", "工作流输入参数；action=start 时可选"))
+                                        "description", "工作流输入参数；action=start 时可选",
+                                        "additionalProperties", Map.of("type", "string")))
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)

@@ -63,8 +63,7 @@ public class GitToolProvider {
                 .id("git.query")
                 .category(ToolCategory.PERCEPTION)
                 .name("Git 查询")
-                .description("查询 Git 仓库信息。通过 action 参数支持四类只读操作：" +
-                        "status=查看仓库状态，diff=查看差异，log=查看提交历史，blame=逐行追溯文件。")
+                .description("Git 仓库只读查询")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -112,8 +111,7 @@ public class GitToolProvider {
                 .id("git.mutate")
                 .category(ToolCategory.ACTION)
                 .name("Git 变更")
-                .description("执行 Git 写操作。通过 action 参数支持三类操作：" +
-                        "commit=提交暂存区变更，stash=管理暂存区，branch=管理分支。")
+                .description("Git 写操作")
                 .inputSchema(JsonSchema.of(buildMutateSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)

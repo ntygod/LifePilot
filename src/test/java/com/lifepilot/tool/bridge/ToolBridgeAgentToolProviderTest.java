@@ -65,7 +65,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 pipeline,
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -98,7 +99,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -132,7 +134,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -166,7 +169,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var hint = provider.resolveSchedulingHint(
@@ -206,7 +210,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var hint = provider.resolveSchedulingHint("file.write", "{not-json");
@@ -247,7 +252,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var callbacks = provider.getToolCallbacks(baseState(List.of("custom.echo")), null);
@@ -290,7 +296,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -327,7 +334,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 pipeline,
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
         var callback = provider.getToolCallbacks(baseState(), null).getFirst();
 
@@ -364,7 +372,8 @@ class ToolBridgeAgentToolProviderTest {
                 registry,
                 pipeline,
                 new ObjectMapper(),
-                30000
+                30000,
+                null
         );
         var callback = provider.getToolCallbacks(baseState(), null).getFirst();
 

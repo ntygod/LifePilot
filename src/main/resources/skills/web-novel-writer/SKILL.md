@@ -1,7 +1,7 @@
 ---
 id: web-novel-writer
 name: "网文写作"
-description: "网文创作全流程：选题、设定、大纲、正文、续写、改稿"
+description: "网文长篇连载创作与管理"
 version: "1.1.0"
 suggested-tools:
   - knowledge.search
@@ -117,13 +117,20 @@ triggers:
   - `datastore`
 - 如果用户说“帮我创建网文数据空间”“搭一个小说工作台”“先把设定库建起来”，默认按下方“单集合工作台”方案建库，不要一上来拆成多个集合
 
+### 长期记忆
+
+- `memory`
+  用于记录和检索跨会话的写作状态，例如：
+  - 记录当前进度：`memory(action=”create”, name=”《书名》写作进度”, entityType=”PROJECT”, description=”已完成第一卷，共 12 章...”)`
+  - 检索写作记录：`memory(action=”search”, query=”书名 写作进度”)`
+
 ### 外部参考
 
 - `web.search`
   只在这些情况使用：
   - 用户明确要求查平台趋势、题材热点、投稿方向
   - 用户要现实背景资料、历史细节、职业细节
-  - 用户要“最新”市场信息
+  - 用户要”最新”市场信息
 
 ### 本地正文保存
 

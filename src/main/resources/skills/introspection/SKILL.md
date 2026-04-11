@@ -1,7 +1,7 @@
 ---
 id: introspection
 name: "系统自省"
-description: "查看系统状态、能力计数、工作流实例和 MCP 连接状态"
+description: "查看系统状态与能力信息"
 version: "1.1.0"
 suggested-tools:
   - system.status

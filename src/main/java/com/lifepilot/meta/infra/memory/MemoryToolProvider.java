@@ -104,7 +104,7 @@ public class MemoryToolProvider {
                 .name("记忆管理")
                 .description("搜索和管理用户的长期记忆。对话中的事实由系统自动提取存储，本工具用于：" +
                         "检索已有记忆、回忆历史对话、用户明确要求时手动写入、建立实体关系、时间点查询。" +
-                        "资料文档用 knowledge.search，结构化数据用 datastore。")
+                        "资料文档用 knowledge.search")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -147,7 +147,7 @@ public class MemoryToolProvider {
         return BuiltinTool.builder()
                 .id("knowledge.search")
                 .name("检索资料")
-                .description("搜索当前会话绑定的资料内容。不要用于精确字段过滤（用 datastore）、搜索知识实体（用 memory(action=search)）或历史对话（用 memory(action=recall)）。")
+                .description("搜索当前会话绑定的资料内容。搜索知识实体用 memory(action=search)，历史对话用 memory(action=recall)")
                 .category(ToolCategory.PERCEPTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",

@@ -1,10 +1,12 @@
 ---
 id: find-skills
 name: "Skill 发现与安装"
-description: "Skill 扩展包搜索与安装"
+description: "技能扩展包搜索与安装"
 version: "1.2.0"
 suggested-tools:
   - shell.exec
+  - web.search
+  - generate_skill
 triggers:
   - "搜索技能"
   - "查找Skill"
@@ -25,7 +27,7 @@ triggers:
 ## When NOT to Use
 - 已知 Skill 的使用（直接加载对应 Skill）
 - 系统内置工具查询（用 introspection）
-- 代码库搜索（用 file.grep）
+- 代码库搜索（用 file.list action=search）
 
 ## 搜索策略（优先级）
 
@@ -86,6 +88,24 @@ npx -y skills add <skill-name> --directory ~/.zhiwei/skills/
 4. 向用户展示搜索结果，推荐最匹配的 Skill
 5. 用户确认后安装到 `~/.zhiwei/skills/`
 6. 告知用户 Skill 已安装并自动加载
+
+## 在线搜索补充
+
+如果 CLI 工具均不可用，可使用 `web.search` 在线搜索：
+
+```
+web.search(query="zhiwei skill <关键词>")
+```
+
+## 自动生成 Skill
+
+如果搜索无结果，且用户需求明确，可用 `generate_skill` 自动生成：
+
+```
+generate_skill(description="用户需求描述", suggested_name="skill-id", suggested_tools=["tool1", "tool2"])
+```
+
+生成后 Skill 自动保存到 `~/.zhiwei/skills/` 并加载。
 
 ## 注意事项
 

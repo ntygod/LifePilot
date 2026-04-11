@@ -49,13 +49,7 @@ public class StorageToolProvider {
         return BuiltinTool.builder()
                 .id("datastore")
                 .name("数据存储")
-                .description("管理结构化数据存储（Datastore）。通过 action 参数支持：" +
-                        "create-collection=创建集合（DOCUMENT/NOTE/METRIC 类型），" +
-                        "list-collections=列出所有集合，delete-collection=删除集合，" +
-                        "insert=添加文档，query=按条件查询文档（支持过滤、排序、分页），" +
-                        "update=更新文档，delete=删除文档，" +
-                        "aggregate=对 METRIC 集合执行时序聚合（SUM/AVG/MIN/MAX/COUNT）。" +
-                        "语义搜索绑定资料请用 knowledge.search，搜索知识实体请用 memory。")
+                .description("结构化数据存储操作")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(buildSchema()))
                 .riskLevel(RiskLevel.MEDIUM)
@@ -79,13 +73,27 @@ public class StorageToolProvider {
         ));
         properties.put("name", Map.of("type", "string", "description", "action=create-collection 时的集合名称（唯一）"));
         properties.put("type", Map.of("type", "string", "enum", List.of("DOCUMENT", "NOTE", "METRIC"), "description", "action=create-collection/list-collections 时的集合类型"));
-        properties.put("properties", Map.of("type", "array", "description", "action=create-collection 时的属性定义数组，每个元素包含 name/type/required 等字段"));
+        properties.put("properties", Map.ofEntries(
+                Map.entry("type", "array"),
+                Map.entry("description", "action=create-collection 时的属性定义数组，每个元素包含 name/type/required 等字段"),
+                Map.entry("items", Map.of("type", "object", "properties", Map.of(
+                        "name", Map.of("type", "string"),
+                        "type", Map.of("type", "string"),
+                        "required", Map.of("type", "boolean")
+                )))));
         properties.put("description", Map.of("type", "string", "description", "action=create-collection 时的集合描述"));
         properties.put("projectionConfig", Map.of("type", "string", "description", "action=create-collection 时的向量投影配置 JSON"));
         properties.put("collectionName", Map.of("type", "string", "description", "目标集合名称；用于 delete-collection/insert/query/aggregate"));
         properties.put("data", Map.of("type", "object", "description", "文档数据对象；用于 insert/update"));
         properties.put("recordedAt", Map.of("type", "string", "description", "记录时间 ISO 8601（METRIC 类型 insert 时必填）"));
-        properties.put("filters", Map.of("type", "array", "description", "action=query 时的过滤条件数组，每个元素包含 field/op/value 字段"));
+        properties.put("filters", Map.ofEntries(
+                Map.entry("type", "array"),
+                Map.entry("description", "action=query 时的过滤条件数组，每个元素包含 field/op/value 字段"),
+                Map.entry("items", Map.of("type", "object", "properties", Map.of(
+                        "field", Map.of("type", "string"),
+                        "op", Map.of("type", "string"),
+                        "value", Map.of("type", "string")
+                )))));
         properties.put("sortField", Map.of("type", "string", "description", "action=query 时排序字段"));
         properties.put("sortDirection", Map.of("type", "string", "enum", List.of("ASC", "DESC"), "description", "action=query 时排序方向"));
         properties.put("offset", Map.of("type", "integer", "description", "action=query 时分页偏移"));

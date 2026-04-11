@@ -57,7 +57,8 @@ public class SkillGenerationTool {
                         ),
                         "suggested_tools", Map.of(
                                 "type", "array",
-                                "description", "建议使用的工具 ID 列表（可选）"
+                                "description", "建议使用的工具 ID 列表（可选）",
+                                "items", Map.of("type", "string")
                         )
                 )
         ));
@@ -65,8 +66,7 @@ public class SkillGenerationTool {
         BuiltinTool generateTool = BuiltinTool.builder()
                 .id("generate_skill")
                 .name("生成 Skill")
-                .description("根据需求描述自动生成新 Skill。"
-                        + "生成成功后自动持久化并注册，可通过 load_skill 加载使用。")
+                .description("根据需求自动生成新技能")
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -127,7 +127,7 @@ public class SkillGenerationTool {
                 "description", definition.description(),
                 "suggested_tools", definition.suggestedTools(),
                 "status", "registered",
-                "message", "Skill 已生成并注册，可通过 load_skill 加载使用"
+                "message", "Skill 已生成并注册，可通过 file.read(skill=\"skill-id\") 加载使用"
         ));
     }
 }

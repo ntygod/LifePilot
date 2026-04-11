@@ -1,11 +1,10 @@
 ---
 id: summarizer
 name: "内容摘要"
-description: "URL/文件摘要、会议纪要、多文档对比摘要"
+description: "内容摘要与要点提取"
 version: "1.0.0"
 suggested-tools:
   - web.fetch
-  - web.search
   - file.read
   - file.write
   - knowledge.search
@@ -54,7 +53,8 @@ web.fetch(url="目标URL")
 # 2. 如果内容过长，用选择器提取正文
 web.fetch(url="目标URL", selector="article, .content, main")
 
-# 3. 生成摘要
+# 3. 生成摘要并保存
+file.write(path="summary.md", content="摘要内容")
 ```
 
 ### 本地文件摘要
@@ -65,6 +65,13 @@ file.read(path="文件路径")
 
 # 2. 大文件分段读取
 file.read(path="文件路径", maxChars=10000)
+```
+
+### 知识库资料摘要
+
+```
+# 从绑定知识库检索相关内容
+knowledge.search(query="主题关键词")
 ```
 
 ### 多文档对比
@@ -124,6 +131,6 @@ file.read(path="doc2.md")
 
 ## 常见错误处理
 
-- **网页抓取失败**：尝试不同的 CSS 选择器，或用 `web.search` 找到缓存版本
+- **网页抓取失败**：尝试不同的 CSS 选择器
 - **文件编码错误**：提示用户确认文件编码
 - **内容过长**：分段处理，逐段摘要后合并

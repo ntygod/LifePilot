@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Skill 渐进式披露 — Agent 集成测试。
  *
- * <p>验证 Spring Context 加载成功、新工具注册到 DynamicToolRegistry、
+ * <p>验证 Spring Context 加载成功、核心 Bean 存在、
  * 旧 skills 工具不存在。使用 {@link SkillTestSupport} 共享配置，
  * 避免 Bean 定义冲突。</p>
  *
@@ -69,16 +69,6 @@ class SkillDisclosure_Agent_集成测试 {
     @Test
     void 旧Bean_SkillToToolBridge_不存在() {
         assertThat(ctx.containsBean("skillToToolBridge")).isFalse();
-    }
-
-    @Test
-    void DynamicToolRegistry_registerTools后包含load_skill工具() {
-        // @ContextConfiguration 不触发 ApplicationReadyEvent，手动调用 registerTools
-        var disclosureTool = ctx.getBean(SkillDisclosureTool.class);
-        disclosureTool.registerTools();
-
-        var registry = ctx.getBean(DynamicToolRegistry.class);
-        assertThat(registry.resolve("load_skill")).isPresent();
     }
 
     @Test

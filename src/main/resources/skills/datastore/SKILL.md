@@ -1,7 +1,7 @@
 ---
 id: datastore
 name: "数据存储"
-description: "集合/文档 CRUD、聚合统计；语义检索走 knowledge.search"
+description: "知微内置数据存储查询与管理"
 version: "1.0.0"
 suggested-tools:
   - datastore
@@ -9,9 +9,9 @@ suggested-tools:
 triggers:
   - "数据存储"
   - "记录数据"
-  - "查询数据"
   - "数据集合"
   - "JSON存储"
+  - "集合管理"
 ---
 
 # 数据存储指南
@@ -26,7 +26,7 @@ triggers:
 - 用户需要管理笔记、列表或指标数据
 
 
-## When NOT to Use
+## 不适用场景
 
 - 文件系统存储（用 file.write）
 - 记忆/知识图谱（用 memory Skill）
@@ -40,73 +40,76 @@ triggers:
 | NOTE | 笔记内容 | 会议记录、学习笔记、灵感记录 |
 | METRIC | 时序指标数据 | 运动记录、体重追踪、支出统计 |
 
-## 工具使用最佳实践
-
-### 检索类型总览
+## 检索类型总览
 
 | 目标 | 优先工具 | 适用问题 |
 |------|----------|----------|
-| 精确结构化查询 | `datastore` | 按字段过滤、排序、分页、按状态/分类/ID 精确查找 |
-| 时序统计分析 | `datastore` | 趋势、求和、平均值、按天/周/月统计 |
+| 精确结构化查询 | `datastore(action=”query”)` | 按字段过滤、排序、分页、按状态/分类/ID 精确查找 |
+| 时序统计分析 | `datastore(action=”aggregate”)` | 趋势、求和、平均值、按天/周/月统计 |
 | 资料语义检索 | `knowledge.search` | 主题检索、资料问答、推荐、说明、设定、架构、总结、比较、步骤 |
+
+**重要**：`datastore(action=”query”)` 不适合主题检索、资料问答、推荐、总结、架构/设定/说明类问题。这些场景必须使用 `knowledge.search`，它会自动检索 Datastore 关联的领域文档和结构化数据投影。
+
+## 工具调用示例
 
 ### 集合管理
 
-- 使用 `datastore` 创建集合时，选择合适的类型
-- 可通过 `properties` 参数定义集合的属性结构（数组，每项包含 name/type/required 字段）
-- 可通过 `projectionConfig` 参数声明集合级向量投影规则；省略时系统会自动保存 `{}` 并使用默认通用投影
-- 使用 `datastore` 查看所有集合，支持按类型过滤
-- 使用 `datastore` 删除整个集合前，先确认目标名称无误；该操作会同时删除集合内全部文档
+```
+# 创建集合（可选 properties 定义属性结构，可选 projectionConfig 声明投影规则）
+datastore(action=”create-collection”, name=”联系人”, type=”DOCUMENT”, description=”客户联系人列表”,
+    properties=[{“name”:”姓名”,”type”:”string”,”required”:true},{“name”:”电话”,”type”:”string”,”required”:false}])
+
+# 列出所有集合（可选 type 过滤）
+datastore(action=”list-collections”)
+datastore(action=”list-collections”, type=”METRIC”)
+
+# 删除集合（会同时删除集合内全部文档，执行前必须确认名称无误）
+datastore(action=”delete-collection”, collectionName=”联系人”)
+```
 
 ### 文档 CRUD
 
-- **添加**：`datastore` 通过集合名称定位，`data` 为对象类型
-  - METRIC 类型集合必须提供 `recordedAt` 时间戳
-- **查询**：`datastore` 支持过滤、排序和分页
-  - 只适合精确结构化条件查询，例如字段过滤、排序、分页、按 ID/状态/分类精确查找
-  - 过滤条件格式：`[{"field":"status","op":"EQ","value":"active"}]`
-  - 支持的操作符：EQ、NE、GT、GTE、LT、LTE、CONTAINS、IN
-  - 排序方向：ASC（升序）、DESC（降序）
-- **重要**：`query_documents` 不适合主题检索、资料问答、推荐、总结、架构/设定/说明类问题
-- 如果当前会话绑定了目标 Datastore，用户是在问“这个数据空间里的资料怎么说”“春季旅游”“架构是什么”“设定里提到什么”，即使只给出简短主题词，也应优先使用 `knowledge.search`
-- `knowledge.search` 会自动检索该 Datastore 关联的领域文档，以及 Datastore 结构化数据投影后的内容
-- **更新**：`datastore` 通过文档 ID 更新
-- **删除**：`datastore` 通过文档 ID 删除
+```
+# 插入文档（data 为对象类型；METRIC 类型必须提供 recordedAt）
+datastore(action=”insert”, collectionName=”联系人”, data={“姓名”:”张三”,”电话”:”13800138000”})
+datastore(action=”insert”, collectionName=”体重记录”, data={“weight”:70.5}, recordedAt=”2026-04-11T08:00:00Z”)
 
-### 聚合查询
+# 查询文档（支持 filters、排序、分页、时间范围）
+datastore(action=”query”, collectionName=”联系人”, filters=[{“field”:”姓名”,”op”:”EQ”,”value”:”张三”}])
+datastore(action=”query”, collectionName=”联系人”, sortField=”姓名”, sortDirection=”ASC”, offset=0, limit=20)
 
-- `datastore` 仅适用于 METRIC 类型集合
-- 支持聚合函数：SUM、AVG、MIN、MAX、COUNT
-- 支持时间分组粒度：DAY、WEEK、MONTH
-- 可指定时间范围（`startTime`、`endTime`，ISO 8601 格式）
+# 更新文档
+datastore(action=”update”, documentId=”doc-xxx”, data={“电话”:”13900139000”})
 
-## 工具协作流程
+# 删除文档
+datastore(action=”delete”, documentId=”doc-xxx”)
+```
 
-### 创建并填充数据集合
+过滤操作符：EQ、NE、GT、GTE、LT、LTE、CONTAINS、IN
 
-1. 用 `datastore` 创建集合，定义属性结构
-2. 用 `datastore` 逐条添加文档
+### 聚合查询（仅 METRIC 类型）
 
-### 查询与分析数据
+```
+datastore(action=”aggregate”, collectionName=”体重记录”, field=”weight”, function=”AVG”,
+    groupBy=”WEEK”, startTime=”2026-01-01T00:00:00Z”, endTime=”2026-04-01T00:00:00Z”)
+```
 
-1. 用 `datastore` 确认目标集合存在
-2. 如果是字段过滤、排序、分页，使用 `datastore`
-3. 如果是主题、资料、说明、推荐类问题，使用 `knowledge.search`
-4. 对 METRIC 集合，用 `datastore` 进行统计分析
+- 聚合函数：SUM、AVG、MIN、MAX、COUNT
+- 时间分组粒度：DAY、WEEK、MONTH
 
-### 数据维护
+### 语义检索
 
-1. 用 `datastore` 找到目标文档
-2. 用 `datastore` 更新或 `datastore` 删除
-3. 如需清空整个数据空间，用 `datastore` 删除集合本身
+```
+knowledge.search(query=”张三的联系方式”)
+```
+
+当用户用主题词、自然语言提问时，优先使用 `knowledge.search` 而非 `datastore(action=”query”)`。
 
 ## 常见错误处理
 
-- **集合不存在**：添加/查询文档前，确认集合名称正确，可用 `list_collections` 检查
-- **误删风险**：`delete_collection` 会删除整个集合及其文档，执行前必须再次确认集合名称
-- **文档不存在**：更新/删除时返回"文档不存在"，先用 `query_documents` 确认文档 ID
-- **无效集合类型**：`type` 必须是 DOCUMENT、NOTE 或 METRIC
-- **聚合类型不匹配**：`aggregate` 仅支持 METRIC 类型集合
-- **属性定义格式错误**：`properties` 参数需为数组，每项包含 `name`、`type`、`required` 字段
-- **projectionConfig 省略**：这是合法情况，系统会自动回退到默认投影配置 `{}`，不需要手工补空对象
-- **资料问题选错工具**：主题词、资料问答、架构/设定/说明类问题不要用 `query_documents`，改用 `knowledge.search`
+- **集合不存在**：先用 `datastore(action=”list-collections”)` 确认集合名称
+- **文档不存在**：先用 `datastore(action=”query”)` 确认文档 ID
+- **无效集合类型**：type 必须是 DOCUMENT、NOTE 或 METRIC
+- **聚合类型不匹配**：aggregate 仅支持 METRIC 类型集合
+- **属性定义格式错误**：properties 需为数组，每项包含 name、type、required 字段
+- **projectionConfig 省略**：合法情况，系统自动回退到默认投影配置

@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 功能概述
 
@@ -171,6 +171,7 @@ lifepilot:
 | `lifepilot.agent.checkpoint.enabled` | `true` | 检查点功能开关 |
 | `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
 | `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词 |
+| `lifepilot.agent.core-tool-ids` | `[]` | 核心工具 ID 列表 — 非空时启用分层工具注入，仅核心工具始终可见，其余随 Skill 加载动态激活 |
 
 ## 6. 使用场景
 

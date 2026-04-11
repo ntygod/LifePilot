@@ -2,13 +2,13 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 功能概述
 
 工具系统为 Agent 提供与外部世界交互的能力，支持两种工具来源：Java 内置工具（BuiltinTool）和 MCP 外部工具（McpTool）。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
 
-> **重要变更**：原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 通过 `load_skill` / `generate_skill` 两个 BuiltinTool 实现渐进式发现与按需激活。
+> **重要变更**：原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。`load_skill` 独立工具已删除，Skill 加载迁移至 `file.read(skill=...)` 参数，ReactAgentLoop 自动检测并激活工具。`generate_skill` 工具保留用于 LLM 驱动的 Skill 自扩展。
 
 ## 2. 核心架构
 
@@ -105,5 +105,5 @@ lifepilot:
 ## 5. 限制与未来方向
 
 - 工具执行结果的结构化程度依赖各工具实现质量
-- Skill 通过 `load_skill` / `generate_skill` 两个 BuiltinTool 实现渐进式发现与按需激活，不再作为独立工具类型
+- Skill 通过 `file.read(skill=...)` 和 `generate_skill` 实现渐进式发现与按需激活，`load_skill` 独立工具已删除
 - 未来计划：工具执行结果的自动摘要、工具推荐排序优化
