@@ -10,6 +10,7 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
@@ -23,10 +24,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * {@link ProcessBooter} 单元测试。
  *
+ * <p>需要本地 Node.js 和 Python 环境，CI 无对应运行时时自动跳过。</p>
+ *
  * @author zsg
  * @since 2026-03-01
  */
+@EnabledIf("runtimesAvailable")
 class ProcessBooterTest {
+
+    /** 检查 node 和 python 命令是否可用，不可用时整个测试类跳过。 */
+    static boolean runtimesAvailable() {
+        try {
+            new ProcessBuilder("node", "--version").start().waitFor();
+            new ProcessBuilder("python", "--version").start().waitFor();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     @TempDir
     Path tempDir;
