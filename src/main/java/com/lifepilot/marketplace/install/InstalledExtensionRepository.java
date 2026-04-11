@@ -75,7 +75,12 @@ public class InstalledExtensionRepository {
      */
     public Optional<InstalledExtension> findByPackageId(String packageId) {
         List<InstalledExtension> results = jdbcTemplate.query(
-                "SELECT * FROM installed_extensions WHERE package_id = ?",
+                """
+                SELECT id, package_id, type, name, version, index_source_url, repo_url,
+                       file_path, install_root_path, requirements_json, security_report_json,
+                       assets_json, created_at, updated_at
+                FROM installed_extensions WHERE package_id = ?
+                """,
                 ROW_MAPPER, packageId);
         return results.stream().findFirst();
     }
@@ -87,7 +92,12 @@ public class InstalledExtensionRepository {
      */
     public List<InstalledExtension> findAll() {
         return List.copyOf(jdbcTemplate.query(
-                "SELECT * FROM installed_extensions ORDER BY created_at ASC",
+                """
+                SELECT id, package_id, type, name, version, index_source_url, repo_url,
+                       file_path, install_root_path, requirements_json, security_report_json,
+                       assets_json, created_at, updated_at
+                FROM installed_extensions ORDER BY created_at ASC
+                """,
                 ROW_MAPPER));
     }
 

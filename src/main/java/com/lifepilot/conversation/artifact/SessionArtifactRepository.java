@@ -116,7 +116,11 @@ public class SessionArtifactRepository {
 
     public Optional<SessionArtifactRow> findById(String artifactId) {
         List<SessionArtifactRow> rows = jdbcTemplate.query(
-                "SELECT * FROM session_artifacts WHERE id = ?",
+                """
+                SELECT id, session_id, source_entry_id, trace_id, artifact_type,
+                       title, summary, status, payload_json, created_at, updated_at
+                FROM session_artifacts WHERE id = ?
+                """,
                 this::mapRow,
                 artifactId
         );
@@ -125,7 +129,9 @@ public class SessionArtifactRepository {
 
     public List<SessionArtifactRow> findBySessionId(String sessionId) {
         return jdbcTemplate.query("""
-                SELECT * FROM session_artifacts
+                SELECT id, session_id, source_entry_id, trace_id, artifact_type,
+                       title, summary, status, payload_json, created_at, updated_at
+                FROM session_artifacts
                 WHERE session_id = ?
                 ORDER BY created_at DESC, id DESC
                 """,

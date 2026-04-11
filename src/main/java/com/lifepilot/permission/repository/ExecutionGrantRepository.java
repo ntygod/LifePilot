@@ -42,7 +42,14 @@ public class ExecutionGrantRepository {
 
     public List<ExecutionGrant> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM execution_grants ORDER BY created_at DESC",
+                """
+                SELECT id, subject_type, subject_id, action_type, risk_ceiling,
+                       scope_json, channels_json, autonomous_allowed,
+                       expires_at, revoked_at, revoked_by, revoked_reason,
+                       created_by, source_entry_id, reason, metadata_json,
+                       created_at, updated_at
+                FROM execution_grants ORDER BY created_at DESC
+                """,
                 this::mapRow
         );
     }
@@ -50,7 +57,12 @@ public class ExecutionGrantRepository {
     public List<ExecutionGrant> findAllActive(Instant now) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM execution_grants
+                SELECT id, subject_type, subject_id, action_type, risk_ceiling,
+                       scope_json, channels_json, autonomous_allowed,
+                       expires_at, revoked_at, revoked_by, revoked_reason,
+                       created_by, source_entry_id, reason, metadata_json,
+                       created_at, updated_at
+                FROM execution_grants
                 WHERE revoked_at IS NULL
                   AND (expires_at IS NULL OR expires_at > ?)
                 ORDER BY created_at DESC
@@ -70,7 +82,12 @@ public class ExecutionGrantRepository {
         }
         String placeholders = String.join(", ", java.util.Collections.nCopies(actionTypes.size(), "?"));
         String sql = """
-                SELECT * FROM execution_grants
+                SELECT id, subject_type, subject_id, action_type, risk_ceiling,
+                       scope_json, channels_json, autonomous_allowed,
+                       expires_at, revoked_at, revoked_by, revoked_reason,
+                       created_by, source_entry_id, reason, metadata_json,
+                       created_at, updated_at
+                FROM execution_grants
                 WHERE action_type IN (%s)
                   AND revoked_at IS NULL
                   AND (expires_at IS NULL OR expires_at > ?)
@@ -87,7 +104,12 @@ public class ExecutionGrantRepository {
     public List<ExecutionGrant> findBySubject(PermissionSubjectType subjectType, String subjectId) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM execution_grants
+                SELECT id, subject_type, subject_id, action_type, risk_ceiling,
+                       scope_json, channels_json, autonomous_allowed,
+                       expires_at, revoked_at, revoked_by, revoked_reason,
+                       created_by, source_entry_id, reason, metadata_json,
+                       created_at, updated_at
+                FROM execution_grants
                 WHERE subject_type = ? AND subject_id = ?
                 ORDER BY created_at DESC
                 """,
@@ -99,7 +121,14 @@ public class ExecutionGrantRepository {
 
     public Optional<ExecutionGrant> findById(String id) {
         return jdbcTemplate.query(
-                "SELECT * FROM execution_grants WHERE id = ?",
+                """
+                SELECT id, subject_type, subject_id, action_type, risk_ceiling,
+                       scope_json, channels_json, autonomous_allowed,
+                       expires_at, revoked_at, revoked_by, revoked_reason,
+                       created_by, source_entry_id, reason, metadata_json,
+                       created_at, updated_at
+                FROM execution_grants WHERE id = ?
+                """,
                 this::mapRow,
                 id
         ).stream().findFirst();

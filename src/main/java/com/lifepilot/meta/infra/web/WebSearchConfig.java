@@ -3,6 +3,7 @@ package com.lifepilot.meta.infra.web;
 /**
  * 联网搜索运行时配置。
  *
+ * @param apiUrl                Tavily API 地址
  * @param provider              搜索提供商
  * @param apiKey                Tavily API Key
  * @param maxResults            最大返回结果数
@@ -15,6 +16,7 @@ package com.lifepilot.meta.infra.web;
  * @since 2026-03-20
  */
 public record WebSearchConfig(
+        String apiUrl,
         String provider,
         String apiKey,
         int maxResults,

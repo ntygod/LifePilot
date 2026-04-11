@@ -52,7 +52,11 @@ public class ReminderReplayReportRepository {
 
     public Optional<ReminderReplayReportRecord> findLatestByUserId(String userId) {
         List<ReminderReplayReportRecord> rows = jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_replay_reports
+                SELECT id, user_id, since, generated_at, sample_count, historical_push_count,
+                       replayed_push_count, suppressed_count, promoted_count, action_shift_count,
+                       historical_observed_reward_mean, historical_estimated_push_reward_mean,
+                       replayed_estimated_push_reward_mean, action_shift_json, summary_json, created_at
+                FROM proactive_reminder_replay_reports
                 WHERE user_id = ?
                 ORDER BY generated_at DESC
                 LIMIT 1

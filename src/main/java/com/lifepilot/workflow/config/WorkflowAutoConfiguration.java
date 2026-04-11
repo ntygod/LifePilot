@@ -49,6 +49,9 @@ import java.util.Set;
 
 /**
  * Workflow engine auto-configuration.
+ *
+ * @author zsg
+ * @since 2026-02-26
  */
 @AutoConfiguration
 @EnableConfigurationProperties(WorkflowConfigProperties.class)

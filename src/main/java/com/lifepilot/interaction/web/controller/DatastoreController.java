@@ -6,6 +6,7 @@ import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.model.PropertyType;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.CreateDatastoreRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.UpdateDatastoreRequest;
@@ -21,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -87,17 +89,17 @@ public class DatastoreController {
      * @return datastore 列表
      */
     @GetMapping
-    public ResponseEntity<List<Collection>> listDatastores(@RequestParam(required = false) String q) {
+    public ApiResponse<List<Collection>> listDatastores(@RequestParam(required = false) String q) {
         List<Collection> collections = dataStoreManager.listCollections();
         if (q == null || q.isBlank()) {
-            return ResponseEntity.ok(collections);
+            return ApiResponse.ok(collections);
         }
 
         String keyword = q.strip().toLowerCase();
         List<Collection> filtered = collections.stream()
                 .filter(collection -> matchesKeyword(collection, keyword))
                 .toList();
-        return ResponseEntity.ok(filtered);
+        return ApiResponse.ok(filtered);
     }
 
     /**
@@ -107,11 +109,10 @@ public class DatastoreController {
      * @return datastore 详情
      */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getDatastore(@PathVariable String id) {
-        return dataStoreManager.getCollection(id)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> getDatastore(@PathVariable String id) {
+        var collection = dataStoreManager.getCollection(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
+        return ApiResponse.ok(collection);
     }
 
     /**
@@ -121,11 +122,10 @@ public class DatastoreController {
      * @return 原始结构化文档列表
      */
     @GetMapping("/{id}/records")
-    public ResponseEntity<?> listDatastoreRecords(@PathVariable String id) {
-        return dataStoreManager.getCollection(id)
-                .<ResponseEntity<?>>map(collection -> ResponseEntity.ok(dataStoreManager.listDocuments(collection.id())))
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> listDatastoreRecords(@PathVariable String id) {
+        var collection = dataStoreManager.getCollection(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
+        return ApiResponse.ok(dataStoreManager.listDocuments(collection.id()));
     }
 
     /**
@@ -135,17 +135,14 @@ public class DatastoreController {
      * @return 知识库列表
      */
     @GetMapping("/{id}/knowledge-bases")
-    public ResponseEntity<?> listDatastoreKnowledgeBases(@PathVariable String id) {
-        return dataStoreManager.getCollection(id)
-                .<ResponseEntity<?>>map(collection -> {
-                    List<KnowledgeBase> items = knowledgeBaseDatastoreRepository.findKnowledgeBaseIdsByDatastoreId(collection.id()).stream()
-                            .map(knowledgeBaseManager::getKnowledgeBase)
-                            .flatMap(Optional::stream)
-                            .toList();
-                    return ResponseEntity.ok(items);
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> listDatastoreKnowledgeBases(@PathVariable String id) {
+        var collection = dataStoreManager.getCollection(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
+        List<KnowledgeBase> items = knowledgeBaseDatastoreRepository.findKnowledgeBaseIdsByDatastoreId(collection.id()).stream()
+                .map(knowledgeBaseManager::getKnowledgeBase)
+                .flatMap(Optional::stream)
+                .toList();
+        return ApiResponse.ok(items);
     }
 
     /**
@@ -155,18 +152,15 @@ public class DatastoreController {
      * @return 领域文档列表
      */
     @GetMapping("/{id}/documents")
-    public ResponseEntity<?> listDatastoreDomainDocuments(@PathVariable String id) {
-        return dataStoreManager.getCollection(id)
-                .<ResponseEntity<?>>map(collection -> {
-                    String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(collection);
-                    var docs = knowledgeBaseManager.listDocuments(defaultKnowledgeBaseId).stream()
-                            .filter(doc -> doc.sourceType() == DocumentSourceType.FILE)
-                            .filter(doc -> Objects.equals(doc.sourceDatastoreId(), collection.id()))
-                            .toList();
-                    return ResponseEntity.ok(docs);
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> listDatastoreDomainDocuments(@PathVariable String id) {
+        var collection = dataStoreManager.getCollection(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
+        String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(collection);
+        var docs = knowledgeBaseManager.listDocuments(defaultKnowledgeBaseId).stream()
+                .filter(doc -> doc.sourceType() == DocumentSourceType.FILE)
+                .filter(doc -> Objects.equals(doc.sourceDatastoreId(), collection.id()))
+                .toList();
+        return ApiResponse.ok(docs);
     }
 
     /**
@@ -177,61 +171,54 @@ public class DatastoreController {
      * @return 提交结果
      */
     @PostMapping("/{id}/documents")
-    public ResponseEntity<?> uploadDatastoreDocument(@PathVariable String id,
+    public ApiResponse<?> uploadDatastoreDocument(@PathVariable String id,
                                                      @RequestParam("file") MultipartFile file) {
         var ingester = this.documentIngester;
         if (ingester == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档导入功能未启用，请检查知识库配置", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档导入功能未启用，请检查知识库配置");
         }
 
-        return dataStoreManager.getCollection(id)
-                .<ResponseEntity<?>>map(collection -> {
-                    String originalName = file.getOriginalFilename();
-                    if (originalName == null || !hasAllowedExtension(originalName)) {
-                        return ResponseEntity.badRequest().body(
-                                new ErrorResponse(400, "不支持的文件格式，仅支持 PDF/Word/Markdown/TXT", Instant.now()));
-                    }
-                    long maxFileSize = knowledgeBaseProperties.maxFileSize();
-                    if (file.getSize() > maxFileSize) {
-                        return ResponseEntity.badRequest().body(
-                                new ErrorResponse(400, buildFileSizeExceededMessage(maxFileSize), Instant.now()));
-                    }
-                    try {
-                        String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(collection);
-                        String suffix = originalName.substring(originalName.lastIndexOf('.'));
-                        Path tempFile = Files.createTempFile("lifepilot-datastore-upload-", suffix);
-                        file.transferTo(Objects.requireNonNull(tempFile.toFile()));
-                        // 先创建文件引用记录，拿到 Datastore 文档 ID
-                        String mimeType = file.getContentType() != null ? file.getContentType() : "";
-                        var dsDoc = dataStoreManager.addFileReference(
-                                collection.id(), originalName, file.getSize(), mimeType, null);
+        var collection = dataStoreManager.getCollection(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
+        String originalName = file.getOriginalFilename();
+        if (originalName == null || !hasAllowedExtension(originalName)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的文件格式，仅支持 PDF/Word/Markdown/TXT");
+        }
+        long maxFileSize = knowledgeBaseProperties.maxFileSize();
+        if (file.getSize() > maxFileSize) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, buildFileSizeExceededMessage(maxFileSize));
+        }
+        try {
+            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(collection);
+            String suffix = originalName.substring(originalName.lastIndexOf('.'));
+            Path tempFile = Files.createTempFile("lifepilot-datastore-upload-", suffix);
+            file.transferTo(Objects.requireNonNull(tempFile.toFile()));
+            // 先创建文件引用记录，拿到 Datastore 文档 ID
+            String mimeType = file.getContentType() != null ? file.getContentType() : "";
+            var dsDoc = dataStoreManager.addFileReference(
+                    collection.id(), originalName, file.getSize(), mimeType, null);
 
-                        // 异步 ingest 完成后回填 knowledgeDocumentId
-                        ingester.ingest(defaultKnowledgeBaseId, tempFile, originalName, collection.id())
-                                .thenAccept(knowledgeDoc -> dataStoreManager.linkKnowledgeDocument(
-                                        dsDoc.id(), knowledgeDoc.id()))
-                                .exceptionally(ex -> {
-                                    log.warn("知识库文档 ID 回填失败: dsDocId={}, error={}", dsDoc.id(), ex.getMessage());
-                                    return null;
-                                });
+            // 异步 ingest 完成后回填 knowledgeDocumentId
+            ingester.ingest(defaultKnowledgeBaseId, tempFile, originalName, collection.id())
+                    .thenAccept(knowledgeDoc -> dataStoreManager.linkKnowledgeDocument(
+                            dsDoc.id(), knowledgeDoc.id()))
+                    .exceptionally(ex -> {
+                        log.warn("知识库文档 ID 回填失败: dsDocId={}, error={}", dsDoc.id(), ex.getMessage());
+                        return null;
+                    });
 
-                        log.info("Datastore 文档上传已提交: datastoreId={}, knowledgeBaseId={}, fileName={}",
-                                collection.id(), defaultKnowledgeBaseId, originalName);
-                        return ResponseEntity.accepted().body(java.util.Map.of(
-                                "message", "文档已提交处理",
-                                "fileName", originalName,
-                                "datastoreId", collection.id(),
-                                "knowledgeBaseId", defaultKnowledgeBaseId
-                        ));
-                    } catch (IOException e) {
-                        log.error("Datastore 文档上传失败: datastoreId={}, error={}", collection.id(), e.getMessage(), e);
-                        return ResponseEntity.internalServerError().body(
-                                new ErrorResponse(500, "文档上传失败: " + e.getMessage(), Instant.now()));
-                    }
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+            log.info("Datastore 文档上传已提交: datastoreId={}, knowledgeBaseId={}, fileName={}",
+                    collection.id(), defaultKnowledgeBaseId, originalName);
+            return ApiResponse.ok(java.util.Map.of(
+                    "message", "文档已提交处理",
+                    "fileName", originalName,
+                    "datastoreId", collection.id(),
+                    "knowledgeBaseId", defaultKnowledgeBaseId
+            ));
+        } catch (IOException e) {
+            log.error("Datastore 文档上传失败: datastoreId={}, error={}", collection.id(), e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "文档上传失败: " + e.getMessage());
+        }
     }
 
     /**
@@ -241,22 +228,19 @@ public class DatastoreController {
      * @return 201 创建成功；400 参数错误
      */
     @PostMapping
-    public ResponseEntity<?> createDatastore(@RequestBody CreateDatastoreRequest request) {
+    public ApiResponse<?> createDatastore(@RequestBody CreateDatastoreRequest request) {
         if (request.name() == null || request.name().isBlank()) {
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "Datastore 名称不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Datastore 名称不能为空");
         }
         if (request.type() == null || request.type().isBlank()) {
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "Datastore 类型不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Datastore 类型不能为空");
         }
 
         CollectionType collectionType;
         try {
             collectionType = CollectionType.valueOf(request.type().strip().toUpperCase());
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "不支持的 Datastore 类型: " + request.type(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的 Datastore 类型: " + request.type());
         }
 
         List<PropertyDefinition> propDefs = null;
@@ -279,11 +263,10 @@ public class DatastoreController {
                     null,
                     request.projectionConfigJson());
             log.info("Datastore 创建成功: id={}, name={}, type={}", collection.id(), collection.name(), collection.type());
-            return ResponseEntity.status(HttpStatus.CREATED).body(collection);
+            return ApiResponse.ok(collection);
         } catch (IllegalStateException | IllegalArgumentException e) {
             log.warn("Datastore 创建失败: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
     }
 
@@ -295,18 +278,14 @@ public class DatastoreController {
      * @return 200 更新成功；404 不存在
      */
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateDatastore(@PathVariable String id,
+    public ApiResponse<?> updateDatastore(@PathVariable String id,
                                              @RequestBody UpdateDatastoreRequest request) {
-        return dataStoreManager.getCollection(id)
-                .<ResponseEntity<?>>map(existing -> {
-                    dataStoreManager.updateCollection(id, request.description(), request.metadataJson(), request.projectionConfigJson());
-                    log.info("Datastore 更新成功: id={}", id);
-                    return dataStoreManager.getCollection(id)
-                            .<ResponseEntity<?>>map(ResponseEntity::ok)
-                            .orElse(ResponseEntity.ok(existing));
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now())));
+        var existing = dataStoreManager.getCollection(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
+        dataStoreManager.updateCollection(id, request.description(), request.metadataJson(), request.projectionConfigJson());
+        log.info("Datastore 更新成功: id={}", id);
+        var updated = dataStoreManager.getCollection(id).orElse(existing);
+        return ApiResponse.ok(updated);
     }
 
     /**
@@ -316,14 +295,13 @@ public class DatastoreController {
      * @return 204 删除成功；404 不存在
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteDatastore(@PathVariable String id) {
+    public ApiResponse<?> deleteDatastore(@PathVariable String id) {
         if (dataStoreManager.getCollection(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "Datastore 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id);
         }
         dataStoreManager.deleteCollection(id);
         log.info("Datastore 删除成功: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     private boolean matchesKeyword(Collection collection, String keyword) {

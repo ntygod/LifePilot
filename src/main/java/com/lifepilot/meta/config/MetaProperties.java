@@ -91,6 +91,9 @@ public class MetaProperties {
         @Data
         public static class WebSearch {
 
+            /** Tavily Search API 地址。 */
+            private String apiUrl = "https://api.tavily.com/search";
+
             /** 搜索引擎提供商，当前固定为 tavily。 */
             private String provider = "tavily";
 

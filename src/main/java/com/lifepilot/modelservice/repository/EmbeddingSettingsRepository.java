@@ -45,7 +45,7 @@ public class EmbeddingSettingsRepository {
      */
     public Optional<EmbeddingSettingsEntity> findById(String id) {
         return jdbcTemplate.query(
-                "SELECT * FROM embedding_settings WHERE id = ?",
+                "SELECT id, default_service_id, knowledge_base_service_id, memory_service_id FROM embedding_settings WHERE id = ?",
                 (rs, rowNum) -> new EmbeddingSettingsEntity(
                         rs.getString("id"),
                         rs.getString("default_service_id"),

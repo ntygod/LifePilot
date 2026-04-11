@@ -44,6 +44,7 @@ import java.util.concurrent.TimeoutException;
 public final class SpringAiProviderAdapter implements ProviderAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(SpringAiProviderAdapter.class);
+    private static final java.net.http.HttpClient SHARED_HTTP_CLIENT = java.net.http.HttpClient.newHttpClient();
 
     private final ProviderConfig config;
     private final ChatModel chatModel;
@@ -222,7 +223,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                     .GET()
                     .timeout(Duration.ofSeconds(5))
                     .build();
-            var response = java.net.http.HttpClient.newHttpClient()
+            var response = SHARED_HTTP_CLIENT
                     .send(request, java.net.http.HttpResponse.BodyHandlers.discarding());
             return response.statusCode() == 200;
         } catch (Exception e) {

@@ -4,6 +4,9 @@ import java.util.Map;
 
 /**
  * 配置迁移器接口，定义从一个配置版本到下一个版本的迁移逻辑。
+ *
+ * @author zsg
+ * @since 2026-03-01
  */
 public interface ConfigMigration {
 

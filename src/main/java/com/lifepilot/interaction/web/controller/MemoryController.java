@@ -1,9 +1,13 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.*;
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.forgetting.ForgettingLogRepository;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -18,7 +22,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -47,7 +50,8 @@ public class MemoryController {
     private final @Nullable ProceduralMemory proceduralMemory;
     private final @Nullable HybridRetriever hybridRetriever;
     private final @Nullable ConsolidationPipeline consolidationPipeline;
-    private final JdbcTemplate jdbcTemplate;
+    private final ForgettingLogRepository forgettingLogRepository;
+    private final MemoryProvenanceRepository provenanceRepository;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
 
     public MemoryController(@Nullable SemanticMemory semanticMemory,
@@ -55,13 +59,15 @@ public class MemoryController {
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable HybridRetriever hybridRetriever,
                             @Nullable ConsolidationPipeline consolidationPipeline,
-                            JdbcTemplate jdbcTemplate) {
+                            ForgettingLogRepository forgettingLogRepository,
+                            MemoryProvenanceRepository provenanceRepository) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
         this.hybridRetriever = hybridRetriever;
         this.consolidationPipeline = consolidationPipeline;
-        this.jdbcTemplate = jdbcTemplate;
+        this.forgettingLogRepository = forgettingLogRepository;
+        this.provenanceRepository = provenanceRepository;
     }
 
     /** 检查记忆系统是否启用，未启用时抛出 503。 */
@@ -99,11 +105,8 @@ public class MemoryController {
         }
 
         // 遗忘日志统计
-        var forgettingLogCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM forgetting_log", Long.class);
-        var lastForgettingTime = jdbcTemplate.query(
-                "SELECT created_at FROM forgetting_log ORDER BY created_at DESC LIMIT 1",
-                (rs, rowNum) -> rs.getString("created_at"));
+        long forgettingLogCount = forgettingLogRepository.countAll();
+        String lastForgettingTime = forgettingLogRepository.getLastForgettingTime();
 
         return new MemoryStatsDto(
                 conversationCount,
@@ -112,8 +115,8 @@ public class MemoryController {
                 relationCount,
                 templateCount,
                 preferenceCount,
-                forgettingLogCount != null ? forgettingLogCount : 0L,
-                lastForgettingTime.isEmpty() ? null : lastForgettingTime.getFirst()
+                forgettingLogCount,
+                lastForgettingTime
         );
     }
 
@@ -134,7 +137,7 @@ public class MemoryController {
             return List.of();
         }
         var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
-        Map<String, EntityMetadata> metadataById = loadEntityMetadata(
+        Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 results.stream().map(r -> r.entityId()).toList()
         );
         return results.stream()
@@ -214,7 +217,7 @@ public class MemoryController {
                         || (memoryScope != null && !memoryScope.isBlank())
                         || (realityType != null && !realityType.isBlank());
         Map<String, EntityMetadata> filteredMetadataById = requiresMetadataFiltering
-                ? loadEntityMetadata(entities.stream().map(TemporalEntity::id).toList())
+                ? provenanceRepository.loadEntityMetadata(entities.stream().map(TemporalEntity::id).toList())
                 : Map.of();
         if (spaceId != null && !spaceId.isBlank()) {
             String normalizedSpaceId = spaceId.trim();
@@ -243,7 +246,7 @@ public class MemoryController {
                     })
                     .toList();
         }
-        Set<String> filteredEntityIdsByProvenance = loadEntityIdsByProvenanceFilters(
+        Set<String> filteredEntityIdsByProvenance = provenanceRepository.findEntityIdsByProvenanceFilters(
                 originType,
                 sourceKnowledgeBaseId,
                 sourceDatastoreId,
@@ -274,7 +277,7 @@ public class MemoryController {
         var pageEntities = entities.subList(fromIndex, toIndex);
         Map<String, EntityMetadata> pageMetadataById = requiresMetadataFiltering
                 ? filteredMetadataById
-                : loadEntityMetadata(pageEntities.stream().map(TemporalEntity::id).toList());
+                : provenanceRepository.loadEntityMetadata(pageEntities.stream().map(TemporalEntity::id).toList());
         var pageItems = pageEntities.stream()
                 .map(e -> toEntitySummary(e, pageMetadataById.get(e.id())))
                 .toList();
@@ -301,7 +304,7 @@ public class MemoryController {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        EntityMetadata metadata = loadEntityMetadata(id);
+        EntityMetadata metadata = provenanceRepository.loadEntityMetadata(List.of(id)).get(id);
         return semanticMemory.getChangeHistory(entity.name(), entity.type()).stream()
                 .map(history -> toEntityDetail(history, metadata))
                 .toList();
@@ -318,7 +321,7 @@ public class MemoryController {
         semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         var relatedEntities = semanticMemory.findRelated(id, maxDepth);
-        Map<String, EntityMetadata> metadataById = loadEntityMetadata(
+        Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 relatedEntities.stream().map(TemporalEntity::id).toList()
         );
         return relatedEntities.stream()
@@ -339,37 +342,8 @@ public class MemoryController {
         requireMemoryEnabled();
         semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        var conditions = new ArrayList<String>();
-        var params = new ArrayList<Object>();
-        conditions.add("entity_id = ?");
-        params.add(id);
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
-        String sql = """
-                SELECT origin_type, source_reference, source_conversation_id, source_session_id,
-                       source_turn_id, source_entry_id, source_document_id, source_knowledge_base_id,
-                       source_datastore_id, source_collection_id, confidence, created_at
-                FROM memory_entity_provenances
-                WHERE %s
-                ORDER BY created_at DESC
-                """.formatted(String.join(" AND ", conditions));
-        List<EntityProvenanceDto> rawItems = jdbcTemplate.query(sql, (rs, rowNum) -> new EntityProvenanceDto(
-                rs.getString("origin_type"),
-                rs.getString("source_reference"),
-                rs.getString("source_conversation_id"),
-                rs.getString("source_session_id"),
-                rs.getString("source_turn_id"),
-                rs.getString("source_entry_id"),
-                rs.getString("source_document_id"),
-                null,
-                rs.getString("source_knowledge_base_id"),
-                null,
-                rs.getString("source_datastore_id"),
-                null,
-                rs.getString("source_collection_id"),
-                null,
-                rs.getFloat("confidence"),
-                Instant.parse(rs.getString("created_at"))
-        ), params.toArray());
+        var rawItems = provenanceRepository.findEntityProvenances(
+                id, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
         return enrichProvenances(rawItems);
     }
 
@@ -387,70 +361,8 @@ public class MemoryController {
         if (limit <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须大于 0");
         }
-        var conditions = new ArrayList<String>();
-        var params = new ArrayList<Object>();
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
-        String whereClause = conditions.isEmpty() ? "" : "WHERE " + String.join(" AND ", conditions);
-        params.add(limit);
-        String sql = """
-                SELECT p.entity_id,
-                       te.name AS entity_name,
-                       te.type AS entity_type,
-                       te.memory_scope AS entity_memory_scope,
-                       te.reality_type AS entity_reality_type,
-                       p.origin_type,
-                       p.source_reference,
-                       p.source_conversation_id,
-                       p.source_session_id,
-                       p.source_turn_id,
-                       p.source_entry_id,
-                       p.source_document_id,
-                       p.source_knowledge_base_id,
-                       p.source_datastore_id,
-                       p.source_collection_id,
-                       p.confidence,
-                       p.created_at
-                FROM memory_entity_provenances p
-                JOIN temporal_entities te ON te.id = p.entity_id AND te.is_current = 1
-                %s
-                ORDER BY p.created_at DESC
-                LIMIT ?
-                """.formatted(whereClause);
-        List<MemoryProvenanceSummaryDto> rawItems = jdbcTemplate.query(sql, (rs, rowNum) -> {
-            String entityType = rs.getString("entity_type");
-            String entityTypeLabel = entityType;
-            if (entityType != null && !entityType.isBlank()) {
-                try {
-                    entityTypeLabel = EntityType.valueOf(entityType).label();
-                } catch (IllegalArgumentException ignored) {
-                    entityTypeLabel = entityType;
-                }
-            }
-            return new MemoryProvenanceSummaryDto(
-                    rs.getString("entity_id"),
-                    rs.getString("entity_name"),
-                    entityType,
-                    entityTypeLabel,
-                    rs.getString("entity_memory_scope"),
-                    rs.getString("entity_reality_type"),
-                    rs.getString("origin_type"),
-                    rs.getString("source_reference"),
-                    rs.getString("source_conversation_id"),
-                    rs.getString("source_session_id"),
-                    rs.getString("source_turn_id"),
-                    rs.getString("source_entry_id"),
-                    rs.getString("source_document_id"),
-                    null,
-                    rs.getString("source_knowledge_base_id"),
-                    null,
-                    rs.getString("source_datastore_id"),
-                    null,
-                    rs.getString("source_collection_id"),
-                    null,
-                    rs.getFloat("confidence"),
-                    Instant.parse(rs.getString("created_at"))
-            );
-        }, params.toArray());
+        var rawItems = provenanceRepository.findRecentProvenanceSummaries(
+                originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId, limit);
         return enrichMemoryProvenanceSummaries(rawItems);
     }
 
@@ -458,12 +370,12 @@ public class MemoryController {
      * 归档实体。
      */
     @DeleteMapping("/entities/{id}")
-    public ResponseEntity<Void> deleteEntity(@PathVariable String id) {
+    public ApiResponse<Void> deleteEntity(@PathVariable String id) {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         semanticMemory.archive(entity);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -472,7 +384,7 @@ public class MemoryController {
      * <p>extractionConfidence 固定为 1.0 表示手动创建。</p>
      */
     @PostMapping("/entities")
-    public ResponseEntity<EntityDetailDto> createEntity(@RequestBody EntityCreateRequest request) {
+    public ApiResponse<EntityDetailDto> createEntity(@RequestBody EntityCreateRequest request) {
         requireMemoryEnabled();
 
         // 校验 name 非空
@@ -511,7 +423,8 @@ public class MemoryController {
 
         semanticMemory.upsertWithConflictDetection(entity, null);
         log.info("手动创建实体: id={}, name={}, type={}", entity.id(), entity.name(), entity.type());
-        return ResponseEntity.status(HttpStatus.CREATED).body(toEntityDetail(entity, loadEntityMetadata(entity.id())));
+        var metadata = provenanceRepository.loadEntityMetadata(List.of(entity.id())).get(entity.id());
+        return ApiResponse.ok(toEntityDetail(entity, metadata));
     }
 
     /**
@@ -557,7 +470,8 @@ public class MemoryController {
 
         semanticMemory.upsertWithConflictDetection(updated, null);
         log.info("更新实体: id={}, name={}", updated.id(), updated.name());
-        return toEntityDetail(updated, loadEntityMetadata(updated.id()));
+        var metadata = provenanceRepository.loadEntityMetadata(List.of(updated.id())).get(updated.id());
+        return toEntityDetail(updated, metadata);
     }
 
     // ========== Req 3: L3 关系查询 ==========
@@ -594,7 +508,7 @@ public class MemoryController {
             entityIds.add(r.targetEntityId());
         }
         Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(entityIds);
-        Map<String, EntityMetadata> entityMetadataMap = loadEntityMetadata(entityIds);
+        Map<String, EntityMetadata> entityMetadataMap = provenanceRepository.loadEntityMetadata(entityIds);
 
         // 分页
         long total = relations.size();
@@ -688,12 +602,12 @@ public class MemoryController {
      * 删除对话。
      */
     @DeleteMapping("/conversations/{id}")
-    public ResponseEntity<Void> deleteConversation(@PathVariable String id) {
+    public ApiResponse<Void> deleteConversation(@PathVariable String id) {
         requireMemoryEnabled();
         if (episodicMemory == null || !episodicMemory.delete(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id);
         }
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     // ========== Req 5: L4 程序记忆浏览 ==========
@@ -760,7 +674,7 @@ public class MemoryController {
      * 删除模板。
      */
     @DeleteMapping("/templates/{id}")
-    public ResponseEntity<Void> deleteTemplate(@PathVariable String id) {
+    public ApiResponse<Void> deleteTemplate(@PathVariable String id) {
         requireMemoryEnabled();
         if (proceduralMemory == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id);
@@ -768,7 +682,7 @@ public class MemoryController {
         proceduralMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id));
         proceduralMemory.delete(id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /**
@@ -791,12 +705,12 @@ public class MemoryController {
      * 删除偏好规则。
      */
     @DeleteMapping("/preferences/{id}")
-    public ResponseEntity<Void> deletePreference(@PathVariable String id) {
+    public ApiResponse<Void> deletePreference(@PathVariable String id) {
         requireMemoryEnabled();
         if (proceduralMemory == null || !proceduralMemory.deletePreference(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "偏好规则不存在: " + id);
         }
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     // ========== Req 6: 遗忘日志查询 ==========
@@ -812,47 +726,7 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String timeTo,
             @RequestParam(required = false) @Nullable String strategy) {
         requireMemoryEnabled();
-
-        // 构建动态 SQL
-        var conditions = new ArrayList<String>();
-        var params = new ArrayList<Object>();
-
-        if (timeFrom != null && !timeFrom.isBlank()) {
-            conditions.add("created_at >= ?");
-            params.add(timeFrom);
-        }
-        if (timeTo != null && !timeTo.isBlank()) {
-            conditions.add("created_at <= ?");
-            params.add(timeTo);
-        }
-        if (strategy != null && !strategy.isBlank()) {
-            conditions.add("strategy = ?");
-            params.add(strategy);
-        }
-
-        String whereClause = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
-
-        // 查询总数
-        var countSql = "SELECT COUNT(*) FROM forgetting_log" + whereClause;
-        var total = jdbcTemplate.queryForObject(countSql, Long.class, params.toArray());
-
-        // 查询分页数据
-        var dataSql = "SELECT * FROM forgetting_log" + whereClause + " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-        params.add(size);
-        params.add(page * size);
-
-        var items = jdbcTemplate.query(dataSql, (rs, rowNum) -> new ForgettingLogDto(
-                rs.getString("id"),
-                rs.getString("entity_id"),
-                rs.getString("entity_name"),
-                rs.getString("strategy"),
-                rs.getString("action_taken"),
-                rs.getFloat("forgetting_priority"),
-                rs.getString("reason"),
-                Instant.parse(rs.getString("created_at"))
-        ), params.toArray());
-
-        return new PageResult<>(items, page, size, total != null ? total : 0L);
+        return forgettingLogRepository.findPaginated(timeFrom, timeTo, strategy, page, size);
     }
 
     // ========== Req 8: 手动触发巩固 ==========
@@ -861,7 +735,7 @@ public class MemoryController {
      * 手动触发记忆巩固管线。
      */
     @PostMapping("/consolidate")
-    public ResponseEntity<Map<String, String>> triggerConsolidation() {
+    public ApiResponse<Map<String, String>> triggerConsolidation() {
         requireMemoryEnabled();
         if (consolidationPipeline == null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "巩固管线未启用");
@@ -876,7 +750,7 @@ public class MemoryController {
                 consolidating.set(false);
             }
         });
-        return ResponseEntity.accepted().body(Map.of("status", "accepted", "message", "巩固任务已提交"));
+        return ApiResponse.ok(Map.of("status", "accepted", "message", "巩固任务已提交"));
     }
 
     // ========== 内部辅助方法 ==========
@@ -911,106 +785,19 @@ public class MemoryController {
         );
     }
 
-    @Nullable
-    private EntityMetadata loadEntityMetadata(String entityId) {
-        return loadEntityMetadata(List.of(entityId)).get(entityId);
-    }
-
-    private Map<String, EntityMetadata> loadEntityMetadata(Collection<String> entityIds) {
-        if (entityIds == null || entityIds.isEmpty()) {
-            return Map.of();
-        }
-        String placeholders = String.join(",", Collections.nCopies(entityIds.size(), "?"));
-        var rows = jdbcTemplate.query(
-                """
-                SELECT id, space_id, memory_scope, reality_type, is_current, version
-                FROM temporal_entities
-                WHERE id IN (%s)
-                ORDER BY id ASC, is_current DESC, version DESC
-                """.formatted(placeholders),
-                (rs, rowNum) -> new EntityMetadata(
-                        rs.getString("id"),
-                        rs.getString("space_id"),
-                        rs.getString("memory_scope"),
-                        rs.getString("reality_type")
-                ),
-                entityIds.toArray()
-        );
-        Map<String, EntityMetadata> metadataById = new LinkedHashMap<>();
-        for (var row : rows) {
-            metadataById.putIfAbsent(row.entityId(), row);
-        }
-        return metadataById;
-    }
-
-    private void appendProvenanceFilters(List<String> conditions,
-                                         List<Object> params,
-                                         @Nullable String originType,
-                                         @Nullable String sourceKnowledgeBaseId,
-                                         @Nullable String sourceDatastoreId,
-                                         @Nullable String sourceDocumentId) {
-        if (originType != null && !originType.isBlank()) {
-            conditions.add("origin_type = ?");
-            params.add(originType.trim());
-        }
-        if (sourceKnowledgeBaseId != null && !sourceKnowledgeBaseId.isBlank()) {
-            conditions.add("source_knowledge_base_id = ?");
-            params.add(sourceKnowledgeBaseId.trim());
-        }
-        if (sourceDatastoreId != null && !sourceDatastoreId.isBlank()) {
-            conditions.add("(source_datastore_id = ? OR source_collection_id = ?)");
-            params.add(sourceDatastoreId.trim());
-            params.add(sourceDatastoreId.trim());
-        }
-        if (sourceDocumentId != null && !sourceDocumentId.isBlank()) {
-            conditions.add("source_document_id = ?");
-            params.add(sourceDocumentId.trim());
-        }
-    }
-
-    @Nullable
-    private Set<String> loadEntityIdsByProvenanceFilters(@Nullable String originType,
-                                                         @Nullable String sourceKnowledgeBaseId,
-                                                         @Nullable String sourceDatastoreId,
-                                                         @Nullable String sourceDocumentId) {
-        var conditions = new ArrayList<String>();
-        var params = new ArrayList<Object>();
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
-        if (conditions.isEmpty()) {
-            return null;
-        }
-        String sql = """
-                SELECT DISTINCT entity_id
-                FROM memory_entity_provenances
-                WHERE %s
-                """.formatted(String.join(" AND ", conditions));
-        return new LinkedHashSet<>(jdbcTemplate.queryForList(sql, String.class, params.toArray()));
-    }
-
     private List<EntityProvenanceDto> enrichProvenances(List<EntityProvenanceDto> items) {
         if (items == null || items.isEmpty()) {
             return List.of();
         }
-        Map<String, String> knowledgeBaseNames = loadNameMap(
-                "knowledge_bases",
-                "id",
-                "name",
+        Map<String, String> knowledgeBaseNames = provenanceRepository.loadKnowledgeBaseNames(
                 items.stream().map(EntityProvenanceDto::sourceKnowledgeBaseId).toList()
         );
         List<String> datastoreIds = items.stream()
                 .flatMap(item -> java.util.stream.Stream.of(item.sourceDatastoreId(), item.sourceCollectionId()))
                 .filter(Objects::nonNull)
                 .toList();
-        Map<String, String> datastoreNames = loadNameMap(
-                "ds_collections",
-                "id",
-                "name",
-                datastoreIds
-        );
-        Map<String, String> documentNames = loadNameMap(
-                "documents",
-                "id",
-                "file_name",
+        Map<String, String> datastoreNames = provenanceRepository.loadCollectionNames(datastoreIds);
+        Map<String, String> documentNames = provenanceRepository.loadDocumentNames(
                 items.stream().map(EntityProvenanceDto::sourceDocumentId).toList()
         );
         return items.stream()
@@ -1039,26 +826,15 @@ public class MemoryController {
         if (items == null || items.isEmpty()) {
             return List.of();
         }
-        Map<String, String> knowledgeBaseNames = loadNameMap(
-                "knowledge_bases",
-                "id",
-                "name",
+        Map<String, String> knowledgeBaseNames = provenanceRepository.loadKnowledgeBaseNames(
                 items.stream().map(MemoryProvenanceSummaryDto::sourceKnowledgeBaseId).toList()
         );
         List<String> datastoreIds = items.stream()
                 .flatMap(item -> java.util.stream.Stream.of(item.sourceDatastoreId(), item.sourceCollectionId()))
                 .filter(Objects::nonNull)
                 .toList();
-        Map<String, String> datastoreNames = loadNameMap(
-                "ds_collections",
-                "id",
-                "name",
-                datastoreIds
-        );
-        Map<String, String> documentNames = loadNameMap(
-                "documents",
-                "id",
-                "file_name",
+        Map<String, String> datastoreNames = provenanceRepository.loadCollectionNames(datastoreIds);
+        Map<String, String> documentNames = provenanceRepository.loadDocumentNames(
                 items.stream().map(MemoryProvenanceSummaryDto::sourceDocumentId).toList()
         );
         return items.stream()
@@ -1089,45 +865,17 @@ public class MemoryController {
                 .toList();
     }
 
-    private Map<String, String> loadNameMap(String tableName,
-                                            String idColumn,
-                                            String nameColumn,
-                                            Collection<String> rawIds) {
-        if (rawIds == null || rawIds.isEmpty()) {
-            return Map.of();
-        }
-        List<String> ids = rawIds.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(id -> !id.isBlank())
-                .distinct()
-                .toList();
-        if (ids.isEmpty()) {
-            return Map.of();
-        }
-        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
-        String sql = """
-                SELECT %s AS item_id, %s AS item_name
-                FROM %s
-                WHERE %s IN (%s)
-                """.formatted(idColumn, nameColumn, tableName, idColumn, placeholders);
-        Map<String, String> names = new LinkedHashMap<>();
-        jdbcTemplate.query(sql, rs -> {
-            String itemId = rs.getString("item_id");
-            String itemName = rs.getString("item_name");
-            if (itemId != null && !itemId.isBlank() && itemName != null && !itemName.isBlank()) {
-                names.put(itemId, itemName);
-            }
-        }, ids.toArray());
-        return names;
-    }
-
     @Nullable
     private String lookupName(Map<String, String> names, @Nullable String id) {
         if (id == null || id.isBlank()) {
             return null;
         }
         return names.get(id);
+    }
+
+    @Nullable
+    private EntityMetadata loadEntityMetadata(String entityId) {
+        return provenanceRepository.loadEntityMetadata(List.of(entityId)).get(entityId);
     }
 
     private ConversationSummaryDto toConversationSummary(ConversationRecord c) {
@@ -1150,11 +898,4 @@ public class MemoryController {
         }
         return result;
     }
-
-    private record EntityMetadata(
-            String entityId,
-            @Nullable String spaceId,
-            @Nullable String memoryScope,
-            @Nullable String realityType
-    ) {}
 }

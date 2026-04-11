@@ -35,6 +35,9 @@ import java.nio.file.StandardCopyOption;
  *     <li>{@code native/sqlite-vec/linux-x86_64/vec0.so}</li>
  *     <li>{@code native/sqlite-vec/macos-aarch64/vec0.dylib}</li>
  * </ul>
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 public class SqliteVecInitializer {
 

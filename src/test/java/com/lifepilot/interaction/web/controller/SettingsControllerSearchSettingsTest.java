@@ -54,14 +54,14 @@ class SettingsControllerSearchSettingsTest {
 
         mockMvc.perform(get("/api/settings/search"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.provider", is("tavily")))
-                .andExpect(jsonPath("$.apiKey", is("")))
-                .andExpect(jsonPath("$.maxResults", is(5)))
-                .andExpect(jsonPath("$.searchDepth", is("basic")))
-                .andExpect(jsonPath("$.topic", is("general")))
-                .andExpect(jsonPath("$.includeAnswer", is(true)))
-                .andExpect(jsonPath("$.connectTimeoutSeconds", is(10)))
-                .andExpect(jsonPath("$.readTimeoutSeconds", is(30)));
+                .andExpect(jsonPath("$.data.provider", is("tavily")))
+                .andExpect(jsonPath("$.data.apiKey", is("")))
+                .andExpect(jsonPath("$.data.maxResults", is(5)))
+                .andExpect(jsonPath("$.data.searchDepth", is("basic")))
+                .andExpect(jsonPath("$.data.topic", is("general")))
+                .andExpect(jsonPath("$.data.includeAnswer", is(true)))
+                .andExpect(jsonPath("$.data.connectTimeoutSeconds", is(10)))
+                .andExpect(jsonPath("$.data.readTimeoutSeconds", is(30)));
     }
 
     @Test
@@ -87,12 +87,12 @@ class SettingsControllerSearchSettingsTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.provider", is("tavily")))
-                .andExpect(jsonPath("$.apiKey", is("****cret")))
-                .andExpect(jsonPath("$.maxResults", is(10)))
-                .andExpect(jsonPath("$.searchDepth", is("advanced")))
-                .andExpect(jsonPath("$.topic", is("news")))
-                .andExpect(jsonPath("$.includeAnswer", is(false)));
+                .andExpect(jsonPath("$.data.provider", is("tavily")))
+                .andExpect(jsonPath("$.data.apiKey", is("****cret")))
+                .andExpect(jsonPath("$.data.maxResults", is(10)))
+                .andExpect(jsonPath("$.data.searchDepth", is("advanced")))
+                .andExpect(jsonPath("$.data.topic", is("news")))
+                .andExpect(jsonPath("$.data.includeAnswer", is(false)));
 
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
         verify(settingsRepository).saveSearchConfig(jsonCaptor.capture());

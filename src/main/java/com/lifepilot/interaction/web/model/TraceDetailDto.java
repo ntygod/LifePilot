@@ -6,6 +6,9 @@ import jakarta.annotation.Nullable;
  * 前端 Trace 详情 DTO（与 zhiwei-web 的 types/TraceDetail 对齐）。
  *
  * <p>注意：该 DTO 仅包含 Web UI 需要的字段，不暴露后端完整 TraceDetail 的所有字段。</p>
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 public record TraceDetailDto(
         String id,

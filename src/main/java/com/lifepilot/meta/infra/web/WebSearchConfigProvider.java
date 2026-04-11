@@ -52,7 +52,10 @@ public class WebSearchConfigProvider {
         String topic = normalizeTopic(getVal(dbConfig, "topic", String.class, defaults.getTopic()));
         boolean includeAnswer = getVal(dbConfig, "includeAnswer", Boolean.class, defaults.isIncludeAnswer());
 
+        String apiUrl = getVal(dbConfig, "apiUrl", String.class, defaults.getApiUrl());
+
         return new WebSearchConfig(
+                apiUrl,
                 provider,
                 apiKey,
                 maxResults,

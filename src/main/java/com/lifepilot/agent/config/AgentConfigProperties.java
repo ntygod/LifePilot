@@ -24,6 +24,8 @@ public class AgentConfigProperties {
     private boolean enabled = true;
     /** 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测。 */
     private String location = "";
+    /** IP 地理定位 API 地址，为空时禁用自动检测。 */
+    private String ipApiUrl = "http://ip-api.com/json/?fields=city,regionName,country&lang=zh-CN";
     private LoopConfig loop = new LoopConfig();
     private BudgetConfig budget = new BudgetConfig();
     private ContextConfig context = new ContextConfig();
@@ -328,6 +330,8 @@ public class AgentConfigProperties {
         private String proactiveReminderLlmScene = "chat";
         /** 主动提醒文案生成超时（秒）。 */
         private int proactiveReminderLlmTimeoutSeconds = 15;
+        /** 和风天气 API 基础 URL。 */
+        private String weatherApiBaseUrl = "https://devapi.qweather.com/v7/weather/3d";
         /** 和风天气 API key。 */
         private String weatherApiKey;
         /** 天气查询城市 ID 或经纬度。 */

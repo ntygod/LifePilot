@@ -77,21 +77,30 @@ public class SqliteSuspendStore implements SuspendStore {
     @Transactional
     public Optional<SuspendedAgent> load(String traceId) {
         List<SuspendedAgent> results = jdbcTemplate.query(
-                "SELECT * FROM suspended_agents WHERE trace_id = ?", rowMapper, traceId);
+                """
+                SELECT trace_id, session_id, channel, reason_type, reason_json,
+                       state_json, budget_json, stream_id, suspended_at
+                FROM suspended_agents WHERE trace_id = ?""", rowMapper, traceId);
         return results.stream().findFirst();
     }
 
     @Override
     public List<SuspendedAgent> findBySession(String sessionId) {
         return List.copyOf(jdbcTemplate.query(
-                "SELECT * FROM suspended_agents WHERE session_id = ? ORDER BY suspended_at ASC",
+                """
+                SELECT trace_id, session_id, channel, reason_type, reason_json,
+                       state_json, budget_json, stream_id, suspended_at
+                FROM suspended_agents WHERE session_id = ? ORDER BY suspended_at ASC""",
                 rowMapper, sessionId));
     }
 
     @Override
     public List<SuspendedAgent> findByReasonType(String reasonType) {
         return List.copyOf(jdbcTemplate.query(
-                "SELECT * FROM suspended_agents WHERE reason_type = ? ORDER BY suspended_at ASC",
+                """
+                SELECT trace_id, session_id, channel, reason_type, reason_json,
+                       state_json, budget_json, stream_id, suspended_at
+                FROM suspended_agents WHERE reason_type = ? ORDER BY suspended_at ASC""",
                 rowMapper, reasonType));
     }
 
@@ -106,7 +115,10 @@ public class SqliteSuspendStore implements SuspendStore {
     @Transactional
     public Optional<SuspendedAgent> loadAndDelete(String traceId) {
         List<SuspendedAgent> results = jdbcTemplate.query(
-                "SELECT * FROM suspended_agents WHERE trace_id = ?", rowMapper, traceId);
+                """
+                SELECT trace_id, session_id, channel, reason_type, reason_json,
+                       state_json, budget_json, stream_id, suspended_at
+                FROM suspended_agents WHERE trace_id = ?""", rowMapper, traceId);
         if (results.isEmpty()) {
             return Optional.empty();
         }

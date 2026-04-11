@@ -118,7 +118,11 @@ public class ContextReportRepository {
 
     public Optional<ContextReportRow> findLatestBySessionId(String sessionId) {
         List<ContextReportRow> rows = jdbcTemplate.query("""
-                SELECT * FROM context_reports
+                SELECT id, session_id, trace_id, system_prompt_tokens, transcript_tokens,
+                       memory_tokens, artifact_tokens, tool_schema_tokens, tool_result_tokens,
+                       pruning_applied, compaction_applied, context_window, reserved_tokens,
+                       payload_json, created_at
+                FROM context_reports
                 WHERE session_id = ?
                 ORDER BY created_at DESC, id DESC
                 LIMIT 1

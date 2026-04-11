@@ -91,7 +91,7 @@ public class ProceduralMemory {
      */
     public Optional<ProcedureTemplate> findById(String templateId) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM procedure_templates WHERE template_id = ?",
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at FROM procedure_templates WHERE template_id = ?",
                 (rs, rowNum) -> mapRowToTemplate(rs),
                 templateId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -215,7 +215,7 @@ public class ProceduralMemory {
      */
     public Optional<PreferenceRule> findPreference(String category, String key) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM preference_rules WHERE category = ? AND key = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at FROM preference_rules WHERE category = ? AND key = ?",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category, key);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -229,7 +229,7 @@ public class ProceduralMemory {
      */
     public List<PreferenceRule> getPreferences(String category) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM preference_rules WHERE category = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at FROM preference_rules WHERE category = ?",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category);
         return List.copyOf(results);
@@ -268,7 +268,7 @@ public class ProceduralMemory {
      */
     public List<ProcedureTemplate> listAllTemplates() {
         var results = jdbcTemplate.query(
-                "SELECT * FROM procedure_templates ORDER BY created_at DESC",
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at FROM procedure_templates ORDER BY created_at DESC",
                 (rs, rowNum) -> mapRowToTemplate(rs));
         return List.copyOf(results);
     }
@@ -280,7 +280,7 @@ public class ProceduralMemory {
      */
     public List<PreferenceRule> listAllPreferences() {
         var results = jdbcTemplate.query(
-                "SELECT * FROM preference_rules ORDER BY category, key",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at FROM preference_rules ORDER BY category, key",
                 (rs, rowNum) -> mapRowToPreference(rs));
         return List.copyOf(results);
     }
@@ -336,7 +336,7 @@ public class ProceduralMemory {
      */
     public List<StrategyPattern> findStrategiesBySituation(String situationText, int topK) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM strategy_patterns WHERE situation LIKE ? ORDER BY success_rate DESC LIMIT ?",
+                "SELECT pattern_id, situation, recommended_action, success_rate, application_count, created_at FROM strategy_patterns WHERE situation LIKE ? ORDER BY success_rate DESC LIMIT ?",
                 (rs, rowNum) -> mapRowToStrategy(rs),
                 "%" + situationText + "%", topK);
         return List.copyOf(results);

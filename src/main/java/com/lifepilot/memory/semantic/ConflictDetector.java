@@ -112,7 +112,7 @@ public class ConflictDetector {
     private Optional<TemporalEntity> findExactMatch(String name, EntityType type, @Nullable String spaceId) {
         var results = jdbcTemplate.query(
                 """
-                SELECT * FROM temporal_entities
+                SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities
                 WHERE name = ? AND type = ? AND is_current = 1
                   AND (? IS NULL OR space_id = ?)
                 """,
@@ -125,7 +125,7 @@ public class ConflictDetector {
     private Optional<TemporalEntity> findEntityById(String entityId, @Nullable String spaceId) {
         var results = jdbcTemplate.query(
                 """
-                SELECT * FROM temporal_entities
+                SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities
                 WHERE id = ? AND is_current = 1
                   AND (? IS NULL OR space_id = ?)
                 """,

@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
@@ -18,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -70,7 +72,7 @@ public class KnowledgeBaseController {
 
     /** 列出所有知识库。 */
     @GetMapping
-    public ResponseEntity<List<KnowledgeBase>> listKnowledgeBases(
+    public ApiResponse<List<KnowledgeBase>> listKnowledgeBases(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String tags,
             @RequestParam(required = false) String timeRange
@@ -79,20 +81,19 @@ public class KnowledgeBaseController {
         
         // 如果没有任何查询参数，使用原有的 findAll 方法
         if (q == null && tags == null && timeRange == null) {
-            return ResponseEntity.ok(kbManager.listKnowledgeBases());
+            return ApiResponse.ok(kbManager.listKnowledgeBases());
         }
         
         // 否则使用条件查询
-        return ResponseEntity.ok(kbManager.listKnowledgeBases(q, tags, timeRange));
+        return ApiResponse.ok(kbManager.listKnowledgeBases(q, tags, timeRange));
     }
 
     /** 创建知识库。 */
     @PostMapping
-    public ResponseEntity<?> createKnowledgeBase(@RequestBody CreateKbRequest request) {
+    public ApiResponse<?> createKnowledgeBase(@RequestBody CreateKbRequest request) {
         if (request.name() == null || request.name().isBlank()) {
             log.warn("创建知识库失败: 名称为空");
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "知识库名称不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "知识库名称不能为空");
         }
         var kb = kbManager.createKnowledgeBase(
                 request.name(),
@@ -104,21 +105,20 @@ public class KnowledgeBaseController {
                 request.tags(),
                 request.datastoreIds());
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
-        return ResponseEntity.status(HttpStatus.CREATED).body(kb);
+        return ApiResponse.ok(kb);
     }
 
     /** 获取知识库详情。 */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getKnowledgeBase(@PathVariable String id) {
-        return kbManager.getKnowledgeBase(id)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> getKnowledgeBase(@PathVariable String id) {
+        var kb = kbManager.getKnowledgeBase(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id));
+        return ApiResponse.ok(kb);
     }
 
     /** 更新知识库。 */
     @PatchMapping("/{id}")
-    public ResponseEntity<?> updateKnowledgeBase(@PathVariable String id,
+    public ApiResponse<?> updateKnowledgeBase(@PathVariable String id,
                                                  @RequestBody UpdateKbRequest request) {
         try {
             KnowledgeBase updated = kbManager.updateKnowledgeBase(
@@ -133,95 +133,85 @@ public class KnowledgeBaseController {
                     request.datastoreIds()
             );
             log.info("知识库更新成功: id={}", id);
-            return ResponseEntity.ok(updated);
+            return ApiResponse.ok(updated);
         } catch (KnowledgeBaseNotFoundException e) {
             log.warn("知识库更新失败: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 
     /** 删除知识库。 */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteKnowledgeBase(@PathVariable String id) {
+    public ApiResponse<?> deleteKnowledgeBase(@PathVariable String id) {
         var kb = kbManager.getKnowledgeBase(id);
         if (kb.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id);
         }
         if (kb.get().systemManaged()) {
             log.warn("拒绝删除系统管理的内部知识库: id={}, ownerDatastoreId={}", id, kb.get().ownerDatastoreId());
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
-                    new ErrorResponse(403, "该知识库由 Datastore 系统管理，请从对应的 Datastore 删除", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "该知识库由 Datastore 系统管理，请从对应的 Datastore 删除");
         }
         kbManager.deleteKnowledgeBase(id);
         log.info("知识库删除: id={}", id);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /** 列出知识库下的文档。 */
     @GetMapping("/{id}/documents")
-    public ResponseEntity<List<Document>> listDocuments(@PathVariable String id) {
+    public ApiResponse<List<Document>> listDocuments(@PathVariable String id) {
         log.debug("查询文档列表: kbId={}", id);
-        return ResponseEntity.ok(kbManager.listDocuments(id));
+        return ApiResponse.ok(kbManager.listDocuments(id));
     }
 
     /** 查询文档分块列表（支持分页）。 */
     @GetMapping("/{id}/documents/{docId}/chunks")
-    public ResponseEntity<?> listDocumentChunks(@PathVariable String id,
+    public ApiResponse<?> listDocumentChunks(@PathVariable String id,
                                                 @PathVariable String docId,
                                                 @RequestParam(defaultValue = "0") int offset,
                                                 @RequestParam(defaultValue = "50") int limit) {
         // 验证知识库存在
         if (kbManager.getKnowledgeBase(id).isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id);
         }
         // 验证文档存在且属于该知识库
         var docRepo = this.documentRepository;
         if (docRepo == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档功能未启用", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档功能未启用");
         }
         var docOpt = docRepo.findById(docId);
         if (docOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "文档不存在: id=" + docId, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文档不存在: id=" + docId);
         }
         if (!docOpt.get().knowledgeBaseId().equals(id)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "文档不属于指定知识库", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文档不属于指定知识库");
         }
         var chunks = kbManager.listDocumentChunks(docId, offset, limit);
         int total = kbManager.countDocumentChunks(docId);
         log.debug("查询文档分块: docId={}, offset={}, limit={}, total={}", docId, offset, limit, total);
-        return ResponseEntity.ok(Map.of("chunks", chunks, "total", total));
+        return ApiResponse.ok(Map.of("chunks", chunks, "total", total));
     }
 
     /** 上传文档到知识库。 */
     @PostMapping("/{id}/documents")
-    public ResponseEntity<?> uploadDocument(@PathVariable String id,
+    public ApiResponse<?> uploadDocument(@PathVariable String id,
                                             @RequestParam("file") MultipartFile file,
                                             @RequestParam(value = "datastoreId", required = false) String datastoreId) {
         var ingester = this.documentIngester;
         if (ingester == null) {
             log.error("文档上传失败: DocumentIngester 未初始化，请检查知识库和向量索引配置");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档导入功能未启用，请检查知识库配置", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档导入功能未启用，请检查知识库配置");
         }
         // 校验文件扩展名
         String originalName = file.getOriginalFilename();
         if (originalName == null || !hasAllowedExtension(originalName)) {
             log.warn("文件格式不支持: fileName={}", originalName);
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "不支持的文件格式，仅支持 PDF/Word/Markdown/TXT", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的文件格式，仅支持 PDF/Word/Markdown/TXT");
         }
         long maxFileSize = knowledgeBaseProperties.maxFileSize();
         if (file.getSize() > maxFileSize) {
             log.warn("文档上传失败: 文件大小超过限制: kbId={}, fileName={}, size={}, max={}",
                     id, originalName, file.getSize(), maxFileSize);
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, buildFileSizeExceededMessage(maxFileSize), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, buildFileSizeExceededMessage(maxFileSize));
         }
 
         try {
@@ -243,26 +233,25 @@ public class KnowledgeBaseController {
             if (normalizedDatastoreId != null) {
                 response.put("datastoreId", normalizedDatastoreId);
             }
-            return ResponseEntity.accepted().body(response);
+            return ApiResponse.ok(response);
         } catch (IOException e) {
             log.error("文档上传失败: kbId={}, fileName={}, error={}", id, originalName, e.getMessage());
-            return ResponseEntity.internalServerError().body(
-                    new ErrorResponse(500, "文档上传失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "文档上传失败: " + e.getMessage());
         }
     }
 
     /** 删除文档。 */
     @DeleteMapping("/{id}/documents/{docId}")
-    public ResponseEntity<Void> removeDocument(@PathVariable String id,
+    public ApiResponse<Void> removeDocument(@PathVariable String id,
                                                @PathVariable String docId) {
         kbManager.removeDocument(docId);
         log.info("文档删除: docId={}", docId);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     /** 更新文档的 datastore 归属。 */
     @PatchMapping("/{id}/documents/{docId}")
-    public ResponseEntity<?> updateDocumentDatastore(@PathVariable String id,
+    public ApiResponse<?> updateDocumentDatastore(@PathVariable String id,
                                                      @PathVariable String docId,
                                                      @RequestBody UpdateDocumentDatastoreRequest request) {
         try {
@@ -270,104 +259,92 @@ public class KnowledgeBaseController {
             Document updated = kbManager.updateDocumentDatastore(id, docId, normalizedDatastoreId);
             log.info("文档 Datastore 归属更新成功: kbId={}, docId={}, datastoreId={}",
                     id, docId, normalizedDatastoreId);
-            return ResponseEntity.ok(updated);
+            return ApiResponse.ok(updated);
         } catch (KnowledgeBaseNotFoundException | DocumentNotFoundException e) {
             log.warn("文档 Datastore 归属更新失败: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         } catch (IllegalArgumentException e) {
             log.warn("文档 Datastore 归属更新失败: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
     }
 
     /** 获取知识库统计信息。 */
     @GetMapping("/{id}/stats")
-    public ResponseEntity<?> getStats(@PathVariable String id) {
-        return kbManager.getKnowledgeBase(id)
-                .<ResponseEntity<?>>map(kb -> {
-                    var docs = kbManager.listDocuments(id);
-                    long totalSize = docs.stream().mapToLong(Document::fileSize).sum();
-                    int totalChunks = docs.stream().mapToInt(Document::chunkCount).sum();
-                    long processingCount = docs.stream()
-                            .filter(d -> !d.status().isTerminal())
-                            .count();
-                    long errorCount = docs.stream()
-                            .filter(d -> d.status() == DocumentStatus.ERROR)
-                            .count();
-                    String indexStatus = errorCount > 0 ? "PARTIAL_FAILURE"
-                            : processingCount > 0 ? "PROCESSING" : "HEALTHY";
-                    return ResponseEntity.ok(Map.of(
-                            "documentCount", docs.size(),
-                            "totalChunks", totalChunks,
-                            "totalSize", totalSize,
-                            "indexStatus", indexStatus,
-                            "processingDocuments", processingCount,
-                            "errorDocuments", errorCount
-                    ));
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now())));
+    public ApiResponse<?> getStats(@PathVariable String id) {
+        kbManager.getKnowledgeBase(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id));
+        var docs = kbManager.listDocuments(id);
+        long totalSize = docs.stream().mapToLong(Document::fileSize).sum();
+        int totalChunks = docs.stream().mapToInt(Document::chunkCount).sum();
+        long processingCount = docs.stream()
+                .filter(d -> !d.status().isTerminal())
+                .count();
+        long errorCount = docs.stream()
+                .filter(d -> d.status() == DocumentStatus.ERROR)
+                .count();
+        String indexStatus = errorCount > 0 ? "PARTIAL_FAILURE"
+                : processingCount > 0 ? "PROCESSING" : "HEALTHY";
+        return ApiResponse.ok(Map.of(
+                "documentCount", docs.size(),
+                "totalChunks", totalChunks,
+                "totalSize", totalSize,
+                "indexStatus", indexStatus,
+                "processingDocuments", processingCount,
+                "errorDocuments", errorCount
+        ));
     }
 
     /** 重试失败的文档处理。 */
     @PostMapping("/{id}/documents/{docId}/retry")
-    public ResponseEntity<?> retryDocument(@PathVariable String id,
+    public ApiResponse<?> retryDocument(@PathVariable String id,
                                            @PathVariable String docId) {
         var ingester = this.documentIngester;
         if (ingester == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档导入功能未启用", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档导入功能未启用");
         }
         var docRepo = this.documentRepository;
         if (docRepo == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档功能未启用", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档功能未启用");
         }
         var docOpt = docRepo.findById(docId);
         if (docOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "文档不存在: id=" + docId, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文档不存在: id=" + docId);
         }
         ingester.resume(docId);
         log.info("文档重试已提交: docId={}", docId);
-        return ResponseEntity.accepted().body(Map.of("message", "文档已提交重新处理"));
+        return ApiResponse.ok(Map.of("message", "文档已提交重新处理"));
     }
 
     /** 重新分块文档。 */
     @PostMapping("/{id}/documents/{docId}/rechunk")
-    public ResponseEntity<?> rechunkDocument(@PathVariable String id,
+    public ApiResponse<?> rechunkDocument(@PathVariable String id,
                                              @PathVariable String docId) {
         var ingester = this.documentIngester;
         if (ingester == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档导入功能未启用", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档导入功能未启用");
         }
         var docRepo = this.documentRepository;
         if (docRepo == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档功能未启用", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档功能未启用");
         }
         var docOpt = docRepo.findById(docId);
         if (docOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "文档不存在: id=" + docId, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文档不存在: id=" + docId);
         }
         ingester.resume(docId);
         log.info("文档重新分块已提交: docId={}", docId);
-        return ResponseEntity.accepted().body(Map.of("message", "文档已提交重新分块"));
+        return ApiResponse.ok(Map.of("message", "文档已提交重新分块"));
     }
 
     /** 测试知识库检索。 */
     @PostMapping("/{id}/test-retrieval")
-    public ResponseEntity<?> testRetrieval(@PathVariable String id,
+    public ApiResponse<?> testRetrieval(@PathVariable String id,
                                           @RequestBody RetrievalTestRequest request) {
         // 验证知识库存在
         if (kbManager.getKnowledgeBase(id).isEmpty()) {
             log.warn("测试检索失败: 知识库不存在, id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id);
         }
 
         // 验证检索服务可用
@@ -375,15 +352,13 @@ public class KnowledgeBaseController {
         var docRepo = this.documentRepository;
         if (retriever == null || docRepo == null) {
             log.error("测试检索失败: DocumentRetriever 或 DocumentRepository 未初始化");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "检索功能未启用，请检查知识库配置", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "检索功能未启用，请检查知识库配置");
         }
 
         // 验证查询参数
         if (request.query() == null || request.query().isBlank()) {
             log.warn("测试检索失败: 查询问题为空");
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "查询问题不能为空", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "查询问题不能为空");
         }
 
         try {
@@ -428,31 +403,28 @@ public class KnowledgeBaseController {
 
             RetrievalTestResponse response = new RetrievalTestResponse(chunks, null);
             log.info("测试检索成功: kbId={}, query={}, chunks={}", id, request.query(), chunks.size());
-            return ResponseEntity.ok(response);
+            return ApiResponse.ok(response);
         } catch (Exception e) {
             log.error("测试检索异常: kbId={}, query={}, error={}", id, request.query(), e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(
-                    new ErrorResponse(500, "检索失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "检索失败: " + e.getMessage());
         }
     }
 
     /** 获取文档处理日志。 */
     @GetMapping("/{id}/documents/{docId}/logs")
-    public ResponseEntity<?> getDocumentLogs(@PathVariable String id,
+    public ApiResponse<?> getDocumentLogs(@PathVariable String id,
                                              @PathVariable String docId) {
         // 验证知识库存在
         if (kbManager.getKnowledgeBase(id).isEmpty()) {
             log.warn("获取文档日志失败: 知识库不存在, id={}", id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id);
         }
 
         // 验证文档存在
         var docRepo = this.documentRepository;
         if (docRepo == null) {
             log.error("获取文档日志失败: DocumentRepository 未初始化");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-                    new ErrorResponse(503, "文档功能未启用，请检查知识库配置", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文档功能未启用，请检查知识库配置");
         }
 
         try {
@@ -462,23 +434,20 @@ public class KnowledgeBaseController {
             // 验证文档属于指定知识库
             if (!doc.knowledgeBaseId().equals(id)) {
                 log.warn("获取文档日志失败: 文档不属于指定知识库, docId={}, kbId={}", docId, id);
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                        new ErrorResponse(400, "文档不属于指定知识库", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "文档不属于指定知识库");
             }
 
             // 基于文档状态生成日志
             List<LogEntry> logs = generateLogsFromDocument(doc);
             
             log.debug("获取文档日志成功: docId={}, logs={}", docId, logs.size());
-            return ResponseEntity.ok(new ProcessingLogResponse(logs));
+            return ApiResponse.ok(new ProcessingLogResponse(logs));
         } catch (DocumentNotFoundException e) {
             log.warn("获取文档日志失败: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(404, e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         } catch (Exception e) {
             log.error("获取文档日志异常: docId={}, error={}", docId, e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(
-                    new ErrorResponse(500, "获取日志失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "获取日志失败: " + e.getMessage());
         }
     }
 

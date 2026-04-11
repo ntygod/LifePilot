@@ -12,6 +12,9 @@ import org.springframework.boot.ApplicationRunner;
 
 /**
  * 启动时配置迁移执行器。
+ *
+ * @author zsg
+ * @since 2026-03-01
  */
 @Slf4j
 @RequiredArgsConstructor

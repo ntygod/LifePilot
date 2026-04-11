@@ -32,6 +32,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
@@ -46,6 +47,7 @@ import java.util.concurrent.Executors;
 public class ToolExecutionCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(ToolExecutionCoordinator.class);
+    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private final AgentToolProvider agentToolProvider;
     private final ObjectMapper objectMapper;
@@ -779,7 +781,7 @@ public class ToolExecutionCoordinator {
                 log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
                         state.sessionId(), toolId, e.getMessage());
             }
-        });
+        }, VIRTUAL_EXECUTOR);
     }
 
     /** 异步将 tool_result 记录到 transcript，不阻塞工具执行主路径。 */
@@ -812,7 +814,7 @@ public class ToolExecutionCoordinator {
                 log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
                         state.sessionId(), toolId, e.getMessage());
             }
-        });
+        }, VIRTUAL_EXECUTOR);
     }
 
     /** 将工具执行结果写入 Trace，保证后续诊断能看到输入、输出和耗时。 */

@@ -33,6 +33,9 @@ public class MarketplaceProperties {
     /** 索引缓存 TTL（小时），默认 24。 */
     private int cacheTtlHours = 24;
 
+    /** jsDelivr CDN URL 模板，%s 依次为 owner, repo, tag, path。 */
+    private String cdnUrlTemplate = "https://cdn.jsdelivr.net/gh/%s/%s@%s/%s";
+
     /** 是否自动检查更新，默认 true。 */
     private boolean autoCheckUpdates = true;
 

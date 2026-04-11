@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository.AttachmentRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -7,8 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,13 +48,13 @@ public class AttachmentController {
         AttachmentRecord record = attachmentRepository.findById(id);
         if (record == null) {
             log.warn("附件不存在: id={}", id);
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
         Path path = Paths.get(record.filePath());
         if (!Files.exists(path)) {
             log.warn("附件文件不存在: id={}, path={}", id, record.filePath());
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
         try {
@@ -73,7 +76,7 @@ public class AttachmentController {
                     .body(resource);
         } catch (IOException e) {
             log.error("读取附件文件失败: id={}, path={}", id, record.filePath(), e);
-            return ResponseEntity.internalServerError().build();
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }

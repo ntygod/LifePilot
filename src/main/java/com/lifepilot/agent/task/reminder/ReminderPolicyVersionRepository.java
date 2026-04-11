@@ -43,14 +43,18 @@ public class ReminderPolicyVersionRepository {
 
     public Optional<ReminderPolicyVersionRecord> findById(String id) {
         return jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_policy_versions
+                SELECT id, user_id, version, config_signature, config_json, source,
+                       summary_json, activated_at, created_at
+                FROM proactive_reminder_policy_versions
                 WHERE id = ?
                 """, rowMapper(), id).stream().findFirst();
     }
 
     public Optional<ReminderPolicyVersionRecord> findLatestByUserId(String userId) {
         return jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_policy_versions
+                SELECT id, user_id, version, config_signature, config_json, source,
+                       summary_json, activated_at, created_at
+                FROM proactive_reminder_policy_versions
                 WHERE user_id = ?
                 ORDER BY version DESC
                 LIMIT 1
@@ -60,7 +64,9 @@ public class ReminderPolicyVersionRepository {
     public Optional<ReminderPolicyVersionRecord> findByUserIdAndConfigSignature(String userId,
                                                                                 String configSignature) {
         return jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_policy_versions
+                SELECT id, user_id, version, config_signature, config_json, source,
+                       summary_json, activated_at, created_at
+                FROM proactive_reminder_policy_versions
                 WHERE user_id = ? AND config_signature = ?
                 LIMIT 1
                 """, rowMapper(), userId, configSignature).stream().findFirst();
@@ -77,7 +83,9 @@ public class ReminderPolicyVersionRepository {
 
     public List<ReminderPolicyVersionRecord> findByUserId(String userId) {
         return List.copyOf(jdbcTemplate.query("""
-                SELECT * FROM proactive_reminder_policy_versions
+                SELECT id, user_id, version, config_signature, config_json, source,
+                       summary_json, activated_at, created_at
+                FROM proactive_reminder_policy_versions
                 WHERE user_id = ?
                 ORDER BY version ASC
                 """, rowMapper(), userId));

@@ -100,7 +100,12 @@ public class PermissionDecisionRepository {
 
     public List<PermissionDecisionEntry> findBySessionId(String sessionId) {
         return jdbcTemplate.query(
-                "SELECT * FROM permission_decisions WHERE session_id = ? ORDER BY created_at DESC",
+                """
+                SELECT id, session_id, trace_id, workspace_id, task_id, user_id, tool_id,
+                       action_type, risk_level, channel, resource_scope_json, decision_type,
+                       matched_grant_id, matched_subject_type, matched_subject_id, reason, created_at
+                FROM permission_decisions WHERE session_id = ? ORDER BY created_at DESC
+                """,
                 this::mapRow,
                 sessionId
         );
@@ -108,7 +113,12 @@ public class PermissionDecisionRepository {
 
     public List<PermissionDecisionEntry> findByTaskId(String taskId) {
         return jdbcTemplate.query(
-                "SELECT * FROM permission_decisions WHERE task_id = ? ORDER BY created_at DESC",
+                """
+                SELECT id, session_id, trace_id, workspace_id, task_id, user_id, tool_id,
+                       action_type, risk_level, channel, resource_scope_json, decision_type,
+                       matched_grant_id, matched_subject_type, matched_subject_id, reason, created_at
+                FROM permission_decisions WHERE task_id = ? ORDER BY created_at DESC
+                """,
                 this::mapRow,
                 taskId
         );

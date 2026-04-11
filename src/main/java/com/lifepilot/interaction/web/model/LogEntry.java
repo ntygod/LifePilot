@@ -10,6 +10,8 @@ import java.util.Map;
  * @param level     日志级别（INFO/WARN/ERROR）
  * @param message   日志消息
  * @param details   详细信息（可选）
+ * @author zsg
+ * @since 2026-03-02
  */
 public record LogEntry(
         Instant timestamp,

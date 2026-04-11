@@ -10,6 +10,9 @@ import java.util.Map;
  * 记忆事件记录器 — 将 {@link MemoryEvent} 写入数据库表 memory_events。
  *
  * <p>该组件是轻量可选依赖：如果表不存在，记录器会降级为仅输出日志。</p>
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 public class MemoryEventRecorder {
 

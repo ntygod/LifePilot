@@ -106,9 +106,9 @@ class ModelServiceControllerTest {
 
         mockMvc.perform(get("/api/model-services/templates"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].vendorKey").value("openai"))
-                .andExpect(jsonPath("$[0].providerType").value("OPENAI_COMPATIBLE"))
-                .andExpect(jsonPath("$[0].modelOptions[0].value").value("gpt-5.4"));
+                .andExpect(jsonPath("$.data[0].vendorKey").value("openai"))
+                .andExpect(jsonPath("$.data[0].providerType").value("OPENAI_COMPATIBLE"))
+                .andExpect(jsonPath("$.data[0].modelOptions[0].value").value("gpt-5.4"));
     }
 
     @Test
@@ -141,9 +141,9 @@ class ModelServiceControllerTest {
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("openai-generation-gpt-5-4"))
-                .andExpect(jsonPath("$.vendorKey").value("openai"))
-                .andExpect(jsonPath("$.type").value("OPENAI_COMPATIBLE"));
+                .andExpect(jsonPath("$.data.id").value("openai-generation-gpt-5-4"))
+                .andExpect(jsonPath("$.data.vendorKey").value("openai"))
+                .andExpect(jsonPath("$.data.type").value("OPENAI_COMPATIBLE"));
 
         var captor = ArgumentCaptor.forClass(ModelServiceEntity.class);
         verify(modelServiceRepository).save(captor.capture());
@@ -175,7 +175,7 @@ class ModelServiceControllerTest {
 
         mockMvc.perform(get("/api/model-services"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].vendorKey").value("openai"))
-                .andExpect(jsonPath("$[0].modelName").value("gpt-5.4"));
+                .andExpect(jsonPath("$.data[0].vendorKey").value("openai"))
+                .andExpect(jsonPath("$.data[0].modelName").value("gpt-5.4"));
     }
 }

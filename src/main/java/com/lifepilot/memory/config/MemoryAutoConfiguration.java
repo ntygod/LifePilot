@@ -68,6 +68,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
+/**
+ * 记忆系统自动装配 — 注册四层记忆（L1-L4）、压缩、巩固、遗忘等核心组件。
+ *
+ * @author zsg
+ * @since 2026-02-25
+ */
 @AutoConfiguration
 @EnableConfigurationProperties({MemoryProperties.class, WorkspaceProperties.class})
 @EnableScheduling

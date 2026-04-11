@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * 对话 REST + SSE 端点，处理消息发送、会话管理和 A2UI 信号回传。
@@ -55,6 +56,7 @@ import java.util.concurrent.CompletableFuture;
 public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
+    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     /**
      * 支持的文件扩展名。
@@ -713,7 +715,7 @@ public class ChatController {
                     } catch (Exception ex) {
                         log.warn("反馈处理失败: entryId={}, error={}", entryId, ex.getMessage());
                     }
-                });
+                }, VIRTUAL_EXECUTOR);
             }
 
             return ResponseEntity.noContent().build();

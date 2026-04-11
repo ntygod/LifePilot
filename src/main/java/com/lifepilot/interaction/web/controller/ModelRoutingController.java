@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.EmbeddingRoutingSettingsRequest;
 import com.lifepilot.interaction.web.model.EmbeddingRoutingSettingsResponse;
 import com.lifepilot.interaction.web.model.GenerationRoutingSettingsRequest;
@@ -16,7 +17,7 @@ import com.lifepilot.modelservice.repository.RerankSettingsRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -47,17 +48,17 @@ public class ModelRoutingController {
     }
 
     @GetMapping("/generation")
-    public ResponseEntity<GenerationRoutingSettingsResponse> getGenerationSettings() {
+    public ApiResponse<GenerationRoutingSettingsResponse> getGenerationSettings() {
         var settings = generationSettingsRepository.findDefault()
                 .orElse(new GenerationSettingsEntity(GenerationSettingsRepository.DEFAULT_ID, null, Map.of()));
-        return ResponseEntity.ok(new GenerationRoutingSettingsResponse(
+        return ApiResponse.ok(new GenerationRoutingSettingsResponse(
                 settings.defaultServiceId(),
                 settings.sceneServiceBindings()
         ));
     }
 
     @PutMapping("/generation")
-    public ResponseEntity<GenerationRoutingSettingsResponse> updateGenerationSettings(
+    public ApiResponse<GenerationRoutingSettingsResponse> updateGenerationSettings(
             @RequestBody GenerationRoutingSettingsRequest request) {
         log.info("更新生成路由设置: defaultServiceId={}", request.defaultServiceId());
         GenerationSettingsEntity current = generationSettingsRepository.findDefault()
@@ -72,10 +73,10 @@ public class ModelRoutingController {
     }
 
     @GetMapping("/embedding")
-    public ResponseEntity<EmbeddingRoutingSettingsResponse> getEmbeddingSettings() {
+    public ApiResponse<EmbeddingRoutingSettingsResponse> getEmbeddingSettings() {
         var settings = embeddingSettingsRepository.findDefault()
                 .orElse(new EmbeddingSettingsEntity(EmbeddingSettingsRepository.DEFAULT_ID, null, null, null));
-        return ResponseEntity.ok(new EmbeddingRoutingSettingsResponse(
+        return ApiResponse.ok(new EmbeddingRoutingSettingsResponse(
                 settings.defaultServiceId(),
                 settings.knowledgeBaseServiceId(),
                 settings.memoryServiceId()
@@ -83,7 +84,7 @@ public class ModelRoutingController {
     }
 
     @PutMapping("/embedding")
-    public ResponseEntity<EmbeddingRoutingSettingsResponse> updateEmbeddingSettings(
+    public ApiResponse<EmbeddingRoutingSettingsResponse> updateEmbeddingSettings(
             @RequestBody EmbeddingRoutingSettingsRequest request) {
         log.info("更新向量路由设置: default={}, knowledgeBase={}, memory={}",
                 request.defaultServiceId(), request.knowledgeBaseServiceId(), request.memoryServiceId());
@@ -100,7 +101,7 @@ public class ModelRoutingController {
     }
 
     @GetMapping("/rerank")
-    public ResponseEntity<RerankRoutingSettingsResponse> getRerankSettings() {
+    public ApiResponse<RerankRoutingSettingsResponse> getRerankSettings() {
         var settings = rerankSettingsRepository.findDefault()
                 .orElse(new RerankSettingsEntity(
                         RerankSettingsRepository.DEFAULT_ID,
@@ -112,7 +113,7 @@ public class ModelRoutingController {
                         false,
                         10
                 ));
-        return ResponseEntity.ok(new RerankRoutingSettingsResponse(
+        return ApiResponse.ok(new RerankRoutingSettingsResponse(
                 settings.enabled(),
                 settings.mode().name(),
                 settings.nativeServiceId(),
@@ -124,7 +125,7 @@ public class ModelRoutingController {
     }
 
     @PutMapping("/rerank")
-    public ResponseEntity<RerankRoutingSettingsResponse> updateRerankSettings(
+    public ApiResponse<RerankRoutingSettingsResponse> updateRerankSettings(
             @RequestBody RerankRoutingSettingsRequest request) {
         log.info("更新精排路由设置: enabled={}, mode={}", request.enabled(), request.mode());
         RerankSettingsEntity current = rerankSettingsRepository.findDefault()
