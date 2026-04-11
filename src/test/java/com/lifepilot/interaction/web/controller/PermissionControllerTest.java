@@ -82,11 +82,11 @@ class PermissionControllerTest {
 
         mockMvc.perform(get("/api/permissions/grants"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value("grant-1"))
-                .andExpect(jsonPath("$[0].subjectType").value("WORKSPACE"))
-                .andExpect(jsonPath("$[0].actionType").value("WRITE_FILE"))
-                .andExpect(jsonPath("$[0].scope.workspacePath").value("D:/WorkSpace/Project/News"))
-                .andExpect(jsonPath("$[0].autonomousAllowed").value(false));
+                .andExpect(jsonPath("$.data[0].id").value("grant-1"))
+                .andExpect(jsonPath("$.data[0].subjectType").value("WORKSPACE"))
+                .andExpect(jsonPath("$.data[0].actionType").value("WRITE_FILE"))
+                .andExpect(jsonPath("$.data[0].scope.workspacePath").value("D:/WorkSpace/Project/News"))
+                .andExpect(jsonPath("$.data[0].autonomousAllowed").value(false));
     }
 
     @Test
@@ -133,10 +133,10 @@ class PermissionControllerTest {
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("grant-2"))
-                .andExpect(jsonPath("$.subjectType").value("TASK"))
-                .andExpect(jsonPath("$.autonomousAllowed").value(true))
-                .andExpect(jsonPath("$.channels[0]").value("cron"));
+                .andExpect(jsonPath("$.data.id").value("grant-2"))
+                .andExpect(jsonPath("$.data.subjectType").value("TASK"))
+                .andExpect(jsonPath("$.data.autonomousAllowed").value(true))
+                .andExpect(jsonPath("$.data.channels[0]").value("cron"));
     }
 
     @Test

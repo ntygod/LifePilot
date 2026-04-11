@@ -11,6 +11,8 @@ import java.util.Map;
  * @param content      分段内容
  * @param score        相似度分数
  * @param metadata     元数据
+ * @author zsg
+ * @since 2026-03-02
  */
 public record ChunkResult(
         String chunkId,

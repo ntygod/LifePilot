@@ -68,7 +68,9 @@ public class KnowledgeSyncJobRepository {
     public List<KnowledgeSyncJob> findAvailableJobs(int limit) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM knowledge_sync_jobs
+                SELECT id, job_type, knowledge_base_id, datastore_id, source_key, source_version,
+                       payload_json, status, attempt_count, last_error, available_at, created_at, updated_at
+                FROM knowledge_sync_jobs
                 WHERE status IN ('PENDING', 'FAILED')
                   AND available_at <= ?
                 ORDER BY created_at ASC

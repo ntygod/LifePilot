@@ -17,6 +17,8 @@ import java.util.List;
  * @param startedAt        片段起始时间
  * @param endedAt          片段结束时间
  * @param messages         片段内的完整消息列表
+ * @author zsg
+ * @since 2026-03-20
  */
 public record ConversationSnippetRecord(
         String id,

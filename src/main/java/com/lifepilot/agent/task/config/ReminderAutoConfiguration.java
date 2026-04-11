@@ -154,8 +154,8 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WeatherSignalSource weatherSignalSource() {
-        return new WeatherSignalSource();
+    public WeatherSignalSource weatherSignalSource(AgentConfigProperties config) {
+        return new WeatherSignalSource(config.getTask().getWeatherApiBaseUrl());
     }
 
     @Bean

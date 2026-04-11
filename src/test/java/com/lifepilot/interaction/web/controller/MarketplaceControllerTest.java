@@ -60,10 +60,10 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(get("/api/marketplace/extensions"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.totalElements").value(1))
-                    .andExpect(jsonPath("$.totalPages").value(1))
-                    .andExpect(jsonPath("$.content", hasSize(1)))
-                    .andExpect(jsonPath("$.content[0].id").value("pkg-1"));
+                    .andExpect(jsonPath("$.data.totalElements").value(1))
+                    .andExpect(jsonPath("$.data.totalPages").value(1))
+                    .andExpect(jsonPath("$.data.content", hasSize(1)))
+                    .andExpect(jsonPath("$.data.content[0].id").value("pkg-1"));
 
             verify(marketplaceService).getExtensions(null, null, null, 0, 20);
         }
@@ -79,8 +79,8 @@ class MarketplaceControllerTest {
                             .param("page", "1")
                             .param("size", "10"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.totalElements").value(0))
-                    .andExpect(jsonPath("$.content", hasSize(0)));
+                    .andExpect(jsonPath("$.data.totalElements").value(0))
+                    .andExpect(jsonPath("$.data.content", hasSize(0)));
 
             verify(marketplaceService).getExtensions(null, "ai", "tool", 1, 10);
         }
@@ -94,7 +94,7 @@ class MarketplaceControllerTest {
             mockMvc.perform(get("/api/marketplace/extensions")
                             .param("type", "AGENT"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.content", hasSize(1)));
+                    .andExpect(jsonPath("$.data.content", hasSize(1)));
 
             verify(marketplaceService).getExtensions(ExtensionType.AGENT, null, null, 0, 20);
         }
@@ -112,8 +112,8 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(get("/api/marketplace/extensions/pkg-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id").value("pkg-1"))
-                    .andExpect(jsonPath("$.name").value("测试工具"));
+                    .andExpect(jsonPath("$.data.id").value("pkg-1"))
+                    .andExpect(jsonPath("$.data.name").value("测试工具"));
         }
 
         @Test
@@ -143,11 +143,11 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(get("/api/marketplace/extensions/pkg-1/installation"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.packageId").value("pkg-1"))
-                    .andExpect(jsonPath("$.type").value("CHANNEL"))
-                    .andExpect(jsonPath("$.installRootPath").value("D:/plugins/pkg-1"))
-                    .andExpect(jsonPath("$.assets", hasSize(1)))
-                    .andExpect(jsonPath("$.assets[0].kind").value("README"));
+                    .andExpect(jsonPath("$.data.packageId").value("pkg-1"))
+                    .andExpect(jsonPath("$.data.type").value("CHANNEL"))
+                    .andExpect(jsonPath("$.data.installRootPath").value("D:/plugins/pkg-1"))
+                    .andExpect(jsonPath("$.data.assets", hasSize(1)))
+                    .andExpect(jsonPath("$.data.assets[0].kind").value("README"));
         }
 
         @Test
@@ -181,10 +181,10 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(post("/api/marketplace/extensions/pkg-1/install"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.extensionId").value("ext-1"))
-                    .andExpect(jsonPath("$.extensionType").value("SKILL"))
-                    .andExpect(jsonPath("$.requiresConfirmation").value(false));
+                    .andExpect(jsonPath("$.data.success").value(true))
+                    .andExpect(jsonPath("$.data.extensionId").value("ext-1"))
+                    .andExpect(jsonPath("$.data.extensionType").value("SKILL"))
+                    .andExpect(jsonPath("$.data.requiresConfirmation").value(false));
 
             verify(marketplaceService).install("pkg-1", false);
         }
@@ -200,9 +200,9 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(post("/api/marketplace/extensions/pkg-2/install"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(false))
-                    .andExpect(jsonPath("$.requiresConfirmation").value(true))
-                    .andExpect(jsonPath("$.securityReport.overallRisk").value("HIGH"));
+                    .andExpect(jsonPath("$.data.success").value(false))
+                    .andExpect(jsonPath("$.data.requiresConfirmation").value(true))
+                    .andExpect(jsonPath("$.data.securityReport.overallRisk").value("HIGH"));
         }
 
         @Test
@@ -213,7 +213,7 @@ class MarketplaceControllerTest {
             mockMvc.perform(post("/api/marketplace/extensions/pkg-2/install")
                             .param("confirmHighRisk", "true"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true));
+                    .andExpect(jsonPath("$.data.success").value(true));
 
             verify(marketplaceService).install("pkg-2", true);
         }
@@ -231,7 +231,7 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(delete("/api/marketplace/extensions/pkg-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true));
+                    .andExpect(jsonPath("$.data.success").value(true));
 
             verify(marketplaceService).uninstall("pkg-1");
         }
@@ -243,8 +243,8 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(delete("/api/marketplace/extensions/unknown"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(false))
-                    .andExpect(jsonPath("$.errorMessage").value("未找到已安装扩展: unknown"));
+                    .andExpect(jsonPath("$.data.success").value(false))
+                    .andExpect(jsonPath("$.data.errorMessage").value("未找到已安装扩展: unknown"));
         }
     }
 
@@ -259,8 +259,8 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(post("/api/marketplace/index/refresh"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.count").value(2))
-                    .andExpect(jsonPath("$.message").value(containsString("2")));
+                    .andExpect(jsonPath("$.data.count").value(2))
+                    .andExpect(jsonPath("$.data.message").value(containsString("2")));
 
             verify(marketplaceService).refreshIndex();
         }
@@ -278,8 +278,8 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(get("/api/marketplace/updates"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].id").value("pkg-1"));
+                    .andExpect(jsonPath("$.data", hasSize(1)))
+                    .andExpect(jsonPath("$.data[0].id").value("pkg-1"));
         }
 
         @Test
@@ -288,7 +288,7 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(get("/api/marketplace/updates"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(0)));
+                    .andExpect(jsonPath("$.data", hasSize(0)));
         }
     }
 
@@ -304,7 +304,7 @@ class MarketplaceControllerTest {
 
             mockMvc.perform(post("/api/marketplace/extensions/pkg-1/upgrade"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true));
+                    .andExpect(jsonPath("$.data.success").value(true));
 
             verify(marketplaceService).upgrade("pkg-1", false);
         }
@@ -317,7 +317,7 @@ class MarketplaceControllerTest {
             mockMvc.perform(post("/api/marketplace/extensions/pkg-1/upgrade")
                             .param("confirmHighRisk", "true"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true));
+                    .andExpect(jsonPath("$.data.success").value(true));
 
             verify(marketplaceService).upgrade("pkg-1", true);
         }

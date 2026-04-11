@@ -139,7 +139,7 @@ public class MemoryDocumentRepository {
 
     public Optional<MemoryDocumentRow> findByNamespaceAndPathLikeKey(String namespace, String pathLikeKey) {
         List<MemoryDocumentRow> rows = jdbcTemplate.query("""
-                SELECT * FROM memory_documents
+                SELECT id, namespace, doc_type, title, path_like_key, content_markdown, source_session_id, source_entry_id, created_at, updated_at FROM memory_documents
                 WHERE namespace = ? AND path_like_key = ?
                 """,
                 this::mapDocumentRow,
@@ -151,7 +151,7 @@ public class MemoryDocumentRepository {
 
     public List<MemoryDocumentRow> listByNamespace(String namespace) {
         return jdbcTemplate.query("""
-                SELECT * FROM memory_documents
+                SELECT id, namespace, doc_type, title, path_like_key, content_markdown, source_session_id, source_entry_id, created_at, updated_at FROM memory_documents
                 WHERE namespace = ?
                 ORDER BY updated_at DESC, id DESC
                 """,
@@ -162,7 +162,7 @@ public class MemoryDocumentRepository {
 
     public List<MemoryDocumentChunkRow> findChunks(String documentId) {
         return jdbcTemplate.query("""
-                SELECT * FROM memory_document_chunks
+                SELECT id, document_id, chunk_index, content_text, token_estimate, created_at FROM memory_document_chunks
                 WHERE document_id = ?
                 ORDER BY chunk_index ASC
                 """,

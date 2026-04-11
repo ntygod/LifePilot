@@ -11,6 +11,8 @@ import reactor.core.publisher.Flux;
  * @param stream     token/片段流
  * @param providerId Provider ID（配置 id）
  * @param modelId    模型 ID（配置 modelName）
+ * @author zsg
+ * @since 2026-03-05
  */
 public record StreamingLlmResponse(
         Flux<String> stream,

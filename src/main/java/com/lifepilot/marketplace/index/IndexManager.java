@@ -191,7 +191,7 @@ public class IndexManager {
             if (segments.length < 4) {
                 return null;
             }
-            return "https://cdn.jsdelivr.net/gh/%s/%s@%s/%s"
+            return properties.getCdnUrlTemplate()
                     .formatted(segments[0], segments[1], segments[2], segments[3]);
         } catch (Exception e) {
             return null;

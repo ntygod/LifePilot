@@ -39,6 +39,7 @@ class WebSearchToolExecutorTest {
         responseSpec = mock(RestClient.ResponseSpec.class);
 
         when(configProvider.getConfig()).thenReturn(new WebSearchConfig(
+                "https://api.tavily.com/search",
                 "tavily",
                 "tvly-secret",
                 5,
@@ -113,6 +114,7 @@ class WebSearchToolExecutorTest {
     @Test
     void 未配置ApiKey_返回错误() {
         when(configProvider.getConfig()).thenReturn(new WebSearchConfig(
+                "https://api.tavily.com/search",
                 "tavily",
                 "",
                 5,

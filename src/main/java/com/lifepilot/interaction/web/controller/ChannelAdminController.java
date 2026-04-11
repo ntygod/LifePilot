@@ -11,6 +11,7 @@ import com.lifepilot.interaction.runtime.ConnectorManager;
 import com.lifepilot.interaction.runtime.ConnectorRuntimeManager;
 import com.lifepilot.interaction.service.ChannelInstanceEventService;
 import com.lifepilot.interaction.service.ChannelInstanceService;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.CreateChannelInstanceRequest;
 import com.lifepilot.interaction.web.model.UpdateChannelInstanceRequest;
 import org.slf4j.Logger;
@@ -19,6 +20,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -62,42 +64,41 @@ public class ChannelAdminController {
     }
 
     @GetMapping("/plugins")
-    public ResponseEntity<List<ChannelPluginDescriptor>> listPlugins() {
-        return ResponseEntity.ok(channelRegistry.listAll().stream()
+    public ApiResponse<List<ChannelPluginDescriptor>> listPlugins() {
+        return ApiResponse.ok(channelRegistry.listAll().stream()
                 .map(connectorManager::decorate)
                 .toList());
     }
 
     @GetMapping("/instances")
-    public ResponseEntity<List<ChannelInstance>> listInstances() {
-        return ResponseEntity.ok(channelInstanceService.listAll().stream()
+    public ApiResponse<List<ChannelInstance>> listInstances() {
+        return ApiResponse.ok(channelInstanceService.listAll().stream()
                 .map(this::maskSecrets)
                 .toList());
     }
 
     @GetMapping("/instances/{instanceId}")
-    public ResponseEntity<ChannelInstance> getInstance(@PathVariable String instanceId) {
-        return channelInstanceService.find(instanceId)
-                .map(this::maskSecrets)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ApiResponse<ChannelInstance> getInstance(@PathVariable String instanceId) {
+        var inst = channelInstanceService.find(instanceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "渠道实例不存在: " + instanceId));
+        return ApiResponse.ok(maskSecrets(inst));
     }
 
     @PostMapping("/instances")
-    public ResponseEntity<?> createInstance(@RequestBody CreateChannelInstanceRequest request) {
+    public ApiResponse<?> createInstance(@RequestBody CreateChannelInstanceRequest request) {
         if (request.pluginId() == null || request.pluginId().isBlank()) {
-            return ResponseEntity.badRequest().body("pluginId 不能为空");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "pluginId 不能为空");
         }
         Optional<ChannelPluginDescriptor> plugin = channelRegistry.find(request.pluginId());
         if (plugin.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("渠道插件不存在: " + request.pluginId());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "渠道插件不存在: " + request.pluginId());
         }
 
         String instanceId = request.instanceId() != null && !request.instanceId().isBlank()
                 ? request.instanceId().trim()
                 : request.pluginId() + "." + UUID.randomUUID().toString().substring(0, 8);
         if (channelInstanceService.find(instanceId).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("渠道实例已存在: " + instanceId);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "渠道实例已存在: " + instanceId);
         }
 
         String displayName = request.displayName() != null && !request.displayName().isBlank()
@@ -135,15 +136,15 @@ public class ChannelAdminController {
             saved = connectorRuntimeManager.start(saved.instanceId());
         }
         log.info("渠道实例创建完成: instanceId={}, pluginId={}", saved.instanceId(), saved.pluginId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(maskSecrets(saved));
+        return ApiResponse.ok(maskSecrets(saved));
     }
 
     @PutMapping("/instances/{instanceId}")
-    public ResponseEntity<?> updateInstance(@PathVariable String instanceId,
+    public ApiResponse<?> updateInstance(@PathVariable String instanceId,
                                             @RequestBody UpdateChannelInstanceRequest request) {
         ChannelInstance existing = channelInstanceService.find(instanceId).orElse(null);
         if (existing == null) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
         ChannelPluginDescriptor plugin = channelRegistry.find(existing.pluginId())
@@ -181,24 +182,24 @@ public class ChannelAdminController {
         } else if (saved.status() == ChannelInstanceStatus.RUNNING) {
             saved = connectorRuntimeManager.stop(saved.instanceId());
         }
-        return ResponseEntity.ok(maskSecrets(saved));
+        return ApiResponse.ok(maskSecrets(saved));
     }
 
     @GetMapping("/instances/{instanceId}/events")
-    public ResponseEntity<List<ChannelInstanceEvent>> listInstanceEvents(@PathVariable String instanceId,
+    public ApiResponse<List<ChannelInstanceEvent>> listInstanceEvents(@PathVariable String instanceId,
                                                                          @RequestParam(defaultValue = "20") int limit) {
         limit = Math.min(Math.max(limit, 1), 200);
         if (channelInstanceService.find(instanceId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        return ResponseEntity.ok(channelInstanceEventService.listRecent(instanceId, limit));
+        return ApiResponse.ok(channelInstanceEventService.listRecent(instanceId, limit));
     }
 
     @PatchMapping("/instances/{instanceId}/enabled")
-    public ResponseEntity<?> updateEnabled(@PathVariable String instanceId,
+    public ApiResponse<?> updateEnabled(@PathVariable String instanceId,
                                            @RequestParam boolean enabled) {
         if (channelInstanceService.find(instanceId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         ChannelInstance updated = channelInstanceService.updateEnabled(instanceId, enabled);
         if (enabled) {
@@ -206,57 +207,57 @@ public class ChannelAdminController {
         } else {
             updated = connectorRuntimeManager.stop(instanceId);
         }
-        return ResponseEntity.ok(maskSecrets(updated));
+        return ApiResponse.ok(maskSecrets(updated));
     }
 
     @PostMapping("/instances/{instanceId}/start")
-    public ResponseEntity<?> startInstance(@PathVariable String instanceId) {
+    public ApiResponse<?> startInstance(@PathVariable String instanceId) {
         if (channelInstanceService.find(instanceId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         channelInstanceService.updateEnabled(instanceId, true);
-        return ResponseEntity.ok(maskSecrets(connectorRuntimeManager.start(instanceId)));
+        return ApiResponse.ok(maskSecrets(connectorRuntimeManager.start(instanceId)));
     }
 
     @PostMapping("/instances/{instanceId}/stop")
-    public ResponseEntity<?> stopInstance(@PathVariable String instanceId) {
+    public ApiResponse<?> stopInstance(@PathVariable String instanceId) {
         if (channelInstanceService.find(instanceId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         channelInstanceService.updateEnabled(instanceId, false);
-        return ResponseEntity.ok(maskSecrets(connectorRuntimeManager.stop(instanceId)));
+        return ApiResponse.ok(maskSecrets(connectorRuntimeManager.stop(instanceId)));
     }
 
     @PostMapping("/instances/{instanceId}/reload")
-    public ResponseEntity<?> reloadInstance(@PathVariable String instanceId) {
+    public ApiResponse<?> reloadInstance(@PathVariable String instanceId) {
         if (channelInstanceService.find(instanceId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        return ResponseEntity.ok(maskSecrets(connectorRuntimeManager.reload(instanceId)));
+        return ApiResponse.ok(maskSecrets(connectorRuntimeManager.reload(instanceId)));
     }
 
     @GetMapping("/instances/{instanceId}/health")
-    public ResponseEntity<?> health(@PathVariable String instanceId) {
+    public ApiResponse<?> health(@PathVariable String instanceId) {
         if (channelInstanceService.find(instanceId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        return ResponseEntity.ok(connectorRuntimeManager.health(instanceId));
+        return ApiResponse.ok(connectorRuntimeManager.health(instanceId));
     }
 
     @DeleteMapping("/instances/{instanceId}")
-    public ResponseEntity<?> deleteInstance(@PathVariable String instanceId) {
+    public ApiResponse<?> deleteInstance(@PathVariable String instanceId) {
         ChannelInstance existing = channelInstanceService.find(instanceId).orElse(null);
         if (existing == null) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         if ("web.default".equalsIgnoreCase(instanceId)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("内建 Web 实例不可删除");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "内建 Web 实例不可删除");
         }
         if (existing.status() == ChannelInstanceStatus.RUNNING) {
             connectorRuntimeManager.stop(instanceId);
         }
         channelInstanceService.delete(instanceId);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.ok();
     }
 
     @Nullable

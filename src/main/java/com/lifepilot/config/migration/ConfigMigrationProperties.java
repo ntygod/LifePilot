@@ -6,6 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * 配置迁移相关属性。
+ *
+ * @author zsg
+ * @since 2026-03-01
  */
 @Setter
 @Getter

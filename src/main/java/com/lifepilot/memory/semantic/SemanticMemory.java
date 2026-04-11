@@ -154,7 +154,7 @@ public class SemanticMemory {
     /** 时间旅行查询：返回指定时间点有效的所有实体。 */
     public List<TemporalEntity> queryAtTime(Instant point) {
         return jdbcTemplate.query(
-                "SELECT * FROM temporal_entities WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)",
+                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)",
                 (rs, rowNum) -> mapRowToEntity(rs),
                 point.toString(), point.toString());
     }
@@ -162,7 +162,7 @@ public class SemanticMemory {
     /** 变更历史：返回指定 name+type 的所有版本，按 version 升序。 */
     public List<TemporalEntity> getChangeHistory(String name, EntityType type) {
         return jdbcTemplate.query(
-                "SELECT * FROM temporal_entities WHERE name = ? AND type = ? ORDER BY version ASC",
+                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE name = ? AND type = ? ORDER BY version ASC",
                 (rs, rowNum) -> mapRowToEntity(rs),
                 name, type.name());
     }
@@ -186,7 +186,7 @@ public class SemanticMemory {
                     JOIN related r ON (tr.source_entity_id = r.id OR tr.target_entity_id = r.id)
                     WHERE tr.valid_to IS NULL AND r.depth < ?
                 )
-                SELECT DISTINCT te.* FROM temporal_entities te
+                SELECT DISTINCT te.id, te.type, te.name, te.description, te.properties_json, te.version, te.is_current, te.valid_from, te.valid_to, te.source_conversation_id, te.extraction_confidence, te.importance_score, te.access_count, te.last_accessed_at, te.created_at, te.updated_at FROM temporal_entities te
                 JOIN related r ON te.id = r.id
                 WHERE te.is_current = 1 AND te.id != ?
                 """,
@@ -211,7 +211,7 @@ public class SemanticMemory {
                                                              EntityType type,
                                                              @Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
-                "SELECT * FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1");
+                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1");
         List<Object> params = new ArrayList<>();
         params.add(name);
         params.add(type.name());
@@ -242,7 +242,7 @@ public class SemanticMemory {
      */
     public List<TemporalEntity> findCurrentByType(EntityType type, @Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
-                "SELECT * FROM temporal_entities WHERE type = ? AND is_current = 1");
+                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE type = ? AND is_current = 1");
         List<Object> params = new ArrayList<>();
         params.add(type.name());
         appendEntityReadFilter(sql, params, filter);
@@ -363,7 +363,7 @@ public class SemanticMemory {
      */
     public List<TemporalEntity> findAllCurrent(@Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
-                "SELECT * FROM temporal_entities WHERE is_current = 1");
+                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE is_current = 1");
         List<Object> params = new ArrayList<>();
         appendEntityReadFilter(sql, params, filter);
         sql.append(" ORDER BY importance_score ASC, access_count ASC");
@@ -394,7 +394,7 @@ public class SemanticMemory {
         if (ids == null || ids.isEmpty()) {
             return Map.of();
         }
-        StringBuilder sql = new StringBuilder("SELECT * FROM temporal_entities WHERE is_current = 1");
+        StringBuilder sql = new StringBuilder("SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE is_current = 1");
         List<Object> params = new ArrayList<>();
         appendEntityReadFilter(sql, params, filter);
         sql.append(" AND id IN (")
@@ -439,7 +439,7 @@ public class SemanticMemory {
      */
     public List<TemporalRelation> findAllCurrentRelations() {
         return jdbcTemplate.query(
-                "SELECT * FROM temporal_relations WHERE valid_to IS NULL ORDER BY created_at DESC",
+                "SELECT id, source_entity_id, target_entity_id, relation_type, strength, properties_json, valid_from, valid_to, source_conversation_id, created_at FROM temporal_relations WHERE valid_to IS NULL ORDER BY created_at DESC",
                 (rs, rowNum) -> mapRowToRelation(rs));
     }
 
@@ -451,7 +451,7 @@ public class SemanticMemory {
      */
     public List<TemporalRelation> findRelationsByEntityId(String entityId) {
         return jdbcTemplate.query(
-                "SELECT * FROM temporal_relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND valid_to IS NULL ORDER BY created_at DESC",
+                "SELECT id, source_entity_id, target_entity_id, relation_type, strength, properties_json, valid_from, valid_to, source_conversation_id, created_at FROM temporal_relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND valid_to IS NULL ORDER BY created_at DESC",
                 (rs, rowNum) -> mapRowToRelation(rs),
                 entityId, entityId);
     }
@@ -464,7 +464,7 @@ public class SemanticMemory {
      */
     public Optional<TemporalEntity> findById(String entityId) {
         var results = jdbcTemplate.query(
-                "SELECT * FROM temporal_entities WHERE id = ? ORDER BY is_current DESC, version DESC",
+                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE id = ? ORDER BY is_current DESC, version DESC",
                 (rs, rowNum) -> mapRowToEntity(rs),
                 entityId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());

@@ -35,6 +35,9 @@ import java.util.stream.Stream;
 
 /**
  * Workflow definition registry with local hot-reload support.
+ *
+ * @author zsg
+ * @since 2026-02-26
  */
 public class WorkflowRegistry {
 

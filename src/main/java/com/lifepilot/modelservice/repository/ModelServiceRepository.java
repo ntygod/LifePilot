@@ -45,7 +45,12 @@ public class ModelServiceRepository {
      */
     public List<ModelServiceEntity> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM model_services ORDER BY kind ASC, priority ASC, id ASC",
+                """
+                SELECT id, kind, provider_type, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, supported_scenes_json,
+                       generation_capabilities_json, metadata_json, display_name, description
+                FROM model_services ORDER BY kind ASC, priority ASC, id ASC
+                """,
                 this::mapRow);
     }
 
@@ -57,7 +62,12 @@ public class ModelServiceRepository {
      */
     public List<ModelServiceEntity> findByKind(ModelServiceKind kind) {
         return jdbcTemplate.query(
-                "SELECT * FROM model_services WHERE kind = ? ORDER BY priority ASC, id ASC",
+                """
+                SELECT id, kind, provider_type, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, supported_scenes_json,
+                       generation_capabilities_json, metadata_json, display_name, description
+                FROM model_services WHERE kind = ? ORDER BY priority ASC, id ASC
+                """,
                 this::mapRow,
                 kind.name());
     }
@@ -70,7 +80,12 @@ public class ModelServiceRepository {
      */
     public List<ModelServiceEntity> findEnabledByKind(ModelServiceKind kind) {
         return jdbcTemplate.query(
-                "SELECT * FROM model_services WHERE kind = ? AND enabled = 1 ORDER BY priority ASC, id ASC",
+                """
+                SELECT id, kind, provider_type, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, supported_scenes_json,
+                       generation_capabilities_json, metadata_json, display_name, description
+                FROM model_services WHERE kind = ? AND enabled = 1 ORDER BY priority ASC, id ASC
+                """,
                 this::mapRow,
                 kind.name());
     }
@@ -83,7 +98,12 @@ public class ModelServiceRepository {
      */
     public Optional<ModelServiceEntity> findById(String id) {
         return jdbcTemplate.query(
-                "SELECT * FROM model_services WHERE id = ?",
+                """
+                SELECT id, kind, provider_type, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, supported_scenes_json,
+                       generation_capabilities_json, metadata_json, display_name, description
+                FROM model_services WHERE id = ?
+                """,
                 this::mapRow,
                 id).stream().findFirst();
     }

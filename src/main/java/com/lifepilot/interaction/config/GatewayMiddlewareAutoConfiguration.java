@@ -30,6 +30,12 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * 网关中间件自动装配 — 注册认证、限流、安全、路由、执行、审计等中间件。
+ *
+ * @author zsg
+ * @since 2026-02-25
+ */
 @AutoConfiguration(after = GatewayAutoConfiguration.class)
 @ConditionalOnProperty(name = "lifepilot.gateway.enabled", matchIfMissing = true)
 public class GatewayMiddlewareAutoConfiguration {

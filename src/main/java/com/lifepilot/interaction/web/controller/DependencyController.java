@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.DependencyGraphResponse;
 import com.lifepilot.interaction.web.model.DependencyGraphResponse.EdgeInfo;
 import com.lifepilot.interaction.web.model.DependencyGraphResponse.NodeInfo;
@@ -9,7 +10,7 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -61,7 +62,7 @@ public class DependencyController {
      * @return 依赖关系图响应
      */
     @GetMapping("/graph")
-    public ResponseEntity<DependencyGraphResponse> getGraph() {
+    public ApiResponse<DependencyGraphResponse> getGraph() {
         // 使用 LinkedHashMap 按 ID 去重，保持插入顺序
         Map<String, NodeInfo> nodeMap = new LinkedHashMap<>();
         List<EdgeInfo> edges = new ArrayList<>();
@@ -89,6 +90,6 @@ public class DependencyController {
 
         var response = new DependencyGraphResponse(List.copyOf(nodeMap.values()), List.copyOf(edges));
         log.debug("依赖关系图构建完成: nodes={}, edges={}", response.nodes().size(), response.edges().size());
-        return ResponseEntity.ok(response);
+        return ApiResponse.ok(response);
     }
 }

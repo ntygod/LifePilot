@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -21,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -75,7 +77,7 @@ public class ToolController {
      * @return Tool 列表
      */
     @GetMapping("/tools")
-    public ResponseEntity<?> listTools(
+    public ApiResponse<?> listTools(
             @RequestParam(required = false) String source,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String name) {
@@ -105,7 +107,7 @@ public class ToolController {
                 .map(this::toToolSummary)
                 .collect(Collectors.toList());
 
-        return ResponseEntity.ok(filtered);
+        return ApiResponse.ok(filtered);
     }
 
     /**
@@ -115,17 +117,14 @@ public class ToolController {
      * @return Tool 详情
      */
     @GetMapping("/tools/{id}")
-    public ResponseEntity<?> getTool(@PathVariable String id) {
+    public ApiResponse<?> getTool(@PathVariable String id) {
         log.debug("查询 Tool 详情: id={}", id);
 
-        return toolRegistry.resolve(id)
-                .<ResponseEntity<?>>map(tool -> {
-                    Map<String, Object> detail = toToolDetail(tool);
-                    detail.put("usage", queryToolUsage(id));
-                    return ResponseEntity.ok(detail);
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now())));
+        var tool = toolRegistry.resolve(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id));
+        Map<String, Object> detail = toToolDetail(tool);
+        detail.put("usage", queryToolUsage(id));
+        return ApiResponse.ok(detail);
     }
 
     /**
@@ -136,37 +135,28 @@ public class ToolController {
      * @return 测试结果
      */
     @PostMapping("/tools/{id}/test")
-    public ResponseEntity<?> testTool(
+    public ApiResponse<?> testTool(
             @PathVariable String id,
             @RequestBody Map<String, Object> request) {
         log.debug("测试 Tool: id={}", id);
 
-        return toolRegistry.resolve(id)
-                .<ResponseEntity<?>>map(tool -> {
-                    try {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> arguments = (Map<String, Object>) request.getOrDefault("arguments", Map.of());
-                        ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null, null);
-                        ToolResult result = tool.execute(input);
+        var tool = toolRegistry.resolve(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = (Map<String, Object>) request.getOrDefault("arguments", Map.of());
+        ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null, null);
+        ToolResult result = tool.execute(input);
 
-                        Map<String, Object> response = new HashMap<>();
-                        response.put("success", result.ok());
-                        response.put("output", result.data());
-                        response.put("error", result.error());
-                        response.put("meta", Map.of(
-                                "durationMs", result.meta().duration().toMillis(),
-                                "toolId", result.meta().toolId(),
-                                "action", result.meta().action()
-                        ));
-                        return ResponseEntity.ok(response);
-                    } catch (Exception e) {
-                        log.error("测试 Tool 失败: id={}", id, e);
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                .body(new ErrorResponse(500, "测试失败: " + e.getMessage(), Instant.now()));
-                    }
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now())));
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", result.ok());
+        response.put("output", result.data());
+        response.put("error", result.error());
+        response.put("meta", Map.of(
+                "durationMs", result.meta().duration().toMillis(),
+                "toolId", result.meta().toolId(),
+                "action", result.meta().action()
+        ));
+        return ApiResponse.ok(response);
     }
 
     /**
@@ -176,15 +166,14 @@ public class ToolController {
      * @return 使用情况
      */
     @GetMapping("/tools/{id}/usage")
-    public ResponseEntity<?> getToolUsage(@PathVariable String id) {
+    public ApiResponse<?> getToolUsage(@PathVariable String id) {
         log.debug("查询 Tool 使用情况: id={}", id);
 
         if (!toolRegistry.resolve(id).isPresent()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id);
         }
 
-        return ResponseEntity.ok(queryToolUsage(id));
+        return ApiResponse.ok(queryToolUsage(id));
     }
 
     /**
@@ -194,7 +183,7 @@ public class ToolController {
      * @return 201 创建成功，400 参数错误
      */
     @PostMapping("/tools")
-    public ResponseEntity<?> createTool(@RequestBody Map<String, Object> request) {
+    public ApiResponse<?> createTool(@RequestBody Map<String, Object> request) {
         log.debug("创建 Tool: request={}", request);
         try {
             String id = getString(request, "id");
@@ -202,16 +191,13 @@ public class ToolController {
             String description = getStringOrDefault(request, "description", "");
 
             if (id == null || id.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Tool ID 不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tool ID 不能为空");
             }
             if (toolName == null || toolName.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(400, "Tool 名称不能为空", Instant.now()));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tool 名称不能为空");
             }
             if (toolRegistry.resolve(id).isPresent()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new ErrorResponse(409, "Tool ID 已存在: " + id, Instant.now()));
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Tool ID 已存在: " + id);
             }
 
             @SuppressWarnings("unchecked")
@@ -251,11 +237,10 @@ public class ToolController {
             toolRegistry.registerBuiltinTool(tool);
 
             log.info("Tool 创建成功: id={}, name={}", id, toolName);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toToolDetail(tool));
+            return ApiResponse.ok(toToolDetail(tool));
         } catch (Exception e) {
             log.error("创建 Tool 失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
         }
     }
 
@@ -267,20 +252,18 @@ public class ToolController {
      * @return 200 更新成功，404 不存在，400 参数错误
      */
     @PutMapping("/tools/{id}")
-    public ResponseEntity<?> updateTool(@PathVariable String id,
+    public ApiResponse<?> updateTool(@PathVariable String id,
                                          @RequestBody Map<String, Object> request) {
         log.debug("更新 Tool: id={}, request={}", id, request);
 
         ToolContract existingTool = toolRegistry.resolve(id).orElse(null);
         if (existingTool == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id);
         }
 
         // MCP 工具不可更新
         if (existingTool.layer() == ToolLayer.MCP_EXTERNAL) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "MCP 工具不支持更新", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "MCP 工具不支持更新");
         }
 
         try {
@@ -327,11 +310,10 @@ public class ToolController {
             toolRegistry.registerBuiltinTool(updatedTool);
 
             log.info("Tool 更新成功: id={}", id);
-            return ResponseEntity.ok(toToolDetail(updatedTool));
+            return ApiResponse.ok(toToolDetail(updatedTool));
         } catch (Exception e) {
             log.error("更新 Tool 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         }
     }
 
@@ -342,19 +324,17 @@ public class ToolController {
      * @return 200 删除成功，404 不存在，400 被引用无法删除
      */
     @DeleteMapping("/tools/{id}")
-    public ResponseEntity<?> deleteTool(@PathVariable String id) {
+    public ApiResponse<?> deleteTool(@PathVariable String id) {
         log.debug("删除 Tool: id={}", id);
 
         ToolContract tool = toolRegistry.resolve(id).orElse(null);
         if (tool == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id);
         }
 
         // MCP 工具不能删除，只能隐藏
         if (tool.layer() == ToolLayer.MCP_EXTERNAL) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "MCP Tool 不能删除，只能隐藏", Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "MCP Tool 不能删除，只能隐藏");
         }
 
         // 检查是否被引用
@@ -363,16 +343,14 @@ public class ToolController {
         int workflowCount = (Integer) usage.get("workflowCount");
 
         if (skillCount > 0 || workflowCount > 0) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400,
-                            String.format("Tool 被 %d 个 Skill 和 %d 个 Workflow 使用，无法删除",
-                                    skillCount, workflowCount),
-                            Instant.now()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    String.format("Tool 被 %d 个 Skill 和 %d 个 Workflow 使用，无法删除",
+                            skillCount, workflowCount));
         }
 
         toolRegistry.unregisterBuiltinTool(id);
         log.info("Tool 删除成功: id={}", id);
-        return ResponseEntity.ok(Map.of("message", "Tool 删除成功"));
+        return ApiResponse.ok(Map.of("message", "Tool 删除成功"));
     }
 
     /**
@@ -382,16 +360,15 @@ public class ToolController {
      * @return 200 启用成功，404 不存在
      */
     @PostMapping("/tools/{id}/enable")
-    public ResponseEntity<?> enableTool(@PathVariable String id) {
+    public ApiResponse<?> enableTool(@PathVariable String id) {
         log.debug("启用 Tool: id={}", id);
 
         if (!toolRegistry.resolve(id).isPresent()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id);
         }
 
         log.info("Tool 启用成功: id={}", id);
-        return ResponseEntity.ok(Map.of("message", "Tool 已启用"));
+        return ApiResponse.ok(Map.of("message", "Tool 已启用"));
     }
 
     /**
@@ -401,16 +378,15 @@ public class ToolController {
      * @return 200 禁用成功，404 不存在
      */
     @PostMapping("/tools/{id}/disable")
-    public ResponseEntity<?> disableTool(@PathVariable String id) {
+    public ApiResponse<?> disableTool(@PathVariable String id) {
         log.debug("禁用 Tool: id={}", id);
 
         if (!toolRegistry.resolve(id).isPresent()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tool 不存在: id=" + id);
         }
 
         log.info("Tool 禁用成功: id={}", id);
-        return ResponseEntity.ok(Map.of("message", "Tool 已禁用"));
+        return ApiResponse.ok(Map.of("message", "Tool 已禁用"));
     }
 
     // ── 辅助方法 ──────────────────────────────────────────

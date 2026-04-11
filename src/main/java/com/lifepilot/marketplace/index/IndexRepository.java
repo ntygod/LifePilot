@@ -68,7 +68,7 @@ public class IndexRepository {
      */
     public Optional<IndexCacheEntry> findBySourceUrl(String sourceUrl) {
         List<IndexCacheEntry> results = jdbcTemplate.query(
-                "SELECT * FROM marketplace_index_cache WHERE source_url = ?",
+                "SELECT id, source_url, index_json, fetched_at, created_at FROM marketplace_index_cache WHERE source_url = ?",
                 ROW_MAPPER, sourceUrl);
         return results.stream().findFirst();
     }
@@ -80,7 +80,7 @@ public class IndexRepository {
      */
     public List<IndexCacheEntry> findAll() {
         return List.copyOf(jdbcTemplate.query(
-                "SELECT * FROM marketplace_index_cache ORDER BY created_at ASC",
+                "SELECT id, source_url, index_json, fetched_at, created_at FROM marketplace_index_cache ORDER BY created_at ASC",
                 ROW_MAPPER));
     }
 

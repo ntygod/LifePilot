@@ -31,6 +31,7 @@ class InfraToolProviderTest {
         properties = new MetaProperties();
         WebSearchConfigProvider webSearchConfigProvider = mock(WebSearchConfigProvider.class);
         when(webSearchConfigProvider.getConfig()).thenReturn(new WebSearchConfig(
+                "https://api.tavily.com/search",
                 "tavily",
                 "",
                 5,

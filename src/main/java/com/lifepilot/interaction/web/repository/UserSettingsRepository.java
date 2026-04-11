@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 用户设置仓储。
@@ -24,6 +25,9 @@ public class UserSettingsRepository {
     public static final String DEFAULT_SETTINGS_ID = "default";
 
     private static final Logger log = LoggerFactory.getLogger(UserSettingsRepository.class);
+    private static final Set<String> ALLOWED_JSON_COLUMNS = Set.of(
+            "knowledge_config_json", "channel_config_json", "search_config_json"
+    );
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -84,7 +88,11 @@ public class UserSettingsRepository {
      */
     public Optional<UserSettings> findById(String id) {
         return jdbcTemplate.query(
-                "SELECT * FROM user_settings WHERE id = ?",
+                """
+                SELECT theme, language, enable_streaming, enable_function_call,
+                       enable_knowledge_base, enable_tool_call
+                FROM user_settings WHERE id = ?
+                """,
                 (rs, rowNum) -> new UserSettings(
                         rs.getString("theme"),
                         rs.getString("language"),
@@ -158,6 +166,7 @@ public class UserSettingsRepository {
     }
 
     private String getJsonColumn(String columnName) {
+        validateColumnName(columnName);
         getSettings();
         var results = jdbcTemplate.query(
                 "SELECT " + columnName + " FROM user_settings WHERE id = ?",
@@ -172,6 +181,7 @@ public class UserSettingsRepository {
     }
 
     private void saveJsonColumn(String columnName, String json, String logMessage) {
+        validateColumnName(columnName);
         getSettings();
         String now = Instant.now().toString();
         jdbcTemplate.update(
@@ -181,5 +191,11 @@ public class UserSettingsRepository {
                 DEFAULT_SETTINGS_ID
         );
         log.debug(logMessage);
+    }
+
+    private static void validateColumnName(String columnName) {
+        if (!ALLOWED_JSON_COLUMNS.contains(columnName)) {
+            throw new IllegalArgumentException("不允许的列名: " + columnName);
+        }
     }
 }

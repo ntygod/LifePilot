@@ -22,6 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
+/**
+ * 聊天会话管理服务 — 负责会话的创建、查询、更新与删除等生命周期管理。
+ *
+ * @author zsg
+ * @since 2026-03-01
+ */
 @Service
 public class ChatSessionService {
 

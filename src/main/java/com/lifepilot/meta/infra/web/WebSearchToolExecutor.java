@@ -26,8 +26,6 @@ import java.util.function.Function;
 public class WebSearchToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(WebSearchToolExecutor.class);
-    private static final String TAVILY_SEARCH_URL = "https://api.tavily.com/search";
-
     private final WebSearchConfigProvider configProvider;
     private final Function<WebSearchConfig, RestClient> restClientFactory;
 
@@ -97,7 +95,7 @@ public class WebSearchToolExecutor {
         requestBody.put("include_raw_content", false);
 
         var response = restClientFactory.apply(config).post()
-                .uri(TAVILY_SEARCH_URL)
+                .uri(config.apiUrl())
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.apiKey())
                 .body(requestBody)

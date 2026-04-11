@@ -1,9 +1,12 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.MemoryProvenanceSummaryDto;
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.forgetting.ForgettingLogRepository;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
@@ -18,22 +21,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.jdbc.core.RowCallbackHandler;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
-
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
@@ -54,7 +53,8 @@ class MemoryControllerTest {
     @Mock private ProceduralMemory proceduralMemory;
     @Mock private HybridRetriever hybridRetriever;
     @Mock private ConsolidationPipeline consolidationPipeline;
-    @Mock private JdbcTemplate jdbcTemplate;
+    @Mock private ForgettingLogRepository forgettingLogRepository;
+    @Mock private MemoryProvenanceRepository provenanceRepository;
 
     private MockMvc mockMvc;
 
@@ -64,13 +64,12 @@ class MemoryControllerTest {
     void setUp() {
         var controller = new MemoryController(
                 semanticMemory, episodicMemory, proceduralMemory,
-                hybridRetriever, consolidationPipeline, jdbcTemplate);
+                hybridRetriever, consolidationPipeline, forgettingLogRepository, provenanceRepository);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
-        lenient().when(jdbcTemplate.query(
-                        contains("FROM temporal_entities"),
-                        any(RowMapper.class),
-                        any(Object[].class)))
-                .thenReturn(List.of());
+        lenient().when(provenanceRepository.loadEntityMetadata(anyCollection()))
+                .thenReturn(Map.of());
+        lenient().when(provenanceRepository.findEntityIdsByProvenanceFilters(any(), any(), any(), any()))
+                .thenReturn(null);
     }
 
     // ── 辅助方法 ──────────────────────────────────────────
@@ -104,7 +103,7 @@ class MemoryControllerTest {
         @BeforeEach
         void setUp() {
             var controller = new MemoryController(
-                    null, null, null, null, null, jdbcTemplate);
+                    null, null, null, null, null, forgettingLogRepository, provenanceRepository);
             disabledMvc = MockMvcBuilders.standaloneSetup(controller).build();
         }
 
@@ -148,11 +147,8 @@ class MemoryControllerTest {
             when(episodicMemory.countConversations()).thenReturn(10L);
             when(proceduralMemory.listAllTemplates()).thenReturn(List.of());
             when(proceduralMemory.listAllPreferences()).thenReturn(List.of());
-            when(jdbcTemplate.queryForObject(eq("SELECT COUNT(*) FROM forgetting_log"), eq(Long.class)))
-                    .thenReturn(2L);
-            when(jdbcTemplate.query(eq("SELECT created_at FROM forgetting_log ORDER BY created_at DESC LIMIT 1"),
-                    any(org.springframework.jdbc.core.RowMapper.class)))
-                    .thenReturn(List.of("2026-03-12T08:00:00Z"));
+            when(forgettingLogRepository.countAll()).thenReturn(2L);
+            when(forgettingLogRepository.getLastForgettingTime()).thenReturn("2026-03-12T08:00:00Z");
 
             mockMvc.perform(get("/api/memories/stats"))
                     .andExpect(status().isOk())
@@ -171,7 +167,6 @@ class MemoryControllerTest {
     class 统一搜索 {
 
         @Test
-        @SuppressWarnings("unchecked")
         void 搜索返回结果() throws Exception {
             var result = new RetrievalResult(
                     "e1", "PERSON", "张三", "描述", 0.85f,
@@ -179,19 +174,8 @@ class MemoryControllerTest {
                     "vector+fts", NOW, 0.5f, null);
             when(hybridRetriever.retrieve(eq("张三"), eq(10), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of(result));
-            when(jdbcTemplate.query(
-                    contains("FROM temporal_entities"),
-                    any(RowMapper.class),
-                    any(Object[].class)))
-                    .thenAnswer(invocation -> {
-                        RowMapper<Object> mapper = (RowMapper<Object>) invocation.getArgument(1);
-                        ResultSet rs = mock(ResultSet.class);
-                        when(rs.getString("id")).thenReturn("e1");
-                        when(rs.getString("space_id")).thenReturn("user:default");
-                        when(rs.getString("memory_scope")).thenReturn("USER_FACT");
-                        when(rs.getString("reality_type")).thenReturn("REAL");
-                        return List.of(mapper.mapRow(rs, 0));
-                    });
+            when(provenanceRepository.loadEntityMetadata(List.of("e1")))
+                    .thenReturn(Map.of("e1", new EntityMetadata("e1", "user:default", "USER_FACT", "REAL")));
 
             mockMvc.perform(get("/api/memories/search").param("q", "张三"))
                     .andExpect(status().isOk())
@@ -241,30 +225,14 @@ class MemoryControllerTest {
         }
 
         @Test
-        @SuppressWarnings("unchecked")
         void 实体列表_按记忆元数据过滤() throws Exception {
             when(semanticMemory.findAllCurrent()).thenReturn(List.of(
                     testEntity("e1", "林夜", EntityType.PERSON),
                     testEntity("e2", "项目A", EntityType.PROJECT)));
-            when(jdbcTemplate.query(
-                    contains("FROM temporal_entities"),
-                    any(RowMapper.class),
-                    any(Object[].class)))
-                    .thenAnswer(invocation -> {
-                        RowMapper<Object> mapper = (RowMapper<Object>) invocation.getArgument(1);
-                        ResultSet first = mock(ResultSet.class);
-                        when(first.getString("id")).thenReturn("e1");
-                        when(first.getString("space_id")).thenReturn("datastore:novel");
-                        when(first.getString("memory_scope")).thenReturn("DOMAIN_MEMORY");
-                        when(first.getString("reality_type")).thenReturn("FICTIONAL");
-
-                        ResultSet second = mock(ResultSet.class);
-                        when(second.getString("id")).thenReturn("e2");
-                        when(second.getString("space_id")).thenReturn("user:default");
-                        when(second.getString("memory_scope")).thenReturn("USER_FACT");
-                        when(second.getString("reality_type")).thenReturn("REAL");
-                        return List.of(mapper.mapRow(first, 0), mapper.mapRow(second, 1));
-                    });
+            when(provenanceRepository.loadEntityMetadata(anyCollection()))
+                    .thenReturn(Map.of(
+                            "e1", new EntityMetadata("e1", "datastore:novel", "DOMAIN_MEMORY", "FICTIONAL"),
+                            "e2", new EntityMetadata("e2", "user:default", "USER_FACT", "REAL")));
 
             mockMvc.perform(get("/api/memories/entities")
                             .param("memoryScope", "DOMAIN_MEMORY")
@@ -282,12 +250,9 @@ class MemoryControllerTest {
             when(semanticMemory.findAllCurrent()).thenReturn(List.of(
                     testEntity("e1", "林夜", EntityType.PERSON),
                     testEntity("e2", "项目A", EntityType.PROJECT)));
-            when(jdbcTemplate.queryForList(
-                    contains("FROM memory_entity_provenances"),
-                    eq(String.class),
-                    eq("ds-1"),
-                    eq("ds-1")))
-                    .thenReturn(List.of("e1"));
+            when(provenanceRepository.findEntityIdsByProvenanceFilters(
+                    eq(null), eq(null), eq("ds-1"), eq(null)))
+                    .thenReturn(Set.of("e1"));
 
             mockMvc.perform(get("/api/memories/entities")
                             .param("sourceDatastoreId", "ds-1"))
@@ -321,7 +286,7 @@ class MemoryControllerTest {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(entity));
 
             mockMvc.perform(delete("/api/memories/entities/e1"))
-                    .andExpect(status().isNoContent());
+                    .andExpect(status().isOk());
 
             verify(semanticMemory).archive(entity);
         }
@@ -338,10 +303,7 @@ class MemoryControllerTest {
         void 实体来源明细_返回provenance列表() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "张三", EntityType.PERSON)));
-            when(jdbcTemplate.query(
-                    contains("FROM memory_entity_provenances"),
-                    any(RowMapper.class),
-                    eq("e1")))
+            when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "CHAT",
                             "session-1",
@@ -368,14 +330,10 @@ class MemoryControllerTest {
         }
 
         @Test
-        @SuppressWarnings("unchecked")
         void 实体来源明细_返回友好名称() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "林夜", EntityType.PERSON)));
-            when(jdbcTemplate.query(
-                    contains("FROM memory_entity_provenances"),
-                    any(RowMapper.class),
-                    eq("e1")))
+            when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
                             "doc-1",
@@ -394,48 +352,12 @@ class MemoryControllerTest {
                             0.93f,
                             NOW
                     )));
-            doAnswer(invocation -> {
-                RowCallbackHandler handler = invocation.getArgument(1);
-                ResultSet rs = mock(ResultSet.class);
-                when(rs.getString("item_id")).thenReturn("kb-1");
-                when(rs.getString("item_name")).thenReturn("世界观资料库");
-                handler.processRow(rs);
-                return null;
-            }).when(jdbcTemplate).query(
-                    contains("FROM knowledge_bases"),
-                    any(RowCallbackHandler.class),
-                    eq("kb-1")
-            );
-            doAnswer(invocation -> {
-                RowCallbackHandler handler = invocation.getArgument(1);
-                ResultSet datastore = mock(ResultSet.class);
-                when(datastore.getString("item_id")).thenReturn("ds-1");
-                when(datastore.getString("item_name")).thenReturn("小说素材库");
-                handler.processRow(datastore);
-
-                ResultSet collection = mock(ResultSet.class);
-                when(collection.getString("item_id")).thenReturn("collection-1");
-                when(collection.getString("item_name")).thenReturn("人物设定集合");
-                handler.processRow(collection);
-                return null;
-            }).when(jdbcTemplate).query(
-                    contains("FROM ds_collections"),
-                    any(RowCallbackHandler.class),
-                    eq("ds-1"),
-                    eq("collection-1")
-            );
-            doAnswer(invocation -> {
-                RowCallbackHandler handler = invocation.getArgument(1);
-                ResultSet rs = mock(ResultSet.class);
-                when(rs.getString("item_id")).thenReturn("doc-1");
-                when(rs.getString("item_name")).thenReturn("人物设定.md");
-                handler.processRow(rs);
-                return null;
-            }).when(jdbcTemplate).query(
-                    contains("FROM documents"),
-                    any(RowCallbackHandler.class),
-                    eq("doc-1")
-            );
+            when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
+                    .thenReturn(Map.of("kb-1", "世界观资料库"));
+            when(provenanceRepository.loadCollectionNames(anyCollection()))
+                    .thenReturn(Map.of("ds-1", "小说素材库", "collection-1", "人物设定集合"));
+            when(provenanceRepository.loadDocumentNames(anyCollection()))
+                    .thenReturn(Map.of("doc-1", "人物设定.md"));
 
             mockMvc.perform(get("/api/memories/entities/e1/provenances"))
                     .andExpect(status().isOk())
@@ -450,15 +372,8 @@ class MemoryControllerTest {
         void 实体来源明细_按来源字段过滤() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "张三", EntityType.PERSON)));
-            when(jdbcTemplate.query(
-                    contains("origin_type = ?"),
-                    any(RowMapper.class),
-                    eq("e1"),
-                    eq("KNOWLEDGE_BASE_DOCUMENT"),
-                    eq("kb-1"),
-                    eq("ds-1"),
-                    eq("ds-1"),
-                    eq("doc-1")))
+            when(provenanceRepository.findEntityProvenances(
+                    eq("e1"), eq("KNOWLEDGE_BASE_DOCUMENT"), eq("kb-1"), eq("ds-1"), eq("doc-1")))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
                             "人物设定集",
@@ -477,21 +392,12 @@ class MemoryControllerTest {
                             0.95f,
                             NOW
                     )));
-            doAnswer(invocation -> null).when(jdbcTemplate).query(
-                    contains("FROM knowledge_bases"),
-                    any(RowCallbackHandler.class),
-                    eq("kb-1")
-            );
-            doAnswer(invocation -> null).when(jdbcTemplate).query(
-                    contains("FROM ds_collections"),
-                    any(RowCallbackHandler.class),
-                    eq("ds-1")
-            );
-            doAnswer(invocation -> null).when(jdbcTemplate).query(
-                    contains("FROM documents"),
-                    any(RowCallbackHandler.class),
-                    eq("doc-1")
-            );
+            when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
+                    .thenReturn(Map.of());
+            when(provenanceRepository.loadCollectionNames(anyCollection()))
+                    .thenReturn(Map.of());
+            when(provenanceRepository.loadDocumentNames(anyCollection()))
+                    .thenReturn(Map.of());
 
             mockMvc.perform(get("/api/memories/entities/e1/provenances")
                             .param("originType", "KNOWLEDGE_BASE_DOCUMENT")
@@ -507,12 +413,8 @@ class MemoryControllerTest {
 
         @Test
         void 最近来源摘要_支持按Datastore过滤并返回友好名称() throws Exception {
-            when(jdbcTemplate.query(
-                    contains("FROM memory_entity_provenances p"),
-                    any(RowMapper.class),
-                    eq("ds-1"),
-                    eq("ds-1"),
-                    eq(5)))
+            when(provenanceRepository.findRecentProvenanceSummaries(
+                    eq(null), eq(null), eq("ds-1"), eq(null), eq(5)))
                     .thenReturn(List.of(new MemoryProvenanceSummaryDto(
                             "e1",
                             "林夜",
@@ -537,48 +439,12 @@ class MemoryControllerTest {
                             0.97f,
                             NOW
                     )));
-            doAnswer(invocation -> {
-                RowCallbackHandler handler = invocation.getArgument(1);
-                ResultSet rs = mock(ResultSet.class);
-                when(rs.getString("item_id")).thenReturn("kb-1");
-                when(rs.getString("item_name")).thenReturn("世界观资料库");
-                handler.processRow(rs);
-                return null;
-            }).when(jdbcTemplate).query(
-                    contains("FROM knowledge_bases"),
-                    any(RowCallbackHandler.class),
-                    eq("kb-1")
-            );
-            doAnswer(invocation -> {
-                RowCallbackHandler handler = invocation.getArgument(1);
-                ResultSet datastore = mock(ResultSet.class);
-                when(datastore.getString("item_id")).thenReturn("ds-1");
-                when(datastore.getString("item_name")).thenReturn("小说素材库");
-                handler.processRow(datastore);
-
-                ResultSet collection = mock(ResultSet.class);
-                when(collection.getString("item_id")).thenReturn("collection-1");
-                when(collection.getString("item_name")).thenReturn("人物设定集合");
-                handler.processRow(collection);
-                return null;
-            }).when(jdbcTemplate).query(
-                    contains("FROM ds_collections"),
-                    any(RowCallbackHandler.class),
-                    eq("ds-1"),
-                    eq("collection-1")
-            );
-            doAnswer(invocation -> {
-                RowCallbackHandler handler = invocation.getArgument(1);
-                ResultSet rs = mock(ResultSet.class);
-                when(rs.getString("item_id")).thenReturn("doc-1");
-                when(rs.getString("item_name")).thenReturn("人物设定.md");
-                handler.processRow(rs);
-                return null;
-            }).when(jdbcTemplate).query(
-                    contains("FROM documents"),
-                    any(RowCallbackHandler.class),
-                    eq("doc-1")
-            );
+            when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
+                    .thenReturn(Map.of("kb-1", "世界观资料库"));
+            when(provenanceRepository.loadCollectionNames(anyCollection()))
+                    .thenReturn(Map.of("ds-1", "小说素材库", "collection-1", "人物设定集合"));
+            when(provenanceRepository.loadDocumentNames(anyCollection()))
+                    .thenReturn(Map.of("doc-1", "人物设定.md"));
 
             mockMvc.perform(get("/api/memories/provenances/recent")
                             .param("sourceDatastoreId", "ds-1")
@@ -635,7 +501,7 @@ class MemoryControllerTest {
             when(episodicMemory.delete("c1")).thenReturn(true);
 
             mockMvc.perform(delete("/api/memories/conversations/c1"))
-                    .andExpect(status().isNoContent());
+                    .andExpect(status().isOk());
         }
 
         @Test
@@ -653,10 +519,10 @@ class MemoryControllerTest {
     class 巩固 {
 
         @Test
-        void 触发巩固_返回202() throws Exception {
+        void 触发巩固_返回200() throws Exception {
             mockMvc.perform(post("/api/memories/consolidate"))
-                    .andExpect(status().isAccepted())
-                    .andExpect(jsonPath("$.status").value("accepted"));
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("accepted"));
         }
     }
 
@@ -672,26 +538,10 @@ class MemoryControllerTest {
             when(semanticMemory.findByIds(any())).thenReturn(Map.of(
                     "e1", testEntity("e1", "张三", EntityType.PERSON),
                     "e2", testEntity("e2", "项目A", EntityType.PROJECT)));
-            when(jdbcTemplate.query(
-                    contains("SELECT id, space_id, memory_scope, reality_type, is_current, version"),
-                    any(RowMapper.class),
-                    any(Object[].class)))
-                    .thenAnswer(invocation -> {
-                        RowMapper<Object> mapper = invocation.getArgument(1);
-                        ResultSet source = mock(ResultSet.class);
-                        when(source.getString("id")).thenReturn("e1");
-                        when(source.getString("space_id")).thenReturn("domain:datastore:novel");
-                        when(source.getString("memory_scope")).thenReturn("DOMAIN_MEMORY");
-                        when(source.getString("reality_type")).thenReturn("FICTIONAL");
-
-                        ResultSet target = mock(ResultSet.class);
-                        when(target.getString("id")).thenReturn("e2");
-                        when(target.getString("space_id")).thenReturn("domain:datastore:novel");
-                        when(target.getString("memory_scope")).thenReturn("DOMAIN_MEMORY");
-                        when(target.getString("reality_type")).thenReturn("FICTIONAL");
-
-                        return List.of(mapper.mapRow(source, 0), mapper.mapRow(target, 1));
-                    });
+            when(provenanceRepository.loadEntityMetadata(anyCollection()))
+                    .thenReturn(Map.of(
+                            "e1", new EntityMetadata("e1", "domain:datastore:novel", "DOMAIN_MEMORY", "FICTIONAL"),
+                            "e2", new EntityMetadata("e2", "domain:datastore:novel", "DOMAIN_MEMORY", "FICTIONAL")));
 
             mockMvc.perform(get("/api/memories/relations"))
                     .andExpect(status().isOk())

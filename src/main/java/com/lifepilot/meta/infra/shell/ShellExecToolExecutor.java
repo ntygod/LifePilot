@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
@@ -41,6 +42,7 @@ import java.util.regex.Pattern;
 public class ShellExecToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ShellExecToolExecutor.class);
+    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private final MetaProperties.Infra.Shell shellConfig;
     private final List<Pattern> compiledBlacklist;
@@ -323,11 +325,11 @@ public class ShellExecToolExecutor {
         var stdoutFuture = CompletableFuture.supplyAsync(() -> {
             try { return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8); }
             catch (IOException e) { return ""; }
-        });
+        }, VIRTUAL_EXECUTOR);
         var stderrFuture = CompletableFuture.supplyAsync(() -> {
             try { return new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8); }
             catch (IOException e) { return ""; }
-        });
+        }, VIRTUAL_EXECUTOR);
 
         // 等待进程完成，超时则强制终止
         boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);

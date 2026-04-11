@@ -64,7 +64,11 @@ public class NotificationRepository {
      */
     public Optional<NotificationRecord> findById(String id) {
         var list = jdbcTemplate.query(
-                "SELECT * FROM notification_history WHERE id = ?",
+                """
+                SELECT id, user_id, type_id, content_json, channel,
+                       read_status, status, metadata_json, sent_at, created_at, updated_at
+                FROM notification_history WHERE id = ?
+                """,
                 notificationRowMapper, id);
         return list.isEmpty() ? Optional.empty() : Optional.of(list.getFirst());
     }
@@ -79,7 +83,11 @@ public class NotificationRepository {
      */
     public List<NotificationRecord> findByUserId(String userId, int page, int size) {
         return List.copyOf(jdbcTemplate.query(
-                "SELECT * FROM notification_history WHERE user_id = ? ORDER BY sent_at DESC LIMIT ? OFFSET ?",
+                """
+                SELECT id, user_id, type_id, content_json, channel,
+                       read_status, status, metadata_json, sent_at, created_at, updated_at
+                FROM notification_history WHERE user_id = ? ORDER BY sent_at DESC LIMIT ? OFFSET ?
+                """,
                 notificationRowMapper, userId, size, page * size));
     }
 
@@ -95,7 +103,9 @@ public class NotificationRepository {
     public List<NotificationRecord> findByUserIdAndTypeSince(String userId, String typeId, Instant since, int limit) {
         return List.copyOf(jdbcTemplate.query(
                 """
-                SELECT * FROM notification_history
+                SELECT id, user_id, type_id, content_json, channel,
+                       read_status, status, metadata_json, sent_at, created_at, updated_at
+                FROM notification_history
                 WHERE user_id = ? AND type_id = ? AND sent_at >= ?
                 ORDER BY sent_at DESC
                 LIMIT ?

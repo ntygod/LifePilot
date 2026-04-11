@@ -29,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +42,7 @@ import java.util.regex.Pattern;
  */
 public class AgentPersistenceHandler {
     private static final Logger log = LoggerFactory.getLogger(AgentPersistenceHandler.class);
+    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
     private static final Pattern RESUME_INPUT_PATTERN = Pattern.compile(
             "<resume_user_input>\\s*(.*?)\\s*</resume_user_input>",
             Pattern.DOTALL
@@ -346,7 +348,7 @@ public class AgentPersistenceHandler {
                     log.warn("会话压缩后处理失败：sessionId={}, error={}",
                             finalState.sessionId(), e.getMessage());
                 }
-            });
+            }, VIRTUAL_EXECUTOR);
 
             var extractionFuture = CompletableFuture.runAsync(() -> {
                 try {
@@ -361,7 +363,7 @@ public class AgentPersistenceHandler {
                     log.warn("实时记忆抽取失败：sessionId={}, error={}",
                             finalState.sessionId(), e.getMessage());
                 }
-            });
+            }, VIRTUAL_EXECUTOR);
 
             // experienceSummarizer 产出 newExperience，contrastiveLearner 依赖它，用 thenAccept 串联
             var experienceFuture = CompletableFuture.supplyAsync(() -> {
@@ -374,7 +376,7 @@ public class AgentPersistenceHandler {
                             finalState.sessionId(), e.getMessage());
                 }
                 return (TemporalEntity) null;
-            }).thenAccept(newExperience -> {
+            }, VIRTUAL_EXECUTOR).thenAccept(newExperience -> {
                 try {
                     if (contrastiveLearner != null && newExperience != null) {
                         contrastiveLearner.learn(newExperience);
@@ -394,7 +396,7 @@ public class AgentPersistenceHandler {
                     log.warn("效果评估失败：sessionId={}, error={}",
                             finalState.sessionId(), e.getMessage());
                 }
-            });
+            }, VIRTUAL_EXECUTOR);
 
             var reflectionFuture = CompletableFuture.runAsync(() -> {
                 try {
@@ -405,7 +407,7 @@ public class AgentPersistenceHandler {
                     log.warn("子任务反思失败：sessionId={}, error={}",
                             finalState.sessionId(), e.getMessage());
                 }
-            });
+            }, VIRTUAL_EXECUTOR);
 
             // 等待所有并行任务完成（fire-and-forget 语义不变，但内部并行化）
             CompletableFuture.allOf(

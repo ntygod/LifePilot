@@ -101,7 +101,7 @@ public class WorkflowRepository {
      */
     public Optional<WorkflowDefinition> findDefinition(String id) {
         List<WorkflowDefinition> results = jdbcTemplate.query(
-                "SELECT * FROM workflow_definitions WHERE id = ? AND deleted = 0",
+                "SELECT definition_yaml, enabled FROM workflow_definitions WHERE id = ? AND deleted = 0",
                 (rs, rowNum) -> mapDefinition(rs.getString("definition_yaml"),
                         rs.getInt("enabled") == 1),
                 id);
@@ -115,7 +115,7 @@ public class WorkflowRepository {
      */
     public List<WorkflowDefinition> findAllDefinitions() {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_definitions WHERE deleted = 0",
+                "SELECT definition_yaml, enabled FROM workflow_definitions WHERE deleted = 0",
                 (rs, rowNum) -> mapDefinition(rs.getString("definition_yaml"),
                         rs.getInt("enabled") == 1))
                 .stream()
@@ -229,7 +229,7 @@ public class WorkflowRepository {
      */
     public Optional<WorkflowInstance> findInstance(String id) {
         List<WorkflowInstance> results = jdbcTemplate.query(
-                "SELECT * FROM workflow_instances WHERE id = ?",
+                "SELECT id, workflow_id, state, context_json, completed_step_ids_json, pending_approval_step_id, wake_up_at, blocked_step_id, blocked_reason, trace_id, started_at, completed_at, failure_reason, created_at, updated_at FROM workflow_instances WHERE id = ?",
                 instanceRowMapper, id);
         return results.stream().findFirst();
     }
@@ -246,7 +246,7 @@ public class WorkflowRepository {
         }
         List<WorkflowInstance> results = jdbcTemplate.query(
                 """
-                SELECT * FROM workflow_instances
+                SELECT id, workflow_id, state, context_json, completed_step_ids_json, pending_approval_step_id, wake_up_at, blocked_step_id, blocked_reason, trace_id, started_at, completed_at, failure_reason, created_at, updated_at FROM workflow_instances
                 WHERE id = ? OR trace_id = ?
                 ORDER BY updated_at DESC
                 LIMIT 1
@@ -272,7 +272,7 @@ public class WorkflowRepository {
      */
     public List<WorkflowInstance> findInstancesByWorkflowId(String workflowId) {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_instances WHERE workflow_id = ? ORDER BY created_at DESC",
+                "SELECT id, workflow_id, state, context_json, completed_step_ids_json, pending_approval_step_id, wake_up_at, blocked_step_id, blocked_reason, trace_id, started_at, completed_at, failure_reason, created_at, updated_at FROM workflow_instances WHERE workflow_id = ? ORDER BY created_at DESC",
                 instanceRowMapper, workflowId);
     }
 
@@ -283,7 +283,7 @@ public class WorkflowRepository {
         String placeholders = Arrays.stream(states)
                 .map(s -> "?")
                 .collect(Collectors.joining(", "));
-        String sql = "SELECT * FROM workflow_instances WHERE state IN (" + placeholders + ")";
+        String sql = "SELECT id, workflow_id, state, context_json, completed_step_ids_json, pending_approval_step_id, wake_up_at, blocked_step_id, blocked_reason, trace_id, started_at, completed_at, failure_reason, created_at, updated_at FROM workflow_instances WHERE state IN (" + placeholders + ")";
         Object[] params = Arrays.stream(states)
                 .map(WorkflowState::name)
                 .toArray();
@@ -298,7 +298,7 @@ public class WorkflowRepository {
      */
     public List<WorkflowInstance> findExpiredWaitingInstances(Instant now) {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_instances WHERE state = 'WAITING' AND wake_up_at IS NOT NULL AND wake_up_at <= ?",
+                "SELECT id, workflow_id, state, context_json, completed_step_ids_json, pending_approval_step_id, wake_up_at, blocked_step_id, blocked_reason, trace_id, started_at, completed_at, failure_reason, created_at, updated_at FROM workflow_instances WHERE state = 'WAITING' AND wake_up_at IS NOT NULL AND wake_up_at <= ?",
                 instanceRowMapper, now.toString());
     }
 
@@ -310,7 +310,7 @@ public class WorkflowRepository {
      */
     public List<WorkflowInstance> findExpiredPausedInstances(Instant now) {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_instances WHERE state = 'PAUSED' AND wake_up_at IS NOT NULL AND wake_up_at <= ?",
+                "SELECT id, workflow_id, state, context_json, completed_step_ids_json, pending_approval_step_id, wake_up_at, blocked_step_id, blocked_reason, trace_id, started_at, completed_at, failure_reason, created_at, updated_at FROM workflow_instances WHERE state = 'PAUSED' AND wake_up_at IS NOT NULL AND wake_up_at <= ?",
                 instanceRowMapper, now.toString());
     }
 
@@ -356,7 +356,7 @@ public class WorkflowRepository {
      */
     public List<StepLog> findStepLogs(String instanceId) {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_step_logs WHERE instance_id = ? ORDER BY created_at ASC",
+                "SELECT id, instance_id, step_id, step_type, state, attempt, input_json, output_json, error_message, started_at, completed_at, duration_ms, retry_count, created_at FROM workflow_step_logs WHERE instance_id = ? ORDER BY created_at ASC",
                 stepLogRowMapper, instanceId);
     }
 

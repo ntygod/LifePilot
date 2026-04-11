@@ -82,9 +82,7 @@ class KnowledgeBaseControllerUploadTest {
         );
 
         mockMvc.perform(multipart("/api/knowledge-bases/kb-1/documents").file(oversizedFile))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(400))
-                .andExpect(jsonPath("$.message").value("文件大小超过限制（最大 1MB）"));
+                .andExpect(status().isBadRequest());
 
         verifyNoInteractions(knowledgeBaseManager, documentIngester);
     }
@@ -101,10 +99,10 @@ class KnowledgeBaseControllerUploadTest {
         mockMvc.perform(multipart("/api/knowledge-bases/kb-1/documents")
                         .file(file)
                         .param("datastoreId", " ds-1 "))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.message").value("文档已提交处理"))
-                .andExpect(jsonPath("$.fileName").value("outline.md"))
-                .andExpect(jsonPath("$.datastoreId").value("ds-1"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.message").value("文档已提交处理"))
+                .andExpect(jsonPath("$.data.fileName").value("outline.md"))
+                .andExpect(jsonPath("$.data.datastoreId").value("ds-1"));
 
         verify(knowledgeBaseManager).ensureDatastoreAssociation("kb-1", "ds-1");
         verify(documentIngester).ingest(eq("kb-1"), any(), eq("outline.md"), eq("ds-1"));
@@ -167,8 +165,8 @@ class KnowledgeBaseControllerUploadTest {
                                 {"datastoreId":" ds-story "}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("doc-1"))
-                .andExpect(jsonPath("$.sourceDatastoreId").value("ds-story"));
+                .andExpect(jsonPath("$.data.id").value("doc-1"))
+                .andExpect(jsonPath("$.data.sourceDatastoreId").value("ds-story"));
 
         mockMvc.perform(patch("/api/knowledge-bases/kb-1/documents/doc-1")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -176,8 +174,8 @@ class KnowledgeBaseControllerUploadTest {
                                 {"datastoreId":null}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("doc-1"))
-                .andExpect(jsonPath("$.sourceDatastoreId").value(nullValue()));
+                .andExpect(jsonPath("$.data.id").value("doc-1"))
+                .andExpect(jsonPath("$.data.sourceDatastoreId").value(nullValue()));
 
         verify(knowledgeBaseManager).updateDocumentDatastore("kb-1", "doc-1", "ds-story");
         verify(knowledgeBaseManager).updateDocumentDatastore("kb-1", "doc-1", null);

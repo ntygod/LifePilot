@@ -4,6 +4,9 @@ import jakarta.annotation.Nullable;
 
 /**
  * 前端 Trace 步骤 DTO（与 zhiwei-web 的 types/TraceStep 对齐）。
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 public record TraceStepDto(
         String id,
