@@ -78,6 +78,7 @@ Agent 循环中存在大量重复的 Token 消耗：
 - `AgentOrchestrator.runStreaming()` 支持 SSE 流式输出
 - `LlmRouter.stream()` / `streamWithInfo()` 支持流式 LLM 调用
 - 前端 SSE 接收 token + ui 事件交替传输
+- `SseEventBuffer` 事件缓冲区：有界异步队列 + 自适应排空，平滑 LLM 生成速率方差（配置前缀 `lifepilot.web.sse.buffer`）
 
 **关键缺口：**
 

@@ -63,9 +63,11 @@ graph TB
 
     subgraph Backend["后端 (lifepilot Java 项目)"]
         CC["ChatController / SettingsController<br/>REST + SSE 端点"]
+        BUF["SseEventBuffer<br/>有界队列 + 自适应排空"]
         WA["BrowserIngressService<br/>Web 通道适配"]
         MG["MessageGateway<br/>Auth → RateLimit → Security → Router → Execution → Audit"]
         CC --> WA --> MG
+        MG -. "Token 流" .-> BUF -. "平滑输出" .-> CC
     end
 ```
 
@@ -126,7 +128,44 @@ REST Controller 将 HTTP 请求转换为 `GatewayMessage`（`channelType = WEB`�
 
 选择 `SseEmitter` 的理由：ZhiWei 已使用 Spring MVC（`spring-boot-starter-web`），SSE 是 AI 对话流式响应的行业标准方案（OpenAI、DeepSeek、通义千问等均采用 SSE），且 `SseEmitter` 在 Virtual Thread 环境下表现良好。
 
-#### 3.2.5 CORS 配置
+#### 3.2.5 SSE 事件缓冲区（SseEventBuffer）
+
+LLM 的 Token 生成速率存在显著方差（快速涌入 vs 工具调用沉默期），直接转发会导致前端体验抖动。`SseEventBuffer` 在 LLM 生产者和 `SseEmitter` 派发之间插入有界异步队列，以自适应速率排空，平滑流式输出。
+
+每个 SSE 流（streamId）拥有独立的缓冲区实例，内部虚拟线程执行排空循环：
+
+```
+LLM Token 流 → SseEventBuffer（有界队列） → 自适应排空虚拟线程 → SseEmitter → 客户端
+```
+
+**自适应排空策略：**
+
+| 队列状态 | 排空间隔 | 速率 | 说明 |
+|---------|---------|------|------|
+| 深度 > highWaterMark | 12ms | ~83 events/sec | 加速排空，防止队列溢出 |
+| 正常范围 | 20ms | ~50 events/sec | 稳态排空 |
+| 深度 < lowWaterMark | 40ms | ~25 events/sec | 减速排空，拉伸内容节奏 |
+| 前瞻扫描到工具调用 | 100ms | ~10 events/sec | 缓和过渡到沉默期 |
+| 队列为空 | — | — | 注入心跳事件（间隔 5000ms），填补工具调用空白期 |
+
+核心组件：`com.lifepilot.interaction.web.sse.SseEventBuffer`
+
+配置前缀：`lifepilot.web.sse.buffer`
+
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `enabled` | `true` | 是否启用事件缓冲区 |
+| `queue-capacity` | `1024` | 有界队列容量 |
+| `high-water-mark` | `100` | 队列深度高水位线 |
+| `low-water-mark` | `50` | 队列深度低水位线 |
+| `fast-drain-interval-ms` | `12` | 高水位排空间隔（毫秒） |
+| `normal-drain-interval-ms` | `20` | 正常排空间隔（毫秒） |
+| `slow-drain-interval-ms` | `40` | 低水位排空间隔（毫秒） |
+| `pre-lookahead-interval-ms` | `100` | 前瞻到工具调用时的排空间隔（毫秒） |
+| `offer-timeout-ms` | `100` | 队列满时 offer 等待超时（毫秒） |
+| `gap-heartbeat-interval-ms` | `5000` | 队列为空时注入心跳的间隔（毫秒） |
+
+#### 3.2.6 CORS 配置
 
 前后端分离部署，前端和后端运行在不同端口/域名，必须配置 CORS：
 
@@ -460,6 +499,7 @@ interface Message {
 | 8 | A2UI 协议 + 自建 Vue 渲染器 | 纯文本 SSE / 自定义 JSON 协议 | A2UI 是 Google 标准化方案（v0.8），邻接表模型简洁；Vue `<component :is>` 天然适配；组件目录可扩展 |
 | 9 | A2UI 组件内嵌 SSE 流 | 独立 WebSocket 通道 / 轮询 | 复用已有 SSE 通道，`ui` 事件与 `token` 事件交替传输，无需额外连接 |
 | 10 | 后端 CORS 配置 | Nginx 反向代理统一入口 | 开发阶段最简方案；生产环境可选择 Nginx 代理替代 CORS |
+| 11 | SseEventBuffer 自适应排空 | 直接转发 Token / 固定速率限流 | 有界异步队列吸收 LLM 生成速率方差，自适应排空（水位线 + 前瞻扫描）平滑前端体验；虚拟线程排空无额外线程池开销 |
 
 ---
 
@@ -494,6 +534,8 @@ lifepilot:
       web:
         enabled: false  # Phase 5 实现后改为 true
 ```
+
+SSE 和事件缓冲区配置绑定 `WebProperties`（前缀 `lifepilot.web`），完整配置键参见 [3.2.5 SSE 事件缓冲区](#325-sse-事件缓冲区sseeventbuffer) 和 [3.2.6 CORS 配置](#326-cors-配置)。
 
 ---
 
