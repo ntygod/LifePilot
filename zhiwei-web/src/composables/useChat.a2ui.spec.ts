@@ -206,7 +206,7 @@ describe('useChat A2UI integration', () => {
 
     expect(chatStore.streamingContent).toBe('')
 
-    vi.advanceTimersByTime(24)
+    vi.advanceTimersByTime(40)
     await flushUi()
 
     expect(chatStore.streamingContent).toBe('第一段')

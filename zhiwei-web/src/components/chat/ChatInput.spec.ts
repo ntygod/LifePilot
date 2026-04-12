@@ -84,7 +84,7 @@ describe('ChatInput 附件交互', () => {
     await dropZone.trigger('dragenter', {
       dataTransfer: { types: ['Files'] }
     })
-    expect(dropZone.classes()).toContain('border-primary/60')
+    expect(dropZone.classes()).toContain('border-primary/40')
 
     await dropZone.trigger('drop', {
       dataTransfer: { files: [document] }

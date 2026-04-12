@@ -152,12 +152,12 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/stats"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.conversationCount").value(10))
-                    .andExpect(jsonPath("$.entityCount").value(5))
-                    .andExpect(jsonPath("$.relationCount").value(3))
-                    .andExpect(jsonPath("$.forgettingLogCount").value(2))
-                    .andExpect(jsonPath("$.entityCountByType.PERSON").value(1))
-                    .andExpect(jsonPath("$.entityCountByType.PROJECT").value(1));
+                    .andExpect(jsonPath("$.data.conversationCount").value(10))
+                    .andExpect(jsonPath("$.data.entityCount").value(5))
+                    .andExpect(jsonPath("$.data.relationCount").value(3))
+                    .andExpect(jsonPath("$.data.forgettingLogCount").value(2))
+                    .andExpect(jsonPath("$.data.entityCountByType.PERSON").value(1))
+                    .andExpect(jsonPath("$.data.entityCountByType.PROJECT").value(1));
         }
     }
 
@@ -179,12 +179,12 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/search").param("q", "张三"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].entityId").value("e1"))
-                    .andExpect(jsonPath("$[0].name").value("张三"))
-                    .andExpect(jsonPath("$[0].spaceId").value("user:default"))
-                    .andExpect(jsonPath("$[0].memoryScope").value("USER_FACT"))
-                    .andExpect(jsonPath("$[0].realityType").value("REAL"));
+                    .andExpect(jsonPath("$.data", hasSize(1)))
+                    .andExpect(jsonPath("$.data[0].entityId").value("e1"))
+                    .andExpect(jsonPath("$.data[0].name").value("张三"))
+                    .andExpect(jsonPath("$.data[0].spaceId").value("user:default"))
+                    .andExpect(jsonPath("$.data[0].memoryScope").value("USER_FACT"))
+                    .andExpect(jsonPath("$.data[0].realityType").value("REAL"));
         }
 
         @Test
@@ -207,9 +207,9 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/entities"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(2)))
-                    .andExpect(jsonPath("$.total").value(2))
-                    .andExpect(jsonPath("$.page").value(0));
+                    .andExpect(jsonPath("$.data.items", hasSize(2)))
+                    .andExpect(jsonPath("$.data.total").value(2))
+                    .andExpect(jsonPath("$.data.page").value(0));
         }
 
         @Test
@@ -220,8 +220,8 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/entities").param("type", "PERSON"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(1)))
-                    .andExpect(jsonPath("$.items[0].type").value("PERSON"));
+                    .andExpect(jsonPath("$.data.items", hasSize(1)))
+                    .andExpect(jsonPath("$.data.items[0].type").value("PERSON"));
         }
 
         @Test
@@ -238,11 +238,11 @@ class MemoryControllerTest {
                             .param("memoryScope", "DOMAIN_MEMORY")
                             .param("realityType", "FICTIONAL"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(1)))
-                    .andExpect(jsonPath("$.items[0].id").value("e1"))
-                    .andExpect(jsonPath("$.items[0].spaceId").value("datastore:novel"))
-                    .andExpect(jsonPath("$.items[0].memoryScope").value("DOMAIN_MEMORY"))
-                    .andExpect(jsonPath("$.items[0].realityType").value("FICTIONAL"));
+                    .andExpect(jsonPath("$.data.items", hasSize(1)))
+                    .andExpect(jsonPath("$.data.items[0].id").value("e1"))
+                    .andExpect(jsonPath("$.data.items[0].spaceId").value("datastore:novel"))
+                    .andExpect(jsonPath("$.data.items[0].memoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.data.items[0].realityType").value("FICTIONAL"));
         }
 
         @Test
@@ -257,8 +257,8 @@ class MemoryControllerTest {
             mockMvc.perform(get("/api/memories/entities")
                             .param("sourceDatastoreId", "ds-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(1)))
-                    .andExpect(jsonPath("$.items[0].id").value("e1"));
+                    .andExpect(jsonPath("$.data.items", hasSize(1)))
+                    .andExpect(jsonPath("$.data.items[0].id").value("e1"));
         }
 
         @Test
@@ -268,8 +268,8 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/entities/e1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id").value("e1"))
-                    .andExpect(jsonPath("$.name").value("张三"));
+                    .andExpect(jsonPath("$.data.id").value("e1"))
+                    .andExpect(jsonPath("$.data.name").value("张三"));
         }
 
         @Test
@@ -325,8 +325,8 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/entities/e1/provenances"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].originType").value("CHAT"))
-                    .andExpect(jsonPath("$[0].sourceSessionId").value("session-1"));
+                    .andExpect(jsonPath("$.data[0].originType").value("CHAT"))
+                    .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"));
         }
 
         @Test
@@ -361,11 +361,11 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/entities/e1/provenances"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
-                    .andExpect(jsonPath("$[0].sourceKnowledgeBaseName").value("世界观资料库"))
-                    .andExpect(jsonPath("$[0].sourceDatastoreName").value("小说素材库"))
-                    .andExpect(jsonPath("$[0].sourceCollectionName").value("人物设定集合"))
-                    .andExpect(jsonPath("$[0].sourceDocumentName").value("人物设定.md"));
+                    .andExpect(jsonPath("$.data[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
+                    .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseName").value("世界观资料库"))
+                    .andExpect(jsonPath("$.data[0].sourceDatastoreName").value("小说素材库"))
+                    .andExpect(jsonPath("$.data[0].sourceCollectionName").value("人物设定集合"))
+                    .andExpect(jsonPath("$.data[0].sourceDocumentName").value("人物设定.md"));
         }
 
         @Test
@@ -405,10 +405,10 @@ class MemoryControllerTest {
                             .param("sourceDatastoreId", "ds-1")
                             .param("sourceDocumentId", "doc-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
-                    .andExpect(jsonPath("$[0].sourceKnowledgeBaseId").value("kb-1"))
-                    .andExpect(jsonPath("$[0].sourceDatastoreId").value("ds-1"))
-                    .andExpect(jsonPath("$[0].sourceDocumentId").value("doc-1"));
+                    .andExpect(jsonPath("$.data[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
+                    .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseId").value("kb-1"))
+                    .andExpect(jsonPath("$.data[0].sourceDatastoreId").value("ds-1"))
+                    .andExpect(jsonPath("$.data[0].sourceDocumentId").value("doc-1"));
         }
 
         @Test
@@ -450,16 +450,16 @@ class MemoryControllerTest {
                             .param("sourceDatastoreId", "ds-1")
                             .param("limit", "5"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].entityId").value("e1"))
-                    .andExpect(jsonPath("$[0].entityName").value("林夜"))
-                    .andExpect(jsonPath("$[0].entityTypeLabel").value("人物"))
-                    .andExpect(jsonPath("$[0].entityMemoryScope").value("DOMAIN_MEMORY"))
-                    .andExpect(jsonPath("$[0].sourceSessionId").value("session-1"))
-                    .andExpect(jsonPath("$[0].sourceKnowledgeBaseName").value("世界观资料库"))
-                    .andExpect(jsonPath("$[0].sourceDatastoreName").value("小说素材库"))
-                    .andExpect(jsonPath("$[0].sourceCollectionName").value("人物设定集合"))
-                    .andExpect(jsonPath("$[0].sourceDocumentName").value("人物设定.md"));
+                    .andExpect(jsonPath("$.data", hasSize(1)))
+                    .andExpect(jsonPath("$.data[0].entityId").value("e1"))
+                    .andExpect(jsonPath("$.data[0].entityName").value("林夜"))
+                    .andExpect(jsonPath("$.data[0].entityTypeLabel").value("人物"))
+                    .andExpect(jsonPath("$.data[0].entityMemoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"))
+                    .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseName").value("世界观资料库"))
+                    .andExpect(jsonPath("$.data[0].sourceDatastoreName").value("小说素材库"))
+                    .andExpect(jsonPath("$.data[0].sourceCollectionName").value("人物设定集合"))
+                    .andExpect(jsonPath("$.data[0].sourceDocumentName").value("人物设定.md"));
         }
     }
 
@@ -475,8 +475,8 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/conversations"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(1)))
-                    .andExpect(jsonPath("$.items[0].id").value("c1"));
+                    .andExpect(jsonPath("$.data.items", hasSize(1)))
+                    .andExpect(jsonPath("$.data.items[0].id").value("c1"));
         }
 
         @Test
@@ -485,7 +485,7 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/conversations/c1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id").value("c1"));
+                    .andExpect(jsonPath("$.data.id").value("c1"));
         }
 
         @Test
@@ -545,15 +545,15 @@ class MemoryControllerTest {
 
             mockMvc.perform(get("/api/memories/relations"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(1)))
-                    .andExpect(jsonPath("$.items[0].sourceEntityName").value("张三"))
-                    .andExpect(jsonPath("$.items[0].sourceEntitySpaceId").value("domain:datastore:novel"))
-                    .andExpect(jsonPath("$.items[0].sourceEntityMemoryScope").value("DOMAIN_MEMORY"))
-                    .andExpect(jsonPath("$.items[0].sourceEntityRealityType").value("FICTIONAL"))
-                    .andExpect(jsonPath("$.items[0].targetEntityName").value("项目A"))
-                    .andExpect(jsonPath("$.items[0].targetEntitySpaceId").value("domain:datastore:novel"))
-                    .andExpect(jsonPath("$.items[0].targetEntityMemoryScope").value("DOMAIN_MEMORY"))
-                    .andExpect(jsonPath("$.items[0].targetEntityRealityType").value("FICTIONAL"));
+                    .andExpect(jsonPath("$.data.items", hasSize(1)))
+                    .andExpect(jsonPath("$.data.items[0].sourceEntityName").value("张三"))
+                    .andExpect(jsonPath("$.data.items[0].sourceEntitySpaceId").value("domain:datastore:novel"))
+                    .andExpect(jsonPath("$.data.items[0].sourceEntityMemoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.data.items[0].sourceEntityRealityType").value("FICTIONAL"))
+                    .andExpect(jsonPath("$.data.items[0].targetEntityName").value("项目A"))
+                    .andExpect(jsonPath("$.data.items[0].targetEntitySpaceId").value("domain:datastore:novel"))
+                    .andExpect(jsonPath("$.data.items[0].targetEntityMemoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.data.items[0].targetEntityRealityType").value("FICTIONAL"));
         }
     }
 }

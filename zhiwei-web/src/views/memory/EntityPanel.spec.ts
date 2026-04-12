@@ -40,6 +40,10 @@ vi.mock('@/stores/memory', () => ({
   useMemoryStore: () => mocks.memoryStore,
 }))
 
+vi.mock('@/stores/ui', () => ({
+  useUiStore: () => ({ showToast: vi.fn() }),
+}))
+
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
   return {

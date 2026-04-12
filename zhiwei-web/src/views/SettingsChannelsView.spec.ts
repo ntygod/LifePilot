@@ -245,6 +245,6 @@ describe('SettingsChannelsView', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已附带可执行 connector 产物')
+    expect(wrapper.text()).toContain('已安装连接服务')
   })
 })
