@@ -127,12 +127,37 @@ public class ModelServiceRegistrationService {
     /**
      * 检查指定模型服务的健康状态。
      *
+     * <p>GENERATION/EMBEDDING 走 ProviderRegistry 健康检查；
+     * RERANK 通过 RerankClientFactory 发一次轻量 rerank 请求验证连通性。</p>
+     *
      * @param serviceId 模型服务 ID
      * @return true 表示健康
-     * @throws IllegalArgumentException 如果服务未注册到 ProviderRegistry
      */
     public boolean healthCheck(String serviceId) {
+        var service = modelServiceRepository.findById(serviceId)
+                .orElseThrow(() -> new IllegalArgumentException("模型服务不存在: id=" + serviceId));
+
+        if (service.kind() == ModelServiceKind.RERANK) {
+            return healthCheckRerank(service);
+        }
+        // GENERATION / EMBEDDING 走 ProviderRegistry
         return providerRegistry.healthCheck(serviceId);
+    }
+
+    /** RERANK 健康检查 — 用极简 query/document 发一次真实请求。 */
+    private boolean healthCheckRerank(ModelServiceEntity service) {
+        if (rerankClientFactory == null) {
+            log.warn("精排客户端工厂未配置，无法检查: id={}", service.id());
+            return false;
+        }
+        try {
+            var client = rerankClientFactory.getOrCreate(service);
+            var results = client.rerank("health check", List.of("test document"), 1, null);
+            return results != null;
+        } catch (Exception e) {
+            log.debug("精排服务健康检查失败: id={}, error={}", service.id(), e.getMessage());
+            return false;
+        }
     }
 
     /**
