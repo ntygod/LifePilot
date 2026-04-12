@@ -545,7 +545,8 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 /* ─── 通知气泡 ─────────────────────────────────────────── */
 .bubble{
   position:absolute;bottom:64px;right:0;width:300px;
-  background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  background:var(--bg);
+  border:1px solid var(--bdr);
   border-radius:16px;box-shadow:var(--shadow-lg);
   padding:14px 16px;display:flex;flex-direction:column;gap:10px;
   z-index:5;
@@ -553,8 +554,8 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 /* 气泡尖角 */
 .bubble::after{
   content:'';position:absolute;bottom:-6px;right:20px;
-  width:12px;height:12px;background:var(--glass);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  width:12px;height:12px;background:var(--bg);
+  border-right:1px solid var(--bdr);border-bottom:1px solid var(--bdr);
   transform:rotate(45deg);border-radius:0 0 3px 0;
   box-shadow:3px 3px 6px rgba(0,0,0,.04);
 }
@@ -587,7 +588,8 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 /* ─── 对话面板 ─────────────────────────────────────────── */
 .chat{
   position:absolute;inset:0;display:flex;flex-direction:column;
-  background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  background:var(--bg);
+  border:1px solid var(--bdr);
   border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden;z-index:20;
 }
 .chat__head{
