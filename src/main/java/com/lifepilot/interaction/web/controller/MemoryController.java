@@ -289,32 +289,32 @@ public class MemoryController {
      * 实体详情。
      */
     @GetMapping("/entities/{id}")
-    public EntityDetailDto getEntity(@PathVariable String id) {
+    public ApiResponse<EntityDetailDto> getEntity(@PathVariable String id) {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        return toEntityDetail(entity, loadEntityMetadata(id));
+        return ApiResponse.ok(toEntityDetail(entity, loadEntityMetadata(id)));
     }
 
     /**
      * 实体版本变更历史。
      */
     @GetMapping("/entities/{id}/history")
-    public List<EntityDetailDto> getEntityHistory(@PathVariable String id) {
+    public ApiResponse<List<EntityDetailDto>> getEntityHistory(@PathVariable String id) {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         EntityMetadata metadata = provenanceRepository.loadEntityMetadata(List.of(id)).get(id);
-        return semanticMemory.getChangeHistory(entity.name(), entity.type()).stream()
+        return ApiResponse.ok(semanticMemory.getChangeHistory(entity.name(), entity.type()).stream()
                 .map(history -> toEntityDetail(history, metadata))
-                .toList();
+                .toList());
     }
 
     /**
      * 关联实体。
      */
     @GetMapping("/entities/{id}/related")
-    public List<EntitySummaryDto> getRelatedEntities(
+    public ApiResponse<List<EntitySummaryDto>> getRelatedEntities(
             @PathVariable String id,
             @RequestParam(defaultValue = "2") int maxDepth) {
         requireMemoryEnabled();
@@ -324,16 +324,16 @@ public class MemoryController {
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 relatedEntities.stream().map(TemporalEntity::id).toList()
         );
-        return relatedEntities.stream()
+        return ApiResponse.ok(relatedEntities.stream()
                 .map(e -> toEntitySummary(e, metadataById.get(e.id())))
-                .toList();
+                .toList());
     }
 
     /**
      * 实体来源明细。
      */
     @GetMapping("/entities/{id}/provenances")
-    public List<EntityProvenanceDto> getEntityProvenances(
+    public ApiResponse<List<EntityProvenanceDto>> getEntityProvenances(
             @PathVariable String id,
             @RequestParam(required = false) @Nullable String originType,
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
@@ -344,14 +344,14 @@ public class MemoryController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         var rawItems = provenanceRepository.findEntityProvenances(
                 id, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
-        return enrichProvenances(rawItems);
+        return ApiResponse.ok(enrichProvenances(rawItems));
     }
 
     /**
      * 最近来源摘要。
      */
     @GetMapping("/provenances/recent")
-    public List<MemoryProvenanceSummaryDto> listRecentProvenances(
+    public ApiResponse<List<MemoryProvenanceSummaryDto>> listRecentProvenances(
             @RequestParam(required = false) @Nullable String originType,
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
             @RequestParam(required = false) @Nullable String sourceDatastoreId,
@@ -363,7 +363,7 @@ public class MemoryController {
         }
         var rawItems = provenanceRepository.findRecentProvenanceSummaries(
                 originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId, limit);
-        return enrichMemoryProvenanceSummaries(rawItems);
+        return ApiResponse.ok(enrichMemoryProvenanceSummaries(rawItems));
     }
 
     /**
@@ -433,7 +433,7 @@ public class MemoryController {
      * <p>仅允许更新当前有效实体（isCurrent=true），已归档实体返回 404。</p>
      */
     @PutMapping("/entities/{id}")
-    public EntityDetailDto updateEntity(@PathVariable String id,
+    public ApiResponse<EntityDetailDto> updateEntity(@PathVariable String id,
                                         @RequestBody EntityUpdateRequest request) {
         requireMemoryEnabled();
 
@@ -471,7 +471,7 @@ public class MemoryController {
         semanticMemory.upsertWithConflictDetection(updated, null);
         log.info("更新实体: id={}, name={}", updated.id(), updated.name());
         var metadata = provenanceRepository.loadEntityMetadata(List.of(updated.id())).get(updated.id());
-        return toEntityDetail(updated, metadata);
+        return ApiResponse.ok(toEntityDetail(updated, metadata));
     }
 
     // ========== Req 3: L3 关系查询 ==========

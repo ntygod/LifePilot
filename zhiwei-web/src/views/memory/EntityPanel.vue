@@ -11,6 +11,7 @@ import {
 } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
 import { logger } from '@/utils/logger'
+import { useUiStore } from '@/stores/ui'
 import type {
   EntitySummary,
   EntityDetail,
@@ -191,6 +192,7 @@ const REALITY_TYPE_OPTIONS = [
 const store = useMemoryStore()
 const route = useRoute()
 const router = useRouter()
+const uiStore = useUiStore()
 const activeListSourceFilters = computed(() => [
   filterOriginType.value ? `来源类型: ${formatOriginType(filterOriginType.value)}` : null,
   filterSourceKnowledgeBaseId.value.trim() ? `知识库: ${filterSourceKnowledgeBaseId.value.trim()}` : null,
@@ -389,7 +391,7 @@ async function handleCreate() {
     loadEntities()
   } catch (e: any) {
     logger.error('创建实体失败:', e)
-    alert(e?.message || '创建实体失败')
+    uiStore.showToast('error', e?.message || '创建实体失败')
   } finally {
     creating.value = false
   }
@@ -416,13 +418,13 @@ async function handleEdit() {
     editForm.value.properties = props
     const updated = await memoryApi.updateEntity(editEntityId.value, editForm.value)
     editOpen.value = false
-    // 刷新详情并重新打开详情面板
     detailEntity.value = updated
     detailOpen.value = true
+    uiStore.showToast('success', '实体已更新')
     loadEntities()
   } catch (e: any) {
     logger.error('编辑实体失败:', e)
-    alert(e?.message || '编辑实体失败')
+    uiStore.showToast('error', e?.message || '编辑实体失败')
   } finally {
     editing.value = false
   }
@@ -450,12 +452,12 @@ async function handleArchive() {
   try {
     await memoryApi.deleteEntity(archiveEntityId.value)
     archiveOpen.value = false
-    // 归档成功，不重新打开详情面板
     detailEntity.value = null
+    uiStore.showToast('success', '实体已归档')
     loadEntities()
   } catch (e: any) {
     logger.error('归档实体失败:', e)
-    alert(e?.message || '归档实体失败')
+    uiStore.showToast('error', e?.message || '归档实体失败')
   } finally {
     archiving.value = false
   }
