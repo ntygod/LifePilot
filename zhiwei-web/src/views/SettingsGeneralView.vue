@@ -30,7 +30,7 @@ const form = ref({
 })
 
 // ---- 数据目录 ----
-const dataDir = ref('')
+const dataDir = ref<string | null>(null)
 const dataDirChanged = ref(false)
 const showRestartForDataDir = ref(false)
 
@@ -39,12 +39,16 @@ async function loadDataDir() {
     try {
       const { invoke } = await import('@tauri-apps/api/core')
       dataDir.value = await invoke<string>('get_data_dir')
-    } catch { /* ignore */ }
+    } catch {
+      dataDir.value = ''
+    }
   } else {
     try {
       const result = await settingsApi.getDataDir()
       dataDir.value = result.dataDir
-    } catch { /* ignore */ }
+    } catch {
+      dataDir.value = '（获取失败）'
+    }
   }
 }
 
@@ -277,7 +281,7 @@ const fontSizeOptions = [
       </SettingSection>
 
       <SettingSection title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。">
-        <SettingItem label="数据目录" :description="dataDir || '加载中...'">
+        <SettingItem label="数据目录" :description="dataDir === null ? '加载中...' : (dataDir || '默认')">
           <div v-if="isTauri" class="flex items-center gap-sm">
             <Button type="button" variant="outline" size="sm" @click="browseDataDir">选择目录</Button>
             <Button type="button" variant="ghost" size="sm" @click="resetDataDir">恢复默认</Button>
