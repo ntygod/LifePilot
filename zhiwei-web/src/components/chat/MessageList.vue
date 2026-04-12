@@ -144,17 +144,18 @@ const lastAssistantId = computed(() => {
 
 function getMotionInitial(message: Message) {
   if (message.role === 'assistant') {
-    return { y: 18, x: -10, opacity: 0, scale: 0.992 }
+    return { y: 16, opacity: 0, scale: 0.995 }
   }
-
-  return { y: 14, x: 14, opacity: 0, scale: 0.97 }
+  // 用户消息：从右下快速弹入
+  return { y: 24, x: 20, opacity: 0, scale: 0.94 }
 }
 
 function getMotionTransition(message: Message) {
-  return {
-    duration: message.role === 'assistant' ? 0.34 : 0.26,
-    ease: 'easeOut' as const,
+  if (message.role === 'assistant') {
+    return { duration: 0.32, ease: 'easeOut' as const }
   }
+  // 用户消息：更快的弹入动画
+  return { duration: 0.2, ease: 'easeOut' as const }
 }
 
 /** 简单日期标签：今天 / 昨天 / 更早。 */

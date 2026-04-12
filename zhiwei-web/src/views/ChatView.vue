@@ -67,6 +67,7 @@ type SidebarPanel = 'session' | 'config' | 'debug'
 
 const scrollContainer = ref<HTMLElement | null>(null)
 const showScrollToBottom = ref(false)
+const messagesReady = ref(false)
 const searchQuery = ref('')
 const activeSidebarPanel = ref<SidebarPanel>('session')
 const showMobileSidebar = ref(false)
@@ -86,9 +87,9 @@ const activeSessionConfig = ref<SessionConfig>({
 const currentSessionDetail = ref<ChatSessionDetail | null>(null)
 
 /** 空状态：无消息且非流式中 */
-// 有 sessionId 说明是已有对话（消息可能还在加载），不算空
+// 消息加载完成且为空时显示欢迎页（加载中不显示，防止闪烁）
 const isEmptyChat = computed(() =>
-  chatStore.messages.length === 0 && !isStreaming.value && !route.params.sessionId
+  chatStore.messages.length === 0 && !isStreaming.value && messagesReady.value
 )
 
 const CHAT_SCENES = new Set([
@@ -279,15 +280,17 @@ onMounted(async () => {
     await sendMessage(content)
   }
 
+  // 首次加载标记就绪
+  messagesReady.value = true
+
   // 监听滚动，判断是否显示"回到底部"按钮
   const el = getScrollEl()
   el?.addEventListener('scroll', handleScroll)
 
   // 首次加载完成后滚到底部
-  window.setTimeout(() => {
-    const scrollEl = getScrollEl()
-    if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
-  }, 200)
+  for (const delay of [50, 200, 500]) {
+    window.setTimeout(forceScrollBottom, delay)
+  }
 })
 
 onUnmounted(() => {
@@ -304,6 +307,8 @@ function handleScroll() {
 watch(
   () => route.params.sessionId as string | undefined,
   async (sessionId) => {
+    messagesReady.value = false
+
     if (!sessionId) {
       chatStore.activeSessionId = null
       try {
@@ -311,12 +316,16 @@ watch(
       } catch (event) {
         logger.error('创建新会话失败:', event)
       }
+      messagesReady.value = true
       return
     }
 
     if (sessionId !== chatStore.activeSessionId) {
       chatStore.activeSessionId = sessionId
     }
+
+    // 等消息加载完成后标记就绪（store 内部 watch 是异步的，延迟兜底）
+    window.setTimeout(() => { messagesReady.value = true }, 300)
 
     // 等消息加载 + DOM 渲染完成后滚到底部
     await nextTick()
@@ -336,7 +345,7 @@ watch(
 /* 获取实际滚动容器（ref 可能因 Transition 延迟为 null，兜底用 DOM 查询） */
 function getScrollEl(): HTMLElement | null {
   return scrollContainer.value
-    ?? document.querySelector<HTMLElement>('.absolute.inset-0.overflow-y-auto')
+    ?? document.querySelector<HTMLElement>('.overflow-y-auto.scrollbar-track-transparent')
 }
 
 /* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次 */
@@ -351,12 +360,22 @@ function scrollToBottom() {
   })
 }
 
-// 消息列表变化（加载历史/新增消息）→ 滚到底部
-watch(() => chatStore.messages.length, () => {
-  window.setTimeout(() => {
-    const el = getScrollEl()
-    if (el) el.scrollTop = el.scrollHeight
-  }, 150)
+/** 强制滚到底（直接 DOM 查询，不依赖 ref） */
+function forceScrollBottom() {
+  const el = document.querySelector<HTMLElement>('.scrollbar-track-transparent.overflow-y-auto')
+  if (el && el.scrollHeight > el.clientHeight) {
+    el.scrollTop = el.scrollHeight
+  }
+}
+
+// 消息列表变化 → 有消息时标记就绪 + 滚到底部
+watch(() => chatStore.messages.length, (len) => {
+  if (len > 0) {
+    messagesReady.value = true
+    for (const delay of [50, 200, 500]) {
+      window.setTimeout(forceScrollBottom, delay)
+    }
+  }
 })
 watch(() => chatStore.streamingContent, scrollToBottom)
 
@@ -367,6 +386,10 @@ async function handleSend(payload: {
   sessionConfig?: SessionConfig
   restoreSessionConfig?: SessionConfig
 }) {
+  // 发送后立即滚到底，让用户看到消息弹入
+  nextTick(() => {
+    window.setTimeout(scrollToBottom, 50)
+  })
   await sendMessage(
     payload.content,
     payload.attachmentIds,
@@ -630,15 +653,6 @@ function closeTracePanel() {
           ref="scrollContainer"
           class="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
-          <Transition
-            enter-active-class="transition-all duration-300 ease-out"
-            enter-from-class="opacity-0 scale-[0.98]"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition-all duration-200 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-[0.98]"
-            mode="out-in"
-          >
           <!-- 空状态：问候 + 输入框居中 -->
           <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center px-4 pt-[15vh] sm:px-6">
             <EmptyState @fill="handleEmptyStateFill" />
@@ -678,7 +692,6 @@ function closeTracePanel() {
               @permission-approval-resolve="resolvePermissionApproval"
             />
           </div>
-          </Transition>
         </div>
         <!-- 底部输入框：仅有消息时显示 -->
         <Transition
@@ -702,7 +715,7 @@ function closeTracePanel() {
                 type="button"
                 class="absolute -top-10 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-md transition-colors hover:bg-muted"
                 title="回到底部"
-                @click="scrollToBottom"
+                @click="() => { const el = getScrollEl(); if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }"
               >
                 <ArrowDown class="size-4 text-muted-foreground" />
               </button>

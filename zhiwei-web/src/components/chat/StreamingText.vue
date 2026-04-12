@@ -32,7 +32,7 @@ const markedInstance = new Marked(
 const html = ref('')
 let parseTimer: ReturnType<typeof setTimeout> | null = null
 let lastParseTs = 0
-const PARSE_INTERVAL_MS = 80
+const PARSE_INTERVAL_MS = 100
 
 function safeParseMarkdown(text: string): string {
   if (!text) return ''

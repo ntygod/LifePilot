@@ -31,8 +31,8 @@ type ExecuteTurnOptions = {
   userMessageId?: string | null
 }
 
-const TOKEN_FLUSH_INTERVAL_MS = 24
-const TOKEN_FLUSH_CHAR_THRESHOLD = 96
+const TOKEN_FLUSH_INTERVAL_MS = 40
+const TOKEN_FLUSH_CHAR_THRESHOLD = 160
 
 export function useChat() {
   const chatStore = useChatStore()
