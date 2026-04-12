@@ -51,6 +51,15 @@ const emit = defineEmits<{
 const chatStore = useChatStore()
 const input = ref('')
 const maxLength = 4000
+
+const PLACEHOLDERS = [
+  '想聊点什么？',
+  '有什么我能帮到你的？',
+  '试试 @ 引用知识库...',
+  '可以直接粘贴图片或文件',
+  '输入问题，或贴一段内容...',
+]
+const randomPlaceholder = ref(PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)])
 const inputLength = computed(() => input.value.length)
 
 const attachments = ref<File[]>([])
@@ -61,6 +70,7 @@ const dragDepth = ref(0)
 const dragActive = computed(() => dragDepth.value > 0)
 
 const voiceSending = ref(false)
+const sendPulsing = ref(false)
 const voiceError = ref<string | null>(null)
 const manualContextPickerOpen = ref(false)
 const manualContextQuery = ref('')
@@ -261,6 +271,10 @@ async function submit() {
   const sessionConfig = buildTemporarySessionConfig()
   const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
 
+  // 发送脉冲动效
+  sendPulsing.value = true
+  setTimeout(() => { sendPulsing.value = false }, 500)
+
   emit('send', {
     content,
     attachmentIds,
@@ -273,6 +287,7 @@ async function submit() {
   attachments.value = []
   uploadError.value = null
   resetTemporaryContextSelection()
+  randomPlaceholder.value = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
 }
 
 function handleFileSelect() {
@@ -631,7 +646,7 @@ defineExpose({
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            :placeholder="placeholder || '输入问题或贴资料...'"
+            :placeholder="placeholder || randomPlaceholder"
             rows="1"
             class="min-h-0 max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/45 focus-visible:ring-0"
             @keydown="handleKeydown"
@@ -722,17 +737,23 @@ defineExpose({
               </button>
 
               <!-- 发送按钮 -->
-              <button
-                type="button"
-                :disabled="sendDisabled"
-                class="flex size-8 items-center justify-center rounded-full transition-all duration-150 disabled:cursor-not-allowed"
-                :class="sendDisabled
-                  ? 'bg-muted/50 text-muted-foreground/30'
-                  : 'bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95'"
-                @click="submit"
-              >
-                <ArrowUp class="size-4" :stroke-width="2.5" />
-              </button>
+              <span class="relative inline-flex">
+                <button
+                  type="button"
+                  :disabled="sendDisabled"
+                  class="relative z-[1] flex size-8 items-center justify-center rounded-full transition-all duration-150 disabled:cursor-not-allowed"
+                  :class="sendDisabled
+                    ? 'bg-muted/50 text-muted-foreground/30'
+                    : 'bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95'"
+                  @click="submit"
+                >
+                  <ArrowUp class="size-4" :stroke-width="2.5" />
+                </button>
+                <span
+                  v-if="sendPulsing"
+                  class="send-pulse-ring"
+                />
+              </span>
             </template>
           </div>
         </div>
@@ -910,6 +931,28 @@ defineExpose({
 .context-option-leave-to {
   opacity: 0;
   transform: translateY(8px);
+}
+
+.send-pulse-ring {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 9999px;
+  border: 2px solid hsl(from var(--primary) h s l / 0.6);
+  animation: send-pulse-expand 500ms var(--ease-fluid) forwards;
+  pointer-events: none;
+}
+
+@keyframes send-pulse-expand {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
 }
 
 @keyframes send-button-breathe {

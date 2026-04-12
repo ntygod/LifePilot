@@ -193,6 +193,22 @@ function openAllConversations() {
   emit('close')
 }
 
+/** 从管理 Tab 切换到对话 Tab 时，导航到新建对话欢迎页 */
+function switchToChatTab() {
+  if (activeTab.value === 'manage') {
+    router.push({ name: 'newConversation' })
+  }
+  activeTab.value = 'chat'
+}
+
+/** 从对话 Tab 切换到管理 Tab 时，导航到通用设置页（管理首页） */
+function switchToManageTab() {
+  if (activeTab.value === 'chat') {
+    router.push('/settings/general')
+  }
+  activeTab.value = 'manage'
+}
+
 /* ── 管理 Tab ── */
 
 function toggleGroup(groupId: string) {
@@ -237,7 +253,7 @@ function openSettings() {
         type="button"
         class="tab-trigger"
         :class="{ 'tab-trigger--active': activeTab === 'chat' }"
-        @click="activeTab = 'chat'"
+        @click="switchToChatTab"
       >
         对话
       </button>
@@ -245,7 +261,7 @@ function openSettings() {
         type="button"
         class="tab-trigger"
         :class="{ 'tab-trigger--active': activeTab === 'manage' }"
-        @click="activeTab = 'manage'"
+        @click="switchToManageTab"
       >
         管理
       </button>

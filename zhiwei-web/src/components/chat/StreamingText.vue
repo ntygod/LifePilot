@@ -130,7 +130,9 @@ watch(() => props.streaming, (streaming) => {
       :aria-live="streaming ? 'polite' : undefined"
       v-html="html"
     />
-    <span v-if="streaming" class="streaming-caret" />
+    <Transition name="caret-fade">
+      <span v-if="streaming" class="streaming-caret" />
+    </Transition>
   </div>
 </template>
 
@@ -257,7 +259,7 @@ watch(() => props.streaming, (streaming) => {
   border: 1px solid hsl(219 21% 25% / 0.82);
   border-radius: 0.95rem;
   background: linear-gradient(180deg, hsl(222 23% 15%), hsl(223 21% 12%));
-  padding: 1rem 1rem 0.95rem;
+  padding: 2rem 1rem 0.95rem;
   box-shadow: 0 18px 28px -30px hsl(var(--shadow-color) / 0.2);
 }
 
@@ -271,9 +273,27 @@ watch(() => props.streaming, (streaming) => {
   color: hsl(210 34% 92%);
 }
 
-.message-prose :deep(.code-copy-btn) {
-  top: 0.75rem;
+.message-prose :deep(.code-block-toolbar) {
+  position: absolute;
+  top: 0.55rem;
   right: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.message-prose :deep(.code-lang-label) {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: hsl(210 18% 56%);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.message-prose :deep(.code-copy-btn) {
   border: 1px solid hsl(216 14% 34% / 0.9);
   border-radius: 999px;
   background: hsl(220 17% 19% / 0.94);
@@ -281,8 +301,11 @@ watch(() => props.streaming, (streaming) => {
   color: hsl(210 18% 86%);
   font-size: 10px;
   line-height: 1.1;
-  opacity: 0.82;
+  opacity: 0;
+  pointer-events: auto;
+  cursor: pointer;
   box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+  transition: opacity 150ms ease;
 }
 
 .message-prose :deep(pre:hover .code-copy-btn) {
@@ -440,5 +463,23 @@ watch(() => props.streaming, (streaming) => {
     opacity: 0.9;
     transform: translateX(0.18rem);
   }
+}
+
+/* 光标退出动画 */
+.caret-fade-leave-active {
+  transition:
+    opacity 250ms ease-out,
+    transform 250ms ease-out;
+}
+
+.caret-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.3);
+}
+
+/* glow 同步渐隐：流式结束后 prose 的 ::after 辉光淡出 */
+.streaming-shell:not(:has(.streaming-caret)) .streaming-prose::after {
+  transition: opacity 300ms ease-out;
+  opacity: 0;
 }
 </style>

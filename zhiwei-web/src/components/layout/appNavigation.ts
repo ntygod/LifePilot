@@ -90,8 +90,8 @@ export const settingsNavGroups: NavGroup[] = [
   },
 ]
 
-/** 管理 Tab 全部分组 = 工作台 + 资料库 + 偏好设置 + 回顾分析 */
-export const manageNavGroups: NavGroup[] = [...sidebarNavGroups, ...settingsNavGroups]
+/** 管理 Tab 全部分组 = 偏好设置 + 回顾分析 + 工作台 + 资料库 */
+export const manageNavGroups: NavGroup[] = [...settingsNavGroups, ...sidebarNavGroups]
 
 /** 管理 Tab 关联的路由前缀，用于自动切换 Tab */
 export const manageRoutePrefixes = manageNavGroups.flatMap(g => g.items.flatMap(i => i.matchPrefixes))

@@ -581,6 +581,10 @@ function approvalLogTone(log: PermissionApprovalLog) {
   box-shadow: none;
 }
 
+:global(.dark) .user-bubble {
+  box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.05);
+}
+
 .user-bubble-pending {
   animation: user-bubble-pulse 1.7s var(--ease-fluid) infinite;
 }

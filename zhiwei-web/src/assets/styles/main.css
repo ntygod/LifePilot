@@ -229,13 +229,38 @@ html[data-ui-density="compact"] {
     color: var(--foreground);
   }
 
-  /* 隐藏滚动条，保留滚动功能 */
+  /* 默认隐藏滚动条，悬停时显示细滚动条（scrollbar-color transition 部分浏览器降级为突变） */
   * {
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.3s;
+  }
+
+  *:hover {
+    scrollbar-color: hsl(from var(--muted-foreground) h s l / 0.2) transparent;
   }
 
   *::-webkit-scrollbar {
-    display: none;
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background-color: transparent;
+    transition: background-color 0.3s;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    background-color: hsl(from var(--muted-foreground) h s l / 0.2);
+  }
+
+  *:hover::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(from var(--muted-foreground) h s l / 0.35);
   }
 
   h1,
