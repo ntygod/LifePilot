@@ -83,7 +83,7 @@ public class MemoryController {
      * 获取记忆系统统计概览。
      */
     @GetMapping("/stats")
-    public MemoryStatsDto getStats() {
+    public ApiResponse<MemoryStatsDto> getStats() {
         requireMemoryEnabled();
 
         long entityCount = semanticMemory.countCurrent();
@@ -108,7 +108,7 @@ public class MemoryController {
         long forgettingLogCount = forgettingLogRepository.countAll();
         String lastForgettingTime = forgettingLogRepository.getLastForgettingTime();
 
-        return new MemoryStatsDto(
+        return ApiResponse.ok(new MemoryStatsDto(
                 conversationCount,
                 entityCount,
                 entityCountByType,
@@ -117,7 +117,7 @@ public class MemoryController {
                 preferenceCount,
                 forgettingLogCount,
                 lastForgettingTime
-        );
+        ));
     }
 
     // ========== Req 7: 统一记忆搜索 ==========
@@ -126,7 +126,7 @@ public class MemoryController {
      * 统一记忆搜索 — 调用 HybridRetriever 三路并行检索。
      */
     @GetMapping("/search")
-    public List<MemorySearchResultDto> search(
+    public ApiResponse<List<MemorySearchResultDto>> search(
             @RequestParam String q,
             @RequestParam(defaultValue = "10") int topK) {
         requireMemoryEnabled();
@@ -134,13 +134,13 @@ public class MemoryController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "搜索关键词不能为空");
         }
         if (hybridRetriever == null) {
-            return List.of();
+            return ApiResponse.ok(List.of());
         }
         var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 results.stream().map(r -> r.entityId()).toList()
         );
-        return results.stream()
+        return ApiResponse.ok(results.stream()
                 .map(r -> {
                     var metadata = metadataById.get(r.entityId());
                     return new MemorySearchResultDto(
@@ -154,7 +154,7 @@ public class MemoryController {
                             metadata != null ? metadata.realityType() : null
                     );
                 })
-                .toList();
+                .toList());
     }
 
     // ========== Req 2: L3 语义记忆实体管理 ==========
@@ -163,7 +163,7 @@ public class MemoryController {
      * 实体分页列表（支持 type/q/timeFrom/timeTo/sortBy/order 过滤排序）。
      */
     @GetMapping("/entities")
-    public PageResult<EntitySummaryDto> listEntities(
+    public ApiResponse<PageResult<EntitySummaryDto>> listEntities(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String type,
@@ -282,7 +282,7 @@ public class MemoryController {
                 .map(e -> toEntitySummary(e, pageMetadataById.get(e.id())))
                 .toList();
 
-        return new PageResult<>(pageItems, page, size, total);
+        return ApiResponse.ok(new PageResult<>(pageItems, page, size, total));
     }
 
     /**
@@ -480,7 +480,7 @@ public class MemoryController {
      * 关系分页列表（附带实体名称）。
      */
     @GetMapping("/relations")
-    public PageResult<RelationDto> listRelations(
+    public ApiResponse<PageResult<RelationDto>> listRelations(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String entityId,
@@ -542,7 +542,7 @@ public class MemoryController {
                 })
                 .toList();
 
-        return new PageResult<>(pageItems, page, size, total);
+        return ApiResponse.ok(new PageResult<>(pageItems, page, size, total));
     }
 
     // ========== Req 4: L2 情景记忆浏览 ==========
@@ -551,7 +551,7 @@ public class MemoryController {
      * 对话分页列表。
      */
     @GetMapping("/conversations")
-    public PageResult<ConversationSummaryDto> listConversations(
+    public ApiResponse<PageResult<ConversationSummaryDto>> listConversations(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String q,
@@ -559,7 +559,7 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String timeTo) {
         requireMemoryEnabled();
         if (episodicMemory == null) {
-            return new PageResult<>(List.of(), page, size, 0L);
+            return ApiResponse.ok(new PageResult<>(List.of(), page, size, 0L));
         }
 
         // 如果有搜索关键词，使用 FTS5 搜索
@@ -573,7 +573,7 @@ public class MemoryController {
             var items = filtered.subList(fromIndex, toIndex).stream()
                     .map(this::toConversationSummary)
                     .toList();
-            return new PageResult<>(items, page, size, total);
+            return ApiResponse.ok(new PageResult<>(items, page, size, total));
         }
 
         // 无搜索关键词，分页查询
@@ -582,20 +582,20 @@ public class MemoryController {
         // 时间范围过滤（分页后过滤，简化实现）
         var filtered = filterByTime(conversations, timeFrom, timeTo);
         var items = filtered.stream().map(this::toConversationSummary).toList();
-        return new PageResult<>(items, page, size, total);
+        return ApiResponse.ok(new PageResult<>(items, page, size, total));
     }
 
     /**
      * 对话详情。
      */
     @GetMapping("/conversations/{id}")
-    public ConversationRecord getConversation(@PathVariable String id) {
+    public ApiResponse<ConversationRecord> getConversation(@PathVariable String id) {
         requireMemoryEnabled();
         if (episodicMemory == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id);
         }
-        return episodicMemory.getById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id));
+        return ApiResponse.ok(episodicMemory.getById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id)));
     }
 
     /**
@@ -616,7 +616,7 @@ public class MemoryController {
      * 模板分页列表。
      */
     @GetMapping("/templates")
-    public PageResult<Object> listTemplates(
+    public ApiResponse<PageResult<Object>> listTemplates(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String q,
@@ -624,7 +624,7 @@ public class MemoryController {
             @RequestParam(defaultValue = "desc") String order) {
         requireMemoryEnabled();
         if (proceduralMemory == null) {
-            return new PageResult<>(List.of(), page, size, 0L);
+            return ApiResponse.ok(new PageResult<>(List.of(), page, size, 0L));
         }
 
         var templates = proceduralMemory.listAllTemplates();
@@ -654,20 +654,20 @@ public class MemoryController {
         int toIndex = Math.min(fromIndex + size, templates.size());
         var pageItems = templates.subList(fromIndex, toIndex);
 
-        return new PageResult<>(List.copyOf(pageItems), page, size, total);
+        return ApiResponse.ok(new PageResult<>(List.copyOf(pageItems), page, size, total));
     }
 
     /**
      * 模板详情。
      */
     @GetMapping("/templates/{id}")
-    public Object getTemplate(@PathVariable String id) {
+    public ApiResponse<Object> getTemplate(@PathVariable String id) {
         requireMemoryEnabled();
         if (proceduralMemory == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id);
         }
-        return proceduralMemory.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id));
+        return ApiResponse.ok(proceduralMemory.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id)));
     }
 
     /**
@@ -689,16 +689,16 @@ public class MemoryController {
      * 偏好规则列表。
      */
     @GetMapping("/preferences")
-    public List<Object> listPreferences(
+    public ApiResponse<List<Object>> listPreferences(
             @RequestParam(required = false) @Nullable String category) {
         requireMemoryEnabled();
         if (proceduralMemory == null) {
-            return List.of();
+            return ApiResponse.ok(List.of());
         }
         if (category != null && !category.isBlank()) {
-            return List.copyOf(proceduralMemory.getPreferences(category));
+            return ApiResponse.ok(List.copyOf(proceduralMemory.getPreferences(category)));
         }
-        return List.copyOf(proceduralMemory.listAllPreferences());
+        return ApiResponse.ok(List.copyOf(proceduralMemory.listAllPreferences()));
     }
 
     /**
@@ -719,14 +719,14 @@ public class MemoryController {
      * 遗忘日志分页列表。
      */
     @GetMapping("/forgetting-logs")
-    public PageResult<ForgettingLogDto> listForgettingLogs(
+    public ApiResponse<PageResult<ForgettingLogDto>> listForgettingLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String timeFrom,
             @RequestParam(required = false) @Nullable String timeTo,
             @RequestParam(required = false) @Nullable String strategy) {
         requireMemoryEnabled();
-        return forgettingLogRepository.findPaginated(timeFrom, timeTo, strategy, page, size);
+        return ApiResponse.ok(forgettingLogRepository.findPaginated(timeFrom, timeTo, strategy, page, size));
     }
 
     // ========== Req 8: 手动触发巩固 ==========
