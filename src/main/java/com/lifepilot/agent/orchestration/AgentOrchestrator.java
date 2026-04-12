@@ -23,6 +23,7 @@ import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.service.ChatTurnService;
+import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.multimodal.MediaContent;
@@ -205,7 +206,8 @@ public class AgentOrchestrator {
         String userEntryId = null;
         String assistantEntryId = null;
         boolean testSession = false;
-        var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId);
+        var eventBuffer = sseManager.createEventBuffer(streamId);
+        var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId, eventBuffer);
         final AgentRequest effectiveRequest = preprocessMedia(request, state, sseManager, streamId);
         if (effectiveRequest == null) return;
 
@@ -223,13 +225,17 @@ public class AgentOrchestrator {
                 if (userEntryId != null) {
                     traceStartData.put("userEntryId", userEntryId);
                 }
-                sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
+                if (eventBuffer != null) {
+                    eventBuffer.offer(SseEventType.TRACE_START, traceStartData);
+                } else {
+                    sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
+                }
             }
 
             agentLoop.sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
                     "AGENT_START", "开始执行",
                     "Agent 开始执行任务，正在初始化推理循环和流式输出。",
-                    null, Map.of());
+                    null, Map.of(), eventBuffer);
 
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
@@ -318,27 +324,38 @@ public class AgentOrchestrator {
 
             if (error != null) {
                 executionPersistence.markTurnFailed(state, error);
-                streamingEventHandler.sendStreamError(
-                        sseManager,
-                        streamId,
-                        500,
-                        "执行失败：Agent 遇到未预期错误 - " + error.getMessage(),
-                        state.traceId(),
-                        tempTurnId,
-                        ChatTurnStatus.FAILED
-                );
+                if (eventBuffer != null && !eventBuffer.isClosed()) {
+                    // 缓冲区模式：构建错误数据，通过 offerTerminal 排空后派发
+                    var errorData = new java.util.HashMap<String, Object>();
+                    errorData.put("code", 500);
+                    errorData.put("message", "执行失败：Agent 遇到未预期错误 - " + error.getMessage());
+                    if (state.traceId() != null) errorData.put("traceId", state.traceId());
+                    if (tempTurnId != null && !tempTurnId.isBlank()) errorData.put("turnId", tempTurnId);
+                    errorData.put("turnStatus", ChatTurnStatus.FAILED.name());
+                    eventBuffer.offerTerminal(SseEventType.ERROR, errorData);
+                } else {
+                    streamingEventHandler.sendStreamError(
+                            sseManager, streamId, 500,
+                            "执行失败：Agent 遇到未预期错误 - " + error.getMessage(),
+                            state.traceId(), tempTurnId, ChatTurnStatus.FAILED);
+                }
             } else {
                 agentLoop.sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
                         "ANSWER_FINALIZED", "回答已完成",
                         "流式输出已完成，正在发送 DONE 事件。",
-                        null, Map.of());
+                        null, Map.of(), eventBuffer);
                 var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
                         state.steps(), reasoningSummary, finalContent, assistantEntryId,
                         loopContext.getLastCollectedA2uiTree(),
                         loopContext.streamingTimingsMs());
-                sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
-                sseManager.closeEmitter(streamId);
+                if (eventBuffer != null && !eventBuffer.isClosed()) {
+                    // 缓冲区模式：offerTerminal 触发排空 → 派发 DONE → 关闭 emitter
+                    eventBuffer.offerTerminal(SseEventType.DONE, doneData);
+                } else {
+                    sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
+                    sseManager.closeEmitter(streamId);
+                }
             }
         }
     }

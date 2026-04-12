@@ -17,6 +17,7 @@ import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
@@ -1200,15 +1201,16 @@ public class ReactAgentLoop implements CallbackHelper {
         }
         loopContext.markFirstReasoningEvent(Instant.now());
         sendReasoningEvent(sseManager, streamId, state.sessionId(), turnId,
-                info[0], info[1], info[2], info[3], extra);
+                info[0], info[1], info[2], info[3], extra, loopContext.getEventBuffer());
     }
 
-    /** 发送 REASONING SSE 事件。 */
+    /** 发送 REASONING SSE 事件（支持事件缓冲区）。 */
     @Override
     public void sendReasoningEvent(SseSessionManager sseManager, String streamId,
                                     String sessionId, String turnId,
                                     String type, String title, String description,
-                                    @Nullable String toolName, Map<String, Object> extra) {
+                                    @Nullable String toolName, Map<String, Object> extra,
+                                    @Nullable SseEventBuffer eventBuffer) {
         try {
             var eventDetail = new HashMap<String, Object>();
             eventDetail.put("id", UUID.randomUUID().toString());
@@ -1224,7 +1226,11 @@ public class ReactAgentLoop implements CallbackHelper {
             eventPayload.put("sessionId", sessionId);
             eventPayload.put("turnId", turnId);
             eventPayload.put("event", eventDetail);
-            sseManager.sendEvent(streamId, SseEventType.REASONING, eventPayload);
+            if (eventBuffer != null) {
+                eventBuffer.offer(SseEventType.REASONING, eventPayload);
+            } else {
+                sseManager.sendEvent(streamId, SseEventType.REASONING, eventPayload);
+            }
         } catch (Exception e) {
             log.debug("发送 reasoning 事件失败: type={}, error={}", type, e.getMessage());
         }

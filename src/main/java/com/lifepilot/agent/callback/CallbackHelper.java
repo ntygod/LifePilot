@@ -1,6 +1,7 @@
 package com.lifepilot.agent.callback;
 
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.multimodal.MediaContent;
@@ -48,7 +49,8 @@ public interface CallbackHelper {
     void sendReasoningEvent(SseSessionManager sseManager, String streamId,
                             String sessionId, String turnId,
                             String type, String title, String description,
-                            @Nullable String toolName, Map<String, Object> extra);
+                            @Nullable String toolName, Map<String, Object> extra,
+                            @Nullable SseEventBuffer eventBuffer);
 
     /** 记录流式 LLM 调用步骤到 Trace。 */
     void recordStreamingLlmStep(@Nullable TraceContext traceContext,

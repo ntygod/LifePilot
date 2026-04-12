@@ -45,6 +45,9 @@ zhiwei-web/src-tauri/gen/
 zhiwei-web/src-tauri/resources/jre/
 zhiwei-web/src-tauri/resources/*.jar
 
+# === Docs (private) ===
+docs/AI-Agent-Java面试复习手册.md
+
 # === Misc ===
 *.swp
 *.swo

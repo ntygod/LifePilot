@@ -64,7 +64,7 @@ class StreamingCallback_单元测试 {
     void setUp() {
         config = new AgentConfigProperties();
         request = new AgentRequest("请继续回答", "session-1", "web");
-        loopContext = new AgentLoopContext(null, "stream-1", "turn-1");
+        loopContext = new AgentLoopContext(null, "stream-1", "turn-1", null);
 
         when(generationRouter.getChatModelWithInfo(anyString(), any(), isNull()))
                 .thenReturn(new GenerationRouter.ChatModelInfo(
@@ -194,7 +194,8 @@ class StreamingCallback_单元测试 {
                 eq("准备调用工具"),
                 contains("tool.search"),
                 eq("tool.search"),
-                anyMap()
+                anyMap(),
+                isNull()
         );
     }
 

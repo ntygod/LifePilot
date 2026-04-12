@@ -32,6 +32,7 @@ public class SseSessionManager {
     private final ConcurrentHashMap<String, String> streamSessions = new ConcurrentHashMap<>();
     /** per-streamId 锁，保护 SseEmitter.send() 的线程安全（SseEmitter 非线程安全） */
     private final ConcurrentHashMap<String, Object> emitterLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SseEventBuffer> eventBuffers = new ConcurrentHashMap<>();
     private final WebProperties properties;
     private final SharedScheduler sharedScheduler;
 
@@ -66,6 +67,7 @@ public class SseSessionManager {
             emitters.remove(streamId);
             emitterLocks.remove(streamId);
             cancelToken(streamId);
+            closeEventBuffer(streamId);
             clearChatStreamBinding(streamId);
             log.debug("SseEmitter 完成: streamId={}", streamId);
         });
@@ -73,6 +75,7 @@ public class SseSessionManager {
             emitters.remove(streamId);
             emitterLocks.remove(streamId);
             cancelToken(streamId);
+            closeEventBuffer(streamId);
             clearChatStreamBinding(streamId);
             log.info("SseEmitter 超时: streamId={}", streamId);
         });
@@ -80,6 +83,7 @@ public class SseSessionManager {
             emitters.remove(streamId);
             emitterLocks.remove(streamId);
             cancelToken(streamId);
+            closeEventBuffer(streamId);
             clearChatStreamBinding(streamId);
             log.warn("SseEmitter 异常: streamId={}", streamId, ex);
         });
@@ -305,9 +309,55 @@ public class SseSessionManager {
         emitterLocks.remove(streamId);
         cancelToken(streamId);
         clearChatStreamBinding(streamId);
+        closeEventBuffer(streamId);
         if (emitter != null) {
             emitter.complete();
             log.debug("SseEmitter 已关闭: streamId={}", streamId);
+        }
+    }
+
+    // ==================== 事件缓冲区管理 ====================
+
+    /**
+     * 为指定 streamId 创建事件缓冲区。
+     *
+     * <p>仅在 {@code lifepilot.web.sse.buffer.enabled=true} 时创建；
+     * 否则返回 null，调用方回退为直接 sendEvent。</p>
+     *
+     * @param streamId 流式传输标识
+     * @return 事件缓冲区实例；配置关闭时返回 null
+     */
+    public SseEventBuffer createEventBuffer(String streamId) {
+        var bufferConfig = properties.sse().buffer();
+        if (!bufferConfig.enabled()) {
+            return null;
+        }
+        var buffer = new SseEventBuffer(streamId, this, bufferConfig);
+        eventBuffers.put(streamId, buffer);
+        log.debug("事件缓冲区已注册: streamId={}", streamId);
+        return buffer;
+    }
+
+    /**
+     * 获取指定 streamId 的事件缓冲区。
+     *
+     * @param streamId 流式传输标识
+     * @return 事件缓冲区；不存在时返回 null
+     */
+    public SseEventBuffer getEventBuffer(String streamId) {
+        return eventBuffers.get(streamId);
+    }
+
+    /**
+     * 关闭并移除指定 streamId 的事件缓冲区。
+     *
+     * @param streamId 流式传输标识
+     */
+    public void closeEventBuffer(String streamId) {
+        var buffer = eventBuffers.remove(streamId);
+        if (buffer != null && !buffer.isClosed()) {
+            buffer.close();
+            log.debug("事件缓冲区已移除: streamId={}", streamId);
         }
     }
 
@@ -361,6 +411,14 @@ public class SseSessionManager {
                 log.warn("关闭 SseEmitter 异常: streamId={}", streamId, e);
             }
         });
+        eventBuffers.forEach((streamId, buffer) -> {
+            try {
+                buffer.close();
+            } catch (Exception e) {
+                log.warn("关闭事件缓冲区异常: streamId={}", streamId, e);
+            }
+        });
+        eventBuffers.clear();
         emitters.clear();
         emitterLocks.clear();
         cancellationTokens.clear();

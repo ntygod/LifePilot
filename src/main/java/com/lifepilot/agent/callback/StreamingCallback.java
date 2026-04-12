@@ -7,6 +7,7 @@ import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.A2uiComponentCatalog;
 import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
+import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
@@ -59,6 +60,7 @@ public class StreamingCallback implements IterationCallback {
     @Nullable private final AgentLoopContext loopContext;
 
     private final SseSessionManager sseManager;
+    @Nullable private final SseEventBuffer eventBuffer;
     private final String streamId;
     private final String sessionId;
     private final String turnId;
@@ -90,6 +92,7 @@ public class StreamingCallback implements IterationCallback {
         this.cancellationToken = cancellationToken;
         this.loopContext = loopContext;
         this.sseManager = sseManager;
+        this.eventBuffer = loopContext != null ? loopContext.getEventBuffer() : null;
         this.streamId = streamId;
         this.sessionId = sessionId;
         this.turnId = turnId;
@@ -539,7 +542,8 @@ public class StreamingCallback implements IterationCallback {
                 "准备调用工具",
                 description,
                 toolName,
-                Map.of("phase", "stream_tool_call_preview")
+                Map.of("phase", "stream_tool_call_preview"),
+                eventBuffer
         );
     }
 
@@ -596,12 +600,17 @@ public class StreamingCallback implements IterationCallback {
         if (loopContext != null) {
             loopContext.markFirstTokenSse(emittedAt);
         }
-        sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+        var tokenData = Map.<String, Object>of(
                 "sessionId", sessionId,
                 "turnId", turnId,
                 "content", content,
                 "index", nextTokenIndex++
-        ));
+        );
+        if (eventBuffer != null) {
+            eventBuffer.offer(SseEventType.TOKEN, tokenData);
+        } else {
+            sseManager.sendEvent(streamId, SseEventType.TOKEN, tokenData);
+        }
     }
 
     /** 清空 token 合批缓冲，防止跨迭代残留。 */
@@ -711,11 +720,16 @@ public class StreamingCallback implements IterationCallback {
                 loopContext.setLastCollectedA2uiTree(tree);
             }
             markVisibleOutputEmitted();
-            sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+            var uiData = Map.<String, Object>of(
                     "sessionId", sessionId,
                     "turnId", turnId,
                     "components", tree.components()
-            ));
+            );
+            if (eventBuffer != null) {
+                eventBuffer.offer(SseEventType.UI, uiData);
+            } else {
+                sseManager.sendEvent(streamId, SseEventType.UI, uiData);
+            }
         }
     }
 

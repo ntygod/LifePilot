@@ -2,6 +2,7 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.springframework.lang.Nullable;
 
@@ -37,6 +38,7 @@ public class AgentLoopContext {
     @Nullable private final SseSessionManager sseManager;
     @Nullable private final String streamId;
     @Nullable private final String turnId;
+    @Nullable private final SseEventBuffer eventBuffer;
 
     /** 非流式模式构造。 */
     public AgentLoopContext() {
@@ -44,25 +46,19 @@ public class AgentLoopContext {
         this.sseManager = null;
         this.streamId = null;
         this.turnId = null;
+        this.eventBuffer = null;
     }
 
     /** 流式模式构造。 */
     public AgentLoopContext(@Nullable SseSessionManager sseManager,
-                            @Nullable String streamId) {
-        this.requestReceivedAt = Instant.now();
-        this.sseManager = sseManager;
-        this.streamId = streamId;
-        this.turnId = null;
-    }
-
-    /** 流式模式构造（含 turnId）。 */
-    public AgentLoopContext(@Nullable SseSessionManager sseManager,
                             @Nullable String streamId,
-                            @Nullable String turnId) {
+                            @Nullable String turnId,
+                            @Nullable SseEventBuffer eventBuffer) {
         this.requestReceivedAt = Instant.now();
         this.sseManager = sseManager;
         this.streamId = streamId;
         this.turnId = turnId;
+        this.eventBuffer = eventBuffer;
     }
 
     /** 获取 SSE 会话管理器（非流式模式返回 null）。 */
@@ -76,6 +72,10 @@ public class AgentLoopContext {
     /** 获取 SSE turnId（非流式模式返回 null）。 */
     @Nullable
     public String getTurnId() { return turnId; }
+
+    /** 获取 SSE 事件缓冲区（未启用或非流式模式返回 null）。 */
+    @Nullable
+    public SseEventBuffer getEventBuffer() { return eventBuffer; }
 
     /** 收集工具产生的媒体数据。 */
     public void addToolMedia(MediaDataExtractor.MediaItem item) {
