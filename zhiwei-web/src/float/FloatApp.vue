@@ -223,6 +223,20 @@ function closeChat() {
   state.value = 'idle'
 }
 
+async function ensureSession(): Promise<string> {
+  if (chatSessionId.value) return chatSessionId.value
+  const port = await getPort()
+  const resp = await fetch(`http://localhost:${port}/api/chat/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '浮窗对话' }),
+  })
+  if (!resp.ok) throw new Error(`创建会话失败: ${resp.status}`)
+  const data = await resp.json()
+  chatSessionId.value = data.data?.id ?? data.id
+  return chatSessionId.value!
+}
+
 async function sendMsg() {
   const text = chatInput.value.trim()
   if (!text) return
@@ -232,13 +246,14 @@ async function sendMsg() {
   const thinkingIdx = chatMessages.value.length - 1
 
   try {
+    const sessionId = await ensureSession()
     const port = await getPort()
     const resp = await fetch(`http://localhost:${port}/api/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body: JSON.stringify({
         content: text,
-        sessionId: chatSessionId.value,
+        sessionId,
         action: 'SEND',
       }),
     })
