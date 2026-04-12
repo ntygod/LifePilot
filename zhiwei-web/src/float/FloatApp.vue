@@ -282,8 +282,9 @@ async function sendMsg() {
 // ─── SSE 通知直连 ───────────────────────────────────────
 let notificationSource: EventSource | null = null
 
-function connectNotificationStream() {
-  const port = (window as any).__ZHIWEI_BACKEND_PORT__ || 8080
+async function connectNotificationStream() {
+  // 浮窗需要自行获取后端端口（主窗口的 __ZHIWEI_BACKEND_PORT__ 在这里不可用）
+  const port = await getPort()
   const url = `http://localhost:${port}/api/notifications/stream?userId=default`
   notificationSource = new EventSource(url)
 
@@ -542,7 +543,7 @@ onUnmounted(() => {
 }}
 
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{background:transparent;overflow:hidden;font-family:var(--font);color:var(--fg);font-size:13px}
+html,body{background:transparent;overflow:hidden;font-family:var(--font);color:var(--fg);font-size:13px;height:100%}
 
 .float-root{
   width:100%;height:100%;position:relative;
