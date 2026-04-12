@@ -23,12 +23,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             label: windows-x64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            label: macos-arm64
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            label: linux-x64
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.label }})
@@ -55,17 +49,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: zhiwei-web/src-tauri
-
-      # Linux 依赖
-      - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
 
       # ------- 构建后端 JAR -------
       - name: Build backend JAR
@@ -118,9 +101,7 @@ jobs:
             ## ZhiWei 桌面端 ${{ github.ref_name }}
 
             ### 安装说明
-            - **Windows**: 下载 `.exe` 安装包，双击安装
-            - **macOS**: 下载 `.dmg`，拖入 Applications
-            - **Linux**: 下载 `.AppImage` 或 `.deb`
+            - 下载 `.msi` 或 `.exe` 安装包，双击安装即可
 
             ### 系统要求
             - 无需安装 Java（已内嵌 JRE 22）

@@ -3,8 +3,6 @@
 > 见微知著，你的 AI 伙伴
 
 [![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](https://github.com/ntygod/ZhiWei/releases)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/ntygod/ZhiWei/releases)
-[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/ntygod/ZhiWei/releases)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](#方式二docker-compose)
 [![CI](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml/badge.svg)](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -13,7 +11,7 @@ ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——
 
 **下载桌面客户端，安装即用** — 无需 Java、Docker 或任何开发环境：
 
-> [**Windows (.msi)**](https://github.com/ntygod/ZhiWei/releases) · [**macOS (.dmg)**](https://github.com/ntygod/ZhiWei/releases) · [**Linux (.AppImage)**](https://github.com/ntygod/ZhiWei/releases)
+> [**Windows 安装包下载 (.msi)**](https://github.com/ntygod/ZhiWei/releases)
 
 ![ZhiWei 对话界面](docs/images/chat-conversation.png)
 
@@ -145,11 +143,7 @@ ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——
 - 首次启动进入设置向导，引导配置 LLM 服务商
 - 后端进程自动管理，系统托盘常驻
 
-| 平台 | 安装包 | 说明 |
-|------|--------|------|
-| Windows | `.msi` | 双击安装，开始菜单启动 |
-| macOS | `.dmg` | 拖入 Applications |
-| Linux | `.AppImage` / `.deb` | 直接运行或 dpkg 安装 |
+从 [Releases](https://github.com/ntygod/ZhiWei/releases) 下载 `.msi` 安装包，双击安装即可。
 
 ### 方式二：Docker Compose
 
