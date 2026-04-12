@@ -279,10 +279,70 @@ async function sendMsg() {
   }
 }
 
+// ─── SSE 通知直连 ───────────────────────────────────────
+let notificationSource: EventSource | null = null
+
+function connectNotificationStream() {
+  const port = (window as any).__ZHIWEI_BACKEND_PORT__ || 8080
+  const url = `http://localhost:${port}/api/notifications/stream?userId=default`
+  notificationSource = new EventSource(url)
+
+  notificationSource.addEventListener('notification', (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data)
+      if (data.type === 'unread-count-snapshot') return
+
+      const typeId = data.typeId as string | undefined
+      if (typeId === 'proactive_reminder' || typeId === 'clipboard_intent') {
+        const contentJson = data.contentJson as string
+        const content = parseContentSummary(contentJson)
+        const metadata = data.metadataJson ? JSON.parse(data.metadataJson) : {}
+        const title = resolveTitle(typeId, metadata)
+        // 先 resize 到气泡尺寸
+        invoke('resize_float_window', { mode: 'bubble' }).then(() => {
+          showBubble({ notificationId: data.id, title, content, pushLevel: 'NORMAL_PUSH' })
+        })
+      }
+    } catch { /* 静默 */ }
+  })
+
+  notificationSource.addEventListener('open', () => { backendOk.value = true })
+  notificationSource.onerror = () => {
+    backendOk.value = false
+    notificationSource?.close()
+    notificationSource = null
+    // 断线重连
+    setTimeout(connectNotificationStream, 5000)
+  }
+}
+
+/** 从 contentJson 提取摘要文本 */
+function parseContentSummary(contentJson: string): string {
+  try {
+    const parsed = JSON.parse(contentJson)
+    if (parsed.type === 'TEXT') return parsed.text ?? contentJson
+    if (parsed.type === 'CARD') return [parsed.title, parsed.body].filter(Boolean).join(' — ')
+    if (parsed.type === 'MARKDOWN') return (parsed.markdown ?? '').replace(/[#*_`>\[\]()]/g, '').slice(0, 100)
+    return contentJson
+  } catch { return contentJson }
+}
+
+/** 根据通知类型生成标题 */
+function resolveTitle(typeId: string, metadata: Record<string, string>): string {
+  if (typeId === 'clipboard_intent') {
+    const labels: Record<string, string> = {
+      TRACKING_NUMBER: '快递查询', FLIGHT_NUMBER: '航班查询', TRAIN_NUMBER: '车次查询',
+    }
+    return labels[metadata.intentType ?? ''] ?? '剪贴板识别'
+  }
+  return metadata.topicKey ?? '主动提醒'
+}
+
 // ─── 生命周期 ────────────────────────────────────────────
 let cleanups: Array<() => void> = []
 
 onMounted(async () => {
+  // 仍保留 Tauri 事件监听（向后兼容主窗口 invoke 链路）
   const u1 = await listen('reminder-bubble', (p) => {
     const d = p as ReminderData
     showBubble(d)
@@ -302,15 +362,14 @@ onMounted(async () => {
 
   startBlinking()
 
-  setInterval(async () => {
-    try { backendOk.value = (await invoke('is_backend_running')) as boolean }
-    catch { backendOk.value = false }
-  }, 10000)
+  // 浮窗直连 SSE 通知流（不依赖主窗口 invoke 转发）
+  connectNotificationStream()
 })
 
 onUnmounted(() => {
   clearDismiss()
   if (blinkInterval) clearInterval(blinkInterval)
+  notificationSource?.close()
   cleanups.forEach(f => f())
 })
 </script>
