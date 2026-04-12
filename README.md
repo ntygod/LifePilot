@@ -8,182 +8,128 @@
 [![CI](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml/badge.svg)](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行用户命令，而是具备自主任务执行能力——支持 cron 定时和条件触发的自主任务。所有数据存储在本地，隐私完全由你掌控。
+ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——拥有四层认知记忆、自主任务执行、工作流引擎和插件市场。所有数据存储在本地 SQLite，单 JAR 部署，开箱即用。
 
-## 目录
-
-- [核心特性](#-核心特性)
-- [界面预览](#-界面预览)
-- [快速开始](#-快速开始)
-- [配置说明](#-配置说明)
-- [技术栈](#-技术栈)
-- [项目结构](#-项目结构)
-- [已知限制](#-已知限制)
-- [后续计划](#-后续计划)
-- [开发指南](#-开发指南)
-- [开源协作](#-开源协作)
-- [贡献指南](#-贡献指南)
-- [FAQ](#-faq)
-- [故障排查](#-故障排查)
+<!-- 主界面预览：建议截一张对话页面的全貌图放在这里 -->
+<!-- ![ZhiWei 主界面](docs/images/hero.png) -->
 
 ## ✨ 核心特性
 
-### 🧠 四层认知记忆系统
-- L1 工作记忆（会话级临时存储）+ L2 情景记忆（对话记录 + 注入记录）
-- L3 语义记忆（TemporalEntity 实体 + TemporalRelation 关系 + 重要性评分 + 访问计数）
-- L4 程序记忆（ProcedureTemplate 技能模式 + PreferenceRule 用户偏好）
-- 记忆巩固管线（ConsolidationPipeline：语义巩固 → 偏好同步 → 经验合并 → 经验提升 → 程序巩固，定时 + Idle 触发）
-- 经验学习子系统：ExperienceSummarizer 经验提炼 + EffectivenessTracker 效果反馈闭环 + ContrastiveLearner 对比学习 + SubtaskReflector 子任务反思 + ExperienceMerger 经验合并 + search-experience 主动检索
-- L3→L4 经验提升：高频经验（importanceScore ≥ 0.8 且 accessCount ≥ 3）自动提升为 ProcedureTemplate
-- 混合检索（向量 + FTS5 + 时序）+ fusedScore 融合排序 + 预算感知截断
-- 时间衰减遗忘 + 过期归档 + accessCount 动态调整
+### 越用越懂你 — 四层认知记忆
 
-### 🤖 Agent 引擎
-- ReactAgentLoop：ReAct 循环架构（Thought → ToolCall → Observation → Answer）
-- 手动 tool calling（internalToolExecutionEnabled=false），完全控制工具执行流程
-- ContextAssembler 上下文组装（记忆检索 + Token 预算动态分配）
-- 5 种挂起/恢复场景（WorkflowWait / UserConfirmation / RemoteDelegation / ScheduledWakeup / ExternalDataWait）
-- ReactStep sealed interface 7 种步骤类型（Progress / Thought / ToolCall / Observation / Answer / Suspend / Resume） + 不可变状态快照
+| 层级 | 名称 | 作用 |
+|------|------|------|
+| L1 | 工作记忆 | 当前会话的临时上下文 |
+| L2 | 情景记忆 | 完整对话记录 + 注入来源 |
+| L3 | 语义记忆 | 知识实体 + 关系网络 + 重要性评分 |
+| L4 | 程序记忆 | 技能模板 + 用户偏好规则 |
 
-### 🔀 多 LLM 智能路由
-- GenerationRouter / EmbeddingRouter / RerankRouter / MultimodalRouter 按能力分离路由
-- ModelServiceRegistry DB 持久化模型服务注册 + Web UI 可视化配置
-- CircuitBreaker 熔断器（Closed → Open → HalfOpen 三态）+ ExponentialBackoff 故障转移
-- SemanticCache 语义缓存（scene + responseFormatKey + prompt 三维匹配）
+记忆自动巩固：对话中提取的知识经过经验学习、对比分析和遗忘衰减，高频经验自动提升为可复用的技能模板。混合检索（向量 + FTS5 + 时序）确保最相关的记忆被召回。
 
-### 🎯 Skill 技能系统
-- 两层工具架构（ToolContract sealed interface）：BuiltinTool（Java Native）→ McpTool（External）
-- 7 大元能力维度（ToolCategory）：感知 / 行动 / 认知 / 存储 / 交互 / 自省 / 扩展
-- Skill 验证三阶段管线：FormatValidator → SecurityValidator → SandboxValidator
-- Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 Markdown SKILL.md
-- 内置 33 个 Skill：记忆管理 / 定时任务 / 浏览器自动化 / 代码助手 / 数据分析 等
-- DynamicToolRegistry 运行时工具注册表，支持热加载
+### 不只是聊天 — Agent 引擎
 
-### 📚 知识库管理
-- 多格式文档解析（PDF / Word / Markdown / TXT）
-- 多分块策略（固定大小 / 语义 / 标题）
-- 混合检索（向量 + FTS5 全文 + 知识图谱遍历）+ 可选 LLM Reranker 精排
+- **ReAct 循环**：思考 → 工具调用 → 观察 → 回答，完全可追溯
+- **33 个内置技能**：记忆管理 / 定时任务 / 浏览器自动化 / 代码沙箱 / 数据分析 / 知识检索
+- **挂起与恢复**：等待用户确认、工作流完成、定时唤醒、外部数据就绪时自动挂起，条件满足后恢复
+- **Skill 自扩展**：运行时检测能力缺口，自动生成新技能
 
-### 🔌 MCP 协议支持
-- McpServerRegistry 服务器发现 + 客户端管理
-- McpServerDiscovery 自动发现
-- McpTool 作为 ToolContract 最低优先级层接入工具生态
+### 用你想用的模型 — 多 LLM 智能路由
 
-### 🤝 多 Agent 协作
-- AgentRegistry + AgentDefinition 注册管理
-- spawn_workers 并行 Worker 派发，SubAgent 独立预算和上下文
-- AgentDefinition Markdown 定义，支持自定义 Agent 蓝图
+- 生成 / 向量 / 精排 / 多模态四路独立路由
+- Web UI 管理模型服务，支持启用切换和连接测试
+- 熔断器 + 指数退避故障转移 + 语义缓存
 
-### 🔄 工作流引擎
-- YAML 声明式工作流定义
-- 多种触发器：manual / cron / event
-- 工作流状态持久化 + 崩溃恢复
+### 扩展你想要的能力
 
-### 🔐 权限与自动执行
-- `PermissionRequestFactory + PermissionEvaluator + ExecutionGrant` 统一工具授权链路
-- 授权范围支持：本会话 / 当前工作区 / 当前任务 / 长期
-- 高风险交互执行走 Web 授权，自主执行只认预授权
-- Cron / Heartbeat / 自主工作流支持任务级高风险预授权
+- **知识库**：PDF / Word / Markdown 解析 → 分块 → 混合检索 → 可选 Reranker 精排
+- **MCP 协议**：一键接入 MCP 工具生态
+- **工作流引擎**：YAML 声明式定义 + cron / event / manual 触发
+- **多 Agent 协作**：Markdown 定义 Agent 蓝图，spawn_workers 并行派发
+- **扩展市场**：Skill / Agent / 工作流 / 渠道插件一键安装
 
-### 🔔 统一通知系统
-- NotificationService 统一接口，工作流 / 各模块统一调用
-- 无结果静默，有结果直接通知
-- 富媒体支持：文本 / Markdown / 交互式卡片 / 图片，各渠道自动适配
-- 通知历史管理：分页查询、未读统计、已读标记
-- Web SSE 实时推送，通知中心直接消费同一条数据流
+### 多渠道触达
 
-### 🌐 Gateway 中间件
-- 6 层可插拔中间件管道（Auth=100 → RateLimit=200 → Security=300 → Router=400 → Execution=500 → Audit=600）
-- 渠道插件架构：Web / 企业微信 / 钉钉 / 飞书（插件式加载）
-- SecurityMiddleware：PromptInjectionDetector + SensitiveDataDetector + TrustScoreCalculator
-- AuditMiddleware：DataRedactor 自动脱敏 + 审计日志
+- **Web UI**：Vue 3 SPA，SSE 流式对话 + 实时通知
+- **桌面端**：Tauri 2.x 跨平台客户端（Windows / macOS / Linux），内嵌 JRE
+- **企业 IM**：飞书 / 钉钉 / 企微 / QQ 机器人，插件式加载
 
-### 🎨 多模态能力
-- 图片 / 文档 / 音频 / 视频处理
-- MultimodalRouter 自动路由到支持多模态的 LLM
+### 安全与可观测
 
-### 🛡️ 护栏与安全
-- GuardrailEngine 护栏引擎：3 种策略类型（ContentSafetyPolicy / RateLimitPolicy / DataRedactionPolicy）
-- GuardrailResult 三态决策：Passed / Blocked / NeedsConfirmation
-- RiskLevel 四级风险分级（LOW → MEDIUM → HIGH → CRITICAL）
-- 高风险工具采用作用域授权模型，Web 聊天可授权，Cron / Heartbeat / 自主工作流只认预授权
-- DataRedactor 敏感信息脱敏：6 条内置规则（API 密钥 / 手机号 / 身份证 / 银行卡 / 邮箱 / IP）+ 自定义规则扩展
-- 代码执行沙箱：Process / Docker 双模式 + CodeValidator 危险操作预检
+- **权限**：工具调用分级授权（会话 / 工作区 / 任务 / 长期），高风险操作需确认
+- **护栏**：内容安全 + 敏感数据脱敏 + 代码沙箱（Process / Docker 双模式）
+- **可观测**：完整轨迹追踪 + 决策回放 + Agentic Evals 评估框架
+- **Gateway**：6 层中间件管道（认证 → 限流 → 安全 → 路由 → 执行 → 审计）
 
-### 🔍 可观测性
-- TraceRecorder 完整追踪：LlmCallStep / ToolCallStep / GuardrailStep 三种步骤类型
-- 每个决策可追溯和回放
-- Agentic Evals 评估框架：五维规则评估 + LLM-as-a-Judge
+### 本地优先，隐私掌控
 
-### 🔗 协议支持
-- A2A 协议：Agent Card 能力声明 + 跨系统 Agent 互操作
-- 扩展市场：Skill / Agent / Workflow / Channel 发布与安装
-
-### 🔄 外部数据源同步（📋 规划中）
-- CalDAV / Todoist / 滴答清单 / Obsidian 连接器
-- 冲突解决策略（Last-Write-Wins / 用户确认）
-
-### 🖥️ Web UI & 桌面端
-- Vue 3 SPA，30+ 页面视图
-- SSE 流式对话 + 实时通知推送
-- 记忆管理（实体 / 关系 / 对话 / 模板 / 偏好 / 遗忘日志）
-- 评估管理（场景 / 运行历史 / 评分趋势）
-- Tauri 2.x 桌面客户端：内嵌 JRE 运行时管理、系统托盘、开机引导向导、跨平台安装包（Windows / macOS / Linux）
-
-### 📦 通用数据存储
-- Schema-Free JSON 文档持久化，三种集合类型（Document / Note / Metric）
-- 可选属性定义：声明后获得类型校验 + SQLite Generated Column 索引加速
-- 7 个 Agent 工具：集合 CRUD + 文档 CRUD + 时序聚合
-- FTS5 全文搜索（Note 类型）+ 时序聚合分析（Metric 类型）
-
-### 🏠 本地优先架构
-- 所有数据存储在本地 `~/.zhiwei/`
+- 所有数据存储在 `~/.zhiwei/`，不上传云端
 - SQLite（WAL 模式）+ sqlite-vec 向量扩展，零外部服务依赖
 - 单 JAR 部署，开箱即用
 
 ## 📸 界面预览
 
-### 对话交互
+> 以下截图展示最新版 UI。完整页面清单见[项目结构](#-项目结构)。
 
-SSE 流式对话，支持 A2UI 自适应渲染（表格、卡片等富媒体形式）：
+<table>
+<tr>
+<td width="50%">
 
-![对话 — A2UI 表格渲染](docs/images/chat-a2ui-table.png)
+**对话** — SSE 流式输出 + 思考链展示 + 消息编辑重发
 
-![对话 — 多轮交互](docs/images/chat-conversation.png)
+![对话界面](docs/images/chat-conversation.png)
+</td>
+<td width="50%">
 
-### 记忆系统
+**扩展市场** — 一键安装 Skill / Agent / 工作流 / 渠道插件
 
-四层认知记忆 + 自我学习，越用越懂你：
+![扩展市场](docs/images/marketplace.png)
+</td>
+</tr>
+<tr>
+<td>
 
-![记忆 — 自我学习](docs/images/memory-self-learning.png)
+**记忆管理** — 实体 / 关系 / 对话 / 模板 / 偏好 / 遗忘日志
 
-![记忆 — 管理面板](docs/images/memory-management.png)
+![记忆管理](docs/images/memory-management.png)
+</td>
+<td>
 
-### Agent 自主能力
+**模型路由** — 多服务商管理 + 启用切换 + 连接测试
 
-Agent 运行时自动检测能力缺口，按需创建工作流和 Skill：
+![模型路由](docs/images/model-services.png)
+</td>
+</tr>
+<tr>
+<td>
 
-![Agent — 自动创建工作流](docs/images/agent-create-workflow.png)
-
-![Agent — 自动创建 Skill](docs/images/agent-create-skill.png)
-
-### 工作流引擎
-
-YAML 声明式工作流，支持 cron / event / manual 触发：
+**工作流** — YAML 声明式定义 + DAG 可视化
 
 ![工作流管理](docs/images/workflow.png)
+</td>
+<td>
 
-### 可观测性
+**渠道管理** — 飞书 / 钉钉 / 企微 / QQ 插件式接入
 
-每个决策步骤可追溯、可回放：
+![渠道管理](docs/images/channels.png)
+</td>
+</tr>
+<tr>
+<td colspan="2">
+
+**轨迹回放** — 每个 Agent 决策步骤可追溯、可回放
 
 ![轨迹回放](docs/images/trace-replay.png)
+</td>
+</tr>
+</table>
 
-### MCP 协议
-
-MCP 服务器发现与管理，一键接入外部工具生态：
-
-![MCP 服务器管理](docs/images/mcp-servers.png)
+<!-- 
+📌 截图更新指引：
+1. 用浏览器 1280×800 窗口大小截图，保持一致比例
+2. 替换 docs/images/ 下对应文件名即可
+3. 新增截图文件：marketplace.png, model-services.png, channels.png
+4. 可选补充：agent-detail.png, knowledge-base.png, mcp-servers.png
+-->
 
 ## 🚀 快速开始
 
