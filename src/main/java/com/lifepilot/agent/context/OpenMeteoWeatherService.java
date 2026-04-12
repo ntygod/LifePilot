@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @author zsg
  * @since 2026-04-12
  */
-public class OpenMeteoWeatherService {
+public class OpenMeteoWeatherService implements WeatherService {
 
     private static final Logger log = LoggerFactory.getLogger(OpenMeteoWeatherService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -69,9 +69,7 @@ public class OpenMeteoWeatherService {
                 .build();
     }
 
-    /**
-     * 触发后台天气数据预取。应在应用启动后调用。
-     */
+    @Override
     public void triggerPrefetch() {
         if (prefetchTriggered) {
             return;
@@ -95,6 +93,7 @@ public class OpenMeteoWeatherService {
      *
      * @return 天气摘要文本，或 null（缓存为空或过期时）
      */
+    @Override
     @Nullable
     public String getWeatherSummary() {
         WeatherData data = getCachedWeatherData();
@@ -117,6 +116,7 @@ public class OpenMeteoWeatherService {
      * @param hasOutdoorEvents 用户明日是否有外出事件
      * @return 信号列表（可能为空）
      */
+    @Override
     public List<ReminderSignal> evaluateWeatherSignals(boolean hasOutdoorEvents) {
         WeatherData data = getOrFetchWeatherData();
         if (data == null) {

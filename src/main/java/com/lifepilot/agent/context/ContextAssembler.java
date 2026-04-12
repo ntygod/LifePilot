@@ -73,7 +73,7 @@ public class ContextAssembler {
     @Nullable private final CollectionRepository collectionRepository;
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
-    @Nullable private final OpenMeteoWeatherService weatherService;
+    @Nullable private final WeatherService weatherService;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -186,7 +186,7 @@ public class ContextAssembler {
                             @Nullable CollectionRepository collectionRepository,
                             @Nullable DynamicToolRegistry toolRegistry,
                             @Nullable McpConfigProperties mcpConfig,
-                            @Nullable OpenMeteoWeatherService weatherService) {
+                            @Nullable WeatherService weatherService) {
         this(config, null, promptRegistry, dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry, generationRouter,
                 contextEngine, sessionKnowledgeBaseRepository, sessionDatastoreRepository,
@@ -210,7 +210,7 @@ public class ContextAssembler {
                             @Nullable CollectionRepository collectionRepository,
                             @Nullable DynamicToolRegistry toolRegistry,
                             @Nullable McpConfigProperties mcpConfig,
-                            @Nullable OpenMeteoWeatherService weatherService) {
+                            @Nullable WeatherService weatherService) {
         this.config = config;
         this.locationResolver = locationResolver != null ? locationResolver : new LocationResolver(config);
         this.promptRegistry = promptRegistry;

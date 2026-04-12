@@ -13,7 +13,7 @@ import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.memory.workspace.WorkspaceItemKind;
-import com.lifepilot.agent.context.OpenMeteoWeatherService;
+import com.lifepilot.agent.context.WeatherService;
 import com.lifepilot.notification.NotificationRecord;
 import com.lifepilot.notification.NotificationRepository;
 import org.slf4j.Logger;
@@ -91,7 +91,7 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
     @Nullable
     private final ReminderTopicAliasRepository topicAliasRepository;
     @Nullable
-    private final OpenMeteoWeatherService weatherService;
+    private final WeatherService weatherService;
 
     /**
      * 便捷构造器 — 供单元测试和不需要全部依赖的场景使用。
@@ -113,7 +113,7 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
                                           @Nullable ReminderFeedbackRepository feedbackRepository,
                                           @Nullable ReminderOutcomeRepository outcomeRepository,
                                           @Nullable ReminderTopicAliasRepository topicAliasRepository,
-                                          @Nullable OpenMeteoWeatherService weatherService) {
+                                          @Nullable WeatherService weatherService) {
         this.semanticMemory = semanticMemory;
         this.proceduralMemory = proceduralMemory;
         this.episodicMemory = episodicMemory;

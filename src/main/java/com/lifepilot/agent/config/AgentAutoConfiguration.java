@@ -193,12 +193,12 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CollectionRepository collectionRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
-            @Autowired(required = false) OpenMeteoWeatherService openMeteoWeatherService) {
+            @Autowired(required = false) WeatherService weatherService) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，天气={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
                 proceduralMemory != null ? "enabled" : "disabled",
-                openMeteoWeatherService != null ? "enabled" : "disabled");
+                weatherService != null ? "enabled" : "disabled");
         return new ContextAssembler(
                 config,
                 locationResolver,
@@ -217,7 +217,7 @@ public class AgentAutoConfiguration {
                 collectionRepository,
                 toolRegistry,
                 mcpConfig,
-                openMeteoWeatherService);
+                weatherService);
     }
 
     @Bean

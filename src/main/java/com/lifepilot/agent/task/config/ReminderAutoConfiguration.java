@@ -29,6 +29,7 @@ import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
 import com.lifepilot.agent.task.reminder.WeatherSignalSource;
 import com.lifepilot.agent.context.LocationResolver;
 import com.lifepilot.agent.context.OpenMeteoWeatherService;
+import com.lifepilot.agent.context.WeatherService;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -135,7 +136,7 @@ public class ReminderAutoConfiguration {
             @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
             @Autowired(required = false) ReminderOutcomeRepository reminderOutcomeRepository,
             @Autowired(required = false) ReminderTopicAliasRepository reminderTopicAliasRepository,
-            @Autowired(required = false) OpenMeteoWeatherService openMeteoWeatherService) {
+            @Autowired(required = false) WeatherService weatherService) {
         return new DefaultReminderSignalCollector(
                 semanticMemory,
                 proceduralMemory,
@@ -145,7 +146,7 @@ public class ReminderAutoConfiguration {
                 reminderFeedbackRepository,
                 reminderOutcomeRepository,
                 reminderTopicAliasRepository,
-                openMeteoWeatherService
+                weatherService
         );
     }
 
@@ -298,8 +299,8 @@ public class ReminderAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     ReminderCounterfactualWarmupListener reminderCounterfactualWarmupListener(
             ProactiveReminderService proactiveReminderService,
-            @Autowired(required = false) OpenMeteoWeatherService openMeteoWeatherService) {
-        return new ReminderCounterfactualWarmupListener(proactiveReminderService, openMeteoWeatherService);
+            @Autowired(required = false) WeatherService weatherService) {
+        return new ReminderCounterfactualWarmupListener(proactiveReminderService, weatherService);
     }
 
     /**
@@ -308,11 +309,10 @@ public class ReminderAutoConfiguration {
     static class ReminderCounterfactualWarmupListener {
         private static final Logger warmupLog = LoggerFactory.getLogger(ReminderCounterfactualWarmupListener.class);
         private final ProactiveReminderService proactiveReminderService;
-        @Nullable
-        private final OpenMeteoWeatherService weatherService;
+        private final WeatherService weatherService;
 
         ReminderCounterfactualWarmupListener(ProactiveReminderService proactiveReminderService,
-                                             @Nullable OpenMeteoWeatherService weatherService) {
+                                             WeatherService weatherService) {
             this.proactiveReminderService = proactiveReminderService;
             this.weatherService = weatherService;
         }
