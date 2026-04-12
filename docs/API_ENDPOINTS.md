@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-11
+> **最后更新**：2026-04-12
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -384,6 +384,8 @@
 |--------|------|---------|------|
 | GET | `/api/settings` | `getSettings` | 获取设置 |
 | PUT | `/api/settings` | `updateSettings` | 更新设置 |
+| GET | `/api/settings/workspace` | `getWorkspaceSettings` | 获取工作目录设置（返回 defaultWorkspace / resolvedPath / systemDefault） |
+| PUT | `/api/settings/workspace` | `updateWorkspaceSettings` | 更新工作目录设置（body: `{defaultWorkspace}`，空字符串清除自定义，需绝对路径） |
 
 ---
 

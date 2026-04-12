@@ -4,6 +4,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -14,6 +15,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { logger } from '@/utils/logger'
 import { useSettings } from '@/composables/useSettings'
+import { settingsApi } from '@/api/client'
+import type { WorkspaceSettings } from '@/api/client'
 
 const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
 
@@ -68,6 +71,72 @@ function confirmRestartForDataDir() {
   window.location.reload()
 }
 
+// ---- 默认工作目录（前后端 API 驱动，实时生效） ----
+const workspaceDir = ref('')
+const workspaceResolvedPath = ref('')
+const workspaceSystemDefault = ref('')
+const workspaceSaving = ref(false)
+const workspaceInputValue = ref('')
+
+async function loadWorkspaceDir() {
+  try {
+    const ws: WorkspaceSettings = await settingsApi.getWorkspaceSettings()
+    workspaceDir.value = ws.defaultWorkspace ?? ''
+    workspaceResolvedPath.value = ws.resolvedPath
+    workspaceSystemDefault.value = ws.systemDefault
+    workspaceInputValue.value = ws.defaultWorkspace ?? ''
+  } catch (e) {
+    logger.error('加载工作目录设置失败:', e)
+  }
+}
+
+async function saveWorkspaceDir(value: string) {
+  workspaceSaving.value = true
+  try {
+    const ws = await settingsApi.updateWorkspaceSettings({
+      defaultWorkspace: value || null
+    })
+    workspaceDir.value = ws.defaultWorkspace ?? ''
+    workspaceResolvedPath.value = ws.resolvedPath
+    workspaceInputValue.value = ws.defaultWorkspace ?? ''
+  } catch (e) {
+    logger.error('保存工作目录失败:', e)
+  } finally {
+    workspaceSaving.value = false
+  }
+}
+
+async function browseWorkspaceDir() {
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({ directory: true, title: '选择默认工作目录' })
+    if (selected && typeof selected === 'string') {
+      workspaceInputValue.value = selected
+      await saveWorkspaceDir(selected)
+    }
+  } catch (e) {
+    logger.error('选择工作目录失败:', e)
+  }
+}
+
+async function resetWorkspaceDir() {
+  workspaceInputValue.value = ''
+  await saveWorkspaceDir('')
+}
+
+function handleWorkspaceInputBlur() {
+  const trimmed = workspaceInputValue.value.trim()
+  if (trimmed !== (workspaceDir.value || '')) {
+    saveWorkspaceDir(trimmed)
+  }
+}
+
+function handleWorkspaceInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    (event.target as HTMLInputElement)?.blur()
+  }
+}
+
 const saveError = ref<string | null>(null)
 const showRestartOnboardingConfirm = ref(false)
 
@@ -79,6 +148,7 @@ onMounted(() => {
     showTokenUsage: settings.value.showTokenUsage,
   }
   loadDataDir()
+  loadWorkspaceDir()
 })
 
 async function applySettings() {
@@ -206,6 +276,33 @@ const fontSizeOptions = [
           <span>数据目录已修改，重启应用后生效。</span>
           <Button type="button" variant="outline" size="sm" @click="showRestartForDataDir = true">立即重启</Button>
         </div>
+      </SettingSection>
+
+      <SettingSection
+        title="工作目录"
+        description="沙箱执行、Shell 命令、文件写入等操作的默认工作目录。修改后立即生效。"
+      >
+        <SettingItem
+          label="默认工作目录"
+          :description="'当前生效路径：' + (workspaceResolvedPath || '加载中...')"
+        >
+          <div class="flex items-center gap-sm">
+            <template v-if="isTauri">
+              <Button type="button" variant="outline" size="sm" :disabled="workspaceSaving" @click="browseWorkspaceDir">选择目录</Button>
+            </template>
+            <template v-else>
+              <Input
+                v-model="workspaceInputValue"
+                class="min-w-2xl"
+                placeholder="留空使用默认目录"
+                :disabled="workspaceSaving"
+                @blur="handleWorkspaceInputBlur"
+                @keydown="handleWorkspaceInputKeydown"
+              />
+            </template>
+            <Button type="button" variant="ghost" size="sm" :disabled="workspaceSaving" @click="resetWorkspaceDir">恢复默认</Button>
+          </div>
+        </SettingItem>
       </SettingSection>
 
       <SettingSection title="辅助操作" description="管理只在当前浏览器中生效的引导状态。">

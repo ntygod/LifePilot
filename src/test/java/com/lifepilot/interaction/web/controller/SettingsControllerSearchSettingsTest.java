@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,11 +40,13 @@ class SettingsControllerSearchSettingsTest {
     @BeforeEach
     void setUp() {
         MetaProperties metaProperties = new MetaProperties();
+        var workspaceResolver = new WorkspaceResolver(null, "");
         var controller = new SettingsController(
                 settingsRepository,
                 new ObjectMapper(),
                 null,
-                metaProperties
+                metaProperties,
+                workspaceResolver
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell;
 
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -48,11 +49,14 @@ public class ShellExecToolExecutor {
     private final List<Pattern> compiledBlacklist;
     @Nullable
     private final BackgroundProcessManager backgroundProcessManager;
+    private final WorkspaceResolver workspaceResolver;
 
     public ShellExecToolExecutor(MetaProperties properties,
-                                  @Nullable BackgroundProcessManager backgroundProcessManager) {
+                                  @Nullable BackgroundProcessManager backgroundProcessManager,
+                                  WorkspaceResolver workspaceResolver) {
         this.shellConfig = properties.getInfra().getShell();
         this.backgroundProcessManager = backgroundProcessManager;
+        this.workspaceResolver = workspaceResolver;
         // 构造时编译正则模式，避免每次执行重复编译
         this.compiledBlacklist = shellConfig.getCommandBlacklist().stream()
                 .map(Pattern::compile)
@@ -75,7 +79,7 @@ public class ShellExecToolExecutor {
         }
 
         String workingDirectory = input.getOptionalParam("workingDirectory", String.class)
-                .orElse(System.getProperty("user.home"));
+                .orElse(workspaceResolver.resolveAndCreate().toString());
 
         int timeoutSeconds = input.getOptionalParam("timeoutSeconds", Number.class)
                 .map(Number::intValue)

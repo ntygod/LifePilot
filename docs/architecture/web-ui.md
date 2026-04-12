@@ -85,6 +85,8 @@ graph TB
 | POST | `/api/chat/signals` | A2UI 信号回传（用户与 Generative UI 组件交互） |
 | GET | `/api/settings` | 获取用户设置 |
 | PUT | `/api/settings` | 更新用户设置 |
+| GET | `/api/settings/workspace` | 获取工作目录设置（defaultWorkspace / resolvedPath / systemDefault） |
+| PUT | `/api/settings/workspace` | 更新工作目录设置（body: `{defaultWorkspace}`） |
 | GET | `/api/health` | 健康检查（复用 Actuator） |
 
 #### 3.2.2 SSE 流式协议

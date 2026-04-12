@@ -56,8 +56,9 @@ public class UserSettingsRepository {
                 INSERT INTO user_settings (
                     id, theme, language,
                     enable_streaming, enable_function_call, enable_knowledge_base, enable_tool_call,
+                    default_workspace,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     theme = excluded.theme,
                     language = excluded.language,
@@ -65,6 +66,7 @@ public class UserSettingsRepository {
                     enable_function_call = excluded.enable_function_call,
                     enable_knowledge_base = excluded.enable_knowledge_base,
                     enable_tool_call = excluded.enable_tool_call,
+                    default_workspace = excluded.default_workspace,
                     updated_at = excluded.updated_at
                 """,
                 DEFAULT_SETTINGS_ID,
@@ -74,6 +76,7 @@ public class UserSettingsRepository {
                 settings.enableFunctionCall() ? 1 : 0,
                 settings.enableKnowledgeBase() ? 1 : 0,
                 settings.enableToolCall() ? 1 : 0,
+                settings.defaultWorkspace(),
                 now,
                 now
         );
@@ -90,7 +93,7 @@ public class UserSettingsRepository {
         return jdbcTemplate.query(
                 """
                 SELECT theme, language, enable_streaming, enable_function_call,
-                       enable_knowledge_base, enable_tool_call
+                       enable_knowledge_base, enable_tool_call, default_workspace
                 FROM user_settings WHERE id = ?
                 """,
                 (rs, rowNum) -> new UserSettings(
@@ -99,7 +102,8 @@ public class UserSettingsRepository {
                         rs.getInt("enable_streaming") == 1,
                         rs.getInt("enable_function_call") == 1,
                         rs.getInt("enable_knowledge_base") == 1,
-                        rs.getInt("enable_tool_call") == 1
+                        rs.getInt("enable_tool_call") == 1,
+                        rs.getString("default_workspace")
                 ),
                 id
         ).stream().findFirst();
@@ -160,7 +164,7 @@ public class UserSettingsRepository {
     }
 
     private UserSettings createDefaultSettings() {
-        UserSettings defaultSettings = new UserSettings("system", "zh-CN", true, true, true, true);
+        UserSettings defaultSettings = new UserSettings("system", "zh-CN", true, true, true, true, null);
         save(defaultSettings);
         return defaultSettings;
     }

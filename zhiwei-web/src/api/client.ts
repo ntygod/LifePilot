@@ -599,7 +599,27 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
+  },
+
+  /** 获取工作目录配置 */
+  getWorkspaceSettings(): Promise<WorkspaceSettings> {
+    return request('/settings/workspace')
+  },
+
+  /** 更新工作目录配置 */
+  updateWorkspaceSettings(workspace: { defaultWorkspace: string | null }): Promise<WorkspaceSettings> {
+    return request('/settings/workspace', {
+      method: 'PUT',
+      body: JSON.stringify(workspace)
+    })
   }
+}
+
+/** 工作目录配置响应 */
+export interface WorkspaceSettings {
+  defaultWorkspace: string | null
+  resolvedPath: string
+  systemDefault: string
 }
 
 /** Reranker 配置响应 */

@@ -21,7 +21,7 @@
 
 ### 2.2 双重隔离策略
 
-ProcessBooter（默认）：基于 ProcessBuilder 的轻量级进程隔离，零外部依赖。在隔离临时目录中执行，清洗环境变量仅保留 PATH，超时强制终止进程。
+ProcessBooter（默认）：基于 ProcessBuilder 的轻量级进程隔离，零外部依赖。在统一工作目录下的 `sandbox/` 子目录中创建隔离会话目录（默认 `~/.zhiwei/workspace/sandbox/`），清洗环境变量仅保留 PATH，超时强制终止进程。
 
 DockerBooter：基于 Docker 容器的强隔离，提供内存/CPU/磁盘资源限制和网络隔离（默认禁用网络）。需要宿主机安装 Docker，适合对安全性要求更高的场景。
 
@@ -58,6 +58,7 @@ CodeExecuteTool 注册为 CRITICAL 风险级别的 BuiltinTool，执行前必须
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
+| `zhiwei.workspace-dir` | `${zhiwei.data-dir}/workspace` | 统一工作目录，沙箱会话目录创建在 `{workspace}/sandbox/` 下 |
 | `lifepilot.sandbox.enabled` | `true` | 沙箱总开关 |
 | `lifepilot.sandbox.booter` | `process` | 隔离策略（process / docker） |
 | `lifepilot.sandbox.supported-languages` | `[python, javascript, shell]` | 支持的语言 |

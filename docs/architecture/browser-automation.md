@@ -214,7 +214,7 @@ Page 操作封装，职责：
 | `headless` | boolean | true | 无头模式 |
 | `acquisition-mode` | enum | LAUNCH | 浏览器获取模式 |
 | `cdp-url` | string | — | CDP 模式的远程调试端口 URL |
-| `user-data-dir` | string | — | PERSISTENT 模式的用户数据目录 |
+| `user-data-dir` | string | `${zhiwei.data-dir}/cache/browser/profile` | PERSISTENT 模式的用户数据目录 |
 | `stealth-mode` | boolean | true | 启用反检测 |
 | `idle-timeout-seconds` | int | 300 | 空闲会话超时（秒） |
 | `tool-timeout-seconds` | int | 30 | navigate 导航超时（秒） |
@@ -232,7 +232,7 @@ Page 操作封装，职责：
 | `timezone-id` | string | Asia/Shanghai | 时区 |
 | `extra-launch-args` | list | [] | 额外 Chromium 启动参数 |
 | `persist-storage-state` | boolean | false | LAUNCH 模式下关闭会话时保存 storageState |
-| `storage-state-dir` | string | — | storageState 持久化目录 |
+| `storage-state-dir` | string | `${zhiwei.data-dir}/cache/browser/storage-state` | storageState 持久化目录 |
 
 ## 8. 生命周期
 

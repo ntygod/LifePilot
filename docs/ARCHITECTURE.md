@@ -150,7 +150,7 @@ graph TB
 | `prompt` | Prompt 模板注册与管理 | [架构](architecture/prompt-management.md) · [特性](features/prompt-management.md) |
 | `notification` | 统一通知服务、直接投递、多渠道广播、通知历史与 SSE 推送 API | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | `observability` | 轨迹记录/查询、GuardrailAdvisor、数据脱敏、轨迹评估 | [架构](architecture/observability.md) · [特性](features/observability.md) |
-| `config` | 全局数据源配置、Flyway 迁移（纯基础设施，不单独出模块文档） | — |
+| `config` | 全局数据源配置、Flyway 迁移、统一工作目录解析（`WorkspaceResolver`）（纯基础设施，不单独出模块文档） | — |
 
 ## 5. 前后端交互架构
 
@@ -187,12 +187,9 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V11）"
-        V1["V1~V4: 核心表 + 通知 + 知识库/数据存储 + 记忆空间"]
-        V5["V5: 语义记忆实体模型"]
-        V6["V6: 数据存储工作区"]
-        V7["V7: 渠道插件控制面"]
-        V8["V8~V11: 市场资产 + Provider 规范化 + 模型服务模板 + Skill 嵌入缓存"]
+    subgraph "Flyway 迁移（V1~V2）"
+        V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
+        V2["V2: user_settings 新增 default_workspace 字段"]
     end
 
     V1 --> SQL

@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.web.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.springframework.lang.Nullable;
 
 /**
  * 用户通用设置。
@@ -14,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * @param enableFunctionCall  是否启用函数调用
  * @param enableKnowledgeBase 是否启用知识库
  * @param enableToolCall      是否启用工具调用
+ * @param defaultWorkspace    默认工作目录（null 表示使用系统默认 ~/.zhiwei/workspace/）
  * @author zsg
  * @since 2026-03-24
  */
@@ -24,7 +26,8 @@ public record UserSettings(
         Boolean enableStreaming,
         Boolean enableFunctionCall,
         Boolean enableKnowledgeBase,
-        Boolean enableToolCall
+        Boolean enableToolCall,
+        @Nullable String defaultWorkspace
 ) {
 
     public UserSettings {

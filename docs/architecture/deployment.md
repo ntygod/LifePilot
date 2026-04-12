@@ -30,7 +30,8 @@
 |------|------|
 | 后端服务 | Spring Boot JAR，提供 REST/SSE API，内嵌 SQLite + sqlite-vec native |
 | 前端应用 | Vue 3 SPA（zhiwei-web），独立构建为静态资源，通过 Nginx 部署 |
-| 数据目录 | `~/.zhiwei/`（本地）或 Docker Volume 挂载点，存放 SQLite 数据库、配置、日志 |
+| 数据目录 | `~/.zhiwei/`（本地）或 Docker Volume 挂载点，存放 SQLite 数据库、配置、日志等 |
+| 工作目录 | `~/.zhiwei/workspace/`（默认），沙箱、Shell、Tmux 等子系统的统一工作根目录，可通过 `zhiwei.workspace-dir` 配置或前端设置页面自定义 |
 | 配置版本 | `application.yml` 中的 `lifepilot.config-version` 字段，标识当前配置格式版本 |
 | 配置迁移器 | 启动时自动检测配置版本并执行迁移链的组件 |
 

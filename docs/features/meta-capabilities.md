@@ -78,11 +78,11 @@ Agent 在执行任务时，自动使用基础工具完成各类操作：搜索 W
 | `lifepilot.meta.infra.shell.max-output-length` | `50000` | Shell 输出最大字符数 |
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
 | `lifepilot.meta.infra.browser.headless` | `true` | 无头模式 |
-| `lifepilot.meta.infra.browser.storage-state-dir` | `""` | storageState 持久化目录，空字符串关闭持久化 |
+| `lifepilot.meta.infra.browser.storage-state-dir` | `${zhiwei.data-dir}/cache/browser/storage-state` | storageState 持久化目录 |
 | `lifepilot.meta.infra.browser.persist-storage-state` | `false` | 是否在会话关闭时自动保存 storageState |
 | `lifepilot.meta.infra.browser.acquisition-mode` | `LAUNCH` | 浏览器获取模式（LAUNCH / CDP / PERSISTENT） |
 | `lifepilot.meta.infra.browser.cdp-url` | `""` | CDP 模式的远程调试端口 URL |
-| `lifepilot.meta.infra.browser.user-data-dir` | `""` | PERSISTENT 模式的用户数据目录 |
+| `lifepilot.meta.infra.browser.user-data-dir` | `${zhiwei.data-dir}/cache/browser/profile` | PERSISTENT 模式的用户数据目录 |
 | `lifepilot.meta.infra.code-execute.enabled` | `true` | 代码执行开关 |
 | `lifepilot.meta.infra.file.max-read-size` | `1048576` | 文件最大读取字节数 |
 | `lifepilot.meta.infra.interaction.response-timeout-seconds` | `120` | 用户交互超时 |

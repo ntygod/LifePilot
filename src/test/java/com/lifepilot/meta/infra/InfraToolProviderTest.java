@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra;
 
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.web.WebSearchConfig;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
@@ -41,7 +42,8 @@ class InfraToolProviderTest {
                 "general",
                 true
         ));
-        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        var workspaceResolver = new WorkspaceResolver(null, "");
+        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, workspaceResolver);
     }
 
     @Test

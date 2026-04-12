@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell.session;
 
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.shell.RingBuffer;
 import jakarta.annotation.Nullable;
@@ -37,11 +38,14 @@ public class TmuxSessionManager {
     private final ConcurrentHashMap<String, TmuxSession> sessions = new ConcurrentHashMap<>();
     private final TmuxCommandExecutor tmuxCmd;
     private final MetaProperties.Infra.ShellSession config;
+    private final WorkspaceResolver workspaceResolver;
     private final ScheduledExecutorService cleanupScheduler;
 
-    public TmuxSessionManager(TmuxCommandExecutor tmuxCmd, MetaProperties.Infra.ShellSession config) {
+    public TmuxSessionManager(TmuxCommandExecutor tmuxCmd, MetaProperties.Infra.ShellSession config,
+                              WorkspaceResolver workspaceResolver) {
         this.tmuxCmd = tmuxCmd;
         this.config = config;
+        this.workspaceResolver = workspaceResolver;
         this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = Thread.ofVirtual().unstarted(r);
             t.setName("session-cleanup");
@@ -74,7 +78,7 @@ public class TmuxSessionManager {
 
         String sessionId = UUID.randomUUID().toString().substring(0, 8);
         String tmuxName = SESSION_PREFIX + sessionId;
-        String cwd = workDir != null ? workDir : System.getProperty("user.home");
+        String cwd = workDir != null ? workDir : workspaceResolver.resolveAndCreate().toString();
 
         // 创建 tmux 会话
         tmuxCmd.newSession(tmuxName, cwd, config.getDefaultCols(), config.getDefaultRows());

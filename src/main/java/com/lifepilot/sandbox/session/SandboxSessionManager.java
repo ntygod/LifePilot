@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
@@ -37,6 +38,7 @@ public class SandboxSessionManager {
 
     private final SandboxConfigProperties config;
     private final SandboxBooter booterTemplate;
+    private final WorkspaceResolver workspaceResolver;
     private final ConcurrentHashMap<String, SandboxEntry> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger activeCount = new AtomicInteger(0);
     private final ScheduledExecutorService scheduler;
@@ -44,14 +46,16 @@ public class SandboxSessionManager {
     /**
      * 创建会话管理器并启动定时清理任务。
      *
-     * @param config         沙箱配置
-     * @param booterTemplate 沙箱启动器模板，用于确定新会话的 booter 类型
-     * @param sharedScheduler 共享调度器
+     * @param config            沙箱配置
+     * @param booterTemplate    沙箱启动器模板，用于确定新会话的 booter 类型
+     * @param sharedScheduler   共享调度器
+     * @param workspaceResolver 工作目录解析器
      */
     public SandboxSessionManager(SandboxConfigProperties config, SandboxBooter booterTemplate,
-                                 SharedScheduler sharedScheduler) {
+                                 SharedScheduler sharedScheduler, WorkspaceResolver workspaceResolver) {
         this.config = config;
         this.booterTemplate = booterTemplate;
+        this.workspaceResolver = workspaceResolver;
         this.scheduler = sharedScheduler.cleanup();
 
         int intervalSeconds = config.getSession().getCleanupIntervalSeconds();
@@ -196,11 +200,13 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 创建临时工作目录。
+     * 在统一工作目录下创建沙箱子目录。
      */
     private Path createWorkingDirectory() {
         try {
-            return Files.createTempDirectory("lifepilot-sandbox-");
+            Path sandboxBase = workspaceResolver.resolveAndCreate().resolve("sandbox");
+            Files.createDirectories(sandboxBase);
+            return Files.createTempDirectory(sandboxBase, "session-");
         } catch (IOException e) {
             throw new IllegalStateException("创建沙箱工作目录失败", e);
         }

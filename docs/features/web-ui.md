@@ -53,6 +53,7 @@ Web UI 为 ZhiWei 提供浏览器端交互界面，用户通过 Web 页面与 AI
 - 主题切换（亮色 / 暗色 / 跟随系统）
 - LLM Provider 选择与配置
 - 语言偏好设置
+- 工作目录配置：用户可在通用设置中自定义工作目录（默认 `~/.zhiwei/workspace/`），沙箱、Shell、Tmux 等子系统共享此目录
 
 ---
 

@@ -46,6 +46,7 @@ graph TB
         WR["WorkflowRegistry"]
         SB["SandboxSessionManager"]
         SSE["SseSessionManager"]
+        WSR["WorkspaceResolver<br/>统一工作目录"]
     end
 
     CA --> SR
@@ -90,7 +91,8 @@ graph TB
   - `ShellToolProvider` — shell.exec + shell.process（由 ShellExecToolExecutor 驱动）
   - `CodeToolProvider` — code.execute（支持一次性沙箱和持久内核两种模式）
 - 浏览器工具特别说明：`browser` 工具的 `action` 参数决定操作类型；支持通过 `acquisitionMode`（LAUNCH/CDP/PERSISTENT）、`cdpUrl`、`userDataDir` 三个可选参数在工具调用时动态指定浏览器获取模式，仅首次创建会话时生效，优先级高于 `application.yml` 静态配置
-- Shell 工具特别说明：`shell.exec` 支持 `env`（环境变量注入，有安全黑名单过滤）和 `shell`（Unix 解释器指定，仅 Unix 生效）两个参数；进程创建统一通过 `ShellProcessFactory`（消除 Windows PowerShell / Unix shell 的重复构建逻辑）
+- Shell 工具特别说明：`shell.exec` 支持 `env`（环境变量注入，有安全黑名单过滤）和 `shell`（Unix 解释器指定，仅 Unix 生效）两个参数；未指定 `workingDirectory` 时默认使用 `WorkspaceResolver` 解析的统一工作目录（默认 `~/.zhiwei/workspace/`）；进程创建统一通过 `ShellProcessFactory`（消除 Windows PowerShell / Unix shell 的重复构建逻辑）
+- 必需依赖：`WorkspaceResolver`（统一工作目录解析）
 - 可选依赖：`SandboxSessionManager`（代码执行）、`NotificationService`（通知）、`BrowserSessionManager`（浏览器自动化，需 Playwright）、`BackgroundProcessManager`（后台进程）、`TmuxSessionManager`（持久会话，需 tmux）
 
 ### 3.2 NotifyToolProvider — 通知工具提供者
@@ -178,6 +180,7 @@ graph TB
 ### 3.12 TmuxSessionManager — 持久会话管理
 
 - 职责：管理 tmux 持久终端会话的完整生命周期
+- 依赖 `WorkspaceResolver` 解析默认工作目录，未指定 `workDir` 时使用统一工作目录（默认 `~/.zhiwei/workspace/`）
 - 启动时孤儿回收：扫描以 `zhiwei-` 为前缀的 tmux 会话，逐一 kill，防止后端重启后遗留无主会话
 - 命令执行机制：发送命令 + 唯一结束标记 → 轮询 `capture-pane` 直到标记出现 → 提取命令输出
 - 空闲清理：按配置间隔（`cleanup-interval-seconds`）定期检查，超过 `ttl-minutes` 的会话自动关闭
@@ -277,6 +280,7 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
+| `zhiwei.workspace-dir` | `${zhiwei.data-dir}/workspace` | 统一工作目录（Shell / Tmux / 沙箱共享），用户可通过前端设置页面覆盖 |
 | `lifepilot.meta.infra.web-search.provider` | `tavily` | 搜索引擎提供商（当前固定为 Tavily） |
 | `lifepilot.meta.infra.web-search.max-results` | `5` | 搜索最大返回数 |
 | `lifepilot.meta.infra.web-search.search-depth` | `basic` | Tavily 搜索深度（basic / advanced） |
@@ -298,11 +302,11 @@ sequenceDiagram
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
 | `lifepilot.meta.infra.browser.headless` | `true` | 无头模式 |
 | `lifepilot.meta.infra.browser.idle-timeout-seconds` | `300` | 浏览器空闲超时 |
-| `lifepilot.meta.infra.browser.storage-state-dir` | `""` | storageState 持久化目录，空字符串关闭持久化 |
+| `lifepilot.meta.infra.browser.storage-state-dir` | `${zhiwei.data-dir}/cache/browser/storage-state` | storageState 持久化目录 |
 | `lifepilot.meta.infra.browser.persist-storage-state` | `false` | 是否在会话关闭时自动保存 storageState |
 | `lifepilot.meta.infra.browser.acquisition-mode` | `LAUNCH` | 浏览器获取模式（LAUNCH / CDP / PERSISTENT） |
 | `lifepilot.meta.infra.browser.cdp-url` | `""` | CDP 模式的远程调试端口 URL |
-| `lifepilot.meta.infra.browser.user-data-dir` | `""` | PERSISTENT 模式的用户数据目录 |
+| `lifepilot.meta.infra.browser.user-data-dir` | `${zhiwei.data-dir}/cache/browser/profile` | PERSISTENT 模式的用户数据目录 |
 | `lifepilot.meta.infra.code-execute.enabled` | `true` | 代码执行开关 |
 | `lifepilot.meta.infra.code-execute.default-language` | `python` | 默认执行语言 |
 | `lifepilot.meta.infra.file.max-read-size` | `1048576` | 文件最大读取字节数（1MB） |

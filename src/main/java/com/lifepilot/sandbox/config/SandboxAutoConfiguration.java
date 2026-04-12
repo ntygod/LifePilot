@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
@@ -86,15 +87,18 @@ public class SandboxAutoConfiguration {
     /**
      * 注册 SandboxSessionManager Bean。
      *
-     * @param config 沙箱配置
-     * @param booter 沙箱启动器模板
+     * @param config            沙箱配置
+     * @param booter            沙箱启动器模板
+     * @param sharedScheduler   共享调度器
+     * @param workspaceResolver 工作目录解析器
      * @return SandboxSessionManager 实例
      */
     @Bean
     @ConditionalOnMissingBean
     SandboxSessionManager sandboxSessionManager(SandboxConfigProperties config, SandboxBooter booter,
-                                                SharedScheduler sharedScheduler) {
-        return new SandboxSessionManager(config, booter, sharedScheduler);
+                                                SharedScheduler sharedScheduler,
+                                                WorkspaceResolver workspaceResolver) {
+        return new SandboxSessionManager(config, booter, sharedScheduler, workspaceResolver);
     }
 
     /**
