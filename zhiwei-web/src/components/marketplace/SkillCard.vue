@@ -129,8 +129,9 @@ async function handleUpgrade() {
 
 <template>
   <article
-    class="list-card flex h-full flex-col p-5 transition-shadow"
+    class="list-card flex h-full cursor-pointer flex-col p-5 transition-shadow hover:border-primary/40"
     :class="selected ? 'border-primary/50 shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]' : ''"
+    @click="emit('inspect', skill.id)"
   >
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
@@ -182,26 +183,12 @@ async function handleUpgrade() {
         </Badge>
       </div>
 
-      <div class="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-4">
-        <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>下载 {{ skill.downloads }}</span>
-          <span v-if="hasUpdate">有新版本可升级</span>
-        </div>
-
-        <div class="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            @click="emit('inspect', skill.id)"
-          >
-            详情
-          </Button>
-
+      <div class="mt-auto flex items-center justify-end gap-1.5 border-t border-border/60 pt-4">
           <Button
             v-if="skill.installed && hasUpdate"
             size="sm"
             :disabled="upgrading"
-            @click="handleUpgrade"
+            @click.stop="handleUpgrade"
           >
             {{ upgrading ? '升级中...' : '升级' }}
           </Button>
@@ -212,7 +199,7 @@ async function handleUpgrade() {
             size="sm"
             :disabled="uninstalling"
             class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
-            @click="showUninstallConfirm = true"
+            @click.stop="showUninstallConfirm = true"
           >
             {{ uninstalling ? '卸载中...' : '卸载' }}
           </Button>
@@ -221,11 +208,10 @@ async function handleUpgrade() {
             v-if="!skill.installed"
             size="sm"
             :disabled="installing"
-            @click="handleInstall"
+            @click.stop="handleInstall"
           >
             {{ installing ? '安装中...' : '安装' }}
           </Button>
-        </div>
       </div>
 
       <p v-if="errorMsg" class="text-xs text-destructive">

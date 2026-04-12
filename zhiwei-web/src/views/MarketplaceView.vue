@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const search = ref('')
-const tag = ref('')
 const extensionType = ref('')
 const page = ref(0)
 const size = 20
@@ -40,7 +39,7 @@ const assetPreviewError = ref('')
 const updateIds = computed(() => new Set(updates.value.map(item => item.id)))
 const installedCount = computed(() => skills.value.filter(skill => skill.installed).length)
 const verifiedCount = computed(() => skills.value.filter(skill => skill.verified).length)
-const hasFilters = computed(() => Boolean(search.value) || Boolean(tag.value) || Boolean(extensionType.value))
+const hasFilters = computed(() => Boolean(search.value) || Boolean(extensionType.value))
 const selectedExtension = computed(() => {
   if (!selectedExtensionId.value) return skills.value[0] ?? null
   return skills.value.find(skill => skill.id === selectedExtensionId.value) ?? skills.value[0] ?? null
@@ -58,13 +57,6 @@ const extensionTypeLabel = computed(() => {
   if (extensionType.value === 'CHANNEL') return '渠道'
   return extensionType.value
 })
-const tagLabel = computed(() => tag.value || '全部标签')
-
-const availableTags = computed(() => {
-  const tagSet = new Set<string>()
-  skills.value.forEach(skill => skill.tags?.forEach(tagValue => tagSet.add(tagValue)))
-  return Array.from(tagSet).sort()
-})
 
 async function loadSkills() {
   loading.value = true
@@ -74,11 +66,10 @@ async function loadSkills() {
     const result = await marketplaceApi.getSkills({
       type: extensionType.value || undefined,
       search: search.value || undefined,
-      tag: tag.value || undefined,
       page: page.value,
       size,
     })
-    skills.value = result.content
+    skills.value = result.content ?? []
     totalPages.value = result.totalPages
     totalElements.value = result.totalElements
     syncSelectedExtension(result.content)
@@ -112,12 +103,11 @@ async function handleRefresh() {
 
 function clearFilters() {
   search.value = ''
-  tag.value = ''
   extensionType.value = ''
   page.value = 0
 }
 
-watch([search, tag, extensionType], () => {
+watch([search, extensionType], () => {
   page.value = 0
   void loadSkills()
 })
@@ -273,44 +263,12 @@ onMounted(() => {
           </template>
         </PageHeader>
 
-        <PageSection
-          eyebrow="筛选"
-          title="查找扩展"
-          description="按关键词、类型和标签缩小范围。"
-        >
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-            <div class="min-w-0">
-              <MarketplaceFilters
-                v-model:search="search"
-                v-model:tag="tag"
-                v-model:type="extensionType"
-                :available-tags="availableTags"
-              />
-            </div>
-
-            <div class="rounded-[calc(var(--radius)+2px)] border border-dashed border-border/60 bg-background/48 px-4 py-4">
-              <div class="space-y-3">
-                <div>
-                  <div class="surface-label text-[0.68rem]">当前视图</div>
-                  <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                    可直接在目录里判断安装状态、更新机会和可信度，再决定是否进入安装或升级动作。
-                  </p>
-                </div>
-
-                <div class="flex flex-wrap gap-2 text-xs">
-                  <span class="filter-pill">结果：{{ totalElements }}</span>
-                  <span class="filter-pill">类型：{{ extensionTypeLabel }}</span>
-                  <span class="filter-pill">标签：{{ tagLabel }}</span>
-                  <span v-if="search" class="filter-pill">关键词：{{ search }}</span>
-                </div>
-
-                <Button v-if="hasFilters" variant="ghost" class="px-0" @click="clearFilters">
-                  清空筛选
-                </Button>
-              </div>
-            </div>
-          </div>
-        </PageSection>
+        <div>
+          <MarketplaceFilters
+            v-model:search="search"
+            v-model:type="extensionType"
+          />
+        </div>
 
         <StatePanel
           v-if="serviceUnavailable"

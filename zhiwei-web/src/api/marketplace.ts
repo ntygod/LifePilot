@@ -29,7 +29,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T
   const text = await res.text()
   if (!text || text.trim() === '') return undefined as T
-  return JSON.parse(text) as T
+  const json = JSON.parse(text)
+  // 自动解包 ApiResponse 结构 { code, message, data }
+  if (json && typeof json === 'object' && 'code' in json && 'data' in json) {
+    return json.data as T
+  }
+  return json as T
 }
 
 /** 扩展市场 API */

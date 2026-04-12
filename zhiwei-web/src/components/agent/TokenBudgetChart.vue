@@ -10,7 +10,7 @@
   @since 2026-03-15
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import VChart from 'vue-echarts'
 import type { TokenBudgetData } from '@/types'
 import '@/plugins/echarts'
@@ -49,6 +49,10 @@ const chartData = computed(() =>
     itemStyle: { color: slot.color },
   }))
 )
+
+// 延迟到 mounted 后渲染，避免 out-in 路由动画期间容器宽高为 0
+const chartReady = ref(false)
+onMounted(() => { chartReady.value = true })
 
 // ECharts 配置
 const chartOption = computed(() => ({
@@ -93,6 +97,7 @@ const chartOption = computed(() => ({
     <!-- 环形图 -->
     <div class="shrink-0 size-[200px]">
       <VChart
+        v-if="chartReady"
         :option="chartOption"
         :autoresize="true"
         class="size-full"
