@@ -232,9 +232,20 @@ async function submit() {
     isUploading.value = true
     uploadError.value = null
 
+    // 懒创建：上传附件需要 sessionId，如果还没有会话则先创建
+    if (!chatStore.activeSessionId) {
+      try {
+        await chatStore.startNewSession()
+      } catch {
+        uploadError.value = '创建会话失败，请重试'
+        isUploading.value = false
+        return
+      }
+    }
+
     try {
       const uploaded = await Promise.all(
-        attachments.value.map(file => chatApi.uploadAttachment(file, chatStore.activeSessionId ?? undefined)),
+        attachments.value.map(file => chatApi.uploadAttachment(file, chatStore.activeSessionId!)),
       )
       attachmentIds = uploaded.map(item => item.fileId)
       uploadedAttachments = uploaded
