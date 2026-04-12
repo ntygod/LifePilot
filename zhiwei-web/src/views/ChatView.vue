@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  ArrowDown,
   EllipsisVertical,
   LibraryBig,
   Settings2,
@@ -65,6 +66,7 @@ const {
 type SidebarPanel = 'session' | 'config' | 'debug'
 
 const scrollContainer = ref<HTMLElement | null>(null)
+const showScrollToBottom = ref(false)
 const searchQuery = ref('')
 const activeSidebarPanel = ref<SidebarPanel>('session')
 const showMobileSidebar = ref(false)
@@ -84,7 +86,10 @@ const activeSessionConfig = ref<SessionConfig>({
 const currentSessionDetail = ref<ChatSessionDetail | null>(null)
 
 /** 空状态：无消息且非流式中 */
-const isEmptyChat = computed(() => chatStore.messages.length === 0 && !isStreaming.value)
+// 有 sessionId 说明是已有对话（消息可能还在加载），不算空
+const isEmptyChat = computed(() =>
+  chatStore.messages.length === 0 && !isStreaming.value && !route.params.sessionId
+)
 
 const CHAT_SCENES = new Set([
   'chat',
@@ -273,7 +278,28 @@ onMounted(async () => {
     chatStore.pendingFirstMessage = null
     await sendMessage(content)
   }
+
+  // 监听滚动，判断是否显示"回到底部"按钮
+  const el = getScrollEl()
+  el?.addEventListener('scroll', handleScroll)
+
+  // 首次加载完成后滚到底部
+  window.setTimeout(() => {
+    const scrollEl = getScrollEl()
+    if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
+  }, 200)
 })
+
+onUnmounted(() => {
+  scrollContainer.value?.removeEventListener('scroll', handleScroll)
+})
+
+function handleScroll() {
+  const el = getScrollEl()
+  if (!el) return
+  const { scrollTop, scrollHeight, clientHeight } = el
+  showScrollToBottom.value = scrollHeight - scrollTop - clientHeight > 120
+}
 
 watch(
   () => route.params.sessionId as string | undefined,
@@ -291,6 +317,11 @@ watch(
     if (sessionId !== chatStore.activeSessionId) {
       chatStore.activeSessionId = sessionId
     }
+
+    // 等消息加载 + DOM 渲染完成后滚到底部
+    await nextTick()
+    // 额外等一帧确保长列表渲染完
+    requestAnimationFrame(() => scrollToBottom())
   },
 )
 
@@ -302,21 +333,31 @@ watch(
   { immediate: true },
 )
 
-/* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次，
-   避免 token 到达时（~24ms）与 DOM 重排交叉触发导致滚动抖动 */
+/* 获取实际滚动容器（ref 可能因 Transition 延迟为 null，兜底用 DOM 查询） */
+function getScrollEl(): HTMLElement | null {
+  return scrollContainer.value
+    ?? document.querySelector<HTMLElement>('.absolute.inset-0.overflow-y-auto')
+}
+
+/* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次 */
 let scrollRaf: number | null = null
 
 function scrollToBottom() {
   if (scrollRaf !== null) return
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = null
-    if (scrollContainer.value) {
-      scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
-    }
+    const el = getScrollEl()
+    if (el) el.scrollTop = el.scrollHeight
   })
 }
 
-watch(() => chatStore.messages.length, scrollToBottom)
+// 消息列表变化（加载历史/新增消息）→ 滚到底部
+watch(() => chatStore.messages.length, () => {
+  window.setTimeout(() => {
+    const el = getScrollEl()
+    if (el) el.scrollTop = el.scrollHeight
+  }, 150)
+})
 watch(() => chatStore.streamingContent, scrollToBottom)
 
 async function handleSend(payload: {
@@ -587,7 +628,7 @@ function closeTracePanel() {
       <section class="relative min-h-0 flex-1 flex min-w-0 flex-col overflow-hidden">
         <div
           ref="scrollContainer"
-          class="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+          class="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
           <Transition
             enter-active-class="transition-all duration-300 ease-out"
@@ -614,7 +655,7 @@ function closeTracePanel() {
           </div>
 
           <!-- 有消息：正常消息列表 -->
-          <div v-else key="messages" class="mx-auto w-full max-w-[800px] px-4 py-4 sm:px-6">
+          <div v-else key="messages" class="mx-auto w-full max-w-[800px] px-4 pt-4 pb-[48px] sm:px-6">
             <MessageList
               :messages="chatStore.messages"
               :is-streaming="isStreaming"
@@ -639,6 +680,25 @@ function closeTracePanel() {
           </div>
           </Transition>
         </div>
+        <!-- 回到底部按钮（消息区域内） -->
+        <Transition
+          enter-active-class="transition-all duration-200 ease-out"
+          enter-from-class="translate-y-2 opacity-0"
+          enter-to-class="translate-y-0 opacity-100"
+          leave-active-class="transition-all duration-150 ease-in"
+          leave-from-class="translate-y-0 opacity-100"
+          leave-to-class="translate-y-2 opacity-0"
+        >
+          <button
+            v-if="showScrollToBottom && !isEmptyChat"
+            type="button"
+            class="absolute bottom-3 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-md transition-colors hover:bg-muted"
+            title="回到底部"
+            @click="scrollToBottom"
+          >
+            <ArrowDown class="size-4 text-muted-foreground" />
+          </button>
+        </Transition>
 
         <!-- 底部输入框：仅有消息时显示 -->
         <Transition

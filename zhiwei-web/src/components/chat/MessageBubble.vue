@@ -16,7 +16,7 @@ import {
   DialogContent,
 } from '@/components/ui/dialog'
 import { copyToClipboard } from '@/utils/clipboard'
-import { getPreviewContent, shouldCollapse } from '@/utils/messageUtils'
+// messageUtils 导入已移除 — 不再折叠 AI 消息
 import KbSourceTag from './KbSourceTag.vue'
 import MessageActions from './MessageActions.vue'
 import MessageError from './MessageError.vue'
@@ -52,7 +52,6 @@ const emit = defineEmits<{
   (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
-const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
 const showImagePreview = ref(false)
 const userCopied = ref(false)
 
@@ -119,17 +118,8 @@ const displayContent = computed(() => {
   if (props.streaming) {
     return props.streamingContent ?? ''
   }
-
-  if (props.message.role === 'assistant' && collapsed.value && shouldCollapse(props.message.content)) {
-    return getPreviewContent(props.message.content)
-  }
-
   return props.message.content
 })
-
-const isCollapsible = computed(() =>
-  props.message.role === 'assistant' && !props.streaming && shouldCollapse(props.message.content),
-)
 
 const activeReactSteps = computed<ReactStepDto[]>(() => {
   if (props.streaming && props.streamingReactSteps?.length) {
@@ -241,14 +231,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
     >
 
       <div
-        v-if="streaming && message.role === 'assistant'"
-        class="streaming-status-pill inline-flex w-fit items-center gap-2 rounded-full border border-primary/14 bg-primary/[0.06] px-2.5 py-1 text-[11px] font-medium text-primary"
-      >
-        <span class="streaming-status-dot" />
-        正在生成
-      </div>
-
-      <div
         class="relative max-w-full transition-all duration-200"
         :class="[
           message.role === 'user' ? 'w-fit overflow-hidden shadow-sm max-w-[60%]' : 'overflow-visible',
@@ -310,15 +292,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
               :content="displayContent"
               :streaming="streaming"
             />
-
-            <button
-              v-if="isCollapsible"
-              type="button"
-              class="mt-2 text-xs text-primary transition-colors hover:underline underline-offset-2"
-              @click="collapsed = !collapsed"
-            >
-              {{ collapsed ? '查看完整回复 ↓' : '收起 ↑' }}
-            </button>
 
             <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
               <button
@@ -504,19 +477,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
 }
 
 
-.streaming-status-pill {
-  box-shadow: 0 8px 14px -20px hsl(var(--shadow-color) / 0.08);
-}
-
-
-.streaming-status-dot {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: hsl(from var(--primary) h s l / 0.96);
-  box-shadow: 0 0 0.45rem hsl(from var(--primary) h s l / 0.22);
-  animation: streaming-dot-pulse 1.2s ease-in-out infinite;
-}
 
 .user-act-btn {
   display: inline-flex;
