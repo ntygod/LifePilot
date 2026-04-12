@@ -101,11 +101,9 @@ function onBallPointerDown(e: PointerEvent) {
 
 let lastClick = 0
 function handleClick() {
-  setCatMood('happy')
-  setTimeout(() => { if (catMood.value === 'happy') setCatMood('normal') }, 600)
-
   const now = Date.now()
   if (now - lastClick < 300) {
+    // 双击 → 打开对话
     switchToChat()
     lastClick = 0
     return
@@ -113,10 +111,13 @@ function handleClick() {
   lastClick = now
   setTimeout(() => {
     if (lastClick === 0) return
+    // 单击
     if (hasPending.value && reminder.value) {
       showBubble(reminder.value)
     } else {
-      switchToChat()
+      // 无通知时单击只做表情反馈，不开对话
+      setCatMood('happy')
+      setTimeout(() => { if (catMood.value === 'happy') setCatMood('normal') }, 600)
     }
   }, 300)
 }
@@ -493,21 +494,22 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 .ball{
   width:52px;height:52px;border-radius:50%;cursor:pointer;
   display:flex;align-items:center;justify-content:center;position:relative;
-  background:var(--bg);box-shadow:var(--shadow);
-  transition:transform .2s var(--ease),box-shadow .2s var(--ease);
+  background:transparent;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.15));
+  transition:transform .2s var(--ease),filter .2s var(--ease);
   z-index:10;
 }
-.ball:hover{transform:scale(1.08);box-shadow:0 4px 18px rgba(0,0,0,.14),0 0 0 1px rgba(0,0,0,.06)}
+.ball:hover{transform:scale(1.08);filter:drop-shadow(0 4px 12px rgba(0,0,0,.2))}
 .ball:active{transform:scale(.96)}
 .ball__dot{
-  position:absolute;bottom:0;right:0;width:10px;height:10px;
-  border-radius:50%;border:2px solid var(--bg);pointer-events:none;
+  position:absolute;bottom:1px;right:1px;width:9px;height:9px;
+  border-radius:50%;border:2px solid var(--cat-fill);pointer-events:none;
   transition:background .3s;
 }
 .ball--glow{animation:ball-glow 2.5s ease-in-out infinite}
 @keyframes ball-glow{
-  0%,100%{box-shadow:var(--shadow),0 0 0 0 transparent}
-  50%{box-shadow:var(--shadow),0 0 16px 4px rgba(91,141,239,.28)}
+  0%,100%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.15))}
+  50%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.15)) drop-shadow(0 0 10px rgba(91,141,239,.35))}
 }
 
 /* ─── 小猫 SVG ─────────────────────────────────────────── */
