@@ -184,11 +184,16 @@ export function useChat() {
     }
 
     if (!chatStore.activeSessionId) {
-      error.value = '会话未创建，请先打开新对话'
-      return
+      // 懒创建：用户发第一条消息时才在后端建会话，避免空会话堆积
+      try {
+        await chatStore.startNewSession()
+      } catch (e) {
+        error.value = '创建会话失败，请重试'
+        return
+      }
     }
 
-    if (options.sessionConfig) {
+    if (options.sessionConfig && chatStore.activeSessionId) {
       try {
         await chatApi.updateSessionConfig(chatStore.activeSessionId, options.sessionConfig)
       } catch (e) {

@@ -255,12 +255,9 @@ onMounted(async () => {
   const sessionId = route.params.sessionId as string | undefined
   if (sessionId && sessionId !== chatStore.activeSessionId) {
     chatStore.activeSessionId = sessionId
-  } else if (!sessionId && !chatStore.activeSessionId) {
-    try {
-      await chatStore.startNewSession()
-    } catch (event) {
-      logger.error('创建新会话失败:', event)
-    }
+  } else if (!sessionId) {
+    // 空对话页：不立即创建会话，等用户发第一条消息时懒创建
+    chatStore.activeSessionId = null
   }
 
   void kbStore.fetchList()
@@ -326,12 +323,8 @@ watch(
     messagesReady.value = false
 
     if (!sessionId) {
+      // 空对话页：不立即创建会话，等用户发第一条消息时懒创建
       chatStore.activeSessionId = null
-      try {
-        await chatStore.startNewSession()
-      } catch (event) {
-        logger.error('创建新会话失败:', event)
-      }
       messagesReady.value = true
       return
     }
