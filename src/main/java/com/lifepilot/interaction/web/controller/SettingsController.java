@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.bootstrap.BootstrapConfigService;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.SearchSettingsRequest;
@@ -48,6 +49,7 @@ public class SettingsController {
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     private final MetaProperties metaProperties;
     private final WorkspaceResolver workspaceResolver;
+    private final BootstrapConfigService bootstrapConfigService;
     private final String dataDir;
 
     public SettingsController(UserSettingsRepository settingsRepository,
@@ -55,12 +57,14 @@ public class SettingsController {
                               @Nullable KnowledgeBaseProperties knowledgeBaseProperties,
                               @Nullable MetaProperties metaProperties,
                               WorkspaceResolver workspaceResolver,
+                              BootstrapConfigService bootstrapConfigService,
                               @org.springframework.beans.factory.annotation.Value("${zhiwei.data-dir}") String dataDir) {
         this.settingsRepository = settingsRepository;
         this.objectMapper = objectMapper;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.metaProperties = metaProperties;
         this.workspaceResolver = workspaceResolver;
+        this.bootstrapConfigService = bootstrapConfigService;
         this.dataDir = dataDir;
     }
 
@@ -226,7 +230,32 @@ public class SettingsController {
 
     @GetMapping("/data-dir")
     public ApiResponse<Map<String, String>> getDataDir() {
-        return ApiResponse.ok(Map.of("dataDir", dataDir));
+        Map<String, String> result = new LinkedHashMap<>();
+        result.put("dataDir", dataDir);
+        result.put("configuredDir", bootstrapConfigService.getDataDir());
+        return ApiResponse.ok(result);
+    }
+
+    @PutMapping("/data-dir")
+    public ApiResponse<Map<String, String>> updateDataDir(@RequestBody Map<String, String> request) {
+        String newDir = request.get("dataDir");
+        if (newDir != null && newDir.isBlank()) {
+            newDir = null;
+        }
+        if (newDir != null) {
+            if (newDir.length() > 1024) {
+                throw new IllegalArgumentException("数据目录路径过长");
+            }
+            if (newDir.contains("..")) {
+                throw new IllegalArgumentException("数据目录路径不允许包含 '..'");
+            }
+            if (!Path.of(newDir).isAbsolute()) {
+                throw new IllegalArgumentException("数据目录必须是绝对路径");
+            }
+        }
+        bootstrapConfigService.saveDataDir(newDir);
+        log.info("数据目录配置已更新: dataDir={}", newDir);
+        return getDataDir();
     }
 
     @GetMapping("/workspace")

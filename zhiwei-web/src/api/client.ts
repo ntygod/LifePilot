@@ -601,9 +601,17 @@ export const settingsApi = {
     })
   },
 
-  /** 获取数据目录（只读） */
-  getDataDir(): Promise<{ dataDir: string }> {
+  /** 获取数据目录 */
+  getDataDir(): Promise<{ dataDir: string, configuredDir: string | null }> {
     return request('/settings/data-dir')
+  },
+
+  /** 更新数据目录（需重启生效） */
+  updateDataDir(dataDir: string | null): Promise<{ dataDir: string, configuredDir: string | null }> {
+    return request('/settings/data-dir', {
+      method: 'PUT',
+      body: JSON.stringify({ dataDir: dataDir ?? '' })
+    })
   },
 
   /** 获取工作目录配置 */

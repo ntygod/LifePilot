@@ -33,47 +33,67 @@ const form = ref({
 const dataDir = ref<string | null>(null)
 const dataDirChanged = ref(false)
 const showRestartForDataDir = ref(false)
+const dataDirSaving = ref(false)
+const dataDirInputValue = ref('')
 
 async function loadDataDir() {
-  if (isTauri) {
-    try {
+  try {
+    const result = await settingsApi.getDataDir()
+    dataDir.value = result.dataDir
+    dataDirInputValue.value = result.configuredDir ?? ''
+  } catch {
+    dataDir.value = '（获取失败）'
+  }
+}
+
+async function saveDataDir(value: string) {
+  dataDirSaving.value = true
+  try {
+    if (isTauri) {
       const { invoke } = await import('@tauri-apps/api/core')
-      dataDir.value = await invoke<string>('get_data_dir')
-    } catch {
-      dataDir.value = ''
+      await invoke('set_data_dir', { path: value })
     }
-  } else {
-    try {
-      const result = await settingsApi.getDataDir()
-      dataDir.value = result.dataDir
-    } catch {
-      dataDir.value = '（获取失败）'
-    }
+    const result = await settingsApi.updateDataDir(value || null)
+    dataDirInputValue.value = result.configuredDir ?? ''
+    dataDirChanged.value = true
+  } catch (e) {
+    logger.error('保存数据目录失败:', e)
+  } finally {
+    dataDirSaving.value = false
   }
 }
 
 async function browseDataDir() {
-  try {
-    const { open } = await import('@tauri-apps/plugin-dialog')
-    const selected = await open({ directory: true, title: '选择数据目录' })
-    if (selected && typeof selected === 'string') {
-      dataDir.value = selected
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('set_data_dir', { path: selected })
-      dataDirChanged.value = true
+  if (isTauri) {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({ directory: true, title: '选择数据目录' })
+      if (selected && typeof selected === 'string') {
+        dataDirInputValue.value = selected
+        await saveDataDir(selected)
+      }
+    } catch (e) {
+      logger.error('选择目录失败:', e)
     }
-  } catch (e) {
-    logger.error('选择目录失败:', e)
   }
 }
 
 async function resetDataDir() {
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('set_data_dir', { path: '' })
-    dataDir.value = await invoke<string>('get_data_dir')
-    dataDirChanged.value = true
-  } catch { /* ignore */ }
+  dataDirInputValue.value = ''
+  await saveDataDir('')
+}
+
+function handleDataDirInputBlur() {
+  const trimmed = dataDirInputValue.value.trim()
+  if (trimmed !== (dataDirInputValue.value || '')) {
+    saveDataDir(trimmed)
+  }
+}
+
+function handleDataDirInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    (event.target as HTMLInputElement)?.blur()
+  }
 }
 
 function confirmRestartForDataDir() {
@@ -280,17 +300,24 @@ const fontSizeOptions = [
         </SettingItem>
       </SettingSection>
 
-      <SettingSection title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。">
-        <SettingItem label="数据目录" :description="dataDir === null ? '加载中...' : (dataDir || '默认')">
-          <div v-if="isTauri" class="flex items-center gap-sm">
-            <Button type="button" variant="outline" size="sm" @click="browseDataDir">选择目录</Button>
-            <Button type="button" variant="ghost" size="sm" @click="resetDataDir">恢复默认</Button>
+      <SettingSection title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。修改后需重启应用。">
+        <SettingItem label="数据目录" :description="dataDir === null ? '加载中...' : ('当前生效路径：' + dataDir)">
+          <div class="flex items-center gap-sm">
+            <Input
+              v-model="dataDirInputValue"
+              class="min-w-2xl"
+              placeholder="留空使用默认目录"
+              :disabled="dataDirSaving"
+              @blur="handleDataDirInputBlur"
+              @keydown="handleDataDirInputKeydown"
+            />
+            <Button v-if="supportsDirPicker" type="button" variant="outline" size="sm" :disabled="dataDirSaving" @click="browseDataDir">选择目录</Button>
+            <Button type="button" variant="ghost" size="sm" :disabled="dataDirSaving" @click="resetDataDir">恢复默认</Button>
           </div>
-          <span v-else class="text-xs text-muted-foreground">通过启动参数 --zhiwei.data-dir 修改</span>
         </SettingItem>
         <div v-if="dataDirChanged" class="flex items-center gap-3 rounded-md bg-warning/10 px-4 py-2.5 text-sm text-warning-foreground">
           <span>数据目录已修改，重启应用后生效。</span>
-          <Button type="button" variant="outline" size="sm" @click="showRestartForDataDir = true">立即重启</Button>
+          <Button v-if="isTauri" type="button" variant="outline" size="sm" @click="showRestartForDataDir = true">立即重启</Button>
         </div>
       </SettingSection>
 
