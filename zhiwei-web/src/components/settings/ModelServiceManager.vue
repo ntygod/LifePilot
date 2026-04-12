@@ -359,7 +359,9 @@ function validate() {
 }
 
 async function saveService() {
-  applyPresetDefaults()
+  // 不在保存时调 applyPresetDefaults() — 那会把用户手动修改的
+  // capabilities/scenes/supportsStreaming 等重置回模板默认值。
+  // validate() 已经会调 normalizeFormForKind() 做必要的清理。
   if (!validate()) return
 
   loading.value = true
