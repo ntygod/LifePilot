@@ -226,14 +226,14 @@ function approvalLogTone(log: PermissionApprovalLog) {
     :class="message.role === 'user' ? 'flex flex-col items-end' : ''"
   >
     <div
-      class="min-w-0 space-y-xs"
-      :class="message.role === 'user' ? 'flex flex-col items-end' : ''"
+      class="space-y-xs"
+      :class="message.role === 'user' ? 'w-full flex flex-col items-end' : 'min-w-0'"
     >
 
       <div
-        class="relative max-w-full transition-all duration-200"
+        class="relative transition-all duration-200"
         :class="[
-          message.role === 'user' ? 'w-fit overflow-hidden shadow-sm max-w-[60%]' : 'overflow-visible',
+          message.role === 'user' ? 'w-fit overflow-hidden shadow-sm max-w-[65%]' : 'max-w-full overflow-visible',
           message.role === 'user' ? userBubbleClass : assistantBubbleClass,
         ]"
       >
@@ -496,9 +496,13 @@ function approvalLogTone(log: PermissionApprovalLog) {
 .user-bubble {
   position: relative;
   transform-origin: right bottom;
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-  background: hsl(from var(--primary) h s l / 0.08);
-  box-shadow: 0 10px 18px -20px hsl(var(--shadow-color) / 0.1);
+  border: none;
+  background: hsl(0 0% 94%);
+  box-shadow: none;
+}
+
+:root.dark .user-bubble {
+  background: hsl(0 0% 18%);
 }
 
 .user-bubble-pending {

@@ -580,11 +580,11 @@ defineExpose({
       </Transition>
 
       <div
-        class="chat-composer-shell overflow-hidden rounded-2xl border bg-card shadow-[0_2px_12px_-4px_hsl(var(--shadow-color)/0.08)] transition-all duration-200"
+        class="chat-composer-shell overflow-hidden rounded-2xl border bg-card transition-all duration-200"
         :class="[
           dragActive
-            ? 'border-primary/60 bg-primary/[0.04] shadow-[0_4px_20px_-6px_hsl(from_var(--primary)_h_s_l/0.14)]'
-            : 'border-border/70 focus-within:border-primary/35 focus-within:shadow-[0_4px_20px_-6px_hsl(from_var(--primary)_h_s_l/0.1)]',
+            ? 'border-primary/40 bg-primary/[0.02]'
+            : 'border-border/40 focus-within:border-border/60',
         ]"
         @dragenter="handleDragEnter"
         @dragover.prevent

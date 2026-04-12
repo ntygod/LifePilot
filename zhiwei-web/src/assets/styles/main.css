@@ -5,37 +5,37 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: hsl(180 6% 97%);
-  --foreground: hsl(200 18% 10%);
-  --card: hsl(180 6% 99%);
-  --card-foreground: hsl(200 18% 10%);
-  --popover: hsl(180 6% 99%);
-  --popover-foreground: hsl(200 18% 10%);
+  --background: hsl(0 0% 98%);
+  --foreground: hsl(0 0% 9%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(0 0% 9%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 9%);
 
   --primary: hsl(160 30% 42%);
   --primary-foreground: hsl(0 0% 100%);
 
-  --secondary: hsl(160 8% 95%);
-  --secondary-foreground: hsl(200 14% 18%);
-  --muted: hsl(160 5% 94%);
-  --muted-foreground: hsl(200 6% 44%);
-  --accent: hsl(160 12% 93%);
-  --accent-foreground: hsl(200 14% 18%);
+  --secondary: hsl(0 0% 96%);
+  --secondary-foreground: hsl(0 0% 15%);
+  --muted: hsl(0 0% 95%);
+  --muted-foreground: hsl(0 0% 45%);
+  --accent: hsl(0 0% 94%);
+  --accent-foreground: hsl(0 0% 15%);
 
   --destructive: hsl(2 78% 58%);
   --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(200 8% 85%);
-  --input: hsl(200 8% 88%);
+  --border: hsl(0 0% 88%);
+  --input: hsl(0 0% 90%);
   --ring: hsl(160 30% 42%);
-  --ring-offset-background: hsl(180 6% 97%);
+  --ring-offset-background: hsl(0 0% 98%);
 
   --radius: 1.1rem;
 
-  --sidebar-background: hsl(160 6% 95%);
-  --sidebar-foreground: hsl(200 18% 10%);
-  --sidebar-border: hsl(200 8% 84%);
-  --sidebar-accent: hsl(160 10% 92%);
-  --sidebar-accent-foreground: hsl(200 14% 18%);
+  --sidebar-background: hsl(0 0% 96.5%);
+  --sidebar-foreground: hsl(0 0% 9%);
+  --sidebar-border: hsl(0 0% 88%);
+  --sidebar-accent: hsl(0 0% 93%);
+  --sidebar-accent-foreground: hsl(0 0% 15%);
   --sidebar-width: 260px;
 
   --chart-1: hsl(160 30% 42%);
@@ -278,8 +278,8 @@ html[data-ui-density="compact"] {
   html:lang(zh),
   html:lang(zh-CN),
   html:lang(zh-Hans) {
-    --font-sans: "DM Sans", "Noto Sans SC", sans-serif;
-    --font-display: "DM Sans", "Noto Sans SC", sans-serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    --font-display: system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
   }
 
   html:lang(zh) h1,
@@ -315,16 +315,7 @@ html[data-ui-density="compact"] {
     background: transparent;
   }
 
-  .app-shell::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(circle at top right, hsl(from var(--primary) h s l / 0.04), transparent 28%),
-      linear-gradient(180deg, hsl(from var(--card) h s l / 0.08), transparent 26%);
-    opacity: 0.88;
-  }
+  /* 去掉全局渐变覆盖层，保持纯净底色 */
 
   .app-main-surface {
     position: relative;
@@ -333,15 +324,14 @@ html[data-ui-density="compact"] {
     flex: 1;
     flex-direction: column;
     overflow: hidden;
-    border-left: 1px solid hsl(from var(--border) h s l / 0.46);
-    background: linear-gradient(180deg, hsl(from var(--background) h s l / 0.985), hsl(from var(--background) h s l / 1));
-    box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.42);
+    border-left: 1px solid hsl(from var(--border) h s l / 0.3);
+    background: var(--card);
   }
 
   .app-nav-shell {
     display: flex;
     min-width: 0;
-    background: linear-gradient(180deg, hsl(from var(--sidebar-background) h s l / 0.99), hsl(from var(--sidebar-background) h s l / 0.955));
+    background: var(--sidebar-background);
     color: var(--sidebar-foreground);
   }
 
@@ -352,10 +342,7 @@ html[data-ui-density="compact"] {
     display: flex;
     height: 100%;
     flex-direction: column;
-    background: linear-gradient(
-      180deg,
-      hsl(from var(--sidebar-background) h s l / 0.985),
-      hsl(from var(--sidebar-background) h s l / 0.94)
+    background: var(--sidebar-background
     );
     color: var(--sidebar-foreground);
   }

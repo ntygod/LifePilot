@@ -680,26 +680,6 @@ function closeTracePanel() {
           </div>
           </Transition>
         </div>
-        <!-- 回到底部按钮（消息区域内） -->
-        <Transition
-          enter-active-class="transition-all duration-200 ease-out"
-          enter-from-class="translate-y-2 opacity-0"
-          enter-to-class="translate-y-0 opacity-100"
-          leave-active-class="transition-all duration-150 ease-in"
-          leave-from-class="translate-y-0 opacity-100"
-          leave-to-class="translate-y-2 opacity-0"
-        >
-          <button
-            v-if="showScrollToBottom && !isEmptyChat"
-            type="button"
-            class="absolute bottom-3 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-md transition-colors hover:bg-muted"
-            title="回到底部"
-            @click="scrollToBottom"
-          >
-            <ArrowDown class="size-4 text-muted-foreground" />
-          </button>
-        </Transition>
-
         <!-- 底部输入框：仅有消息时显示 -->
         <Transition
           enter-active-class="transition-all duration-300 ease-out"
@@ -707,7 +687,26 @@ function closeTracePanel() {
           enter-to-class="translate-y-0 opacity-100"
         >
         <div v-if="!isEmptyChat" class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
-          <div class="mx-auto w-full max-w-[800px]">
+          <div class="mx-auto w-full max-w-[800px] relative">
+            <!-- 回到底部按钮：固定在输入框上方 -->
+            <Transition
+              enter-active-class="transition-all duration-200 ease-out"
+              enter-from-class="translate-y-2 opacity-0"
+              enter-to-class="translate-y-0 opacity-100"
+              leave-active-class="transition-all duration-150 ease-in"
+              leave-from-class="translate-y-0 opacity-100"
+              leave-to-class="translate-y-2 opacity-0"
+            >
+              <button
+                v-if="showScrollToBottom"
+                type="button"
+                class="absolute -top-10 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-md transition-colors hover:bg-muted"
+                title="回到底部"
+                @click="scrollToBottom"
+              >
+                <ArrowDown class="size-4 text-muted-foreground" />
+              </button>
+            </Transition>
             <StatePanel
               v-if="showGlobalErrorPanel"
               class="mb-3"

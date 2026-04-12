@@ -42,10 +42,6 @@ function closeSidebar() {
 
 <template>
   <div class="app-shell">
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div class="absolute inset-x-[28%] top-[-13rem] h-[20rem] rounded-full bg-[radial-gradient(circle,hsl(from_var(--primary)_h_s_l_/_0.07),transparent_72%)] blur-3xl" />
-    </div>
-
     <GlobalLoadingBar />
 
     <Button
