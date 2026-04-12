@@ -283,9 +283,17 @@ async function sendMsg() {
 let notificationSource: EventSource | null = null
 
 async function connectNotificationStream() {
-  // 浮窗需要自行获取后端端口（主窗口的 __ZHIWEI_BACKEND_PORT__ 在这里不可用）
-  const port = await getPort()
+  // 等待后端就绪（端口 > 0）
+  let port = 0
+  for (let i = 0; i < 30; i++) {
+    port = await getPort()
+    if (port > 0) break
+    await new Promise(r => setTimeout(r, 2000))
+  }
+  if (port <= 0) return
+
   const url = `http://localhost:${port}/api/notifications/stream?userId=default`
+  console.log('[浮窗] SSE 通知流连接:', url)
   notificationSource = new EventSource(url)
 
   notificationSource.addEventListener('notification', (event: MessageEvent) => {
@@ -299,20 +307,23 @@ async function connectNotificationStream() {
         const content = parseContentSummary(contentJson)
         const metadata = data.metadataJson ? JSON.parse(data.metadataJson) : {}
         const title = resolveTitle(typeId, metadata)
+        console.log('[浮窗] 收到通知:', typeId, title)
         // 先 resize 到气泡尺寸
         invoke('resize_float_window', { mode: 'bubble' }).then(() => {
           showBubble({ notificationId: data.id, title, content, pushLevel: 'NORMAL_PUSH' })
         })
       }
-    } catch { /* 静默 */ }
+    } catch (e) { console.error('[浮窗] 通知处理异常:', e) }
   })
 
-  notificationSource.addEventListener('open', () => { backendOk.value = true })
+  notificationSource.addEventListener('open', () => {
+    backendOk.value = true
+    console.log('[浮窗] SSE 通知流已连接')
+  })
   notificationSource.onerror = () => {
     backendOk.value = false
     notificationSource?.close()
     notificationSource = null
-    // 断线重连
     setTimeout(connectNotificationStream, 5000)
   }
 }
