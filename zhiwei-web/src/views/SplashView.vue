@@ -90,7 +90,7 @@ async function resolveDestination(): Promise<string> {
     // 查询失败且未完成过引导，仍进入引导流程
     if (!onboardingDone) return '/setup'
   }
-  return '/conversations'
+  return '/conversations/new'
 }
 
 async function navigateAfterReady(quick = false) {
@@ -109,7 +109,7 @@ async function navigateAfterReady(quick = false) {
 
 async function waitForBackend() {
   if (!window.__TAURI_INTERNALS__) {
-    router.replace('/conversations')
+    router.replace('/conversations/new')
     return
   }
 
