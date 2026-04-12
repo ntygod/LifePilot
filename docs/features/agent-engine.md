@@ -103,10 +103,13 @@ public class ReactAgentLoop {
 `ContextAssembler` 当前采用更明确的分层组装方式：
 
 - 系统 Prompt（通过 `PromptRegistry`）
+- 运行时环境（当前时间、位置、天气摘要等，注入 `react-user-prompt.st` 的 `<runtime_context>` 段）
 - 当前 session 最近完整轮次（通过 `ContextEngine` 从 transcript 读取）
 - L1 临时工作区摘要（通过 `ContextEngine.ContextSnapshot.workspaceItems()` 读取）
 - L3 用户画像与经验实体
 - 其他段落按需预留
+
+位置通过 `LocationResolver` 解析（配置手动覆盖 > IP 自动检测），天气通过 `OpenMeteoWeatherService` 获取（仅读缓存，不阻塞对话路径）。
 
 跨会话原始对话不会自动注入主 Prompt；如需回忆别的会话，Agent 应显式调用 `memory.recall`。
 

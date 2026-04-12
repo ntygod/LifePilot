@@ -187,7 +187,7 @@ onMounted(async () => {
             v-if="expandedId === item.id"
             class="border-b bg-muted/30"
           >
-            <NotificationDetail :content-json="item.contentJson" />
+            <NotificationDetail :content-json="item.contentJson" :notification-item="item" />
           </div>
         </div>
 

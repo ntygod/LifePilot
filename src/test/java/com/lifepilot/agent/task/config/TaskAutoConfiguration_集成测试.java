@@ -101,7 +101,7 @@ class TaskAutoConfiguration_集成测试 {
 
         ReminderSignalCollector reminderSignalCollector = reminderConfig.reminderSignalCollector(
                 null, null, null, null, mock(NotificationRepository.class),
-                reminderFeedbackRepository, reminderOutcomeRepository, reminderTopicAliasRepository);
+                reminderFeedbackRepository, reminderOutcomeRepository, reminderTopicAliasRepository, null);
         assertThat(reminderSignalCollector).isNotNull();
 
         ReminderMessageGenerator reminderMessageGenerator = reminderConfig.reminderMessageGenerator(

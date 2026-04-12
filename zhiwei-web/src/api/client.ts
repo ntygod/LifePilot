@@ -1589,6 +1589,15 @@ export const notificationApi = {
   /** 标记所有通知已读 */
   markAllAsRead(userId: string): Promise<{ updatedCount: number }> {
     return request(`/notifications/read-all?userId=${encodeURIComponent(userId)}`, { method: 'PUT' })
+  },
+
+  /** 提交主动提醒反馈 */
+  submitFeedback(id: string, feedbackType: string): Promise<NotificationItem> {
+    return request(`/notifications/${id}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedbackType }),
+    })
   }
 }
 

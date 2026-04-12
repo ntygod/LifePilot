@@ -72,7 +72,8 @@ graph TB
 
 ### 3.3 ContextAssembler
 
-- 职责：组装 LLM 调用上下文，包括系统 Prompt、当前 session 最近完整轮次、L1 临时工作区、L3 用户画像与经验
+- 职责：组装 LLM 调用上下文，包括系统 Prompt、当前 session 最近完整轮次、L1 临时工作区、L3 用户画像与经验、运行时环境（位置、天气）
+- 运行时环境注入：通过 `LocationResolver` 解析用户位置（配置覆盖 > IP 自动检测），通过 `OpenMeteoWeatherService` 注入天气摘要（仅读缓存，零阻塞）
 - 当前主路径不再依赖旧的 `WorkingMemory` 对话缓存，也不再自动注入跨 session 原始对话
 - 跨会话历史检索通过记忆工具显式触发，而不是直接混入主 Prompt
 
@@ -179,5 +180,7 @@ sequenceDiagram
 | `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
 | `lifepilot.agent.execution-retry.max-attempts` | 2 | 最大尝试次数（含首次） |
 | `lifepilot.agent.session.timeout-minutes` | 30 | 会话超时时间（分钟） |
-| `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完���提示词（仅限受控环境） |
+| `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词（仅限受控环境） |
+| `lifepilot.agent.location` | `""` | 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测 |
+| `lifepilot.agent.ip-api-url` | `http://ip-api.com/json/...` | IP 地理定位 API 地址，为空时禁用自动检测 |
 | `lifepilot.agent.core-tool-ids` | `[]` | 核心工具 ID 列表 — 非空时启用分层工具注入，仅核心工具始终可见，其余工具随 Skill 加载动态激活 |

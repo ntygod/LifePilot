@@ -1584,6 +1584,7 @@ export interface NotificationItem {
   status: string
   metadataJson?: string
   sentAt: string  // ISO 8601
+  feedbackType?: string
 }
 
 /** 解析后的详情 */

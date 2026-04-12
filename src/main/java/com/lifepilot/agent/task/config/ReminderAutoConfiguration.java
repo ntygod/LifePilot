@@ -27,6 +27,8 @@ import com.lifepilot.agent.task.reminder.ReminderTopicAliasRepository;
 import com.lifepilot.agent.task.reminder.ReminderTrustGradient;
 import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
 import com.lifepilot.agent.task.reminder.WeatherSignalSource;
+import com.lifepilot.agent.context.LocationResolver;
+import com.lifepilot.agent.context.OpenMeteoWeatherService;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -117,6 +119,13 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public OpenMeteoWeatherService openMeteoWeatherService(LocationResolver locationResolver,
+                                                            AgentConfigProperties config) {
+        return new OpenMeteoWeatherService(locationResolver, config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ReminderSignalCollector reminderSignalCollector(
             @Autowired(required = false) SemanticMemory semanticMemory,
             @Autowired(required = false) ProceduralMemory proceduralMemory,
@@ -125,7 +134,8 @@ public class ReminderAutoConfiguration {
             NotificationRepository notificationRepository,
             @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
             @Autowired(required = false) ReminderOutcomeRepository reminderOutcomeRepository,
-            @Autowired(required = false) ReminderTopicAliasRepository reminderTopicAliasRepository) {
+            @Autowired(required = false) ReminderTopicAliasRepository reminderTopicAliasRepository,
+            @Autowired(required = false) OpenMeteoWeatherService openMeteoWeatherService) {
         return new DefaultReminderSignalCollector(
                 semanticMemory,
                 proceduralMemory,
@@ -134,7 +144,8 @@ public class ReminderAutoConfiguration {
                 notificationRepository,
                 reminderFeedbackRepository,
                 reminderOutcomeRepository,
-                reminderTopicAliasRepository
+                reminderTopicAliasRepository,
+                openMeteoWeatherService
         );
     }
 
@@ -286,23 +297,31 @@ public class ReminderAutoConfiguration {
     @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "proactive-reminder-enabled",
             havingValue = "true", matchIfMissing = true)
     ReminderCounterfactualWarmupListener reminderCounterfactualWarmupListener(
-            ProactiveReminderService proactiveReminderService) {
-        return new ReminderCounterfactualWarmupListener(proactiveReminderService);
+            ProactiveReminderService proactiveReminderService,
+            @Autowired(required = false) OpenMeteoWeatherService openMeteoWeatherService) {
+        return new ReminderCounterfactualWarmupListener(proactiveReminderService, openMeteoWeatherService);
     }
 
     /**
-     * 内部监听器 — 在应用就绪后触发反事实预热。
+     * 内部监听器 — 在应用就绪后触发反事实预热和天气数据预取。
      */
     static class ReminderCounterfactualWarmupListener {
         private static final Logger warmupLog = LoggerFactory.getLogger(ReminderCounterfactualWarmupListener.class);
         private final ProactiveReminderService proactiveReminderService;
+        @Nullable
+        private final OpenMeteoWeatherService weatherService;
 
-        ReminderCounterfactualWarmupListener(ProactiveReminderService proactiveReminderService) {
+        ReminderCounterfactualWarmupListener(ProactiveReminderService proactiveReminderService,
+                                             @Nullable OpenMeteoWeatherService weatherService) {
             this.proactiveReminderService = proactiveReminderService;
+            this.weatherService = weatherService;
         }
 
         @EventListener(ApplicationReadyEvent.class)
         public void onApplicationReady() {
+            if (weatherService != null) {
+                weatherService.triggerPrefetch();
+            }
             Thread.ofVirtual().name("reminder-counterfactual-warmup").start(() -> {
                 try {
                     int count = proactiveReminderService.warmupCounterfactualExamples();

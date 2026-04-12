@@ -157,7 +157,7 @@ async function feedback(type: FeedbackType) {
   if (!reminder.value) return
   const port = await getPort()
   try {
-    await fetch(`http://localhost:${port}/api/notifications/${reminder.value.notificationId}/reminder-feedback`, {
+    await fetch(`http://localhost:${port}/api/notifications/${reminder.value.notificationId}/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ feedbackType: type }),

@@ -14,7 +14,7 @@
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| 信号采集（`DefaultReminderSignalCollector`） | ✅ 已实现 | L3/L4/L2/Workspace/通知反馈/topic alias |
+| 信号采集（`DefaultReminderSignalCollector`） | ✅ 已实现 | L3/L4/L2/Workspace/通知反馈/topic alias/天气 |
 | 候选生成与评分（`ReminderCandidateDetector` / `ReminderScoringModel`） | ✅ 已实现 | 5 类检测器 + 统一评分模型 |
 | 规则决策引擎（`ReminderDecisionEngine`） | ✅ 已实现 | 硬边界 + 评分阈值控制 |
 | Contextual Bandit 策略（`ReminderActionContextualBandit`） | ✅ 已实现 | LinUCB 在线学习，机会层 + 动作层双层 Bandit |
@@ -24,6 +24,7 @@
 | 离线回放与策略评估 | ✅ 已实现 | `ReminderReplayService` + 定时调度器 |
 | 策略调优与版本化 | ✅ 已实现 | `ReminderPolicyTuner` + 安全护栏 + 版本持久化 |
 | 时机预测模型（危险率 / 时序点过程） | ⏳ 待定 | 当前为规则回退，点过程模型为后续迭代方向 |
+| 天气信号接入（`OpenMeteoWeatherService`） | ✅ 已实现 | 零配置 Open-Meteo API，温差/降水/强降水三类信号 |
 | 外部系统信号接入（日历/AFK/Focus） | ⏳ 待定 | 依赖 sync 模块后续对接 |
 
 ## 2. 问题定义
@@ -95,6 +96,7 @@ graph TB
         EXT["External Signals<br/>Calendar/Todo/Presence"]
         NOTI["Notification Signals<br/>已读/处理/忽略/稍后提醒"]
         ACT["Activity Signals<br/>活跃时段/AFK/任务切换"]
+        WEATHER["Weather Signals<br/>Open-Meteo 天气异常"]
     end
 
     subgraph "决策层"
@@ -123,6 +125,7 @@ graph TB
     EXT --> COLLECT
     NOTI --> COLLECT
     ACT --> COLLECT
+    WEATHER --> COLLECT
     COLLECT --> DETECT
     DETECT --> PREDICT
     PREDICT --> POLICY
@@ -211,7 +214,23 @@ graph TB
 - 判断用户当前是否处于合适打扰窗口
 - 为“事件前准备提醒”提供事实锚点
 
-### 7.5 通知反馈
+### 7.5 天气信号
+
+数据来源：`OpenMeteoWeatherService`（基于 Open-Meteo 免费 API，无需 API key）
+
+位置解析：通过 `LocationResolver` 获取城市名 → Open-Meteo Geocoding API 转经纬度 → 缓存
+
+产生的信号类型：
+
+- **温差提醒**：明日最高温与最低温之差超过阈值（默认 10°C）
+- **降水提醒**：明日降水量超过阈值（默认 5mm）且用户有外出事件
+- **强降水提醒**：明日降水量超过重度阈值（默认 20mm），无论是否有外出安排
+
+天气数据通过后台 virtual thread 异步预取并缓存（TTL 由 `weatherCacheTtlHours` 控制，默认 6 小时），不阻塞对话路径。
+
+同一 topic key `weather:tomorrow` 下的多个信号会合并到同一 `ReminderTopicSnapshot`。
+
+### 7.6 通知反馈
 
 目标态反馈事件：
 
@@ -589,6 +608,10 @@ UI action
 | `lifepilot.agent.reminder.policy.name` | `lin_ts` | 默认策略 |
 | `lifepilot.agent.reminder.policy.exploration-alpha` | `0.2` | 探索强度 |
 | `lifepilot.agent.reminder.renderer.llm-enabled` | `true` | 是否启用 LLM 文案生成 |
+| `lifepilot.agent.task.weather-cache-ttl-hours` | `6` | 天气缓存 TTL（小时） |
+| `lifepilot.agent.task.weather-temp-diff-threshold` | `10` | 天气温差提醒阈值（°C） |
+| `lifepilot.agent.task.weather-precipitation-threshold` | `5.0` | 天气降水提醒阈值（mm，有外出事件时生效） |
+| `lifepilot.agent.task.weather-heavy-precipitation-threshold` | `20.0` | 天气强降水提醒阈值（mm，无论是否外出） |
 
 ## 14. 实现顺序
 

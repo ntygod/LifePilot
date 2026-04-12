@@ -73,6 +73,7 @@ public class ContextAssembler {
     @Nullable private final CollectionRepository collectionRepository;
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
+    @Nullable private final OpenMeteoWeatherService weatherService;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -161,8 +162,57 @@ public class ContextAssembler {
                             @Nullable CollectionRepository collectionRepository,
                             @Nullable DynamicToolRegistry toolRegistry,
                             @Nullable McpConfigProperties mcpConfig) {
+        this(config, promptRegistry, dataRedactor, semanticMemory, memoryProperties,
+                proceduralMemory, effectivenessTracker, skillRegistry,
+                generationRouter, contextEngine,
+                sessionKnowledgeBaseRepository, sessionDatastoreRepository,
+                knowledgeBaseRepository, collectionRepository,
+                toolRegistry, mcpConfig, null);
+    }
+
+    public ContextAssembler(AgentConfigProperties config,
+                            PromptRegistry promptRegistry,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable SemanticMemory semanticMemory,
+                            @Nullable MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
+                            @Nullable EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry,
+                            @Nullable GenerationRouter generationRouter,
+                            @Nullable ContextEngine contextEngine,
+                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+                            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                            @Nullable CollectionRepository collectionRepository,
+                            @Nullable DynamicToolRegistry toolRegistry,
+                            @Nullable McpConfigProperties mcpConfig,
+                            @Nullable OpenMeteoWeatherService weatherService) {
+        this(config, null, promptRegistry, dataRedactor, semanticMemory, memoryProperties,
+                proceduralMemory, effectivenessTracker, skillRegistry, generationRouter,
+                contextEngine, sessionKnowledgeBaseRepository, sessionDatastoreRepository,
+                knowledgeBaseRepository, collectionRepository, toolRegistry, mcpConfig, weatherService);
+    }
+
+    public ContextAssembler(AgentConfigProperties config,
+                            @Nullable LocationResolver locationResolver,
+                            PromptRegistry promptRegistry,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable SemanticMemory semanticMemory,
+                            @Nullable MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
+                            @Nullable EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry,
+                            @Nullable GenerationRouter generationRouter,
+                            @Nullable ContextEngine contextEngine,
+                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+                            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                            @Nullable CollectionRepository collectionRepository,
+                            @Nullable DynamicToolRegistry toolRegistry,
+                            @Nullable McpConfigProperties mcpConfig,
+                            @Nullable OpenMeteoWeatherService weatherService) {
         this.config = config;
-        this.locationResolver = new LocationResolver(config);
+        this.locationResolver = locationResolver != null ? locationResolver : new LocationResolver(config);
         this.promptRegistry = promptRegistry;
         this.dataRedactor = dataRedactor;
         this.semanticMemory = semanticMemory;
@@ -178,6 +228,7 @@ public class ContextAssembler {
         this.collectionRepository = collectionRepository;
         this.toolRegistry = toolRegistry;
         this.mcpConfig = mcpConfig;
+        this.weatherService = weatherService;
     }
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
@@ -417,15 +468,23 @@ public class ContextAssembler {
 
     String buildUserPrompt(ReactAgentState state) {
         ZonedDateTime now = ZonedDateTime.now();
-        String userPrompt = promptRegistry.render("agent/react-user-prompt", Map.of(
-                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                "timezone", now.getZone().getId(),
-                "location", locationResolver.resolve(),
-                "osName", System.getProperty("os.name", "unknown"),
-                "osVersion", System.getProperty("os.version", "unknown"),
-                "channel", state.channel() != null ? state.channel() : "unknown",
-                "userGoal", state.goal() != null ? state.goal() : ""
-        ));
+        var params = new LinkedHashMap<String, Object>();
+        params.put("currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        params.put("timezone", now.getZone().getId());
+        params.put("location", locationResolver.resolve());
+        params.put("osName", System.getProperty("os.name", "unknown"));
+        params.put("osVersion", System.getProperty("os.version", "unknown"));
+        params.put("channel", state.channel() != null ? state.channel() : "unknown");
+        params.put("userGoal", state.goal() != null ? state.goal() : "");
+        String weatherLine = "";
+        if (weatherService != null) {
+            String weather = weatherService.getWeatherSummary();
+            if (weather != null) {
+                weatherLine = "\n- 当前天���: " + weather;
+            }
+        }
+        params.put("weather", weatherLine);
+        String userPrompt = promptRegistry.render("agent/react-user-prompt", params);
         String knowledgeBindingPrompt = buildKnowledgeBindingPrompt(state.sessionId());
         if (!knowledgeBindingPrompt.isBlank()) {
             userPrompt = userPrompt + "\n\n" + knowledgeBindingPrompt;

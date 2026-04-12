@@ -1,23 +1,29 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
-import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
+import com.lifepilot.interaction.model.ResponseContent;
+import com.lifepilot.notification.NotificationRequest;
+import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.slf4j.LoggerFactory;
-import com.lifepilot.interaction.web.model.ApiResponse;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 /**
  * 上下文感知 REST Controller — 接收 Tauri 桌面端上报的环境上下文信息。
  *
- * <p>包括焦点应用状态和剪贴板意图识别。</p>
+ * <p>包括焦点应用状态和剪贴板意图识别。
+ * 剪贴板高置信意图（快递/航班/车次）会通过通知系统推送到用户。</p>
  *
  * @author zsg
  * @since 2026-04-05
@@ -30,9 +36,17 @@ public class ContextController {
     private static final Logger log = LoggerFactory.getLogger(ContextController.class);
 
     private final ReminderFocusStateHolder focusStateHolder;
+    @Nullable
+    private final NotificationService notificationService;
+    @Nullable
+    private final NotificationProperties notificationProperties;
 
-    public ContextController(ReminderFocusStateHolder focusStateHolder) {
+    public ContextController(ReminderFocusStateHolder focusStateHolder,
+                             @Nullable NotificationService notificationService,
+                             @Nullable NotificationProperties notificationProperties) {
         this.focusStateHolder = focusStateHolder;
+        this.notificationService = notificationService;
+        this.notificationProperties = notificationProperties;
     }
 
     /**
@@ -48,16 +62,31 @@ public class ContextController {
     }
 
     /**
-     * 接收剪贴板意图识别结果。
+     * 接收剪贴板意图识别结果，通过通知系统推送给用户。
      *
      * @param intent 剪贴板意图
-     * @return 建议操作（如有），否则 204 No Content
+     * @return 204 No Content
      */
     @PostMapping("/clipboard-intent")
-    public ApiResponse<String> reportClipboardIntent(@RequestBody ReminderClipboardIntent intent) {
+    public ResponseEntity<Void> reportClipboardIntent(@RequestBody ReminderClipboardIntent intent) {
         log.info("收到剪贴板意图: type={}, value={}", intent.intentType(), intent.value());
+
+        if (notificationService == null || notificationProperties == null) {
+            log.debug("通知服务不可用，跳过剪贴板意图推送");
+            return ResponseEntity.noContent().build();
+        }
+
         String suggestion = generateSuggestion(intent);
-        return ApiResponse.ok(suggestion);
+        String userId = notificationProperties.getDefaultUserId();
+        var content = new ResponseContent.TextContent(suggestion);
+        var metadata = Map.of(
+                "intentType", intent.intentType().name(),
+                "value", intent.value()
+        );
+        var request = new NotificationRequest(userId, content, null, "clipboard_intent", metadata);
+        notificationService.send(request);
+
+        return ResponseEntity.noContent().build();
     }
 
     /**

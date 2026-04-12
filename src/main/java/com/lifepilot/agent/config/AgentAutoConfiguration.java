@@ -168,9 +168,16 @@ public class AgentAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    public LocationResolver locationResolver(AgentConfigProperties config) {
+        return new LocationResolver(config);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(ContextAssembler.class)
     public ContextAssembler contextAssembler(
             AgentConfigProperties config,
+            LocationResolver locationResolver,
             PromptRegistry promptRegistry,
             @Autowired(required = false) DataRedactor dataRedactor,
             @Autowired(required = false) SemanticMemory semanticMemory,
@@ -185,13 +192,16 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
             @Autowired(required = false) CollectionRepository collectionRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
-            @Autowired(required = false) McpConfigProperties mcpConfig) {
-        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
+            @Autowired(required = false) McpConfigProperties mcpConfig,
+            @Autowired(required = false) OpenMeteoWeatherService openMeteoWeatherService) {
+        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，天气={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
-                proceduralMemory != null ? "enabled" : "disabled");
+                proceduralMemory != null ? "enabled" : "disabled",
+                openMeteoWeatherService != null ? "enabled" : "disabled");
         return new ContextAssembler(
                 config,
+                locationResolver,
                 promptRegistry,
                 dataRedactor,
                 semanticMemory,
@@ -206,7 +216,8 @@ public class AgentAutoConfiguration {
                 knowledgeBaseRepository,
                 collectionRepository,
                 toolRegistry,
-                mcpConfig);
+                mcpConfig,
+                openMeteoWeatherService);
     }
 
     @Bean

@@ -37,7 +37,7 @@ export function useNotificationStream() {
         } else {
           notificationStore.addNotification(data as NotificationItem)
           const item = data as NotificationItem
-          if (item.typeId === 'proactive_reminder') {
+          if (item.typeId === 'proactive_reminder' || item.typeId === 'clipboard_intent') {
             sendToFloatWindow(item)
           } else {
             sendDesktopNotification(item)

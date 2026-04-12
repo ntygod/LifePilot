@@ -76,6 +76,20 @@ Web 端通过 `/api/notifications/stream` 建立通知专用 SSE 连接：
 - 后续新通知实时广播
 - 前端通知中心直接消费同一条数据流
 
+### 2.8 主动提醒反馈按钮
+
+通知详情组件（`NotificationDetail`）会根据通知类型渲染不同的交互元素。当 `typeId` 为 `proactive_reminder` 时，通知详情底部会显示反馈操作条，提供三个按钮：
+
+- **有用**（`ACTED`）— 最强正反馈
+- **知道了**（`SNOOZED`）— 弱正反馈
+- **不需要**（`NOT_RELEVANT`）— 最强负反馈
+
+用户的反馈会通过 `NotificationStore.submitFeedback()` 提交到后端，用于主动提醒引擎的策略学习和调优。每条通知只能提交一次反馈。
+
+### 2.9 剪贴板意图通知
+
+桌面端通过 `ContextController` 上报剪贴板意图识别结果（快递号、航班号、车次、URL、电话号码），高置信意图会通过 `NotificationService` 以 `clipboard_intent` 类型推送给用户，附带操作建议（如"要帮你查询快递 XXX 的物流状态吗？"）。
+
 ## 3. 使用场景
 
 ### 场景 1：自主任务结果通知

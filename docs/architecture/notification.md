@@ -27,6 +27,7 @@ graph TB
         HEARTBEAT["HeartbeatRunner<br/>唤醒主动提醒"]
         WF["StepExecutor / NotifyStep"]
         META["NotifyToolProvider<br/>notify 工具"]
+        CTX_CTRL["ContextController<br/>剪贴板意图推送"]
         FUTURE["未来模块"]
     end
 
@@ -57,6 +58,7 @@ graph TB
     HEARTBEAT --> NS
     WF --> NS
     META --> NS
+    CTX_CTRL --> NS
     FUTURE --> NS
 
     NS --> IMPL
@@ -192,6 +194,7 @@ sequenceDiagram
 | 方向 | 模块 | 交互方式 |
 |------|------|---------|
 | 被依赖 | `agent.task` | cron / 主动提醒通过 `NotificationService` 发送结果 |
+| 被依赖 | `interaction.web` | `ContextController` 将高置信剪贴板意图（快递/航班/车次等）通过 `NotificationService` 推送给用户 |
 | 被依赖 | `workflow` | `NotifyStep` 通过 `NotificationService` 投递通知 |
 | 被依赖 | `meta` | 独立的 `notify` 工具（`NotifyToolProvider` → `NotifyToolExecutor`）直接调用通知服务 |
 | 依赖 | `interaction.channel` | 通过插件架构向外部渠道发送（具体渠道适配器由插件提供） |
