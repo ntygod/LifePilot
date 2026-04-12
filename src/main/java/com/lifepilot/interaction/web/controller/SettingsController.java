@@ -48,17 +48,20 @@ public class SettingsController {
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     private final MetaProperties metaProperties;
     private final WorkspaceResolver workspaceResolver;
+    private final String dataDir;
 
     public SettingsController(UserSettingsRepository settingsRepository,
                               ObjectMapper objectMapper,
                               @Nullable KnowledgeBaseProperties knowledgeBaseProperties,
                               @Nullable MetaProperties metaProperties,
-                              WorkspaceResolver workspaceResolver) {
+                              WorkspaceResolver workspaceResolver,
+                              @org.springframework.beans.factory.annotation.Value("${zhiwei.data-dir}") String dataDir) {
         this.settingsRepository = settingsRepository;
         this.objectMapper = objectMapper;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.metaProperties = metaProperties;
         this.workspaceResolver = workspaceResolver;
+        this.dataDir = dataDir;
     }
 
     @GetMapping
@@ -219,6 +222,11 @@ public class SettingsController {
 
         settingsRepository.saveSearchConfig(writeJson(config));
         return getSearchSettings();
+    }
+
+    @GetMapping("/data-dir")
+    public ApiResponse<Map<String, String>> getDataDir() {
+        return ApiResponse.ok(Map.of("dataDir", dataDir));
     }
 
     @GetMapping("/workspace")

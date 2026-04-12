@@ -46,7 +46,8 @@ class SettingsControllerSearchSettingsTest {
                 new ObjectMapper(),
                 null,
                 metaProperties,
-                workspaceResolver
+                workspaceResolver,
+                "/tmp/.zhiwei"
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

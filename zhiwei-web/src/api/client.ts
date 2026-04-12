@@ -601,6 +601,11 @@ export const settingsApi = {
     })
   },
 
+  /** 获取数据目录（只读） */
+  getDataDir(): Promise<{ dataDir: string }> {
+    return request('/settings/data-dir')
+  },
+
   /** 获取工作目录配置 */
   getWorkspaceSettings(): Promise<WorkspaceSettings> {
     return request('/settings/workspace')

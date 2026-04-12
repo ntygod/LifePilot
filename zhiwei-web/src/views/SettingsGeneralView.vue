@@ -29,17 +29,23 @@ const form = ref({
   showTokenUsage: true,
 })
 
-// ---- 数据目录（仅 Tauri 桌面端） ----
+// ---- 数据目录 ----
 const dataDir = ref('')
 const dataDirChanged = ref(false)
 const showRestartForDataDir = ref(false)
 
 async function loadDataDir() {
-  if (!isTauri) return
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    dataDir.value = await invoke<string>('get_data_dir')
-  } catch { /* 非桌面端 */ }
+  if (isTauri) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      dataDir.value = await invoke<string>('get_data_dir')
+    } catch { /* ignore */ }
+  } else {
+    try {
+      const result = await settingsApi.getDataDir()
+      dataDir.value = result.dataDir
+    } catch { /* ignore */ }
+  }
 }
 
 async function browseDataDir() {
@@ -107,17 +113,22 @@ async function saveWorkspaceDir(value: string) {
 }
 
 async function browseWorkspaceDir() {
-  try {
-    const { open } = await import('@tauri-apps/plugin-dialog')
-    const selected = await open({ directory: true, title: '选择默认工作目录' })
-    if (selected && typeof selected === 'string') {
-      workspaceInputValue.value = selected
-      await saveWorkspaceDir(selected)
+  if (isTauri) {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({ directory: true, title: '选择默认工作目录' })
+      if (selected && typeof selected === 'string') {
+        workspaceInputValue.value = selected
+        await saveWorkspaceDir(selected)
+      }
+    } catch (e) {
+      logger.error('选择工作目录失败:', e)
     }
-  } catch (e) {
-    logger.error('选择工作目录失败:', e)
   }
 }
+
+/** 浏览器是否支持原生目录选择 */
+const supportsDirPicker = isTauri || 'showDirectoryPicker' in window
 
 async function resetWorkspaceDir() {
   workspaceInputValue.value = ''
@@ -265,12 +276,13 @@ const fontSizeOptions = [
         </SettingItem>
       </SettingSection>
 
-      <SettingSection v-if="isTauri" title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。修改后需重启应用。">
+      <SettingSection title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。">
         <SettingItem label="数据目录" :description="dataDir || '加载中...'">
-          <div class="flex items-center gap-2">
+          <div v-if="isTauri" class="flex items-center gap-sm">
             <Button type="button" variant="outline" size="sm" @click="browseDataDir">选择目录</Button>
             <Button type="button" variant="ghost" size="sm" @click="resetDataDir">恢复默认</Button>
           </div>
+          <span v-else class="text-xs text-muted-foreground">通过启动参数 --zhiwei.data-dir 修改</span>
         </SettingItem>
         <div v-if="dataDirChanged" class="flex items-center gap-3 rounded-md bg-warning/10 px-4 py-2.5 text-sm text-warning-foreground">
           <span>数据目录已修改，重启应用后生效。</span>
@@ -287,19 +299,15 @@ const fontSizeOptions = [
           :description="'当前生效路径：' + (workspaceResolvedPath || '加载中...')"
         >
           <div class="flex items-center gap-sm">
-            <template v-if="isTauri">
-              <Button type="button" variant="outline" size="sm" :disabled="workspaceSaving" @click="browseWorkspaceDir">选择目录</Button>
-            </template>
-            <template v-else>
-              <Input
-                v-model="workspaceInputValue"
-                class="min-w-2xl"
-                placeholder="留空使用默认目录"
-                :disabled="workspaceSaving"
-                @blur="handleWorkspaceInputBlur"
-                @keydown="handleWorkspaceInputKeydown"
-              />
-            </template>
+            <Input
+              v-model="workspaceInputValue"
+              class="min-w-2xl"
+              placeholder="留空使用默认目录"
+              :disabled="workspaceSaving"
+              @blur="handleWorkspaceInputBlur"
+              @keydown="handleWorkspaceInputKeydown"
+            />
+            <Button v-if="supportsDirPicker" type="button" variant="outline" size="sm" :disabled="workspaceSaving" @click="browseWorkspaceDir">选择目录</Button>
             <Button type="button" variant="ghost" size="sm" :disabled="workspaceSaving" @click="resetWorkspaceDir">恢复默认</Button>
           </div>
         </SettingItem>
