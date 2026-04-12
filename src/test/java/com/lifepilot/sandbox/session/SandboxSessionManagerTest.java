@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
@@ -46,7 +47,8 @@ class SandboxSessionManagerTest {
 
         // 使用 ProcessBooter 作为模板
         SandboxBooter template = new ProcessBooter(config);
-        manager = new SandboxSessionManager(config, template, sharedScheduler);
+        var workspaceResolver = new WorkspaceResolver(null, "");
+        manager = new SandboxSessionManager(config, template, sharedScheduler, workspaceResolver);
     }
 
     @AfterEach

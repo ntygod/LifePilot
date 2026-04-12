@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell;
 
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -25,11 +26,12 @@ class ShellExecToolExecutorTest {
     private ShellExecToolExecutor executor;
     private MetaProperties properties;
     private BackgroundProcessManager backgroundProcessManager;
+    private final WorkspaceResolver workspaceResolver = new WorkspaceResolver(null, "");
 
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        executor = new ShellExecToolExecutor(properties, null);
+        executor = new ShellExecToolExecutor(properties, null, workspaceResolver);
         backgroundProcessManager = null;
     }
 
@@ -215,7 +217,7 @@ class ShellExecToolExecutorTest {
     void execute_输出超过maxOutputLength被截断_Unix() {
         // 设置极小的 maxOutputLength
         properties.getInfra().getShell().setMaxOutputLength(10);
-        executor = new ShellExecToolExecutor(properties, null);
+        executor = new ShellExecToolExecutor(properties, null, workspaceResolver);
 
         // 生成超过 10 字符的输出
         ToolInput input = buildInput(Map.of("command", "echo abcdefghijklmnopqrstuvwxyz"));
@@ -230,7 +232,7 @@ class ShellExecToolExecutorTest {
     @Test
     void execute_yieldMs快速失败时保留真实exitCode与双通道输出() {
         backgroundProcessManager = new BackgroundProcessManager(properties.getInfra().getProcess(), null);
-        executor = new ShellExecToolExecutor(properties, backgroundProcessManager);
+        executor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver);
 
         ToolInput input = buildInput(Map.of(
                 "command", buildStdoutStderrFailCommand(7),

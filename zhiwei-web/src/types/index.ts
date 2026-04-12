@@ -177,6 +177,7 @@ export interface UserSettings {
   enableFunctionCall?: boolean
   enableKnowledgeBase?: boolean
   enableToolCall?: boolean
+  defaultWorkspace?: string | null
   sessionTimeout?: number
   maxRecentTurns?: number
   workingMemoryBudget?: number

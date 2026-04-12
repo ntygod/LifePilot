@@ -4,6 +4,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -14,6 +15,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { logger } from '@/utils/logger'
 import { useSettings } from '@/composables/useSettings'
+import { settingsApi } from '@/api/client'
+import type { WorkspaceSettings } from '@/api/client'
 
 const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
 
@@ -26,46 +29,147 @@ const form = ref({
   showTokenUsage: true,
 })
 
-// ---- 数据目录（仅 Tauri 桌面端） ----
-const dataDir = ref('')
+// ---- 数据目录 ----
+const dataDir = ref<string | null>(null)
 const dataDirChanged = ref(false)
 const showRestartForDataDir = ref(false)
+const dataDirSaving = ref(false)
+const dataDirInputValue = ref('')
 
 async function loadDataDir() {
-  if (!isTauri) return
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    dataDir.value = await invoke<string>('get_data_dir')
-  } catch { /* 非桌面端 */ }
+    const result = await settingsApi.getDataDir()
+    dataDir.value = result.dataDir
+    dataDirInputValue.value = result.configuredDir ?? ''
+  } catch {
+    dataDir.value = '（获取失败）'
+  }
+}
+
+async function saveDataDir(value: string) {
+  dataDirSaving.value = true
+  try {
+    if (isTauri) {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('set_data_dir', { path: value })
+    }
+    const result = await settingsApi.updateDataDir(value || null)
+    dataDirInputValue.value = result.configuredDir ?? ''
+    dataDirChanged.value = true
+  } catch (e) {
+    logger.error('保存数据目录失败:', e)
+  } finally {
+    dataDirSaving.value = false
+  }
 }
 
 async function browseDataDir() {
-  try {
-    const { open } = await import('@tauri-apps/plugin-dialog')
-    const selected = await open({ directory: true, title: '选择数据目录' })
-    if (selected && typeof selected === 'string') {
-      dataDir.value = selected
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('set_data_dir', { path: selected })
-      dataDirChanged.value = true
+  if (isTauri) {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({ directory: true, title: '选择数据目录' })
+      if (selected && typeof selected === 'string') {
+        dataDirInputValue.value = selected
+        await saveDataDir(selected)
+      }
+    } catch (e) {
+      logger.error('选择目录失败:', e)
     }
-  } catch (e) {
-    logger.error('选择目录失败:', e)
   }
 }
 
 async function resetDataDir() {
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('set_data_dir', { path: '' })
-    dataDir.value = await invoke<string>('get_data_dir')
-    dataDirChanged.value = true
-  } catch { /* ignore */ }
+  dataDirInputValue.value = ''
+  await saveDataDir('')
+}
+
+function handleDataDirInputBlur() {
+  const trimmed = dataDirInputValue.value.trim()
+  if (trimmed !== (dataDirInputValue.value || '')) {
+    saveDataDir(trimmed)
+  }
+}
+
+function handleDataDirInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    (event.target as HTMLInputElement)?.blur()
+  }
 }
 
 function confirmRestartForDataDir() {
   showRestartForDataDir.value = false
   window.location.reload()
+}
+
+// ---- 默认工作目录（前后端 API 驱动，实时生效） ----
+const workspaceDir = ref('')
+const workspaceResolvedPath = ref('')
+const workspaceSystemDefault = ref('')
+const workspaceSaving = ref(false)
+const workspaceInputValue = ref('')
+
+async function loadWorkspaceDir() {
+  try {
+    const ws: WorkspaceSettings = await settingsApi.getWorkspaceSettings()
+    workspaceDir.value = ws.defaultWorkspace ?? ''
+    workspaceResolvedPath.value = ws.resolvedPath
+    workspaceSystemDefault.value = ws.systemDefault
+    workspaceInputValue.value = ws.defaultWorkspace ?? ''
+  } catch (e) {
+    logger.error('加载工作目录设置失败:', e)
+  }
+}
+
+async function saveWorkspaceDir(value: string) {
+  workspaceSaving.value = true
+  try {
+    const ws = await settingsApi.updateWorkspaceSettings({
+      defaultWorkspace: value || null
+    })
+    workspaceDir.value = ws.defaultWorkspace ?? ''
+    workspaceResolvedPath.value = ws.resolvedPath
+    workspaceInputValue.value = ws.defaultWorkspace ?? ''
+  } catch (e) {
+    logger.error('保存工作目录失败:', e)
+  } finally {
+    workspaceSaving.value = false
+  }
+}
+
+async function browseWorkspaceDir() {
+  if (isTauri) {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({ directory: true, title: '选择默认工作目录' })
+      if (selected && typeof selected === 'string') {
+        workspaceInputValue.value = selected
+        await saveWorkspaceDir(selected)
+      }
+    } catch (e) {
+      logger.error('选择工作目录失败:', e)
+    }
+  }
+}
+
+/** 浏览器是否支持原生目录选择 */
+const supportsDirPicker = isTauri || 'showDirectoryPicker' in window
+
+async function resetWorkspaceDir() {
+  workspaceInputValue.value = ''
+  await saveWorkspaceDir('')
+}
+
+function handleWorkspaceInputBlur() {
+  const trimmed = workspaceInputValue.value.trim()
+  if (trimmed !== (workspaceDir.value || '')) {
+    saveWorkspaceDir(trimmed)
+  }
+}
+
+function handleWorkspaceInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    (event.target as HTMLInputElement)?.blur()
+  }
 }
 
 const saveError = ref<string | null>(null)
@@ -79,6 +183,7 @@ onMounted(() => {
     showTokenUsage: settings.value.showTokenUsage,
   }
   loadDataDir()
+  loadWorkspaceDir()
 })
 
 async function applySettings() {
@@ -195,17 +300,48 @@ const fontSizeOptions = [
         </SettingItem>
       </SettingSection>
 
-      <SettingSection v-if="isTauri" title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。修改后需重启应用。">
-        <SettingItem label="数据目录" :description="dataDir || '加载中...'">
-          <div class="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" @click="browseDataDir">选择目录</Button>
-            <Button type="button" variant="ghost" size="sm" @click="resetDataDir">恢复默认</Button>
+      <SettingSection title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。修改后需重启应用。">
+        <SettingItem label="数据目录" :description="dataDir === null ? '加载中...' : ('当前生效路径：' + dataDir)">
+          <div class="flex items-center gap-sm">
+            <Input
+              v-model="dataDirInputValue"
+              class="min-w-2xl"
+              placeholder="留空使用默认目录"
+              :disabled="dataDirSaving"
+              @blur="handleDataDirInputBlur"
+              @keydown="handleDataDirInputKeydown"
+            />
+            <Button v-if="supportsDirPicker" type="button" variant="outline" size="sm" :disabled="dataDirSaving" @click="browseDataDir">选择目录</Button>
+            <Button type="button" variant="ghost" size="sm" :disabled="dataDirSaving" @click="resetDataDir">恢复默认</Button>
           </div>
         </SettingItem>
         <div v-if="dataDirChanged" class="flex items-center gap-3 rounded-md bg-warning/10 px-4 py-2.5 text-sm text-warning-foreground">
           <span>数据目录已修改，重启应用后生效。</span>
-          <Button type="button" variant="outline" size="sm" @click="showRestartForDataDir = true">立即重启</Button>
+          <Button v-if="isTauri" type="button" variant="outline" size="sm" @click="showRestartForDataDir = true">立即重启</Button>
         </div>
+      </SettingSection>
+
+      <SettingSection
+        title="工作目录"
+        description="沙箱执行、Shell 命令、文件写入等操作的默认工作目录。修改后立即生效。"
+      >
+        <SettingItem
+          label="默认工作目录"
+          :description="'当前生效路径：' + (workspaceResolvedPath || '加载中...')"
+        >
+          <div class="flex items-center gap-sm">
+            <Input
+              v-model="workspaceInputValue"
+              class="min-w-2xl"
+              placeholder="留空使用默认目录"
+              :disabled="workspaceSaving"
+              @blur="handleWorkspaceInputBlur"
+              @keydown="handleWorkspaceInputKeydown"
+            />
+            <Button v-if="supportsDirPicker" type="button" variant="outline" size="sm" :disabled="workspaceSaving" @click="browseWorkspaceDir">选择目录</Button>
+            <Button type="button" variant="ghost" size="sm" :disabled="workspaceSaving" @click="resetWorkspaceDir">恢复默认</Button>
+          </div>
+        </SettingItem>
       </SettingSection>
 
       <SettingSection title="辅助操作" description="管理只在当前浏览器中生效的引导状态。">

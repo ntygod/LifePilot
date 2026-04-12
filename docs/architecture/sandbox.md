@@ -46,7 +46,7 @@ flowchart TD
 ### 3.2 ProcessBooter
 
 - 职责：基于 ProcessBuilder 的轻量级进程沙箱，零外部依赖，默认方案
-- 隔离措施：隔离临时目录、清洗环境变量（仅保留 PATH）、超时强制终止
+- 隔离措施：在统一工作目录下的 `sandbox/` 子目录中创建隔离会话目录、清洗环境变量（仅保留 PATH）、超时强制终止
 - 异步读取：Virtual Thread 异步读取 stdout/stderr，避免阻塞
 - 执行流程：写入临时脚本文件 → 构建 ProcessBuilder → 启动进程 → 等待完成或超时 → 清理临时文件
 
@@ -67,6 +67,7 @@ flowchart TD
 ### 3.5 SandboxSessionManager
 
 - 职责：会话级沙箱实例管理，支持 TTL 自动续期和过期清理
+- 依赖 `WorkspaceResolver` 解析工作目录，会话工作目录创建在 `{workspace}/sandbox/session-{id}/` 下
 - `getOrCreate(sessionId)`：已有会话续期返回，新会话检查上限后创建
 - 定时清理：`ScheduledExecutorService` 定期扫描过期会话并销毁
 - 销毁流程：shutdown booter → 删除工作目录 → 移除 entry
@@ -135,6 +136,7 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
+| `zhiwei.workspace-dir` | `${zhiwei.data-dir}/workspace` | 统一工作目录，沙箱会话目录创建在 `{workspace}/sandbox/` 下 |
 | `lifepilot.sandbox.enabled` | `true` | 沙箱总开关 |
 | `lifepilot.sandbox.booter` | `process` | 沙箱类型（process / docker） |
 | `lifepilot.sandbox.supported-languages` | `[python, javascript, shell]` | 支持的语言列表 |

@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra;
 
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
@@ -73,6 +74,7 @@ public class InfraToolProvider {
     @Nullable private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
     @Nullable private final ChannelInstanceService channelInstanceService;
     @Nullable private final String skillDirectory;
+    private final WorkspaceResolver workspaceResolver;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -91,7 +93,8 @@ public class InfraToolProvider {
                              @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                              @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                              @Nullable ChannelInstanceService channelInstanceService,
-                             @Nullable String skillDirectory) {
+                             @Nullable String skillDirectory,
+                             WorkspaceResolver workspaceResolver) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -110,6 +113,7 @@ public class InfraToolProvider {
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.channelInstanceService = channelInstanceService;
         this.skillDirectory = skillDirectory;
+        this.workspaceResolver = workspaceResolver;
     }
 
     /**
@@ -189,14 +193,14 @@ public class InfraToolProvider {
         if (shellSessionConfig.isEnabled()) {
             var tmuxCmd = new TmuxCommandExecutor(shellSessionConfig.getExecTimeoutSeconds());
             if (tmuxCmd.isTmuxAvailable()) {
-                tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig);
+                tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig, workspaceResolver);
             } else {
                 log.warn("tmux 不可用，Shell 持久会话能力将不可用");
             }
         }
 
         // Shell 工具（shell.exec + shell.process）
-        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager);
+        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver);
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 

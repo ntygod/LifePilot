@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell.session;
 
+import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +40,8 @@ class TmuxSessionManagerTest {
         config.setExecTimeoutSeconds(120);
         config.setOutputMaxChars(50000);
         config.setCleanupIntervalSeconds(3600); // 测试中设置长间隔，避免自动清理干扰
-        manager = new TmuxSessionManager(tmuxCmd, config);
+        var workspaceResolver = new WorkspaceResolver(null, "");
+        manager = new TmuxSessionManager(tmuxCmd, config, workspaceResolver);
     }
 
     @AfterEach

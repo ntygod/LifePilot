@@ -1,6 +1,7 @@
 # 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.data-dir=xxx 覆盖）
 zhiwei:
   data-dir: "${user.home}/.zhiwei"
+  workspace-dir: "${zhiwei.data-dir}/workspace"
 
 spring:
   application:
@@ -877,11 +878,11 @@ lifepilot:
         wait-timeout-seconds: 10
         accessibility-max-depth: 5
         js-execution-timeout-seconds: 10
-        storage-state-dir: ""
+        storage-state-dir: "${zhiwei.data-dir}/cache/browser/storage-state"
         persist-storage-state: false
         acquisition-mode: LAUNCH        # LAUNCH / CDP / PERSISTENT
         cdp-url: ""                      # CDP 模式的远程调试端口 URL
-        user-data-dir: ""                # PERSISTENT 模式的用户数据目录
+        user-data-dir: "${zhiwei.data-dir}/cache/browser/profile"  # PERSISTENT 模式的用户数据目录
       git:
         enabled: true
         timeout-seconds: 30
