@@ -125,10 +125,10 @@ let installationRequestId = 0
 let assetPreviewRequestId = 0
 
 const summaryItems = computed(() => ([
-  { label: '已注册插件', value: String(plugins.value.length), hint: '主服务只保留控制面，平台协议交给插件和 connector。' },
-  { label: '渠道实例', value: String(instances.value.length), hint: '实例是实际连接，不再等同于平台枚举。' },
-  { label: '运行中', value: String(instances.value.filter(instance => instance.status === 'RUNNING').length), hint: '当前已经接入 Gateway 的实例数量。' },
-  { label: '外部 Connector', value: String(plugins.value.filter(plugin => plugin.connectorMode === 'EXTERNAL').length), hint: '飞书、企微、钉钉默认通过外部 connector 接入。' },
+  { label: '可用插件', value: String(plugins.value.length), hint: '支持接入的消息平台数量。' },
+  { label: '已创建实例', value: String(instances.value.length), hint: '每个实例对应一个平台的接入配置。' },
+  { label: '运行中', value: String(instances.value.filter(instance => instance.status === 'RUNNING').length), hint: '当前正在接收和投递消息的实例。' },
+  { label: '需要外部服务', value: String(plugins.value.filter(plugin => plugin.connectorMode === 'EXTERNAL').length), hint: '飞书、企微、钉钉等需要启动对应的连接服务。' },
 ]))
 
 watch(createPlugin, (plugin) => {
@@ -256,6 +256,7 @@ function hasManualConnectorBaseUrl(config?: Record<string, unknown> | null) {
 
 function shouldShowConnectorBaseUrlField(plugin: ChannelPluginDescriptor | null, useCustomBaseUrl: boolean) {
   if (!plugin || plugin.connectorMode !== 'EXTERNAL') {
+    // 非外部连接模式不显示切换提示
     return true
   }
   if (!hasManagedConnector(plugin)) {
@@ -285,19 +286,12 @@ function updateEditCustomBaseUrl(nextValue: boolean) {
 
 function managedConnectorToggleDescription(plugin: ChannelPluginDescriptor | null) {
   if (!plugin || plugin.connectorMode !== 'EXTERNAL' || !hasManagedConnector(plugin)) {
-    return '该插件默认通过外部 connector 接入。'
+    return '该平台需要通过外部连接服务接入。'
   }
   if (managedConnectorAvailable(plugin)) {
-    const resolution = managedConnectorConfig(plugin)?.resolution
-    if (resolution === 'installed-artifact') {
-      return '当前插件已包含可执行 connector 产物，主服务会直接自动托管；只有接入自建 connector 时才需要手动填写 Base URL。'
-    }
-    if (resolution === 'workspace' || resolution === 'workspace-fallback') {
-      return '主服务已发现本地 connector 开发工作区，可自动托管；只有接入自建 connector 时才需要手动填写 Base URL。'
-    }
-    return '官方插件会优先由主服务自动托管 connector；只有接入自建 connector 时才需要手动填写 Base URL。'
+    return '连接服务已就绪，可自动运行。开启此选项后需手动填写自定义服务地址。'
   }
-  return '当前插件未提供可自动托管的 connector 运行产物，请切换为自定义地址，或安装带运行时产物的官方插件版本。'
+  return '连接服务暂未就绪，请先安装对应插件或手动填写服务地址。'
 }
 
 function isNotFoundError(error: unknown) {
@@ -479,11 +473,11 @@ async function loadData(showSuccessToast = false) {
       instanceEvents.value = []
     }
     if (showSuccessToast) {
-      uiStore.showToast('success', '渠道控制面已刷新')
+      uiStore.showToast('success', '渠道信息已刷新')
     }
   } catch (error) {
-    logger.error('加载渠道控制面失败:', error)
-    uiStore.showToast('error', getErrorMessage(error, '加载渠道控制面失败'))
+    logger.error('加载渠道信息失败:', error)
+    uiStore.showToast('error', getErrorMessage(error, '加载渠道信息失败'))
   } finally {
     loading.value = false
     refreshing.value = false
@@ -910,34 +904,34 @@ function selectInstance(instanceId: string) {
 function fieldDescription(field: NormalizedChannelField, mode: 'create' | 'edit') {
   if (field.description) return field.description
   if (field.secret && mode === 'edit') return '敏感字段默认显示脱敏值，不修改即可保留原值。'
-  if (field.secret) return '敏感字段将单独保存，不会在控制面里明文回显。'
+  if (field.secret) return '敏感信息将加密保存，不会明文显示。'
   return '由插件 schema 驱动的实例配置字段。'
 }
 
 function connectorHint(plugin: ChannelPluginDescriptor | null) {
   if (!plugin) return ''
   if (plugin.connectorMode === 'LOCAL') {
-    return '该插件由主服务内建运行，不需要额外启动 connector。'
+    return '内建插件，无需额外配置即可使用。'
   }
   if (hasManagedConnector(plugin) && managedConnectorAvailable(plugin)) {
     const resolution = managedConnectorConfig(plugin)?.resolution
     if (resolution === 'installed-artifact') {
-      return '该官方插件安装后已附带可执行 connector 产物，主服务会直接自动托管，通常不需要手动启动进程或填写 Base URL。'
+      return '已安装连接服务，创建实例后可直接启用。'
     }
-    return '该官方插件会优先由主服务自动托管 connector，通常不需要手动启动进程或填写 Base URL。'
+    return '连接服务可自动运行，通常无需手动配置。'
   }
   if (hasManagedConnector(plugin)) {
-    return '该插件支持官方 connector 托管；当前主服务尚未发现可用运行产物，可改为手动填写 Base URL 接入自建 connector。'
+    return '连接服务暂不可用，请安装对应插件或手动填写服务地址。'
   }
-  return '该插件默认通过外部 connector 接入，建议先确认 connector 可达，再启用实例。'
+  return '需要先启动对应平台的连接服务，再创建实例。'
 }
 </script>
 
 <template>
   <div class="space-y-6">
     <StatePanel
-      title="渠道控制面"
-      description="渠道配置已经从固定平台表单升级成插件和实例模型。主服务负责统一控制面，协议细节交给插件和 connector。"
+      title="渠道管理"
+      description="管理消息平台的接入配置，将知微连接到飞书、钉钉、企微等平台。"
     >
       <template #icon>
         <Activity class="size-5" />
@@ -972,10 +966,10 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
       <section class="detail-card p-6">
         <div class="flex flex-col gap-4 border-b border-border/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
           <div class="space-y-1">
-            <div class="surface-label">插件注册表</div>
-            <h3 class="text-lg font-semibold text-foreground">官方渠道插件</h3>
+            <div class="surface-label">平台插件</div>
+            <h3 class="text-lg font-semibold text-foreground">可接入的平台</h3>
             <p class="max-w-[52rem] text-sm leading-6 text-muted-foreground">
-              新增渠道不再改主系统 controller、settings 页面和 Spring 装配。这里展示的插件描述直接来自后端控制面注册表。
+              选择要接入的消息平台，创建实例后配置对应的凭证即可开始使用。
             </p>
           </div>
         </div>
@@ -1046,7 +1040,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
         @update:open="value => { if (!value) cancelCreate() }"
       >
         <div class="divide-y divide-border/60">
-          <SettingItem label="实例名称" description="用于控制面展示和通知路由识别。" required>
+          <SettingItem label="实例名称" description="显示在侧边栏和通知中的名称。" required>
             <Input v-model="createDisplayName" class="w-[320px]" placeholder="例如：飞书生产机器人" />
           </SettingItem>
 
@@ -1057,8 +1051,8 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
           <SettingItem
             label="创建后启用"
             :description="managedConnectorAvailable(createPlugin)
-              ? '官方 connector 可自动托管，创建后可以直接启用。'
-              : '外部 connector 默认建议先配置好 Base URL 再显式启用。'"
+              ? '连接服务已就绪，创建后可直接启用。'
+              : '建议先配置好服务地址再启用。'"
           >
             <Switch
               :model-value="createEnabled"
@@ -1122,7 +1116,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
           </template>
 
           <div v-else class="py-4 text-sm text-muted-foreground">
-            该插件没有额外配置字段，创建后即可作为实例托管到统一控制面。
+            该插件无需额外配置，创建后即可使用。
           </div>
 
           <div class="pt-2">
@@ -1275,7 +1269,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
               <section class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-background/70 p-4">
               <SettingSection
                 title="实例配置"
-                description="配置页由插件 schema 自动渲染，主服务不再维护飞书、企微、钉钉的固定表单。"
+                description="根据插件定义的配置项进行设置。"
               >
                 <template #header-actions>
                   <Badge v-if="selectedInstanceLocked" variant="outline">内建实例</Badge>
@@ -1284,7 +1278,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                   </Button>
                 </template>
 
-                <SettingItem label="实例名称" description="用于控制面展示和通知路由识别。" required>
+                <SettingItem label="实例名称" description="显示在侧边栏和通知中的名称。" required>
                   <Input v-model="editDisplayName" class="w-[320px]" placeholder="实例名称" />
                 </SettingItem>
 
@@ -1351,7 +1345,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 </template>
 
                 <div v-else class="py-4 text-sm text-muted-foreground">
-                  当前插件没有可编辑的 schema 字段，实例主要通过运行状态和系统默认行为参与统一控制面。
+                  当前插件无需额外配置，使用默认设置即可。
                 </div>
 
                 <div class="pt-2">
@@ -1388,7 +1382,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
             <StatePanel
               v-if="healthStatus"
               title="健康检查结果"
-              :description="healthStatus.healthy ? '连接器或本地渠道返回正常。' : '健康检查已返回异常，请检查 connector 可达性和实例配置。'"
+              :description="healthStatus.healthy ? '服务连接正常。' : '连接异常，请检查服务是否正常运行。'"
               :tone="healthTone()"
             >
               <template #icon>
@@ -1563,7 +1557,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
                 <div>
                   <div class="text-sm font-semibold text-foreground">最近事件</div>
                   <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                    启动、健康检查、connector 入站处理和主动投递都会记录到统一事件流里。
+                    实例的启停、消息收发和异常都会记录在这里。
                   </p>
                 </div>
                 <Badge variant="outline">{{ instanceEvents.length }} 条</Badge>
@@ -1632,7 +1626,7 @@ function connectorHint(plugin: ChannelPluginDescriptor | null) {
           <StatePanel
             v-else
             title="还没有选中实例"
-            description="先从左侧选择一个实例，或者先在上方插件注册表中创建新实例。"
+            description="从左侧选择一个实例查看详情，或在上方创建新实例。"
             tone="warning"
           >
             <template #icon>
