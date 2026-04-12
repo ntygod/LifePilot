@@ -141,6 +141,38 @@ public class ModelServiceController {
         return ApiResponse.ok(toResponse(merged));
     }
 
+    /** 切换模型服务启用状态。 */
+    @PostMapping("/{id}/toggle-enabled")
+    public ApiResponse<ModelServiceResponse> toggleEnabled(@PathVariable String id) {
+        var existing = modelServiceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型服务不存在: id=" + id));
+        var toggled = new ModelServiceEntity(
+                existing.id(), existing.kind(), existing.providerType(),
+                existing.apiUrl(), existing.apiKey(), existing.modelName(),
+                existing.timeoutSeconds(), existing.priority(), !existing.enabled(),
+                existing.supportedScenes(), existing.generationCapabilities(),
+                existing.metadata(), existing.displayName(), existing.description()
+        );
+        modelServiceRepository.save(toggled);
+        registrationService.registerService(toggled);
+        log.info("模型服务启用状态已切换: id={}, enabled={}", id, toggled.enabled());
+        return ApiResponse.ok(toResponse(toggled));
+    }
+
+    /** 测试模型服务连接。 */
+    @PostMapping("/{id}/test")
+    public ApiResponse<Map<String, Object>> testConnection(@PathVariable String id) {
+        var existing = modelServiceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型服务不存在: id=" + id));
+        try {
+            boolean healthy = registrationService.healthCheck(id);
+            return ApiResponse.ok(Map.of("healthy", healthy, "serviceId", id, "modelName", existing.modelName()));
+        } catch (Exception e) {
+            log.warn("模型服务连接测试失败: id={}, error={}", id, e.getMessage());
+            return ApiResponse.ok(Map.of("healthy", false, "serviceId", id, "error", e.getMessage() != null ? e.getMessage() : "连接失败"));
+        }
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteService(@PathVariable String id) {
         if (modelServiceRepository.findById(id).isEmpty()) {

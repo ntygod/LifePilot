@@ -70,7 +70,7 @@ export const settingsNavGroups: NavGroup[] = [
     id: 'settings',
     label: '偏好设置',
     items: [
-      { label: '通用', path: '/settings/general', icon: Settings, matchPrefixes: ['/settings/general', '/settings'] },
+      { label: '通用', path: '/settings/general', icon: Settings, matchPrefixes: ['/settings/general'] },
       { label: '模型与路由', path: '/settings/models', icon: MonitorCog, matchPrefixes: ['/settings/models'] },
       { label: '知识与检索', path: '/settings/knowledge', icon: BookOpen, matchPrefixes: ['/settings/knowledge'] },
       { label: '集成渠道', path: '/settings/channels', icon: MessageSquare, matchPrefixes: ['/settings/channels'] },

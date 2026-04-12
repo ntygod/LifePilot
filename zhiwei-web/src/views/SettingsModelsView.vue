@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Cpu, Plus, RefreshCw } from 'lucide-vue-next'
+import { CheckCircle, Cpu, Loader2, Plus, RefreshCw, Unplug, XCircle } from 'lucide-vue-next'
 import { modelServiceApi, type ModelService } from '@/api/client'
 import { logger } from '@/utils/logger'
 import ModelServiceManager from '@/components/settings/ModelServiceManager.vue'
@@ -9,6 +9,7 @@ import { useUiStore } from '@/stores/ui'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 
 const uiStore = useUiStore()
 
@@ -64,6 +65,43 @@ function openEdit(serviceId: string) {
   showManager.value = true
 }
 
+const togglingIds = ref(new Set<string>())
+const testingIds = ref(new Set<string>())
+const testResults = ref(new Map<string, boolean | null>())
+
+async function handleToggleEnabled(service: ModelService) {
+  togglingIds.value.add(service.id)
+  try {
+    const updated = await modelServiceApi.toggleEnabled(service.id)
+    const index = services.value.findIndex(s => s.id === service.id)
+    if (index !== -1) services.value[index] = updated
+    uiStore.showToast('success', `${service.displayName || service.id} 已${updated.enabled ? '启用' : '禁用'}`)
+  } catch (error) {
+    logger.error('切换启用状态失败:', error)
+    uiStore.showToast('error', '操作失败')
+  } finally {
+    togglingIds.value.delete(service.id)
+  }
+}
+
+async function handleTestConnection(service: ModelService) {
+  testingIds.value.add(service.id)
+  testResults.value.delete(service.id)
+  try {
+    const result = await modelServiceApi.testConnection(service.id)
+    testResults.value.set(service.id, result.healthy)
+    uiStore.showToast(result.healthy ? 'success' : 'error',
+      result.healthy ? `${service.displayName || service.id} 连接正常` : `连接失败：${result.error || '无法连接'}`)
+  } catch (error: any) {
+    testResults.value.set(service.id, false)
+    uiStore.showToast('error', error?.message || '测试连接失败')
+  } finally {
+    testingIds.value.delete(service.id)
+  }
+  // 5秒后清除测试结果
+  setTimeout(() => { testResults.value.delete(service.id) }, 5000)
+}
+
 async function handleManagerClose() {
   showManager.value = false
   managerMode.value = null
@@ -111,14 +149,13 @@ onMounted(() => {
       </div>
 
       <div v-else class="space-y-3">
-        <button
+        <div
           v-for="service in sortedServices"
           :key="service.id"
-          type="button"
-          class="w-full rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/25"
+          class="cursor-pointer rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-4 transition-colors hover:border-primary/40 hover:bg-muted/25"
           @click="openEdit(service.id)"
         >
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-medium text-foreground">
@@ -126,22 +163,36 @@ onMounted(() => {
                 </span>
                 <Badge variant="outline">{{ kindLabel(service.kind) }}</Badge>
                 <Badge variant="outline">{{ vendorLabel(service) }}</Badge>
-                <Badge :variant="service.enabled ? 'default' : 'secondary'">
-                  {{ service.enabled ? '已启用' : '已禁用' }}
-                </Badge>
               </div>
-              <p class="mt-2 text-sm text-muted-foreground">
+              <p class="mt-1 text-sm text-muted-foreground">
                 {{ service.modelName }}
               </p>
-              <p v-if="service.description" class="mt-2 text-sm leading-6 text-muted-foreground">
-                {{ service.description }}
-              </p>
             </div>
-            <div class="text-sm text-muted-foreground">
-              进入详情配置
+
+            <div class="flex items-center gap-sm" @click.stop>
+              <!-- 测试连接 -->
+              <Button
+                variant="ghost"
+                size="sm"
+                :disabled="testingIds.has(service.id) || !service.enabled"
+                :title="service.enabled ? '测试连接' : '请先启用服务'"
+                @click="handleTestConnection(service)"
+              >
+                <Loader2 v-if="testingIds.has(service.id)" class="size-4 animate-spin" />
+                <CheckCircle v-else-if="testResults.get(service.id) === true" class="size-4 text-emerald-500" />
+                <XCircle v-else-if="testResults.get(service.id) === false" class="size-4 text-destructive" />
+                <Unplug v-else class="size-4" />
+              </Button>
+
+              <!-- 启用/禁用开关 -->
+              <Switch
+                :model-value="service.enabled"
+                :disabled="togglingIds.has(service.id)"
+                @update:model-value="handleToggleEnabled(service)"
+              />
             </div>
           </div>
-        </button>
+        </div>
       </div>
     </StatePanel>
 

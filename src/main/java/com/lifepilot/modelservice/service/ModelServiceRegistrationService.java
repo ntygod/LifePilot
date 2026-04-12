@@ -125,6 +125,17 @@ public class ModelServiceRegistrationService {
     }
 
     /**
+     * 检查指定模型服务的健康状态。
+     *
+     * @param serviceId 模型服务 ID
+     * @return true 表示健康
+     * @throws IllegalArgumentException 如果服务未注册到 ProviderRegistry
+     */
+    public boolean healthCheck(String serviceId) {
+        return providerRegistry.healthCheck(serviceId);
+    }
+
+    /**
      * 驱逐所有客户端工厂中该服务的缓存实例，确保下次调用时基于最新配置重建。
      */
     private void evictClientCaches(String serviceId) {

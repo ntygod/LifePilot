@@ -51,7 +51,7 @@ const hasActiveView = computed(() => route.path in viewMap)
 <template>
   <div class="h-full overflow-y-auto">
     <PageContainer size="wide" class="py-lg">
-      <div class="mx-auto max-w-[860px] space-y-lg">
+      <div class="mx-auto space-y-lg" :class="activeView === SettingsChannelsView ? 'max-w-[1200px]' : 'max-w-[860px]'">
         <h1 class="text-xl font-semibold tracking-tight text-foreground">{{ currentLabel }}</h1>
         <component v-if="hasActiveView" :is="activeView" />
       </div>

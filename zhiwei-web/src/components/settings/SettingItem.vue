@@ -10,7 +10,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="setting-item grid gap-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+  <div class="setting-item grid gap-3 py-3 md:grid-cols-[minmax(180px,1fr)_auto] md:items-center">
     <div class="min-w-0 pr-4">
       <Label :for="htmlFor" class="text-sm font-medium leading-none">
         {{ label }}

@@ -797,7 +797,17 @@ export const modelServiceApi = {
     return request(`/model-services/${id}`, {
       method: 'DELETE'
     })
-  }
+  },
+
+  /** 切换模型服务启用状态。 */
+  toggleEnabled(id: string): Promise<ModelService> {
+    return request(`/model-services/${id}/toggle-enabled`, { method: 'POST' })
+  },
+
+  /** 测试模型服务连接。 */
+  testConnection(id: string): Promise<{ healthy: boolean; serviceId: string; modelName?: string; error?: string }> {
+    return request(`/model-services/${id}/test`, { method: 'POST' })
+  },
 }
 
 /** 创建模型服务请求。 */
