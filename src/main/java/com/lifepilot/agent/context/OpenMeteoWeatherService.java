@@ -17,6 +17,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -93,12 +94,25 @@ public class OpenMeteoWeatherService implements WeatherService {
      *
      * @return 天气摘要文本，或 null（缓存为空或过期时）
      */
+    /** 晚 8 点后展示"明日+后天"而非"今日+明日"。 */
+    private static final LocalTime EVENING_CUTOFF = LocalTime.of(20, 0);
+
     @Override
     @Nullable
     public String getWeatherSummary() {
         WeatherData data = getCachedWeatherData();
         if (data == null) {
             return null;
+        }
+        boolean isEvening = LocalTime.now().isAfter(EVENING_CUTOFF);
+        if (isEvening && data.dayAfterTomorrowDesc() != null) {
+            // 晚 8 点后：当前 + 明日 + 后天
+            return "%s %d°C %s；明日 %s %d~%d°C；后天 %s %d~%d°C".formatted(
+                    data.locationName(),
+                    data.currentTemp(), data.currentDesc(),
+                    data.tomorrowDesc(), data.tomorrowMin(), data.tomorrowMax(),
+                    data.dayAfterTomorrowDesc(), data.dayAfterTomorrowMin(), data.dayAfterTomorrowMax()
+            );
         }
         return "%s %d°C %s；今日 %d~%d°C；明日 %s %d~%d°C".formatted(
                 data.locationName(),
@@ -173,6 +187,34 @@ public class OpenMeteoWeatherService implements WeatherService {
             ));
         }
 
+        // 晚 8 点后额外评估后天天气
+        if (LocalTime.now().isAfter(EVENING_CUTOFF) && data.dayAfterTomorrowDesc() != null) {
+            int dayAfterDiff = data.dayAfterTomorrowMax() - data.dayAfterTomorrowMin();
+            if (dayAfterDiff >= tempDiffThreshold) {
+                signals.add(new ReminderSignal(
+                        UUID.randomUUID().toString(),
+                        ReminderSignalKind.EVENT,
+                        0.75f, 0.55f, 1,
+                        now, null, null,
+                        7, 9,
+                        0.25f, true, false,
+                        "后天温差较大（%d°C），注意增减衣物".formatted(dayAfterDiff)
+                ));
+            }
+            if (data.dayAfterTomorrowPrecipitation() > heavyPrecipThreshold) {
+                signals.add(new ReminderSignal(
+                        UUID.randomUUID().toString(),
+                        ReminderSignalKind.EVENT,
+                        0.85f, 0.7f, 1,
+                        now, null, null,
+                        7, 9,
+                        0.4f, true, false,
+                        "后天有强降水（%s，%.1fmm），提前做好准备".formatted(
+                                data.dayAfterTomorrowDesc(), data.dayAfterTomorrowPrecipitation())
+                ));
+            }
+        }
+
         return signals;
     }
 
@@ -216,7 +258,7 @@ public class OpenMeteoWeatherService implements WeatherService {
                     + "&longitude=" + geo.longitude()
                     + "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_sum"
                     + "&current=temperature_2m,weather_code"
-                    + "&timezone=auto&forecast_days=2";
+                    + "&timezone=auto&forecast_days=3";
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -324,12 +366,18 @@ public class OpenMeteoWeatherService implements WeatherService {
                 return null;
             }
 
+            // 后天数据（可能不存在，forecast_days=3 时有）
+            boolean hasDayAfter = maxTemps.size() >= 3;
             return new WeatherData(
                     locationName,
                     currentTemp, wmoCodeToDescription(currentCode),
                     maxTemps.get(0).asInt(), minTemps.get(0).asInt(), wmoCodeToDescription(codes.get(0).asInt()),
                     maxTemps.get(1).asInt(), minTemps.get(1).asInt(), wmoCodeToDescription(codes.get(1).asInt()),
-                    precip.size() > 1 ? precip.get(1).asDouble(0) : 0
+                    precip.size() > 1 ? precip.get(1).asDouble(0) : 0,
+                    hasDayAfter ? maxTemps.get(2).asInt() : 0,
+                    hasDayAfter ? minTemps.get(2).asInt() : 0,
+                    hasDayAfter ? wmoCodeToDescription(codes.get(2).asInt()) : null,
+                    hasDayAfter && precip.size() > 2 ? precip.get(2).asDouble(0) : 0
             );
         } catch (Exception e) {
             log.debug("天气数据解析失败: {}", e.getMessage());
@@ -383,6 +431,9 @@ public class OpenMeteoWeatherService implements WeatherService {
             int currentTemp, String currentDesc,
             int todayMax, int todayMin, String todayDesc,
             int tomorrowMax, int tomorrowMin, String tomorrowDesc,
-            double tomorrowPrecipitation
+            double tomorrowPrecipitation,
+            int dayAfterTomorrowMax, int dayAfterTomorrowMin,
+            @Nullable String dayAfterTomorrowDesc,
+            double dayAfterTomorrowPrecipitation
     ) {}
 }
