@@ -26,6 +26,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'retry', message: Message): void
+  (e: 'edit', message: Message, newContent: string): void
   (e: 'like', message: Message): void
   (e: 'dislike', message: Message, feedback?: string): void
   (e: 'fork', message: Message): void
@@ -210,6 +211,7 @@ function highlight(text: string): string {
           :streaming-permission-approval-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovalResolutions : undefined"
           :is-last-assistant="msg.id === lastAssistantId"
           @retry="(m: Message) => emit('retry', m)"
+          @edit="(m: Message, c: string) => emit('edit', m, c)"
           @like="(m: Message) => emit('like', m)"
           @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
           @fork="(m: Message) => emit('fork', m)"

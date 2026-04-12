@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { Check, Copy, FileText, Mic, Pencil } from 'lucide-vue-next'
 import type {
   A2uiComponent,
@@ -47,13 +47,61 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'edit', message: Message): void
+  (e: 'edit', message: Message, newContent: string): void
   (e: 'show-trace', messageId: string): void
   (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
 const showImagePreview = ref(false)
 const userCopied = ref(false)
+const isEditing = ref(false)
+const editContent = ref('')
+const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
+
+function startEditing() {
+  editContent.value = props.message.content
+  isEditing.value = true
+  nextTick(() => {
+    const textarea = editTextareaRef.value
+    if (textarea) {
+      autoResizeTextarea(textarea)
+      textarea.focus()
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    }
+  })
+}
+
+function cancelEditing() {
+  isEditing.value = false
+  editContent.value = ''
+}
+
+function submitEdit() {
+  const trimmed = editContent.value.trim()
+  if (!trimmed) return
+  isEditing.value = false
+  emit('edit', props.message, trimmed)
+  editContent.value = ''
+}
+
+function autoResizeTextarea(el: HTMLTextAreaElement) {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+function onEditInput(event: Event) {
+  autoResizeTextarea(event.target as HTMLTextAreaElement)
+}
+
+function onEditKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    submitEdit()
+  }
+  if (event.key === 'Escape') {
+    cancelEditing()
+  }
+}
 
 async function handleUserCopy() {
   if (await copyToClipboard(props.message.content)) {
@@ -233,16 +281,48 @@ function approvalLogTone(log: PermissionApprovalLog) {
       <div
         class="relative transition-all duration-200"
         :class="[
-          message.role === 'user' ? 'w-fit overflow-hidden shadow-sm max-w-[65%]' : 'max-w-full overflow-visible',
-          message.role === 'user' ? userBubbleClass : assistantBubbleClass,
+          message.role === 'user'
+            ? (isEditing ? 'w-full overflow-visible' : 'w-fit overflow-hidden shadow-sm max-w-[65%]')
+            : 'max-w-full overflow-visible',
+          message.role === 'user' ? (isEditing ? '' : userBubbleClass) : assistantBubbleClass,
         ]"
       >
         <div class="relative z-[1]">
-          <p
-            v-if="message.role === 'user'"
-            class="whitespace-pre-wrap text-[15px] leading-relaxed"
-            v-html="(message as any).highlightedContent ?? message.content"
-          />
+          <!-- 用户消息：编辑模式 / 展示模式 -->
+          <template v-if="message.role === 'user'">
+            <div v-if="isEditing" class="edit-container rounded-2xl border border-border/60 bg-background px-xl py-md shadow-sm">
+              <textarea
+                ref="editTextareaRef"
+                v-model="editContent"
+                class="w-full resize-none border-none bg-transparent text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
+                rows="1"
+                @input="onEditInput"
+                @keydown="onEditKeydown"
+              />
+              <div class="mt-sm flex items-center justify-end gap-sm">
+                <button
+                  type="button"
+                  class="rounded-full px-lg py-xs text-sm text-muted-foreground transition-colors hover:bg-muted/60"
+                  @click="cancelEditing"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="rounded-full bg-primary px-lg py-xs text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+                  :disabled="!editContent.trim()"
+                  @click="submitEdit"
+                >
+                  发送
+                </button>
+              </div>
+            </div>
+            <p
+              v-else
+              class="whitespace-pre-wrap text-[15px] leading-relaxed"
+              v-html="(message as any).highlightedContent ?? message.content"
+            />
+          </template>
 
           <template v-else>
             <div
@@ -420,7 +500,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </template>
 
       <!-- 用户消息操作：复制 + 编辑 -->
-      <div v-if="message.role === 'user' && message.status !== 'pending'" class="flex items-center justify-end gap-0.5 pr-xs">
+      <div v-if="message.role === 'user' && message.status !== 'pending' && !isEditing" class="flex items-center justify-end gap-0.5 pr-xs">
         <button
           type="button"
           class="user-act-btn"
@@ -434,7 +514,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
           type="button"
           class="user-act-btn"
           title="编辑"
-          @click="emit('edit', message)"
+          @click="startEditing"
         >
           <Pencil class="size-3.5" />
         </button>

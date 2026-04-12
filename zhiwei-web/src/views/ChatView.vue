@@ -472,6 +472,22 @@ async function handleFork(message: Message) {
   }
 }
 
+async function handleEdit(message: Message, newContent: string) {
+  // 更新用户消息内容后，以 RESTART 重新生成
+  chatStore.updateMessage(message.id, { content: newContent })
+  const turnId = message.turnId
+  if (turnId) {
+    await executeTurn(turnId, 'RESTART', {
+      content: newContent,
+      attachmentIds: getAttachmentIds(message),
+      attachments: message.attachments,
+      userMessageId: message.id,
+    })
+  } else {
+    await sendMessage(newContent, getAttachmentIds(message), message.attachments)
+  }
+}
+
 async function handleCopy(content: string) {
   const ok = await copyToClipboard(content)
   uiStore.showToast(ok ? 'success' : 'error', ok ? '已复制到剪贴板' : '复制失败')
@@ -681,6 +697,7 @@ function closeTracePanel() {
               :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
               :query="searchQuery"
               @retry="handleRetry"
+              @edit="handleEdit"
               @like="handleLike"
               @dislike="handleDislike"
               @fork="handleFork"

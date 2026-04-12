@@ -215,6 +215,14 @@ export function useChat() {
       await parseSseStream(stream)
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') {
+        // 请求阶段就被中止 — 将用户消息标记为已发送（可编辑）
+        if (currentUserMessageId) {
+          chatStore.updateMessage(currentUserMessageId, {
+            status: 'success',
+            errorMessage: undefined,
+          })
+        }
+        chatStore.resetStreaming()
         return
       }
       clearStreamingTextBuffer()
@@ -360,6 +368,29 @@ export function useChat() {
         handleSseEvent(currentEvent, currentData)
       }
     } catch (e) {
+      if (abortController?.signal.aborted) {
+        // 用户主动停止 — 保留已接收的部分内容
+        flushStreamingText()
+        const partialContent = chatStore.streamingContent.trim()
+        if (partialContent) {
+          finalizeInterruptedTurn({
+            id: buildTerminalAssistantId(currentTurnId ?? undefined, undefined, 'aborted'),
+            turnId: currentTurnId ?? undefined,
+            turnStatus: 'SUCCESS',
+            content: partialContent,
+          })
+        } else {
+          // 无内容（停止太早），仅更新用户消息状态
+          if (currentUserMessageId) {
+            chatStore.updateMessage(currentUserMessageId, {
+              status: 'success',
+              errorMessage: undefined,
+            })
+          }
+          chatStore.resetStreaming()
+        }
+        return
+      }
       clearStreamingTextBuffer()
       markCurrentTurnFailed(e instanceof Error ? e.message : 'SSE 解析失败')
       activeInteraction.value = null
@@ -1094,11 +1125,11 @@ export function useChat() {
 
   function abort() {
     abortController?.abort()
-    clearStreamingTextBuffer()
+    // 不在这里 resetStreaming / clearStreamingTextBuffer —
+    // 让 parseSseStream 的 catch 块检测到中止后正确收尾（保留部分内容）
     activeInteraction.value = null
     interactionSubmitting.value = false
     interactionError.value = null
-    chatStore.resetStreaming()
     a2uiStore.clearComponents()
   }
 
