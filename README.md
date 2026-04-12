@@ -2,16 +2,20 @@
 
 > 见微知著，你的 AI 伙伴
 
-[![Java](https://img.shields.io/badge/Java-22-orange.svg)](https://adoptium.net/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.12-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.3-blue.svg)](https://spring.io/projects/spring-ai)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](https://github.com/ntygod/ZhiWei/releases)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/ntygod/ZhiWei/releases)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/ntygod/ZhiWei/releases)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](#方式二docker-compose)
 [![CI](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml/badge.svg)](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——拥有四层认知记忆、自主任务执行、工作流引擎和插件市场。所有数据存储在本地 SQLite，单 JAR 部署，开箱即用。
+ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——拥有四层认知记忆、自主任务执行、工作流引擎和插件市场。所有数据存储在本地，隐私完全掌控。
 
-<!-- 主界面预览：建议截一张对话页面的全貌图放在这里 -->
-<!-- ![ZhiWei 主界面](docs/images/hero.png) -->
+**下载桌面客户端，安装即用** — 无需 Java、Docker 或任何开发环境：
+
+> [**Windows (.msi)**](https://github.com/ntygod/ZhiWei/releases) · [**macOS (.dmg)**](https://github.com/ntygod/ZhiWei/releases) · [**Linux (.AppImage)**](https://github.com/ntygod/ZhiWei/releases)
+
+![ZhiWei 对话界面](docs/images/chat-conversation.png)
 
 ## ✨ 核心特性
 
@@ -133,59 +137,50 @@ ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——
 
 ## 🚀 快速开始
 
-### 方式一：Docker Compose（推荐）
+### 方式一：桌面客户端（推荐）
+
+从 [Releases](https://github.com/ntygod/ZhiWei/releases) 下载对应平台安装包，双击安装即可。
+
+- 内嵌 JRE，**无需安装 Java、Docker 或任何开发环境**
+- 首次启动进入设置向导，引导配置 LLM 服务商
+- 后端进程自动管理，系统托盘常驻
+
+| 平台 | 安装包 | 说明 |
+|------|--------|------|
+| Windows | `.msi` | 双击安装，开始菜单启动 |
+| macOS | `.dmg` | 拖入 Applications |
+| Linux | `.AppImage` / `.deb` | 直接运行或 dpkg 安装 |
+
+### 方式二：Docker Compose
+
+适合服务器部署或已有 Docker 环境的用户：
 
 ```bash
-git clone https://github.com/ntygod/ZhiWei.git
-cd ZhiWei
-
-# 配置环境变量（至少填入一个 LLM API Key）
-cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY 或 OPENAI_API_KEY
-
-# 启动
-docker compose up -d
-
-# 访问 http://localhost
+git clone https://github.com/ntygod/ZhiWei.git && cd ZhiWei
+cp .env.example .env   # 编辑 .env，填入 LLM API Key
+docker compose up -d   # 访问 http://localhost
 ```
 
-### 方式二：桌面客户端（Windows / macOS / Linux）
+### 方式三：源码构建
 
-从 [Releases](https://github.com/ntygod/ZhiWei/releases) 下载对应平台安装包，双击安装即可。桌面客户端内嵌 JRE，自动管理后端进程，无需手动配置 Java 环境。
-
-首次启动会进入设置向导，引导配置 LLM 服务商。
-
-### 方式三：JAR 包手动启动
-
-前置条件：Java 22+（[下载地址](https://adoptium.net/)）
+前置条件：Java 22+、Node.js 18+
 
 ```bash
-git clone https://github.com/ntygod/ZhiWei.git
-cd ZhiWei
+git clone https://github.com/ntygod/ZhiWei.git && cd ZhiWei
+mvn clean package -DskipTests    # 构建后端
+cd zhiwei-web && npm install     # 安装前端依赖
 
-# 1. 构建后端
-mvn clean package -DskipTests
-
-# 2. 启动后端
-./start.sh          # Linux / macOS
-start.bat           # Windows
-# 后端默认监听 8080 端口，可通过 ZHIWEI_PORT 环境变量自定义
-
-# 3. 构建并启动前端
-cd zhiwei-web
-npm install
-npm run dev
-# 访问 http://localhost:5173
+# 启动（两个终端）
+mvn spring-boot:run              # 后端 :8080
+npm run dev                      # 前端 :5173
 ```
 
 ### 首次使用
 
-1. 启动后访问 Web UI
-2. 进入「设置 → 模型管理」页面，配置至少一个 LLM 服务商
-3. 回到对话页面，开始与 ZhiWei 交互
+1. 进入「设置 → 模型与路由」，配置至少一个 LLM 服务商（支持 DeepSeek / OpenAI / 通义千问 / Ollama 等）
+2. 回到对话页面，开始与 ZhiWei 交互
 
-> LLM 服务商配置已迁移到数据库，通过 Web UI 管理，无需手动编辑 application.yml。
-> 环境变量（如 `DEEPSEEK_API_KEY`）仅用于 Docker 部署时的初始化注入。
+> 模型配置通过 Web UI 管理，无需手动编辑配置文件。
 
 ## 📋 配置说明
 
