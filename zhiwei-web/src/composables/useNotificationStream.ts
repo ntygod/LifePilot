@@ -38,6 +38,7 @@ export function useNotificationStream() {
           notificationStore.addNotification(data as NotificationItem)
           const item = data as NotificationItem
           if (item.typeId === 'proactive_reminder' || item.typeId === 'clipboard_intent') {
+            logger.info('尝试投递到浮窗: typeId=%s, isTauri=%s', item.typeId, !!window.__TAURI_INTERNALS__)
             sendToFloatWindow(item)
           } else {
             sendDesktopNotification(item)

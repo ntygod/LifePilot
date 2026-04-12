@@ -156,8 +156,9 @@ function onBallMouseLeave() {
 
 // ─── 状态切换 ────────────────────────────────────────────
 async function switchToChat() {
-  state.value = 'chat'
+  // 先 resize 窗口到对话尺寸，再切状态（避免对话面板被裁剪）
   await invoke('resize_float_window', { mode: 'chat' })
+  state.value = 'chat'
 }
 
 function onBubbleAfterLeave() {
@@ -218,8 +219,8 @@ async function feedback(type: FeedbackType) {
 const chatSessionId = ref<string | null>(null)
 
 function closeChat() {
+  // 只改状态触发退出动画，resize 在 onChatAfterLeave 中处理
   state.value = 'idle'
-  invoke('resize_float_window', { mode: 'idle' })
 }
 
 async function sendMsg() {
