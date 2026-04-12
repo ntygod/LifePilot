@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { FileText, Mic } from 'lucide-vue-next'
+import { Check, Copy, FileText, Mic, Pencil } from 'lucide-vue-next'
 import type {
   A2uiComponent,
   Message,
@@ -10,19 +10,18 @@ import type {
   ReactStepDto,
 } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
-import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import { buildPermissionApprovalLog } from '@/utils/permissionApproval'
 import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
+import { copyToClipboard } from '@/utils/clipboard'
 import { getPreviewContent, shouldCollapse } from '@/utils/messageUtils'
 import KbSourceTag from './KbSourceTag.vue'
 import MessageActions from './MessageActions.vue'
 import MessageError from './MessageError.vue'
 import MessageFeedback from './MessageFeedback.vue'
-import ReasoningTimeline from './ReasoningTimeline.vue'
-import ReactStepTimeline from './ReactStepTimeline.vue'
+import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
@@ -48,11 +47,21 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
+  (e: 'edit', message: Message): void
+  (e: 'show-trace', messageId: string): void
   (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
 const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
 const showImagePreview = ref(false)
+const userCopied = ref(false)
+
+async function handleUserCopy() {
+  if (await copyToClipboard(props.message.content)) {
+    userCopied.value = true
+    window.setTimeout(() => { userCopied.value = false }, 2000)
+  }
+}
 const previewImageUrl = ref<string | null>(null)
 
 const timeLabel = computed(() => {
@@ -206,7 +215,7 @@ const assistantBubbleClass = computed(() => {
 })
 
 const userBubbleClass = computed(() => [
-  'user-bubble rounded-[1.2rem] rounded-tr-[0.45rem] px-4 py-3 text-primary-foreground',
+  'user-bubble rounded-[1rem] px-4 py-3 text-foreground',
   props.message.status === 'pending' ? 'user-bubble-pending' : 'group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.26)]',
 ].join(' '))
 
@@ -223,47 +232,13 @@ function approvalLogTone(log: PermissionApprovalLog) {
 
 <template>
   <div
-    class="group/message grid w-full gap-md"
-    :class="message.role === 'user' ? 'grid-cols-[1fr_auto]' : 'grid-cols-[auto_1fr]'"
+    class="group/message w-full"
+    :class="message.role === 'user' ? 'flex flex-col items-end' : ''"
   >
-    <div
-      v-if="message.role === 'assistant'"
-      class="assistant-avatar-shell mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.95rem] border border-primary/16 bg-card/82 text-primary"
-      :class="streaming && 'assistant-avatar-streaming'"
-      style="--zhiwei-logo-accent: hsl(from var(--card) h s l / 0.98);"
-      aria-label="知微回复"
-    >
-      <ZhiweiMark class="size-[1.05rem]" />
-    </div>
-
     <div
       class="min-w-0 space-y-xs"
       :class="message.role === 'user' ? 'flex flex-col items-end' : ''"
     >
-      <div
-        class="flex items-center gap-xs text-xs text-muted-foreground"
-        :class="message.role === 'user' ? 'justify-end' : ''"
-      >
-        <template v-if="message.role === 'assistant'">
-          <span class="inline-flex items-center gap-1.5">
-            <span class="h-px w-3 rounded-full bg-primary/72" />
-            <span class="font-medium text-foreground/92">知微</span>
-          </span>
-          <span>·</span>
-          <time :datetime="new Date(message.timestamp).toISOString()">{{ timeLabel }}</time>
-        </template>
-        <template v-else>
-          <time :datetime="new Date(message.timestamp).toISOString()">{{ timeLabel }}</time>
-          <span>·</span>
-          <span class="font-semibold text-foreground">你</span>
-          <template v-if="userStatusLabel">
-            <span>·</span>
-            <span :class="message.status === 'error' ? 'text-destructive' : 'text-muted-foreground'">
-              {{ userStatusLabel }}
-            </span>
-          </template>
-        </template>
-      </div>
 
       <div
         v-if="streaming && message.role === 'assistant'"
@@ -276,19 +251,14 @@ function approvalLogTone(log: PermissionApprovalLog) {
       <div
         class="relative max-w-full transition-all duration-200"
         :class="[
-          message.role === 'user' ? 'overflow-hidden shadow-sm md:max-w-[82%]' : 'overflow-visible md:max-w-[88%]',
+          message.role === 'user' ? 'w-fit overflow-hidden shadow-sm max-w-[60%]' : 'overflow-visible',
           message.role === 'user' ? userBubbleClass : assistantBubbleClass,
         ]"
       >
-        <div
-          v-if="streaming && message.role === 'assistant'"
-          class="pointer-events-none absolute inset-y-1 left-0 w-px bg-primary/36"
-        />
-
         <div class="relative z-[1]">
           <p
             v-if="message.role === 'user'"
-            class="whitespace-pre-wrap text-sm"
+            class="whitespace-pre-wrap text-[15px] leading-relaxed"
             v-html="(message as any).highlightedContent ?? message.content"
           />
 
@@ -327,6 +297,14 @@ function approvalLogTone(log: PermissionApprovalLog) {
               </div>
             </div>
 
+            <ThinkingIndicator
+              v-if="activeReasoningEvents.length > 0 || activeReactSteps.length > 0"
+              :reasoning-events="activeReasoningEvents"
+              :react-steps="activeReactSteps"
+              :streaming="streaming"
+              @show-trace="emit('show-trace', message.id)"
+            />
+
             <StreamingText
               v-if="displayContent"
               :content="displayContent"
@@ -339,7 +317,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
               class="mt-2 text-xs text-primary transition-colors hover:underline underline-offset-2"
               @click="collapsed = !collapsed"
             >
-              {{ collapsed ? '展开全文' : '收起' }}
+              {{ collapsed ? '查看完整回复 ↓' : '收起 ↑' }}
             </button>
 
             <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
@@ -388,19 +366,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
               />
             </div>
 
-            <ReasoningTimeline
-              v-if="activeReasoningEvents.length > 0"
-              :summary="message.reasoningSummary"
-              :events="activeReasoningEvents"
-              :streaming="streaming"
-            />
-
-            <ReactStepTimeline
-              v-else-if="activeReactSteps.length > 0"
-              :steps="activeReactSteps"
-              :streaming="streaming"
-              :summary="message.reasoningSummary"
-            />
           </template>
 
           <div v-if="message.role === 'user' && imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
@@ -463,7 +428,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </div>
 
       <template v-if="message.role === 'assistant' && !streaming">
-        <div class="message-toolbar space-y-2 pl-xs md:pointer-events-none md:opacity-0 md:transition-all md:duration-200 md:group-hover/message:pointer-events-auto md:group-hover/message:translate-y-0 md:group-hover/message:opacity-100">
+        <div class="flex items-center gap-0.5 pl-xs">
           <MessageActions
             :message="message"
             :is-last-assistant="isLastAssistant ?? false"
@@ -480,6 +445,27 @@ function approvalLogTone(log: PermissionApprovalLog) {
           />
         </div>
       </template>
+
+      <!-- 用户消息操作：复制 + 编辑 -->
+      <div v-if="message.role === 'user' && message.status !== 'pending'" class="flex items-center justify-end gap-0.5 pr-xs">
+        <button
+          type="button"
+          class="user-act-btn"
+          title="复制"
+          @click="handleUserCopy"
+        >
+          <Check v-if="userCopied" class="size-3.5 text-primary" />
+          <Copy v-else class="size-3.5" />
+        </button>
+        <button
+          type="button"
+          class="user-act-btn"
+          title="编辑"
+          @click="emit('edit', message)"
+        >
+          <Pencil class="size-3.5" />
+        </button>
+      </div>
 
       <MessageError
         v-if="message.role === 'user' && message.status === 'error'"
@@ -506,74 +492,22 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </Dialog>
     </div>
 
-    <div
-      v-if="message.role === 'user'"
-      class="mt-xs flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground shadow-md"
-      :class="message.status === 'pending' && 'user-avatar-pending'"
-      aria-label="你的消息"
-    >
-      你
-    </div>
   </div>
 </template>
 
 <style scoped>
 .assistant-bubble {
   position: relative;
-  padding-left: 1rem;
   border: none;
   background: transparent;
   box-shadow: none;
 }
 
-.assistant-bubble::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  pointer-events: none;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, hsl(from var(--primary) h s l / 0.72) 18%, hsl(from var(--border) h s l / 0.42) 84%, transparent);
-  opacity: 0.9;
-}
-
-.assistant-bubble::after {
-  content: "";
-  position: absolute;
-  left: -1px;
-  top: 0.4rem;
-  height: 0.42rem;
-  width: 0.42rem;
-  border-radius: 999px;
-  background: hsl(from var(--primary) h s l / 0.82);
-  box-shadow: 0 0 0.55rem hsl(from var(--primary) h s l / 0.16);
-  opacity: 0.88;
-}
-
-.assistant-bubble-streaming {
-  padding-left: 1rem;
-}
 
 .streaming-status-pill {
   box-shadow: 0 8px 14px -20px hsl(var(--shadow-color) / 0.08);
 }
 
-.assistant-bubble-streaming::after {
-  left: -1px;
-  top: 0.35rem;
-  animation: assistant-stream-sheen 2.3s linear infinite;
-}
-
-.assistant-avatar-shell {
-  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.74);
-}
-
-.assistant-avatar-streaming {
-  box-shadow:
-    0 0 0 1px hsl(from var(--primary) h s l / 0.14),
-    0 0 0.75rem hsl(from var(--primary) h s l / 0.1),
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.74);
-  animation: assistant-avatar-breathe 1.8s var(--ease-fluid) infinite;
-}
 
 .streaming-status-dot {
   width: 0.45rem;
@@ -584,62 +518,34 @@ function approvalLogTone(log: PermissionApprovalLog) {
   animation: streaming-dot-pulse 1.2s ease-in-out infinite;
 }
 
+.user-act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.3rem;
+  color: var(--muted-foreground);
+  transition: color 120ms ease;
+}
+
+.user-act-btn:hover {
+  color: var(--foreground);
+}
+
 .user-bubble {
   position: relative;
   transform-origin: right bottom;
-  border: 1px solid hsl(from var(--primary) h s l / 0.14);
-  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.96), hsl(from var(--primary) h s l / 0.9));
-  box-shadow: 0 10px 18px -20px hsl(var(--shadow-color) / 0.18);
-}
-
-.user-bubble::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: inset 0 1px 0 hsl(from var(--primary-foreground) h s l / 0.14);
-  opacity: 1;
+  border: 1px solid hsl(from var(--border) h s l / 0.5);
+  background: hsl(from var(--primary) h s l / 0.08);
+  box-shadow: 0 10px 18px -20px hsl(var(--shadow-color) / 0.1);
 }
 
 .user-bubble-pending {
   animation: user-bubble-pulse 1.7s var(--ease-fluid) infinite;
 }
 
-.user-avatar-pending {
-  animation: user-avatar-pulse 1.7s var(--ease-fluid) infinite;
-}
-
-.message-toolbar {
-  transform: translateY(4px);
-}
-
-@keyframes assistant-stream-sheen {
-  0% {
-    opacity: 0;
-    transform: translateX(-12%) rotate(10deg);
-  }
-
-  18% {
-    opacity: 0.7;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateX(260%) rotate(10deg);
-  }
-}
-
-@keyframes assistant-avatar-breathe {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-
-  50% {
-    transform: translateY(-1px) scale(1.04);
-  }
-}
+.message-toolbar {}
 
 @keyframes streaming-dot-pulse {
   0%,
@@ -667,14 +573,4 @@ function approvalLogTone(log: PermissionApprovalLog) {
   }
 }
 
-@keyframes user-avatar-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-
-  50% {
-    transform: scale(1.06);
-  }
-}
 </style>

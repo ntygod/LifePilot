@@ -35,22 +35,22 @@ class ReactStepSerializerTest {
     }
 
     @Test
-    void serialize_ToolCall步骤_包含toolId和inputSummary() {
+    void serialize_ToolCall步骤_inputSummary为自然语言() {
         var steps = List.<ReactStep>of(
-                new ReactStep.ToolCall("web-search", "网页搜索", "{\"query\":\"test\"}", 150));
+                new ReactStep.ToolCall("web.search", "网页搜索", "{\"query\":\"test\"}", 150));
         var result = ReactStepSerializer.serialize(steps);
 
         assertEquals("TOOL_CALL", result.getFirst().get("type"));
-        assertEquals("web-search", result.getFirst().get("toolId"));
+        assertEquals("web.search", result.getFirst().get("toolId"));
         assertEquals("网页搜索", result.getFirst().get("toolName"));
-        assertEquals("{\"query\":\"test\"}", result.getFirst().get("inputSummary"));
+        assertEquals("搜索「test」", result.getFirst().get("inputSummary"));
         assertEquals(150L, result.getFirst().get("latencyMs"));
     }
 
     @Test
     void serialize_ToolCall步骤_有callId时应输出callId() {
         var steps = List.<ReactStep>of(
-                new ReactStep.ToolCall("web-search", "网页搜索", "{\"query\":\"test\"}", 150, "call-123"));
+                new ReactStep.ToolCall("web.search", "网页搜索", "{\"query\":\"test\"}", 150, "call-123"));
         var result = ReactStepSerializer.serialize(steps);
 
         assertEquals("call-123", result.getFirst().get("callId"));
@@ -67,22 +67,23 @@ class ReactStepSerializerTest {
     }
 
     @Test
-    void serialize_Observation步骤_包含success和outputSummary() {
+    void serialize_Observation步骤_outputSummary为自然语言() {
         var steps = List.<ReactStep>of(
-                new ReactStep.Observation("web-search", "网页搜索", true, "搜索结果内容", 42));
+                new ReactStep.Observation("web.search", "网页搜索", true,
+                        "{\"results\":[{\"title\":\"A\",\"url\":\"https://a.com\"}],\"count\":1}", 42));
         var result = ReactStepSerializer.serialize(steps);
 
         assertEquals("OBSERVATION", result.getFirst().get("type"));
-        assertEquals("web-search", result.getFirst().get("toolId"));
+        assertEquals("web.search", result.getFirst().get("toolId"));
         assertEquals(true, result.getFirst().get("success"));
-        assertEquals("搜索结果内容", result.getFirst().get("outputSummary"));
-        assertEquals(42, result.getFirst().get("tokensUsed"));
+        assertEquals("找到 1 条结果", result.getFirst().get("outputSummary"));
+        assertNotNull(result.getFirst().get("outputDetail"));
     }
 
     @Test
     void serialize_Observation步骤_有callId时应输出callId() {
         var steps = List.<ReactStep>of(
-                new ReactStep.Observation("web-search", "网页搜索", true, "搜索结果内容", 42, "call-456"));
+                new ReactStep.Observation("web.search", "网页搜索", true, "搜索结果内容", 42, "call-456"));
         var result = ReactStepSerializer.serialize(steps);
 
         assertEquals("call-456", result.getFirst().get("callId"));
@@ -132,31 +133,8 @@ class ReactStepSerializerTest {
         var result = ReactStepSerializer.serialize(steps);
 
         String content = (String) result.getFirst().get("content");
-        assertEquals(503, content.length()); // 500 + "..."
-        assertTrue(content.endsWith("..."));
-    }
-
-    @Test
-    void truncate_超长inputJson_截断到200字符() {
-        String longInput = "{" + "x".repeat(300) + "}";
-        var steps = List.<ReactStep>of(new ReactStep.ToolCall("tool", null, longInput, 100));
-        var result = ReactStepSerializer.serialize(steps);
-
-        String inputSummary = (String) result.getFirst().get("inputSummary");
-        assertEquals(203, inputSummary.length()); // 200 + "..."
-        assertTrue(inputSummary.endsWith("..."));
-    }
-
-    @Test
-    void truncate_超长output_截断到300字符() {
-        String longOutput = "O".repeat(400);
-        var steps = List.<ReactStep>of(
-                new ReactStep.Observation("tool", null, true, longOutput, 10));
-        var result = ReactStepSerializer.serialize(steps);
-
-        String outputSummary = (String) result.getFirst().get("outputSummary");
-        assertEquals(303, outputSummary.length()); // 300 + "..."
-        assertTrue(outputSummary.endsWith("..."));
+        assertEquals(501, content.length()); // 500 + "…"
+        assertTrue(content.endsWith("…"));
     }
 
     @Test
@@ -168,8 +146,9 @@ class ReactStepSerializerTest {
     void serialize_完整ReAct循环_索引递增() {
         var steps = List.<ReactStep>of(
                 new ReactStep.Thought("思考问题"),
-                new ReactStep.ToolCall("search", "搜索", "{}", 100),
-                new ReactStep.Observation("search", "搜索", true, "结果", 20),
+                new ReactStep.ToolCall("web.search", "搜索", "{\"query\":\"test\"}", 100),
+                new ReactStep.Observation("web.search", "搜索", true,
+                        "{\"results\":[{\"title\":\"R\",\"url\":\"https://r.com\"}]}", 20),
                 new ReactStep.Answer("最终回答")
         );
         var result = ReactStepSerializer.serialize(steps);
@@ -182,5 +161,156 @@ class ReactStepSerializerTest {
         assertEquals("TOOL_CALL", result.get(1).get("type"));
         assertEquals("OBSERVATION", result.get(2).get("type"));
         assertEquals("ANSWER", result.get(3).get("type"));
+    }
+
+    // ─── summarizeInput 测试 ───
+
+    @Test
+    void summarizeInput_webSearch_提取query() {
+        assertEquals("搜索「Java 并发编程」",
+                ReactStepSerializer.summarizeInput("web.search", "{\"query\":\"Java 并发编程\",\"maxResults\":10}"));
+    }
+
+    @Test
+    void summarizeInput_fileRead_提取path() {
+        assertEquals("读取 /src/main/java/App.java",
+                ReactStepSerializer.summarizeInput("file.read", "{\"path\":\"/src/main/java/App.java\"}"));
+    }
+
+    @Test
+    void summarizeInput_fileEdit_提取path和操作数() {
+        assertEquals("编辑 /src/App.vue（2 处修改）",
+                ReactStepSerializer.summarizeInput("file.edit",
+                        "{\"path\":\"/src/App.vue\",\"operations\":[{\"type\":\"replace\"},{\"type\":\"insert\"}]}"));
+    }
+
+    @Test
+    void summarizeInput_shellExec_提取command() {
+        assertEquals("执行 `npm install`",
+                ReactStepSerializer.summarizeInput("shell.exec", "{\"command\":\"npm install\"}"));
+    }
+
+    @Test
+    void summarizeInput_codeExecute_提取language() {
+        assertEquals("执行 python 代码",
+                ReactStepSerializer.summarizeInput("code.execute", "{\"code\":\"print(1)\",\"language\":\"python\"}"));
+    }
+
+    @Test
+    void summarizeInput_datastore_按action分派() {
+        assertEquals("创建集合「文案库」",
+                ReactStepSerializer.summarizeInput("datastore",
+                        "{\"action\":\"create-collection\",\"name\":\"文案库\",\"type\":\"DOCUMENT\"}"));
+        assertEquals("查询「文案库」",
+                ReactStepSerializer.summarizeInput("datastore",
+                        "{\"action\":\"query\",\"collectionName\":\"文案库\"}"));
+    }
+
+    @Test
+    void summarizeInput_memory_按action分派() {
+        assertEquals("搜索记忆「用户偏好」",
+                ReactStepSerializer.summarizeInput("memory",
+                        "{\"action\":\"search\",\"query\":\"用户偏好\"}"));
+        assertEquals("创建记忆「小明」",
+                ReactStepSerializer.summarizeInput("memory",
+                        "{\"action\":\"create\",\"name\":\"小明\",\"entityType\":\"PERSON\"}"));
+    }
+
+    @Test
+    void summarizeInput_gitQuery_按action分派() {
+        assertEquals("查看 Git 状态",
+                ReactStepSerializer.summarizeInput("git.query", "{\"action\":\"status\"}"));
+        assertEquals("查看 Git 日志",
+                ReactStepSerializer.summarizeInput("git.query", "{\"action\":\"log\",\"count\":5}"));
+    }
+
+    @Test
+    void summarizeInput_browser_按action分派() {
+        assertEquals("截取页面截图",
+                ReactStepSerializer.summarizeInput("browser", "{\"action\":\"screenshot\"}"));
+    }
+
+    @Test
+    void summarizeInput_未知工具_通用提取() {
+        assertEquals("搜索「hello」",
+                ReactStepSerializer.summarizeInput("mcp.custom", "{\"query\":\"hello\"}"));
+    }
+
+    @Test
+    void summarizeInput_畸形JSON_降级截断() {
+        String broken = "not json at all, just a plain string input for some tool";
+        String result = ReactStepSerializer.summarizeInput("unknown", broken);
+        assertNotNull(result);
+        assertTrue(result.length() <= 121); // 120 + "…"
+    }
+
+    // ─── summarizeOutput 测试 ───
+
+    @Test
+    void summarizeOutput_失败_提取错误信息() {
+        assertEquals("连接超时",
+                ReactStepSerializer.summarizeOutput("web.search",
+                        "{\"error\":\"连接超时\"}", false));
+    }
+
+    @Test
+    void summarizeOutput_失败_纯文本错误() {
+        assertEquals("Tool execution failed: timeout",
+                ReactStepSerializer.summarizeOutput("unknown",
+                        "Tool execution failed: timeout", false));
+    }
+
+    @Test
+    void summarizeOutput_fileRead_显示行数() {
+        assertEquals("读取了 150 行",
+                ReactStepSerializer.summarizeOutput("file.read",
+                        "{\"content\":\"...\",\"lineCount\":150,\"path\":\"/a.java\"}", true));
+    }
+
+    @Test
+    void summarizeOutput_shellExec_显示退出码() {
+        assertEquals("退出码 0",
+                ReactStepSerializer.summarizeOutput("shell.exec",
+                        "{\"exitCode\":0,\"stdout\":\"OK\"}", true));
+    }
+
+    @Test
+    void summarizeOutput_未知工具_返回操作成功() {
+        assertEquals("操作成功",
+                ReactStepSerializer.summarizeOutput("mcp.custom", "{\"some\":\"data\"}", true));
+    }
+
+    // ─── extractOutputDetail 测试 ───
+
+    @Test
+    void extractOutputDetail_webSearch_格式化结果列表() {
+        String output = "{\"results\":[{\"title\":\"标题A\",\"url\":\"https://a.com\",\"snippet\":\"摘要A\"}," +
+                "{\"title\":\"标题B\",\"url\":\"https://b.com\"}]}";
+        String detail = ReactStepSerializer.extractOutputDetail("web.search", output, true);
+        assertNotNull(detail);
+        assertTrue(detail.contains("1. 标题A"));
+        assertTrue(detail.contains("https://a.com"));
+        assertTrue(detail.contains("2. 标题B"));
+    }
+
+    @Test
+    void extractOutputDetail_shellExec_截断stdout() {
+        String output = "{\"exitCode\":0,\"stdout\":\"" + "x".repeat(100) + "\"}";
+        String detail = ReactStepSerializer.extractOutputDetail("shell.exec", output, true);
+        assertNotNull(detail);
+        assertTrue(detail.contains("x"));
+    }
+
+    @Test
+    void extractOutputDetail_失败_完整错误信息() {
+        String detail = ReactStepSerializer.extractOutputDetail("datastore",
+                "{\"error\":\"创建集合失败: 非法字段名\"}", false);
+        assertNotNull(detail);
+        assertTrue(detail.contains("非法字段名"));
+    }
+
+    @Test
+    void extractOutputDetail_无有效内容_返回null() {
+        assertNull(ReactStepSerializer.extractOutputDetail("notify", "{\"success\":true}", true));
     }
 }

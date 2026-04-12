@@ -33,6 +33,7 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
+  (e: 'show-trace', messageId: string): void
   (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
@@ -177,11 +178,11 @@ function highlight(text: string): string {
 </script>
 
 <template>
-  <div class="flex flex-col">
+  <div class="flex flex-col gap-[36px]">
     <template v-for="(msg, index) in mergedMessages" :key="msg.id">
       <div
         v-if="index === 0 || getDateLabel(msg.timestamp) !== getDateLabel(mergedMessages[index - 1]?.timestamp)"
-        class="my-4 flex items-center justify-center text-xs text-muted-foreground"
+        class="my-6 flex items-center justify-center text-xs text-muted-foreground"
       >
         <span class="rounded-full bg-muted/70 px-3 py-1 text-xs font-medium">
           {{ getDateLabel(msg.timestamp) }}
@@ -215,6 +216,7 @@ function highlight(text: string): string {
           @resume="(m: Message) => emit('resume', m)"
           @restart="(m: Message) => emit('restart', m)"
           @copy="(c: string) => emit('copy', c)"
+          @show-trace="(id: string) => emit('show-trace', id)"
           @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
         />
       </MotionDiv>
@@ -235,6 +237,7 @@ function highlight(text: string): string {
         :streaming-a2ui-components="streamingA2uiComponents"
         :streaming-permission-approvals="streamingPermissionApprovals"
         :streaming-permission-approval-resolutions="streamingPermissionApprovalResolutions"
+        @show-trace="(id: string) => emit('show-trace', id)"
         @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
       />
     </MotionDiv>

@@ -1,434 +1,323 @@
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+/**
+ * 推理轨迹 — 三态 UI（v2 基于同类产品调研重设计）
+ *
+ * 设计参考：ChatGPT "Thought for Xs" 折叠 + Claude 结构化展开
+ * 核心原则：不打断阅读，不抢注意力，按需披露
+ *
+ * - 流式：一行动态文字 + 脉动点，无面板
+ * - 完成（折叠）：灰色小字 "思考了 Xs · 工具计数"，右箭头
+ * - 完成（展开）：薄左边线 + 分组 bullet 列表
+ * - 纯对话无工具：流式 "正在思考…"，完成后隐藏
+ *
+ * @author zsg
+ * @since 2026-04-11
+ */
+import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
+import { Check, ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-vue-next'
 import type { ReasoningEvent } from '@/types'
-import {
-  Play, Wrench, Lightbulb, PenLine, CheckCircle2,
-  AlertCircle, ChevronDown, ChevronRight, Loader2, Clock,
-  RotateCcw, CircleDot
-} from 'lucide-vue-next'
-import WorkerResultCard from './WorkerResultCard.vue'
 
 const props = defineProps<{
-  /** 推理概要文本（后端返回的单行摘要） */
   summary?: string
-  /** 推理事件时间线 */
   events?: ReasoningEvent[]
-  /** 是否正在流式推理中 */
   streaming?: boolean
+  traceId?: string
 }>()
 
-const expanded = ref(false)
-
-/* ---- 流式期间自动展开，结束后延迟折叠 ---- */
-let collapseTimer: ReturnType<typeof setTimeout> | null = null
-
-watch(() => props.streaming, (streaming) => {
-  if (collapseTimer !== null) {
-    clearTimeout(collapseTimer)
-    collapseTimer = null
+/** 将原始输出（可能是 JSON）转为人类可读的详情文本 */
+function humanizeDetail(raw: string | undefined, isError: boolean): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  // JSON → 提取有意义的信息
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const obj = JSON.parse(trimmed)
+      if (obj.error) return obj.error
+      if (obj.message) return obj.message
+      // 成功的 JSON 不展示原始数据
+      return null
+    } catch {
+      // 截断的 JSON，尝试提取 error 字段
+      const errorMatch = trimmed.match(/"error"\s*:\s*"([^"]+)"/)
+      if (errorMatch) return errorMatch[1]
+      return null
+    }
   }
-  if (streaming) {
-    expanded.value = true
-  } else {
-    collapseTimer = setTimeout(() => {
-      collapseTimer = null
-      expanded.value = false
-    }, 1200)
-  }
-})
+  // 普通文本：截断
+  const line = trimmed.split('\n')[0]
+  return line.length <= 80 ? line : line.substring(0, 80) + '…'
+}
 
-onBeforeUnmount(() => {
-  if (collapseTimer !== null) {
-    clearTimeout(collapseTimer)
-  }
-})
+// ─── 数据 ───
 
-// 有效事件列表
 const eventList = computed(() => props.events ?? [])
-const hasEvents = computed(() => eventList.value.length > 0)
-const latestEvent = computed(() => eventList.value[eventList.value.length - 1] ?? null)
 
-// 计算推理耗时（从第一个事件到最后一个事件的时间差）
-const durationSeconds = computed(() => {
-  if (eventList.value.length < 2) return null
-  const first = eventList.value[0]
-  const last = eventList.value[eventList.value.length - 1]
-  if (!first.createdAt || !last.createdAt) return null
-  const start = new Date(first.createdAt).getTime()
-  const end = new Date(last.createdAt).getTime()
-  const diff = (end - start) / 1000
-  return diff > 0 ? diff : null
-})
-
-// 统计信息
-const stepCount = computed(() => eventList.value.length)
-const toolCallCount = computed(() =>
-  eventList.value.filter(e => e.type === 'TOOL_CALL').length
+const hasToolCalls = computed(() =>
+  eventList.value.some(e => e.type === 'TOOL_CALL'),
 )
 
-const durationLabel = computed(() => {
-  if (durationSeconds.value === null) return null
-  const sec = durationSeconds.value
-  return sec < 1 ? '<1s' : sec < 60 ? `${Math.round(sec)}s` : `${Math.floor(sec / 60)}m${Math.round(sec % 60)}s`
-})
-
-// 触发器主文案：流式时实时显示当前事件，完成后显示耗时 + 最后事件摘要
-const triggerLabel = computed(() => {
+/** 耗时（秒） */
+const durationSeconds = computed(() => {
   const list = eventList.value
-  const count = list.length
-  if (count === 0) return props.streaming ? '推理中…' : '推理概要'
-  const last = list[count - 1]
-  const brief = getEventBrief(last)
-  if (props.streaming) return brief
-  if (durationLabel.value) {
-    return `${count} 步 · ${durationLabel.value} · ${brief}`
-  }
-  return `${count} 步 · ${brief}`
+  if (list.length < 2) return null
+  const start = new Date(list[0].createdAt).getTime()
+  const end = new Date(list[list.length - 1].createdAt).getTime()
+  const sec = Math.round((end - start) / 1000)
+  return sec > 0 ? sec : null
 })
 
-// 事件简短描述（用于触发器区域，控制在 40 字符内）
-function getEventBrief(ev: ReasoningEvent): string {
-  switch (ev.type) {
-    case 'AGENT_START': return '准备上下文与预算…'
-    case 'PROGRESS': {
-      const text = ev.description ?? ev.title ?? ''
-      if (text.length <= 40) return text || '处理中…'
-      return text.substring(0, 40) + '…'
+// ─── 阶段合并 ───
+
+interface Stage {
+  name: string
+  count: number
+  status: 'running' | 'done' | 'error'
+  details: string[]
+}
+
+const stages = computed<Stage[]>(() => {
+  const map = new Map<string, Stage>()
+  const order: string[] = []
+
+  for (const ev of eventList.value) {
+    if (ev.type === 'TOOL_CALL' && ev.toolName) {
+      let s = map.get(ev.toolName)
+      if (!s) {
+        s = { name: ev.toolName, count: 0, status: 'running', details: [] }
+        map.set(ev.toolName, s)
+        order.push(ev.toolName)
+      }
+      s.count++
+    } else if (ev.type === 'OBSERVATION' && ev.toolName) {
+      const s = map.get(ev.toolName)
+      if (s) {
+        const failed = !!ev.title?.includes('失败')
+        // 每次覆盖：只保留最后一次调用的状态和详情
+        // 中间的重试失败对用户没有意义
+        s.status = failed ? 'error' : 'running'
+        s.details = []
+        const detail = humanizeDetail(ev.description, failed)
+        if (detail) s.details = [detail]
+      }
     }
-    case 'THOUGHT': {
-      const text = ev.description ?? ev.title ?? ''
-      if (text.length <= 40) return text || '推理中…'
-      return text.substring(0, 40) + '…'
+  }
+
+  const result = order.map(k => map.get(k)!)
+  if (!props.streaming) {
+    result.forEach(s => { if (s.status === 'running') s.status = 'done' })
+  } else if (result.length > 1) {
+    for (let i = 0; i < result.length - 1; i++) {
+      if (result[i].status === 'running') result[i].status = 'done'
     }
-    case 'TOOL_CALL': return ev.toolName ? `调用 ${ev.toolName}` : '调用工具…'
-    case 'OBSERVATION': return ev.toolName ? `${ev.toolName} 返回` : '工具返回'
-    case 'ANSWER': return '生成回答'
-    case 'SUSPEND': return '等待确认…'
-    case 'RESUME': return '已恢复执行'
-    case 'ANSWER_FINALIZED': return '回答已完成'
-    default: return ev.title ?? '处理中…'
   }
+  return result
+})
+
+/** 最新 PROGRESS 描述 */
+const latestProgress = computed(() => {
+  for (let i = eventList.value.length - 1; i >= 0; i--) {
+    const e = eventList.value[i]
+    if (e.type === 'PROGRESS' && e.description) return e.description
+  }
+  return null
+})
+
+// ─── 摘要文本 ───
+
+const durationLabel = computed(() => {
+  if (!durationSeconds.value) return null
+  const s = durationSeconds.value
+  return s < 60 ? `思考了 ${s} 秒` : `思考了 ${Math.floor(s / 60)}分${s % 60}秒`
+})
+
+const toolSummaryParts = computed(() =>
+  stages.value.map(s => s.count === 1 ? s.name : `${s.name} ${s.count} 次`),
+)
+
+// ─── 显示控制 ───
+
+const shouldShow = computed(() => {
+  if (props.streaming) return eventList.value.length > 0
+  return hasToolCalls.value
+})
+
+const expanded = ref(false)
+const expandedGroups = ref<Set<string>>(new Set())
+
+watch(() => props.streaming, (v) => { if (!v) expanded.value = false })
+
+function toggleGroup(name: string) {
+  expandedGroups.value.has(name) ? expandedGroups.value.delete(name) : expandedGroups.value.add(name)
 }
 
-// 事件图标映射（触发栏使用）
-function getEventIcon(type: string) {
-  switch (type) {
-    case 'AGENT_START': return Play
-    case 'PROGRESS': return Loader2
-    case 'THOUGHT': return Lightbulb
-    case 'TOOL_CALL': return Wrench
-    case 'OBSERVATION': return CheckCircle2
-    case 'ANSWER': return PenLine
-    case 'SUSPEND': return AlertCircle
-    case 'RESUME': return RotateCcw
-    case 'ANSWER_FINALIZED': return CheckCircle2
-    default: return CircleDot
-  }
-}
-
-// 事件颜色映射（触发栏使用）
-function getEventColor(type: string) {
-  switch (type) {
-    case 'AGENT_START': return 'text-blue-500'
-    case 'PROGRESS': return 'text-primary'
-    case 'THOUGHT': return 'text-violet-500'
-    case 'TOOL_CALL': return 'text-amber-500'
-    case 'OBSERVATION': return 'text-blue-500'
-    case 'ANSWER': return 'text-primary'
-    case 'SUSPEND': return 'text-orange-500'
-    case 'RESUME': return 'text-cyan-500'
-    case 'ANSWER_FINALIZED': return 'text-emerald-500'
-    default: return 'text-muted-foreground'
-  }
-}
-
-// 紧凑时间线圆点颜色
-function getDotColor(type: string) {
-  switch (type) {
-    case 'AGENT_START': return 'bg-blue-400/80'
-    case 'PROGRESS': return 'bg-primary/70'
-    case 'THOUGHT': return 'bg-violet-500'
-    case 'TOOL_CALL': return 'bg-amber-500'
-    case 'OBSERVATION': return 'bg-blue-500'
-    case 'ANSWER': return 'bg-emerald-500'
-    case 'ANSWER_FINALIZED': return 'bg-emerald-500'
-    case 'SUSPEND': return 'bg-orange-500'
-    case 'RESUME': return 'bg-cyan-500'
-    default: return 'bg-muted-foreground/50'
-  }
-}
-
-// 格式化事件时间（相对于第一个事件的偏移）
-function formatRelativeTime(event: ReasoningEvent): string | null {
-  if (eventList.value.length === 0 || !event.createdAt) return null
-  const first = eventList.value[0]
-  if (!first.createdAt) return null
-  const start = new Date(first.createdAt).getTime()
-  const current = new Date(event.createdAt).getTime()
-  const diffMs = current - start
-  if (diffMs < 1000) return `+${diffMs}ms`
-  return `+${(diffMs / 1000).toFixed(1)}s`
+function stageRunningLabel(s: Stage) {
+  return s.count <= 1 ? `${s.name}…` : `${s.name}（已执行 ${s.count} 次）…`
 }
 </script>
 
 <template>
-  <div
-    v-if="summary || hasEvents"
-    class="reasoning-panel mt-2 overflow-hidden rounded-xl border text-xs transition-all duration-300"
-    :class="streaming ? 'reasoning-panel-streaming' : 'reasoning-panel-idle'"
-  >
-    <!-- 触发栏 -->
-    <button
-      type="button"
-      class="reasoning-trigger flex w-full items-center justify-between gap-2 px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
-      @click="expanded = !expanded"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-2">
-        <div
-          class="reasoning-icon-shell relative shrink-0"
-          :class="streaming ? 'reasoning-icon-shell-streaming' : ''"
+  <div v-if="shouldShow" class="mt-1.5">
+    <!-- ━━━ 流式 ━━━ -->
+    <template v-if="streaming">
+      <!-- 无工具 -->
+      <p v-if="!hasToolCalls" class="thinking-live">
+        <span class="thinking-dot" />
+        <span>{{ latestProgress || '正在思考…' }}</span>
+      </p>
+      <!-- 有工具 -->
+      <div v-else class="flex flex-col">
+        <p
+          v-for="s in stages" :key="s.name"
+          class="thinking-live"
+          :class="s.status === 'running' ? 'text-foreground/78' : 'text-muted-foreground/50'"
         >
-          <component
-            :is="latestEvent ? getEventIcon(latestEvent.type) : CircleDot"
-            :size="12"
-            class="transition-colors duration-300"
-            :class="streaming
-              ? 'text-primary'
-              : latestEvent ? getEventColor(latestEvent.type) : 'text-muted-foreground'"
-          />
-        </div>
-        <div class="flex min-w-0 flex-1 items-center gap-2">
-          <span class="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">推理轨迹</span>
-          <span v-if="toolCallCount > 0" class="reasoning-chip">
-            <Wrench :size="10" />
-            {{ toolCallCount }}
-          </span>
-          <span class="text-muted-foreground/30">·</span>
-          <p
-            class="min-w-0 truncate text-[11px] font-medium"
-            :class="streaming ? 'text-primary' : 'text-foreground/84'"
-          >
-            {{ triggerLabel }}
+          <Check v-if="s.status === 'done'" class="size-3 shrink-0" />
+          <X v-else-if="s.status === 'error'" class="size-3 shrink-0 text-destructive/60" />
+          <span v-else class="thinking-dot" />
+          <span>{{ s.status === 'running' ? stageRunningLabel(s) : (s.count === 1 ? s.name : `${s.name}（${s.count}次）`) }}</span>
+        </p>
+        <p v-if="latestProgress && !stages.some(s => s.status === 'running')" class="thinking-live text-foreground/78">
+          <span class="thinking-dot" />
+          <span>{{ latestProgress }}</span>
+        </p>
+      </div>
+    </template>
+
+    <!-- ━━━ 完成：折叠 / 展开 ━━━ -->
+    <template v-else>
+      <button type="button" class="thinking-trigger" @click="expanded = !expanded">
+        <span v-if="durationLabel">{{ durationLabel }}</span>
+        <template v-for="(part, i) in toolSummaryParts" :key="part">
+          <span class="text-border/60">·</span>
+          <span>{{ part }}</span>
+        </template>
+        <component :is="expanded ? ChevronDown : ChevronRight" class="size-3 opacity-50" />
+      </button>
+
+      <div v-if="expanded" class="thinking-detail">
+        <div v-for="s in stages" :key="s.name">
+          <!-- 有详情：可展开 -->
+          <button v-if="s.details.length" type="button" class="thinking-group-header" @click="toggleGroup(s.name)">
+            <component :is="expandedGroups.has(s.name) ? ChevronDown : ChevronRight" class="size-3 opacity-40" />
+            <span>{{ s.count === 1 ? s.name : `${s.name}（${s.count}次）` }}</span>
+            <span v-if="s.status === 'error'" class="text-[10px] text-destructive/70">失败</span>
+          </button>
+          <!-- 无详情：纯文本，不可展开 -->
+          <p v-else class="thinking-group-label">
+            {{ s.count === 1 ? s.name : `${s.name}（${s.count}次）` }}
           </p>
+          <div v-if="expandedGroups.has(s.name) && s.details.length" class="thinking-group-body">
+            <p v-for="(d, i) in s.details" :key="i">{{ d }}</p>
+          </div>
         </div>
+        <RouterLink
+          v-if="traceId"
+          :to="{ name: 'traces', query: { id: traceId } }"
+          class="thinking-trace-link"
+        >
+          <ExternalLink class="size-3" />
+          查看完整执行轨迹
+        </RouterLink>
       </div>
-
-      <div class="flex shrink-0 items-center gap-2">
-        <span v-if="streaming" class="reasoning-chip reasoning-chip-streaming">
-          <Loader2 :size="10" class="animate-spin" />
-          进行中
-        </span>
-        <span v-else-if="durationLabel" class="reasoning-chip">
-          <Clock :size="10" />
-          {{ durationLabel }}
-        </span>
-        <span class="reasoning-chip">{{ stepCount }} 步</span>
-        <component
-          :is="expanded ? ChevronDown : ChevronRight"
-          :size="12"
-          class="text-muted-foreground transition-transform duration-200"
-        />
-      </div>
-    </button>
-
-    <!-- 紧凑时间线 -->
-    <Transition
-      enter-active-class="transition-all duration-200 ease-out"
-      enter-from-class="max-h-0 opacity-0"
-      enter-to-class="max-h-96 opacity-100"
-      leave-active-class="transition-all duration-150 ease-in"
-      leave-from-class="max-h-96 opacity-100"
-      leave-to-class="max-h-0 opacity-0"
-    >
-      <div v-if="expanded" class="overflow-hidden">
-        <div class="reasoning-detail border-t border-border/40 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border/40">
-          <TransitionGroup
-            v-if="hasEvents"
-            name="trace-step"
-            tag="div"
-          >
-            <div
-              v-for="(event, index) in eventList"
-              :key="event.id"
-            >
-              <div class="reasoning-step">
-                <span
-                  class="reasoning-dot"
-                  :class="[
-                    getDotColor(event.type),
-                    streaming && index === eventList.length - 1 && 'reasoning-dot-active'
-                  ]"
-                />
-                <span class="reasoning-step-title">{{ event.title }}</span>
-                <span
-                  v-if="event.description && event.type !== 'TOOL_CALL'"
-                  class="reasoning-step-desc"
-                >
-                  {{ event.description }}
-                </span>
-                <span
-                  v-if="formatRelativeTime(event)"
-                  class="reasoning-step-time"
-                >
-                  {{ formatRelativeTime(event) }}
-                </span>
-              </div>
-              <WorkerResultCard
-                v-if="event.type === 'OBSERVATION' && event.extra?.toolId === 'spawn_workers' && event.description"
-                class="ml-4 mt-0.5 mb-1"
-                :output="event.description"
-              />
-            </div>
-          </TransitionGroup>
-
-          <p
-            v-else-if="summary"
-            class="py-1 text-[10px] leading-relaxed text-muted-foreground/70"
-          >
-            {{ summary }}
-          </p>
-        </div>
-      </div>
-    </Transition>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.reasoning-panel {
-  position: relative;
-  background: hsl(from var(--card) h s l / 0.92);
-  box-shadow:
-    0 14px 24px -30px hsl(var(--shadow-color) / 0.12),
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.44);
-}
-
-.reasoning-panel-idle {
-  border-color: hsl(from var(--border) h s l / 0.5);
-}
-
-.reasoning-panel-streaming {
-  border-color: hsl(from var(--primary) h s l / 0.24);
-}
-
-.reasoning-trigger {
-  transition: background-color 180ms var(--ease-fluid);
-}
-
-.reasoning-trigger:hover {
-  background: hsl(from var(--accent) h s l / 0.32);
-}
-
-.reasoning-icon-shell {
-  display: inline-flex;
-  height: 1.5rem;
-  width: 1.5rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.625rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.46);
-  background: hsl(from var(--background) h s l / 0.8);
-  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.32);
-}
-
-.reasoning-icon-shell-streaming {
-  box-shadow:
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.32),
-    0 0 0 1px hsl(from var(--primary) h s l / 0.08);
-}
-
-.reasoning-chip {
+/* ── 流式行 ── */
+.thinking-live {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.thinking-dot {
+  display: inline-block;
+  width: 0.38rem;
+  height: 0.38rem;
   border-radius: 999px;
-  border: 1px solid hsl(from var(--border) h s l / 0.42);
-  background: hsl(from var(--background) h s l / 0.72);
-  padding: 0.22rem 0.5rem;
-  font-size: 10px;
-  line-height: 1.1;
+  flex-shrink: 0;
+  background: hsl(from var(--primary) h s l / 0.72);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── 折叠触发器 ── */
+.thinking-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(from var(--muted-foreground) h s l / 0.62);
+  transition: color 140ms ease;
+}
+
+.thinking-trigger:hover {
   color: hsl(from var(--muted-foreground) h s l / 0.88);
 }
 
-.reasoning-chip-streaming {
-  border-color: hsl(from var(--primary) h s l / 0.18);
-  background: hsl(from var(--primary) h s l / 0.1);
-  color: hsl(from var(--primary) h s l / 0.92);
+/* ── 展开区域 ── */
+.thinking-detail {
+  margin-top: 0.35rem;
+  padding-left: 0.15rem;
+  border-left: 1.5px solid hsl(from var(--border) h s l / 0.35);
 }
 
-/* ---- 紧凑时间线 ---- */
-
-.reasoning-detail {
-  padding: 0.35rem 0.7rem 0.3rem 0.75rem;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.reasoning-step {
+.thinking-group-header {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  padding: 0.15rem 0;
-  font-size: 11px;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0 0.15rem 0.55rem;
+  font-size: 12px;
   line-height: 1.5;
+  color: hsl(from var(--foreground) h s l / 0.72);
+  transition: color 120ms ease;
 }
 
-.reasoning-dot {
-  margin-top: 0.4em;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.thinking-group-header:hover {
+  color: var(--foreground);
 }
 
-.reasoning-dot-active {
-  animation: dot-pulse 1.4s ease infinite;
+.thinking-group-label {
+  padding: 0.15rem 0 0.15rem 0.55rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(from var(--foreground) h s l / 0.58);
 }
 
-.reasoning-step-title {
-  font-weight: 500;
-  color: hsl(from var(--foreground) h s l / 0.82);
-  white-space: nowrap;
-  flex-shrink: 0;
+.thinking-group-body {
+  padding: 0 0 0.2rem 1.6rem;
+  font-size: 11px;
+  line-height: 1.6;
+  color: hsl(from var(--muted-foreground) h s l / 0.6);
 }
 
-.reasoning-step-desc {
-  flex: 1;
-  min-width: 0;
-  color: hsl(from var(--muted-foreground) h s l / 0.58);
+.thinking-group-body p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.reasoning-step-time {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: hsl(from var(--muted-foreground) h s l / 0.4);
+.thinking-trace-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding-left: 0.55rem;
+  font-size: 11px;
+  color: hsl(from var(--primary) h s l / 0.6);
+  transition: color 120ms ease;
+}
+
+.thinking-trace-link:hover {
+  color: hsl(from var(--primary) h s l / 0.92);
 }
 
 @keyframes dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-/* ---- 步骤进入动画 ---- */
-
-.trace-step-enter-active,
-.trace-step-leave-active {
-  transition:
-    transform 200ms var(--ease-fluid),
-    opacity 160ms var(--ease-fluid);
-}
-
-.trace-step-enter-from,
-.trace-step-leave-to {
-  opacity: 0;
-  transform: translateY(6px);
-}
-
-.trace-step-move {
-  transition: transform 200ms var(--ease-fluid);
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
 </style>

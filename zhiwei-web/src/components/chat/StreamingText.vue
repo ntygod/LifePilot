@@ -125,7 +125,7 @@ watch(() => props.streaming, (streaming) => {
   <div class="streaming-shell">
     <div
       ref="proseRef"
-      class="message-prose prose prose-sm max-w-none dark:prose-invert"
+      class="message-prose prose max-w-none dark:prose-invert"
       :class="streaming && 'streaming-prose'"
       :aria-live="streaming ? 'polite' : undefined"
       v-html="html"

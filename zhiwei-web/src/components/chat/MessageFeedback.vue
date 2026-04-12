@@ -79,30 +79,26 @@ async function submitDislikeFeedback() {
 
 <template>
   <div class="message-feedback space-y-2">
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-0.5">
       <button
         type="button"
-        class="feedback-chip"
-        :class="feedbackStatus === 'liked' ? 'feedback-chip-liked' : 'feedback-chip-idle'"
+        class="act-btn"
+        :class="feedbackStatus === 'liked' && 'act-btn--active'"
         :disabled="isSubmitting"
+        title="有帮助"
         @click="handleLike"
       >
-        <span class="feedback-chip-icon">
-          <ThumbsUp :size="14" />
-        </span>
-        <span>有帮助</span>
+        <ThumbsUp class="size-4" />
       </button>
       <button
         type="button"
-        class="feedback-chip"
-        :class="feedbackStatus === 'disliked' ? 'feedback-chip-disliked' : 'feedback-chip-idle'"
+        class="act-btn"
+        :class="feedbackStatus === 'disliked' && 'act-btn--disliked'"
         :disabled="isSubmitting"
+        title="无帮助"
         @click="handleDislike"
       >
-        <span class="feedback-chip-icon">
-          <ThumbsDown :size="14" />
-        </span>
-        <span>无帮助</span>
+        <ThumbsDown class="size-4" />
       </button>
     </div>
 
@@ -151,65 +147,33 @@ async function submitDislikeFeedback() {
 </template>
 
 <style scoped>
-.feedback-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2rem;
-  border-radius: 999px;
-  border: 1px solid hsl(from var(--border) h s l / 0.42);
-  background: hsl(from var(--card) h s l / 0.76);
-  padding: 0.34rem 0.78rem;
-  font-size: 11px;
-  line-height: 1.1;
-  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.28);
-  transition:
-    transform 180ms var(--ease-fluid),
-    border-color 180ms var(--ease-fluid),
-    background-color 180ms var(--ease-fluid),
-    box-shadow 180ms var(--ease-fluid),
-    color 180ms var(--ease-fluid);
-}
-
-.feedback-chip:hover {
-  transform: translateY(-1px);
-}
-
-.feedback-chip-idle {
-  color: hsl(from var(--muted-foreground) h s l / 0.92);
-}
-
-.feedback-chip-idle:hover {
-  border-color: hsl(from var(--border) h s l / 0.62);
-  background: hsl(from var(--card) h s l / 0.88);
-  color: var(--foreground);
-}
-
-.feedback-chip-liked {
-  border-color: hsl(from var(--primary) h s l / 0.2);
-  background: hsl(from var(--primary) h s l / 0.1);
-  color: hsl(from var(--primary) h s l / 0.92);
-  box-shadow:
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.28),
-    0 10px 18px -22px hsl(var(--shadow-color) / 0.12);
-}
-
-.feedback-chip-disliked {
-  border-color: hsl(from var(--destructive) h s l / 0.18);
-  background: hsl(from var(--destructive) h s l / 0.08);
-  color: hsl(from var(--destructive) h s l / 0.86);
-  box-shadow:
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.28),
-    0 10px 18px -22px hsl(var(--shadow-color) / 0.12);
-}
-
-.feedback-chip-icon {
+.act-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 1.1rem;
-  width: 1.1rem;
-  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.act-btn:hover {
+  color: var(--foreground);
+  background: hsl(from var(--muted) h s l / 0.5);
+}
+
+.act-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.act-btn--active {
+  color: var(--primary);
+}
+
+.act-btn--disliked {
+  color: hsl(from var(--destructive) h s l / 0.8);
 }
 
 .feedback-panel {

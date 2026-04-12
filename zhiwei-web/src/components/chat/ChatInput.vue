@@ -615,14 +615,14 @@ defineExpose({
         </div>
 
         <!-- 输入区 -->
-        <div class="relative px-4 pb-1 pt-3">
+        <div class="relative px-4 pb-1 pt-2">
           <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            :placeholder="placeholder || '直接说，知微来做...'"
+            :placeholder="placeholder || '输入问题或贴资料...'"
             rows="1"
-            class="min-h-[56px] max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
+            class="min-h-0 max-h-[220px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/45 focus-visible:ring-0"
             @keydown="handleKeydown"
             @paste="handlePaste"
           />

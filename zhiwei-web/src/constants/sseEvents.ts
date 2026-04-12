@@ -39,6 +39,8 @@ export const SSE_EVENT_TYPES = {
   AGENT_SUSPENDED: 'agent-suspended',
 
   TRANSCRIPTION: 'transcription',
+
+  TITLE_GENERATED: 'title-generated',
 } as const
 
 export type SseEventType = typeof SSE_EVENT_TYPES[keyof typeof SSE_EVENT_TYPES]

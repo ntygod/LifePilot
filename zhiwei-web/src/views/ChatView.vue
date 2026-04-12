@@ -26,6 +26,7 @@ import EmptyState from '@/components/chat/EmptyState.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
+import TracePanel from '@/components/chat/TracePanel.vue'
 import { useChat } from '@/composables/useChat'
 import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
@@ -334,8 +335,12 @@ async function handleSend(payload: {
   )
 }
 
-function handleEmptyStateSend(content: string) {
-  void handleSend({ content })
+const emptyInputRef = ref<InstanceType<typeof ChatInput> | null>(null)
+
+function handleEmptyStateFill(content: string) {
+  if (emptyInputRef.value) {
+    emptyInputRef.value.input = content
+  }
 }
 
 function getAttachmentIds(message: Message): string[] | undefined {
@@ -481,18 +486,59 @@ function closeMobileSidebar() {
 function selectSidebarPanel(panel: SidebarPanel) {
   activeSidebarPanel.value = panel
 }
+
+// ─── 执行轨迹面板 ───
+
+const activeTraceMessageId = ref<string | null>(null)
+
+const activeTraceData = computed(() => {
+  const id = activeTraceMessageId.value
+  if (!id) return null
+
+  if (id === 'streaming' || (isStreaming.value && id === lastAssistantMessage.value?.id)) {
+    return {
+      reasoningEvents: reasoningEvents.value,
+      reactSteps: streamingReactSteps.value,
+      streaming: true,
+      traceId: undefined as string | undefined,
+    }
+  }
+
+  const msg = chatStore.messages.find(m => m.id === id)
+  if (!msg) return null
+
+  return {
+    reasoningEvents: msg.reasoningEvents ?? [],
+    reactSteps: msg.reactSteps ?? [],
+    streaming: false,
+    traceId: msg.traceId,
+  }
+})
+
+const showTracePanel = computed(() => !!activeTraceMessageId.value && !!activeTraceData.value)
+
+// 流式结束后，把 'streaming' placeholder ID 更新为真实消息 ID
+watch(isStreaming, (streaming) => {
+  if (!streaming && activeTraceMessageId.value === 'streaming') {
+    const realMsg = lastAssistantMessage.value
+    activeTraceMessageId.value = realMsg?.id ?? null
+  }
+})
+
+function handleShowTrace(messageId: string) {
+  activeTraceMessageId.value = messageId
+  showMobileSidebar.value = false
+}
+
+function closeTracePanel() {
+  activeTraceMessageId.value = null
+}
 </script>
 
 <template>
   <div class="relative flex h-full flex-col overflow-hidden">
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div class="absolute inset-x-[14%] top-[-10rem] h-[20rem] rounded-full bg-[radial-gradient(circle,rgba(13,148,136,0.12),transparent_70%)] blur-3xl" />
-      <div class="absolute right-[-8rem] top-[22%] h-[18rem] w-[18rem] rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.12),transparent_70%)] blur-3xl" />
-      <div class="absolute left-[-10rem] bottom-[-8rem] h-[20rem] w-[20rem] rounded-full bg-[radial-gradient(circle,rgba(15,23,42,0.08),transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(148,163,184,0.1),transparent_72%)]" />
-    </div>
-
     <header class="relative shrink-0 px-4 pt-2 sm:px-6">
-      <div class="mx-auto max-w-[1180px]">
+      <div class="mx-auto max-w-[800px]">
         <div class="flex min-w-0 items-center gap-3 px-1 py-1" :class="isEmptyChat ? 'justify-end' : 'justify-between'">
           <h1 v-if="!isEmptyChat" class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
             {{ headerTitle }}
@@ -508,7 +554,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
               @click="abort"
             >
               <Square class="size-4" />
-              停止
+              停止生成
             </Button>
 
             <DropdownMenu>
@@ -537,8 +583,8 @@ function selectSidebarPanel(panel: SidebarPanel) {
       </div>
     </header>
 
-    <div class="relative min-h-0 flex-1 overflow-hidden pt-3">
-      <section class="relative min-h-0 flex h-full min-w-0 flex-col overflow-hidden">
+    <div class="relative min-h-0 flex-1 flex overflow-hidden pt-3">
+      <section class="relative min-h-0 flex-1 flex min-w-0 flex-col overflow-hidden">
         <div
           ref="scrollContainer"
           class="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
@@ -553,10 +599,11 @@ function selectSidebarPanel(panel: SidebarPanel) {
             mode="out-in"
           >
           <!-- 空状态：问候 + 输入框居中 -->
-          <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center justify-center px-4 sm:px-6">
-            <EmptyState @send="handleEmptyStateSend" />
-            <div class="w-full max-w-[480px] mt-xl">
+          <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center px-4 pt-[15vh] sm:px-6">
+            <EmptyState @fill="handleEmptyStateFill" />
+            <div class="w-full max-w-[540px] mt-xl">
               <ChatInput
+                ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
                 :knowledge-bases="kbStore.list"
                 :datastores="datastoreStore.list"
@@ -567,7 +614,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
           </div>
 
           <!-- 有消息：正常消息列表 -->
-          <div v-else key="messages" class="mx-auto w-full max-w-[1180px] px-4 py-4 sm:px-6">
+          <div v-else key="messages" class="mx-auto w-full max-w-[800px] px-4 py-4 sm:px-6">
             <MessageList
               :messages="chatStore.messages"
               :is-streaming="isStreaming"
@@ -586,6 +633,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
               @resume="handleResume"
               @restart="handleRestart"
               @copy="handleCopy"
+              @show-trace="handleShowTrace"
               @permission-approval-resolve="resolvePermissionApproval"
             />
           </div>
@@ -599,7 +647,7 @@ function selectSidebarPanel(panel: SidebarPanel) {
           enter-to-class="translate-y-0 opacity-100"
         >
         <div v-if="!isEmptyChat" class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
-          <div class="mx-auto w-full max-w-[1180px]">
+          <div class="mx-auto w-full max-w-[800px]">
             <StatePanel
               v-if="showGlobalErrorPanel"
               class="mb-3"
@@ -628,6 +676,21 @@ function selectSidebarPanel(panel: SidebarPanel) {
         </Transition>
       </section>
 
+      <!-- 轨迹面板：集成布局，和页面融为一体 -->
+      <aside
+        v-if="showTracePanel && activeTraceData"
+        class="w-[340px] shrink-0 border-l border-border/40 bg-background"
+      >
+        <TracePanel
+          :reasoning-events="activeTraceData.reasoningEvents"
+          :react-steps="activeTraceData.reactSteps"
+          :streaming="activeTraceData.streaming"
+          :trace-id="activeTraceData.traceId"
+          @close="closeTracePanel"
+        />
+      </aside>
+
+      <!-- 浮窗侧边栏：配置 / 信息 / 调试 -->
       <Transition
         enter-active-class="transition-all duration-250 ease-out"
         enter-from-class="opacity-0 translate-x-4"

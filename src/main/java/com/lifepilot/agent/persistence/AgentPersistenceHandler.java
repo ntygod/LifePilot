@@ -10,6 +10,7 @@ import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
+import com.lifepilot.interaction.web.service.SessionTitleGenerator;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.memory.experience.ContrastiveLearner;
 import com.lifepilot.memory.experience.EffectivenessTracker;
@@ -71,6 +72,8 @@ public class AgentPersistenceHandler {
     private final CompactionEngine compactionEngine;
     @Nullable
     private final ChatTurnService chatTurnService;
+    @Nullable
+    private final SessionTitleGenerator sessionTitleGenerator;
 
     public AgentPersistenceHandler(
             AgentConfigProperties config,
@@ -84,7 +87,8 @@ public class AgentPersistenceHandler {
             @Nullable ContrastiveLearner contrastiveLearner,
             @Nullable SubtaskReflector subtaskReflector,
             @Nullable CompactionEngine compactionEngine,
-            @Nullable ChatTurnService chatTurnService) {
+            @Nullable ChatTurnService chatTurnService,
+            @Nullable SessionTitleGenerator sessionTitleGenerator) {
         this.config = config;
         this.workspaceService = workspaceService;
         this.transcriptStore = transcriptStore;
@@ -97,6 +101,7 @@ public class AgentPersistenceHandler {
         this.subtaskReflector = subtaskReflector;
         this.compactionEngine = compactionEngine;
         this.chatTurnService = chatTurnService;
+        this.sessionTitleGenerator = sessionTitleGenerator;
     }
 
     public void saveWorkspaceForSuspend(ReactAgentState state) {
@@ -409,10 +414,22 @@ public class AgentPersistenceHandler {
                 }
             }, VIRTUAL_EXECUTOR);
 
+            var titleFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    if (sessionTitleGenerator != null) {
+                        sessionTitleGenerator.generateIfNeeded(
+                                finalState.sessionId(), finalState.goal());
+                    }
+                } catch (Exception e) {
+                    log.warn("会话标题生成失败：sessionId={}, error={}",
+                            finalState.sessionId(), e.getMessage());
+                }
+            }, VIRTUAL_EXECUTOR);
+
             // 等待所有并行任务完成（fire-and-forget 语义不变，但内部并行化）
             CompletableFuture.allOf(
                     compactionFuture, extractionFuture, experienceFuture,
-                    effectivenessFuture, reflectionFuture
+                    effectivenessFuture, reflectionFuture, titleFuture
             ).join();
         });
     }

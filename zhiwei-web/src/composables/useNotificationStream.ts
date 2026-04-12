@@ -48,6 +48,15 @@ export function useNotificationStream() {
       }
     })
 
+    eventSource.addEventListener(SSE_EVENT_TYPES.TITLE_GENERATED, (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as { sessionId: string; title: string }
+        chatStore.updateSessionTitle(data.sessionId, data.title)
+      } catch (error) {
+        logger.error('标题生成事件解析失败:', error)
+      }
+    })
+
     eventSource.addEventListener(SSE_EVENT_TYPES.TRANSCRIPTION, (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as SseTranscriptionEvent

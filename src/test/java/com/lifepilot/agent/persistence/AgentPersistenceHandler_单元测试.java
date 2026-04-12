@@ -59,7 +59,8 @@ class AgentPersistenceHandler_单元测试 {
                 null,
                 null,
                 null,
-                chatTurnService
+                chatTurnService,
+                null
         );
     }
 

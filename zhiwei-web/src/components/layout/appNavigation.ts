@@ -1,12 +1,18 @@
 import type { Component } from 'vue'
 import {
+  BarChart3,
   BookOpen,
   Bot,
   Brain,
   Database,
+  FlaskConical,
+  GitBranch,
+  Key,
   MessageSquare,
+  MonitorCog,
   Puzzle,
   Server,
+  Settings,
   ShoppingBag,
   Wrench,
   Workflow,
@@ -57,6 +63,38 @@ export const conversationNav: NavItem = {
   icon: MessageSquare,
   matchPrefixes: ['/conversations'],
 }
+
+/** 偏好设置 + 回顾分析导航（从 SettingsView 迁移） */
+export const settingsNavGroups: NavGroup[] = [
+  {
+    id: 'settings',
+    label: '偏好设置',
+    items: [
+      { label: '通用', path: '/settings/general', icon: Settings, matchPrefixes: ['/settings/general', '/settings'] },
+      { label: '模型与路由', path: '/settings/models', icon: MonitorCog, matchPrefixes: ['/settings/models'] },
+      { label: '知识与检索', path: '/settings/knowledge', icon: BookOpen, matchPrefixes: ['/settings/knowledge'] },
+      { label: '集成渠道', path: '/settings/channels', icon: MessageSquare, matchPrefixes: ['/settings/channels'] },
+      { label: '授权与执行', path: '/settings/permissions', icon: Key, matchPrefixes: ['/settings/permissions'] },
+    ],
+  },
+  {
+    id: 'analytics',
+    label: '回顾与分析',
+    items: [
+      { label: '用量统计', path: '/analytics/usage', icon: BarChart3, matchPrefixes: ['/analytics/usage'] },
+      { label: '智能体分析', path: '/analytics/agents', icon: Bot, matchPrefixes: ['/analytics/agents'] },
+      { label: '工具统计', path: '/analytics/tools', icon: Wrench, matchPrefixes: ['/analytics/tools'] },
+      { label: '评估测试', path: '/eval', icon: FlaskConical, matchPrefixes: ['/eval'] },
+      { label: '轨迹回放', path: '/traces', icon: GitBranch, matchPrefixes: ['/traces'] },
+    ],
+  },
+]
+
+/** 管理 Tab 全部分组 = 工作台 + 资料库 + 偏好设置 + 回顾分析 */
+export const manageNavGroups: NavGroup[] = [...sidebarNavGroups, ...settingsNavGroups]
+
+/** 管理 Tab 关联的路由前缀，用于自动切换 Tab */
+export const manageRoutePrefixes = manageNavGroups.flatMap(g => g.items.flatMap(i => i.matchPrefixes))
 
 export function isPathActive(pathname: string, targetPath: string) {
   return pathname === targetPath || pathname.startsWith(`${targetPath}/`)

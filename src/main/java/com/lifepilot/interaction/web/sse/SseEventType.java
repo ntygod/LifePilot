@@ -105,6 +105,10 @@ public final class SseEventType {
     /** 权限审批请求事件 */
     public static final String PERMISSION_APPROVAL_REQUEST = "permission-approval-request";
 
+    // 会话模块事件类型
+    /** 会话标题自动生成事件 */
+    public static final String TITLE_GENERATED = "title-generated";
+
     // Agent 挂起-恢复事件类型
     /** Agent 挂起事件 */
     public static final String AGENT_SUSPENDED = "agent-suspended";

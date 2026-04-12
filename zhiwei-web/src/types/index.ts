@@ -267,6 +267,8 @@ export interface ObservationStep extends ReactStepBase {
   generatedFilePath?: string
   /** Shell / 代码执行的工作目录 */
   workingDirectory?: string
+  /** 工具执行的具体结果（详情面板展示） */
+  outputDetail?: string
 }
 
 /** 回答步骤 */

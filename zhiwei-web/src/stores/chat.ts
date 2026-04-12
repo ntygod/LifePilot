@@ -109,6 +109,14 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent.value = ''
   }
 
+  /** 更新会话标题（由 SSE title-generated 事件触发）。 */
+  function updateSessionTitle(sessionId: string, title: string) {
+    const session = sessions.value.find(s => s.id === sessionId)
+    if (session) {
+      session.title = title
+    }
+  }
+
   // 切换会话时清空本地消息，并重新加载对应历史。
   watch(activeSessionId, async (newId) => {
     messages.value = []
@@ -136,6 +144,7 @@ export const useChatStore = defineStore('chat', () => {
     updateSession,
     deleteSession,
     clearCurrentSessionMessages,
-    resetStreaming
+    resetStreaming,
+    updateSessionTitle
   }
 })

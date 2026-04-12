@@ -23,6 +23,7 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
+import com.lifepilot.interaction.web.service.SessionTitleGenerator;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
@@ -245,7 +246,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) ContrastiveLearner contrastiveLearner,
             @Autowired(required = false) SubtaskReflector subtaskReflector,
             @Autowired(required = false) CompactionEngine compactionEngine,
-            @Autowired(required = false) ChatTurnService chatTurnService) {
+            @Autowired(required = false) ChatTurnService chatTurnService,
+            @Autowired(required = false) SessionTitleGenerator sessionTitleGenerator) {
         return new AgentPersistenceHandler(
                 config,
                 workspaceService,
@@ -258,7 +260,8 @@ public class AgentAutoConfiguration {
                 contrastiveLearner,
                 subtaskReflector,
                 compactionEngine,
-                chatTurnService);
+                chatTurnService,
+                sessionTitleGenerator);
     }
 
     @Bean

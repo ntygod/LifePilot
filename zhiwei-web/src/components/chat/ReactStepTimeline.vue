@@ -1,717 +1,300 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+/**
+ * 执行轨迹 — 三态 UI（v2 基于同类产品调研重设计）
+ *
+ * 与 ReasoningTimeline 视觉一致，数据源为 ReactStepDto
+ *
+ * @author zsg
+ * @since 2026-04-11
+ */
+import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
+import { Check, ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-vue-next'
 import type { ReactStepDto, ToolCallStep, ObservationStep } from '@/types'
-import {
-  Lightbulb, Wrench, Eye, PenLine, Pause, Play,
-  ChevronDown, ChevronRight, Loader2,
-  CircleDot, FileText, FolderOpen, Copy, Check,
-} from 'lucide-vue-next'
-import WorkerResultCard from './WorkerResultCard.vue'
 
-const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
-
-/** 复制路径的状态追踪（按 step index） */
-const copiedSteps = ref<Set<number>>(new Set())
-
-/** 在 Tauri 桌面端用系统默认程序打开文件 */
-async function openFile(filePath: string) {
-  if (!isTauri) return
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(filePath)
-  } catch (e) {
-    console.warn('打开文件失败:', filePath, e)
+/** 将原始输出（可能是 JSON）转为人类可读的详情文本 */
+function humanizeDetail(raw: string | undefined, isError: boolean): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const obj = JSON.parse(trimmed)
+      if (obj.error) return obj.error
+      if (obj.message) return obj.message
+      return null
+    } catch {
+      const errorMatch = trimmed.match(/"error"\s*:\s*"([^"]+)"/)
+      if (errorMatch) return errorMatch[1]
+      return null
+    }
   }
-}
-
-/** 用系统文件管理器打开文件所在目录 */
-async function revealInFolder(filePath: string) {
-  if (!isTauri) return
-  try {
-    const dir = filePath.replace(/[\\/][^\\/]+$/, '')
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(dir)
-  } catch (e) {
-    console.warn('打开目录失败:', filePath, e)
-  }
-}
-
-/** 缩短路径显示 — 取最后两级目录 */
-function shortenPath(fullPath: string): string {
-  const sep = fullPath.includes('\\') ? '\\' : '/'
-  const parts = fullPath.split(sep).filter(Boolean)
-  if (parts.length <= 2) return fullPath
-  return '…' + sep + parts.slice(-2).join(sep)
-}
-
-/** 复制文件路径到剪贴板 */
-async function copyPath(filePath: string, stepIndex: number) {
-  try {
-    await navigator.clipboard.writeText(filePath)
-  } catch {
-    // clipboard API 不可用时（如非 HTTPS 环境）静默忽略
-  }
-  copiedSteps.value.add(stepIndex)
-  setTimeout(() => copiedSteps.value.delete(stepIndex), 2000)
+  const line = trimmed.split('\n')[0]
+  return line.length <= 80 ? line : line.substring(0, 80) + '…'
 }
 
 const props = defineProps<{
-  /** ReAct 步骤序列 */
   steps: ReactStepDto[]
-  /** 是否正在流式推理中 */
   streaming?: boolean
-  /** 推理概要文本（兜底展示） */
   summary?: string
+  traceId?: string
 }>()
 
-const expanded = ref(false)
+// ─── 数据 ───
 
-// 有效步骤列表
-const hasSteps = computed(() => props.steps.length > 0)
+const hasToolCalls = computed(() => props.steps.some(s => s.type === 'TOOL_CALL'))
 
-// 统计信息
-const stepCount = computed(() => props.steps.length)
-const toolCallCount = computed(() =>
-  props.steps.filter(s => s.type === 'TOOL_CALL').length
+/** 耗时 */
+const totalMs = computed(() =>
+  props.steps.reduce((sum, s) => sum + (s.type === 'TOOL_CALL' ? (s as ToolCallStep).latencyMs : 0), 0),
 )
-const latestStep = computed(() => props.steps[props.steps.length - 1] ?? null)
+const durationSeconds = computed(() => {
+  const s = Math.round(totalMs.value / 1000)
+  return s > 0 ? s : null
+})
 
-// ToolCall + Observation 配对归组
-interface StepGroup {
-  type: 'single' | 'tool-pair'
-  steps: ReactStepDto[]
+// ─── 阶段合并 ───
+
+interface Stage {
+  name: string
+  count: number
+  status: 'running' | 'done' | 'error'
+  details: string[]
 }
 
-const stepGroups = computed<StepGroup[]>(() => {
-  const groups: StepGroup[] = []
-  const list = props.steps
-  let i = 0
-  while (i < list.length) {
-    const step = list[i]
-    // 如果是 TOOL_CALL 且下一个是同 toolId 的 OBSERVATION，归组
-    if (step.type === 'TOOL_CALL' && i + 1 < list.length && list[i + 1].type === 'OBSERVATION') {
-      const obs = list[i + 1] as ObservationStep
+const stages = computed<Stage[]>(() => {
+  const map = new Map<string, Stage>()
+  const order: string[] = []
+
+  for (const step of props.steps) {
+    if (step.type === 'TOOL_CALL') {
       const tc = step as ToolCallStep
-      if (obs.toolId === tc.toolId) {
-        groups.push({ type: 'tool-pair', steps: [step, list[i + 1]] })
-        i += 2
-        continue
+      const name = tc.toolName || tc.toolId
+      let s = map.get(name)
+      if (!s) {
+        s = { name, count: 0, status: 'running', details: [] }
+        map.set(name, s)
+        order.push(name)
+      }
+      s.count++
+    } else if (step.type === 'OBSERVATION') {
+      const obs = step as ObservationStep
+      const name = obs.toolName || obs.toolId
+      const s = map.get(name)
+      if (s) {
+        s.status = obs.success ? 'running' : 'error'
+        s.details = []
+        const detail = humanizeDetail(obs.outputSummary, !obs.success)
+        if (detail) s.details = [detail]
       }
     }
-    groups.push({ type: 'single', steps: [step] })
-    i++
   }
-  return groups
+
+  const result = order.map(k => map.get(k)!)
+  if (!props.streaming) {
+    result.forEach(s => { if (s.status === 'running') s.status = 'done' })
+  } else if (result.length > 1) {
+    for (let i = 0; i < result.length - 1; i++) {
+      if (result[i].status === 'running') result[i].status = 'done'
+    }
+  }
+  return result
 })
 
-// 触发器主文案：流式时实时显示当前步骤，完成后显示统计
-const triggerLabel = computed(() => {
-  const count = props.steps.length
-  if (count === 0) return props.streaming ? '推理中…' : '推理概要'
-  // 取最新步骤的简短描述
-  const last = props.steps[count - 1]
-  const desc = getStepBrief(last)
-  if (props.streaming) return desc
-  // 完成后也显示最后一步摘要，让用户不展开就能看到结论
-  return `${count} 步 · ${desc}`
+const latestProgress = computed(() => {
+  for (let i = props.steps.length - 1; i >= 0; i--) {
+    if (props.steps[i].type === 'PROGRESS') return (props.steps[i] as { content: string }).content
+  }
+  return null
 })
 
-// 步骤简短描述（用于触发器区域，控制在 40 字符内）
-function getStepBrief(step: ReactStepDto): string {
-  switch (step.type) {
-    case 'PROGRESS': {
-      const text = step.content ?? ''
-      if (text.length <= 40) return text || '处理中…'
-      return text.substring(0, 40) + '…'
-    }
-    case 'THOUGHT': {
-      const text = step.content ?? ''
-      if (text.length <= 40) return text || '推理中…'
-      return text.substring(0, 40) + '…'
-    }
-    case 'TOOL_CALL': return `调用 ${step.toolName ?? step.toolId}`
-    case 'OBSERVATION': return `${step.success ? '✓' : '✗'} ${step.toolName ?? step.toolId} 返回`
-    case 'ANSWER': return '生成回答'
-    case 'SUSPEND': return '等待确认…'
-    case 'RESUME': return '已恢复执行'
-  }
+// ─── 摘要 ───
+
+const durationLabel = computed(() => {
+  if (!durationSeconds.value) return null
+  const s = durationSeconds.value
+  return s < 60 ? `思考了 ${s} 秒` : `思考了 ${Math.floor(s / 60)}分${s % 60}秒`
+})
+
+const toolSummaryParts = computed(() =>
+  stages.value.map(s => s.count === 1 ? s.name : `${s.name} ${s.count} 次`),
+)
+
+// ─── 显示控制 ───
+
+const shouldShow = computed(() => {
+  if (props.streaming) return props.steps.length > 0
+  return hasToolCalls.value
+})
+
+const expanded = ref(false)
+const expandedGroups = ref<Set<string>>(new Set())
+
+watch(() => props.streaming, (v) => { if (!v) expanded.value = false })
+
+function toggleGroup(name: string) {
+  expandedGroups.value.has(name) ? expandedGroups.value.delete(name) : expandedGroups.value.add(name)
 }
 
-// 步骤展开/折叠状态（按 index 追踪）
-const expandedSteps = ref<Set<number>>(new Set())
-function toggleStep(index: number) {
-  if (expandedSteps.value.has(index)) {
-    expandedSteps.value.delete(index)
-  } else {
-    expandedSteps.value.add(index)
-  }
-}
-
-// 步骤图标映射
-function getStepIcon(type: string) {
-  switch (type) {
-    case 'PROGRESS': return Loader2
-    case 'THOUGHT': return Lightbulb
-    case 'TOOL_CALL': return Wrench
-    case 'OBSERVATION': return Eye
-    case 'ANSWER': return PenLine
-    case 'SUSPEND': return Pause
-    case 'RESUME': return Play
-    default: return CircleDot
-  }
-}
-
-// 步骤颜色映射
-function getStepColor(type: string) {
-  switch (type) {
-    case 'PROGRESS': return 'text-primary'
-    case 'THOUGHT': return 'text-violet-500'
-    case 'TOOL_CALL': return 'text-amber-500'
-    case 'OBSERVATION': return 'text-blue-500'
-    case 'ANSWER': return 'text-emerald-500'
-    case 'SUSPEND': return 'text-orange-500'
-    case 'RESUME': return 'text-cyan-500'
-    default: return 'text-muted-foreground'
-  }
-}
-
-// 步骤标题（Thought 类型显示内容摘要而非固定文案）
-function getStepTitle(step: ReactStepDto): string {
-  switch (step.type) {
-    case 'PROGRESS': {
-      if (step.content && step.content.length <= 30) return step.content
-      return '执行进度'
-    }
-    case 'THOUGHT': {
-      // 短内容直接作为标题，长内容用固定标题 + 内联预览
-      if (step.content && step.content.length <= 30) return step.content
-      return '推理思考'
-    }
-    case 'TOOL_CALL': return `调用工具: ${step.toolName ?? step.toolId}`
-    case 'OBSERVATION': return `${step.success ? '工具返回' : '工具失败'}: ${step.toolName ?? step.toolId}`
-    case 'ANSWER': return '生成回答'
-    case 'SUSPEND': return 'Agent 挂起'
-    case 'RESUME': return 'Agent 恢复'
-  }
-}
-
-// 步骤完整内容（点击展开时显示）
-function getStepContent(step: ReactStepDto): string | null {
-  switch (step.type) {
-    case 'PROGRESS': return step.content
-    case 'THOUGHT': return step.content
-    case 'TOOL_CALL': return step.inputSummary || null
-    case 'OBSERVATION': return step.outputSummary || null
-    case 'ANSWER': return step.content
-    case 'SUSPEND': return step.reason
-    case 'RESUME': return `挂起时长: ${step.suspendDurationMs}ms`
-  }
-}
-
-// 步骤内联预览（始终可见的一行摘要，截断到 80 字符）
-function getStepPreview(step: ReactStepDto): string | null {
-  // Progress / Thought 的短内容已作为标题显示，不重复
-  if ((step.type === 'THOUGHT' || step.type === 'PROGRESS') && step.content && step.content.length <= 30) return null
-  const content = getStepContent(step)
-  if (!content) return null
-  const firstLine = content.split('\n')[0]
-  if (firstLine.length > 80) return firstLine.substring(0, 80) + '…'
-  return firstLine
-}
-
-// 内容是否超出预览长度（决定是否显示展开按钮）
-function hasExpandableContent(step: ReactStepDto): boolean {
-  // Progress / Thought 的短内容已作为标题，无需展开
-  if ((step.type === 'THOUGHT' || step.type === 'PROGRESS') && step.content && step.content.length <= 30) return false
-  const content = getStepContent(step)
-  if (!content) return false
-  return content.length > 80 || content.includes('\n')
-}
-
-// 工具配对组的标题
-function getToolPairTitle(tc: ToolCallStep, obs: ObservationStep): string {
-  return `${tc.toolName ?? tc.toolId} — ${obs.success ? '成功' : '失败'}`
-}
-
-// 工具配对组的内联输出预览
-function getToolPairPreview(tc: ToolCallStep, obs: ObservationStep): string | null {
-  // spawn_workers 专用预览
-  if (tc.toolId === 'spawn_workers') {
-    try {
-      const data = JSON.parse(obs.outputSummary)
-      if (data.workers) {
-        return `${data.workers.length} 个 Worker · ${data.successCount ?? 0} 成功 · ${data.failureCount ?? 0} 失败`
-      }
-    } catch { /* 解析失败回退默认逻辑 */ }
-  }
-  const output = obs.outputSummary
-  if (!output) return null
-  const firstLine = output.split('\n')[0]
-  if (firstLine.length > 80) return firstLine.substring(0, 80) + '…'
-  return firstLine
-}
-
-function getGroupKey(group: StepGroup): string {
-  const first = group.steps[0]
-  return `${group.type}-${first.index}-${first.type}`
+function stageRunningLabel(s: Stage) {
+  return s.count <= 1 ? `${s.name}…` : `${s.name}（已执行 ${s.count} 次）…`
 }
 </script>
 
 <template>
-  <div
-    v-if="summary || hasSteps"
-    class="react-panel mt-2 overflow-hidden rounded-xl border text-xs transition-all duration-300"
-    :class="streaming ? 'react-panel-streaming' : 'react-panel-idle'"
-  >
-    <button
-      type="button"
-      class="react-trigger flex w-full items-center justify-between gap-2 px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
-      @click="expanded = !expanded"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-2">
-        <div
-          class="react-icon-shell relative shrink-0"
-          :class="streaming ? 'react-icon-shell-streaming' : ''"
+  <div v-if="shouldShow" class="mt-1.5">
+    <!-- ━━━ 流式 ━━━ -->
+    <template v-if="streaming">
+      <p v-if="!hasToolCalls" class="thinking-live">
+        <span class="thinking-dot" />
+        <span>{{ latestProgress || '正在思考…' }}</span>
+      </p>
+      <div v-else class="flex flex-col">
+        <p
+          v-for="s in stages" :key="s.name"
+          class="thinking-live"
+          :class="s.status === 'running' ? 'text-foreground/78' : 'text-muted-foreground/50'"
         >
-          <component
-            :is="latestStep ? getStepIcon(latestStep.type) : CircleDot"
-            :size="12"
-            class="transition-colors duration-300"
-            :class="streaming
-              ? 'text-primary'
-              : latestStep ? getStepColor(latestStep.type) : 'text-muted-foreground'"
-          />
-        </div>
-        <div class="flex min-w-0 flex-1 items-center gap-2">
-          <span class="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/82">执行轨迹</span>
-          <span v-if="toolCallCount > 0" class="react-chip">
-            <Wrench :size="10" />
-            {{ toolCallCount }}
-          </span>
-          <span class="text-muted-foreground/30">·</span>
-          <p
-            class="min-w-0 truncate text-[11px] font-medium"
-            :class="streaming ? 'text-primary' : 'text-foreground/84'"
-          >
-            {{ triggerLabel }}
+          <Check v-if="s.status === 'done'" class="size-3 shrink-0" />
+          <X v-else-if="s.status === 'error'" class="size-3 shrink-0 text-destructive/60" />
+          <span v-else class="thinking-dot" />
+          <span>{{ s.status === 'running' ? stageRunningLabel(s) : (s.count === 1 ? s.name : `${s.name}（${s.count}次）`) }}</span>
+        </p>
+        <p v-if="latestProgress && !stages.some(s => s.status === 'running')" class="thinking-live text-foreground/78">
+          <span class="thinking-dot" />
+          <span>{{ latestProgress }}</span>
+        </p>
+      </div>
+    </template>
+
+    <!-- ━━━ 完成 ━━━ -->
+    <template v-else>
+      <button type="button" class="thinking-trigger" @click="expanded = !expanded">
+        <span v-if="durationLabel">{{ durationLabel }}</span>
+        <template v-for="(part, i) in toolSummaryParts" :key="part">
+          <span class="text-border/60">·</span>
+          <span>{{ part }}</span>
+        </template>
+        <component :is="expanded ? ChevronDown : ChevronRight" class="size-3 opacity-50" />
+      </button>
+
+      <div v-if="expanded" class="thinking-detail">
+        <div v-for="s in stages" :key="s.name">
+          <button v-if="s.details.length" type="button" class="thinking-group-header" @click="toggleGroup(s.name)">
+            <component :is="expandedGroups.has(s.name) ? ChevronDown : ChevronRight" class="size-3 opacity-40" />
+            <span>{{ s.count === 1 ? s.name : `${s.name}（${s.count}次）` }}</span>
+            <span v-if="s.status === 'error'" class="text-[10px] text-destructive/70">失败</span>
+          </button>
+          <p v-else class="thinking-group-label">
+            {{ s.count === 1 ? s.name : `${s.name}（${s.count}次）` }}
           </p>
+          <div v-if="expandedGroups.has(s.name) && s.details.length" class="thinking-group-body">
+            <p v-for="(d, i) in s.details" :key="i">{{ d }}</p>
+          </div>
         </div>
+        <RouterLink
+          v-if="traceId"
+          :to="{ name: 'traces', query: { id: traceId } }"
+          class="thinking-trace-link"
+        >
+          <ExternalLink class="size-3" />
+          查看完整执行轨迹
+        </RouterLink>
       </div>
-      <div class="flex shrink-0 items-center gap-2">
-        <span v-if="streaming" class="react-chip react-chip-streaming">
-          <Loader2 :size="10" class="animate-spin" />
-          进行中
-        </span>
-        <span class="react-chip">{{ stepCount }} 步</span>
-        <component
-          :is="expanded ? ChevronDown : ChevronRight"
-          :size="12"
-          class="text-muted-foreground transition-transform duration-200"
-        />
-      </div>
-    </button>
-
-    <Transition
-      enter-active-class="transition-all duration-300 ease-out"
-      enter-from-class="max-h-0 opacity-0"
-      enter-to-class="max-h-[600px] opacity-100"
-      leave-active-class="transition-all duration-200 ease-in"
-      leave-from-class="max-h-[600px] opacity-100"
-      leave-to-class="max-h-0 opacity-0"
-    >
-      <div v-if="expanded" class="overflow-hidden">
-        <div class="border-t border-border/55 px-3 pb-3 pt-2.5">
-          <TransitionGroup
-            v-if="hasSteps"
-            name="react-step"
-            tag="div"
-            class="space-y-2"
-          >
-            <div
-              v-for="(group, gi) in stepGroups"
-              :key="getGroupKey(group)"
-              class="flex items-start gap-2.5"
-            >
-              <div class="flex w-6 shrink-0 flex-col items-center">
-                <div
-                  class="react-node flex h-6 w-6 items-center justify-center rounded-2xl"
-                  :class="streaming && gi === stepGroups.length - 1 ? 'react-node-active' : ''"
-                >
-                  <Wrench v-if="group.type === 'tool-pair'" :size="12" class="text-amber-500" />
-                  <component
-                    v-else
-                    :is="getStepIcon(group.steps[0].type)"
-                    :size="12"
-                    :class="getStepColor(group.steps[0].type)"
-                  />
-                </div>
-                <div v-if="gi < stepGroups.length - 1" class="react-line w-px flex-1 min-h-[18px] bg-border" />
-              </div>
-
-              <div
-                class="react-card flex-1 min-w-0"
-                :class="streaming && gi === stepGroups.length - 1 ? 'react-card-active' : ''"
-              >
-                <template v-if="group.type === 'tool-pair'">
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-1.5 flex-wrap">
-                        <button
-                          type="button"
-                          class="text-left text-[11px] font-medium leading-5 text-foreground/92 transition-colors hover:text-primary"
-                          @click="toggleStep((group.steps[0] as ToolCallStep).index)"
-                        >
-                          {{ getToolPairTitle(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
-                        </button>
-                        <span
-                          class="react-meta-chip"
-                          :class="(group.steps[1] as ObservationStep).success ? 'react-meta-chip-success' : 'react-meta-chip-failure'"
-                        >
-                          {{ (group.steps[1] as ObservationStep).success ? '成功' : '失败' }}
-                        </span>
-                      </div>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-1">
-                      <button
-                        v-if="group.steps.length > 1 && (group.steps[1] as ObservationStep).workingDirectory"
-                        type="button"
-                        class="react-workdir-chip"
-                        :title="(group.steps[1] as ObservationStep).workingDirectory"
-                        @click.stop="isTauri
-                          ? revealInFolder((group.steps[1] as ObservationStep).workingDirectory! + '/')
-                          : copyPath((group.steps[1] as ObservationStep).workingDirectory!, (group.steps[1] as ObservationStep).index)"
-                      >
-                        <FolderOpen :size="10" />
-                        <span class="max-w-[120px] truncate">{{ shortenPath((group.steps[1] as ObservationStep).workingDirectory!) }}</span>
-                      </button>
-                      <span
-                        v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
-                        class="react-meta-chip shrink-0"
-                      >
-                        {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
-                      </span>
-                    </div>
-                  </div>
-                  <p
-                    v-if="getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep)"
-                    class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/82"
-                  >
-                    {{ getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
-                  </p>
-                  <div
-                    v-if="expandedSteps.has((group.steps[0] as ToolCallStep).index)"
-                    class="mt-2 space-y-2"
-                  >
-                    <WorkerResultCard
-                      v-if="(group.steps[0] as ToolCallStep).toolId === 'spawn_workers'"
-                      :output="(group.steps[1] as ObservationStep).outputSummary"
-                    />
-                    <template v-else>
-                      <div v-if="(group.steps[0] as ToolCallStep).inputSummary" class="react-detail-block">
-                        <div class="react-detail-label">输入</div>
-                        <p class="text-[10px] leading-relaxed text-foreground/84">
-                          {{ (group.steps[0] as ToolCallStep).inputSummary }}
-                        </p>
-                      </div>
-                      <div v-if="(group.steps[1] as ObservationStep).outputSummary" class="react-detail-block">
-                        <div class="react-detail-label">输出</div>
-                        <p class="text-[10px] leading-relaxed text-foreground/84">
-                          {{ (group.steps[1] as ObservationStep).outputSummary }}
-                        </p>
-                      </div>
-                    </template>
-                  </div>
-                  <!-- 生成文件路径 -->
-                  <div
-                    v-if="(group.steps[1] as ObservationStep).generatedFilePath"
-                    class="react-file-bar mt-2"
-                  >
-                    <FileText :size="12" class="shrink-0 text-emerald-500" />
-                    <span class="min-w-0 truncate text-[10px] text-foreground/84">
-                      {{ (group.steps[1] as ObservationStep).generatedFilePath }}
-                    </span>
-                    <div class="ml-auto flex shrink-0 items-center gap-1">
-                      <button
-                        v-if="isTauri"
-                        type="button"
-                        class="react-file-action"
-                        title="用默认程序打开"
-                        @click.stop="openFile((group.steps[1] as ObservationStep).generatedFilePath!)"
-                      >
-                        <FileText :size="10" />
-                        <span>打开</span>
-                      </button>
-                      <button
-                        v-if="isTauri"
-                        type="button"
-                        class="react-file-action"
-                        title="在文件夹中显示"
-                        @click.stop="revealInFolder((group.steps[1] as ObservationStep).generatedFilePath!)"
-                      >
-                        <FolderOpen :size="10" />
-                        <span>文件夹</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="react-file-action"
-                        title="复制路径"
-                        @click.stop="copyPath((group.steps[1] as ObservationStep).generatedFilePath!, (group.steps[1] as ObservationStep).index)"
-                      >
-                        <component :is="copiedSteps.has((group.steps[1] as ObservationStep).index) ? Check : Copy" :size="10" />
-                        <span>{{ copiedSteps.has((group.steps[1] as ObservationStep).index) ? '已复制' : '复制路径' }}</span>
-                      </button>
-                    </div>
-                  </div>
-                </template>
-
-                <template v-else>
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="min-w-0">
-                      <button
-                        v-if="hasExpandableContent(group.steps[0])"
-                        type="button"
-                        class="text-left text-[11px] font-medium leading-5 text-foreground/92 transition-colors hover:text-primary"
-                        @click="toggleStep(group.steps[0].index)"
-                      >
-                        {{ getStepTitle(group.steps[0]) }}
-                      </button>
-                      <span v-else class="text-[11px] font-medium leading-5 text-foreground/92">
-                        {{ getStepTitle(group.steps[0]) }}
-                      </span>
-                    </div>
-                    <span
-                      v-if="group.steps[0].type === 'OBSERVATION'"
-                      class="react-meta-chip shrink-0"
-                      :class="(group.steps[0] as ObservationStep).success ? 'react-meta-chip-success' : 'react-meta-chip-failure'"
-                    >
-                      {{ (group.steps[0] as ObservationStep).success ? '成功' : '失败' }}
-                    </span>
-                  </div>
-                  <p
-                    v-if="getStepPreview(group.steps[0]) && !expandedSteps.has(group.steps[0].index)"
-                    class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/82"
-                  >
-                    {{ getStepPreview(group.steps[0]) }}
-                  </p>
-                  <div
-                    v-if="expandedSteps.has(group.steps[0].index) && getStepContent(group.steps[0])"
-                    class="mt-2 react-detail-block"
-                  >
-                    <p class="text-[10px] whitespace-pre-wrap leading-relaxed text-foreground/84">
-                      {{ getStepContent(group.steps[0]) }}
-                    </p>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </TransitionGroup>
-
-          <p v-else-if="summary" class="rounded-2xl border border-border/45 bg-background/62 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-            {{ summary }}
-          </p>
-        </div>
-      </div>
-    </Transition>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.react-panel {
-  position: relative;
-  background: hsl(from var(--card) h s l / 0.92);
-  box-shadow:
-    0 14px 24px -30px hsl(var(--shadow-color) / 0.12),
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.44);
-}
-
-.react-panel-idle {
-  border-color: hsl(from var(--border) h s l / 0.5);
-}
-
-.react-panel-streaming {
-  border-color: hsl(from var(--primary) h s l / 0.24);
-}
-
-.react-trigger {
-  transition: background-color 180ms var(--ease-fluid);
-}
-
-.react-trigger:hover {
-  background: hsl(from var(--accent) h s l / 0.32);
-}
-
-.react-icon-shell {
-  display: inline-flex;
-  height: 1.5rem;
-  width: 1.5rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.625rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.46);
-  background: hsl(from var(--background) h s l / 0.8);
-  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.32);
-}
-
-.react-icon-shell-streaming {
-  box-shadow:
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.32),
-    0 0 0 1px hsl(from var(--primary) h s l / 0.08);
-}
-
-.react-chip {
+.thinking-live {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.thinking-dot {
+  display: inline-block;
+  width: 0.38rem;
+  height: 0.38rem;
   border-radius: 999px;
-  border: 1px solid hsl(from var(--border) h s l / 0.42);
-  background: hsl(from var(--background) h s l / 0.72);
-  padding: 0.22rem 0.5rem;
-  font-size: 10px;
-  line-height: 1.1;
+  flex-shrink: 0;
+  background: hsl(from var(--primary) h s l / 0.72);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+.thinking-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(from var(--muted-foreground) h s l / 0.62);
+  transition: color 140ms ease;
+}
+
+.thinking-trigger:hover {
   color: hsl(from var(--muted-foreground) h s l / 0.88);
 }
 
-.react-chip-streaming {
-  border-color: hsl(from var(--primary) h s l / 0.18);
-  background: hsl(from var(--primary) h s l / 0.1);
+.thinking-detail {
+  margin-top: 0.35rem;
+  padding-left: 0.15rem;
+  border-left: 1.5px solid hsl(from var(--border) h s l / 0.35);
+}
+
+.thinking-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0 0.15rem 0.55rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(from var(--foreground) h s l / 0.72);
+  transition: color 120ms ease;
+}
+
+.thinking-group-header:hover {
+  color: var(--foreground);
+}
+
+.thinking-group-label {
+  padding: 0.15rem 0 0.15rem 0.55rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(from var(--foreground) h s l / 0.58);
+}
+
+.thinking-group-body {
+  padding: 0 0 0.2rem 1.6rem;
+  font-size: 11px;
+  line-height: 1.6;
+  color: hsl(from var(--muted-foreground) h s l / 0.6);
+}
+
+.thinking-group-body p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking-trace-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding-left: 0.55rem;
+  font-size: 11px;
+  color: hsl(from var(--primary) h s l / 0.6);
+  transition: color 120ms ease;
+}
+
+.thinking-trace-link:hover {
   color: hsl(from var(--primary) h s l / 0.92);
 }
 
-.react-node {
-  border: 1px solid hsl(from var(--border) h s l / 0.46);
-  background: hsl(from var(--background) h s l / 0.82);
-  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.3);
-}
-
-.react-node-active {
-  border-color: hsl(from var(--primary) h s l / 0.24);
-  box-shadow:
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.3),
-    0 0 0 1px hsl(from var(--primary) h s l / 0.08);
-}
-
-.react-line {
-  opacity: 0.75;
-}
-
-.react-card {
-  border-radius: 1rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.42);
-  background: hsl(from var(--background) h s l / 0.7);
-  padding: 0.8rem 0.9rem;
-  box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.24);
-}
-
-.react-card-active {
-  border-color: hsl(from var(--primary) h s l / 0.2);
-  background: hsl(from var(--primary) h s l / 0.08);
-}
-
-.react-meta-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
-  background: hsl(from var(--card) h s l / 0.72);
-  padding: 0.14rem 0.45rem;
-  font-size: 10px;
-  line-height: 1.1;
-  color: hsl(from var(--muted-foreground) h s l / 0.84);
-}
-
-.react-meta-chip-success {
-  border-color: hsl(160 56% 78% / 0.9);
-  background: hsl(160 56% 92% / 0.86);
-  color: hsl(160 58% 30%);
-}
-
-.react-meta-chip-failure {
-  border-color: hsl(from var(--destructive) h s l / 0.2);
-  background: hsl(from var(--destructive) h s l / 0.08);
-  color: hsl(from var(--destructive) h s l / 0.86);
-}
-
-.react-detail-block {
-  border-radius: 0.9rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.42);
-  background: hsl(from var(--background) h s l / 0.62);
-  padding: 0.7rem 0.8rem;
-}
-
-.react-detail-label {
-  margin-bottom: 0.32rem;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: hsl(from var(--muted-foreground) h s l / 0.84);
-}
-
-.react-step-enter-active,
-.react-step-leave-active {
-  transition:
-    transform 220ms var(--ease-fluid),
-    opacity 180ms var(--ease-fluid);
-}
-
-.react-step-enter-from,
-.react-step-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.react-step-move {
-  transition: transform 220ms var(--ease-fluid);
-}
-
-.react-workdir-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  border-radius: 999px;
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
-  background: hsl(from var(--background) h s l / 0.72);
-  padding: 0.14rem 0.48rem;
-  font-size: 10px;
-  line-height: 1.1;
-  color: hsl(from var(--muted-foreground) h s l / 0.84);
-  cursor: pointer;
-  transition: all 140ms var(--ease-fluid);
-}
-
-.react-workdir-chip:hover {
-  background: hsl(from var(--accent) h s l / 0.5);
-  color: hsl(from var(--foreground) h s l / 0.92);
-  border-color: hsl(from var(--border) h s l / 0.6);
-}
-
-.react-file-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  border-radius: 0.7rem;
-  border: 1px solid hsl(160 56% 78% / 0.5);
-  background: hsl(160 56% 96% / 0.5);
-  padding: 0.45rem 0.6rem;
-}
-
-.react-file-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  border-radius: 0.5rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
-  background: hsl(from var(--background) h s l / 0.8);
-  padding: 0.2rem 0.45rem;
-  font-size: 10px;
-  line-height: 1.1;
-  color: hsl(from var(--foreground) h s l / 0.72);
-  cursor: pointer;
-  transition: all 140ms var(--ease-fluid);
-}
-
-.react-file-action:hover {
-  background: hsl(from var(--accent) h s l / 0.5);
-  color: hsl(from var(--foreground) h s l / 0.92);
-  border-color: hsl(from var(--border) h s l / 0.6);
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
 </style>
