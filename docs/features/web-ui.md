@@ -27,6 +27,7 @@ Web UI 为 ZhiWei 提供浏览器端交互界面，用户通过 Web 页面与 AI
 
 - 完整的对话 API（发送消息、会话管理、历史消息）
 - SSE 流式端点，支持 `token`、`ui`、`done`、`error` 四种事件类型
+- SSE 事件缓冲区（`SseEventBuffer`）：在 LLM 生产者和 SSE 派发器之间插入有界异步队列，自适应排空速率平滑流式输出
 - A2UI 信号回传端点（用户与 Generative UI 组件交互）
 - 设置管理 API
 - BrowserIngressService 接入 MessageGateway 中间件管道
@@ -85,6 +86,17 @@ Agent 通过 A2UI 生成表单组件，用户直接在 UI 中填写信息：
 | `lifepilot.gateway.channels.web.enabled` | `false` | 是否启用 Web 通道（Phase 5 实现后改为 `true`） |
 | `lifepilot.web.sse.timeout` | `300000` | SSE 连接超时时间（毫秒），默认 5 分钟 |
 | `lifepilot.web.sse.heartbeat-interval` | `30000` | SSE 心跳间隔（毫秒），防止连接被代理断开 |
+| `lifepilot.web.sse.mcp-status-timeout` | `1800000` | MCP Server 状态 SSE 连接超时时间（毫秒），默认 30 分钟 |
+| `lifepilot.web.sse.buffer.enabled` | `true` | 是否启用事件缓冲区（平滑流式输出速率） |
+| `lifepilot.web.sse.buffer.queue-capacity` | `1024` | 有界队列容量 |
+| `lifepilot.web.sse.buffer.high-water-mark` | `100` | 队列深度高水位线，超过则加速排空 |
+| `lifepilot.web.sse.buffer.low-water-mark` | `50` | 队列深度低水位线，低于则减速排空 |
+| `lifepilot.web.sse.buffer.fast-drain-interval-ms` | `12` | 高水位排空间隔（毫秒），约 83 events/sec |
+| `lifepilot.web.sse.buffer.normal-drain-interval-ms` | `20` | 正常排空间隔（毫秒），约 50 events/sec |
+| `lifepilot.web.sse.buffer.slow-drain-interval-ms` | `40` | 低水位排空间隔（毫秒），约 25 events/sec |
+| `lifepilot.web.sse.buffer.pre-lookahead-interval-ms` | `100` | 前瞻到工具调用时的排空间隔（毫秒），约 10 events/sec |
+| `lifepilot.web.sse.buffer.offer-timeout-ms` | `100` | 队列满时 offer 等待超时（毫秒） |
+| `lifepilot.web.sse.buffer.gap-heartbeat-interval-ms` | `5000` | 队列为空时注入心跳的间隔（毫秒） |
 | `lifepilot.web.cors.allowed-origins` | `http://localhost:5173` | CORS 允许的前端源 |
 | `lifepilot.web.cors.allow-credentials` | `true` | 是否允许携带 Cookie |
 

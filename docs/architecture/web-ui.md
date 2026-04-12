@@ -37,6 +37,7 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 | A2UI (Agent-to-UI) | Google 提出的声明式 Generative UI 协议（v0.8 Public Preview），Agent 以 JSON 描述 UI 组件树，客户端渲染为原生控件 |
 | SSE (Server-Sent Events) | 服务端向客户端单向推送事件的 HTTP 协议，用于流式传输 LLM 生成的 Token 和 A2UI 组件描述 |
 | SseEmitter | Spring MVC 提供的 SSE 发射器，支持异步逐块发送事件到客户端 |
+| SseEventBuffer | SSE 事件缓冲区，在 LLM 生产者和 SseEmitter 之间插入有界异步队列，以自适应排空速率平滑流式输出 |
 | BrowserIngressService | Web 通道适配器，桥接 REST 请求与 MessageGateway |
 | Pinia | Vue 3 官方状态管理库，管理对话列表、消息流、用户设置等全局状态 |
 | Reka UI 2.x | Vue 3 UI 组件库 |
