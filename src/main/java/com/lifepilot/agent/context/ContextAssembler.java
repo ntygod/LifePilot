@@ -480,7 +480,7 @@ public class ContextAssembler {
         if (weatherService != null) {
             String weather = weatherService.getWeatherSummary();
             if (weather != null) {
-                weatherLine = "\n- 当前天���: " + weather;
+                weatherLine = "\n- 当前天气: " + weather;
             }
         }
         params.put("weather", weatherLine);
