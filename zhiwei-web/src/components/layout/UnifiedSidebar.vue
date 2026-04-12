@@ -489,13 +489,9 @@ function openSettings() {
   border: none;
   background: transparent;
   font-size: 14px;
-  color: #1d1d1f;
+  color: var(--foreground);
   cursor: pointer;
   transition: background 120ms ease;
-}
-
-:root.dark .qw-action-row {
-  color: var(--foreground);
 }
 
 .qw-action-row:hover {
@@ -556,10 +552,6 @@ function openSettings() {
   white-space: nowrap;
   font-size: 14px;
   line-height: 22px;
-  color: #1d1d1f;
-}
-
-:root.dark .qw-session-title {
   color: var(--foreground);
 }
 

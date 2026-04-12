@@ -4,7 +4,6 @@ import com.lifepilot.interaction.web.config.WebProperties.SseBufferProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -37,10 +36,9 @@ public class SseEventBuffer {
      *
      * @param eventType SSE 事件类型
      * @param data      事件数据
-     * @param createdAt 入队时间
      * @param terminal  是否为终结事件（DONE / ERROR），触发同步排空
      */
-    record SseEvent(String eventType, Object data, Instant createdAt, boolean terminal) {}
+    record SseEvent(String eventType, Object data, boolean terminal) {}
 
     private final String streamId;
     private final LinkedBlockingQueue<SseEvent> queue;
@@ -83,7 +81,7 @@ public class SseEventBuffer {
         }
         try {
             boolean accepted = queue.offer(
-                    new SseEvent(eventType, data, Instant.now(), false),
+                    new SseEvent(eventType, data, false),
                     config.offerTimeoutMs(), TimeUnit.MILLISECONDS
             );
             if (!accepted) {
@@ -112,7 +110,7 @@ public class SseEventBuffer {
         }
         try {
             boolean accepted = queue.offer(
-                    new SseEvent(eventType, data, Instant.now(), true),
+                    new SseEvent(eventType, data, true),
                     config.offerTimeoutMs(), TimeUnit.MILLISECONDS
             );
             if (!accepted) {
@@ -172,6 +170,8 @@ public class SseEventBuffer {
                     // 终结事件 — 先排空所有前序事件，再派发
                     flushAll();
                     dispatch(event);
+                    // 先标记关闭，避免 closeEmitter 回调链触发冗余 interrupt
+                    closed.set(true);
                     sseManager.closeEmitter(streamId);
                     return;
                 }
@@ -259,8 +259,8 @@ public class SseEventBuffer {
             if (event.data() instanceof Map<?, ?> map) {
                 Object inner = map.get("event");
                 if (inner instanceof Map<?, ?> detail) {
-                    String type = (String) detail.get("type");
-                    if ("TOOL_CALL".equals(type) || "PROGRESS".equals(type)) {
+                    if (detail.get("type") instanceof String type
+                            && ("TOOL_CALL".equals(type) || "PROGRESS".equals(type))) {
                         return true;
                     }
                 }

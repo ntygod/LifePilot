@@ -247,7 +247,7 @@ public class AgentOrchestrator {
             cleanupWorkspaceProgress(state);
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
-                handleSuspendStreaming(state, streamId, sseManager, loopContext);
+                handleSuspendStreaming(state, streamId, sseManager, loopContext, eventBuffer);
                 return;
             }
 
@@ -326,7 +326,7 @@ public class AgentOrchestrator {
                 executionPersistence.markTurnFailed(state, error);
                 if (eventBuffer != null && !eventBuffer.isClosed()) {
                     // 缓冲区模式：构建错误数据，通过 offerTerminal 排空后派发
-                    var errorData = new java.util.HashMap<String, Object>();
+                    var errorData = new HashMap<String, Object>();
                     errorData.put("code", 500);
                     errorData.put("message", "执行失败：Agent 遇到未预期错误 - " + error.getMessage());
                     if (state.traceId() != null) errorData.put("traceId", state.traceId());
@@ -700,7 +700,8 @@ public class AgentOrchestrator {
      */
     private void handleSuspendStreaming(ReactAgentState state, String streamId,
                                         SseSessionManager sseManager,
-                                        AgentLoopContext loopContext) {
+                                        AgentLoopContext loopContext,
+                                        @Nullable SseEventBuffer eventBuffer) {
         executionPersistence.saveWorkspaceForSuspend(state);
         String suspendMessage = resolveSuspendMessage(state);
         var suspendedState = state.toBuilder()
@@ -721,8 +722,13 @@ public class AgentOrchestrator {
         }
 
         // 先向前端发出挂起信号，让输入框立即恢复为"继续回复即可"的自然对话状态。
-        sseManager.sendEvent(streamId, SseEventType.AGENT_SUSPENDED, buildSuspendedEventPayload(suspendedState, suspendMessage));
-        sseManager.closeEmitter(streamId);
+        // 挂起事件作为终结事件走缓冲区排空，确保前序 TOKEN 事件不丢失。
+        if (eventBuffer != null && !eventBuffer.isClosed()) {
+            eventBuffer.offerTerminal(SseEventType.AGENT_SUSPENDED, buildSuspendedEventPayload(suspendedState, suspendMessage));
+        } else {
+            sseManager.sendEvent(streamId, SseEventType.AGENT_SUSPENDED, buildSuspendedEventPayload(suspendedState, suspendMessage));
+            sseManager.closeEmitter(streamId);
+        }
 
         // 挂起后的 transcript/turn 落库放在事件发送之后，避免用户先感知到"卡住"。
         try {

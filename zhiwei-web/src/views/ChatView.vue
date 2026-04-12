@@ -284,18 +284,34 @@ onMounted(async () => {
   messagesReady.value = true
 
   // 监听滚动，判断是否显示"回到底部"按钮
-  const el = getScrollEl()
-  el?.addEventListener('scroll', handleScroll)
+  scrollListenerEl = getScrollEl()
+  scrollListenerEl?.addEventListener('scroll', handleScroll, { passive: true })
 
   // 首次加载完成后滚到底部
   for (const delay of [50, 200, 500]) {
-    window.setTimeout(forceScrollBottom, delay)
+    pendingTimers.push(window.setTimeout(forceScrollBottom, delay))
   }
 })
 
 onUnmounted(() => {
-  scrollContainer.value?.removeEventListener('scroll', handleScroll)
+  scrollListenerEl?.removeEventListener('scroll', handleScroll)
+  scrollListenerEl = null
+  pendingTimers.forEach(clearTimeout)
+  pendingTimers.length = 0
+  if (scrollRaf !== null) {
+    cancelAnimationFrame(scrollRaf)
+    scrollRaf = null
+  }
+  if (readyTimer !== null) {
+    clearTimeout(readyTimer)
+    readyTimer = null
+  }
 })
+
+/* 滚动事件注册引用 + 定时器收集（卸载时统一清理） */
+let scrollListenerEl: HTMLElement | null = null
+const pendingTimers: number[] = []
+let readyTimer: number | null = null
 
 function handleScroll() {
   const el = getScrollEl()
@@ -325,7 +341,8 @@ watch(
     }
 
     // 等消息加载完成后标记就绪（store 内部 watch 是异步的，延迟兜底）
-    window.setTimeout(() => { messagesReady.value = true }, 300)
+    if (readyTimer !== null) clearTimeout(readyTimer)
+    readyTimer = window.setTimeout(() => { messagesReady.value = true; readyTimer = null }, 300)
 
     // 等消息加载 + DOM 渲染完成后滚到底部
     await nextTick()
@@ -342,10 +359,10 @@ watch(
   { immediate: true },
 )
 
-/* 获取实际滚动容器（ref 可能因 Transition 延迟为 null，兜底用 DOM 查询） */
+/* 获取实际滚动容器（ref 可能因 Transition 延迟为 null，兜底用 data 属性查询） */
 function getScrollEl(): HTMLElement | null {
   return scrollContainer.value
-    ?? document.querySelector<HTMLElement>('.overflow-y-auto.scrollbar-track-transparent')
+    ?? document.querySelector<HTMLElement>('[data-scroll-container]')
 }
 
 /* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次 */
@@ -360,9 +377,14 @@ function scrollToBottom() {
   })
 }
 
-/** 强制滚到底（直接 DOM 查询，不依赖 ref） */
+function scrollToBottomSmooth() {
+  const el = getScrollEl()
+  if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+}
+
+/** 强制滚到底（直接查询，不依赖 ref） */
 function forceScrollBottom() {
-  const el = document.querySelector<HTMLElement>('.scrollbar-track-transparent.overflow-y-auto')
+  const el = getScrollEl()
   if (el && el.scrollHeight > el.clientHeight) {
     el.scrollTop = el.scrollHeight
   }
@@ -373,7 +395,7 @@ watch(() => chatStore.messages.length, (len) => {
   if (len > 0) {
     messagesReady.value = true
     for (const delay of [50, 200, 500]) {
-      window.setTimeout(forceScrollBottom, delay)
+      pendingTimers.push(window.setTimeout(forceScrollBottom, delay))
     }
   }
 })
@@ -473,6 +495,7 @@ async function handleFork(message: Message) {
 }
 
 async function handleEdit(message: Message, newContent: string) {
+  if (isStreaming.value) return
   // 更新用户消息内容后，以 RESTART 重新生成
   chatStore.updateMessage(message.id, { content: newContent })
   const turnId = message.turnId
@@ -667,6 +690,7 @@ function closeTracePanel() {
       <section class="relative min-h-0 flex-1 flex min-w-0 flex-col overflow-hidden">
         <div
           ref="scrollContainer"
+          data-scroll-container
           class="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
           <!-- 空状态：问候 + 输入框居中 -->
@@ -732,7 +756,7 @@ function closeTracePanel() {
                 type="button"
                 class="absolute -top-10 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-md transition-colors hover:bg-muted"
                 title="回到底部"
-                @click="() => { const el = getScrollEl(); if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }"
+                @click="scrollToBottomSmooth"
               >
                 <ArrowDown class="size-4 text-muted-foreground" />
               </button>

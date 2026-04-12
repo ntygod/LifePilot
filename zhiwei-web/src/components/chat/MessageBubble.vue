@@ -253,7 +253,7 @@ const assistantBubbleClass = computed(() => {
 })
 
 const userBubbleClass = computed(() => [
-  'user-bubble rounded-[1rem] px-4 py-3 text-foreground',
+  'user-bubble rounded-2xl px-xl py-md text-foreground',
   props.message.status === 'pending' ? 'user-bubble-pending' : 'group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.26)]',
 ].join(' '))
 
@@ -294,7 +294,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
               <textarea
                 ref="editTextareaRef"
                 v-model="editContent"
-                class="w-full resize-none border-none bg-transparent text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
+                class="w-full max-h-[50vh] resize-none overflow-y-auto border-none bg-transparent text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
                 rows="1"
                 @input="onEditInput"
                 @keydown="onEditKeydown"
@@ -577,12 +577,8 @@ function approvalLogTone(log: PermissionApprovalLog) {
   position: relative;
   transform-origin: right bottom;
   border: none;
-  background: hsl(0 0% 94%);
+  background: var(--muted);
   box-shadow: none;
-}
-
-:root.dark .user-bubble {
-  background: hsl(0 0% 18%);
 }
 
 .user-bubble-pending {

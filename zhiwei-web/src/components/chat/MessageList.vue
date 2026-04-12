@@ -180,7 +180,7 @@ function highlight(text: string): string {
 </script>
 
 <template>
-  <div class="flex flex-col gap-[36px]">
+  <div class="flex flex-col gap-2xl">
     <template v-for="(msg, index) in mergedMessages" :key="msg.id">
       <div
         v-if="index === 0 || getDateLabel(msg.timestamp) !== getDateLabel(mergedMessages[index - 1]?.timestamp)"

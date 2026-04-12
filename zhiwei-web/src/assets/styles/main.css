@@ -58,35 +58,35 @@
 }
 
 .dark {
-  --background: hsl(200 12% 8%);
-  --foreground: hsl(180 10% 94%);
-  --card: hsl(200 10% 12%);
-  --card-foreground: hsl(180 10% 94%);
-  --popover: hsl(200 10% 12%);
-  --popover-foreground: hsl(180 10% 94%);
+  --background: hsl(0 0% 8%);
+  --foreground: hsl(0 0% 94%);
+  --card: hsl(0 0% 12%);
+  --card-foreground: hsl(0 0% 94%);
+  --popover: hsl(0 0% 12%);
+  --popover-foreground: hsl(0 0% 94%);
 
   --primary: hsl(160 32% 56%);
-  --primary-foreground: hsl(200 20% 8%);
+  --primary-foreground: hsl(0 0% 8%);
 
-  --secondary: hsl(200 8% 16%);
-  --secondary-foreground: hsl(180 10% 94%);
-  --muted: hsl(200 8% 14%);
-  --muted-foreground: hsl(200 6% 64%);
-  --accent: hsl(160 10% 18%);
-  --accent-foreground: hsl(180 10% 94%);
+  --secondary: hsl(0 0% 16%);
+  --secondary-foreground: hsl(0 0% 94%);
+  --muted: hsl(0 0% 14%);
+  --muted-foreground: hsl(0 0% 64%);
+  --accent: hsl(0 0% 18%);
+  --accent-foreground: hsl(0 0% 94%);
 
   --destructive: hsl(2 68% 44%);
   --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(200 8% 22%);
-  --input: hsl(200 8% 18%);
+  --border: hsl(0 0% 22%);
+  --input: hsl(0 0% 18%);
   --ring: hsl(160 32% 56%);
-  --ring-offset-background: hsl(200 12% 8%);
+  --ring-offset-background: hsl(0 0% 8%);
 
-  --sidebar-background: hsl(200 10% 9%);
-  --sidebar-foreground: hsl(180 10% 94%);
-  --sidebar-border: hsl(200 8% 18%);
-  --sidebar-accent: hsl(160 8% 16%);
-  --sidebar-accent-foreground: hsl(180 10% 94%);
+  --sidebar-background: hsl(0 0% 9%);
+  --sidebar-foreground: hsl(0 0% 94%);
+  --sidebar-border: hsl(0 0% 18%);
+  --sidebar-accent: hsl(0 0% 16%);
+  --sidebar-accent-foreground: hsl(0 0% 94%);
 
   --chart-1: hsl(160 32% 56%);
   --chart-2: hsl(200 64% 60%);
@@ -94,7 +94,7 @@
   --chart-4: hsl(280 52% 64%);
   --chart-5: hsl(342 74% 65%);
 
-  --shadow-color: 200 20% 3%;
+  --shadow-color: 0 0% 3%;
 }
 
 @theme inline {
@@ -342,8 +342,7 @@ html[data-ui-density="compact"] {
     display: flex;
     height: 100%;
     flex-direction: column;
-    background: var(--sidebar-background
-    );
+    background: var(--sidebar-background);
     color: var(--sidebar-foreground);
   }
 

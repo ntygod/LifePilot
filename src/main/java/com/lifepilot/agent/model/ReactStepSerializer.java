@@ -209,8 +209,10 @@ public final class ReactStepSerializer {
             case "web.fetch" -> {
                 String url = textField(root, "url");
                 if (url != null) {
-                    try { yield "抓取 " + URI.create(url).getHost(); }
-                    catch (Exception e) { yield "抓取 " + truncate(url, 50); }
+                    try {
+                        String host = URI.create(url).getHost();
+                        yield "抓取 " + (host != null ? host : truncate(url, 50));
+                    } catch (Exception e) { yield "抓取 " + truncate(url, 50); }
                 }
                 yield "抓取网页";
             }
@@ -296,8 +298,10 @@ public final class ReactStepSerializer {
                     case "navigate" -> {
                         String url = textField(root, "url");
                         if (url != null) {
-                            try { yield "访问 " + URI.create(url).getHost(); }
-                            catch (Exception e) { yield "访问 " + truncate(url, 40); }
+                            try {
+                                String host = URI.create(url).getHost();
+                                yield "访问 " + (host != null ? host : truncate(url, 40));
+                            } catch (Exception e) { yield "访问 " + truncate(url, 40); }
                         }
                         yield "访问页面";
                     }
@@ -318,7 +322,12 @@ public final class ReactStepSerializer {
                 String q = textField(root, "query");
                 if (q != null) yield "搜索「" + truncate(q, 50) + "」";
                 String url = textField(root, "url");
-                if (url != null) { try { yield URI.create(url).getHost(); } catch (Exception e) { yield truncate(url, 50); } }
+                if (url != null) {
+                    try {
+                        String host = URI.create(url).getHost();
+                        yield host != null ? host : truncate(url, 50);
+                    } catch (Exception e) { yield truncate(url, 50); }
+                }
                 String path = textField(root, "path");
                 if (path != null) yield truncate(path, 60);
                 String name = textField(root, "name");

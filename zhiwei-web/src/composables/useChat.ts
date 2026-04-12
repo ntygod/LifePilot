@@ -376,6 +376,8 @@ export function useChat() {
           finalizeInterruptedTurn({
             id: buildTerminalAssistantId(currentTurnId ?? undefined, undefined, 'aborted'),
             turnId: currentTurnId ?? undefined,
+            // 用 SUCCESS 而非 FAILED — 用户主动停止不应显示错误 UI。
+            // ChatTurnStatus 无 ABORTED 值，SUCCESS 是语义最接近的选择。
             turnStatus: 'SUCCESS',
             content: partialContent,
           })
