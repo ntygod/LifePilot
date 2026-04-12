@@ -235,11 +235,16 @@ async function sendMsg() {
     const port = await getPort()
     const resp = await fetch(`http://localhost:${port}/api/chat/messages/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text, sessionId: chatSessionId.value }),
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body: JSON.stringify({
+        content: text,
+        sessionId: chatSessionId.value,
+        action: 'SEND',
+      }),
     })
     if (!resp.ok || !resp.body) {
-      chatMessages.value[thinkingIdx] = { role: 'assistant', text: `请求失败: ${resp.status}` }
+      const errText = await resp.text().catch(() => '')
+      chatMessages.value[thinkingIdx] = { role: 'assistant', text: `请求失败(${resp.status}): ${errText}`.slice(0, 200) }
       return
     }
 
