@@ -1,37 +1,29 @@
 ---
 id: cron-scheduler
 name: "定时任务调度"
-description: "定时任务创建与管理"
-version: "1.0.0"
+description: "定时任务创建与管理。用户说「每天早上」「每周一」「定时提醒」「定时任务」「每小时」「定时搜索」「cron」时使用。不适用于模糊关注类需求（记录到记忆）或一次性任务（直接执行）。"
+version: "2.0.0"
 suggested-tools:
   - cron
-triggers:
-  - "定时任务"
-  - "每天"
-  - "每周"
-  - "定时"
-  - "cron"
-  - "调度"
 ---
 
 # 定时任务调度指南
 
-你是 ZhiWei 的定时任务管理助手。当用户需要设置定期执行的任务时，帮助用户创建和管理 Cron 定时任务。
+创建和管理 Cron 定时任务。
 
 ## 适用场景
 
 - 精确时间调度："每天早上8点"、"每周一"、"每小时"
-- 定时提醒："提醒我每天…"、"定时…"
+- 定时提醒："提醒我每天…"
 - 周期性任务："每天搜索最新AI资讯"、"每周生成周报"
-
 
 ## 不适用场景
 
-- 模糊关注类需求（不要强行创建 cron，优先记录为记忆或工作区信号，交由主动提醒引擎后续判断）
-- 一次性任务（直接执行，不创建定时任务）
-- 工作流编排（用 workflow-creator）
+- 模糊关注类需求 → 记录到记忆或工作区，不强行创建 cron
+- 一次性任务 → 直接执行
+- 工作流编排 → 用 workflow-creator
 
-## 工具调用示例
+## 工作流
 
 ### 创建定时任务
 
@@ -40,10 +32,8 @@ cron(action="create", name="每日AI资讯", schedule="0 0 8 * * *", instruction
 ```
 
 - `name`：任务名称（中文）
-- `schedule`：Spring 6 位 Cron 表达式（秒 分 时 日 月 周）
+- `schedule`：Spring 6 位 Cron（秒 分 时 日 月 周）
 - `instruction`：Agent 执行时的 prompt 指令
-
-如果任务后续会自主执行高风险操作（如删文件、改文件、执行命令、联网请求、浏览器自动化），创建任务时要让系统触发一次性预授权，避免任务运行时因缺少授权而失败。
 
 ### 常用 Cron 表达式
 
@@ -62,8 +52,6 @@ cron(action="list")
 cron(action="list", status="active")
 ```
 
-可传 `status` 按状态过滤：active / paused / completed
-
 ### 修改任务
 
 ```
@@ -71,24 +59,25 @@ cron(action="update", taskId="task-xxx", schedule="0 0 9 * * *")
 cron(action="update", taskId="task-xxx", status="paused")
 ```
 
-可修改的字段：name、schedule、instruction、status
-
 ### 删除任务
 
 ```
 cron(action="remove", taskId="task-xxx")
 ```
 
-删除任务会同时删除执行日志。
-
 ## 静默协议
 
-任务执行后，如果没有需要汇报的内容（例行检查一切正常），回复 `TASK_SILENT`。
-TASK_SILENT 必须出现在回复的开头或结尾才会被识别。
+任务执行后如果没有需要汇报的内容（例行检查一切正常），回复 `TASK_SILENT`（必须出现在回复的开头或结尾）。
 
-## 注意事项
+## 规则
 
 - Cron 表达式使用 Spring 6 位格式（含秒），不是 Linux 5 位格式
-- 任务创建后立即注册精确定时器，无需等待扫描
-- 暂停任务使用 `cron(action="update")` 将 status 设为 `paused`
-- 恢复任务将 status 设回 `active`
+- 任务如需执行高风险操作（删文件、联网、浏览器自动化），创建时触发预授权
+- 暂停用 `status="paused"`，恢复用 `status="active"`
+- 删除任务会同时删除执行日志，执行前确认
+
+## 常见错误处理
+
+- **Cron 表达式错误** → 确认是 6 位格式，检查秒/分/时顺序
+- **任务不触发** → 确认 status 是 active，检查 schedule 是否正确
+- **任务执行失败** → 查看执行日志，检查 instruction 是否清晰

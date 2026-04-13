@@ -240,18 +240,19 @@ class ContextEngine_集成测试 {
         ContextEngine.ContextSnapshot snapshot = contextEngine.load(buildState(), 320);
         String history = serializeMessages(snapshot.historyMessages());
 
+        // 工具名中的 . 被 sanitizeToolName 替换为 _（OpenAI API 名称模式要求）
         assertThat(history)
                 .contains("任务检查点")
                 .contains("历史压缩摘要")
                 .contains("[user] 第二轮问题")
-                .contains("[tool_call] tool.beta")
-                .contains("tool.beta")
+                .contains("[tool_call] tool_beta")
+                .contains("tool_beta")
                 .contains("[assistant] 第二轮回答")
                 .contains("[user] 第三轮问题")
-                .contains("[tool_call] tool.gamma")
-                .contains("tool.gamma")
+                .contains("[tool_call] tool_gamma")
+                .contains("tool_gamma")
                 .contains("[assistant] 第三轮回答")
-                .doesNotContain("tool.alpha")
+                .doesNotContain("tool_alpha")
                 .doesNotContain("第一轮问题")
                 .doesNotContain("第一轮回答");
         assertThat(snapshot.pruningApplied()).isFalse();

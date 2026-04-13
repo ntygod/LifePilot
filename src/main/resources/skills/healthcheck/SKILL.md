@@ -1,82 +1,99 @@
 ---
 id: healthcheck
 name: "系统健康检查"
-description: "系统健康检查与诊断报告"
-version: "1.0.1"
+description: "系统资源监控、服务状态检查与诊断报告。用户说「系统检查」「健康检查」「系统慢了」「诊断一下」「内存不够了」「磁盘满了」「端口占用」时使用。不适用于应用层 bug 调试（用 code-assistant）或日志分析（用 log-analyzer）。"
+version: "2.0.0"
 suggested-tools:
   - shell.exec
   - file.read
-triggers:
-  - "系统检查"
-  - "健康检查"
-  - "系统状态"
-  - "诊断"
-  - "系统问题"
 ---
 
 # 系统健康检查指南
 
-你是 ZhiWei 的系统健康检查助手。执行系统诊断、资源监控和安全审计。
+执行系统诊断、资源监控和服务状态检查。
 
-## When to Use
-- 用户报告系统运行缓慢或异常
+## 适用场景
+
+- 系统运行缓慢排查
 - 定期系统巡检
-- 部署前/后的健康验证
-- 排查系统级问题
+- 部署前/后健康验证
+- 资源使用监控（CPU / 内存 / 磁盘）
 
-## When NOT to Use
-- 应用层面的 bug 调试（用 code-assistant）
-- 日志分析（用 log-analyzer）
-- 网络问题排查（直接用 shell.exec）
+## 不适用场景
 
-## 检查流程（按顺序执行）
+- 应用层 bug 调试 → 用 code-assistant
+- 日志分析 → 用 log-analyzer
+- 知微运行时信息（Skill/工具/工作流数量）→ 用 introspection
+
+## 工作流
+
+按顺序执行以下检查：
 
 ### 1. 系统概览
+
+**Windows：**
 ```bash
-# Windows
 shell.exec(command="systeminfo | findstr /B /C:\"OS\" /C:\"System\" /C:\"Total Physical\"")
-# Linux
+```
+
+**Linux：**
+```bash
 shell.exec(command="uname -a")
 ```
 
-### 2. 资源使用检查
-```bash
-# Windows — 磁盘、内存、CPU
-shell.exec(command="powershell -c \"Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free,@{N='Size(GB)';E={[math]::Round($_.Used/1GB+$_.Free/1GB,1)}} -AutoSize\"")
-shell.exec(command="powershell -c \"Get-CimInstance Win32_OperatingSystem | Select-Object @{N='TotalGB';E={[math]::Round($_.TotalVisibleMemorySize/1MB,1)}},@{N='FreeGB';E={[math]::Round($_.FreePhysicalMemory/1MB,1)}}\"")
-shell.exec(command="powershell -c \"Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 20 Name,Id,@{N='MemMB';E={[math]::Round($_.WorkingSet64/1MB)}} | Format-Table -AutoSize\"")
+### 2. 资源使用
 
-# Linux
-shell.exec(command="df -h && free -h && uptime && ps aux --sort=-%mem | head -20")
+**Windows：**
+```bash
+shell.exec(command="powershell -c \"Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free -AutoSize\"")
+shell.exec(command="powershell -c \"Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 20 Name,Id,@{N='MemMB';E={[math]::Round($_.WorkingSet64/1MB)}} | Format-Table -AutoSize\"")
 ```
 
-### 3. 服务状态检查
+**Linux：**
 ```bash
-# Windows — 检查关键端口和 Java 进程
+shell.exec(command="df -h && free -h && uptime")
+shell.exec(command="ps aux --sort=-%mem | head -20")
+```
+
+### 3. 服务状态
+
+```bash
 shell.exec(command="netstat -ano | findstr /R \"8080 3306 5432 6379 11434\"")
 shell.exec(command="jps -l")
-
-# Linux
-shell.exec(command="ss -tlnp | grep -E '(8080|3306|5432|6379|11434)' && jps -l")
 ```
 
 ### 4. 日志异常扫描
 
-通过 `shell.exec` 读取最近日志末尾：
-```
-shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 100\"")
-```
-
-或通过 `file.list` 搜索日志中的错误关键词：
-```
-file.list(action="search", path="~/.zhiwei/logs", pattern="ERROR|Exception|FATAL", filePattern="*.log", maxResults=20)
+```bash
+shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 100 | Select-String 'ERROR|Exception'\"")
 ```
 
 ### 5. 生成诊断报告
 
-汇总所有检查结果，按严重程度分类：
-- 🔴 严重：需要立即处理
-- 🟡 警告：需要关注
-- 🟢 正常：运行良好
+按严重程度分类输出：
 
-提供具体的修复建议和操作命令。
+```
+## 诊断报告
+
+### 严重（需立即处理）
+- 问题描述 + 修复命令
+
+### 警告（需关注）
+- 问题描述 + 建议
+
+### 正常
+- 各项指标正常值
+```
+
+## 规则
+
+- 按顺序执行全部检查项，不跳过
+- 报告中的数据必须来自实际命令输出，不编造数值
+- 给出具体的修复命令，不只说"请修复"
+- 区分 Windows 和 Linux 命令，根据当前平台选择
+
+## 常见错误处理
+
+- **命令不存在** → 提供替代命令（如 `netstat` 不可用时用 `ss`）
+- **权限不足** → 提示用户以管理员身份运行
+- **服务未启动** → 给出启动命令

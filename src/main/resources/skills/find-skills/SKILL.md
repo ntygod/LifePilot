@@ -1,114 +1,122 @@
 ---
 id: find-skills
-name: "Skill 发现与安装"
-description: "技能扩展包搜索与安装"
-version: "1.2.0"
+name: "能力发现与自扩展"
+description: "发现能力缺口并通过搜索或自动生成补足。当用户需求超出现有 Skill 覆盖范围时使用——用户说「有没有能…的功能」「帮我找个技能」「你能不能…」且现有 Skill 无法满足时，或者 Agent 自身意识到当前任务缺少对应 Skill 时，主动触发。"
+version: "2.0.0"
 suggested-tools:
   - shell.exec
   - web.search
   - generate_skill
-triggers:
-  - "搜索技能"
-  - "查找Skill"
-  - "安装Skill"
-  - "技能市场"
-  - "SkillHub"
 ---
 
-# Skill 发现与安装指南
+# 能力发现与自扩展指南
 
-你是 ZhiWei 的 Skill 发现助手。当用户需要扩展系统能力时，帮助用户搜索和安装 Skill。
+当用户需求超出现有 Skill 覆盖范围时，通过外部搜索或自动生成补足能力缺口。
 
-## When to Use
-- 用户需要扩展系统能力
-- 用户想搜索可用的 Skill
-- 用户想安装新的 Skill
+知微的核心设计理念：**不可能穷举所有使用场景，但可以利用已有的工具原语组合出新的 Skill。**
 
-## When NOT to Use
-- 已知 Skill 的使用（直接加载对应 Skill）
-- 系统内置工具查询（用 introspection）
-- 代码库搜索（用 file.list action=search）
+## 适用场景
 
-## 搜索策略（优先级）
+- 用户请求的任务没有现有 Skill 能覆盖
+- Agent 在执行中意识到缺少特定领域的指导
+- 用户主动要求搜索或安装新技能
+- 用户描述了一个可复用的工作流，值得固化为 Skill
 
-### 1. SkillHub CLI（优先 — 中文加速）
+## 不适用场景
 
-检查 skillhub 是否已安装：
+- 已知 Skill 的使用 → 直接加载对应 Skill
+- 系统内置工具查询 → 用 introspection
+- 一次性简单任务 → 直接用工具完成，不需要创建 Skill
+
+## 核心原则
+
+知微拥有一组核心工具原语，任何新 Skill 都是这些原语的组合编排：
+
+| 类别 | 工具 | 能力 |
+|------|------|------|
+| 信息获取 | web.search, web.fetch, knowledge.search | 搜索、抓取、知识检索 |
+| 文件操作 | file.read, file.write, file.list, file.edit, file.manage | 完整文件生命周期 |
+| 命令执行 | shell.exec, shell.process | 任意命令行 + 后台进程 |
+| 代码执行 | code.execute | Python 持久内核 |
+| 浏览器 | browser | JS 渲染页面交互 |
+| 数据存储 | datastore | 结构化数据 CRUD + 聚合 |
+| 记忆 | memory | 跨会话持久化 |
+| Git | git.query, git.mutate | 版本控制 |
+| 调度 | cron | 定时触发 |
+| 工作流 | workflow | 多步骤编排 |
+| 通知 | notify | 消息推送 |
+| 渠道 | channel.feishu | 飞书集成 |
+
+任何用户需求，如果能分解为上述工具的组合，就可以生成一个 Skill。
+
+## 工作流
+
+### 1. 判断是否真的需要新 Skill
+
+先检查：
+- 现有 25 个内置 Skill 是否已经覆盖？
+- 能否通过组合现有 Skill 解决？（如 daily-manager 协调多个 Skill）
+- 是否是一次性任务？（一次性任务直接用工具完成，不创建 Skill）
+
+只有当需求具有**可复用性**且现有 Skill 不覆盖时，才进入下一步。
+
+### 2. 外部搜索
+
+**SkillHub CLI（优先）：**
 ```bash
-skillhub --version
+shell.exec(command="skillhub search <关键词>")
 ```
 
-如果未安装，先安装 CLI：
+未安装时安装：
 ```bash
-curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only
+shell.exec(command="curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only")
 ```
 
-搜索 Skill：
+**npx skills（回退）：**
 ```bash
-skillhub search <关键词>
+shell.exec(command="npx -y skills find <关键词>")
 ```
 
-安装 Skill：
-```bash
-skillhub install <skill-name>
-```
-
-### 2. npx skills（回退 — 英文 Skill）
-
-当 SkillHub CLI 不可用或无匹配结果时：
-
-搜索：
-```bash
-npx -y skills find <关键词>
-```
-
-安装：
-```bash
-npx -y skills add <skill-name> --directory ~/.zhiwei/skills/
-```
-
-## 搜索源
-
-1. **SkillHub** — 中文 Skill 市场，加速、合规（优先）
-2. **skills.sh 索引** — 36,500+ 个英文 Skill
-3. **LobeHub Marketplace** — LobeChat 生态
-4. **GitHub 搜索** — 直接从 GitHub 仓库搜索
-
-## 安装目录约定
-
-- 用户 Skill 目录：`~/.zhiwei/skills/`
-- 每个 Skill 安装为独立文件夹，包含 `SKILL.md` 定义文件
-- SkillFileWatcher 监控该目录，自动检测新增、修改和删除
-
-## 使用流程
-
-1. 用户描述需求（如"我需要一个能同步日历的功能"）
-2. 提取关键词，先用 `skillhub search` 搜索
-3. 如果 SkillHub 无结果，回退到 `npx skills find`
-4. 向用户展示搜索结果，推荐最匹配的 Skill
-5. 用户确认后安装到 `~/.zhiwei/skills/`
-6. 告知用户 Skill 已安装并自动加载
-
-## 在线搜索补充
-
-如果 CLI 工具均不可用，可使用 `web.search` 在线搜索：
-
+**在线搜索（最终回退）：**
 ```
 web.search(query="zhiwei skill <关键词>")
 ```
 
-## 自动生成 Skill
+搜索到合适的 Skill 后，向用户确认并安装到 `~/.zhiwei/skills/`。
 
-如果搜索无结果，且用户需求明确，可用 `generate_skill` 自动生成：
+### 3. 自动生成 Skill
+
+搜索无果时，用 `generate_skill` 从核心工具原语组合出新 Skill：
 
 ```
 generate_skill(description="用户需求描述", suggested_name="skill-id", suggested_tools=["tool1", "tool2"])
 ```
 
-生成后 Skill 自动保存到 `~/.zhiwei/skills/` 并加载。
+生成器会：
+1. 获取所有已注册工具的能力清单
+2. 选择最匹配的模板
+3. 用 LLM 生成 SKILL.md（含工具组合编排）
+4. 三重验证 + 迭代修正
+5. 生成后保存到 `~/.zhiwei/skills/auto/`，用户确认后注册
 
-## 注意事项
+### 4. 告知用户结果
 
-- SkillHub CLI 安装无需额外依赖
-- npx 回退方案需要 Node.js 环境
-- 安装前建议向用户确认
+安装或生成成功后，告知用户：
+- Skill 名称和能力描述
+- 如何触发（关键词或场景）
+- 知微已自动加载，无需重启
+
+## 规则
+
+- 搜索顺序：SkillHub CLI → npx skills → web.search → generate_skill
+- 安装外部 Skill 前必须向用户确认
+- 自动生成的 Skill 需要用户确认后才激活
+- 一次性任务不创建 Skill，直接用工具完成
+- `generate_skill` 只能组合已注册的工具，不能引用不存在的工具
+
+## 常见错误处理
+
+- **CLI 未安装** → 给出安装命令
+- **网络问题** → 换用其他搜索源
+- **generate_skill 验证失败** → 系统会自动迭代修正，多次失败后告知用户原因
+- **生成的 Skill 质量不佳** → 建议用户手动编辑 `~/.zhiwei/skills/auto/{id}/SKILL.md` 微调

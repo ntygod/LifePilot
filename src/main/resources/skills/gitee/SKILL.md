@@ -1,105 +1,94 @@
 ---
 id: gitee
 name: "Gitee 代码托管"
-description: "Gitee 仓库、PR、Issue 管理"
-version: "1.0.0"
+description: "Gitee 仓库、PR、Issue 管理。用户说「Gitee」「码云」「Gitee PR」「Gitee Issue」「推到 Gitee」时使用。GitHub 操作用 github-workflow。"
+version: "2.0.0"
 suggested-tools:
   - shell.exec
   - web.fetch
   - git.query
   - git.mutate
-triggers:
-  - "Gitee"
-  - "码云"
-  - "Gitee PR"
-  - "Gitee Issue"
-  - "Gitee仓库"
 ---
 
 # Gitee 代码托管指南
 
-你是 ZhiWei 的 Gitee 集成助手。通过 Gitee OpenAPI 帮助用户管理代码仓库、PR 和 Issue。
+通过 Gitee OpenAPI 管理代码仓库、PR 和 Issue。
 
-## When to Use
-- 用户需要管理 Gitee 仓库（创建/查看/设置）
-- 用户需要创建或管理 Pull Request
-- 用户需要创建或管理 Issue
-- 用户需要查看 CI/CD 状态
+## 适用场景
 
-## When NOT to Use
-- GitHub 操作（用 github-workflow Skill）
-- 本地 Git 操作（直接用 shell.exec）
-- 代码编写和调试（用 code-assistant）
+- 管理 Gitee 仓库（创建 / 查看 / 设置）
+- 创建和管理 Pull Request
+- 创建和管理 Issue
+- 查看 CI/CD 状态
+
+## 不适用场景
+
+- GitHub 操作 → 用 github-workflow
+- 纯本地 Git → 直接用 `git.query` / `git.mutate`
+- 代码编写 → 用 code-assistant
 
 ## 前置条件
 
-需要配置 Gitee 私人令牌：
-- `GITEE_TOKEN` — 私人令牌（在 gitee.com/profile/personal_access_tokens 创建）
+需要配置 Gitee 私人令牌：`GITEE_TOKEN`（在 gitee.com/profile/personal_access_tokens 创建）
 
-## 核心操作
+## 工作流
 
-### 查看仓库列表
+### 查看仓库
+
 ```
-web.fetch(
-  url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20",
-  method="GET"
-)
+web.fetch(url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20", method="GET")
 ```
 
 ### 创建 Issue
+
 ```
 web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/issues",
   method="POST",
   headers={"Content-Type": "application/json"},
-  body="{\"access_token\": \"${GITEE_TOKEN}\", \"title\": \"Issue标题\", \"body\": \"Issue描述\"}"
+  body="{\"access_token\": \"${GITEE_TOKEN}\", \"title\": \"标题\", \"body\": \"描述\"}"
 )
 ```
 
 ### 创建 Pull Request
+
 ```
 web.fetch(
   url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls",
   method="POST",
   headers={"Content-Type": "application/json"},
-  body="{\"access_token\": \"${GITEE_TOKEN}\", \"title\": \"PR标题\", \"head\": \"源分支\", \"base\": \"目标分支\", \"body\": \"PR描述\"}"
+  body="{\"access_token\": \"${GITEE_TOKEN}\", \"title\": \"PR标题\", \"head\": \"源分支\", \"base\": \"目标分支\", \"body\": \"描述\"}"
 )
 ```
 
-### 查看 PR 列表
-```
-web.fetch(
-  url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls?access_token=${GITEE_TOKEN}&state=open",
-  method="GET"
-)
-```
+### 本地 Git 操作
 
-## 结合 Git 工具
-
-本地仓库只读查询使用 `git.query`：
-
+只读查询用 `git.query`：
 ```
 git.query(action="status")
 git.query(action="log", count=10)
-git.query(action="diff", filePath="src/Main.java")
 ```
 
-本地仓库写操作使用 `git.mutate`：
-
+写操作用 `git.mutate`：
 ```
 git.mutate(action="commit", message="提交信息", files=["file1.java"])
 git.mutate(action="branch", branchAction="create", name="feature-xxx")
 ```
 
-克隆和推送等 Git 原生命令通过 `shell.exec` 执行：
-
-```
-shell.exec(command="git clone https://gitee.com/${owner}/${repo}.git")
+推送用 `shell.exec`：
+```bash
 shell.exec(command="git push origin feature-branch")
 ```
 
-## 注意事项
+## 规则
 
-- API 频率限制：5000 次/小时
+- API 频率限制 5000 次/小时
 - 创建 PR/Issue 前确认标题和内容
-- 敏感操作（删除仓库、强制推送）需要用户二次确认
+- 删除仓库、强制推送等敏感操作需用户二次确认
+- Token 不在日志或输出中暴露
+
+## 常见错误处理
+
+- **Token 无效** → 提示用户检查或重新生成令牌
+- **仓库不存在** → 确认 owner/repo 拼写
+- **权限不足** → 确认 Token 的权限范围

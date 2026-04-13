@@ -23,8 +23,6 @@ public record SkillDefinition(
         SkillSource source,
         String instructions,
         List<String> suggestedTools,
-        /** 触发关键词/场景列表 — 用于系统提示词中的 Skill 匹配。 */
-        List<String> triggers,
         Map<String, String> metadata
 ) {
 
@@ -34,7 +32,6 @@ public record SkillDefinition(
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Skill 名称不能为空");
         if (instructions == null || instructions.isBlank()) throw new IllegalArgumentException("Skill 指令不能为空");
         suggestedTools = List.copyOf(suggestedTools);
-        triggers = triggers != null ? List.copyOf(triggers) : List.of();
         metadata = Map.copyOf(metadata);
     }
 
