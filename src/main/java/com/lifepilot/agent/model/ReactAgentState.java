@@ -7,8 +7,10 @@ import lombok.Builder;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -48,6 +50,8 @@ public record ReactAgentState(
         @Nullable List<String> allowedToolIds,
         /** 已被 Skill 激活的工具 ID 集合 — 加载 Skill 时动态扩充。 */
         @Nullable Set<String> activatedToolIds,
+        /** 已加载的 Skill 指南内容 — 注入系统提示词供 LLM 遵循。 */
+        @Nullable String loadedSkillContent,
         @Nullable List<MediaContent> pendingMedia,
         int earlyStopRejectCount,
         boolean suspended,
@@ -208,6 +212,24 @@ public record ReactAgentState(
         merged.addAll(newToolIds);
         return this.toBuilder()
                 .activatedToolIds(merged)
+                .build();
+    }
+
+    /**
+     * 追加已加载的 Skill 指南内容，累积拼接到已有内容之后。
+     *
+     * @param newContent 新加载的 Skill 指南文本
+     * @return 包含累积内容的新状态
+     */
+    public ReactAgentState appendSkillContent(String newContent) {
+        if (newContent == null || newContent.isBlank()) {
+            return this;
+        }
+        String merged = loadedSkillContent != null
+                ? loadedSkillContent + "\n\n" + newContent
+                : newContent;
+        return this.toBuilder()
+                .loadedSkillContent(merged)
                 .build();
     }
 

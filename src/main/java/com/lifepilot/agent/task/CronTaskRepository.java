@@ -29,7 +29,8 @@ public class CronTaskRepository {
             rs.getString("instruction"),
             rs.getString("status"),
             rs.getString("created_at"),
-            rs.getString("updated_at")
+            rs.getString("updated_at"),
+            rs.getString("skill_ids")
     );
 
     private static final RowMapper<CronTaskLog> LOG_MAPPER = (rs, _) -> new CronTaskLog(
@@ -50,11 +51,11 @@ public class CronTaskRepository {
     /** 保存新任务。 */
     public void save(CronTaskEntry entry) {
         jdbc.update("""
-                INSERT INTO cron_tasks (id, name, schedule, instruction, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cron_tasks (id, name, schedule, instruction, status, created_at, updated_at, skill_ids)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 entry.id(), entry.name(), entry.schedule(), entry.instruction(),
-                entry.status(), entry.createdAt(), entry.updatedAt());
+                entry.status(), entry.createdAt(), entry.updatedAt(), entry.skillIds());
         log.debug("Cron 任务已保存: id={}, name={}", entry.id(), entry.name());
     }
 
@@ -62,11 +63,11 @@ public class CronTaskRepository {
     public void update(CronTaskEntry entry) {
         jdbc.update("""
                 UPDATE cron_tasks SET name = ?, schedule = ?, instruction = ?,
-                    status = ?, updated_at = ?
+                    status = ?, updated_at = ?, skill_ids = ?
                 WHERE id = ?
                 """,
                 entry.name(), entry.schedule(), entry.instruction(),
-                entry.status(), entry.updatedAt(), entry.id());
+                entry.status(), entry.updatedAt(), entry.skillIds(), entry.id());
         log.debug("Cron 任务已更新: id={}, name={}", entry.id(), entry.name());
     }
 
@@ -79,7 +80,7 @@ public class CronTaskRepository {
     /** 按 ID 查询任务。 */
     public Optional<CronTaskEntry> findById(String id) {
         var results = jdbc.query("""
-                SELECT id, name, schedule, instruction, status, created_at, updated_at
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
                 FROM cron_tasks WHERE id = ?""", TASK_MAPPER, id);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
@@ -88,7 +89,7 @@ public class CronTaskRepository {
     public List<CronTaskEntry> findByStatus(String status) {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, name, schedule, instruction, status, created_at, updated_at
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
                 FROM cron_tasks WHERE status = ? ORDER BY created_at""",
                 TASK_MAPPER, status));
     }
@@ -97,7 +98,7 @@ public class CronTaskRepository {
     public List<CronTaskEntry> findAll() {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, name, schedule, instruction, status, created_at, updated_at
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
                 FROM cron_tasks ORDER BY created_at""", TASK_MAPPER));
     }
 

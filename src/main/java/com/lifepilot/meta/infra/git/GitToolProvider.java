@@ -74,7 +74,7 @@ public class GitToolProvider {
                                         "description", "Git 查询动作类型")),
                                 Map.entry("path", Map.of(
                                         "type", "string",
-                                        "description", "Git 仓库路径，默认为当前工作目录")),
+                                        "description", "Git 仓库路径（必填）")),
                                 Map.entry("staged", Map.of(
                                         "type", "boolean",
                                         "description", "action=diff 时是否查看暂存区差异（--staged），默认 false")),
@@ -135,7 +135,7 @@ public class GitToolProvider {
         ));
         properties.put("path", Map.of(
                 "type", "string",
-                "description", "Git 仓库路径，默认为当前工作目录"
+                "description", "Git 仓库路径（必填）"
         ));
         properties.put("message", Map.of(
                 "type", "string",

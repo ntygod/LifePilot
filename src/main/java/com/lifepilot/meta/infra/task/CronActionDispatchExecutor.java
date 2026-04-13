@@ -52,11 +52,12 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         String name = input.getParam("name", String.class);
                         String schedule = input.getParam("schedule", String.class);
                         String instruction = input.getParam("instruction", String.class);
+                        String skillIds = input.getOptionalParam("skillIds", String.class).orElse(null);
 
                         CronExpression.parse(schedule);
 
                         String now = Instant.now().toString();
-                        var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now);
+                        var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now, skillIds);
                         cronTaskRepository.save(entry);
                         cronScheduler.schedule(entry);
 

@@ -128,8 +128,13 @@ public class CronScheduler {
         int tokensUsed = 0;
 
         try {
-            // 构造 AgentRequest
-            String prompt = "[定时任务: %s]\n%s".formatted(task.name(), task.instruction());
+            // 构造 AgentRequest — 有绑定 Skill 时 prepend 加载指令
+            String instruction = task.instruction();
+            if (task.skillIds() != null && !task.skillIds().isBlank()) {
+                instruction = "首先加载技能指南: file.read(skill=\"%s\"), 然后执行以下任务:\n%s"
+                        .formatted(task.skillIds(), instruction);
+            }
+            String prompt = "[定时任务: %s]\n%s".formatted(task.name(), instruction);
             String sessionId = "cron:" + task.id();
             var request = new AgentRequest(prompt, sessionId, InteractionSource.cron(sessionId));
 
