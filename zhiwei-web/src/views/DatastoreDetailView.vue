@@ -15,7 +15,7 @@ import {
   Upload,
 } from 'lucide-vue-next'
 import { datastoreApi, memoryApi } from '@/api/client'
-import type { Datastore, DatastoreRecord, EntitySummary, KbDocument, KnowledgeBase, MemoryProvenanceSummary } from '@/types'
+import type { Datastore, DatastoreDocument, EntitySummary, KbDocument, KnowledgeBase, MemoryProvenanceSummary } from '@/types'
 import { useDatastoreStore } from '@/stores/datastore'
 import { useUiStore } from '@/stores/ui'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
@@ -30,10 +30,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
-type PropertyDefinition = {
+type FieldHint = {
   name?: string
   type?: string
-  required?: boolean
+  description?: string
 }
 
 const route = useRoute()
@@ -44,7 +44,7 @@ const uiStore = useUiStore()
 const datastoreId = computed(() => route.params.id as string)
 const datastore = ref<Datastore | null>(null)
 const relatedKnowledgeBases = ref<KnowledgeBase[]>([])
-const datastoreRecords = ref<DatastoreRecord[]>([])
+const datastoreRecords = ref<DatastoreDocument[]>([])
 const datastoreDomainDocuments = ref<KbDocument[]>([])
 const relatedMemoryEntities = ref<EntitySummary[]>([])
 const recentProvenanceItems = ref<MemoryProvenanceSummary[]>([])
@@ -69,20 +69,17 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: datastore.value?.name ?? '详情' },
 ])
 
-const propertyDefinitions = computed(() => {
-  if (!datastore.value?.propertiesJson?.trim()) {
-    return [] as PropertyDefinition[]
+const fieldHints = computed(() => {
+  if (!datastore.value?.fieldHintsJson?.trim()) {
+    return [] as FieldHint[]
   }
   try {
-    const parsed = JSON.parse(datastore.value.propertiesJson)
+    const parsed = JSON.parse(datastore.value.fieldHintsJson)
     return Array.isArray(parsed) ? parsed : []
   } catch {
-    return [] as PropertyDefinition[]
+    return [] as FieldHint[]
   }
 })
-
-const formattedProjectionConfig = computed(() => formatJson(datastore.value?.projectionConfigJson))
-const formattedMetadata = computed(() => formatJson(datastore.value?.metadataJson))
 
 const MEMORY_SCOPE_LABELS: Record<string, string> = {
   USER_PROFILE: '用户画像',
@@ -151,7 +148,7 @@ async function loadDatastoreRecords() {
     datastoreRecords.value = await datastoreApi.listRecords(datastoreId.value)
   } catch (requestError: any) {
     datastoreRecords.value = []
-    recordsError.value = requestError?.message ?? '加载结构化数据失败。'
+    recordsError.value = requestError?.message ?? '加载文档列表失败。'
   } finally {
     recordsLoading.value = false
   }
@@ -227,15 +224,20 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleString('zh-CN')
 }
 
-function formatRecordPreview(dataJson: string) {
-  if (!dataJson?.trim()) {
-    return '空数据'
-  }
+function parseMetadataJson(raw?: string | null): Record<string, unknown> | null {
+  if (!raw?.trim()) return null
   try {
-    return JSON.stringify(JSON.parse(dataJson), null, 2)
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? parsed : null
   } catch {
-    return dataJson
+    return null
   }
+}
+
+function truncateContent(content?: string | null, maxLength = 200): string {
+  if (!content) return '无内容'
+  if (content.length <= maxLength) return content
+  return content.slice(0, maxLength) + '...'
 }
 
 function openKnowledgeBase(knowledgeBaseId: string) {
@@ -412,25 +414,16 @@ watch(
         <PageHeader
           eyebrow="Datastore"
           :title="datastore?.name || 'Datastore 详情'"
-          :description="datastore?.description || '查看这个领域数据容器的结构字段、投影配置与元数据。'"
+          :description="datastore?.description || '查看这个领域数据容器的索引字段与文档列表。'"
         >
           <template #actions>
-            <Badge v-if="datastore" variant="outline">{{ datastore.type }}</Badge>
+            <Badge v-if="datastore" variant="outline">{{ datastore.timeSeries ? '时序集合' : '普通集合' }}</Badge>
           </template>
 
           <template #meta>
-            <MetricCard label="字段数量" :value="propertyDefinitions.length" hint="当前 Datastore 已声明的结构字段数。">
+            <MetricCard label="字段数量" :value="fieldHints.length" hint="当前 Datastore 已声明的索引字段数。">
               <template #icon>
                 <FileJson2 class="size-5" />
-              </template>
-            </MetricCard>
-            <MetricCard
-              label="投影配置"
-              :value="formattedProjectionConfig ? '已配置' : '默认'"
-              hint="控制结构化数据向向量检索文本的投影方式。"
-            >
-              <template #icon>
-                <Settings2 class="size-5" />
               </template>
             </MetricCard>
             <MetricCard label="更新时间" :value="formatDate(datastore?.updatedAt)" hint="最后一次更新 Datastore 定义的时间。">
@@ -478,7 +471,7 @@ watch(
                 </div>
                 <div>
                   <div class="text-muted-foreground">类型</div>
-                  <div class="mt-1 font-medium text-foreground">{{ datastore.type }}</div>
+                  <div class="mt-1 font-medium text-foreground">{{ datastore.timeSeries ? '时序集合' : '普通集合' }}</div>
                 </div>
                 <div>
                   <div class="text-muted-foreground">创建者</div>
@@ -496,55 +489,31 @@ watch(
             </div>
           </PageSection>
 
-          <PageSection title="字段结构" description="Datastore 已声明的结构字段，用于校验、索引和向量投影。">
+          <PageSection title="索引字段" description="已声明的索引字段，用于加速结构化查询。">
             <div class="detail-card overflow-hidden">
-              <div v-if="propertyDefinitions.length === 0" class="px-5 py-10 text-sm text-muted-foreground">
-                当前 Datastore 没有声明结构字段。
+              <div v-if="fieldHints.length === 0" class="px-5 py-10 text-sm text-muted-foreground">
+                当前 Datastore 没有声明索引字段。
               </div>
               <table v-else class="w-full text-sm">
                 <thead>
                   <tr class="border-b border-border/60">
                     <th class="px-5 py-3 text-left font-medium text-muted-foreground">字段名</th>
                     <th class="px-5 py-3 text-left font-medium text-muted-foreground">类型</th>
-                    <th class="px-5 py-3 text-left font-medium text-muted-foreground">必填</th>
+                    <th class="px-5 py-3 text-left font-medium text-muted-foreground">语义描述</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr
-                    v-for="field in propertyDefinitions"
+                    v-for="field in fieldHints"
                     :key="field.name || field.type"
                     class="border-b border-border/40"
                   >
                     <td class="px-5 py-3 font-medium text-foreground">{{ field.name || '未命名字段' }}</td>
                     <td class="px-5 py-3 text-muted-foreground">{{ field.type || '未标注' }}</td>
-                    <td class="px-5 py-3 text-muted-foreground">{{ field.required ? '是' : '否' }}</td>
+                    <td class="px-5 py-3 text-muted-foreground">{{ field.description || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
-            </div>
-          </PageSection>
-
-          <PageSection title="投影配置" description="控制 Datastore 结构化数据如何投影为可检索文本。">
-            <div class="detail-card p-4">
-              <pre
-                v-if="formattedProjectionConfig"
-                class="overflow-x-auto rounded-[calc(var(--radius)-2px)] border border-border/60 bg-background/70 p-4 text-xs leading-6 text-foreground"
-              >{{ formattedProjectionConfig }}</pre>
-              <div v-else class="text-sm text-muted-foreground">
-                当前使用默认投影规则，没有显式 projectionConfig。
-              </div>
-            </div>
-          </PageSection>
-
-          <PageSection title="元数据" description="保留 Datastore 的附加元数据，用于扩展和排查。">
-            <div class="detail-card p-4">
-              <pre
-                v-if="formattedMetadata"
-                class="overflow-x-auto rounded-[calc(var(--radius)-2px)] border border-border/60 bg-background/70 p-4 text-xs leading-6 text-foreground"
-              >{{ formattedMetadata }}</pre>
-              <div v-else class="text-sm text-muted-foreground">
-                当前没有元数据。
-              </div>
             </div>
           </PageSection>
 
@@ -604,11 +573,11 @@ watch(
             </div>
           </PageSection>
 
-          <PageSection title="结构化数据" description="这里展示 Datastore 原始结构化记录，便于确认数据已经入库并等待同步投影。">
+          <PageSection title="文档列表" description="Datastore 中的文档，以富文本为主表示，结构化元数据为副索引。">
             <div class="space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="text-sm text-muted-foreground">
-                  当前共 {{ datastoreRecords.length }} 条结构化记录，语义检索会基于这些记录的投影结果执行。
+                  当前共 {{ datastoreRecords.length }} 篇文档，语义检索会基于文档内容与元数据索引执行。
                 </div>
                 <Button type="button" variant="outline" size="sm" @click="loadDatastoreRecords">
                   <RefreshCw class="size-4" />
@@ -623,7 +592,7 @@ watch(
                 {{ recordsError }}
               </div>
               <div v-else-if="datastoreRecords.length === 0" class="detail-card p-4 text-sm text-muted-foreground">
-                当前还没有结构化记录。
+                当前还没有文档记录。
               </div>
               <div v-else class="space-y-3">
                 <article
@@ -632,17 +601,30 @@ watch(
                   class="detail-card p-4"
                 >
                   <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div class="text-sm font-medium text-foreground">{{ record.id }}</div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="text-sm font-medium text-foreground">{{ record.fileName }}</h3>
+                      <Badge variant="outline">{{ record.status }}</Badge>
+                    </div>
                     <div class="text-xs text-muted-foreground">
                       {{ formatDate(record.updatedAt) }}
                     </div>
                   </div>
+                  <p class="mt-3 text-sm leading-6 text-muted-foreground">
+                    {{ truncateContent(record.content) }}
+                  </p>
+                  <div v-if="parseMetadataJson(record.metadataJson)" class="mt-3 flex flex-wrap gap-2">
+                    <Badge
+                      v-for="(value, key) in parseMetadataJson(record.metadataJson)!"
+                      :key="String(key)"
+                      variant="secondary"
+                    >
+                      {{ key }}: {{ value }}
+                    </Badge>
+                  </div>
                   <div class="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
-                    <span>集合 {{ record.collectionId }}</span>
                     <span v-if="record.recordedAt">记录时间 {{ formatDate(record.recordedAt) }}</span>
                     <span>创建于 {{ formatDate(record.createdAt) }}</span>
                   </div>
-                  <pre class="mt-4 overflow-x-auto rounded-[calc(var(--radius)-2px)] border border-border/60 bg-background/70 p-4 text-xs leading-6 text-foreground">{{ formatRecordPreview(record.dataJson) }}</pre>
                 </article>
               </div>
             </div>
