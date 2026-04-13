@@ -180,27 +180,32 @@ CREATE INDEX idx_ds_doc_{prefix}_rating ON documents(_idx_{prefix}_rating)
 ### 4.1 DataStoreManager（数据存储管理门面）
 
 - 职责：提供集合和文档的完整 CRUD 操作，是所有外部调用的统一入口
-- 集合操作：创建、查询（按名称/类型）、更新、删除（级联删除文档）
-- 文档操作：创建、查询（按集合 + 过滤条件）、更新、删除
-- 创建集合时如果声明了属性定义，自动创建 Generated Column 索引
-- 创建集合时会自动确保一个系统托管的内部 Knowledge Base，并回填 `defaultKnowledgeBaseId`
-- 创建/更新集合时会将缺省的 `projectionConfigJson` 归一化为 `{}`，避免运行时写入 `NULL`
-- 集合级投影配置会被后续 datastore → knowledge base 同步链路复用
+- 集合操作：创建、查询（按名称 / 按 timeSeries 标记）、更新、删除（级联删除文档）
+- 文档操作：通过知识库 `DocumentRepository` 和 `DocumentIngester` 委托实现
+  - 添加文档：创建知识库文档记录（状态 CHUNKING），异步 ingest（分块 + embedding + FTS）
+  - 获取文档：按 ID 查询知识库文档
+  - 更新文档：按 `contentHash` 判断 content 是否变化，变化则触发重新 ingest；仅改 metadata 不触发
+  - 删除文档：委托 `KnowledgeBaseManager.removeDocument()`
+- 创建集合时如果声明了 FieldHint，自动在 `documents` 表创建 Generated Column + partial index
+- 创建集合时通过 `DatastoreKnowledgeBaseProvisioner` 自动确保一个系统托管的内部 Knowledge Base，并回填 `defaultKnowledgeBaseId`
+- 核心依赖均为 `@Nullable`（`KnowledgeBaseManager`、`DocumentIngester`、`DocumentRepository`、`DatastoreKnowledgeBaseProvisioner`），知识库模块未启用时降级为仅集合管理
 - 写操作标注 `@Transactional`
 
 ### 4.2 QueryEngine（动态查询引擎）
 
-- 职责：将用户的过滤、排序、分页条件转换为 SQLite SQL
-- 支持的过滤操作：`eq`（等于）、`ne`（不等于）、`gt`/`gte`/`lt`/`lte`（比较）、`contains`（文本包含）、`in`（枚举匹配）
-- 有 Generated Column 索引时使用索引列查询，否则降级为 `json_extract` 表达式
-- 排序支持 JSON 路径字段排序
+- 职责：将查询请求转换为针对 `documents` 表的参数化 SQL
+- 查询基础条件：`WHERE source_datastore_id = ? AND source_type = 'DATASTORE_DOCUMENT'`
+- 支持的过滤操作：`EQ`（等于）、`NE`（不等于）、`GT`/`GTE`/`LT`/`LTE`（比较）、`CONTAINS`（文本 LIKE + 通配符转义）、`IN`（枚举匹配，展开为多个 `?` 占位符）
+- 索引感知：有 Generated Column 的字段使用索引列名（`_idx_{prefix}_{field}`），无索引字段使用 `json_extract(metadata_json, '$.{field}')` 表达式
+- 支持时间范围过滤（`startTime` / `endTime`，基于 `COALESCE(recorded_at, created_at)`）
+- 排序支持 metadata 字段排序
 - 分页使用 `LIMIT` + `OFFSET`
 
 查询条件模型：
 
 ```java
 public record QueryFilter(
-    String field,       // JSON 路径，如 "rating"、"author"
+    String field,       // metadata 字段名，如 "rating"、"author"
     FilterOp op,        // 过滤操作
     Object value        // 过滤值
 ) {}
@@ -212,80 +217,94 @@ public enum FilterOp {
 public record QueryRequest(
     String collectionId,
     List<QueryFilter> filters,
-    String sortField,
-    SortDirection sortDirection,
+    @Nullable String sortField,
+    @Nullable SortDirection sortDirection,
     int offset,
-    int limit
+    int limit,
+    @Nullable String startTime,   // 时间范围起始 ISO 8601
+    @Nullable String endTime      // 时间范围结束 ISO 8601
 ) {}
 ```
 
 ### 4.3 AggregationEngine（时序聚合引擎）
 
-- 职责：为 METRIC 类型集合提供时间范围聚合查询
+- 职责：为时序集合提供时间范围聚合查询
+- 查询目标为 `documents` 表，按 `source_datastore_id` + `recorded_at` 范围过滤
 - 支持的聚合函数：`SUM`、`AVG`、`MIN`、`MAX`、`COUNT`
-- 支持按时间粒度分组：`DAY`、`WEEK`、`MONTH`
-- 基于 SQLite 的 `strftime` 函数实现时间分组
-- 返回聚合结果列表，每项包含时间桶和聚合值
+- 支持按时间粒度分组：`DAY`、`WEEK`、`MONTH`（基于 SQLite `strftime`）
+- 无时间分组时返回总计（`time_bucket = 'total'`）
+- 索引感知：与 QueryEngine 一致，有 Generated Column 用索引列，否则用 `json_extract`
 
 ```java
 public record AggregationRequest(
     String collectionId,
-    String field,           // 聚合字段，如 "weight"
-    AggregateFunction func, // SUM / AVG / MIN / MAX / COUNT
-    TimeGranularity groupBy,// DAY / WEEK / MONTH
-    String startTime,       // ISO 8601 起始时间
-    String endTime          // ISO 8601 结束时间
+    String field,                    // 聚合字段，如 "weight"
+    AggregateFunction func,          // SUM / AVG / MIN / MAX / COUNT
+    @Nullable TimeGranularity groupBy, // DAY / WEEK / MONTH（可选）
+    @Nullable String startTime,      // ISO 8601 起始时间
+    @Nullable String endTime         // ISO 8601 结束时间
 ) {}
 
 public record AggregationResult(
-    String timeBucket,  // 时间桶，如 "2026-03-01"
+    String timeBucket,  // 时间桶，如 "2026-03-01"、"total"
     double value        // 聚合值
 ) {}
 ```
 
-### 4.4 CollectionRepository / DocumentRepository
+### 4.4 CollectionRepository
 
-- 基于 JdbcTemplate 的 SQLite 存储层
-- CollectionRepository：集合表 CRUD + 按名称/类型查询
-- DocumentRepository：文档表 CRUD + 动态 SQL 查询 + 时序聚合
-- Generated Column 管理：创建/删除集合时动态添加/清理虚拟列和索引
+- 基于 JdbcTemplate 操作 `ds_collections` 表
+- 集合 CRUD + 按名称 / 按 `timeSeries` 标记查询
+- Generated Column 管理：在 `documents` 表上创建/删除虚拟列和 partial index（直接执行 DDL）
 
-### 4.5 Datastore → Knowledge 检索链路
+### 4.5 DatastoreKnowledgeBaseProvisioner（内部知识库编排器）
 
-- 每个 Datastore 默认对应一个内部 Knowledge Base
-- 结构化数据先经过 `projection_config_json` 投影为检索文本
-- 投影后的文本进入分块、向量索引和 FTS 索引
-- 会话绑定 Datastore 后，资料型问题统一通过 `knowledge.search` 命中对应作用域
-- `datastore.query_documents` 只负责结构化过滤、排序、分页，不承担语义检索职责
+- 接口定义在 `com.lifepilot.datastore.sync` 包
+- 职责：为每个集合确保内部知识库存在（`ensureDefaultKnowledgeBase`），删除集合时清理对应知识库（`deleteDefaultKnowledgeBase`）
+- 知识库的 `ON DELETE CASCADE` 外键自动级联删除所有关联的 documents 和 chunks
 
-### 4.6 DataStoreTool（Agent 工具集）
+### 4.6 读取路径
 
-注册为 BuiltinTool，提供 8 个操作供 Agent 调用：
+**语义检索（主路径）**：Agent 调用 `knowledge.search(datastoreId=X, query="...")`。文档已在知识库中，向量检索 + FTS → 返回命中文档。
 
-| 工具 ID | 操作 | 说明 |
-|---------|------|------|
-| `datastore.create_collection` | 创建集合 | 指定名称、类型、可选属性定义、可选 `projectionConfig` |
-| `datastore.list_collections` | 列出集合 | 返回所有集合及其属性定义 |
-| `datastore.delete_collection` | 删除集合 | 删除整个集合及其文档 |
-| `datastore.add_document` | 添加文档 | 向指定集合写入 JSON 文档 |
-| `datastore.query_documents` | 查询文档 | 按过滤条件查询，支持排序分页，仅用于结构化查询 |
-| `datastore.update_document` | 更新文档 | 按 ID 更新文档数据 |
-| `datastore.delete_document` | 删除文档 | 按 ID 删除文档 |
-| `datastore.aggregate` | 聚合查询 | METRIC 类型集合的时序聚合 |
+**结构化查询（精确路径）**：Agent 调用 `datastore(action="query")`。QueryEngine 生成 SQL 查询 `documents` 表，按 `source_datastore_id` 过滤，支持 metadata 字段过滤、排序、分页。
+
+**时序聚合（时序集合专用）**：Agent 调用 `datastore(action="aggregate")`。AggregationEngine 生成 SQL 聚合 `documents` 表，按 `source_datastore_id` + `recorded_at` 范围过滤。
+
+Agent 检索决策规则：
+- 能翻译成字段条件 → `datastore(action="query")`（快、精确）
+- 不能 → `knowledge.search`（语义、模糊）
+- 需要统计 → `datastore(action="aggregate")`（数值聚合）
+- 不确定 → `knowledge.search` 优先，必要时补充 `datastore(action="query")`
+
+### 4.7 StorageToolProvider + DatastoreActionDispatchExecutor（Agent 工具）
+
+注册为单个 BuiltinTool（`id = "datastore"`），通过 `action` 参数路由到 9 个操作：
+
+| action | 说明 | 关键参数 |
+|--------|------|---------|
+| `create-collection` | 创建集合 | `name`、`type`（"TIME_SERIES"/"GENERAL"）、`fieldHints`、`description` |
+| `list-collections` | 列出集合 | `type`（可选，按类型过滤） |
+| `update-collection` | 更新集合 | `collectionName`、`description`、`fieldHintsJson` |
+| `delete-collection` | 删除集合及其所有文档 | `collectionName` |
+| `insert` | 添加文档 | `collectionName`、`data`（content 富文本）、`metadataJson`（可选）、`recordedAt`（时序必填） |
+| `query` | 结构化查询 | `collectionName`、`filters`、`sortField`、`sortDirection`、`offset`、`limit`、`startTime`、`endTime` |
+| `update` | 更新文档 | `documentId`、`data`（content）、`metadataJson`（可选） |
+| `delete` | 删除文档 | `documentId` |
+| `aggregate` | 时序聚合 | `collectionName`、`field`、`function`、`groupBy`、`startTime`、`endTime` |
 
 Agent 使用示例：
-- 用户说「帮我记一下这本书：三体，刘慈欣，评分 5 分」
-- Agent 调用 `list_collections` 查找是否有「书单」集合
-- 如果没有，调用 `create_collection` 创建，属性定义包含 title(TEXT)、author(TEXT)、rating(NUMBER)
-- 调用 `add_document` 写入 `{"title":"三体","author":"刘慈欣","rating":5}`
+- 用户说「帮我记一下这本书：三体，刘慈欣，硬科幻，讲三体文明入侵地球，非常好看，评分 5 分」
+- Agent 调用 `list-collections` 查找是否有「书单」集合
+- 如果没有，调用 `create-collection` 创建，`fieldHints` 包含 rating(NUMBER)、author(TEXT)
+- 调用 `insert`，`data` 为 Agent 整理的富文本（保留"硬科幻"、"讲三体文明入侵地球"等描述性信息），`metadataJson` 为 `{"title":"三体","author":"刘慈欣","rating":5}`
 
-`create_collection` 的 `projectionConfig` 参数为可选项；如果未提供，系统会自动保存 `{}`，表示启用默认通用投影策略。
+### 4.8 DataStoreCrudAdapter（泛型领域适配器）
 
-### 4.7 DataStoreSkillProvider（内置 Skill 提供者）
-
-- 实现 `BuiltinSkillProvider` 接口，注册 DataStore 相关工具
-- 提供 Skill 定义蓝图，包含数据存储操作的指令模板
-- 通过 `@BuiltinSkill(id = "datastore", order = 5)` 注册，优先级高于具体业务 Skill
+- 为内置 Skill（Todo / Schedule / Habit 等）提供类型安全的 CRUD 适配层
+- 每个实例绑定一个 Collection（按 `CrudAdapterConfig` 配置），首次操作时幂等查找或创建
+- 实体序列化/反序列化通过 Jackson `ObjectMapper` 委托
+- 使用 double-checked locking 缓存 `collectionId`
 
 
 ## 5. 核心流程
@@ -296,25 +315,28 @@ Agent 使用示例：
 sequenceDiagram
     participant U as 用户
     participant AL as ReactAgentLoop
-    participant DST as DataStoreTool
+    participant DST as DatastoreActionDispatchExecutor
     participant DSM as DataStoreManager
-    participant DB as SQLite
+    participant KDR as DocumentRepository(knowledge)
+    participant DI as DocumentIngester
 
-    U->>AL: "帮我记一下这本书：三体，刘慈欣，评分5分"
-    AL->>DST: list_collections()
+    U->>AL: "帮我记一下这本书：三体，刘慈欣，硬科幻，评分5分"
+    AL->>DST: list-collections
     DST->>DSM: listCollections()
     DSM-->>DST: [] (空)
     DST-->>AL: 无"书单"集合
 
-    AL->>DST: create_collection("书单", DOCUMENT, properties=[...])
+    AL->>DST: create-collection("书单", fieldHints=[rating(NUMBER), author(TEXT)])
     DST->>DSM: createCollection(...)
-    DSM->>DB: INSERT INTO ds_collections
-    DSM->>DB: ALTER TABLE 添加 Generated Column + 索引
+    DSM->>KDR: 确保内部知识库
+    DSM->>KDR: ALTER TABLE documents 添加 Generated Column + partial index
     DSM-->>DST: collectionId
 
-    AL->>DST: add_document(collectionId, {"title":"三体","author":"刘慈欣","rating":5})
-    DST->>DSM: addDocument(...)
-    DSM->>DB: INSERT INTO ds_documents
+    AL->>DST: insert("书单", content="三体，刘慈欣著...", metadata={"title":"三体","rating":5})
+    DST->>DSM: addDocument(collectionId, content, metadataJson, null)
+    DSM->>KDR: INSERT INTO documents (status=CHUNKING)
+    DSM->>DI: ingestProjectedDocument(doc, content)
+    Note over DI: 异步分块 + embedding + FTS
     DSM-->>DST: documentId
     DST-->>AL: 成功
     AL-->>U: "已添加到书单：三体"
@@ -326,19 +348,20 @@ sequenceDiagram
 sequenceDiagram
     participant U as 用户
     participant AL as ReactAgentLoop
-    participant DST as DataStoreTool
+    participant DST as DatastoreActionDispatchExecutor
     participant DSM as DataStoreManager
     participant AGG as AggregationEngine
 
     U->>AL: "今天体重 72.5kg"
-    AL->>DST: add_document("体重记录", {"weight":72.5}, recordedAt=now)
+    AL->>DST: insert("体重记录", content="今天体重72.5kg", metadata={"weight":72.5}, recordedAt=now)
     DST->>DSM: addDocument(...)
     DSM-->>DST: documentId
 
     U->>AL: "这个月体重趋势怎么样？"
     AL->>DST: aggregate("体重记录", field="weight", func=AVG, groupBy=WEEK)
     DST->>DSM: aggregate(...)
-    DSM->>AGG: execute(request)
+    DSM->>AGG: buildAggregation(request)
+    Note over AGG: SELECT strftime(..., recorded_at), AVG(...)<br/>FROM documents WHERE source_datastore_id = ?
     AGG-->>DSM: [{"2026-W09": 73.1}, {"2026-W10": 72.8}, ...]
     DSM-->>DST: 聚合结果
     DST-->>AL: 周均值趋势数据
@@ -349,19 +372,21 @@ sequenceDiagram
 
 | 决策 | 选择 | 备选方案 | 理由 |
 |------|------|---------|------|
-| 存储模型 | JSON 文档 + 可选属性定义 | EAV 模型 / 动态建表 | JSON 文档最灵活，SQLite JSON 函数成熟；EAV 查询复杂度高；动态建表需要运行时 DDL 管理 |
-| 索引加速 | SQLite Generated Column + json_extract | 全表 JSON 扫描 / 独立索引表 | Generated Column 是 SQLite 原生特性，零额外存储（VIRTUAL），B-tree 索引性能等同普通列 |
-| 集合类型区分 | CollectionType 枚举（DOCUMENT/NOTE/METRIC） | 统一类型 | 三种类型的查询模式差异大：DOCUMENT 需过滤排序，NOTE 需全文搜索，METRIC 需时序聚合 |
-| 全文搜索 | FTS5 虚拟表 | json_extract LIKE | FTS5 支持分词、排名、高亮，性能远优于 LIKE 模糊匹配 |
+| 存储模型 | 文档优先 — content 富文本为主，metadata JSON 为副索引 | JSON 文档 + 投影同步 | 直接存入知识库消除双存储和同步延迟；content 保留用户原话中的描述性信息，embedding 质量更高 |
+| 文档表 | 复用知识库 `documents` 表 | 独立 `ds_documents` 表 | 一份数据、无同步延迟、检索路径统一；partial index 按 `source_datastore_id` 隔离 |
+| 索引加速 | SQLite Generated Column + json_extract (partial index) | 全表 JSON 扫描 / 独立索引表 | VIRTUAL Generated Column 零额外存储，partial index 仅扫描对应集合行 |
+| 集合类型区分 | `timeSeries` 布尔标记 | `CollectionType` 枚举 | 文档优先模型下 DOCUMENT/NOTE 行为一致，合并；METRIC 因聚合需求保留为时序标记 |
+| 字段定义 | FieldHint（无校验，3 种类型） | PropertyDefinition（有校验，9 种类型） | 去掉写入校验降低复杂度，3 种 SQLite 亲和类型（TEXT/NUMBER/BOOLEAN）覆盖所有索引需求 |
+| 集合上下文注入 | contextPrefix 注入 chunk 级，不拼入 content | 拼入 content | content 保持干净、diff 简单；集合描述变更后重新 ingest 时自动使用最新描述 |
 | 时序聚合 | SQLite strftime 分组 | 应用层聚合 | SQLite 内置时间函数足够，数据量在个人助手场景下不会成为瓶颈 |
 | 与记忆系统关系 | 正交独立 | 复用 L3 语义记忆 | 记忆系统存储 Agent 隐式认知数据，DataStore 存储用户显式管理的领域数据，职责不同 |
-| 工具暴露方式 | BuiltinTool（8 个操作） | 每个集合动态生成工具 | 固定工具集更简单，Agent 通过参数区分集合；动态工具会导致工具注册表膨胀 |
+| 工具暴露方式 | 单个 BuiltinTool（9 个 action） | 每个集合动态生成工具 | 固定工具集更简单，Agent 通过参数区分集合；动态工具会导致工具注册表膨胀 |
 
 ### 6.1 调研参考
 
-**Notion 数据模型**：Notion 采用「Everything is a Block」理念，Database 是特殊的 Block 容器，每个 Page 是 Database 中的一行。Property 类型丰富（22 种），包括 checkbox、date、select、relation 等。知微借鉴其 Database + Property 概念，简化为 Collection + PropertyDefinition，属性类型精简为 9 种覆盖个人助手场景。
+**Notion 数据模型**：Notion 采用「Everything is a Block」理念，Database 是特殊的 Block 容器，每个 Page 是 Database 中的一行。知微借鉴其 Database + Property 概念，简化为 Collection + FieldHint，属性类型精简为 3 种覆盖个人助手场景。
 
-**LangGraph BaseStore**：LangChain/LangGraph 的长期记忆采用 namespace + key-value JSON 文档模型，支持层级命名空间和可选向量搜索。知微借鉴其 JSON 文档存储理念，但增加了集合级属性定义和时序聚合能力，更适合结构化数据管理。
+**LangGraph BaseStore**：LangChain/LangGraph 的长期记忆采用 namespace + key-value JSON 文档模型，支持层级命名空间和可选向量搜索。知微借鉴其 JSON 文档存储理念，但增加了集合级字段提示和时序聚合能力，更适合结构化数据管理。
 
 **SQLite JSON + Generated Column**：SQLite 3.31+ 支持 Generated Column，结合 json_extract 可创建虚拟列并建立 B-tree 索引，查询性能等同普通列。这是本模块索引加速的核心技术，避免了引入额外存储引擎。
 
@@ -371,11 +396,10 @@ sequenceDiagram
 
 | 依赖模块 | 交互方式 | 说明 |
 |---------|---------|------|
-| Tool System (`com.lifepilot.tool`) | BuiltinTool 注册 | DataStoreTool 注册到 DynamicToolRegistry |
-| Skill System (`com.lifepilot.skill`) | BuiltinSkillProvider | DataStoreSkillProvider 提供 Skill 定义 |
-| Sync Engine (`com.lifepilot.sync`) | SyncConnector 扩展 | 未来扩展：DataStoreSyncAdapter 支持同步扩展数据 |
-| Workflow (`com.lifepilot.workflow`) | WorkflowStep 扩展 | 未来扩展：DataStoreWorkflowAdapter 支持工作流读写 |
-| Prompt Management (`com.lifepilot.prompt`) | PromptRegistry | 数据存储 Skill 指令模板 |
+| Tool System (`com.lifepilot.meta.infra.storage`) | BuiltinTool 注册 | `StorageToolProvider` 注册 `datastore` 工具，`DatastoreActionDispatchExecutor` 路由 9 个 action |
+| Skill System (`com.lifepilot.skill`) | Skill 定义 | `src/main/resources/skills/datastore/SKILL.md`，通过 `file.read(skill="datastore")` 按需激活 |
+| Knowledge System (`com.lifepilot.knowledge`) | 文档存储 + ingest | 文档直接存入 `documents` 表，通过 `DocumentIngester` 异步分块 + embedding |
+| Knowledge System (`com.lifepilot.knowledge`) | 语义检索 | Agent 调用 `knowledge.search(datastoreId=X)` 检索 datastore 文档 |
 
 ## 8. 配置参考
 
@@ -384,7 +408,7 @@ sequenceDiagram
 | `lifepilot.datastore.enabled` | `true` | 通用数据存储总开关 |
 | `lifepilot.datastore.max-collections` | `100` | 最大集合数量 |
 | `lifepilot.datastore.max-documents-per-collection` | `10000` | 单集合最大文档数 |
-| `lifepilot.datastore.max-document-size-bytes` | `65536` | 单文档 JSON 最大字节数（64KB） |
+| `lifepilot.datastore.max-document-size-bytes` | `65536` | 单文档最大字节数（64KB） |
 | `lifepilot.datastore.default-page-size` | `20` | 默认分页大小 |
 | `lifepilot.datastore.max-page-size` | `100` | 最大分页大小 |
-| `lifepilot.datastore.index-threshold` | `100` | 文档数超过此阈值时建议创建属性索引 |
+| `lifepilot.datastore.index-threshold` | `100` | 文档数超过此阈值时建议创建字段索引 |

@@ -235,7 +235,6 @@ public class DataStoreManager {
             }
         }
 
-        String contextPrefix = buildContextPrefix(collection);
         String docId = UUID.randomUUID().toString();
         String sourceKey = "DATASTORE:" + collectionId + ":" + docId;
         String title = extractTitle(metadataJson);
@@ -387,14 +386,6 @@ public class DataStoreManager {
             log.warn("字段提示反序列化失败: json={}, error={}", fieldHintsJson, e.getMessage());
             return List.of();
         }
-    }
-
-    private String buildContextPrefix(Collection collection) {
-        var sb = new StringBuilder("[").append(collection.name()).append("]");
-        if (collection.description() != null && !collection.description().isBlank()) {
-            sb.append(" ").append(collection.description());
-        }
-        return sb.toString();
     }
 
     @Nullable

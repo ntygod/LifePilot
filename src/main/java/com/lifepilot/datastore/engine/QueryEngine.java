@@ -40,8 +40,11 @@ public class QueryEngine {
                                     Set<String> indexedFields,
                                     String collectionIdPrefix) {
         var sql = new StringBuilder(
-                "SELECT id, knowledge_base_id, content, metadata_json, recorded_at, " +
-                "source_datastore_id, source_key, created_at, updated_at" +
+                "SELECT id, knowledge_base_id, file_name, file_path, file_size, mime_type, " +
+                "content_hash, status, chunk_count, entity_count, error_message, " +
+                "last_processed_stage, metadata_json, created_at, updated_at, " +
+                "source_type, source_key, source_datastore_id, source_collection_id, " +
+                "source_ref_json, content, recorded_at" +
                 " FROM documents WHERE source_datastore_id = ? AND source_type = 'DATASTORE_DOCUMENT'");
         var params = new ArrayList<>();
         params.add(request.collectionId());

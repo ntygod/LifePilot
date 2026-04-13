@@ -224,21 +224,11 @@ public class DatastoreController {
         if (request.name() == null || request.name().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Datastore 名称不能为空");
         }
-        boolean timeSeries = request.type() != null
-                && request.type().strip().equalsIgnoreCase("TIME_SERIES");
-
-        List<FieldHint> fieldHints = null;
-        if (request.properties() != null && !request.properties().isEmpty()) {
-            fieldHints = request.properties().stream()
-                    .map(dto -> new FieldHint(dto.name(), dto.type(), dto.description()))
-                    .toList();
-        }
-
         try {
             var collection = dataStoreManager.createCollection(
                     request.name().strip(),
-                    timeSeries,
-                    fieldHints,
+                    request.timeSeries(),
+                    request.fieldHints(),
                     request.description(),
                     null);
             log.info("Datastore 创建成功: id={}, name={}, timeSeries={}", collection.id(), collection.name(), collection.timeSeries());
@@ -261,7 +251,7 @@ public class DatastoreController {
                                              @RequestBody UpdateDatastoreRequest request) {
         var existing = dataStoreManager.getCollection(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
-        dataStoreManager.updateCollection(id, request.description(), null);
+        dataStoreManager.updateCollection(id, request.description(), request.fieldHintsJson());
         log.info("Datastore 更新成功: id={}", id);
         var updated = dataStoreManager.getCollection(id).orElse(existing);
         return ApiResponse.ok(updated);
