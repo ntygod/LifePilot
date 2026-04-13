@@ -40,8 +40,9 @@ public class QueryEngine {
                                     Set<String> indexedFields,
                                     String collectionIdPrefix) {
         var sql = new StringBuilder(
-                "SELECT id, collection_id, data_json, recorded_at, source_type, knowledge_document_id, created_at, updated_at" +
-                " FROM ds_documents WHERE collection_id = ?");
+                "SELECT id, knowledge_base_id, content, metadata_json, recorded_at, " +
+                "source_datastore_id, source_key, created_at, updated_at" +
+                " FROM documents WHERE source_datastore_id = ? AND source_type = 'DATASTORE_DOCUMENT'");
         var params = new ArrayList<>();
         params.add(request.collectionId());
 
@@ -106,7 +107,7 @@ public class QueryEngine {
         if (indexedFields.contains(field)) {
             return "_idx_" + collectionIdPrefix + "_" + field;
         }
-        return "json_extract(data_json, '$." + field + "')";
+        return "json_extract(metadata_json, '$." + field + "')";
     }
 
     /**

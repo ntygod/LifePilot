@@ -8,10 +8,9 @@ import com.lifepilot.datastore.model.AggregateFunction;
 import com.lifepilot.datastore.model.AggregationRequest;
 import com.lifepilot.datastore.model.AggregationResult;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
-import com.lifepilot.datastore.model.Document;
+import com.lifepilot.datastore.model.FieldHint;
 import com.lifepilot.datastore.model.FilterOp;
-import com.lifepilot.datastore.model.PropertyDefinition;
+import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.datastore.model.QueryFilter;
 import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.model.SortDirection;
@@ -84,17 +83,17 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleCreateCollection(ToolInput input) {
         try {
             String name = input.getParam("name", String.class);
-            CollectionType type = CollectionType.valueOf(input.getParam("type", String.class).toUpperCase());
-            Object rawProperties = input.parameters().get("properties");
+            String typeStr = input.getOptionalParam("type", String.class).orElse("GENERAL");
+            boolean timeSeries = typeStr.equalsIgnoreCase("TIME_SERIES");
+            Object rawFieldHints = input.parameters().get("fieldHints");
             String description = input.getOptionalParam("description", String.class).orElse(null);
-            String projectionConfig = input.getOptionalParam("projectionConfig", String.class).orElse(null);
 
-            var propDefs = parsePropertyDefinitions(rawProperties);
-            Collection created = dataStoreManager.createCollection(name, type, propDefs, description, null, projectionConfig);
+            var fieldHints = parseFieldHints(rawFieldHints);
+            Collection created = dataStoreManager.createCollection(name, timeSeries, fieldHints, description, null);
             var result = new HashMap<String, Object>();
             result.put("id", created.id());
             result.put("name", created.name());
-            result.put("type", created.type().name());
+            result.put("timeSeries", created.timeSeries());
             if (created.defaultKnowledgeBaseId() != null && !created.defaultKnowledgeBaseId().isBlank()) {
                 result.put("defaultKnowledgeBaseId", created.defaultKnowledgeBaseId());
             }
@@ -108,9 +107,14 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
     private ToolResult handleListCollections(ToolInput input) {
         try {
             String typeStr = input.getOptionalParam("type", String.class).orElse(null);
-            List<Collection> collections = typeStr != null
-                    ? dataStoreManager.listCollections(CollectionType.valueOf(typeStr.toUpperCase()))
-                    : dataStoreManager.listCollections();
+            List<Collection> collections;
+            if (typeStr != null && typeStr.equalsIgnoreCase("TIME_SERIES")) {
+                collections = dataStoreManager.listCollections(true);
+            } else if (typeStr != null && typeStr.equalsIgnoreCase("GENERAL")) {
+                collections = dataStoreManager.listCollections(false);
+            } else {
+                collections = dataStoreManager.listCollections();
+            }
             List<Map<String, Object>> items = collections.stream().map(this::collectionToMap).toList();
             return ToolResult.success(Map.of("collections", items));
         } catch (Exception e) {
@@ -125,9 +129,8 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
             Collection collection = dataStoreManager.findCollection(collectionName)
                     .orElseThrow(() -> new IllegalArgumentException("集合不存在: " + collectionName));
             String description = input.getOptionalParam("description", String.class).orElse(null);
-            String metadataJson = input.getOptionalParam("metadataJson", String.class).orElse(null);
-            String projectionConfig = input.getOptionalParam("projectionConfig", String.class).orElse(null);
-            boolean success = dataStoreManager.updateCollection(collection.id(), description, metadataJson, projectionConfig);
+            String fieldHintsJson = input.getOptionalParam("fieldHintsJson", String.class).orElse(null);
+            boolean success = dataStoreManager.updateCollection(collection.id(), description, fieldHintsJson);
             return success
                     ? ToolResult.success(Map.of("updated", true, "id", collection.id(), "name", collection.name()))
                     : ToolResult.error("集合更新失败: " + collectionName);
@@ -179,10 +182,11 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
             String collectionName = input.getParam("collectionName", String.class);
             String data = resolveJsonParam(input, "data");
             String recordedAt = input.getOptionalParam("recordedAt", String.class).orElse(null);
+            String metadataJson = input.getOptionalParam("metadataJson", String.class).orElse(null);
             Collection collection = dataStoreManager.findCollection(collectionName)
                     .orElseThrow(() -> new IllegalArgumentException("集合不存在: " + collectionName));
-            Document doc = dataStoreManager.addDocument(collection.id(), data, recordedAt);
-            return ToolResult.success(Map.of("id", doc.id(), "collectionId", doc.collectionId()));
+            String docId = dataStoreManager.addDocument(collection.id(), data, metadataJson, recordedAt);
+            return ToolResult.success(Map.of("id", docId, "collectionId", collection.id()));
         } catch (Exception e) {
             log.error("添加文档失败: {}", e.getMessage(), e);
             return ToolResult.error("添加文档失败: " + e.getMessage());
@@ -193,7 +197,8 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
         try {
             String documentId = input.getParam("documentId", String.class);
             String data = resolveJsonParam(input, "data");
-            boolean success = dataStoreManager.updateDocument(documentId, data);
+            String metadataJson = input.getOptionalParam("metadataJson", String.class).orElse(null);
+            boolean success = dataStoreManager.updateDocument(documentId, data, metadataJson);
             return success ? ToolResult.success(Map.of("updated", true))
                     : ToolResult.error("文档不存在: id=" + documentId);
         } catch (Exception e) {
@@ -284,10 +289,9 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
         var map = new HashMap<String, Object>();
         map.put("id", col.id());
         map.put("name", col.name());
-        map.put("type", col.type().name());
+        map.put("timeSeries", col.timeSeries());
         if (col.description() != null) map.put("description", col.description());
-        if (col.propertiesJson() != null) map.put("propertiesJson", col.propertiesJson());
-        if (col.projectionConfigJson() != null) map.put("projectionConfigJson", col.projectionConfigJson());
+        if (col.fieldHintsJson() != null) map.put("fieldHintsJson", col.fieldHintsJson());
         if (col.defaultKnowledgeBaseId() != null) map.put("defaultKnowledgeBaseId", col.defaultKnowledgeBaseId());
         map.put("createdAt", col.createdAt());
         map.put("updatedAt", col.updatedAt());
@@ -297,22 +301,22 @@ public class DatastoreActionDispatchExecutor extends ActionDispatchExecutor {
     private Map<String, Object> documentToMap(Document doc) {
         var map = new HashMap<String, Object>();
         map.put("id", doc.id());
-        map.put("collectionId", doc.collectionId());
-        map.put("dataJson", doc.dataJson());
+        if (doc.sourceDatastoreId() != null) map.put("collectionId", doc.sourceDatastoreId());
+        if (doc.content() != null) map.put("content", doc.content());
         if (doc.recordedAt() != null) map.put("recordedAt", doc.recordedAt());
-        if (doc.sourceType() != null) map.put("sourceType", doc.sourceType());
-        if (doc.knowledgeDocumentId() != null) map.put("knowledgeDocumentId", doc.knowledgeDocumentId());
+        map.put("sourceType", doc.sourceType().name());
+        map.put("fileName", doc.fileName());
         map.put("createdAt", doc.createdAt());
         map.put("updatedAt", doc.updatedAt());
         return Map.copyOf(map);
     }
 
-    private List<PropertyDefinition> parsePropertyDefinitions(Object rawProperties) throws JsonProcessingException {
-        return switch (rawProperties) {
+    private List<FieldHint> parseFieldHints(Object rawFieldHints) throws JsonProcessingException {
+        return switch (rawFieldHints) {
             case null -> null;
-            case String propsJson -> objectMapper.readValue(propsJson, new TypeReference<>() {});
+            case String json -> objectMapper.readValue(json, new TypeReference<>() {});
             case List<?> rawList -> objectMapper.convertValue(rawList, new TypeReference<>() {});
-            default -> throw new IllegalArgumentException("properties 参数类型不匹配: 期望数组或 JSON 字符串");
+            default -> throw new IllegalArgumentException("fieldHints 参数类型不匹配: 期望数组或 JSON 字符串");
         };
     }
 

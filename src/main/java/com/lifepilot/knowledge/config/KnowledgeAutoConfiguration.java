@@ -22,7 +22,6 @@ import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeSyncJobRepository;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.knowledge.sync.DatastoreDocumentProjector;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -188,12 +187,6 @@ public class KnowledgeAutoConfiguration {
     public KnowledgeSyncJobRepository knowledgeSyncJobRepository(JdbcTemplate jdbcTemplate,
                                                                  ObjectMapper objectMapper) {
         return new KnowledgeSyncJobRepository(jdbcTemplate, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public DatastoreDocumentProjector datastoreDocumentProjector(ObjectMapper objectMapper) {
-        return new DatastoreDocumentProjector(objectMapper);
     }
 
     // ---- 索引服务 ----

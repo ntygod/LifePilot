@@ -1,7 +1,6 @@
 package com.lifepilot.knowledge.config;
 
 import com.lifepilot.datastore.config.DataStoreAutoConfiguration;
-import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.chunking.*;
@@ -15,8 +14,6 @@ import com.lifepilot.knowledge.ingest.DocumentIngester;
 import com.lifepilot.knowledge.parser.FormatDetector;
 import com.lifepilot.knowledge.repository.*;
 import com.lifepilot.knowledge.retrieve.*;
-import com.lifepilot.knowledge.sync.DataStoreKnowledgeSyncJobPublisher;
-import com.lifepilot.knowledge.sync.DatastoreDocumentProjector;
 import com.lifepilot.knowledge.sync.DefaultDatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.knowledge.sync.KnowledgeSyncWorker;
 import com.lifepilot.knowledge.util.TokenCounter;
@@ -103,8 +100,7 @@ public class KnowledgeRuntimeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
-    public GraphKnowledgeSearcher graphKnowledgeSearcher(SemanticMemory semanticMemory,
+    public GraphKnowledgeSearcher graphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
                                                           DocumentChunkRepository chunkRepository,
                                                           DocumentRepository docRepository) {
         return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository);
@@ -150,27 +146,6 @@ public class KnowledgeRuntimeAutoConfiguration {
     @ConditionalOnMissingBean
     public RetrievalEvaluator retrievalEvaluator(DocumentRetriever documentRetriever) {
         return new RetrievalEvaluator(documentRetriever);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(DataStoreKnowledgeSyncPublisher.class)
-    @ConditionalOnBean({
-            KnowledgeBaseDatastoreRepository.class,
-            KnowledgeSyncJobRepository.class,
-            com.lifepilot.datastore.repository.CollectionRepository.class,
-            com.lifepilot.datastore.repository.DocumentRepository.class
-    })
-    public DataStoreKnowledgeSyncPublisher dataStoreKnowledgeSyncPublisher(
-            KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
-            KnowledgeSyncJobRepository knowledgeSyncJobRepository,
-            com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository,
-            DatastoreDocumentProjector datastoreDocumentProjector) {
-        return new DataStoreKnowledgeSyncJobPublisher(
-                knowledgeBaseDatastoreRepository,
-                knowledgeSyncJobRepository,
-                datastoreCollectionRepository,
-                datastoreDocumentProjector
-        );
     }
 
     @Bean
@@ -257,7 +232,6 @@ public class KnowledgeRuntimeAutoConfiguration {
             KnowledgeSyncJobRepository.class,
             KnowledgeBaseDatastoreRepository.class,
             com.lifepilot.datastore.repository.CollectionRepository.class,
-            com.lifepilot.datastore.repository.DocumentRepository.class,
             DocumentRepository.class,
             KnowledgeBaseManager.class,
             DocumentIngester.class
@@ -266,20 +240,16 @@ public class KnowledgeRuntimeAutoConfiguration {
             KnowledgeSyncJobRepository knowledgeSyncJobRepository,
             KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
             com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository,
-            com.lifepilot.datastore.repository.DocumentRepository datastoreDocumentRepository,
             DocumentRepository knowledgeDocumentRepository,
             KnowledgeBaseManager knowledgeBaseManager,
-            DocumentIngester documentIngester,
-            DatastoreDocumentProjector datastoreDocumentProjector) {
+            DocumentIngester documentIngester) {
         return new KnowledgeSyncWorker(
                 knowledgeSyncJobRepository,
                 knowledgeBaseDatastoreRepository,
                 datastoreCollectionRepository,
-                datastoreDocumentRepository,
                 knowledgeDocumentRepository,
                 knowledgeBaseManager,
-                documentIngester,
-                datastoreDocumentProjector
+                documentIngester
         );
     }
 }
