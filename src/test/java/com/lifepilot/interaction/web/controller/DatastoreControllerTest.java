@@ -2,7 +2,6 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
@@ -97,8 +96,7 @@ class DatastoreControllerTest {
         mockMvc.perform(get("/api/datastores/ds-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value("ds-1"))
-                .andExpect(jsonPath("$.data.name").value("知天命素材库"))
-                .andExpect(jsonPath("$.data.type").value("DOCUMENT"));
+                .andExpect(jsonPath("$.data.name").value("知天命素材库"));
     }
 
     @Test
@@ -170,21 +168,31 @@ class DatastoreControllerTest {
                 collection("ds-1", "知天命素材库", "小说世界观资料")
         ));
         when(dataStoreManager.listDocuments("ds-1")).thenReturn(List.of(
-                new com.lifepilot.datastore.model.Document(
+                new Document(
                         "record-1",
-                        "ds-1",
-                        "{\"title\":\"林夜\"}",
-                        null,
-                        "2026-03-27T00:00:00Z",
-                        "2026-03-27T00:30:00Z"
+                        "kb-001",
+                        "林夜",
+                        "datastore://ds-1/record-1",
+                        100,
+                        "text/plain",
+                        "hash",
+                        DocumentStatus.READY,
+                        0, 0, null, null,
+                        Map.of(),
+                        Instant.parse("2026-03-27T00:00:00Z"),
+                        Instant.parse("2026-03-27T00:30:00Z"),
+                        DocumentSourceType.DATASTORE_DOCUMENT,
+                        "DATASTORE:ds-1:record-1",
+                        "ds-1", null,
+                        Map.of(),
+                        "{\"title\":\"林夜\"}", null
                 )
         ));
 
         mockMvc.perform(get("/api/datastores/ds-1/records"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
-                .andExpect(jsonPath("$.data[0].id").value("record-1"))
-                .andExpect(jsonPath("$.data[0].collectionId").value("ds-1"));
+                .andExpect(jsonPath("$.data[0].id").value("record-1"));
     }
 
     @Test
@@ -213,7 +221,8 @@ class DatastoreControllerTest {
                         "FILE:doc-1",
                         "ds-1",
                         null,
-                        Map.of()
+                        Map.of(),
+                        null, null
                 ),
                 new Document(
                         "doc-2",
@@ -235,7 +244,8 @@ class DatastoreControllerTest {
                         "FILE:doc-2",
                         "ds-other",
                         null,
-                        Map.of()
+                        Map.of(),
+                        null, null
                 ),
                 new Document(
                         "doc-3",
@@ -257,7 +267,8 @@ class DatastoreControllerTest {
                         "DATASTORE:ds-1:doc-3",
                         "ds-1",
                         "collection-1",
-                        Map.of()
+                        Map.of(),
+                        null, null
                 )
         ));
 
@@ -274,17 +285,13 @@ class DatastoreControllerTest {
                 collection("ds-1", "知天命素材库", "小说世界观资料", "kb-internal")
         ));
         when(knowledgeBaseProperties.maxFileSize()).thenReturn(10L * 1024 * 1024);
-        // mock addFileReference 返回文件引用文档
-        var dsDoc = com.lifepilot.datastore.model.Document.builder()
-                .id("ds-doc-1").collectionId("ds-1").dataJson("{}").createdAt("now").updatedAt("now").build();
-        when(dataStoreManager.addFileReference(eq("ds-1"), eq("人物设定.md"), anyLong(), anyString(), isNull()))
-                .thenReturn(dsDoc);
         // mock ingest 返回已完成的 future
-        var knowledgeDoc = new com.lifepilot.knowledge.model.Document(
+        var knowledgeDoc = new Document(
                 "kb-doc-1", "kb-internal", "人物设定.md", "/tmp/test.md", 6L, "", "",
-                com.lifepilot.knowledge.model.DocumentStatus.READY, 1, 100,
-                null, null, java.util.Map.of(), java.time.Instant.now(), java.time.Instant.now(),
-                com.lifepilot.knowledge.model.DocumentSourceType.FILE, null, "ds-1", null, java.util.Map.of());
+                DocumentStatus.READY, 1, 100,
+                null, null, Map.of(), java.time.Instant.now(), java.time.Instant.now(),
+                DocumentSourceType.FILE, null, "ds-1", null, Map.of(),
+                null, null);
         when(documentIngester.ingest(eq("kb-internal"), any(java.nio.file.Path.class), eq("人物设定.md"), eq("ds-1")))
                 .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(knowledgeDoc));
 
@@ -302,7 +309,6 @@ class DatastoreControllerTest {
                 .andExpect(jsonPath("$.data.fileName").value("人物设定.md"));
 
         verify(documentIngester).ingest(eq("kb-internal"), any(java.nio.file.Path.class), eq("人物设定.md"), eq("ds-1"));
-        verify(dataStoreManager).linkKnowledgeDocument("ds-doc-1", "kb-doc-1");
     }
 
     private Collection collection(String id, String name, String description) {
@@ -314,9 +320,7 @@ class DatastoreControllerTest {
                 id,
                 name,
                 description,
-                CollectionType.DOCUMENT,
-                null,
-                null,
+                false,
                 null,
                 defaultKnowledgeBaseId,
                 null,

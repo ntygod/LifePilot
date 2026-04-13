@@ -114,10 +114,7 @@ public class DocumentRepository {
      */
     public Optional<Document> findById(String id) {
         List<Document> results = jdbcTemplate.query(
-                """
-                SELECT """ + ALL_COLUMNS + """
-                FROM documents WHERE id = ?
-                """,
+                "SELECT " + ALL_COLUMNS + " FROM documents WHERE id = ?",
                 rowMapper, id);
         return results.stream().findFirst();
     }
@@ -130,10 +127,7 @@ public class DocumentRepository {
      */
     public List<Document> findByKnowledgeBaseId(String knowledgeBaseId) {
         return jdbcTemplate.query(
-                """
-                SELECT """ + ALL_COLUMNS + """
-                FROM documents WHERE knowledge_base_id = ?
-                """,
+                "SELECT " + ALL_COLUMNS + " FROM documents WHERE knowledge_base_id = ?",
                 rowMapper, knowledgeBaseId);
     }
 
@@ -142,10 +136,7 @@ public class DocumentRepository {
      */
     public Optional<Document> findByKnowledgeBaseIdAndSourceKey(String knowledgeBaseId, String sourceKey) {
         List<Document> results = jdbcTemplate.query(
-                """
-                SELECT """ + ALL_COLUMNS + """
-                FROM documents WHERE knowledge_base_id = ? AND source_key = ?
-                """,
+                "SELECT " + ALL_COLUMNS + " FROM documents WHERE knowledge_base_id = ? AND source_key = ?",
                 rowMapper, knowledgeBaseId, sourceKey);
         return results.stream().findFirst();
     }
@@ -157,13 +148,8 @@ public class DocumentRepository {
                                                                                   String datastoreId,
                                                                                   DocumentSourceType sourceType) {
         return jdbcTemplate.query(
-                """
-                SELECT """ + ALL_COLUMNS + """
-                FROM documents
-                WHERE knowledge_base_id = ?
-                  AND source_datastore_id = ?
-                  AND source_type = ?
-                """,
+                "SELECT " + ALL_COLUMNS +
+                " FROM documents WHERE knowledge_base_id = ? AND source_datastore_id = ? AND source_type = ?",
                 rowMapper,
                 knowledgeBaseId,
                 datastoreId,
@@ -316,12 +302,12 @@ public class DocumentRepository {
 
     /** RowMapper：将 ResultSet 行映射为 Document record。 */
     /** 完整 SELECT 列列表 — 包含所有列用于标准查询。 */
-    private static final String ALL_COLUMNS = """
-            id, knowledge_base_id, file_name, file_path, file_size, mime_type,
-            content_hash, status, chunk_count, entity_count, error_message,
-            last_processed_stage, metadata_json, created_at, updated_at,
-            source_type, source_key, source_datastore_id, source_collection_id,
-            source_ref_json, content, recorded_at""";
+    private static final String ALL_COLUMNS =
+            "id, knowledge_base_id, file_name, file_path, file_size, mime_type, " +
+            "content_hash, status, chunk_count, entity_count, error_message, " +
+            "last_processed_stage, metadata_json, created_at, updated_at, " +
+            "source_type, source_key, source_datastore_id, source_collection_id, " +
+            "source_ref_json, content, recorded_at";
 
     private Document mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new Document(

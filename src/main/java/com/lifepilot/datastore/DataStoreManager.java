@@ -243,6 +243,8 @@ public class DataStoreManager {
         String filePath = "datastore://" + collectionId + "/" + docId;
         String contentHash = sha256(content);
         String normalizedMetadata = metadataJson != null ? metadataJson : "{}";
+        // metadata_json 列存储结构化元数据，QueryEngine 的 json_extract 直接查询此列
+        Map<String, String> metadataMap = parseMetadataToStringMap(normalizedMetadata);
 
         var doc = new Document(
                 docId,
@@ -253,7 +255,7 @@ public class DataStoreManager {
                 contentHash,
                 DocumentStatus.CHUNKING,
                 0, 0, null, null,
-                Map.of("syncSource", "datastore"),
+                metadataMap,
                 Instant.now(), Instant.now(),
                 DocumentSourceType.DATASTORE_DOCUMENT,
                 sourceKey, collectionId, null,
@@ -263,6 +265,10 @@ public class DataStoreManager {
 
         if (knowledgeDocRepository != null) {
             knowledgeDocRepository.save(doc);
+            // save() 通过 serializeMap(metadata) 写入 metadata_json，
+            // 但 Map<String,String> 会丢失数值类型（"5" 而不是 5），
+            // 需要用原始 JSON 覆盖以保证 json_extract 的类型正确性
+            knowledgeDocRepository.updateMetadataJson(docId, normalizedMetadata);
         }
 
         // 异步 ingest
@@ -420,6 +426,22 @@ public class DataStoreManager {
         catch (Exception cleanupEx) {
             log.error("清理半成品集合失败: datastoreId={}", collection.id(), cleanupEx);
             cause.addSuppressed(cleanupEx);
+        }
+    }
+
+    /** 将 metadataJson 解析为 Map&lt;String, String&gt; — 值统一 toString。 */
+    private Map<String, String> parseMetadataToStringMap(String metadataJson) {
+        try {
+            var node = objectMapper.readTree(metadataJson);
+            var map = new java.util.LinkedHashMap<String, String>();
+            node.fields().forEachRemaining(entry ->
+                    map.put(entry.getKey(), entry.getValue().isTextual()
+                            ? entry.getValue().asText()
+                            : entry.getValue().toString()));
+            return Map.copyOf(map);
+        } catch (JsonProcessingException e) {
+            log.warn("metadata JSON 解析失败，使用空 Map: {}", e.getMessage());
+            return Map.of();
         }
     }
 

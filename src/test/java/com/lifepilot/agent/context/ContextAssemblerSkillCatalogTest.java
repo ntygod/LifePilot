@@ -4,7 +4,6 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -226,8 +225,8 @@ class ContextAssemblerSkillCatalogTest {
                 .thenReturn(List.of("kb-xhs"));
         when(collectionRepository.findById("ds-xhs"))
                 .thenReturn(java.util.Optional.of(new Collection(
-                        "ds-xhs", "小红书集合", "春季旅游素材", CollectionType.DOCUMENT,
-                        null, "{}", null, null, null, Instant.now().toString(), Instant.now().toString()
+                        "ds-xhs", "小红书集合", "春季旅游素材", false,
+                        null, null, null, Instant.now().toString(), Instant.now().toString()
                 )));
         when(knowledgeBaseRepository.findById("kb-xhs"))
                 .thenReturn(java.util.Optional.of(new KnowledgeBase(
@@ -250,7 +249,7 @@ class ContextAssemblerSkillCatalogTest {
 
         assertThat(result)
                 .contains("<active_knowledge_bindings>")
-                .contains("小红书集合 [DOCUMENT] (ds-xhs)")
+                .contains("小红书集合 [GENERAL] (ds-xhs)")
                 .contains("小红书资料库 (kb-xhs)")
                 .contains("knowledge.search");
     }
