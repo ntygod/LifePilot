@@ -35,7 +35,8 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", List.of(), null, null, 0, 10);
         var result = engine.buildQuery(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("SELECT * FROM ds_documents WHERE collection_id = ?");
+        assertThat(result.sql()).contains("FROM documents WHERE source_datastore_id = ?");
+        assertThat(result.sql()).contains("source_type = 'DATASTORE_DOCUMENT'");
         assertThat(result.sql()).contains("LIMIT ?");
         assertThat(result.params()).contains("col-123");
         assertThat(result.params()).contains(10);
@@ -76,7 +77,7 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", filters, null, null, 0, 10);
         var result = engine.buildQuery(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("json_extract(data_json, '$.status') = ?");
+        assertThat(result.sql()).contains("json_extract(metadata_json, '$.status') = ?");
         assertThat(result.params()).contains("active");
     }
 
@@ -86,7 +87,7 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", filters, null, null, 0, 10);
         var result = engine.buildQuery(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("json_extract(data_json, '$.score') > ?");
+        assertThat(result.sql()).contains("json_extract(metadata_json, '$.score') > ?");
         assertThat(result.params()).contains(80);
     }
 
@@ -96,7 +97,7 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", filters, null, null, 0, 10);
         var result = engine.buildQuery(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("json_extract(data_json, '$.name') LIKE ?");
+        assertThat(result.sql()).contains("json_extract(metadata_json, '$.name') LIKE ?");
         assertThat(result.params()).contains("%test%");
     }
 
@@ -162,7 +163,7 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", filters, null, null, 0, 10);
         var result = engine.buildQuery(request, Set.of("status"), "col-1234");
 
-        assertThat(result.sql()).contains("json_extract(data_json, '$.name')");
+        assertThat(result.sql()).contains("json_extract(metadata_json, '$.name')");
     }
 
     // ---- 排序 ----
@@ -172,7 +173,7 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", List.of(), "score", SortDirection.DESC, 0, 10);
         var result = engine.buildQuery(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("ORDER BY json_extract(data_json, '$.score') DESC");
+        assertThat(result.sql()).contains("ORDER BY json_extract(metadata_json, '$.score') DESC");
     }
 
     @Test
@@ -180,7 +181,7 @@ class QueryEngine单元测试 {
         var request = new QueryRequest("col-123", List.of(), "name", null, 0, 10);
         var result = engine.buildQuery(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("ORDER BY json_extract(data_json, '$.name') ASC");
+        assertThat(result.sql()).contains("ORDER BY json_extract(metadata_json, '$.name') ASC");
     }
 
     @Test

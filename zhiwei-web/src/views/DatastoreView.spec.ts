@@ -8,10 +8,9 @@ const mocks = vi.hoisted(() => ({
       id: string
       name: string
       description?: string | null
-      type: string
-      propertiesJson?: string | null
-      projectionConfigJson?: string | null
-      metadataJson?: string | null
+      timeSeries: boolean
+      fieldHintsJson?: string | null
+      defaultKnowledgeBaseId?: string | null
       createdBy?: string | null
       createdAt: string
       updatedAt: string
@@ -98,13 +97,12 @@ beforeEach(() => {
       id: 'ds-1',
       name: 'novel-workspace',
       description: '小说创作素材库',
-      type: 'DOCUMENT',
-      propertiesJson: JSON.stringify([
-        { name: 'title', type: 'TEXT', required: true },
-        { name: 'chapter', type: 'NUMBER', required: false },
+      timeSeries: false,
+      fieldHintsJson: JSON.stringify([
+        { name: 'title', type: 'TEXT', description: '标题' },
+        { name: 'chapter', type: 'NUMBER', description: '章节号' },
       ]),
-      projectionConfigJson: '{"scalarPaths":["title"]}',
-      metadataJson: null,
+      defaultKnowledgeBaseId: 'kb-internal',
       createdBy: 'tester',
       createdAt: '2026-03-27T00:00:00Z',
       updatedAt: '2026-03-27T00:00:00Z',
@@ -118,8 +116,8 @@ describe('DatastoreView', () => {
 
     expect(mocks.datastoreStore.fetchList).toHaveBeenCalled()
     expect(wrapper.text()).toContain('novel-workspace')
-    expect(wrapper.text()).toContain('结构化列表')
     expect(wrapper.text()).toContain('title、chapter')
+    expect(wrapper.text()).toContain('索引字段')
 
     await wrapper.get('article').trigger('click')
 

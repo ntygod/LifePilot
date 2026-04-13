@@ -267,17 +267,16 @@ class KnowledgeBaseManagerTest {
                 null, null, null, null, null);
         jdbcTemplate.update("""
                 INSERT INTO ds_collections (
-                    id, name, description, type, properties_json, projection_config_json,
-                    metadata_json, created_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, name, description, time_series, field_hints_json,
+                    default_knowledge_base_id, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 "ds-novel",
                 "novel-workspace",
                 "小说领域",
-                "DOCUMENT",
-                "{}",
-                "{}",
-                "{}",
+                0,
+                null,
+                null,
                 "tester",
                 Instant.now().toString(),
                 Instant.now().toString()

@@ -7,7 +7,7 @@
   ChatSessionDetail,
   CreateKbRequest,
   Datastore,
-  DatastoreRecord,
+  DatastoreDocument,
   UpdateKbRequest,
   DocumentChunk,
   ErrorResponse,
@@ -1004,8 +1004,11 @@ export const datastoreApi = {
   listKnowledgeBases(id: string): Promise<KnowledgeBase[]> {
     return request(`/datastores/${id}/knowledge-bases`)
   },
-  listRecords(id: string): Promise<DatastoreRecord[]> {
+  listRecords(id: string): Promise<DatastoreDocument[]> {
     return request(`/datastores/${id}/records`)
+  },
+  getDocument(id: string): Promise<DatastoreDocument> {
+    return request(`/datastores/documents/${id}`)
   },
   listDocuments(id: string): Promise<KbDocument[]> {
     return request(`/datastores/${id}/documents`)

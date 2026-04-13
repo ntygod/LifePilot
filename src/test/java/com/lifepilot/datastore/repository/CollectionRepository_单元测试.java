@@ -1,7 +1,6 @@
 package com.lifepilot.datastore.repository;
 
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -44,11 +43,11 @@ class CollectionRepository_单元测试 {
     // ==================== 辅助方法 ====================
 
     /** 构造测试用 Collection 实例。 */
-    private Collection 构造测试集合(CollectionType type) {
+    private Collection 构造测试集合(boolean timeSeries) {
         return new Collection(
-                null, "test-collection", "测试集合", type,
-                "[{\"name\":\"title\"}]", "{\"dim\":128}",
-                "{\"version\":1}", "kb-001", "test-user",
+                null, "test-collection", "测试集合", timeSeries,
+                "[{\"name\":\"title\",\"type\":\"TEXT\"}]",
+                "kb-001", "test-user",
                 "2026-04-01T00:00:00Z", "2026-04-01T00:00:00Z"
         );
     }
@@ -56,9 +55,9 @@ class CollectionRepository_单元测试 {
     /** 构造带完整字段的 Collection 结果行。 */
     private Collection 构造结果集合(String id) {
         return new Collection(
-                id, "test-collection", "测试集合", CollectionType.DOCUMENT,
-                "[{\"name\":\"title\"}]", "{}",
-                "{\"version\":1}", "kb-001", "test-user",
+                id, "test-collection", "测试集合", false,
+                "[{\"name\":\"title\",\"type\":\"TEXT\"}]",
+                "kb-001", "test-user",
                 "2026-04-01T00:00:00Z", "2026-04-01T00:00:00Z"
         );
     }
@@ -71,7 +70,7 @@ class CollectionRepository_单元测试 {
         @Test
         void 正常插入_返回生成的UUID() {
             // given
-            var collection = 构造测试集合(CollectionType.DOCUMENT);
+            var collection = 构造测试集合(false);
 
             // when
             String id = repository.insert(collection);
@@ -83,7 +82,7 @@ class CollectionRepository_单元测试 {
         @Test
         void 正常插入_传递正确的SQL参数() {
             // given
-            var collection = 构造测试集合(CollectionType.NOTE);
+            var collection = 构造测试集合(true);
 
             // when
             String id = repository.insert(collection);
@@ -94,38 +93,36 @@ class CollectionRepository_单元测试 {
             verify(jdbcTemplate).update(contains("INSERT INTO ds_collections"), argsCaptor.capture());
 
             Object[] args = argsCaptor.getValue();
-            assertThat(args[0]).isEqualTo(id);                           // id
-            assertThat(args[1]).isEqualTo("test-collection");            // name
-            assertThat(args[2]).isEqualTo("测试集合");                     // description
-            assertThat(args[3]).isEqualTo("NOTE");                       // type
-            assertThat(args[4]).isEqualTo("[{\"name\":\"title\"}]");     // propertiesJson
-            assertThat(args[5]).isEqualTo("{\"dim\":128}");              // projectionConfigJson（非 null 不归一化）
-            assertThat(args[6]).isEqualTo("{\"version\":1}");            // metadataJson
-            assertThat(args[7]).isEqualTo("kb-001");                     // defaultKnowledgeBaseId
-            assertThat(args[8]).isEqualTo("test-user");                  // createdBy
-            assertThat((String) args[9]).startsWith("2026-");            // createdAt（Instant.now()）
-            assertThat((String) args[10]).startsWith("2026-");           // updatedAt（Instant.now()）
+            assertThat(args[0]).isEqualTo(id);                                           // id
+            assertThat(args[1]).isEqualTo("test-collection");                            // name
+            assertThat(args[2]).isEqualTo("测试集合");                                     // description
+            assertThat(args[3]).isEqualTo(1);                                            // time_series (true → 1)
+            assertThat(args[4]).isEqualTo("[{\"name\":\"title\",\"type\":\"TEXT\"}]");    // fieldHintsJson
+            assertThat(args[5]).isEqualTo("kb-001");                                     // defaultKnowledgeBaseId
+            assertThat(args[6]).isEqualTo("test-user");                                  // createdBy
+            assertThat((String) args[7]).startsWith("2026-");                            // createdAt（Instant.now()）
+            assertThat((String) args[8]).startsWith("2026-");                            // updatedAt（Instant.now()）
         }
 
         @Test
-        void projectionConfigJson为null时_归一化为默认值() {
-            // given — projectionConfigJson 为 null
+        void fieldHintsJson为null时_传递null() {
+            // given — fieldHintsJson 为 null
             var collection = new Collection(
-                    null, "no-projection", null, CollectionType.DOCUMENT,
-                    null, null, null, null, null,
+                    null, "no-hints", null, false,
+                    null, null, null,
                     "2026-04-01T00:00:00Z", "2026-04-01T00:00:00Z"
             );
 
             // when
             repository.insert(collection);
 
-            // then — projectionConfigJson 参数位置应为 "{}"
+            // then — fieldHintsJson 参数位置应为 null
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
             verify(jdbcTemplate).update(contains("INSERT INTO ds_collections"), argsCaptor.capture());
 
             Object[] args = argsCaptor.getValue();
-            assertThat(args[5]).isEqualTo("{}");
+            assertThat(args[4]).isNull();
         }
     }
 
@@ -201,19 +198,19 @@ class CollectionRepository_单元测试 {
     }
 
     @Nested
-    class 按类型查询 {
+    class 按时序标记查询 {
 
         @SuppressWarnings("unchecked")
         @Test
-        void 返回匹配类型的集合列表() {
+        void 返回匹配时序标记的集合列表() {
             // given
             var col1 = 构造结果集合("uuid-a");
             var col2 = 构造结果集合("uuid-b");
-            when(jdbcTemplate.query(contains("WHERE type = ?"), any(RowMapper.class), eq("NOTE")))
+            when(jdbcTemplate.query(contains("WHERE time_series = ?"), any(RowMapper.class), eq(1)))
                     .thenReturn(List.of(col1, col2));
 
             // when
-            List<Collection> results = repository.findByType(CollectionType.NOTE);
+            List<Collection> results = repository.findByTimeSeries(true);
 
             // then
             assertThat(results).hasSize(2);
@@ -223,11 +220,11 @@ class CollectionRepository_单元测试 {
         @Test
         void 无匹配记录_返回空列表() {
             // given
-            when(jdbcTemplate.query(contains("WHERE type = ?"), any(RowMapper.class), eq("METRIC")))
+            when(jdbcTemplate.query(contains("WHERE time_series = ?"), any(RowMapper.class), eq(0)))
                     .thenReturn(Collections.emptyList());
 
             // when
-            List<Collection> results = repository.findByType(CollectionType.METRIC);
+            List<Collection> results = repository.findByTimeSeries(false);
 
             // then
             assertThat(results).isEmpty();
@@ -237,14 +234,14 @@ class CollectionRepository_单元测试 {
         @Test
         void SQL包含按创建时间降序排序() {
             // given
-            when(jdbcTemplate.query(contains("ORDER BY created_at DESC"), any(RowMapper.class), anyString()))
+            when(jdbcTemplate.query(contains("ORDER BY created_at DESC"), any(RowMapper.class), anyInt()))
                     .thenReturn(Collections.emptyList());
 
             // when
-            repository.findByType(CollectionType.DOCUMENT);
+            repository.findByTimeSeries(false);
 
             // then — 验证 SQL 包含排序子句
-            verify(jdbcTemplate).query(contains("ORDER BY created_at DESC"), any(RowMapper.class), eq("DOCUMENT"));
+            verify(jdbcTemplate).query(contains("ORDER BY created_at DESC"), any(RowMapper.class), eq(0));
         }
     }
 
@@ -295,7 +292,7 @@ class CollectionRepository_单元测试 {
                     .thenReturn(1);
 
             // when
-            boolean result = repository.update("uuid-001", "新描述", "{\"dim\":256}", "{\"v\":2}");
+            boolean result = repository.update("uuid-001", "新描述", "[{\"name\":\"title\",\"type\":\"TEXT\"}]");
 
             // then
             assertThat(result).isTrue();
@@ -308,20 +305,20 @@ class CollectionRepository_单元测试 {
                     .thenReturn(0);
 
             // when
-            boolean result = repository.update("nonexistent", "描述", null, null);
+            boolean result = repository.update("nonexistent", "描述", null);
 
             // then
             assertThat(result).isFalse();
         }
 
         @Test
-        void 传递正确的SQL参数_包含归一化的projectionConfigJson() {
+        void 传递正确的SQL参数() {
             // given
             when(jdbcTemplate.update(contains("UPDATE ds_collections"), any(Object[].class)))
                     .thenReturn(1);
 
             // when
-            repository.update("uuid-001", "新描述", null, "{\"meta\":true}");
+            repository.update("uuid-001", "新描述", "[{\"name\":\"price\",\"type\":\"NUMBER\"}]");
 
             // then
             @SuppressWarnings("unchecked")
@@ -329,21 +326,20 @@ class CollectionRepository_单元测试 {
             verify(jdbcTemplate).update(contains("UPDATE ds_collections"), argsCaptor.capture());
 
             Object[] args = argsCaptor.getValue();
-            assertThat(args[0]).isEqualTo("新描述");             // description
-            assertThat(args[1]).isEqualTo("{}");                 // projectionConfigJson（null → "{}"）
-            assertThat(args[2]).isEqualTo("{\"meta\":true}");    // metadataJson
-            // args[3] 是 updatedAt（动态值）
-            assertThat(args[4]).isEqualTo("uuid-001");           // id（WHERE 条件）
+            assertThat(args[0]).isEqualTo("新描述");                                         // description
+            assertThat(args[1]).isEqualTo("[{\"name\":\"price\",\"type\":\"NUMBER\"}]");     // fieldHintsJson
+            // args[2] 是 updatedAt（动态值）
+            assertThat(args[3]).isEqualTo("uuid-001");                                       // id（WHERE 条件）
         }
 
         @Test
-        void projectionConfigJson非null时保持原值() {
+        void fieldHintsJson为null时_传递null() {
             // given
             when(jdbcTemplate.update(contains("UPDATE ds_collections"), any(Object[].class)))
                     .thenReturn(1);
 
             // when
-            repository.update("uuid-001", null, "{\"dim\":512}", null);
+            repository.update("uuid-001", null, null);
 
             // then
             @SuppressWarnings("unchecked")
@@ -351,7 +347,7 @@ class CollectionRepository_单元测试 {
             verify(jdbcTemplate).update(contains("UPDATE ds_collections"), argsCaptor.capture());
 
             Object[] args = argsCaptor.getValue();
-            assertThat(args[1]).isEqualTo("{\"dim\":512}");
+            assertThat(args[1]).isNull();
         }
     }
 
@@ -510,10 +506,10 @@ class CollectionRepository_单元测试 {
             verify(jdbcTemplate, times(2)).execute(sqlCaptor.capture());
 
             String alterSql = sqlCaptor.getAllValues().get(0);
-            assertThat(alterSql).contains("ALTER TABLE ds_documents ADD COLUMN");
+            assertThat(alterSql).contains("ALTER TABLE documents ADD COLUMN");
             assertThat(alterSql).contains("_idx_12345678_price");
             assertThat(alterSql).contains("REAL");
-            assertThat(alterSql).contains("json_extract(data_json, '$.price')");
+            assertThat(alterSql).contains("json_extract(metadata_json, '$.price')");
             assertThat(alterSql).contains("VIRTUAL");
         }
 
@@ -533,7 +529,7 @@ class CollectionRepository_单元测试 {
             assertThat(indexSql).contains("CREATE INDEX");
             assertThat(indexSql).contains("idx_ds_doc_aabbccdd_status");
             assertThat(indexSql).contains("_idx_aabbccdd_status");
-            assertThat(indexSql).contains("WHERE collection_id = '%s'".formatted(collectionId));
+            assertThat(indexSql).contains("WHERE source_datastore_id = '%s'".formatted(collectionId));
         }
 
         @Test

@@ -84,13 +84,17 @@ file.write(path="novels/<书名>/正文.md", content="章节内容", mode="appen
 用户要求维护设定时，使用 Datastore 单集合工作台：
 
 ```
-datastore(action="create-collection", name="书名", type="DOCUMENT",
-    properties=[{"name":"docType","type":"string","required":true},
-                {"name":"name","type":"string","required":true},
-                {"name":"summary","type":"string","required":false},
-                {"name":"details","type":"string","required":false},
-                {"name":"status","type":"string","required":false},
-                {"name":"tags","type":"string","required":false}])
+datastore(action="create-collection", name="书名", description="小说创作素材与设定",
+    fieldHints=[{"name":"docType","type":"TEXT","description":"文档类型：setting/character/faction/outline/foreshadowing/chapter"},
+                {"name":"name","type":"TEXT","description":"设定名称"},
+                {"name":"status","type":"TEXT","description":"状态：draft/active/archived"}])
+```
+
+写入时 content 包含完整设定描述（供语义检索），metadata 只放需要过滤的字段：
+```
+datastore(action="add", collectionName="书名",
+    content="林夜是本书主角，出身寒门，性格坚韧沉稳，擅长剑术，身怀神秘传承...",
+    metadata={"docType":"character","name":"林夜","status":"active"})
 ```
 
 `docType` 值：`setting` / `character` / `faction` / `outline` / `foreshadowing` / `chapter`

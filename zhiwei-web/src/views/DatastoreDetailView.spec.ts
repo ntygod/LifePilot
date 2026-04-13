@@ -98,13 +98,11 @@ beforeEach(() => {
     id: 'ds-1',
     name: 'novel-workspace',
     description: '小说创作素材库',
-    type: 'DOCUMENT',
-    propertiesJson: JSON.stringify([
-      { name: 'title', type: 'TEXT', required: true },
-      { name: 'chapter', type: 'NUMBER', required: false },
+    timeSeries: false,
+    fieldHintsJson: JSON.stringify([
+      { name: 'title', type: 'TEXT', description: '标题' },
+      { name: 'chapter', type: 'NUMBER', description: '章节号' },
     ]),
-    projectionConfigJson: '{"scalarPaths":["title"],"bodyPaths":["content"]}',
-    metadataJson: '{"owner":"writer"}',
     defaultKnowledgeBaseId: 'kb-internal',
     createdBy: 'tester',
     createdAt: '2026-03-27T00:00:00Z',
@@ -129,9 +127,13 @@ beforeEach(() => {
   mocks.datastoreApi.listRecords.mockResolvedValue([
     {
       id: 'record-1',
-      collectionId: 'ds-1',
-      dataJson: '{"title":"人物设定","content":"林夜是主角"}',
+      knowledgeBaseId: 'kb-internal',
+      fileName: '人物设定',
+      content: '林夜是主角',
+      metadataJson: '{"title":"人物设定"}',
       recordedAt: null,
+      sourceDatastoreId: 'ds-1',
+      status: 'READY',
       createdAt: '2026-03-27T02:00:00Z',
       updatedAt: '2026-03-27T02:30:00Z',
     },
@@ -230,16 +232,15 @@ describe('DatastoreDetailView', () => {
       limit: 6,
     })
     expect(wrapper.text()).toContain('novel-workspace')
-    expect(wrapper.text()).toContain('DOCUMENT')
+    expect(wrapper.text()).toContain('普通集合')
     expect(wrapper.text()).toContain('title')
     expect(wrapper.text()).toContain('chapter')
     expect(wrapper.text()).toContain('tester')
     expect(wrapper.text()).toContain('kb-internal')
-    expect(wrapper.text()).toContain('scalarPaths')
-    expect(wrapper.text()).toContain('owner')
     expect(wrapper.text()).toContain('世界观资料库')
     expect(wrapper.text()).toContain('人物设定.md')
     expect(wrapper.text()).toContain('人物设定')
+    expect(wrapper.text()).toContain('林夜是主角')
 
     await wrapper.get('[data-test="related-kb-card"]').trigger('click')
     expect(mocks.router.push).toHaveBeenCalledWith({

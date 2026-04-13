@@ -9,92 +9,88 @@ import com.lifepilot.datastore.engine.QueryEngine;
 import com.lifepilot.datastore.model.AggregationRequest;
 import com.lifepilot.datastore.model.AggregationResult;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
-import com.lifepilot.datastore.model.Document;
+import com.lifepilot.datastore.model.FieldHint;
 import com.lifepilot.datastore.model.FieldNames;
-import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.model.QueryRequest;
+import com.lifepilot.datastore.model.SqlWithParams;
 import com.lifepilot.datastore.repository.CollectionRepository;
-import com.lifepilot.datastore.repository.DocumentRepository;
-import com.lifepilot.datastore.sync.DataStoreKnowledgeSyncPublisher;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
-import com.lifepilot.datastore.validation.PropertyValidator;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.ingest.DocumentIngester;
+import com.lifepilot.knowledge.model.Document;
+import com.lifepilot.knowledge.model.DocumentSourceType;
+import com.lifepilot.knowledge.model.DocumentStatus;
+import com.lifepilot.knowledge.repository.DocumentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 数据存储管理门面 — 提供集合和文档的完整 CRUD 操作的统一入口。
+ * 数据存储管理门面 — 文档优先模型。
  *
- * <p>封装限额检查、名称唯一性校验、属性校验、Generated Column 管理、
- * FTS5 同步等横切逻辑，对外暴露简洁的业务方法。</p>
+ * <p>文档以富文本 content 为主表示，直接存入知识库 documents 表。
+ * metadata_json 作为副索引支持排序、过滤、聚合。</p>
  *
  * @author zsg
- * @since 2026-03-10
+ * @since 2026-04-13
  */
 public class DataStoreManager {
 
     private static final Logger log = LoggerFactory.getLogger(DataStoreManager.class);
-    private static final TypeReference<List<PropertyDefinition>> PROP_LIST_TYPE =
-            new TypeReference<>() {};
+    private static final TypeReference<List<FieldHint>> FIELD_HINT_LIST_TYPE = new TypeReference<>() {};
 
     private final CollectionRepository collectionRepository;
-    private final DocumentRepository documentRepository;
     private final QueryEngine queryEngine;
     private final AggregationEngine aggregationEngine;
-    private final PropertyValidator propertyValidator;
     private final DataStoreProperties properties;
     private final ObjectMapper objectMapper;
-    @Nullable
-    private final DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher;
-    @Nullable
-    private final DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner;
+    @Nullable private final KnowledgeBaseManager knowledgeBaseManager;
+    @Nullable private final DocumentIngester documentIngester;
+    @Nullable private final DocumentRepository knowledgeDocRepository;
+    @Nullable private final DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner;
 
     public DataStoreManager(CollectionRepository collectionRepository,
-                            DocumentRepository documentRepository,
                             QueryEngine queryEngine,
                             AggregationEngine aggregationEngine,
-                            PropertyValidator propertyValidator,
                             DataStoreProperties properties,
                             ObjectMapper objectMapper,
-                            @Nullable DataStoreKnowledgeSyncPublisher knowledgeSyncPublisher,
+                            @Nullable KnowledgeBaseManager knowledgeBaseManager,
+                            @Nullable DocumentIngester documentIngester,
+                            @Nullable DocumentRepository knowledgeDocRepository,
                             @Nullable DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner) {
         this.collectionRepository = collectionRepository;
-        this.documentRepository = documentRepository;
         this.queryEngine = queryEngine;
         this.aggregationEngine = aggregationEngine;
-        this.propertyValidator = propertyValidator;
         this.properties = properties;
         this.objectMapper = objectMapper;
-        this.knowledgeSyncPublisher = knowledgeSyncPublisher;
+        this.knowledgeBaseManager = knowledgeBaseManager;
+        this.documentIngester = documentIngester;
+        this.knowledgeDocRepository = knowledgeDocRepository;
         this.datastoreKnowledgeBaseProvisioner = datastoreKnowledgeBaseProvisioner;
     }
 
     // ---- 集合操作 ----
 
     @Transactional
-    public Collection createCollection(String name, CollectionType type,
-                                       @Nullable List<PropertyDefinition> propDefs,
+    public Collection createCollection(String name, boolean timeSeries,
+                                       @Nullable List<FieldHint> fieldHints,
                                        @Nullable String description,
                                        @Nullable String createdBy) {
-        return createCollection(name, type, propDefs, description, createdBy, null);
-    }
-
-    @Transactional
-    public Collection createCollection(String name, CollectionType type,
-                                       @Nullable List<PropertyDefinition> propDefs,
-                                       @Nullable String description,
-                                       @Nullable String createdBy,
-                                       @Nullable String projectionConfigJson) {
         int currentCount = collectionRepository.count();
         if (currentCount >= properties.getMaxCollections()) {
             throw new IllegalStateException("集合数量已达上限: " + properties.getMaxCollections());
@@ -103,11 +99,10 @@ public class DataStoreManager {
             throw new IllegalArgumentException("集合名称已存在: " + name);
         }
 
-        String propertiesJson = serializeProperties(propDefs);
+        String fieldHintsJson = serializeFieldHints(fieldHints);
         var collection = Collection.builder()
-                .name(name).type(type).description(description)
-                .propertiesJson(propertiesJson)
-                .projectionConfigJson(Collection.normalizeProjectionConfig(projectionConfigJson))
+                .name(name).timeSeries(timeSeries).description(description)
+                .fieldHintsJson(fieldHintsJson)
                 .createdBy(createdBy).build();
 
         String collectionId = collectionRepository.insert(collection);
@@ -115,15 +110,14 @@ public class DataStoreManager {
             collection = collectionRepository.findById(collectionId).orElseThrow(
                     () -> new IllegalStateException("集合创建后查询失败: id=" + collectionId));
 
-            if (propDefs != null && !propDefs.isEmpty()) {
-                for (var prop : propDefs) {
-                    if (prop.type().isIndexable()) {
-                        collectionRepository.addGeneratedColumn(prop.name(), prop.type().toSqliteAffinity(), collectionId);
-                    }
+            if (fieldHints != null && !fieldHints.isEmpty()) {
+                for (var hint : fieldHints) {
+                    collectionRepository.addGeneratedColumn(
+                            hint.name(), hint.toSqliteAffinity(), collectionId);
                 }
             }
-            log.info("集合创建完成: id={}, name={}, type={}, 属性数={}", collectionId, name, type,
-                    propDefs != null ? propDefs.size() : 0);
+            log.info("集合创建完成: id={}, name={}, timeSeries={}, 字段提示数={}", collectionId, name, timeSeries,
+                    fieldHints != null ? fieldHints.size() : 0);
 
             if (datastoreKnowledgeBaseProvisioner != null) {
                 String defaultKbId = datastoreKnowledgeBaseProvisioner.ensureDefaultKnowledgeBase(collection);
@@ -148,8 +142,8 @@ public class DataStoreManager {
         return List.copyOf(collectionRepository.findAll());
     }
 
-    public List<Collection> listCollections(CollectionType type) {
-        return List.copyOf(collectionRepository.findByType(type));
+    public List<Collection> listCollections(boolean timeSeries) {
+        return List.copyOf(collectionRepository.findByTimeSeries(timeSeries));
     }
 
     public Optional<Collection> findCollection(String name) {
@@ -160,30 +154,16 @@ public class DataStoreManager {
         return collectionRepository.findById(id);
     }
 
-    public boolean updateCollection(String id, @Nullable String description,
-                                    @Nullable String metadataJson) {
-        return updateCollection(id, description, metadataJson, null);
-    }
-
     @Transactional
     public boolean updateCollection(String id, @Nullable String description,
-                                    @Nullable String metadataJson,
-                                    @Nullable String projectionConfigJson) {
+                                    @Nullable String fieldHintsJson) {
         var existing = collectionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + id));
         boolean updated = collectionRepository.update(id,
                 description != null ? description : existing.description(),
-                Collection.normalizeProjectionConfig(
-                        projectionConfigJson != null ? projectionConfigJson : existing.projectionConfigJson()),
-                metadataJson != null ? metadataJson : existing.metadataJson());
+                fieldHintsJson != null ? fieldHintsJson : existing.fieldHintsJson());
         if (updated) {
             log.info("集合更新完成: id={}", id);
-            if (projectionConfigJson != null
-                    && !Collection.normalizeProjectionConfig(projectionConfigJson)
-                    .equals(Collection.normalizeProjectionConfig(existing.projectionConfigJson()))
-                    && knowledgeSyncPublisher != null) {
-                knowledgeSyncPublisher.publishDatastoreResync(id);
-            }
         }
         return updated;
     }
@@ -193,25 +173,20 @@ public class DataStoreManager {
         var collection = collectionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + id));
 
-        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
-        if (!propDefs.isEmpty()) {
-            List<String> indexable = propDefs.stream()
-                    .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).toList();
-            if (!indexable.isEmpty()) {
-                collectionRepository.dropGeneratedColumns(id, indexable);
-            }
+        // 1. 清理 Generated Column 索引
+        List<FieldHint> fieldHints = deserializeFieldHints(collection.fieldHintsJson());
+        if (!fieldHints.isEmpty()) {
+            List<String> indexable = fieldHints.stream().map(FieldHint::name).toList();
+            collectionRepository.dropGeneratedColumns(id, indexable);
         }
 
-        documentRepository.deleteFtsByCollectionId(id);
-
-        if (knowledgeSyncPublisher != null) {
-            knowledgeSyncPublisher.publishDatastorePurge(id);
-        }
+        // 2. 删除内部知识库（CASCADE 删除所有关联文档和分块）
         if (datastoreKnowledgeBaseProvisioner != null) {
             datastoreKnowledgeBaseProvisioner.deleteDefaultKnowledgeBase(collection);
-            log.info("Datastore 内部知识库删除已提交: datastoreId={}, knowledgeBaseId={}",
-                    collection.id(), collection.defaultKnowledgeBaseId());
+            log.info("Datastore 内部知识库删除已提交: datastoreId={}", collection.id());
         }
+
+        // 3. 删除集合记录
         boolean deleted = collectionRepository.delete(id);
         if (deleted) {
             log.info("集合删除完成: id={}, name={}", id, collection.name());
@@ -221,152 +196,164 @@ public class DataStoreManager {
 
     // ---- 文档操作 ----
 
-    @Transactional
-    public Document addDocument(String collectionId, String dataJson,
-                                @Nullable String recordedAt) {
+    /**
+     * 添加文档 — 创建知识库文档，异步 ingest。
+     *
+     * @param collectionId 集合 ID
+     * @param content      富文本内容
+     * @param metadataJson 可选结构化元数据 JSON
+     * @param recordedAt   时序集合的 ISO 8601 时间戳
+     * @return 创建的知识库文档 ID
+     */
+    /**
+     * 添加文档 — 事务内保存文档记录，事务提交后异步 ingest。
+     *
+     * <p>拆分为两步避免 SQLite 写锁竞争：
+     * (1) {@link #saveDocument} 在 @Transactional 内创建文档记录
+     * (2) ingest 在事务外异步执行（分块 + embedding + FTS）</p>
+     */
+    public String addDocument(String collectionId, String content,
+                              @Nullable String metadataJson,
+                              @Nullable String recordedAt) {
         var collection = collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
 
-        int docCount = documentRepository.countByCollection(collectionId);
-        if (docCount >= properties.getMaxDocumentsPerCollection()) {
-            throw new IllegalStateException("集合文档数量已达上限: " + properties.getMaxDocumentsPerCollection());
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("文档内容不能为空");
         }
-        if (dataJson.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
+        if (content.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
             throw new IllegalArgumentException("文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
         }
-
-        try { objectMapper.readTree(dataJson); }
-        catch (JsonProcessingException e) { throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e); }
-
-        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
-        if (!propDefs.isEmpty()) {
-            var errors = propertyValidator.validate(propDefs, dataJson);
-            if (!errors.isEmpty()) { throw new IllegalArgumentException("属性校验失败: " + errors); }
-        }
-
-        if (collection.type() == CollectionType.METRIC) {
+        if (collection.timeSeries()) {
             if (recordedAt == null || recordedAt.isBlank()) {
-                throw new IllegalArgumentException("METRIC 类型文档必须包含 recordedAt 字段");
+                throw new IllegalArgumentException("时序集合文档必须包含 recordedAt");
             }
             try { DateTimeFormatter.ISO_DATE_TIME.parse(recordedAt); }
-            catch (DateTimeParseException e) { throw new IllegalArgumentException("recordedAt 格式非法，期望 ISO 8601: " + recordedAt, e); }
+            catch (DateTimeParseException e) {
+                throw new IllegalArgumentException("recordedAt 格式非法，期望 ISO 8601: " + recordedAt, e);
+            }
         }
 
-        var document = Document.builder().collectionId(collectionId).dataJson(dataJson).recordedAt(recordedAt).build();
-        String documentId = documentRepository.insert(document);
-
-        if (collection.type() == CollectionType.NOTE) {
-            documentRepository.insertFts(documentId, extractFtsContent(dataJson));
+        if (knowledgeDocRepository != null) {
+            int docCount = knowledgeDocRepository.countBySourceDatastoreId(collectionId);
+            if (docCount >= properties.getMaxDocumentsPerCollection()) {
+                throw new IllegalStateException("集合文档数量已达上限: " + properties.getMaxDocumentsPerCollection());
+            }
         }
 
-        log.info("文档添加完成: id={}, collectionId={}", documentId, collectionId);
-        var created = documentRepository.findById(documentId).orElseThrow(
-                () -> new IllegalStateException("文档创建后查询失败: id=" + documentId));
-        if (knowledgeSyncPublisher != null) {
-            knowledgeSyncPublisher.publishDocumentUpsert(collection, created);
+        // 1. 事务内保存文档记录
+        String docId = saveDocument(collection, content, metadataJson, recordedAt);
+
+        // 2. 事务提交后异步 ingest（分块 + embedding + FTS），不持有写锁
+        if (documentIngester != null && knowledgeDocRepository != null) {
+            var savedDoc = knowledgeDocRepository.findById(docId).orElse(null);
+            if (savedDoc != null) {
+                documentIngester.ingestProjectedDocument(savedDoc, content);
+            }
         }
-        return created;
+
+        log.info("文档添加完成: id={}, collectionId={}", docId, collectionId);
+        return docId;
     }
 
-    /**
-     * 向集合中添加文件引用文档。
-     *
-     * <p>当文件上传至知识库后，在 Datastore 中创建一条文件元数据记录，
-     * 使 Datastore 能完整呈现"N 条结构化数据 + M 份参考文档"。</p>
-     */
+    /** 事务内保存文档记录 — 与 ingest 分离，避免长时间持有 SQLite 写锁。 */
     @Transactional
-    public Document addFileReference(String collectionId, String fileName, long fileSize,
-                                     String mimeType, @Nullable String knowledgeDocumentId) {
-        collectionRepository.findById(collectionId)
-                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
-        String dataJson;
-        try {
-            dataJson = objectMapper.writeValueAsString(java.util.Map.of(
-                    "fileName", fileName, "fileSize", fileSize, "mimeType", mimeType));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("文件元数据序列化失败", e);
+    protected String saveDocument(Collection collection, String content,
+                                  @Nullable String metadataJson,
+                                  @Nullable String recordedAt) {
+        String docId = UUID.randomUUID().toString();
+        String sourceKey = "DATASTORE:" + collection.id() + ":" + docId;
+        String title = extractTitle(metadataJson);
+        String fileName = "%s - %s".formatted(collection.name(), title != null ? title : docId.substring(0, 8));
+        String filePath = "datastore://" + collection.id() + "/" + docId;
+        String contentHash = sha256(content);
+        Map<String, Object> metadataMap = parseMetadataMap(metadataJson);
+
+        var doc = new Document(
+                docId,
+                collection.defaultKnowledgeBaseId(),
+                fileName, filePath,
+                content.getBytes(StandardCharsets.UTF_8).length,
+                "text/plain",
+                contentHash,
+                DocumentStatus.CHUNKING,
+                0, 0, null, null,
+                metadataMap,
+                Instant.now(), Instant.now(),
+                DocumentSourceType.DATASTORE_DOCUMENT,
+                sourceKey, collection.id(), null,
+                Map.of(),
+                content, recordedAt
+        );
+
+        if (knowledgeDocRepository != null) {
+            knowledgeDocRepository.save(doc);
         }
-
-        var document = Document.builder()
-                .collectionId(collectionId).dataJson(dataJson)
-                .sourceType(Document.SOURCE_TYPE_FILE_REF)
-                .knowledgeDocumentId(knowledgeDocumentId).build();
-        String documentId = documentRepository.insert(document);
-        log.info("文件引用文档添加完成: id={}, collectionId={}, fileName={}", documentId, collectionId, fileName);
-        return documentRepository.findById(documentId).orElseThrow(
-                () -> new IllegalStateException("文件引用文档创建后查询失败: id=" + documentId));
-    }
-
-    /**
-     * 回填文件引用文档的知识库文档 ID — 异步 ingest 完成后调用。
-     *
-     * @param datastoreDocumentId  Datastore 文档 ID
-     * @param knowledgeDocumentId  知识库文档 ID
-     */
-    public void linkKnowledgeDocument(String datastoreDocumentId, String knowledgeDocumentId) {
-        documentRepository.updateKnowledgeDocumentId(datastoreDocumentId, knowledgeDocumentId);
+        return docId;
     }
 
     public Optional<Document> getDocument(String id) {
-        return documentRepository.findById(id);
+        return knowledgeDocRepository != null ? knowledgeDocRepository.findById(id) : Optional.empty();
     }
 
     public List<Document> listDocuments(String collectionId, int offset, int limit) {
         collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
-        return List.copyOf(documentRepository.findByCollectionId(collectionId, offset, limit));
+        if (knowledgeDocRepository != null) {
+            return List.copyOf(knowledgeDocRepository.findBySourceDatastoreId(collectionId, offset, limit));
+        }
+        return List.of();
     }
 
     public List<Document> listDocuments(String collectionId) {
-        collectionRepository.findById(collectionId)
-                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
-        return List.copyOf(documentRepository.findByCollectionId(collectionId));
+        return listDocuments(collectionId, 0, properties.getMaxPageSize());
     }
 
-    @Transactional
-    public boolean updateDocument(String id, String dataJson) {
-        var existingDoc = documentRepository.findById(id)
+    public boolean updateDocument(String id, @Nullable String content, @Nullable String metadataJson) {
+        if (knowledgeDocRepository == null) {
+            return false;
+        }
+        var existingDoc = knowledgeDocRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在: id=" + id));
-        if (dataJson.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
-            throw new IllegalArgumentException("文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
-        }
-        try { objectMapper.readTree(dataJson); }
-        catch (JsonProcessingException e) { throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e); }
 
-        var collection = collectionRepository.findById(existingDoc.collectionId())
-                .orElseThrow(() -> new IllegalStateException("文档所属集合不存在: collectionId=" + existingDoc.collectionId()));
-        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
-        if (!propDefs.isEmpty()) {
-            var errors = propertyValidator.validate(propDefs, dataJson);
-            if (!errors.isEmpty()) { throw new IllegalArgumentException("属性校验失败: " + errors); }
+        // 1. 事务内更新字段
+        boolean contentChanged = updateDocumentFields(id, content, metadataJson, existingDoc);
+
+        // 2. 事务外异步 re-ingest
+        if (contentChanged && documentIngester != null) {
+            var updatedDoc = knowledgeDocRepository.findById(id).orElse(existingDoc);
+            documentIngester.ingestProjectedDocument(updatedDoc,
+                    content != null ? content : existingDoc.content());
         }
 
-        documentRepository.update(id, dataJson);
-        if (collection.type() == CollectionType.NOTE) {
-            documentRepository.updateFts(id, extractFtsContent(dataJson));
-        }
-        log.info("文档更新完成: id={}", id);
-        if (knowledgeSyncPublisher != null) {
-            var updatedDoc = documentRepository.findById(id)
-                    .orElseThrow(() -> new IllegalStateException("文档更新后查询失败: id=" + id));
-            knowledgeSyncPublisher.publishDocumentUpsert(collection, updatedDoc);
-        }
+        log.info("文档更新完成: id={}, contentChanged={}", id, contentChanged);
         return true;
     }
 
     @Transactional
+    protected boolean updateDocumentFields(String id, @Nullable String content,
+                                           @Nullable String metadataJson, Document existingDoc) {
+        boolean contentChanged = false;
+        if (content != null && !content.isBlank()) {
+            String newHash = sha256(content);
+            if (!newHash.equals(existingDoc.contentHash())) {
+                contentChanged = true;
+                knowledgeDocRepository.updateContent(id, content, newHash);
+            }
+        }
+        if (metadataJson != null) {
+            knowledgeDocRepository.updateMetadataJson(id, metadataJson);
+        }
+        return contentChanged;
+    }
+
+    @Transactional
     public boolean deleteDocument(String id) {
-        var existingDoc = documentRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("文档不存在: id=" + id));
-        var collection = collectionRepository.findById(existingDoc.collectionId());
-        if (collection.isPresent() && collection.get().type() == CollectionType.NOTE) {
-            documentRepository.deleteFts(id);
+        if (knowledgeBaseManager == null) {
+            return false;
         }
-        documentRepository.delete(id);
+        knowledgeBaseManager.removeDocument(id);
         log.info("文档删除完成: id={}", id);
-        if (knowledgeSyncPublisher != null) {
-            knowledgeSyncPublisher.publishDocumentDelete(existingDoc.collectionId(), id, existingDoc.updatedAt());
-        }
         return true;
     }
 
@@ -375,60 +362,68 @@ public class DataStoreManager {
     public List<Document> queryDocuments(QueryRequest request) {
         var collection = collectionRepository.findById(request.collectionId())
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + request.collectionId()));
-        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
-        Set<String> indexedFields = propDefs.stream()
-                .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).collect(Collectors.toSet());
+        List<FieldHint> fieldHints = deserializeFieldHints(collection.fieldHintsJson());
+        Set<String> indexedFields = fieldHints.stream().map(FieldHint::name).collect(Collectors.toSet());
         var sqlWithParams = queryEngine.buildQuery(request, indexedFields, FieldNames.safePrefix(request.collectionId()));
-        var results = documentRepository.query(sqlWithParams.sql(), sqlWithParams.params());
-        log.debug("文档查询完成: collectionId={}, 结果数={}", request.collectionId(), results.size());
-        return List.copyOf(results);
-    }
-
-    public List<Document> searchDocuments(String collectionId, String query, int limit) {
-        var collection = collectionRepository.findById(collectionId)
-                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
-        if (collection.type() != CollectionType.NOTE) {
-            throw new IllegalArgumentException("全文搜索仅支持 NOTE 类型集合");
+        if (knowledgeDocRepository != null) {
+            var results = knowledgeDocRepository.queryRaw(sqlWithParams.sql(), sqlWithParams.params());
+            log.debug("文档查询完成: collectionId={}, 结果数={}", request.collectionId(), results.size());
+            return List.copyOf(results);
         }
-        var results = documentRepository.searchFts(collectionId, query, limit);
-        log.debug("全文搜索完成: collectionId={}, query={}, 结果数={}", collectionId, query, results.size());
-        return List.copyOf(results);
+        return List.of();
     }
 
     public List<AggregationResult> aggregate(AggregationRequest request) {
         var collection = collectionRepository.findById(request.collectionId())
                 .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + request.collectionId()));
-        if (collection.type() != CollectionType.METRIC) {
-            throw new IllegalArgumentException("时序聚合仅支持 METRIC 类型集合");
+        if (!collection.timeSeries()) {
+            throw new IllegalArgumentException("时序聚合仅支持时序集合");
         }
-        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
-        Set<String> indexedFields = propDefs.stream()
-                .filter(p -> p.type().isIndexable()).map(PropertyDefinition::name).collect(Collectors.toSet());
+        List<FieldHint> fieldHints = deserializeFieldHints(collection.fieldHintsJson());
+        Set<String> indexedFields = fieldHints.stream().map(FieldHint::name).collect(Collectors.toSet());
         var sqlWithParams = aggregationEngine.buildAggregation(request, indexedFields, FieldNames.safePrefix(request.collectionId()));
-        var results = documentRepository.aggregate(sqlWithParams.sql(), sqlWithParams.params());
-        log.debug("时序聚合完成: collectionId={}, func={}, 结果数={}", request.collectionId(), request.func(), results.size());
-        return List.copyOf(results);
+        if (knowledgeDocRepository != null) {
+            var results = knowledgeDocRepository.aggregateRaw(sqlWithParams.sql(), sqlWithParams.params());
+            log.debug("时序聚合完成: collectionId={}, func={}, 结果数={}", request.collectionId(), request.func(), results.size());
+            return List.copyOf(results);
+        }
+        return List.of();
     }
 
     // ---- 内部方法 ----
 
     @Nullable
-    private String serializeProperties(@Nullable List<PropertyDefinition> propDefs) {
-        if (propDefs == null || propDefs.isEmpty()) { return null; }
-        try { return objectMapper.writeValueAsString(propDefs); }
-        catch (JsonProcessingException e) { throw new IllegalArgumentException("属性定义序列化失败: " + e.getMessage(), e); }
+    private String serializeFieldHints(@Nullable List<FieldHint> fieldHints) {
+        if (fieldHints == null || fieldHints.isEmpty()) { return null; }
+        try { return objectMapper.writeValueAsString(fieldHints); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("字段提示序列化失败: " + e.getMessage(), e); }
     }
 
-    List<PropertyDefinition> deserializeProperties(@Nullable String propertiesJson) {
-        if (propertiesJson == null || propertiesJson.isBlank()) { return List.of(); }
-        try { return objectMapper.readValue(propertiesJson, PROP_LIST_TYPE); }
+    List<FieldHint> deserializeFieldHints(@Nullable String fieldHintsJson) {
+        if (fieldHintsJson == null || fieldHintsJson.isBlank()) { return List.of(); }
+        try { return objectMapper.readValue(fieldHintsJson, FIELD_HINT_LIST_TYPE); }
         catch (JsonProcessingException e) {
-            log.warn("属性定义反序列化失败: json={}, error={}", propertiesJson, e.getMessage());
+            log.warn("字段提示反序列化失败: json={}, error={}", fieldHintsJson, e.getMessage());
             return List.of();
         }
     }
 
-    /** 清理创建失败的集合 — 补偿外部系统副作用 + 兜底删除集合记录（防止非事务场景残留）。 */
+    @Nullable
+    private String extractTitle(@Nullable String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) { return null; }
+        try {
+            var root = objectMapper.readTree(metadataJson);
+            for (String key : List.of("title", "name", "书名", "标题")) {
+                if (root.has(key) && root.get(key).isTextual()) {
+                    return root.get(key).asText();
+                }
+            }
+        } catch (JsonProcessingException e) {
+            log.debug("提取标题失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
     private void cleanupFailedCollectionCreation(Collection collection, RuntimeException cause) {
         log.warn("集合创建失败，开始清理: id={}, name={}", collection.id(), collection.name(), cause);
         if (datastoreKnowledgeBaseProvisioner != null) {
@@ -445,16 +440,26 @@ public class DataStoreManager {
         }
     }
 
-    private String extractFtsContent(String dataJson) {
+    /** 将 metadataJson 解析为 Map&lt;String, Object&gt;，保留数值类型。 */
+    private Map<String, Object> parseMetadataMap(@Nullable String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) { return Map.of(); }
         try {
-            var root = objectMapper.readTree(dataJson);
-            if (root != null && root.has("content") && root.get("content").isTextual()) {
-                return root.get("content").asText();
-            }
+            Map<String, Object> result = objectMapper.readValue(metadataJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            return result != null ? Map.copyOf(result) : Map.of();
         } catch (JsonProcessingException e) {
-            log.debug("FTS 内容提取时 JSON 解析失败，使用原始 JSON: {}", e.getMessage());
+            log.warn("metadata JSON 解析失败，使用空 Map: {}", e.getMessage());
+            return Map.of();
         }
-        return dataJson;
     }
 
+    private static String sha256(String input) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 算法不可用", e);
+        }
+    }
 }

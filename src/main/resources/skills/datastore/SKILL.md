@@ -2,7 +2,7 @@
 id: datastore
 name: "数据存储"
 description: "知微内置数据存储的集合管理、文档增删改查和聚合统计。用户说「创建集合」「记录数据」「查一下」「存起来」「数据集合」「统计趋势」「聚合查询」时使用。不适用于外部数据库（用 database-query）或记忆/知识图谱（用 memory）。"
-version: "2.0.0"
+version: "3.0.0"
 suggested-tools:
   - datastore
   - knowledge.search
@@ -12,12 +12,17 @@ suggested-tools:
 
 管理知微内置数据存储——创建集合、增删改查文档、聚合统计。
 
+## 核心模型
+
+文档以**自然语言富文本（content）**为主表示，直接参与语义检索。
+结构化字段（metadata）为副索引，支持排序、过滤、聚合。
+
 ## 适用场景
 
-- 创建数据集合存储结构化信息
+- 创建数据集合存储领域信息
 - 文档的增删改查
 - 时序数据聚合统计（趋势、均值、求和）
-- 笔记、列表、指标数据管理
+- 书单、联系人、笔记、指标数据管理
 
 ## 不适用场景
 
@@ -29,50 +34,63 @@ suggested-tools:
 
 | 目标 | 工具 | 适用问题 |
 |------|------|---------|
-| 精确结构化查询 | `datastore(action="query")` | 按字段过滤、排序、分页 |
+| 精确结构化查询 | `datastore(action="query")` | 按 metadata 字段过滤、排序、分页 |
 | 时序统计分析 | `datastore(action="aggregate")` | 趋势、求和、均值 |
-| 语义主题检索 | `knowledge.search` | 主题问答、推荐、总结 |
+| 语义主题检索 | `knowledge.search` | 主题问答、模糊查找、推荐 |
 
-**关键**：用户用自然语言提问（"张三的联系方式"）时用 `knowledge.search`，按字段精确查找（"状态为已完成的任务"）时用 `datastore(action="query")`。
+**关键**：用户用自然语言提问（"那本讲外星文明的书"）时用 `knowledge.search`，按字段精确查找（"评分大于4的书"）时用 `datastore(action="query")`。
 
 ## 工作流
 
 ### 1. 集合管理
 
 ```
-datastore(action="create-collection", name="联系人", type="DOCUMENT", description="客户联系人列表",
-    properties=[{"name":"姓名","type":"string","required":true},{"name":"电话","type":"string","required":false}])
+datastore(action="create-collection", name="书单", description="用户的阅读记录", timeSeries=false,
+    fieldHints=[{"name":"rating","type":"NUMBER","description":"用户评分，1-5分"},
+                {"name":"author","type":"TEXT","description":"作者"}])
 
 datastore(action="list-collections")
 
-datastore(action="delete-collection", collectionName="联系人")
+datastore(action="delete-collection", collectionName="书单")
 ```
 
-集合类型：
-- `DOCUMENT`：结构化列表（联系人、书签、清单）
-- `NOTE`：笔记内容（会议记录、灵感）
-- `METRIC`：时序指标（运动、体重、支出）
+集合类型通过 `timeSeries` 区分：
+- `false`（默认）：普通集合（书单、联系人、笔记）
+- `true`：时序集合（体重、运动量），文档必须带 `recordedAt`
+
+fieldHints 的 type 只有三种：`TEXT`、`NUMBER`、`BOOLEAN`。
 
 ### 2. 文档 CRUD
 
+**写入核心规则**：content 必须包含用户原话中所有有助于日后检索的信息。metadata 只提取需要排序/过滤/聚合的字段。
+
 ```
-datastore(action="insert", collectionName="联系人", data={"姓名":"张三","电话":"13800138000"})
+datastore(action="add", collectionName="书单",
+    content="《三体》是刘慈欣创作的硬科幻小说，讲述三体文明与地球文明的对抗。用户评价5分，非常喜欢。",
+    metadata={"title":"三体","author":"刘慈欣","rating":5})
 
-datastore(action="query", collectionName="联系人", filters=[{"field":"姓名","op":"EQ","value":"张三"}])
+datastore(action="get", documentId="doc-xxx")
 
-datastore(action="update", documentId="doc-xxx", data={"电话":"13900139000"})
+datastore(action="query", collectionName="书单",
+    filters=[{"field":"author","op":"EQ","value":"刘慈欣"}],
+    sortField="rating", sortDirection="DESC", limit=10)
+
+datastore(action="update", documentId="doc-xxx",
+    content="更新后的正文...", metadata={"rating":4})
 
 datastore(action="delete", documentId="doc-xxx")
 ```
 
 过滤操作符：EQ、NE、GT、GTE、LT、LTE、CONTAINS、IN
 
-METRIC 类型插入时必须提供 `recordedAt`：
+时序集合插入时必须提供 `recordedAt`：
 ```
-datastore(action="insert", collectionName="体重记录", data={"weight":70.5}, recordedAt="2026-04-11T08:00:00Z")
+datastore(action="add", collectionName="体重记录",
+    content="2026-04-11 体重 70.5kg",
+    metadata={"weight":70.5}, recordedAt="2026-04-11T08:00:00Z")
 ```
 
-### 3. 聚合查询（仅 METRIC 类型）
+### 3. 聚合查询（仅时序集合）
 
 ```
 datastore(action="aggregate", collectionName="体重记录", field="weight", function="AVG",
@@ -84,20 +102,21 @@ datastore(action="aggregate", collectionName="体重记录", field="weight", fun
 ### 4. 语义检索
 
 ```
-knowledge.search(query="张三的联系方式")
+knowledge.search(query="那本讲外星文明的硬科幻", datastoreId="ds-xxx")
 ```
+
+传入 `datastoreId` 参数，只在指定数据空间内检索。
 
 ## 规则
 
+- 写入前先 query 或 list 检查是否已有同名记录，避免重复
 - 删除集合前必须确认集合名称无误，删除会清除全部文档
-- aggregate 仅支持 METRIC 类型集合，对 DOCUMENT/NOTE 使用会报错
-- 用户用自然语言提问时优先走 `knowledge.search`，不强行用 `datastore(action="query")` 做主题检索
-- 创建集合时如果用户没指定 properties，可以跳过（系统有默认配置）
-- METRIC 类型必须传 `recordedAt`，否则插入失败
+- aggregate 仅支持时序集合（timeSeries=true）
+- 用户用自然语言提问时优先走 `knowledge.search`，不强行用 `datastore(action="query")`
+- content 变更会触发重新索引，仅改 metadata 不会
 
 ## 常见错误处理
 
 - **集合不存在** → 先 `datastore(action="list-collections")` 确认名称
 - **文档不存在** → 先 `datastore(action="query")` 确认 ID
-- **聚合类型不匹配** → 确认集合是 METRIC 类型
-- **属性格式错误** → properties 需为数组，每项含 name、type、required
+- **聚合类型不匹配** → 确认集合是时序集合（timeSeries=true）

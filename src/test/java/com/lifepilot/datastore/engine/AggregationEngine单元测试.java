@@ -28,8 +28,8 @@ class AggregationEngine单元测试 {
         var result = engine.buildAggregation(request, Set.of(), "col-1234");
 
         assertThat(result.sql()).contains("'total' AS time_bucket");
-        assertThat(result.sql()).contains("SUM(json_extract(data_json, '$.weight'))");
-        assertThat(result.sql()).contains("WHERE collection_id = ?");
+        assertThat(result.sql()).contains("SUM(json_extract(metadata_json, '$.weight'))");
+        assertThat(result.sql()).contains("WHERE source_datastore_id = ?");
         assertThat(result.params()).containsExactly("col-123");
     }
 
@@ -39,7 +39,7 @@ class AggregationEngine单元测试 {
                 null, null, null);
         var result = engine.buildAggregation(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("AVG(json_extract(data_json, '$.score'))");
+        assertThat(result.sql()).contains("AVG(json_extract(metadata_json, '$.score'))");
     }
 
     @Test
@@ -48,7 +48,7 @@ class AggregationEngine单元测试 {
                 null, null, null);
         var result = engine.buildAggregation(request, Set.of(), "col-1234");
 
-        assertThat(result.sql()).contains("COUNT(json_extract(data_json, '$.id'))");
+        assertThat(result.sql()).contains("COUNT(json_extract(metadata_json, '$.id'))");
     }
 
     // ---- 时间分组 ----
@@ -133,6 +133,6 @@ class AggregationEngine单元测试 {
                 null, null, null);
         var result = engine.buildAggregation(request, Set.of("other"), "col-1234");
 
-        assertThat(result.sql()).contains("json_extract(data_json, '$.weight')");
+        assertThat(result.sql()).contains("json_extract(metadata_json, '$.weight')");
     }
 }

@@ -30,29 +30,23 @@ public class KnowledgeSyncWorker {
     private final KnowledgeSyncJobRepository knowledgeSyncJobRepository;
     private final KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository;
     private final com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository;
-    private final com.lifepilot.datastore.repository.DocumentRepository datastoreDocumentRepository;
     private final DocumentRepository knowledgeDocumentRepository;
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final DocumentIngester documentIngester;
-    private final DatastoreDocumentProjector projector;
 
     public KnowledgeSyncWorker(
             KnowledgeSyncJobRepository knowledgeSyncJobRepository,
             KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
             com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository,
-            com.lifepilot.datastore.repository.DocumentRepository datastoreDocumentRepository,
             DocumentRepository knowledgeDocumentRepository,
             KnowledgeBaseManager knowledgeBaseManager,
-            DocumentIngester documentIngester,
-            DatastoreDocumentProjector projector) {
+            DocumentIngester documentIngester) {
         this.knowledgeSyncJobRepository = knowledgeSyncJobRepository;
         this.knowledgeBaseDatastoreRepository = knowledgeBaseDatastoreRepository;
         this.datastoreCollectionRepository = datastoreCollectionRepository;
-        this.datastoreDocumentRepository = datastoreDocumentRepository;
         this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.documentIngester = documentIngester;
-        this.projector = projector;
     }
 
     /**
@@ -139,42 +133,15 @@ public class KnowledgeSyncWorker {
             handlePurgeJob(job);
             return;
         }
-        var collection = datastoreCollectionRepository.findById(job.datastoreId())
-                .orElseThrow(() -> new IllegalStateException("Datastore 不存在: id=" + job.datastoreId()));
-        List<com.lifepilot.datastore.model.Document> datastoreDocuments =
-                datastoreDocumentRepository.findByCollectionId(job.datastoreId());
-        Set<String> activeSourceKeys = new HashSet<>();
-
-        for (com.lifepilot.datastore.model.Document datastoreDocument : datastoreDocuments) {
-            String sourceKey = sourceKey(job.datastoreId(), datastoreDocument.id());
-            activeSourceKeys.add(sourceKey);
-            var projected = projector.project(collection, datastoreDocument);
-            upsertProjectedDocument(
-                    job.knowledgeBaseId(),
-                    job.datastoreId(),
-                    collection.id(),
-                    sourceKey,
-                    datastoreDocument.updatedAt(),
-                    projected.fileName(),
-                    projected.filePath(),
-                    projected.content(),
-                    projected.sourceRef()
-            );
+        // 文档现在直接存储在知识库中，重同步检查 datastore 集合是否仍存在
+        var collection = datastoreCollectionRepository.findById(job.datastoreId());
+        if (collection.isEmpty()) {
+            // Datastore 已不存在，清理知识库中的孤立文档
+            handlePurgeJob(job);
+            return;
         }
-
-        List<com.lifepilot.knowledge.model.Document> syncedDocuments =
-                knowledgeDocumentRepository.findByKnowledgeBaseIdAndSourceDatastoreIdAndSourceType(
-                        job.knowledgeBaseId(),
-                        job.datastoreId(),
-                        DocumentSourceType.DATASTORE_DOCUMENT
-                );
-        for (com.lifepilot.knowledge.model.Document syncedDocument : syncedDocuments) {
-            if (!activeSourceKeys.contains(syncedDocument.sourceKey())) {
-                knowledgeBaseManager.removeDocument(syncedDocument.id());
-            }
-        }
-        log.info("Datastore 重同步完成: jobId={}, datastoreId={}, knowledgeBaseId={}, activeSourceCount={}",
-                job.id(), job.datastoreId(), job.knowledgeBaseId(), activeSourceKeys.size());
+        log.info("Datastore 重同步完成（文档已统一到知识库）: jobId={}, datastoreId={}, knowledgeBaseId={}",
+                job.id(), job.datastoreId(), job.knowledgeBaseId());
     }
 
     private void handlePurgeJob(KnowledgeSyncJob job) {

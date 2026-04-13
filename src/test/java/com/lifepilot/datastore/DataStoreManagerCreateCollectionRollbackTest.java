@@ -4,11 +4,8 @@ import com.lifepilot.datastore.config.DataStoreProperties;
 import com.lifepilot.datastore.engine.AggregationEngine;
 import com.lifepilot.datastore.engine.QueryEngine;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.datastore.repository.CollectionRepository;
-import com.lifepilot.datastore.repository.DocumentRepository;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
-import com.lifepilot.datastore.validation.PropertyValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
@@ -31,35 +28,41 @@ class DataStoreManagerCreateCollectionRollbackTest {
         JdbcTemplate jdbcTemplate = createJdbcTemplate();
         jdbcTemplate.execute("""
                 CREATE TABLE ds_collections (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL UNIQUE,
-                    description TEXT,
-                    type TEXT NOT NULL DEFAULT 'DOCUMENT',
-                    properties_json TEXT,
-                    projection_config_json TEXT NOT NULL DEFAULT '{}',
-                    metadata_json TEXT,
+                    id              TEXT PRIMARY KEY,
+                    name            TEXT NOT NULL UNIQUE,
+                    description     TEXT,
+                    time_series     INTEGER NOT NULL DEFAULT 0,
+                    field_hints_json TEXT,
                     default_knowledge_base_id TEXT,
-                    created_by TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    created_by      TEXT,
+                    created_at      TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL
                 )
                 """);
         jdbcTemplate.execute("""
-                CREATE TABLE ds_documents (
-                    id TEXT PRIMARY KEY,
-                    collection_id TEXT NOT NULL,
-                    data_json TEXT NOT NULL DEFAULT '{}',
-                    recorded_at TEXT,
-                    source_type TEXT NOT NULL DEFAULT 'DATA',
-                    knowledge_document_id TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """);
-        jdbcTemplate.execute("""
-                CREATE VIRTUAL TABLE ds_documents_fts USING fts5(
-                    document_id, content,
-                    tokenize='unicode61'
+                CREATE TABLE documents (
+                    id                   TEXT PRIMARY KEY,
+                    knowledge_base_id    TEXT,
+                    file_name            TEXT NOT NULL DEFAULT '',
+                    file_path            TEXT NOT NULL DEFAULT '',
+                    file_size            INTEGER NOT NULL DEFAULT 0,
+                    mime_type            TEXT NOT NULL DEFAULT 'text/plain',
+                    content_hash         TEXT NOT NULL DEFAULT '',
+                    status               TEXT NOT NULL DEFAULT 'READY',
+                    chunk_count          INTEGER NOT NULL DEFAULT 0,
+                    entity_count         INTEGER NOT NULL DEFAULT 0,
+                    error_message        TEXT,
+                    last_processed_stage TEXT,
+                    metadata             TEXT NOT NULL DEFAULT '{}',
+                    created_at           TEXT NOT NULL,
+                    updated_at           TEXT NOT NULL,
+                    source_type          TEXT NOT NULL DEFAULT 'FILE',
+                    source_key           TEXT NOT NULL DEFAULT '',
+                    source_datastore_id  TEXT,
+                    source_collection_id TEXT,
+                    source_ref           TEXT NOT NULL DEFAULT '{}',
+                    content              TEXT,
+                    recorded_at          TEXT
                 )
                 """);
 
@@ -69,15 +72,14 @@ class DataStoreManagerCreateCollectionRollbackTest {
         properties.setMaxDocumentSizeBytes(1024 * 1024);
 
         var collectionRepository = new CollectionRepository(jdbcTemplate);
-        var documentRepository = new DocumentRepository(jdbcTemplate);
         var manager = new DataStoreManager(
                 collectionRepository,
-                documentRepository,
                 new QueryEngine(properties),
                 new AggregationEngine(),
-                new PropertyValidator(),
                 properties,
                 new com.fasterxml.jackson.databind.ObjectMapper(),
+                null,
+                null,
                 null,
                 new DatastoreKnowledgeBaseProvisioner() {
                     @Override
@@ -94,7 +96,7 @@ class DataStoreManagerCreateCollectionRollbackTest {
 
         assertThatThrownBy(() -> manager.createCollection(
                 "novel-workspace",
-                CollectionType.DOCUMENT,
+                false,
                 null,
                 "小说创作数据存储",
                 null

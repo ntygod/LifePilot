@@ -68,24 +68,25 @@ public class StorageToolProvider {
         var properties = new LinkedHashMap<String, Object>();
         properties.put("action", Map.of(
                 "type", "string",
-                "enum", List.of("create-collection", "list-collections", "delete-collection", "insert", "query", "update", "delete", "aggregate"),
+                "enum", List.of("create-collection", "list-collections", "update-collection", "delete-collection",
+                        "add", "get", "query", "update", "delete", "aggregate"),
                 "description", "数据存储操作类型"
         ));
         properties.put("name", Map.of("type", "string", "description", "action=create-collection 时的集合名称（唯一）"));
-        properties.put("type", Map.of("type", "string", "enum", List.of("DOCUMENT", "NOTE", "METRIC"), "description", "action=create-collection/list-collections 时的集合类型"));
-        properties.put("properties", Map.ofEntries(
+        properties.put("timeSeries", Map.of("type", "boolean", "description", "action=create-collection 时是否为时序集合（默认 false）"));
+        properties.put("fieldHints", Map.ofEntries(
                 Map.entry("type", "array"),
-                Map.entry("description", "action=create-collection 时的属性定义数组，每个元素包含 name/type/required 等字段"),
+                Map.entry("description", "action=create-collection 时的字段提示数组，用于索引加速"),
                 Map.entry("items", Map.of("type", "object", "properties", Map.of(
                         "name", Map.of("type", "string"),
-                        "type", Map.of("type", "string"),
-                        "required", Map.of("type", "boolean")
+                        "type", Map.of("type", "string", "enum", List.of("TEXT", "NUMBER", "BOOLEAN")),
+                        "description", Map.of("type", "string")
                 )))));
-        properties.put("description", Map.of("type", "string", "description", "action=create-collection 时的集合描述"));
-        properties.put("projectionConfig", Map.of("type", "string", "description", "action=create-collection 时的向量投影配置 JSON"));
-        properties.put("collectionName", Map.of("type", "string", "description", "目标集合名称；用于 delete-collection/insert/query/aggregate"));
-        properties.put("data", Map.of("type", "object", "description", "文档数据对象；用于 insert/update"));
-        properties.put("recordedAt", Map.of("type", "string", "description", "记录时间 ISO 8601（METRIC 类型 insert 时必填）"));
+        properties.put("description", Map.of("type", "string", "description", "action=create-collection/update-collection 时的集合描述"));
+        properties.put("collectionName", Map.of("type", "string", "description", "目标集合名称；用于 delete-collection/add/query/aggregate"));
+        properties.put("content", Map.of("type", "string", "description", "action=add/update 时的文档正文（自然语言富文本）"));
+        properties.put("metadata", Map.of("type", "object", "description", "action=add/update 时的结构化元数据 JSON，用于排序/过滤/聚合"));
+        properties.put("recordedAt", Map.of("type", "string", "description", "记录时间 ISO 8601（时序集合 add 时必填）"));
         properties.put("filters", Map.ofEntries(
                 Map.entry("type", "array"),
                 Map.entry("description", "action=query 时的过滤条件数组，每个元素包含 field/op/value 字段"),
