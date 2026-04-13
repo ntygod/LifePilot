@@ -16,6 +16,7 @@ import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.prompt.PromptRegistry;
@@ -156,7 +157,7 @@ public class KnowledgeExtractionPipeline {
             for (var entityInfo : response.entities()) {
                 try {
                     var entity = toTemporalEntity(entityInfo);
-                    var persisted = semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext);
+                    var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext));
                     entityNameToId.put(entityInfo.name(), persisted.id());
                     entityCount++;
                 } catch (Exception e) {
@@ -177,7 +178,7 @@ public class KnowledgeExtractionPipeline {
                         continue;
                     }
                     var relation = toTemporalRelation(relationInfo, sourceId, targetId, doc.id());
-                    semanticMemory.addRelation(relation, writeContext);
+                    SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
                     relationCount++;
                 } catch (Exception e) {
                     log.warn("关系写入失败: type={}, error={}", relationInfo.relationType(), e.getMessage());

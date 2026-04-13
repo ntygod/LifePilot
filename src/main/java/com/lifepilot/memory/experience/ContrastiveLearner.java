@@ -6,6 +6,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -190,8 +191,10 @@ public class ContrastiveLearner {
                 now
         );
 
-        semanticMemory.upsertWithConflictDetection(entity, "contrastive-learning");
-        vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        SqliteBusyRetry.run(() -> {
+            semanticMemory.upsertWithConflictDetection(entity, "contrastive-learning");
+            vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        });
 
         log.info("对比学习: 对比经验已写入, entityId={}, successId={}, failureId={}",
                 entity.id(), successExp.id(), failureExp.id());

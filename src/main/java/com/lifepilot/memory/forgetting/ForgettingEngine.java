@@ -4,6 +4,7 @@ import com.lifepilot.llm.LlmScene;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
@@ -190,19 +191,19 @@ public class ForgettingEngine {
                 log.debug("遗忘引擎: 实体压缩成功, id={}, name={}, 摘要长度={}",
                         entity.id(), entity.name(), summary.length());
                 // 压缩后归档原实体
-                semanticMemory.archive(entity);
+                SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
                 return new ForgetActionResult("COMPRESSED", summary);
             } catch (Exception e) {
                 log.warn("遗忘引擎: LLM 压缩失败, 降级为归档, id={}, error={}",
                         entity.id(), e.getMessage());
                 // 降级为归档
-                semanticMemory.archive(entity);
+                SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
                 return new ForgetActionResult("ARCHIVED", null);
             }
         }
 
         // 默认：归档
-        semanticMemory.archive(entity);
+        SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
         return new ForgetActionResult("ARCHIVED", null);
     }
 

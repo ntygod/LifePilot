@@ -5,6 +5,7 @@ import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -200,7 +201,7 @@ public class EpisodicToSemanticConsolidator {
                             entity.extractionConfidence(), newImportance,
                             entity.accessCount(), entity.lastAccessedAt(),
                             entity.createdAt(), Instant.now());
-                    semanticMemory.upsertWithConflictDetection(updated, entity.sourceConversationId());
+                    SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, entity.sourceConversationId()));
                     boosted++;
                     log.debug("语义巩固: 实体重要度提升, name={}, oldScore={}, newScore={}, mentions={}",
                             entity.name(), entity.importanceScore(), newImportance, mentions);

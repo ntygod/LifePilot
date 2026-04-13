@@ -14,6 +14,7 @@ import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import jakarta.annotation.Nullable;
@@ -374,7 +375,7 @@ public class MemoryController {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        semanticMemory.archive(entity);
+        SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
         return ApiResponse.ok();
     }
 
@@ -421,7 +422,7 @@ public class MemoryController {
                 now
         );
 
-        semanticMemory.upsertWithConflictDetection(entity, null);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, null));
         log.info("手动创建实体: id={}, name={}, type={}", entity.id(), entity.name(), entity.type());
         var metadata = provenanceRepository.loadEntityMetadata(List.of(entity.id())).get(entity.id());
         return ApiResponse.ok(toEntityDetail(entity, metadata));
@@ -468,7 +469,7 @@ public class MemoryController {
                 Instant.now()
         );
 
-        semanticMemory.upsertWithConflictDetection(updated, null);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, null));
         log.info("更新实体: id={}, name={}", updated.id(), updated.name());
         var metadata = provenanceRepository.loadEntityMetadata(List.of(updated.id())).get(updated.id());
         return ApiResponse.ok(toEntityDetail(updated, metadata));

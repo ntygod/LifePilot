@@ -4,6 +4,7 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,7 +88,7 @@ public class FeedbackProcessor {
             }
             float oldScore = entity.importanceScore();
             float newScore = Math.max(0.0f, Math.min(1.0f, oldScore + delta));
-            semanticMemory.updateImportanceScore(entityId, newScore);
+            SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(entityId, newScore));
             log.debug("importanceScore 调整: entityId={}, assistantEntryId={}, reason={}, {} -> {}",
                     entityId, assistantEntryId, reason, oldScore, newScore);
         }
