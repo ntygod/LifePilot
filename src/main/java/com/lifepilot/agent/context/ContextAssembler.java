@@ -388,6 +388,7 @@ public class ContextAssembler {
         if (!mcpCatalog.isBlank()) {
             systemPrompt = systemPrompt + "\n" + mcpCatalog;
         }
+
         return systemPrompt;
     }
 
@@ -426,6 +427,11 @@ public class ContextAssembler {
                 "channel", state.channel() != null ? state.channel() : "unknown",
                 "userGoal", state.goal() != null ? state.goal() : ""
         ));
+        // 已加载的 Skill 指南注入到 userPrompt 头部（紧邻 runtime_context 上方）
+        String loadedSkills = buildLoadedSkillsSection(state);
+        if (!loadedSkills.isBlank()) {
+            userPrompt = loadedSkills + "\n\n" + userPrompt;
+        }
         String knowledgeBindingPrompt = buildKnowledgeBindingPrompt(state.sessionId());
         if (!knowledgeBindingPrompt.isBlank()) {
             userPrompt = userPrompt + "\n\n" + knowledgeBindingPrompt;
@@ -924,6 +930,44 @@ public class ContextAssembler {
             log.warn("渲染技能目录失败: error={}", e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * 构建已加载 Skill 指南段 — 注入到 userPrompt 头部（runtime_context 上方），
+     * 利用近因效应确保 LLM 优先注意到 Skill 指南中的约束。
+     *
+     * <p>仅注入 Markdown body 部分，剥离 YAML frontmatter（id/name/description/version
+     * 等元数据对 LLM 执行无意义，节省 token）。</p>
+     */
+    private String buildLoadedSkillsSection(@Nullable ReactAgentState state) {
+        if (state == null || state.loadedSkillContent() == null || state.loadedSkillContent().isBlank()) {
+            return "";
+        }
+        String content = stripYamlFrontmatter(state.loadedSkillContent());
+        if (content.isBlank()) {
+            return "";
+        }
+        return "<loaded_skills>\n" + content + "\n</loaded_skills>";
+    }
+
+    /**
+     * 剥离 SKILL.md 中的 YAML frontmatter（--- ... --- 之间的部分），只保留 Markdown body。
+     */
+    static String stripYamlFrontmatter(String content) {
+        String normalized = content.replace("\r\n", "\n").replace("\r", "\n");
+        if (!normalized.startsWith("---")) {
+            return content;
+        }
+        int secondDelimiter = normalized.indexOf("\n---", 3);
+        if (secondDelimiter < 0) {
+            return content;
+        }
+        // 跳过第二个 --- 及其后的换行
+        int bodyStart = secondDelimiter + 4;
+        if (bodyStart >= normalized.length()) {
+            return "";
+        }
+        return normalized.substring(bodyStart).strip();
     }
 
     /**

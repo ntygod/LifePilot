@@ -66,7 +66,7 @@ public class GitToolProvider {
                 .description("Git 仓库只读查询")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("action"),
+                        "required", List.of("action", "path"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
@@ -74,7 +74,7 @@ public class GitToolProvider {
                                         "description", "Git 查询动作类型")),
                                 Map.entry("path", Map.of(
                                         "type", "string",
-                                        "description", "Git 仓库路径，默认为当前工作目录")),
+                                        "description", "Git 仓库路径（必填）")),
                                 Map.entry("staged", Map.of(
                                         "type", "boolean",
                                         "description", "action=diff 时是否查看暂存区差异（--staged），默认 false")),
@@ -135,7 +135,7 @@ public class GitToolProvider {
         ));
         properties.put("path", Map.of(
                 "type", "string",
-                "description", "Git 仓库路径，默认为当前工作目录"
+                "description", "Git 仓库路径（必填）"
         ));
         properties.put("message", Map.of(
                 "type", "string",
@@ -165,7 +165,7 @@ public class GitToolProvider {
 
         var schema = new LinkedHashMap<String, Object>();
         schema.put("type", "object");
-        schema.put("required", List.of("action"));
+        schema.put("required", List.of("action", "path"));
         schema.put("properties", properties);
         return schema;
     }

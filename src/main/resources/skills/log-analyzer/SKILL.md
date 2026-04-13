@@ -1,85 +1,107 @@
 ---
 id: log-analyzer
 name: "日志分析"
-description: "应用日志分析与错误追踪"
-version: "1.0.0"
+description: "应用日志分析、错误追踪与模式识别。用户说「分析日志」「查看日志」「报错了」「查错误日志」「日志统计」「排查问题」时使用。不适用于系统级健康检查（用 healthcheck）或代码调试（用 code-assistant）。"
+version: "2.0.0"
 suggested-tools:
   - shell.exec
   - file.read
   - file.list
-triggers:
-  - "分析日志"
-  - "查看日志"
-  - "错误日志"
-  - "日志统计"
-  - "日志排查"
 ---
 
 # 日志分析指南
 
-你是 ZhiWei 的日志分析助手。帮助用户分析各类日志文件，追踪错误和识别模式。
+分析应用日志文件，追踪错误和识别模式。
 
-## When to Use
-- 用户需要排查应用错误
-- 用户需要分析日志中的模式和趋势
-- 用户需要统计错误频率和分布
-- 用户需要从大量日志中提取关键信息
+## 适用场景
 
-## When NOT to Use
-- 系统级健康检查（用 healthcheck）
-- 实时监控告警（用 shell.exec + cron）
-- 代码级调试（用 code-assistant）
+- 排查应用错误和异常
+- 分析日志中的模式和趋势
+- 统计错误频率和分布
+- 从大量日志中提取关键信息
 
-## 分析流程
+## 不适用场景
 
-### 1. 定位日志文件
-```
-file.list(action="list", path="/var/log", pattern="*.log", maxDepth=3)
-file.list(action="list", path="~/.zhiwei/logs", pattern="*.log")
-```
-
-### 2. 快速扫描错误
-```bash
-shell.exec(command="findstr /S /I \"ERROR FATAL Exception\" path\\to\\logs\\*.log")
-# 或 Linux 环境：
-shell.exec(command="grep -rn -E 'ERROR|FATAL|Exception' /path/to/logs/ -C 3")
-```
-
-### 3. 时间范围过滤
-```bash
-# Windows — 先读取最近日志，再由 Agent 筛选时间范围
-shell.exec(command="powershell -c \"Get-Content app.log -Tail 500 | Select-String 'ERROR|Exception'\"")
-# Linux
-shell.exec(command="grep -E 'ERROR|Exception' app.log | awk -v d=\"$(date -d '1 hour ago' '+%Y-%m-%d %H')\" '$0 >= d'")
-```
-
-### 4. 统计分析
-```bash
-# Windows — 通过 PowerShell 统计错误
-shell.exec(command="powershell -c \"Get-Content app.log | Select-String 'ERROR' | Group-Object { ($_ -split '\\s+')[-1] } | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
-# Linux
-shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20")
-```
-
-### 5. 生成报告
-
-按以下结构输出分析结果：
-- 📊 概览：日志时间范围、总行数、错误数
-- 🔴 关键错误：需要立即处理的错误（附堆栈）
-- 📈 趋势：错误频率变化
-- 🔍 模式：重复出现的错误模式
-- 💡 建议：修复建议和预防措施
+- 系统级健康检查（CPU/内存/磁盘） → 用 healthcheck
+- 实时监控告警 → 用 cron-scheduler 配合 shell.exec
+- 代码级 bug 调试 → 用 code-assistant
 
 ## 常用日志路径
 
 - 知微应用日志：`~/.zhiwei/logs/lifepilot.log`
-- Windows 事件日志：通过 `powershell -c "Get-EventLog -LogName Application -Newest 50"` 查看
-- Linux 系统日志：`/var/log/syslog` 或 `/var/log/messages`
-- Nginx：`/var/log/nginx/error.log`
 - Java 应用：`./logs/` 或 `./target/logs/`
+- Nginx：`/var/log/nginx/error.log`
+- Linux 系统日志：`/var/log/syslog`
+- Windows 事件日志：通过 `powershell -c "Get-EventLog -LogName Application -Newest 50"` 查看
 
-## 注意事项
+## 工作流
 
-- 大日志文件用 `file.read` 的 `startLine`/`endLine` 读取指定范围，或用 `maxChars` 限制返回大小
-- 敏感信息（IP、用户名、密码）在输出时脱敏
+### 1. 定位日志文件
+
+```
+file.list(action="list", path="~/.zhiwei/logs", pattern="*.log")
+```
+
+### 2. 快速扫描错误
+
+**Windows：**
+```bash
+shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 500 | Select-String 'ERROR|Exception'\"")
+```
+
+**Linux：**
+```bash
+shell.exec(command="grep -rn -E 'ERROR|FATAL|Exception' /path/to/logs/ -C 3")
+```
+
+### 3. 统计错误分布
+
+**Windows：**
+```bash
+shell.exec(command="powershell -c \"Get-Content app.log | Select-String 'ERROR' | Group-Object { ($_ -split '\\s+')[-1] } | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
+```
+
+**Linux：**
+```bash
+shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20")
+```
+
+### 4. 生成分析报告
+
+按以下结构输出：
+
+```
+## 概览
+- 日志时间范围：
+- 总行数：
+- 错误数：
+
+## 关键错误（需立即处理）
+1. 错误描述（出现 N 次）
+   - 首次出现：时间
+   - 堆栈摘要：...
+
+## 错误趋势
+- 频率变化描述
+
+## 重复模式
+- 反复出现的错误模式
+
+## 修复建议
+1. 建议 1
+2. 建议 2
+```
+
+## 规则
+
+- 分析结果中引用的日志内容必须是实际读取到的，不编造日志行
+- 大日志文件用 `file.read` 的 `startLine`/`endLine` 读取指定范围，不一次性全量加载
+- 输出中的 IP、用户名等敏感信息脱敏处理
 - 二进制日志文件跳过，只处理文本日志
+- 错误严重程度分级：需立即处理 / 需关注 / 可忽略
+
+## 常见错误处理
+
+- **日志文件过大** → 先读取尾部最近的 500-1000 行，再按需扩展
+- **编码错误** → 尝试不同编码读取
+- **日志格式不规范** → 先采样几行确认分隔符和时间格式

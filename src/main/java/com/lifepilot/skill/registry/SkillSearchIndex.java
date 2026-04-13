@@ -282,8 +282,7 @@ public class SkillSearchIndex {
         return Stream.of(
                         definition.id(),
                         definition.name(),
-                        definition.description(),
-                        String.join(" ", definition.triggers())
+                        definition.description()
                 )
                 .filter(part -> part != null && !part.isBlank())
                 .map(SkillSearchIndex::expandTerms)

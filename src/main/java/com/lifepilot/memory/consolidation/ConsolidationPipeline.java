@@ -6,6 +6,7 @@ import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.TemplateStep;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -189,10 +190,10 @@ public class ConsolidationPipeline {
                         now,
                         now
                 );
-                proceduralMemory.save(template);
-
-                // 归档已提升的经验
-                semanticMemory.archive(exp);
+                SqliteBusyRetry.run(() -> {
+                    proceduralMemory.save(template);
+                    semanticMemory.archive(exp);
+                });
                 promoted++;
                 log.debug("巩固管线: 经验提升为模板, entityId={}, name={}", exp.id(), exp.name());
             }

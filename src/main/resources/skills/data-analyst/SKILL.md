@@ -1,88 +1,50 @@
 ---
 id: data-analyst
 name: "数据分析"
-description: "数据加载、统计分析与可视化"
-version: "1.0.0"
+description: "数据加载、统计分析与可视化。用户说「分析这份数据」「做个图表」「统计一下」「数据可视化」「处理 CSV」「处理 Excel」「数据清洗」「画个图」「报表」时使用。不适用于数据库 SQL 查询（用 database-query）或日志文件分析（用 log-analyzer）。"
+version: "2.0.0"
 suggested-tools:
   - code.execute
   - file.read
   - file.write
   - file.list
   - shell.exec
-triggers:
-  - "数据分析"
-  - "统计"
-  - "图表"
-  - "报表"
-  - "数据可视化"
-  - "Excel"
 ---
 
 # 数据分析指南
 
-你是 ZhiWei 的数据分析助手。通过代码执行环境完成数据加载、分析和可视化任务。
+通过代码执行环境完成数据加载、分析和可视化任务。
 
 ## 适用场景
 
-- CSV/JSON/Excel 数据探索和分析
+- CSV / JSON / Excel 数据探索和分析
 - 数据清洗和转换
 - 统计分析和假设检验
 - 图表生成和数据可视化
 - 数据质量检查
 
-
 ## 不适用场景
 
-- 数据库 SQL 查询（用 database-query）
-- 日志文件分析（用 log-analyzer）
-- 简单数学计算（直接回答，无需加载本 Skill）
+- 数据库 SQL 查询 → 用 database-query
+- 日志文件分析 → 用 log-analyzer
+- 简单数学计算 → 直接回答
+- 知微 Datastore 操作 → 用 datastore
 
-## 工具使用说明
+## 工作流
 
-### code.execute — 核心分析工具
+### 1. 预览数据
 
-使用持久内核（kernelId）保持变量跨调用共享：
-
-```
-code.execute(language="python", kernelId="data-analysis", code="import pandas as pd\ndf = pd.read_csv('data.csv')\nprint(df.shape, df.dtypes)")
-```
-
-- `kernelId` 相同的多次调用共享变量（df 不会丢失）
-- 不传 `kernelId` 则一次性沙箱，执行完变量即丢弃
-- 特殊 code 值：`kernel:reset` 清空状态，`kernel:inspect` 查看当前变量
-
-### file.read — 预览数据文件
-
-大文件先用 `file.read` 预览前几行，确认结构后再在内核中加载：
+大文件先预览结构，确认列名和格式：
 
 ```
 file.read(path="data.csv", maxChars=2000)
 ```
 
-### file.list — 查找数据文件
+### 2. 加载与探索
 
-```
-file.list(action="list", path="数据目录", pattern="*.csv")
-file.list(action="search", path="项目目录", pattern="import pandas", filePattern="*.py")
-```
+使用持久内核保持变量跨调用共享：
 
-### file.write — 保存分析结果
-
-```
-file.write(path="output/report.md", content="# 分析报告\n...")
-```
-
-### shell.exec — 环境准备
-
-```
-shell.exec(command="pip install openpyxl", workingDirectory="/project")
-```
-
-## 分析工作流
-
-### 1. 数据加载与探索
-
-```
+```python
 code.execute(language="python", kernelId="analysis", code="""
 import pandas as pd
 df = pd.read_csv('data.csv')
@@ -93,9 +55,11 @@ print(df.isnull().sum())
 """)
 ```
 
-### 2. 数据清洗
+`kernelId` 相同的调用共享变量。不传则一次性沙箱。
 
-```
+### 3. 数据清洗
+
+```python
 code.execute(language="python", kernelId="analysis", code="""
 df = df.dropna(subset=['关键列'])
 df['日期列'] = pd.to_datetime(df['日期列'])
@@ -104,9 +68,9 @@ print(f'清洗后: {len(df)} 行')
 """)
 ```
 
-### 3. 分析与可视化
+### 4. 分析与可视化
 
-```
+```python
 code.execute(language="python", kernelId="analysis", code="""
 import matplotlib
 matplotlib.use('Agg')
@@ -122,20 +86,23 @@ print('图表已保存')
 """)
 ```
 
-### 4. 保存结果
+### 5. 保存结果
 
-```
+```python
 code.execute(language="python", kernelId="analysis", code="df.to_csv('output/cleaned.csv', index=False)")
 ```
 
-## 注意事项
+## 规则
 
-- 大文件（>100MB）先用 `file.read` 预览，再用 `chunksize` 或 `usecols` 分块加载
-- 可视化使用 `Agg` 后端，保存为图片而非交互式显示
-- 中文图表需设置字体：`plt.rcParams['font.sans-serif'] = ['SimHei']`
+- 大文件（>100MB）先用 `file.read` 预览，再用 `chunksize` 或 `usecols` 分块加载，不一次性全量读取
+- 可视化使用 `Agg` 后端 + `plt.savefig()`，不用交互式显示
+- 中文图表必须设置字体：`plt.rcParams['font.sans-serif'] = ['SimHei']`
+- 分析结论必须有数据支撑，输出具体数值而非模糊描述
+- 清洗操作前先打印清洗前后的行数变化，让用户知道丢失了多少数据
 
 ## 常见错误处理
 
-- **编码错误**：尝试 `encoding='utf-8'` 或 `encoding='gbk'`
-- **内存不足**：使用 `chunksize` 分块读取，或 `usecols` 只读需要的列
-- **图表中文乱码**：设置 matplotlib 中文字体
+- **编码错误** → 尝试 `encoding='utf-8'` 或 `encoding='gbk'`
+- **内存不足** → 使用 `chunksize` 分块读取，或 `usecols` 只读需要的列
+- **图表中文乱码** → 设置 matplotlib 中文字体
+- **依赖未安装** → `shell.exec(command="pip install openpyxl")` 安装

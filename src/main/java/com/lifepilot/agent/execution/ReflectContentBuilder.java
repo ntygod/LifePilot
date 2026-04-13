@@ -243,21 +243,61 @@ public final class ReflectContentBuilder {
     private static String buildToolFailureContent(ReactAgentState state, int iteration, int remaining) {
         var steps = state.steps();
         String toolName = "未知工具";
+        String toolId = "";
         String briefError = "";
 
         // 逆序扫描找到最近一个失败的 Observation
         for (int i = steps.size() - 1; i >= 0; i--) {
             if (steps.get(i) instanceof ReactStep.Observation obs && !obs.success()) {
                 toolName = obs.toolName() != null ? obs.toolName() : obs.toolId();
-                briefError = obs.output() != null && obs.output().length() > 100
-                        ? obs.output().substring(0, 100) + "..."
+                toolId = obs.toolId() != null ? obs.toolId() : "";
+                briefError = obs.output() != null && obs.output().length() > 200
+                        ? obs.output().substring(0, 200) + "..."
                         : (obs.output() != null ? obs.output() : "");
                 break;
             }
         }
 
-        return "上一步工具 %s 执行失败: %s。我需要分析失败原因并决定：重试（修改参数）、切换策略、还是向用户说明。当前已执行 %d 轮，剩余步骤预算 %d。"
-                .formatted(toolName, briefError, iteration + 1, remaining);
+        // 统计连续失败次数（从最新步骤向前数，同一工具连续失败的次数）
+        int consecutiveFailures = countConsecutiveFailures(steps, toolId);
+
+        var sb = new StringBuilder();
+        sb.append("⚠ 工具执行失败\n");
+        sb.append("工具: ").append(toolName).append('\n');
+        sb.append("错误: ").append(briefError).append('\n');
+        if (consecutiveFailures > 1) {
+            sb.append("连续失败: ").append(consecutiveFailures).append(" 次\n");
+        }
+        sb.append("已执行轮次: ").append(iteration + 1).append("，剩余预算: ").append(remaining).append('\n');
+        sb.append('\n');
+        if (consecutiveFailures >= 2) {
+            sb.append("同一工具已连续失败 ").append(consecutiveFailures)
+                    .append(" 次，禁止再使用相同参数调用。必须切换工具或根本性调整参数。");
+        } else {
+            sb.append("请分析错误原因，调整参数重试或切换到其他工具。禁止使用完全相同的参数重复调用。");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 统计从最新步骤向前，同一工具连续失败的次数。
+     */
+    private static int countConsecutiveFailures(List<ReactStep> steps, String targetToolId) {
+        if (targetToolId == null || targetToolId.isEmpty()) {
+            return 1;
+        }
+        int count = 0;
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            if (steps.get(i) instanceof ReactStep.Observation obs) {
+                if (!obs.success() && targetToolId.equals(obs.toolId())) {
+                    count++;
+                } else {
+                    break;
+                }
+            }
+            // 跳过 ToolCall、Reflect 等非 Observation 步骤继续向前
+        }
+        return Math.max(count, 1);
     }
 
     /** 周期性触发的反思文本。 */

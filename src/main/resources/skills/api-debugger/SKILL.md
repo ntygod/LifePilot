@@ -1,111 +1,102 @@
 ---
 id: api-debugger
 name: "API 调试"
-description: "REST/GraphQL 接口测试与调试"
-version: "1.0.0"
+description: "REST/GraphQL 接口测试与调试。用户说「测试接口」「调试 API」「发个请求」「HTTP 请求」「接口返回不对」「Postman」「curl 一下」时使用。不适用于浏览器自动化测试（用 browser-automation）或代码级单元测试（用 code-assistant）。"
+version: "2.0.0"
 suggested-tools:
   - shell.exec
   - code.execute
   - file.read
   - file.write
-triggers:
-  - "API调试"
-  - "接口测试"
-  - "HTTP请求"
-  - "REST"
-  - "调试接口"
-  - "Postman"
 ---
 
 # API 调试指南
 
-你是 ZhiWei 的 API 调试助手。帮助用户测试、分析和调试 REST/GraphQL 接口。
+测试、分析和调试 REST / GraphQL 接口。
 
 ## 适用场景
 
-- REST API 请求测试（GET/POST/PUT/DELETE）
+- REST API 请求测试（GET / POST / PUT / DELETE）
 - GraphQL 查询和变更测试
 - 响应格式验证和错误分析
-- Mock 数据和测试数据生成
-- 接口文档与实际行为对比验证
+- 接口文档与实际行为对比
+- Mock 数据生成
 
+## 不适用场景
 
-## When NOT to Use
+- 浏览器自动化测试 → 用 browser-automation
+- 代码级单元测试 → 用 code-assistant
+- 简单的单次 curl 命令 → 直接用 `shell.exec`
 
-- 浏览器自动化测试（用 browser-automation）
-- 代码级单元测试（用 code-assistant）
-- 简单的 curl 命令（直接用 shell.exec）
+## 工作流
 
-## 请求测试
+### 1. 发送请求
 
-### REST API
-
+**GET：**
 ```bash
-# GET 请求
 shell.exec(command="curl -s -w '\\nHTTP_CODE:%{http_code}' 'https://api.example.com/users'")
-
-# POST 请求（JSON）
-shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"test\"}' 'https://api.example.com/users'")
-
-# 带认证
-shell.exec(command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.example.com/protected'")
-
-# 格式化输出
-shell.exec(command="curl -s 'https://api.example.com/users' | python -m json.tool")
 ```
 
-### GraphQL
+**POST（JSON）：**
+```bash
+shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"test\"}' 'https://api.example.com/users'")
+```
 
+**带认证：**
+```bash
+shell.exec(command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.example.com/protected'")
+```
+
+**GraphQL：**
 ```bash
 shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"query\":\"{ users { id name } }\"}' 'https://api.example.com/graphql'")
 ```
 
-## 响应分析
+### 2. 分析响应
 
 检查要点：
 - HTTP 状态码是否符合预期
 - 响应体结构是否与文档一致
 - 错误响应是否包含有用信息
-- 响应时间是否合理
 - Content-Type 是否正确
 
-## Mock 数据生成
-
-```python
-code.execute(language="python", code="
-import json, random, string
-
-def gen_user():
-    return {
-        'id': random.randint(1, 10000),
-        'name': ''.join(random.choices(string.ascii_letters, k=8)),
-        'email': f\"{''.join(random.choices(string.ascii_lowercase, k=5))}@example.com\"
-    }
-
-mock_data = [gen_user() for _ in range(10)]
-print(json.dumps(mock_data, indent=2))
-")
+格式化输出：
+```bash
+shell.exec(command="curl -s 'URL' | python -m json.tool")
 ```
 
-## 批量测试流程
+### 3. 批量测试
 
-1. 读取接口文档或 OpenAPI spec
-
+读取接口文档或 OpenAPI spec：
 ```
 file.read(path="openapi.yaml")
 ```
 
-2. 逐个端点测试
-3. 记录测试结果
-4. 生成测试报告
+逐个端点测试，记录结果：
+```
+file.write(path="api-test-report.md", content="测试报告")
+```
 
+### 4. Mock 数据生成
+
+```python
+code.execute(language="python", code="
+import json, random, string
+mock_data = [{'id': i, 'name': ''.join(random.choices(string.ascii_letters, k=8))} for i in range(10)]
+print(json.dumps(mock_data, indent=2))
+")
 ```
-file.write(path="api-test-report.md", content="测试报告内容")
-```
+
+## 规则
+
+- 每次请求输出 HTTP 状态码，不只看响应体
+- 认证信息（Token / API Key）不在输出中明文显示，用变量替代
+- 开发环境可用 `-k` 跳过 SSL 验证，但必须注明"仅限测试"
+- 批量测试时先测一个端点确认格式，再批量执行
 
 ## 常见错误处理
 
-- **连接超时**：检查 URL 和网络，增加 `--connect-timeout` 参数
-- **401/403**：检查认证信息（Token/API Key）
-- **CORS 错误**：这是浏览器限制，curl 不受影响
-- **SSL 错误**：开发环境可用 `-k` 跳过证书验证（仅限测试）
+- **连接超时** → 检查 URL 和网络，增加 `--connect-timeout` 参数
+- **401/403** → 检查认证信息（Token / API Key）
+- **CORS 错误** → 这是浏览器限制，curl 不受影响
+- **SSL 错误** → 开发环境用 `-k`，生产环境检查证书

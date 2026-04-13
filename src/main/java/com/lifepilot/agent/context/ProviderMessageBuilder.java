@@ -31,6 +31,7 @@ public class ProviderMessageBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderMessageBuilder.class);
     private static final int CURRENT_TURN_DIGEST_MIN_CHARS = 320;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final TranscriptHygieneEngine hygieneEngine;
     private final SessionPruningEngine pruningEngine;
@@ -191,10 +192,12 @@ public class ProviderMessageBuilder {
     private String buildStructuredPrompt(AssembledContext context) {
         List<ContextMessageFormatter.TaggedBlock> promptBlocks =
                 ContextMessageFormatter.parseTaggedBlocks(context.userPrompt());
+        String loadedSkillsBlock = findTaggedBlock(promptBlocks, "loaded_skills");
         String runtimeBlock = findTaggedBlock(promptBlocks, "runtime_context");
         String currentRequestBlock = findTaggedBlock(promptBlocks, "current_request");
 
         List<String> sections = new ArrayList<>();
+        appendSectionIfPresent(sections, loadedSkillsBlock);
         appendSectionIfPresent(sections, runtimeBlock);
         context.contextMessages().stream()
                 .map(this::extractRawTaggedContext)
@@ -202,7 +205,9 @@ public class ProviderMessageBuilder {
                 .forEach(sections::add);
         promptBlocks.stream()
                 .map(ContextMessageFormatter.TaggedBlock::rawText)
-                .filter(raw -> !raw.equals(runtimeBlock) && !raw.equals(currentRequestBlock))
+                .filter(raw -> !raw.equals(loadedSkillsBlock)
+                        && !raw.equals(runtimeBlock)
+                        && !raw.equals(currentRequestBlock))
                 .forEach(sections::add);
 
         String historyTranscript = ContextMessageFormatter.serializeHistoryTranscript(context.historyMessages()).strip();
@@ -254,13 +259,19 @@ public class ProviderMessageBuilder {
             case ReactStep.Thought thought -> new AssistantMessage(thought.content());
             // ToolCall 由 convertStepsToMessages 批量合并处理，不在此单独转换
             case ReactStep.ToolCall ignored -> null;
-            case ReactStep.Observation observation -> ToolResponseMessage.builder()
-                    .responses(List.of(new ToolResponseMessage.ToolResponse(
-                            observation.callId() != null ? observation.callId() : observation.toolId(),
-                            sanitizeToolName(observation.toolId()),
-                            formatObservationForPrompt(observation)
-                    )))
-                    .build();
+            case ReactStep.Observation observation -> {
+                // Skill 指南已提升到系统提示词，对话历史中用摘要替代原文避免重复
+                String content = isPromotedSkillResult(observation)
+                        ? buildSkillLoadSummary(observation.output())
+                        : formatObservationForPrompt(observation);
+                yield ToolResponseMessage.builder()
+                        .responses(List.of(new ToolResponseMessage.ToolResponse(
+                                observation.callId() != null ? observation.callId() : observation.toolId(),
+                                sanitizeToolName(observation.toolId()),
+                                content
+                        )))
+                        .build();
+            }
             case ReactStep.Answer answer -> new AssistantMessage(answer.content());
             case ReactStep.Suspend suspend -> new AssistantMessage(
                     "Agent 已挂起，等待恢复信号。挂起原因: " + formatSuspendReason(suspend.reason()));
@@ -279,6 +290,31 @@ public class ProviderMessageBuilder {
                 yield null;
             }
         };
+    }
+
+    /**
+     * 判断 Observation 是否为已提升到系统提示词的 Skill 加载结果。
+     *
+     * <p>仅 {@code FileReadToolExecutor.executeSkillRead} 会在输出中写入 {@code _skillIds} 字段。</p>
+     */
+    private boolean isPromotedSkillResult(ReactStep.Observation observation) {
+        return observation.success()
+                && observation.output() != null
+                && observation.output().contains("\"_skillIds\"");
+    }
+
+    /** 从 Skill 加载结果中提取 skillId 列表，生成简要摘要。 */
+    private String buildSkillLoadSummary(String output) {
+        try {
+            var data = OBJECT_MAPPER.readTree(output);
+            var ids = data.path("_skillIds");
+            if (ids.isArray() && !ids.isEmpty()) {
+                var names = new java.util.ArrayList<String>();
+                ids.forEach(node -> names.add(node.asText()));
+                return "已加载 Skill 指南: " + String.join(", ", names);
+            }
+        } catch (Exception ignored) {}
+        return "Skill 指南已加载";
     }
 
     private String formatObservationForPrompt(ReactStep.Observation observation) {

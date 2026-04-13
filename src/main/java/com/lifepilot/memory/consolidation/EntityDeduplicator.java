@@ -2,6 +2,7 @@ package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -169,7 +170,7 @@ public class EntityDeduplicator {
                 primary.extractionConfidence(), primary.importanceScore(),
                 mergedAccessCount, primary.lastAccessedAt(),
                 primary.createdAt(), Instant.now());
-        semanticMemory.upsertWithConflictDetection(merged, merged.sourceConversationId());
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(merged, merged.sourceConversationId()));
 
         // 5. 迁移关系：将从实体的关系指向主实体
         try {
@@ -180,7 +181,7 @@ public class EntityDeduplicator {
         }
 
         // 6. 归档从实体
-        semanticMemory.archive(secondary);
+        SqliteBusyRetry.run(() -> semanticMemory.archive(secondary));
 
         // 7. 记录合并日志
         logMerge(primary.id(), secondary.id(), pair.similarity,

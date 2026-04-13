@@ -38,7 +38,10 @@ public class GitStatusToolExecutor {
     public ToolResult execute(ToolInput input) {
         try {
             String pathStr = input.getOptionalParam("path", String.class)
-                    .orElse(System.getProperty("user.dir"));
+                    .orElse(null);
+            if (pathStr == null) {
+                return ToolResult.error("必须指定 path 参数（Git 仓库路径）");
+            }
             Path repoPath = Path.of(pathStr).toAbsolutePath().normalize();
 
             if (!gitCmd.isGitRepo(repoPath)) {

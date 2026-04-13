@@ -5,6 +5,7 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -271,7 +272,7 @@ public class RealtimeExtractor {
                 confidence,
                 importance,
                 0, null, now, now);
-        semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext));
         log.debug("AUDN ADD: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
@@ -305,7 +306,7 @@ public class RealtimeExtractor {
                 Math.max(old.importanceScore(), newImportance),
                 old.accessCount(), old.lastAccessedAt(),
                 old.createdAt(), Instant.now());
-        semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
         log.debug("AUDN UPDATE: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
@@ -318,7 +319,7 @@ public class RealtimeExtractor {
             log.debug("AUDN DELETE 跳过: 未找到匹配实体, name={}", decision.entityName());
             return;
         }
-        semanticMemory.archive(existing.get());
+        SqliteBusyRetry.run(() -> semanticMemory.archive(existing.get()));
         log.debug("AUDN DELETE: name={}, type={}", decision.entityName(), decision.entityType());
     }
 

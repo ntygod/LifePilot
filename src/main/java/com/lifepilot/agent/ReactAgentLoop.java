@@ -376,14 +376,18 @@ public class ReactAgentLoop implements CallbackHelper {
                         loopContext,
                         this::appendAndPublishStep);
 
-                // ★ Skill 工具激活 — 检测 file.read 返回的 _skillIds 并激活对应工具
-                var newActivatedTools = detectSkillToolActivation(state, preExecStepCount);
-                if (!newActivatedTools.isEmpty()) {
-                    state = state.withActivatedToolIds(newActivatedTools);
+                // ★ Skill 工具激活 — 检测 file.read 返回的 _skillIds 并激活对应工具，同时提取指南内容
+                var activation = detectSkillToolActivation(state, preExecStepCount);
+                if (activation.hasActivation()) {
+                    state = state.withActivatedToolIds(activation.toolIds());
                     cachedToolCallbacks = null;
                     log.info("Skill 工具已激活: traceId={}, skills={}, totalActivated={}",
-                            state.traceId(), newActivatedTools,
+                            state.traceId(), activation.toolIds(),
                             state.activatedToolIds() != null ? state.activatedToolIds().size() : 0);
+                }
+                if (activation.skillContent() != null) {
+                    state = state.appendSkillContent(activation.skillContent());
+                    cachedContext = null;  // Skill 指南已注入 state，需重建系统提示词
                 }
 
                 // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
@@ -1311,27 +1315,45 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     /**
-     * 检测 file.read 工具结果中的 _skillIds 字段，合并所有相关 Skill 的 suggestedTools。
+     * Skill 激活检测结果 — 包含需要激活的工具 ID 和 Skill 指南内容。
+     */
+    private record SkillActivationResult(Set<String> toolIds, @Nullable String skillContent) {
+        boolean hasActivation() {
+            return !toolIds.isEmpty();
+        }
+    }
+
+    /**
+     * 检测 file.read 工具结果中的 _skillIds 字段，合并所有相关 Skill 的 suggestedTools，
+     * 同时提取 Skill 指南内容用于注入系统提示词。
      *
      * @param state 当前状态（包含新增的 Observation 步骤）
      * @param fromStepIndex 扫描起始步骤索引
-     * @return 需要激活的工具 ID 集合（可能为空）
+     * @return 激活结果，包含工具 ID 集合和 Skill 指南内容
      */
-    private Set<String> detectSkillToolActivation(ReactAgentState state, int fromStepIndex) {
+    private SkillActivationResult detectSkillToolActivation(ReactAgentState state, int fromStepIndex) {
         if (config.getCoreToolIds().isEmpty()) {
-            return Set.of();
+            return new SkillActivationResult(Set.of(), null);
         }
         if (skillRegistry == null && toolRegistry == null) {
-            return Set.of();
+            return new SkillActivationResult(Set.of(), null);
         }
         Set<String> toolIds = new LinkedHashSet<>();
+        String skillContent = null;
         for (int i = fromStepIndex; i < state.steps().size(); i++) {
             if (!(state.steps().get(i) instanceof ReactStep.Observation obs)) continue;
             if (!obs.success() || obs.output() == null) continue;
 
-            // 尝试解析 _skillIds 字段
-            List<String> skillIds = extractSkillIds(obs.output());
-            for (String skillId : skillIds) {
+            // 尝试解析 _skillIds 和 content 字段
+            var parsed = extractSkillData(obs.output());
+            if (parsed == null) continue;
+
+            // 提取 Skill 指南内容
+            if (parsed.content() != null && !parsed.content().isBlank()) {
+                skillContent = parsed.content();
+            }
+
+            for (String skillId : parsed.skillIds()) {
                 if (skillId.startsWith("mcp:")) {
                     // MCP server — 从 registry 获取该 server 的所有工具 ID
                     String serverName = skillId.substring(4);
@@ -1347,24 +1369,31 @@ public class ReactAgentLoop implements CallbackHelper {
                 }
             }
         }
-        return toolIds;
+        return new SkillActivationResult(toolIds, skillContent);
     }
 
-    /** 从工具输出 JSON 中提取 _skillIds 列表。 */
+    /** Skill 数据解析结果。 */
+    private record SkillData(List<String> skillIds, @Nullable String content) {}
+
+    /** 从工具输出 JSON 中提取 _skillIds 列表和 content 字段。 */
     @SuppressWarnings("unchecked")
-    private List<String> extractSkillIds(String output) {
+    @Nullable
+    private SkillData extractSkillData(String output) {
         try {
             var data = objectMapper.readValue(output, Map.class);
             Object raw = data.get("_skillIds");
-            if (raw instanceof List<?> list) {
-                return list.stream()
-                        .filter(String.class::isInstance)
-                        .map(String.class::cast)
-                        .toList();
+            if (!(raw instanceof List<?> list)) {
+                return null;
             }
+            var skillIds = list.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .toList();
+            String content = data.get("content") instanceof String s ? s : null;
+            return new SkillData(skillIds, content);
         } catch (Exception ignored) {
             // 非 JSON 或不含 _skillIds — 正常，忽略
+            return null;
         }
-        return List.of();
     }
 }

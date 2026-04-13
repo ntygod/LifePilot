@@ -20,5 +20,13 @@ public record CronTaskEntry(
         String instruction,
         String status,
         String createdAt,
-        String updatedAt
-) {}
+        String updatedAt,
+        /** 创建时已加载的 Skill ID 列表（逗号分隔），执行时自动预加载。 */
+        @org.springframework.lang.Nullable String skillIds
+) {
+    /** 兼容旧代码的无 skillIds 构造器。 */
+    public CronTaskEntry(String id, String name, String schedule, String instruction,
+                         String status, String createdAt, String updatedAt) {
+        this(id, name, schedule, instruction, status, createdAt, updatedAt, null);
+    }
+}

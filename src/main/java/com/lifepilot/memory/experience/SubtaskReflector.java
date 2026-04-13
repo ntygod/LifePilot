@@ -7,6 +7,7 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -253,8 +254,10 @@ public class SubtaskReflector {
                 now
         );
 
-        semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection");
-        vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        SqliteBusyRetry.run(() -> {
+            semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection");
+            vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        });
 
         log.info("子任务反思: 子任务经验已写入, entityId={}, name={}", entity.id(), name);
     }
