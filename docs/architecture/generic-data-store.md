@@ -2,12 +2,12 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.datastore`
-> **最后更新**：2026-04-11
+> **最后更新**：2026-04-13
 > **实现状态**：✅ 已完成
 
 ## 1. 模块概述
 
-通用数据存储（GenericDataStore）为知微的所有扩展模块（Skill、Agent、Workflow、外部同步）提供统一的、Schema-Free 的数据持久化能力。当前内置 Skill（Todo / Schedule / Habit）各自维护独立的 Repository 和硬编码表结构，用户通过 YAML Skill、自定义 Agent 或 Workflow 扩展的功能无法持久化领域数据。本模块通过「集合（Collection）+ JSON 文档（Document）+ 可选属性定义（PropertyDefinition）」三层模型，让任何扩展模块都能在运行时动态创建数据集合并执行 CRUD 操作，无需编写 Java 代码或 Flyway 迁移脚本。
+通用数据存储（GenericDataStore）为知微的所有扩展模块（Skill、Agent、Workflow）提供统一的、Schema-Free 的数据持久化能力。本模块采用**文档优先**模型：每条记录以 Agent 整理的自然语言富文本（content）为主表示，直接存入知识库 `documents` 表；可选的结构化字段（metadata_json）作为副索引支持排序、过滤、聚合。通过「集合（Collection）+ 知识库文档（Document）+ 可选字段提示（FieldHint）」三层模型，任何扩展模块都能在运行时动态创建数据集合并执行 CRUD 操作，无需编写 Java 代码或 Flyway 迁移脚本。
 
 ### 1.1 问题域
 
@@ -16,23 +16,21 @@
 | YAML Skill | Skill 通过 `file.read(skill=...)` 按需激活，无数据存储 | 完全缺失 |
 | 自定义 Agent | `AgentOrchestrator.run()` 执行，无持久化状态 | 完全缺失 |
 | Workflow | `WorkflowContext` 为内存 HashMap，仅持久化执行状态 | 领域数据缺失 |
-| 外部同步 | `SyncEngine` 硬编码 3 种内置实体类型映射 | 无法同步扩展数据 |
 | MCP | 外部服务器自行管理存储 | 不在本模块范围 |
 
 ### 1.2 用户需求分类
 
-通过分析个人助手的典型使用场景，用户数据需求归纳为三类存储模式：
+通过分析个人助手的典型使用场景，用户数据需求归纳为两类存储模式：
 
-**Document Store（结构化列表管理）**：书单、影单、购物清单、旅行计划、食谱、联系人、记账。CRUD + 过滤 + 排序。最高频需求。
+**普通集合（结构化列表 + 笔记）**：书单、影单、购物清单、旅行计划、食谱、联系人、记账、日记、会议记录、灵感。CRUD + 过滤 + 排序 + 语义检索。在文档优先模型下，结构化列表和非结构化笔记的行为一致：content 存富文本，metadata 存可查询字段。
 
-**Note Store（非结构化笔记）**：日记、会议记录、灵感、梦境记录。写入 + 资料沉淀。与 L2 情景记忆有部分重叠，但用户期望显式的「笔记本」概念；在当前实现中，资料检索统一通过内部 Knowledge Base + `knowledge.search` 完成。
-
-**Metric Store（时序指标追踪）**：体重、运动量、睡眠、饮水、学习时长。追加 + 时间范围查询 + 聚合（均值、趋势、极值）。
+**时序集合（指标追踪）**：体重、运动量、睡眠、饮水、学习时长。追加 + 时间范围查询 + 聚合（均值、趋势、极值）。通过集合的 `timeSeries` 布尔标记区分。
 
 ### 1.3 设计目标
 
-- 统一存储接口：所有扩展模块通过同一套 API 读写数据
-- Schema-Free + 可选 Schema：默认无需定义结构，可选声明属性定义以获得类型校验和索引加速
+- 文档优先：每条记录的主表示是自然语言富文本，直接参与 embedding，语义检索效果好
+- 消除双存储：文档直接存入知识库 `documents` 表，无异步同步链路，无一致性负担
+- Schema-Free + 可选提示：默认无需定义结构，可选声明字段提示（FieldHint）以获得索引加速
 - Agent 可发现：Agent 能通过工具调用自动创建集合、写入文档，无需用户手动配置
 - 与记忆系统正交：GenericDataStore 存储用户显式管理的领域数据，记忆系统存储 Agent 隐式积累的认知数据
 
@@ -42,170 +40,139 @@
 ```mermaid
 graph TB
     subgraph "通用数据存储"
-        DSM["DataStoreManager<br/>(集合 CRUD 门面)"]
+        DSM["DataStoreManager<br/>(文档优先门面)"]
         COL["Collection<br/>(数据集合)"]
-        DOC["Document<br/>(JSON 文档)"]
-        PD["PropertyDefinition<br/>(可选属性定义)"]
+        FH["FieldHint<br/>(可选字段提示)"]
         DSM --> COL
-        DSM --> DOC
-        DSM --> PD
+        DSM --> FH
     end
 
-    subgraph "存储引擎"
-        DR["DocumentRepository<br/>(JdbcTemplate)"]
-        CR["CollectionRepository"]
+    subgraph "知识库存储层"
+        KBM["KnowledgeBaseManager"]
+        KDR["DocumentRepository<br/>(knowledge 模块)"]
+        DI["DocumentIngester<br/>(分块+embedding)"]
+    end
+
+    subgraph "查询引擎"
+        CR["CollectionRepository<br/>(ds_collections)"]
         QE["QueryEngine<br/>(动态 SQL 构建)"]
         AGG["AggregationEngine<br/>(时序聚合)"]
-        DR --> QE
-        DR --> AGG
     end
 
     subgraph "工具层"
-        DST["DataStoreTool<br/>(BuiltinTool, 8 个操作)"]
+        STP["StorageToolProvider"]
+        DST["DatastoreActionDispatchExecutor<br/>(9 个操作)"]
+        STP --> DST
     end
 
     subgraph "集成层"
-        SSP["DataStoreSkillProvider<br/>(BuiltinSkill)"]
-        SYN["DataStoreSyncAdapter<br/>(SyncConnector 扩展)"]
-        WFA["DataStoreWorkflowAdapter<br/>(WorkflowStep 扩展)"]
+        DKBP["DatastoreKnowledgeBaseProvisioner<br/>(内部知识库生命周期)"]
+        DSCA["DataStoreCrudAdapter&lt;T&gt;<br/>(泛型领域适配器)"]
     end
 
-    DST -->|"CRUD"| DSM
-    SSP -->|"注册工具"| DST
-    SYN -->|"同步扩展数据"| DSM
-    WFA -->|"工作流读写"| DSM
-    DSM --> DR
-    DSM --> CR
+    DST -->|"CRUD + 查询"| DSM
+    DSM -->|"文档 CRUD"| KDR
+    DSM -->|"异步 ingest"| DI
+    DSM -->|"删除文档"| KBM
+    DSM -->|"集合 CRUD"| CR
+    DSM -->|"结构化查询"| QE
+    DSM -->|"时序聚合"| AGG
+    DSM -->|"知识库绑定"| DKBP
+    DSCA -->|"领域 CRUD"| DSM
 ```
 
 ## 3. 核心数据模型
 
 ### 3.1 Collection（数据集合）
 
-集合是文档的容器，类似 Notion 的 Database 或 Airtable 的 Table。每个集合有唯一名称和可选的属性定义。
+集合是文档的逻辑容器。每个集合绑定一个内部知识库，文档直接存入知识库 `documents` 表。通过 `timeSeries` 布尔标记区分普通集合和时序集合。
 
 ```java
+@Builder(toBuilder = true)
 public record Collection(
-    String id,              // UUID
-    String name,            // 集合名称，如 "书单"、"体重记录"
-    String description,     // 集合描述
-    CollectionType type,    // DOCUMENT / NOTE / METRIC
-    String propertiesJson,  // 属性定义 JSON（可选）
-    String projectionConfigJson, // 向量投影配置 JSON（集合级）
-    String metadataJson,    // 扩展元数据
-    String defaultKnowledgeBaseId, // 当前 Datastore 的内部 Knowledge Base
-    String createdBy,       // 创建来源（skill:todo / agent:researcher / workflow:daily-report）
-    String createdAt,
-    String updatedAt
-) {}
-
-public enum CollectionType {
-    DOCUMENT,  // 结构化列表（书单、购物清单、联系人）
-    NOTE,      // 非结构化笔记（日记、灵感）
-    METRIC     // 时序指标（体重、睡眠、运动量）
-}
-```
-
-### 3.1.1 projectionConfigJson（集合级向量投影配置）
-
-`projection_config_json` 挂在 Collection 级，而不是知识库挂载级。它用于描述当 datastore 文档被同步到知识库时，结构化 JSON 应如何投影成可检索文本。
-
-- 省略该配置时，系统会持久化为 `{}`，表示使用默认的通用投影规则
-- 显式配置时，可覆盖默认规则，适配更复杂的结构化数据形态
-- 该字段是 datastore 进入知识库向量检索链路的入口配置，不应再依赖硬编码字段名推断
-
-### 3.2 Document（JSON 文档）
-
-文档是集合中的一条记录，核心数据以 JSON 存储在 `data_json` 列。
-
-```java
-public record Document(
-    String id,           // UUID
-    String collectionId, // 所属集合 ID
-    String dataJson,     // 核心数据 JSON，如 {"title":"三体","author":"刘慈欣","rating":5}
-    String recordedAt,   // 记录时间（METRIC 类型用于时序排序）
+    String id,                     // UUID
+    String name,                   // 集合名称（唯一），如 "书单"、"体重记录"
+    @Nullable String description,  // 集合描述（可选）
+    boolean timeSeries,            // 是否为时序集合
+    @Nullable String fieldHintsJson, // 字段提示 JSON（可选，List<FieldHint> 序列化）
+    @Nullable String defaultKnowledgeBaseId, // 绑定的内部知识库 ID
+    @Nullable String createdBy,    // 创建来源（skill:todo / agent:researcher）
     String createdAt,
     String updatedAt
 ) {}
 ```
 
-### 3.3 PropertyDefinition（属性定义）
+### 3.2 文档存储（知识库 documents 表）
 
-可选的属性定义，存储在 Collection 的 `propertiesJson` 中。声明后可获得：类型校验、SQLite Generated Column 索引加速、Agent 工具描述增强。
+文档直接存入知识库的 `documents` 表，不再有独立的 `ds_documents` 表。每条 datastore 文档复用知识库现有字段，并使用两个新增列：
+
+| 字段 | 用法 | 说明 |
+|------|------|------|
+| `source_type` | `'DATASTORE_DOCUMENT'` | 标识文档来源 |
+| `source_datastore_id` | 指向 `ds_collections.id` | 集合归属 |
+| `source_key` | `"DATASTORE:{collectionId}:{uuid}"` | 幂等标识 |
+| `content` | Agent 整理的自然语言富文本 | **新增列**，作为 ingest 的输入源 |
+| `metadata_json` | 结构化字段 JSON，如 `{"title":"三体","rating":5}` | 支持 `json_extract` 查询 |
+| `recorded_at` | 时序集合的 ISO 8601 时间戳 | **新增列**，仅时序集合使用 |
+| `content_hash` | content 的 SHA-256 | 更新时判断 content 是否变化 |
+| `file_name` | `"{collection.name} - {title 或 docId}"` | 显示名 |
+| `file_path` | `"datastore://{collectionId}/{documentId}"` | 虚拟路径 |
+| `mime_type` | `"text/plain"` | 固定值 |
+
+### 3.3 FieldHint（字段提示）
+
+可选的字段提示，存储在 Collection 的 `fieldHintsJson` 中。声明后可获得：Generated Column 索引加速、Agent 查询时的字段描述。**不做写入校验**。
 
 ```java
-public record PropertyDefinition(
-    String name,          // 属性名，如 "title"、"weight"
-    PropertyType type,    // 属性类型
-    boolean required,     // 是否必填
-    String description    // 属性描述（用于 Agent 工具 schema 生成）
+public record FieldHint(
+    String name,        // 字段名，如 "rating"
+    String type,        // SQLite 亲和类型：TEXT / NUMBER / BOOLEAN
+    @Nullable String description  // 语义描述，如 "用户对这本书的喜好评分，1-5"
 ) {}
-
-public enum PropertyType {
-    TEXT,       // 字符串
-    NUMBER,     // 数值（整数或浮点）
-    BOOLEAN,    // 布尔
-    DATE,       // ISO 8601 日期
-    DATETIME,   // ISO 8601 日期时间
-    SELECT,     // 单选（枚举值）
-    MULTI_SELECT, // 多选
-    URL,        // URL
-    JSON        // 嵌套 JSON 对象
-}
 ```
+
+与旧版 `PropertyDefinition` 的区别：
+- 类型从 9 种精简为 3 种（TEXT / NUMBER / BOOLEAN），对应 SQLite 亲和类型
+- 去除 `required` 约束，metadata 是自由 JSON
+- 仅服务于索引和 Agent 提示，不做写入校验
 
 ### 3.4 数据库表设计
 
 ```sql
--- 集合表
+-- 集合表（ds_collections）
 CREATE TABLE ds_collections (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    description TEXT,
-    type TEXT NOT NULL DEFAULT 'DOCUMENT',  -- DOCUMENT / NOTE / METRIC
-    properties_json TEXT,                    -- 属性定义 JSON 数组
-    projection_config_json TEXT NOT NULL DEFAULT '{}', -- 向量投影配置
-    metadata_json TEXT,
-    default_knowledge_base_id TEXT,          -- 内部知识库指针
-    created_by TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    id                        TEXT PRIMARY KEY,
+    name                      TEXT NOT NULL UNIQUE,
+    description               TEXT,
+    time_series               INTEGER NOT NULL DEFAULT 0,
+    field_hints_json          TEXT,
+    default_knowledge_base_id TEXT,
+    created_by                TEXT,
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL
 );
 
--- 文档表（核心存储）
-CREATE TABLE ds_documents (
-    id TEXT PRIMARY KEY,
-    collection_id TEXT NOT NULL REFERENCES ds_collections(id) ON DELETE CASCADE,
-    data_json TEXT NOT NULL DEFAULT '{}',
-    recorded_at TEXT,                        -- METRIC 类型的时序时间戳
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
+-- 文档存储在知识库 documents 表，新增两列（V4 迁移）：
+-- ALTER TABLE documents ADD COLUMN content TEXT;
+-- ALTER TABLE documents ADD COLUMN recorded_at TEXT;
 
--- 索引
-CREATE INDEX idx_ds_documents_collection ON ds_documents(collection_id);
-CREATE INDEX idx_ds_documents_recorded_at ON ds_documents(collection_id, recorded_at);
-
--- FTS5 全文索引（Datastore 同步到内部 Knowledge Base 后的全文检索基础）
-CREATE VIRTUAL TABLE ds_documents_fts USING fts5(
-    document_id,
-    content,
-    content_source='ds_documents',
-    tokenize='unicode61'
-);
+-- 时序查询索引
+CREATE INDEX idx_documents_ds_recorded_at
+    ON documents(source_datastore_id, recorded_at)
+    WHERE source_datastore_id IS NOT NULL AND recorded_at IS NOT NULL;
 ```
 
-**SQLite JSON + Generated Column 索引加速**：当集合声明了属性定义后，通过 `ALTER TABLE` 动态添加 Generated Column + 索引，实现对 JSON 字段的高效查询：
+**SQLite JSON + Generated Column 索引加速**：当集合声明了 FieldHint 后，通过 `ALTER TABLE` 动态在 `documents` 表添加 Generated Column + partial index，实现对 `metadata_json` 字段的高效查询：
 
 ```sql
--- 示例：为 "书单" 集合的 "rating" 属性创建索引
-ALTER TABLE ds_documents ADD COLUMN _idx_rating REAL
-    GENERATED ALWAYS AS (json_extract(data_json, '$.rating')) VIRTUAL;
-CREATE INDEX idx_ds_doc_rating ON ds_documents(_idx_rating)
-    WHERE collection_id = '{collection_id}';
+-- 示例：为 "书单" 集合的 "rating" 字段创建索引
+ALTER TABLE documents ADD COLUMN _idx_{prefix}_rating REAL
+    GENERATED ALWAYS AS (json_extract(metadata_json, '$.rating')) VIRTUAL;
+CREATE INDEX idx_ds_doc_{prefix}_rating ON documents(_idx_{prefix}_rating)
+    WHERE source_datastore_id = '{collectionId}';
 ```
 
-这是 SQLite 3.31+ 支持的特性，利用 `json_extract` 虚拟生成列实现 B-tree 索引查找，避免全表 JSON 解析扫描。
+列名格式为 `_idx_{collectionId前8位}_{fieldName}`，partial index 按 `source_datastore_id` 过滤，查询只扫描该集合的行。这是 SQLite 3.31+ 支持的特性，利用 `json_extract` 虚拟生成列实现 B-tree 索引查找，避免全表 JSON 解析扫描。
 
 
 ## 4. 核心组件
