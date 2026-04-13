@@ -786,7 +786,7 @@ lifepilot:
       enabled: true
       record-prompts: false
       retention-days: 30
-      use-scoped-value: true
+      use-scoped-value: false
     guardrail:
       enabled: true
       approval-timeout-seconds: 60

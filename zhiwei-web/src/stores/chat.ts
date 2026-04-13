@@ -70,6 +70,8 @@ export const useChatStore = defineStore('chat', () => {
   /** 开始新对话，立即创建并激活一个新会话。 */
   async function startNewSession(title?: string): Promise<ChatSession> {
     const session = await createSession(title)
+    // 新建会话没有历史消息，跳过 watch 中的 loadMessages 避免竞态覆盖
+    skipNextLoad = true
     activeSessionId.value = session.id
     return session
   }
@@ -114,16 +116,23 @@ export const useChatStore = defineStore('chat', () => {
     const session = sessions.value.find(s => s.id === sessionId)
     if (session) {
       session.title = title
+    } else {
+      // session 尚未在本地列表中（可能是懒创建还未同步），异步刷新列表
+      loadSessions().catch(() => {})
     }
   }
+
+  // 新建会话时跳过 loadMessages 的竞态守卫
+  let skipNextLoad = false
 
   // 切换会话时清空本地消息，并重新加载对应历史。
   watch(activeSessionId, async (newId) => {
     messages.value = []
     streamingContent.value = ''
-    if (newId) {
+    if (newId && !skipNextLoad) {
       await loadMessages(newId)
     }
+    skipNextLoad = false
   })
 
   return {

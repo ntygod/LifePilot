@@ -78,6 +78,42 @@ shell.exec(command="gh api \"repos/owner/repo/commits?sha=main&since=2026-04-01T
 3. 逐文件审查
 4. 提交意见：`gh pr review 55 --repo owner/repo --approve --body "审查通过"`
 
+### 远程文件内容更新
+
+GitHub Contents API 返回的 Base64 含换行符，**必须先去除换行再整体解码，禁止逐行解码**（否则多字节 UTF-8 字符会被截断产生乱码）。
+
+**Bash：**
+
+```bash
+# 读取文件（获取内容和 SHA）
+file_json=$(gh api "repos/owner/repo/contents/path.md?ref=branch")
+sha=$(echo "$file_json" | jq -r '.sha')
+old_content=$(echo "$file_json" | jq -r '.content' | tr -d '\n\r' | base64 -d)
+
+# 拼接新内容并更新
+new_content="${prepend_text}${old_content}"
+new_base64=$(echo -n "$new_content" | base64 -w 0)
+gh api -X PUT "repos/owner/repo/contents/path.md" \
+  -f message="docs: 更新说明" -f content="$new_base64" -f branch="branch" -f sha="$sha"
+```
+
+**PowerShell：**
+
+```powershell
+# 读取文件（ConvertFrom-Json 保留完整 content 字符串）
+$info = gh api "repos/owner/repo/contents/path.md?ref=branch" | ConvertFrom-Json
+$sha = $info.sha
+$oldContent = [System.Text.Encoding]::UTF8.GetString(
+    [System.Convert]::FromBase64String($info.content -replace '\s','')
+)
+
+# 拼接新内容并更新
+$newContent = $prependText + $oldContent
+$newBase64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($newContent))
+gh api -X PUT "repos/owner/repo/contents/path.md" `
+  -f message="docs: 更新说明" -f content="$newBase64" -f branch="branch" -f sha="$sha"
+```
+
 ## 规则
 
 - 禁止使用 `--paginate`
@@ -86,6 +122,7 @@ shell.exec(command="gh api \"repos/owner/repo/commits?sha=main&since=2026-04-01T
 - 不在当前 git 目录时始终指定 `--repo owner/repo`
 - 合并前确认 CI 全部通过
 - 优先使用 `--json` / `--jq` 获取结构化输出
+- GitHub API 返回的 Base64 内容含换行符，**禁止逐行解码**，必须拼接去除空白后整体解码
 
 ## 常见错误处理
 
