@@ -31,6 +31,7 @@ public class ProviderMessageBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderMessageBuilder.class);
     private static final int CURRENT_TURN_DIGEST_MIN_CHARS = 320;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final TranscriptHygieneEngine hygieneEngine;
     private final SessionPruningEngine pruningEngine;
@@ -305,7 +306,7 @@ public class ProviderMessageBuilder {
     /** 从 Skill 加载结果中提取 skillId 列表，生成简要摘要。 */
     private String buildSkillLoadSummary(String output) {
         try {
-            var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(output);
+            var data = OBJECT_MAPPER.readTree(output);
             var ids = data.path("_skillIds");
             if (ids.isArray() && !ids.isEmpty()) {
                 var names = new java.util.ArrayList<String>();

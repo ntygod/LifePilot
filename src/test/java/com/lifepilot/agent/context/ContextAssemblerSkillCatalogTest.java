@@ -340,4 +340,36 @@ class ContextAssemblerSkillCatalogTest {
                 .suspendReason(null)
                 .build();
     }
+
+    // ── stripYamlFrontmatter 测试 ──
+
+    @Test
+    void stripYamlFrontmatter_正常剥离frontmatter() {
+        String input = "---\nid: test\nname: 测试\n---\n# 标题\n正文内容";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文内容");
+    }
+
+    @Test
+    void stripYamlFrontmatter_无frontmatter时原样返回() {
+        String input = "# 标题\n正文内容";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文内容");
+    }
+
+    @Test
+    void stripYamlFrontmatter_仅有开头分隔符时原样返回() {
+        String input = "---\nid: test\nname: 测试";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo(input);
+    }
+
+    @Test
+    void stripYamlFrontmatter_frontmatter后无内容时返回空() {
+        String input = "---\nid: test\n---";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEmpty();
+    }
+
+    @Test
+    void stripYamlFrontmatter_处理CRLF换行() {
+        String input = "---\r\nid: test\r\n---\r\n# 标题\r\n正文";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文");
+    }
 }

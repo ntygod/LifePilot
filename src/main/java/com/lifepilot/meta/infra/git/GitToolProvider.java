@@ -66,7 +66,7 @@ public class GitToolProvider {
                 .description("Git 仓库只读查询")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("action"),
+                        "required", List.of("action", "path"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
@@ -165,7 +165,7 @@ public class GitToolProvider {
 
         var schema = new LinkedHashMap<String, Object>();
         schema.put("type", "object");
-        schema.put("required", List.of("action"));
+        schema.put("required", List.of("action", "path"));
         schema.put("properties", properties);
         return schema;
     }
