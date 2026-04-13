@@ -2,9 +2,7 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
-import com.lifepilot.datastore.model.PropertyDefinition;
-import com.lifepilot.datastore.model.PropertyType;
+import com.lifepilot.datastore.model.FieldHint;
 import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.CreateDatastoreRequest;
@@ -193,17 +191,11 @@ public class DatastoreController {
             String suffix = originalName.substring(originalName.lastIndexOf('.'));
             Path tempFile = Files.createTempFile("lifepilot-datastore-upload-", suffix);
             file.transferTo(Objects.requireNonNull(tempFile.toFile()));
-            // 先创建文件引用记录，拿到 Datastore 文档 ID
-            String mimeType = file.getContentType() != null ? file.getContentType() : "";
-            var dsDoc = dataStoreManager.addFileReference(
-                    collection.id(), originalName, file.getSize(), mimeType, null);
 
-            // 异步 ingest 完成后回填 knowledgeDocumentId
+            // 异步 ingest 到知识库
             ingester.ingest(defaultKnowledgeBaseId, tempFile, originalName, collection.id())
-                    .thenAccept(knowledgeDoc -> dataStoreManager.linkKnowledgeDocument(
-                            dsDoc.id(), knowledgeDoc.id()))
                     .exceptionally(ex -> {
-                        log.warn("知识库文档 ID 回填失败: dsDocId={}, error={}", dsDoc.id(), ex.getMessage());
+                        log.warn("文档 ingest 失败: datastoreId={}, error={}", collection.id(), ex.getMessage());
                         return null;
                     });
 
@@ -232,37 +224,14 @@ public class DatastoreController {
         if (request.name() == null || request.name().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Datastore 名称不能为空");
         }
-        if (request.type() == null || request.type().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Datastore 类型不能为空");
-        }
-
-        CollectionType collectionType;
-        try {
-            collectionType = CollectionType.valueOf(request.type().strip().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的 Datastore 类型: " + request.type());
-        }
-
-        List<PropertyDefinition> propDefs = null;
-        if (request.properties() != null && !request.properties().isEmpty()) {
-            propDefs = request.properties().stream()
-                    .map(dto -> new PropertyDefinition(
-                            dto.name(),
-                            PropertyType.fromValue(dto.type()),
-                            dto.required(),
-                            dto.description()))
-                    .toList();
-        }
-
         try {
             var collection = dataStoreManager.createCollection(
                     request.name().strip(),
-                    collectionType,
-                    propDefs,
+                    request.timeSeries(),
+                    request.fieldHints(),
                     request.description(),
-                    null,
-                    request.projectionConfigJson());
-            log.info("Datastore 创建成功: id={}, name={}, type={}", collection.id(), collection.name(), collection.type());
+                    null);
+            log.info("Datastore 创建成功: id={}, name={}, timeSeries={}", collection.id(), collection.name(), collection.timeSeries());
             return ApiResponse.ok(collection);
         } catch (IllegalStateException | IllegalArgumentException e) {
             log.warn("Datastore 创建失败: {}", e.getMessage());
@@ -282,7 +251,7 @@ public class DatastoreController {
                                              @RequestBody UpdateDatastoreRequest request) {
         var existing = dataStoreManager.getCollection(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Datastore 不存在: id=" + id));
-        dataStoreManager.updateCollection(id, request.description(), request.metadataJson(), request.projectionConfigJson());
+        dataStoreManager.updateCollection(id, request.description(), request.fieldHintsJson());
         log.info("Datastore 更新成功: id={}", id);
         var updated = dataStoreManager.getCollection(id).orElse(existing);
         return ApiResponse.ok(updated);

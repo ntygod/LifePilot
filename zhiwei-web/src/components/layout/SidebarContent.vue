@@ -168,7 +168,10 @@ function emitClose() {
 
 function newChat() {
   chatStore.activeSessionId = null
-  router.push({ name: 'conversations' })
+  chatStore.streamingContent = ''
+  router.push({ name: 'newConversation' }).catch(() => {
+    // 已在新对话页，静默忽略 NavigationDuplicated
+  })
   emitClose()
 }
 

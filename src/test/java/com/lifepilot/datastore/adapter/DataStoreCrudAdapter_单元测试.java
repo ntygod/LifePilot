@@ -4,12 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
-import com.lifepilot.datastore.model.Document;
 import com.lifepilot.datastore.model.FilterOp;
 import com.lifepilot.datastore.model.QueryFilter;
 import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.model.SortDirection;
+import com.lifepilot.knowledge.model.Document;
+import com.lifepilot.knowledge.model.DocumentSourceType;
+import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.tool.model.ToolResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -72,7 +73,7 @@ class DataStoreCrudAdapter_单元测试 {
         var config = new CrudAdapterConfig<>(
                 "test",
                 COLLECTION_NAME,
-                CollectionType.DOCUMENT,
+                false,
                 TestEntity.class,
                 null,
                 "测试集合"
@@ -87,7 +88,7 @@ class DataStoreCrudAdapter_单元测试 {
         return Collection.builder()
                 .id(id)
                 .name(COLLECTION_NAME)
-                .type(CollectionType.DOCUMENT)
+                .timeSeries(false)
                 .description("测试集合")
                 .createdAt(NOW)
                 .updatedAt(NOW)
@@ -95,14 +96,25 @@ class DataStoreCrudAdapter_单元测试 {
     }
 
     /** 创建一个标准的 Document 实例。 */
-    private Document 创建文档(String docId, String json) {
-        return Document.builder()
-                .id(docId)
-                .collectionId(COLLECTION_ID)
-                .dataJson(json)
-                .createdAt(NOW)
-                .updatedAt(NOW)
-                .build();
+    private Document 创建文档(String docId, String content) {
+        return new Document(
+                docId,
+                "kb-001",
+                "test-doc",
+                "datastore://col-001/" + docId,
+                content.getBytes().length,
+                "text/plain",
+                "hash",
+                DocumentStatus.READY,
+                0, 0, null, null,
+                Map.of(),
+                Instant.now(), Instant.now(),
+                DocumentSourceType.DATASTORE_DOCUMENT,
+                "DATASTORE:col-001:" + docId,
+                COLLECTION_ID, null,
+                Map.of(),
+                content, null
+        );
     }
 
     /** 准备 ensureCollection 的 mock：集合已存在。 */
@@ -117,7 +129,7 @@ class DataStoreCrudAdapter_单元测试 {
                 .thenReturn(Optional.empty());
         when(dataStoreManager.createCollection(
                 eq(COLLECTION_NAME),
-                eq(CollectionType.DOCUMENT),
+                eq(false),
                 isNull(),
                 eq("测试集合"),
                 eq("skill:test")
@@ -151,7 +163,7 @@ class DataStoreCrudAdapter_单元测试 {
             assertThat(id).isEqualTo(COLLECTION_ID);
             verify(dataStoreManager).createCollection(
                     eq(COLLECTION_NAME),
-                    eq(CollectionType.DOCUMENT),
+                    eq(false),
                     isNull(),
                     eq("测试集合"),
                     eq("skill:test")
@@ -209,7 +221,7 @@ class DataStoreCrudAdapter_单元测试 {
             }
 
             verify(dataStoreManager, times(1)).findCollection(anyString());
-            verify(dataStoreManager, never()).createCollection(any(), any(), any(), any(), any());
+            verify(dataStoreManager, never()).createCollection(any(), anyBoolean(), any(), any(), any());
         }
     }
 
@@ -222,9 +234,8 @@ class DataStoreCrudAdapter_单元测试 {
         void 正常创建_返回文档ID() {
             模拟集合已存在();
             var entity = new TestEntity("张三", 25);
-            var expectedDoc = 创建文档(DOCUMENT_ID, "{\"name\":\"张三\",\"age\":25}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(expectedDoc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
 
             ToolResult result = adapter.create(entity);
 
@@ -236,14 +247,13 @@ class DataStoreCrudAdapter_单元测试 {
         void 正常创建_序列化内容正确传递给DataStoreManager() {
             模拟集合已存在();
             var entity = new TestEntity("李四", 30);
-            var expectedDoc = 创建文档(DOCUMENT_ID, "{}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(expectedDoc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
 
             adapter.create(entity);
 
             ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-            verify(dataStoreManager).addDocument(eq(COLLECTION_ID), jsonCaptor.capture(), isNull());
+            verify(dataStoreManager).addDocument(eq(COLLECTION_ID), jsonCaptor.capture(), isNull(), isNull());
             String capturedJson = jsonCaptor.getValue();
             assertThat(capturedJson).contains("\"name\":\"李四\"");
             assertThat(capturedJson).contains("\"age\":30");
@@ -261,7 +271,7 @@ class DataStoreCrudAdapter_单元测试 {
             }
 
             var config = new CrudAdapterConfig<>(
-                    "test", COLLECTION_NAME, CollectionType.DOCUMENT,
+                    "test", COLLECTION_NAME, false,
                     TestEntity.class, null, "测试集合"
             );
             var failAdapter = new DataStoreCrudAdapter<>(dataStoreManager, failingMapper, config);
@@ -271,21 +281,20 @@ class DataStoreCrudAdapter_单元测试 {
             assertThat(result.isSuccess()).isFalse();
             assertThat(result.error()).contains("序列化失败");
             // 序列化失败时不应调用 addDocument
-            verify(dataStoreManager, never()).addDocument(any(), any(), any());
+            verify(dataStoreManager, never()).addDocument(any(), any(), any(), any());
         }
 
         @Test
         void 首次创建触发集合自动创建() {
             模拟集合不存在需要创建();
             var entity = new TestEntity("王五", 20);
-            var expectedDoc = 创建文档(DOCUMENT_ID, "{}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(expectedDoc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
 
             adapter.create(entity);
 
             verify(dataStoreManager).createCollection(
-                    eq(COLLECTION_NAME), eq(CollectionType.DOCUMENT),
+                    eq(COLLECTION_NAME), eq(false),
                     isNull(), eq("测试集合"), eq("skill:test")
             );
         }
@@ -321,7 +330,7 @@ class DataStoreCrudAdapter_单元测试 {
 
         @Test
         void 反序列化失败_返回空Optional() {
-            // dataJson 不是有效的 TestEntity JSON
+            // content 不是有效的 TestEntity JSON
             var doc = 创建文档(DOCUMENT_ID, "这不是合法JSON");
             when(dataStoreManager.getDocument(DOCUMENT_ID))
                     .thenReturn(Optional.of(doc));
@@ -515,7 +524,7 @@ class DataStoreCrudAdapter_单元测试 {
             adapter.update(DOCUMENT_ID, entity);
 
             ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-            verify(dataStoreManager).updateDocument(eq(DOCUMENT_ID), jsonCaptor.capture());
+            verify(dataStoreManager).updateDocument(eq(DOCUMENT_ID), jsonCaptor.capture(), isNull());
             assertThat(jsonCaptor.getValue()).contains("\"name\":\"王五\"");
             assertThat(jsonCaptor.getValue()).contains("\"age\":35");
         }
@@ -527,7 +536,7 @@ class DataStoreCrudAdapter_单元测试 {
                     .thenThrow(new JsonProcessingException("模拟更新序列化错误") {});
 
             var config = new CrudAdapterConfig<>(
-                    "test", COLLECTION_NAME, CollectionType.DOCUMENT,
+                    "test", COLLECTION_NAME, false,
                     TestEntity.class, null, "测试集合"
             );
             var failAdapter = new DataStoreCrudAdapter<>(dataStoreManager, failingMapper, config);
@@ -537,7 +546,7 @@ class DataStoreCrudAdapter_单元测试 {
             assertThat(result.isSuccess()).isFalse();
             assertThat(result.error()).contains("序列化失败");
             // 序列化失败时不应调用 updateDocument
-            verify(dataStoreManager, never()).updateDocument(any(), any());
+            verify(dataStoreManager, never()).updateDocument(any(), any(), any());
         }
 
         @Test
@@ -548,7 +557,7 @@ class DataStoreCrudAdapter_单元测试 {
 
             // update 不调用 ensureCollection
             verify(dataStoreManager, never()).findCollection(any());
-            verify(dataStoreManager, never()).createCollection(any(), any(), any(), any(), any());
+            verify(dataStoreManager, never()).createCollection(any(), anyBoolean(), any(), any(), any());
         }
     }
 
@@ -580,7 +589,7 @@ class DataStoreCrudAdapter_单元测试 {
             adapter.delete(DOCUMENT_ID);
 
             verify(dataStoreManager, never()).findCollection(any());
-            verify(dataStoreManager, never()).createCollection(any(), any(), any(), any(), any());
+            verify(dataStoreManager, never()).createCollection(any(), anyBoolean(), any(), any(), any());
         }
 
         @Test
@@ -603,9 +612,8 @@ class DataStoreCrudAdapter_单元测试 {
         void create调用后list复用缓存的集合ID() {
             模拟集合已存在();
             var entity = new TestEntity("测试", 1);
-            var doc = 创建文档(DOCUMENT_ID, "{}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(doc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
             when(dataStoreManager.queryDocuments(any(QueryRequest.class)))
                     .thenReturn(List.of());
 
@@ -623,16 +631,15 @@ class DataStoreCrudAdapter_单元测试 {
             模拟集合不存在需要创建();
             when(dataStoreManager.queryDocuments(any(QueryRequest.class)))
                     .thenReturn(List.of());
-            var doc = 创建文档(DOCUMENT_ID, "{}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(doc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
 
             adapter.list(null, null, null, 0, 10);
             adapter.create(new TestEntity("测试", 1));
 
             verify(dataStoreManager, times(1)).findCollection(COLLECTION_NAME);
             verify(dataStoreManager, times(1)).createCollection(
-                    eq(COLLECTION_NAME), eq(CollectionType.DOCUMENT),
+                    eq(COLLECTION_NAME), eq(false),
                     isNull(), eq("测试集合"), eq("skill:test")
             );
         }
@@ -647,15 +654,14 @@ class DataStoreCrudAdapter_单元测试 {
         void 实体包含特殊字符_正确序列化() {
             模拟集合已存在();
             var entity = new TestEntity("张三\"引号\\反斜杠", 0);
-            var doc = 创建文档(DOCUMENT_ID, "{}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(doc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
 
             ToolResult result = adapter.create(entity);
 
             assertThat(result.isSuccess()).isTrue();
             ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-            verify(dataStoreManager).addDocument(eq(COLLECTION_ID), jsonCaptor.capture(), isNull());
+            verify(dataStoreManager).addDocument(eq(COLLECTION_ID), jsonCaptor.capture(), isNull(), isNull());
             // 验证 JSON 中特殊字符被正确转义
             assertThat(jsonCaptor.getValue()).contains("\\\"");
             assertThat(jsonCaptor.getValue()).contains("\\\\");
@@ -680,15 +686,14 @@ class DataStoreCrudAdapter_单元测试 {
         void 实体age为零和负数() {
             模拟集合已存在();
             var entity = new TestEntity("边界", -1);
-            var doc = 创建文档(DOCUMENT_ID, "{}");
-            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull()))
-                    .thenReturn(doc);
+            when(dataStoreManager.addDocument(eq(COLLECTION_ID), anyString(), isNull(), isNull()))
+                    .thenReturn(DOCUMENT_ID);
 
             ToolResult result = adapter.create(entity);
 
             assertThat(result.isSuccess()).isTrue();
             ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-            verify(dataStoreManager).addDocument(eq(COLLECTION_ID), jsonCaptor.capture(), isNull());
+            verify(dataStoreManager).addDocument(eq(COLLECTION_ID), jsonCaptor.capture(), isNull(), isNull());
             assertThat(jsonCaptor.getValue()).contains("\"age\":-1");
         }
 

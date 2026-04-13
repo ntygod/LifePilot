@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.datastore.model.PropertyDefinition;
+import com.lifepilot.datastore.model.FieldHint;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.SourceKind;
@@ -508,28 +508,26 @@ public class ContextAssembler {
      */
     private String buildDatastoreBindingSummary(com.lifepilot.datastore.model.Collection collection) {
         var sb = new StringBuilder();
-        sb.append("%s [%s] (%s)".formatted(collection.name(), collection.type().name(), collection.id()));
+        sb.append("%s [%s] (%s)".formatted(collection.name(), collection.timeSeries() ? "TIME_SERIES" : "GENERAL", collection.id()));
         if (collection.description() != null && !collection.description().isBlank()) {
             sb.append(" — ").append(collection.description());
         }
 
-        // 解析并追加字段定义，让 Agent 知道可以按哪些字段做结构化查询
-        if (collection.propertiesJson() != null && !collection.propertiesJson().isBlank()
-                && !"[]".equals(collection.propertiesJson().strip())) {
+        // 解析并追加字段提示，让 Agent 知道可以按哪些字段做结构化查询
+        if (collection.fieldHintsJson() != null && !collection.fieldHintsJson().isBlank()
+                && !"[]".equals(collection.fieldHintsJson().strip())) {
             try {
-                var props = SHARED_MAPPER.readValue(
-                        collection.propertiesJson(),
-                        new TypeReference<List<PropertyDefinition>>() {});
-                if (!props.isEmpty()) {
-                    String fieldList = props.stream()
-                            .map(p -> "%s(%s%s)".formatted(
-                                    p.name(), p.type().name(),
-                                    p.required() ? ",必填" : ""))
+                var hints = SHARED_MAPPER.readValue(
+                        collection.fieldHintsJson(),
+                        new TypeReference<List<FieldHint>>() {});
+                if (!hints.isEmpty()) {
+                    String fieldList = hints.stream()
+                            .map(h -> "%s(%s)".formatted(h.name(), h.type()))
                             .collect(java.util.stream.Collectors.joining(", "));
                     sb.append("\n    字段: ").append(fieldList);
                 }
             } catch (Exception e) {
-                log.debug("Datastore 属性定义解析失败，跳过字段摘要: collectionId={}, error={}",
+                log.debug("Datastore 字段提示解析失败，跳过字段摘要: collectionId={}, error={}",
                         collection.id(), e.getMessage());
             }
         }

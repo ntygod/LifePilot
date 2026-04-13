@@ -448,7 +448,6 @@ public class ReactAgentLoop implements CallbackHelper {
                                 .completionReason(completionReason)
                                 .budget(state.budget().deductTokens(responseTokens))
                                 .build();
-                        consecutiveFailures = 0;
 
                         log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, taskMode={}, completionReason={}, preview={}",
                                 state.traceId(), iteration + 1, state.stepCount(),
@@ -472,7 +471,6 @@ public class ReactAgentLoop implements CallbackHelper {
                                 .suspend(new SuspendReason.ExternalDataWait("__await_user_input__", suspendPrompt));
                         state = appendAndPublishStep(state, new ReactStep.Suspend(
                                 state.suspendReason(), Instant.now(), state.stepCount()), loopContext);
-                        consecutiveFailures = 0;
 
                         log.info("ReAct 循环挂起等待用户补充: traceId={}, iterations={}, stepCount={}, preview={}",
                                 state.traceId(), iteration + 1, state.stepCount(), previewForLog(visibleContent));
@@ -511,7 +509,6 @@ public class ReactAgentLoop implements CallbackHelper {
                                 .completionReason(CompletionReason.DIRECT_ANSWER)
                                 .budget(state.budget().deductTokens(responseTokens))
                                 .build();
-                        consecutiveFailures = 0;
 
                         log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, taskMode={}, completionReason={}, preview={}",
                                 state.traceId(), iteration + 1, state.stepCount(),

@@ -102,8 +102,8 @@ describe('ChatInput 上下文选择', () => {
       props: {
         disabled: false,
         datastores: [
-          { id: 'ds-default', name: '默认设定库', type: 'DOCUMENT', createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' },
-          { id: 'ds-story', name: '故事设定', description: '世界观与人物素材', type: 'DOCUMENT', createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' }
+          { id: 'ds-default', name: '默认设定库', timeSeries: false, createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' },
+          { id: 'ds-story', name: '故事设定', description: '世界观与人物素材', timeSeries: false, createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' }
         ],
         knowledgeBases: [
           { id: 'kb-default', name: '默认知识库', description: '', embeddingModel: '', datastoreIds: [], documentCount: 0, totalChunks: 0, createdAt: '2026-03-27T00:00:00Z', updatedAt: '2026-03-27T00:00:00Z' },

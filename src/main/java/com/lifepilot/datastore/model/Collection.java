@@ -6,63 +6,30 @@ import org.springframework.lang.Nullable;
 /**
  * 数据集合 — 文档的逻辑容器。
  *
- * <p>每个集合具有唯一名称和类型（DOCUMENT / NOTE / METRIC），
- * 可选的属性定义（propertiesJson）用于类型校验和 Generated Column 索引，
- * 可选的元数据（metadataJson）用于存储扩展信息。</p>
+ * <p>每个集合绑定一个内部知识库，文档直接存入知识库表。
+ * {@code timeSeries} 标记决定是否为时序集合（支持 recordedAt 和聚合查询）。</p>
  *
- * @param id             集合唯一标识（UUID）
- * @param name           集合名称（唯一）
- * @param description    集合描述（可选）
- * @param type           集合类型
- * @param propertiesJson 属性定义 JSON（可选，List&lt;PropertyDefinition&gt; 序列化）
- * @param projectionConfigJson 向量投影配置 JSON（可选）
- * @param metadataJson   元数据 JSON（可选）
- * @param createdBy      创建者（可选）
- * @param createdAt      创建时间（ISO 8601）
- * @param updatedAt      更新时间（ISO 8601）
+ * @param id                     集合唯一标识（UUID）
+ * @param name                   集合名称（唯一）
+ * @param description            集合描述（可选）
+ * @param timeSeries             是否为时序集合
+ * @param fieldHintsJson         字段提示 JSON（可选，List&lt;FieldHint&gt; 序列化）
+ * @param defaultKnowledgeBaseId 绑定的内部知识库 ID
+ * @param createdBy              创建者（可选）
+ * @param createdAt              创建时间（ISO 8601）
+ * @param updatedAt              更新时间（ISO 8601）
  * @author zsg
- * @since 2026-03-10
+ * @since 2026-04-13
  */
 @Builder(toBuilder = true)
 public record Collection(
         String id,
         String name,
         @Nullable String description,
-        CollectionType type,
-        @Nullable String propertiesJson,
-        @Nullable String projectionConfigJson,
-        @Nullable String metadataJson,
+        boolean timeSeries,
+        @Nullable String fieldHintsJson,
         @Nullable String defaultKnowledgeBaseId,
         @Nullable String createdBy,
         String createdAt,
         String updatedAt
-) {
-
-    private static final String DEFAULT_PROJECTION_CONFIG_JSON = "{}";
-
-    public Collection(
-            String id,
-            String name,
-            @Nullable String description,
-            CollectionType type,
-            @Nullable String propertiesJson,
-            @Nullable String projectionConfigJson,
-            @Nullable String metadataJson,
-            @Nullable String createdBy,
-            String createdAt,
-            String updatedAt
-    ) {
-        this(id, name, description, type, propertiesJson, projectionConfigJson, metadataJson,
-                null, createdBy, createdAt, updatedAt);
-    }
-
-    /**
-     * 归一化投影配置 JSON — null 转为空对象 JSON。
-     *
-     * @param projectionConfigJson 原始投影配置
-     * @return 非 null 的投影配置 JSON
-     */
-    public static String normalizeProjectionConfig(@Nullable String projectionConfigJson) {
-        return projectionConfigJson != null ? projectionConfigJson : DEFAULT_PROJECTION_CONFIG_JSON;
-    }
-}
+) {}

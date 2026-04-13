@@ -500,15 +500,13 @@ export interface SessionConfig {
 
 // ========== 第一部分 19: Web UI 相关类型定义 ==========
 
-/** Datastore */
+/** Datastore 集合 */
 export interface Datastore {
   id: string
   name: string
   description?: string | null
-  type: string
-  propertiesJson?: string | null
-  projectionConfigJson?: string | null
-  metadataJson?: string | null
+  timeSeries: boolean
+  fieldHintsJson?: string | null
   defaultKnowledgeBaseId?: string | null
   createdBy?: string | null
   createdAt: string
@@ -518,33 +516,34 @@ export interface Datastore {
 /** Datastore 创建请求 */
 export interface CreateDatastoreRequest {
   name: string
-  type: string
   description?: string | null
-  properties?: PropertyDefinitionDto[] | null
-  projectionConfigJson?: string | null
+  timeSeries?: boolean
+  fieldHints?: FieldHintDto[] | null
 }
 
 /** Datastore 更新请求 */
 export interface UpdateDatastoreRequest {
   description?: string | null
-  metadataJson?: string | null
-  projectionConfigJson?: string | null
+  fieldHintsJson?: string | null
 }
 
-/** 属性定义 DTO */
-export interface PropertyDefinitionDto {
+/** 字段提示 DTO — 用于索引加速和 Agent 查询提示 */
+export interface FieldHintDto {
   name: string
-  type: string
-  required: boolean
+  type: string  // TEXT / NUMBER / BOOLEAN
   description?: string | null
 }
 
-/** Datastore 原始结构化文档 */
-export interface DatastoreRecord {
+/** Datastore 文档（存储在知识库 documents 表中） */
+export interface DatastoreDocument {
   id: string
-  collectionId: string
-  dataJson: string
+  knowledgeBaseId: string
+  fileName: string
+  content?: string | null
+  metadataJson?: string | null
   recordedAt?: string | null
+  sourceDatastoreId?: string | null
+  status: string
   createdAt: string
   updatedAt: string
 }

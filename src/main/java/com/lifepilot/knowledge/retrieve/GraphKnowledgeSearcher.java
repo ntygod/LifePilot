@@ -11,6 +11,7 @@ import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,17 +63,17 @@ public class GraphKnowledgeSearcher {
     /**
      * 构造图谱检索服务。
      *
-     * @param semanticMemory  语义记忆（知识图谱）
+     * @param semanticMemory  语义记忆（知识图谱），可为 null（记忆模块未启用时）
      * @param chunkRepository 分块数据访问层
      * @param docRepository   文档数据访问层
      */
-    public GraphKnowledgeSearcher(SemanticMemory semanticMemory,
+    public GraphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
                                    DocumentChunkRepository chunkRepository,
                                    DocumentRepository docRepository) {
         this.semanticMemory = semanticMemory;
         this.chunkRepository = chunkRepository;
         this.docRepository = docRepository;
-        log.info("GraphKnowledgeSearcher 初始化完成");
+        log.info("GraphKnowledgeSearcher 初始化完成, semanticMemory={}", semanticMemory != null ? "可用" : "不可用");
     }
 
     /**
@@ -84,7 +85,7 @@ public class GraphKnowledgeSearcher {
      * @return 按图谱相关性降序排列的检索结果
      */
     public List<DocumentSearchResult> search(String query, List<KnowledgeSearchScope> scopes, int topK) {
-        if (query == null || query.isBlank()) {
+        if (semanticMemory == null || query == null || query.isBlank()) {
             return List.of();
         }
 
