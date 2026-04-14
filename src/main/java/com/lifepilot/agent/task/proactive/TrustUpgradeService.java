@@ -1,7 +1,9 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -20,11 +22,8 @@ public class TrustUpgradeService {
 
     private static final Logger log = LoggerFactory.getLogger(TrustUpgradeService.class);
 
-    /** 连续正反馈触发升级建议的阈值。 */
-    private static final int UPGRADE_THRESHOLD = 5;
-
-    /** 降级后冷却期。 */
-    private static final Duration DOWNGRADE_COOLDOWN = Duration.ofDays(7);
+    private static final int DEFAULT_UPGRADE_THRESHOLD = 5;
+    private static final Duration DEFAULT_DOWNGRADE_COOLDOWN = Duration.ofDays(7);
 
     /** 各行为的默认自主度。 */
     private static final Map<String, AutonomyLevel> DEFAULT_LEVELS = Map.of(
@@ -39,9 +38,25 @@ public class TrustUpgradeService {
     );
 
     private final AutonomyRepository autonomyRepository;
+    @Nullable
+    private final AgentConfigProperties config;
 
     public TrustUpgradeService(AutonomyRepository autonomyRepository) {
+        this(autonomyRepository, null);
+    }
+
+    public TrustUpgradeService(AutonomyRepository autonomyRepository,
+                               @Nullable AgentConfigProperties config) {
         this.autonomyRepository = autonomyRepository;
+        this.config = config;
+    }
+
+    private int upgradeThreshold() {
+        return config != null ? config.getTask().getProactiveEngineTrustUpgradeThreshold() : DEFAULT_UPGRADE_THRESHOLD;
+    }
+
+    private Duration downgradeCooldown() {
+        return config != null ? Duration.ofDays(config.getTask().getProactiveEngineTrustDowngradeCooldownDays()) : DEFAULT_DOWNGRADE_COOLDOWN;
     }
 
     /** 获取行为的当前自主度（不存在则用默认值）。 */
@@ -60,7 +75,7 @@ public class TrustUpgradeService {
         boolean inCooldown = config.cooldownUntil() != null && Instant.now().isBefore(config.cooldownUntil());
         boolean shouldSuggest = !inCooldown
                 && !config.upgradeSuggested()
-                && newPositive >= UPGRADE_THRESHOLD
+                && newPositive >= upgradeThreshold()
                 && config.autonomyLevel() != AutonomyLevel.C;
 
         autonomyRepository.upsert(new AutonomyConfig(
@@ -84,7 +99,7 @@ public class TrustUpgradeService {
         Instant cooldown = config.cooldownUntil();
         if (newNegative >= 3 && level != AutonomyLevel.A) {
             level = level == AutonomyLevel.C ? AutonomyLevel.B : AutonomyLevel.A;
-            cooldown = Instant.now().plus(DOWNGRADE_COOLDOWN);
+            cooldown = Instant.now().plus(downgradeCooldown());
             log.info("信任降级: userId={}, behavior={}, newLevel={}", userId, behaviorName, level);
         }
 

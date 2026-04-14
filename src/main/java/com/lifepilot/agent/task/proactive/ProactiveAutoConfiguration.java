@@ -41,7 +41,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-04-14
  */
-@AutoConfiguration
+@AutoConfiguration(after = com.lifepilot.agent.task.config.ReminderAutoConfiguration.class)
 public class ProactiveAutoConfiguration {
 
     @Bean
@@ -58,8 +58,9 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository) {
-        return new TrustUpgradeService(autonomyRepository);
+    public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository,
+                                                     AgentConfigProperties config) {
+        return new TrustUpgradeService(autonomyRepository, config);
     }
 
     @Bean
@@ -109,8 +110,9 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     public FollowUpBehavior followUpBehavior(IntentMemoryService intentMemoryService,
                                               @Autowired(required = false) GenerationRouter generationRouter,
-                                              @Autowired(required = false) PromptRegistry promptRegistry) {
-        return new FollowUpBehavior(intentMemoryService, generationRouter, promptRegistry);
+                                              @Autowired(required = false) PromptRegistry promptRegistry,
+                                              AgentConfigProperties config) {
+        return new FollowUpBehavior(intentMemoryService, generationRouter, promptRegistry, config);
     }
 
     @Bean
@@ -140,16 +142,19 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     public ContextPrepBehavior contextPrepBehavior(
             @Autowired(required = false) IntentMemoryService intentMemoryService,
-            @Autowired(required = false) GenerationRouter generationRouter) {
-        return new ContextPrepBehavior(intentMemoryService, generationRouter);
+            @Autowired(required = false) GenerationRouter generationRouter,
+            @Autowired(required = false) PromptRegistry promptRegistry,
+            AgentConfigProperties config) {
+        return new ContextPrepBehavior(intentMemoryService, generationRouter, promptRegistry, config);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public ReportBehavior reportBehavior(
             @Autowired(required = false) EpisodicMemory episodicMemory,
-            @Autowired(required = false) GenerationRouter generationRouter) {
-        return new ReportBehavior(episodicMemory, generationRouter);
+            @Autowired(required = false) GenerationRouter generationRouter,
+            AgentConfigProperties config) {
+        return new ReportBehavior(episodicMemory, generationRouter, config);
     }
 
     @Bean
@@ -191,8 +196,11 @@ public class ProactiveAutoConfiguration {
                                            NotificationProperties notificationProperties,
                                            NotificationRepository notificationRepository,
                                            AgentConfigProperties config,
-                                           @Autowired(required = false) ReminderFocusStateHolder focusStateHolder) {
+                                           @Autowired(required = false) ReminderFocusStateHolder focusStateHolder,
+                                           @Autowired(required = false) IntentMemoryService intentMemoryService,
+                                           @Autowired(required = false) PreferenceLearner preferenceLearner) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
-                notificationProperties, notificationRepository, config, focusStateHolder);
+                notificationProperties, notificationRepository, config, focusStateHolder,
+                intentMemoryService, preferenceLearner);
     }
 }

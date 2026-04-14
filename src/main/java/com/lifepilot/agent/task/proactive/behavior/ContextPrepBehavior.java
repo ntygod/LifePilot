@@ -4,6 +4,7 @@ import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
 import com.lifepilot.agent.task.proactive.intent.IntentRecord;
 import com.lifepilot.agent.task.proactive.intent.IntentType;
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -12,8 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
-import java.time.Duration;
-import java.time.Instant;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
@@ -28,15 +29,30 @@ import java.util.*;
 public class ContextPrepBehavior implements ProactiveBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(ContextPrepBehavior.class);
-    private static final Duration LLM_TIMEOUT = Duration.ofSeconds(15);
+    private static final String PROMPT_KEY = "generation/proactive-context-prep";
 
     @Nullable private final IntentMemoryService intentMemoryService;
     @Nullable private final GenerationRouter generationRouter;
+    @Nullable private final PromptRegistry promptRegistry;
+    @Nullable private final AgentConfigProperties config;
 
     public ContextPrepBehavior(@Nullable IntentMemoryService intentMemoryService,
                                @Nullable GenerationRouter generationRouter) {
+        this(intentMemoryService, generationRouter, null, null);
+    }
+
+    public ContextPrepBehavior(@Nullable IntentMemoryService intentMemoryService,
+                               @Nullable GenerationRouter generationRouter,
+                               @Nullable PromptRegistry promptRegistry,
+                               @Nullable AgentConfigProperties config) {
         this.intentMemoryService = intentMemoryService;
         this.generationRouter = generationRouter;
+        this.promptRegistry = promptRegistry;
+        this.config = config;
+    }
+
+    private Duration llmTimeout() {
+        return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
     }
 
     @Override
@@ -78,12 +94,15 @@ public class ContextPrepBehavior implements ProactiveBehavior {
     }
 
     private String generatePrep(ProactiveCandidate candidate) {
-        if (generationRouter != null) {
+        if (generationRouter != null && promptRegistry != null) {
             try {
-                String prompt = "你是个人助手。用户有一个待办事项：「" + candidate.title()
-                        + "」。请用一句话（不超过40字）提醒用户可以提前准备什么。语气自然，不要说教。只输出提醒内容。";
+                String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
+                        "currentTime", java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
+                                java.time.Instant.now().atZone(java.time.ZoneId.systemDefault())),
+                        "todoItem", candidate.title(),
+                        "itemType", candidate.rationale()));
                 LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, LLM_TIMEOUT);
+                        GenerationCapability.CHAT, llmTimeout());
                 if (response != null && !response.content().isBlank()) return response.content().strip();
             } catch (Exception e) {
                 log.debug("ContextPrepBehavior: LLM 失败: {}", e.getMessage());

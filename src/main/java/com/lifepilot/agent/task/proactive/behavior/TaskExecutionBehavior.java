@@ -50,8 +50,9 @@ public class TaskExecutionBehavior implements ProactiveBehavior {
             if (intent.intentType() != IntentType.CONDITIONAL) continue;
             if (intent.triggerCondition() == null) continue;
 
-            // Phase 3: 简单的触发检查 — 检查次数达到阈值视为条件就绪
-            // 后续可对接外部数据源做真实条件评估
+            // @implNote Phase 3 占位逻辑：以检查次数 ≥ 3 作为"条件可能就绪"的粗略信号。
+            //   真实条件评估需对接外部数据源（价格 API、天气 API 等），计划在后续迭代中实现。
+            //   当前逻辑仅用于验证引擎管线的端到端流程，不应作为生产判断依据。
             if (intent.checkCount() >= 3) {
                 float score = 0.55f;
                 candidates.add(new ProactiveCandidate(

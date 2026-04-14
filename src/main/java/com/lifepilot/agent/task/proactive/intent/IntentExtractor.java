@@ -75,9 +75,9 @@ public class IntentExtractor {
         }
     }
 
-    /** 取前 4 个字符作为去重键（同一对话内粗粒度去重）。 */
+    /** 取前 6 个字符作为去重键（同一对话内粗粒度去重）。 */
     private static String normalizeForDedupe(String goal) {
-        String cleaned = goal.replaceAll("[\\s，。！？,\\.!?一个好的]", "");
-        return cleaned.length() > 4 ? cleaned.substring(0, 4) : cleaned;
+        String cleaned = goal.replaceAll("[\\s，。！？,\\.!?一个好的了吗呢啊]", "");
+        return cleaned.length() > 6 ? cleaned.substring(0, 6) : cleaned;
     }
 }

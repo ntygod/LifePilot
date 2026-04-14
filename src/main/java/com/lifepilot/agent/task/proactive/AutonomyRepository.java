@@ -33,7 +33,9 @@ public class AutonomyRepository {
     @Nullable
     public AutonomyConfig findByUserAndBehavior(String userId, String behaviorName) {
         var list = jdbc.query("""
-                SELECT * FROM proactive_behavior_autonomy
+                SELECT user_id, behavior_name, autonomy_level, consecutive_positive,
+                       consecutive_negative, upgrade_suggested, cooldown_until, updated_at
+                FROM proactive_behavior_autonomy
                 WHERE user_id = ? AND behavior_name = ?
                 """, ROW_MAPPER, userId, behaviorName);
         return list.isEmpty() ? null : list.getFirst();
@@ -42,7 +44,9 @@ public class AutonomyRepository {
     /** 查询用户所有行为的自主度配置。 */
     public List<AutonomyConfig> findAllByUserId(String userId) {
         return jdbc.query("""
-                SELECT * FROM proactive_behavior_autonomy
+                SELECT user_id, behavior_name, autonomy_level, consecutive_positive,
+                       consecutive_negative, upgrade_suggested, cooldown_until, updated_at
+                FROM proactive_behavior_autonomy
                 WHERE user_id = ? ORDER BY behavior_name
                 """, ROW_MAPPER, userId);
     }

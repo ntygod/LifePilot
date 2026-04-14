@@ -53,7 +53,9 @@ public class QueuedActionRepository {
     /** 查询用户未展示的排队动作（按分数降序）。 */
     public List<QueuedActionRecord> findPendingByUserId(String userId, int limit) {
         return jdbc.query("""
-                SELECT * FROM proactive_queued_actions
+                SELECT id, user_id, behavior, topic_key, title, content, score, metadata,
+                       shown, created_at, shown_at
+                FROM proactive_queued_actions
                 WHERE user_id = ? AND shown = 0
                 ORDER BY score DESC, created_at DESC
                 LIMIT ?

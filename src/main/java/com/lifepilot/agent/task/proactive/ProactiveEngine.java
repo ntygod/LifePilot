@@ -1,6 +1,9 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
+import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
+import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.notification.NotificationRepository;
@@ -35,8 +38,8 @@ public class ProactiveEngine {
     private static final Logger log = LoggerFactory.getLogger(ProactiveEngine.class);
     private static final String PROACTIVE_TYPE = "proactive_action";
 
-    /** Gate 2 阈值 — 所有候选最高分低于此值时不进入 FULL。 */
-    private static final float GATE2_THRESHOLD = 0.4f;
+    /** Gate 2 默认阈值。 */
+    private static final float DEFAULT_GATE2_THRESHOLD = 0.4f;
 
     private final List<ProactiveBehavior> behaviors;
     private final DecisionGate decisionGate;
@@ -49,6 +52,10 @@ public class ProactiveEngine {
     private final AgentConfigProperties config;
     @Nullable
     private final ReminderFocusStateHolder focusStateHolder;
+    @Nullable
+    private final IntentMemoryService intentMemoryService;
+    @Nullable
+    private final PreferenceLearner preferenceLearner;
 
     /** 上次心跳时间，用于 Gate 1 变化量检查。 */
     @Nullable
@@ -58,7 +65,7 @@ public class ProactiveEngine {
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
                            DecisionGate decisionGate,
                            DeliveryEngine deliveryEngine) {
-        this(behaviors, decisionGate, deliveryEngine, null, null, null, null);
+        this(behaviors, decisionGate, deliveryEngine, null, null, null, null, null, null);
     }
 
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
@@ -67,7 +74,9 @@ public class ProactiveEngine {
                            @Nullable NotificationProperties notificationProperties,
                            @Nullable NotificationRepository notificationRepository,
                            @Nullable AgentConfigProperties config,
-                           @Nullable ReminderFocusStateHolder focusStateHolder) {
+                           @Nullable ReminderFocusStateHolder focusStateHolder,
+                           @Nullable IntentMemoryService intentMemoryService,
+                           @Nullable PreferenceLearner preferenceLearner) {
         this.behaviors = List.copyOf(behaviors);
         this.decisionGate = decisionGate;
         this.deliveryEngine = deliveryEngine;
@@ -75,6 +84,8 @@ public class ProactiveEngine {
         this.notificationRepository = notificationRepository;
         this.config = config;
         this.focusStateHolder = focusStateHolder;
+        this.intentMemoryService = intentMemoryService;
+        this.preferenceLearner = preferenceLearner;
     }
 
     /**
@@ -100,6 +111,9 @@ public class ProactiveEngine {
             return DetectionLevel.SILENT;
         }
 
+        // ── 全局维护：意图过期清理 + 新意图提取（Y1: 从插件上移到引擎层统一执行） ──
+        runIntentMaintenance(ctx);
+
         // ── Gate 2: 各插件快速检测候选 ──
         var allCandidates = new ArrayList<ProactiveCandidate>();
         for (var behavior : behaviors) {
@@ -117,7 +131,7 @@ public class ProactiveEngine {
                 .max(Float::compare)
                 .orElse(0f);
 
-        if (allCandidates.isEmpty() || maxScore < GATE2_THRESHOLD) {
+        if (allCandidates.isEmpty() || maxScore < gate2Threshold()) {
             log.debug("主动引擎: FAST — candidates={}, maxScore={}",
                     allCandidates.size(), maxScore);
             return DetectionLevel.FAST;
@@ -125,7 +139,7 @@ public class ProactiveEngine {
 
         // ── Gate 3: 高分候选进入精细推理 ──
         var topCandidates = allCandidates.stream()
-                .filter(c -> c.score() >= GATE2_THRESHOLD)
+                .filter(c -> c.score() >= gate2Threshold())
                 .sorted(Comparator.comparingDouble(ProactiveCandidate::score).reversed())
                 .toList();
 
@@ -159,6 +173,14 @@ public class ProactiveEngine {
         for (var ga : gated) {
             try {
                 var result = deliveryEngine.deliver(ga.action(), ga.level(), ctx.userId());
+                // 偏好学习：记录投递结果用于五维偏好模型
+                if (preferenceLearner != null) {
+                    try {
+                        preferenceLearner.learnFromDelivery(ga.action(), result, ctx.userId(), true);
+                    } catch (Exception ex) {
+                        log.debug("主动引擎: 偏好学习跳过: {}", ex.getMessage());
+                    }
+                }
                 var behavior = findBehavior(ga.action().candidate().behaviorName());
                 if (behavior != null) {
                     behavior.onDelivered(ga.action(), result);
@@ -172,6 +194,21 @@ public class ProactiveEngine {
         log.info("主动引擎: FULL — candidates={}, actions={}, delivered={}",
                 topCandidates.size(), allActions.size(), gated.size());
         return DetectionLevel.FULL;
+    }
+
+    /** 全局意图维护 — 过期清理 + 对话提取。 */
+    private void runIntentMaintenance(ContextPacket ctx) {
+        if (intentMemoryService == null) return;
+        try {
+            intentMemoryService.expireStaleIntents();
+            intentMemoryService.extractFromRecentConversations(ctx.userId());
+        } catch (Exception e) {
+            log.debug("主动引擎: 意图维护跳过: {}", e.getMessage());
+        }
+    }
+
+    private float gate2Threshold() {
+        return config != null ? config.getTask().getProactiveEngineGate2Threshold() : DEFAULT_GATE2_THRESHOLD;
     }
 
     private ProactiveBehavior findBehavior(String name) {

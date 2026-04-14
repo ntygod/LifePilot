@@ -56,14 +56,16 @@ public class IntentRepository {
     /** 按 ID 查询。 */
     @Nullable
     public IntentRecord findById(String id) {
-        var list = jdbc.query("SELECT * FROM proactive_intent_memory WHERE id = ?", ROW_MAPPER, id);
+        var list = jdbc.query("SELECT id, user_id, intent_type, goal, trigger_condition, source_session_id, status, check_count, created_at, expires_at, triggered_at, fulfilled_at, updated_at FROM proactive_intent_memory WHERE id = ?", ROW_MAPPER, id);
         return list.isEmpty() ? null : list.getFirst();
     }
 
     /** 查询用户所有活跃意图。 */
     public List<IntentRecord> findActiveByUserId(String userId) {
         return jdbc.query("""
-                SELECT * FROM proactive_intent_memory
+                SELECT id, user_id, intent_type, goal, trigger_condition, source_session_id,
+                       status, check_count, created_at, expires_at, triggered_at, fulfilled_at, updated_at
+                FROM proactive_intent_memory
                 WHERE user_id = ? AND status = 'ACTIVE'
                 ORDER BY created_at DESC
                 """, ROW_MAPPER, userId);
@@ -72,7 +74,9 @@ public class IntentRepository {
     /** 查询已过期但状态仍为 ACTIVE 的意图。 */
     public List<IntentRecord> findExpired(Instant now) {
         return jdbc.query("""
-                SELECT * FROM proactive_intent_memory
+                SELECT id, user_id, intent_type, goal, trigger_condition, source_session_id,
+                       status, check_count, created_at, expires_at, triggered_at, fulfilled_at, updated_at
+                FROM proactive_intent_memory
                 WHERE status = 'ACTIVE' AND expires_at IS NOT NULL AND expires_at < ?
                 """, ROW_MAPPER, now.toString());
     }

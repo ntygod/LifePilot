@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.agent.task.proactive.intent.*;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -27,21 +28,39 @@ import java.util.*;
 public class FollowUpBehavior implements ProactiveBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(FollowUpBehavior.class);
-    private static final Duration MIN_AGE = Duration.ofHours(24);
-    private static final int MAX_CHECK_COUNT = 5;
     private static final String PROMPT_KEY = "generation/proactive-follow-up";
-    private static final Duration LLM_TIMEOUT = Duration.ofSeconds(15);
 
     private final IntentMemoryService intentMemoryService;
     @Nullable private final GenerationRouter generationRouter;
     @Nullable private final PromptRegistry promptRegistry;
+    @Nullable private final AgentConfigProperties config;
 
     public FollowUpBehavior(IntentMemoryService intentMemoryService,
                             @Nullable GenerationRouter generationRouter,
                             @Nullable PromptRegistry promptRegistry) {
+        this(intentMemoryService, generationRouter, promptRegistry, null);
+    }
+
+    public FollowUpBehavior(IntentMemoryService intentMemoryService,
+                            @Nullable GenerationRouter generationRouter,
+                            @Nullable PromptRegistry promptRegistry,
+                            @Nullable AgentConfigProperties config) {
         this.intentMemoryService = intentMemoryService;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
+        this.config = config;
+    }
+
+    private Duration minAge() {
+        return Duration.ofHours(config != null ? config.getTask().getProactiveEngineFollowUpMinAgeHours() : 24);
+    }
+
+    private int maxCheckCount() {
+        return config != null ? config.getTask().getProactiveEngineFollowUpMaxCheckCount() : 5;
+    }
+
+    private Duration llmTimeout() {
+        return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
     }
 
     @Override
@@ -49,16 +68,13 @@ public class FollowUpBehavior implements ProactiveBehavior {
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        // 维护：过期清理 + 提取新意图
-        intentMemoryService.expireStaleIntents();
-        intentMemoryService.extractFromRecentConversations(ctx.userId());
-
+        // 意图维护已上移到 ProactiveEngine.heartbeat() 统一执行
         var intents = intentMemoryService.getActiveIntents(ctx.userId());
         var candidates = new ArrayList<ProactiveCandidate>();
 
         for (var intent : intents) {
-            if (Duration.between(intent.createdAt(), ctx.now()).compareTo(MIN_AGE) < 0) continue;
-            if (intent.checkCount() >= MAX_CHECK_COUNT) continue;
+            if (Duration.between(intent.createdAt(), ctx.now()).compareTo(minAge()) < 0) continue;
+            if (intent.checkCount() >= maxCheckCount()) continue;
 
             float score = computeScore(intent, ctx.now());
             if (score < 0.3f) continue;
@@ -106,7 +122,7 @@ public class FollowUpBehavior implements ProactiveBehavior {
                         "conversationSummary", candidate.rationale(),
                         "daysSinceLastChat", String.valueOf(computeDaysSince(candidate))));
                 LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, LLM_TIMEOUT);
+                        GenerationCapability.CHAT, llmTimeout());
                 if (response != null && !response.content().isBlank()) return response.content().strip();
             } catch (Exception e) {
                 log.debug("FollowUpBehavior: LLM 生成失败，使用回退模板: {}", e.getMessage());

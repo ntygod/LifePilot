@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
@@ -24,17 +25,31 @@ import java.util.*;
 public class ReportBehavior implements ProactiveBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(ReportBehavior.class);
-    private static final int DAILY_REPORT_HOUR = 20;
     private static final DayOfWeek WEEKLY_REPORT_DAY = DayOfWeek.FRIDAY;
-    private static final Duration LLM_TIMEOUT = Duration.ofSeconds(20);
 
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final GenerationRouter generationRouter;
+    @Nullable private final AgentConfigProperties config;
 
     public ReportBehavior(@Nullable EpisodicMemory episodicMemory,
                           @Nullable GenerationRouter generationRouter) {
+        this(episodicMemory, generationRouter, null);
+    }
+
+    public ReportBehavior(@Nullable EpisodicMemory episodicMemory,
+                          @Nullable GenerationRouter generationRouter,
+                          @Nullable AgentConfigProperties config) {
         this.episodicMemory = episodicMemory;
         this.generationRouter = generationRouter;
+        this.config = config;
+    }
+
+    private int dailyReportHour() {
+        return config != null ? config.getTask().getProactiveEngineDailyReportHour() : 20;
+    }
+
+    private Duration llmTimeout() {
+        return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
     }
 
     @Override
@@ -49,7 +64,7 @@ public class ReportBehavior implements ProactiveBehavior {
         var candidates = new ArrayList<ProactiveCandidate>();
 
         // 日报：每天 20:00-21:00 时段
-        if (hour == DAILY_REPORT_HOUR) {
+        if (hour == dailyReportHour()) {
             candidates.add(new ProactiveCandidate(
                     UUID.randomUUID().toString(), name(),
                     "daily-report-" + localNow.toLocalDate(),
@@ -58,7 +73,7 @@ public class ReportBehavior implements ProactiveBehavior {
         }
 
         // 周报：每周五 20:00-21:00
-        if (hour == DAILY_REPORT_HOUR && dayOfWeek == WEEKLY_REPORT_DAY) {
+        if (hour == dailyReportHour() && dayOfWeek == WEEKLY_REPORT_DAY) {
             candidates.add(new ProactiveCandidate(
                     UUID.randomUUID().toString(), name(),
                     "weekly-report-" + localNow.toLocalDate(),
@@ -91,7 +106,7 @@ public class ReportBehavior implements ProactiveBehavior {
                         + "要求：3-5 个要点，每点一句话，不超过 150 字。语气简洁自然，不要用 Markdown。\n\n"
                         + "对话摘要：\n" + summaryInput;
                 LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, LLM_TIMEOUT);
+                        GenerationCapability.CHAT, llmTimeout());
                 if (response != null && !response.content().isBlank()) return response.content().strip();
             } catch (Exception e) {
                 log.debug("ReportBehavior: LLM 失败: {}", e.getMessage());

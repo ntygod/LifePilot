@@ -30,7 +30,9 @@ public class PreferenceRepository {
     /** 查询用户某维度的所有偏好。 */
     public List<PreferenceEntry> findByDimension(String userId, PreferenceDimension dimension) {
         return jdbc.query("""
-                SELECT * FROM proactive_user_preferences
+                SELECT user_id, dimension, preference_key, preference_value,
+                       observation_count, last_observed_at, updated_at
+                FROM proactive_user_preferences
                 WHERE user_id = ? AND dimension = ?
                 ORDER BY preference_value DESC
                 """, ROW_MAPPER, userId, dimension.name());
@@ -39,7 +41,9 @@ public class PreferenceRepository {
     /** 查询用户所有偏好。 */
     public List<PreferenceEntry> findAllByUserId(String userId) {
         return jdbc.query("""
-                SELECT * FROM proactive_user_preferences
+                SELECT user_id, dimension, preference_key, preference_value,
+                       observation_count, last_observed_at, updated_at
+                FROM proactive_user_preferences
                 WHERE user_id = ? ORDER BY dimension, preference_value DESC
                 """, ROW_MAPPER, userId);
     }
