@@ -14,9 +14,6 @@ import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
-import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
-import com.lifepilot.interaction.web.config.A2uiProperties;
-import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -84,7 +81,6 @@ public class ReactAgentLoop implements CallbackHelper {
     private final ToolExecutionCoordinator toolExecutionCoordinator;
     @Nullable private final CompactionEngine compactionEngine;
     @Nullable private final TraceRecorder traceRecorder;
-    @Nullable private final A2uiProperties a2uiProperties;
 
     // ===== 可选依赖（多模态） =====
     @Nullable private final MultimodalRouter multimodalRouter;
@@ -113,7 +109,6 @@ public class ReactAgentLoop implements CallbackHelper {
             AgentConfigProperties config,
             ObjectMapper objectMapper,
             @Nullable TraceRecorder traceRecorder,
-            @Nullable A2uiProperties a2uiProperties,
             @Nullable TranscriptStore transcriptStore,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
@@ -144,7 +139,6 @@ public class ReactAgentLoop implements CallbackHelper {
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
-        this.a2uiProperties = a2uiProperties;
         this.multimodalRouter = multimodalRouter;
         this.eventPublisher = eventPublisher;
         this.proceduralMemory = proceduralMemory;
@@ -1237,44 +1231,10 @@ public class ReactAgentLoop implements CallbackHelper {
         }
     }
 
-    // ===== A2UI 辅助方法 =====
-
-    /** 判断 A2UI 功能是否启用。 */
+    /** 增强系统提示词（注入流式约束）。 */
     @Override
-    public boolean isA2uiEnabled() {
-        return a2uiProperties != null && a2uiProperties.enabled();
-    }
-
-    /** 获取 A2UI 最大组件数。 */
-    @Override
-    public int getA2uiMaxComponents() {
-        return a2uiProperties != null ? a2uiProperties.maxComponentsPerTree() : 0;
-    }
-
-    /** 增强系统提示词（流式约束 + A2UI）。 */
-    @Override
-    public String enhanceSystemPromptForStreaming(String systemText, @Nullable String a2uiPrompt) {
-        return contextAssembler.enhanceSystemPromptForStreaming(systemText, a2uiPrompt);
-    }
-
-    /** 解析并校验 A2UI JSON 为组件树。 */
-    @Override
-    @Nullable
-    public A2uiComponentTree parseAndValidateA2uiTree(String json, int maxComponents) {
-        try {
-            var tree = A2uiPayloadSupport.normalizeTree(
-                    objectMapper.readValue(json, A2uiComponentTree.class));
-            var validation = com.lifepilot.interaction.web.a2ui.A2uiComponentValidator
-                    .validate(tree, maxComponents);
-            if (!validation.valid()) {
-                log.warn("A2UI 载荷校验失败: errors={}", validation.errors());
-                return null;
-            }
-            return validation.truncatedTree() != null ? validation.truncatedTree() : tree;
-        } catch (Exception e) {
-            log.warn("A2UI 载荷解析失败: error={}", e.getMessage());
-            return null;
-        }
+    public String enhanceSystemPromptForStreaming(String systemText) {
+        return contextAssembler.enhanceSystemPromptForStreaming(systemText);
     }
 
     // ===== 提示词辅助 =====

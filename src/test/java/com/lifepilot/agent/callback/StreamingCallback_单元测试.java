@@ -5,8 +5,6 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.interaction.web.model.A2uiComponent;
-import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.config.ProviderType;
@@ -76,22 +74,14 @@ class StreamingCallback_单元测试 {
                         true
                 ));
         when(sseManager.getEmitter("stream-1")).thenReturn(new SseEmitter());
-        when(helper.enhanceSystemPromptForStreaming(anyString(), any()))
-                .thenAnswer(invocation -> {
-                    String systemText = invocation.getArgument(0, String.class);
-                    String a2uiPrompt = invocation.getArgument(1, String.class);
-                    return a2uiPrompt == null || a2uiPrompt.isBlank()
-                            ? systemText
-                            : systemText + "\n" + a2uiPrompt;
-                });
-        when(helper.getA2uiMaxComponents()).thenReturn(20);
+        when(helper.enhanceSystemPromptForStreaming(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class));
         doNothing().when(helper).logLlmPromptIfEnabled(anyString(), anyList(), any());
         doNothing().when(helper).recordStreamingLlmStep(any(), any(), anyString(), anyString(), anyString(), any(), any());
     }
 
     @Test
     void 纯文本流式分片应合批为更少的Token事件() {
-        when(helper.isA2uiEnabled()).thenReturn(false);
         when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
                 textChunk("你好"),
                 textChunk("世界")
@@ -124,47 +114,7 @@ class StreamingCallback_单元测试 {
     }
 
     @Test
-    void A2ui标签跨Chunk时应保留普通文本并只发送一次UI事件() {
-        when(helper.isA2uiEnabled()).thenReturn(true);
-        when(helper.parseAndValidateA2uiTree(anyString(), eq(20))).thenReturn(sampleTree());
-        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
-                textChunk("普通文本<a2"),
-                textChunk("ui>{\"components\":[{\"id\":\"card-1\",\"type\":\"Card\",\"properties\":{\"title\":\"面板\"},\"children\":[]}]}</a2ui>")
-        ));
-
-        StreamingCallback callback = new StreamingCallback(
-                config,
-                generationRouter,
-                null,
-                helper,
-                new CancellationToken(),
-                loopContext,
-                sseManager,
-                "stream-1",
-                "session-1",
-                "turn-1",
-                request
-        );
-
-        callback.callLlm(request, basicMessages(), List.of(), null);
-
-        ArgumentCaptor<Object> tokenCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(sseManager, times(1)).sendEvent(eq("stream-1"), eq(SseEventType.TOKEN), tokenCaptor.capture());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> tokenPayload = (Map<String, Object>) tokenCaptor.getValue();
-        assertThat(tokenPayload).containsEntry("content", "普通文本");
-
-        ArgumentCaptor<Object> uiCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(sseManager, times(1)).sendEvent(eq("stream-1"), eq(SseEventType.UI), uiCaptor.capture());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> uiPayload = (Map<String, Object>) uiCaptor.getValue();
-        assertThat(uiPayload).containsKey("components");
-        assertThat(loopContext.getLastCollectedA2uiTree()).isEqualTo(sampleTree());
-    }
-
-    @Test
     void 流式检测到ToolCall时应先发出准备调用工具事件() {
-        when(helper.isA2uiEnabled()).thenReturn(false);
         when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
                 toolCallChunk("tool.search", "{\"q\":\"知微\"}")
         ));
@@ -223,9 +173,4 @@ class StreamingCallback_单元测试 {
         );
     }
 
-    private A2uiComponentTree sampleTree() {
-        return new A2uiComponentTree(List.of(
-                new A2uiComponent("card-1", "Card", Map.of("title", "面板"), List.of(), null)
-        ));
-    }
 }

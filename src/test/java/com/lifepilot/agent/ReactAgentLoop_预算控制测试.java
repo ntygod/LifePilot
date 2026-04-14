@@ -91,8 +91,7 @@ class ReactAgentLoop_预算控制测试 {
                 agentToolProvider,
                 new AgentConfigProperties(),
                 new ObjectMapper(),
-                null,
-                null,
+                null,  // traceRecorder
                 transcriptStore,
                 null,
                 null,
@@ -323,8 +322,7 @@ class ReactAgentLoop_预算控制测试 {
                 agentToolProvider,
                 new AgentConfigProperties(),
                 new ObjectMapper(),
-                null,
-                null,
+                null,  // traceRecorder
                 transcriptStore,
                 null,
                 null,

@@ -19,6 +19,7 @@ import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
@@ -70,6 +71,7 @@ public class AgentOrchestrator {
     @Nullable private final AgentCheckpointStore checkpointStore;
     @Nullable private final SuspendStore suspendStore;
     @Nullable private final SessionWorkspaceService workspaceService;
+    @Nullable private final UiEmitTreeCapture uiEmitTreeCapture;
     private final AgentExecutionPersistenceSupport executionPersistence;
 
     public AgentOrchestrator(
@@ -86,7 +88,8 @@ public class AgentOrchestrator {
             @Nullable AgentCheckpointStore checkpointStore,
             @Nullable SuspendStore suspendStore,
             @Nullable ChatTurnService chatTurnService,
-            @Nullable SessionWorkspaceService workspaceService) {
+            @Nullable SessionWorkspaceService workspaceService,
+            @Nullable UiEmitTreeCapture uiEmitTreeCapture) {
         this.agentLoop = agentLoop;
         this.streamingEventHandler = streamingEventHandler;
         this.config = config;
@@ -99,6 +102,7 @@ public class AgentOrchestrator {
         this.checkpointStore = checkpointStore;
         this.suspendStore = suspendStore;
         this.workspaceService = workspaceService;
+        this.uiEmitTreeCapture = uiEmitTreeCapture;
         this.executionPersistence = new AgentExecutionPersistenceSupport(persistenceHandler, chatTurnService);
     }
 
@@ -264,17 +268,11 @@ public class AgentOrchestrator {
             }
 
             if (error == null) {
-                // 提取最终内容和 A2UI 组件树
+                // 提取最终内容
                 String callbackContent = callback.getFinalContent();
                 finalContent = state.finalOutput() != null
                         ? state.finalOutput()
                         : (callbackContent != null ? callbackContent : finalContent);
-                var extractedFinalContent = streamingEventHandler.extractA2uiContent(finalContent);
-                A2uiComponentTree finalA2uiTree = extractedFinalContent.tree();
-                finalContent = extractedFinalContent.visibleText();
-                if (finalA2uiTree != null) {
-                    loopContext.setLastCollectedA2uiTree(finalA2uiTree);
-                }
 
                 if (state.terminationReason() == null) {
                     reasoningSummary = buildReasoningSummary(state, traceContext);
@@ -288,6 +286,14 @@ public class AgentOrchestrator {
                             .finalOutput(finalContent)
                             .build();
                     saveCheckpoint(state, effectiveRequest);
+                }
+
+                // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
+                if (uiEmitTreeCapture != null) {
+                    var capturedTree = uiEmitTreeCapture.poll(streamId);
+                    if (capturedTree != null) {
+                        loopContext.setLastCollectedA2uiTree(capturedTree);
+                    }
                 }
 
                 // 持久化助手回复和 turn 记录
@@ -307,6 +313,13 @@ public class AgentOrchestrator {
                 state = degradeForException(state, e);
                 finalContent = state.finalOutput() != null ? state.finalOutput() : "";
                 saveCheckpoint(state, effectiveRequest);
+                // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
+                if (uiEmitTreeCapture != null) {
+                    var capturedTree = uiEmitTreeCapture.poll(streamId);
+                    if (capturedTree != null) {
+                        loopContext.setLastCollectedA2uiTree(capturedTree);
+                    }
+                }
                 if (!testSession) {
                     String a2uiJson = streamingEventHandler.serializeA2uiTree(
                             loopContext.getLastCollectedA2uiTree());
@@ -321,6 +334,11 @@ public class AgentOrchestrator {
             }
         } finally {
             endTraceIfEnabled(traceContext, state, error);
+
+            // 兜底清理，防止泄漏（组件树已在 success/catch 路径中 poll 过，这里仅做安全移除）
+            if (uiEmitTreeCapture != null) {
+                uiEmitTreeCapture.poll(streamId); // 兜底清理，防止泄漏
+            }
 
             if (error != null) {
                 executionPersistence.markTurnFailed(state, error);

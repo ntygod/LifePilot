@@ -2,8 +2,11 @@
 import { ref, onBeforeUnmount, onMounted, onUpdated, watch } from 'vue'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
+import markedKatex from 'marked-katex-extension'
+import markedAlert from 'marked-alert'
 import { highlightCode } from '@/lib/highlight'
 import { injectCopyButtons } from '@/utils/codeBlockCopy'
+import 'katex/dist/katex.min.css'
 
 const props = defineProps<{
   content: string
@@ -18,7 +21,9 @@ const markedInstance = new Marked(
     highlight(code: string, lang: string) {
       return highlightCode(code, lang)
     }
-  })
+  }),
+  markedKatex({ throwOnError: false }),
+  markedAlert()
 )
 
 /* ---- Markdown 节流渲染 ----
@@ -227,6 +232,17 @@ watch(() => props.streaming, (streaming) => {
   font-weight: 700;
 }
 
+.message-prose :deep(ul.contains-task-list),
+.message-prose :deep(.task-list-item) {
+  list-style: none;
+  padding-left: 0;
+}
+
+.message-prose :deep(.task-list-item input[type="checkbox"]) {
+  margin-right: 0.5rem;
+  accent-color: hsl(from var(--primary) h s l / 0.82);
+}
+
 .message-prose :deep(blockquote) {
   margin: 0.9rem 0;
   border-left: 3px solid hsl(from var(--primary) h s l / 0.28);
@@ -234,6 +250,42 @@ watch(() => props.streaming, (streaming) => {
   background: hsl(from var(--accent) h s l / 0.42);
   padding: 0.8rem 1rem;
   color: hsl(from var(--foreground) h s l / 0.76);
+}
+
+.message-prose :deep(.markdown-alert) {
+  padding: 0.8rem 1rem;
+  margin: 0.65rem 0;
+  border-left: 3px solid hsl(from var(--primary) h s l / 0.42);
+  border-radius: 0 0.65rem 0.65rem 0;
+  background: hsl(from var(--accent) h s l / 0.32);
+}
+
+.message-prose :deep(.markdown-alert-title) {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.message-prose :deep(.markdown-alert-note) {
+  border-left-color: var(--alert-note, hsl(210 80% 60% / 0.6));
+}
+
+.message-prose :deep(.markdown-alert-warning) {
+  border-left-color: var(--alert-warning, hsl(38 92% 55% / 0.6));
+}
+
+.message-prose :deep(.markdown-alert-caution) {
+  border-left-color: var(--alert-caution, hsl(0 72% 55% / 0.6));
+}
+
+.message-prose :deep(.markdown-alert-tip) {
+  border-left-color: var(--alert-tip, hsl(from var(--primary) h s l / 0.6));
+}
+
+.message-prose :deep(.markdown-alert-important) {
+  border-left-color: var(--alert-important, hsl(280 60% 60% / 0.6));
 }
 
 .message-prose :deep(hr) {
@@ -386,6 +438,17 @@ watch(() => props.streaming, (streaming) => {
 .message-prose :deep(.hljs-meta),
 .message-prose :deep(.hljs-tag) {
   color: hsl(280 60% 74%);
+}
+
+.message-prose :deep(.katex-display) {
+  margin: 0.8rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4rem 0;
+}
+
+.message-prose :deep(.katex) {
+  font-size: 1.05em;
 }
 
 .streaming-prose {

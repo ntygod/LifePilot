@@ -11,41 +11,6 @@ class A2uiPayloadSupportTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void extractContent_stripsA2uiTagsAndKeepsTopLevelSignal() {
-        String raw = """
-                先看这个面板：
-                <a2ui>{"components":[{"id":"btn-1","type":"Button","properties":{"label":"继续"},"children":[],"signal":{"name":"next.step","payload":{"step":1}}}]}</a2ui>
-                好了
-                """;
-
-        var parsed = A2uiPayloadSupport.extractContent(raw, objectMapper, 20);
-
-        assertFalse(parsed.visibleText().contains("<a2ui>"));
-        assertEquals("next.step", parsed.tree().components().getFirst().signal().name());
-        assertEquals("继续", parsed.tree().components().getFirst().properties().get("label"));
-    }
-
-    @Test
-    void extractContent_keepsOnlyTheFirstValidA2uiBlock() {
-        String raw = """
-                先看第一个面板
-                <a2ui>{"components":[{"id":"card-1","type":"Card","properties":{"title":"第一块"},"children":[],"signal":null}]}</a2ui>
-                中间说明
-                <a2ui>{"components":[{"id":"card-2","type":"Card","properties":{"title":"第二块"},"children":[],"signal":null}]}</a2ui>
-                结束
-                """;
-
-        var parsed = A2uiPayloadSupport.extractContent(raw, objectMapper, 20);
-
-        assertNotNull(parsed.tree());
-        assertEquals("card-1", parsed.tree().components().getFirst().id());
-        assertFalse(parsed.visibleText().contains("<a2ui>"));
-        assertTrue(parsed.visibleText().contains("先看第一个面板"));
-        assertTrue(parsed.visibleText().contains("中间说明"));
-        assertTrue(parsed.visibleText().contains("结束"));
-    }
-
-    @Test
     void deserializeStoredTree_acceptsOnlyStandardTreeShape() throws Exception {
         String json = """
                 {"components":[{"id":"card-1","type":"Card","properties":{},"children":[],"signal":null}]}
