@@ -318,14 +318,16 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class, GenerationRouter.class})
-    public RealtimeExtractor realtimeExtractor(GenerationRouter generationRouter,
+    public RealtimeExtractor realtimeExtractor(@Nullable GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
                                                @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
-        log.info("记忆模块: 注册 RealtimeExtractor");
+        if (generationRouter == null) {
+            log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
+        }
+        log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry, snapshotRepository);
     }
 

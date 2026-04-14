@@ -1,5 +1,7 @@
 package com.lifepilot.memory.semantic;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.lang.Nullable;
 
 import java.util.Map;
@@ -9,6 +11,9 @@ import java.util.Map;
  *
  * <p>每条决策描述对一个实体的操作：新增、更新、删除或跳过。
  * 由 {@link RealtimeExtractor} 通过 LLM 结构化输出获取。</p>
+ *
+ * <p>LLM 返回的字段名可能与 Java 定义不同（如 "op" vs "operation"），
+ * 使用 {@link JsonAlias} 兼容常见变体。</p>
  *
  * @param operation  操作类型
  * @param entityName 实体名称
@@ -20,12 +25,13 @@ import java.util.Map;
  * @author zsg
  * @since 2026-03-05
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record AudnDecision(
-        AudnOperation operation,
-        String entityName,
-        EntityType entityType,
-        @Nullable String description,
-        @Nullable Map<String, Object> properties,
-        @Nullable Float extractionConfidence,
-        @Nullable Float importanceScore
+        @JsonAlias({"op", "action", "type"}) AudnOperation operation,
+        @JsonAlias({"name", "entity_name"}) String entityName,
+        @JsonAlias({"entity_type", "entitytype"}) EntityType entityType,
+        @Nullable @JsonAlias({"desc"}) String description,
+        @Nullable @JsonAlias({"props", "attributes"}) Map<String, Object> properties,
+        @Nullable @JsonAlias({"confidence", "extraction_confidence"}) Float extractionConfidence,
+        @Nullable @JsonAlias({"importance", "importance_score"}) Float importanceScore
 ) {}

@@ -45,6 +45,7 @@ public class RealtimeExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeExtractor.class);
 
+    @Nullable
     private final GenerationRouter generationRouter;
     private final SemanticMemory semanticMemory;
     private final ExtractionValidator extractionValidator;
@@ -55,7 +56,7 @@ public class RealtimeExtractor {
     @Nullable
     private final ChatTurnMemorySnapshotRepository snapshotRepository;
 
-    public RealtimeExtractor(GenerationRouter generationRouter,
+    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
                              MemoryProperties properties,
                              ExtractionValidator extractionValidator,
@@ -107,6 +108,10 @@ public class RealtimeExtractor {
 
     void extract(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
         if (userMessage == null || userMessage.isBlank()) return;
+        if (generationRouter == null) {
+            log.debug("实时实体提取: GenerationRouter 不可用，跳过");
+            return;
+        }
         MemoryWriteContext writeContext = resolveWriteContext(sessionId, turnId);
         if (writeContext == null) {
             log.debug("实时实体提取: 当前轮次已禁止自动学习, sessionId={}, turnId={}", sessionId, turnId);
@@ -173,9 +178,9 @@ public class RealtimeExtractor {
                                     Duration.ofSeconds(extractionTimeoutSeconds)),
                             executor)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
-                    .thenApply(response -> JsonOutputParser.parse(response.content(), AudnDecisionList.class))
+                    .thenApply(response -> parseAudnResponse(response.content()))
                     .join();
-            return result != null ? result.decisions() : List.of();
+            return result != null ? result : List.of();
         } catch (Exception e) {
             // CompletableFuture.join() 包装为 CompletionException，解包判断是否超时
             Throwable cause = e.getCause() != null ? e.getCause() : e;
@@ -186,6 +191,25 @@ public class RealtimeExtractor {
             }
             return List.of();
         }
+    }
+
+    /** 解析 LLM 返回的 AUDN 决策，兼容数组 [...] 和对象 {"decisions":[...]} 两种格式。 */
+    private List<AudnDecision> parseAudnResponse(String content) {
+        if (content == null || content.isBlank()) return List.of();
+        String repaired = JsonOutputParser.repairJson(content);
+        if (repaired.stripLeading().startsWith("[")) {
+            // LLM 直接返回数组格式
+            try {
+                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                return mapper.readValue(repaired,
+                        mapper.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
+            } catch (Exception e) {
+                log.warn("AUDN 数组格式解析失败，尝试对象格式: {}", e.getMessage());
+            }
+        }
+        // 尝试对象格式 {"decisions": [...]}
+        var result = JsonOutputParser.parse(repaired, AudnDecisionList.class);
+        return result != null ? result.decisions() : List.of();
     }
 
     /** 构建增强版 AUDN 提示词：注入已有实体上下文 + 提取标准 + 评分要求。 */
