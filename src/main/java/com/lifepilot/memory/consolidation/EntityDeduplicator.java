@@ -1,15 +1,18 @@
 package com.lifepilot.memory.consolidation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
-import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.*;
@@ -27,20 +30,24 @@ import java.util.stream.Collectors;
 public class EntityDeduplicator {
 
     private static final Logger log = LoggerFactory.getLogger(EntityDeduplicator.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
+    private final TransactionTemplate transactionTemplate;
 
     public EntityDeduplicator(SemanticMemory semanticMemory,
                               VectorSearcher vectorSearcher,
                               JdbcTemplate jdbcTemplate,
-                              MemoryProperties properties) {
+                              MemoryProperties properties,
+                              PlatformTransactionManager transactionManager) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /** 定时去重入口。 */
@@ -93,14 +100,12 @@ public class EntityDeduplicator {
                     .collect(Collectors.toMap(TemporalEntity::id, e -> e));
 
             for (var entity : entities) {
-                if (alreadyMerged.contains(entity.id())) continue;
                 try {
                     var results = vectorSearcher.searchEntities(
                             entity.textRepresentation(), 5, threshold);
                     for (VectorSearchResult result : results) {
                         String otherId = result.entityId();
                         if (otherId.equals(entity.id())) continue;
-                        if (alreadyMerged.contains(otherId)) continue;
                         // 只匹配同类型实体
                         if (!entityMap.containsKey(otherId)) continue;
 
@@ -140,6 +145,7 @@ public class EntityDeduplicator {
 
     /**
      * 合并一对重复实体：选择主实体 → 合并属性 → 迁移关系 → 归档从实体 → 记录日志。
+     * 整个合并过程在单一事务内执行，确保原子性。
      */
     private void mergePair(CandidatePair pair) {
         var primary = pair.primary();
@@ -162,42 +168,89 @@ public class EntityDeduplicator {
         // 3. 累加 accessCount
         int mergedAccessCount = primary.accessCount() + secondary.accessCount();
 
-        // 4. 构建合并后的主实体并更新
-        var merged = new TemporalEntity(
-                primary.id(), primary.type(), primary.name(), mergedDesc,
-                mergedProps, primary.version(), primary.isCurrent(),
-                primary.validFrom(), primary.validTo(), primary.sourceConversationId(),
-                primary.extractionConfidence(), primary.importanceScore(),
-                mergedAccessCount, primary.lastAccessedAt(),
-                primary.createdAt(), Instant.now());
-        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(merged, merged.sourceConversationId()));
+        String finalDesc = mergedDesc;
+        String propsJson = mergedProps.isEmpty() ? null : serializeProps(mergedProps);
+        String now = Instant.now().toString();
 
-        // 5. 迁移关系：将从实体的关系指向主实体
-        try {
-            migrateRelations(secondary.id(), primary.id());
-        } catch (Exception e) {
-            log.warn("实体去重: 关系迁移失败, secondaryId={}, error={}",
-                    secondary.id(), e.getMessage());
-        }
+        // 事务包裹：更新主实体 + 迁移关系 + 归档从实体 + 记录日志，保证原子性
+        SqliteBusyRetry.run(() -> transactionTemplate.executeWithoutResult(status -> {
+            // 4. 更新主实体属性
+            jdbcTemplate.update("""
+                    UPDATE memory_entities
+                    SET access_count = ?, last_seen_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    mergedAccessCount, now, now, primary.id());
+            jdbcTemplate.update("""
+                    UPDATE memory_entity_versions
+                    SET description = COALESCE(?, description),
+                        properties_json = COALESCE(?, properties_json),
+                        updated_at = ?
+                    WHERE entity_id = ? AND is_current = 1
+                    """,
+                    finalDesc, propsJson, now, primary.id());
 
-        // 6. 归档从实体
-        SqliteBusyRetry.run(() -> semanticMemory.archive(secondary));
+            // 5. 迁移关系
+            migrateRelations(secondary.id(), primary.id(), now);
 
-        // 7. 记录合并日志
-        logMerge(primary.id(), secondary.id(), pair.similarity,
-                "向量相似度超过阈值: " + primary.name() + " ≈ " + secondary.name());
+            // 6. 归档从实体
+            semanticMemory.archive(secondary);
+
+            // 7. 记录合并日志
+            logMerge(primary.id(), secondary.id(), pair.similarity,
+                    "向量相似度超过阈值: " + primary.name() + " ≈ " + secondary.name());
+        }));
     }
 
     /**
-     * 迁移关系：将活动关系的实体引用更新为主实体 ID。
+     * 迁移关系：归档冲突关系后，将剩余活动关系的实体引用更新为主实体 ID。
+     *
+     * <p>冲突场景：
+     * <ul>
+     *   <li>自引用 — secondary ↔ primary 的直接关系，迁移后 source = target</li>
+     *   <li>重复 — primary 已有相同方向+类型+目标的关系</li>
+     * </ul>
      */
-    private void migrateRelations(String secondaryId, String primaryId) {
+    private void migrateRelations(String secondaryId, String primaryId, String now) {
+        // 1. 归档自引用关系（secondary ↔ primary）
+        jdbcTemplate.update("""
+                UPDATE memory_relations SET status = 'ARCHIVED', updated_at = ?
+                WHERE status = 'ACTIVE' AND (
+                    (source_entity_id = ? AND target_entity_id = ?)
+                    OR (source_entity_id = ? AND target_entity_id = ?)
+                )""", now, secondaryId, primaryId, primaryId, secondaryId);
+
+        // 2. 归档迁移后会与主实体现有关系重复的从实体关系（source 侧）
+        jdbcTemplate.update("""
+                UPDATE memory_relations SET status = 'ARCHIVED', updated_at = ?
+                WHERE source_entity_id = ? AND status = 'ACTIVE'
+                  AND EXISTS (
+                      SELECT 1 FROM memory_relations r2
+                      WHERE r2.source_entity_id = ?
+                        AND r2.target_entity_id = memory_relations.target_entity_id
+                        AND r2.relation_type = memory_relations.relation_type
+                        AND r2.status = 'ACTIVE'
+                  )""", now, secondaryId, primaryId);
+
+        // 3. 归档重复关系（target 侧）
+        jdbcTemplate.update("""
+                UPDATE memory_relations SET status = 'ARCHIVED', updated_at = ?
+                WHERE target_entity_id = ? AND status = 'ACTIVE'
+                  AND EXISTS (
+                      SELECT 1 FROM memory_relations r2
+                      WHERE r2.target_entity_id = ?
+                        AND r2.source_entity_id = memory_relations.source_entity_id
+                        AND r2.relation_type = memory_relations.relation_type
+                        AND r2.status = 'ACTIVE'
+                  )""", now, secondaryId, primaryId);
+
+        // 4. 迁移剩余关系
         int sourceUpdated = jdbcTemplate.update(
-                "UPDATE memory_relations SET source_entity_id = ? WHERE source_entity_id = ? AND status = 'ACTIVE'",
-                primaryId, secondaryId);
+                "UPDATE memory_relations SET source_entity_id = ?, updated_at = ? WHERE source_entity_id = ? AND status = 'ACTIVE'",
+                primaryId, now, secondaryId);
         int targetUpdated = jdbcTemplate.update(
-                "UPDATE memory_relations SET target_entity_id = ? WHERE target_entity_id = ? AND status = 'ACTIVE'",
-                primaryId, secondaryId);
+                "UPDATE memory_relations SET target_entity_id = ?, updated_at = ? WHERE target_entity_id = ? AND status = 'ACTIVE'",
+                primaryId, now, secondaryId);
         if (sourceUpdated + targetUpdated > 0) {
             log.debug("实体去重: 关系迁移完成, secondaryId={}, sourceUpdated={}, targetUpdated={}",
                     secondaryId, sourceUpdated, targetUpdated);
@@ -212,6 +265,14 @@ public class EntityDeduplicator {
                 "INSERT INTO entity_merge_log(id, primary_entity_id, merged_entity_id, similarity_score, merge_reason, created_at) VALUES(?,?,?,?,?,?)",
                 UUID.randomUUID().toString(), primaryId, mergedId,
                 similarity, reason, Instant.now().toString());
+    }
+
+    private static String serializeProps(Map<String, Object> props) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(props);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 生成排序后的 ID 对 key，用于去重。 */
