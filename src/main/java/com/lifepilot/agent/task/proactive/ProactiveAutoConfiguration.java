@@ -187,6 +187,15 @@ public class ProactiveAutoConfiguration {
         return new ScheduleExtractor();
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public ConversationCompletionHook conversationCompletionHook(
+            @Autowired(required = false) com.lifepilot.agent.task.proactive.profile.UserProfileService userProfileService,
+            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector,
+            @Autowired(required = false) IntentMemoryService intentMemoryService) {
+        return new ConversationCompletionHook(userProfileService, implicitSignalCollector, intentMemoryService);
+    }
+
     // ── 认知升级: 画像 + 反思 + 隐式信号 ──
 
     @Bean

@@ -365,8 +365,23 @@ public class ProactiveEngine {
         LocalTime qEnd = parseTime(config != null
                 ? config.getTask().getProactiveReminderQuietHoursEnd() : null);
 
+        // 注入画像和反思经验 — 让所有 behavior 能"懂"用户
+        String portrait = null;
+        if (userProfileService != null) {
+            try { portrait = userProfileService.getProfile(userId).getPortraitOrDefault(); }
+            catch (Exception e) { log.debug("主动引擎: 画像读取跳过: {}", e.getMessage()); }
+        }
+        String experience = null;
+        if (reflectionService != null) {
+            try {
+                var latest = reflectionService.getLatestExperience(userId);
+                if (latest != null) experience = latest.rawReflection();
+            } catch (Exception e) { log.debug("主动引擎: 经验读取跳过: {}", e.getMessage()); }
+        }
+
         return new ContextPacket(userId, now, zoneId, qStart, qEnd,
-                sentToday, dailyMax, focusState, lastHeartbeatAt, heartbeatMin);
+                sentToday, dailyMax, focusState, lastHeartbeatAt, heartbeatMin,
+                portrait, experience);
     }
 
     @Nullable

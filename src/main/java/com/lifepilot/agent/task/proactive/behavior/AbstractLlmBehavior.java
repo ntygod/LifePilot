@@ -65,11 +65,19 @@ public abstract class AbstractLlmBehavior implements ProactiveBehavior {
         return actions;
     }
 
-    /** 生成内容：LLM 优先 → 回退模板。 */
+    /** 生成内容：LLM 优先 → 回退模板。画像和经验自动注入 prompt context。 */
     protected String generateContent(ProactiveCandidate candidate, ContextPacket ctx) {
         if (generationRouter != null && promptRegistry != null) {
             try {
-                String prompt = promptRegistry.render(promptKey(), buildPromptVariables(candidate, ctx));
+                var vars = new java.util.HashMap<>(buildPromptVariables(candidate, ctx));
+                // 自动注入画像和反思经验 — 让 LLM "懂"用户
+                if (ctx.userProfile() != null) {
+                    vars.put("userProfile", ctx.userProfile());
+                }
+                if (ctx.recentExperience() != null) {
+                    vars.put("recentExperience", ctx.recentExperience());
+                }
+                String prompt = promptRegistry.render(promptKey(), vars);
                 LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
                         GenerationCapability.CHAT, llmTimeout());
                 if (response != null && !response.content().isBlank()) {
