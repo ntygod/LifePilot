@@ -483,7 +483,7 @@ public class SemanticMemory {
         }
     }
 
-    /** 插入实体根记录。 */
+    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突。 */
     private void insertEntityRoot(TemporalEntity entity, MemoryWriteContext writeContext, Instant now) {
         String spaceId = writeContext.spaceId() != null
                 ? writeContext.spaceId()
@@ -498,6 +498,14 @@ public class SemanticMemory {
                     reality_type, status, access_count, last_accessed_at,
                     first_seen_at, last_seen_at, created_at, updated_at
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    canonical_name = excluded.canonical_name,
+                    normalized_name = excluded.normalized_name,
+                    status = excluded.status,
+                    access_count = excluded.access_count,
+                    last_accessed_at = excluded.last_accessed_at,
+                    last_seen_at = excluded.last_seen_at,
+                    updated_at = excluded.updated_at
                 """,
                 entity.id(),
                 spaceId,

@@ -32,6 +32,7 @@ public class ConsolidationPipeline {
     private static final Logger log = LoggerFactory.getLogger(ConsolidationPipeline.class);
 
     private final EpisodicToSemanticConsolidator semanticConsolidator;
+    @Nullable
     private final EpisodicToProceduralConsolidator proceduralConsolidator;
     private final MemoryProperties properties;
     @Nullable
@@ -55,7 +56,7 @@ public class ConsolidationPipeline {
      * @param experienceMerger       经验合并器（可选，用于相似经验合并为元经验）
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
-                                  EpisodicToProceduralConsolidator proceduralConsolidator,
+                                  @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
                                   MemoryProperties properties,
                                   @Nullable PreferenceConsolidator preferenceConsolidator,
                                   @Nullable SemanticMemory semanticMemory,
@@ -110,12 +111,16 @@ public class ConsolidationPipeline {
         }
 
         // 2. 程序巩固（情景→程序）
-        try {
-            var proceduralStats = proceduralConsolidator.consolidate();
-            log.info("巩固管线: 程序巩固完成, traces={}, created={}",
-                    proceduralStats.conversationsAnalyzed(), proceduralStats.templatesCreated());
-        } catch (Exception e) {
-            log.warn("巩固管线: 程序巩固失败, error={}", e.getMessage(), e);
+        if (proceduralConsolidator != null) {
+            try {
+                var proceduralStats = proceduralConsolidator.consolidate();
+                log.info("巩固管线: 程序巩固完成, traces={}, created={}",
+                        proceduralStats.conversationsAnalyzed(), proceduralStats.templatesCreated());
+            } catch (Exception e) {
+                log.warn("巩固管线: 程序巩固失败, error={}", e.getMessage(), e);
+            }
+        } else {
+            log.debug("巩固管线: 程序巩固器不可用，已跳过");
         }
 
         // 3. 偏好同步（L3 PREFERENCE → L4 PreferenceRule）

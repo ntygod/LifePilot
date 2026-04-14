@@ -432,10 +432,10 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({EpisodicToSemanticConsolidator.class, EpisodicToProceduralConsolidator.class})
+    @ConditionalOnBean(EpisodicToSemanticConsolidator.class)
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
-            EpisodicToProceduralConsolidator proceduralConsolidator,
+            @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
             MemoryProperties properties,
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,

@@ -1,11 +1,12 @@
 package com.lifepilot.memory.consolidation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
-import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -93,14 +94,12 @@ public class EntityDeduplicator {
                     .collect(Collectors.toMap(TemporalEntity::id, e -> e));
 
             for (var entity : entities) {
-                if (alreadyMerged.contains(entity.id())) continue;
                 try {
                     var results = vectorSearcher.searchEntities(
                             entity.textRepresentation(), 5, threshold);
                     for (VectorSearchResult result : results) {
                         String otherId = result.entityId();
                         if (otherId.equals(entity.id())) continue;
-                        if (alreadyMerged.contains(otherId)) continue;
                         // 只匹配同类型实体
                         if (!entityMap.containsKey(otherId)) continue;
 
@@ -162,15 +161,26 @@ public class EntityDeduplicator {
         // 3. 累加 accessCount
         int mergedAccessCount = primary.accessCount() + secondary.accessCount();
 
-        // 4. 构建合并后的主实体并更新
-        var merged = new TemporalEntity(
-                primary.id(), primary.type(), primary.name(), mergedDesc,
-                mergedProps, primary.version(), primary.isCurrent(),
-                primary.validFrom(), primary.validTo(), primary.sourceConversationId(),
-                primary.extractionConfidence(), primary.importanceScore(),
-                mergedAccessCount, primary.lastAccessedAt(),
-                primary.createdAt(), Instant.now());
-        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(merged, merged.sourceConversationId()));
+        // 4. 直接更新主实体的属性（不走 upsertWithConflictDetection，避免走新建分支导致 PK 冲突）
+        String finalDesc = mergedDesc;
+        String propsJson = mergedProps.isEmpty() ? null : serializeProps(mergedProps);
+        String now = Instant.now().toString();
+        SqliteBusyRetry.run(() -> {
+            jdbcTemplate.update("""
+                UPDATE memory_entities
+                SET access_count = ?, last_seen_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                mergedAccessCount, now, now, primary.id());
+            jdbcTemplate.update("""
+                UPDATE memory_entity_versions
+                SET description = COALESCE(?, description),
+                    properties_json = COALESCE(?, properties_json),
+                    updated_at = ?
+                WHERE entity_id = ? AND is_current = 1
+                """,
+                finalDesc, propsJson, now, primary.id());
+        });
 
         // 5. 迁移关系：将从实体的关系指向主实体
         try {
@@ -212,6 +222,14 @@ public class EntityDeduplicator {
                 "INSERT INTO entity_merge_log(id, primary_entity_id, merged_entity_id, similarity_score, merge_reason, created_at) VALUES(?,?,?,?,?,?)",
                 UUID.randomUUID().toString(), primaryId, mergedId,
                 similarity, reason, Instant.now().toString());
+    }
+
+    private static String serializeProps(Map<String, Object> props) {
+        try {
+            return new ObjectMapper().writeValueAsString(props);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 生成排序后的 ID 对 key，用于去重。 */
