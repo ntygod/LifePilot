@@ -232,6 +232,17 @@ watch(() => props.streaming, (streaming) => {
   font-weight: 700;
 }
 
+.streaming-prose :deep(ul.contains-task-list),
+.streaming-prose :deep(.task-list-item) {
+  list-style: none;
+  padding-left: 0;
+}
+
+.streaming-prose :deep(.task-list-item input[type="checkbox"]) {
+  margin-right: 0.5rem;
+  accent-color: hsl(from var(--primary) h s l / 0.82);
+}
+
 .message-prose :deep(blockquote) {
   margin: 0.9rem 0;
   border-left: 3px solid hsl(from var(--primary) h s l / 0.28);
@@ -239,6 +250,42 @@ watch(() => props.streaming, (streaming) => {
   background: hsl(from var(--accent) h s l / 0.42);
   padding: 0.8rem 1rem;
   color: hsl(from var(--foreground) h s l / 0.76);
+}
+
+.streaming-prose :deep(.markdown-alert) {
+  padding: 0.8rem 1rem;
+  margin: 0.65rem 0;
+  border-left: 3px solid hsl(from var(--primary) h s l / 0.42);
+  border-radius: 0 0.65rem 0.65rem 0;
+  background: hsl(from var(--accent) h s l / 0.32);
+}
+
+.streaming-prose :deep(.markdown-alert-title) {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.streaming-prose :deep(.markdown-alert-note) {
+  border-left-color: hsl(210 80% 60% / 0.6);
+}
+
+.streaming-prose :deep(.markdown-alert-warning) {
+  border-left-color: hsl(38 92% 55% / 0.6);
+}
+
+.streaming-prose :deep(.markdown-alert-caution) {
+  border-left-color: hsl(0 72% 55% / 0.6);
+}
+
+.streaming-prose :deep(.markdown-alert-tip) {
+  border-left-color: hsl(from var(--primary) h s l / 0.6);
+}
+
+.streaming-prose :deep(.markdown-alert-important) {
+  border-left-color: hsl(280 60% 60% / 0.6);
 }
 
 .message-prose :deep(hr) {
@@ -391,6 +438,17 @@ watch(() => props.streaming, (streaming) => {
 .message-prose :deep(.hljs-meta),
 .message-prose :deep(.hljs-tag) {
   color: hsl(280 60% 74%);
+}
+
+.streaming-prose :deep(.katex-display) {
+  margin: 0.8rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4rem 0;
+}
+
+.streaming-prose :deep(.katex) {
+  font-size: 1.05em;
 }
 
 .streaming-prose {
