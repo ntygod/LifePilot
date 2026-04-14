@@ -94,7 +94,7 @@ public class UiEmitToolProvider {
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.of(
                         PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.none()
                 ))
                 .tags(UI_TAGS)

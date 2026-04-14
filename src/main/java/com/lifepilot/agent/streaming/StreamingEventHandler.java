@@ -240,7 +240,13 @@ public class StreamingEventHandler {
 
     // ===== A2UI 辅助方法 =====
 
-    /** 从响应内容中提取 A2UI 组件。 */
+    /**
+     * 从响应内容中提取 A2UI 组件。
+     *
+     * @deprecated A2UI 已改用 ui.emit tool call 提交组件树，不再需要从文本中解析标签。
+     *             保留仅供历史数据兼容，后续版本将移除。
+     */
+    @Deprecated(since = "2026-04-14", forRemoval = true)
     public A2uiPayloadSupport.ParsedA2uiContent extractA2uiContent(@Nullable String content) {
         if (a2uiProperties == null || !a2uiProperties.enabled()) {
             return new A2uiPayloadSupport.ParsedA2uiContent(content != null ? content : "", null);

@@ -269,23 +269,23 @@ watch(() => props.streaming, (streaming) => {
 }
 
 .message-prose :deep(.markdown-alert-note) {
-  border-left-color: hsl(210 80% 60% / 0.6);
+  border-left-color: var(--alert-note, hsl(210 80% 60% / 0.6));
 }
 
 .message-prose :deep(.markdown-alert-warning) {
-  border-left-color: hsl(38 92% 55% / 0.6);
+  border-left-color: var(--alert-warning, hsl(38 92% 55% / 0.6));
 }
 
 .message-prose :deep(.markdown-alert-caution) {
-  border-left-color: hsl(0 72% 55% / 0.6);
+  border-left-color: var(--alert-caution, hsl(0 72% 55% / 0.6));
 }
 
 .message-prose :deep(.markdown-alert-tip) {
-  border-left-color: hsl(from var(--primary) h s l / 0.6);
+  border-left-color: var(--alert-tip, hsl(from var(--primary) h s l / 0.6));
 }
 
 .message-prose :deep(.markdown-alert-important) {
-  border-left-color: hsl(280 60% 60% / 0.6);
+  border-left-color: var(--alert-important, hsl(280 60% 60% / 0.6));
 }
 
 .message-prose :deep(hr) {

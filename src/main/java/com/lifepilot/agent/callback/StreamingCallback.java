@@ -143,7 +143,6 @@ public class StreamingCallback implements IterationCallback {
 
         Instant callStart = Instant.now();
         markModelStreamStarted(callStart);
-        var outputState = new StreamOutputState();
         var contentBuilder = new StringBuilder();
         final Instant[] firstTokenTime = {null};
 
@@ -158,7 +157,7 @@ public class StreamingCallback implements IterationCallback {
                             firstTokenTime[0] = now;
                         }
                         markFirstModelToken(now);
-                        pushTokenToSse(token, outputState);
+                        pushTokenToSse(token);
                     })
                     .doOnError(e -> {
                         log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
@@ -179,7 +178,7 @@ public class StreamingCallback implements IterationCallback {
         } else if (sseManager.getEmitter(streamId) == null) {
             log.debug("多模态流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
-        outputState.flush();
+        flushPendingTokenBatch();
         if (this.streamingError != null) {
             log.warn("多模态流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
             throw this.streamingError instanceof RuntimeException re ? re : new RuntimeException(this.streamingError);
@@ -266,7 +265,6 @@ public class StreamingCallback implements IterationCallback {
         markModelStreamStarted(callStart);
         String scene2 = config.getLoop().getLlmScene();
 
-        var outputState = new StreamOutputState();
         var contentBuilder = new StringBuilder();
         var toolCallAggregator = new StreamingToolCallAggregator();
         final ChatResponse[] lastChunk = {null};
@@ -308,7 +306,7 @@ public class StreamingCallback implements IterationCallback {
                             firstTokenTime[0] = now;
                         }
                         markFirstModelToken(now);
-                        pushTokenToSse(text, outputState);
+                        pushTokenToSse(text);
                     }
 
                     if (output.hasToolCalls()) {
@@ -338,7 +336,7 @@ public class StreamingCallback implements IterationCallback {
         } else if (sseManager.getEmitter(streamId) == null) {
             log.debug("流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
-        outputState.flush();
+        flushPendingTokenBatch();
 
         if (this.streamingError != null) {
             log.warn("流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
@@ -498,19 +496,17 @@ public class StreamingCallback implements IterationCallback {
 
     /** 将文本内容逐段推送为 SSE TOKEN 事件。 */
     private void streamContentToSse(String content) {
-        var outputState = new StreamOutputState();
-        outputState.accept(content);
-        outputState.flush();
+        enqueueTokenChunk(content);
+        flushPendingTokenBatch();
     }
 
     /**
      * 将单个流式 token 推送为 SSE 事件。
      *
-     * @param token      LLM 流式输出的单个 token
-     * @param outputState 输出合批状态
+     * @param token LLM 流式输出的单个 token
      */
-    private void pushTokenToSse(String token, StreamOutputState outputState) {
-        outputState.accept(token);
+    private void pushTokenToSse(String token) {
+        enqueueTokenChunk(token);
     }
 
     private void emitToolCallPreview(List<AssistantMessage.ToolCall> toolCalls, boolean[] toolCallPreviewSent) {
@@ -612,23 +608,6 @@ public class StreamingCallback implements IterationCallback {
     private void clearPendingTokenBatch() {
         pendingTokenBatch.setLength(0);
         tokenBatchOpenedAt = null;
-    }
-
-    private final class StreamOutputState {
-
-        private StreamOutputState() {
-        }
-
-        private void accept(String chunk) {
-            if (chunk == null || chunk.isEmpty()) {
-                return;
-            }
-            enqueueTokenChunk(chunk);
-        }
-
-        private void flush() {
-            flushPendingTokenBatch();
-        }
     }
 
     private String describeProviderError(Throwable error) {

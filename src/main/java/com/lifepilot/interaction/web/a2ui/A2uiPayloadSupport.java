@@ -24,6 +24,11 @@ public final class A2uiPayloadSupport {
     public record ParsedA2uiContent(String visibleText, @Nullable A2uiComponentTree tree) {
     }
 
+    /**
+     * @deprecated A2UI 已改用 ui.emit tool call 提交组件树，不再需要从文本中解析标签。
+     *             保留仅供历史数据兼容，后续版本将移除。
+     */
+    @Deprecated(since = "2026-04-14", forRemoval = true)
     public static ParsedA2uiContent extractContent(@Nullable String rawContent,
                                                    ObjectMapper objectMapper,
                                                    int maxComponentsPerTree) {

@@ -21,7 +21,10 @@ import java.util.List;
  *
  * @author zsg
  * @since 2026-03-11
+ * @deprecated A2UI 已改用 ui.emit tool call 提交组件树，不再需要流式标签解析。
+ *             保留仅供历史数据兼容，后续版本将移除。
  */
+@Deprecated(since = "2026-04-14", forRemoval = true)
 public class StreamingA2uiParser {
 
     /**
