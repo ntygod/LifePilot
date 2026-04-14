@@ -1,6 +1,7 @@
 package com.lifepilot.agent.task;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.proactive.ProactiveEngine;
 import com.lifepilot.agent.task.reminder.ProactiveReminderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,18 +28,28 @@ public class HeartbeatRunner {
     private final AgentConfigProperties config;
     @Nullable
     private final ProactiveReminderService proactiveReminderService;
+    @Nullable
+    private final ProactiveEngine proactiveEngine;
 
     public HeartbeatRunner(ScheduledExecutorService scheduler,
                            AgentConfigProperties config) {
-        this(scheduler, config, null);
+        this(scheduler, config, null, null);
     }
 
     public HeartbeatRunner(ScheduledExecutorService scheduler,
                            AgentConfigProperties config,
                            @Nullable ProactiveReminderService proactiveReminderService) {
+        this(scheduler, config, proactiveReminderService, null);
+    }
+
+    public HeartbeatRunner(ScheduledExecutorService scheduler,
+                           AgentConfigProperties config,
+                           @Nullable ProactiveReminderService proactiveReminderService,
+                           @Nullable ProactiveEngine proactiveEngine) {
         this.scheduler = scheduler;
         this.config = config;
         this.proactiveReminderService = proactiveReminderService;
+        this.proactiveEngine = proactiveEngine;
     }
 
     /**
@@ -61,7 +72,21 @@ public class HeartbeatRunner {
             return;
         }
 
-        runProactiveReminderIfEnabled();
+        // 优先使用新引擎，无引擎时回退到旧服务
+        if (proactiveEngine != null) {
+            runProactiveEngineIfEnabled();
+        } else {
+            runProactiveReminderIfEnabled();
+        }
+    }
+
+    private void runProactiveEngineIfEnabled() {
+        try {
+            var level = proactiveEngine.heartbeat();
+            log.debug("主动引擎心跳完成: level={}", level);
+        } catch (Exception e) {
+            log.warn("主动引擎心跳异常: {}", e.getMessage());
+        }
     }
 
     private void runProactiveReminderIfEnabled() {

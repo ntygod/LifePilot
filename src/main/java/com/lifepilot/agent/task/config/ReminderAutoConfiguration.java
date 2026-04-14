@@ -4,6 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.task.reminder.DefaultReminderSignalCollector;
 import com.lifepilot.agent.task.reminder.DefaultReminderMessageGenerator;
+import com.lifepilot.agent.task.reminder.ReminderBehavior;
 import com.lifepilot.agent.task.reminder.ProactiveReminderService;
 import com.lifepilot.agent.task.reminder.ReminderDecisionEngine;
 import com.lifepilot.agent.task.reminder.ReminderExecutionRepository;
@@ -162,6 +163,18 @@ public class ReminderAutoConfiguration {
             @Autowired(required = false) ReminderTrustGradient reminderTrustGradient) {
         return new ReminderDecisionEngine(new com.lifepilot.agent.task.reminder.ReminderCandidateDetector(),
                 reminderTrustGradient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReminderBehavior reminderBehavior(ReminderSignalCollector reminderSignalCollector,
+                                             ReminderMessageGenerator reminderMessageGenerator,
+                                             @Autowired(required = false) ReminderOutcomeInferenceService outcomeInferenceService) {
+        return new ReminderBehavior(
+                reminderSignalCollector,
+                new com.lifepilot.agent.task.reminder.ReminderCandidateDetector(),
+                reminderMessageGenerator,
+                outcomeInferenceService);
     }
 
     @Bean

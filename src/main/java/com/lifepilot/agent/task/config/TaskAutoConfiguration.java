@@ -73,11 +73,13 @@ public class TaskAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public HeartbeatRunner heartbeatRunner(SharedScheduler sharedScheduler,
                                            AgentConfigProperties config,
-                                           @Autowired(required = false) ProactiveReminderService proactiveReminderService) {
+                                           @Autowired(required = false) ProactiveReminderService proactiveReminderService,
+                                           @Autowired(required = false) com.lifepilot.agent.task.proactive.ProactiveEngine proactiveEngine) {
         return new HeartbeatRunner(
                 sharedScheduler.heartbeat(),
                 config,
-                proactiveReminderService
+                proactiveReminderService,
+                proactiveEngine
         );
     }
 
