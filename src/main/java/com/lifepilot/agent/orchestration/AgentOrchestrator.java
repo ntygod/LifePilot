@@ -274,14 +274,6 @@ public class AgentOrchestrator {
                         ? state.finalOutput()
                         : (callbackContent != null ? callbackContent : finalContent);
 
-                // 从 UiEmitTreeCapture 桥接器取回 ui.emit 工具调用产生的组件树
-                if (uiEmitTreeCapture != null) {
-                    var capturedTree = uiEmitTreeCapture.poll(streamId);
-                    if (capturedTree != null) {
-                        loopContext.setLastCollectedA2uiTree(capturedTree);
-                    }
-                }
-
                 if (state.terminationReason() == null) {
                     reasoningSummary = buildReasoningSummary(state, traceContext);
                     state = state.toBuilder()
@@ -327,6 +319,14 @@ public class AgentOrchestrator {
             }
         } finally {
             endTraceIfEnabled(traceContext, state, error);
+
+            // 无论成功还是异常，都必须从桥接器取走组件树，防止内存泄漏
+            if (uiEmitTreeCapture != null) {
+                var capturedTree = uiEmitTreeCapture.poll(streamId);
+                if (capturedTree != null) {
+                    loopContext.setLastCollectedA2uiTree(capturedTree);
+                }
+            }
 
             if (error != null) {
                 executionPersistence.markTurnFailed(state, error);
