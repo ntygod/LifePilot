@@ -73,7 +73,7 @@ public class UiEmitToolExecutor implements ToolExecutor {
             return ToolResult.error("参数错误: " + e.getMessage());
         }
 
-        if (rawComponents == null || rawComponents.isEmpty()) {
+        if (rawComponents.isEmpty()) {
             return ToolResult.error("components 不能为空");
         }
 

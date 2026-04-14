@@ -16,7 +16,7 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.config.MediaProperties;
-import com.lifepilot.tool.BuiltinTool;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -112,21 +112,26 @@ public class WebAutoConfiguration {
     }
 
     /**
-     * 注册 ui.emit 内置工具 Bean，由 {@link com.lifepilot.tool.registry.BuiltinToolRegistrar} 在启动时收集。
+     * 在 ApplicationReadyEvent 中注册 ui.emit 工具到 DynamicToolRegistry。
      *
-     * <p>依赖 {@link SseSessionManager} 向前端推送组件树事件，
-     * 因此只有在 Web 渠道启用时才注册。</p>
-     *
-     * @param sseManager     SSE 会话管理器
-     * @param a2uiProperties A2UI 配置属性
-     * @param treeCapture    组件树捕获桥接器
-     * @return ui.emit BuiltinTool 实例
+     * <p>与 MetaAutoConfiguration.registerTools() 使用相同的 HIGHEST_PRECEDENCE 优先级，
+     * 确保在 SkillAutoConfiguration 加载 Skill（校验 suggested-tools）之前完成注册。</p>
      */
-    @Bean
-    public BuiltinTool uiEmitTool(SseSessionManager sseManager, A2uiProperties a2uiProperties,
-                                   UiEmitTreeCapture treeCapture) {
+    @EventListener(ApplicationReadyEvent.class)
+    @org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
+    public void registerUiEmitTool(ApplicationReadyEvent event) {
+        var ctx = event.getApplicationContext();
+        if (!ctx.containsBean("sseSessionManager")) {
+            return;
+        }
+        var sseManager = ctx.getBean(SseSessionManager.class);
+        var a2uiProperties = ctx.getBean(A2uiProperties.class);
+        var treeCapture = ctx.getBean(UiEmitTreeCapture.class);
+        var toolRegistry = ctx.getBean(com.lifepilot.tool.registry.DynamicToolRegistry.class);
+
+        var tool = new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree(), treeCapture).buildTool();
+        toolRegistry.registerBuiltinTool(tool);
         log.info("注册 ui.emit 内置工具: maxComponentsPerTree={}", a2uiProperties.maxComponentsPerTree());
-        return new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree(), treeCapture).buildTool();
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、
