@@ -175,7 +175,8 @@ public class RealtimeExtractor {
                                     null,
                                     null,
                                     GenerationCapability.CHAT,
-                                    Duration.ofSeconds(extractionTimeoutSeconds)),
+                                    Duration.ofSeconds(extractionTimeoutSeconds),
+                                    true),  // skipCache: 每次对话内容不同，语义缓存会张冠李戴
                             executor)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
                     .thenApply(response -> parseAudnResponse(response.content()))
