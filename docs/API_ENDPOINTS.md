@@ -116,6 +116,7 @@
 |--------|------|---------|------|
 | GET | `/api/memories/forgetting-logs` | `listForgettingLogs` | 遗忘日志分页列表（timeFrom/timeTo/strategy 过滤） |
 | POST | `/api/memories/consolidate` | `triggerConsolidation` | 手动触发记忆巩固（AtomicBoolean 防重入，Virtual Thread 异步，202） |
+| POST | `/api/memories/deduplicate` | `triggerDeduplication` | 手动触发实体去重（AtomicBoolean 防重入，Virtual Thread 异步，去重服务未启用时 503） |
 
 ---
 

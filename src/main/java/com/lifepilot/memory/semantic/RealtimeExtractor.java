@@ -44,6 +44,8 @@ import java.util.concurrent.TimeoutException;
 public class RealtimeExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeExtractor.class);
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final java.util.concurrent.ExecutorService VIRTUAL_EXECUTOR = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
     @Nullable
     private final GenerationRouter generationRouter;
@@ -165,8 +167,6 @@ public class RealtimeExtractor {
     private List<AudnDecision> callLlmForAudnDecisions(String conversationText, MemoryReadFilter readFilter) {
         String prompt = buildAudnPrompt(conversationText, readFilter);
         try {
-            // 使用 Virtual Thread 执行器避免阻塞 ForkJoinPool.commonPool()
-            var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
             var result = CompletableFuture.supplyAsync(() ->
                             generationRouter.call(
                                     LlmScene.KNOWLEDGE_EXTRACTION,
@@ -177,7 +177,7 @@ public class RealtimeExtractor {
                                     GenerationCapability.CHAT,
                                     Duration.ofSeconds(extractionTimeoutSeconds),
                                     true),  // skipCache: 每次对话内容不同，语义缓存会张冠李戴
-                            executor)
+                            VIRTUAL_EXECUTOR)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
                     .thenApply(response -> parseAudnResponse(response.content()))
                     .join();
@@ -201,9 +201,8 @@ public class RealtimeExtractor {
         if (repaired.stripLeading().startsWith("[")) {
             // LLM 直接返回数组格式
             try {
-                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                return mapper.readValue(repaired,
-                        mapper.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
+                return MAPPER.readValue(repaired,
+                        MAPPER.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
             } catch (Exception e) {
                 log.warn("AUDN 数组格式解析失败，尝试对象格式: {}", e.getMessage());
             }

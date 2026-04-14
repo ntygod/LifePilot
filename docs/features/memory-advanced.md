@@ -31,7 +31,7 @@
 
 自动将短期记忆沉淀为长期知识，包含 5 个阶段：
 
-1. **语义巩固**（EpisodicToSemanticConsolidator）：分析近期对话，提取新实体写入知识图谱，提升高频实体的重要度评分
+1. **语义巩固**（EpisodicToSemanticConsolidator）：分析近期对话中已有实体的提及频率，提升高频实体的重要度评分（不再触发新增知识提取）
 2. **程序巩固**（EpisodicToProceduralConsolidator）：识别对话中的重复行为模式，聚类生成操作模板，提取用户偏好规则
 3. **偏好同步**（PreferenceConsolidator）：将 L3 的 PREFERENCE 实体同步为 L4 的 PreferenceRule
 4. **经验合并**（ExperienceMerger）：将语义相似的 EXPERIENCE 实体合并为泛化的元经验

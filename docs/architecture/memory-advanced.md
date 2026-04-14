@@ -97,10 +97,10 @@ graph TB
 
 ### 3.3 EpisodicToSemanticConsolidator（情景→语义巩固器）
 
-- 职责：从 L2 情景记忆中提取实体和关系，巩固到 L3 语义记忆
-- 读取近期对话（lookback 天数可配置），分析对话中提及的实体
-- 高频提及的实体提升重要度评分（importance boost），增强记忆持久性
-- 可选集成 `KnowledgeExtractionPipeline`（通过 ObjectProvider 延迟获取）
+- 职责：分析近期对话中已有 L3 实体的提及频率，高频实体提升重要度评分
+- 读取近期对话（lookback 天数可配置），统计已有实体在对话文本中的提及次数
+- 高频提及的实体（≥ 阈值）通过直接 SQL UPDATE 提升 importanceScore，不创建新版本（避免与 RealtimeExtractor 并发写入时的唯一约束冲突）
+- 不再触发新增知识提取，巩固阶段只强化已有实体
 
 ### 3.4 EpisodicToProceduralConsolidator（情景→程序巩固器）
 
@@ -235,8 +235,8 @@ sequenceDiagram
 | SemanticMemory (L3) | 构造函数注入 | 巩固写入实体、遗忘归档实体 |
 | VectorSearcher | 构造函数注入 | IntentMatcher 和 ProceduralMemory 的向量匹配 |
 | GenerationRouter | 构造函数注入（@Nullable） | ReflectionSummaryPolicy 摘要压缩、EpisodicToProcedural 模式识别 |
+| EmbeddingRouter | 构造函数注入（@Nullable） | EpisodicToProcedural 轨迹向量化与模板去重 |
 | PromptRegistry | 构造函数注入 | 遗忘压缩提示词模板 |
-| KnowledgeExtractionPipeline | ObjectProvider 延迟获取 | EpisodicToSemantic 可选使用知识提取管线 |
 
 ## 7. 配置参考
 

@@ -194,7 +194,10 @@ public class EpisodicToSemanticConsolidator {
                 float newImportance = Math.min(1.0f, entity.importanceScore() + boost);
 
                 if (newImportance > entity.importanceScore()) {
-                    // 仅更新分数，不创建新版本（避免与 RealtimeExtractor 并发写入时的 UNIQUE 约束冲突）
+                    // 仅更新分数，不创建新版本 — 两个原因：
+                    // 1. 避免与 RealtimeExtractor 并发写入时的 UNIQUE(entity_id) WHERE is_current=1 约束冲突
+                    // 2. importance boost 是统计调整，不涉及实体内容变更，不需要版本化
+                    // 代价：绕过了 SemanticMemory 的 writeCallback 和审计事件，importance 变化历史不可追溯
                     SqliteBusyRetry.run(() -> jdbcTemplate.update(
                             "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
                             newImportance, Instant.now().toString(), entity.id()));
