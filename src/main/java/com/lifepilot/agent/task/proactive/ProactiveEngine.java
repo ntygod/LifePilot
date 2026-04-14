@@ -78,13 +78,6 @@ public class ProactiveEngine {
     @Nullable
     private volatile Instant lastHeartbeatAt;
 
-    /** 测试用简化构造器。 */
-    public ProactiveEngine(List<ProactiveBehavior> behaviors,
-                           DecisionGate decisionGate,
-                           DeliveryEngine deliveryEngine) {
-        this(behaviors, decisionGate, deliveryEngine, null, null, null, null, null, null, null, null, null, null);
-    }
-
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
                            DecisionGate decisionGate,
                            DeliveryEngine deliveryEngine,
@@ -295,13 +288,7 @@ public class ProactiveEngine {
     }
 
     private static String resolveTimeSlot(ContextPacket ctx) {
-        int hour = java.time.LocalTime.ofInstant(ctx.now(), ctx.zoneId()).getHour();
-        if (hour >= 6 && hour < 9) return "early-morning";
-        if (hour >= 9 && hour < 12) return "morning";
-        if (hour >= 12 && hour < 14) return "noon";
-        if (hour >= 14 && hour < 18) return "afternoon";
-        if (hour >= 18 && hour < 21) return "evening";
-        return "night";
+        return TimeSlotResolver.resolve(ctx);
     }
 
     /** 反思触发 — 周日 22:00 执行周度自省。 */
@@ -309,7 +296,7 @@ public class ProactiveEngine {
         if (reflectionService == null) return;
         try {
             if (reflectionService.shouldReflect(ctx.now(), ctx.zoneId())) {
-                reflectionService.reflect(ctx.userId(), ctx.zoneId());
+                reflectionService.reflect(ctx.userId(), ctx.zoneId(), ctx.now());
             }
         } catch (Exception e) {
             log.debug("主动引擎: 反思执行跳过: {}", e.getMessage());

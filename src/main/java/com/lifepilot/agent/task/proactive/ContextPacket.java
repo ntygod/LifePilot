@@ -40,17 +40,6 @@ public record ContextPacket(
         @Nullable String recentExperience
 ) {
 
-    /** 兼容旧调用（无画像/经验）。 */
-    public ContextPacket(String userId, Instant now, ZoneId zoneId,
-                         @Nullable LocalTime quietHoursStart, @Nullable LocalTime quietHoursEnd,
-                         int actionsSentToday, int dailyMaxActions,
-                         @Nullable ReminderFocusState focusState,
-                         @Nullable Instant lastHeartbeatAt, int heartbeatIntervalMin) {
-        this(userId, now, zoneId, quietHoursStart, quietHoursEnd,
-                actionsSentToday, dailyMaxActions, focusState,
-                lastHeartbeatAt, heartbeatIntervalMin, null, null);
-    }
-
     private static final Pattern IDE_TITLE_PATTERN = Pattern.compile(
             "VS Code|Visual Studio Code|IntelliJ|WebStorm|PyCharm|CLion|GoLand|Rider|RustRover|Cursor|Zed|Neovim",
             Pattern.CASE_INSENSITIVE

@@ -4,8 +4,6 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.agent.task.proactive.intent.*;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,41 +11,31 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
  * 主动追问行为插件 — 基于意图记忆追踪用户未完成的目标和话题。
  *
  * <p>detect: 查询活跃意图，过滤创建超过 24h 且检查次数合理的。
- * reason: 使用 LLM 生成自然追问（带回退模板）。</p>
+ * reason: 使用 LLM 生成自然追问（带回退模板），自动注入画像/经验。</p>
  *
  * @author zsg
  * @since 2026-04-14
  */
-public class FollowUpBehavior implements ProactiveBehavior {
+public class FollowUpBehavior extends AbstractLlmBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(FollowUpBehavior.class);
     private static final String PROMPT_KEY = "generation/proactive-follow-up";
 
     private final IntentMemoryService intentMemoryService;
-    @Nullable private final GenerationRouter generationRouter;
-    @Nullable private final PromptRegistry promptRegistry;
     @Nullable private final AgentConfigProperties config;
-
-    public FollowUpBehavior(IntentMemoryService intentMemoryService,
-                            @Nullable GenerationRouter generationRouter,
-                            @Nullable PromptRegistry promptRegistry) {
-        this(intentMemoryService, generationRouter, promptRegistry, null);
-    }
 
     public FollowUpBehavior(IntentMemoryService intentMemoryService,
                             @Nullable GenerationRouter generationRouter,
                             @Nullable PromptRegistry promptRegistry,
                             @Nullable AgentConfigProperties config) {
+        super(generationRouter, promptRegistry);
         this.intentMemoryService = intentMemoryService;
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
         this.config = config;
     }
 
@@ -59,12 +47,16 @@ public class FollowUpBehavior implements ProactiveBehavior {
         return config != null ? config.getTask().getProactiveEngineFollowUpMaxCheckCount() : 5;
     }
 
-    private Duration llmTimeout() {
+    @Override
+    protected Duration llmTimeout() {
         return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
     }
 
     @Override
     public String name() { return "follow-up"; }
+
+    @Override
+    protected String promptKey() { return PROMPT_KEY; }
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
@@ -90,18 +82,33 @@ public class FollowUpBehavior implements ProactiveBehavior {
 
     @Override
     public List<ProactiveAction> reason(List<ProactiveCandidate> candidates, ContextPacket ctx) {
-        var actions = new ArrayList<ProactiveAction>();
+        var actions = super.reason(candidates, ctx);
+        // 推理后递增检查计数
         for (var candidate : candidates) {
-            String content = generateFollowUp(candidate, ctx);
-            if (content == null || content.isBlank()) continue;
-
-            actions.add(new ProactiveAction(candidate, content, DeliveryLevel.NOTIFY, candidate.detail()));
-
             if (candidate.detail() instanceof IntentRecord intent) {
                 intentMemoryService.incrementCheckCount(intent.id());
             }
         }
         return actions;
+    }
+
+    @Override
+    protected Map<String, Object> buildPromptVariables(ProactiveCandidate candidate, ContextPacket ctx) {
+        return Map.of(
+                "currentTime", formatTime(ctx),
+                "intentGoal", candidate.title(),
+                "conversationSummary", candidate.rationale(),
+                "daysSinceLastChat", String.valueOf(computeDaysSince(candidate, ctx.now())));
+    }
+
+    @Override
+    protected String fallbackContent(ProactiveCandidate candidate) {
+        return "你之前提到过「" + candidate.title() + "」，进展怎么样了？";
+    }
+
+    @Override
+    protected DeliveryLevel suggestLevel(ProactiveCandidate candidate) {
+        return DeliveryLevel.NOTIFY;
     }
 
     private float computeScore(IntentRecord intent, Instant now) {
@@ -113,27 +120,9 @@ public class FollowUpBehavior implements ProactiveBehavior {
         return Math.max(0f, Math.min(1f, score));
     }
 
-    private String generateFollowUp(ProactiveCandidate candidate, ContextPacket ctx) {
-        if (generationRouter != null && promptRegistry != null) {
-            try {
-                String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
-                        "currentTime", DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(ctx.now().atZone(ctx.zoneId())),
-                        "intentGoal", candidate.title(),
-                        "conversationSummary", candidate.rationale(),
-                        "daysSinceLastChat", String.valueOf(computeDaysSince(candidate))));
-                LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, llmTimeout());
-                if (response != null && !response.content().isBlank()) return response.content().strip();
-            } catch (Exception e) {
-                log.debug("FollowUpBehavior: LLM 生成失败，使用回退模板: {}", e.getMessage());
-            }
-        }
-        return "你之前提到过「" + candidate.title() + "」，进展怎么样了？";
-    }
-
-    private long computeDaysSince(ProactiveCandidate candidate) {
+    private long computeDaysSince(ProactiveCandidate candidate, Instant now) {
         if (candidate.detail() instanceof IntentRecord intent) {
-            return Duration.between(intent.createdAt(), Instant.now()).toDays();
+            return Duration.between(intent.createdAt(), now).toDays();
         }
         return 1;
     }

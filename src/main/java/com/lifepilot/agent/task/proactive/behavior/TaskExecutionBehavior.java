@@ -69,7 +69,9 @@ public class TaskExecutionBehavior implements ProactiveBehavior {
                 content = "你之前说过「" + intent.triggerCondition() + "」，条件看起来已经满足了。我已帮你处理。";
                 level = DeliveryLevel.INTERRUPT;
                 // 标记意图为已触发
-                intentMemoryService.fulfillIntent(intent.id());
+                if (intentMemoryService != null) {
+                    intentMemoryService.fulfillIntent(intent.id());
+                }
             } else {
                 // B 级：展示执行计划等确认
                 content = "你之前说过「" + intent.triggerCondition() + "」，条件看起来已经满足了。需要我帮你处理吗？";

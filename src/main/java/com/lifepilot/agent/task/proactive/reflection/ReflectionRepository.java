@@ -48,6 +48,15 @@ public class ReflectionRepository {
         return list.isEmpty() ? null : list.getFirst();
     }
 
+    /** 检查本周是否已反思过（幂等保护）。 */
+    public boolean existsByUserIdAndWeekStart(String userId, String weekStart) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM proactive_reflection_experiences
+                WHERE user_id = ? AND week_start = ?
+                """, Integer.class, userId, weekStart);
+        return count != null && count > 0;
+    }
+
     /** 查最近 N 条经验。 */
     public List<ReflectionExperience> findRecentByUserId(String userId, int limit) {
         return jdbc.query("""

@@ -6,6 +6,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.modelservice.model.GenerationCapability;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -26,22 +27,21 @@ public class ReportBehavior implements ProactiveBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(ReportBehavior.class);
     private static final DayOfWeek WEEKLY_REPORT_DAY = DayOfWeek.FRIDAY;
+    private static final String PROMPT_KEY = "generation/proactive-report";
 
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final GenerationRouter generationRouter;
     @Nullable private final AgentConfigProperties config;
-
-    public ReportBehavior(@Nullable EpisodicMemory episodicMemory,
-                          @Nullable GenerationRouter generationRouter) {
-        this(episodicMemory, generationRouter, null);
-    }
+    @Nullable private final PromptRegistry promptRegistry;
 
     public ReportBehavior(@Nullable EpisodicMemory episodicMemory,
                           @Nullable GenerationRouter generationRouter,
-                          @Nullable AgentConfigProperties config) {
+                          @Nullable AgentConfigProperties config,
+                          @Nullable PromptRegistry promptRegistry) {
         this.episodicMemory = episodicMemory;
         this.generationRouter = generationRouter;
         this.config = config;
+        this.promptRegistry = promptRegistry;
     }
 
     private int dailyReportHour() {
@@ -102,9 +102,18 @@ public class ReportBehavior implements ProactiveBehavior {
         if (generationRouter != null && !summaryInput.isBlank()) {
             try {
                 String period = "weekly".equals(type) ? "本周" : "今天";
-                String prompt = "你是个人助手。请基于以下对话摘要生成" + period + "的简报。\n"
-                        + "要求：3-5 个要点，每点一句话，不超过 150 字。语气简洁自然，不要用 Markdown。\n\n"
-                        + "对话摘要：\n" + summaryInput;
+                String prompt;
+                if (promptRegistry != null) {
+                    prompt = promptRegistry.render(PROMPT_KEY, Map.of(
+                            "reportType", period,
+                            "currentTime", java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
+                                    ctx.now().atZone(ctx.zoneId())),
+                            "conversationSummaries", summaryInput));
+                } else {
+                    prompt = "你是个人助手。请基于以下对话摘要生成" + period + "的简报。\n"
+                            + "要求：3-5 个要点，每点一句话，不超过 150 字。语气简洁自然，不要用 Markdown。\n\n"
+                            + "对话摘要：\n" + summaryInput;
+                }
                 LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
                         GenerationCapability.CHAT, llmTimeout());
                 if (response != null && !response.content().isBlank()) return response.content().strip();

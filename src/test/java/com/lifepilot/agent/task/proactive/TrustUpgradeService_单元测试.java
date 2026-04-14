@@ -29,7 +29,7 @@ class TrustUpgradeService_单元测试 {
                     PRIMARY KEY (user_id, behavior_name)
                 )""");
         repo = new AutonomyRepository(jdbc);
-        service = new TrustUpgradeService(repo);
+        service = new TrustUpgradeService(repo, null);
     }
 
     @AfterEach

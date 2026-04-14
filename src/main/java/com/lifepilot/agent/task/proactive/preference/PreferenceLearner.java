@@ -61,12 +61,6 @@ public class PreferenceLearner {
 
     /** 将时间映射为时段标签。 */
     private static String resolveTimeSlot(java.time.Instant instant, ZoneId zoneId) {
-        int hour = LocalTime.ofInstant(instant, zoneId).getHour();
-        if (hour >= 6 && hour < 9) return "early-morning";
-        if (hour >= 9 && hour < 12) return "morning";
-        if (hour >= 12 && hour < 14) return "noon";
-        if (hour >= 14 && hour < 18) return "afternoon";
-        if (hour >= 18 && hour < 21) return "evening";
-        return "night";
+        return com.lifepilot.agent.task.proactive.TimeSlotResolver.resolve(instant, zoneId);
     }
 }

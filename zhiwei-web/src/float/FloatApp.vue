@@ -322,7 +322,7 @@ async function connectNotificationStream() {
       if (data.type === 'unread-count-snapshot') return
 
       const typeId = data.typeId as string | undefined
-      if (typeId === 'proactive_reminder' || typeId === 'clipboard_intent') {
+      if (typeId === 'proactive_reminder' || typeId === 'proactive_action' || typeId === 'clipboard_intent') {
         const contentJson = data.contentJson as string
         const content = parseContentSummary(contentJson)
         const metadata = data.metadataJson ? JSON.parse(data.metadataJson) : {}

@@ -34,12 +34,6 @@ public class DecisionGate {
     @Nullable
     private final PreferenceRepository preferenceRepository;
 
-    public DecisionGate() { this(null, null); }
-
-    public DecisionGate(@Nullable TrustUpgradeService trustUpgradeService) {
-        this(trustUpgradeService, null);
-    }
-
     public DecisionGate(@Nullable TrustUpgradeService trustUpgradeService,
                         @Nullable PreferenceRepository preferenceRepository) {
         this.trustUpgradeService = trustUpgradeService;
@@ -153,13 +147,7 @@ public class DecisionGate {
     }
 
     private static String resolveTimeSlot(ContextPacket ctx) {
-        int hour = LocalTime.ofInstant(ctx.now(), ctx.zoneId()).getHour();
-        if (hour >= 6 && hour < 9) return "early-morning";
-        if (hour >= 9 && hour < 12) return "morning";
-        if (hour >= 12 && hour < 14) return "noon";
-        if (hour >= 14 && hour < 18) return "afternoon";
-        if (hour >= 18 && hour < 21) return "evening";
-        return "night";
+        return TimeSlotResolver.resolve(ctx);
     }
 
     /**

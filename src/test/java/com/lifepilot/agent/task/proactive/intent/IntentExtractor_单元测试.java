@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class IntentExtractor_单元测试 {
 
-    private final IntentExtractor extractor = new IntentExtractor();
+    private final IntentExtractor extractor = new IntentExtractor(null, null, null);
 
     @Test
     void 提取目标意图_我想() {

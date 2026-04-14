@@ -20,7 +20,7 @@ const detail = computed(() => parseNotificationDetail(props.contentJson))
 
 /** 是否为主动提醒类型 */
 const isProactiveReminder = computed(
-  () => props.notificationItem?.typeId === 'proactive_reminder'
+  () => props.notificationItem?.typeId === 'proactive_reminder' || props.notificationItem?.typeId === 'proactive_action'
 )
 
 /** 当前反馈类型（优先取 prop 中已有值，再取本地提交后的值） */

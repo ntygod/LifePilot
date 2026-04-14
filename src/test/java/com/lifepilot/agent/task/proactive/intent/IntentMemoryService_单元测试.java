@@ -27,7 +27,7 @@ class IntentMemoryService_单元测试 {
     @BeforeEach
     void setUp() {
         intentRepository = mock(IntentRepository.class);
-        intentExtractor = new IntentExtractor();
+        intentExtractor = new IntentExtractor(null, null, null);
         episodicMemory = mock(EpisodicMemory.class);
         service = new IntentMemoryService(intentRepository, intentExtractor, episodicMemory);
     }

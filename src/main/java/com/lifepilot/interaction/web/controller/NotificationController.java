@@ -50,6 +50,7 @@ public class NotificationController {
     private static final Logger log = LoggerFactory.getLogger(NotificationController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String REMINDER_TYPE = "proactive_reminder";
+    private static final String PROACTIVE_TYPE = "proactive_action";
 
     private final NotificationRepository notificationRepository;
     private final NotificationProperties notificationProperties;
@@ -160,7 +161,7 @@ public class NotificationController {
         NotificationRecord record = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "通知不存在: id=" + id));
-        if (!REMINDER_TYPE.equals(record.typeId())) {
+        if (!REMINDER_TYPE.equals(record.typeId()) && !PROACTIVE_TYPE.equals(record.typeId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "仅主动提醒支持反馈");
         }
 
@@ -228,7 +229,7 @@ public class NotificationController {
                     trustUpgradeService.recordNegativeFeedback(record.userId(), behaviorName);
                 }
             } catch (Exception e) {
-                log.debug("反馈闭环: 信任更新失败: {}", e.getMessage());
+                log.warn("反馈闭环: 信任更新失败: {}", e.getMessage());
             }
         }
 
@@ -242,7 +243,7 @@ public class NotificationController {
                 var result = new DeliveryResult(record.id(), DeliveryLevel.NOTIFY, record.createdAt());
                 preferenceLearner.learnFromDelivery(action, result, record.userId(), positive);
             } catch (Exception e) {
-                log.debug("反馈闭环: 偏好学习失败: {}", e.getMessage());
+                log.warn("反馈闭环: 偏好学习失败: {}", e.getMessage());
             }
         }
     }

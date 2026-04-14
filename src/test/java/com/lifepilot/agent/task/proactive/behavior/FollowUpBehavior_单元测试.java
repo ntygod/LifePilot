@@ -23,7 +23,7 @@ class FollowUpBehavior_单元测试 {
     @BeforeEach
     void setUp() {
         intentMemoryService = mock(IntentMemoryService.class);
-        behavior = new FollowUpBehavior(intentMemoryService, null, null);
+        behavior = new FollowUpBehavior(intentMemoryService, null, null, null);
     }
 
     @Test
@@ -103,6 +103,6 @@ class FollowUpBehavior_单元测试 {
 
     private ContextPacket testCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30);
+                null, null, 0, 5, null, null, 30, null, null);
     }
 }

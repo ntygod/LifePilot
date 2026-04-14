@@ -28,9 +28,10 @@ import java.util.regex.Pattern;
 public class IntentExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(IntentExtractor.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String PROMPT_KEY = "generation/intent-extraction";
     private static final Duration LLM_TIMEOUT = Duration.ofSeconds(10);
+
+    private final ObjectMapper objectMapper;
 
     // ── 正则兜底模式 ──
     private static final Pattern GOAL_PATTERN = Pattern.compile(
@@ -48,14 +49,12 @@ public class IntentExtractor {
     @Nullable private final GenerationRouter generationRouter;
     @Nullable private final PromptRegistry promptRegistry;
 
-    public IntentExtractor() {
-        this(null, null);
-    }
-
     public IntentExtractor(@Nullable GenerationRouter generationRouter,
-                           @Nullable PromptRegistry promptRegistry) {
+                           @Nullable PromptRegistry promptRegistry,
+                           @Nullable ObjectMapper objectMapper) {
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
     /**
@@ -102,7 +101,7 @@ public class IntentExtractor {
             line = line.strip();
             if (line.isEmpty() || !line.startsWith("{")) continue;
             try {
-                JsonNode node = MAPPER.readTree(line);
+                JsonNode node = objectMapper.readTree(line);
                 String type = node.path("type").asText("");
                 String goal = node.path("goal").asText("");
                 String trigger = node.path("trigger").isNull() ? null : node.path("trigger").asText();

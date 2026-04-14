@@ -31,7 +31,8 @@ class ProactiveEngine_单元测试 {
         when(behavior.name()).thenReturn("test-behavior");
         gate = mock(DecisionGate.class);
         delivery = mock(DeliveryEngine.class);
-        engine = new ProactiveEngine(List.of(behavior), gate, delivery);
+        engine = new ProactiveEngine(List.of(behavior), gate, delivery,
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -40,7 +41,7 @@ class ProactiveEngine_单元测试 {
         var focus = new ReminderFocusState("explorer.exe", "Desktop", false, 60, Instant.now());
         var ctx = new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
                 null, null, 0, 5, focus,
-                Instant.now().minusSeconds(1800), 30);
+                Instant.now().minusSeconds(1800), 30, null, null);
 
         var result = engine.heartbeat(ctx);
 
@@ -161,6 +162,6 @@ class ProactiveEngine_单元测试 {
 
     private ContextPacket activeCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30);
+                null, null, 0, 5, null, null, 30, null, null);
     }
 }

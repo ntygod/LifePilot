@@ -19,7 +19,7 @@ class ReportBehavior_单元测试 {
     @BeforeEach
     void setUp() {
         episodicMemory = mock(EpisodicMemory.class);
-        behavior = new ReportBehavior(episodicMemory, null);
+        behavior = new ReportBehavior(episodicMemory, null, null, null);
     }
 
     @Test
@@ -31,7 +31,7 @@ class ReportBehavior_单元测试 {
     void detect_在日报时段返回候选() {
         // 20:30 CST = 12:30 UTC
         var ctx = new ContextPacket("u1", Instant.parse("2026-04-14T12:30:00Z"),
-                ZoneId.of("Asia/Shanghai"), null, null, 0, 5, null, null, 30);
+                ZoneId.of("Asia/Shanghai"), null, null, 0, 5, null, null, 30, null, null);
 
         var candidates = behavior.detect(ctx);
 
@@ -42,7 +42,7 @@ class ReportBehavior_单元测试 {
     void detect_非日报时段返回空() {
         // 15:00 CST = 07:00 UTC
         var ctx = new ContextPacket("u1", Instant.parse("2026-04-14T07:00:00Z"),
-                ZoneId.of("Asia/Shanghai"), null, null, 0, 5, null, null, 30);
+                ZoneId.of("Asia/Shanghai"), null, null, 0, 5, null, null, 30, null, null);
 
         assertThat(behavior.detect(ctx)).isEmpty();
     }
@@ -53,7 +53,7 @@ class ReportBehavior_单元测试 {
         var friday = LocalDate.of(2026, 4, 17).atTime(20, 30)
                 .atZone(ZoneId.of("Asia/Shanghai")).toInstant();
         var ctx = new ContextPacket("u1", friday, ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30);
+                null, null, 0, 5, null, null, 30, null, null);
 
         var candidates = behavior.detect(ctx);
 
@@ -75,6 +75,6 @@ class ReportBehavior_单元测试 {
 
     private ContextPacket testCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30);
+                null, null, 0, 5, null, null, 30, null, null);
     }
 }

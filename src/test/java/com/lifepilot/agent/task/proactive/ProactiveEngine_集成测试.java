@@ -130,11 +130,11 @@ class ProactiveEngine_集成测试 {
         when(notificationService.send(any())).thenReturn(List.of("notif-" + UUID.randomUUID()));
 
         intentRepo = new IntentRepository(jdbc);
-        intentMemoryService = new IntentMemoryService(intentRepo, new IntentExtractor(), null);
+        intentMemoryService = new IntentMemoryService(intentRepo, new IntentExtractor(null, null, null), null);
         queuedActionRepo = new QueuedActionRepository(jdbc);
         autonomyRepo = new AutonomyRepository(jdbc);
-        trustUpgradeService = new TrustUpgradeService(autonomyRepo);
-        decisionGate = new DecisionGate(trustUpgradeService);
+        trustUpgradeService = new TrustUpgradeService(autonomyRepo, null);
+        decisionGate = new DecisionGate(trustUpgradeService, null);
         deliveryEngine = new DeliveryEngine(notificationService, queuedActionRepo);
         clipboardBuffer = new ClipboardIntentBuffer();
     }
@@ -148,7 +148,8 @@ class ProactiveEngine_集成测试 {
 
     /** 构建引擎，使用指定的行为插件列表。 */
     private ProactiveEngine buildEngine(List<ProactiveBehavior> behaviors) {
-        return new ProactiveEngine(behaviors, decisionGate, deliveryEngine);
+        return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     /** 构建标准 ContextPacket。 */
@@ -156,14 +157,14 @@ class ProactiveEngine_集成测试 {
                                     Instant lastHeartbeatAt, int heartbeatMin,
                                     LocalTime quietStart, LocalTime quietEnd) {
         return new ContextPacket(USER_ID, now, ZONE, quietStart, quietEnd,
-                0, 10, focusState, lastHeartbeatAt, heartbeatMin);
+                0, 10, focusState, lastHeartbeatAt, heartbeatMin, null, null);
     }
 
     // ── 测试用例 ──
 
     @Test
     void 心跳SILENT_用户空闲时跳过检测() {
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null);
+        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
         var engine = buildEngine(List.of(followUp));
 
         Instant now = Instant.now();
@@ -180,7 +181,7 @@ class ProactiveEngine_集成测试 {
 
     @Test
     void 心跳FAST_无候选时快速返回() {
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null);
+        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
         var clipboard = new ClipboardBehavior(clipboardBuffer);
         var engine = buildEngine(List.of(followUp, clipboard));
 
@@ -196,7 +197,7 @@ class ProactiveEngine_集成测试 {
 
     @Test
     void 心跳FULL_有候选时完整流程_FollowUp生成追问() {
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null);
+        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
         var engine = buildEngine(List.of(followUp));
 
         // 预置一个 GOAL 类型意图：创建于 3 天前，checkCount=2
@@ -290,7 +291,7 @@ class ProactiveEngine_集成测试 {
                 USER_ID, "follow-up", AutonomyLevel.A,
                 0, 0, false, null, Instant.now()));
 
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null);
+        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
         var engine = buildEngine(List.of(followUp));
 
         // 预置一个高分意图（CONDITIONAL 类型额外 +0.1 分）
@@ -332,7 +333,7 @@ class ProactiveEngine_集成测试 {
         Instant now = Instant.now();
         // actionsSentToday=10, dailyMaxActions=10 → remainingSlots=0
         var ctx = new ContextPacket(USER_ID, now, ZONE, null, null,
-                10, 10, null, null, 30);
+                10, 10, null, null, 30, null, null);
         DetectionLevel level = engine.heartbeat(ctx);
 
         assertThat(level).isEqualTo(DetectionLevel.FULL);

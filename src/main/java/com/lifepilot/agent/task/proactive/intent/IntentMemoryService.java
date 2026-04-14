@@ -8,6 +8,7 @@ import org.springframework.lang.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 意图记忆服务 — 管理意图的提取、存储、检查和过期。
@@ -104,10 +105,27 @@ public class IntentMemoryService {
         }
     }
 
-    /** 简单去重：目标文本前缀匹配。 */
+    /** Jaccard bigram 去重（阈值 0.5，与 IntentExtractor 一致）。 */
     private boolean isDuplicateGoal(String goal, List<String> existing) {
-        String prefix = goal.substring(0, Math.min(4, goal.length()));
-        return existing.stream().anyMatch(g -> g.contains(prefix)
-                || prefix.length() >= 4 && goal.contains(g.substring(0, Math.min(4, g.length()))));
+        var goalBigrams = charBigrams(goal);
+        return existing.stream().anyMatch(g -> jaccardSimilarity(goalBigrams, charBigrams(g)) > 0.5);
+    }
+
+    private static Set<String> charBigrams(String text) {
+        String cleaned = text.replaceAll("[\\s，。！？,\\.!?]", "");
+        var bigrams = new java.util.HashSet<String>();
+        for (int i = 0; i < cleaned.length() - 1; i++) {
+            bigrams.add(cleaned.substring(i, i + 2));
+        }
+        return bigrams;
+    }
+
+    private static double jaccardSimilarity(Set<String> a, Set<String> b) {
+        if (a.isEmpty() && b.isEmpty()) return 1.0;
+        var intersection = new java.util.HashSet<>(a);
+        intersection.retainAll(b);
+        var union = new java.util.HashSet<>(a);
+        union.addAll(b);
+        return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
     }
 }

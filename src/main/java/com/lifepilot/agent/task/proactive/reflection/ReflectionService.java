@@ -66,14 +66,23 @@ public class ReflectionService {
     }
 
     /** 执行一次反思。 */
-    public void reflect(String userId, ZoneId zoneId) {
+    public void reflect(String userId, ZoneId zoneId, Instant now) {
         if (generationRouter == null || promptRegistry == null) {
             log.debug("ReflectionService: LLM 不可用，跳过反思");
             return;
         }
 
+        // 幂等保护：检查本周是否已反思过
+        String weekStart = LocalDate.ofInstant(now, zoneId)
+                .with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                .format(DateTimeFormatter.ISO_LOCAL_DATE);
+        if (reflectionRepository.existsByUserIdAndWeekStart(userId, weekStart)) {
+            log.debug("ReflectionService: 本周已反思, weekStart={}", weekStart);
+            return;
+        }
+
         try {
-            String deliveryRecords = gatherDeliveryRecords(userId);
+            String deliveryRecords = gatherDeliveryRecords(userId, now);
             String feedback = gatherUserFeedback();
             String conversations = gatherConversationSummaries();
             String portrait = userProfileService != null
@@ -92,13 +101,10 @@ public class ReflectionService {
             if (response != null && !response.content().isBlank()) {
                 String reflection = response.content().strip();
                 String[] parts = splitReflection(reflection);
-                String weekStart = LocalDate.now(zoneId)
-                        .with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-                        .format(DateTimeFormatter.ISO_LOCAL_DATE);
 
                 reflectionRepository.save(new ReflectionExperience(
                         UUID.randomUUID().toString(), userId, weekStart,
-                        parts[0], parts[1], parts[2], reflection, Instant.now()));
+                        parts[0], parts[1], parts[2], reflection, now));
 
                 log.info("周度反思完成: userId={}, weekStart={}", userId, weekStart);
             }
@@ -116,10 +122,10 @@ public class ReflectionService {
         return result;
     }
 
-    private String gatherDeliveryRecords(String userId) {
+    private String gatherDeliveryRecords(String userId, Instant now) {
         if (notificationRepository == null) return "无投递记录";
         try {
-            Instant weekAgo = Instant.now().minus(Duration.ofDays(7));
+            Instant weekAgo = now.minus(Duration.ofDays(7));
             long count = notificationRepository.countSentByUserIdAndTypeSince(
                     userId, "proactive_action", weekAgo);
             return "本周共投递 " + count + " 条主动通知";

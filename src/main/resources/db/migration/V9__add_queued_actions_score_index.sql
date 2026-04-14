@@ -2,5 +2,5 @@
 
 DROP INDEX IF EXISTS idx_proactive_queued_actions_user_shown;
 
-CREATE INDEX idx_proactive_queued_actions_user_shown_score
+CREATE INDEX IF NOT EXISTS idx_proactive_queued_actions_user_shown_score
     ON proactive_queued_actions (user_id, shown, score DESC, created_at DESC);

@@ -158,6 +158,6 @@ class ReminderBehavior_单元测试 {
 
     private ContextPacket testCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30);
+                null, null, 0, 5, null, null, 30, null, null);
     }
 }

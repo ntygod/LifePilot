@@ -2,11 +2,9 @@ package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,41 +12,39 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
  * 洞察推送行为插件 — 基于语义记忆中的实体变化检测模式趋势。
  *
  * <p>detect: 查询最近新增/更新的实体（目标、习惯、话题），识别变化趋势。
- * reason: 使用 LLM 生成可解释的洞察（带回退模板）。</p>
+ * reason: 使用 LLM 生成可解释的洞察（带回退模板），自动注入画像/经验。</p>
  *
  * @author zsg
  * @since 2026-04-14
  */
-public class InsightBehavior implements ProactiveBehavior {
+public class InsightBehavior extends AbstractLlmBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(InsightBehavior.class);
     private static final Duration RECENT_WINDOW = Duration.ofDays(7);
     private static final String PROMPT_KEY = "generation/proactive-insight";
-    private static final Duration LLM_TIMEOUT = Duration.ofSeconds(15);
     private static final Set<EntityType> WATCHED_TYPES = Set.of(
             EntityType.GOAL, EntityType.HABIT, EntityType.TOPIC, EntityType.PROJECT);
 
     @Nullable private final SemanticMemory semanticMemory;
-    @Nullable private final GenerationRouter generationRouter;
-    @Nullable private final PromptRegistry promptRegistry;
 
     public InsightBehavior(@Nullable SemanticMemory semanticMemory,
                            @Nullable GenerationRouter generationRouter,
                            @Nullable PromptRegistry promptRegistry) {
+        super(generationRouter, promptRegistry);
         this.semanticMemory = semanticMemory;
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
     }
 
     @Override
     public String name() { return "insight"; }
+
+    @Override
+    protected String promptKey() { return PROMPT_KEY; }
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
@@ -84,14 +80,18 @@ public class InsightBehavior implements ProactiveBehavior {
     }
 
     @Override
-    public List<ProactiveAction> reason(List<ProactiveCandidate> candidates, ContextPacket ctx) {
-        var actions = new ArrayList<ProactiveAction>();
-        for (var candidate : candidates) {
-            String content = generateInsight(candidate, ctx);
-            if (content == null || content.isBlank()) continue;
-            actions.add(new ProactiveAction(candidate, content, DeliveryLevel.NOTIFY, candidate.detail()));
-        }
-        return actions;
+    protected Map<String, Object> buildPromptVariables(ProactiveCandidate candidate, ContextPacket ctx) {
+        return Map.of(
+                "currentTime", formatTime(ctx),
+                "changeType", candidate.rationale(),
+                "changeDetail", candidate.title(),
+                "relatedTopics", "");
+    }
+
+    @Override
+    protected String fallbackContent(ProactiveCandidate candidate) {
+        String entityName = candidate.title().replaceAll("^[^:]+:\\s*", "");
+        return "最近你在关注「" + entityName + "」方面有新的变化，想聊聊吗？";
     }
 
     private float computeScore(TemporalEntity entity, Instant now) {
@@ -100,24 +100,5 @@ public class InsightBehavior implements ProactiveBehavior {
         if (Duration.between(entity.createdAt(), now).toDays() <= 3) score += 0.15f;
         if (entity.accessCount() > 3) score += 0.1f;
         return Math.max(0f, Math.min(1f, score));
-    }
-
-    private String generateInsight(ProactiveCandidate candidate, ContextPacket ctx) {
-        if (generationRouter != null && promptRegistry != null) {
-            try {
-                String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
-                        "currentTime", DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(ctx.now().atZone(ctx.zoneId())),
-                        "changeType", candidate.rationale(),
-                        "changeDetail", candidate.title(),
-                        "relatedTopics", ""));
-                LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, LLM_TIMEOUT);
-                if (response != null && !response.content().isBlank()) return response.content().strip();
-            } catch (Exception e) {
-                log.debug("InsightBehavior: LLM 生成失败: {}", e.getMessage());
-            }
-        }
-        String entityName = candidate.title().replaceAll("^[^:]+:\\s*", "");
-        return "最近你在关注「" + entityName + "」方面有新的变化，想聊聊吗？";
     }
 }

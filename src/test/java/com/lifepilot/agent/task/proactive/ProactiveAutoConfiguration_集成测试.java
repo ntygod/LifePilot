@@ -68,7 +68,7 @@ class ProactiveAutoConfiguration_集成测试 {
         DeliveryEngine deliveryEngine = config.proactiveDeliveryEngine(notificationService, queuedActionRepository);
         assertThat(deliveryEngine).isNotNull();
 
-        IntentExtractor intentExtractor = config.intentExtractor(null, null);
+        IntentExtractor intentExtractor = config.intentExtractor(null, null, new com.fasterxml.jackson.databind.ObjectMapper());
         assertThat(intentExtractor).isNotNull();
 
         IntentMemoryService intentMemoryService = config.intentMemoryService(intentRepository, intentExtractor, null);
@@ -104,7 +104,7 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(contextPrepBehavior).isNotNull();
         assertThat(contextPrepBehavior.name()).isEqualTo("context-prep");
 
-        ReportBehavior reportBehavior = config.reportBehavior(null, null, null);
+        ReportBehavior reportBehavior = config.reportBehavior(null, null, null, null);
         assertThat(reportBehavior).isNotNull();
         assertThat(reportBehavior.name()).isEqualTo("report");
 
@@ -131,7 +131,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var trustUpgrade = config.trustUpgradeService(autonomyRepo, null);
         var gate = config.proactiveDecisionGate(trustUpgrade, preferenceRepo);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
-        var extractor = config.intentExtractor(null, null);
+        var extractor = config.intentExtractor(null, null, new com.fasterxml.jackson.databind.ObjectMapper());
         var intentMemory = config.intentMemoryService(intentRepo, extractor, null);
         var buffer = config.clipboardIntentBuffer();
         var preferenceLearner = config.preferenceLearner(preferenceRepo);
@@ -143,7 +143,7 @@ class ProactiveAutoConfiguration_集成测试 {
                 config.clipboardBehavior(buffer),
                 config.infoSupplementBehavior(intentMemory),
                 config.contextPrepBehavior(intentMemory, null, null, null),
-                config.reportBehavior(null, null, null),
+                config.reportBehavior(null, null, null, null),
                 config.taskExecutionBehavior(intentMemory, trustUpgrade)
         );
 
@@ -181,7 +181,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var config = new ProactiveAutoConfiguration();
         var jdbcTemplate = mock(JdbcTemplate.class);
         var intentRepo = config.intentRepository(jdbcTemplate);
-        var extractor = config.intentExtractor(null, null);
+        var extractor = config.intentExtractor(null, null, new com.fasterxml.jackson.databind.ObjectMapper());
         var intentMemory = config.intentMemoryService(intentRepo, extractor, null);
         var buffer = config.clipboardIntentBuffer();
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
@@ -193,7 +193,7 @@ class ProactiveAutoConfiguration_集成测试 {
                 config.clipboardBehavior(buffer),
                 config.infoSupplementBehavior(intentMemory),
                 config.contextPrepBehavior(intentMemory, null, null, null),
-                config.reportBehavior(null, null, null),
+                config.reportBehavior(null, null, null, null),
                 config.taskExecutionBehavior(intentMemory, trustUpgrade)
         );
 

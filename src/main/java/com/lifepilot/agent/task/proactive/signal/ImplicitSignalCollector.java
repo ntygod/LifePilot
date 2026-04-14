@@ -41,6 +41,9 @@ public class ImplicitSignalCollector {
     /** 投递后视为"忽略"的时间阈值。 */
     private static final Duration IGNORE_THRESHOLD = Duration.ofHours(4);
 
+    /** recentDeliveries 硬上限，防止内存膨胀。 */
+    private static final int MAX_RECENT_DELIVERIES = 500;
+
     private final ImplicitSignalRepository signalRepository;
     @Nullable private final TrustUpgradeService trustUpgradeService;
     @Nullable private final PreferenceLearner preferenceLearner;
@@ -63,9 +66,14 @@ public class ImplicitSignalCollector {
                 userId, action.candidate().behaviorName(),
                 action.candidate().topicKey(), result.deliveredAt()));
 
-        // 清理过期记录（超过 24h）
+        // 清理过期记录（超过 24h）+ 硬上限裁剪
         Instant cutoff = Instant.now().minus(Duration.ofHours(24));
         recentDeliveries.values().removeIf(d -> d.deliveredAt.isBefore(cutoff));
+        while (recentDeliveries.size() > MAX_RECENT_DELIVERIES) {
+            recentDeliveries.entrySet().stream()
+                    .min(java.util.Comparator.comparing(e -> e.getValue().deliveredAt))
+                    .ifPresent(e -> recentDeliveries.remove(e.getKey()));
+        }
     }
 
     /**

@@ -41,10 +41,6 @@ public class TrustUpgradeService {
     @Nullable
     private final AgentConfigProperties config;
 
-    public TrustUpgradeService(AutonomyRepository autonomyRepository) {
-        this(autonomyRepository, null);
-    }
-
     public TrustUpgradeService(AutonomyRepository autonomyRepository,
                                @Nullable AgentConfigProperties config) {
         this.autonomyRepository = autonomyRepository;

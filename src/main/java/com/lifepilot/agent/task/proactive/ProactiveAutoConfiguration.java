@@ -88,8 +88,9 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public IntentExtractor intentExtractor(@Autowired(required = false) GenerationRouter generationRouter,
-                                            @Autowired(required = false) PromptRegistry promptRegistry) {
-        return new IntentExtractor(generationRouter, promptRegistry);
+                                            @Autowired(required = false) PromptRegistry promptRegistry,
+                                            com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+        return new IntentExtractor(generationRouter, promptRegistry, objectMapper);
     }
 
     @Bean
@@ -155,8 +156,9 @@ public class ProactiveAutoConfiguration {
     public ReportBehavior reportBehavior(
             @Autowired(required = false) EpisodicMemory episodicMemory,
             @Autowired(required = false) GenerationRouter generationRouter,
-            @Autowired(required = false) AgentConfigProperties config) {
-        return new ReportBehavior(episodicMemory, generationRouter, config);
+            @Autowired(required = false) AgentConfigProperties config,
+            @Autowired(required = false) PromptRegistry promptRegistry) {
+        return new ReportBehavior(episodicMemory, generationRouter, config, promptRegistry);
     }
 
     @Bean

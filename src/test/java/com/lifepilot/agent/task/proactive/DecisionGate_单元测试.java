@@ -24,7 +24,7 @@ class DecisionGate_单元测试 {
                 LocalTime.of(23, 0), LocalTime.of(8, 0), 0, 5, null);
         var actions = List.of(action(0.8f));
 
-        var result = new DecisionGate().evaluate(actions, ctx);
+        var result = new DecisionGate(null, null).evaluate(actions, ctx);
 
         assertThat(result).isEmpty();
     }
@@ -36,7 +36,7 @@ class DecisionGate_单元测试 {
                 null, null, 0, 5, focus);
         var actions = List.of(action(0.8f));
 
-        var result = new DecisionGate().evaluate(actions, ctx);
+        var result = new DecisionGate(null, null).evaluate(actions, ctx);
 
         assertThat(result).isEmpty();
     }
@@ -47,7 +47,7 @@ class DecisionGate_单元测试 {
                 null, null, 5, 5, null);  // sent=5, max=5
         var actions = List.of(action(0.8f));
 
-        var result = new DecisionGate().evaluate(actions, ctx);
+        var result = new DecisionGate(null, null).evaluate(actions, ctx);
 
         assertThat(result).isEmpty();
     }
@@ -61,7 +61,7 @@ class DecisionGate_单元测试 {
                 null, null, 0, 5, focus);
         var actions = List.of(action(0.8f, DeliveryLevel.INTERRUPT));
 
-        var result = new DecisionGate().evaluate(actions, ctx);
+        var result = new DecisionGate(null, null).evaluate(actions, ctx);
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().level()).isEqualTo(DeliveryLevel.NOTIFY);
@@ -77,7 +77,7 @@ class DecisionGate_单元测试 {
                 action(0.6f, DeliveryLevel.NOTIFY)
         );
 
-        var result = new DecisionGate().evaluate(actions, ctx);
+        var result = new DecisionGate(null, null).evaluate(actions, ctx);
 
         assertThat(result.getFirst().action().candidate().score()).isEqualTo(0.8f);
     }
@@ -91,7 +91,7 @@ class DecisionGate_单元测试 {
                 action(0.8f, DeliveryLevel.INTERRUPT)
         );
 
-        var result = new DecisionGate().evaluate(actions, ctx);
+        var result = new DecisionGate(null, null).evaluate(actions, ctx);
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().action().candidate().score()).isEqualTo(0.8f);
@@ -104,7 +104,7 @@ class DecisionGate_单元测试 {
         var silentAction = action(0.2f, DeliveryLevel.SILENT);
         var notifyAction = action(0.6f, DeliveryLevel.NOTIFY);
 
-        var result = new DecisionGate().evaluate(List.of(silentAction, notifyAction), ctx);
+        var result = new DecisionGate(null, null).evaluate(List.of(silentAction, notifyAction), ctx);
 
         // SILENT 被跳过，只有 NOTIFY 通过
         assertThat(result).hasSize(1);
@@ -132,7 +132,7 @@ class DecisionGate_单元测试 {
 
     private ContextPacket ctx(Instant now, LocalTime qStart, LocalTime qEnd,
                               int sent, int max, ReminderFocusState focus) {
-        return new ContextPacket(USER, now, ZONE, qStart, qEnd, sent, max, focus, null, 30);
+        return new ContextPacket(USER, now, ZONE, qStart, qEnd, sent, max, focus, null, 30, null, null);
     }
 
     private ProactiveAction action(float score) {
