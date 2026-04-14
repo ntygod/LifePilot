@@ -65,8 +65,9 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DecisionGate proactiveDecisionGate(@Autowired(required = false) TrustUpgradeService trustUpgradeService) {
-        return new DecisionGate(trustUpgradeService);
+    public DecisionGate proactiveDecisionGate(@Autowired(required = false) TrustUpgradeService trustUpgradeService,
+                                               @Autowired(required = false) PreferenceRepository preferenceRepository) {
+        return new DecisionGate(trustUpgradeService, preferenceRepository);
     }
 
     @Bean
@@ -198,9 +199,10 @@ public class ProactiveAutoConfiguration {
                                            @Autowired(required = false) AgentConfigProperties config,
                                            @Autowired(required = false) ReminderFocusStateHolder focusStateHolder,
                                            @Autowired(required = false) IntentMemoryService intentMemoryService,
-                                           @Autowired(required = false) PreferenceLearner preferenceLearner) {
+                                           @Autowired(required = false) PreferenceLearner preferenceLearner,
+                                           @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
                 notificationProperties, notificationRepository, config, focusStateHolder,
-                intentMemoryService, preferenceLearner);
+                intentMemoryService, preferenceLearner, trustUpgradeService);
     }
 }

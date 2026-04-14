@@ -67,10 +67,19 @@ class IntentExtractor_单元测试 {
     }
 
     @Test
-    void 同一对话内相似目标去重() {
+    void 同一对话内高度相似目标去重() {
+        // "买降噪耳机" vs "买降噪耳机送人" — bigram 高度重叠，应去重
         var intents = extractor.extract("u1", "sess-6",
-                List.of("我想买耳机", "我想买个好耳机"));
-        assertThat(intents.stream().filter(i -> i.goal().contains("耳机")).count()).isLessThanOrEqualTo(1);
+                List.of("我想买降噪耳机", "我想买降噪耳机送人"));
+        assertThat(intents.stream().filter(i -> i.goal().contains("降噪耳机")).count()).isLessThanOrEqualTo(1);
+    }
+
+    @Test
+    void 同一对话内不同目标不误去重() {
+        // "学Python" vs "学Ruby" — 不同语言，不应去重
+        var intents = extractor.extract("u1", "sess-7a",
+                List.of("我想学Python", "我想学Ruby"));
+        assertThat(intents).hasSizeGreaterThanOrEqualTo(2);
     }
 
     @Test

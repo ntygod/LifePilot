@@ -22,7 +22,7 @@ public class AutonomyRepository {
     private static final RowMapper<AutonomyConfig> ROW_MAPPER = (rs, _) -> new AutonomyConfig(
             rs.getString("user_id"),
             rs.getString("behavior_name"),
-            AutonomyLevel.valueOf(rs.getString("autonomy_level")),
+            SafeEnum.parse(AutonomyLevel.class, rs.getString("autonomy_level"), AutonomyLevel.A),
             rs.getInt("consecutive_positive"),
             rs.getInt("consecutive_negative"),
             rs.getInt("upgrade_suggested") == 1,

@@ -3,8 +3,12 @@ package com.lifepilot.agent.task.proactive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.lifepilot.agent.task.proactive.preference.PreferenceDimension;
+import com.lifepilot.agent.task.proactive.preference.PreferenceRepository;
 import org.springframework.lang.Nullable;
 
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,13 +26,24 @@ public class DecisionGate {
 
     private static final Logger log = LoggerFactory.getLogger(DecisionGate.class);
 
+    /** 时间偏好低于此值时降级投递。 */
+    private static final float LOW_PREFERENCE_THRESHOLD = 0.3f;
+
     @Nullable
     private final TrustUpgradeService trustUpgradeService;
+    @Nullable
+    private final PreferenceRepository preferenceRepository;
 
-    public DecisionGate() { this(null); }
+    public DecisionGate() { this(null, null); }
 
     public DecisionGate(@Nullable TrustUpgradeService trustUpgradeService) {
+        this(trustUpgradeService, null);
+    }
+
+    public DecisionGate(@Nullable TrustUpgradeService trustUpgradeService,
+                        @Nullable PreferenceRepository preferenceRepository) {
         this.trustUpgradeService = trustUpgradeService;
+        this.preferenceRepository = preferenceRepository;
     }
 
     /** 分数 → 投递级别映射。 */
@@ -97,6 +112,16 @@ public class DecisionGate {
                 }
             }
 
+            // 偏好降级: 当前时段或行为领域偏好低 → 降一级
+            if (preferenceRepository != null && level.ordinal() > DeliveryLevel.QUEUE.ordinal()) {
+                if (isLowPreferenceTimeSlot(ctx) || isLowPreferenceBehavior(ctx, action)) {
+                    DeliveryLevel downgraded = level == DeliveryLevel.INTERRUPT ? DeliveryLevel.NOTIFY : DeliveryLevel.QUEUE;
+                    log.debug("决策门控: 偏好低，{}→{} behavior={}",
+                            level, downgraded, action.candidate().behaviorName());
+                    level = downgraded;
+                }
+            }
+
             // SILENT 级别不占额度，仅记录
             if (level == DeliveryLevel.SILENT) {
                 log.debug("决策门控: SILENT topic={}", action.candidate().topicKey());
@@ -106,6 +131,35 @@ public class DecisionGate {
             result.add(new GatedAction(action, level));
         }
         return List.copyOf(result);
+    }
+
+    /** 检查当前时段的用户偏好是否低。 */
+    private boolean isLowPreferenceTimeSlot(ContextPacket ctx) {
+        if (preferenceRepository == null) return false;
+        String timeSlot = resolveTimeSlot(ctx);
+        var prefs = preferenceRepository.findByDimension(ctx.userId(), PreferenceDimension.TIMING);
+        return prefs.stream()
+                .filter(p -> p.preferenceKey().equals(timeSlot))
+                .anyMatch(p -> p.preferenceValue() < LOW_PREFERENCE_THRESHOLD && p.observationCount() >= 3);
+    }
+
+    /** 检查行为领域的用户偏好是否低。 */
+    private boolean isLowPreferenceBehavior(ContextPacket ctx, ProactiveAction action) {
+        if (preferenceRepository == null) return false;
+        var prefs = preferenceRepository.findByDimension(ctx.userId(), PreferenceDimension.DOMAIN);
+        return prefs.stream()
+                .filter(p -> p.preferenceKey().equals(action.candidate().behaviorName()))
+                .anyMatch(p -> p.preferenceValue() < LOW_PREFERENCE_THRESHOLD && p.observationCount() >= 3);
+    }
+
+    private static String resolveTimeSlot(ContextPacket ctx) {
+        int hour = LocalTime.ofInstant(ctx.now(), ctx.zoneId()).getHour();
+        if (hour >= 6 && hour < 9) return "early-morning";
+        if (hour >= 9 && hour < 12) return "morning";
+        if (hour >= 12 && hour < 14) return "noon";
+        if (hour >= 14 && hour < 18) return "afternoon";
+        if (hour >= 18 && hour < 21) return "evening";
+        return "night";
     }
 
     /**

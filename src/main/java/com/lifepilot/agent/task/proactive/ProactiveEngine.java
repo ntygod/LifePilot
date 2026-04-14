@@ -41,6 +41,9 @@ public class ProactiveEngine {
     /** Gate 2 默认阈值。 */
     private static final float DEFAULT_GATE2_THRESHOLD = 0.4f;
 
+    /** 单次心跳进入 reason() 的最大候选数 — 控制 LLM 调用量。 */
+    private static final int MAX_REASON_CANDIDATES = 3;
+
     private final List<ProactiveBehavior> behaviors;
     private final DecisionGate decisionGate;
     private final DeliveryEngine deliveryEngine;
@@ -56,6 +59,9 @@ public class ProactiveEngine {
     private final IntentMemoryService intentMemoryService;
     @Nullable
     private final PreferenceLearner preferenceLearner;
+    @Nullable
+    private final TrustUpgradeService trustUpgradeService;
+    private final BehaviorHealthTracker healthTracker = new BehaviorHealthTracker();
 
     /** 上次心跳时间，用于 Gate 1 变化量检查。 */
     @Nullable
@@ -65,7 +71,7 @@ public class ProactiveEngine {
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
                            DecisionGate decisionGate,
                            DeliveryEngine deliveryEngine) {
-        this(behaviors, decisionGate, deliveryEngine, null, null, null, null, null, null);
+        this(behaviors, decisionGate, deliveryEngine, null, null, null, null, null, null, null);
     }
 
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
@@ -76,7 +82,8 @@ public class ProactiveEngine {
                            @Nullable AgentConfigProperties config,
                            @Nullable ReminderFocusStateHolder focusStateHolder,
                            @Nullable IntentMemoryService intentMemoryService,
-                           @Nullable PreferenceLearner preferenceLearner) {
+                           @Nullable PreferenceLearner preferenceLearner,
+                           @Nullable TrustUpgradeService trustUpgradeService) {
         this.behaviors = List.copyOf(behaviors);
         this.decisionGate = decisionGate;
         this.deliveryEngine = deliveryEngine;
@@ -86,6 +93,7 @@ public class ProactiveEngine {
         this.focusStateHolder = focusStateHolder;
         this.intentMemoryService = intentMemoryService;
         this.preferenceLearner = preferenceLearner;
+        this.trustUpgradeService = trustUpgradeService;
     }
 
     /**
@@ -117,12 +125,16 @@ public class ProactiveEngine {
         // ── Gate 2: 各插件快速检测候选 ──
         var allCandidates = new ArrayList<ProactiveCandidate>();
         for (var behavior : behaviors) {
+            if (!healthTracker.isHealthy(behavior.name())) {
+                log.debug("主动引擎: 插件已降级，跳过 detect, behavior={}", behavior.name());
+                continue;
+            }
             try {
                 var candidates = behavior.detect(ctx);
                 allCandidates.addAll(candidates);
+                healthTracker.recordSuccess(behavior.name());
             } catch (Exception e) {
-                log.warn("主动引擎: 插件 detect 异常, behavior={}, error={}",
-                        behavior.name(), e.getMessage());
+                healthTracker.recordFailure(behavior.name(), e);
             }
         }
 
@@ -141,6 +153,7 @@ public class ProactiveEngine {
         var topCandidates = allCandidates.stream()
                 .filter(c -> c.score() >= gate2Threshold())
                 .sorted(Comparator.comparingDouble(ProactiveCandidate::score).reversed())
+                .limit(MAX_REASON_CANDIDATES)
                 .toList();
 
         // 按插件分组，调用 reason()
@@ -155,9 +168,9 @@ public class ProactiveEngine {
             try {
                 var actions = behavior.reason(entry.getValue(), ctx);
                 allActions.addAll(actions);
+                healthTracker.recordSuccess(entry.getKey());
             } catch (Exception e) {
-                log.warn("主动引擎: 插件 reason 异常, behavior={}, error={}",
-                        entry.getKey(), e.getMessage());
+                healthTracker.recordFailure(entry.getKey(), e);
             }
         }
 
@@ -179,6 +192,15 @@ public class ProactiveEngine {
                         preferenceLearner.learnFromDelivery(ga.action(), result, ctx.userId(), true);
                     } catch (Exception ex) {
                         log.debug("主动引擎: 偏好学习跳过: {}", ex.getMessage());
+                    }
+                }
+                // 信任追踪：投递成功视为正反馈（用户实际的显式反馈由通知回调处理）
+                if (trustUpgradeService != null) {
+                    try {
+                        trustUpgradeService.recordPositiveFeedback(
+                                ctx.userId(), ga.action().candidate().behaviorName());
+                    } catch (Exception ex) {
+                        log.debug("主动引擎: 信任记录跳过: {}", ex.getMessage());
                     }
                 }
                 var behavior = findBehavior(ga.action().candidate().behaviorName());

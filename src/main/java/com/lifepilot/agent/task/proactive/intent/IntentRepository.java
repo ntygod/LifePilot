@@ -24,11 +24,11 @@ public class IntentRepository {
     private static final RowMapper<IntentRecord> ROW_MAPPER = (rs, _) -> new IntentRecord(
             rs.getString("id"),
             rs.getString("user_id"),
-            IntentType.valueOf(rs.getString("intent_type")),
+            com.lifepilot.agent.task.proactive.SafeEnum.parse(IntentType.class, rs.getString("intent_type"), IntentType.GOAL),
             rs.getString("goal"),
             rs.getString("trigger_condition"),
             rs.getString("source_session_id"),
-            IntentStatus.valueOf(rs.getString("status")),
+            com.lifepilot.agent.task.proactive.SafeEnum.parse(IntentStatus.class, rs.getString("status"), IntentStatus.ACTIVE),
             rs.getInt("check_count"),
             Instant.parse(rs.getString("created_at")),
             rs.getString("expires_at") != null ? Instant.parse(rs.getString("expires_at")) : null,

@@ -32,22 +32,10 @@ class TaskExecutionBehavior_单元测试 {
     }
 
     @Test
-    void detect_条件型意图且检查次数足够时返回候选() {
+    void detect_真实条件评估未实现时始终返回空() {
+        // 当前版本未对接外部数据源，detect 始终返回空，避免无依据的自主行动
         var intent = new IntentRecord("i1", "u1", IntentType.CONDITIONAL, "等降到300以下",
                 "价格<300", "sess-1", IntentStatus.ACTIVE, 3,
-                Instant.now().minusSeconds(10 * 86400), null, null, null, Instant.now());
-        when(intentMemoryService.getActiveIntents("u1")).thenReturn(List.of(intent));
-
-        var candidates = behavior.detect(testCtx());
-
-        assertThat(candidates).hasSize(1);
-        assertThat(candidates.getFirst().title()).contains("降到300");
-    }
-
-    @Test
-    void detect_非条件型意图不返回() {
-        var intent = new IntentRecord("i1", "u1", IntentType.GOAL, "买耳机",
-                null, "sess-1", IntentStatus.ACTIVE, 5,
                 Instant.now().minusSeconds(10 * 86400), null, null, null, Instant.now());
         when(intentMemoryService.getActiveIntents("u1")).thenReturn(List.of(intent));
 

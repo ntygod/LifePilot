@@ -62,7 +62,7 @@ class ProactiveAutoConfiguration_集成测试 {
         TrustUpgradeService trustUpgradeService = config.trustUpgradeService(autonomyRepository, null);
         assertThat(trustUpgradeService).isNotNull();
 
-        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService);
+        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, null);
         assertThat(decisionGate).isNotNull();
 
         DeliveryEngine deliveryEngine = config.proactiveDeliveryEngine(notificationService, queuedActionRepository);
@@ -129,7 +129,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var intentRepo = config.intentRepository(jdbcTemplate);
         var preferenceRepo = config.preferenceRepository(jdbcTemplate);
         var trustUpgrade = config.trustUpgradeService(autonomyRepo, null);
-        var gate = config.proactiveDecisionGate(trustUpgrade);
+        var gate = config.proactiveDecisionGate(trustUpgrade, preferenceRepo);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
         var extractor = config.intentExtractor();
         var intentMemory = config.intentMemoryService(intentRepo, extractor, null);
@@ -150,7 +150,7 @@ class ProactiveAutoConfiguration_集成测试 {
         // 构建引擎
         ProactiveEngine engine = config.proactiveEngine(
                 behaviors, gate, delivery, notificationProperties,
-                null, null, null, intentMemory, preferenceLearner);
+                null, null, null, intentMemory, preferenceLearner, trustUpgrade);
 
         assertThat(engine).isNotNull();
     }
@@ -171,7 +171,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var config = new ProactiveAutoConfiguration();
 
         // TrustUpgradeService 可为 null（@Autowired(required = false)）
-        DecisionGate gate = config.proactiveDecisionGate(null);
+        DecisionGate gate = config.proactiveDecisionGate(null, null);
         assertThat(gate).isNotNull();
     }
 

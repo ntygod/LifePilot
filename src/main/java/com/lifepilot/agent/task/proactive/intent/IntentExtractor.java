@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Set;
+import java.util.HashSet;
 
 /**
  * 意图提取器 — 从对话文本中识别用户目标、关注点和触发条件。
@@ -62,22 +64,48 @@ public class IntentExtractor {
             String goal = matcher.group(1).strip();
             if (goal.length() < 2) continue;
 
-            String dedupeKey = normalizeForDedupe(goal);
-            if (results.containsKey(dedupeKey)) continue;
+            // 基于字符 bigram Jaccard 相似度去重（阈值 0.5）
+            if (isDuplicateByJaccard(goal, results.values())) continue;
 
             String triggerCondition = type == IntentType.CONDITIONAL ? goal : null;
             String goalText = type == IntentType.CONDITIONAL ? text.strip() : goal;
 
-            results.put(dedupeKey, new IntentRecord(
+            results.put(goal, new IntentRecord(
                     UUID.randomUUID().toString(), userId, type, goalText,
                     triggerCondition, sessionId, IntentStatus.ACTIVE, 0,
                     now, expiry, null, null, now));
         }
     }
 
-    /** 取前 6 个字符作为去重键（同一对话内粗粒度去重）。 */
-    private static String normalizeForDedupe(String goal) {
-        String cleaned = goal.replaceAll("[\\s，。！？,\\.!?一个好的了吗呢啊]", "");
-        return cleaned.length() > 6 ? cleaned.substring(0, 6) : cleaned;
+    /** 检查是否与已有意图重复（Jaccard bigram 相似度 > 0.5）。 */
+    private static boolean isDuplicateByJaccard(String goal, java.util.Collection<IntentRecord> existing) {
+        var goalBigrams = charBigrams(goal);
+        for (var record : existing) {
+            var existingBigrams = charBigrams(record.goal());
+            if (jaccardSimilarity(goalBigrams, existingBigrams) > 0.5) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 提取字符 bigram 集合。 */
+    private static Set<String> charBigrams(String text) {
+        String cleaned = text.replaceAll("[\\s，。！？,\\.!?]", "");
+        var bigrams = new HashSet<String>();
+        for (int i = 0; i < cleaned.length() - 1; i++) {
+            bigrams.add(cleaned.substring(i, i + 2));
+        }
+        return bigrams;
+    }
+
+    /** Jaccard 相似度 = |A ∩ B| / |A ∪ B|。 */
+    private static double jaccardSimilarity(Set<String> a, Set<String> b) {
+        if (a.isEmpty() && b.isEmpty()) return 1.0;
+        var intersection = new HashSet<>(a);
+        intersection.retainAll(b);
+        var union = new HashSet<>(a);
+        union.addAll(b);
+        return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
     }
 }

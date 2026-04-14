@@ -38,30 +38,17 @@ public class TaskExecutionBehavior implements ProactiveBehavior {
     @Override
     public String name() { return "task-execution"; }
 
+    /**
+     * 检测条件型意图是否触发。
+     *
+     * <p>当前版本尚未对接真实条件评估（价格 API、天气 API 等），
+     * 因此 detect 始终返回空列表，避免产生无依据的自主行动。
+     * 真实条件评估将在后续迭代中实现。</p>
+     */
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        if (intentMemoryService == null) return List.of();
-
-        var intents = intentMemoryService.getActiveIntents(ctx.userId());
-        var candidates = new ArrayList<ProactiveCandidate>();
-
-        for (var intent : intents) {
-            // 只处理条件型意图
-            if (intent.intentType() != IntentType.CONDITIONAL) continue;
-            if (intent.triggerCondition() == null) continue;
-
-            // @implNote Phase 3 占位逻辑：以检查次数 ≥ 3 作为"条件可能就绪"的粗略信号。
-            //   真实条件评估需对接外部数据源（价格 API、天气 API 等），计划在后续迭代中实现。
-            //   当前逻辑仅用于验证引擎管线的端到端流程，不应作为生产判断依据。
-            if (intent.checkCount() >= 3) {
-                float score = 0.55f;
-                candidates.add(new ProactiveCandidate(
-                        UUID.randomUUID().toString(), name(),
-                        "exec-" + intent.id(), intent.goal(),
-                        score, "条件可能已满足: " + intent.triggerCondition(), intent));
-            }
-        }
-        return candidates;
+        // TODO: 对接外部数据源实现真实条件评估后启用
+        return List.of();
     }
 
     @Override

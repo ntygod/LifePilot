@@ -20,7 +20,7 @@ public class PreferenceRepository {
 
     private static final RowMapper<PreferenceEntry> ROW_MAPPER = (rs, _) -> new PreferenceEntry(
             rs.getString("user_id"),
-            PreferenceDimension.valueOf(rs.getString("dimension")),
+            com.lifepilot.agent.task.proactive.SafeEnum.parse(PreferenceDimension.class, rs.getString("dimension"), PreferenceDimension.DOMAIN),
             rs.getString("preference_key"),
             rs.getFloat("preference_value"),
             rs.getInt("observation_count"),
@@ -46,6 +46,15 @@ public class PreferenceRepository {
                 FROM proactive_user_preferences
                 WHERE user_id = ? ORDER BY dimension, preference_value DESC
                 """, ROW_MAPPER, userId);
+    }
+
+    /** 清理过期偏好（超过指定天数未观察的记录）。 */
+    public int deleteStale(String userId, int staleDays) {
+        Instant cutoff = Instant.now().minusSeconds((long) staleDays * 86400);
+        return jdbc.update("""
+                DELETE FROM proactive_user_preferences
+                WHERE user_id = ? AND last_observed_at IS NOT NULL AND last_observed_at < ?
+                """, userId, cutoff.toString());
     }
 
     /** 观察并更新偏好值（加权移动平均）。 */
