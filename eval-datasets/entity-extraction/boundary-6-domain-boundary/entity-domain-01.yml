@@ -1,0 +1,38 @@
+id: entity-domain-01
+name: 用户设备 vs 领域知识
+category: entity-extraction/boundary-6-domain-boundary
+difficulty: hard
+tags: [user-fact, domain, device]
+
+conversation:
+  - "我现在用的 MacBook Pro M3 芯片的，编译大项目特别慢，经常要等十几分钟"
+  - "有什么办法能优化编译速度吗"
+
+expected:
+  - operation: ADD
+    type: CUSTOM
+    name_hint: "使用设备/MacBook"
+    description_should_contain:
+      - "MacBook Pro"
+      - "M3"
+    min_confidence: 0.7
+    rationale: "用户的个人设备是 USER_FACT，影响未来工具推荐和方案选择"
+
+should_not_extract:
+  - type: TOPIC
+    name_hint: "M3 芯片性能"
+    reason: "芯片性能参数是领域知识，属于 datastore 范畴"
+  - type: SKILL
+    name_hint: "编译优化"
+    reason: "用户在求助，不是展示能力"
+  - type: PREFERENCE
+    name_hint: "MacBook/Mac 偏好"
+    reason: "'我用的是'描述现状，不是'我喜欢'表达偏好"
+
+review_notes: |
+  核心边界：用户事实 vs 领域知识的分离。
+  1. "我用的 MacBook Pro M3" -> USER_FACT(设备信息)——这对未来推荐有价值
+  2. M3 芯片的性能特征 -> 领域知识，不应进入个人记忆
+  3. "编译慢" -> 当前问题上下文，不是持久事实
+  4. 如果提取了 TOPIC(M3/编译优化) -> 领域知识泄漏到个人记忆
+  5. 分离关键：同一句话中"我用的"是个人信息，"M3 芯片"是领域概念

@@ -1,0 +1,36 @@
+id: entity-implicit-02
+name: 双重否定理解
+category: entity-extraction/boundary-1-implicit-vs-explicit
+difficulty: hard
+tags: [preference, negation, semantic]
+
+conversation:
+  - "最近同事们经常约我去打羽毛球"
+  - "我不是不喜欢运动，就是最近项目太赶了，每天加班到九十点，实在没精力。等忙完这阵子肯定去"
+
+expected:
+  - operation: ADD
+    type: PREFERENCE
+    name_hint: "运动态度"
+    description_should_contain:
+      - "喜欢运动"
+    min_confidence: 0.7
+    rationale: "'不是不喜欢'= 喜欢，加上'肯定去'的意愿表达，是明确的正面态度"
+
+should_not_extract:
+  - type: HABIT
+    name_hint: "运动/羽毛球"
+    reason: "用户当前并不运动，不能提取为习惯"
+  - type: PREFERENCE
+    name_hint: "不喜欢运动"
+    description_contains: ["不喜欢"]
+    reason: "双重否定被错误解析为否定——这是最常见的提取错误"
+  - type: HABIT
+    name_hint: "加班"
+    reason: "'最近'限定词说明这是临时状态，不是持久习惯"
+
+review_notes: |
+  核心边界：双重否定的语义解析。
+  1. "不是不喜欢" -> 喜欢。如果提取出"不喜欢运动"，说明 prompt 的否定理解有严重缺陷
+  2. "最近项目太赶"中的"最近"是关键时间限定词，不应提取为持久状态
+  3. "每天加班到九十点"虽然具体，但有"最近"限定，不应提取为 HABIT

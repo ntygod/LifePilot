@@ -1,0 +1,28 @@
+id: exp-attr-03
+name: 多任务部分成功-混合结果
+category: experience-extraction
+difficulty: hard
+tags: [partial-success, multi-task, attribution]
+
+conversation:
+  - "帮我做三件事：第一，查一下北京今天的天气；第二，帮我在日历上创建一个明天上午十点的团队会议；第三，搜索一下最近有什么值得关注的 AI 新闻"
+
+trigger_expectation: |
+  任务 1（查天气）和任务 3（搜新闻）可能成功（如果有对应工具）。
+  任务 2（创建日历事件）大概率失败（可能没有日历工具）。
+  形成部分成功的局面。
+
+expected:
+  - type: EXPERIENCE
+    success: false
+    lessons_should_reflect: "部分任务成功的经验仍有价值"
+    rationale: "即使整体标记为失败，成功部分的策略应该被记录"
+
+review_notes: |
+  核心测试：部分成功场景的处理。
+  1. 整体 success 可能是 false（不是所有任务都完成）
+  2. 但 lessons 应该分别记录成功和失败的部分
+  3. failureAttribution 应该区分：日历任务失败是 system（缺少工具）还是 strategy
+  4. 如果全部标记为 strategy 失败，归因过于粗糙
+  5. 如果成功任务的经验也被丢弃，经验提取的粒度太粗
+  6. 理想结果：提取出经验，lessons 包含"天气查询成功""日历功能不可用"等区分性信息

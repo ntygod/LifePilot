@@ -1,0 +1,36 @@
+id: consol-decay-01
+name: 低频实体巩固后不涨分
+category: consolidation/importance-stability
+difficulty: medium
+tags: [importance, frequency, stability]
+
+prerequisite_sessions:
+  - ref: entity-temp-01
+    note: "跑完后应有 SKILL(Java) 实体"
+  - additional:
+      description: "再跑 3-5 个不提及 Java 的普通对话，制造'低频'条件"
+      conversations:
+        - ["帮我查一下明天北京天气"]
+        - ["推荐几本好看的科幻小说"]
+        - ["帮我翻译一段英文"]
+
+trigger: consolidation
+
+expected_after_trigger:
+  - check: importance_stable
+    entity_hint: "Java"
+    description: "Java 技能的 importanceScore 不应在巩固后上升（因为后续对话未提及）"
+
+should_not_happen:
+  - check: importance_boosted
+    entity_hint: "Java"
+    description: "如果没被提及但 importance 仍上升，巩固的 mention counting 有误"
+
+review_notes: |
+  重要性稳定性测试：
+  1. 记录巩固前 Java 实体的 importanceScore
+  2. 触发巩固
+  3. 再次查看 importanceScore
+  4. 应该不变（后续对话未提及 Java）
+  5. 如果上升，提及计数可能有误匹配（如某个对话中偶然出现 Java 相关词）
+  6. 这个测试验证巩固的"不该动的别动"原则

@@ -1,0 +1,43 @@
+id: entity-quote-02
+name: 组织决策 vs 个人偏好
+category: entity-extraction/boundary-3-quoted-vs-self
+difficulty: hard
+tags: [organization, preference, mandate]
+
+conversation:
+  - "老板决定下个季度我们全部迁移到 Kubernetes，帮我整理一下 K8s 的学习路线"
+  - "说实话我觉得现在的 Docker Compose 部署挺好的，但没办法，公司决定了"
+
+expected:
+  - operation: ADD
+    type: PREFERENCE
+    name_hint: "部署方式偏好"
+    description_should_contain:
+      - "Docker Compose"
+      - "偏好"
+    min_confidence: 0.7
+    rationale: "'我觉得挺好的'是用户个人对 Docker Compose 的正面态度"
+  - operation: ADD
+    type: GOAL
+    name_hint: "学习 Kubernetes"
+    description_should_contain:
+      - "K8s"
+      - "学习"
+    min_confidence: 0.7
+    rationale: "虽然被动驱动，但'整理学习路线'是真实行动目标"
+
+should_not_extract:
+  - type: PREFERENCE
+    name_hint: "Kubernetes 偏好"
+    reason: "用户明确说'没办法'——迁移 K8s 是被迫的，不是偏好"
+  - type: SKILL
+    name_hint: "Kubernetes"
+    reason: "用户需要学习路线，说明尚不掌握"
+
+review_notes: |
+  核心边界：组织指令 vs 个人态度的分离。
+  1. "老板决定" -> 组织决策，K8s 不是用户偏好
+  2. "我觉得 Docker Compose 挺好的" -> 用户真实偏好
+  3. "没办法" -> 关键信号词，标记了非自愿
+  4. 正确提取应该是：PREFERENCE(Docker Compose, 正面) + GOAL(学 K8s)
+  5. 错误提取：PREFERENCE(K8s, 正面) — 混淆了被迫执行和主动偏好

@@ -1,0 +1,29 @@
+id: entity-temp-02
+name: 情绪宣泄 vs 持久偏好
+category: entity-extraction/boundary-2-temporary-vs-persistent
+difficulty: medium
+tags: [preference, emotion, transient]
+
+conversation:
+  - "帮我调一下这段代码的格式"
+  - "这个格式化工具怎么又把我的缩进搞乱了，烦死了，每次都要手动调回来"
+
+expected: []
+
+should_not_extract:
+  - type: PREFERENCE
+    name_hint: "代码格式化/工具偏好"
+    reason: "这是对当前工具的不满情绪，不是持久偏好。用户没说'我喜欢X格式'或'我不要Y工具'"
+  - type: HABIT
+    name_hint: "手动调整缩进"
+    reason: "'每次'虽然暗示重复，但这是被迫行为不是主动习惯"
+  - type: SKILL
+    name_hint: "代码格式化"
+    reason: "用户在求助，不是展示能力"
+
+review_notes: |
+  核心边界：情绪表达不应被记录为持久态度。
+  1. 正确行为：完全不提取任何实体
+  2. "烦死了"是情绪宣泄，不是"我不喜欢X"的偏好表达
+  3. 如果提取出 PREFERENCE，说明 prompt 把临时情绪等同于稳定偏好
+  4. 这个场景应该产出零提取——测试 prompt 的"不提取"能力

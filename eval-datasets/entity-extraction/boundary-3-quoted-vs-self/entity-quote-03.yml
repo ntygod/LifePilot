@@ -1,0 +1,30 @@
+id: entity-quote-03
+name: 复述文章-转述 vs 自身行为
+category: entity-extraction/boundary-3-quoted-vs-self
+difficulty: medium
+tags: [habit, attribution, article]
+
+conversation:
+  - "我今天看到一篇文章说每天冥想十分钟能提高专注力"
+  - "你觉得这个说法有科学依据吗"
+
+expected: []
+
+should_not_extract:
+  - type: HABIT
+    name_hint: "冥想"
+    reason: "用户在引用文章观点，没有说自己做冥想"
+  - type: PREFERENCE
+    name_hint: "冥想/专注力"
+    reason: "用户在求证信息真伪，不是表达偏好"
+  - type: GOAL
+    name_hint: "冥想/提高专注力"
+    reason: "没有任何意愿表达，纯粹在讨论一个话题"
+
+review_notes: |
+  核心边界：信息讨论 vs 个人行为/意图。
+  1. 正确行为：零提取——用户在讨论一篇文章，没有透露任何个人信息
+  2. "我看到一篇文章说" -> 转述来源，不是自述
+  3. "你觉得有科学依据吗" -> 求证态度，不是接受态度
+  4. 如果提取出 HABIT(冥想) 或 GOAL(提高专注力)，说明 prompt 无法区分"讨论话题"和"表达意图"
+  5. 对比测试：如果用户说"我最近开始每天冥想十分钟"，那就应该提取

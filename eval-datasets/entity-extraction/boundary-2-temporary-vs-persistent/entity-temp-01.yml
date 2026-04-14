@@ -1,0 +1,41 @@
+id: entity-temp-01
+name: 学习中 vs 已有技能
+category: entity-extraction/boundary-2-temporary-vs-persistent
+difficulty: hard
+tags: [skill, temporal, learning]
+
+conversation:
+  - "我最近在学 Python，之前一直写 Java 的"
+  - "有没有适合 Java 开发者转 Python 的教程推荐"
+
+expected:
+  - operation: ADD
+    type: SKILL
+    name_hint: "Java"
+    description_should_contain:
+      - "Java"
+    min_confidence: 0.8
+    rationale: "'一直写 Java'表明成熟技能，高置信度"
+  - operation: ADD
+    type: GOAL
+    name_hint: "学习 Python"
+    description_should_contain:
+      - "学习"
+      - "Python"
+    min_confidence: 0.7
+    rationale: "'在学'是进行中的目标，不是已掌握的技能"
+
+should_not_extract:
+  - type: SKILL
+    name_hint: "Python"
+    reason: "'在学' != 已掌握。提取为 SKILL 是经典错误——混淆学习意图和现有能力"
+  - type: PREFERENCE
+    name_hint: "Python/Java 偏好"
+    reason: "用户没有表达偏好，学新语言不代表不喜欢旧语言"
+
+review_notes: |
+  核心边界：时态敏感的技能识别。
+  1. "一直写 Java" -> SKILL(Java)，高置信度
+  2. "在学 Python" -> GOAL(学 Python)，不是 SKILL(Python)
+  3. 如果两者都被提取为 SKILL，说明 prompt 缺乏时态意识
+  4. 额外检查：是否误生成 Java vs Python 的偏好比较

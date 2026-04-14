@@ -1,0 +1,33 @@
+id: entity-implicit-03
+name: 行为暗示-信息不完整的习惯
+category: entity-extraction/boundary-1-implicit-vs-explicit
+difficulty: hard
+tags: [habit, implicit, incomplete]
+
+conversation:
+  - "又到周五了，帮我订一下老地方的位子"
+  - "就那个靠窗的桌子，两个人，晚上七点"
+
+expected:
+  - operation: ADD
+    type: HABIT
+    name_hint: "周五聚餐"
+    description_should_contain:
+      - "周五"
+    min_confidence: 0.5
+    rationale: "'又到周五'+'老地方'暗示固定模式，但信息有限，置信度应较低"
+
+should_not_extract:
+  - type: PLACE
+    name_hint: "老地方/餐厅"
+    reason: "没有说出具体餐厅名，'老地方'是指代不是实体名"
+  - type: PERSON
+    name_hint: "同伴"
+    reason: "'两个人'没有透露对方身份"
+
+review_notes: |
+  核心边界：信息不完整时是否应该提取？
+  1. 合理行为：提取低置信度的 HABIT（因为"又"暗示重复模式）
+  2. 但不应填充未知信息——不知道餐厅名就不应虚构
+  3. 如果完全不提取也可接受——关键是不要提取错误信息
+  4. 这个场景测试的是"宁可不提取也不要提取错"的判断

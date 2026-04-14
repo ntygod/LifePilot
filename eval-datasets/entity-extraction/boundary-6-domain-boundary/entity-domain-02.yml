@@ -1,0 +1,36 @@
+id: entity-domain-02
+name: 经验发现 vs 已知事实
+category: entity-extraction/boundary-6-domain-boundary
+difficulty: hard
+tags: [experience, domain, discovery]
+
+conversation:
+  - "我昨天排查了半天 bug，最后发现是 SQLite 在 WAL 模式下长事务会阻塞其他写入"
+  - "以后写代码得注意事务要尽量短，这个教训挺深的"
+
+expected:
+  - operation: ADD
+    type: EXPERIENCE
+    name_hint: "SQLite 事务排查"
+    description_should_contain:
+      - "WAL"
+      - "长事务"
+      - "阻塞"
+    min_confidence: 0.7
+    rationale: "虽然事实本身是公知，但'排查了半天'+'教训挺深'表明这是用户的个人经验教训"
+
+should_not_extract:
+  - type: TOPIC
+    name_hint: "SQLite WAL 模式"
+    reason: "WAL 模式的技术细节是领域知识"
+  - type: SKILL
+    name_hint: "SQLite/数据库"
+    reason: "排查了一次 bug 不等于精通数据库"
+
+review_notes: |
+  核心边界：这个场景最具争议性。
+  1. 事实层面："SQLite WAL 模式下长事务阻塞写入"是公开文档中的已知事实
+  2. 经验层面："排查了半天"+"教训挺深"让这个事实对用户有特殊意义
+  3. 合理判断：提取为 EXPERIENCE 是正确的——不是记录 SQLite 知识，而是记录"用户踩过这个坑"
+  4. EXPERIENCE 的 lessons 应该包含"保持事务尽量短"而非 SQLite WAL 的技术细节
+  5. 如果提取为 TOPIC -> 混淆了"用户经历"和"领域知识"

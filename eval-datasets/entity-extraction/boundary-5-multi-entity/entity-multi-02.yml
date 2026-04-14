@@ -1,0 +1,39 @@
+id: entity-multi-02
+name: 角色描述 vs 独立实体
+category: entity-extraction/boundary-5-multi-entity
+difficulty: medium
+tags: [person, role, confusion]
+
+conversation:
+  - "帮我安排和我们产品经理李总明天下午三点的会议"
+  - "主要讨论一下下个版本的需求优先级排序"
+
+expected:
+  - operation: ADD
+    type: PERSON
+    name_hint: "李总"
+    description_should_contain:
+      - "产品经理"
+    min_confidence: 0.7
+    rationale: "李总是具体的人，'产品经理'是描述角色的属性"
+
+should_not_extract:
+  - type: PERSON
+    name_hint: "产品经理"
+    reason: "'产品经理'是角色描述不是人名，不应作为独立实体"
+  - type: PROJECT
+    name_hint: "下个版本"
+    reason: "'下个版本'太模糊，没有项目名称，不应提取"
+  - type: EVENT
+    name_hint: "会议"
+    reason: "单次会议安排是临时任务，不是需要持久化的事件"
+  - type: HABIT
+    name_hint: "开会"
+    reason: "单次会议请求不能推断为习惯"
+
+review_notes: |
+  核心边界：角色是属性不是实体。
+  1. "产品经理李总" -> PERSON(李总, role=产品经理)，不是两个实体
+  2. 如果生成了 PERSON(产品经理) + PERSON(李总) -> 角色/人名拆分错误
+  3. "明天下午三点的会议" -> 临时事件，不应持久化
+  4. "下个版本" -> 太泛，缺乏具体项目上下文

@@ -1,0 +1,37 @@
+id: entity-quote-01
+name: 引用同事观点-技术偏好归属
+category: entity-extraction/boundary-3-quoted-vs-self
+difficulty: hard
+tags: [preference, attribution, person]
+
+conversation:
+  - "我同事小李觉得 TypeScript 比 JavaScript 好用多了，他说类型检查能减少很多 bug"
+  - "你觉得这个说法有道理吗？我在考虑要不要也试试"
+
+expected:
+  - operation: ADD
+    type: PERSON
+    name_hint: "小李"
+    description_should_contain:
+      - "同事"
+    min_confidence: 0.7
+    rationale: "小李是用户的同事，这是用户社交关系中的确定信息"
+
+should_not_extract:
+  - type: PREFERENCE
+    name_hint: "TypeScript/JavaScript 偏好"
+    reason: "'小李觉得'明确标记了观点归属——这是小李的偏好，不是用户的"
+  - type: SKILL
+    name_hint: "TypeScript/JavaScript"
+    reason: "用户'在考虑要不要试试'，说明尚未使用 TypeScript"
+  - type: GOAL
+    name_hint: "学 TypeScript"
+    reason: "'在考虑'比'我要学'弱得多，还在犹豫阶段，不应提取为目标"
+
+review_notes: |
+  核心边界：观点归属的正确判断。
+  1. "我同事小李觉得" -> 归属小李，不归属用户
+  2. PERSON(小李) 的提取是合理的——社交关系是用户事实
+  3. 如果提取出用户的 PREFERENCE(TypeScript)，说明 prompt 忽略了归属标记
+  4. "在考虑"是弱意图，不应升级为 GOAL
+  5. 对比测试：如果用户说"我觉得 TypeScript 更好"，那就应该提取

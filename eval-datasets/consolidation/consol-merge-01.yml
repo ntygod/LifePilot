@@ -1,0 +1,47 @@
+id: consol-merge-01
+name: 同义人物实体合并
+category: consolidation/entity-merge
+difficulty: hard
+tags: [dedup, person, alias]
+
+prerequisite_sessions:
+  - session_a:
+      conversation:
+        - "我同事小王帮我 review 了代码，提了几个很好的建议"
+  - session_b:
+      conversation:
+        - "王磊今天给我分享了一个很有用的 Git 技巧"
+  - session_c:
+      conversation:
+        - "老王说他最近在研究 Rust，推荐我也看看"
+
+setup_notes: |
+  三个会话分别用了"小王"/"王磊"/"老王"指代同一个人。
+  但系统不知道它们是同一人——需要去重来发现。
+  注意：如果对话中没有明确关联三个名字，去重只能依赖向量相似度。
+  实际上这三个名字的向量可能不够相似，因为：
+  - "小王" vs "王磊" 语义差异大
+  - 只有"王磊" vs "老王"可能被检测为相似
+  这个场景测试的是去重的极限能力。
+
+trigger: dedup
+
+expected_after_trigger:
+  - check: similarity_detection
+    description: "至少'王磊'和'老王'应被识别为候选重复对"
+  - check: merge_quality
+    description: "合并后主实体描述应综合多个来源（同事、review代码、Git技巧、研究Rust）"
+
+should_not_happen:
+  - check: over_merge
+    description: "不应把无关的 PERSON 实体误合并"
+
+review_notes: |
+  去重极限测试：
+  1. 先检查前置对话是否成功创建了 3 个 PERSON 实体
+  2. 触发去重后，检查 entity_merge_log 表
+  3. "小王"和"王磊"语义差异大，很可能不会被检测为重复，这是预期的
+  4. "王磊"和"老王"有共同的"王"字，可能被检测，取决于向量模型
+  5. 如果三个都没合并，说明纯向量去重对中文别名效果有限
+  6. 如果误合并了其他人，去重阈值太低
+  7. 这个场景可能暴露"需要名称归一化"的改进方向

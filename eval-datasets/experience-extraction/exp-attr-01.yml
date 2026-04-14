@@ -1,0 +1,33 @@
+id: exp-attr-01
+name: 多工具协作-应提取有效经验
+category: experience-extraction
+difficulty: medium
+tags: [multi-tool, success, baseline]
+
+conversation:
+  - "帮我查一下北京明天的天气情况，然后根据天气帮我推荐适合的户外活动"
+
+trigger_expectation: |
+  Agent 应该先调用天气查询工具，再基于结果推理活动推荐。
+  如果系统有天气工具，至少 2 次工具调用，触发经验提取门槛。
+
+expected:
+  - type: EXPERIENCE
+    scenario_should_contain: ["天气", "推荐"]
+    strategy_should_contain: ["查询", "推荐"]
+    success: true
+    min_lessons: 1
+    rationale: "多工具组合完成复合任务，值得提取为经验"
+
+should_not_extract:
+  - type: EXPERIENCE
+    scenario: "查询天气"
+    reason: "如果拆成两条独立经验（查天气 + 推荐活动），说明经验粒度过细"
+
+review_notes: |
+  经验提取的基线测试：
+  1. 是否触发了经验提取？（检查 EXPERIENCE 类型实体）
+  2. scenario 是否描述的是"复合任务"而非单步操作？
+  3. lessons 是否包含具体发现（如"先查天气再推荐"的策略）而非泛泛之谈？
+  4. 如果没有触发提取，检查是否满足触发条件（>=2 工具调用）
+  5. 如果系统没有天气工具，Agent 可能只用了搜索，仍然可能触发

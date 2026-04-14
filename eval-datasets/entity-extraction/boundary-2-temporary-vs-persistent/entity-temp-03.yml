@@ -1,0 +1,37 @@
+id: entity-temp-03
+name: 出差 vs 常住地
+category: entity-extraction/boundary-2-temporary-vs-persistent
+difficulty: medium
+tags: [place, temporal, context]
+
+conversation:
+  - "我这周在上海出差，帮我推荐附近有什么好的咖啡馆"
+  - "平时在北京工作，不太熟悉这边"
+
+expected:
+  - operation: ADD
+    type: PLACE
+    name_hint: "北京/工作地"
+    description_should_contain:
+      - "北京"
+      - "工作"
+    min_confidence: 0.8
+    rationale: "'平时在北京工作'是稳定的地理事实"
+
+should_not_extract:
+  - type: PLACE
+    name_hint: "上海"
+    reason: "'这周在上海出差'有明确时间限定，是临时状态"
+  - type: HABIT
+    name_hint: "喝咖啡"
+    reason: "找咖啡馆可能是临时需求，不能推断为习惯"
+  - type: PREFERENCE
+    name_hint: "咖啡偏好"
+    reason: "没有表达对咖啡的偏好态度"
+
+review_notes: |
+  核心边界：同一对话中的时间限定词区分。
+  1. "这周" -> 临时，不应提取上海为常驻地
+  2. "平时" -> 持久，应提取北京为工作地
+  3. 关键能力：同一对话中正确区分两个地点的时间属性
+  4. 如果上海和北京都被提取为 PLACE，说明忽略了时间限定词

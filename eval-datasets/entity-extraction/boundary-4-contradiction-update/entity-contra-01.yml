@@ -1,0 +1,45 @@
+id: entity-contra-01
+name: 显式否定旧偏好-颜色变更
+category: entity-extraction/boundary-4-contradiction-update
+difficulty: hard
+tags: [preference, update, contradiction]
+
+# 需要两个会话，先跑 session_1 建立基线
+session_1:
+  description: "建立蓝色偏好基线"
+  conversation:
+    - "帮我选个应用主题颜色，我喜欢蓝色系的，清爽一点"
+
+# 间隔一段时间后跑 session_2
+session_2:
+  description: "否定旧偏好"
+  conversation:
+    - "之前选了蓝色主题，但用了一段时间觉得太冷了"
+    - "还是换成暖色调吧，我现在更喜欢绿色系"
+
+expected:
+  - operation: UPDATE
+    type: PREFERENCE
+    name_hint: "主题颜色偏好"
+    description_should_contain:
+      - "绿色"
+    min_confidence: 0.8
+    rationale: "'现在更喜欢'是明确的偏好变更信号，应该 UPDATE 而非 ADD"
+
+should_not_extract:
+  - operation: ADD
+    type: PREFERENCE
+    name_hint: "绿色偏好"
+    reason: "应该是 UPDATE 操作更新已有蓝色偏好，不是新增一条绿色偏好"
+  - operation: NOOP
+    type: PREFERENCE
+    name_hint: "蓝色偏好"
+    reason: "旧偏好不应该保持不变——'觉得太冷了'是明确否定"
+
+review_notes: |
+  核心边界：偏好变更时的操作类型判断。
+  1. session_1 后应有 PREFERENCE(蓝色)
+  2. session_2 后应变为 PREFERENCE(绿色)，蓝色版本被标记为历史
+  3. 如果 ADD 了新的绿色偏好而蓝色仍然 is_current=true -> AUDN 判断失败
+  4. 如果整体变成 NOOP -> 提取器没有捕获到变更信号
+  5. 检查：entity 的 version 是否递增，旧版本 validTo 是否被设置

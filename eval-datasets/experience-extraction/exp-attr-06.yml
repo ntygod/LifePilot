@@ -1,0 +1,32 @@
+id: exp-attr-06
+name: 系统故障-不应污染经验库
+category: experience-extraction
+difficulty: medium
+tags: [system-failure, attribution, filter]
+
+conversation:
+  - "帮我搜索一下最近一周关于大语言模型的学术论文，整理出前五篇最有影响力的"
+
+trigger_expectation: |
+  如果搜索工具出现超时或错误（网络问题、API 限流等），
+  Agent 可能重试多次后仍然失败或降级处理。
+  这类系统层面的失败不应记录为策略经验。
+
+expected:
+  - if_system_error:
+      type: EXPERIENCE
+      failureAttribution: "system"
+      should_be_filtered: true
+      rationale: "系统故障归因的经验应被 ExperienceSummarizer 过滤，不写入记忆"
+  - if_success:
+      type: EXPERIENCE
+      success: true
+      rationale: "如果正常完成，可以正常提取经验"
+
+review_notes: |
+  归因过滤测试：
+  1. 如果工具执行中有明显系统错误（超时、500 等），failureAttribution 应为 system
+  2. system 归因的经验应被过滤（日志中应有"跳过系统归因经验"）
+  3. 如果工具错误被归因为 strategy，归因判断有误
+  4. 注意：这个场景依赖实际的工具执行情况，如果工具正常运行则转为正例测试
+  5. 可以通过临时降低网络超时时间来制造系统错误条件

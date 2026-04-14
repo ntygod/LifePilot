@@ -1,0 +1,36 @@
+id: entity-implicit-01
+name: 隐含偏好-从不满推断
+category: entity-extraction/boundary-1-implicit-vs-explicit
+difficulty: hard
+tags: [preference, implicit, inference]
+
+conversation:
+  - "帮我推荐几家吃饭的地方"
+  - "你推荐的这些都太远了，走过去要二十多分钟，有没有近一点的？我中午休息时间就一个小时"
+
+expected:
+  - operation: ADD
+    type: PREFERENCE
+    name_hint: "餐厅距离/就餐偏好"
+    description_should_contain:
+      - "近"
+      - "步行距离"
+    min_confidence: 0.6
+    rationale: "用户反复强调距离问题并给出具体原因（午休时间短），这是稳定偏好而非临时要求"
+
+should_not_extract:
+  - type: PLACE
+    name_hint: "公司附近/餐厅"
+    reason: "没有提到具体地点名称，'附近'是相对概念"
+  - type: HABIT
+    name_hint: "午餐习惯"
+    reason: "仅知道午休一小时，无法推断就餐习惯模式"
+  - type: GOAL
+    name_hint: "找餐厅"
+    reason: "这是当前任务请求，不是长期目标"
+
+review_notes: |
+  核心边界：不满情绪中的隐含偏好能否被正确提取？
+  1. 偏好的推断是否合理——"距离近"确实是从上下文推出的持久偏好
+  2. 置信度是否适当降低——隐含推断应低于显式声明（如"我喜欢近的餐厅"）
+  3. 不应过度推断——不能从"中午休息一小时"推出"工作很忙"等其他偏好
