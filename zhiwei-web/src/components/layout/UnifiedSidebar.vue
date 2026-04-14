@@ -147,7 +147,11 @@ function formatRelativeTime(isoString?: string) {
 /* ── 会话操作 ── */
 
 function handleNewConversation() {
-  router.push({ name: 'newConversation' })
+  // 必须先清空 activeSessionId，否则同路由导航被忽略时消息会发到旧会话
+  chatStore.activeSessionId = null
+  router.push({ name: 'newConversation' }).catch(() => {
+    // 已在 newConversation 路由，导航被忽略但状态已通过上方 activeSessionId=null 重置
+  })
   emit('close')
 }
 
@@ -196,6 +200,7 @@ function openAllConversations() {
 /** 从管理 Tab 切换到对话 Tab 时，导航到新建对话欢迎页 */
 function switchToChatTab() {
   if (activeTab.value === 'manage') {
+    chatStore.activeSessionId = null
     router.push({ name: 'newConversation' })
   }
   activeTab.value = 'chat'

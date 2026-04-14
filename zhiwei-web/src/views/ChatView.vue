@@ -233,7 +233,8 @@ const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary
 const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
 const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
 
-const headerTitle = computed(() => currentSessionDetail.value?.title?.trim() || currentSession.value?.title?.trim() || '新对话')
+// store 中的 title 由 SSE title-generated 事件实时更新，优先于可能过时的 currentSessionDetail
+const headerTitle = computed(() => currentSession.value?.title?.trim() || currentSessionDetail.value?.title?.trim() || '新对话')
 const activeContextCount = computed(() => (
   (activeSessionConfig.value.knowledgeBaseIds?.length ?? 0)
   + (activeSessionConfig.value.datastoreIds?.length ?? 0)
@@ -249,6 +250,30 @@ const sessionStatusText = computed(() => {
     return '待开始'
   }
   return '就绪'
+})
+
+// 会话懒创建或状态重置后，同步 URL 与 activeSessionId：
+// - 新会话创建 → URL 从 /conversations/new 替换为 /conversations/:id
+// - 在旧会话页面点"新建对话"后发送消息 → URL 同步到新会话
+watch(() => chatStore.activeSessionId, (newId) => {
+  if (newId && route.params.sessionId !== newId) {
+    router.replace({ name: 'conversationDetail', params: { sessionId: newId } })
+  }
+})
+
+// 同一组件在 newConversation ↔ conversationDetail 间复用时 onMounted 不会重新触发，
+// 需要 watch route 来重置状态
+watch(() => route.fullPath, () => {
+  const sessionId = route.params.sessionId as string | undefined
+  if (route.name === 'newConversation') {
+    // 设置 activeSessionId = null 会触发 store 内部 watcher 清空 messages/streamingContent
+    chatStore.activeSessionId = null
+    messagesReady.value = true
+    currentSessionDetail.value = null
+    resetActiveSessionConfig()
+  } else if (sessionId && sessionId !== chatStore.activeSessionId) {
+    chatStore.activeSessionId = sessionId
+  }
 })
 
 onMounted(async () => {
