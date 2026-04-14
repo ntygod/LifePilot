@@ -47,6 +47,27 @@ public interface TranscriptStore {
         }
     }
 
+    /**
+     * 追加用户消息，允许控制是否对用户可见。
+     *
+     * <p>用于 A2UI 信号等自动化交互场景——消息需要保留在模型上下文中，
+     * 但不应在聊天界面展示给用户。</p>
+     *
+     * @param visibleToUser false 时消息不在聊天历史中展示
+     */
+    default String appendUserMessage(String sessionId,
+                                     @Nullable String turnId,
+                                     String content,
+                                     @Nullable String traceId,
+                                     boolean visibleToUser,
+                                     @Nullable Instant createdAt) {
+        if (visibleToUser) {
+            return appendUserMessage(sessionId, turnId, content, traceId, createdAt);
+        }
+        return appendCustomMessage(sessionId, turnId, "user", content, traceId,
+                true, false, createdAt);
+    }
+
     default String appendUserMessage(String sessionId,
                                      String content,
                                      @Nullable String traceId,

@@ -45,22 +45,65 @@ public class JdbcTranscriptStore implements TranscriptStore {
                                     String content,
                                     @Nullable String traceId,
                                     @Nullable Instant createdAt) {
+        return appendUserMessageInternal(sessionId, turnId, content, traceId, true, createdAt);
+    }
+
+    @Override
+    public String appendUserMessage(String sessionId,
+                                    @Nullable String turnId,
+                                    String content,
+                                    @Nullable String traceId,
+                                    boolean visibleToUser,
+                                    @Nullable Instant createdAt) {
+        return appendUserMessageInternal(sessionId, turnId, content, traceId, visibleToUser, createdAt);
+    }
+
+    /**
+     * 用户消息写入核心逻辑，visibleToUser 控制消息是否在聊天界面展示。
+     *
+     * <p>当 visibleToUser=false 时通过 {@code appendEntry} 直接写入条目，
+     * 避免在消息预览摘要中留下信号交互的痕迹。
+     */
+    private String appendUserMessageInternal(String sessionId,
+                                             @Nullable String turnId,
+                                             String content,
+                                             @Nullable String traceId,
+                                             boolean visibleToUser,
+                                             @Nullable Instant createdAt) {
         ensureSessionExists(sessionId);
         Instant timestamp = createdAt != null ? createdAt : Instant.now();
-        String entryId = sessionTranscriptRepository.appendMessageEntry(
+        if (visibleToUser) {
+            String entryId = sessionTranscriptRepository.appendMessageEntry(
+                    sessionId,
+                    "user",
+                    content,
+                    null,
+                    turnId,
+                    traceId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    timestamp
+            );
+            appendMessageMeta(sessionId, timestamp, content);
+            return entryId;
+        }
+        // 信号等不可见消息：保留在模型上下文中，但不展示给用户
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("content", content);
+        String entryId = sessionTranscriptRepository.appendEntry(
                 sessionId,
+                TranscriptEntryType.USER_MESSAGE,
                 "user",
-                content,
-                null,
-                turnId,
-                traceId,
-                null,
-                null,
-                null,
-                null,
+                normalizeBlank(turnId),
+                normalizeBlank(traceId),
+                true,
+                false,
+                payload,
                 timestamp
         );
-        appendMessageMeta(sessionId, timestamp, content);
+        sessionStoreRepository.touchActivity(sessionId, timestamp);
         return entryId;
     }
 

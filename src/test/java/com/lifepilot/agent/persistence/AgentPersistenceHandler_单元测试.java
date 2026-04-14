@@ -98,7 +98,7 @@ class AgentPersistenceHandler_单元测试 {
         ReactAgentState state = buildState("session-2", "turn-2", "请安排今天的计划");
         when(chatTurnService.findBySessionIdAndTurnId("session-2", "turn-2"))
                 .thenReturn(Optional.empty());
-        when(transcriptStore.appendUserMessage("session-2", "turn-2", "请安排今天的计划", state.traceId(), null))
+        when(transcriptStore.appendUserMessage("session-2", "turn-2", "请安排今天的计划", state.traceId(), true, null))
                 .thenReturn("user-entry-2");
 
         String entryId = handler.persistUserMessageReturningId(state);
