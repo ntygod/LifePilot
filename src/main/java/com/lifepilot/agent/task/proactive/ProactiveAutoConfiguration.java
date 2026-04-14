@@ -59,7 +59,7 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository,
-                                                     AgentConfigProperties config) {
+                                                     @Autowired(required = false) AgentConfigProperties config) {
         return new TrustUpgradeService(autonomyRepository, config);
     }
 
@@ -111,7 +111,7 @@ public class ProactiveAutoConfiguration {
     public FollowUpBehavior followUpBehavior(IntentMemoryService intentMemoryService,
                                               @Autowired(required = false) GenerationRouter generationRouter,
                                               @Autowired(required = false) PromptRegistry promptRegistry,
-                                              AgentConfigProperties config) {
+                                              @Autowired(required = false) AgentConfigProperties config) {
         return new FollowUpBehavior(intentMemoryService, generationRouter, promptRegistry, config);
     }
 
@@ -144,7 +144,7 @@ public class ProactiveAutoConfiguration {
             @Autowired(required = false) IntentMemoryService intentMemoryService,
             @Autowired(required = false) GenerationRouter generationRouter,
             @Autowired(required = false) PromptRegistry promptRegistry,
-            AgentConfigProperties config) {
+            @Autowired(required = false) AgentConfigProperties config) {
         return new ContextPrepBehavior(intentMemoryService, generationRouter, promptRegistry, config);
     }
 
@@ -153,7 +153,7 @@ public class ProactiveAutoConfiguration {
     public ReportBehavior reportBehavior(
             @Autowired(required = false) EpisodicMemory episodicMemory,
             @Autowired(required = false) GenerationRouter generationRouter,
-            AgentConfigProperties config) {
+            @Autowired(required = false) AgentConfigProperties config) {
         return new ReportBehavior(episodicMemory, generationRouter, config);
     }
 
@@ -193,9 +193,9 @@ public class ProactiveAutoConfiguration {
     public ProactiveEngine proactiveEngine(List<ProactiveBehavior> behaviors,
                                            DecisionGate decisionGate,
                                            DeliveryEngine deliveryEngine,
-                                           NotificationProperties notificationProperties,
-                                           NotificationRepository notificationRepository,
-                                           AgentConfigProperties config,
+                                           @Autowired(required = false) NotificationProperties notificationProperties,
+                                           @Autowired(required = false) NotificationRepository notificationRepository,
+                                           @Autowired(required = false) AgentConfigProperties config,
                                            @Autowired(required = false) ReminderFocusStateHolder focusStateHolder,
                                            @Autowired(required = false) IntentMemoryService intentMemoryService,
                                            @Autowired(required = false) PreferenceLearner preferenceLearner) {
