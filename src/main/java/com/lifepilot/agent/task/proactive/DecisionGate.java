@@ -3,6 +3,8 @@ package com.lifepilot.agent.task.proactive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.lang.Nullable;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -19,6 +21,15 @@ import java.util.List;
 public class DecisionGate {
 
     private static final Logger log = LoggerFactory.getLogger(DecisionGate.class);
+
+    @Nullable
+    private final TrustUpgradeService trustUpgradeService;
+
+    public DecisionGate() { this(null); }
+
+    public DecisionGate(@Nullable TrustUpgradeService trustUpgradeService) {
+        this.trustUpgradeService = trustUpgradeService;
+    }
 
     /** 分数 → 投递级别映射。 */
     public static DeliveryLevel scoreToLevel(float score) {
@@ -73,6 +84,17 @@ public class DecisionGate {
             if (ctx.isFocusedCoding() && level == DeliveryLevel.INTERRUPT) {
                 level = DeliveryLevel.NOTIFY;
                 log.debug("决策门控: 编码中，INTERRUPT→NOTIFY topic={}", action.candidate().topicKey());
+            }
+
+            // 自主度约束: A 级最高 NOTIFY，不允许 INTERRUPT
+            if (trustUpgradeService != null) {
+                AutonomyLevel autonomy = trustUpgradeService.getLevel(
+                        ctx.userId(), action.candidate().behaviorName());
+                if (autonomy == AutonomyLevel.A && level == DeliveryLevel.INTERRUPT) {
+                    level = DeliveryLevel.NOTIFY;
+                    log.debug("决策门控: 自主度A，INTERRUPT→NOTIFY behavior={}",
+                            action.candidate().behaviorName());
+                }
             }
 
             // SILENT 级别不占额度，仅记录

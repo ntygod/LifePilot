@@ -3,8 +3,12 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
+import com.lifepilot.agent.task.proactive.behavior.ContextPrepBehavior;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
+import com.lifepilot.agent.task.proactive.behavior.InfoSupplementBehavior;
 import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
+import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
+import com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior;
 import com.lifepilot.agent.task.proactive.intent.IntentExtractor;
 import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
 import com.lifepilot.agent.task.proactive.intent.IntentRepository;
@@ -45,8 +49,20 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DecisionGate proactiveDecisionGate() {
-        return new DecisionGate();
+    public AutonomyRepository autonomyRepository(JdbcTemplate jdbcTemplate) {
+        return new AutonomyRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository) {
+        return new TrustUpgradeService(autonomyRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DecisionGate proactiveDecisionGate(@Autowired(required = false) TrustUpgradeService trustUpgradeService) {
+        return new DecisionGate(trustUpgradeService);
     }
 
     @Bean
@@ -106,6 +122,39 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     public ClipboardBehavior clipboardBehavior(ClipboardIntentBuffer clipboardIntentBuffer) {
         return new ClipboardBehavior(clipboardIntentBuffer);
+    }
+
+    // ── Phase 3 行为插件 ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public InfoSupplementBehavior infoSupplementBehavior(
+            @Autowired(required = false) IntentMemoryService intentMemoryService) {
+        return new InfoSupplementBehavior(intentMemoryService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ContextPrepBehavior contextPrepBehavior(
+            @Autowired(required = false) IntentMemoryService intentMemoryService,
+            @Autowired(required = false) GenerationRouter generationRouter) {
+        return new ContextPrepBehavior(intentMemoryService, generationRouter);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReportBehavior reportBehavior(
+            @Autowired(required = false) EpisodicMemory episodicMemory,
+            @Autowired(required = false) GenerationRouter generationRouter) {
+        return new ReportBehavior(episodicMemory, generationRouter);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public TaskExecutionBehavior taskExecutionBehavior(
+            @Autowired(required = false) IntentMemoryService intentMemoryService,
+            @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
+        return new TaskExecutionBehavior(intentMemoryService, trustUpgradeService);
     }
 
     // ── 引擎 ──
