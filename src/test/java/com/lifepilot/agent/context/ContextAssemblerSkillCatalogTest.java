@@ -4,7 +4,6 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.datastore.model.Collection;
-import com.lifepilot.datastore.model.CollectionType;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -226,8 +225,8 @@ class ContextAssemblerSkillCatalogTest {
                 .thenReturn(List.of("kb-xhs"));
         when(collectionRepository.findById("ds-xhs"))
                 .thenReturn(java.util.Optional.of(new Collection(
-                        "ds-xhs", "小红书集合", "春季旅游素材", CollectionType.DOCUMENT,
-                        null, "{}", null, null, null, Instant.now().toString(), Instant.now().toString()
+                        "ds-xhs", "小红书集合", "春季旅游素材", false,
+                        null, null, null, Instant.now().toString(), Instant.now().toString()
                 )));
         when(knowledgeBaseRepository.findById("kb-xhs"))
                 .thenReturn(java.util.Optional.of(new KnowledgeBase(
@@ -250,7 +249,7 @@ class ContextAssemblerSkillCatalogTest {
 
         assertThat(result)
                 .contains("<active_knowledge_bindings>")
-                .contains("小红书集合 [DOCUMENT] (ds-xhs)")
+                .contains("小红书集合 [GENERAL] (ds-xhs)")
                 .contains("小红书资料库 (kb-xhs)")
                 .contains("knowledge.search");
     }
@@ -286,18 +285,21 @@ class ContextAssemblerSkillCatalogTest {
                 "用户画像",
                 "工作区",
                 "产物摘要",
-                "经验片段"
+                "经验片段",
+                "记忆上下文"
         );
 
-        assertThat(messages).hasSize(4);
+        assertThat(messages).hasSize(5);
         assertThat(messages.getFirst().getText()).contains("<user_profile_context>");
         assertThat(messages.getFirst().getText()).contains("用户画像");
         assertThat(messages.get(1).getText()).contains("<workspace_context>");
         assertThat(messages.get(1).getText()).contains("工作区");
         assertThat(messages.get(2).getText()).contains("<artifact_context>");
         assertThat(messages.get(2).getText()).contains("产物摘要");
-        assertThat(messages.getLast().getText()).contains("<experience_context>");
-        assertThat(messages.getLast().getText()).contains("经验片段");
+        assertThat(messages.get(3).getText()).contains("<experience_context>");
+        assertThat(messages.get(3).getText()).contains("经验片段");
+        assertThat(messages.getLast().getText()).contains("<memory_context>");
+        assertThat(messages.getLast().getText()).contains("记忆上下文");
     }
 
     private AgentConfigProperties buildConfig() {
@@ -339,5 +341,37 @@ class ContextAssemblerSkillCatalogTest {
                 .suspended(false)
                 .suspendReason(null)
                 .build();
+    }
+
+    // ── stripYamlFrontmatter 测试 ──
+
+    @Test
+    void stripYamlFrontmatter_正常剥离frontmatter() {
+        String input = "---\nid: test\nname: 测试\n---\n# 标题\n正文内容";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文内容");
+    }
+
+    @Test
+    void stripYamlFrontmatter_无frontmatter时原样返回() {
+        String input = "# 标题\n正文内容";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文内容");
+    }
+
+    @Test
+    void stripYamlFrontmatter_仅有开头分隔符时原样返回() {
+        String input = "---\nid: test\nname: 测试";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo(input);
+    }
+
+    @Test
+    void stripYamlFrontmatter_frontmatter后无内容时返回空() {
+        String input = "---\nid: test\n---";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEmpty();
+    }
+
+    @Test
+    void stripYamlFrontmatter_处理CRLF换行() {
+        String input = "---\r\nid: test\r\n---\r\n# 标题\r\n正文";
+        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文");
     }
 }

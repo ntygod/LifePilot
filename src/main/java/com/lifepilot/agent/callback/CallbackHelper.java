@@ -1,6 +1,5 @@
 package com.lifepilot.agent.callback;
 
-import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
@@ -35,16 +34,6 @@ public interface CallbackHelper {
     /** 将 LlmResponse 适配为 ChatResponse。 */
     ChatResponse adaptToChatResponse(LlmResponse llmResponse);
 
-    /** 判断 A2UI 是否启用。 */
-    boolean isA2uiEnabled();
-
-    /** 获取 A2UI 最大组件数。 */
-    int getA2uiMaxComponents();
-
-    /** 解析并校验 A2UI JSON 为组件树。 */
-    @Nullable
-    A2uiComponentTree parseAndValidateA2uiTree(String json, int maxComponents);
-
     /** 发送 REASONING SSE 事件。 */
     void sendReasoningEvent(SseSessionManager sseManager, String streamId,
                             String sessionId, String turnId,
@@ -59,8 +48,8 @@ public interface CallbackHelper {
                                 ChatResponse chatResponse,
                                 @Nullable Exception error);
 
-    /** 增强系统提示词（流式约束 + A2UI）。 */
-    String enhanceSystemPromptForStreaming(String systemText, @Nullable String a2uiPrompt);
+    /** 增强系统提示词（注入流式约束）。 */
+    String enhanceSystemPromptForStreaming(String systemText);
 
     /** 调试日志 — 打印发送给 LLM 的完整消息列表。 */
     void logLlmPromptIfEnabled(String scene, List<Message> messages,

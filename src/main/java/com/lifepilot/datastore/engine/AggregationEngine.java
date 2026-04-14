@@ -46,12 +46,12 @@ public class AggregationEngine {
             String timeBucketExpr = "strftime(" + groupBy.toStrftime() + ", recorded_at)";
             sql.append("SELECT ").append(timeBucketExpr).append(" AS time_bucket, ")
                     .append(funcExpr)
-                    .append(" FROM ds_documents WHERE collection_id = ?");
+                    .append(" FROM documents WHERE source_datastore_id = ? AND source_type = 'DATASTORE_DOCUMENT'");
         } else {
             // 无时间分组：返回总计
             sql.append("SELECT 'total' AS time_bucket, ")
                     .append(funcExpr)
-                    .append(" FROM ds_documents WHERE collection_id = ?");
+                    .append(" FROM documents WHERE source_datastore_id = ? AND source_type = 'DATASTORE_DOCUMENT'");
         }
         params.add(request.collectionId());
 
@@ -88,6 +88,6 @@ public class AggregationEngine {
         if (indexedFields.contains(field)) {
             return "_idx_" + collectionIdPrefix + "_" + field;
         }
-        return "json_extract(data_json, '$." + field + "')";
+        return "json_extract(metadata_json, '$." + field + "')";
     }
 }

@@ -91,8 +91,7 @@ class ReactAgentLoop_预算控制测试 {
                 agentToolProvider,
                 new AgentConfigProperties(),
                 new ObjectMapper(),
-                null,
-                null,
+                null,  // traceRecorder
                 transcriptStore,
                 null,
                 null,
@@ -103,7 +102,8 @@ class ReactAgentLoop_预算控制测试 {
                 sharedScheduler,
                 null,  // workspaceService
                 null,  // skillRegistry
-                null   // toolRegistry
+                null,  // toolRegistry
+                null   // semanticMemory
         );
     }
 
@@ -323,8 +323,7 @@ class ReactAgentLoop_预算控制测试 {
                 agentToolProvider,
                 new AgentConfigProperties(),
                 new ObjectMapper(),
-                null,
-                null,
+                null,  // traceRecorder
                 transcriptStore,
                 null,
                 null,
@@ -335,7 +334,8 @@ class ReactAgentLoop_预算控制测试 {
                 sharedScheduler,
                 null,  // workspaceService
                 null,  // skillRegistry
-                null   // toolRegistry
+                null,  // toolRegistry
+                null   // semanticMemory
         );
 
         when(contextAssembler.assemble(any())).thenReturn(baseContext("请执行测试任务"));

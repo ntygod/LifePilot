@@ -288,6 +288,9 @@ public class MemoryProperties {
         /** 新模板默认重要度 [0.0, 1.0]，默认 0.5。 */
         private float defaultImportance = 0.5f;
 
+        /** 是否启用操作模板聚类，默认关闭。 */
+        private boolean templateEnabled = false;
+
         public int getMaxTemplates() { return maxTemplates; }
         public void setMaxTemplates(int maxTemplates) { this.maxTemplates = maxTemplates; }
 
@@ -305,6 +308,9 @@ public class MemoryProperties {
 
         public float getDefaultImportance() { return defaultImportance; }
         public void setDefaultImportance(float defaultImportance) { this.defaultImportance = defaultImportance; }
+
+        public boolean isTemplateEnabled() { return templateEnabled; }
+        public void setTemplateEnabled(boolean templateEnabled) { this.templateEnabled = templateEnabled; }
     }
 
     /**
@@ -600,6 +606,21 @@ public static class Retrieval {
         /** 话题切换检测余弦相似度阈值 [0.0, 1.0]，默认 0.3。 */
         private float topicSwitchThreshold = 0.3f;
 
+        /** 注入权重配置 — 控制 relevance / importance / recency 的融合比例。 */
+        private InjectionWeights injectionWeights = new InjectionWeights();
+
+        /** 是否启用 memory_context 注入，默认 true。 */
+        private boolean memoryContextEnabled = true;
+
+        /** memory_context 最大实体数，默认 5。 */
+        private int memoryContextMaxEntities = 5;
+
+        /** memory_context token 预算，默认 800。 */
+        private int memoryContextTokenBudget = 800;
+
+        /** memory_context 最低相关度阈值 [0.0, 1.0]，默认 0.6。 */
+        private float memoryContextScoreThreshold = 0.6f;
+
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
 
@@ -647,6 +668,21 @@ public static class Retrieval {
 
         public float getTopicSwitchThreshold() { return topicSwitchThreshold; }
         public void setTopicSwitchThreshold(float topicSwitchThreshold) { this.topicSwitchThreshold = topicSwitchThreshold; }
+
+        public InjectionWeights getInjectionWeights() { return injectionWeights; }
+        public void setInjectionWeights(InjectionWeights injectionWeights) { this.injectionWeights = injectionWeights; }
+
+        public boolean isMemoryContextEnabled() { return memoryContextEnabled; }
+        public void setMemoryContextEnabled(boolean memoryContextEnabled) { this.memoryContextEnabled = memoryContextEnabled; }
+
+        public int getMemoryContextMaxEntities() { return memoryContextMaxEntities; }
+        public void setMemoryContextMaxEntities(int memoryContextMaxEntities) { this.memoryContextMaxEntities = memoryContextMaxEntities; }
+
+        public int getMemoryContextTokenBudget() { return memoryContextTokenBudget; }
+        public void setMemoryContextTokenBudget(int memoryContextTokenBudget) { this.memoryContextTokenBudget = memoryContextTokenBudget; }
+
+        public float getMemoryContextScoreThreshold() { return memoryContextScoreThreshold; }
+        public void setMemoryContextScoreThreshold(float memoryContextScoreThreshold) { this.memoryContextScoreThreshold = memoryContextScoreThreshold; }
     }
 
     /**
@@ -1001,5 +1037,34 @@ public static class Retrieval {
             public int getLlmTimeoutSeconds() { return llmTimeoutSeconds; }
             public void setLlmTimeoutSeconds(int llmTimeoutSeconds) { this.llmTimeoutSeconds = llmTimeoutSeconds; }
         }
+    }
+
+    /**
+     * 注入权重配置 — 控制记忆检索结果的 relevance / importance / recency 融合比例。
+     *
+     * <p>三个权重之和应为 1.0，用于对检索到的记忆条目进行加权排序。</p>
+     *
+     * @author zsg
+     * @since 2026-04-14
+     */
+    public static class InjectionWeights {
+
+        /** 相关度权重，默认 0.4。 */
+        private float relevance = 0.4f;
+
+        /** 重要度权重，默认 0.3。 */
+        private float importance = 0.3f;
+
+        /** 时近度权重，默认 0.3。 */
+        private float recency = 0.3f;
+
+        public float getRelevance() { return relevance; }
+        public void setRelevance(float relevance) { this.relevance = relevance; }
+
+        public float getImportance() { return importance; }
+        public void setImportance(float importance) { this.importance = importance; }
+
+        public float getRecency() { return recency; }
+        public void setRecency(float recency) { this.recency = recency; }
     }
 }

@@ -73,10 +73,27 @@ public class GenerationRouter {
                             @Nullable String modelName,
                             GenerationCapability requiredCapability,
                             @Nullable Duration timeoutOverride) {
+        return call(scene, prompt, outputSchema, serviceId, modelName, requiredCapability, timeoutOverride, false);
+    }
+
+    /**
+     * 文本生成（支持跳过语义缓存）。
+     *
+     * @param skipCache true 时跳过语义缓存的读取和写入，适用于每次输入内容不同但模板相似的场景（如实体提取）
+     */
+    public LlmResponse call(String scene,
+                            String prompt,
+                            @Nullable String outputSchema,
+                            @Nullable String serviceId,
+                            @Nullable String modelName,
+                            GenerationCapability requiredCapability,
+                            @Nullable Duration timeoutOverride,
+                            boolean skipCache) {
         String normalizedScene = normalizeScene(scene);
         String responseFormatKey = responseFormatKey(outputSchema);
-        boolean cacheable = requiredCapability == GenerationCapability.CHAT
-                || requiredCapability == GenerationCapability.STRUCTURED_OUTPUT;
+        boolean cacheable = !skipCache
+                && (requiredCapability == GenerationCapability.CHAT
+                || requiredCapability == GenerationCapability.STRUCTURED_OUTPUT);
         if (cacheable) {
             LlmResponse cached = lookupCachedResponse(normalizedScene, responseFormatKey, prompt);
             if (cached != null) {

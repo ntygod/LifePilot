@@ -17,10 +17,10 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * L4 程序记忆服务 — 管理操作模板、偏好规则、策略模式的 CRUD 和检索。
+ * L4 程序记忆服务 — 管理操作模板和偏好规则的 CRUD 和检索。
  *
- * <p>初始化时程序化创建 {@code procedure_intent_vec} 和 {@code strategy_situation_vec}
- * 两个 sqlite-vec 向量索引虚拟表（与 {@code entity_embeddings} 保持一致的创建方式）。</p>
+ * <p>初始化时程序化创建 {@code procedure_intent_vec}
+ * sqlite-vec 向量索引虚拟表（与 {@code entity_embeddings} 保持一致的创建方式）。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -299,53 +299,10 @@ public class ProceduralMemory {
         return rows > 0;
     }
 
-    // ========== 策略模式 ==========
-
-    /**
-     * 保存策略模式 — 插入数据库并创建 situation 向量索引。
-     *
-     * @param pattern 策略模式
-     */
-    public void saveStrategy(StrategyPattern pattern) {
-        jdbcTemplate.update(
-                """
-                INSERT INTO strategy_patterns(
-                    pattern_id, situation, recommended_action,
-                    success_rate, application_count, created_at
-                ) VALUES(?,?,?,?,?,?)
-                """,
-                pattern.patternId(), pattern.situation(), pattern.recommendedAction(),
-                pattern.successRate(), pattern.applicationCount(),
-                pattern.createdAt().toString());
-
-        // 创建 situation 向量索引
-        upsertSituationVector(pattern.patternId(), pattern.situation());
-
-        log.info("程序记忆: 保存策略模式, patternId={}, situation={}", pattern.patternId(), pattern.situation());
-    }
-
-    /**
-     * 按情境文本检索策略模式 — 基于 SQL LIKE 模糊匹配 + 成功率排序。
-     *
-     * <p>当前使用文本模糊匹配作为基础实现，完整的向量语义检索将在
-     * IntentMatcher（任务 5.1）中通过 GenerationRouter 实现。</p>
-     *
-     * @param situationText 情境描述文本
-     * @param topK          返回前 K 个结果
-     * @return 匹配的策略模式列表，按成功率降序排列
-     */
-    public List<StrategyPattern> findStrategiesBySituation(String situationText, int topK) {
-        var results = jdbcTemplate.query(
-                "SELECT pattern_id, situation, recommended_action, success_rate, application_count, created_at FROM strategy_patterns WHERE situation LIKE ? ORDER BY success_rate DESC LIMIT ?",
-                (rs, rowNum) -> mapRowToStrategy(rs),
-                "%" + situationText + "%", topK);
-        return List.copyOf(results);
-    }
-
     // ========== 内部方法 ==========
 
     /**
-     * 程序化创建 procedure_intent_vec 和 strategy_situation_vec 虚拟表。
+     * 程序化创建 procedure_intent_vec 虚拟表。
      * 与 VectorSearcher 中 entity_embeddings 的创建方式保持一致。
      */
     private void initVec0Tables() {
@@ -357,11 +314,6 @@ public class ProceduralMemory {
         try {
             jdbcTemplate.execute(
                     "CREATE VIRTUAL TABLE IF NOT EXISTS procedure_intent_vec USING vec0(" +
-                    "entity_id TEXT PRIMARY KEY, " +
-                    "embedding FLOAT[" + dimensions + "]" +
-                    ")");
-            jdbcTemplate.execute(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS strategy_situation_vec USING vec0(" +
                     "entity_id TEXT PRIMARY KEY, " +
                     "embedding FLOAT[" + dimensions + "]" +
                     ")");
@@ -387,21 +339,6 @@ public class ProceduralMemory {
     }
 
     /**
-     * 插入/更新 situation 向量索引。
-     *
-     * @param patternId 策略模式 ID
-     * @param situation 情境描述文本
-     */
-    private void upsertSituationVector(String patternId, String situation) {
-        try {
-            vectorSearcher.upsertEntityVector(patternId, situation);
-        } catch (Exception e) {
-            log.warn("程序记忆: situation 向量索引更新失败, patternId={}, error={}",
-                    patternId, e.getMessage());
-        }
-    }
-
-    /**
      * ResultSet 行映射为 PreferenceRule。
      */
     private PreferenceRule mapRowToPreference(ResultSet rs) throws SQLException {
@@ -415,20 +352,6 @@ public class ProceduralMemory {
                 rs.getInt("observation_count"),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at"))
-        );
-    }
-
-    /**
-     * ResultSet 行映射为 StrategyPattern。
-     */
-    private StrategyPattern mapRowToStrategy(ResultSet rs) throws SQLException {
-        return new StrategyPattern(
-                rs.getString("pattern_id"),
-                rs.getString("situation"),
-                rs.getString("recommended_action"),
-                rs.getFloat("success_rate"),
-                rs.getInt("application_count"),
-                Instant.parse(rs.getString("created_at"))
         );
     }
 

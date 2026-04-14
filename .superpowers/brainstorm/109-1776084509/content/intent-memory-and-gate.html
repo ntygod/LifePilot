@@ -1,0 +1,128 @@
+<h2>④ 意图记忆 + ⑤ 统一决策门控</h2>
+<p class="subtitle">让知微从"即时反应"变成"持续关注"，同时防止过度打扰</p>
+
+<!-- Intent Memory -->
+<div style="margin: 2rem 0; padding: 1.5rem; background: var(--card); border-radius: 12px; border: 1px solid var(--border);">
+  <h3 style="margin-top: 0; font-size: 15px; color: #26a69a;">④ 意图记忆 — 持久目标追踪</h3>
+
+  <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.7;">
+    用户说过的目标、愿望、计划，不是聊完就忘——而是持久存储，每次心跳检查触发条件。<br>
+    这是知微从"问一答一"到"贾维斯式持续关注"的关键能力。
+  </div>
+
+  <!-- Example -->
+  <div style="background: var(--bg); border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+    <div style="font-size: 12px; color: #26a69a; font-weight: bold; margin-bottom: 10px;">示例：一条意图的生命周期</div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 140px; padding: 10px; background: var(--card); border-radius: 6px; border-top: 3px solid #42a5f5;">
+        <div style="font-size: 11px; color: #42a5f5; font-weight: bold;">提取</div>
+        <div style="font-size: 12px; margin-top: 4px; line-height: 1.5;">用户对话中说：<br>"<em>等那个耳机降到 300 以下我就买</em>"</div>
+      </div>
+      <div style="display: flex; align-items: center; color: var(--muted);">→</div>
+      <div style="flex: 1; min-width: 140px; padding: 10px; background: var(--card); border-radius: 6px; border-top: 3px solid #ff9800;">
+        <div style="font-size: 11px; color: #ff9800; font-weight: bold;">存储</div>
+        <div style="font-size: 12px; margin-top: 4px; line-height: 1.5;">
+          目标: 买耳机<br>
+          触发: 价格 &lt; 300<br>
+          过期: 90天
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; color: var(--muted);">→</div>
+      <div style="flex: 1; min-width: 140px; padding: 10px; background: var(--card); border-radius: 6px; border-top: 3px solid #4caf50;">
+        <div style="font-size: 11px; color: #4caf50; font-weight: bold;">触发</div>
+        <div style="font-size: 12px; margin-top: 4px; line-height: 1.5;">第 12 天心跳发现<br>价格降到 279<br>→ 主动通知用户</div>
+      </div>
+      <div style="display: flex; align-items: center; color: var(--muted);">→</div>
+      <div style="flex: 1; min-width: 140px; padding: 10px; background: var(--card); border-radius: 6px; border-top: 3px solid #78909c;">
+        <div style="font-size: 11px; color: #78909c; font-weight: bold;">完成</div>
+        <div style="font-size: 12px; margin-top: 4px; line-height: 1.5;">用户反馈"有用"<br>或自主度 C 下<br>直接代下单</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data model -->
+  <div style="font-family: monospace; font-size: 12px; background: var(--bg); padding: 14px; border-radius: 8px; line-height: 2;">
+    <span style="color: #78909c;">// 意图记录</span><br>
+    <span style="color: #ab47bc;">record</span> <span style="color: #42a5f5;">Intent</span>(<br>
+    &nbsp;&nbsp;String id,<br>
+    &nbsp;&nbsp;String userId,<br>
+    &nbsp;&nbsp;String goal, &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #78909c;">// "买耳机"</span><br>
+    &nbsp;&nbsp;String triggerCondition, <span style="color: #78909c;">// 结构化条件 或 自然语言</span><br>
+    &nbsp;&nbsp;String sourceSessionId,&nbsp;<span style="color: #78909c;">// 从哪次对话提取的</span><br>
+    &nbsp;&nbsp;IntentStatus status, &nbsp;&nbsp;&nbsp;<span style="color: #78909c;">// ACTIVE / TRIGGERED / FULFILLED / EXPIRED</span><br>
+    &nbsp;&nbsp;LocalDateTime createdAt,<br>
+    &nbsp;&nbsp;LocalDateTime expiresAt, <span style="color: #78909c;">// 自动过期，防止永远占着</span><br>
+    &nbsp;&nbsp;int checkCount &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #78909c;">// 已检查次数，用于衰减</span><br>
+    )
+  </div>
+
+  <!-- Where intents come from -->
+  <div style="margin-top: 14px; padding: 12px 16px; background: #e0f2f1; border-radius: 8px; font-size: 13px; line-height: 1.7;">
+    <strong>意图从哪来？</strong><br>
+    <span style="margin-left: 0.5em;">• <strong>对话提取</strong> — 从 L2 情景记忆中识别"我想...""帮我盯着...""等...的时候告诉我"</span><br>
+    <span style="margin-left: 0.5em;">• <strong>用户显式创建</strong> — 对话中直接对知微说"帮我关注 XX"</span><br>
+    <span style="margin-left: 0.5em;">• <strong>行为插件产出</strong> — 任务代行插件执行后产生后续意图</span>
+  </div>
+</div>
+
+<!-- Decision Gate -->
+<div style="margin: 2rem 0; padding: 1.5rem; background: var(--card); border-radius: 12px; border: 1px solid var(--border);">
+  <h3 style="margin-top: 0; font-size: 15px; color: #ef5350;">⑤ 统一决策门控 — 防过度打扰的最后防线</h3>
+
+  <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.7;">
+    多个插件可能同时产出候选动作。门控负责：选哪个？怎么投递？要不要拦截？
+  </div>
+
+  <!-- Gate checks -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+
+    <div style="padding: 12px; background: var(--bg); border-radius: 8px;">
+      <div style="font-size: 12px; font-weight: bold; color: #ef5350;">硬边界（一票否决）</div>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.7;">
+        • 安静时段（23:00-08:00）<br>
+        • 同话题冷却期未过<br>
+        • 每日上限已达<br>
+        • 用户在全屏/专注模式
+      </div>
+    </div>
+
+    <div style="padding: 12px; background: var(--bg); border-radius: 8px;">
+      <div style="font-size: 12px; font-weight: bold; color: #ff9800;">软约束（降级处理）</div>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.7;">
+        • 已有一条通知未读 → 排队<br>
+        • 用户刚拒绝过上一条 → 降级为静默<br>
+        • 多个候选并列 → 只推最高分的<br>
+        • 信任度不够 → 降一级自主度
+      </div>
+    </div>
+
+    <div style="padding: 12px; background: var(--bg); border-radius: 8px;">
+      <div style="font-size: 12px; font-weight: bold; color: #2196f3;">自主度检查</div>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.7;">
+        • A 通知型 → 只允许通知/排队<br>
+        • B 建议型 → 允许通知+带方案<br>
+        • C 代行型 → 允许执行，完成后告知
+      </div>
+    </div>
+
+    <div style="padding: 12px; background: var(--bg); border-radius: 8px;">
+      <div style="font-size: 12px; font-weight: bold; color: #4caf50;">投递级别决定</div>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.7;">
+        • 分数 &lt; 0.3 → 静默（仅记录）<br>
+        • 分数 0.3-0.5 → 排队到下次对话<br>
+        • 分数 0.5-0.7 → 浮窗通知气泡<br>
+        • 分数 ≥ 0.7 → 主动消息/打断
+      </div>
+    </div>
+
+  </div>
+
+  <!-- What's reused -->
+  <div style="margin-top: 14px; padding: 12px 16px; background: #fce4ec; border-radius: 8px; font-size: 13px; line-height: 1.7;">
+    <strong>复用现有能力：</strong><br>
+    <span style="margin-left: 0.5em;">• 硬边界检查 → 现有 <code>ReminderDecisionEngine</code> 的逻辑直接上提</span><br>
+    <span style="margin-left: 0.5em;">• LinUCB 赌博机 → 从提醒专用变成全局共享，所有插件的动作都经过它</span><br>
+    <span style="margin-left: 0.5em;">• 反馈仓库 → 从提醒专用扩展为全行为类型</span><br>
+    <span style="margin-left: 0.5em;">• 新增："排队"投递级别（现在没有，动作不是推就是不推）</span>
+  </div>
+</div>

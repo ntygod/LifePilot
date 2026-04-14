@@ -65,8 +65,8 @@ public class DataStoreCrudAdapter<T> {
             return ToolResult.error("序列化失败: 无法将实体转换为 JSON");
         }
         String collectionId = ensureCollection();
-        var doc = dataStoreManager.addDocument(collectionId, json, null);
-        return ToolResult.success(Map.of("documentId", doc.id()));
+        String docId = dataStoreManager.addDocument(collectionId, json, null, null);
+        return ToolResult.success(Map.of("documentId", docId));
     }
 
     /**
@@ -79,7 +79,7 @@ public class DataStoreCrudAdapter<T> {
      */
     public Optional<T> findById(String documentId) {
         return dataStoreManager.getDocument(documentId)
-                .flatMap(doc -> deserialize(doc.dataJson()));
+                .flatMap(doc -> deserialize(doc.content()));
     }
 
     /**
@@ -108,7 +108,7 @@ public class DataStoreCrudAdapter<T> {
                 limit
         );
         return dataStoreManager.queryDocuments(request).stream()
-                .map(doc -> deserialize(doc.dataJson()))
+                .map(doc -> deserialize(doc.content()))
                 .flatMap(Optional::stream)
                 .toList();
     }
@@ -140,7 +140,7 @@ public class DataStoreCrudAdapter<T> {
                 limit
         );
         return dataStoreManager.queryDocuments(request).stream()
-                .map(doc -> deserialize(doc.dataJson())
+                .map(doc -> deserialize(doc.content())
                         .map(entity -> (Map.Entry<String, T>) new AbstractMap.SimpleImmutableEntry<>(doc.id(), entity)))
                 .flatMap(Optional::stream)
                 .toList();
@@ -160,7 +160,7 @@ public class DataStoreCrudAdapter<T> {
         if (json == null) {
             return ToolResult.error("序列化失败: 无法将实体转换为 JSON");
         }
-        dataStoreManager.updateDocument(documentId, json);
+        dataStoreManager.updateDocument(documentId, json, null);
         return ToolResult.success(Map.of("documentId", documentId));
     }
 
@@ -199,8 +199,8 @@ public class DataStoreCrudAdapter<T> {
             } else {
                 var created = dataStoreManager.createCollection(
                         config.collectionName(),
-                        config.collectionType(),
-                        config.propertyDefinitions(),
+                        config.timeSeries(),
+                        config.fieldHints(),
                         config.description(),
                         "skill:" + config.domain()
                 );

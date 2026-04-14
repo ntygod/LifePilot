@@ -2,6 +2,8 @@ package com.lifepilot.interaction.web.config;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.interaction.web.a2ui.UiEmitToolProvider;
+import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.BrowserIngressService;
@@ -14,6 +16,7 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.config.MediaProperties;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -95,6 +98,40 @@ public class WebAutoConfiguration {
         log.info("注册 WebPermissionApprovalService: timeout={}s", timeout);
         return new WebPermissionApprovalService(sseSessionManager, transcriptStore,
                 permissionService, objectMapper, timeout);
+    }
+
+    /**
+     * 注册 A2UI 组件树捕获桥接器，在 ui.emit 工具执行器和编排器之间传递组件树用于持久化。
+     *
+     * @return UiEmitTreeCapture 实例
+     */
+    @Bean
+    public UiEmitTreeCapture uiEmitTreeCapture() {
+        log.info("注册 UiEmitTreeCapture");
+        return new UiEmitTreeCapture();
+    }
+
+    /**
+     * 在 ApplicationReadyEvent 中注册 ui.emit 工具到 DynamicToolRegistry。
+     *
+     * <p>与 MetaAutoConfiguration.registerTools() 使用相同的 HIGHEST_PRECEDENCE 优先级，
+     * 确保在 SkillAutoConfiguration 加载 Skill（校验 suggested-tools）之前完成注册。</p>
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
+    public void registerUiEmitTool(ApplicationReadyEvent event) {
+        var ctx = event.getApplicationContext();
+        if (!ctx.containsBean("sseSessionManager")) {
+            return;
+        }
+        var sseManager = ctx.getBean(SseSessionManager.class);
+        var a2uiProperties = ctx.getBean(A2uiProperties.class);
+        var treeCapture = ctx.getBean(UiEmitTreeCapture.class);
+        var toolRegistry = ctx.getBean(com.lifepilot.tool.registry.DynamicToolRegistry.class);
+
+        var tool = new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree(), treeCapture).buildTool();
+        toolRegistry.registerBuiltinTool(tool);
+        log.info("注册 ui.emit 内置工具: maxComponentsPerTree={}", a2uiProperties.maxComponentsPerTree());
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、

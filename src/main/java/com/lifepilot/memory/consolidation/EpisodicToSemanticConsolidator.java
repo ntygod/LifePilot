@@ -5,6 +5,7 @@ import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -193,14 +194,13 @@ public class EpisodicToSemanticConsolidator {
                 float newImportance = Math.min(1.0f, entity.importanceScore() + boost);
 
                 if (newImportance > entity.importanceScore()) {
-                    var updated = new TemporalEntity(
-                            entity.id(), entity.type(), entity.name(), entity.description(),
-                            entity.properties(), entity.version(), entity.isCurrent(),
-                            entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
-                            entity.extractionConfidence(), newImportance,
-                            entity.accessCount(), entity.lastAccessedAt(),
-                            entity.createdAt(), Instant.now());
-                    semanticMemory.upsertWithConflictDetection(updated, entity.sourceConversationId());
+                    // 仅更新分数，不创建新版本 — 两个原因：
+                    // 1. 避免与 RealtimeExtractor 并发写入时的 UNIQUE(entity_id) WHERE is_current=1 约束冲突
+                    // 2. importance boost 是统计调整，不涉及实体内容变更，不需要版本化
+                    // 代价：绕过了 SemanticMemory 的 writeCallback 和审计事件，importance 变化历史不可追溯
+                    SqliteBusyRetry.run(() -> jdbcTemplate.update(
+                            "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
+                            newImportance, Instant.now().toString(), entity.id()));
                     boosted++;
                     log.debug("语义巩固: 实体重要度提升, name={}, oldScore={}, newScore={}, mentions={}",
                             entity.name(), entity.importanceScore(), newImportance, mentions);

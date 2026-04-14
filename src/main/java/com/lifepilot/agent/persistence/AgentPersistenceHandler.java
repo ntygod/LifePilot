@@ -152,7 +152,10 @@ public class AgentPersistenceHandler {
             return;
         }
         try {
-            transcriptStore.appendUserMessage(state.sessionId(), state.turnId(), state.goal(), state.traceId(), null);
+            boolean visibleToUser = !isA2uiSignalMessage(state.goal());
+            transcriptStore.appendUserMessage(
+                    state.sessionId(), state.turnId(), state.goal(),
+                    state.traceId(), visibleToUser, null);
         } catch (Exception e) {
             log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
@@ -192,11 +195,14 @@ public class AgentPersistenceHandler {
                     return existingTurn.get().userEntryId();
                 }
             }
+            // A2UI 信号消息对模型可见但不展示给用户，避免原始信号数据作为气泡出现
+            boolean visibleToUser = !isA2uiSignalMessage(state.goal());
             String entryId = transcriptStore.appendUserMessage(
                     state.sessionId(),
                     state.turnId(),
                     state.goal(),
                     state.traceId(),
+                    visibleToUser,
                     null
             );
             if (chatTurnService != null && state.turnId() != null && entryId != null) {
@@ -207,6 +213,17 @@ public class AgentPersistenceHandler {
             log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 判断消息是否为 A2UI 信号交互产生的自动化文本。
+     *
+     * <p>该文本由 {@code MessageContent.EventMessage.toPlainText()} 生成，
+     * 以固定前缀 "用户通过 UI 组件触发了操作：" 开头。此类消息需保留在模型上下文中供推理使用，
+     * 但不应作为用户气泡展示在聊天界面。</p>
+     */
+    static boolean isA2uiSignalMessage(@Nullable String goal) {
+        return goal != null && goal.stripLeading().startsWith("用户通过 UI 组件触发了操作：");
     }
 
     @Nullable

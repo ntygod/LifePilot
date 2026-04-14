@@ -5,6 +5,7 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -43,7 +44,10 @@ import java.util.concurrent.TimeoutException;
 public class RealtimeExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeExtractor.class);
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final java.util.concurrent.ExecutorService VIRTUAL_EXECUTOR = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
+    @Nullable
     private final GenerationRouter generationRouter;
     private final SemanticMemory semanticMemory;
     private final ExtractionValidator extractionValidator;
@@ -54,7 +58,7 @@ public class RealtimeExtractor {
     @Nullable
     private final ChatTurnMemorySnapshotRepository snapshotRepository;
 
-    public RealtimeExtractor(GenerationRouter generationRouter,
+    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
                              MemoryProperties properties,
                              ExtractionValidator extractionValidator,
@@ -106,6 +110,10 @@ public class RealtimeExtractor {
 
     void extract(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
         if (userMessage == null || userMessage.isBlank()) return;
+        if (generationRouter == null) {
+            log.debug("实时实体提取: GenerationRouter 不可用，跳过");
+            return;
+        }
         MemoryWriteContext writeContext = resolveWriteContext(sessionId, turnId);
         if (writeContext == null) {
             log.debug("实时实体提取: 当前轮次已禁止自动学习, sessionId={}, turnId={}", sessionId, turnId);
@@ -159,8 +167,6 @@ public class RealtimeExtractor {
     private List<AudnDecision> callLlmForAudnDecisions(String conversationText, MemoryReadFilter readFilter) {
         String prompt = buildAudnPrompt(conversationText, readFilter);
         try {
-            // 使用 Virtual Thread 执行器避免阻塞 ForkJoinPool.commonPool()
-            var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
             var result = CompletableFuture.supplyAsync(() ->
                             generationRouter.call(
                                     LlmScene.KNOWLEDGE_EXTRACTION,
@@ -169,12 +175,13 @@ public class RealtimeExtractor {
                                     null,
                                     null,
                                     GenerationCapability.CHAT,
-                                    Duration.ofSeconds(extractionTimeoutSeconds)),
-                            executor)
+                                    Duration.ofSeconds(extractionTimeoutSeconds),
+                                    true),  // skipCache: 每次对话内容不同，语义缓存会张冠李戴
+                            VIRTUAL_EXECUTOR)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
-                    .thenApply(response -> JsonOutputParser.parse(response.content(), AudnDecisionList.class))
+                    .thenApply(response -> parseAudnResponse(response.content()))
                     .join();
-            return result != null ? result.decisions() : List.of();
+            return result != null ? result : List.of();
         } catch (Exception e) {
             // CompletableFuture.join() 包装为 CompletionException，解包判断是否超时
             Throwable cause = e.getCause() != null ? e.getCause() : e;
@@ -185,6 +192,24 @@ public class RealtimeExtractor {
             }
             return List.of();
         }
+    }
+
+    /** 解析 LLM 返回的 AUDN 决策，兼容数组 [...] 和对象 {"decisions":[...]} 两种格式。 */
+    private List<AudnDecision> parseAudnResponse(String content) {
+        if (content == null || content.isBlank()) return List.of();
+        String repaired = JsonOutputParser.repairJson(content);
+        if (repaired.stripLeading().startsWith("[")) {
+            // LLM 直接返回数组格式
+            try {
+                return MAPPER.readValue(repaired,
+                        MAPPER.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
+            } catch (Exception e) {
+                log.warn("AUDN 数组格式解析失败，尝试对象格式: {}", e.getMessage());
+            }
+        }
+        // 尝试对象格式 {"decisions": [...]}
+        var result = JsonOutputParser.parse(repaired, AudnDecisionList.class);
+        return result != null ? result.decisions() : List.of();
     }
 
     /** 构建增强版 AUDN 提示词：注入已有实体上下文 + 提取标准 + 评分要求。 */
@@ -271,7 +296,7 @@ public class RealtimeExtractor {
                 confidence,
                 importance,
                 0, null, now, now);
-        semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext));
         log.debug("AUDN ADD: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
@@ -305,7 +330,7 @@ public class RealtimeExtractor {
                 Math.max(old.importanceScore(), newImportance),
                 old.accessCount(), old.lastAccessedAt(),
                 old.createdAt(), Instant.now());
-        semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
         log.debug("AUDN UPDATE: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
@@ -318,7 +343,7 @@ public class RealtimeExtractor {
             log.debug("AUDN DELETE 跳过: 未找到匹配实体, name={}", decision.entityName());
             return;
         }
-        semanticMemory.archive(existing.get());
+        SqliteBusyRetry.run(() -> semanticMemory.archive(existing.get()));
         log.debug("AUDN DELETE: name={}, type={}", decision.entityName(), decision.entityType());
     }
 

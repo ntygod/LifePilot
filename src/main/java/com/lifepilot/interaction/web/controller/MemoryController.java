@@ -5,6 +5,7 @@ import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
+import com.lifepilot.memory.consolidation.EntityDeduplicator;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.forgetting.ForgettingLogRepository;
@@ -14,6 +15,7 @@ import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import jakarta.annotation.Nullable;
@@ -50,15 +52,18 @@ public class MemoryController {
     private final @Nullable ProceduralMemory proceduralMemory;
     private final @Nullable HybridRetriever hybridRetriever;
     private final @Nullable ConsolidationPipeline consolidationPipeline;
+    private final @Nullable EntityDeduplicator entityDeduplicator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
+    private final AtomicBoolean deduplicating = new AtomicBoolean(false);
 
     public MemoryController(@Nullable SemanticMemory semanticMemory,
                             @Nullable EpisodicMemory episodicMemory,
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable HybridRetriever hybridRetriever,
                             @Nullable ConsolidationPipeline consolidationPipeline,
+                            @Nullable EntityDeduplicator entityDeduplicator,
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository) {
         this.semanticMemory = semanticMemory;
@@ -66,6 +71,7 @@ public class MemoryController {
         this.proceduralMemory = proceduralMemory;
         this.hybridRetriever = hybridRetriever;
         this.consolidationPipeline = consolidationPipeline;
+        this.entityDeduplicator = entityDeduplicator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
     }
@@ -374,7 +380,7 @@ public class MemoryController {
         requireMemoryEnabled();
         var entity = semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        semanticMemory.archive(entity);
+        SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
         return ApiResponse.ok();
     }
 
@@ -421,7 +427,7 @@ public class MemoryController {
                 now
         );
 
-        semanticMemory.upsertWithConflictDetection(entity, null);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, null));
         log.info("手动创建实体: id={}, name={}, type={}", entity.id(), entity.name(), entity.type());
         var metadata = provenanceRepository.loadEntityMetadata(List.of(entity.id())).get(entity.id());
         return ApiResponse.ok(toEntityDetail(entity, metadata));
@@ -468,7 +474,7 @@ public class MemoryController {
                 Instant.now()
         );
 
-        semanticMemory.upsertWithConflictDetection(updated, null);
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, null));
         log.info("更新实体: id={}, name={}", updated.id(), updated.name());
         var metadata = provenanceRepository.loadEntityMetadata(List.of(updated.id())).get(updated.id());
         return ApiResponse.ok(toEntityDetail(updated, metadata));
@@ -751,6 +757,30 @@ public class MemoryController {
             }
         });
         return ApiResponse.ok(Map.of("status", "accepted", "message", "巩固任务已提交"));
+    }
+
+    // ========== Req 9: 手动触发去重 ==========
+
+    /**
+     * 手动触发实体去重。
+     */
+    @PostMapping("/deduplicate")
+    public ApiResponse<Map<String, String>> triggerDeduplication() {
+        requireMemoryEnabled();
+        if (entityDeduplicator == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "去重服务未启用");
+        }
+        if (!deduplicating.compareAndSet(false, true)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "去重任务正在执行中");
+        }
+        Thread.startVirtualThread(() -> {
+            try {
+                entityDeduplicator.dedup();
+            } finally {
+                deduplicating.set(false);
+            }
+        });
+        return ApiResponse.ok(Map.of("status", "accepted", "message", "去重任务已提交"));
     }
 
     // ========== 内部辅助方法 ==========

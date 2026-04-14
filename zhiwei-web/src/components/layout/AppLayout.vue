@@ -5,12 +5,16 @@ import ToastContainer from '@/components/global/ToastContainer.vue'
 import GlobalLoadingBar from '@/components/global/GlobalLoadingBar.vue'
 import { Button } from '@/components/ui/button'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import { useNotificationStream } from '@/composables/useNotificationStream'
 import Sidebar from './Sidebar.vue'
 
 const sidebarOpen = ref(false)
 const isMobile = ref(false)
 
 const { install: installShortcuts, uninstall: uninstallShortcuts } = useKeyboardShortcuts()
+
+// 建立通知 SSE 连接，接收标题生成、通知推送等实时事件
+useNotificationStream()
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 768

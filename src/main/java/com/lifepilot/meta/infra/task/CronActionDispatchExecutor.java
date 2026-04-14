@@ -12,11 +12,14 @@ import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.support.CronExpression;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Cron 工具 action 路由执行器。
@@ -52,11 +55,14 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         String name = input.getParam("name", String.class);
                         String schedule = input.getParam("schedule", String.class);
                         String instruction = input.getParam("instruction", String.class);
+                        String skillIds = input.getOptionalParam("skillIds", String.class)
+                                .map(CronActionDispatchExecutor::stripSelfSkill)
+                                .orElse(null);
 
                         CronExpression.parse(schedule);
 
                         String now = Instant.now().toString();
-                        var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now);
+                        var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now, skillIds);
                         cronTaskRepository.save(entry);
                         cronScheduler.schedule(entry);
 
@@ -177,5 +183,20 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         return ToolResult.error("删除定时任务失败: " + e.getMessage());
                     }
                 });
+    }
+
+    /**
+     * 过滤掉 cron-scheduler 自身的 Skill ID —— 执行定时任务时不需要定时任务管理指南。
+     *
+     * @param raw 逗号分隔的 skillId 列表
+     * @return 过滤后的列表，全部过滤完则返回 null
+     */
+    static @Nullable String stripSelfSkill(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String result = Arrays.stream(raw.split(","))
+                .map(String::strip)
+                .filter(id -> !id.equals("cron-scheduler"))
+                .collect(Collectors.joining(","));
+        return result.isBlank() ? null : result;
     }
 }

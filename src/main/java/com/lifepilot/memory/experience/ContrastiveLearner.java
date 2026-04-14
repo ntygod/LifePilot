@@ -6,6 +6,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -109,8 +110,8 @@ public class ContrastiveLearner {
                 return;
             }
 
-            // 写入对比经验实体
-            persistContrastiveExperience(insight, successExp, failureExp);
+            // 增强源经验（成功经验）
+            enrichSourceExperience(insight, successExp, failureExp);
 
         } catch (Exception e) {
             log.warn("对比学习失败: entityId={}, error={}", newExperience.id(), e.getMessage());
@@ -150,50 +151,71 @@ public class ContrastiveLearner {
         }
     }
 
-    /** 持久化对比经验实体。 */
-    private void persistContrastiveExperience(ContrastiveInsight insight,
-                                               TemporalEntity successExp,
-                                               TemporalEntity failureExp) {
-        var now = Instant.now();
-        String name = "对比洞察: " + successExp.name();
-        if (name.length() > 100) name = name.substring(0, 100);
+    /**
+     * 增强源经验 — 将对比洞察回写到成功经验的 lessons 列表中。
+     *
+     * <p>在成功经验的 properties 中追加带 "[对比]" 前缀的 lesson 条目，
+     * 并标记 contrastiveEnriched=true，避免创建独立的对比洞察实体。</p>
+     */
+    private void enrichSourceExperience(ContrastiveInsight insight,
+                                         TemporalEntity successExp,
+                                         TemporalEntity failureExp) {
+        // 复制 properties（TemporalEntity compact constructor 会 Map.copyOf，需可变副本）
+        var updatedProps = new LinkedHashMap<>(successExp.properties());
 
-        String description = insight.successFactor() + " vs " + insight.failureReason();
+        // 读取已有 lessons 列表，可能为 null
+        @SuppressWarnings("unchecked")
+        var existingLessons = (List<String>) updatedProps.get("lessons");
+        var lessons = new ArrayList<>(existingLessons != null ? existingLessons : List.<String>of());
 
-        Map<String, Object> props = new LinkedHashMap<>();
-        props.put("contrastive", true);
-        props.put("successEntityId", successExp.id());
-        props.put("failureEntityId", failureExp.id());
-        props.put("failureReason", insight.failureReason());
-        props.put("successFactor", insight.successFactor());
-        props.put("contrastiveLessons", insight.contrastiveLessons() != null
-                ? insight.contrastiveLessons() : List.of());
-        props.put("avoidanceStrategy", insight.avoidanceStrategy());
-        props.put("success", true); // 对比洞察视为正面经验
+        // 追加对比教训列表（优先使用 contrastiveLessons，内容更具操作指导性）
+        boolean hasContrastiveLessons = false;
+        if (insight.contrastiveLessons() != null) {
+            for (String lesson : insight.contrastiveLessons()) {
+                if (lesson != null && !lesson.isBlank()) {
+                    lessons.add("[对比] " + lesson);
+                    hasContrastiveLessons = true;
+                }
+            }
+        }
+        // 兜底：仅在 contrastiveLessons 为空时追加失败根因和成功因素
+        if (!hasContrastiveLessons) {
+            if (insight.failureReason() != null && !insight.failureReason().isBlank()) {
+                lessons.add("[对比] 失败原因: " + insight.failureReason());
+            }
+            if (insight.successFactor() != null && !insight.successFactor().isBlank()) {
+                lessons.add("[对比] 成功因素: " + insight.successFactor());
+            }
+        }
 
-        var entity = new TemporalEntity(
-                UUID.randomUUID().toString(),
-                EntityType.EXPERIENCE,
-                name,
-                description,
-                props,
-                1,
-                true,
-                now,
-                null,
-                null,
-                0.8f,
-                config.getInitialImportance(),
-                0,
-                null,
-                now,
-                now
+        updatedProps.put("lessons", lessons);
+        updatedProps.put("contrastiveEnriched", true);
+
+        // 构建更新后的不可变实体
+        var enriched = new TemporalEntity(
+                successExp.id(),
+                successExp.type(),
+                successExp.name(),
+                successExp.description(),
+                updatedProps,
+                successExp.version(),
+                successExp.isCurrent(),
+                successExp.validFrom(),
+                successExp.validTo(),
+                successExp.sourceConversationId(),
+                successExp.extractionConfidence(),
+                successExp.importanceScore(),
+                successExp.accessCount(),
+                successExp.lastAccessedAt(),
+                successExp.createdAt(),
+                Instant.now()
         );
 
-        semanticMemory.upsertWithConflictDetection(entity, "contrastive-learning");
-        vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        SqliteBusyRetry.run(() -> {
+            semanticMemory.upsertWithConflictDetection(enriched, "contrastive-learning");
+        });
 
-        log.info("对比学习: 对比经验已写入, entityId={}, successId={}, failureId={}",
-                entity.id(), successExp.id(), failureExp.id());
+        log.info("对比学习: 成功经验已增强, successId={}, failureId={}, 新增lessons={}条",
+                successExp.id(), failureExp.id(), lessons.size() - (existingLessons != null ? existingLessons.size() : 0));
     }
 }

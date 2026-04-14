@@ -1,0 +1,22 @@
+# EditorConfig 配置文件 - 统一知微项目缩进风格
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# 前端代码、配置文件使用 2 空格缩进
+[*.{vue,ts,js,json,html,css,scss,yaml,yml,md}]
+indent_size = 2
+
+# Java 代码、XML 保持 4 空格缩进
+[*.{java,xml}]
+indent_size = 4
+
+# 脚本文件保持 LF 换行
+[*.{sh,bat}]
+end_of_line = lf

@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-14
 
 ## 1. 模块概述
 
@@ -12,7 +12,7 @@
 - **L1 临时工作区**：`session_workspace_items`，保存跨轮但临时的任务状态
 - **L2 情景记忆**：基于会话层和 `chat_messages_fts` 提供跨会话片段回忆
 - **L3 语义记忆**：维护时序知识图谱，存放稳定事实、画像和经验实体
-- **L4 程序记忆**：存放偏好规则、操作模板和策略模式
+- **L4 程序记忆**：存放偏好规则和操作模板（策略模式已删除）
 
 这套设计明确取消了“L1 作为对话缓存并 flush 到 L2”的旧链路。当前会话连续性直接来自会话层，跨会话对话检索通过 `memory.recall` 显式触发，L1 不再承载原始对话。
 
@@ -59,6 +59,7 @@ graph TB
         PR["PreferenceRule / ProcedureTemplate"]
         IM --> PM
         PM --> PR
+        Note["templateEnabled 默认关闭"]
     end
 
     subgraph "检索与工具"
@@ -90,7 +91,8 @@ graph TB
 
 - 原始对话统一写入 `session_transcript_entries`，由 `ConversationHistoryStore` 承担写入抽象
 - 当前会话的最近完整轮次由 `ContextEngine` 直接从会话层读取
-- `ContextAssembler` 组装当前上下文时只使用会话层，不再依赖 L1 或 L2 的对话副本
+- `ContextAssembler` 组装当前上下文时做四路并行检索（contextSnapshot + userProfile + experiences + relevantMemories），不再依赖 L1 或 L2 的对话副本
+- `ContextAssembler` 在 system prompt 中注入 `<memory_metadata>` 标签（记忆统计信息：画像数、经验数、事实数），带 5 分钟 TTL 缓存
 
 ### 3.2 SessionWorkspaceService（L1 临时工作区）
 
@@ -119,12 +121,14 @@ graph TB
 - `EntityType` 枚举包含 12 种类型：PERSON、ORGANIZATION、PLACE、EVENT、PROJECT、TOPIC、PREFERENCE、HABIT、GOAL、SKILL、EXPERIENCE、CUSTOM
 - `RealtimeExtractor` 在对话后异步提取实体写入 L3
 - `ContextAssembler` 当前自动注入的长期信息主要来自：
-  - `PREFERENCE / HABIT / GOAL`
-  - `EXPERIENCE`
+  - `PREFERENCE / HABIT / GOAL`（用户画像）
+  - `EXPERIENCE`（排除工具级经验，工具级经验由 `ToolExecutionCoordinator` 在工具执行前精准注入）
+  - 通过 `HybridRetriever` 检索的相关记忆实体（排除已由画像和经验路径覆盖的类型），注入到 `<memory_context>` 标签
 
 ### 3.5 ProceduralMemory（L4 程序记忆）
 
-- `ProceduralMemory` 保存偏好规则、操作模板和策略模式
+- `ProceduralMemory` 保存偏好规则和操作模板（`StrategyPattern` 已删除）
+- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认关闭
 - `IntentMatcher` 负责在检索和编排阶段提供程序化建议
 - 当前上下文组装会读取高置信度偏好规则，与 L3 画像一起构成用户画像区
 
@@ -155,7 +159,11 @@ graph TB
 
 - `ExperienceSummarizer`、`EffectivenessTracker`、`ContrastiveLearner`、`SubtaskReflector` 继续保留
 - 经验写入 L3 的 `EXPERIENCE` 实体
-- `ContextAssembler` 会按重要度和适用条件自动注入少量经验
+- `ContrastiveLearner` 不再创建独立的对比洞察实体，改为增强源经验（成功经验）的 lessons 列表，追加 `[对比]` 前缀的 lesson 条目并标记 `contrastiveEnriched=true`
+- `ContrastiveInsight` 记录包含 `failureReason`、`successFactor`、`contrastiveLessons` 三个字段（`avoidanceStrategy` 已删除）
+- `SubtaskReflector` 产出的经验带 `toolId`（主工具 ID）和 `granularity=TOOL_LEVEL` 标记
+- 工具级经验不在 `ContextAssembler` 的通用经验注入中出现，而是在工具执行前由 `ToolExecutionCoordinator.loadToolTips()` 按 toolId 精准注入到 observation 中
+- `ContextAssembler` 会按重要度和适用条件自动注入非工具级经验
 - `memory.search-experience` 允许 Agent 主动检索经验
 
 ## 4. 核心流程
@@ -170,25 +178,36 @@ sequenceDiagram
     participant CE as ContextEngine
     participant SWS as SessionWorkspaceService
     participant SM as SemanticMemory
+    participant HR as HybridRetriever
     participant CA as ContextAssembler
 
     U->>CHS: 发送消息
     CHS->>DB: 写入 user/assistant 原始消息
-    CA->>CE: load(sessionId, budget)
-    CE->>DB: 读取最近完整轮次
-    CA->>SWS: listActive(sessionId)
-    CA->>SM: 读取用户画像与经验
+    Note over CA: 四路并行检索（CompletableFuture + Virtual Thread）
+    par contextSnapshot
+        CA->>CE: load(sessionId, budget)
+        CE->>DB: 读取最近完整轮次 + 工作区
+    and userProfile
+        CA->>SM: 读取 PREFERENCE/HABIT/GOAL
+    and experiences
+        CA->>SM: 读取 EXPERIENCE（排除 TOOL_LEVEL）
+    and relevantMemories
+        CA->>HR: retrieve(query, userMemory scope)
+    end
+    CA->>CA: buildAugmentedSystemPrompt（含 memory_metadata）
     CA-->>U: 组装后的 Prompt
 ```
 
 当前自动注入顺序是：
 
-1. 系统提示词
+1. 系统提示词（含 `<memory_metadata>` 记忆统计）
 2. 当前用户请求
 3. 当前 session 最近完整轮次
-4. 活跃工作区摘要
-5. 用户画像与经验
-6. 其他段落按需预留
+4. 活跃工作区摘要（`workspace_context`）
+5. 用户画像（`user_profile_context`）
+6. 经验（`experience_context`，排除工具级经验）
+7. 相关记忆（`memory_context`，通过 HybridRetriever 检索，排除已被画像和经验覆盖的类型）
+8. 其他段落按需预留
 
 ### 4.2 跨会话回忆
 
@@ -240,7 +259,7 @@ sequenceDiagram
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 读取最近轮次、工作区、用户画像和经验 |
+| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；`ToolExecutionCoordinator` 按 toolId 精准注入工具级经验 |
 | 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
 | 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
 | 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `knowledge.search` 工具通过知识库检索补充外部文档片段 |
@@ -260,6 +279,12 @@ sequenceDiagram
 | `lifepilot.memory.workspace.cleanup-cron` | 工作区清理调度 |
 | `lifepilot.memory.agentic-tool.*` | 记忆工具默认检索参数 |
 | `lifepilot.memory.retrieval.*` | L3/L4 检索、用户画像和回退参数 |
+| `lifepilot.memory.retrieval.injectionWeights` | 记忆注入权重（relevance/importance/recency，默认 0.4/0.3/0.3） |
+| `lifepilot.memory.retrieval.memoryContextEnabled` | 是否启用 `<memory_context>` 注入（默认 true） |
+| `lifepilot.memory.retrieval.memoryContextMaxEntities` | memory_context 最大实体数（默认 5） |
+| `lifepilot.memory.retrieval.memoryContextTokenBudget` | memory_context token 预算（默认 800） |
+| `lifepilot.memory.retrieval.memoryContextScoreThreshold` | memory_context 最低相关度阈值（默认 0.6） |
+| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 false） |
 | `lifepilot.memory.consolidation.*` | 巩固触发模式与阈值 |
 | `lifepilot.memory.episodic-cleanup.*` | L2 清理策略 |
 | `lifepilot.memory.experience.*` | 经验注入、隔离、合并与反馈配置 |
@@ -267,5 +292,5 @@ sequenceDiagram
 ## 8. 当前限制
 
 - 工作区的主写入点目前集中在挂起/确认场景，`WorkingSetItem` 还没有形成完整主链路
-- `ContextAssembler` 目前自动注入的是最近轮次、工作区、画像和经验，知识库与跨会话对话仍以工具调用为主
+- `ContextAssembler` 目前自动注入的是最近轮次、工作区、画像、经验和相关记忆（`memory_context`），知识库与跨会话对话仍以工具调用为主
 - `MemoryProperties` 内仍保留部分历史配置字段，但当前主架构已不再依赖旧的 `WorkingMemory`/`flush` 语义

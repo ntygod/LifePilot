@@ -409,6 +409,33 @@ public class SemanticMemory {
     }
 
     /**
+     * 按实体类型分组统计当前有效实体数量 — 轻量 SQL 聚合，避免全量加载实体对象。
+     *
+     * @param filter 读取过滤条件（可为 null）
+     * @return 实体类型 → 数量映射
+     */
+    public Map<EntityType, Integer> countByEntityType(@Nullable MemoryReadFilter filter) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT type, COUNT(*) AS cnt FROM temporal_entities WHERE is_current = 1");
+        List<Object> params = new ArrayList<>();
+        appendEntityReadFilter(sql, params, filter);
+        sql.append(" GROUP BY type");
+        var rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+        Map<EntityType, Integer> result = new java.util.EnumMap<>(EntityType.class);
+        for (var row : rows) {
+            try {
+                EntityType type = EntityType.valueOf((String) row.get("type"));
+                int count = ((Number) row.get("cnt")).intValue();
+                result.put(type, count);
+            } catch (IllegalArgumentException e) {
+                // 未知的实体类型，跳过
+                log.debug("语义记忆: 忽略未知实体类型, type={}", row.get("type"));
+            }
+        }
+        return result;
+    }
+
+    /**
      * 统计当前有效实体总数。
      *
      * @return 当前有效实体数量
@@ -483,7 +510,7 @@ public class SemanticMemory {
         }
     }
 
-    /** 插入实体根记录。 */
+    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突。 */
     private void insertEntityRoot(TemporalEntity entity, MemoryWriteContext writeContext, Instant now) {
         String spaceId = writeContext.spaceId() != null
                 ? writeContext.spaceId()
@@ -498,6 +525,14 @@ public class SemanticMemory {
                     reality_type, status, access_count, last_accessed_at,
                     first_seen_at, last_seen_at, created_at, updated_at
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    canonical_name = excluded.canonical_name,
+                    normalized_name = excluded.normalized_name,
+                    status = excluded.status,
+                    access_count = excluded.access_count,
+                    last_accessed_at = excluded.last_accessed_at,
+                    last_seen_at = excluded.last_seen_at,
+                    updated_at = excluded.updated_at
                 """,
                 entity.id(),
                 spaceId,

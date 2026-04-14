@@ -16,6 +16,7 @@ import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.prompt.PromptRegistry;
@@ -151,12 +152,18 @@ public class KnowledgeExtractionPipeline {
         int relationCount = 0;
 
         // 写入实体，同时建立 name → id 映射供关系解析使用
+        // 领域数据文档不提取用户属性类型（PREFERENCE/HABIT/GOAL），这些只应从对话中产生
+        boolean isDomainDoc = doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT;
         var entityNameToId = new HashMap<String, String>();
         if (response.entities() != null) {
             for (var entityInfo : response.entities()) {
                 try {
                     var entity = toTemporalEntity(entityInfo);
-                    var persisted = semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext);
+                    if (isDomainDoc && isUserAttributeType(entity.type())) {
+                        log.debug("知识提取: 跳过领域文档中的用户属性实体, name={}, type={}", entity.name(), entity.type());
+                        continue;
+                    }
+                    var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext));
                     entityNameToId.put(entityInfo.name(), persisted.id());
                     entityCount++;
                 } catch (Exception e) {
@@ -177,7 +184,7 @@ public class KnowledgeExtractionPipeline {
                         continue;
                     }
                     var relation = toTemporalRelation(relationInfo, sourceId, targetId, doc.id());
-                    semanticMemory.addRelation(relation, writeContext);
+                    SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
                     relationCount++;
                 } catch (Exception e) {
                     log.warn("关系写入失败: type={}, error={}", relationInfo.relationType(), e.getMessage());
@@ -243,6 +250,11 @@ public class KnowledgeExtractionPipeline {
                 writeContext.spaceId() != null ? List.of(writeContext.spaceId()) : List.of(),
                 writeContext.memoryScope() != null ? List.of(writeContext.memoryScope()) : List.of()
         );
+    }
+
+    /** 用户属性类型 — 只应从对话中提取，不从领域数据文档中提取。 */
+    private static boolean isUserAttributeType(EntityType type) {
+        return type == EntityType.PREFERENCE || type == EntityType.HABIT || type == EntityType.GOAL;
     }
 
     private EntityType parseEntityType(String type) {

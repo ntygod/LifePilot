@@ -1,0 +1,105 @@
+<h2>② 需求检测层 — 三级过滤</h2>
+<p class="subtitle">关键省钱层：大部分心跳在这里就结束了，不调 LLM</p>
+
+<!-- Flow diagram -->
+<div style="margin: 2rem 0; padding: 2rem; background: var(--card); border-radius: 12px; border: 1px solid var(--border);">
+
+  <!-- Trigger -->
+  <div style="text-align: center; margin-bottom: 16px;">
+    <span style="display: inline-block; padding: 8px 20px; background: #e3f2fd; color: #1565c0; border-radius: 20px; font-weight: bold; font-size: 14px;">心跳唤醒 / 事件触发</span>
+  </div>
+
+  <div style="text-align: center; color: var(--muted); font-size: 16px; margin: 8px 0;">▼</div>
+
+  <!-- Step 1: Delta Check -->
+  <div style="background: var(--bg); border: 2px solid #ff9800; border-radius: 10px; padding: 16px; margin: 8px auto; max-width: 600px;">
+    <div style="font-weight: bold; color: #ff9800; margin-bottom: 8px;">第一关：变化量检查（纯规则，0 成本）</div>
+    <div style="font-size: 13px; color: var(--fg); line-height: 1.8;">
+      对比上次心跳的 ContextPacket，检查：<br>
+      <span style="margin-left: 1em;">• 记忆层有新增/更新吗？</span><br>
+      <span style="margin-left: 1em;">• 有新的外部数据到达吗？（天气变化、剪贴板变化）</span><br>
+      <span style="margin-left: 1em;">• 有时间窗口触发吗？（接近截止日、习惯时段到了）</span><br>
+      <span style="margin-left: 1em;">• 意图记忆的触发条件满足了吗？</span>
+    </div>
+  </div>
+
+  <!-- Branch: No change -->
+  <div style="display: flex; align-items: flex-start; max-width: 600px; margin: 0 auto;">
+    <div style="flex: 1; text-align: center;">
+      <div style="color: var(--muted); font-size: 14px; margin: 8px 0;">▼ 无变化</div>
+      <div style="display: inline-block; padding: 10px 24px; background: #e8e8e8; color: #666; border-radius: 8px; font-weight: bold; font-size: 15px;">
+        🔇 SILENT
+      </div>
+      <div style="color: var(--muted); font-size: 12px; margin-top: 6px;">记录心跳日志，休眠<br><strong>预估 80% 心跳到此结束</strong></div>
+    </div>
+    <div style="flex: 1; text-align: center;">
+      <div style="color: var(--muted); font-size: 14px; margin: 8px 0;">▼ 有变化</div>
+      <div style="color: var(--muted); font-size: 16px;">↓</div>
+    </div>
+  </div>
+
+  <!-- Step 2: Quick Score -->
+  <div style="background: var(--bg); border: 2px solid #ff9800; border-radius: 10px; padding: 16px; margin: 16px auto 8px; max-width: 600px;">
+    <div style="font-weight: bold; color: #ff9800; margin-bottom: 8px;">第二关：快速打分（规则 + 现有打分模型，0 LLM 成本）</div>
+    <div style="font-size: 13px; color: var(--fg); line-height: 1.8;">
+      对变化的信号跑现有的 <code>ReminderScoringModel</code> 公式：<br>
+      <span style="margin-left: 1em;">30% 证据 + 25% 时机 + 20% 紧迫 + 15% 适配 + 10% 可行</span><br>
+      <span style="margin-left: 1em;">每个行为插件快速报告：有无候选 + 粗略分数</span>
+    </div>
+  </div>
+
+  <!-- Branch: Low score vs High score -->
+  <div style="display: flex; align-items: flex-start; max-width: 600px; margin: 0 auto;">
+    <div style="flex: 1; text-align: center;">
+      <div style="color: var(--muted); font-size: 14px; margin: 8px 0;">▼ 分数 &lt; 0.4</div>
+      <div style="display: inline-block; padding: 10px 24px; background: #fff3e0; color: #e65100; border-radius: 8px; font-weight: bold; font-size: 15px;">
+        ⚡ FAST
+      </div>
+      <div style="color: var(--muted); font-size: 12px; margin-top: 6px;">用缓存上下文生成轻量响应<br>或排队到下次对话<br><strong>预估 15% 心跳到此</strong></div>
+    </div>
+    <div style="flex: 1; text-align: center;">
+      <div style="color: var(--muted); font-size: 14px; margin: 8px 0;">▼ 分数 ≥ 0.4</div>
+      <div style="color: var(--muted); font-size: 16px;">↓</div>
+    </div>
+  </div>
+
+  <!-- Step 3: Full LLM -->
+  <div style="background: var(--bg); border: 2px solid #d32f2f; border-radius: 10px; padding: 16px; margin: 16px auto 8px; max-width: 600px;">
+    <div style="font-weight: bold; color: #d32f2f; margin-bottom: 8px;">第三关：完整 LLM 推理（仅 ~5% 心跳走到这里）</div>
+    <div style="font-size: 13px; color: var(--fg); line-height: 1.8;">
+      <span style="margin-left: 1em;">• 携带完整上下文调用 LLM</span><br>
+      <span style="margin-left: 1em;">• 生成思维链（为什么现在要主动、要做什么）</span><br>
+      <span style="margin-left: 1em;">• 输出：主动分数(1-5) + 动作类型 + 生成内容</span><br>
+      <span style="margin-left: 1em;">• 透明性：思维链保存到决策日志，可解释</span>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 12px;">
+    <div style="color: var(--muted); font-size: 14px; margin: 8px 0;">▼</div>
+    <div style="display: inline-block; padding: 10px 24px; background: #ffccbc; color: #bf360c; border-radius: 8px; font-weight: bold; font-size: 15px;">
+      🧠 FULL → 进入统一决策门控
+    </div>
+  </div>
+</div>
+
+<!-- Cost comparison -->
+<div style="margin: 1.5rem 0; padding: 1.5rem; background: var(--card); border-radius: 10px; border: 1px solid var(--border);">
+  <h3 style="margin-top: 0; font-size: 15px;">成本对比</h3>
+  <div style="display: flex; gap: 16px;">
+    <div style="flex: 1; padding: 12px; background: #ffebee; border-radius: 8px; text-align: center;">
+      <div style="font-size: 12px; color: #c62828; font-weight: bold;">现在</div>
+      <div style="font-size: 20px; font-weight: bold; color: #c62828; margin: 4px 0;">100%</div>
+      <div style="font-size: 11px; color: #666;">每次心跳都跑全量评估</div>
+    </div>
+    <div style="flex: 1; padding: 12px; background: #e8f5e9; border-radius: 8px; text-align: center;">
+      <div style="font-size: 12px; color: #2e7d32; font-weight: bold;">重构后</div>
+      <div style="font-size: 20px; font-weight: bold; color: #2e7d32; margin: 4px 0;">~5%</div>
+      <div style="font-size: 11px; color: #666;">80% SILENT + 15% FAST + 5% FULL</div>
+    </div>
+  </div>
+</div>
+
+<!-- Event trigger note -->
+<div style="margin: 1rem 0; padding: 1rem 1.5rem; background: #fff8e1; border-radius: 8px; border-left: 4px solid #ff9800; font-size: 13px;">
+  <strong>事件触发的迷你心跳：</strong>剪贴板变化、屏幕切换等实时信号不等 30 分钟心跳，直接触发一次从第一关开始的快速检查。同样走三级过滤，不会增加 LLM 成本。
+</div>

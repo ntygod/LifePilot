@@ -102,6 +102,7 @@ graph TB
 - **职责**：文本生成、流式生成、结构化输出、ChatClient/ChatModel 获取
 - **关键接口**：
   - `call(scene, prompt, outputSchema, serviceId, modelName, requiredCapability, timeoutOverride)` → `LlmResponse`
+  - `call(..., skipCache)` → `LlmResponse`（8 参数重载，`skipCache=true` 时跳过语义缓存的读取和写入，适用于每次输入内容不同但模板相似的场景如实体提取）
   - `callEntity(scene, prompt, responseType, serviceId, modelName, timeoutOverride)` → `<T>`
   - `streamWithInfo(scene, prompt, serviceId, modelName)` → `StreamingGenerationResponse`
   - `getChatClientWithInfo(scene, serviceId, modelName)` → `ChatClientInfo`

@@ -34,8 +34,6 @@ public class SkillTemplateLibrary {
             name: 自动生成 Skill
             description: 根据用户需求自动生成的 Skill
             version: 1.0.0
-            triggers:
-              - 帮我处理
             suggestedTools: []
             maxSteps: 10
             timeoutSeconds: 60

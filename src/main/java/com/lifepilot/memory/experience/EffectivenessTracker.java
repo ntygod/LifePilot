@@ -5,6 +5,7 @@ import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,10 +119,10 @@ public class EffectivenessTracker {
 
             if (newScore < config.getEvictionThreshold()) {
                 // 淘汰低分经验
-                semanticMemory.archive(entity);
+                SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
                 log.info("效果评估: 经验淘汰, entityId={}, score={}", entityId, newScore);
             } else {
-                semanticMemory.updateImportanceScore(entityId, newScore);
+                SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(entityId, newScore));
                 log.debug("效果评估: 分数调整, entityId={}, oldScore={}, newScore={}, effective={}",
                         entityId, currentScore, newScore, effective);
             }

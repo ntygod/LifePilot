@@ -73,6 +73,9 @@ public class TaskToolProvider {
                                 Map.entry("instruction", Map.of(
                                         "type", "string",
                                         "description", "任务触发时 Agent 执行的 prompt 指令；create 必填")),
+                                Map.entry("skillIds", Map.of(
+                                        "type", "string",
+                                        "description", "当前已加载的 Skill ID（逗号分隔），任务执行时自动预加载")),
                                 Map.entry("status", Map.of(
                                         "type", "string",
                                         "enum", List.of("active", "paused", "completed"),

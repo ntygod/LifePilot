@@ -85,7 +85,7 @@ class CacheFlapping_Preservation_保持测试 {
         var skillDef = new SkillDefinition(
                 "test-skill", "测试技能", "测试用技能描述", "1.0.0",
                 new SkillSource.UserDefined("/test", null), "测试指令内容",
-                List.of(), List.of(), Map.of());
+                List.of(), Map.of());
         var event = new SkillRegistryEvent.SkillRegistered(skillDef);
 
         // 发布单个事件

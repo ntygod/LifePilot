@@ -58,6 +58,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
@@ -317,14 +318,16 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class, GenerationRouter.class})
-    public RealtimeExtractor realtimeExtractor(GenerationRouter generationRouter,
+    public RealtimeExtractor realtimeExtractor(@Nullable GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
                                                @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
-        log.info("记忆模块: 注册 RealtimeExtractor");
+        if (generationRouter == null) {
+            log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
+        }
+        log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry, snapshotRepository);
     }
 
@@ -407,15 +410,19 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ProceduralMemory.class, GenerationRouter.class, EmbeddingRouter.class})
+    @ConditionalOnBean(ProceduralMemory.class)
     public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
-            GenerationRouter generationRouter,
-            EmbeddingRouter embeddingRouter,
+            @Nullable GenerationRouter generationRouter,
+            @Nullable EmbeddingRouter embeddingRouter,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator");
+        if (generationRouter == null || embeddingRouter == null) {
+            log.warn("记忆模块: GenerationRouter 或 EmbeddingRouter 不可用，EpisodicToProceduralConsolidator 将无法执行巩固");
+        }
+        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator, generationRouterAvailable={}, embeddingRouterAvailable={}",
+                generationRouter != null ? "yes" : "no", embeddingRouter != null ? "yes" : "no");
         return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
                 generationRouter, embeddingRouter, properties, promptRegistry);
     }
@@ -432,10 +439,10 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({EpisodicToSemanticConsolidator.class, EpisodicToProceduralConsolidator.class})
+    @ConditionalOnBean(EpisodicToSemanticConsolidator.class)
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
-            EpisodicToProceduralConsolidator proceduralConsolidator,
+            @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
             MemoryProperties properties,
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
@@ -459,9 +466,10 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties) {
+            MemoryProperties properties,
+            PlatformTransactionManager transactionManager) {
         log.info("记忆模块: 注册 EntityDeduplicator");
-        return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties);
+        return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties, transactionManager);
     }
 
     @Bean

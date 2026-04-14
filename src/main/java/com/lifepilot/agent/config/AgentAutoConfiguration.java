@@ -18,7 +18,6 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -37,6 +36,7 @@ import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.memory.experience.SubtaskReflector;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -168,16 +168,9 @@ public class AgentAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean
-    public LocationResolver locationResolver(AgentConfigProperties config) {
-        return new LocationResolver(config);
-    }
-
-    @Bean
     @ConditionalOnMissingBean(ContextAssembler.class)
     public ContextAssembler contextAssembler(
             AgentConfigProperties config,
-            LocationResolver locationResolver,
             PromptRegistry promptRegistry,
             @Autowired(required = false) DataRedactor dataRedactor,
             @Autowired(required = false) SemanticMemory semanticMemory,
@@ -193,15 +186,13 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CollectionRepository collectionRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
-            @Autowired(required = false) WeatherService weatherService) {
-        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，天气={}",
+            @Autowired(required = false) HybridRetriever hybridRetriever) {
+        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
-                proceduralMemory != null ? "enabled" : "disabled",
-                weatherService != null ? "enabled" : "disabled");
+                proceduralMemory != null ? "enabled" : "disabled");
         return new ContextAssembler(
                 config,
-                locationResolver,
                 promptRegistry,
                 dataRedactor,
                 semanticMemory,
@@ -217,7 +208,7 @@ public class AgentAutoConfiguration {
                 collectionRepository,
                 toolRegistry,
                 mcpConfig,
-                weatherService);
+                hybridRetriever);
     }
 
     @Bean
@@ -279,11 +270,10 @@ public class AgentAutoConfiguration {
     @ConditionalOnMissingBean
     public StreamingEventHandler streamingEventHandler(
             ObjectMapper objectMapper,
-            @Autowired(required = false) A2uiProperties a2uiProperties,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository) {
         return new StreamingEventHandler(
-                objectMapper, a2uiProperties, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
+                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
     }
 
     @Bean
@@ -295,7 +285,6 @@ public class AgentAutoConfiguration {
             AgentConfigProperties config,
             ObjectMapper objectMapper,
             @Autowired(required = false) TraceRecorder traceRecorder,
-            @Autowired(required = false) A2uiProperties a2uiProperties,
             @Autowired(required = false) TranscriptStore transcriptStore,
             @Autowired(required = false) MultimodalRouter multimodalRouter,
             @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
@@ -306,7 +295,8 @@ public class AgentAutoConfiguration {
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
-            @Autowired(required = false) DynamicToolRegistry toolRegistry) {
+            @Autowired(required = false) DynamicToolRegistry toolRegistry,
+            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
         return new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -314,7 +304,6 @@ public class AgentAutoConfiguration {
                 config,
                 objectMapper,
                 traceRecorder,
-                a2uiProperties,
                 transcriptStore,
                 multimodalRouter,
                 mediaDataExtractor,
@@ -325,7 +314,8 @@ public class AgentAutoConfiguration {
                 sharedScheduler,
                 workspaceService,
                 skillRegistry,
-                toolRegistry);
+                toolRegistry,
+                semanticMemory);
     }
 
     @Bean
@@ -344,7 +334,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) AgentCheckpointStore checkpointStore,
             @Autowired(required = false) SuspendStore suspendStore,
             @Autowired(required = false) ChatTurnService chatTurnService,
-            @Autowired(required = false) SessionWorkspaceService workspaceService) {
+            @Autowired(required = false) SessionWorkspaceService workspaceService,
+            @Autowired(required = false) com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture uiEmitTreeCapture) {
         return new AgentOrchestrator(
                 reactAgentLoop,
                 persistenceHandler,
@@ -359,6 +350,7 @@ public class AgentAutoConfiguration {
                 checkpointStore,
                 suspendStore,
                 chatTurnService,
-                workspaceService);
+                workspaceService,
+                uiEmitTreeCapture);
     }
 }

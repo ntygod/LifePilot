@@ -7,6 +7,7 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -33,6 +34,9 @@ public class SubtaskReflector {
 
     private static final Logger log = LoggerFactory.getLogger(SubtaskReflector.class);
     private static final String PROMPT_KEY = "memory/subtask-reflection";
+
+    /** 工具级经验粒度标识 — 在 ContextAssembler、ToolExecutionCoordinator 中共享引用。 */
+    public static final String TOOL_LEVEL = "TOOL_LEVEL";
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
@@ -217,9 +221,9 @@ public class SubtaskReflector {
     /** 持久化子任务经验实体。 */
     private void persistSubtaskExperience(ExperienceRecord record, ReactAgentState state) {
         var now = Instant.now();
-        String name = record.scenario().length() > 100
-                ? record.scenario().substring(0, 100)
-                : record.scenario();
+        // 加上 [工具] 前缀以区分工具级经验
+        String scenarioText = record.scenario();
+        String name = "[工具] " + (scenarioText.length() > 94 ? scenarioText.substring(0, 94) : scenarioText);
 
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("lessons", record.lessons() != null ? record.lessons() : List.of());
@@ -228,6 +232,11 @@ public class SubtaskReflector {
         props.put("toolsUsed", record.toolsUsed() != null ? record.toolsUsed() : List.of());
         props.put("success", record.success());
         props.put("subtask", true);
+        // 工具级经验标记：粒度 + 主工具 ID
+        props.put("granularity", TOOL_LEVEL);
+        String primaryToolId = record.toolsUsed() != null && !record.toolsUsed().isEmpty()
+                ? record.toolsUsed().getFirst() : null;
+        props.put("toolId", primaryToolId);
         props.put("executionContext", ExecutionContext.infer(state).name());
         props.put("effectivenessScore", 0.0f);
         props.put("injectionCount", 0);
@@ -253,8 +262,10 @@ public class SubtaskReflector {
                 now
         );
 
-        semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection");
-        vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        SqliteBusyRetry.run(() -> {
+            semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection");
+            vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
+        });
 
         log.info("子任务反思: 子任务经验已写入, entityId={}, name={}", entity.id(), name);
     }
