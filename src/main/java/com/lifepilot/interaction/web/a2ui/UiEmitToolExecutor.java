@@ -36,16 +36,19 @@ public class UiEmitToolExecutor implements ToolExecutor {
 
     private final SseSessionManager sseManager;
     private final int maxComponents;
+    private final UiEmitTreeCapture treeCapture;
 
     /**
      * 构造函数。
      *
      * @param sseManager    SSE 会话管理器
      * @param maxComponents 单次允许推送的最大组件数
+     * @param treeCapture   组件树捕获桥接器，用于将校验后的树传递给编排器持久化
      */
-    public UiEmitToolExecutor(SseSessionManager sseManager, int maxComponents) {
+    public UiEmitToolExecutor(SseSessionManager sseManager, int maxComponents, UiEmitTreeCapture treeCapture) {
         this.sseManager = sseManager;
         this.maxComponents = maxComponents;
+        this.treeCapture = treeCapture;
     }
 
     @Override
@@ -105,6 +108,9 @@ public class UiEmitToolExecutor implements ToolExecutor {
                 "components", finalTree.components()
         );
         sseManager.sendEvent(streamId, SseEventType.UI, uiData);
+
+        // 捕获组件树，供编排器在 coreLoop 结束后读取并持久化
+        treeCapture.capture(streamId, finalTree);
 
         int count = finalTree.components().size();
         log.info("ui.emit 已推送 {} 个组件: streamId={}, sessionId={}, turnId={}",

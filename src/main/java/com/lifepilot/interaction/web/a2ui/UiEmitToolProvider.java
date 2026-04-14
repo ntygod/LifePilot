@@ -28,16 +28,19 @@ public class UiEmitToolProvider {
 
     private final SseSessionManager sseManager;
     private final int maxComponentsPerTree;
+    private final UiEmitTreeCapture treeCapture;
 
     /**
      * 构造函数。
      *
-     * @param sseManager         SSE 会话管理器
+     * @param sseManager           SSE 会话管理器
      * @param maxComponentsPerTree 单个组件树允许的最大组件数
+     * @param treeCapture          组件树捕获桥接器
      */
-    public UiEmitToolProvider(SseSessionManager sseManager, int maxComponentsPerTree) {
+    public UiEmitToolProvider(SseSessionManager sseManager, int maxComponentsPerTree, UiEmitTreeCapture treeCapture) {
         this.sseManager = sseManager;
         this.maxComponentsPerTree = maxComponentsPerTree;
+        this.treeCapture = treeCapture;
     }
 
     /**
@@ -46,7 +49,7 @@ public class UiEmitToolProvider {
      * @return ui.emit BuiltinTool 实例
      */
     public BuiltinTool buildTool() {
-        var executor = new UiEmitToolExecutor(sseManager, maxComponentsPerTree);
+        var executor = new UiEmitToolExecutor(sseManager, maxComponentsPerTree, treeCapture);
         return BuiltinTool.builder()
                 .id("ui.emit")
                 .name("渲染交互组件")

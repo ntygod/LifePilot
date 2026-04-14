@@ -116,7 +116,8 @@ class AgentOrchestrator_单元测试 {
                 null,
                 suspendStore,
                 chatTurnService,
-                null  // workspaceService
+                null,  // workspaceService
+                null   // uiEmitTreeCapture
         );
     }
 

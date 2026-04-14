@@ -3,6 +3,7 @@ package com.lifepilot.interaction.web.config;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.a2ui.UiEmitToolProvider;
+import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.BrowserIngressService;
@@ -100,6 +101,17 @@ public class WebAutoConfiguration {
     }
 
     /**
+     * 注册 A2UI 组件树捕获桥接器，在 ui.emit 工具执行器和编排器之间传递组件树用于持久化。
+     *
+     * @return UiEmitTreeCapture 实例
+     */
+    @Bean
+    public UiEmitTreeCapture uiEmitTreeCapture() {
+        log.info("注册 UiEmitTreeCapture");
+        return new UiEmitTreeCapture();
+    }
+
+    /**
      * 注册 ui.emit 内置工具 Bean，由 {@link com.lifepilot.tool.registry.BuiltinToolRegistrar} 在启动时收集。
      *
      * <p>依赖 {@link SseSessionManager} 向前端推送组件树事件，
@@ -107,12 +119,14 @@ public class WebAutoConfiguration {
      *
      * @param sseManager     SSE 会话管理器
      * @param a2uiProperties A2UI 配置属性
+     * @param treeCapture    组件树捕获桥接器
      * @return ui.emit BuiltinTool 实例
      */
     @Bean
-    public BuiltinTool uiEmitTool(SseSessionManager sseManager, A2uiProperties a2uiProperties) {
+    public BuiltinTool uiEmitTool(SseSessionManager sseManager, A2uiProperties a2uiProperties,
+                                   UiEmitTreeCapture treeCapture) {
         log.info("注册 ui.emit 内置工具: maxComponentsPerTree={}", a2uiProperties.maxComponentsPerTree());
-        return new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree()).buildTool();
+        return new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree(), treeCapture).buildTool();
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、

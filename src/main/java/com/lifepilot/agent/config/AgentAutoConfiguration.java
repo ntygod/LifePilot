@@ -331,7 +331,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) AgentCheckpointStore checkpointStore,
             @Autowired(required = false) SuspendStore suspendStore,
             @Autowired(required = false) ChatTurnService chatTurnService,
-            @Autowired(required = false) SessionWorkspaceService workspaceService) {
+            @Autowired(required = false) SessionWorkspaceService workspaceService,
+            @Autowired(required = false) com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture uiEmitTreeCapture) {
         return new AgentOrchestrator(
                 reactAgentLoop,
                 persistenceHandler,
@@ -346,6 +347,7 @@ public class AgentAutoConfiguration {
                 checkpointStore,
                 suspendStore,
                 chatTurnService,
-                workspaceService);
+                workspaceService,
+                uiEmitTreeCapture);
     }
 }

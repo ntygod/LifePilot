@@ -19,6 +19,7 @@ import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
@@ -70,6 +71,7 @@ public class AgentOrchestrator {
     @Nullable private final AgentCheckpointStore checkpointStore;
     @Nullable private final SuspendStore suspendStore;
     @Nullable private final SessionWorkspaceService workspaceService;
+    @Nullable private final UiEmitTreeCapture uiEmitTreeCapture;
     private final AgentExecutionPersistenceSupport executionPersistence;
 
     public AgentOrchestrator(
@@ -86,7 +88,8 @@ public class AgentOrchestrator {
             @Nullable AgentCheckpointStore checkpointStore,
             @Nullable SuspendStore suspendStore,
             @Nullable ChatTurnService chatTurnService,
-            @Nullable SessionWorkspaceService workspaceService) {
+            @Nullable SessionWorkspaceService workspaceService,
+            @Nullable UiEmitTreeCapture uiEmitTreeCapture) {
         this.agentLoop = agentLoop;
         this.streamingEventHandler = streamingEventHandler;
         this.config = config;
@@ -99,6 +102,7 @@ public class AgentOrchestrator {
         this.checkpointStore = checkpointStore;
         this.suspendStore = suspendStore;
         this.workspaceService = workspaceService;
+        this.uiEmitTreeCapture = uiEmitTreeCapture;
         this.executionPersistence = new AgentExecutionPersistenceSupport(persistenceHandler, chatTurnService);
     }
 
@@ -264,16 +268,18 @@ public class AgentOrchestrator {
             }
 
             if (error == null) {
-                // 提取最终内容和 A2UI 组件树
+                // 提取最终内容
                 String callbackContent = callback.getFinalContent();
                 finalContent = state.finalOutput() != null
                         ? state.finalOutput()
                         : (callbackContent != null ? callbackContent : finalContent);
-                var extractedFinalContent = streamingEventHandler.extractA2uiContent(finalContent);
-                A2uiComponentTree finalA2uiTree = extractedFinalContent.tree();
-                finalContent = extractedFinalContent.visibleText();
-                if (finalA2uiTree != null) {
-                    loopContext.setLastCollectedA2uiTree(finalA2uiTree);
+
+                // 从 UiEmitTreeCapture 桥接器取回 ui.emit 工具调用产生的组件树
+                if (uiEmitTreeCapture != null) {
+                    var capturedTree = uiEmitTreeCapture.poll(streamId);
+                    if (capturedTree != null) {
+                        loopContext.setLastCollectedA2uiTree(capturedTree);
+                    }
                 }
 
                 if (state.terminationReason() == null) {
