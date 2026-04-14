@@ -164,7 +164,7 @@ class ProactiveEngine_集成测试 {
 
     @Test
     void 心跳SILENT_用户空闲时跳过检测() {
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
+        var followUp = new FollowUpBehavior(mock(ProactiveMemoryBridge.class), null, null, null);
         var engine = buildEngine(List.of(followUp));
 
         Instant now = Instant.now();
@@ -181,7 +181,7 @@ class ProactiveEngine_集成测试 {
 
     @Test
     void 心跳FAST_无候选时快速返回() {
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
+        var followUp = new FollowUpBehavior(mock(ProactiveMemoryBridge.class), null, null, null);
         var clipboard = new ClipboardBehavior(clipboardBuffer);
         var engine = buildEngine(List.of(followUp, clipboard));
 
@@ -197,37 +197,30 @@ class ProactiveEngine_集成测试 {
 
     @Test
     void 心跳FULL_有候选时完整流程_FollowUp生成追问() {
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
-        var engine = buildEngine(List.of(followUp));
-
-        // 预置一个 GOAL 类型意图：创建于 3 天前，checkCount=2
+        // 通过 mock bridge 提供 GoalView 数据
+        var bridge = mock(ProactiveMemoryBridge.class);
         Instant now = Instant.now();
         Instant threeDaysAgo = now.minus(3, ChronoUnit.DAYS);
-        var intent = new IntentRecord(
-                UUID.randomUUID().toString(), USER_ID, IntentType.GOAL,
-                "学习 Rust 编程语言", null, "sess-1",
-                IntentStatus.ACTIVE, 2, threeDaysAgo,
-                now.plus(90, ChronoUnit.DAYS), null, null, threeDaysAgo);
-        intentRepo.save(intent);
+        var goal = new GoalView("entity-1", "学习 Rust 编程语言", "想转方向学 Rust",
+                0.6f, 5, threeDaysAgo, 2, null, java.util.Map.of());
+        when(bridge.getActiveGoals()).thenReturn(List.of(goal));
+        when(bridge.enrichGoalContext(anyString(), anyString())).thenReturn("");
 
-        // 首次心跳 → 有活跃意图 → FollowUp detect 产出候选 → reason 生成回退模板追问
+        var followUp = new FollowUpBehavior(bridge, null, null, null);
+        var engine = buildEngine(List.of(followUp));
+
         var ctx = buildCtx(now, null, null, 30, null, null);
         DetectionLevel level = engine.heartbeat(ctx);
 
         assertThat(level).isEqualTo(DetectionLevel.FULL);
 
-        // 验证通知已发送（NotificationService.send 被调用）
+        // 验证通知已发送
         var captor = ArgumentCaptor.forClass(NotificationRequest.class);
         verify(notificationService, atLeastOnce()).send(captor.capture());
+        assertThat(captor.getValue().targetUserId()).isEqualTo(USER_ID);
 
-        // 验证通知内容包含意图目标
-        var request = captor.getValue();
-        assertThat(request.targetUserId()).isEqualTo(USER_ID);
-
-        // 验证 checkCount 被递增
-        var updated = intentRepo.findById(intent.id());
-        assertThat(updated).isNotNull();
-        assertThat(updated.checkCount()).isGreaterThan(2);
+        // 验证 bridge 的 checkCount 被递增
+        verify(bridge).incrementCheckCount("entity-1");
     }
 
     @Test
@@ -291,18 +284,17 @@ class ProactiveEngine_集成测试 {
                 USER_ID, "follow-up", AutonomyLevel.A,
                 0, 0, false, null, Instant.now()));
 
-        var followUp = new FollowUpBehavior(intentMemoryService, null, null, null);
-        var engine = buildEngine(List.of(followUp));
-
-        // 预置一个高分意图（CONDITIONAL 类型额外 +0.1 分）
+        // 通过 mock bridge 提供高分目标
+        var bridge = mock(ProactiveMemoryBridge.class);
         Instant now = Instant.now();
         Instant fiveDaysAgo = now.minus(5, ChronoUnit.DAYS);
-        var intent = new IntentRecord(
-                UUID.randomUUID().toString(), USER_ID, IntentType.CONDITIONAL,
-                "等 Rust 教程降价到 50 告诉我", "价格低于50", "sess-2",
-                IntentStatus.ACTIVE, 0, fiveDaysAgo,
-                now.plus(90, ChronoUnit.DAYS), null, null, fiveDaysAgo);
-        intentRepo.save(intent);
+        var goal = new GoalView("entity-2", "等 Rust 教程降价到 50 告诉我", "价格低于50",
+                0.8f, 3, fiveDaysAgo, 0, null, java.util.Map.of());
+        when(bridge.getActiveGoals()).thenReturn(List.of(goal));
+        when(bridge.enrichGoalContext(anyString(), anyString())).thenReturn("");
+
+        var followUp = new FollowUpBehavior(bridge, null, null, null);
+        var engine = buildEngine(List.of(followUp));
 
         var ctx = buildCtx(now, null, null, 30, null, null);
         DetectionLevel level = engine.heartbeat(ctx);

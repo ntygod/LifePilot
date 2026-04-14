@@ -46,6 +46,22 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public GoalTrackingRepository goalTrackingRepository(JdbcTemplate jdbcTemplate) {
+        return new GoalTrackingRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ProactiveMemoryBridge proactiveMemoryBridge(
+            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
+            @Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory,
+            @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+            GoalTrackingRepository goalTrackingRepository) {
+        return new ProactiveMemoryBridge(semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public QueuedActionRepository queuedActionRepository(JdbcTemplate jdbcTemplate) {
         return new QueuedActionRepository(jdbcTemplate);
     }
@@ -111,11 +127,11 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public FollowUpBehavior followUpBehavior(IntentMemoryService intentMemoryService,
+    public FollowUpBehavior followUpBehavior(ProactiveMemoryBridge memoryBridge,
                                               @Autowired(required = false) GenerationRouter generationRouter,
                                               @Autowired(required = false) PromptRegistry promptRegistry,
                                               @Autowired(required = false) AgentConfigProperties config) {
-        return new FollowUpBehavior(intentMemoryService, generationRouter, promptRegistry, config);
+        return new FollowUpBehavior(memoryBridge, generationRouter, promptRegistry, config);
     }
 
     @Bean
@@ -137,18 +153,18 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public InfoSupplementBehavior infoSupplementBehavior(
-            @Autowired(required = false) IntentMemoryService intentMemoryService) {
-        return new InfoSupplementBehavior(intentMemoryService);
+            @Autowired(required = false) ProactiveMemoryBridge memoryBridge) {
+        return new InfoSupplementBehavior(memoryBridge);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public ContextPrepBehavior contextPrepBehavior(
-            @Autowired(required = false) IntentMemoryService intentMemoryService,
+            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
             @Autowired(required = false) GenerationRouter generationRouter,
             @Autowired(required = false) PromptRegistry promptRegistry,
             @Autowired(required = false) AgentConfigProperties config) {
-        return new ContextPrepBehavior(intentMemoryService, generationRouter, promptRegistry, config);
+        return new ContextPrepBehavior(memoryBridge, generationRouter, promptRegistry, config);
     }
 
     @Bean
@@ -164,9 +180,9 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public TaskExecutionBehavior taskExecutionBehavior(
-            @Autowired(required = false) IntentMemoryService intentMemoryService,
+            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
             @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
-        return new TaskExecutionBehavior(intentMemoryService, trustUpgradeService);
+        return new TaskExecutionBehavior(memoryBridge, trustUpgradeService);
     }
 
     // ── Phase 4: 偏好模型 + 日程提取 ──

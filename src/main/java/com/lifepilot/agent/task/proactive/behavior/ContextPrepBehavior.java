@@ -1,8 +1,6 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.task.proactive.*;
-import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
-import com.lifepilot.agent.task.proactive.intent.IntentType;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.prompt.PromptRegistry;
@@ -16,7 +14,8 @@ import java.util.*;
 /**
  * 情境准备行为插件 — 在即将到来的事件或截止日期前准备相关上下文。
  *
- * <p>detect: 检查意图记忆中即将触发的条件型/习惯型意图。
+ * <p>detect: 当前版本返回空列表（CONDITIONAL/RECURRING 意图类型无 L3 等价物，
+ * 待对接外部数据源后启用）。
  * reason: 汇总相关对话历史，生成准备建议，自动注入画像/经验。</p>
  *
  * @author zsg
@@ -27,15 +26,15 @@ public class ContextPrepBehavior extends AbstractLlmBehavior {
     private static final Logger log = LoggerFactory.getLogger(ContextPrepBehavior.class);
     private static final String PROMPT_KEY = "generation/proactive-context-prep";
 
-    @Nullable private final IntentMemoryService intentMemoryService;
+    @Nullable private final ProactiveMemoryBridge memoryBridge;
     @Nullable private final AgentConfigProperties config;
 
-    public ContextPrepBehavior(@Nullable IntentMemoryService intentMemoryService,
+    public ContextPrepBehavior(@Nullable ProactiveMemoryBridge memoryBridge,
                                @Nullable GenerationRouter generationRouter,
                                @Nullable PromptRegistry promptRegistry,
                                @Nullable AgentConfigProperties config) {
         super(generationRouter, promptRegistry);
-        this.intentMemoryService = intentMemoryService;
+        this.memoryBridge = memoryBridge;
         this.config = config;
     }
 
@@ -50,28 +49,17 @@ public class ContextPrepBehavior extends AbstractLlmBehavior {
     @Override
     protected String promptKey() { return PROMPT_KEY; }
 
+    /**
+     * 检测需要提前准备的情境。
+     *
+     * <p>当前版本无法区分条件型/习惯型目标（L3 GOAL 实体不区分 IntentType），
+     * 且真实条件评估（价格 API、日程 API）尚未对接。
+     * 返回空列表，避免产生无依据的推送。后续迭代启用。</p>
+     */
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        if (intentMemoryService == null) return List.of();
-
-        var intents = intentMemoryService.getActiveIntents(ctx.userId());
-        var candidates = new ArrayList<ProactiveCandidate>();
-
-        for (var intent : intents) {
-            // 条件型和习惯型意图更需要提前准备
-            if (intent.intentType() != IntentType.CONDITIONAL
-                    && intent.intentType() != IntentType.RECURRING) continue;
-            if (intent.checkCount() > 2) continue;
-
-            float score = 0.45f;
-            if (intent.intentType() == IntentType.CONDITIONAL) score += 0.1f;
-
-            candidates.add(new ProactiveCandidate(
-                    UUID.randomUUID().toString(), name(),
-                    "prep-" + intent.id(), intent.goal(),
-                    score, "需要准备: " + intent.intentType(), intent));
-        }
-        return candidates;
+        // TODO: 对接外部数据源 + L3 实体属性扩展后启用
+        return List.of();
     }
 
     @Override

@@ -1,29 +1,26 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.task.proactive.*;
-import com.lifepilot.agent.task.proactive.intent.*;
-import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class FollowUpBehavior_单元测试 {
 
-    IntentMemoryService intentMemoryService;
+    ProactiveMemoryBridge memoryBridge;
     FollowUpBehavior behavior;
 
     @BeforeEach
     void setUp() {
-        intentMemoryService = mock(IntentMemoryService.class);
-        behavior = new FollowUpBehavior(intentMemoryService, null, null, null);
+        memoryBridge = mock(ProactiveMemoryBridge.class);
+        behavior = new FollowUpBehavior(memoryBridge, null, null, null);
     }
 
     @Test
@@ -32,12 +29,10 @@ class FollowUpBehavior_单元测试 {
     }
 
     @Test
-    void detect_有活跃意图时返回候选() {
-        var intent = new IntentRecord("i1", "u1", IntentType.GOAL, "买耳机",
-                null, "sess-1", IntentStatus.ACTIVE, 2,
-                Instant.now().minusSeconds(3 * 86400), Instant.now().plusSeconds(87 * 86400),
-                null, null, Instant.now().minusSeconds(86400));
-        when(intentMemoryService.getActiveIntents("u1")).thenReturn(List.of(intent));
+    void detect_有活跃目标时返回候选() {
+        var goal = new GoalView("e1", "买耳机", "想买一副降噪耳机", 0.6f, 5,
+                Instant.now().minusSeconds(3 * 86400), 2, null, Map.of());
+        when(memoryBridge.getActiveGoals()).thenReturn(List.of(goal));
 
         var candidates = behavior.detect(testCtx());
 
@@ -46,40 +41,36 @@ class FollowUpBehavior_单元测试 {
     }
 
     @Test
-    void detect_无意图时返回空() {
-        when(intentMemoryService.getActiveIntents("u1")).thenReturn(List.of());
+    void detect_无目标时返回空() {
+        when(memoryBridge.getActiveGoals()).thenReturn(List.of());
         assertThat(behavior.detect(testCtx())).isEmpty();
     }
 
     @Test
-    void detect_刚创建的意图不追问() {
-        var intent = new IntentRecord("i1", "u1", IntentType.GOAL, "买耳机",
-                null, "sess-1", IntentStatus.ACTIVE, 0,
-                Instant.now().minusSeconds(3600), Instant.now().plusSeconds(90 * 86400),
-                null, null, Instant.now().minusSeconds(3600));
-        when(intentMemoryService.getActiveIntents("u1")).thenReturn(List.of(intent));
+    void detect_刚创建的目标不追问() {
+        var goal = new GoalView("e1", "买耳机", null, 0.5f, 0,
+                Instant.now().minusSeconds(3600), 0, null, Map.of());
+        when(memoryBridge.getActiveGoals()).thenReturn(List.of(goal));
 
         assertThat(behavior.detect(testCtx())).isEmpty();
     }
 
     @Test
-    void detect_检查次数过多不追问() {
-        var intent = new IntentRecord("i1", "u1", IntentType.GOAL, "买耳机",
-                null, "sess-1", IntentStatus.ACTIVE, 5,
-                Instant.now().minusSeconds(10 * 86400), Instant.now().plusSeconds(80 * 86400),
-                null, null, Instant.now().minusSeconds(86400));
-        when(intentMemoryService.getActiveIntents("u1")).thenReturn(List.of(intent));
+    void detect_追问次数过多不追问() {
+        var goal = new GoalView("e1", "买耳机", null, 0.5f, 10,
+                Instant.now().minusSeconds(10 * 86400), 5, null, Map.of());
+        when(memoryBridge.getActiveGoals()).thenReturn(List.of(goal));
 
         assertThat(behavior.detect(testCtx())).isEmpty();
     }
 
     @Test
     void reason_使用回退模板生成追问() {
-        var candidate = new ProactiveCandidate("c1", "follow-up", "intent-i1",
-                "买耳机", 0.5f, "活跃意图: GOAL",
-                new IntentRecord("i1", "u1", IntentType.GOAL, "买耳机",
-                        null, null, IntentStatus.ACTIVE, 1,
-                        Instant.now().minusSeconds(3 * 86400), null, null, null, Instant.now()));
+        var goal = new GoalView("e1", "买耳机", null, 0.5f, 3,
+                Instant.now().minusSeconds(3 * 86400), 1, null, Map.of());
+        when(memoryBridge.enrichGoalContext("e1", "买耳机")).thenReturn("");
+        var candidate = new ProactiveCandidate("c1", "follow-up", "goal-e1",
+                "买耳机", 0.5f, "活跃目标", goal);
 
         var actions = behavior.reason(List.of(candidate), testCtx());
 
@@ -89,16 +80,16 @@ class FollowUpBehavior_单元测试 {
     }
 
     @Test
-    void reason_递增检查计数() {
-        var intent = new IntentRecord("i1", "u1", IntentType.GOAL, "买耳机",
-                null, null, IntentStatus.ACTIVE, 1,
-                Instant.now().minusSeconds(3 * 86400), null, null, null, Instant.now());
-        var candidate = new ProactiveCandidate("c1", "follow-up", "intent-i1",
-                "买耳机", 0.5f, "活跃意图", intent);
+    void reason_递增追问计数() {
+        var goal = new GoalView("e1", "买耳机", null, 0.5f, 3,
+                Instant.now().minusSeconds(3 * 86400), 1, null, Map.of());
+        when(memoryBridge.enrichGoalContext("e1", "买耳机")).thenReturn("");
+        var candidate = new ProactiveCandidate("c1", "follow-up", "goal-e1",
+                "买耳机", 0.5f, "活跃目标", goal);
 
         behavior.reason(List.of(candidate), testCtx());
 
-        verify(intentMemoryService).incrementCheckCount("i1");
+        verify(memoryBridge).incrementCheckCount("e1");
     }
 
     private ContextPacket testCtx() {

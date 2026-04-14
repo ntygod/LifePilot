@@ -2,7 +2,6 @@ package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
-import com.lifepilot.agent.task.proactive.intent.*;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -14,10 +13,10 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * 主动追问行为插件 — 基于意图记忆追踪用户未完成的目标和话题。
+ * 主动追问行为插件 — 基于 L3 目标实体追踪用户未完成的目标。
  *
- * <p>detect: 查询活跃意图，过滤创建超过 24h 且检查次数合理的。
- * reason: 使用 LLM 生成自然追问（带回退模板），自动注入画像/经验。</p>
+ * <p>detect: 查询 L3 GOAL 实体，过滤创建超过 24h 且追问次数合理的。
+ * reason: 使用 LLM 生成自然追问（带回退模板），自动注入画像/经验 + 目标上下文。</p>
  *
  * @author zsg
  * @since 2026-04-14
@@ -27,15 +26,15 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
     private static final Logger log = LoggerFactory.getLogger(FollowUpBehavior.class);
     private static final String PROMPT_KEY = "generation/proactive-follow-up";
 
-    private final IntentMemoryService intentMemoryService;
+    private final ProactiveMemoryBridge memoryBridge;
     @Nullable private final AgentConfigProperties config;
 
-    public FollowUpBehavior(IntentMemoryService intentMemoryService,
+    public FollowUpBehavior(ProactiveMemoryBridge memoryBridge,
                             @Nullable GenerationRouter generationRouter,
                             @Nullable PromptRegistry promptRegistry,
                             @Nullable AgentConfigProperties config) {
         super(generationRouter, promptRegistry);
-        this.intentMemoryService = intentMemoryService;
+        this.memoryBridge = memoryBridge;
         this.config = config;
     }
 
@@ -60,33 +59,33 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        // 意图维护已上移到 ProactiveEngine.heartbeat() 统一执行
-        var intents = intentMemoryService.getActiveIntents(ctx.userId());
+        var goals = memoryBridge.getActiveGoals();
         var candidates = new ArrayList<ProactiveCandidate>();
 
-        for (var intent : intents) {
-            if (Duration.between(intent.createdAt(), ctx.now()).compareTo(minAge()) < 0) continue;
-            if (intent.checkCount() >= maxCheckCount()) continue;
+        for (var goal : goals) {
+            if (Duration.between(goal.createdAt(), ctx.now()).compareTo(minAge()) < 0) continue;
+            if (goal.checkCount() >= maxCheckCount()) continue;
 
-            float score = computeScore(intent, ctx.now());
+            float score = computeScore(goal, ctx.now());
             if (score < 0.3f) continue;
 
             candidates.add(new ProactiveCandidate(
                     UUID.randomUUID().toString(), name(),
-                    "intent-" + intent.id(), intent.goal(),
-                    score, "活跃意图: " + intent.intentType(), intent));
+                    "goal-" + goal.entityId(), goal.goal(),
+                    score, "活跃目标 (重要度:" + String.format("%.1f", goal.importanceScore()) + ")",
+                    goal));
         }
-        log.debug("FollowUpBehavior.detect: intents={}, candidates={}", intents.size(), candidates.size());
+        log.debug("FollowUpBehavior.detect: goals={}, candidates={}", goals.size(), candidates.size());
         return candidates;
     }
 
     @Override
     public List<ProactiveAction> reason(List<ProactiveCandidate> candidates, ContextPacket ctx) {
         var actions = super.reason(candidates, ctx);
-        // 推理后递增检查计数
+        // 推理后递增追问计数
         for (var candidate : candidates) {
-            if (candidate.detail() instanceof IntentRecord intent) {
-                intentMemoryService.incrementCheckCount(intent.id());
+            if (candidate.detail() instanceof GoalView goal) {
+                memoryBridge.incrementCheckCount(goal.entityId());
             }
         }
         return actions;
@@ -94,11 +93,20 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
 
     @Override
     protected Map<String, Object> buildPromptVariables(ProactiveCandidate candidate, ContextPacket ctx) {
-        return Map.of(
-                "currentTime", formatTime(ctx),
-                "intentGoal", candidate.title(),
-                "conversationSummary", candidate.rationale(),
-                "daysSinceLastChat", String.valueOf(computeDaysSince(candidate, ctx.now())));
+        var vars = new HashMap<String, Object>();
+        vars.put("currentTime", formatTime(ctx));
+        vars.put("intentGoal", candidate.title());
+        vars.put("conversationSummary", candidate.rationale());
+        vars.put("daysSinceLastChat", String.valueOf(computeDaysSince(candidate, ctx.now())));
+
+        // 注入丰富的目标上下文（演变历史 + 关联实体 + 对话片段）
+        if (candidate.detail() instanceof GoalView goal) {
+            String goalContext = memoryBridge.enrichGoalContext(goal.entityId(), goal.goal());
+            if (!goalContext.isBlank()) {
+                vars.put("goalContext", goalContext);
+            }
+        }
+        return vars;
     }
 
     @Override
@@ -111,18 +119,21 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
         return DeliveryLevel.NOTIFY;
     }
 
-    private float computeScore(IntentRecord intent, Instant now) {
-        long ageDays = Duration.between(intent.createdAt(), now).toDays();
-        float score = 0.5f;
+    private float computeScore(GoalView goal, Instant now) {
+        long ageDays = Duration.between(goal.createdAt(), now).toDays();
+        float score = 0.4f;
+        // 重要度加成（L3 importanceScore 范围 0-1）
+        score += goal.importanceScore() * 0.2f;
+        // 时间衰减
         if (ageDays > 7) score -= (ageDays - 7) * 0.02f;
-        score -= intent.checkCount() * 0.05f;
-        if (intent.intentType() == IntentType.CONDITIONAL) score += 0.1f;
+        // 追问次数衰减
+        score -= goal.checkCount() * 0.05f;
         return Math.max(0f, Math.min(1f, score));
     }
 
     private long computeDaysSince(ProactiveCandidate candidate, Instant now) {
-        if (candidate.detail() instanceof IntentRecord intent) {
-            return Duration.between(intent.createdAt(), now).toDays();
+        if (candidate.detail() instanceof GoalView goal) {
+            return Duration.between(goal.createdAt(), now).toDays();
         }
         return 1;
     }
