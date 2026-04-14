@@ -27,6 +27,11 @@ public class PreferenceLearner {
         this.preferenceRepository = preferenceRepository;
     }
 
+    /** 获取偏好仓储（供引擎评分调整使用）。 */
+    public PreferenceRepository getPreferenceRepository() {
+        return preferenceRepository;
+    }
+
     /**
      * 从一次投递结果中学习偏好。
      *

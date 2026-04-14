@@ -2,8 +2,9 @@ package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
+import com.lifepilot.agent.task.proactive.preference.PreferenceDimension;
+import com.lifepilot.agent.task.proactive.preference.PreferenceEntry;
 import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
-import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.notification.NotificationRepository;
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.HashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -138,6 +140,9 @@ public class ProactiveEngine {
             }
         }
 
+        // ── 偏好前置过滤：用偏好分数调整候选分，低偏好内容从源头被压低 ──
+        allCandidates = applyPreferenceScoring(allCandidates, ctx);
+
         float maxScore = allCandidates.stream()
                 .map(ProactiveCandidate::score)
                 .max(Float::compare)
@@ -216,6 +221,62 @@ public class ProactiveEngine {
         log.info("主动引擎: FULL — candidates={}, actions={}, delivered={}",
                 topCandidates.size(), allActions.size(), gated.size());
         return DetectionLevel.FULL;
+    }
+
+    /**
+     * 偏好前置过滤 — 基于用户偏好调整候选分数。
+     *
+     * <p>查询领域偏好和时段偏好，对低偏好的候选降低分数。
+     * 这样用户不感兴趣的内容在 Gate 2 就被过滤，而非生成后再压制。</p>
+     */
+    private ArrayList<ProactiveCandidate> applyPreferenceScoring(ArrayList<ProactiveCandidate> candidates,
+                                                                  ContextPacket ctx) {
+        if (preferenceLearner == null || preferenceLearner.getPreferenceRepository() == null) {
+            return candidates;
+        }
+        var prefRepo = preferenceLearner.getPreferenceRepository();
+        var domainPrefs = prefRepo.findByDimension(ctx.userId(), PreferenceDimension.DOMAIN);
+        var timingPrefs = prefRepo.findByDimension(ctx.userId(), PreferenceDimension.TIMING);
+        if (domainPrefs.isEmpty() && timingPrefs.isEmpty()) return candidates;
+
+        // 构建偏好 Map
+        var domainMap = new HashMap<String, Float>();
+        for (var p : domainPrefs) {
+            if (p.observationCount() >= 3) domainMap.put(p.preferenceKey(), p.preferenceValue());
+        }
+        String currentTimeSlot = resolveTimeSlot(ctx);
+        float timingPref = timingPrefs.stream()
+                .filter(p -> p.preferenceKey().equals(currentTimeSlot) && p.observationCount() >= 3)
+                .map(PreferenceEntry::preferenceValue)
+                .findFirst().orElse(0.5f);
+
+        var adjusted = new ArrayList<ProactiveCandidate>();
+        for (var c : candidates) {
+            float domainPref = domainMap.getOrDefault(c.behaviorName(), 0.5f);
+            // 偏好调整：将偏好值映射为乘数 [0.5, 1.2]
+            // 偏好 0.0 → 乘数 0.5（大幅降低）
+            // 偏好 0.5 → 乘数 1.0（不变）
+            // 偏好 1.0 → 乘数 1.2（轻微提升）
+            float domainMultiplier = 0.5f + domainPref * 0.7f;
+            float timingMultiplier = 0.5f + timingPref * 0.7f;
+            float combinedMultiplier = (domainMultiplier + timingMultiplier) / 2;
+            float newScore = Math.max(0f, Math.min(1f, c.score() * combinedMultiplier));
+
+            adjusted.add(new ProactiveCandidate(
+                    c.id(), c.behaviorName(), c.topicKey(), c.title(),
+                    newScore, c.rationale(), c.detail()));
+        }
+        return adjusted;
+    }
+
+    private static String resolveTimeSlot(ContextPacket ctx) {
+        int hour = java.time.LocalTime.ofInstant(ctx.now(), ctx.zoneId()).getHour();
+        if (hour >= 6 && hour < 9) return "early-morning";
+        if (hour >= 9 && hour < 12) return "morning";
+        if (hour >= 12 && hour < 14) return "noon";
+        if (hour >= 14 && hour < 18) return "afternoon";
+        if (hour >= 18 && hour < 21) return "evening";
+        return "night";
     }
 
     /** 全局意图维护 — 过期清理 + 对话提取。 */
