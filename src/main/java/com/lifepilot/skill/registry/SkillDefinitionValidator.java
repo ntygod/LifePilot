@@ -64,11 +64,13 @@ public class SkillDefinitionValidator {
             errors.add("Instructions 长度超过限制: " + definition.instructions().length() + " > " + validationConfig.getMaxInstructionsLength());
         }
 
-        // 校验 suggestedTools 中每个工具 ID 在 DynamicToolRegistry 中存在（允许空列表）
+        // suggestedTools 中的工具 ID 可能在后续启动阶段才注册（如 BuiltinTool 在 ApplicationReadyEvent 注册），
+        // 因此仅做 WARN 提示，不阻断 Skill 注册
         if (definition.suggestedTools() != null) {
             for (String toolId : definition.suggestedTools()) {
                 if (toolRegistry.resolve(toolId).isEmpty()) {
-                    errors.add("建议工具未注册: " + toolId);
+                    log.warn("Skill '{}' 的建议工具 '{}' 当前未注册（可能在后续启动阶段注册）",
+                            definition.id(), toolId);
                 }
             }
         }

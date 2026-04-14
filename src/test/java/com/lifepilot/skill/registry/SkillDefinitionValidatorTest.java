@@ -153,12 +153,11 @@ class SkillDefinitionValidatorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void suggestedTools中工具未注册_校验失败() {
+    void suggestedTools中工具未注册_仅警告不阻断() {
         when(toolRegistry.resolve("unknown-tool")).thenReturn(Optional.empty());
         var def = validDefinition().toBuilder().suggestedTools(List.of("unknown-tool")).build();
         ValidationResult result = validator.validate(def);
-        assertThat(result.valid()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("建议工具未注册: unknown-tool"));
+        assertThat(result.valid()).isTrue();
     }
 
     // ─────────────────────────────────────────────
@@ -167,15 +166,13 @@ class SkillDefinitionValidatorTest {
 
     @Test
     void 多个校验错误_全部返回() {
-        when(toolRegistry.resolve("unknown")).thenReturn(Optional.empty());
         var def = validDefinition().toBuilder()
                 .id("INVALID_ID!")
                 .name("n".repeat(200))
-                .suggestedTools(List.of("unknown"))
                 .build();
         ValidationResult result = validator.validate(def);
         assertThat(result.valid()).isFalse();
-        assertThat(result.errors()).hasSize(3);
+        assertThat(result.errors()).hasSize(2);
     }
 
     // ─────────────────────────────────────────────
