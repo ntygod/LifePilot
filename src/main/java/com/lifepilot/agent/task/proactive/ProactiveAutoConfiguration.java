@@ -9,6 +9,9 @@ import com.lifepilot.agent.task.proactive.behavior.InfoSupplementBehavior;
 import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
 import com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior;
+import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
+import com.lifepilot.agent.task.proactive.preference.PreferenceRepository;
+import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.proactive.intent.IntentExtractor;
 import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
 import com.lifepilot.agent.task.proactive.intent.IntentRepository;
@@ -155,6 +158,26 @@ public class ProactiveAutoConfiguration {
             @Autowired(required = false) IntentMemoryService intentMemoryService,
             @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
         return new TaskExecutionBehavior(intentMemoryService, trustUpgradeService);
+    }
+
+    // ── Phase 4: 偏好模型 + 日程提取 ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PreferenceRepository preferenceRepository(JdbcTemplate jdbcTemplate) {
+        return new PreferenceRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PreferenceLearner preferenceLearner(PreferenceRepository preferenceRepository) {
+        return new PreferenceLearner(preferenceRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ScheduleExtractor scheduleExtractor() {
+        return new ScheduleExtractor();
     }
 
     // ── 引擎 ──
