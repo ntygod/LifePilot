@@ -1,10 +1,21 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
+import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
+import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
+import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
+import com.lifepilot.agent.task.proactive.intent.IntentExtractor;
+import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
+import com.lifepilot.agent.task.proactive.intent.IntentRepository;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
+import com.lifepilot.prompt.PromptRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -44,6 +55,60 @@ public class ProactiveAutoConfiguration {
                                                    QueuedActionRepository queuedActionRepository) {
         return new DeliveryEngine(notificationService, queuedActionRepository);
     }
+
+    // ── 意图记忆 ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public IntentRepository intentRepository(JdbcTemplate jdbcTemplate) {
+        return new IntentRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public IntentExtractor intentExtractor() {
+        return new IntentExtractor();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public IntentMemoryService intentMemoryService(IntentRepository intentRepository,
+                                                    IntentExtractor intentExtractor,
+                                                    @Autowired(required = false) EpisodicMemory episodicMemory) {
+        return new IntentMemoryService(intentRepository, intentExtractor, episodicMemory);
+    }
+
+    // ── Phase 2 行为插件 ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ClipboardIntentBuffer clipboardIntentBuffer() {
+        return new ClipboardIntentBuffer();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public FollowUpBehavior followUpBehavior(IntentMemoryService intentMemoryService,
+                                              @Autowired(required = false) GenerationRouter generationRouter,
+                                              @Autowired(required = false) PromptRegistry promptRegistry) {
+        return new FollowUpBehavior(intentMemoryService, generationRouter, promptRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public InsightBehavior insightBehavior(@Autowired(required = false) SemanticMemory semanticMemory,
+                                           @Autowired(required = false) GenerationRouter generationRouter,
+                                           @Autowired(required = false) PromptRegistry promptRegistry) {
+        return new InsightBehavior(semanticMemory, generationRouter, promptRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ClipboardBehavior clipboardBehavior(ClipboardIntentBuffer clipboardIntentBuffer) {
+        return new ClipboardBehavior(clipboardIntentBuffer);
+    }
+
+    // ── 引擎 ──
 
     @Bean
     @ConditionalOnMissingBean

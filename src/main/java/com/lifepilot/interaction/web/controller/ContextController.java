@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
@@ -40,13 +41,17 @@ public class ContextController {
     private final NotificationService notificationService;
     @Nullable
     private final NotificationProperties notificationProperties;
+    @Nullable
+    private final ClipboardIntentBuffer clipboardIntentBuffer;
 
     public ContextController(ReminderFocusStateHolder focusStateHolder,
                              @Nullable NotificationService notificationService,
-                             @Nullable NotificationProperties notificationProperties) {
+                             @Nullable NotificationProperties notificationProperties,
+                             @Nullable ClipboardIntentBuffer clipboardIntentBuffer) {
         this.focusStateHolder = focusStateHolder;
         this.notificationService = notificationService;
         this.notificationProperties = notificationProperties;
+        this.clipboardIntentBuffer = clipboardIntentBuffer;
     }
 
     /**
@@ -71,6 +76,13 @@ public class ContextController {
     public ResponseEntity<Void> reportClipboardIntent(@RequestBody ReminderClipboardIntent intent) {
         log.info("收到剪贴板意图: type={}, value={}", intent.intentType(), intent.value());
 
+        // 优先送入主动引擎缓冲区，由 ClipboardBehavior 在心跳中处理
+        if (clipboardIntentBuffer != null) {
+            clipboardIntentBuffer.offer(intent);
+            return ResponseEntity.noContent().build();
+        }
+
+        // 回退：直接通知（引擎不可用时）
         if (notificationService == null || notificationProperties == null) {
             log.debug("通知服务不可用，跳过剪贴板意图推送");
             return ResponseEntity.noContent().build();
