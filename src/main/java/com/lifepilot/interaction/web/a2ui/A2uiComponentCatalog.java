@@ -74,37 +74,6 @@ public final class A2uiComponentCatalog {
         return ENUM_PROPERTIES.get(key(type, property));
     }
 
-    public static String renderPrompt(int maxComponentsPerTree) {
-        var lines = COMPONENTS.stream()
-                .map(spec -> {
-                    String suffix = spec.supportsSignal() ? ", 顶层 signal?: Signal" : "";
-                    String notes = spec.notes() == null || spec.notes().isBlank() ? "" : "  - " + spec.notes();
-                    return "- " + spec.type() + ": " + spec.promptProperties() + suffix + notes;
-                })
-                .collect(Collectors.joining("\n"));
-
-        return """
-                A2UI 组件输出（可选）：当回答包含结构化信息时，输出 A2UI JSON 让前端渲染交互式界面。
-
-                规则：
-                - 仅在需要结构化展示时使用；纯文本不输出 A2UI
-                - JSON 必须包裹在 <a2ui>...</a2ui> 中，每次最多一个
-                - <a2ui> 标签外的文本照常输出，标签内只放 JSON
-                - signal 放在组件顶层字段，不放在 properties 内
-                - 单组件树最多 %d 个组件
-
-                已注册组件（type → properties）：
-                %s
-
-                Signal 格式：{name: string, payload: {[key]: value}}
-                组件树结构：{"components":[{"id","type","properties","children":[],"signal":null}]}
-
-                示例：
-                今天有 1 项待办：
-                <a2ui>{"components":[{"id":"list-1","type":"List","properties":{"ordered":true},"children":["item-1"],"signal":null},{"id":"item-1","type":"ListItem","properties":{"text":"提交周报"},"children":[],"signal":{"name":"todo.complete","payload":{"taskId":"1"}}}]}</a2ui>
-                """.formatted(maxComponentsPerTree, lines);
-    }
-
     private static String key(String type, String property) {
         return type + "#" + property;
     }

@@ -5,8 +5,6 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.interaction.web.a2ui.A2uiComponentCatalog;
-import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
 import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -48,9 +46,6 @@ public class StreamingCallback implements IterationCallback {
     private static final Logger log = LoggerFactory.getLogger(StreamingCallback.class);
     private static final Duration TOKEN_BATCH_MAX_DELAY = Duration.ofMillis(24);
     private static final int TOKEN_BATCH_MAX_CHARS = 96;
-    private static final String A2UI_OPEN_TAG = "<a2ui>";
-    private static final String A2UI_CLOSE_TAG = "</a2ui>";
-    private static final int A2UI_PROBE_TAIL_LIMIT = A2UI_CLOSE_TAG.length() - 1;
 
     private final AgentConfigProperties config;
     private final GenerationRouter generationRouter;
@@ -148,7 +143,7 @@ public class StreamingCallback implements IterationCallback {
 
         Instant callStart = Instant.now();
         markModelStreamStarted(callStart);
-        var outputState = new StreamOutputState(helper.isA2uiEnabled(), helper.getA2uiMaxComponents());
+        var outputState = new StreamOutputState();
         var contentBuilder = new StringBuilder();
         final Instant[] firstTokenTime = {null};
 
@@ -220,13 +215,13 @@ public class StreamingCallback implements IterationCallback {
         String preferredProviderId = request.preferredProvider();
 
         // 提取 system 文本，通过 CallbackHelper 集中增强（流式约束）
-        // A2UI 组件文档已移至 a2ui skill，不再每次注入 system prompt
+        // A2UI 通过 ui.emit tool call 提交组件树，不再使用文本标签解析
         String systemText = messages.stream()
                 .filter(m -> m instanceof SystemMessage)
                 .map(m -> ((SystemMessage) m).getText())
                 .findFirst().orElse("");
 
-        String streamingSystemPrompt = helper.enhanceSystemPromptForStreaming(systemText, null);
+        String streamingSystemPrompt = helper.enhanceSystemPromptForStreaming(systemText);
 
         // 先尝试用 ChatModel 做一次非流式调用检测 tool call
         var chatModelInfo = generationRouter.getChatModelWithInfo(scene, preferredProviderId, null);
@@ -271,7 +266,7 @@ public class StreamingCallback implements IterationCallback {
         markModelStreamStarted(callStart);
         String scene2 = config.getLoop().getLlmScene();
 
-        var outputState = new StreamOutputState(helper.isA2uiEnabled(), helper.getA2uiMaxComponents());
+        var outputState = new StreamOutputState();
         var contentBuilder = new StringBuilder();
         var toolCallAggregator = new StreamingToolCallAggregator();
         final ChatResponse[] lastChunk = {null};
@@ -503,16 +498,16 @@ public class StreamingCallback implements IterationCallback {
 
     /** 将文本内容逐段推送为 SSE TOKEN 事件。 */
     private void streamContentToSse(String content) {
-        var outputState = new StreamOutputState(helper.isA2uiEnabled(), helper.getA2uiMaxComponents());
+        var outputState = new StreamOutputState();
         outputState.accept(content);
         outputState.flush();
     }
 
     /**
-     * 将单个流式 token 推送为 SSE 事件，支持 A2UI 增量解析。
+     * 将单个流式 token 推送为 SSE 事件。
      *
      * @param token      LLM 流式输出的单个 token
-     * @param outputState 输出合批与 A2UI 探测状态
+     * @param outputState 输出合批状态
      */
     private void pushTokenToSse(String token, StreamOutputState outputState) {
         outputState.accept(token);
@@ -619,117 +614,20 @@ public class StreamingCallback implements IterationCallback {
         tokenBatchOpenedAt = null;
     }
 
-    private boolean looksLikeA2uiCandidate(String text) {
-        if (text == null || text.isEmpty() || text.indexOf('<') < 0) {
-            return false;
-        }
-        for (int index = text.indexOf('<'); index >= 0; index = text.indexOf('<', index + 1)) {
-            String tail = text.substring(index);
-            if (A2UI_OPEN_TAG.startsWith(tail)
-                    || A2UI_CLOSE_TAG.startsWith(tail)
-                    || tail.startsWith(A2UI_OPEN_TAG)
-                    || tail.startsWith(A2UI_CLOSE_TAG)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private final class StreamOutputState {
 
-        private final boolean a2uiEnabled;
-        private final int maxComponents;
-        @Nullable private StreamingA2uiParser parser;
-        private String probeTail = "";
-
-        private StreamOutputState(boolean a2uiEnabled, int maxComponents) {
-            this.a2uiEnabled = a2uiEnabled;
-            this.maxComponents = maxComponents;
+        private StreamOutputState() {
         }
 
         private void accept(String chunk) {
             if (chunk == null || chunk.isEmpty()) {
                 return;
             }
-            if (!a2uiEnabled) {
-                enqueueTokenChunk(chunk);
-                return;
-            }
-            if (parser != null) {
-                feedParser(chunk);
-                return;
-            }
-            String combined = probeTail + chunk;
-            if (looksLikeA2uiCandidate(combined)) {
-                parser = new StreamingA2uiParser();
-                probeTail = "";
-                feedParser(combined);
-                return;
-            }
-            emitPlainWithProbeTail(combined);
+            enqueueTokenChunk(chunk);
         }
 
         private void flush() {
-            if (parser != null) {
-                handleSegments(parser.flush());
-                parser = null;
-            } else if (!probeTail.isEmpty()) {
-                enqueueTokenChunk(probeTail);
-                probeTail = "";
-            }
             flushPendingTokenBatch();
-        }
-
-        private void feedParser(String text) {
-            handleSegments(parser.feed(text));
-        }
-
-        private void handleSegments(List<StreamingA2uiParser.Segment> segments) {
-            for (var segment : segments) {
-                switch (segment) {
-                    case StreamingA2uiParser.Segment.TextSegment(var text) -> {
-                        if (!text.isEmpty()) {
-                            enqueueTokenChunk(text);
-                        }
-                    }
-                    case StreamingA2uiParser.Segment.A2uiSegment(var json) -> emitA2ui(json);
-                }
-            }
-        }
-
-        private void emitPlainWithProbeTail(String combined) {
-            if (combined.length() <= A2UI_PROBE_TAIL_LIMIT) {
-                probeTail = combined;
-                return;
-            }
-            int emitLength = combined.length() - A2UI_PROBE_TAIL_LIMIT;
-            String emitText = combined.substring(0, emitLength);
-            if (!emitText.isEmpty()) {
-                enqueueTokenChunk(emitText);
-            }
-            probeTail = combined.substring(emitLength);
-        }
-
-        private void emitA2ui(String json) {
-            flushPendingTokenBatch();
-            var tree = helper.parseAndValidateA2uiTree(json, maxComponents);
-            if (tree == null) {
-                return;
-            }
-            if (loopContext != null) {
-                loopContext.setLastCollectedA2uiTree(tree);
-            }
-            markVisibleOutputEmitted();
-            var uiData = Map.<String, Object>of(
-                    "sessionId", sessionId,
-                    "turnId", turnId,
-                    "components", tree.components()
-            );
-            if (eventBuffer != null) {
-                eventBuffer.offer(SseEventType.UI, uiData);
-            } else {
-                sseManager.sendEvent(streamId, SseEventType.UI, uiData);
-            }
         }
     }
 

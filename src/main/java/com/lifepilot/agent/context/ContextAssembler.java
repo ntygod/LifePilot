@@ -392,15 +392,11 @@ public class ContextAssembler {
         return systemPrompt;
     }
 
-    public String enhanceSystemPromptForStreaming(String baseSystemPrompt,
-                                                  @Nullable String a2uiPrompt) {
+    public String enhanceSystemPromptForStreaming(String baseSystemPrompt) {
         String streamingConstraint = promptRegistry.render("agent/streaming-constraint");
         StringBuilder sb = new StringBuilder(baseSystemPrompt != null ? baseSystemPrompt : "");
         if (streamingConstraint != null && !streamingConstraint.isBlank()) {
             sb.append("\n").append(streamingConstraint);
-        }
-        if (a2uiPrompt != null && !a2uiPrompt.isBlank()) {
-            sb.append("\n").append(a2uiPrompt);
         }
         return sb.toString();
     }
