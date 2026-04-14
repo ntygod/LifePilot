@@ -2,8 +2,11 @@
 import { ref, onBeforeUnmount, onMounted, onUpdated, watch } from 'vue'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
+import markedKatex from 'marked-katex-extension'
+import markedAlert from 'marked-alert'
 import { highlightCode } from '@/lib/highlight'
 import { injectCopyButtons } from '@/utils/codeBlockCopy'
+import 'katex/dist/katex.min.css'
 
 const props = defineProps<{
   content: string
@@ -18,7 +21,9 @@ const markedInstance = new Marked(
     highlight(code: string, lang: string) {
       return highlightCode(code, lang)
     }
-  })
+  }),
+  markedKatex({ throwOnError: false }),
+  markedAlert()
 )
 
 /* ---- Markdown 节流渲染 ----
