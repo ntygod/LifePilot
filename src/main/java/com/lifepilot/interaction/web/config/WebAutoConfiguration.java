@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.config;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.interaction.web.a2ui.UiEmitToolProvider;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.BrowserIngressService;
@@ -14,6 +15,7 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.config.MediaProperties;
+import com.lifepilot.tool.BuiltinTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -95,6 +97,22 @@ public class WebAutoConfiguration {
         log.info("注册 WebPermissionApprovalService: timeout={}s", timeout);
         return new WebPermissionApprovalService(sseSessionManager, transcriptStore,
                 permissionService, objectMapper, timeout);
+    }
+
+    /**
+     * 注册 ui.emit 内置工具 Bean，由 {@link com.lifepilot.tool.registry.BuiltinToolRegistrar} 在启动时收集。
+     *
+     * <p>依赖 {@link SseSessionManager} 向前端推送组件树事件，
+     * 因此只有在 Web 渠道启用时才注册。</p>
+     *
+     * @param sseManager     SSE 会话管理器
+     * @param a2uiProperties A2UI 配置属性
+     * @return ui.emit BuiltinTool 实例
+     */
+    @Bean
+    public BuiltinTool uiEmitTool(SseSessionManager sseManager, A2uiProperties a2uiProperties) {
+        log.info("注册 ui.emit 内置工具: maxComponentsPerTree={}", a2uiProperties.maxComponentsPerTree());
+        return new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree()).buildTool();
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、
