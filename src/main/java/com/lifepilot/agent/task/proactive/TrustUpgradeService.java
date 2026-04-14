@@ -56,7 +56,10 @@ public class TrustUpgradeService {
         var config = getOrCreateConfig(userId, behaviorName);
         int newPositive = config.consecutivePositive() + 1;
 
-        boolean shouldSuggest = !config.upgradeSuggested()
+        // 冷却期内不触发升级建议
+        boolean inCooldown = config.cooldownUntil() != null && Instant.now().isBefore(config.cooldownUntil());
+        boolean shouldSuggest = !inCooldown
+                && !config.upgradeSuggested()
                 && newPositive >= UPGRADE_THRESHOLD
                 && config.autonomyLevel() != AutonomyLevel.C;
 
@@ -95,6 +98,11 @@ public class TrustUpgradeService {
         var config = getOrCreateConfig(userId, behaviorName);
         if (!config.upgradeSuggested()) return false;
         if (config.autonomyLevel() == AutonomyLevel.C) return false;
+        // 冷却期内不允许升级
+        if (config.cooldownUntil() != null && Instant.now().isBefore(config.cooldownUntil())) {
+            log.debug("信任升级拒绝: 冷却期未过, behavior={}", behaviorName);
+            return false;
+        }
 
         AutonomyLevel newLevel = config.autonomyLevel() == AutonomyLevel.A
                 ? AutonomyLevel.B : AutonomyLevel.C;

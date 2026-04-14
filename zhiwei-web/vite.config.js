@@ -3,26 +3,20 @@ import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 export default defineConfig({
-    plugins: [
-        vue(),
-        tailwindcss(),
-        // 确保 /float.html 在 SPA 回退之前被正确处理
-        {
-            name: 'float-html',
-            configureServer(server) {
-                server.middlewares.use((req, res, next) => {
-                    if (req.url === '/float.html' || req.url?.startsWith('/float.html?')) {
-                        req.url = '/float.html'
-                    }
-                    next()
-                })
-            }
-        },
-    ],
+    plugins: [vue(), tailwindcss()],
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src')
         }
+    },
+    // 多页面入口：主应用 + 浮窗
+    build: {
+        rollupOptions: {
+            input: {
+                main: path.resolve(__dirname, 'index.html'),
+                float: path.resolve(__dirname, 'float.html'),
+            },
+        },
     },
     // Monaco Editor Web Worker 配置，避免编辑器语法解析阻塞主线程
     worker: {
@@ -43,14 +37,6 @@ export default defineConfig({
             '/api': {
                 target: process.env.VITE_API_BASE || 'http://localhost:8080',
                 changeOrigin: true
-            }
-        }
-    },
-    build: {
-        rollupOptions: {
-            input: {
-                main: path.resolve(__dirname, 'index.html'),
-                float: path.resolve(__dirname, 'float.html'),
             }
         }
     }
