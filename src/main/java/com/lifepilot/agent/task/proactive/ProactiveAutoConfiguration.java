@@ -9,12 +9,7 @@ import com.lifepilot.agent.task.proactive.behavior.InfoSupplementBehavior;
 import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
 import com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior;
-import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
-import com.lifepilot.agent.task.proactive.preference.PreferenceRepository;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
-import com.lifepilot.agent.task.proactive.intent.IntentExtractor;
-import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
-import com.lifepilot.agent.task.proactive.intent.IntentRepository;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
@@ -82,8 +77,8 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DecisionGate proactiveDecisionGate(@Autowired(required = false) TrustUpgradeService trustUpgradeService,
-                                               @Autowired(required = false) PreferenceRepository preferenceRepository) {
-        return new DecisionGate(trustUpgradeService, preferenceRepository);
+                                               @Autowired(required = false) ProactiveMemoryBridge memoryBridge) {
+        return new DecisionGate(trustUpgradeService, memoryBridge);
     }
 
     @Bean
@@ -91,30 +86,6 @@ public class ProactiveAutoConfiguration {
     public DeliveryEngine proactiveDeliveryEngine(NotificationService notificationService,
                                                    QueuedActionRepository queuedActionRepository) {
         return new DeliveryEngine(notificationService, queuedActionRepository);
-    }
-
-    // ── 意图记忆 ──
-
-    @Bean
-    @ConditionalOnMissingBean
-    public IntentRepository intentRepository(JdbcTemplate jdbcTemplate) {
-        return new IntentRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public IntentExtractor intentExtractor(@Autowired(required = false) GenerationRouter generationRouter,
-                                            @Autowired(required = false) PromptRegistry promptRegistry,
-                                            com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
-        return new IntentExtractor(generationRouter, promptRegistry, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public IntentMemoryService intentMemoryService(IntentRepository intentRepository,
-                                                    IntentExtractor intentExtractor,
-                                                    @Autowired(required = false) EpisodicMemory episodicMemory) {
-        return new IntentMemoryService(intentRepository, intentExtractor, episodicMemory);
     }
 
     // ── Phase 2 行为插件 ──
@@ -185,19 +156,7 @@ public class ProactiveAutoConfiguration {
         return new TaskExecutionBehavior(memoryBridge, trustUpgradeService);
     }
 
-    // ── Phase 4: 偏好模型 + 日程提取 ──
-
-    @Bean
-    @ConditionalOnMissingBean
-    public PreferenceRepository preferenceRepository(JdbcTemplate jdbcTemplate) {
-        return new PreferenceRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public PreferenceLearner preferenceLearner(PreferenceRepository preferenceRepository) {
-        return new PreferenceLearner(preferenceRepository);
-    }
+    // ── 日程提取 ──
 
     @Bean
     @ConditionalOnMissingBean
@@ -208,65 +167,19 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ConversationCompletionHook conversationCompletionHook(
-            @Autowired(required = false) com.lifepilot.agent.task.proactive.profile.UserProfileService userProfileService,
-            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector,
-            @Autowired(required = false) IntentMemoryService intentMemoryService) {
-        return new ConversationCompletionHook(userProfileService, implicitSignalCollector, intentMemoryService);
+            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector) {
+        return new ConversationCompletionHook(implicitSignalCollector);
     }
 
-    // ── 认知升级: 画像 + 反思 + 隐式信号 ──
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.profile.UserProfileRepository userProfileRepository(JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.agent.task.proactive.profile.UserProfileRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.profile.UserProfileService userProfileService(
-            com.lifepilot.agent.task.proactive.profile.UserProfileRepository userProfileRepository,
-            @Autowired(required = false) EpisodicMemory episodicMemory,
-            @Autowired(required = false) IntentMemoryService intentMemoryService,
-            @Autowired(required = false) GenerationRouter generationRouter,
-            @Autowired(required = false) PromptRegistry promptRegistry) {
-        return new com.lifepilot.agent.task.proactive.profile.UserProfileService(
-                userProfileRepository, episodicMemory, intentMemoryService, generationRouter, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.reflection.ReflectionRepository reflectionRepository(JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.agent.task.proactive.reflection.ReflectionRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.reflection.ReflectionService reflectionService(
-            com.lifepilot.agent.task.proactive.reflection.ReflectionRepository reflectionRepository,
-            @Autowired(required = false) EpisodicMemory episodicMemory,
-            @Autowired(required = false) NotificationRepository notificationRepository,
-            @Autowired(required = false) com.lifepilot.agent.task.proactive.profile.UserProfileService userProfileService,
-            @Autowired(required = false) GenerationRouter generationRouter,
-            @Autowired(required = false) PromptRegistry promptRegistry) {
-        return new com.lifepilot.agent.task.proactive.reflection.ReflectionService(
-                reflectionRepository, episodicMemory, notificationRepository, userProfileService, generationRouter, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.signal.ImplicitSignalRepository implicitSignalRepository(JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.agent.task.proactive.signal.ImplicitSignalRepository(jdbcTemplate);
-    }
+    // ── 隐式信号 ──
 
     @Bean
     @ConditionalOnMissingBean
     public com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector(
-            com.lifepilot.agent.task.proactive.signal.ImplicitSignalRepository implicitSignalRepository,
-            @Autowired(required = false) TrustUpgradeService trustUpgradeService,
-            @Autowired(required = false) PreferenceLearner preferenceLearner) {
+            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
+            @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
         return new com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector(
-                implicitSignalRepository, trustUpgradeService, preferenceLearner);
+                memoryBridge, trustUpgradeService);
     }
 
     // ── 引擎 ──
@@ -281,15 +194,11 @@ public class ProactiveAutoConfiguration {
                                            @Autowired(required = false) NotificationRepository notificationRepository,
                                            @Autowired(required = false) AgentConfigProperties config,
                                            @Autowired(required = false) ReminderFocusStateHolder focusStateHolder,
-                                           @Autowired(required = false) IntentMemoryService intentMemoryService,
-                                           @Autowired(required = false) PreferenceLearner preferenceLearner,
+                                           @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
                                            @Autowired(required = false) TrustUpgradeService trustUpgradeService,
-                                           @Autowired(required = false) com.lifepilot.agent.task.proactive.profile.UserProfileService userProfileService,
-                                           @Autowired(required = false) com.lifepilot.agent.task.proactive.reflection.ReflectionService reflectionService,
                                            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
                 notificationProperties, notificationRepository, config, focusStateHolder,
-                intentMemoryService, preferenceLearner, trustUpgradeService,
-                userProfileService, reflectionService, implicitSignalCollector);
+                memoryBridge, trustUpgradeService, implicitSignalCollector);
     }
 }

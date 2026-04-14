@@ -3,12 +3,6 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
-import com.lifepilot.agent.task.proactive.intent.IntentExtractor;
-import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
-import com.lifepilot.agent.task.proactive.intent.IntentRecord;
-import com.lifepilot.agent.task.proactive.intent.IntentRepository;
-import com.lifepilot.agent.task.proactive.intent.IntentStatus;
-import com.lifepilot.agent.task.proactive.intent.IntentType;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
@@ -51,8 +45,6 @@ class ProactiveEngine_集成测试 {
     private NotificationService notificationService;
 
     // 真实组件
-    private IntentRepository intentRepo;
-    private IntentMemoryService intentMemoryService;
     private QueuedActionRepository queuedActionRepo;
     private AutonomyRepository autonomyRepo;
     private TrustUpgradeService trustUpgradeService;
@@ -81,22 +73,6 @@ class ProactiveEngine_集成测试 {
                     shown_at    TEXT
                 )""");
         jdbc.execute("""
-                CREATE TABLE proactive_intent_memory (
-                    id                   TEXT    NOT NULL PRIMARY KEY,
-                    user_id              TEXT    NOT NULL,
-                    intent_type          TEXT    NOT NULL,
-                    goal                 TEXT    NOT NULL,
-                    trigger_condition    TEXT,
-                    source_session_id    TEXT,
-                    status               TEXT    NOT NULL DEFAULT 'ACTIVE',
-                    check_count          INTEGER NOT NULL DEFAULT 0,
-                    created_at           TEXT    NOT NULL,
-                    expires_at           TEXT,
-                    triggered_at         TEXT,
-                    fulfilled_at         TEXT,
-                    updated_at           TEXT    NOT NULL
-                )""");
-        jdbc.execute("""
                 CREATE TABLE proactive_behavior_autonomy (
                     user_id               TEXT    NOT NULL,
                     behavior_name         TEXT    NOT NULL,
@@ -108,29 +84,13 @@ class ProactiveEngine_集成测试 {
                     updated_at            TEXT    NOT NULL,
                     PRIMARY KEY (user_id, behavior_name)
                 )""");
-        jdbc.execute("""
-                CREATE TABLE proactive_user_preferences (
-                    user_id              TEXT    NOT NULL,
-                    dimension            TEXT    NOT NULL,
-                    preference_key       TEXT    NOT NULL,
-                    preference_value     REAL    NOT NULL DEFAULT 0.5,
-                    observation_count    INTEGER NOT NULL DEFAULT 0,
-                    last_observed_at     TEXT,
-                    updated_at           TEXT    NOT NULL,
-                    PRIMARY KEY (user_id, dimension, preference_key)
-                )""");
-
         // 索引
-        jdbc.execute("CREATE INDEX idx_intent_user_status ON proactive_intent_memory (user_id, status, created_at DESC)");
-        jdbc.execute("CREATE INDEX idx_intent_expires ON proactive_intent_memory (status, expires_at)");
         jdbc.execute("CREATE INDEX idx_queued_user_shown ON proactive_queued_actions (user_id, shown, created_at DESC)");
 
         // 初始化真实组件
         notificationService = mock(NotificationService.class);
         when(notificationService.send(any())).thenReturn(List.of("notif-" + UUID.randomUUID()));
 
-        intentRepo = new IntentRepository(jdbc);
-        intentMemoryService = new IntentMemoryService(intentRepo, new IntentExtractor(null, null, null), null);
         queuedActionRepo = new QueuedActionRepository(jdbc);
         autonomyRepo = new AutonomyRepository(jdbc);
         trustUpgradeService = new TrustUpgradeService(autonomyRepo, null);
@@ -149,7 +109,7 @@ class ProactiveEngine_集成测试 {
     /** 构建引擎，使用指定的行为插件列表。 */
     private ProactiveEngine buildEngine(List<ProactiveBehavior> behaviors) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     /** 构建标准 ContextPacket。 */

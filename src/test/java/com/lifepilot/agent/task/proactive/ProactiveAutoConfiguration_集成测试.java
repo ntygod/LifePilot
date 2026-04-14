@@ -8,11 +8,6 @@ import com.lifepilot.agent.task.proactive.behavior.InfoSupplementBehavior;
 import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
 import com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior;
-import com.lifepilot.agent.task.proactive.intent.IntentExtractor;
-import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
-import com.lifepilot.agent.task.proactive.intent.IntentRepository;
-import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
-import com.lifepilot.agent.task.proactive.preference.PreferenceRepository;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.reminder.ReminderBehavior;
 import com.lifepilot.notification.NotificationService;
@@ -43,44 +38,32 @@ class ProactiveAutoConfiguration_集成测试 {
         var config = new ProactiveAutoConfiguration();
 
         // ── 仓储层 Bean ──
+        GoalTrackingRepository goalTrackingRepo = config.goalTrackingRepository(jdbcTemplate);
+        assertThat(goalTrackingRepo).isNotNull();
+
         QueuedActionRepository queuedActionRepository = config.queuedActionRepository(jdbcTemplate);
         assertThat(queuedActionRepository).isNotNull();
 
         AutonomyRepository autonomyRepository = config.autonomyRepository(jdbcTemplate);
         assertThat(autonomyRepository).isNotNull();
 
-        IntentRepository intentRepository = config.intentRepository(jdbcTemplate);
-        assertThat(intentRepository).isNotNull();
-
-        PreferenceRepository preferenceRepository = config.preferenceRepository(jdbcTemplate);
-        assertThat(preferenceRepository).isNotNull();
-
         // ── 服务层 Bean ──
         TrustUpgradeService trustUpgradeService = config.trustUpgradeService(autonomyRepository, null);
         assertThat(trustUpgradeService).isNotNull();
 
-        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, null);
+        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, memoryBridge);
         assertThat(decisionGate).isNotNull();
 
         DeliveryEngine deliveryEngine = config.proactiveDeliveryEngine(notificationService, queuedActionRepository);
         assertThat(deliveryEngine).isNotNull();
 
-        IntentExtractor intentExtractor = config.intentExtractor(null, null, new com.fasterxml.jackson.databind.ObjectMapper());
-        assertThat(intentExtractor).isNotNull();
-
-        IntentMemoryService intentMemoryService = config.intentMemoryService(intentRepository, intentExtractor, null);
-        assertThat(intentMemoryService).isNotNull();
-
         ClipboardIntentBuffer clipboardIntentBuffer = config.clipboardIntentBuffer();
         assertThat(clipboardIntentBuffer).isNotNull();
-
-        PreferenceLearner preferenceLearner = config.preferenceLearner(preferenceRepository);
-        assertThat(preferenceLearner).isNotNull();
 
         ScheduleExtractor scheduleExtractor = config.scheduleExtractor();
         assertThat(scheduleExtractor).isNotNull();
 
-        // ── 行为插件 Bean（已改接 ProactiveMemoryBridge）──
+        // ── 行为插件 Bean ──
         FollowUpBehavior followUpBehavior = config.followUpBehavior(memoryBridge, null, null, null);
         assertThat(followUpBehavior).isNotNull();
         assertThat(followUpBehavior.name()).isEqualTo("follow-up");
@@ -108,6 +91,13 @@ class ProactiveAutoConfiguration_集成测试 {
         TaskExecutionBehavior taskExecutionBehavior = config.taskExecutionBehavior(memoryBridge, trustUpgradeService);
         assertThat(taskExecutionBehavior).isNotNull();
         assertThat(taskExecutionBehavior.name()).isEqualTo("task-execution");
+
+        // ── 隐式信号 + Hook ──
+        var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgradeService);
+        assertThat(signalCollector).isNotNull();
+
+        var hook = config.conversationCompletionHook(signalCollector);
+        assertThat(hook).isNotNull();
     }
 
     @Test
@@ -122,15 +112,11 @@ class ProactiveAutoConfiguration_集成测试 {
 
         var queuedActionRepo = config.queuedActionRepository(jdbcTemplate);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
-        var preferenceRepo = config.preferenceRepository(jdbcTemplate);
-        var intentRepo = config.intentRepository(jdbcTemplate);
-        var extractor = config.intentExtractor(null, null, new com.fasterxml.jackson.databind.ObjectMapper());
-        var intentMemory = config.intentMemoryService(intentRepo, extractor, null);
         var trustUpgrade = config.trustUpgradeService(autonomyRepo, null);
-        var gate = config.proactiveDecisionGate(trustUpgrade, preferenceRepo);
+        var gate = config.proactiveDecisionGate(trustUpgrade, memoryBridge);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
         var buffer = config.clipboardIntentBuffer();
-        var preferenceLearner = config.preferenceLearner(preferenceRepo);
+        var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgrade);
 
         var behaviors = java.util.List.<ProactiveBehavior>of(
                 config.followUpBehavior(memoryBridge, null, null, null),
@@ -144,8 +130,7 @@ class ProactiveAutoConfiguration_集成测试 {
 
         ProactiveEngine engine = config.proactiveEngine(
                 behaviors, gate, delivery, notificationProperties,
-                null, null, null, intentMemory, preferenceLearner, trustUpgrade,
-                null, null, null);
+                null, null, null, memoryBridge, trustUpgrade, signalCollector);
 
         assertThat(engine).isNotNull();
     }
@@ -160,7 +145,7 @@ class ProactiveAutoConfiguration_集成测试 {
     }
 
     @Test
-    void DecisionGate_支持无TrustUpgradeService构造() {
+    void DecisionGate_支持无依赖构造() {
         var config = new ProactiveAutoConfiguration();
         DecisionGate gate = config.proactiveDecisionGate(null, null);
         assertThat(gate).isNotNull();

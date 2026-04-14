@@ -2,12 +2,9 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.task.proactive.DeliveryLevel;
-import com.lifepilot.agent.task.proactive.DeliveryResult;
-import com.lifepilot.agent.task.proactive.ProactiveAction;
-import com.lifepilot.agent.task.proactive.ProactiveCandidate;
+import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
+import com.lifepilot.agent.task.proactive.TimeSlotResolver;
 import com.lifepilot.agent.task.proactive.TrustUpgradeService;
-import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRecord;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackType;
@@ -59,7 +56,7 @@ public class NotificationController {
     @Nullable
     private final TrustUpgradeService trustUpgradeService;
     @Nullable
-    private final PreferenceLearner preferenceLearner;
+    private final ProactiveMemoryBridge memoryBridge;
 
     public NotificationController(NotificationRepository notificationRepository,
                                   NotificationProperties notificationProperties) {
@@ -71,12 +68,12 @@ public class NotificationController {
                                   NotificationProperties notificationProperties,
                                   @Nullable ReminderFeedbackRepository reminderFeedbackRepository,
                                   @Nullable TrustUpgradeService trustUpgradeService,
-                                  @Nullable PreferenceLearner preferenceLearner) {
+                                  @Nullable ProactiveMemoryBridge memoryBridge) {
         this.notificationRepository = notificationRepository;
         this.notificationProperties = notificationProperties;
         this.reminderFeedbackRepository = reminderFeedbackRepository;
         this.trustUpgradeService = trustUpgradeService;
-        this.preferenceLearner = preferenceLearner;
+        this.memoryBridge = memoryBridge;
     }
 
     /**
@@ -233,15 +230,14 @@ public class NotificationController {
             }
         }
 
-        // 偏好学习
-        if (preferenceLearner != null) {
+        // 偏好学习 — 写入 L4
+        if (memoryBridge != null) {
             try {
-                var candidate = new ProactiveCandidate("feedback", behaviorName,
-                        extractTopicKey(record.metadataJson()).orElse("unknown"),
-                        "", 0.5f, "", null);
-                var action = new ProactiveAction(candidate, "", DeliveryLevel.NOTIFY, null);
-                var result = new DeliveryResult(record.id(), DeliveryLevel.NOTIFY, record.createdAt());
-                preferenceLearner.learnFromDelivery(action, result, record.userId(), positive);
+                float signal = positive ? 0.8f : 0.2f;
+                String timeSlot = TimeSlotResolver.resolve(record.createdAt(), java.time.ZoneId.systemDefault());
+                memoryBridge.observePreference("proactive-timing", timeSlot, signal);
+                memoryBridge.observePreference("proactive-domain", behaviorName, signal);
+                memoryBridge.observePreference("proactive-style", "NOTIFY", signal);
             } catch (Exception e) {
                 log.warn("反馈闭环: 偏好学习失败: {}", e.getMessage());
             }

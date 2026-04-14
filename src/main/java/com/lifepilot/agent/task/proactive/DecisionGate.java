@@ -1,14 +1,10 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.memory.procedural.PreferenceRule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.lifepilot.agent.task.proactive.preference.PreferenceDimension;
-import com.lifepilot.agent.task.proactive.preference.PreferenceRepository;
 import org.springframework.lang.Nullable;
 
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -29,15 +25,13 @@ public class DecisionGate {
     /** 时间偏好低于此值时降级投递。 */
     private static final float LOW_PREFERENCE_THRESHOLD = 0.3f;
 
-    @Nullable
-    private final TrustUpgradeService trustUpgradeService;
-    @Nullable
-    private final PreferenceRepository preferenceRepository;
+    @Nullable private final TrustUpgradeService trustUpgradeService;
+    @Nullable private final ProactiveMemoryBridge memoryBridge;
 
     public DecisionGate(@Nullable TrustUpgradeService trustUpgradeService,
-                        @Nullable PreferenceRepository preferenceRepository) {
+                        @Nullable ProactiveMemoryBridge memoryBridge) {
         this.trustUpgradeService = trustUpgradeService;
-        this.preferenceRepository = preferenceRepository;
+        this.memoryBridge = memoryBridge;
     }
 
     /** 分数 → 投递级别映射。 */
@@ -50,15 +44,9 @@ public class DecisionGate {
 
     /**
      * 评估候选动作列表，返回通过门控的 (动作, 投递级别) 对。
-     *
-     * @param actions 所有插件 reason() 产出的动作
-     * @param ctx     心跳上下文
-     * @return 通过门控的评估结果列表，按分数降序排列
      */
     public List<GatedAction> evaluate(List<ProactiveAction> actions, ContextPacket ctx) {
-        if (actions == null || actions.isEmpty()) {
-            return List.of();
-        }
+        if (actions == null || actions.isEmpty()) return List.of();
 
         // ── 硬边界（一票否决） ──
         if (ctx.isWithinQuietHours()) {
@@ -107,7 +95,7 @@ public class DecisionGate {
             }
 
             // 偏好降级: 当前时段或行为领域偏好低 → 降一级
-            if (preferenceRepository != null && level.ordinal() > DeliveryLevel.QUEUE.ordinal()) {
+            if (memoryBridge != null && level.ordinal() > DeliveryLevel.QUEUE.ordinal()) {
                 if (isLowPreferenceTimeSlot(ctx) || isLowPreferenceBehavior(ctx, action)) {
                     DeliveryLevel downgraded = level == DeliveryLevel.INTERRUPT ? DeliveryLevel.NOTIFY : DeliveryLevel.QUEUE;
                     log.debug("决策门控: 偏好低，{}→{} behavior={}",
@@ -129,29 +117,21 @@ public class DecisionGate {
 
     /** 检查当前时段的用户偏好是否低。 */
     private boolean isLowPreferenceTimeSlot(ContextPacket ctx) {
-        if (preferenceRepository == null) return false;
-        String timeSlot = resolveTimeSlot(ctx);
-        var prefs = preferenceRepository.findByDimension(ctx.userId(), PreferenceDimension.TIMING);
-        return prefs.stream()
-                .filter(p -> p.preferenceKey().equals(timeSlot))
-                .anyMatch(p -> p.preferenceValue() < LOW_PREFERENCE_THRESHOLD && p.observationCount() >= 3);
+        if (memoryBridge == null) return false;
+        String timeSlot = TimeSlotResolver.resolve(ctx);
+        return memoryBridge.getPreferences("proactive-timing").stream()
+                .filter(p -> p.key().equals(timeSlot) && p.observationCount() >= 3)
+                .anyMatch(p -> ProactiveMemoryBridge.parseFloat(p.value(), 0.5f) < LOW_PREFERENCE_THRESHOLD);
     }
 
     /** 检查行为领域的用户偏好是否低。 */
     private boolean isLowPreferenceBehavior(ContextPacket ctx, ProactiveAction action) {
-        if (preferenceRepository == null) return false;
-        var prefs = preferenceRepository.findByDimension(ctx.userId(), PreferenceDimension.DOMAIN);
-        return prefs.stream()
-                .filter(p -> p.preferenceKey().equals(action.candidate().behaviorName()))
-                .anyMatch(p -> p.preferenceValue() < LOW_PREFERENCE_THRESHOLD && p.observationCount() >= 3);
+        if (memoryBridge == null) return false;
+        return memoryBridge.getPreferences("proactive-domain").stream()
+                .filter(p -> p.key().equals(action.candidate().behaviorName()) && p.observationCount() >= 3)
+                .anyMatch(p -> ProactiveMemoryBridge.parseFloat(p.value(), 0.5f) < LOW_PREFERENCE_THRESHOLD);
     }
 
-    private static String resolveTimeSlot(ContextPacket ctx) {
-        return TimeSlotResolver.resolve(ctx);
-    }
-
-    /**
-     * 门控通过的动作 + 最终投递级别。
-     */
+    /** 门控通过的动作 + 最终投递级别。 */
     public record GatedAction(ProactiveAction action, DeliveryLevel level) {}
 }

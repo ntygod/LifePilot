@@ -1,15 +1,10 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
-import com.lifepilot.agent.task.proactive.preference.PreferenceDimension;
-import com.lifepilot.agent.task.proactive.preference.PreferenceEntry;
-import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
-import com.lifepilot.agent.task.proactive.profile.UserProfileService;
-import com.lifepilot.agent.task.proactive.reflection.ReflectionService;
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
+import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
@@ -21,7 +16,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.HashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -52,26 +46,13 @@ public class ProactiveEngine {
     private final List<ProactiveBehavior> behaviors;
     private final DecisionGate decisionGate;
     private final DeliveryEngine deliveryEngine;
-    @Nullable
-    private final NotificationProperties notificationProperties;
-    @Nullable
-    private final NotificationRepository notificationRepository;
-    @Nullable
-    private final AgentConfigProperties config;
-    @Nullable
-    private final ReminderFocusStateHolder focusStateHolder;
-    @Nullable
-    private final IntentMemoryService intentMemoryService;
-    @Nullable
-    private final PreferenceLearner preferenceLearner;
-    @Nullable
-    private final TrustUpgradeService trustUpgradeService;
-    @Nullable
-    private final UserProfileService userProfileService;
-    @Nullable
-    private final ReflectionService reflectionService;
-    @Nullable
-    private final ImplicitSignalCollector implicitSignalCollector;
+    @Nullable private final NotificationProperties notificationProperties;
+    @Nullable private final NotificationRepository notificationRepository;
+    @Nullable private final AgentConfigProperties config;
+    @Nullable private final ReminderFocusStateHolder focusStateHolder;
+    @Nullable private final ProactiveMemoryBridge memoryBridge;
+    @Nullable private final TrustUpgradeService trustUpgradeService;
+    @Nullable private final ImplicitSignalCollector implicitSignalCollector;
     private final BehaviorHealthTracker healthTracker = new BehaviorHealthTracker();
 
     /** 上次心跳时间，用于 Gate 1 变化量检查。 */
@@ -85,11 +66,8 @@ public class ProactiveEngine {
                            @Nullable NotificationRepository notificationRepository,
                            @Nullable AgentConfigProperties config,
                            @Nullable ReminderFocusStateHolder focusStateHolder,
-                           @Nullable IntentMemoryService intentMemoryService,
-                           @Nullable PreferenceLearner preferenceLearner,
+                           @Nullable ProactiveMemoryBridge memoryBridge,
                            @Nullable TrustUpgradeService trustUpgradeService,
-                           @Nullable UserProfileService userProfileService,
-                           @Nullable ReflectionService reflectionService,
                            @Nullable ImplicitSignalCollector implicitSignalCollector) {
         this.behaviors = List.copyOf(behaviors);
         this.decisionGate = decisionGate;
@@ -98,17 +76,12 @@ public class ProactiveEngine {
         this.notificationRepository = notificationRepository;
         this.config = config;
         this.focusStateHolder = focusStateHolder;
-        this.intentMemoryService = intentMemoryService;
-        this.preferenceLearner = preferenceLearner;
+        this.memoryBridge = memoryBridge;
         this.trustUpgradeService = trustUpgradeService;
-        this.userProfileService = userProfileService;
-        this.reflectionService = reflectionService;
         this.implicitSignalCollector = implicitSignalCollector;
     }
 
-    /**
-     * 生产入口：自行构建 ContextPacket 并执行心跳。
-     */
+    /** 生产入口：自行构建 ContextPacket 并执行心跳。 */
     public DetectionLevel heartbeat() {
         var ctx = buildContextPacket();
         var level = heartbeat(ctx);
@@ -129,9 +102,7 @@ public class ProactiveEngine {
             return DetectionLevel.SILENT;
         }
 
-        // ── 全局维护 ──
-        runIntentMaintenance(ctx);
-        runReflectionIfDue(ctx);
+        // ── 隐式信号检测 ──
         runImplicitSignalCheck(ctx);
 
         // ── Gate 2: 各插件快速检测候选 ──
@@ -150,7 +121,7 @@ public class ProactiveEngine {
             }
         }
 
-        // ── 偏好前置过滤：用偏好分数调整候选分，低偏好内容从源头被压低 ──
+        // ── 偏好前置过滤：用 L4 偏好分数调整候选分 ──
         allCandidates = applyPreferenceScoring(allCandidates, ctx);
 
         float maxScore = allCandidates.stream()
@@ -171,7 +142,6 @@ public class ProactiveEngine {
                 .limit(MAX_REASON_CANDIDATES)
                 .toList();
 
-        // 按插件分组，调用 reason()
         var byBehavior = topCandidates.stream()
                 .collect(Collectors.groupingBy(ProactiveCandidate::behaviorName,
                         LinkedHashMap::new, Collectors.toList()));
@@ -201,14 +171,8 @@ public class ProactiveEngine {
         for (var ga : gated) {
             try {
                 var result = deliveryEngine.deliver(ga.action(), ga.level(), ctx.userId());
-                // 偏好学习：记录投递结果用于五维偏好模型
-                if (preferenceLearner != null) {
-                    try {
-                        preferenceLearner.learnFromDelivery(ga.action(), result, ctx.userId(), true);
-                    } catch (Exception ex) {
-                        log.debug("主动引擎: 偏好学习跳过: {}", ex.getMessage());
-                    }
-                }
+                // 偏好学习：投递结果写入 L4
+                learnPreferenceFromDelivery(ga.action(), result, ctx.userId(), true);
                 // 隐式信号：记录投递事件以便后续检测参与度
                 if (implicitSignalCollector != null) {
                     try {
@@ -217,7 +181,7 @@ public class ProactiveEngine {
                         log.debug("主动引擎: 隐式信号记录跳过: {}", ex.getMessage());
                     }
                 }
-                // 信任追踪：投递成功视为正反馈（用户实际的显式反馈由通知回调处理）
+                // 信任追踪：投递成功视为正反馈
                 if (trustUpgradeService != null) {
                     try {
                         trustUpgradeService.recordPositiveFeedback(
@@ -242,39 +206,32 @@ public class ProactiveEngine {
     }
 
     /**
-     * 偏好前置过滤 — 基于用户偏好调整候选分数。
-     *
-     * <p>查询领域偏好和时段偏好，对低偏好的候选降低分数。
-     * 这样用户不感兴趣的内容在 Gate 2 就被过滤，而非生成后再压制。</p>
+     * 偏好前置过滤 — 基于 L4 偏好规则调整候选分数。
      */
     private ArrayList<ProactiveCandidate> applyPreferenceScoring(ArrayList<ProactiveCandidate> candidates,
                                                                   ContextPacket ctx) {
-        if (preferenceLearner == null || preferenceLearner.getPreferenceRepository() == null) {
-            return candidates;
-        }
-        var prefRepo = preferenceLearner.getPreferenceRepository();
-        var domainPrefs = prefRepo.findByDimension(ctx.userId(), PreferenceDimension.DOMAIN);
-        var timingPrefs = prefRepo.findByDimension(ctx.userId(), PreferenceDimension.TIMING);
+        if (memoryBridge == null) return candidates;
+
+        var domainPrefs = memoryBridge.getPreferences("proactive-domain");
+        var timingPrefs = memoryBridge.getPreferences("proactive-timing");
         if (domainPrefs.isEmpty() && timingPrefs.isEmpty()) return candidates;
 
         // 构建偏好 Map
         var domainMap = new HashMap<String, Float>();
         for (var p : domainPrefs) {
-            if (p.observationCount() >= 3) domainMap.put(p.preferenceKey(), p.preferenceValue());
+            if (p.observationCount() >= 3) {
+                domainMap.put(p.key(), ProactiveMemoryBridge.parseFloat(p.value(), 0.5f));
+            }
         }
-        String currentTimeSlot = resolveTimeSlot(ctx);
+        String currentTimeSlot = TimeSlotResolver.resolve(ctx);
         float timingPref = timingPrefs.stream()
-                .filter(p -> p.preferenceKey().equals(currentTimeSlot) && p.observationCount() >= 3)
-                .map(PreferenceEntry::preferenceValue)
+                .filter(p -> p.key().equals(currentTimeSlot) && p.observationCount() >= 3)
+                .map(p -> ProactiveMemoryBridge.parseFloat(p.value(), 0.5f))
                 .findFirst().orElse(0.5f);
 
         var adjusted = new ArrayList<ProactiveCandidate>();
         for (var c : candidates) {
             float domainPref = domainMap.getOrDefault(c.behaviorName(), 0.5f);
-            // 偏好调整：将偏好值映射为乘数 [0.5, 1.2]
-            // 偏好 0.0 → 乘数 0.5（大幅降低）
-            // 偏好 0.5 → 乘数 1.0（不变）
-            // 偏好 1.0 → 乘数 1.2（轻微提升）
             float domainMultiplier = 0.5f + domainPref * 0.7f;
             float timingMultiplier = 0.5f + timingPref * 0.7f;
             float combinedMultiplier = (domainMultiplier + timingMultiplier) / 2;
@@ -287,19 +244,18 @@ public class ProactiveEngine {
         return adjusted;
     }
 
-    private static String resolveTimeSlot(ContextPacket ctx) {
-        return TimeSlotResolver.resolve(ctx);
-    }
-
-    /** 反思触发 — 周日 22:00 执行周度自省。 */
-    private void runReflectionIfDue(ContextPacket ctx) {
-        if (reflectionService == null) return;
+    /** 偏好学习 — 投递结果三维度写入 L4。 */
+    private void learnPreferenceFromDelivery(ProactiveAction action, DeliveryResult result,
+                                              String userId, boolean positive) {
+        if (memoryBridge == null) return;
         try {
-            if (reflectionService.shouldReflect(ctx.now(), ctx.zoneId())) {
-                reflectionService.reflect(ctx.userId(), ctx.zoneId(), ctx.now());
-            }
+            float signal = positive ? 0.8f : 0.2f;
+            String timeSlot = TimeSlotResolver.resolve(result.deliveredAt(), ZoneId.systemDefault());
+            memoryBridge.observePreference("proactive-timing", timeSlot, signal);
+            memoryBridge.observePreference("proactive-domain", action.candidate().behaviorName(), signal);
+            memoryBridge.observePreference("proactive-style", result.level().name(), signal);
         } catch (Exception e) {
-            log.debug("主动引擎: 反思执行跳过: {}", e.getMessage());
+            log.debug("主动引擎: 偏好学习跳过: {}", e.getMessage());
         }
     }
 
@@ -310,17 +266,6 @@ public class ProactiveEngine {
             implicitSignalCollector.checkIgnoredDeliveries(ctx.userId());
         } catch (Exception e) {
             log.debug("主动引擎: 隐式信号检测跳过: {}", e.getMessage());
-        }
-    }
-
-    /** 全局意图维护 — 过期清理 + 对话提取。 */
-    private void runIntentMaintenance(ContextPacket ctx) {
-        if (intentMemoryService == null) return;
-        try {
-            intentMemoryService.expireStaleIntents();
-            intentMemoryService.extractFromRecentConversations(ctx.userId());
-        } catch (Exception e) {
-            log.debug("主动引擎: 意图维护跳过: {}", e.getMessage());
         }
     }
 
@@ -352,23 +297,14 @@ public class ProactiveEngine {
         LocalTime qEnd = parseTime(config != null
                 ? config.getTask().getProactiveReminderQuietHoursEnd() : null);
 
-        // 注入画像和反思经验 — 让所有 behavior 能"懂"用户
-        String portrait = null;
-        if (userProfileService != null) {
-            try { portrait = userProfileService.getProfile(userId).getPortraitOrDefault(); }
-            catch (Exception e) { log.debug("主动引擎: 画像读取跳过: {}", e.getMessage()); }
-        }
-        String experience = null;
-        if (reflectionService != null) {
-            try {
-                var latest = reflectionService.getLatestExperience(userId);
-                if (latest != null) experience = latest.rawReflection();
-            } catch (Exception e) { log.debug("主动引擎: 经验读取跳过: {}", e.getMessage()); }
-        }
+        // 从记忆模块读取画像和经验
+        String portrait = memoryBridge != null ? memoryBridge.getUserPortrait() : null;
+        String experience = memoryBridge != null ? memoryBridge.getRecentExperiences() : null;
 
         return new ContextPacket(userId, now, zoneId, qStart, qEnd,
                 sentToday, dailyMax, focusState, lastHeartbeatAt, heartbeatMin,
-                portrait, experience);
+                portrait.isBlank() ? null : portrait,
+                experience.isBlank() ? null : experience);
     }
 
     @Nullable
