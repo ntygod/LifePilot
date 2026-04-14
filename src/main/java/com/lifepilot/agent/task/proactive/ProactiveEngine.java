@@ -5,6 +5,9 @@ import com.lifepilot.agent.task.proactive.intent.IntentMemoryService;
 import com.lifepilot.agent.task.proactive.preference.PreferenceDimension;
 import com.lifepilot.agent.task.proactive.preference.PreferenceEntry;
 import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
+import com.lifepilot.agent.task.proactive.profile.UserProfileService;
+import com.lifepilot.agent.task.proactive.reflection.ReflectionService;
+import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.notification.NotificationRepository;
@@ -63,6 +66,12 @@ public class ProactiveEngine {
     private final PreferenceLearner preferenceLearner;
     @Nullable
     private final TrustUpgradeService trustUpgradeService;
+    @Nullable
+    private final UserProfileService userProfileService;
+    @Nullable
+    private final ReflectionService reflectionService;
+    @Nullable
+    private final ImplicitSignalCollector implicitSignalCollector;
     private final BehaviorHealthTracker healthTracker = new BehaviorHealthTracker();
 
     /** 上次心跳时间，用于 Gate 1 变化量检查。 */
@@ -73,7 +82,7 @@ public class ProactiveEngine {
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
                            DecisionGate decisionGate,
                            DeliveryEngine deliveryEngine) {
-        this(behaviors, decisionGate, deliveryEngine, null, null, null, null, null, null, null);
+        this(behaviors, decisionGate, deliveryEngine, null, null, null, null, null, null, null, null, null, null);
     }
 
     public ProactiveEngine(List<ProactiveBehavior> behaviors,
@@ -85,7 +94,10 @@ public class ProactiveEngine {
                            @Nullable ReminderFocusStateHolder focusStateHolder,
                            @Nullable IntentMemoryService intentMemoryService,
                            @Nullable PreferenceLearner preferenceLearner,
-                           @Nullable TrustUpgradeService trustUpgradeService) {
+                           @Nullable TrustUpgradeService trustUpgradeService,
+                           @Nullable UserProfileService userProfileService,
+                           @Nullable ReflectionService reflectionService,
+                           @Nullable ImplicitSignalCollector implicitSignalCollector) {
         this.behaviors = List.copyOf(behaviors);
         this.decisionGate = decisionGate;
         this.deliveryEngine = deliveryEngine;
@@ -96,6 +108,9 @@ public class ProactiveEngine {
         this.intentMemoryService = intentMemoryService;
         this.preferenceLearner = preferenceLearner;
         this.trustUpgradeService = trustUpgradeService;
+        this.userProfileService = userProfileService;
+        this.reflectionService = reflectionService;
+        this.implicitSignalCollector = implicitSignalCollector;
     }
 
     /**
@@ -121,8 +136,10 @@ public class ProactiveEngine {
             return DetectionLevel.SILENT;
         }
 
-        // ── 全局维护：意图过期清理 + 新意图提取（Y1: 从插件上移到引擎层统一执行） ──
+        // ── 全局维护 ──
         runIntentMaintenance(ctx);
+        runReflectionIfDue(ctx);
+        runImplicitSignalCheck(ctx);
 
         // ── Gate 2: 各插件快速检测候选 ──
         var allCandidates = new ArrayList<ProactiveCandidate>();
@@ -197,6 +214,14 @@ public class ProactiveEngine {
                         preferenceLearner.learnFromDelivery(ga.action(), result, ctx.userId(), true);
                     } catch (Exception ex) {
                         log.debug("主动引擎: 偏好学习跳过: {}", ex.getMessage());
+                    }
+                }
+                // 隐式信号：记录投递事件以便后续检测参与度
+                if (implicitSignalCollector != null) {
+                    try {
+                        implicitSignalCollector.onDelivered(ctx.userId(), ga.action(), result);
+                    } catch (Exception ex) {
+                        log.debug("主动引擎: 隐式信号记录跳过: {}", ex.getMessage());
                     }
                 }
                 // 信任追踪：投递成功视为正反馈（用户实际的显式反馈由通知回调处理）
@@ -277,6 +302,28 @@ public class ProactiveEngine {
         if (hour >= 14 && hour < 18) return "afternoon";
         if (hour >= 18 && hour < 21) return "evening";
         return "night";
+    }
+
+    /** 反思触发 — 周日 22:00 执行周度自省。 */
+    private void runReflectionIfDue(ContextPacket ctx) {
+        if (reflectionService == null) return;
+        try {
+            if (reflectionService.shouldReflect(ctx.now(), ctx.zoneId())) {
+                reflectionService.reflect(ctx.userId(), ctx.zoneId());
+            }
+        } catch (Exception e) {
+            log.debug("主动引擎: 反思执行跳过: {}", e.getMessage());
+        }
+    }
+
+    /** 隐式信号检测 — 检查已投递通知是否被忽略。 */
+    private void runImplicitSignalCheck(ContextPacket ctx) {
+        if (implicitSignalCollector == null) return;
+        try {
+            implicitSignalCollector.checkIgnoredDeliveries(ctx.userId());
+        } catch (Exception e) {
+            log.debug("主动引擎: 隐式信号检测跳过: {}", e.getMessage());
+        }
     }
 
     /** 全局意图维护 — 过期清理 + 对话提取。 */

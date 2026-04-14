@@ -150,7 +150,8 @@ class ProactiveAutoConfiguration_集成测试 {
         // 构建引擎
         ProactiveEngine engine = config.proactiveEngine(
                 behaviors, gate, delivery, notificationProperties,
-                null, null, null, intentMemory, preferenceLearner, trustUpgrade);
+                null, null, null, intentMemory, preferenceLearner, trustUpgrade,
+                null, null, null);
 
         assertThat(engine).isNotNull();
     }
