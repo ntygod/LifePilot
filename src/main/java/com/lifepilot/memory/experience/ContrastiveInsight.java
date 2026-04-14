@@ -14,7 +14,5 @@ public record ContrastiveInsight(
         /** 成功关键因素。 */
         String successFactor,
         /** 对比教训列表。 */
-        List<String> contrastiveLessons,
-        /** 规避策略。 */
-        String avoidanceStrategy
+        List<String> contrastiveLessons
 ) {}

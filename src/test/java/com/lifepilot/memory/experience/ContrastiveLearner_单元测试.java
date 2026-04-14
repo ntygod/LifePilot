@@ -86,8 +86,7 @@ class ContrastiveLearner_单元测试 {
                 {
                   "failureReason": "未充分检查前置条件",
                   "successFactor": "逐步验证每一步输出",
-                  "contrastiveLessons": ["应在每步后验证", "错误传播需要早期截断"],
-                  "avoidanceStrategy": "添加前置条件断言"
+                  "contrastiveLessons": ["应在每步后验证", "错误传播需要早期截断"]
                 }
                 """;
     }
@@ -98,8 +97,7 @@ class ContrastiveLearner_单元测试 {
                 {
                   "failureReason": "",
                   "successFactor": "",
-                  "contrastiveLessons": [],
-                  "avoidanceStrategy": ""
+                  "contrastiveLessons": []
                 }
                 """;
     }
@@ -135,7 +133,7 @@ class ContrastiveLearner_单元测试 {
     class 正常对比分析流程 {
 
         @Test
-        void 新成功经验匹配到失败经验_生成并持久化对比洞察() {
+        void 新成功经验匹配到失败经验_增强成功经验的lessons() {
             // given — 新经验为成功
             var newExp = 构造经验实体("success-1", "成功场景", true);
             var failureExp = 构造经验实体("failure-1", "失败场景", false);
@@ -160,27 +158,26 @@ class ContrastiveLearner_单元测试 {
             // when
             learner.learn(newExp);
 
-            // then — 对比经验实体被写入
+            // then — 成功经验被增强写回
             var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
-            verify(vectorSearcher).upsertEntityVector(anyString(), anyString());
 
-            var persisted = entityCaptor.getValue();
-            assertThat(persisted.type()).isEqualTo(EntityType.EXPERIENCE);
-            assertThat(persisted.name()).startsWith("对比洞察:");
-            assertThat(persisted.properties().get("contrastive")).isEqualTo(true);
-            assertThat(persisted.properties().get("successEntityId")).isEqualTo("success-1");
-            assertThat(persisted.properties().get("failureEntityId")).isEqualTo("failure-1");
-            assertThat(persisted.properties().get("failureReason")).isEqualTo("未充分检查前置条件");
-            assertThat(persisted.properties().get("successFactor")).isEqualTo("逐步验证每一步输出");
-            assertThat((List<?>) persisted.properties().get("contrastiveLessons")).hasSize(2);
-            assertThat(persisted.properties().get("avoidanceStrategy")).isEqualTo("添加前置条件断言");
-            assertThat(persisted.properties().get("success")).isEqualTo(true);
-            assertThat(persisted.importanceScore()).isEqualTo(0.7f);
+            var enriched = entityCaptor.getValue();
+            assertThat(enriched.id()).isEqualTo("success-1");
+            assertThat(enriched.type()).isEqualTo(EntityType.EXPERIENCE);
+            assertThat(enriched.name()).isEqualTo("成功场景");
+            assertThat(enriched.properties().get("contrastiveEnriched")).isEqualTo(true);
+            @SuppressWarnings("unchecked")
+            var lessons = (List<String>) enriched.properties().get("lessons");
+            assertThat(lessons).contains(
+                    "教训一",
+                    "[对比] 失败原因: 未充分检查前置条件",
+                    "[对比] 成功因素: 逐步验证每一步输出");
+            assertThat(enriched.properties().get("success")).isEqualTo(true);
         }
 
         @Test
-        void 新失败经验匹配到成功经验_成功失败角色正确分配() {
+        void 新失败经验匹配到成功经验_增强成功经验而非失败经验() {
             // given — 新经验为失败
             var newExp = 构造经验实体("failure-2", "失败场景B", false);
             var successExp = 构造经验实体("success-2", "成功场景B", true);
@@ -204,13 +201,13 @@ class ContrastiveLearner_单元测试 {
             // when
             learner.learn(newExp);
 
-            // then — 持久化时 successEntityId 和 failureEntityId 正确映射
+            // then — 增强的是成功经验（success-2），而非新传入的失败经验
             var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
 
-            var persisted = entityCaptor.getValue();
-            assertThat(persisted.properties().get("successEntityId")).isEqualTo("success-2");
-            assertThat(persisted.properties().get("failureEntityId")).isEqualTo("failure-2");
+            var enriched = entityCaptor.getValue();
+            assertThat(enriched.id()).isEqualTo("success-2");
+            assertThat(enriched.properties().get("contrastiveEnriched")).isEqualTo(true);
         }
 
         @Test
@@ -456,8 +453,7 @@ class ContrastiveLearner_单元测试 {
                     {
                       "failureReason": "原因存在",
                       "successFactor": "   ",
-                      "contrastiveLessons": [],
-                      "avoidanceStrategy": ""
+                      "contrastiveLessons": []
                     }
                     """;
             when(vectorSearcher.searchEntities(anyString(), eq(5), eq(0.80f)))
@@ -483,8 +479,7 @@ class ContrastiveLearner_单元测试 {
                     {
                       "failureReason": null,
                       "successFactor": "有效因素",
-                      "contrastiveLessons": [],
-                      "avoidanceStrategy": ""
+                      "contrastiveLessons": []
                     }
                     """;
             when(vectorSearcher.searchEntities(anyString(), eq(5), eq(0.80f)))
@@ -502,17 +497,15 @@ class ContrastiveLearner_单元测试 {
         }
     }
 
-    // ────────────── 持久化实体结构验证 ──────────────
+    // ────────────── 增强实体结构验证 ──────────────
 
     @Nested
-    class 持久化实体结构验证 {
+    class 增强实体结构验证 {
 
         @Test
-        void 对比经验名称超过100字符时被截断() {
-            // given — 构造超长名称的成功经验
-            String longName = "一二三四五六七八九十".repeat(10); // 100 个汉字
-            var newExp = 构造经验实体("s1", longName, true);
-            var failureExp = 构造经验实体("f1", "失败", false);
+        void 增强后保留原始经验的name和description() {
+            var newExp = 构造经验实体("s1", "成功L", true);
+            var failureExp = 构造经验实体("f1", "失败L", false);
 
             when(vectorSearcher.searchEntities(anyString(), eq(5), eq(0.80f)))
                     .thenReturn(List.of(new VectorSearchResult("f1", 0.85f)));
@@ -523,48 +516,26 @@ class ContrastiveLearner_单元测试 {
                     any(GenerationCapability.class), any(Duration.class)))
                     .thenReturn(构造LLM响应(合法洞察JSON()));
 
-            // when
-            learner.learn(newExp);
-
-            // then — name 被截断到 100 字符
-            var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
-            verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
-            assertThat(entityCaptor.getValue().name().length()).isLessThanOrEqualTo(100);
-        }
-
-        @Test
-        void contrastiveLessons为null时写入空列表() {
-            var newExp = 构造经验实体("s1", "成功L", true);
-            var failureExp = 构造经验实体("f1", "失败L", false);
-
-            String noLessonsJSON = """
-                    {
-                      "failureReason": "原因",
-                      "successFactor": "因素",
-                      "contrastiveLessons": null,
-                      "avoidanceStrategy": "策略"
-                    }
-                    """;
-            when(vectorSearcher.searchEntities(anyString(), eq(5), eq(0.80f)))
-                    .thenReturn(List.of(new VectorSearchResult("f1", 0.85f)));
-            when(semanticMemory.findById("f1")).thenReturn(Optional.of(failureExp));
-            when(promptRegistry.render(eq("memory/contrastive-learning"), anyMap()))
-                    .thenReturn("prompt");
-            when(generationRouter.call(anyString(), anyString(), any(), any(), any(),
-                    any(GenerationCapability.class), any(Duration.class)))
-                    .thenReturn(构造LLM响应(noLessonsJSON));
-
             learner.learn(newExp);
 
             var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
-            assertThat(entityCaptor.getValue().properties().get("contrastiveLessons"))
-                    .isEqualTo(List.of());
+            var enriched = entityCaptor.getValue();
+            assertThat(enriched.name()).isEqualTo("成功L");
+            assertThat(enriched.description()).isEqualTo("策略描述");
         }
 
         @Test
-        void 对比经验description由successFactor和failureReason拼接() {
-            var newExp = 构造经验实体("s1", "成功M", true);
+        void 源经验lessons为null时从空列表开始追加() {
+            // 构造一个 lessons 为 null 的经验
+            Map<String, Object> props = new LinkedHashMap<>();
+            props.put("success", true);
+            props.put("toolsUsed", List.of("web.search"));
+            // 不设置 lessons
+            var newExp = new TemporalEntity(
+                    "s1", EntityType.EXPERIENCE, "成功M", "策略描述", props,
+                    1, true, Instant.now(), null, null,
+                    0.8f, 0.5f, 0, null, Instant.now(), Instant.now());
             var failureExp = 构造经验实体("f1", "失败M", false);
 
             when(vectorSearcher.searchEntities(anyString(), eq(5), eq(0.80f)))
@@ -580,12 +551,15 @@ class ContrastiveLearner_单元测试 {
 
             var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
-            assertThat(entityCaptor.getValue().description())
-                    .isEqualTo("逐步验证每一步输出 vs 未充分检查前置条件");
+            @SuppressWarnings("unchecked")
+            var lessons = (List<String>) entityCaptor.getValue().properties().get("lessons");
+            assertThat(lessons).hasSize(2);
+            assertThat(lessons.get(0)).startsWith("[对比] 失败原因:");
+            assertThat(lessons.get(1)).startsWith("[对比] 成功因素:");
         }
 
         @Test
-        void 对比经验向量也同步写入() {
+        void 增强后不调用vectorSearcher的upsertEntityVector() {
             var newExp = 构造经验实体("s1", "成功N", true);
             var failureExp = 构造经验实体("f1", "失败N", false);
 
@@ -600,7 +574,8 @@ class ContrastiveLearner_单元测试 {
 
             learner.learn(newExp);
 
-            verify(vectorSearcher).upsertEntityVector(anyString(), anyString());
+            // 增强模式不创建新实体，不需要写入新向量
+            verify(vectorSearcher, never()).upsertEntityVector(anyString(), anyString());
         }
     }
 
@@ -631,10 +606,11 @@ class ContrastiveLearner_单元测试 {
             learner.learn(newExp);
 
             // 无 success 属性时 Boolean.TRUE.equals(null) == false，应与 success=true 的 s1 配对
+            // 增强的是成功经验 s1
             var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
-            assertThat(entityCaptor.getValue().properties().get("successEntityId")).isEqualTo("s1");
-            assertThat(entityCaptor.getValue().properties().get("failureEntityId")).isEqualTo("e1");
+            assertThat(entityCaptor.getValue().id()).isEqualTo("s1");
+            assertThat(entityCaptor.getValue().properties().get("contrastiveEnriched")).isEqualTo(true);
         }
 
         @Test
@@ -699,9 +675,11 @@ class ContrastiveLearner_单元测试 {
 
             learner.learn(newExp);
 
+            // 增强的是成功经验 s1
             var entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             verify(semanticMemory).upsertWithConflictDetection(entityCaptor.capture(), eq("contrastive-learning"));
-            assertThat(entityCaptor.getValue().properties().get("failureEntityId")).isEqualTo("f1");
+            assertThat(entityCaptor.getValue().id()).isEqualTo("s1");
+            assertThat(entityCaptor.getValue().properties().get("contrastiveEnriched")).isEqualTo(true);
         }
 
         @Test

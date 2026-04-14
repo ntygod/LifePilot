@@ -102,9 +102,18 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("搜索和管理用户的长期记忆。对话中的事实由系统自动提取存储，本工具用于：" +
-                        "检索已有记忆、回忆历史对话、用户明确要求时手动写入、建立实体关系、时间点查询。" +
-                        "资料文档用 knowledge.search")
+                .description("搜索和管理用户的长期记忆。\n\n" +
+                        "自动行为：对话中的事实由系统自动提取存储，用户画像和相关经验已自动注入上下文。\n\n" +
+                        "手动使用场景：\n" +
+                        "- search：用户提到具体人/事/项目时，搜索相关知识实体\n" +
+                        "- recall：用户引用历史对话（\u201C上次聊的\u201D\u201C之前说过\u201D）时，回忆完整对话片段\n" +
+                        "- create：用户明确要求记住某事，或表达了重要偏好/目标变更\n" +
+                        "- update：已有实体信息需要修正或补充\n" +
+                        "- delete：用户要求遗忘某条记忆\n" +
+                        "- search-experience：需要借鉴过往类似任务的执行经验\n" +
+                        "- query-at-time：需要查询某个时间点的历史状态\n\n" +
+                        "不需要调用的情况：当前上下文已有足够信息、纯闲聊、一般知识问答。\n" +
+                        "资料文档检索请用 knowledge.search。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

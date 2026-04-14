@@ -88,6 +88,11 @@ public class EpisodicToProceduralConsolidator {
      * @return 巩固统计结果
      */
     public ConsolidationStats consolidate() {
+        // 操作模板聚类开关（可通过配置关闭以节省 LLM 成本）
+        if (!properties.getProcedural().isTemplateEnabled()) {
+            log.debug("程序巩固: 操作模板聚类已关闭，跳过");
+            return new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, 0);
+        }
         if (generationRouter == null || embeddingRouter == null) {
             log.warn("程序巩固: GenerationRouter 或 EmbeddingRouter 不可用，跳过");
             return new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, 0);
