@@ -16,6 +16,7 @@ import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -50,7 +51,9 @@ public class EpisodicToProceduralConsolidator {
 
     private final JdbcTemplate jdbcTemplate;
     private final ProceduralMemory proceduralMemory;
+    @Nullable
     private final GenerationRouter generationRouter;
+    @Nullable
     private final EmbeddingRouter embeddingRouter;
     private final MemoryProperties properties;
     private final PromptRegistry promptRegistry;
@@ -66,8 +69,8 @@ public class EpisodicToProceduralConsolidator {
      */
     public EpisodicToProceduralConsolidator(JdbcTemplate jdbcTemplate,
                                             ProceduralMemory proceduralMemory,
-                                            GenerationRouter generationRouter,
-                                            EmbeddingRouter embeddingRouter,
+                                            @Nullable GenerationRouter generationRouter,
+                                            @Nullable EmbeddingRouter embeddingRouter,
                                             MemoryProperties properties,
                                             PromptRegistry promptRegistry) {
         this.jdbcTemplate = jdbcTemplate;
@@ -85,6 +88,10 @@ public class EpisodicToProceduralConsolidator {
      * @return 巩固统计结果
      */
     public ConsolidationStats consolidate() {
+        if (generationRouter == null || embeddingRouter == null) {
+            log.warn("程序巩固: GenerationRouter 或 EmbeddingRouter 不可用，跳过");
+            return new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, 0);
+        }
         long startMs = System.currentTimeMillis();
         var config = properties.getConsolidation();
 

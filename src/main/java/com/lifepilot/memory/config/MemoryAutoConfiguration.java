@@ -410,15 +410,18 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ProceduralMemory.class, GenerationRouter.class, EmbeddingRouter.class})
     public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
-            GenerationRouter generationRouter,
-            EmbeddingRouter embeddingRouter,
+            @Nullable GenerationRouter generationRouter,
+            @Nullable EmbeddingRouter embeddingRouter,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator");
+        if (generationRouter == null || embeddingRouter == null) {
+            log.warn("记忆模块: GenerationRouter 或 EmbeddingRouter 不可用，EpisodicToProceduralConsolidator 将无法执行巩固");
+        }
+        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator, generationRouterAvailable={}, embeddingRouterAvailable={}",
+                generationRouter != null ? "yes" : "no", embeddingRouter != null ? "yes" : "no");
         return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
                 generationRouter, embeddingRouter, properties, promptRegistry);
     }
