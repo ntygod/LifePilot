@@ -285,18 +285,21 @@ class ContextAssemblerSkillCatalogTest {
                 "用户画像",
                 "工作区",
                 "产物摘要",
-                "经验片段"
+                "经验片段",
+                "记忆上下文"
         );
 
-        assertThat(messages).hasSize(4);
+        assertThat(messages).hasSize(5);
         assertThat(messages.getFirst().getText()).contains("<user_profile_context>");
         assertThat(messages.getFirst().getText()).contains("用户画像");
         assertThat(messages.get(1).getText()).contains("<workspace_context>");
         assertThat(messages.get(1).getText()).contains("工作区");
         assertThat(messages.get(2).getText()).contains("<artifact_context>");
         assertThat(messages.get(2).getText()).contains("产物摘要");
-        assertThat(messages.getLast().getText()).contains("<experience_context>");
-        assertThat(messages.getLast().getText()).contains("经验片段");
+        assertThat(messages.get(3).getText()).contains("<experience_context>");
+        assertThat(messages.get(3).getText()).contains("经验片段");
+        assertThat(messages.getLast().getText()).contains("<memory_context>");
+        assertThat(messages.getLast().getText()).contains("记忆上下文");
     }
 
     private AgentConfigProperties buildConfig() {

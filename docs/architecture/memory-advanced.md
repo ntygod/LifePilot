@@ -2,11 +2,11 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统：procedural / consolidation / forgetting）
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-14
 
 ## 1. 模块概述
 
-记忆系统进阶模块构建在基础记忆系统之上，实现三大高级能力：L4 程序记忆（操作模板 + 偏好规则 + 策略模式）、记忆巩固管线（情景→语义 / 情景→程序的自动沉淀）、MaRS 认知遗忘引擎（六策略混合遗忘 + 受保护实体机制）。这些能力使知微从"记住对话"进化为"学习行为模式并主动遗忘过时信息"。
+记忆系统进阶模块构建在基础记忆系统之上，实现三大高级能力：L4 程序记忆（操作模板 + 偏好规则）、记忆巩固管线（情景→语义 / 情景→程序的自动沉淀）、MaRS 认知遗忘引擎（六策略混合遗忘 + 受保护实体机制）。这些能力使知微从"记住对话"进化为"学习行为模式并主动遗忘过时信息"。
 
 ## 2. 架构图
 
@@ -15,13 +15,11 @@ graph TB
     subgraph "L4 程序记忆"
         PM["ProceduralMemory"]
         IM["IntentMatcher"]
-        PT["ProcedureTemplate<br/>(操作模板)"]
+        PT["ProcedureTemplate<br/>(操作模板, 默认关闭)"]
         PR["PreferenceRule<br/>(偏好规则)"]
-        SP["StrategyPattern<br/>(策略模式)"]
         TS["TemplateStep"]
         PM --> PT
         PM --> PR
-        PM --> SP
         PT --> TS
         IM --> PM
     end
@@ -79,12 +77,12 @@ graph TB
 
 ### 3.1 ProceduralMemory（L4 程序记忆）
 
-- 职责：存储和管理用户的操作模板、偏好规则和策略模式
-- 三种数据类型：
+- 职责：存储和管理用户的操作模板和偏好规则
+- 两种数据类型（`StrategyPattern` 已删除）：
   - `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数
   - `PreferenceRule`：偏好规则，按 category + key 组织，支持强化（reinforcement）
-  - `StrategyPattern`：策略模式，按情境文本向量匹配
-- 使用 sqlite-vec 建立意图向量索引（`procedure_intent_embeddings`）和情境向量索引（`strategy_situation_embeddings`）
+- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认关闭
+- 使用 sqlite-vec 建立意图向量索引（`procedure_intent_embeddings`）
 - 记录每次模板执行的成功/失败，动态更新成功率
 
 ### 3.2 IntentMatcher（意图匹配器）
@@ -105,6 +103,7 @@ graph TB
 ### 3.4 EpisodicToProceduralConsolidator（情景→程序巩固器）
 
 - 职责：从重复行为模式中聚类生成操作模板，提取用户偏好
+- 模板聚类受 `lifepilot.memory.procedural.templateEnabled` 开关控制（默认关闭）
 - 分析对话轨迹中的工具调用序列，识别重复模式
 - 相似度超过阈值的轨迹聚类为操作模板（`ProcedureTemplate`）
 - 配置参数：聚类相似度阈值、最小聚类大小、每次运行最大模板数、最小执行步骤数
@@ -219,7 +218,7 @@ sequenceDiagram
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| L4 三种数据类型 | ProcedureTemplate + PreferenceRule + StrategyPattern | 分别覆盖"怎么做"、"喜欢什么"、"什么情况下怎么做"三个维度 |
+| L4 两种数据类型 | ProcedureTemplate + PreferenceRule | 分别覆盖"怎么做"和"喜欢什么"两个维度（StrategyPattern 已删除） |
 | 巩固管线顺序执行 | 语义巩固 → 程序巩固 | 程序巩固可能依赖语义巩固的实体提取结果 |
 | 故障隔离策略 | try-catch 独立包裹 | 单个巩固器失败不应阻塞整个管线 |
 | 遗忘策略 sealed interface | 6 种策略 + HybridPolicy 编排 | 每种策略有明确适用场景，Hybrid 综合优势；sealed 保证穷举 |
@@ -247,6 +246,7 @@ sequenceDiagram
 | `lifepilot.memory.procedural.min-use-count` | — | 模板最低使用次数 |
 | `lifepilot.memory.procedural.stale-days` | — | 模板过期天数 |
 | `lifepilot.memory.procedural.match-threshold` | — | 意图匹配相似度阈值 |
+| `lifepilot.memory.procedural.templateEnabled` | false | 是否启用操作模板聚类 |
 | `lifepilot.memory.consolidation.cron` | — | 巩固管线 Cron 表达式 |
 | `lifepilot.memory.consolidation.trigger-mode` | — | 触发模式（cron / idle） |
 | `lifepilot.memory.consolidation.lookback-days` | — | 巩固回溯天数 |

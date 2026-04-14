@@ -409,6 +409,33 @@ public class SemanticMemory {
     }
 
     /**
+     * 按实体类型分组统计当前有效实体数量 — 轻量 SQL 聚合，避免全量加载实体对象。
+     *
+     * @param filter 读取过滤条件（可为 null）
+     * @return 实体类型 → 数量映射
+     */
+    public Map<EntityType, Integer> countByEntityType(@Nullable MemoryReadFilter filter) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT type, COUNT(*) AS cnt FROM temporal_entities WHERE is_current = 1");
+        List<Object> params = new ArrayList<>();
+        appendEntityReadFilter(sql, params, filter);
+        sql.append(" GROUP BY type");
+        var rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+        Map<EntityType, Integer> result = new java.util.EnumMap<>(EntityType.class);
+        for (var row : rows) {
+            try {
+                EntityType type = EntityType.valueOf((String) row.get("type"));
+                int count = ((Number) row.get("cnt")).intValue();
+                result.put(type, count);
+            } catch (IllegalArgumentException e) {
+                // 未知的实体类型，跳过
+                log.debug("语义记忆: 忽略未知实体类型, type={}", row.get("type"));
+            }
+        }
+        return result;
+    }
+
+    /**
      * 统计当前有效实体总数。
      *
      * @return 当前有效实体数量

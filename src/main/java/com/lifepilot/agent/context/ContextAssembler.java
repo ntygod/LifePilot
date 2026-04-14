@@ -14,6 +14,10 @@ import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
+import com.lifepilot.memory.experience.SubtaskReflector;
+import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.retrieval.RetrievalResult;
+import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -56,6 +60,12 @@ public class ContextAssembler {
     private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
+
+    /** 记忆统计缓存（不可变 record，单字段原子读写）。 */
+    private record MetadataCache(String content, Instant cachedAt) {}
+    private volatile MetadataCache metadataCache;
+    private static final Duration METADATA_CACHE_TTL = Duration.ofMinutes(5);
+
     private final AgentConfigProperties config;
     private final LocationResolver locationResolver;
     private final PromptRegistry promptRegistry;
@@ -73,6 +83,7 @@ public class ContextAssembler {
     @Nullable private final CollectionRepository collectionRepository;
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
+    @Nullable private final HybridRetriever hybridRetriever;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -86,7 +97,7 @@ public class ContextAssembler {
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
                 null, null, null, null, null, null,
-                null, null);
+                null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -102,7 +113,7 @@ public class ContextAssembler {
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
                 generationRouter, null, null, null, null, null,
-                null, null);
+                null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -119,7 +130,7 @@ public class ContextAssembler {
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
                 generationRouter, contextEngine, null, null, null, null,
-                null, null);
+                null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -142,7 +153,7 @@ public class ContextAssembler {
                 generationRouter, contextEngine,
                 sessionKnowledgeBaseRepository, sessionDatastoreRepository,
                 knowledgeBaseRepository, collectionRepository,
-                null, null);
+                null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -160,7 +171,8 @@ public class ContextAssembler {
                             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                             @Nullable CollectionRepository collectionRepository,
                             @Nullable DynamicToolRegistry toolRegistry,
-                            @Nullable McpConfigProperties mcpConfig) {
+                            @Nullable McpConfigProperties mcpConfig,
+                            @Nullable HybridRetriever hybridRetriever) {
         this.config = config;
         this.locationResolver = new LocationResolver(config);
         this.promptRegistry = promptRegistry;
@@ -178,6 +190,7 @@ public class ContextAssembler {
         this.collectionRepository = collectionRepository;
         this.toolRegistry = toolRegistry;
         this.mcpConfig = mcpConfig;
+        this.hybridRetriever = hybridRetriever;
     }
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
@@ -187,7 +200,7 @@ public class ContextAssembler {
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
-            // 三路独立检索并行化：contextSnapshot、userProfile、experiences 互不依赖
+            // 四路独立检索并行化：contextSnapshot、userProfile、experiences、relevantMemories 互不依赖
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
             var profileFuture = mediaPlaceholder
@@ -196,24 +209,31 @@ public class ContextAssembler {
             var experiencesFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
                     : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()), VIRTUAL_EXECUTOR);
-            CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture).join();
+            var memoryFuture = mediaPlaceholder
+                    ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
+                    : CompletableFuture.supplyAsync(
+                        () -> safeRetrieveRelevantMemories(state.goal()), VIRTUAL_EXECUTOR);
+            CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture, memoryFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
             List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
             String userProfile = profileFuture.join();
             List<TemporalEntity> experiences = experiencesFuture.join();
+            List<TemporalEntity> relevantMemories = memoryFuture.join();
             List<String> injectedIds = recordExperienceInjection(state, experiences);
             String profileSection = safeRedact(formatUserProfileSection(userProfile));
             String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
             String artifactSection = safeRedact(contextSnapshot.artifactSection());
             String experienceSection = safeRedact(formatExperienceSection(experiences));
+            String memorySection = safeRedact(formatMemorySection(relevantMemories));
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
             List<Message> contextMessages = buildContextMessages(
                     profileSection,
                     workspaceSection,
                     artifactSection,
-                    experienceSection
+                    experienceSection,
+                    memorySection
             );
             String userPrompt = buildUserPrompt(state);
 
@@ -310,15 +330,22 @@ public class ContextAssembler {
                         .toList();
             }
 
+            // 排除工具级经验（由 ToolExecutionCoordinator 在工具执行前精准注入）
+            experiences = experiences.stream()
+                    .filter(entity -> {
+                        Object granularity = entity.properties().get("granularity");
+                        return granularity == null || !SubtaskReflector.TOOL_LEVEL.equals(granularity.toString());
+                    })
+                    .toList();
+
             String evalPrefix = experience.getEvalTagPrefix();
             return experiences.stream()
                     .sorted((left, right) -> {
-                        int leftBoost = hasMatchingEvalTag(left, query, evalPrefix) ? 1 : 0;
-                        int rightBoost = hasMatchingEvalTag(right, query, evalPrefix) ? 1 : 0;
-                        if (leftBoost != rightBoost) {
-                            return rightBoost - leftBoost;
-                        }
-                        return Float.compare(right.importanceScore(), left.importanceScore());
+                        boolean leftHit = hasMatchingEvalTag(left, query, evalPrefix);
+                        boolean rightHit = hasMatchingEvalTag(right, query, evalPrefix);
+                        float leftScore = computeInjectionScore(left, leftHit);
+                        float rightScore = computeInjectionScore(right, rightHit);
+                        return Float.compare(rightScore, leftScore);
                     })
                     .limit(experience.getMaxInjectionCount())
                     .toList();
@@ -348,6 +375,73 @@ public class ContextAssembler {
             usedTokens += entryTokens;
         }
 
+        return sb.toString();
+    }
+
+    /**
+     * 检索与当前查询相关的记忆实体 — 通过 HybridRetriever 三路混合检索，
+     * 排除已由 userProfile 和 experience 路径覆盖的类型。
+     */
+    List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query) {
+        if (hybridRetriever == null || semanticMemory == null || memoryProperties == null) {
+            return List.of();
+        }
+        var retrieval = memoryProperties.getRetrieval();
+        if (!retrieval.isMemoryContextEnabled()) {
+            return List.of();
+        }
+        try {
+            int maxEntities = retrieval.getMemoryContextMaxEntities();
+            float threshold = retrieval.getMemoryContextScoreThreshold();
+            // 用 HybridRetriever 检索全类型实体（userMemory scope）
+            List<RetrievalResult> results = hybridRetriever.retrieve(
+                    query != null ? query : "", maxEntities * 2,
+                    RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+            // 过滤已由 userProfile 和 experience 路径覆盖的类型（entityType 是 String）
+            Set<String> excludedTypeNames = Set.of(
+                    EntityType.PREFERENCE.name(), EntityType.HABIT.name(),
+                    EntityType.GOAL.name(), EntityType.EXPERIENCE.name());
+            results = results.stream()
+                    .filter(r -> !excludedTypeNames.contains(r.entityType()))
+                    .filter(r -> r.fusedScore() >= threshold)
+                    .limit(maxEntities)
+                    .toList();
+            if (results.isEmpty()) {
+                return List.of();
+            }
+            // 批量加载完整实体
+            Set<String> ids = results.stream().map(RetrievalResult::entityId).collect(Collectors.toSet());
+            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, MemoryReadFilter.userMemory());
+            return results.stream()
+                    .map(r -> entityMap.get(r.entityId()))
+                    .filter(Objects::nonNull)
+                    .toList();
+        } catch (Exception e) {
+            log.debug("相关记忆检索已跳过: error={}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 格式化记忆实体为注入段 — 按 token 预算截断，避免超出上下文窗口。
+     */
+    String formatMemorySection(List<TemporalEntity> memories) {
+        if (memories == null || memories.isEmpty() || memoryProperties == null) {
+            return "";
+        }
+        int tokenBudget = memoryProperties.getRetrieval().getMemoryContextTokenBudget();
+        StringBuilder sb = new StringBuilder("\n与当前话题相关的记忆:\n");
+        int usedTokens = 0;
+        for (TemporalEntity entity : memories) {
+            String entry = "- [" + entity.type().label() + "] " + entity.name()
+                    + (entity.description() != null ? ": " + entity.description() : "") + "\n";
+            int entryTokens = estimateTokens(entry);
+            if (usedTokens + entryTokens > tokenBudget) {
+                break;
+            }
+            sb.append(entry);
+            usedTokens += entryTokens;
+        }
         return sb.toString();
     }
 
@@ -401,14 +495,77 @@ public class ContextAssembler {
         return sb.toString();
     }
 
+    /**
+     * 构建记忆统计元数据 — 按实体类型分组计数，生成 XML 片段注入 system prompt。
+     * 使用 SQL GROUP BY 聚合避免全量加载实体，结果缓存 5 分钟。
+     */
+    String buildMemoryMetadata() {
+        if (semanticMemory == null) {
+            return "";
+        }
+        MetadataCache cached = metadataCache;
+        Instant now = Instant.now();
+        if (cached != null && Duration.between(cached.cachedAt(), now).compareTo(METADATA_CACHE_TTL) < 0) {
+            return cached.content();
+        }
+        try {
+            Map<EntityType, Integer> counts = semanticMemory.countByEntityType(MemoryReadFilter.userMemory());
+            if (counts.isEmpty()) {
+                metadataCache = new MetadataCache("", now);
+                return "";
+            }
+            // 分类统计
+            int profileCount = 0;
+            int experienceCount = 0;
+            int factCount = 0;
+            var profileDetails = new StringBuilder();
+            var factDetails = new StringBuilder();
+            for (var entry : counts.entrySet()) {
+                int count = entry.getValue();
+                switch (entry.getKey()) {
+                    case PREFERENCE, HABIT, GOAL -> {
+                        profileCount += count;
+                        if (!profileDetails.isEmpty()) profileDetails.append("、");
+                        profileDetails.append(entry.getKey().label()).append(" ").append(count);
+                    }
+                    case EXPERIENCE -> experienceCount = count;
+                    default -> {
+                        factCount += count;
+                        if (!factDetails.isEmpty()) factDetails.append("、");
+                        factDetails.append(entry.getKey().label()).append(" ").append(count);
+                    }
+                }
+            }
+            var sb = new StringBuilder("<memory_metadata>\n");
+            if (profileCount > 0) {
+                sb.append("- 已存储 ").append(profileCount).append(" 条用户画像（").append(profileDetails).append("）\n");
+            }
+            if (experienceCount > 0) {
+                sb.append("- 已存储 ").append(experienceCount).append(" 条执行经验\n");
+            }
+            if (factCount > 0) {
+                sb.append("- 已存储 ").append(factCount).append(" 条事实性记忆（").append(factDetails).append("）\n");
+            }
+            sb.append("</memory_metadata>");
+            String result = sb.toString();
+            metadataCache = new MetadataCache(result, now);
+            return result;
+        } catch (Exception e) {
+            log.debug("记忆统计构建失败: {}", e.getMessage());
+            return "";
+        }
+    }
+
     String buildAugmentedSystemPrompt(ReactAgentState state) {
         String baseSystemPrompt = safeReactSystemPrompt(state);
         String toolGuide = safeRenderToolGuide();
         String executionGuard = buildExecutionGuardPrompt(state);
+        String memoryMetadata = buildMemoryMetadata();
         return joinNonBlankSections(
                 baseSystemPrompt,
                 toolGuide,
-                executionGuard
+                executionGuard,
+                memoryMetadata
         );
     }
 
@@ -539,12 +696,14 @@ public class ContextAssembler {
     List<Message> buildContextMessages(@Nullable String profileSection,
                                        @Nullable String workspaceSection,
                                        @Nullable String artifactSection,
-                                       @Nullable String experienceSection) {
+                                       @Nullable String experienceSection,
+                                       @Nullable String memorySection) {
         List<Message> messages = new ArrayList<>();
         addTaggedContextMessage(messages, "user_profile_context", profileSection);
         addTaggedContextMessage(messages, "workspace_context", workspaceSection);
         addTaggedContextMessage(messages, "artifact_context", artifactSection);
         addTaggedContextMessage(messages, "experience_context", experienceSection);
+        addTaggedContextMessage(messages, "memory_context", memorySection);
         return List.copyOf(messages);
     }
 
@@ -703,11 +862,13 @@ public class ContextAssembler {
 
             List<TemporalEntity> selected = !matched.isEmpty()
                     ? matched.stream()
-                            .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                            .sorted(Comparator.comparingDouble(
+                                    (TemporalEntity e) -> computeInjectionScore(e, true)).reversed())
                             .limit(maxEntities)
                             .toList()
                     : candidates.stream()
-                            .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                            .sorted(Comparator.comparingDouble(
+                                    (TemporalEntity e) -> computeInjectionScore(e, false)).reversed())
                             .limit(fallbackCount)
                             .toList();
 
@@ -901,6 +1062,31 @@ public class ContextAssembler {
                 .count();
         long otherChars = text.length() - cjkChars;
         return Math.max(1, (int) (cjkChars + otherChars / 4));
+    }
+
+    /**
+     * 三因子注入评分 — 融合 relevance（相关度）、importance（重要度）、recency（时近度）。
+     *
+     * <p>权重从 {@code lifepilot.memory.retrieval.injection-weights} 配置读取，
+     * 避免硬编码 0.4 / 0.3 / 0.3。</p>
+     *
+     * @param entity        目标实体
+     * @param relevanceHit  是否命中相关度判定（eval-tag 匹配或关键词匹配）
+     * @return 融合评分 [0.0, 1.0]
+     */
+    private float computeInjectionScore(TemporalEntity entity, boolean relevanceHit) {
+        MemoryProperties.InjectionWeights w = memoryProperties != null
+                ? memoryProperties.getRetrieval().getInjectionWeights()
+                : new MemoryProperties.InjectionWeights();
+        float relevance = relevanceHit ? 1.0f : 0.0f;
+        float importance = entity.importanceScore();
+        // 时近度：30 天内线性衰减到 0
+        float recency = 1.0f;
+        if (entity.updatedAt() != null) {
+            long daysAgo = Duration.between(entity.updatedAt(), Instant.now()).toDays();
+            recency = Math.max(0.0f, 1.0f - daysAgo / 30.0f);
+        }
+        return w.getRelevance() * relevance + w.getImportance() * importance + w.getRecency() * recency;
     }
 
     private String buildSkillCatalog() {

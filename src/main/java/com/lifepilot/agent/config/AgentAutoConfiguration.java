@@ -36,6 +36,7 @@ import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.memory.experience.SubtaskReflector;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -184,7 +185,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
             @Autowired(required = false) CollectionRepository collectionRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
-            @Autowired(required = false) McpConfigProperties mcpConfig) {
+            @Autowired(required = false) McpConfigProperties mcpConfig,
+            @Autowired(required = false) HybridRetriever hybridRetriever) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -205,7 +207,8 @@ public class AgentAutoConfiguration {
                 knowledgeBaseRepository,
                 collectionRepository,
                 toolRegistry,
-                mcpConfig);
+                mcpConfig,
+                hybridRetriever);
     }
 
     @Bean
@@ -292,7 +295,8 @@ public class AgentAutoConfiguration {
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
-            @Autowired(required = false) DynamicToolRegistry toolRegistry) {
+            @Autowired(required = false) DynamicToolRegistry toolRegistry,
+            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
         return new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -310,7 +314,8 @@ public class AgentAutoConfiguration {
                 sharedScheduler,
                 workspaceService,
                 skillRegistry,
-                toolRegistry);
+                toolRegistry,
+                semanticMemory);
     }
 
     @Bean

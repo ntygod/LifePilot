@@ -119,7 +119,8 @@ public class ReactAgentLoop implements CallbackHelper {
             SharedScheduler sharedScheduler,
             @Nullable SessionWorkspaceService workspaceService,
             @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
-            @Nullable DynamicToolRegistry toolRegistry) {
+            @Nullable DynamicToolRegistry toolRegistry,
+            @Nullable com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -135,7 +136,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 proceduralMemory,
                 intentMatcher,
                 config.getLoop().getMaxParallelToolCalls(),
-                multimodalRouter
+                multimodalRouter,
+                semanticMemory
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;

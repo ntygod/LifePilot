@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-03-20
+> **最后更新**：2026-04-14
 
 ## 1. 功能概述
 
@@ -17,11 +17,13 @@
 
 ## 2. 核心特性
 
-### 2.1 当前会话上下文改为“最近完整轮次”
+### 2.1 当前会话上下文改为”四路并行检索 + 最近完整轮次”
 
-- `ContextAssembler` 每次直接从会话层读取最近完整轮次，按时间正序拼接
-- user 和 assistant 消息以完整 turn 保留，不再按 importance 打散
-- 这意味着当前 session 的连续性不再依赖 L1，也不依赖 L2 flush
+- `ContextAssembler` 通过四路并行检索组装上下文（contextSnapshot + userProfile + experiences + relevantMemories），使用 `CompletableFuture` + Virtual Thread 并行化
+- 最近完整轮次从会话层读取，按时间正序拼接；user 和 assistant 消息以完整 turn 保留，不再按 importance 打散
+- `ContextAssembler` 在 system prompt 中注入 `<memory_metadata>` 标签，包含画像数、经验数和事实性记忆数的统计信息（5 分钟 TTL 缓存）
+- 通过 `HybridRetriever` 检索与当前查询相关的记忆实体，注入到 `<memory_context>` 标签（排除已由画像和经验路径覆盖的类型）
+- 当前 session 的连续性不再依赖 L1，也不依赖 L2 flush
 
 ### 2.2 L1 变成真正的临时工作区
 
@@ -42,14 +44,17 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 同时会排除当前 session，避免把当前对话再次检索回来。
 
-### 2.4 用户画像和经验继续自动注入
+### 2.4 用户画像、经验和相关记忆自动注入
 
-当前自动注入到 Prompt 的长期信息主要有两类：
+当前自动注入到 Prompt 的长期信息包括三类：
 
-- L3 的 `PREFERENCE / HABIT / GOAL`
-- L3 的 `EXPERIENCE`
+- L3 的 `PREFERENCE / HABIT / GOAL`（用户画像）
+- L3 的 `EXPERIENCE`（排除工具级经验，工具级经验由 `ToolExecutionCoordinator` 在工具执行前按 toolId 精准注入）
+- 通过 `HybridRetriever` 检索的相关记忆实体（`memory_context`），排除已被画像和经验路径覆盖的类型
 
-这保证模型仍然能感知长期偏好和过往经验，但不会自动把别的 session 原始对话混进主上下文。
+注入权重由 `lifepilot.memory.retrieval.injectionWeights` 控制（relevance/importance/recency，默认 0.4/0.3/0.3）。
+
+这保证模型仍然能感知长期偏好、过往经验和相关事实记忆，但不会自动把别的 session 原始对话混进主上下文。
 
 ### 2.5 记忆工具能力更清晰
 
@@ -90,7 +95,7 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 ### 3.4 复用历史经验
 
-当任务与过去成功案例相似时，系统会自动注入少量经验实体；如果还需要更主动地查找历史策略，Agent 还可以调用 `memory.search-experience`。
+当任务与过去成功案例相似时，系统会自动注入少量非工具级经验实体；工具级经验则在工具执行前由 `ToolExecutionCoordinator` 按 toolId 精准注入到 observation 中，帮助 Agent 理解结果或纠正后续调用。如果还需要更主动地查找历史策略，Agent 还可以调用 `memory.search-experience`。
 
 ## 4. 配置项
 
@@ -107,11 +112,17 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 | `lifepilot.memory.workspace.cleanup-cron` | 工作区清理调度 |
 | `lifepilot.memory.agentic-tool.*` | 记忆工具默认 TopK 等参数 |
 | `lifepilot.memory.retrieval.*` | 用户画像和 L3/L4 检索参数 |
+| `lifepilot.memory.retrieval.injectionWeights` | 记忆注入权重（relevance/importance/recency，默认 0.4/0.3/0.3） |
+| `lifepilot.memory.retrieval.memoryContextEnabled` | 是否启用 memory_context 注入（默认 true） |
+| `lifepilot.memory.retrieval.memoryContextMaxEntities` | memory_context 最大实体数（默认 5） |
+| `lifepilot.memory.retrieval.memoryContextTokenBudget` | memory_context token 预算（默认 800） |
+| `lifepilot.memory.retrieval.memoryContextScoreThreshold` | memory_context 最低相关度阈值（默认 0.6） |
+| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 false） |
 | `lifepilot.memory.consolidation.*` | 巩固触发与窗口参数 |
 | `lifepilot.memory.experience.*` | 经验注入、反馈、合并与隔离参数 |
 
 ## 5. 当前限制
 
 - `WorkingSetItem` 的业务写入场景还比较少，当前最成熟的是挂起/确认类工作区
-- 知识库和跨会话 recall 仍然主要依赖工具调用，而不是自动注入
+- 知识库和跨会话 recall 仍然主要依赖工具调用，而不是自动注入（但相关记忆实体已通过 memory_context 自动注入）
 - 配置类里仍保留少量历史字段，但主链路已经不再按旧的 `WorkingMemory`/`flush` 模型运行
