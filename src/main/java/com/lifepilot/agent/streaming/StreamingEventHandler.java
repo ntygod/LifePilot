@@ -2,8 +2,6 @@ package com.lifepilot.agent.streaming;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.model.TokenUsage;
-import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
-import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -37,17 +35,14 @@ public class StreamingEventHandler {
     private static final Logger log = LoggerFactory.getLogger(StreamingEventHandler.class);
 
     private final ObjectMapper objectMapper;
-    @Nullable private final A2uiProperties a2uiProperties;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
 
     public StreamingEventHandler(
             ObjectMapper objectMapper,
-            @Nullable A2uiProperties a2uiProperties,
             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
         this.objectMapper = objectMapper;
-        this.a2uiProperties = a2uiProperties;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
     }
@@ -239,20 +234,6 @@ public class StreamingEventHandler {
     }
 
     // ===== A2UI 辅助方法 =====
-
-    /**
-     * 从响应内容中提取 A2UI 组件。
-     *
-     * @deprecated A2UI 已改用 ui.emit tool call 提交组件树，不再需要从文本中解析标签。
-     *             保留仅供历史数据兼容，后续版本将移除。
-     */
-    @Deprecated(since = "2026-04-14", forRemoval = true)
-    public A2uiPayloadSupport.ParsedA2uiContent extractA2uiContent(@Nullable String content) {
-        if (a2uiProperties == null || !a2uiProperties.enabled()) {
-            return new A2uiPayloadSupport.ParsedA2uiContent(content != null ? content : "", null);
-        }
-        return A2uiPayloadSupport.extractContent(content, objectMapper, a2uiProperties.maxComponentsPerTree());
-    }
 
     /** 序列化 A2UI 组件树为 JSON。 */
     @Nullable
