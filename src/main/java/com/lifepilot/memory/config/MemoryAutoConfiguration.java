@@ -58,6 +58,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
@@ -459,9 +460,10 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties) {
+            MemoryProperties properties,
+            PlatformTransactionManager transactionManager) {
         log.info("记忆模块: 注册 EntityDeduplicator");
-        return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties);
+        return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties, transactionManager);
     }
 
     @Bean
