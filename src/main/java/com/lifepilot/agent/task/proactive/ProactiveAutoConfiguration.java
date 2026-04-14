@@ -87,8 +87,9 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public IntentExtractor intentExtractor() {
-        return new IntentExtractor();
+    public IntentExtractor intentExtractor(@Autowired(required = false) GenerationRouter generationRouter,
+                                            @Autowired(required = false) PromptRegistry promptRegistry) {
+        return new IntentExtractor(generationRouter, promptRegistry);
     }
 
     @Bean

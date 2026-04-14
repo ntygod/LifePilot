@@ -68,7 +68,7 @@ class ProactiveAutoConfiguration_集成测试 {
         DeliveryEngine deliveryEngine = config.proactiveDeliveryEngine(notificationService, queuedActionRepository);
         assertThat(deliveryEngine).isNotNull();
 
-        IntentExtractor intentExtractor = config.intentExtractor();
+        IntentExtractor intentExtractor = config.intentExtractor(null, null);
         assertThat(intentExtractor).isNotNull();
 
         IntentMemoryService intentMemoryService = config.intentMemoryService(intentRepository, intentExtractor, null);
@@ -131,7 +131,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var trustUpgrade = config.trustUpgradeService(autonomyRepo, null);
         var gate = config.proactiveDecisionGate(trustUpgrade, preferenceRepo);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
-        var extractor = config.intentExtractor();
+        var extractor = config.intentExtractor(null, null);
         var intentMemory = config.intentMemoryService(intentRepo, extractor, null);
         var buffer = config.clipboardIntentBuffer();
         var preferenceLearner = config.preferenceLearner(preferenceRepo);
@@ -180,7 +180,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var config = new ProactiveAutoConfiguration();
         var jdbcTemplate = mock(JdbcTemplate.class);
         var intentRepo = config.intentRepository(jdbcTemplate);
-        var extractor = config.intentExtractor();
+        var extractor = config.intentExtractor(null, null);
         var intentMemory = config.intentMemoryService(intentRepo, extractor, null);
         var buffer = config.clipboardIntentBuffer();
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);

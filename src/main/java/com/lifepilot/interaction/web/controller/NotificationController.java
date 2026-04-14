@@ -2,6 +2,12 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.task.proactive.DeliveryLevel;
+import com.lifepilot.agent.task.proactive.DeliveryResult;
+import com.lifepilot.agent.task.proactive.ProactiveAction;
+import com.lifepilot.agent.task.proactive.ProactiveCandidate;
+import com.lifepilot.agent.task.proactive.TrustUpgradeService;
+import com.lifepilot.agent.task.proactive.preference.PreferenceLearner;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRecord;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackType;
@@ -49,19 +55,27 @@ public class NotificationController {
     private final NotificationProperties notificationProperties;
     @Nullable
     private final ReminderFeedbackRepository reminderFeedbackRepository;
+    @Nullable
+    private final TrustUpgradeService trustUpgradeService;
+    @Nullable
+    private final PreferenceLearner preferenceLearner;
 
     public NotificationController(NotificationRepository notificationRepository,
                                   NotificationProperties notificationProperties) {
-        this(notificationRepository, notificationProperties, null);
+        this(notificationRepository, notificationProperties, null, null, null);
     }
 
     @Autowired
     public NotificationController(NotificationRepository notificationRepository,
                                   NotificationProperties notificationProperties,
-                                  @Nullable ReminderFeedbackRepository reminderFeedbackRepository) {
+                                  @Nullable ReminderFeedbackRepository reminderFeedbackRepository,
+                                  @Nullable TrustUpgradeService trustUpgradeService,
+                                  @Nullable PreferenceLearner preferenceLearner) {
         this.notificationRepository = notificationRepository;
         this.notificationProperties = notificationProperties;
         this.reminderFeedbackRepository = reminderFeedbackRepository;
+        this.trustUpgradeService = trustUpgradeService;
+        this.preferenceLearner = preferenceLearner;
     }
 
     /**
@@ -181,6 +195,10 @@ public class NotificationController {
             ));
         }
         notificationRepository.markAsRead(id);
+
+        // ── 反馈闭环：通知引擎的信任升级和偏好学习 ──
+        dispatchFeedbackToEngine(record, feedbackType);
+
         NotificationRecord updated = notificationRepository.findById(id).orElse(record);
         ReminderNotificationFeedbackView feedbackView = reminderFeedbackRepository.findFeedbackViewByNotificationId(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
@@ -188,6 +206,55 @@ public class NotificationController {
         log.info("提交主动提醒反馈: notificationId={}, topicKey={}, feedbackType={}, muteTopic={}",
                 id, topicKey, feedbackType, request.muteTopic());
         return ApiResponse.ok(NotificationDto.from(updated, feedbackView));
+    }
+
+    /**
+     * 反馈闭环 — 将用户反馈回流到信任升级和偏好学习。
+     *
+     * <p>ACTED/SNOOZED → 正反馈 → 信任升级 + 偏好正向观察。
+     * DISMISSED/NOT_RELEVANT → 负反馈 → 信任降级 + 偏好负向观察。</p>
+     */
+    private void dispatchFeedbackToEngine(NotificationRecord record, ReminderFeedbackType feedbackType) {
+        boolean positive = feedbackType == ReminderFeedbackType.ACTED
+                || feedbackType == ReminderFeedbackType.SNOOZED;
+        String behaviorName = extractBehaviorName(record.metadataJson()).orElse("reminder");
+
+        // 信任升级/降级
+        if (trustUpgradeService != null) {
+            try {
+                if (positive) {
+                    trustUpgradeService.recordPositiveFeedback(record.userId(), behaviorName);
+                } else {
+                    trustUpgradeService.recordNegativeFeedback(record.userId(), behaviorName);
+                }
+            } catch (Exception e) {
+                log.debug("反馈闭环: 信任更新失败: {}", e.getMessage());
+            }
+        }
+
+        // 偏好学习
+        if (preferenceLearner != null) {
+            try {
+                var candidate = new ProactiveCandidate("feedback", behaviorName,
+                        extractTopicKey(record.metadataJson()).orElse("unknown"),
+                        "", 0.5f, "", null);
+                var action = new ProactiveAction(candidate, "", DeliveryLevel.NOTIFY, null);
+                var result = new DeliveryResult(record.id(), DeliveryLevel.NOTIFY, record.createdAt());
+                preferenceLearner.learnFromDelivery(action, result, record.userId(), positive);
+            } catch (Exception e) {
+                log.debug("反馈闭环: 偏好学习失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    private Optional<String> extractBehaviorName(@Nullable String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) return Optional.empty();
+        try {
+            Map<String, String> metadata = MAPPER.readValue(metadataJson, new TypeReference<>() {});
+            return Optional.ofNullable(metadata.get("behaviorName"));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
 
     private Map<String, ReminderNotificationFeedbackView> loadFeedbackViews(List<NotificationRecord> records) {
