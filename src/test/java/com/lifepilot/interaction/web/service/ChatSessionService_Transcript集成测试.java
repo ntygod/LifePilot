@@ -166,7 +166,8 @@ class ChatSessionService_Transcript集成测试 {
         chatTurnService = new ChatTurnService(
                 new ChatTurnRepository(jdbcTemplate),
                 transcriptRepository,
-                objectMapper
+                objectMapper,
+                mock(org.springframework.context.ApplicationEventPublisher.class)
         );
 
         knowledgeBaseRepository = mock(SessionKnowledgeBaseRepository.class);

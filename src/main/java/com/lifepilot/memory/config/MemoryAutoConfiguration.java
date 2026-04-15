@@ -11,6 +11,7 @@ import com.lifepilot.memory.consolidation.EntityDeduplicator;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
+import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.EpisodicCleanupJob;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.event.MemoryEventBus;
@@ -435,6 +436,21 @@ public class MemoryAutoConfiguration {
             ProceduralMemory proceduralMemory) {
         log.info("记忆模块: 注册 PreferenceConsolidator");
         return new PreferenceConsolidator(semanticMemory, proceduralMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public UserProfileConsolidator userProfileConsolidator(
+            @Nullable SemanticMemory semanticMemory,
+            @Nullable EpisodicMemory episodicMemory,
+            @Nullable ProceduralMemory proceduralMemory,
+            @Nullable GenerationRouter generationRouter,
+            @Nullable PromptRegistry promptRegistry) {
+        log.info("记忆模块: 注册 UserProfileConsolidator, semanticMemory={}, generationRouter={}",
+                semanticMemory != null ? "available" : "missing",
+                generationRouter != null ? "available" : "missing");
+        return new UserProfileConsolidator(semanticMemory, episodicMemory,
+                proceduralMemory, generationRouter, promptRegistry);
     }
 
     @Bean

@@ -1583,6 +1583,60 @@ export interface NotificationItem {
   status: string
   metadataJson?: string
   sentAt: string  // ISO 8601
+  feedbackType?: string
+}
+
+/** 主动引擎排队动作 */
+export interface QueuedAction {
+  id: string
+  behavior: string
+  topicKey: string
+  title: string
+  content: string
+  score: number
+  metadata: Record<string, string> | null
+  shown: boolean
+  createdAt: string
+  shownAt: string | null
+}
+
+/** 信任状态 */
+export interface TrustStatus {
+  behaviorName: string
+  behaviorLabel: string
+  currentLevel: 'A' | 'B' | 'C'
+  targetLevel: 'B' | 'C' | null
+  upgradeSuggested: boolean
+  consecutivePositive: number
+  consecutiveNegative: number
+  cooldownUntil: string | null
+  updatedAt: string
+}
+
+/** 主动引擎配置 */
+export interface ProactiveConfig {
+  enabled: boolean
+  dailyMaxReminders: number
+  quietHoursStart: string | null
+  quietHoursEnd: string | null
+  gate2Threshold: number
+  behaviors: Array<{
+    name: string
+    label: string
+    autonomyLevel: string
+  }>
+}
+
+/** 主动引擎配置更新请求 */
+export interface ProactiveConfigUpdate {
+  enabled?: boolean
+  dailyMaxReminders?: number
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  behaviorOverrides?: Array<{
+    name: string
+    autonomyLevel?: string
+  }>
 }
 
 /** 解析后的详情 */

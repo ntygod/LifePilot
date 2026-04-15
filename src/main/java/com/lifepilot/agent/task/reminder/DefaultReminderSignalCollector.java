@@ -13,6 +13,7 @@ import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.memory.workspace.WorkspaceItemKind;
+import com.lifepilot.agent.context.WeatherService;
 import com.lifepilot.notification.NotificationRecord;
 import com.lifepilot.notification.NotificationRepository;
 import org.slf4j.Logger;
@@ -89,43 +90,21 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
     private final ReminderOutcomeRepository outcomeRepository;
     @Nullable
     private final ReminderTopicAliasRepository topicAliasRepository;
+    @Nullable
+    private final WeatherService weatherService;
 
+    /**
+     * 便捷构造器 — 供单元测试和不需要全部依赖的场景使用。
+     */
     public DefaultReminderSignalCollector(@Nullable SemanticMemory semanticMemory,
                                           @Nullable ProceduralMemory proceduralMemory,
                                           NotificationRepository notificationRepository) {
-        this(semanticMemory, proceduralMemory, null, null, notificationRepository, null, null, null);
+        this(semanticMemory, proceduralMemory, null, null, notificationRepository, null, null, null, null);
     }
 
-    public DefaultReminderSignalCollector(@Nullable SemanticMemory semanticMemory,
-                                          @Nullable ProceduralMemory proceduralMemory,
-                                          @Nullable EpisodicMemory episodicMemory,
-                                          @Nullable SessionWorkspaceService workspaceService,
-                                          NotificationRepository notificationRepository) {
-        this(semanticMemory, proceduralMemory, episodicMemory, workspaceService,
-                notificationRepository, null, null, null);
-    }
-
-    public DefaultReminderSignalCollector(@Nullable SemanticMemory semanticMemory,
-                                          @Nullable ProceduralMemory proceduralMemory,
-                                          @Nullable EpisodicMemory episodicMemory,
-                                          @Nullable SessionWorkspaceService workspaceService,
-                                          NotificationRepository notificationRepository,
-                                          @Nullable ReminderFeedbackRepository feedbackRepository) {
-        this(semanticMemory, proceduralMemory, episodicMemory, workspaceService,
-                notificationRepository, feedbackRepository, null, null);
-    }
-
-    public DefaultReminderSignalCollector(@Nullable SemanticMemory semanticMemory,
-                                          @Nullable ProceduralMemory proceduralMemory,
-                                          @Nullable EpisodicMemory episodicMemory,
-                                          @Nullable SessionWorkspaceService workspaceService,
-                                          NotificationRepository notificationRepository,
-                                          @Nullable ReminderFeedbackRepository feedbackRepository,
-                                          @Nullable ReminderOutcomeRepository outcomeRepository) {
-        this(semanticMemory, proceduralMemory, episodicMemory, workspaceService,
-                notificationRepository, feedbackRepository, outcomeRepository, null);
-    }
-
+    /**
+     * 全参构造器 — 由 Spring AutoConfiguration 调用。
+     */
     public DefaultReminderSignalCollector(@Nullable SemanticMemory semanticMemory,
                                           @Nullable ProceduralMemory proceduralMemory,
                                           @Nullable EpisodicMemory episodicMemory,
@@ -133,7 +112,8 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
                                           NotificationRepository notificationRepository,
                                           @Nullable ReminderFeedbackRepository feedbackRepository,
                                           @Nullable ReminderOutcomeRepository outcomeRepository,
-                                          @Nullable ReminderTopicAliasRepository topicAliasRepository) {
+                                          @Nullable ReminderTopicAliasRepository topicAliasRepository,
+                                          @Nullable WeatherService weatherService) {
         this.semanticMemory = semanticMemory;
         this.proceduralMemory = proceduralMemory;
         this.episodicMemory = episodicMemory;
@@ -142,6 +122,7 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
         this.feedbackRepository = feedbackRepository;
         this.outcomeRepository = outcomeRepository;
         this.topicAliasRepository = topicAliasRepository;
+        this.weatherService = weatherService;
     }
 
     @Override
@@ -170,6 +151,8 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
                 topics, recentSessionIds, userId, aliasMap, context);
         collectWorkspaceItems(historyByTopic, feedbackStatsByTopic, inferredOutcomeCountsByTopic,
                 topics, recentSessionIds, userId, aliasMap, context);
+        collectWeatherSignals(historyByTopic, feedbackStatsByTopic, inferredOutcomeCountsByTopic,
+                topics, context);
 
         return topics.values().stream()
                 .sorted(Comparator.comparing(ReminderTopicSnapshot::title))
@@ -320,6 +303,34 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
                         resolveTopicState(resolvedTopicKey.stateKeys(), historyByTopic, feedbackStatsByTopic,
                                 inferredOutcomeCountsByTopic, context));
             }
+        }
+    }
+
+    /**
+     * 天气信号采集 — 通过 Open-Meteo 获取明日天气异常信号。
+     */
+    private void collectWeatherSignals(Map<String, List<NotificationRecord>> historyByTopic,
+                                        Map<String, ReminderTopicFeedbackStats> feedbackStatsByTopic,
+                                        Map<String, Integer> inferredOutcomeCountsByTopic,
+                                        Map<String, ReminderTopicSnapshot> topics,
+                                        ReminderRuntimeContext context) {
+        if (weatherService == null) {
+            return;
+        }
+        try {
+            // 判断明日是否有外出事件
+            boolean hasOutdoorEvents = semanticMemory != null
+                    && !semanticMemory.findCurrentByType(EntityType.EVENT).isEmpty();
+            List<ReminderSignal> signals = weatherService.evaluateWeatherSignals(hasOutdoorEvents);
+            for (ReminderSignal signal : signals) {
+                String topicKey = "weather:tomorrow";
+                ReminderTopicState state = resolveTopicState(
+                        List.of(topicKey), historyByTopic, feedbackStatsByTopic,
+                        inferredOutcomeCountsByTopic, context);
+                upsertTopic(topics, topicKey, "明日天气提醒", signal, state);
+            }
+        } catch (Exception e) {
+            log.debug("提醒采集: 天气信号获取失败, error={}", e.getMessage());
         }
     }
 

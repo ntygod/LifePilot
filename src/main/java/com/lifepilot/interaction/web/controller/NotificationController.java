@@ -2,6 +2,9 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
+import com.lifepilot.agent.task.proactive.TimeSlotResolver;
+import com.lifepilot.agent.task.proactive.TrustUpgradeService;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRecord;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackType;
@@ -44,24 +47,33 @@ public class NotificationController {
     private static final Logger log = LoggerFactory.getLogger(NotificationController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String REMINDER_TYPE = "proactive_reminder";
+    private static final String PROACTIVE_TYPE = "proactive_action";
 
     private final NotificationRepository notificationRepository;
     private final NotificationProperties notificationProperties;
     @Nullable
     private final ReminderFeedbackRepository reminderFeedbackRepository;
+    @Nullable
+    private final TrustUpgradeService trustUpgradeService;
+    @Nullable
+    private final ProactiveMemoryBridge memoryBridge;
 
     public NotificationController(NotificationRepository notificationRepository,
                                   NotificationProperties notificationProperties) {
-        this(notificationRepository, notificationProperties, null);
+        this(notificationRepository, notificationProperties, null, null, null);
     }
 
     @Autowired
     public NotificationController(NotificationRepository notificationRepository,
                                   NotificationProperties notificationProperties,
-                                  @Nullable ReminderFeedbackRepository reminderFeedbackRepository) {
+                                  @Nullable ReminderFeedbackRepository reminderFeedbackRepository,
+                                  @Nullable TrustUpgradeService trustUpgradeService,
+                                  @Nullable ProactiveMemoryBridge memoryBridge) {
         this.notificationRepository = notificationRepository;
         this.notificationProperties = notificationProperties;
         this.reminderFeedbackRepository = reminderFeedbackRepository;
+        this.trustUpgradeService = trustUpgradeService;
+        this.memoryBridge = memoryBridge;
     }
 
     /**
@@ -146,7 +158,7 @@ public class NotificationController {
         NotificationRecord record = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "通知不存在: id=" + id));
-        if (!REMINDER_TYPE.equals(record.typeId())) {
+        if (!REMINDER_TYPE.equals(record.typeId()) && !PROACTIVE_TYPE.equals(record.typeId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "仅主动提醒支持反馈");
         }
 
@@ -181,6 +193,10 @@ public class NotificationController {
             ));
         }
         notificationRepository.markAsRead(id);
+
+        // ── 反馈闭环：通知引擎的信任升级和偏好学习 ──
+        dispatchFeedbackToEngine(record, feedbackType);
+
         NotificationRecord updated = notificationRepository.findById(id).orElse(record);
         ReminderNotificationFeedbackView feedbackView = reminderFeedbackRepository.findFeedbackViewByNotificationId(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
@@ -188,6 +204,54 @@ public class NotificationController {
         log.info("提交主动提醒反馈: notificationId={}, topicKey={}, feedbackType={}, muteTopic={}",
                 id, topicKey, feedbackType, request.muteTopic());
         return ApiResponse.ok(NotificationDto.from(updated, feedbackView));
+    }
+
+    /**
+     * 反馈闭环 — 将用户反馈回流到信任升级和偏好学习。
+     *
+     * <p>ACTED/SNOOZED → 正反馈 → 信任升级 + 偏好正向观察。
+     * DISMISSED/NOT_RELEVANT → 负反馈 → 信任降级 + 偏好负向观察。</p>
+     */
+    private void dispatchFeedbackToEngine(NotificationRecord record, ReminderFeedbackType feedbackType) {
+        boolean positive = feedbackType == ReminderFeedbackType.ACTED
+                || feedbackType == ReminderFeedbackType.SNOOZED;
+        String behaviorName = extractBehaviorName(record.metadataJson()).orElse("reminder");
+
+        // 信任升级/降级
+        if (trustUpgradeService != null) {
+            try {
+                if (positive) {
+                    trustUpgradeService.recordPositiveFeedback(record.userId(), behaviorName);
+                } else {
+                    trustUpgradeService.recordNegativeFeedback(record.userId(), behaviorName);
+                }
+            } catch (Exception e) {
+                log.warn("反馈闭环: 信任更新失败: {}", e.getMessage());
+            }
+        }
+
+        // 偏好学习 — 写入 L4
+        if (memoryBridge != null) {
+            try {
+                float signal = positive ? 0.8f : 0.2f;
+                String timeSlot = TimeSlotResolver.resolve(record.createdAt(), java.time.ZoneId.systemDefault());
+                memoryBridge.observePreference("proactive-timing", timeSlot, signal);
+                memoryBridge.observePreference("proactive-domain", behaviorName, signal);
+                memoryBridge.observePreference("proactive-style", "NOTIFY", signal);
+            } catch (Exception e) {
+                log.warn("反馈闭环: 偏好学习失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    private Optional<String> extractBehaviorName(@Nullable String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) return Optional.empty();
+        try {
+            Map<String, String> metadata = MAPPER.readValue(metadataJson, new TypeReference<>() {});
+            return Optional.ofNullable(metadata.get("behaviorName"));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
 
     private Map<String, ReminderNotificationFeedbackView> loadFeedbackViews(List<NotificationRecord> records) {

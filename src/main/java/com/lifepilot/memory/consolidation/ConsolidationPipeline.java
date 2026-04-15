@@ -134,7 +134,7 @@ public class ConsolidationPipeline {
             }
         }
 
-        // 3.5 经验合并（相似经验 → 元经验）
+        // 4. 经验合并（相似经验 → 元经验）
         if (experienceMerger != null) {
             try {
                 var mergeStats = experienceMerger.merge();
@@ -145,7 +145,7 @@ public class ConsolidationPipeline {
             }
         }
 
-        // 4. 高频经验提升为 L4 ProcedureTemplate
+        // 6. 高频经验提升为 L4 ProcedureTemplate
         if (semanticMemory != null && proceduralMemory != null) {
             try {
                 int promoted = promoteHighFrequencyExperiences();

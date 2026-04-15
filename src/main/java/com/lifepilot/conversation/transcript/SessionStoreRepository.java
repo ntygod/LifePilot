@@ -177,6 +177,15 @@ public class SessionStoreRepository {
         );
     }
 
+    public void updateSummary(String sessionId, String summary) {
+        ensureSessionShell(sessionId);
+        String now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE session_store SET summary = ?, updated_at = ?, last_activity_at = ? WHERE session_id = ?",
+                summary, now, now, sessionId
+        );
+    }
+
     public void updatePinned(String sessionId, boolean pinned) {
         ensureSessionShell(sessionId);
         String now = Instant.now().toString();

@@ -336,6 +336,14 @@ public class AgentConfigProperties {
         private String weatherApiKey;
         /** 天气查询城市 ID 或经纬度。 */
         private String weatherLocation;
+        /** 天气缓存 TTL（小时）。 */
+        private long weatherCacheTtlHours = 6;
+        /** 天气温差提醒阈值（°C）。 */
+        private int weatherTempDiffThreshold = 10;
+        /** 天气降水提醒阈值（mm，有外出事件时生效）。 */
+        private double weatherPrecipitationThreshold = 5.0;
+        /** 天气强降水提醒阈值（mm，无论是否外出）。 */
+        private double weatherHeavyPrecipitationThreshold = 20.0;
         /** 单次执行超时（秒）。 */
         private int executionTimeoutSeconds = 300;
         /** 活跃时段开始（HH:mm，null 表示全天）。 */
@@ -344,6 +352,25 @@ public class AgentConfigProperties {
         private String activeHoursEnd;
         /** 每个 cron 任务保留的最大执行日志数。 */
         private int maxLogsPerTask = 50;
+
+        // ── 主动引擎（ProactiveEngine）参数 ──
+
+        /** Gate 2 阈值 — 所有候选最高分低于此值时不进入 FULL 推理。 */
+        private float proactiveEngineGate2Threshold = 0.4f;
+        /** 主动引擎行为插件 LLM 调用超时（秒）。 */
+        private int proactiveEngineLlmTimeoutSeconds = 15;
+        /** 信任升级连续正反馈阈值。 */
+        private int proactiveEngineTrustUpgradeThreshold = 5;
+        /** 信任降级冷却天数。 */
+        private int proactiveEngineTrustDowngradeCooldownDays = 7;
+        /** 日报触发小时（24h 制）。 */
+        private int proactiveEngineDailyReportHour = 20;
+        /** 追问行为最小意图年龄（小时） — 创建时间不足此值的意图不追问。 */
+        private int proactiveEngineFollowUpMinAgeHours = 24;
+        /** 追问行为最大检查次数 — 超过此值的意图不再追问。 */
+        private int proactiveEngineFollowUpMaxCheckCount = 5;
+        /** 剪贴板意图缓冲区最大容量。 */
+        private int proactiveEngineClipboardBufferMaxSize = 20;
 
     }
 }

@@ -3,16 +3,20 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 /// 浮窗窗口标签常量
 const FLOAT_WINDOW_LABEL: &str = "float";
 
-/// 浮球尺寸
-const BALL_SIZE: f64 = 52.0;
+/// 浮球尺寸（含内边距）
+const BALL_SIZE: f64 = 56.0;
 
-/// 气泡 / 快捷面板展开尺寸
-const BUBBLE_WIDTH: f64 = 316.0;
-const BUBBLE_HEIGHT: f64 = 220.0;
+/// 气泡模式：气泡（180px）+ 间距（12px）+ 球（56px）= 248px
+const BUBBLE_WIDTH: f64 = 340.0;
+const BUBBLE_HEIGHT: f64 = 248.0;
 
-/// 迷你对话窗口尺寸
-const CHAT_WIDTH: f64 = 360.0;
-const CHAT_HEIGHT: f64 = 480.0;
+/// 队列模式
+const QUEUE_WIDTH: f64 = 320.0;
+const QUEUE_HEIGHT: f64 = 420.0;
+
+/// 对话模式
+const CHAT_WIDTH: f64 = 368.0;
+const CHAT_HEIGHT: f64 = 500.0;
 
 /// 屏幕边距
 const TASKBAR_MARGIN: f64 = 80.0;
@@ -35,13 +39,13 @@ pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
     .title("")
     .inner_size(BALL_SIZE, BALL_SIZE)
     .position(x, y)
-    .transparent(true)      // 启用透明
-    .decorations(false)     // 去掉系统边框
-    .shadow(false)          // v2 关键：shadow 默认开启会阻止透明
+    .transparent(true)
+    .decorations(false)
+    .shadow(false)
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
-    .visible(false)         // 等前端加载完再显示
+    .visible(false)
     .build()?;
 
     log::info!("浮窗已创建: 位置=({:.0}, {:.0}), 尺寸={:.0}x{:.0}", x, y, BALL_SIZE, BALL_SIZE);
@@ -55,15 +59,7 @@ pub fn show_float_window(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("显示浮窗失败: {}", e))
 }
 
-/// 隐藏浮窗
-#[allow(dead_code)]
-pub fn hide_float_window(app: &AppHandle) -> Result<(), String> {
-    get_float(app)?
-        .hide()
-        .map_err(|e| format!("隐藏浮窗失败: {}", e))
-}
-
-/// Tauri command：展示提醒气泡
+/// Tauri command：展示提醒气泡（调整窗口到气泡尺寸 + emit 事件）
 #[tauri::command]
 pub fn show_reminder_bubble(
     app: AppHandle,
@@ -87,23 +83,23 @@ pub fn show_reminder_bubble(
     Ok(())
 }
 
-/// Tauri command：收起提醒气泡
+/// Tauri command：收起提醒气泡（只 emit 事件，让前端先播退出动画再 resize）
 #[tauri::command]
 pub fn hide_reminder_bubble(app: AppHandle) -> Result<(), String> {
     let window = get_float(&app)?;
-    resize_and_reposition(&app, &window, BALL_SIZE, BALL_SIZE)?;
     window.emit("reminder-dismiss", ())
         .map_err(|e| format!("发送收起事件失败: {}", e))?;
     Ok(())
 }
 
-/// Tauri command：切换浮窗模式
+/// Tauri command：切换浮窗模式尺寸
 #[tauri::command]
 pub fn resize_float_window(app: AppHandle, mode: String) -> Result<(), String> {
     let window = get_float(&app)?;
     let (w, h) = match mode.as_str() {
-        "idle" | "soft" => (BALL_SIZE, BALL_SIZE),
-        "bubble" | "panel" => (BUBBLE_WIDTH, BUBBLE_HEIGHT),
+        "idle" => (BALL_SIZE, BALL_SIZE),
+        "bubble" => (BUBBLE_WIDTH, BUBBLE_HEIGHT),
+        "queue" => (QUEUE_WIDTH, QUEUE_HEIGHT),
         "chat" => (CHAT_WIDTH, CHAT_HEIGHT),
         _ => return Err(format!("未知浮窗模式: {}", mode)),
     };
@@ -119,6 +115,7 @@ fn get_float(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
         .ok_or_else(|| "浮窗窗口不存在".to_string())
 }
 
+/// 调整窗口尺寸并重新定位（保持右下角锚点不变）
 fn resize_and_reposition(
     app: &AppHandle,
     window: &tauri::WebviewWindow,

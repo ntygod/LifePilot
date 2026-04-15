@@ -72,46 +72,54 @@ fn read_clipboard_windows() -> Option<String> {
     }
 }
 
-/// 检测剪贴板内容中的结构化意图
+/// 检测剪贴板内容中的结构化意图。
+///
+/// 使用搜索模式（非锚定），从剪贴板文本中提取匹配片段，
+/// 允许单号前后有其他文字（如"快递单号：SF1234567890123"）。
 fn detect_intent(content: &str) -> Option<ClipboardIntent> {
     let trimmed = content.trim();
 
-    // 快递单号：顺丰(SF)、中通(ZTO)、圆通(YT)、韵达(YD)、申通等
-    if let Some(m) = regex_match(trimmed, r"^(?:SF|JD|YT|YD|ZTO|STO|EMS)\d{10,18}$") {
+    // 快递单号：顺丰(SF)、京东(JD)、圆通(YT)、韵达(YD)、中通(ZTO)、申通(STO)、EMS
+    if let Some(m) = regex_search(trimmed, r"(?i)\b(?:SF|JD|YT|YD|ZTO|STO|EMS)\d{10,18}\b") {
         return Some(ClipboardIntent {
             intent_type: "TRACKING_NUMBER".to_string(),
-            value: m,
-        });
-    }
-    // 纯数字运单号（12-18位）
-    if let Some(m) = regex_match(trimmed, r"^\d{12,18}$") {
-        return Some(ClipboardIntent {
-            intent_type: "TRACKING_NUMBER".to_string(),
-            value: m,
+            value: m.to_uppercase(),
         });
     }
 
-    // 航班号：两字母+3-4位数字
-    if let Some(m) = regex_match(trimmed, r"^[A-Z]{2}\d{3,4}$") {
+    // 纯数字运单号（12-18位，前后需要有边界）
+    if let Some(m) = regex_search(trimmed, r"(?<!\d)\d{12,18}(?!\d)") {
+        // 排除明显不是运单的情况（如手机号11位、身份证18位但含X等）
+        let len = m.len();
+        if (12..=18).contains(&len) {
+            return Some(ClipboardIntent {
+                intent_type: "TRACKING_NUMBER".to_string(),
+                value: m,
+            });
+        }
+    }
+
+    // 航班号：两字母+3-4位数字（不区分大小写）
+    if let Some(m) = regex_search(trimmed, r"(?i)\b[A-Z]{2}\d{3,4}\b") {
         return Some(ClipboardIntent {
             intent_type: "FLIGHT_NUMBER".to_string(),
-            value: m,
+            value: m.to_uppercase(),
         });
     }
 
-    // 车次：G/D/C/Z/T/K + 数字
-    if let Some(m) = regex_match(trimmed, r"^[GCDZTK]\d{1,4}$") {
+    // 车次：G/D/C/Z/T/K + 数字（不区分大小写）
+    if let Some(m) = regex_search(trimmed, r"(?i)\b[GCDZTK]\d{1,4}\b") {
         return Some(ClipboardIntent {
             intent_type: "TRAIN_NUMBER".to_string(),
-            value: m,
+            value: m.to_uppercase(),
         });
     }
 
     None
-    // URL 和手机号故意不检测 — 太频繁，噪音大
 }
 
-fn regex_match(text: &str, pattern: &str) -> Option<String> {
+/// 在文本中搜索匹配片段（非锚定），返回第一个匹配。
+fn regex_search(text: &str, pattern: &str) -> Option<String> {
     let re = regex::Regex::new(pattern).ok()?;
     re.find(text).map(|m| m.as_str().to_string())
 }
@@ -132,8 +140,10 @@ fn report_to_backend(port: u16, intent: &ClipboardIntent) {
         .timeout(Duration::from_secs(3))
         .send()
     {
-        Ok(_) => log::debug!("剪贴板意图上报成功"),
-        Err(e) => log::debug!("剪贴板意图上报失败: {}", e),
+        Ok(resp) => log::info!(
+            "剪贴板意图上报成功: status={}", resp.status()
+        ),
+        Err(e) => log::warn!("剪贴板意图上报失败: {}", e),
     }
 }
 

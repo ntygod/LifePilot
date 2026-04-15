@@ -64,6 +64,10 @@ public class ChatSessionRepository {
         sessionStoreRepository.updateTitle(id, title);
     }
 
+    public void updateSummary(String id, String summary) {
+        sessionStoreRepository.updateSummary(id, summary);
+    }
+
     public void updatePinned(String id, boolean pinned) {
         sessionStoreRepository.updatePinned(id, pinned);
     }

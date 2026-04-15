@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 30+ 个内置工具覆盖环境感知、Web 信息获取、Shell 执行、浏览器自动化、代码执行、文件系统操作和通知推送；**便利层**（Convenience）提供系统自省和 Skill 发现能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具通过 `BuiltinSkillProvider` 机制注册到 `DynamicToolRegistry`。
+元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 30+ 个内置工具覆盖环境感知、Web 信息获取、Shell 执行、浏览器自动化、代码执行、文件系统操作和通知推送；**便利层**（Convenience）提供系统自省和 Skill 发现能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具在 `MetaAutoConfiguration` 中通过 `ApplicationReadyEvent` 注册到 `DynamicToolRegistry`。
 
 ## 2. 架构图
 

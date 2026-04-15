@@ -73,6 +73,10 @@
   OptionItem,
   // 通知中心类型
   NotificationItem,
+  ProactiveConfig,
+  ProactiveConfigUpdate,
+  QueuedAction,
+  TrustStatus,
   SseInteractionEvent,
   // 记忆管理类型
   MemoryStats,
@@ -1592,7 +1596,59 @@ export const notificationApi = {
   /** 标记所有通知已读 */
   markAllAsRead(userId: string): Promise<{ updatedCount: number }> {
     return request(`/notifications/read-all?userId=${encodeURIComponent(userId)}`, { method: 'PUT' })
+  },
+
+  /** 提交主动提醒反馈 */
+  submitFeedback(id: string, feedbackType: string): Promise<NotificationItem> {
+    return request(`/notifications/${id}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedbackType }),
+    })
   }
+}
+
+// ========== 主动引擎 API ==========
+
+export const proactiveApi = {
+  /** 获取待阅队列 */
+  getQueue(userId: string = 'default', limit: number = 20): Promise<QueuedAction[]> {
+    return request(`/proactive/queue?userId=${encodeURIComponent(userId)}&limit=${limit}`)
+  },
+
+  /** 标记队列条目已展示 */
+  markShown(id: string): Promise<void> {
+    return request(`/proactive/queue/${id}/shown`, { method: 'PUT' })
+  },
+
+  /** 删除队列条目 */
+  deleteQueueItem(id: string): Promise<void> {
+    return request(`/proactive/queue/${id}`, { method: 'DELETE' })
+  },
+
+  /** 获取信任状态列表 */
+  getTrustStatus(userId: string = 'default'): Promise<TrustStatus[]> {
+    return request(`/proactive/trust?userId=${encodeURIComponent(userId)}`)
+  },
+
+  /** 确认信任升级 */
+  confirmUpgrade(behavior: string, userId: string = 'default'): Promise<TrustStatus> {
+    return request(`/proactive/trust/${behavior}/confirm?userId=${encodeURIComponent(userId)}`, { method: 'POST' })
+  },
+
+  /** 获取主动引擎配置 */
+  getConfig(userId: string = 'default'): Promise<ProactiveConfig> {
+    return request(`/proactive/config?userId=${encodeURIComponent(userId)}`)
+  },
+
+  /** 更新主动引擎配置 */
+  updateConfig(data: ProactiveConfigUpdate): Promise<ProactiveConfig> {
+    return request('/proactive/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+  },
 }
 
 // ========== 记忆管理 API ==========

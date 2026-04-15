@@ -1,7 +1,7 @@
 package com.lifepilot.agent.task;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.task.reminder.ProactiveReminderService;
+import com.lifepilot.agent.task.proactive.ProactiveEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -13,8 +13,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 心跳唤醒运行器。
  *
- * <p>仅负责按固定频率唤醒主动提醒引擎，并执行活跃时段控制。
- * 不再直接读取 HEARTBEAT.md，也不再通过 Agent 运行巡检 checklist。</p>
+ * <p>仅负责按固定频率唤醒主动引擎，并执行活跃时段控制。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -26,19 +25,14 @@ public class HeartbeatRunner {
     private final ScheduledExecutorService scheduler;
     private final AgentConfigProperties config;
     @Nullable
-    private final ProactiveReminderService proactiveReminderService;
-
-    public HeartbeatRunner(ScheduledExecutorService scheduler,
-                           AgentConfigProperties config) {
-        this(scheduler, config, null);
-    }
+    private final ProactiveEngine proactiveEngine;
 
     public HeartbeatRunner(ScheduledExecutorService scheduler,
                            AgentConfigProperties config,
-                           @Nullable ProactiveReminderService proactiveReminderService) {
+                           @Nullable ProactiveEngine proactiveEngine) {
         this.scheduler = scheduler;
         this.config = config;
-        this.proactiveReminderService = proactiveReminderService;
+        this.proactiveEngine = proactiveEngine;
     }
 
     /**
@@ -55,26 +49,26 @@ public class HeartbeatRunner {
      * 单次心跳。
      */
     void beat() {
-        // 活跃时段检查
         if (!isWithinActiveHours()) {
             log.debug("心跳跳过: 当前不在活跃时段");
             return;
         }
 
-        runProactiveReminderIfEnabled();
-    }
-
-    private void runProactiveReminderIfEnabled() {
-        if (!config.getTask().isProactiveReminderEnabled() || proactiveReminderService == null) {
-            log.debug("心跳跳过: 主动提醒未启用或服务不可用");
+        if (proactiveEngine == null) {
+            log.debug("心跳跳过: 主动引擎未注册");
             return;
         }
+
+        if (!config.getTask().isProactiveReminderEnabled()) {
+            log.debug("心跳跳过: 主动引擎未启用");
+            return;
+        }
+
         try {
-            var result = proactiveReminderService.runOnce();
-            log.debug("主动提醒评估完成: topics={}, decisions={}, sent={}",
-                    result.topicsCollected(), result.decisionsEvaluated(), result.remindersSent());
+            var level = proactiveEngine.heartbeat();
+            log.debug("主动引擎心跳完成: level={}", level);
         } catch (Exception e) {
-            log.warn("主动提醒执行异常: {}", e.getMessage());
+            log.warn("主动引擎心跳异常: {}", e.getMessage());
         }
     }
 

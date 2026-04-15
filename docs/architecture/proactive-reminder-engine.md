@@ -1,28 +1,52 @@
-# 主动提醒引擎 — 目标态架构设计
+# 主动智能引擎 — 架构设计
 
-> **文档性质**：目标态架构设计文档
-> **模块归属**：跨模块（`agent.task` / `memory` / `notification` / `sync` / `observability`）
-> **最后更新**：2026-03
+> **文档性质**：架构设计文档
+> **模块归属**：`com.lifepilot.agent.task.proactive`（+ `agent.task.reminder` 子系统）
+> **最后更新**：2026-04-15
 
 ## 1. 文档定位
 
-本文档定义知微主动提醒能力的目标态设计，用于替代当前“heartbeat 巡检 + HEARTBEAT.md checklist”的过渡实现。
+本文档描述知微主动智能引擎的架构设计。系统由两层组成：
 
-本文档描述的是最终形态，不代表当前代码已经全部实现。
+- **ProactiveEngine 框架层**（`agent.task.proactive`）：三级需求检测管线、行为插件编排、决策门控、四级投递引擎、信任阶梯。这是当前生产代码的主入口。
+- **Reminder 子系统**（`agent.task.reminder`）：作为一个行为插件（`ReminderBehavior`）接入 ProactiveEngine，保留了原有的信号采集、候选检测、Contextual Bandit 策略、LLM 文案生成等能力。
+
+### 模块关系
+
+```
+HeartbeatRunner（定时唤醒）
+  └─ ProactiveEngine（三级管线 + 行为编排）
+       ├─ ReminderBehavior（定时提醒插件）
+       ├─ FollowUpBehavior（追问进展插件）
+       ├─ InsightBehavior（关联洞察插件）
+       ├─ ClipboardBehavior（剪贴板识别插件）
+       ├─ InfoSupplementBehavior（信息补充插件）
+       ├─ ContextPrepBehavior（情境准备插件）
+       ├─ ReportBehavior（日报周报插件）
+       └─ TaskExecutionBehavior（任务代行插件）
+```
 
 ### 实现进度
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| 信号采集（`DefaultReminderSignalCollector`） | ✅ 已实现 | L3/L4/L2/Workspace/通知反馈/topic alias |
+| **ProactiveEngine 三级管线** | ✅ 已实现 | Gate 1 变化量检查 → Gate 2 快速检测 → Gate 3 精细推理 |
+| **行为插件框架**（`ProactiveBehavior`） | ✅ 已实现 | 7 个行为插件 + `ReminderBehavior` 适配 |
+| **DecisionGate 决策门控** | ✅ 已实现 | 硬边界 + 偏好降级 + 自主度约束 |
+| **DeliveryEngine 四级投递** | ✅ 已实现 | SILENT → QUEUE → NOTIFY → INTERRUPT |
+| **信任阶梯**（`TrustUpgradeService`） | ✅ 已实现 | A/B/C 三级自主度 + 连续正反馈升级建议 + 用户确认 |
+| **ProactiveMemoryBridge 记忆桥接** | ✅ 已实现 | 从 L2/L3/L4 消费数据 + 偏好 EWMA 写入 |
+| **ConversationCompletionHook** | ✅ 已实现 | 对话完成后触发隐式信号 + 摘要生成 + 画像巩固 |
+| **ProactiveController REST API** | ✅ 已实现 | queue/trust/config 三组端点 |
+| 信号采集（`DefaultReminderSignalCollector`） | ✅ 已实现 | L3/L4/L2/Workspace/通知反馈/topic alias/天气 |
 | 候选生成与评分（`ReminderCandidateDetector` / `ReminderScoringModel`） | ✅ 已实现 | 5 类检测器 + 统一评分模型 |
-| 规则决策引擎（`ReminderDecisionEngine`） | ✅ 已实现 | 硬边界 + 评分阈值控制 |
 | Contextual Bandit 策略（`ReminderActionContextualBandit`） | ✅ 已实现 | LinUCB 在线学习，机会层 + 动作层双层 Bandit |
 | LLM 文案生成（`DefaultReminderMessageGenerator`） | ✅ 已实现 | StringTemplate + GenerationRouter |
-| 通知投递与反馈闭环 | ✅ 已实现 | 反馈接口 + 主题静默 + 奖励映射 |
 | 隐式结果推断（`ReminderOutcomeInferenceService`） | ✅ 已实现 | Workspace/Workflow/Trace/Semantic/Conversation 多源推断 |
 | 离线回放与策略评估 | ✅ 已实现 | `ReminderReplayService` + 定时调度器 |
 | 策略调优与版本化 | ✅ 已实现 | `ReminderPolicyTuner` + 安全护栏 + 版本持久化 |
+| 天气信号接入（`OpenMeteoWeatherService`） | ✅ 已实现 | 零配置 Open-Meteo API，温差/降水/强降水三类信号 |
+| 隐式信号检测（`ImplicitSignalCollector`） | ✅ 已实现 | 投递忽略检测 + 对话参与度 + 未命中检测 |
 | 时机预测模型（危险率 / 时序点过程） | ⏳ 待定 | 当前为规则回退，点过程模型为后续迭代方向 |
 | 外部系统信号接入（日历/AFK/Focus） | ⏳ 待定 | 依赖 sync 模块后续对接 |
 
@@ -84,56 +108,102 @@
 
 ## 6. 总体架构
 
+### 6.1 ProactiveEngine 三级管线
+
 ```mermaid
 graph TB
     subgraph "唤醒层"
-        WAKE["HeartbeatWakeupScheduler<br/>定时唤醒 / 自适应下一次扫描"]
+        HB["HeartbeatRunner<br/>定时唤醒 + 活跃时段控制"]
     end
 
+    subgraph "ProactiveEngine 三级管线"
+        G1["Gate 1: SILENT<br/>变化量检查（~80%）"]
+        ISC["ImplicitSignalCollector<br/>隐式信号检测"]
+        G2["Gate 2: FAST<br/>各插件快速检测候选（~15%）"]
+        PREF["偏好前置过滤<br/>L4 偏好分数调整"]
+        G3["Gate 3: FULL<br/>高分候选精细推理（~5%）"]
+    end
+
+    subgraph "行为插件"
+        B1["ReminderBehavior<br/>定时提醒"]
+        B2["FollowUpBehavior<br/>追问进展"]
+        B3["InsightBehavior<br/>关联洞察"]
+        B4["ClipboardBehavior<br/>剪贴板识别"]
+        B5["InfoSupplementBehavior<br/>信息补充"]
+        B6["ContextPrepBehavior<br/>情境准备"]
+        B7["ReportBehavior<br/>日报周报"]
+        B8["TaskExecutionBehavior<br/>任务代行"]
+    end
+
+    subgraph "决策与投递"
+        DG["DecisionGate<br/>硬边界 + 偏好降级 + 自主度"]
+        DE["DeliveryEngine<br/>四级投递"]
+    end
+
+    subgraph "记忆与学习"
+        MB["ProactiveMemoryBridge<br/>L2/L3/L4 数据消费"]
+        TS["TrustUpgradeService<br/>信任阶梯 A→B→C"]
+        ISC2["ImplicitSignalCollector<br/>隐式信号 → 偏好学习"]
+    end
+
+    subgraph "投递级别"
+        SILENT["SILENT<br/>仅记录"]
+        QUEUE["QUEUE<br/>排队等展示"]
+        NOTIFY["NOTIFY<br/>浮窗气泡"]
+        INTERRUPT["INTERRUPT<br/>主动消息"]
+    end
+
+    HB --> G1
+    G1 -->|有变化| ISC
+    ISC --> G2
+    G2 --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8
+    B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8 --> PREF
+    PREF -->|高分候选| G3
+    G3 --> DG
+    DG --> DE
+    DE --> SILENT & QUEUE & NOTIFY & INTERRUPT
+    MB --> G2
+    MB --> G3
+    TS --> DG
+    DE --> ISC2
+```
+
+### 6.2 Reminder 子系统（原有架构，现作为行为插件运行）
+
+```mermaid
+graph TB
     subgraph "信号层"
         MEM["Memory Signals<br/>L3/L4/近期对话"]
         EXT["External Signals<br/>Calendar/Todo/Presence"]
         NOTI["Notification Signals<br/>已读/处理/忽略/稍后提醒"]
         ACT["Activity Signals<br/>活跃时段/AFK/任务切换"]
+        WEATHER["Weather Signals<br/>Open-Meteo 天气异常"]
     end
 
-    subgraph "决策层"
+    subgraph "Reminder 决策层"
         COLLECT["ReminderSignalCollector<br/>信号归一化"]
         DETECT["ReminderCandidateDetector<br/>候选生成器"]
-        PREDICT["OpportunityPredictor<br/>时机预测"]
-        POLICY["ReminderPolicyEngine<br/>Contextual Bandit 策略"]
-        RENDER["ReminderRenderer<br/>LLM 文案生成"]
-    end
-
-    subgraph "投递与反馈层"
-        DELIVERY["ReminderDeliveryService<br/>发送通知"]
-        FEEDBACK["ReminderFeedbackService<br/>反馈回写"]
+        PREDICT["ReminderScoringModel<br/>评分模型"]
+        POLICY["ReminderActionContextualBandit<br/>LinUCB 策略"]
+        RENDER["DefaultReminderMessageGenerator<br/>LLM 文案生成"]
     end
 
     subgraph "存储层"
-        DB1["reminder_topic_profile"]
-        DB2["reminder_candidate"]
-        DB3["reminder_delivery"]
-        DB4["reminder_feedback"]
-        DB5["reminder_policy_snapshot"]
+        DB1["proactive_reminder_*<br/>（V1 迁移建表）"]
     end
 
-    WAKE --> COLLECT
     MEM --> COLLECT
     EXT --> COLLECT
     NOTI --> COLLECT
     ACT --> COLLECT
+    WEATHER --> COLLECT
     COLLECT --> DETECT
     DETECT --> PREDICT
     PREDICT --> POLICY
     POLICY --> RENDER
-    RENDER --> DELIVERY
-    DELIVERY --> FEEDBACK
     COLLECT --> DB1
-    DETECT --> DB2
-    DELIVERY --> DB3
-    FEEDBACK --> DB4
-    POLICY --> DB5
+    DETECT --> DB1
+    POLICY --> DB1
 ```
 
 ## 7. 数据来源
@@ -211,7 +281,23 @@ graph TB
 - 判断用户当前是否处于合适打扰窗口
 - 为“事件前准备提醒”提供事实锚点
 
-### 7.5 通知反馈
+### 7.5 天气信号
+
+数据来源：`OpenMeteoWeatherService`（基于 Open-Meteo 免费 API，无需 API key）
+
+位置解析：通过 `LocationResolver` 获取城市名 → Open-Meteo Geocoding API 转经纬度 → 缓存
+
+产生的信号类型：
+
+- **温差提醒**：明日最高温与最低温之差超过阈值（默认 10°C）
+- **降水提醒**：明日降水量超过阈值（默认 5mm）且用户有外出事件
+- **强降水提醒**：明日降水量超过重度阈值（默认 20mm），无论是否有外出安排
+
+天气数据通过后台 virtual thread 异步预取并缓存（TTL 由 `weatherCacheTtlHours` 控制，默认 6 小时），不阻塞对话路径。
+
+同一 topic key `weather:tomorrow` 下的多个信号会合并到同一 `ReminderTopicSnapshot`。
+
+### 7.6 通知反馈
 
 目标态反馈事件：
 
@@ -553,64 +639,129 @@ UI action
 
 ## 12. 与现有模块的职责映射
 
-| 当前组件 | 目标态角色 |
-|----------|------------|
+| 组件 | 当前角色 |
+|------|----------|
+| `HeartbeatRunner` | 纯唤醒器，按固定频率调用 `ProactiveEngine.heartbeat()`，不做任何决策 |
+| `ProactiveEngine` | 三级检测管线 + 行为插件编排的主入口 |
+| `ProactiveBehavior`（接口） | 行为插件规范：`detect()` → `reason()` → `execute()` → `onDelivered()` |
+| `DecisionGate` | 统一决策门控，硬边界 + 偏好降级 + 自主度约束 |
+| `DeliveryEngine` | 四级投递引擎（SILENT / QUEUE / NOTIFY / INTERRUPT） |
+| `ProactiveMemoryBridge` | 记忆数据消费唯一入口（L2/L3/L4），替代旧的 IntentMemoryService / UserProfileService |
+| `TrustUpgradeService` | 信任阶梯管理（A/B/C 自主度 + 连续反馈追踪 + 用户确认升级） |
+| `ImplicitSignalCollector` | 隐式信号检测（投递忽略 / 对话参与度 / 未命中检测） |
+| `ConversationCompletionHook` | 对话完成后触发隐式信号检测 + 摘要生成 + 画像巩固 |
+| `UserProfileConsolidator` | 画像巩固（L3 碎片 → LLM → `__consolidated_profile` 实体，2h 防抖） |
+| `ConversationSummaryGenerator` | 对话摘要（LLM 生成 → `session_store.summary`） |
 | `CronScheduler` | 保持不变，只负责显式定时任务 |
-| `HeartbeatRunner` | 收敛为唤醒器，不再直接读取 `HEARTBEAT.md` 做主决策 |
-| `NotificationService` | 继续负责统一投递，但上层新增提醒投递与反馈语义 |
-| `memory` | 提供结构化长期信号与近期上下文 |
-| `sync` | 提供外部日历、待办、状态等事实信号 |
-| `observability` | 提供策略回放、效果评估、特征审计 |
+| `NotificationService` | 继续负责统一投递，`DeliveryEngine` 通过它发送 NOTIFY/INTERRUPT 级通知 |
+| `QueuedActionRepository` | 管理 QUEUE 级投递的排队动作持久化 |
+| `AutonomyRepository` | 管理每用户每行为的自主度配置 |
+| `BehaviorHealthTracker` | 插件健康追踪（连续失败 → 自动降级） |
 
-建议新增组件：
+已删除组件：
 
-- `HeartbeatWakeupScheduler`
-- `ReminderSignalCollector`
-- `ReminderTopicBuilder`
-- `ReminderCandidateDetector`
-- `OpportunityPredictor`
-- `ReminderPolicyEngine`
-- `ReminderRenderer`
-- `ReminderDeliveryService`
-- `ReminderFeedbackService`
+- `ProactiveReminderService` — 职责由 `ProactiveEngine` + `ReminderBehavior` 替代
+- `ReminderWakeupScheduler` — 职责由 `HeartbeatRunner` 直接调用 `ProactiveEngine` 替代
 
 ## 13. 配置参考
 
-建议新增如下配置：
+### 13.1 ProactiveEngine 框架配置
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.agent.reminder.enabled` | `true` | 主动提醒总开关 |
-| `lifepilot.agent.reminder.scan-interval-seconds` | `900` | 基础扫描间隔 |
-| `lifepilot.agent.reminder.daily-max-reminders` | `3` | 每日最大主动提醒数 |
-| `lifepilot.agent.reminder.default-cooldown-hours` | `24` | 同主题默认冷却 |
-| `lifepilot.agent.reminder.quiet-hours-start` | `23:00` | 静默开始 |
-| `lifepilot.agent.reminder.quiet-hours-end` | `08:00` | 静默结束 |
-| `lifepilot.agent.reminder.policy.name` | `lin_ts` | 默认策略 |
-| `lifepilot.agent.reminder.policy.exploration-alpha` | `0.2` | 探索强度 |
-| `lifepilot.agent.reminder.renderer.llm-enabled` | `true` | 是否启用 LLM 文案生成 |
+| `lifepilot.agent.task.proactive-reminder-enabled` | `true` | 主动引擎总开关 |
+| `lifepilot.agent.task.proactive-reminder-daily-max-reminders` | `3` | 每日最大主动行为数 |
+| `lifepilot.agent.task.proactive-reminder-quiet-hours-start` | `23:00` | 静默时段开始 |
+| `lifepilot.agent.task.proactive-reminder-quiet-hours-end` | `08:00` | 静默时段结束 |
+| `lifepilot.agent.task.proactive-engine-gate2-threshold` | `0.4` | Gate 2 候选进入阈值 |
+| `lifepilot.agent.task.proactive-engine-llm-timeout-seconds` | `15` | 行为插件 LLM 调用超时 |
+| `lifepilot.agent.task.proactive-engine-trust-upgrade-threshold` | `5` | 信任升级所需连续正反馈次数 |
+| `lifepilot.agent.task.proactive-engine-trust-downgrade-cooldown-days` | `7` | 信任降级后冷却天数 |
+| `lifepilot.agent.task.proactive-engine-daily-report-hour` | `20` | 日报触发小时 |
+| `lifepilot.agent.task.proactive-engine-follow-up-min-age-hours` | `24` | 追问最小间隔 |
+| `lifepilot.agent.task.proactive-engine-follow-up-max-check-count` | `5` | 追问最大次数 |
+| `lifepilot.agent.task.proactive-engine-clipboard-buffer-max-size` | `20` | 剪贴板缓冲区大小 |
+| `lifepilot.agent.task.heartbeat-interval-seconds` | `1800` | 心跳间隔（秒） |
+| `lifepilot.agent.task.active-hours-start` | — | 活跃时段开始（未配置则全天活跃） |
+| `lifepilot.agent.task.active-hours-end` | — | 活跃时段结束 |
 
-## 14. 实现顺序
+### 13.2 Reminder 子系统配置
 
-虽然本文档定义的是最终形态，但落地时推荐按以下顺序推进：
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.agent.task.proactive-reminder-cooldown-hours` | `24` | 同主题默认冷却 |
+| `lifepilot.agent.task.proactive-reminder-bandit-enabled` | `true` | 是否启用 Contextual Bandit |
+| `lifepilot.agent.task.proactive-reminder-bandit-exploration-alpha` | `0.18` | LinUCB 探索强度 |
+| `lifepilot.agent.task.proactive-reminder-llm-scene` | `chat` | LLM 文案生成场景 |
+| `lifepilot.agent.task.proactive-reminder-llm-timeout-seconds` | `15` | LLM 文案生成超时 |
+| `lifepilot.agent.task.proactive-reminder-replay-tuning-enabled` | `true` | 是否启用离线回放调优 |
+| `lifepilot.agent.task.proactive-reminder-retention-days` | `180` | 决策记录保留天数 |
+| `lifepilot.agent.task.weather-cache-ttl-hours` | `6` | 天气缓存 TTL（小时） |
+| `lifepilot.agent.task.weather-temp-diff-threshold` | `10` | 天气温差提醒阈值（°C） |
+| `lifepilot.agent.task.weather-precipitation-threshold` | `5.0` | 天气降水提醒阈值（mm，有外出事件时生效） |
+| `lifepilot.agent.task.weather-heavy-precipitation-threshold` | `20.0` | 天气强降水提醒阈值（mm，无论是否外出） |
 
-1. 建表与运行态数据模型
-2. 候选生成器与统一评分模型
-3. 提醒投递与反馈闭环
-4. 时机预测模型
-5. Contextual Bandit 策略
-6. 文案优化与离线评估
+## 14. 数据模型（ProactiveEngine 新增）
+
+### 14.1 proactive_queued_actions（V5）
+
+QUEUE 级投递的排队动作。同一 userId + topicKey 走 UPSERT 去重。
+
+| 列 | 类型 | 说明 |
+|----|------|------|
+| id | TEXT PK | 确定性 UUID（userId + topicKey） |
+| user_id | TEXT NOT NULL | 目标用户 |
+| behavior_name | TEXT NOT NULL | 行为插件名 |
+| topic_key | TEXT NOT NULL | 主题键 |
+| title | TEXT | 标题 |
+| content | TEXT | 投递内容 |
+| score | REAL | 候选分数 |
+| notification_id | TEXT | 关联通知 ID（QUEUE 级无） |
+| shown | INTEGER NOT NULL DEFAULT 0 | 是否已展示 |
+| created_at | TEXT NOT NULL | 创建时间 |
+| shown_at | TEXT | 展示时间 |
+
+### 14.2 proactive_behavior_autonomy（V6）
+
+每用户每行为的自主度配置与信任追踪。
+
+| 列 | 类型 | 说明 |
+|----|------|------|
+| user_id | TEXT NOT NULL | 用户 ID |
+| behavior_name | TEXT NOT NULL | 行为插件名 |
+| autonomy_level | TEXT NOT NULL | A/B/C |
+| consecutive_positive | INTEGER NOT NULL DEFAULT 0 | 连续正反馈次数 |
+| consecutive_negative | INTEGER NOT NULL DEFAULT 0 | 连续负反馈次数 |
+| upgrade_suggested | INTEGER NOT NULL DEFAULT 0 | 是否建议升级 |
+| cooldown_until | TEXT | 冷却截止时间 |
+| updated_at | TEXT NOT NULL | 更新时间 |
+
+主键：`(user_id, behavior_name)`
+
+### 14.3 proactive_goal_tracking（V8）
+
+目标追踪状态（与 L3 GOAL 实体配合）。
+
+| 列 | 类型 | 说明 |
+|----|------|------|
+| entity_id | TEXT PK | L3 GOAL 实体 ID |
+| check_count | INTEGER NOT NULL DEFAULT 0 | 追问次数 |
+| last_follow_up_at | TEXT | 上次追问时间 |
 
 ## 15. 设计决策
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
+| 架构模式 | ProactiveEngine 框架 + 行为插件 | 将 Reminder 降级为插件之一，统一编排所有主动行为 |
+| 检测管线 | 三级门控（SILENT / FAST / FULL） | ~80% 心跳在 Gate 1 直接跳过，降低 LLM 调用频次 |
+| 投递分级 | 四级（SILENT / QUEUE / NOTIFY / INTERRUPT） | 按候选分数和自主度精细控制打扰程度 |
+| 信任模型 | A/B/C 三级阶梯 + 用户确认升级 | 渐进信任，永远不自动升级 |
+| 偏好学习 | L4 PreferenceRule EWMA | 轻量在线学习，三维度（时段/领域/风格） |
+| 记忆消费 | ProactiveMemoryBridge 统一入口 | 所有记忆 bean 可为 null，缺失时安全降级 |
 | 运行态存储 | SQLite | 结构化查询、反馈学习、策略回放都依赖结构化数据 |
-| 提醒主决策 | 规则 + 预测 + Bandit | 比端到端 LLM 更稳定、更可解释 |
-| 时机预测 | 危险率模型 / 时序点过程 | 适合建模习惯和下一次行为时间 |
-| 策略优化 | Contextual Bandit | 适合“有限动作 + 在线反馈”的提醒问题 |
-| LLM 角色 | 文案与语义压缩 | 保留表达能力，避免主决策漂移 |
-| 边界控制 | 强规则硬约束 | 防止 heartbeat 越权或过度打扰 |
+| Reminder 策略 | Contextual Bandit (LinUCB) | 适合”有限动作 + 在线反馈”的提醒问题 |
+| LLM 角色 | 行为插件 `reason()` 中调用 | 保留表达能力，不参与主决策 |
+| 边界控制 | DecisionGate 强规则硬约束 | 防止过度打扰（安静时段/全屏/额度/偏好降级） |
 
 ## 16. 研究参考
 

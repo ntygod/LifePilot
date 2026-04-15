@@ -63,7 +63,7 @@ class DefaultReminderSignalCollector_单元测试 {
         topicAliasRepository = mock(ReminderTopicAliasRepository.class);
         collector = new DefaultReminderSignalCollector(
                 semanticMemory, proceduralMemory, episodicMemory, workspaceService,
-                notificationRepository, feedbackRepository, outcomeRepository, topicAliasRepository);
+                notificationRepository, feedbackRepository, outcomeRepository, topicAliasRepository, null);
 
         when(semanticMemory.findCurrentByType(EntityType.EVENT)).thenReturn(List.of());
         when(semanticMemory.findCurrentByType(EntityType.HABIT)).thenReturn(List.of());

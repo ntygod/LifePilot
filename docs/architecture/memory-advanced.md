@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统：procedural / consolidation / forgetting）
-> **最后更新**：2026-04-14
+> **最后更新**：2026-04-15
 
 ## 1. 模块概述
 
@@ -30,6 +30,7 @@ graph TB
         E2P["EpisodicToProcedural<br/>Consolidator"]
         EM_M["ExperienceMerger"]
         CS["ConsolidationStats"]
+        UPC["UserProfileConsolidator<br/>(对话驱动 + 2h 防抖)"]
         CP --> E2S
         CP --> EM_M
         CP --> E2P
@@ -68,6 +69,9 @@ graph TB
     E2S -->|"写入实体"| SM
     E2P -->|"读取对话轨迹"| EM
     E2P -->|"写入模板"| PM
+    UPC -->|"读取碎片实体+对话+偏好"| SM & EM & PM
+    UPC -->|"写入画像实体"| SM
+    UPC -->|"LLM 生成画像"| LLM
     FE -->|"获取/归档实体"| SM
     IM -->|"向量匹配"| VS
     RS -->|"摘要压缩"| GenerationRouter
@@ -118,7 +122,17 @@ graph TB
 - 支持手动调用 `consolidate()` 方法（为 Idle-Driven 触发模式预留）
 - 返回 `ConsolidationStats` 统计信息（分析对话数、提升实体数、创建模板数）
 
-### 3.6 ForgettingEngine（MaRS 遗忘引擎）
+### 3.6 UserProfileConsolidator（用户画像巩固器）
+
+- 职责：将 L3 碎片实体（PREFERENCE / HABIT / GOAL / SKILL）聚合为连贯的用户画像文本
+- 数据来源：L3 碎片实体 + L2 最近 7 天对话 + L4 偏好规则
+- 输出：调用 LLM 生成第三人称自然语言画像（~200 字），存入 L3 作为 `__consolidated_profile` 特殊 CUSTOM 实体
+- 防抖机制：两次巩固间隔最少 2 小时（`MIN_INTERVAL`），避免频繁调用 LLM
+- 触发方式：由 `ConversationCompletionHook` 在对话完成后异步触发（虚拟线程），而非定时触发
+- 所有依赖均可为 null，缺失时 `consolidate()` 直接跳过
+- 消费方：`ContextAssembler` 和 `ProactiveMemoryBridge` 都优先读取巩固后的画像，降级为零散实体拼接
+
+### 3.7 ForgettingEngine（MaRS 遗忘引擎）
 
 - 职责：定时执行认知遗忘，维持记忆系统健康容量
 - 核心流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 选择候选 → 执行遗忘动作 → 记录日志
@@ -126,7 +140,7 @@ graph TB
 - 遗忘动作决策：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档
 - LLM 压缩失败时降级为直接归档
 
-### 3.7 ForgettingPolicy（遗忘策略体系）
+### 3.8 ForgettingPolicy（遗忘策略体系）
 
 - 通过 sealed interface 定义 6 种策略，确保类型安全和穷举匹配
 - `FifoPolicy`：按创建时间先进先出

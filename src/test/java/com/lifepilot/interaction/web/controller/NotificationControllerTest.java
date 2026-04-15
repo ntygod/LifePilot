@@ -49,7 +49,7 @@ class NotificationControllerTest {
     @BeforeEach
     void setUp() {
         properties = new NotificationProperties();
-        var controller = new NotificationController(notificationRepository, properties, reminderFeedbackRepository);
+        var controller = new NotificationController(notificationRepository, properties, reminderFeedbackRepository, null, null);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

@@ -15,7 +15,12 @@ import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.notification.config.NotificationProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
@@ -34,9 +39,14 @@ import java.util.Optional;
 @Service
 public class ChatTurnService {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatTurnService.class);
+
     private final ChatTurnRepository chatTurnRepository;
     private final SessionTranscriptRepository transcriptRepository;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
+    @Nullable
+    private final NotificationProperties notificationProperties;
     @Nullable
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable
@@ -50,6 +60,8 @@ public class ChatTurnService {
     public ChatTurnService(ChatTurnRepository chatTurnRepository,
                            SessionTranscriptRepository transcriptRepository,
                            ObjectMapper objectMapper,
+                           ApplicationEventPublisher eventPublisher,
+                           @Nullable NotificationProperties notificationProperties,
                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
                            @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
@@ -57,16 +69,21 @@ public class ChatTurnService {
         this.chatTurnRepository = chatTurnRepository;
         this.transcriptRepository = transcriptRepository;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
+        this.notificationProperties = notificationProperties;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.sessionDatastoreRepository = sessionDatastoreRepository;
         this.chatTurnMemorySnapshotRepository = chatTurnMemorySnapshotRepository;
         this.memorySpaceRepository = memorySpaceRepository;
     }
 
+    /** 便捷构造器（测试用）— 由 Spring 管理时使用主构造器。 */
     public ChatTurnService(ChatTurnRepository chatTurnRepository,
                            SessionTranscriptRepository transcriptRepository,
-                           ObjectMapper objectMapper) {
-        this(chatTurnRepository, transcriptRepository, objectMapper, null, null, null, null);
+                           ObjectMapper objectMapper,
+                           ApplicationEventPublisher eventPublisher) {
+        this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
+                null, null, null, null, null);
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -112,6 +129,36 @@ public class ChatTurnService {
                 completionMode != null ? completionMode.name() : null,
                 Instant.now()
         );
+
+        // 发布对话完成事件 — 触发认知闭环（画像巩固 + 隐式信号 + 未命中检测）
+        if (status == ChatTurnStatus.SUCCESS) {
+            try {
+                String userId = notificationProperties != null ? notificationProperties.getDefaultUserId() : "default";
+                String summary = loadConversationSummary(sessionId);
+                eventPublisher.publishEvent(
+                        new ConversationCompletedEvent(this, userId, sessionId, summary));
+            } catch (Exception e) {
+                log.debug("对话完成事件发布跳过: sessionId={}, error={}", sessionId, e.getMessage());
+            }
+        }
+    }
+
+    /** 加载对话摘要（取最近一条用户消息的前 200 字作为上下文）。 */
+    @Nullable
+    private String loadConversationSummary(String sessionId) {
+        try {
+            var entries = transcriptRepository.findBySessionId(sessionId);
+            return entries.stream()
+                    .filter(e -> "user".equals(e.role()))
+                    .reduce((first, second) -> second)  // 取最后一条
+                    .map(e -> {
+                        String content = e.payloadJson();
+                        return content != null && content.length() > 200 ? content.substring(0, 200) : content;
+                    })
+                    .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public void markFailed(String sessionId,

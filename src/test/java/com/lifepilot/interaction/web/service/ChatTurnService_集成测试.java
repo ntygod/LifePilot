@@ -237,6 +237,8 @@ class ChatTurnService_集成测试 {
                 chatTurnRepository,
                 transcriptRepository,
                 objectMapper,
+                event -> {},  // 测试用 no-op ApplicationEventPublisher
+                null,
                 sessionKnowledgeBaseRepository,
                 sessionDatastoreRepository,
                 snapshotRepository,

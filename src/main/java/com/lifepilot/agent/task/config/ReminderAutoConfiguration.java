@@ -4,7 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.task.reminder.DefaultReminderSignalCollector;
 import com.lifepilot.agent.task.reminder.DefaultReminderMessageGenerator;
-import com.lifepilot.agent.task.reminder.ProactiveReminderService;
+import com.lifepilot.agent.task.reminder.ReminderBehavior;
 import com.lifepilot.agent.task.reminder.ReminderDecisionEngine;
 import com.lifepilot.agent.task.reminder.ReminderExecutionRepository;
 import com.lifepilot.agent.task.reminder.ReminderReplayReportRepository;
@@ -25,8 +25,10 @@ import com.lifepilot.agent.task.reminder.ReminderSituationSynthesizer;
 import com.lifepilot.agent.task.reminder.ReminderRetentionScheduler;
 import com.lifepilot.agent.task.reminder.ReminderTopicAliasRepository;
 import com.lifepilot.agent.task.reminder.ReminderTrustGradient;
-import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
 import com.lifepilot.agent.task.reminder.WeatherSignalSource;
+import com.lifepilot.agent.context.LocationResolver;
+import com.lifepilot.agent.context.OpenMeteoWeatherService;
+import com.lifepilot.agent.context.WeatherService;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -46,9 +48,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -117,6 +117,19 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public LocationResolver locationResolver(AgentConfigProperties config) {
+        return new LocationResolver(config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public OpenMeteoWeatherService openMeteoWeatherService(LocationResolver locationResolver,
+                                                            AgentConfigProperties config) {
+        return new OpenMeteoWeatherService(locationResolver, config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ReminderSignalCollector reminderSignalCollector(
             @Autowired(required = false) SemanticMemory semanticMemory,
             @Autowired(required = false) ProceduralMemory proceduralMemory,
@@ -125,7 +138,8 @@ public class ReminderAutoConfiguration {
             NotificationRepository notificationRepository,
             @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
             @Autowired(required = false) ReminderOutcomeRepository reminderOutcomeRepository,
-            @Autowired(required = false) ReminderTopicAliasRepository reminderTopicAliasRepository) {
+            @Autowired(required = false) ReminderTopicAliasRepository reminderTopicAliasRepository,
+            @Autowired(required = false) WeatherService weatherService) {
         return new DefaultReminderSignalCollector(
                 semanticMemory,
                 proceduralMemory,
@@ -134,7 +148,8 @@ public class ReminderAutoConfiguration {
                 notificationRepository,
                 reminderFeedbackRepository,
                 reminderOutcomeRepository,
-                reminderTopicAliasRepository
+                reminderTopicAliasRepository,
+                weatherService
         );
     }
 
@@ -150,6 +165,18 @@ public class ReminderAutoConfiguration {
             @Autowired(required = false) ReminderTrustGradient reminderTrustGradient) {
         return new ReminderDecisionEngine(new com.lifepilot.agent.task.reminder.ReminderCandidateDetector(),
                 reminderTrustGradient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReminderBehavior reminderBehavior(ReminderSignalCollector reminderSignalCollector,
+                                             ReminderMessageGenerator reminderMessageGenerator,
+                                             @Autowired(required = false) ReminderOutcomeInferenceService outcomeInferenceService) {
+        return new ReminderBehavior(
+                reminderSignalCollector,
+                new com.lifepilot.agent.task.reminder.ReminderCandidateDetector(),
+                reminderMessageGenerator,
+                outcomeInferenceService);
     }
 
     @Bean
@@ -237,102 +264,7 @@ public class ReminderAutoConfiguration {
         return new ReminderSituationSynthesizer(generationRouter, promptRegistry);
     }
 
-    @Bean
-    @ConditionalOnMissingBean
-    public ProactiveReminderService proactiveReminderService(ReminderSignalCollector reminderSignalCollector,
-                                                             ReminderDecisionEngine reminderDecisionEngine,
-                                                             ReminderPolicyTuner reminderPolicyTuner,
-                                                             ReminderOpportunityPolicySelector reminderOpportunityPolicySelector,
-                                                             ReminderActionPolicySelector reminderActionPolicySelector,
-                                                             ReminderMessageGenerator reminderMessageGenerator,
-                                                             NotificationService notificationService,
-                                                             NotificationRepository notificationRepository,
-                                                             ReminderExecutionRepository reminderExecutionRepository,
-                                                             @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
-                                                             @Autowired(required = false) ReminderOutcomeInferenceService reminderOutcomeInferenceService,
-                                                             @Autowired(required = false) ReminderReplayService reminderReplayService,
-                                                             @Autowired(required = false) ReminderPolicyVersionService reminderPolicyVersionService,
-                                                             @Autowired(required = false) ReminderSituationSynthesizer reminderSituationSynthesizer,
-                                                             @Autowired(required = false) ReminderFocusStateHolder reminderFocusStateHolder,
-                                                             AgentConfigProperties config,
-                                                             NotificationProperties notificationProperties) {
-        return new ProactiveReminderService(
-                reminderSignalCollector,
-                reminderDecisionEngine,
-                notificationService,
-                notificationRepository,
-                reminderExecutionRepository,
-                reminderFeedbackRepository,
-                reminderPolicyTuner,
-                reminderOpportunityPolicySelector,
-                reminderActionPolicySelector,
-                reminderMessageGenerator,
-                reminderOutcomeInferenceService,
-                reminderReplayService,
-                reminderPolicyVersionService,
-                reminderSituationSynthesizer,
-                reminderFocusStateHolder,
-                config,
-                notificationProperties
-        );
-    }
-
-    // ===== 启动预热 =====
-
-    /**
-     * 应用启动后异步执行反事实样本预热，缓解 Bandit 冷启动问题。
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "proactive-reminder-enabled",
-            havingValue = "true", matchIfMissing = true)
-    ReminderCounterfactualWarmupListener reminderCounterfactualWarmupListener(
-            ProactiveReminderService proactiveReminderService) {
-        return new ReminderCounterfactualWarmupListener(proactiveReminderService);
-    }
-
-    /**
-     * 内部监听器 — 在应用就绪后触发反事实预热。
-     */
-    static class ReminderCounterfactualWarmupListener {
-        private static final Logger warmupLog = LoggerFactory.getLogger(ReminderCounterfactualWarmupListener.class);
-        private final ProactiveReminderService proactiveReminderService;
-
-        ReminderCounterfactualWarmupListener(ProactiveReminderService proactiveReminderService) {
-            this.proactiveReminderService = proactiveReminderService;
-        }
-
-        @EventListener(ApplicationReadyEvent.class)
-        public void onApplicationReady() {
-            Thread.ofVirtual().name("reminder-counterfactual-warmup").start(() -> {
-                try {
-                    int count = proactiveReminderService.warmupCounterfactualExamples();
-                    if (count > 0) {
-                        warmupLog.info("主动提醒反事实预热完成: examples={}", count);
-                    }
-                } catch (Exception e) {
-                    warmupLog.debug("主动提醒反事实预热跳过: {}", e.getMessage());
-                }
-            });
-        }
-    }
-
     // ===== 调度器层 =====
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "proactive-reminder-enabled",
-            havingValue = "true", matchIfMissing = true)
-    public ReminderWakeupScheduler reminderWakeupScheduler(SharedScheduler sharedScheduler,
-                                                           ReminderExecutionRepository reminderExecutionRepository,
-                                                           ProactiveReminderService proactiveReminderService,
-                                                           AgentConfigProperties config) {
-        return new ReminderWakeupScheduler(
-                sharedScheduler.heartbeat(),
-                reminderExecutionRepository,
-                proactiveReminderService,
-                config
-        );
-    }
 
     @Bean
     @ConditionalOnMissingBean

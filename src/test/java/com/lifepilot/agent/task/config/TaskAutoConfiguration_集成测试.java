@@ -21,8 +21,6 @@ import com.lifepilot.agent.task.reminder.ReminderReplayService;
 import com.lifepilot.agent.task.reminder.ReminderActionPolicySelector;
 import com.lifepilot.agent.task.reminder.ReminderOpportunityPolicySelector;
 import com.lifepilot.agent.task.reminder.ReminderSignalCollector;
-import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
-import com.lifepilot.agent.task.reminder.ProactiveReminderService;
 import com.lifepilot.agent.task.reminder.ReminderDecisionEngine;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.notification.NotificationRepository;
@@ -101,7 +99,7 @@ class TaskAutoConfiguration_集成测试 {
 
         ReminderSignalCollector reminderSignalCollector = reminderConfig.reminderSignalCollector(
                 null, null, null, null, mock(NotificationRepository.class),
-                reminderFeedbackRepository, reminderOutcomeRepository, reminderTopicAliasRepository);
+                reminderFeedbackRepository, reminderOutcomeRepository, reminderTopicAliasRepository, null);
         assertThat(reminderSignalCollector).isNotNull();
 
         ReminderMessageGenerator reminderMessageGenerator = reminderConfig.reminderMessageGenerator(
@@ -137,31 +135,6 @@ class TaskAutoConfiguration_集成测试 {
                 config
         );
         assertThat(reminderReplayService).isNotNull();
-
-        ProactiveReminderService proactiveReminderService = reminderConfig.proactiveReminderService(
-                reminderSignalCollector,
-                new ReminderDecisionEngine(),
-                reminderPolicyTuner,
-                reminderOpportunityPolicySelector,
-                reminderActionPolicySelector,
-                reminderMessageGenerator,
-                notificationService,
-                mock(NotificationRepository.class),
-                reminderExecutionRepository,
-                reminderFeedbackRepository,
-                reminderOutcomeInferenceService,
-                reminderReplayService,
-                reminderPolicyVersionService,
-                null,
-                null,
-                config,
-                notificationProperties
-        );
-        assertThat(proactiveReminderService).isNotNull();
-
-        ReminderWakeupScheduler reminderWakeupScheduler = reminderConfig.reminderWakeupScheduler(
-                sharedScheduler, reminderExecutionRepository, proactiveReminderService, config);
-        assertThat(reminderWakeupScheduler).isNotNull();
 
         ReminderReplayEvaluationScheduler reminderReplayEvaluationScheduler =
                 reminderConfig.reminderReplayEvaluationScheduler(
