@@ -45,8 +45,8 @@ async function saveConfig() {
   await store.updateConfig({
     enabled: localEnabled.value,
     dailyMaxReminders: localDailyMax.value,
-    quietHoursStart: localQuietStart.value || null,
-    quietHoursEnd: localQuietEnd.value || null,
+    quietHoursStart: localQuietStart.value,  // 空字符串 = 清除，后端区分 null(不变) vs ""(清除)
+    quietHoursEnd: localQuietEnd.value,
   })
   saving.value = false
 }

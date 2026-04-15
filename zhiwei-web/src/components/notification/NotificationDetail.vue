@@ -38,7 +38,9 @@ async function handleFeedback(type: string) {
   submitting.value = true
   try {
     await notificationStore.submitFeedback(props.notificationItem.id, type)
-    localFeedbackType.value = type
+    localFeedbackType.value = type  // 只在成功时设置，失败会抛异常跳过此行
+  } catch {
+    // 失败时不设置 localFeedbackType，按钮保持可重试
   } finally {
     submitting.value = false
   }

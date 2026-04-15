@@ -181,15 +181,7 @@ public class ProactiveEngine {
                         log.debug("主动引擎: 隐式信号记录跳过: {}", ex.getMessage());
                     }
                 }
-                // 信任追踪：投递成功视为正反馈
-                if (trustUpgradeService != null) {
-                    try {
-                        trustUpgradeService.recordPositiveFeedback(
-                                ctx.userId(), ga.action().candidate().behaviorName());
-                    } catch (Exception ex) {
-                        log.debug("主动引擎: 信任记录跳过: {}", ex.getMessage());
-                    }
-                }
+                // 信任追踪：投递不记正反馈，由用户显式反馈（NotificationController.dispatchFeedbackToEngine）驱动
                 var behavior = findBehavior(ga.action().candidate().behaviorName());
                 if (behavior != null) {
                     behavior.onDelivered(ga.action(), result);

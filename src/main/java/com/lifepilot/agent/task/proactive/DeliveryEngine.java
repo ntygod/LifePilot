@@ -53,8 +53,11 @@ public class DeliveryEngine {
     }
 
     private DeliveryResult deliverQueue(ProactiveAction action, String userId) {
+        // 用 userId+topicKey 生成确定性 id，同一话题的队列条目走 UPSERT 去重
+        var stableId = UUID.nameUUIDFromBytes(
+                (userId + ":" + action.candidate().topicKey()).getBytes()).toString();
         var record = new QueuedActionRecord(
-                UUID.randomUUID().toString(),
+                stableId,
                 userId,
                 action.candidate().behaviorName(),
                 action.candidate().topicKey(),

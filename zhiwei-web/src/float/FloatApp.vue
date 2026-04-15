@@ -255,7 +255,7 @@ async function openQueueItem(item: QueueItem) {
   await invoke('resize_float_window', { mode: 'bubble' })
   state.value = 'bubble'
   showBubble({
-    notificationId: item.id,
+    notificationId: '',  // 队列条目无 notification ID，反馈按钮会检查此字段
     title: item.title,
     content: item.content,
     pushLevel: 'NORMAL_PUSH',
@@ -329,14 +329,17 @@ function clearDismiss() {
 // ─── 反馈 ────────────────────────────────────────────────
 async function feedback(type: FeedbackType) {
   if (!reminder.value) return
-  const port = await getPort()
-  try {
-    await fetch(`http://localhost:${port}/api/notifications/${reminder.value.notificationId}/feedback`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ feedbackType: type }),
-    })
-  } catch { /* 静默 */ }
+  // 队列条目无 notification ID，只 dismiss 不调反馈 API
+  if (reminder.value.notificationId) {
+    const port = await getPort()
+    try {
+      await fetch(`http://localhost:${port}/api/notifications/${reminder.value.notificationId}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedbackType: type }),
+      })
+    } catch { /* 静默 */ }
+  }
   setCatMood('happy')
   setTimeout(() => setCatMood('normal'), 600)
   dismissBubble()

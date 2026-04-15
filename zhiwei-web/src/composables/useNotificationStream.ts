@@ -37,10 +37,8 @@ export function useNotificationStream() {
         } else {
           notificationStore.addNotification(data as NotificationItem)
           const item = data as NotificationItem
-          if (item.typeId === 'proactive_reminder' || item.typeId === 'proactive_action' || item.typeId === 'clipboard_intent') {
-            logger.info('尝试投递到浮窗: typeId=%s, isTauri=%s', item.typeId, !!window.__TAURI_INTERNALS__)
-            sendToFloatWindow(item)
-          } else {
+          // 主动提醒类通知由浮窗自己的 SSE 连接处理，主窗口不再转发，避免重复投递
+          if (item.typeId !== 'proactive_reminder' && item.typeId !== 'proactive_action' && item.typeId !== 'clipboard_intent') {
             sendDesktopNotification(item)
           }
         }

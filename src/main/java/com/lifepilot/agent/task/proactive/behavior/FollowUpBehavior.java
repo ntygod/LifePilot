@@ -1,7 +1,13 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.task.proactive.*;
+import com.lifepilot.agent.task.proactive.ContextPacket;
+import com.lifepilot.agent.task.proactive.DeliveryLevel;
+import com.lifepilot.agent.task.proactive.DeliveryResult;
+import com.lifepilot.agent.task.proactive.GoalView;
+import com.lifepilot.agent.task.proactive.ProactiveAction;
+import com.lifepilot.agent.task.proactive.ProactiveCandidate;
+import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -81,14 +87,17 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
 
     @Override
     public List<ProactiveAction> reason(List<ProactiveCandidate> candidates, ContextPacket ctx) {
-        var actions = super.reason(candidates, ctx);
-        // 只对成功产出 action 的候选递增追问计数，避免 LLM 失败白白消耗配额
-        for (var action : actions) {
-            if (action.candidate().detail() instanceof GoalView goal) {
-                memoryBridge.incrementCheckCount(goal.entityId());
-            }
+        // checkCount 不在 reason 阶段递增 — 由 onDelivered 在实际投递后递增，
+        // 避免被 DecisionGate 拦截（安静时段/全屏/每日上限）的动作白白消耗追问配额
+        return super.reason(candidates, ctx);
+    }
+
+    @Override
+    public void onDelivered(ProactiveAction action, DeliveryResult result) {
+        // 实际投递成功后才递增追问计数
+        if (action.candidate().detail() instanceof GoalView goal) {
+            memoryBridge.incrementCheckCount(goal.entityId());
         }
-        return actions;
     }
 
     @Override

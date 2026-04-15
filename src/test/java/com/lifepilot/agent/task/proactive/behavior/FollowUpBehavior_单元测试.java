@@ -80,7 +80,7 @@ class FollowUpBehavior_单元测试 {
     }
 
     @Test
-    void reason_递增追问计数() {
+    void reason_不递增追问计数_由onDelivered处理() {
         var goal = new GoalView("e1", "买耳机", null, 0.5f, 3,
                 Instant.now().minusSeconds(3 * 86400), 1, null, Map.of());
         when(memoryBridge.enrichGoalContext("e1", "买耳机")).thenReturn("");
@@ -88,6 +88,21 @@ class FollowUpBehavior_单元测试 {
                 "买耳机", 0.5f, "活跃目标", goal);
 
         behavior.reason(List.of(candidate), testCtx());
+
+        // reason 阶段不递增 checkCount，避免被 DecisionGate 拦截后浪费配额
+        verify(memoryBridge, never()).incrementCheckCount(any());
+    }
+
+    @Test
+    void onDelivered_递增追问计数() {
+        var goal = new GoalView("e1", "买耳机", null, 0.5f, 3,
+                Instant.now().minusSeconds(3 * 86400), 1, null, Map.of());
+        var candidate = new ProactiveCandidate("c1", "follow-up", "goal-e1",
+                "买耳机", 0.5f, "活跃目标", goal);
+        var action = new ProactiveAction(candidate, "进展如何？", DeliveryLevel.NOTIFY, goal);
+        var result = new DeliveryResult("n1", DeliveryLevel.NOTIFY, Instant.now());
+
+        behavior.onDelivered(action, result);
 
         verify(memoryBridge).incrementCheckCount("e1");
     }

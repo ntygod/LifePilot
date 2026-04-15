@@ -15,7 +15,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -134,7 +136,7 @@ public class ProactiveController {
             @RequestParam(defaultValue = "default") String userId) {
 
         if (autonomyRepository == null) {
-            return ApiResponse.error(503, "信任升级服务不可用");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "信任升级服务不可用");
         }
 
         var configs = autonomyRepository.findAllByUserId(userId);
@@ -178,19 +180,19 @@ public class ProactiveController {
             @RequestParam(defaultValue = "default") String userId) {
 
         if (trustUpgradeService == null || autonomyRepository == null) {
-            return ApiResponse.error(503, "信任升级服务不可用");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "信任升级服务不可用");
         }
 
         boolean success = trustUpgradeService.confirmUpgrade(userId, behavior);
         if (!success) {
             log.info("信任升级确认失败: userId={}, behavior={}", userId, behavior);
-            return ApiResponse.error(400, "升级条件不满足或当前无升级建议");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "升级条件不满足或当前无升级建议");
         }
 
         // 查询升级后的最新状态
         var config = autonomyRepository.findByUserAndBehavior(userId, behavior);
         if (config == null) {
-            return ApiResponse.error(500, "升级成功但无法读取最新状态");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "升级成功但无法读取最新状态");
         }
 
         log.info("信任升级确认成功: userId={}, behavior={}, level={}", userId, behavior, config.autonomyLevel());
@@ -210,7 +212,7 @@ public class ProactiveController {
             @RequestParam(defaultValue = "default") String userId) {
 
         if (agentConfig == null) {
-            return ApiResponse.error(503, "配置服务不可用");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "配置服务不可用");
         }
 
         log.debug("查询主动引擎配置: userId={}", userId);
@@ -230,7 +232,7 @@ public class ProactiveController {
             @RequestBody ProactiveConfigUpdateRequest request) {
 
         if (agentConfig == null) {
-            return ApiResponse.error(503, "配置服务不可用");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "配置服务不可用");
         }
 
         var taskConfig = agentConfig.getTask();
@@ -242,11 +244,14 @@ public class ProactiveController {
         if (request.dailyMaxReminders() != null) {
             taskConfig.setProactiveReminderDailyMaxReminders(request.dailyMaxReminders());
         }
+        // 静默时段：空字符串表示清除，null 表示不变
         if (request.quietHoursStart() != null) {
-            taskConfig.setProactiveReminderQuietHoursStart(request.quietHoursStart());
+            taskConfig.setProactiveReminderQuietHoursStart(
+                    request.quietHoursStart().isBlank() ? null : request.quietHoursStart());
         }
         if (request.quietHoursEnd() != null) {
-            taskConfig.setProactiveReminderQuietHoursEnd(request.quietHoursEnd());
+            taskConfig.setProactiveReminderQuietHoursEnd(
+                    request.quietHoursEnd().isBlank() ? null : request.quietHoursEnd());
         }
 
         // 更新行为自主度
