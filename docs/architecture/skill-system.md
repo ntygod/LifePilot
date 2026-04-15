@@ -149,8 +149,6 @@ sealed interface，穷举三种来源，每种来源携带不同元数据：
 
 安装后文件落入 `~/.zhiwei/skills/` 目录，由 `SkillFileWatcher` 检测到新目录后自动加载注册。
 
-> **注意**：`BuiltinSkillRegistrar`、`BuiltinSkillProvider`、`ProactiveSkillProvider` 接口在早期设计中规划但尚未实现，代码中不存在这些类。内置 Skill 配置开关（`SkillConfigProperties.Builtin`）已预留但当前仅返回默认值。
-
 ### 3.11 SkillAuditRepository（审计追溯）
 
 通过 Spring Event 监听 `SkillRegistryEvent` 和 `SkillLifecycleEvent`，将审计事件持久化到 SQLite `skill_audit_logs` 表。支持按 Skill ID 和时间范围查询。写入失败不影响主流程。
@@ -267,7 +265,7 @@ sequenceDiagram
 | 工具系统 (`com.lifepilot.tool`) | Skill → Tool | SkillGenerationTool 注册 `generate_skill` 到 DynamicToolRegistry；`load_skill` 已删除，Skill 加载由 `file.read(skill=...)` 承载 |
 | Agent 引擎 (`com.lifepilot.agent`) | Agent → Skill | Agent 调用 `file.read(skill="id")` 加载 Skill 指南，ReactAgentLoop 检测 `_skillIds` 后激活 suggestedTools；ContextAssembler 组装 Skill 目录和 MCP server 目录到系统提示词 |
 | 记忆系统 (`com.lifepilot.memory`) | Meta → Memory | 记忆工具由 `MemoryToolProvider`（元能力模块）直接注册，不通过 Skill 系统 |
-| Prompt 管理 (`com.lifepilot.prompt`) | Skill → Prompt | SkillGenerator 通过 PromptRegistry 渲染生成 Prompt；内置 Skill 通过 PromptRegistry 加载指令模板 |
+| Prompt 管理 (`com.lifepilot.prompt`) | Skill → Prompt | SkillGenerator 通过 PromptRegistry 渲染生成 Prompt |
 | 可观测性 (`com.lifepilot.observability`) | Skill → Observability | SkillGenerationTool 引用 RiskLevel 枚举设置工具风险等级 |
 | SkillHub (`com.lifepilot.skill.hub`) | Skill → External | SkillHubClient 通过 CLI 从腾讯 SkillHub 搜索和安装 Skill，安装到本地后由 SkillFileWatcher 自动加载 |
 

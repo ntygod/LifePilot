@@ -246,7 +246,7 @@ graph TB
 | 主题 | 文档 |
 |------|------|
 | 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
-| 预置 Skill 与元能力工具（Memory 等） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
+| 预置 Skill（种子 Skill） | [架构](architecture/preset-skills.md) · [特性](features/preset-skills.md) |
 | 工具权限与自动执行 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |
 | 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
