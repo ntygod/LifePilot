@@ -8,7 +8,6 @@ import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.agent.task.HeartbeatRunner;
 import com.lifepilot.agent.task.reminder.ReminderReplayEvaluationScheduler;
 import com.lifepilot.agent.task.reminder.ReminderRetentionScheduler;
-import com.lifepilot.agent.task.reminder.ReminderWakeupScheduler;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
@@ -99,12 +98,6 @@ public class TaskAutoConfiguration {
             var heartbeatRunner = context.getBean(HeartbeatRunner.class);
             heartbeatRunner.start();
             log.info("自主任务系统就绪: 心跳唤醒已启动");
-        }
-
-        if (context.containsBean("reminderWakeupScheduler")) {
-            var reminderWakeupScheduler = context.getBean(ReminderWakeupScheduler.class);
-            reminderWakeupScheduler.start();
-            log.info("自主任务系统就绪: 主动提醒延后唤醒已启动");
         }
 
         if (context.containsBean("reminderReplayEvaluationScheduler")) {
