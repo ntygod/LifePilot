@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统：procedural / consolidation / forgetting）
-> **最后更新**：2026-04-15
+> **最后更新**：2026-04-16
 
 ## 1. 模块概述
 
@@ -15,7 +15,7 @@ graph TB
     subgraph "L4 程序记忆"
         PM["ProceduralMemory"]
         IM["IntentMatcher"]
-        PT["ProcedureTemplate<br/>(操作模板, 默认关闭)"]
+        PT["ProcedureTemplate<br/>(操作模板, 默认启用)"]
         PR["PreferenceRule<br/>(偏好规则)"]
         TS["TemplateStep"]
         PM --> PT
@@ -85,7 +85,7 @@ graph TB
 - 两种数据类型（`StrategyPattern` 已删除）：
   - `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数
   - `PreferenceRule`：偏好规则，按 category + key 组织，支持强化（reinforcement）
-- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认关闭
+- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认启用
 - 使用 sqlite-vec 建立意图向量索引（`procedure_intent_embeddings`）
 - 记录每次模板执行的成功/失败，动态更新成功率
 
@@ -107,7 +107,7 @@ graph TB
 ### 3.4 EpisodicToProceduralConsolidator（情景→程序巩固器）
 
 - 职责：从重复行为模式中聚类生成操作模板，提取用户偏好
-- 模板聚类受 `lifepilot.memory.procedural.templateEnabled` 开关控制（默认关闭）
+- 模板聚类受 `lifepilot.memory.procedural.templateEnabled` 开关控制（默认启用）
 - 分析对话轨迹中的工具调用序列，识别重复模式
 - 相似度超过阈值的轨迹聚类为操作模板（`ProcedureTemplate`）
 - 配置参数：聚类相似度阈值、最小聚类大小、每次运行最大模板数、最小执行步骤数
@@ -115,7 +115,7 @@ graph TB
 ### 3.5 ConsolidationPipeline（巩固管线编排）
 
 - 职责：编排语义巩固、经验合并和程序巩固的执行顺序
-- 顺序执行：语义巩固 → 程序巩固 → 偏好同步（PreferenceConsolidator）→ 经验合并（ExperienceMerger）→ 经验提升（promoteHighFrequencyExperiences，L3→L4），故障隔离（try-catch 独立包裹）
+- 顺序执行六步：语义巩固 → 程序巩固 → 偏好同步（PreferenceConsolidator）→ 经验合并（ExperienceMerger）→ 用户画像巩固（UserProfileConsolidator）→ 经验提升（promoteHighFrequencyExperiences，L3→L4），故障隔离（try-catch 独立包裹）
 - 经验合并阶段：通过 ExperienceMerger 将语义相似的 EXPERIENCE 实体合并为泛化的元经验
 - 经验提升阶段（L3→L4）：扫描 EXPERIENCE 实体，将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 ProcedureTemplate，提升后原始经验归档
 - 通过 `@Scheduled` Cron 表达式定时触发
@@ -136,7 +136,11 @@ graph TB
 
 - 职责：定时执行认知遗忘，维持记忆系统健康容量
 - 核心流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 选择候选 → 执行遗忘动作 → 记录日志
-- 受保护实体（永不遗忘）：受保护类型（可配置，`config.getProtectedTypes()`，默认 PREFERENCE / HABIT / GOAL），或 importanceScore ≥ 保护阈值（可配置，`config.getProtectionThreshold()`，默认 0.9）
+- 受保护实体（永不遗忘，满足任一即受保护）：
+  - 受保护类型（可配置，`config.getProtectedTypes()`，默认 PREFERENCE / HABIT / GOAL）
+  - importanceScore ≥ 保护阈值（可配置，`config.getProtectionThreshold()`，默认 0.9）
+  - accessCount ≥ 高频访问保护阈值（`config.getHighAccessCountProtection()`，默认 10）
+  - 最近 N 天内被访问过（`config.getRecentAccessProtectionDays()`，默认 7 天）
 - 遗忘动作决策：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档
 - LLM 压缩失败时降级为直接归档
 
@@ -162,6 +166,7 @@ sequenceDiagram
     participant E2P as EpisodicToProcedural
     participant PrefCon as PreferenceConsolidator
     participant EM_M as ExperienceMerger
+    participant UPC as UserProfileConsolidator
     participant EM as EpisodicMemory
     participant SM as SemanticMemory
     participant PM as ProceduralMemory
@@ -183,13 +188,18 @@ sequenceDiagram
     PrefCon->>PM: 同步 PreferenceRule
     PrefCon-->>CP: stats(created, reinforced, deleted)
 
-    CP->>EM_M: 3.5 merge()（经验合并）
+    CP->>EM_M: 4. merge()（经验合并）
     EM_M->>SM: 加载 EXPERIENCE 实体
     EM_M->>EM_M: 向量相似度检测 + LLM 合并
     EM_M->>SM: 写入元经验 + 归档原始
     EM_M-->>CP: MergeStats
 
-    CP->>CP: 4. promoteHighFrequencyExperiences()（经验提升 L3→L4）
+    CP->>UPC: 5. consolidate()（用户画像巩固）
+    UPC->>SM: 读取碎片实体 + 偏好
+    UPC->>UPC: LLM 生成画像
+    UPC->>SM: 写入 __consolidated_profile
+
+    CP->>CP: 6. promoteHighFrequencyExperiences()（经验提升 L3→L4）
     CP->>SM: findCurrentByType(EXPERIENCE)
     CP->>CP: 过滤 importanceScore≥0.8 且 accessCount≥3
     CP->>PM: save(ProcedureTemplate)
@@ -210,7 +220,7 @@ sequenceDiagram
 
     SCH->>FE: scheduledForget()
     FE->>SM: findAllCurrent()
-    FE->>FE: 过滤受保护实体（config.getProtectedTypes() 默认 PREFERENCE/HABIT/GOAL, importance≥config.getProtectionThreshold() 默认 0.9）
+    FE->>FE: 过滤受保护实体（类型保护 + importance≥0.9 + accessCount≥10 + 7天内访问）
 
     FE->>HP: selectForForgetting(candidates, maxPerRun)
     Note over HP: 四阶段遗忘：FIFO → LRU → PriorityDecay → ReflectionSummary
@@ -236,7 +246,7 @@ sequenceDiagram
 | 巩固管线顺序执行 | 语义巩固 → 程序巩固 | 程序巩固可能依赖语义巩固的实体提取结果 |
 | 故障隔离策略 | try-catch 独立包裹 | 单个巩固器失败不应阻塞整个管线 |
 | 遗忘策略 sealed interface | 6 种策略 + HybridPolicy 编排 | 每种策略有明确适用场景，Hybrid 综合优势；sealed 保证穷举 |
-| 受保护实体机制 | 类型保护 + 重要度保护 | 用户核心偏好和习惯不应被遗忘，高重要度实体代表关键知识 |
+| 受保护实体机制 | 类型保护 + 重要度保护 + 高频访问保护 + 近期访问保护 | 四维保护：核心偏好按类型保护、关键知识按重要度保护、高频使用实体和近期活跃实体不应被遗忘 |
 | 遗忘动作分级 | 压缩归档 vs 直接归档 | 中等重要度实体值得保留核心信息，低重要度直接归档节省资源 |
 | 触发模式预留 | Cron + 手动调用接口 | 当前使用 Cron 定时触发，为未来 Idle-Driven 模式预留 consolidate() 入口 |
 
@@ -260,7 +270,7 @@ sequenceDiagram
 | `lifepilot.memory.procedural.min-use-count` | — | 模板最低使用次数 |
 | `lifepilot.memory.procedural.stale-days` | — | 模板过期天数 |
 | `lifepilot.memory.procedural.match-threshold` | — | 意图匹配相似度阈值 |
-| `lifepilot.memory.procedural.templateEnabled` | false | 是否启用操作模板聚类 |
+| `lifepilot.memory.procedural.templateEnabled` | true | 是否启用操作模板聚类 |
 | `lifepilot.memory.consolidation.cron` | — | 巩固管线 Cron 表达式 |
 | `lifepilot.memory.consolidation.trigger-mode` | — | 触发模式（cron / idle） |
 | `lifepilot.memory.consolidation.lookback-days` | — | 巩固回溯天数 |
@@ -273,3 +283,5 @@ sequenceDiagram
 | `lifepilot.memory.forgetting.lru-threshold-days` | — | LRU 淘汰天数阈值 |
 | `lifepilot.memory.forgetting.priority-decay-rate` | — | 优先级衰减速率 |
 | `lifepilot.memory.forgetting.max-forget-per-run` | — | 每次运行最大遗忘数 |
+| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 7 | 近期访问保护天数 — 在此天数内被访问过的实体受保护 |
+| `lifepilot.memory.forgetting.highAccessCountProtection` | 10 | 高频访问保护阈值 — accessCount ≥ 此值的实体受保护 |

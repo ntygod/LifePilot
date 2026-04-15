@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-04-14
+> **最后更新**：2026-04-16
 
 ## 1. 模块概述
 
@@ -59,13 +59,15 @@ graph TB
         PR["PreferenceRule / ProcedureTemplate"]
         IM --> PM
         PM --> PR
-        Note["templateEnabled 默认关闭"]
+        Note["templateEnabled 默认启用"]
     end
 
     subgraph "检索与工具"
         HR["HybridRetriever"]
         MTP["MemoryToolProvider"]
+        VS["VectorSearcher<br/>(pre-filter 支持)"]
         HR --> SM
+        HR --> VS
         IM --> HR
         EM --> MTP
         HR --> MTP
@@ -103,7 +105,10 @@ graph TB
   - `WorkingSetItem`：供下一轮继续使用的中间结果摘要
 - 工作区明确不保存原始 user/assistant 消息、思维链和原始工具大结果
 - `WorkspaceCleanupJob` 按 TTL 过期活动项，并清理终态条目
-- 当前主写入点在 `AgentPersistenceHandler.saveWorkspaceForSuspend()`，用于挂起、确认等待和任务续跑
+- 主写入点有三处：
+  - `AgentPersistenceHandler.saveWorkspaceForSuspend()`：用于挂起、确认等待和任务续跑
+  - `ToolExecutionCoordinator.persistToolResultToWorkspace()`：关键工具（`memory.create/update/tag`、`workflow.execute`、`code.execute`、`datastore.query`）执行成功后自动写入 `WorkingSetItem`
+  - `ReactAgentLoop`：反思触发后将反思结论写入 `WorkingSetItem`（截断至 300 字符），增强长对话上下文保持
 
 ### 3.3 EpisodicMemory（L2 情景记忆）
 
@@ -120,6 +125,7 @@ graph TB
 - `SemanticMemory` 存放版本化实体与关系，是稳定事实、用户画像和经验实体的主存储
 - `EntityType` 枚举包含 12 种类型：PERSON、ORGANIZATION、PLACE、EVENT、PROJECT、TOPIC、PREFERENCE、HABIT、GOAL、SKILL、EXPERIENCE、CUSTOM
 - `RealtimeExtractor` 在对话后异步提取实体写入 L3
+- SQL 聚合方法（`countCurrentByType`、`countRecentlyAccessed`、`averageImportanceScore`）用于记忆健康度 API，避免全量加载实体到 JVM 内存
 - `ContextAssembler` 当前自动注入的长期信息主要来自：
   - `PREFERENCE / HABIT / GOAL`（用户画像）
   - `EXPERIENCE`（排除工具级经验，工具级经验由 `ToolExecutionCoordinator` 在工具执行前精准注入）
@@ -128,7 +134,7 @@ graph TB
 ### 3.5 ProceduralMemory（L4 程序记忆）
 
 - `ProceduralMemory` 保存偏好规则和操作模板（`StrategyPattern` 已删除）
-- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认关闭
+- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认启用
 - `IntentMatcher` 负责在检索和编排阶段提供程序化建议
 - 当前上下文组装会读取高置信度偏好规则，与 L3 画像一起构成用户画像区
 
@@ -137,6 +143,7 @@ graph TB
 - `HybridRetriever` 继续负责 L3/L4 的混合检索，包含向量、FTS 和图遍历三路融合
 - `HybridRetriever` 支持可选的 `RerankRouter` 步骤，对记忆候选进行精排重排序
 - `HybridRetriever` 实现 `knownEmpty` 短路优化：当检索空间已知为空时，跳过实际检索直接返回空结果
+- `HybridRetriever` 向量路径支持 pre-filter：当 `MemoryReadFilter` 限制了 space_id / memory_scope 时，先通过 `SemanticMemory.findEligibleEntityIds()` 查询合规实体 ID 集合，传入 `VectorSearcher` 做内存过滤；候选集超过 1000 时自动回退为后过滤，避免内存压力
 - `MemoryToolProvider` 当前注册 9 个记忆工具：
   - `memory.search`
   - `memory.recall`
@@ -152,6 +159,7 @@ graph TB
 ### 3.7 ConsolidationPipeline 与 ForgettingEngine
 
 - 巩固链路仍然负责将情景信息沉淀为语义和程序记忆
+- `ConsolidationPipeline` 顺序执行六步：语义巩固 → 程序巩固 → 偏好同步 → 经验合并 → 用户画像巩固 → 经验提升
 - `checkIdleConsolidation()` 基于空闲时间触发巩固，不依赖 L1 flush
 - `ForgettingEngine` 继续负责实体遗忘、压缩和归档
 
@@ -159,6 +167,7 @@ graph TB
 
 - `ExperienceSummarizer`、`EffectivenessTracker`、`ContrastiveLearner`、`SubtaskReflector` 继续保留
 - 经验写入 L3 的 `EXPERIENCE` 实体
+- `ExperienceSummarizer.quickLearn()` 提供即时经验写入路径：反思触发时由 `ReactAgentLoop` 异步调用（虚拟线程），仅在工具失败反思时触发，跳过质量评估和 LLM 提炼，直接从反思内容提取关键教训写入 L3 EXPERIENCE 实体
 - `ContrastiveLearner` 不再创建独立的对比洞察实体，改为增强源经验（成功经验）的 lessons 列表，追加 `[对比]` 前缀的 lesson 条目并标记 `contrastiveEnriched=true`
 - `ContrastiveInsight` 记录包含 `failureReason`、`successFactor`、`contrastiveLessons` 三个字段（`avoidanceStrategy` 已删除）
 - `SubtaskReflector` 产出的经验带 `toolId`（主工具 ID）和 `granularity=TOOL_LEVEL` 标记
@@ -259,10 +268,12 @@ sequenceDiagram
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；`ToolExecutionCoordinator` 按 toolId 精准注入工具级经验 |
+| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；`ToolExecutionCoordinator` 按 toolId 精准注入工具级经验，关键工具执行结果写入 L1 工作区；`ReactAgentLoop` 反思触发时异步写入即时经验并将反思结论写入 L1 工作区 |
 | 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
 | 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
 | 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `knowledge.search` 工具通过知识库检索补充外部文档片段 |
+| 主动引擎（`com.lifepilot.agent.task.proactive`） | Proactive → Memory | `ImplicitSignalCollector` 隐式信号同时回写 L4 偏好（`observePreference`）和 L3 语义记忆（`syncInsightToL3`），使洞察可被 `HybridRetriever` 检索 |
+| Web API（`com.lifepilot.interaction.web.controller`） | REST → Memory | `MemoryController` 提供记忆健康度（`GET /api/memories/health`）和用户画像（`GET/PUT /api/memories/profile`）REST 端点 |
 
 ## 7. 配置参考
 
@@ -284,13 +295,15 @@ sequenceDiagram
 | `lifepilot.memory.retrieval.memoryContextMaxEntities` | memory_context 最大实体数（默认 5） |
 | `lifepilot.memory.retrieval.memoryContextTokenBudget` | memory_context token 预算（默认 800） |
 | `lifepilot.memory.retrieval.memoryContextScoreThreshold` | memory_context 最低相关度阈值（默认 0.6） |
-| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 false） |
+| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 true） |
 | `lifepilot.memory.consolidation.*` | 巩固触发模式与阈值 |
+| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 近期访问保护天数（默认 7），在此天数内被访问过的实体受保护 |
+| `lifepilot.memory.forgetting.highAccessCountProtection` | 高频访问保护阈值（默认 10），accessCount 达到此值的实体受保护 |
 | `lifepilot.memory.episodic-cleanup.*` | L2 清理策略 |
 | `lifepilot.memory.experience.*` | 经验注入、隔离、合并与反馈配置 |
 
 ## 8. 当前限制
 
-- 工作区的主写入点目前集中在挂起/确认场景，`WorkingSetItem` 还没有形成完整主链路
+- `WorkingSetItem` 已在工具执行（关键工具结果）和反思结论两个场景形成主链路写入
 - `ContextAssembler` 目前自动注入的是最近轮次、工作区、画像、经验和相关记忆（`memory_context`），知识库与跨会话对话仍以工具调用为主
 - `MemoryProperties` 内仍保留部分历史配置字段，但当前主架构已不再依赖旧的 `WorkingMemory`/`flush` 语义

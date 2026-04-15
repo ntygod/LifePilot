@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统）
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-16
 
 ## 1. 功能概述
 
@@ -14,9 +14,8 @@
 
 使 Agent 能够学习和复用用户的行为模式：
 
-- 操作模板（ProcedureTemplate）：记录用户常用的操作步骤序列，包含触发意图、步骤列表、成功率和执行次数。当用户发出类似意图时，Agent 可以主动建议复用已有模板
+- 操作模板（ProcedureTemplate）：记录用户常用的操作步骤序列，包含触发意图、步骤列表、成功率和执行次数。当用户发出类似意图时，Agent 可以主动建议复用已有模板。模板聚类默认启用（`templateEnabled=true`）
 - 偏好规则（PreferenceRule）：按类别和键值对存储用户偏好（如"日程提醒提前 30 分钟"），支持强化机制——用户反复确认的偏好权重更高
-- 策略模式（StrategyPattern）：记录"什么情境下采用什么策略"的决策模式，通过向量匹配情境文本找到最佳策略
 
 ### 2.2 意图匹配
 
@@ -29,13 +28,14 @@
 
 ### 2.3 记忆巩固管线
 
-自动将短期记忆沉淀为长期知识，包含 5 个阶段：
+自动将短期记忆沉淀为长期知识，包含 6 个阶段：
 
 1. **语义巩固**（EpisodicToSemanticConsolidator）：分析近期对话中已有实体的提及频率，提升高频实体的重要度评分（不再触发新增知识提取）
 2. **程序巩固**（EpisodicToProceduralConsolidator）：识别对话中的重复行为模式，聚类生成操作模板，提取用户偏好规则
 3. **偏好同步**（PreferenceConsolidator）：将 L3 的 PREFERENCE 实体同步为 L4 的 PreferenceRule
 4. **经验合并**（ExperienceMerger）：将语义相似的 EXPERIENCE 实体合并为泛化的元经验
-5. **高频经验提升**（promoteHighFrequencyExperiences）：将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 ProcedureTemplate
+5. **用户画像巩固**（UserProfileConsolidator）：将 L3 碎片实体聚合为连贯的用户画像文本，存入 `__consolidated_profile` 特殊 CUSTOM 实体
+6. **高频经验提升**（promoteHighFrequencyExperiences）：将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 ProcedureTemplate
 
 - 定时执行（Cron 可配置），各阶段故障隔离，互不影响
 - 返回统计信息（分析对话数、提升实体数、创建模板数），支持可观测性
@@ -53,10 +53,12 @@
 
 ### 2.5 受保护实体机制
 
-确保用户核心知识不被误遗忘：
+确保用户核心知识不被误遗忘（满足任一即受保护）：
 
 - 类型保护：受保护类型可配置（`config.getProtectedTypes()`，默认 PREFERENCE / HABIT / GOAL）类型的实体永不遗忘
 - 重要度保护：importanceScore ≥ 保护阈值（可配置，`config.getProtectionThreshold()`，默认 0.9）的实体永不遗忘
+- 高频访问保护：accessCount ≥ 高频访问保护阈值（`config.getHighAccessCountProtection()`，默认 10）的实体永不遗忘
+- 近期访问保护：最近 N 天内被访问过（`config.getRecentAccessProtectionDays()`，默认 7 天）的实体永不遗忘
 - 保护机制在遗忘流程最前端执行，受保护实体不进入候选列表
 
 ### 2.6 遗忘审计日志
@@ -87,6 +89,8 @@
 | `lifepilot.memory.forgetting.max-retention-days` | — | 最大保留天数 |
 | `lifepilot.memory.forgetting.priority-decay-rate` | — | 优先级衰减速率 |
 | `lifepilot.memory.forgetting.max-forget-per-run` | — | 每次运行最大遗忘数 |
+| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 7 | 近期访问保护天数 |
+| `lifepilot.memory.forgetting.highAccessCountProtection` | 10 | 高频访问保护阈值 |
 
 ## 5. 限制与未来方向
 
