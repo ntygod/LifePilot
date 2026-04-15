@@ -25,6 +25,7 @@ import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.memory.workspace.TaskStateItem;
+import com.lifepilot.memory.workspace.WorkingSetItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -141,7 +142,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 intentMatcher,
                 config.getLoop().getMaxParallelToolCalls(),
                 multimodalRouter,
-                semanticMemory
+                semanticMemory,
+                workspaceService
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
@@ -415,6 +417,24 @@ public class ReactAgentLoop implements CallbackHelper {
                     // 即时经验补丁：工具失败反思时同步写入经验，当前轮次即可被检索
                     if (experienceSummarizer != null) {
                         experienceSummarizer.quickLearn(state, maybeReflect.content(), maybeReflect.trigger());
+                    }
+                    // 反思结论写入 L1 工作区，增强长对话的上下文保持
+                    if (workspaceService != null && state.sessionId() != null) {
+                        try {
+                            String reflectSummary = maybeReflect.content().length() > 300
+                                    ? maybeReflect.content().substring(0, 300) + "…"
+                                    : maybeReflect.content();
+                            workspaceService.saveWorkingSet(state.sessionId(), new WorkingSetItem(
+                                    "反思结论: " + maybeReflect.trigger().name(),
+                                    reflectSummary,
+                                    Map.of("trigger", maybeReflect.trigger().name(), "iteration", iteration),
+                                    70,
+                                    state.traceId(),
+                                    state.traceId(),
+                                    null));
+                        } catch (Exception e) {
+                            log.debug("反思工作区持久化失败: {}", e.getMessage());
+                        }
                     }
                     cachedContext = null;
                     cachedToolCallbacks = null;
