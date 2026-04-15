@@ -102,6 +102,9 @@ public class ReactAgentLoop implements CallbackHelper {
     // ===== 可选依赖（MCP 工具激活） =====
     @Nullable private final DynamicToolRegistry toolRegistry;
 
+    // ===== 可选依赖（即时经验补丁） =====
+    @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
+
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
             ProviderMessageBuilder providerMessageBuilder,
@@ -120,7 +123,8 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable SessionWorkspaceService workspaceService,
             @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
             @Nullable DynamicToolRegistry toolRegistry,
-            @Nullable com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
+            @Nullable com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
+            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -148,6 +152,7 @@ public class ReactAgentLoop implements CallbackHelper {
         this.workspaceService = workspaceService;
         this.skillRegistry = skillRegistry;
         this.toolRegistry = toolRegistry;
+        this.experienceSummarizer = experienceSummarizer;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
 
@@ -407,6 +412,10 @@ public class ReactAgentLoop implements CallbackHelper {
                 if (maybeReflect != null) {
                     state = appendAndPublishStep(state, maybeReflect, loopContext);
                     persistReflectToWorkspace(state, iteration);
+                    // 即时经验补丁：工具失败反思时同步写入经验，当前轮次即可被检索
+                    if (experienceSummarizer != null) {
+                        experienceSummarizer.quickLearn(state, maybeReflect.content(), maybeReflect.trigger());
+                    }
                     cachedContext = null;
                     cachedToolCallbacks = null;
                 }

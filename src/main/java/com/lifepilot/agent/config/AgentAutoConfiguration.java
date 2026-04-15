@@ -299,7 +299,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
-            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
+            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
+            @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -318,7 +319,8 @@ public class AgentAutoConfiguration {
                 workspaceService,
                 skillRegistry,
                 toolRegistry,
-                semanticMemory);
+                semanticMemory,
+                experienceSummarizer);
     }
 
     @Bean
