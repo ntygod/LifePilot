@@ -18,8 +18,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -251,6 +253,20 @@ public class SemanticMemory {
                 sql.toString(),
                 (rs, rowNum) -> mapRowToEntity(rs),
                 params.toArray());
+    }
+
+    /**
+     * 查询符合过滤条件的所有当前实体 ID 集合 — 用于向量检索 pre-filter。
+     *
+     * @param filter 读取过滤条件
+     * @return 符合条件的实体 ID 集合
+     */
+    public Set<String> findEligibleEntityIds(MemoryReadFilter filter) {
+        var sql = new StringBuilder("SELECT id FROM memory_entities WHERE status = 'ACTIVE'");
+        var params = new ArrayList<>();
+        appendEntityReadFilter(sql, params, filter);
+        return new LinkedHashSet<>(
+                jdbcTemplate.queryForList(sql.toString(), String.class, params.toArray()));
     }
 
     /** 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系。 */

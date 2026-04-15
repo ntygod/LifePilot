@@ -123,8 +123,15 @@ public class HybridRetriever {
 
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
         float minVecSim = memoryProperties.getRetrieval().getMinVectorSimilarity();
+        // 向量路径 pre-filter：filter 生效时，预查合规实体 ID
+        final Set<String> eligibleIds;
+        if (filter != null && !filter.isUnrestricted()) {
+            eligibleIds = semanticMemory.findEligibleEntityIds(filter);
+        } else {
+            eligibleIds = null;
+        }
         var vectorFuture = CompletableFuture.supplyAsync(
-                () -> vectorSearcher.searchEntities(query, topK, minVecSim), virtualThreadExecutor);
+                () -> vectorSearcher.searchEntities(query, topK, minVecSim, eligibleIds), virtualThreadExecutor);
         var ftsFuture = CompletableFuture.supplyAsync(
                 () -> ftsSearcher.search(query, topK), virtualThreadExecutor);
         var graphFuture = CompletableFuture.supplyAsync(
