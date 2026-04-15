@@ -463,14 +463,16 @@ public class MemoryAutoConfiguration {
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
             @Nullable ProceduralMemory proceduralMemory,
-            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger) {
-        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}",
+            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger,
+            @Nullable UserProfileConsolidator userProfileConsolidator) {
+        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
                 semanticMemory != null && proceduralMemory != null ? "enabled" : "disabled",
-                experienceMerger != null ? "enabled" : "disabled");
+                experienceMerger != null ? "enabled" : "disabled",
+                userProfileConsolidator != null ? "enabled" : "disabled");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
                 properties, preferenceConsolidator, semanticMemory, proceduralMemory,
-                experienceMerger);
+                experienceMerger, userProfileConsolidator);
     }
 
     // 遗忘 / 反馈 / 清理

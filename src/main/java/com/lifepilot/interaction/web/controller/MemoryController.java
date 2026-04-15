@@ -6,6 +6,7 @@ import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EntityDeduplicator;
+import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.forgetting.ForgettingLogRepository;
@@ -53,6 +54,7 @@ public class MemoryController {
     private final @Nullable HybridRetriever hybridRetriever;
     private final @Nullable ConsolidationPipeline consolidationPipeline;
     private final @Nullable EntityDeduplicator entityDeduplicator;
+    private final @Nullable UserProfileConsolidator userProfileConsolidator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
@@ -64,6 +66,7 @@ public class MemoryController {
                             @Nullable HybridRetriever hybridRetriever,
                             @Nullable ConsolidationPipeline consolidationPipeline,
                             @Nullable EntityDeduplicator entityDeduplicator,
+                            @Nullable UserProfileConsolidator userProfileConsolidator,
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository) {
         this.semanticMemory = semanticMemory;
@@ -72,6 +75,7 @@ public class MemoryController {
         this.hybridRetriever = hybridRetriever;
         this.consolidationPipeline = consolidationPipeline;
         this.entityDeduplicator = entityDeduplicator;
+        this.userProfileConsolidator = userProfileConsolidator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
     }
@@ -782,6 +786,49 @@ public class MemoryController {
         });
         return ApiResponse.ok(Map.of("status", "accepted", "message", "去重任务已提交"));
     }
+
+    // ========== 用户画像 ==========
+
+    /**
+     * 获取用户画像。
+     */
+    @GetMapping("/profile")
+    public ApiResponse<ProfileDto> getProfile() {
+        requireMemoryEnabled();
+        var entity = semanticMemory.findCurrentByNameAndType(
+                "__consolidated_profile", EntityType.CUSTOM);
+        if (entity.isEmpty()) {
+            return ApiResponse.ok(new ProfileDto("", null, null));
+        }
+        var e = entity.get();
+        return ApiResponse.ok(new ProfileDto(
+                e.description() != null ? e.description() : "",
+                e.updatedAt().toString(),
+                e.version()));
+    }
+
+    /**
+     * 更新用户画像。
+     */
+    @PutMapping("/profile")
+    public ApiResponse<ProfileDto> updateProfile(@RequestBody ProfileUpdateRequest request) {
+        requireMemoryEnabled();
+        if (request.description() == null || request.description().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "画像描述不能为空");
+        }
+        var entity = new TemporalEntity(
+                null, EntityType.CUSTOM, "__consolidated_profile", request.description(),
+                Map.of(), 1, true, Instant.now(), null, null,
+                1.0f, 1.0f, 0, null, Instant.now(), Instant.now());
+        var updated = semanticMemory.upsertWithConflictDetection(entity, "manual-edit");
+        return ApiResponse.ok(new ProfileDto(
+                updated.description() != null ? updated.description() : "",
+                updated.updatedAt().toString(),
+                updated.version()));
+    }
+
+    record ProfileDto(String description, @Nullable String updatedAt, @Nullable Integer version) {}
+    record ProfileUpdateRequest(String description) {}
 
     // ========== 内部辅助方法 ==========
 
