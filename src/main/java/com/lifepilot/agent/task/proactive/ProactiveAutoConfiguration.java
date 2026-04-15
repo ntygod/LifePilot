@@ -83,6 +83,7 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(NotificationService.class)
     public DeliveryEngine proactiveDeliveryEngine(NotificationService notificationService,
                                                    QueuedActionRepository queuedActionRepository) {
         return new DeliveryEngine(notificationService, queuedActionRepository);
