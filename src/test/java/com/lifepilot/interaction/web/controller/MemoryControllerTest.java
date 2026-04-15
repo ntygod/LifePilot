@@ -64,7 +64,7 @@ class MemoryControllerTest {
     void setUp() {
         var controller = new MemoryController(
                 semanticMemory, episodicMemory, proceduralMemory,
-                hybridRetriever, consolidationPipeline, null, forgettingLogRepository, provenanceRepository);
+                hybridRetriever, consolidationPipeline, null, null, forgettingLogRepository, provenanceRepository);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         lenient().when(provenanceRepository.loadEntityMetadata(anyCollection()))
                 .thenReturn(Map.of());
@@ -103,7 +103,7 @@ class MemoryControllerTest {
         @BeforeEach
         void setUp() {
             var controller = new MemoryController(
-                    null, null, null, null, null, null, forgettingLogRepository, provenanceRepository);
+                    null, null, null, null, null, null, null, forgettingLogRepository, provenanceRepository);
             disabledMvc = MockMvcBuilders.standaloneSetup(controller).build();
         }
 
