@@ -187,7 +187,7 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(ProactiveBehavior.class)
+    @ConditionalOnBean({ProactiveBehavior.class, DeliveryEngine.class})
     public ProactiveEngine proactiveEngine(List<ProactiveBehavior> behaviors,
                                            DecisionGate decisionGate,
                                            DeliveryEngine deliveryEngine,
