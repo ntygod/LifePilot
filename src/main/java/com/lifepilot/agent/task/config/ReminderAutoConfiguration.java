@@ -121,6 +121,12 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public LocationResolver locationResolver(AgentConfigProperties config) {
+        return new LocationResolver(config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public OpenMeteoWeatherService openMeteoWeatherService(LocationResolver locationResolver,
                                                             AgentConfigProperties config) {
         return new OpenMeteoWeatherService(locationResolver, config);
