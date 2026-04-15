@@ -265,8 +265,14 @@ public class SemanticMemory {
         var sql = new StringBuilder("SELECT id FROM memory_entities WHERE status = 'ACTIVE'");
         var params = new ArrayList<>();
         appendEntityReadFilter(sql, params, filter);
-        return new LinkedHashSet<>(
+        var ids = new LinkedHashSet<>(
                 jdbcTemplate.queryForList(sql.toString(), String.class, params.toArray()));
+        // 结果集过大时返回 null，由调用方回退为后过滤
+        if (ids.size() > 1000) {
+            log.debug("语义记忆: pre-filter 候选集过大({}), 回退为后过滤", ids.size());
+            return null;
+        }
+        return ids;
     }
 
     /** 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系。 */
@@ -473,6 +479,36 @@ public class SemanticMemory {
                 "SELECT COUNT(*) FROM temporal_relations WHERE valid_to IS NULL",
                 Long.class);
         return count != null ? count : 0L;
+    }
+
+    /** 按类型统计当前实体数量 — 轻量 SQL 聚合，返回 type name → 数量映射。 */
+    public Map<String, Long> countCurrentByType() {
+        return jdbcTemplate.query(
+                "SELECT type, COUNT(*) AS cnt FROM temporal_entities WHERE is_current = 1 GROUP BY type",
+                rs -> {
+                    Map<String, Long> result = new java.util.LinkedHashMap<>();
+                    while (rs.next()) {
+                        result.put(rs.getString("type"), rs.getLong("cnt"));
+                    }
+                    return result;
+                });
+    }
+
+    /** 统计最近 N 天内被访问的当前实体数量。 */
+    public long countRecentlyAccessed(int days) {
+        String cutoff = Instant.now().minus(java.time.Duration.ofDays(days)).toString();
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM temporal_entities WHERE is_current = 1 AND last_accessed_at > ?",
+                Long.class, cutoff);
+        return count != null ? count : 0L;
+    }
+
+    /** 当前实体的平均重要度分数。 */
+    public float averageImportanceScore() {
+        var avg = jdbcTemplate.queryForObject(
+                "SELECT AVG(importance_score) FROM temporal_entities WHERE is_current = 1",
+                Double.class);
+        return avg != null ? avg.floatValue() : 0f;
     }
 
     /**

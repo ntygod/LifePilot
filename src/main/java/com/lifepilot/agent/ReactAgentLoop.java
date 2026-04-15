@@ -414,9 +414,12 @@ public class ReactAgentLoop implements CallbackHelper {
                 if (maybeReflect != null) {
                     state = appendAndPublishStep(state, maybeReflect, loopContext);
                     persistReflectToWorkspace(state, iteration);
-                    // 即时经验补丁：工具失败反思时同步写入经验，当前轮次即可被检索
+                    // 即时经验补丁：异步写入经验，避免在同步路径上做数据库写入
                     if (experienceSummarizer != null) {
-                        experienceSummarizer.quickLearn(state, maybeReflect.content(), maybeReflect.trigger());
+                        final var snapshotState = state;
+                        final var reflectContent = maybeReflect.content();
+                        final var reflectTrigger = maybeReflect.trigger();
+                        Thread.startVirtualThread(() -> experienceSummarizer.quickLearn(snapshotState, reflectContent, reflectTrigger));
                     }
                     // 反思结论写入 L1 工作区，增强长对话的上下文保持
                     if (workspaceService != null && state.sessionId() != null) {

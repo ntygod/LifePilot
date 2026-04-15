@@ -141,9 +141,7 @@ class MemoryControllerTest {
         void 返回各层记忆统计() throws Exception {
             when(semanticMemory.countCurrent()).thenReturn(5L);
             when(semanticMemory.countCurrentRelations()).thenReturn(3L);
-            when(semanticMemory.findAllCurrent()).thenReturn(List.of(
-                    testEntity("e1", "张三", EntityType.PERSON),
-                    testEntity("e2", "项目A", EntityType.PROJECT)));
+            when(semanticMemory.countCurrentByType()).thenReturn(Map.of("PERSON", 1L, "PROJECT", 1L));
             when(episodicMemory.countConversations()).thenReturn(10L);
             when(proceduralMemory.listAllTemplates()).thenReturn(List.of());
             when(proceduralMemory.listAllPreferences()).thenReturn(List.of());

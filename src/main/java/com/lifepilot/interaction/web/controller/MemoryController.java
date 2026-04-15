@@ -100,11 +100,8 @@ public class MemoryController {
         long entityCount = semanticMemory.countCurrent();
         long relationCount = semanticMemory.countCurrentRelations();
 
-        // 按 EntityType 分组统计
-        var allCurrent = semanticMemory.findAllCurrent();
-        Map<String, Long> entityCountByType = allCurrent.stream()
-                .filter(TemporalEntity::isCurrent)
-                .collect(Collectors.groupingBy(e -> e.type().name(), Collectors.counting()));
+        // SQL 聚合查询，避免全量加载实体到 JVM 内存
+        Map<String, Long> entityCountByType = semanticMemory.countCurrentByType();
 
         long conversationCount = episodicMemory != null ? episodicMemory.countConversations() : 0L;
 
@@ -143,9 +140,8 @@ public class MemoryController {
         long totalEntities = semanticMemory.countCurrent();
         long totalRelations = semanticMemory.countCurrentRelations();
 
-        var allCurrent = semanticMemory.findAllCurrent();
-        Map<String, Long> entityCountByType = allCurrent.stream()
-                .collect(Collectors.groupingBy(e -> e.type().name(), Collectors.counting()));
+        // SQL 聚合查询，避免全量加载实体到 JVM 内存
+        Map<String, Long> entityCountByType = semanticMemory.countCurrentByType();
 
         long experienceCount = entityCountByType.getOrDefault("EXPERIENCE", 0L);
         long preferenceCount = entityCountByType.getOrDefault("PREFERENCE", 0L);
@@ -164,15 +160,10 @@ public class MemoryController {
         long forgettingLogCount = forgettingLogRepository.countAll();
         String lastForgettingTime = forgettingLogRepository.getLastForgettingTime();
 
-        long recentlyAccessedCount = allCurrent.stream()
-                .filter(e -> e.lastAccessedAt() != null
-                        && Duration.between(e.lastAccessedAt(), Instant.now()).toDays() <= 7)
-                .count();
+        long recentlyAccessedCount = semanticMemory.countRecentlyAccessed(7);
         float recentAccessRatio = totalEntities > 0 ? (float) recentlyAccessedCount / totalEntities : 0f;
 
-        float avgImportance = totalEntities > 0
-                ? (float) allCurrent.stream().mapToDouble(TemporalEntity::importanceScore).average().orElse(0)
-                : 0f;
+        float avgImportance = semanticMemory.averageImportanceScore();
 
         return ApiResponse.ok(new MemoryHealthDto(
                 totalEntities, totalRelations, entityCountByType,
@@ -867,6 +858,9 @@ public class MemoryController {
         requireMemoryEnabled();
         if (request.description() == null || request.description().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "画像描述不能为空");
+        }
+        if (request.description().length() > 5000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "画像描述不能超过 5000 字符");
         }
         var entity = new TemporalEntity(
                 null, EntityType.CUSTOM, "__consolidated_profile", request.description(),
