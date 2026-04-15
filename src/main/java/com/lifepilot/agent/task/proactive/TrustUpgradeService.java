@@ -26,7 +26,7 @@ public class TrustUpgradeService {
     private static final Duration DEFAULT_DOWNGRADE_COOLDOWN = Duration.ofDays(7);
 
     /** 各行为的默认自主度。 */
-    private static final Map<String, AutonomyLevel> DEFAULT_LEVELS = Map.of(
+    public static final Map<String, AutonomyLevel> DEFAULT_LEVELS = Map.of(
             "reminder", AutonomyLevel.A,
             "follow-up", AutonomyLevel.A,
             "insight", AutonomyLevel.A,

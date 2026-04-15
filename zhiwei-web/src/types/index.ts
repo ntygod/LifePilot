@@ -1600,6 +1600,45 @@ export interface QueuedAction {
   shownAt: string | null
 }
 
+/** 信任状态 */
+export interface TrustStatus {
+  behaviorName: string
+  behaviorLabel: string
+  currentLevel: 'A' | 'B' | 'C'
+  targetLevel: 'B' | 'C' | null
+  upgradeSuggested: boolean
+  consecutivePositive: number
+  consecutiveNegative: number
+  cooldownUntil: string | null
+  updatedAt: string
+}
+
+/** 主动引擎配置 */
+export interface ProactiveConfig {
+  enabled: boolean
+  dailyMaxReminders: number
+  quietHoursStart: string | null
+  quietHoursEnd: string | null
+  gate2Threshold: number
+  behaviors: Array<{
+    name: string
+    label: string
+    autonomyLevel: string
+  }>
+}
+
+/** 主动引擎配置更新请求 */
+export interface ProactiveConfigUpdate {
+  enabled?: boolean
+  dailyMaxReminders?: number
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  behaviorOverrides?: Array<{
+    name: string
+    autonomyLevel?: string
+  }>
+}
+
 /** 解析后的详情 */
 export interface ParsedDetail {
   type: 'TEXT' | 'MARKDOWN' | 'CARD' | 'UNKNOWN'

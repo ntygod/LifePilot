@@ -73,7 +73,10 @@
   OptionItem,
   // 通知中心类型
   NotificationItem,
+  ProactiveConfig,
+  ProactiveConfigUpdate,
   QueuedAction,
+  TrustStatus,
   SseInteractionEvent,
   // 记忆管理类型
   MemoryStats,
@@ -1621,6 +1624,30 @@ export const proactiveApi = {
   /** 删除队列条目 */
   deleteQueueItem(id: string): Promise<void> {
     return request(`/proactive/queue/${id}`, { method: 'DELETE' })
+  },
+
+  /** 获取信任状态列表 */
+  getTrustStatus(userId: string = 'default'): Promise<TrustStatus[]> {
+    return request(`/proactive/trust?userId=${encodeURIComponent(userId)}`)
+  },
+
+  /** 确认信任升级 */
+  confirmUpgrade(behavior: string, userId: string = 'default'): Promise<TrustStatus> {
+    return request(`/proactive/trust/${behavior}/confirm?userId=${encodeURIComponent(userId)}`, { method: 'POST' })
+  },
+
+  /** 获取主动引擎配置 */
+  getConfig(userId: string = 'default'): Promise<ProactiveConfig> {
+    return request(`/proactive/config?userId=${encodeURIComponent(userId)}`)
+  },
+
+  /** 更新主动引擎配置 */
+  updateConfig(data: ProactiveConfigUpdate): Promise<ProactiveConfig> {
+    return request('/proactive/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
   },
 }
 

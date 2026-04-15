@@ -19,6 +19,12 @@ interface ReminderData {
   content: string
   pushLevel: string
   behavior?: string
+  /** 气泡变体：普通 / 信任升级 / 中断（持久） */
+  variant?: 'normal' | 'trust-upgrade' | 'interrupt'
+  /** 信任升级专用字段 */
+  trustBehavior?: string
+  trustCurrentLevel?: string
+  trustTargetLevel?: string
 }
 
 interface QueueItem {
@@ -297,7 +303,11 @@ function showBubble(data: ReminderData) {
   state.value = 'bubble'
   setCatMood('alert')
   clearDismiss()
-  scheduleDismiss(10000)
+  // INTERRUPT 和信任升级气泡不自动消失
+  const persistent = data.variant === 'interrupt' || data.variant === 'trust-upgrade'
+  if (!persistent) {
+    scheduleDismiss(10000)
+  }
 }
 
 function scheduleDismiss(ms: number) {
@@ -331,6 +341,27 @@ async function feedback(type: FeedbackType) {
   setTimeout(() => setCatMood('normal'), 600)
   dismissBubble()
 }
+
+// ─── 信任升级 ────────────────────────────────────────────
+async function confirmTrustUpgrade() {
+  if (!reminder.value?.trustBehavior) return
+  const port = await getPort()
+  try {
+    await fetch(`http://localhost:${port}/api/proactive/trust/${reminder.value.trustBehavior}/confirm?userId=default`, {
+      method: 'POST',
+    })
+  } catch { /* 静默 */ }
+  setCatMood('happy')
+  setTimeout(() => setCatMood('normal'), 800)
+  dismissBubble()
+}
+
+function declineTrustUpgrade() {
+  setCatMood('normal')
+  dismissBubble()
+}
+
+const LEVEL_LABELS: Record<string, string> = { A: '通知型', B: '建议型', C: '代行型' }
 
 // ─── 对话 ────────────────────────────────────────────────
 const chatSessionId = ref<string | null>(null)
@@ -439,6 +470,25 @@ async function connectNotificationStream() {
       if (data.type === 'unread-count-snapshot') return
 
       const typeId = data.typeId as string | undefined
+      // 信任升级建议事件
+      if (typeId === 'trust_upgrade') {
+        const metadata = data.metadataJson ? JSON.parse(data.metadataJson) : {}
+        invoke('resize_float_window', { mode: 'bubble' }).then(() => {
+          showBubble({
+            notificationId: data.id,
+            title: '信任升级',
+            content: `「${getBehaviorLabel(metadata.behaviorName)}」表现不错，允许升级吗？`,
+            pushLevel: 'NORMAL_PUSH',
+            behavior: metadata.behaviorName,
+            variant: 'trust-upgrade',
+            trustBehavior: metadata.behaviorName,
+            trustCurrentLevel: metadata.currentLevel,
+            trustTargetLevel: metadata.targetLevel,
+          })
+        })
+        return
+      }
+
       if (typeId === 'proactive_reminder' || typeId === 'proactive_action' || typeId === 'clipboard_intent') {
         const contentJson = data.contentJson as string
         const content = parseContentSummary(contentJson)
@@ -454,9 +504,11 @@ async function connectNotificationStream() {
           return
         }
 
-        // NOTIFY/INTERRUPT：弹气泡
+        // INTERRUPT：持久气泡
+        const variant = deliveryLevel === 'INTERRUPT' ? 'interrupt' as const : 'normal' as const
+
         invoke('resize_float_window', { mode: 'bubble' }).then(() => {
-          showBubble({ notificationId: data.id, title, content, pushLevel: deliveryLevel ?? 'NORMAL_PUSH', behavior: behaviorName })
+          showBubble({ notificationId: data.id, title, content, pushLevel: deliveryLevel ?? 'NORMAL_PUSH', behavior: behaviorName, variant })
         })
       }
     } catch (e) { console.error('[浮窗] 通知处理异常:', e) }
@@ -552,7 +604,11 @@ onUnmounted(() => {
       <!-- 手绘小猫 SVG -->
       <svg
         class="cat"
-        :class="[`cat--${catMood}`, { 'cat--blink': isBlinking, 'cat--alert': state === 'bubble' }]"
+        :class="[`cat--${catMood}`, {
+          'cat--blink': isBlinking,
+          'cat--alert': state === 'bubble' && reminder?.variant !== 'interrupt',
+          'cat--alert-persistent': state === 'bubble' && reminder?.variant === 'interrupt',
+        }]"
         viewBox="0 0 40 40"
         fill="none"
       >
@@ -630,6 +686,10 @@ onUnmounted(() => {
       <div
         v-if="state === 'bubble' && reminder"
         class="bubble"
+        :class="{
+          'bubble--interrupt': reminder.variant === 'interrupt',
+          'bubble--trust': reminder.variant === 'trust-upgrade',
+        }"
         @mouseenter="isHovering = true"
         @mouseleave="isHovering = false"
       >
@@ -639,12 +699,49 @@ onUnmounted(() => {
           </span>
           <button class="bubble__close" @click="dismissBubble">&times;</button>
         </div>
-        <p class="bubble__text">{{ reminder.content }}</p>
-        <div class="bubble__actions">
-          <button class="bubble__btn bubble__btn--ok" @click="feedback('ACTED')">有用</button>
-          <button class="bubble__btn" @click="feedback('SNOOZED')">知道了</button>
-          <button class="bubble__btn bubble__btn--no" @click="feedback('NOT_RELEVANT')">不需要</button>
-        </div>
+
+        <!-- 信任升级变体 -->
+        <template v-if="reminder.variant === 'trust-upgrade'">
+          <p class="bubble__text">
+            「{{ getBehaviorLabel(reminder.trustBehavior) }}」连续表现不错
+          </p>
+          <div class="bubble__trust-levels">
+            <span class="bubble__trust-tag bubble__trust-tag--from">
+              {{ LEVEL_LABELS[reminder.trustCurrentLevel ?? 'A'] ?? 'A' }}
+            </span>
+            <span class="bubble__trust-arrow">&rarr;</span>
+            <span class="bubble__trust-tag bubble__trust-tag--to">
+              {{ LEVEL_LABELS[reminder.trustTargetLevel ?? 'B'] ?? 'B' }}
+            </span>
+          </div>
+          <div class="bubble__actions">
+            <button class="bubble__btn bubble__btn--ok" @click="confirmTrustUpgrade">同意升级</button>
+            <button class="bubble__btn" @click="declineTrustUpgrade">再观察</button>
+          </div>
+        </template>
+
+        <!-- P3: 日报/周报卡片式气泡 -->
+        <template v-else-if="reminder.behavior === 'report'">
+          <div class="bubble__report-header">
+            <span class="bubble__report-icon">&#x1F4CA;</span>
+            <span class="bubble__report-title">{{ reminder.title }}</span>
+          </div>
+          <p class="bubble__text">{{ reminder.content }}</p>
+          <div class="bubble__actions">
+            <button class="bubble__btn bubble__btn--ok" @click="feedback('ACTED')">查看完整报告</button>
+            <button class="bubble__btn" @click="feedback('SNOOZED')">知道了</button>
+          </div>
+        </template>
+
+        <!-- 普通/INTERRUPT 气泡 -->
+        <template v-else>
+          <p class="bubble__text">{{ reminder.content }}</p>
+          <div class="bubble__actions">
+            <button class="bubble__btn bubble__btn--ok" @click="feedback('ACTED')">有用</button>
+            <button class="bubble__btn" @click="feedback('SNOOZED')">知道了</button>
+            <button class="bubble__btn bubble__btn--no" @click="feedback('NOT_RELEVANT')">不需要</button>
+          </div>
+        </template>
       </div>
     </Transition>
 
@@ -796,6 +893,10 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 .cat--alert{animation:cat-breathe 3.5s ease-in-out infinite,cat-alert .3s var(--spring)}
 @keyframes cat-alert{from{transform:rotate(0)}50%{transform:rotate(-5deg)}to{transform:rotate(0)}}
 
+/* P2: INTERRUPT 持久警觉 — 耳朵抖动 */
+.cat--alert-persistent{animation:cat-breathe 3.5s ease-in-out infinite,ear-shake .4s var(--spring) infinite 1.5s}
+@keyframes ear-shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}
+
 .cat--happy .cat__eye-white,.cat--happy .cat__pupil,.cat--happy .cat__highlight{opacity:0}
 .cat--happy::after{content:'';/* 闭眼弧线由 blink 覆盖 */}
 
@@ -837,6 +938,32 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 .bubble__btn:hover{background:var(--hover)}
 .bubble__btn--ok:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-bg)}
 .bubble__btn--no:hover{border-color:var(--red);color:var(--red)}
+
+/* P3: 日报/周报气泡 — 绿色渐变头部 */
+.bubble__report-header{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 10px;margin:-14px -16px 0;
+  background:linear-gradient(to right,hsl(152 48% 42% / 0.08),transparent);
+  border-radius:16px 16px 0 0;
+}
+.bubble__report-icon{font-size:16px}
+.bubble__report-title{font-size:13px;font-weight:600;color:hsl(152 48% 38%)}
+
+/* P2: INTERRUPT 气泡 — 红色脉冲边框 */
+.bubble--interrupt{border-color:var(--red);animation:interrupt-pulse 2s ease-in-out infinite}
+@keyframes interrupt-pulse{
+  0%,100%{border-color:var(--red);box-shadow:var(--shadow-lg),0 0 0 0 rgba(229,72,77,0)}
+  50%{border-color:var(--red);box-shadow:var(--shadow-lg),0 0 12px 2px rgba(229,72,77,.15)}
+}
+
+/* P1: 信任升级气泡 — 渐变顶部边框 */
+.bubble--trust{border-top:2px solid transparent;background-clip:padding-box;
+  border-image:linear-gradient(to right,hsl(160 30% 42%),hsl(160 30% 42% / 0.2)) 1}
+.bubble__trust-levels{display:flex;align-items:center;gap:8px;justify-content:center;padding:4px 0}
+.bubble__trust-tag{font-size:12px;font-weight:600;padding:3px 10px;border-radius:8px}
+.bubble__trust-tag--from{background:var(--hover);color:var(--fg2)}
+.bubble__trust-tag--to{background:hsl(160 30% 42% / 0.12);color:hsl(160 30% 38%)}
+.bubble__trust-arrow{color:var(--fg2);font-size:14px}
 
 /* 气泡入场/退场动画 */
 .bubble-enter-active{animation:bubble-in .3s var(--spring) forwards}

@@ -213,6 +213,11 @@ const router = createRouter({
       name: 'settingsPermissions',
       component: () => import('@/views/SettingsView.vue')
     },
+    {
+      path: '/settings/proactive',
+      name: 'settingsProactive',
+      component: () => import('@/views/SettingsView.vue')
+    },
 
     /**
      * Eval / 评估（挂在 SettingsView 壳子下）
