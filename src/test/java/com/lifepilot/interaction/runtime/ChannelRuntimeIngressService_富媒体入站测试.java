@@ -189,7 +189,7 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
         setupMocks();
         var payload = Map.<String, Object>of("action_tag", "button_approve", "value", "yes");
         var content = new ChannelRuntimeEventRequest.Content(
-                "card_action", null, null, payload);
+                "card-action", null, null, payload);
         var request = buildEventRequest(content, List.of());
 
         // when
@@ -209,7 +209,7 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
         // given
         setupMocks();
         var content = new ChannelRuntimeEventRequest.Content(
-                "card_action", null, "custom_card_event",
+                "card-action", null, "custom_card_event",
                 Map.of("key", "val"));
         var request = buildEventRequest(content, List.of());
 

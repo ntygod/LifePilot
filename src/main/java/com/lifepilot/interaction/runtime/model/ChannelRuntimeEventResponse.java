@@ -27,4 +27,9 @@ public record ChannelRuntimeEventResponse(
         return new ChannelRuntimeEventResponse(
                 true, null, 200, "重复事件已忽略: " + eventId, List.of());
     }
+
+    /** 处理成功但无需投递的快捷响应（如权限审批回调）。 */
+    public static ChannelRuntimeEventResponse ok(@Nullable String eventId) {
+        return new ChannelRuntimeEventResponse(true, null, 200, null, List.of());
+    }
 }

@@ -40,6 +40,31 @@ public record ExecutionGrant(
         metadata = metadata == null || metadata.isEmpty() ? Map.of() : Map.copyOf(metadata);
     }
 
+    /**
+     * 创建会话级执行授权 — 渠道审批场景使用。
+     */
+    public static ExecutionGrant sessionScoped(String sessionId,
+                                               PermissionActionType actionType,
+                                               RiskLevel riskLevel,
+                                               @Nullable String userId,
+                                               @Nullable String reason) {
+        Instant now = Instant.now();
+        return new ExecutionGrant(
+                null,
+                PermissionSubjectType.SESSION,
+                sessionId,
+                actionType,
+                riskLevel,
+                ExecutionGrantScope.EMPTY,
+                List.of(),
+                false,
+                null, null, null, null,
+                userId, null, reason,
+                Map.of("grantKind", "CHANNEL_APPROVAL"),
+                now, now
+        );
+    }
+
     public boolean isActiveAt(Instant now) {
         if (revokedAt != null) {
             return false;

@@ -8,7 +8,9 @@ import com.lifepilot.interaction.repository.ChannelPluginRepository;
 import com.lifepilot.interaction.runtime.ConnectorManager;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
+import com.lifepilot.interaction.runtime.ChannelPermissionApprovalService;
 import com.lifepilot.interaction.runtime.ChannelRuntimeIngressService;
+import com.lifepilot.interaction.runtime.ChannelUserMappingCache;
 import com.lifepilot.interaction.runtime.ConnectorRuntimeManager;
 import com.lifepilot.interaction.model.ChannelInstanceStatus;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -153,11 +155,30 @@ public class ChannelControlPlaneConfiguration {
     }
 
     @Bean
+    public ChannelUserMappingCache channelUserMappingCache(JdbcTemplate jdbcTemplate) {
+        return new ChannelUserMappingCache(jdbcTemplate);
+    }
+
+    @Bean
+    public ChannelPermissionApprovalService channelPermissionApprovalService(
+            ChannelDeliveryDispatcher channelDeliveryDispatcher,
+            ChannelInstanceService channelInstanceService,
+            ChannelUserMappingCache channelUserMappingCache,
+            com.lifepilot.observability.config.ObservabilityProperties observabilityProperties) {
+        long timeout = observabilityProperties.getGuardrail().getApprovalTimeoutSeconds();
+        log.info("注册 ChannelPermissionApprovalService: timeout={}s", timeout);
+        return new ChannelPermissionApprovalService(
+                channelDeliveryDispatcher, channelInstanceService, channelUserMappingCache, timeout);
+    }
+
+    @Bean
     public ChannelRuntimeIngressService channelRuntimeIngressService(ChannelInstanceService channelInstanceService,
                                                                     ChannelIngressService channelIngressService,
                                                                     ConnectorRuntimeManager connectorRuntimeManager,
                                                                     ChannelInstanceEventService channelInstanceEventService,
                                                                     ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                                                    ChannelPermissionApprovalService channelApprovalService,
+                                                                    ChannelUserMappingCache channelUserMappingCache,
                                                                     ConnectorManagerProperties connectorManagerProperties) {
         return new ChannelRuntimeIngressService(
                 channelInstanceService,
@@ -165,6 +186,8 @@ public class ChannelControlPlaneConfiguration {
                 connectorRuntimeManager,
                 channelInstanceEventService,
                 channelDeliveryDispatcher,
+                channelApprovalService,
+                channelUserMappingCache,
                 connectorManagerProperties.getMaxAttachmentSizeBytes(),
                 connectorManagerProperties.getEventDeduplicationCacheSize()
         );

@@ -99,7 +99,7 @@ class WebPermissionApprovalServiceTest {
         );
 
         CompletableFuture<ExecutionGrant> future = CompletableFuture.supplyAsync(
-                () -> service.requestApproval(tool, request, "stream-1")
+                () -> service.requestApproval(tool, request, Map.of("streamId", "stream-1"))
         );
         while (requestIdRef[0] == null) {
             TimeUnit.MILLISECONDS.sleep(10);

@@ -169,7 +169,8 @@ public class ChannelDeliveryDispatcher {
         List<Map<String, String>> actions = card.actions().stream()
                 .map(action -> Map.of(
                         "label", action.label(),
-                        "url", action.url()
+                        "type", action.type(),
+                        "value", action.value()
                 ))
                 .toList();
         Map<String, Object> payload = new LinkedHashMap<>();

@@ -10,7 +10,10 @@ import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.service.WebPermissionApprovalService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.runtime.ChannelPermissionApprovalService;
 import com.lifepilot.observability.config.ObservabilityProperties;
+import com.lifepilot.permission.service.CompositePermissionApprovalService;
+import com.lifepilot.permission.service.PermissionApprovalService;
 import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.registry.ProviderRegistry;
@@ -87,7 +90,6 @@ public class WebAutoConfiguration {
     }
 
     @Bean
-    @Primary
     public WebPermissionApprovalService webPermissionApprovalService(
             SseSessionManager sseSessionManager,
             TranscriptStore transcriptStore,
@@ -98,6 +100,18 @@ public class WebAutoConfiguration {
         log.info("注册 WebPermissionApprovalService: timeout={}s", timeout);
         return new WebPermissionApprovalService(sseSessionManager, transcriptStore,
                 permissionService, objectMapper, timeout);
+    }
+
+    /**
+     * 路由审批服务 — 根据 approvalContext 中的渠道标识直接路由。
+     * 有 streamId → Web；有 channelInstanceId → Channel。
+     */
+    @Bean
+    @Primary
+    public PermissionApprovalService compositePermissionApprovalService(
+            WebPermissionApprovalService webApprovalService,
+            @Nullable ChannelPermissionApprovalService channelApprovalService) {
+        return new CompositePermissionApprovalService(webApprovalService, channelApprovalService);
     }
 
     /**

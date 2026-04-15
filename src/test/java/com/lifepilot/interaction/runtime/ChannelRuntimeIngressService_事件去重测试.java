@@ -71,6 +71,8 @@ class ChannelRuntimeIngressService_事件去重测试 {
                 connectorRuntimeManager,
                 channelInstanceEventService,
                 channelDeliveryDispatcher,
+                null,
+                null,
                 10L * 1024 * 1024,
                 eventCacheMaxSize
         );

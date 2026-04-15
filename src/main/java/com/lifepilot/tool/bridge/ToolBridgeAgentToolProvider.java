@@ -354,10 +354,45 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         // 由 MediaDataExtractor 在 ReactAgentLoop 中提取媒体后再处理
         if (output.length() > maxToolOutputChars && !containsMediaField(result)) {
             int originalLength = output.length();
-            output = output.substring(0, maxToolOutputChars)
-                    + "...[输出已截断，原始长度: " + originalLength + " 字符，截断到: " + maxToolOutputChars + " 字符]";
+            output = truncateJsonSafe(output, maxToolOutputChars, originalLength);
         }
         return output;
+    }
+
+    /**
+     * JSON 安全截断 — 截断后保证 JSON 结构可被解析器容忍。
+     *
+     * <p>在截断位置后追加闭合标记和截断提示，避免 MediaDataExtractor
+     * 等下游解析器遇到不完整 JSON 抛出 {@code Unexpected end-of-input}。</p>
+     */
+    private static String truncateJsonSafe(String json, int maxChars, int originalLength) {
+        String truncated = json.substring(0, maxChars);
+        // 如果截断点在字符串内部（奇数个未转义引号），先闭合字符串
+        if (isInsideJsonString(truncated)) {
+            truncated += "\"";
+        }
+        String suffix = "...[已截断: %d→%d 字符]".formatted(originalLength, maxChars);
+        // 追加最小闭合：让顶层 JSON 对象/数组能被解析
+        if (json.charAt(0) == '{') {
+            return truncated + ",\"_truncated\":\"" + suffix + "\"}";
+        } else if (json.charAt(0) == '[') {
+            return truncated + "]";
+        }
+        return truncated + suffix;
+    }
+
+    /**
+     * 粗略判断截断点是否落在 JSON 字符串值内部。
+     * 从末尾向前找最近的未转义双引号，计算从该引号到末尾的引号数量奇偶性。
+     */
+    private static boolean isInsideJsonString(String s) {
+        int quotes = 0;
+        for (int i = s.length() - 1; i >= 0; i--) {
+            if (s.charAt(i) == '"' && (i == 0 || s.charAt(i - 1) != '\\')) {
+                quotes++;
+            }
+        }
+        return quotes % 2 != 0;
     }
 
     /** 检查 ToolResult 是否包含已知媒体字段。 */

@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 渠道运行时入站服务。
@@ -49,9 +50,20 @@ public class ChannelRuntimeIngressService {
     private final ConnectorRuntimeManager connectorRuntimeManager;
     private final ChannelInstanceEventService channelInstanceEventService;
     private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
+    @Nullable
+    private final ChannelPermissionApprovalService channelApprovalService;
+    @Nullable
+    private final ChannelUserMappingCache userMappingCache;
     private final long maxAttachmentSize;
     /** 事件去重缓存（FIFO，超过容量自动淘汰最早条目）。 */
     private final Map<String, Boolean> processedEventIds;
+
+    /** 渠道会话空闲超时（毫秒），超过此时间未收到消息则自动开新会话。默认 30 分钟。 */
+    private static final long SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000L;
+    /** 渠道用户级会话跟踪：compositeKey(instanceId:userId) → {sessionId, lastMessageAt}。 */
+    private final ConcurrentHashMap<String, ChannelSessionState> channelSessions = new ConcurrentHashMap<>();
+
+    private record ChannelSessionState(String sessionId, long lastMessageAt) {}
 
     public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
                                         ChannelIngressService channelIngressService,
@@ -60,7 +72,7 @@ public class ChannelRuntimeIngressService {
                                         ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                         long maxAttachmentSize) {
         this(channelInstanceService, channelIngressService, connectorRuntimeManager,
-                channelInstanceEventService, channelDeliveryDispatcher,
+                channelInstanceEventService, channelDeliveryDispatcher, null, null,
                 maxAttachmentSize, DEFAULT_EVENT_CACHE_MAX_SIZE);
     }
 
@@ -69,6 +81,8 @@ public class ChannelRuntimeIngressService {
                                         ConnectorRuntimeManager connectorRuntimeManager,
                                         ChannelInstanceEventService channelInstanceEventService,
                                         ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        @Nullable ChannelPermissionApprovalService channelApprovalService,
+                                        @Nullable ChannelUserMappingCache userMappingCache,
                                         long maxAttachmentSize,
                                         int eventCacheMaxSize) {
         this.channelInstanceService = channelInstanceService;
@@ -76,6 +90,8 @@ public class ChannelRuntimeIngressService {
         this.connectorRuntimeManager = connectorRuntimeManager;
         this.channelInstanceEventService = channelInstanceEventService;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
+        this.channelApprovalService = channelApprovalService;
+        this.userMappingCache = userMappingCache;
         this.maxAttachmentSize = maxAttachmentSize > 0 ? maxAttachmentSize : DEFAULT_MAX_ATTACHMENT_SIZE;
         int cacheSize = eventCacheMaxSize > 0 ? eventCacheMaxSize : DEFAULT_EVENT_CACHE_MAX_SIZE;
         this.processedEventIds = Collections.synchronizedMap(
@@ -96,6 +112,20 @@ public class ChannelRuntimeIngressService {
             }
         }
         ChannelInstance instance = requireActiveInstance(instanceId);
+
+        // 自动学习平台用户 ID 和会话 ID 映射
+        if (userMappingCache != null && request.userId() != null && !request.userId().isBlank()) {
+            // request.sessionId() 是 connector 上报的平台会话 ID（如飞书 oc_xxx）
+            userMappingCache.observe(instanceId, request.userId().trim(),
+                    request.sessionId() != null && !request.sessionId().isBlank() ? request.sessionId().trim() : null);
+        }
+
+        // 拦截权限审批卡片回调 — 不走 Agent 管线，直接解析审批结果
+        var approvalResponse = tryResolvePermissionApproval(instanceId, request);
+        if (approvalResponse != null) {
+            return approvalResponse;
+        }
+
         try {
             GatewayMessage message = toGatewayMessage(instance, request);
             GatewayResponse response = channelIngressService.submitSync(message);
@@ -146,7 +176,8 @@ public class ChannelRuntimeIngressService {
         }
 
         String messageId = firstNonBlank(request.messageId(), request.eventId(), UUID.randomUUID().toString());
-        String sessionId = firstNonBlank(request.sessionId(), instance.instanceId() + ":" + request.userId());
+        String sessionId = firstNonBlank(request.sessionId(),
+                resolveChannelSessionId(instance.instanceId(), request.userId().trim()));
         Instant timestamp = request.occurredAt() != null ? request.occurredAt() : Instant.now();
 
         return GatewayMessage.builder()
@@ -170,7 +201,7 @@ public class ChannelRuntimeIngressService {
             case "event" -> buildEventContent(content);
             case "text" -> new MessageContent.TextMessage(requireText(content.text(), "text"));
             case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments);
-            case "card_action" -> buildCardActionContent(content);
+            case "card-action" -> buildCardActionContent(content);
             default -> throw new IllegalArgumentException("不支持的 connector 内容类型: " + type);
         };
     }
@@ -320,6 +351,73 @@ public class ChannelRuntimeIngressService {
             throw new IllegalArgumentException(contentType + " 类型消息必须提供 text");
         }
         return text.trim();
+    }
+
+    /**
+     * 解析渠道会话 ID — 空闲超时自动开新会话。
+     *
+     * <p>同一用户在同一渠道实例上，如果距上一条消息超过 30 分钟，
+     * 自动生成新的 sessionId，避免所有对话堆积在同一个会话中。</p>
+     */
+    private String resolveChannelSessionId(String instanceId, String userId) {
+        String compositeKey = instanceId + ":" + userId;
+        long now = System.currentTimeMillis();
+
+        var existing = channelSessions.get(compositeKey);
+        if (existing != null && (now - existing.lastMessageAt()) < SESSION_IDLE_TIMEOUT_MS) {
+            // 会话仍活跃，复用 sessionId，更新最后消息时间
+            channelSessions.put(compositeKey, new ChannelSessionState(existing.sessionId(), now));
+            return existing.sessionId();
+        }
+
+        // 超时或首次 — 创建新会话
+        String newSessionId = instanceId + ":" + userId + ":" + UUID.randomUUID().toString().substring(0, 8);
+        channelSessions.put(compositeKey, new ChannelSessionState(newSessionId, now));
+        if (existing != null) {
+            log.info("渠道会话空闲超时，自动开新会话: compositeKey={}, newSessionId={}", compositeKey, newSessionId);
+        }
+        return newSessionId;
+    }
+
+    /**
+     *
+     * <p>当 card_action 事件的 name 匹配 {@code permission_approval:{requestId}:approved/rejected} 时，
+     * 直接解析审批结果并返回成功响应，不进入 Agent 管线。</p>
+     *
+     * @return 审批回调响应；非审批事件返回 null 继续正常流程
+     */
+    @Nullable
+    private ChannelRuntimeEventResponse tryResolvePermissionApproval(String instanceId,
+                                                                      ChannelRuntimeEventRequest request) {
+        if (channelApprovalService == null || request.content() == null) {
+            return null;
+        }
+        String contentType = request.content().type();
+        if (!"card-action".equalsIgnoreCase(contentType)) {
+            return null;
+        }
+        // 卡片回调的 action value 放在 name 或 payload.action 中
+        String actionValue = request.content().name();
+        if (actionValue == null || actionValue.isBlank()) {
+            var payload = request.content().payload();
+            if (payload != null && payload.get("action") instanceof String a) {
+                actionValue = a;
+            }
+        }
+        if (!ChannelPermissionApprovalService.isApprovalCallback(actionValue)) {
+            return null;
+        }
+        String[] parsed = ChannelPermissionApprovalService.parseCallback(actionValue);
+        if (parsed == null) {
+            return null;
+        }
+        String requestId = parsed[0];
+        boolean approved = "approved".equalsIgnoreCase(parsed[1]);
+        boolean resolved = channelApprovalService.resolveApproval(requestId, approved);
+        log.info("渠道审批卡片回调已处理: instanceId={}, requestId={}, approved={}, resolved={}",
+                instanceId, requestId, approved, resolved);
+        connectorRuntimeManager.markHeartbeat(instanceId);
+        return ChannelRuntimeEventResponse.ok(request.eventId());
     }
 
     private String firstNonBlank(String... values) {

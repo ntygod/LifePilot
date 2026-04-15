@@ -116,7 +116,8 @@ class ToolExecutionPipelineTest {
         ToolResult result = pipeline.execute("test.approval", Map.of(), "trace-1", null, "stream-1");
         assertFalse(result.ok());
         assertTrue(result.error().contains("未获得执行授权"));
-        verify(permissionApprovalService).requestApproval(any(), any(), eq("stream-1"));
+        verify(permissionApprovalService).requestApproval(any(), any(), argThat(ctx ->
+                ctx != null && "stream-1".equals(ctx.get("streamId"))));
         verify(guardrailEngine, never()).checkToolCall(any(), any());
     }
 

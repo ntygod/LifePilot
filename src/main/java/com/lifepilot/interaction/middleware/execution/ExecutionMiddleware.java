@@ -347,7 +347,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                     .metadata(metadata)
                     .build();
         }
-        return GatewayResponse.success(message.channelType(), new ResponseContent.TextContent(agentResponse.content()))
+        return GatewayResponse.success(message.channelType(), new ResponseContent.MarkdownContent(agentResponse.content()))
                 .toBuilder()
                 .responseId(agentResponse.assistantEntryId())
                 .tokenUsage(tokenUsage)

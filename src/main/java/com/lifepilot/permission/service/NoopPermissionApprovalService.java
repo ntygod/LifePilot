@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.util.Map;
+
 /**
  * 默认权限审批服务。
  *
@@ -21,7 +23,8 @@ public class NoopPermissionApprovalService implements PermissionApprovalService 
 
     @Override
     @Nullable
-    public ExecutionGrant requestApproval(ToolContract tool, PermissionRequest request, @Nullable String streamId) {
+    public ExecutionGrant requestApproval(ToolContract tool, PermissionRequest request,
+                                          @Nullable Map<String, String> approvalContext) {
         log.info("当前渠道未提供权限审批实现，拒绝执行: toolId={}, channel={}, actionType={}",
                 tool.id(), request.channelAliases(), request.actionType());
         return null;

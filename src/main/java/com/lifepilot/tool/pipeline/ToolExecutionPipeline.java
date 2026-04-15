@@ -10,6 +10,7 @@ import com.lifepilot.permission.service.PermissionApprovalService;
 import com.lifepilot.permission.service.PermissionRequestFactory;
 import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolResultMeta;
@@ -78,7 +79,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
     }
 
     /**
-     * 执行工具调用（无 SSE 流标识）— 便捷重载。
+     * 执行工具调用（无审批上下文）— 便捷重载。
      *
      * @param toolId 工具 ID
      * @param parameters 调用参数
@@ -98,7 +99,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
      * @param parameters 调用参数
      * @param traceId 轨迹 ID（用于日志关联）
      * @param idempotencyKey 幂等键（可选）
-     * @param streamId SSE 流标识（可选）
+     * @param streamId SSE 流标识（可选，用于构建审批上下文）
      * @return 结构化执行结果
      */
     public ToolResult execute(String toolId, Map<String, Object> parameters,
@@ -116,8 +117,8 @@ public class ToolExecutionPipeline implements java.io.Closeable {
      * @param parameters 调用参数
      * @param traceId 轨迹 ID（用于日志关联）
      * @param idempotencyKey 幂等键（可选）
-     * @param streamId SSE 流标识（用于精确推送授权审批请求，可选）
-     * @param context 请求级上下文（传递 sessionId 等非 LLM 参数，可选）
+     * @param streamId SSE 流标识（可选，用于构建审批上下文）
+     * @param context 请求级上下文（传递 sessionId/channelType 等非 LLM 参数，可选）
      * @return 结构化执行结果
      */
     public ToolResult execute(String toolId, Map<String, Object> parameters,
@@ -157,7 +158,8 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                     buildMeta(toolId, start, 0, false, idempotencyKey));
         }
         if (permissionDecision.decisionType() == PermissionDecisionType.NEEDS_APPROVAL) {
-            ExecutionGrant grant = permissionApprovalService.requestApproval(tool, permissionRequest, streamId);
+            var approvalContext = buildApprovalContext(streamId, context);
+            ExecutionGrant grant = permissionApprovalService.requestApproval(tool, permissionRequest, approvalContext);
             if (grant == null) {
                 log.info("工具授权未获批准: toolId={}, actionType={}", toolId, permissionRequest.actionType());
                 return ToolResult.error("未获得执行授权",
@@ -332,6 +334,35 @@ public class ToolExecutionPipeline implements java.io.Closeable {
         return error.contains("超时") || error.contains("timeout")
                 || error.contains("连接") || error.contains("connection")
                 || error.contains("临时") || error.contains("temporary");
+    }
+
+    /**
+     * 从 streamId 和请求上下文中提取审批路由信息。
+     *
+     * <p>Web 端携带 streamId，渠道端携带 channelType/channelInstanceId/userId。
+     * 两者不互斥：Web 端也可能携带渠道信息。</p>
+     */
+    @Nullable
+    private Map<String, String> buildApprovalContext(@Nullable String streamId,
+                                                     @Nullable Map<String, Object> context) {
+        Map<String, String> approvalCtx = new LinkedHashMap<>();
+        if (streamId != null && !streamId.isBlank()) {
+            approvalCtx.put("streamId", streamId);
+        }
+        if (context != null) {
+            copyIfPresent(context, approvalCtx, ToolContextKeys.CHANNEL_TYPE);
+            copyIfPresent(context, approvalCtx, ToolContextKeys.CHANNEL_INSTANCE_ID);
+            copyIfPresent(context, approvalCtx, ToolContextKeys.USER_ID);
+            copyIfPresent(context, approvalCtx, ToolContextKeys.SESSION_ID);
+        }
+        return approvalCtx.isEmpty() ? null : Map.copyOf(approvalCtx);
+    }
+
+    private static void copyIfPresent(Map<String, Object> source, Map<String, String> target, String key) {
+        Object value = source.get(key);
+        if (value instanceof String s && !s.isBlank()) {
+            target.put(key, s);
+        }
     }
 
     /** 构建执行元信息。 */

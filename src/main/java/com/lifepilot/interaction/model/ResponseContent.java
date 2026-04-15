@@ -95,11 +95,23 @@ public sealed interface ResponseContent
          * 卡片操作。
          *
          * @param label 操作标签
-         * @param url   操作链接
+         * @param value 操作值（URL 或回调标识）
+         * @param type  操作类型：{@code "url"}（链接跳转）或 {@code "callback"}（平台回调）
          * @author zsg
          * @since 2026-02-25
          */
-        public record CardAction(String label, String url) {}
+        public record CardAction(String label, String value, String type) {
+
+            /** URL 操作 — 点击后打开链接。 */
+            public static CardAction url(String label, String url) {
+                return new CardAction(label, url, "url");
+            }
+
+            /** 回调操作 — 点击后通过平台回调通知服务端。 */
+            public static CardAction callback(String label, String callbackValue) {
+                return new CardAction(label, callbackValue, "callback");
+            }
+        }
     }
 
     /**

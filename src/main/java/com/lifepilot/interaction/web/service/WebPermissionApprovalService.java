@@ -64,9 +64,11 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
 
     @Override
     @Nullable
-    public ExecutionGrant requestApproval(ToolContract tool, PermissionRequest request, @Nullable String streamId) {
+    public ExecutionGrant requestApproval(ToolContract tool, PermissionRequest request,
+                                          @Nullable Map<String, String> approvalContext) {
+        String streamId = approvalContext != null ? approvalContext.get("streamId") : null;
         if (streamId == null || streamId.isBlank()) {
-            log.info("当前请求缺少 streamId，无法发起 Web 权限审批: toolId={}", tool.id());
+            log.debug("审批上下文中无 streamId，Web 审批不适用: toolId={}", tool.id());
             return null;
         }
 
