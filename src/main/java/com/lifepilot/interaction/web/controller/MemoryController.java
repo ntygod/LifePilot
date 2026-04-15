@@ -28,6 +28,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -128,6 +129,57 @@ public class MemoryController {
                 forgettingLogCount,
                 lastForgettingTime
         ));
+    }
+
+    // ========== 记忆健康度 ==========
+
+    /**
+     * 获取记忆系统健康度指标 — 各层统计、遗忘日志、访问活跃度。
+     */
+    @GetMapping("/health")
+    public ApiResponse<MemoryHealthDto> getHealth() {
+        requireMemoryEnabled();
+
+        long totalEntities = semanticMemory.countCurrent();
+        long totalRelations = semanticMemory.countCurrentRelations();
+
+        var allCurrent = semanticMemory.findAllCurrent();
+        Map<String, Long> entityCountByType = allCurrent.stream()
+                .collect(Collectors.groupingBy(e -> e.type().name(), Collectors.counting()));
+
+        long experienceCount = entityCountByType.getOrDefault("EXPERIENCE", 0L);
+        long preferenceCount = entityCountByType.getOrDefault("PREFERENCE", 0L);
+        long habitCount = entityCountByType.getOrDefault("HABIT", 0L);
+        long goalCount = entityCountByType.getOrDefault("GOAL", 0L);
+
+        long templateCount = 0L;
+        long ruleCount = 0L;
+        if (proceduralMemory != null) {
+            templateCount = proceduralMemory.listAllTemplates().size();
+            ruleCount = proceduralMemory.listAllPreferences().size();
+        }
+
+        long conversationCount = episodicMemory != null ? episodicMemory.countConversations() : 0L;
+
+        long forgettingLogCount = forgettingLogRepository.countAll();
+        String lastForgettingTime = forgettingLogRepository.getLastForgettingTime();
+
+        long recentlyAccessedCount = allCurrent.stream()
+                .filter(e -> e.lastAccessedAt() != null
+                        && Duration.between(e.lastAccessedAt(), Instant.now()).toDays() <= 7)
+                .count();
+        float recentAccessRatio = totalEntities > 0 ? (float) recentlyAccessedCount / totalEntities : 0f;
+
+        float avgImportance = totalEntities > 0
+                ? (float) allCurrent.stream().mapToDouble(TemporalEntity::importanceScore).average().orElse(0)
+                : 0f;
+
+        return ApiResponse.ok(new MemoryHealthDto(
+                totalEntities, totalRelations, entityCountByType,
+                conversationCount, templateCount, ruleCount,
+                experienceCount, preferenceCount, habitCount, goalCount,
+                forgettingLogCount, lastForgettingTime,
+                recentAccessRatio, avgImportance));
     }
 
     // ========== Req 7: 统一记忆搜索 ==========
