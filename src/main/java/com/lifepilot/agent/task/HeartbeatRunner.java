@@ -81,6 +81,10 @@ public class HeartbeatRunner {
     }
 
     private void runProactiveEngineIfEnabled() {
+        if (!config.getTask().isProactiveReminderEnabled()) {
+            log.debug("心跳跳过: 主动引擎未启用");
+            return;
+        }
         try {
             var level = proactiveEngine.heartbeat();
             log.debug("主动引擎心跳完成: level={}", level);

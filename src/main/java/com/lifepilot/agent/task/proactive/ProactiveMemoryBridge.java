@@ -210,7 +210,7 @@ public class ProactiveMemoryBridge {
      *
      * <p>如果已有同 category+key 的规则，用 EWMA 更新；否则新建。</p>
      */
-    public void observePreference(String category, String key, float signal) {
+    public synchronized void observePreference(String category, String key, float signal) {
         if (proceduralMemory == null) return;
         try {
             var existing = proceduralMemory.findPreference(category, key);

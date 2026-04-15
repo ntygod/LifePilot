@@ -35,12 +35,15 @@ public class QueuedActionRepository {
                     rs.getString("shown_at") != null ? Instant.parse(rs.getString("shown_at")) : null
             );
 
-    /** 保存排队动作。 */
+    /** 保存排队动作（幂等 — 重复 ID 覆盖更新）。 */
     public void save(QueuedActionRecord record) {
         jdbc.update("""
                 INSERT INTO proactive_queued_actions
                     (id, user_id, behavior, topic_key, title, content, score, metadata, shown, created_at, shown_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title, content = excluded.content,
+                    score = excluded.score, metadata = excluded.metadata
                 """,
                 record.id(), record.userId(), record.behavior(),
                 record.topicKey(), record.title(), record.content(),

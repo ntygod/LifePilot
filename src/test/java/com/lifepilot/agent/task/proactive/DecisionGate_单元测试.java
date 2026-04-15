@@ -1,6 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
+import com.lifepilot.memory.procedural.PreferenceRule;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -9,6 +10,8 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class DecisionGate_单元测试 {
 
@@ -126,6 +129,50 @@ class DecisionGate_单元测试 {
         assertThat(DecisionGate.scoreToLevel(0.3f)).isEqualTo(DeliveryLevel.QUEUE);
         assertThat(DecisionGate.scoreToLevel(0.5f)).isEqualTo(DeliveryLevel.NOTIFY);
         assertThat(DecisionGate.scoreToLevel(0.7f)).isEqualTo(DeliveryLevel.INTERRUPT);
+    }
+
+    // ── 自主度与偏好约束 ──
+
+    @Test
+    void 自主度A级限制INTERRUPT降级为NOTIFY() {
+        // given — TrustUpgradeService mock 返回 A 级自主度
+        var trustService = mock(TrustUpgradeService.class);
+        when(trustService.getLevel(USER, "reminder")).thenReturn(AutonomyLevel.A);
+
+        var ctx = ctx(Instant.parse("2026-04-14T06:00:00Z"),  // CST 14:00
+                null, null, 0, 5, null);
+        var actions = List.of(action(0.8f, DeliveryLevel.INTERRUPT));
+
+        // when
+        var result = new DecisionGate(trustService, null).evaluate(actions, ctx);
+
+        // then — A 级自主度下 INTERRUPT 应降为 NOTIFY
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().level()).isEqualTo(DeliveryLevel.NOTIFY);
+    }
+
+    @Test
+    void 偏好低时NOTIFY降为QUEUE() {
+        // given — ProactiveMemoryBridge mock 返回低偏好值
+        var memoryBridge = mock(ProactiveMemoryBridge.class);
+
+        // 当前时间 CST 14:00 → TimeSlotResolver 解析为 "afternoon"
+        var now = Instant.parse("2026-04-14T06:00:00Z");
+        var lowPreference = new PreferenceRule(
+                "r1", "proactive-timing", "afternoon", "0.1",
+                0.8f, "proactive-engine", 5, now, now);
+        when(memoryBridge.getPreferences("proactive-timing"))
+                .thenReturn(List.of(lowPreference));
+
+        var ctx = ctx(now, null, null, 0, 5, null);
+        var actions = List.of(action(0.6f, DeliveryLevel.NOTIFY));
+
+        // when
+        var result = new DecisionGate(null, memoryBridge).evaluate(actions, ctx);
+
+        // then — 偏好低于阈值，NOTIFY 应降为 QUEUE
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().level()).isEqualTo(DeliveryLevel.QUEUE);
     }
 
     // ── helpers ──

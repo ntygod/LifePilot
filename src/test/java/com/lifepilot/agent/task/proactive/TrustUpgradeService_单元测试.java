@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TrustUpgradeService_单元测试 {
@@ -106,5 +109,43 @@ class TrustUpgradeService_单元测试 {
         service.recordPositiveFeedback("u1", "reminder"); // 只 1 次
         boolean upgraded = service.confirmUpgrade("u1", "reminder");
         assertThat(upgraded).isFalse();
+    }
+
+    @Test
+    void 冷却期内正反馈不触发升级建议() {
+        // given — 模拟降级后的状态：等级 A，冷却期截止 7 天后
+        Instant futureDeadline = Instant.now().plus(Duration.ofDays(7));
+        repo.upsert(new AutonomyConfig("u1", "reminder", AutonomyLevel.A,
+                0, 3, false, futureDeadline, Instant.now()));
+
+        // when — 冷却期内连续 5 次正反馈
+        for (int i = 0; i < 5; i++) {
+            service.recordPositiveFeedback("u1", "reminder");
+        }
+
+        // then — 冷却期未过，不应触发升级建议
+        var config = repo.findByUserAndBehavior("u1", "reminder");
+        assertThat(config).isNotNull();
+        assertThat(config.upgradeSuggested()).isFalse();
+        assertThat(config.consecutivePositive()).isEqualTo(5);
+    }
+
+    @Test
+    void 冷却期过后正反馈触发升级建议() {
+        // given — 冷却期已在 1 秒前到期
+        Instant expiredDeadline = Instant.now().minus(Duration.ofSeconds(1));
+        repo.upsert(new AutonomyConfig("u1", "reminder", AutonomyLevel.A,
+                0, 0, false, expiredDeadline, Instant.now()));
+
+        // when — 冷却期已过，连续 5 次正反馈
+        for (int i = 0; i < 5; i++) {
+            service.recordPositiveFeedback("u1", "reminder");
+        }
+
+        // then — 冷却期已过期，应触发升级建议
+        var config = repo.findByUserAndBehavior("u1", "reminder");
+        assertThat(config).isNotNull();
+        assertThat(config.upgradeSuggested()).isTrue();
+        assertThat(config.consecutivePositive()).isEqualTo(5);
     }
 }

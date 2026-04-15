@@ -15,5 +15,10 @@ public enum DeliveryLevel {
     SILENT,
     QUEUE,
     NOTIFY,
-    INTERRUPT
+    INTERRUPT;
+
+    /** 是否为通知级别（NOTIFY 或 INTERRUPT）— 需要用户关注。 */
+    public boolean isNotifiable() {
+        return this == NOTIFY || this == INTERRUPT;
+    }
 }

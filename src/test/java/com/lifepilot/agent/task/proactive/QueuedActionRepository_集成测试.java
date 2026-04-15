@@ -44,8 +44,8 @@ class QueuedActionRepository_集成测试 {
                 )
                 """);
         jdbc.execute("""
-                CREATE INDEX idx_proactive_queued_actions_user_shown
-                    ON proactive_queued_actions (user_id, shown, created_at DESC)
+                CREATE INDEX idx_proactive_queued_actions_user_shown_score
+                    ON proactive_queued_actions (user_id, shown, score DESC, created_at DESC)
                 """);
         repo = new QueuedActionRepository(jdbc);
     }

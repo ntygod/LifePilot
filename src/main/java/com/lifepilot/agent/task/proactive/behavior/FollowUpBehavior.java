@@ -82,9 +82,9 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
     @Override
     public List<ProactiveAction> reason(List<ProactiveCandidate> candidates, ContextPacket ctx) {
         var actions = super.reason(candidates, ctx);
-        // 推理后递增追问计数
-        for (var candidate : candidates) {
-            if (candidate.detail() instanceof GoalView goal) {
+        // 只对成功产出 action 的候选递增追问计数，避免 LLM 失败白白消耗配额
+        for (var action : actions) {
+            if (action.candidate().detail() instanceof GoalView goal) {
                 memoryBridge.incrementCheckCount(goal.entityId());
             }
         }

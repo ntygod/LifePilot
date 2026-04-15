@@ -60,13 +60,18 @@ public class ImplicitSignalCollector {
                 userId, action.candidate().behaviorName(),
                 action.candidate().topicKey(), result.deliveredAt()));
 
-        // 清理过期记录（超过 24h）+ 硬上限裁剪
+        // 清理过期记录（超过 24h）
         Instant cutoff = Instant.now().minus(Duration.ofHours(24));
         recentDeliveries.values().removeIf(d -> d.deliveredAt.isBefore(cutoff));
-        while (recentDeliveries.size() > MAX_RECENT_DELIVERIES) {
-            recentDeliveries.entrySet().stream()
-                    .min(Comparator.comparing(e -> e.getValue().deliveredAt))
-                    .ifPresent(e -> recentDeliveries.remove(e.getKey()));
+
+        // 硬上限裁剪 — 一次性批量淘汰最旧的记录
+        if (recentDeliveries.size() > MAX_RECENT_DELIVERIES) {
+            var toRemove = recentDeliveries.entrySet().stream()
+                    .sorted(Comparator.comparing(e -> e.getValue().deliveredAt))
+                    .limit(recentDeliveries.size() - MAX_RECENT_DELIVERIES)
+                    .map(Map.Entry::getKey)
+                    .toList();
+            toRemove.forEach(recentDeliveries::remove);
         }
     }
 

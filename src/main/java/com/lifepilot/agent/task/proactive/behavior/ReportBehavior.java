@@ -3,9 +3,7 @@ package com.lifepilot.agent.task.proactive.behavior;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,37 +21,38 @@ import java.util.*;
  * @author zsg
  * @since 2026-04-14
  */
-public class ReportBehavior implements ProactiveBehavior {
+public class ReportBehavior extends AbstractLlmBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(ReportBehavior.class);
     private static final DayOfWeek WEEKLY_REPORT_DAY = DayOfWeek.FRIDAY;
     private static final String PROMPT_KEY = "generation/proactive-report";
 
     @Nullable private final EpisodicMemory episodicMemory;
-    @Nullable private final GenerationRouter generationRouter;
     @Nullable private final AgentConfigProperties config;
-    @Nullable private final PromptRegistry promptRegistry;
 
     public ReportBehavior(@Nullable EpisodicMemory episodicMemory,
                           @Nullable GenerationRouter generationRouter,
                           @Nullable AgentConfigProperties config,
                           @Nullable PromptRegistry promptRegistry) {
+        super(generationRouter, promptRegistry);
         this.episodicMemory = episodicMemory;
-        this.generationRouter = generationRouter;
         this.config = config;
-        this.promptRegistry = promptRegistry;
     }
 
     private int dailyReportHour() {
         return config != null ? config.getTask().getProactiveEngineDailyReportHour() : 20;
     }
 
-    private Duration llmTimeout() {
+    @Override
+    protected Duration llmTimeout() {
         return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
     }
 
     @Override
     public String name() { return "report"; }
+
+    @Override
+    protected String promptKey() { return PROMPT_KEY; }
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
@@ -84,48 +83,41 @@ public class ReportBehavior implements ProactiveBehavior {
     }
 
     @Override
-    public List<ProactiveAction> reason(List<ProactiveCandidate> candidates, ContextPacket ctx) {
-        var actions = new ArrayList<ProactiveAction>();
-        for (var candidate : candidates) {
-            String reportType = candidate.detail() instanceof String s ? s : "daily";
-            String content = generateReport(reportType, ctx);
-            if (content == null || content.isBlank()) continue;
-            actions.add(new ProactiveAction(candidate, content, DeliveryLevel.NOTIFY, reportType));
-        }
-        return actions;
+    protected Map<String, Object> buildPromptVariables(ProactiveCandidate candidate, ContextPacket ctx) {
+        String reportType = candidate.detail() instanceof String s ? s : "daily";
+        Duration lookback = "weekly".equals(reportType) ? Duration.ofDays(7) : Duration.ofDays(1);
+        String summaryInput = gatherConversationSummaries(lookback);
+        String period = "weekly".equals(reportType) ? "本周" : "今天";
+
+        var vars = new HashMap<String, Object>();
+        vars.put("reportType", period);
+        vars.put("currentTime", formatTime(ctx));
+        vars.put("conversationSummaries", summaryInput);
+        return vars;
     }
 
-    private String generateReport(String type, ContextPacket ctx) {
-        Duration lookback = "weekly".equals(type) ? Duration.ofDays(7) : Duration.ofDays(1);
-        String summaryInput = gatherConversationSummaries(lookback);
+    /**
+     * 覆写内容生成 — 无对话摘要时返回 null（跳过报告），有摘要时走基类 LLM+回退流程。
+     */
+    @Override
+    protected String generateContent(ProactiveCandidate candidate, ContextPacket ctx) {
+        String reportType = candidate.detail() instanceof String s ? s : "daily";
+        Duration lookback = "weekly".equals(reportType) ? Duration.ofDays(7) : Duration.ofDays(1);
+        if (gatherConversationSummaries(lookback).isBlank()) return null;
+        return super.generateContent(candidate, ctx);
+    }
 
-        if (generationRouter != null && !summaryInput.isBlank()) {
-            try {
-                String period = "weekly".equals(type) ? "本周" : "今天";
-                String prompt;
-                if (promptRegistry != null) {
-                    prompt = promptRegistry.render(PROMPT_KEY, Map.of(
-                            "reportType", period,
-                            "currentTime", java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
-                                    ctx.now().atZone(ctx.zoneId())),
-                            "conversationSummaries", summaryInput));
-                } else {
-                    prompt = "你是个人助手。请基于以下对话摘要生成" + period + "的简报。\n"
-                            + "要求：3-5 个要点，每点一句话，不超过 150 字。语气简洁自然，不要用 Markdown。\n\n"
-                            + "对话摘要：\n" + summaryInput;
-                }
-                LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, llmTimeout());
-                if (response != null && !response.content().isBlank()) return response.content().strip();
-            } catch (Exception e) {
-                log.debug("ReportBehavior: LLM 失败: {}", e.getMessage());
-            }
-        }
-
-        if (summaryInput.isBlank()) return null;
-        return "weekly".equals(type)
+    @Override
+    protected String fallbackContent(ProactiveCandidate candidate) {
+        String reportType = candidate.detail() instanceof String s ? s : "daily";
+        return "weekly".equals(reportType)
                 ? "本周你和我聊了不少话题，要看看本周总结吗？"
                 : "今天的对话有一些值得回顾的内容，要看看今日小结吗？";
+    }
+
+    @Override
+    protected DeliveryLevel suggestLevel(ProactiveCandidate candidate) {
+        return DeliveryLevel.NOTIFY;
     }
 
     private String gatherConversationSummaries(Duration lookback) {

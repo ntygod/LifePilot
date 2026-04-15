@@ -10,8 +10,8 @@ import java.util.*;
 /**
  * 信息补充行为插件 — 当知识库有与用户兴趣相关的新内容时主动推送。
  *
- * <p>detect: 检查 L3 活跃目标关键词是否匹配近期知识库更新。
- * reason: 生成摘要推荐。</p>
+ * <p>TODO: 当前为占位实现，detect 始终返回空列表。
+ * 后续需对接知识库查询，只在确实有新增内容时才产出候选。</p>
  *
  * @author zsg
  * @since 2026-04-14
@@ -31,21 +31,8 @@ public class InfoSupplementBehavior implements ProactiveBehavior {
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        if (memoryBridge == null) return List.of();
-
-        var goals = memoryBridge.getActiveGoals();
-        if (goals.isEmpty()) return List.of();
-
-        var candidates = new ArrayList<ProactiveCandidate>();
-        for (var goal : goals) {
-            if (goal.checkCount() > 3) continue;
-            float score = 0.35f;
-            candidates.add(new ProactiveCandidate(
-                    UUID.randomUUID().toString(), name(),
-                    "info-" + goal.entityId(), "关于「" + goal.goal() + "」的信息",
-                    score, "活跃兴趣: " + goal.goal(), goal));
-        }
-        return candidates;
+        // TODO: 对接知识库查询，检查是否有与活跃目标匹配的新增内容
+        return List.of();
     }
 
     @Override

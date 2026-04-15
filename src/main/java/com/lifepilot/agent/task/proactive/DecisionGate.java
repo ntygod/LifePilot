@@ -95,7 +95,7 @@ public class DecisionGate {
             }
 
             // 偏好降级: 当前时段或行为领域偏好低 → 降一级
-            if (memoryBridge != null && level.ordinal() > DeliveryLevel.QUEUE.ordinal()) {
+            if (memoryBridge != null && level.isNotifiable()) {
                 if (isLowPreferenceTimeSlot(ctx) || isLowPreferenceBehavior(ctx, action)) {
                     DeliveryLevel downgraded = level == DeliveryLevel.INTERRUPT ? DeliveryLevel.NOTIFY : DeliveryLevel.QUEUE;
                     log.debug("决策门控: 偏好低，{}→{} behavior={}",

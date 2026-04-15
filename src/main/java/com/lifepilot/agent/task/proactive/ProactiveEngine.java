@@ -108,7 +108,7 @@ public class ProactiveEngine {
         // ── Gate 2: 各插件快速检测候选 ──
         var allCandidates = new ArrayList<ProactiveCandidate>();
         for (var behavior : behaviors) {
-            if (!healthTracker.isHealthy(behavior.name())) {
+            if (!healthTracker.tryActivate(behavior.name())) {
                 log.debug("主动引擎: 插件已降级，跳过 detect, behavior={}", behavior.name());
                 continue;
             }
@@ -171,8 +171,8 @@ public class ProactiveEngine {
         for (var ga : gated) {
             try {
                 var result = deliveryEngine.deliver(ga.action(), ga.level(), ctx.userId());
-                // 偏好学习：投递结果写入 L4
-                learnPreferenceFromDelivery(ga.action(), result, ctx.userId(), true);
+                // 偏好学习：投递即正信号，写入 L4
+                learnPreferenceFromDelivery(ga.action(), result, ctx.userId());
                 // 隐式信号：记录投递事件以便后续检测参与度
                 if (implicitSignalCollector != null) {
                     try {
@@ -244,12 +244,12 @@ public class ProactiveEngine {
         return adjusted;
     }
 
-    /** 偏好学习 — 投递结果三维度写入 L4。 */
+    /** 偏好学习 — 投递即正信号，三维度写入 L4。负反馈由 ImplicitSignalCollector 处理。 */
     private void learnPreferenceFromDelivery(ProactiveAction action, DeliveryResult result,
-                                              String userId, boolean positive) {
+                                              String userId) {
         if (memoryBridge == null) return;
         try {
-            float signal = positive ? 0.8f : 0.2f;
+            float signal = 0.8f;
             String timeSlot = TimeSlotResolver.resolve(result.deliveredAt(), ZoneId.systemDefault());
             memoryBridge.observePreference("proactive-timing", timeSlot, signal);
             memoryBridge.observePreference("proactive-domain", action.candidate().behaviorName(), signal);

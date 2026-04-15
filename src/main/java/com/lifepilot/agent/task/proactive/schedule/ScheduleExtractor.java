@@ -31,12 +31,22 @@ public class ScheduleExtractor {
     private static final Pattern SIMPLE_EVENT_PATTERN = Pattern.compile(
             "(?:有个?|安排了?|约了?)\\s*(会议|面试|预约|活动|聚会|出差|培训|复诊|考试|答辩|演讲)");
 
+    private final Clock clock;
+
+    public ScheduleExtractor() {
+        this(Clock.systemDefaultZone());
+    }
+
+    public ScheduleExtractor(Clock clock) {
+        this.clock = clock;
+    }
+
     /**
      * 从对话消息中提取日程事件。
      */
     public List<ScheduleEvent> extract(String userId, String sessionId, List<String> messages, ZoneId zoneId) {
         var results = new ArrayList<ScheduleEvent>();
-        Instant now = Instant.now();
+        Instant now = Instant.now(clock);
 
         for (String msg : messages) {
             Matcher matcher = EVENT_PATTERN.matcher(msg);
@@ -88,7 +98,7 @@ public class ScheduleExtractor {
     }
 
     private LocalDate resolveDate(String ref, ZoneId zoneId) {
-        LocalDate today = LocalDate.now(zoneId);
+        LocalDate today = LocalDate.now(clock);
         return switch (ref) {
             case "今天", "今晚" -> today;
             case "明天" -> today.plusDays(1);

@@ -69,8 +69,12 @@ public class BehaviorHealthTracker {
         return count;
     }
 
-    /** 判断插件是否可运行（未降级，或降级后到了恢复尝试间隔）。 */
-    public boolean isHealthy(String behaviorName) {
+    /**
+     * 尝试激活插件 — 未降级返回 true；降级后每隔 N 次心跳尝试恢复一次。
+     *
+     * <p>注意：此方法有副作用（递增恢复计数器），每个心跳周期每个 behavior 只应调用一次。</p>
+     */
+    public boolean tryActivate(String behaviorName) {
         if (!degradedSince.containsKey(behaviorName)) {
             return true;
         }
