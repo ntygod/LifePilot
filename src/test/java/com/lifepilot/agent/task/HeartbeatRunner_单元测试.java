@@ -1,8 +1,8 @@
 package com.lifepilot.agent.task;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.task.reminder.ProactiveReminderRunResult;
-import com.lifepilot.agent.task.reminder.ProactiveReminderService;
+import com.lifepilot.agent.task.proactive.DetectionLevel;
+import com.lifepilot.agent.task.proactive.ProactiveEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,21 +17,19 @@ import static org.mockito.Mockito.*;
 /**
  * HeartbeatRunner 单元测试。
  *
- * <p>验证心跳唤醒逻辑、活跃时段判断和主动提醒服务调用。</p>
- *
  * @author zsg
  * @since 2026-03-20
  */
 class HeartbeatRunner_单元测试 {
 
     private HeartbeatRunner heartbeatRunner;
-    private ProactiveReminderService proactiveReminderService;
+    private ProactiveEngine proactiveEngine;
     private AgentConfigProperties config;
     private ScheduledExecutorService scheduler;
 
     @BeforeEach
     void setUp() {
-        proactiveReminderService = mock(ProactiveReminderService.class);
+        proactiveEngine = mock(ProactiveEngine.class);
         scheduler = Executors.newScheduledThreadPool(1);
         config = new AgentConfigProperties();
     }
@@ -40,47 +38,54 @@ class HeartbeatRunner_单元测试 {
     void isWithinActiveHours_未配置_全天活跃() {
         config.getTask().setActiveHoursStart(null);
         config.getTask().setActiveHoursEnd(null);
-        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveReminderService);
+        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveEngine);
 
         assertThat(heartbeatRunner.isWithinActiveHours()).isTrue();
     }
 
     @Test
-    void beat_主动提醒启用_调用主动提醒服务() {
-        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveReminderService);
-        when(proactiveReminderService.runOnce()).thenReturn(new ProactiveReminderRunResult(3, 2, 1));
+    void beat_引擎启用_调用心跳() {
+        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveEngine);
+        when(proactiveEngine.heartbeat()).thenReturn(DetectionLevel.FAST);
 
         heartbeatRunner.beat();
 
-        verify(proactiveReminderService, times(1)).runOnce();
+        verify(proactiveEngine, times(1)).heartbeat();
     }
 
     @Test
-    void beat_主动提醒关闭_不调用主动提醒服务() {
+    void beat_引擎关闭_不调用心跳() {
         config.getTask().setProactiveReminderEnabled(false);
-        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveReminderService);
+        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveEngine);
 
         heartbeatRunner.beat();
 
-        verify(proactiveReminderService, never()).runOnce();
+        verify(proactiveEngine, never()).heartbeat();
     }
 
     @Test
-    void beat_不在活跃时段_跳过主动提醒() {
+    void beat_引擎为null_不崩溃() {
+        heartbeatRunner = new HeartbeatRunner(scheduler, config, null);
+
+        assertThatCode(() -> heartbeatRunner.beat()).doesNotThrowAnyException();
+    }
+
+    @Test
+    void beat_不在活跃时段_跳过() {
         LocalTime now = LocalTime.now();
         config.getTask().setActiveHoursStart(now.plusMinutes(2).withSecond(0).withNano(0).toString());
         config.getTask().setActiveHoursEnd(now.plusMinutes(3).withSecond(0).withNano(0).toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveReminderService);
+        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveEngine);
 
         heartbeatRunner.beat();
 
-        verify(proactiveReminderService, never()).runOnce();
+        verify(proactiveEngine, never()).heartbeat();
     }
 
     @Test
-    void beat_主动提醒异常_不抛出() {
-        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveReminderService);
-        when(proactiveReminderService.runOnce()).thenThrow(new RuntimeException("主动提醒异常"));
+    void beat_引擎异常_不抛出() {
+        heartbeatRunner = new HeartbeatRunner(scheduler, config, proactiveEngine);
+        when(proactiveEngine.heartbeat()).thenThrow(new RuntimeException("模拟异常"));
 
         assertThatCode(() -> heartbeatRunner.beat()).doesNotThrowAnyException();
     }

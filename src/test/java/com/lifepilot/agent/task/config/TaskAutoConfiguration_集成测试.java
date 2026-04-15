@@ -186,7 +186,7 @@ class TaskAutoConfiguration_集成测试 {
 
         // ===== HeartbeatRunner Bean =====
         HeartbeatRunner heartbeatRunner = taskConfig.heartbeatRunner(
-                sharedScheduler, config, null, null);
+                sharedScheduler, config, null);
         assertThat(heartbeatRunner).isNotNull();
 
         scheduler.shutdownNow();
