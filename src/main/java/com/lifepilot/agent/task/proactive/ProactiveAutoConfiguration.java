@@ -1,26 +1,24 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
-import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
-import com.lifepilot.agent.task.proactive.behavior.ContextPrepBehavior;
-import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
-import com.lifepilot.agent.task.proactive.behavior.InfoSupplementBehavior;
-import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
-import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
-import com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior;
+import com.lifepilot.agent.task.config.ReminderAutoConfiguration;
+import com.lifepilot.agent.task.proactive.behavior.*;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
+import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
+import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationAutoConfiguration;
 import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.prompt.PromptRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,7 +34,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-04-14
  */
-@AutoConfiguration(after = com.lifepilot.agent.task.config.ReminderAutoConfiguration.class)
+@AutoConfiguration(after = {ReminderAutoConfiguration.class, NotificationAutoConfiguration.class})
 public class ProactiveAutoConfiguration {
 
     @Bean
@@ -48,9 +46,9 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ProactiveMemoryBridge proactiveMemoryBridge(
-            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
-            @Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory,
-            @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+            @Autowired(required = false) SemanticMemory semanticMemory,
+            @Autowired(required = false) EpisodicMemory episodicMemory,
+            @Autowired(required = false) ProceduralMemory proceduralMemory,
             GoalTrackingRepository goalTrackingRepository) {
         return new ProactiveMemoryBridge(semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository);
     }
@@ -83,9 +81,9 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(NotificationService.class)
-    public DeliveryEngine proactiveDeliveryEngine(NotificationService notificationService,
-                                                   QueuedActionRepository queuedActionRepository) {
+    public DeliveryEngine proactiveDeliveryEngine(
+            @Autowired(required = false) NotificationService notificationService,
+            QueuedActionRepository queuedActionRepository) {
         return new DeliveryEngine(notificationService, queuedActionRepository);
     }
 
@@ -168,9 +166,9 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ConversationCompletionHook conversationCompletionHook(
-            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector,
-            @Autowired(required = false) com.lifepilot.interaction.web.service.ConversationSummaryGenerator summaryGenerator,
-            @Autowired(required = false) com.lifepilot.memory.consolidation.UserProfileConsolidator userProfileConsolidator) {
+            @Autowired(required = false) ImplicitSignalCollector implicitSignalCollector,
+            @Autowired(required = false) ConversationSummaryGenerator summaryGenerator,
+            @Autowired(required = false) UserProfileConsolidator userProfileConsolidator) {
         return new ConversationCompletionHook(implicitSignalCollector, summaryGenerator, userProfileConsolidator);
     }
 
@@ -178,10 +176,10 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector(
+    public ImplicitSignalCollector implicitSignalCollector(
             @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
             @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
-        return new com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector(
+        return new ImplicitSignalCollector(
                 memoryBridge, trustUpgradeService);
     }
 
@@ -189,7 +187,6 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ProactiveBehavior.class, DeliveryEngine.class})
     public ProactiveEngine proactiveEngine(List<ProactiveBehavior> behaviors,
                                            DecisionGate decisionGate,
                                            DeliveryEngine deliveryEngine,
@@ -199,7 +196,7 @@ public class ProactiveAutoConfiguration {
                                            @Autowired(required = false) ReminderFocusStateHolder focusStateHolder,
                                            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
                                            @Autowired(required = false) TrustUpgradeService trustUpgradeService,
-                                           @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector) {
+                                           @Autowired(required = false) ImplicitSignalCollector implicitSignalCollector) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
                 notificationProperties, notificationRepository, config, focusStateHolder,
                 memoryBridge, trustUpgradeService, implicitSignalCollector);

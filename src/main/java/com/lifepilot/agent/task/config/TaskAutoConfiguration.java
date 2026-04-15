@@ -1,11 +1,12 @@
 package com.lifepilot.agent.task.config;
 
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.config.AgentAutoConfiguration;
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.agent.task.HeartbeatRunner;
+import com.lifepilot.agent.task.proactive.ProactiveEngine;
 import com.lifepilot.agent.task.reminder.ReminderReplayEvaluationScheduler;
 import com.lifepilot.agent.task.reminder.ReminderRetentionScheduler;
 import com.lifepilot.config.threadpool.SharedScheduler;
@@ -71,7 +72,7 @@ public class TaskAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public HeartbeatRunner heartbeatRunner(SharedScheduler sharedScheduler,
                                            AgentConfigProperties config,
-                                           @Autowired(required = false) com.lifepilot.agent.task.proactive.ProactiveEngine proactiveEngine) {
+                                           @Autowired(required = false) ProactiveEngine proactiveEngine) {
         return new HeartbeatRunner(
                 sharedScheduler.heartbeat(),
                 config,

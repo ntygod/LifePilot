@@ -60,6 +60,8 @@ public class DefaultReminderMessageGenerator implements ReminderMessageGenerator
         }
         try {
             String prompt = promptRegistry.render(PROMPT_KEY, buildPromptVariables(decision, snapshot, context));
+            // skipCache=true：每个 topic 的 prompt 模板相似但内容不同，
+            // 语义缓存会误命中导致不同 topic 返回相同文案
             LlmResponse response = generationRouter.call(
                     resolveScene(),
                     prompt,
@@ -67,7 +69,8 @@ public class DefaultReminderMessageGenerator implements ReminderMessageGenerator
                     null,
                     null,
                     GenerationCapability.CHAT,
-                    Duration.ofSeconds(Math.max(3, config.getTask().getProactiveReminderLlmTimeoutSeconds()))
+                    Duration.ofSeconds(Math.max(3, config.getTask().getProactiveReminderLlmTimeoutSeconds())),
+                    true
             );
             String body = sanitize(response.content());
             if (body.isBlank()) {

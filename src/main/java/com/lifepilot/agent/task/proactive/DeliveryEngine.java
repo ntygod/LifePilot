@@ -5,6 +5,7 @@ import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -15,7 +16,8 @@ import java.util.UUID;
  * 四级投递引擎。
  *
  * <p>根据 {@link DeliveryLevel} 将主动行为动作路由到对应投递通道：
- * SILENT（仅记录）→ QUEUE（排队）→ NOTIFY（通知）→ INTERRUPT（打断）。</p>
+ * SILENT（仅记录）→ QUEUE（排队）→ NOTIFY（通知）→ INTERRUPT（打断）。
+ * 当 {@link NotificationService} 不可用时，NOTIFY/INTERRUPT 降级为 QUEUE。</p>
  *
  * @author zsg
  * @since 2026-04-14
@@ -25,13 +27,17 @@ public class DeliveryEngine {
     private static final Logger log = LoggerFactory.getLogger(DeliveryEngine.class);
     private static final String PROACTIVE_TYPE = "proactive_action";
 
+    @Nullable
     private final NotificationService notificationService;
     private final QueuedActionRepository queuedActionRepository;
 
-    public DeliveryEngine(NotificationService notificationService,
+    public DeliveryEngine(@Nullable NotificationService notificationService,
                           QueuedActionRepository queuedActionRepository) {
         this.notificationService = notificationService;
         this.queuedActionRepository = queuedActionRepository;
+        if (notificationService == null) {
+            log.warn("投递引擎: NotificationService 不可用，NOTIFY/INTERRUPT 将降级为 QUEUE");
+        }
     }
 
     /**
@@ -76,6 +82,10 @@ public class DeliveryEngine {
     }
 
     private DeliveryResult deliverNotification(ProactiveAction action, String userId, boolean interrupt) {
+        if (notificationService == null) {
+            log.debug("投递引擎: NotificationService 不可用，{} 降级为 QUEUE", interrupt ? "INTERRUPT" : "NOTIFY");
+            return deliverQueue(action, userId);
+        }
         var candidate = action.candidate();
         var metadata = new LinkedHashMap<String, String>();
         metadata.put("behaviorName", candidate.behaviorName());

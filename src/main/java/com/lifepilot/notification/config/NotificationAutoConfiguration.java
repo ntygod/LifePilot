@@ -1,6 +1,7 @@
 package com.lifepilot.notification.config;
 
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.ChannelUserMappingCache;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.notification.DefaultNotificationService;
 import com.lifepilot.notification.NotificationRepository;
@@ -8,6 +9,7 @@ import com.lifepilot.notification.NotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -42,13 +44,15 @@ public class NotificationAutoConfiguration {
     public NotificationService notificationService(ChannelInstanceService channelInstanceService,
                                                    ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                                    NotificationRepository notificationRepository,
-                                                   NotificationProperties properties) {
+                                                   NotificationProperties properties,
+                                                   @Autowired(required = false) ChannelUserMappingCache userMappingCache) {
         log.info("通知模块: 注册 DefaultNotificationService");
         return new DefaultNotificationService(
                 channelInstanceService,
                 channelDeliveryDispatcher,
                 notificationRepository,
-                properties
+                properties,
+                userMappingCache
         );
     }
 }

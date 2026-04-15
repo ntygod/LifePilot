@@ -6,10 +6,12 @@ import com.lifepilot.interaction.model.ChannelInstance;
 import com.lifepilot.interaction.model.ChannelInstanceStatus;
 import com.lifepilot.interaction.model.DeliveryMode;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
+import com.lifepilot.interaction.runtime.ChannelUserMappingCache;
 import com.lifepilot.interaction.runtime.model.ChannelRuntimeDeliveryRequest;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
+import org.springframework.lang.Nullable;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
@@ -37,15 +39,26 @@ public class DefaultNotificationService implements NotificationService {
     private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
     private final NotificationRepository notificationRepository;
     private final NotificationProperties properties;
+    @Nullable
+    private final ChannelUserMappingCache userMappingCache;
 
     public DefaultNotificationService(ChannelInstanceService channelInstanceService,
                                       ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                       NotificationRepository notificationRepository,
                                       NotificationProperties properties) {
+        this(channelInstanceService, channelDeliveryDispatcher, notificationRepository, properties, null);
+    }
+
+    public DefaultNotificationService(ChannelInstanceService channelInstanceService,
+                                      ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                      NotificationRepository notificationRepository,
+                                      NotificationProperties properties,
+                                      @Nullable ChannelUserMappingCache userMappingCache) {
         this.channelInstanceService = channelInstanceService;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.notificationRepository = notificationRepository;
         this.properties = properties;
+        this.userMappingCache = userMappingCache;
     }
 
     @Override
@@ -117,16 +130,54 @@ public class DefaultNotificationService implements NotificationService {
             return;
         }
 
+        // 外部渠道：使用实例 config 中的 defaultPlatformUserId 替换内部用户 ID
+        String platformUserId = resolvePlatformUserId(instance, request.targetUserId());
+        if (platformUserId == null || platformUserId.isBlank()) {
+            log.warn("渠道实例未配置 defaultPlatformUserId，跳过发送: instanceId={}, internalUserId={}",
+                    instance.instanceId(), request.targetUserId());
+            return;
+        }
+
+        // 同时传 platformSessionId — 飞书等平台的 deliver API 需要 chat_id 定位发送目标
+        String platformSessionId = userMappingCache != null
+                ? userMappingCache.resolveSessionId(instance.instanceId()) : null;
         var delivery = new ChannelRuntimeDeliveryRequest(
                 instance.instanceId(),
                 record.id(),
                 DeliveryMode.ASYNC_PUSH,
-                new ChannelRuntimeDeliveryRequest.Target(request.targetUserId(), null, Map.of()),
+                new ChannelRuntimeDeliveryRequest.Target(platformUserId, platformSessionId, Map.of()),
                 channelDeliveryDispatcher.buildContent(request.content()),
                 List.of(),
                 buildDeliveryMetadata(request, record)
         );
         channelDeliveryDispatcher.deliver(instance, delivery);
+    }
+
+    /**
+     * 解析外部渠道的平台用户 ID。
+     *
+     * <p>优先级：
+     * <ol>
+     *   <li>自动学习的映射（入站消息中观察到的平台用户 ID）</li>
+     *   <li>内部 userId 本身是平台格式（如飞书 ou_xxx）则直接使用</li>
+     * </ol>
+     * </p>
+     */
+    @Nullable
+    private String resolvePlatformUserId(ChannelInstance instance, String internalUserId) {
+        // 1. 自动学习的映射（从入站消息中观察到的最近一个平台用户 ID）
+        if (userMappingCache != null) {
+            String cached = userMappingCache.resolve(instance.instanceId());
+            if (cached != null && !cached.isBlank()) {
+                return cached;
+            }
+        }
+        // 2. 内部 userId 本身是平台格式（如飞书 ou_xxx）则直接使用
+        if (internalUserId != null && !internalUserId.equals("default")
+                && !internalUserId.isBlank()) {
+            return internalUserId;
+        }
+        return null;
     }
 
     private Map<String, Object> buildDeliveryMetadata(NotificationRequest request, NotificationRecord record) {

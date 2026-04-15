@@ -116,7 +116,8 @@ public class SseSessionManager {
         emitter.onError(ex -> {
             emitters.remove(notificationStreamId);
             emitterLocks.remove(notificationStreamId);
-            log.warn("通知 SseEmitter 异常: streamId={}", notificationStreamId, ex);
+            log.debug("通知 SseEmitter 断开: streamId={}, reason={}", notificationStreamId,
+                    ex != null ? ex.getMessage() : "unknown");
         });
 
         emitters.put(notificationStreamId, emitter);
@@ -376,7 +377,7 @@ public class SseSessionManager {
                             .data("");
                     doSend(streamId, emitter, event);
                 } catch (IOException e) {
-                    log.warn("心跳发送失败，关闭连接: streamId={}", streamId, e);
+                    log.debug("心跳发送失败，关闭连接: streamId={}, reason={}", streamId, e.getMessage());
                     closeEmitter(streamId);
                 } catch (Exception e) {
                     log.warn("心跳发送异常: streamId={}", streamId, e);
