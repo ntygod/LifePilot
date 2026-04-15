@@ -10,6 +10,10 @@ const BALL_SIZE: f64 = 56.0;
 const BUBBLE_WIDTH: f64 = 340.0;
 const BUBBLE_HEIGHT: f64 = 248.0;
 
+/// 队列模式
+const QUEUE_WIDTH: f64 = 320.0;
+const QUEUE_HEIGHT: f64 = 420.0;
+
 /// 对话模式
 const CHAT_WIDTH: f64 = 368.0;
 const CHAT_HEIGHT: f64 = 500.0;
@@ -95,6 +99,7 @@ pub fn resize_float_window(app: AppHandle, mode: String) -> Result<(), String> {
     let (w, h) = match mode.as_str() {
         "idle" => (BALL_SIZE, BALL_SIZE),
         "bubble" => (BUBBLE_WIDTH, BUBBLE_HEIGHT),
+        "queue" => (QUEUE_WIDTH, QUEUE_HEIGHT),
         "chat" => (CHAT_WIDTH, CHAT_HEIGHT),
         _ => return Err(format!("未知浮窗模式: {}", mode)),
     };

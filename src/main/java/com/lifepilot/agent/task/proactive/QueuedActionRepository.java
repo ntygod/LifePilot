@@ -74,6 +74,19 @@ public class QueuedActionRepository {
                 """, Instant.now().toString(), id);
     }
 
+    /** 按 ID 删除单条排队动作。 */
+    public int deleteById(String id) {
+        return jdbc.update("DELETE FROM proactive_queued_actions WHERE id = ?", id);
+    }
+
+    /** 统计用户未展示的排队动作数量。 */
+    public int countPendingByUserId(String userId) {
+        var result = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM proactive_queued_actions WHERE user_id = ? AND shown = 0",
+                Integer.class, userId);
+        return result != null ? result : 0;
+    }
+
     /** 清理过期排队动作（超过指定时间的记录）。 */
     public int deleteOlderThan(Instant before) {
         return jdbc.update("""

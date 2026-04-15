@@ -73,6 +73,7 @@
   OptionItem,
   // 通知中心类型
   NotificationItem,
+  QueuedAction,
   SseInteractionEvent,
   // 记忆管理类型
   MemoryStats,
@@ -1602,6 +1603,25 @@ export const notificationApi = {
       body: JSON.stringify({ feedbackType }),
     })
   }
+}
+
+// ========== 主动引擎 API ==========
+
+export const proactiveApi = {
+  /** 获取待阅队列 */
+  getQueue(userId: string = 'default', limit: number = 20): Promise<QueuedAction[]> {
+    return request(`/proactive/queue?userId=${encodeURIComponent(userId)}&limit=${limit}`)
+  },
+
+  /** 标记队列条目已展示 */
+  markShown(id: string): Promise<void> {
+    return request(`/proactive/queue/${id}/shown`, { method: 'PUT' })
+  },
+
+  /** 删除队列条目 */
+  deleteQueueItem(id: string): Promise<void> {
+    return request(`/proactive/queue/${id}`, { method: 'DELETE' })
+  },
 }
 
 // ========== 记忆管理 API ==========

@@ -9,7 +9,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
  * 通知：对话气泡风格，毛玻璃 + slide-up 动画
  */
 
-type FloatState = 'idle' | 'bubble' | 'chat'
+type FloatState = 'idle' | 'bubble' | 'chat' | 'queue'
 type CatMood = 'normal' | 'happy' | 'surprised' | 'alert'
 type FeedbackType = 'ACTED' | 'SNOOZED' | 'NOT_RELEVANT'
 
@@ -18,6 +18,48 @@ interface ReminderData {
   title: string
   content: string
   pushLevel: string
+  behavior?: string
+}
+
+interface QueueItem {
+  id: string
+  behavior: string
+  topicKey: string
+  title: string
+  content: string
+  score: number
+  createdAt: string
+}
+
+/** 行为类型视觉映射 — 与 src/constants/behaviorTheme.ts 保持一致 */
+const BEHAVIOR_MAP: Record<string, { label: string; hue: number; sat: number; lit: number }> = {
+  'follow-up': { label: '追问进展', hue: 215, sat: 65, lit: 52 },
+  'insight': { label: '关联洞察', hue: 38, sat: 72, lit: 50 },
+  'clipboard': { label: '剪贴板识别', hue: 24, sat: 78, lit: 52 },
+  'report': { label: '日报周报', hue: 152, sat: 48, lit: 42 },
+  'info-supplement': { label: '信息补充', hue: 186, sat: 55, lit: 42 },
+  'context-prep': { label: '情境准备', hue: 230, sat: 50, lit: 52 },
+  'task-execution': { label: '任务代行', hue: 2, sat: 72, lit: 54 },
+  'reminder': { label: '定时提醒', hue: 160, sat: 30, lit: 42 },
+}
+
+function getBehaviorLabel(key?: string): string {
+  return key && BEHAVIOR_MAP[key] ? BEHAVIOR_MAP[key].label : '主动提醒'
+}
+
+function behaviorVars(key?: string): Record<string, string> {
+  const b = key ? BEHAVIOR_MAP[key] : null
+  if (!b) return { '--bh-hue': '160', '--bh-sat': '30%', '--bh-lit': '42%' }
+  return { '--bh-hue': String(b.hue), '--bh-sat': `${b.sat}%`, '--bh-lit': `${b.lit}%` }
+}
+
+function behaviorBadgeStyle(key?: string): Record<string, string> {
+  const b = key ? BEHAVIOR_MAP[key] : null
+  if (!b) return { background: 'var(--blue-bg)', color: 'var(--blue)' }
+  return {
+    background: `hsl(${b.hue} ${b.sat}% ${b.lit}% / 0.12)`,
+    color: `hsl(${b.hue} ${b.sat}% ${Math.max(0, b.lit - 8)}%)`,
+  }
 }
 
 // ─── 状态 ────────────────────────────────────────────────
@@ -37,7 +79,12 @@ const pupilOffsetX = ref(0)
 const pupilOffsetY = ref(0)
 let blinkInterval: ReturnType<typeof setInterval> | null = null
 
-const isExpanded = computed(() => state.value === 'bubble' || state.value === 'chat')
+// ─── 队列状态 ──────────────────────────────────────────
+const queueItems = ref<QueueItem[]>([])
+const queueCount = computed(() => queueItems.value.length)
+let queuePollTimer: ReturnType<typeof setInterval> | null = null
+
+const isExpanded = computed(() => state.value !== 'idle')
 const statusDot = computed(() =>
   hasPending.value ? '#4B83F0' : backendOk.value ? '#34C759' : '#aaa'
 )
@@ -114,6 +161,8 @@ function handleClick() {
     // 单击
     if (hasPending.value && reminder.value) {
       showBubble(reminder.value)
+    } else if (queueCount.value > 0) {
+      switchToQueue()
     } else {
       // 无通知时单击只做表情反馈，不开对话
       setCatMood('happy')
@@ -159,6 +208,74 @@ async function switchToChat() {
   // 先 resize 窗口到对话尺寸，再切状态（避免对话面板被裁剪）
   await invoke('resize_float_window', { mode: 'chat' })
   state.value = 'chat'
+}
+
+// ─── 队列 ────────────────────────────────────────────────
+async function fetchQueueData() {
+  const port = await getPort()
+  try {
+    const resp = await fetch(`http://localhost:${port}/api/proactive/queue?userId=default&limit=20`)
+    if (resp.ok) {
+      const result = await resp.json()
+      queueItems.value = result.data ?? []
+    }
+  } catch { /* 静默 */ }
+}
+
+async function switchToQueue() {
+  await fetchQueueData()
+  if (queueItems.value.length === 0) {
+    setCatMood('happy')
+    setTimeout(() => setCatMood('normal'), 600)
+    return
+  }
+  await invoke('resize_float_window', { mode: 'queue' })
+  state.value = 'queue'
+}
+
+function closeQueue() {
+  state.value = 'idle'
+}
+
+function onQueueAfterLeave() {
+  invoke('resize_float_window', { mode: 'idle' })
+}
+
+async function openQueueItem(item: QueueItem) {
+  // 标记已展示
+  const port = await getPort()
+  fetch(`http://localhost:${port}/api/proactive/queue/${item.id}/shown`, { method: 'PUT' }).catch(() => {})
+  // 切到气泡展示
+  await invoke('resize_float_window', { mode: 'bubble' })
+  state.value = 'bubble'
+  showBubble({
+    notificationId: item.id,
+    title: item.title,
+    content: item.content,
+    pushLevel: 'NORMAL_PUSH',
+    behavior: item.behavior,
+  })
+  // 从队列移除
+  queueItems.value = queueItems.value.filter(q => q.id !== item.id)
+}
+
+async function dismissQueueItem(id: string) {
+  const port = await getPort()
+  fetch(`http://localhost:${port}/api/proactive/queue/${id}`, { method: 'DELETE' }).catch(() => {})
+  queueItems.value = queueItems.value.filter(q => q.id !== id)
+  if (queueItems.value.length === 0 && state.value === 'queue') {
+    closeQueue()
+  }
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return '刚刚'
+  if (mins < 60) return `${mins}分钟前`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}小时前`
+  return `${Math.floor(hours / 24)}天前`
 }
 
 function onBubbleAfterLeave() {
@@ -326,11 +443,20 @@ async function connectNotificationStream() {
         const contentJson = data.contentJson as string
         const content = parseContentSummary(contentJson)
         const metadata = data.metadataJson ? JSON.parse(data.metadataJson) : {}
+        const deliveryLevel = metadata.deliveryLevel as string | undefined
+        const behaviorName = metadata.behaviorName as string | undefined
         const title = resolveTitle(typeId, metadata)
-        console.log('[浮窗] 收到通知:', typeId, title)
-        // 先 resize 到气泡尺寸
+        console.log('[浮窗] 收到通知:', typeId, title, deliveryLevel)
+
+        // QUEUE 级别：刷新队列计数，不弹气泡
+        if (deliveryLevel === 'QUEUE') {
+          fetchQueueData()
+          return
+        }
+
+        // NOTIFY/INTERRUPT：弹气泡
         invoke('resize_float_window', { mode: 'bubble' }).then(() => {
-          showBubble({ notificationId: data.id, title, content, pushLevel: 'NORMAL_PUSH' })
+          showBubble({ notificationId: data.id, title, content, pushLevel: deliveryLevel ?? 'NORMAL_PUSH', behavior: behaviorName })
         })
       }
     } catch (e) { console.error('[浮窗] 通知处理异常:', e) }
@@ -396,11 +522,16 @@ onMounted(async () => {
 
   // 浮窗直连 SSE 通知流（不依赖主窗口 invoke 转发）
   connectNotificationStream()
+
+  // 定时拉取队列（60秒）
+  fetchQueueData()
+  queuePollTimer = setInterval(fetchQueueData, 60000)
 })
 
 onUnmounted(() => {
   clearDismiss()
   if (blinkInterval) clearInterval(blinkInterval)
+  if (queuePollTimer) clearInterval(queuePollTimer)
   notificationSource?.close()
   cleanups.forEach(f => f())
 })
@@ -488,6 +619,10 @@ onUnmounted(() => {
 
       <!-- 状态点 -->
       <i class="ball__dot" :style="{ background: statusDot }"/>
+      <!-- 队列角标 -->
+      <span v-if="queueCount > 0 && state === 'idle'" class="ball__badge">
+        {{ queueCount > 9 ? '9+' : queueCount }}
+      </span>
     </div>
 
     <!-- ═══ 通知气泡 ═══ -->
@@ -499,7 +634,9 @@ onUnmounted(() => {
         @mouseleave="isHovering = false"
       >
         <div class="bubble__head">
-          <span class="bubble__badge">{{ reminder.title || '主动提醒' }}</span>
+          <span class="bubble__badge" :style="behaviorBadgeStyle(reminder.behavior)">
+            {{ getBehaviorLabel(reminder.behavior) }}
+          </span>
           <button class="bubble__close" @click="dismissBubble">&times;</button>
         </div>
         <p class="bubble__text">{{ reminder.content }}</p>
@@ -507,6 +644,37 @@ onUnmounted(() => {
           <button class="bubble__btn bubble__btn--ok" @click="feedback('ACTED')">有用</button>
           <button class="bubble__btn" @click="feedback('SNOOZED')">知道了</button>
           <button class="bubble__btn bubble__btn--no" @click="feedback('NOT_RELEVANT')">不需要</button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ═══ 队列面板 ═══ -->
+    <Transition name="queue" @after-leave="onQueueAfterLeave">
+      <div v-if="state === 'queue'" class="queue-panel">
+        <header class="queue-panel__head">
+          <span class="queue-panel__title">待阅建议</span>
+          <span class="queue-panel__count">{{ queueCount }}</span>
+          <button class="queue-panel__close" @click="closeQueue">&times;</button>
+        </header>
+        <div class="queue-panel__list">
+          <div
+            v-for="(item, idx) in queueItems"
+            :key="item.id"
+            class="queue-card"
+            :style="{ ...behaviorVars(item.behavior), '--stagger': `${idx * 50}ms` }"
+            @click="openQueueItem(item)"
+          >
+            <div class="queue-card__bar" />
+            <div class="queue-card__body">
+              <span class="queue-card__badge" :style="behaviorBadgeStyle(item.behavior)">
+                {{ getBehaviorLabel(item.behavior) }}
+              </span>
+              <p class="queue-card__text">{{ item.title }}</p>
+              <span class="queue-card__time">{{ relativeTime(item.createdAt) }}</span>
+            </div>
+            <button class="queue-card__dismiss" @click.stop="dismissQueueItem(item.id)">&times;</button>
+          </div>
+          <p v-if="queueItems.length === 0" class="queue-panel__empty">暂无待阅建议</p>
         </div>
       </div>
     </Transition>
@@ -725,4 +893,75 @@ html,body{background:transparent;overflow:hidden;font-family:var(--font);color:v
 .chat-leave-active{animation:chat-out .2s var(--ease) forwards}
 @keyframes chat-in{from{opacity:0;transform:translateY(20px) scale(.92);transform-origin:bottom right}to{opacity:1;transform:none}}
 @keyframes chat-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(12px) scale(.95)}}
+
+/* ─── 队列角标 ─────────────────────────────────────────── */
+.ball__badge{
+  position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;
+  padding:0 4px;border-radius:8px;
+  background:var(--blue);color:#fff;
+  font-size:10px;font-weight:700;line-height:16px;text-align:center;
+  pointer-events:none;animation:badge-in .3s var(--spring);
+}
+@keyframes badge-in{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:scale(1)}}
+
+/* ─── 队列面板 ─────────────────────────────────────────── */
+.queue-panel{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  background:var(--bg);
+  border:1px solid var(--bdr);
+  border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden;z-index:15;
+}
+.queue-panel__head{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 14px;border-bottom:1px solid var(--bdr);
+}
+.queue-panel__title{font-size:14px;font-weight:600;flex:1}
+.queue-panel__count{
+  font-size:11px;font-weight:700;color:var(--blue);
+  background:var(--blue-bg);padding:1px 8px;border-radius:8px;
+}
+.queue-panel__close{
+  width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  border:0;background:0;color:var(--fg2);cursor:pointer;border-radius:6px;font-size:16px;
+}
+.queue-panel__close:hover{background:var(--hover);color:var(--fg)}
+.queue-panel__list{flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.queue-panel__empty{text-align:center;color:var(--fg2);font-size:13px;padding:40px 0}
+
+/* 队列卡片 */
+.queue-card{
+  display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+  border-radius:10px;cursor:pointer;position:relative;
+  transition:background .15s,transform .15s var(--ease);
+  animation:card-stagger .3s var(--spring) backwards;
+  animation-delay:var(--stagger, 0ms);
+}
+.queue-card:hover{background:var(--hover);transform:translateY(-1px)}
+.queue-card__bar{
+  width:2px;height:100%;min-height:32px;border-radius:1px;flex-shrink:0;
+  background:hsl(var(--bh-hue) var(--bh-sat) var(--bh-lit));
+}
+.queue-card__body{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.queue-card__badge{
+  align-self:flex-start;font-size:10px;font-weight:600;
+  padding:1px 6px;border-radius:6px;
+}
+.queue-card__text{font-size:13px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.queue-card__time{font-size:11px;color:var(--fg2)}
+.queue-card__dismiss{
+  position:absolute;top:6px;right:6px;width:18px;height:18px;
+  display:flex;align-items:center;justify-content:center;
+  border:0;background:0;color:var(--fg2);cursor:pointer;border-radius:4px;
+  font-size:12px;opacity:0;transition:opacity .15s;
+}
+.queue-card:hover .queue-card__dismiss{opacity:1}
+.queue-card__dismiss:hover{background:var(--hover);color:var(--red)}
+
+@keyframes card-stagger{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+
+/* 队列面板入场/退场 */
+.queue-enter-active{animation:queue-in .3s var(--spring) forwards}
+.queue-leave-active{animation:queue-out .2s var(--ease) forwards}
+@keyframes queue-in{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}
+@keyframes queue-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(10px) scale(.97)}}
 </style>

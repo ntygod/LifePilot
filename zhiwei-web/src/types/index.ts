@@ -1586,6 +1586,20 @@ export interface NotificationItem {
   feedbackType?: string
 }
 
+/** 主动引擎排队动作 */
+export interface QueuedAction {
+  id: string
+  behavior: string
+  topicKey: string
+  title: string
+  content: string
+  score: number
+  metadata: Record<string, string> | null
+  shown: boolean
+  createdAt: string
+  shownAt: string | null
+}
+
 /** 解析后的详情 */
 export interface ParsedDetail {
   type: 'TEXT' | 'MARKDOWN' | 'CARD' | 'UNKNOWN'
