@@ -471,6 +471,12 @@ public class MemoryProperties {
         /** 受保护的实体类型列表 — 这些类型的实体永不被遗忘，默认 PREFERENCE/HABIT/GOAL。 */
         private Set<String> protectedTypes = Set.of("PREFERENCE", "HABIT", "GOAL");
 
+        /** 近期访问保护天数 — 在此天数内被访问过的实体受保护，默认 7 天。 */
+        private int recentAccessProtectionDays = 7;
+
+        /** 高频访问保护阈值 — accessCount ≥ 此值的实体受保护，默认 10。 */
+        private int highAccessCountProtection = 10;
+
         public String getCron() { return cron; }
         public void setCron(String cron) { this.cron = cron; }
 
@@ -503,6 +509,12 @@ public class MemoryProperties {
 
         public Set<String> getProtectedTypes() { return protectedTypes; }
         public void setProtectedTypes(Set<String> protectedTypes) { this.protectedTypes = protectedTypes; }
+
+        public int getRecentAccessProtectionDays() { return recentAccessProtectionDays; }
+        public void setRecentAccessProtectionDays(int recentAccessProtectionDays) { this.recentAccessProtectionDays = recentAccessProtectionDays; }
+
+        public int getHighAccessCountProtection() { return highAccessCountProtection; }
+        public void setHighAccessCountProtection(int highAccessCountProtection) { this.highAccessCountProtection = highAccessCountProtection; }
     }
 
     /**

@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
 
@@ -139,6 +140,8 @@ public class ForgettingEngine {
      * <ul>
      *   <li>实体类型在 {@code protectedTypes} 配置列表中（默认 PREFERENCE / HABIT / GOAL）</li>
      *   <li>importanceScore ≥ {@code protectionThreshold} 配置值（默认 0.9）</li>
+     *   <li>accessCount ≥ {@code highAccessCountProtection} 配置值（默认 10）— 高频访问保护</li>
+     *   <li>最近 {@code recentAccessProtectionDays} 天内被访问过（默认 7 天）— 近期访问保护</li>
      * </ul></p>
      *
      * @param entity 目标实体
@@ -149,7 +152,21 @@ public class ForgettingEngine {
         if (config.getProtectedTypes().contains(entity.type().name())) {
             return true;
         }
-        return entity.importanceScore() >= config.getProtectionThreshold();
+        if (entity.importanceScore() >= config.getProtectionThreshold()) {
+            return true;
+        }
+        // 高频访问保护：访问次数达到阈值的实体受保护
+        if (entity.accessCount() >= config.getHighAccessCountProtection()) {
+            return true;
+        }
+        // 近期访问保护：在保护窗口内被访问过的实体受保护
+        if (entity.lastAccessedAt() != null) {
+            var protectionWindow = Instant.now().minus(config.getRecentAccessProtectionDays(), ChronoUnit.DAYS);
+            if (entity.lastAccessedAt().isAfter(protectionWindow)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 遗忘动作执行结果 — 携带动作名称和可选的压缩摘要。 */
