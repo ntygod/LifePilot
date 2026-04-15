@@ -256,6 +256,32 @@ public class ProactiveMemoryBridge {
         }
     }
 
+    /**
+     * 将主动引擎洞察回写到 L3 语义记忆，使其可被 HybridRetriever 检索。
+     *
+     * @param category 偏好类别（如 "proactive-domain"）
+     * @param key      偏好键（如行为名）
+     * @param value    信号值 [0, 1]
+     * @param evidence 证据描述
+     */
+    public void syncInsightToL3(String category, String key, float value, String evidence) {
+        if (semanticMemory == null) return;
+        try {
+            String entityName = "proactive_insight_" + category + "_" + key;
+            String description = "主动引擎洞察: %s/%s, 信号=%.2f, 证据=%s".formatted(category, key, value, evidence);
+
+            var entity = new TemporalEntity(
+                    null, EntityType.PREFERENCE, entityName, description,
+                    Map.of("category", category, "key", key, "signal", value, "evidence", evidence),
+                    1, true, Instant.now(), null, null,
+                    0.8f, Math.max(0.5f, value), 0, null, Instant.now(), Instant.now());
+            semanticMemory.upsertWithConflictDetection(entity, "proactive-engine");
+            log.debug("记忆桥接: 主动洞察回写 L3, name={}", entityName);
+        } catch (Exception e) {
+            log.debug("记忆桥接: 主动洞察回写 L3 失败: {}", e.getMessage());
+        }
+    }
+
     /** 解析偏好值为 float，解析失败返回默认值。 */
     public static float parseFloat(String value, float defaultValue) {
         try {
