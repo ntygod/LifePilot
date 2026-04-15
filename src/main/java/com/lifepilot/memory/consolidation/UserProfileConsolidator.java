@@ -59,6 +59,12 @@ public class UserProfileConsolidator {
     /** LLM 调用超时。 */
     private static final Duration LLM_TIMEOUT = Duration.ofSeconds(60);
 
+    /** 两次巩固之间的最小间隔 — 防止频繁调用 LLM。 */
+    private static final Duration MIN_INTERVAL = Duration.ofHours(2);
+
+    /** 上次巩固时间（防抖用）。 */
+    private volatile Instant lastConsolidatedAt = Instant.EPOCH;
+
     @Nullable
     private final SemanticMemory semanticMemory;
     @Nullable
@@ -93,9 +99,15 @@ public class UserProfileConsolidator {
             log.debug("用户画像巩固: 核心依赖缺失，已跳过");
             return;
         }
+        // 防抖：距上次巩固不到 MIN_INTERVAL 则跳过
+        if (Duration.between(lastConsolidatedAt, Instant.now()).compareTo(MIN_INTERVAL) < 0) {
+            log.debug("用户画像巩固: 距上次不到{}小时，已跳过", MIN_INTERVAL.toHours());
+            return;
+        }
 
         try {
             doConsolidate();
+            lastConsolidatedAt = Instant.now();
         } catch (Exception e) {
             log.warn("用户画像巩固: 执行失败, error={}", e.getMessage(), e);
         }

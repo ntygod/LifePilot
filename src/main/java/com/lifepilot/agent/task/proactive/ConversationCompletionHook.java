@@ -2,16 +2,14 @@ package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
+import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.Nullable;
 
 /**
- * 对话完成钩子 — 在每轮对话结束后触发隐式信号检测。
- *
- * <p>画像巩固和意图提取由记忆模块（RealtimeExtractor + ConsolidationPipeline）自动处理，
- * 本钩子只负责主动引擎特有的隐式信号检测（投递后参与度 + 未命中检测）。</p>
+ * 对话完成钩子 — 在每轮对话结束后触发隐式信号检测、摘要生成和画像巩固。
  *
  * @author zsg
  * @since 2026-04-14
@@ -22,11 +20,14 @@ public class ConversationCompletionHook {
 
     @Nullable private final ImplicitSignalCollector implicitSignalCollector;
     @Nullable private final ConversationSummaryGenerator summaryGenerator;
+    @Nullable private final UserProfileConsolidator userProfileConsolidator;
 
     public ConversationCompletionHook(@Nullable ImplicitSignalCollector implicitSignalCollector,
-                                      @Nullable ConversationSummaryGenerator summaryGenerator) {
+                                      @Nullable ConversationSummaryGenerator summaryGenerator,
+                                      @Nullable UserProfileConsolidator userProfileConsolidator) {
         this.implicitSignalCollector = implicitSignalCollector;
         this.summaryGenerator = summaryGenerator;
+        this.userProfileConsolidator = userProfileConsolidator;
     }
 
     /**
@@ -67,6 +68,15 @@ public class ConversationCompletionHook {
                     summaryGenerator.generateIfNeeded(event.getSessionId());
                 } catch (Exception e) {
                     log.debug("对话完成钩子: 摘要生成跳过: {}", e.getMessage());
+                }
+            }
+
+            // 画像巩固（内置防抖，距上次不到 2 小时自动跳过）
+            if (userProfileConsolidator != null) {
+                try {
+                    userProfileConsolidator.consolidate();
+                } catch (Exception e) {
+                    log.debug("对话完成钩子: 画像巩固跳过: {}", e.getMessage());
                 }
             }
         });
