@@ -47,20 +47,17 @@ public class GoalTrackingRepository {
         return list.isEmpty() ? null : list.getFirst();
     }
 
-    /** 递增追问次数并更新时间。 */
+    /** 递增追问次数并更新时间（upsert 原子操作）。 */
     public void incrementCheckCount(String entityId) {
         Instant now = Instant.now();
-        int rows = jdbc.update("""
-                UPDATE proactive_goal_tracking
-                SET check_count = check_count + 1, last_follow_up = ?, updated_at = ?
-                WHERE entity_id = ?
-                """, now.toString(), now.toString(), entityId);
-        if (rows == 0) {
-            jdbc.update("""
-                    INSERT INTO proactive_goal_tracking (entity_id, check_count, last_follow_up, updated_at)
-                    VALUES (?, 1, ?, ?)
-                    """, entityId, now.toString(), now.toString());
-        }
+        jdbc.update("""
+                INSERT INTO proactive_goal_tracking (entity_id, check_count, last_follow_up, updated_at)
+                VALUES (?, 1, ?, ?)
+                ON CONFLICT(entity_id) DO UPDATE SET
+                    check_count = check_count + 1,
+                    last_follow_up = excluded.last_follow_up,
+                    updated_at = excluded.updated_at
+                """, entityId, now.toString(), now.toString());
     }
 
     /** 清理孤立记录（对应 L3 实体已归档时调用）。 */

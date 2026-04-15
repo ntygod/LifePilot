@@ -130,7 +130,7 @@ public class ImplicitSignalCollector {
         if (text == null || topicKey == null) return false;
         String core = topicKey.replaceAll("^[a-z]+-", "");
         if (core.length() < 2) return false;
-        return text.contains(core) || core.contains(text.substring(0, Math.min(4, text.length())));
+        return text.contains(core);
     }
 
     /** 记录信号 — 回流到信任和偏好系统（通过 L4）。 */

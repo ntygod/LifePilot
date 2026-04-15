@@ -303,8 +303,8 @@ public class ProactiveEngine {
 
         return new ContextPacket(userId, now, zoneId, qStart, qEnd,
                 sentToday, dailyMax, focusState, lastHeartbeatAt, heartbeatMin,
-                portrait.isBlank() ? null : portrait,
-                experience.isBlank() ? null : experience);
+                portrait != null && !portrait.isBlank() ? portrait : null,
+                experience != null && !experience.isBlank() ? experience : null);
     }
 
     @Nullable

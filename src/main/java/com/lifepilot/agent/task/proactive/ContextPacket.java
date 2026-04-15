@@ -89,7 +89,8 @@ public record ContextPacket(
 
     /** 用户是否正在 IDE 编码。 */
     public boolean isFocusedCoding() {
-        return focusState != null && IDE_TITLE_PATTERN.matcher(focusState.focusTitle()).find();
+        return focusState != null && focusState.focusTitle() != null
+                && IDE_TITLE_PATTERN.matcher(focusState.focusTitle()).find();
     }
 
     /** 今日剩余投递额度。 */
