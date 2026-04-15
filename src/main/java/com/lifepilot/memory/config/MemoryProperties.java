@@ -288,8 +288,8 @@ public class MemoryProperties {
         /** 新模板默认重要度 [0.0, 1.0]，默认 0.5。 */
         private float defaultImportance = 0.5f;
 
-        /** 是否启用操作模板聚类，默认关闭。 */
-        private boolean templateEnabled = false;
+        /** 是否启用操作模板聚类，默认启用。 */
+        private boolean templateEnabled = true;
 
         public int getMaxTemplates() { return maxTemplates; }
         public void setMaxTemplates(int maxTemplates) { this.maxTemplates = maxTemplates; }
