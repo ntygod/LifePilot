@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.skill`
-> **最后更新**：2026-03
+> **最后更新**：2026-04
 
 ## 1. 功能概述
 
@@ -23,8 +23,7 @@
 ```
 
 `SKILL.md` 采用 YAML Frontmatter + Markdown Body 格式：
-- YAML Frontmatter 定义元数据（id、name、description、version、suggestedTools、triggers 等）
-- `triggers` 字段为 `List<String>`，用于系统提示词中的关键词匹配，帮助 Agent 快速发现相关 Skill
+- YAML Frontmatter 定义元数据（id、name、description、version、suggestedTools 等）
 - Markdown Body 定义 Skill 指令（instructions），即激活后注入 Agent 上下文的专业指导
 
 ### 2.2 热加载

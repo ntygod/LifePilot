@@ -1,21 +1,16 @@
-# 内置 Skill 插件 — 特性说明
+# 预置 Skill 与元能力工具 — 特性说明
 
 > **文档性质**：特性说明文档
 > **模块归属**：预置 Skill / 元能力工具
-> **最后更新**：2026-03-20
+> **最后更新**：2026-04-15
 
 > **说明**：本文只覆盖与记忆模块直接相关的预置能力。
 
-> **注意**：`src/main/resources/skills/` 目录下共有 **30** 个内置 Skill 定义。完整 Skill ID 列表：`a2ui`、`api-debugger`、`browser-automation`、`code-assistant`、`content-creator`、`cron-scheduler`、`daily-manager`、`data-analyst`、`database-query`、`datastore`、`desktop-automation`、`dingtalk`、`doc-processor`、`email-manager`、`feishu`、`file-organizer`、`find-skills`、`gitee`、`github-workflow`、`healthcheck`、`introspection`、`log-analyzer`、`project-scaffolder`、`research-assistant`、`session-logs`、`summarizer`、`teaching-assistant`、`web-novel-writer`、`workflow-creator`、`wps-office`。本文仅覆盖 Memory Skill。
+> **注意**：`src/main/resources/skills/` 目录下共有 **25** 个预置 Skill 定义。完整 Skill ID 列表：`a2ui`、`api-debugger`、`browser-automation`、`code-assistant`、`content-creator`、`cron-scheduler`、`daily-manager`、`data-analyst`、`database-query`、`datastore`、`desktop-automation`、`doc-processor`、`feishu`、`file-organizer`、`find-skills`、`gitee`、`github-workflow`、`healthcheck`、`introspection`、`log-analyzer`、`research-assistant`、`summarizer`、`teaching-assistant`、`web-novel-writer`、`workflow-creator`。本文仅覆盖 Memory Skill 相关能力。
 
 ## 1. 功能概述
 
-当前预置的记忆能力由两部分组成：
-
-- 资源内置的 Memory Skill 说明文件
-- `MemoryToolProvider` 注册的记忆与资料检索工具
-
-Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，底层工具负责真正执行检索、创建和更新。
+当前记忆能力由 `MemoryToolProvider`（元能力模块）直接注册工具实现，不依赖独立的 `memory/SKILL.md` 资源文件。`MemoryToolProvider` 在应用启动后将记忆与资料检索工具注册到 `DynamicToolRegistry`，Agent 可直接调用这些工具进行检索、创建和更新。
 
 ## 2. 核心特性
 

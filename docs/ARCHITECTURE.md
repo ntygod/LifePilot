@@ -11,7 +11,7 @@
 - **多层记忆系统**：L1 工作记忆 → L2 情景记忆 → L3 语义记忆 + 时序知识图谱 → L4 程序记忆，模拟人类认知记忆层次
 - **自主任务执行**：支持 cron 定时和自主工作流，任务定义持久化在 SQLite 中
 - **权限与自动执行**：高风险工具改为作用域授权模型，自主任务支持任务级预授权
-- **Skill 自扩展**：Agent 可检测能力缺口并自动生成新 Skill（YAML 声明式）
+- **Skill 自扩展**：Agent 可检测能力缺口并自动生成新 Skill（Markdown SKILL.md 声明式）
 - **单 JAR 部署**：后端 + SQLite + sqlite-vec 打包为单个可执行 JAR，零外部依赖
 
 ## 2. 技术栈总览
@@ -137,7 +137,7 @@ graph TB
 | `mcp` | Model Context Protocol 客户端、懒连接生命周期、工具缓存、自动发现、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
 | `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
-| `skill` | Skill 注册/激活/热加载、内置 Skill、自扩展（Gap 检测 + YAML 生成） | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
+| `skill` | Skill 注册/激活/热加载、自扩展（Gap 检测 + Markdown SKILL.md 生成）、SkillHub 远程市场 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
@@ -246,7 +246,7 @@ graph TB
 | 主题 | 文档 |
 |------|------|
 | 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
-| 内置 Skill（Memory / Task） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
+| 预置 Skill 与元能力工具（Memory 等） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
 | 工具权限与自动执行 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |
 | 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
