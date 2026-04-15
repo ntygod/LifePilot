@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-04
+> **最后更新**：2026-04-15
 
 ## 1. 功能概述
 
@@ -104,14 +104,24 @@ public class ReactAgentLoop {
 
 - 系统 Prompt（通过 `PromptRegistry`）
 - 运行时环境（当前时间、位置、天气摘要等，注入 `react-user-prompt.st` 的 `<runtime_context>` 段）
+  - 天气摘要通过 `WeatherService`（实现为 `OpenMeteoWeatherService`）注入到 `{weather}` 模板变量
 - 当前 session 最近完整轮次（通过 `ContextEngine` 从 transcript 读取）
 - L1 临时工作区摘要（通过 `ContextEngine.ContextSnapshot.workspaceItems()` 读取）
 - L3 用户画像与经验实体
+  - 用户画像优先读取 `UserProfileConsolidator` 巩固后的连贯画像（`__consolidated_profile` CUSTOM 实体），降级为零散实体拼接
 - 其他段落按需预留
 
 位置通过 `LocationResolver` 解析（配置手动覆盖 > IP 自动检测），天气通过 `OpenMeteoWeatherService` 获取（仅读缓存，不阻塞对话路径）。
 
 跨会话原始对话不会自动注入主 Prompt；如需回忆别的会话，Agent 应显式调用 `memory.recall`。
+
+### 3.6 对话完成后处理
+
+对话结束时发布 `ConversationCompletedEvent`，由 `ConversationCompletionHook`（虚拟线程异步）触发：
+
+1. **隐式信号检测**（`ImplicitSignalCollector`）：检查用户是否因主动通知而发起对话（参与度检测），以及是否存在引擎该推但没推的内容（未命中检测）
+2. **对话摘要生成**（`ConversationSummaryGenerator`）：消息数 >= 3 且无现有摘要时，调用 LLM 生成简短摘要写入 `session_store.summary`
+3. **用户画像巩固**（`UserProfileConsolidator`）：内置 2h 防抖，从 L3 碎片实体 + L2 近期对话 + L4 偏好规则出发，LLM 生成第三人称画像写入 L3
 
 ### 3.5 媒体处理
 
@@ -191,4 +201,5 @@ lifepilot:
 ## 7. 限制与未来方向
 
 - 当前依赖 LLM 输出格式稳定性，格式偏差可能导致解析失败
+- 主动引擎的时机预测模型当前仅使用规则回退，危险率模型和时序点过程为后续迭代方向
 - 未来：优化首字响应时间（TTFT）、引入更细粒度执行策略

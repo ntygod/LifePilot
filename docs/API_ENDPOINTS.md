@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-12
+> **最后更新**：2026-04-15
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -31,6 +31,7 @@
 - [Dependencies（依赖关系）](#dependencies依赖关系)
 - [A2A（Agent-to-Agent 协议）](#a2a协议端点)
 - [Eval（评估）](#eval评估)
+- [Proactive（主动引擎管理）](#proactive主动引擎管理)
 - [Context（桌面端上下文上报）](#context桌面端上下文上报)
 - [Webhooks（外部渠道回调）](#webhooks外部渠道回调)
 - [MCP Server（服务端 JSON-RPC）](#mcp-server服务端-json-rpc)
@@ -468,6 +469,34 @@
 
 ---
 
+## Proactive（主动引擎管理）
+
+来源：`ProactiveController`，Base Path: `/api/proactive`
+
+### 排队动作（Queue）
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/proactive/queue` | `listQueue` | 查询未展示的排队动作（userId/limit 参数，limit 最大 50） |
+| PUT | `/api/proactive/queue/{id}/shown` | `markShown` | 标记排队动作已展示 |
+| DELETE | `/api/proactive/queue/{id}` | `deleteAction` | 删除排队动作 |
+
+### 信任升级（Trust）
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/proactive/trust` | `listTrust` | 查询所有行为的信任状态（userId 参数，503 服务不可用） |
+| POST | `/api/proactive/trust/{behavior}/confirm` | `confirmTrustUpgrade` | 确认行为信任升级（userId 参数，400 条件不满足，503 服务不可用） |
+
+### 配置管理（Config）
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/proactive/config` | `getConfig` | 查询主动引擎配置（userId 参数，503 配置不可用） |
+| PUT | `/api/proactive/config` | `updateConfig` | 更新主动引擎配置（运行时生效不持久化，userId 参数，503 配置不可用） |
+
+---
+
 ## Context（桌面端上下文上报）
 
 来源：`ContextController`，Base Path: `/api/context`
@@ -477,7 +506,7 @@
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | POST | `/api/context/focus` | `reportFocusState` | 上报焦点应用状态（204） |
-| POST | `/api/context/clipboard-intent` | `reportClipboardIntent` | 上报剪贴板意图识别结果，通过通知推送给用户（204） |
+| POST | `/api/context/clipboard-intent` | `reportClipboardIntent` | 上报剪贴板意图识别结果，优先送入 `ClipboardIntentBuffer` 由主动引擎处理，回退直接通知（204） |
 
 ---
 

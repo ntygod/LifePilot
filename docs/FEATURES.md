@@ -8,7 +8,7 @@
 知微是一个 AI 驱动的个人生活助手，通过自然语言交互帮助用户管理日常事务。与通用 AI 助手不同，知微专注于：
 
 - **长期记忆**：多层记忆系统让助手真正"记住"用户的偏好、习惯和历史
-- **自主任务**：支持 cron 定时、heartbeat 唤醒驱动的主动提醒和自主工作流，遵循“无结果静默，有结果直接通知”
+- **自主任务**：支持 cron 定时、主动智能引擎（ProactiveEngine 三级检测 + 8 个行为插件 + 四级投递 + 信任阶梯）和自主工作流
 - **本地优先**：单 JAR 部署 + SQLite 存储，数据完全在用户本地，隐私友好
 - **可扩展**：Markdown SKILL.md 声明式 Skill 系统 + MCP 协议，能力可按需扩展
 
@@ -58,7 +58,7 @@
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |
-| 自主任务执行 | cron 定时 + heartbeat 唤醒驱动的主动提醒 + 自主工作流，无结果静默，有结果直接通知 | — |
+| 自主任务执行 | cron 定时 + 主动智能引擎（三级检测管线 + 8 个行为插件 + 四级投递 + 信任阶梯） + 自主工作流 | [架构](architecture/proactive-reminder-engine.md) |
 | 通知系统 | 统一通知服务、直接通知、多渠道广播、富媒体支持、通知历史管理 | [特性](features/notification.md) |
 
 ### 3.4 高级能力

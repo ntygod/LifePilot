@@ -1,7 +1,7 @@
 # 知微（ZhiWei）— 系统架构总览
 
 > **文档性质**：架构总览文档
-> **最后更新**：2026-04
+> **最后更新**：2026-04-15
 
 ## 1. 项目概述
 
@@ -45,7 +45,8 @@ graph TB
 
     subgraph "引擎层"
         AGENT["Agent 引擎<br/>AgentOrchestrator + ReactAgentLoop"]
-        TASK["自主任务<br/>HeartbeatRunner"]
+        PROACTIVE["主动智能引擎<br/>ProactiveEngine + 行为插件"]
+        TASK["自主任务<br/>HeartbeatRunner → ProactiveEngine"]
         MULTI["多 Agent 协作<br/>spawn_workers"]
         CTX["ContextAssembler<br/>上下文组装"]
     end
@@ -90,7 +91,8 @@ graph TB
     CHANNEL --> GW
     GW --> MW --> AGENT
     AGENT --> CTX
-    AGENT --> TASK
+    TASK --> PROACTIVE
+    PROACTIVE --> MEM
     AGENT --> MULTI
     AGENT --> SKILL
     AGENT --> TOOL
@@ -128,6 +130,7 @@ graph TB
 | `rerank` | 精排路由（RerankRouter）、原生/LLM Pointwise/Listwise 策略 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `modelservice` | DB 驱动模型服务注册表（ModelServiceRegistry）、厂商模板管理 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `agent` | Agent ReAct 循环、不可变状态管理、上下文组装、挂起恢复、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
+| `agent.task.proactive` | 主动智能引擎（三级检测管线、行为插件、四级投递、信任阶梯） | [架构](architecture/proactive-reminder-engine.md) |
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
@@ -187,15 +190,20 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V2）"
+    subgraph "Flyway 迁移（V1~V8）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
+        V3["V3: cron_tasks 新增 skill_ids"]
+        V4["V4: datastore document-first 改造"]
+        V5["V5: proactive_queued_actions 排队动作表"]
+        V6["V6: proactive_behavior_autonomy 行为自主度表"]
+        V7["V7: queued_actions score 索引"]
+        V8["V8: proactive_goal_tracking 目标追踪表"]
     end
 
     V1 --> SQL
-    V5 --> FTS
-    V5 --> VEC
-    V7 --> GRAPH
+    V1 --> FTS
+    V1 --> VEC
 ```
 
 关键 PRAGMA 配置：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`

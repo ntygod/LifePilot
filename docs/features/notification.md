@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.notification`
-> **最后更新**：2026-03
+> **最后更新**：2026-04-15
 
 ## 1. 功能概述
 
@@ -76,19 +76,19 @@ Web 端通过 `/api/notifications/stream` 建立通知专用 SSE 连接：
 - 后续新通知实时广播
 - 前端通知中心直接消费同一条数据流
 
-### 2.8 主动提醒反馈按钮
+### 2.8 主动引擎反馈按钮
 
-通知详情组件（`NotificationDetail`）会根据通知类型渲染不同的交互元素。当 `typeId` 为 `proactive_reminder` 时，通知详情底部会显示反馈操作条，提供三个按钮：
+通知详情组件（`NotificationDetail`）会根据通知类型渲染不同的交互元素。当 `typeId` 为 `proactive_action` 时，通知详情底部会显示反馈操作条，提供三个按钮：
 
-- **有用**（`ACTED`）— 最强正反馈
+- **有用**（`ACTED`）— 最强正反馈，驱动 `TrustUpgradeService` 记录正信号
 - **知道了**（`SNOOZED`）— 弱正反馈
-- **不需要**（`NOT_RELEVANT`）— 最强负反馈
+- **不需要**（`NOT_RELEVANT`）— 最强负反馈，驱动 `TrustUpgradeService` 记录负信号
 
-用户的反馈会通过 `NotificationStore.submitFeedback()` 提交到后端，用于主动提醒引擎的策略学习和调优。每条通知只能提交一次反馈。
+用户的反馈通过 `NotificationStore.submitFeedback()` 提交到后端，由 `NotificationController.dispatchFeedbackToEngine()` 路由到主动引擎的信任追踪（`TrustUpgradeService`）和隐式信号检测（`ImplicitSignalCollector`）。每条通知只能提交一次反馈。
 
 ### 2.9 剪贴板意图通知
 
-桌面端通过 `ContextController` 上报剪贴板意图识别结果（快递号、航班号、车次、URL、电话号码），高置信意图会通过 `NotificationService` 以 `clipboard_intent` 类型推送给用户，附带操作建议（如"要帮你查询快递 XXX 的物流状态吗？"）。
+桌面端通过 `ContextController` 上报剪贴板意图识别结果（快递号、航班号、车次、URL、电话号码）。主路径下，意图会送入 `ClipboardIntentBuffer`，由 `ClipboardBehavior` 在下次心跳中处理并通过 `DeliveryEngine` 投递。回退路径（主动引擎未启用时），`ContextController` 直接通过 `NotificationService` 以 `clipboard_intent` 类型推送给用户。
 
 ## 3. 使用场景
 
@@ -124,6 +124,7 @@ cron 任务执行后，如果产生了新的摘要、异常或结论，直接把
 
 ## 6. 当前约束
 
-- 通知系统当前只负责“结果投递”，不再负责通知等级、偏好过滤或被动队列聚合
-- “无结果静默”由上游任务协议保证，例如 cron 的 `TASK_SILENT`，以及主动提醒内部评估的静默退出
+- 通知系统当前只负责”结果投递”，不再负责通知等级、偏好过滤或被动队列聚合
+- “无结果静默”由上游任务协议保证：cron 的 `TASK_SILENT`；主动引擎通过三级门控在 Gate 1/Gate 2 静默退出；`DeliveryEngine` 的 SILENT 级别仅记录不投递
+- 主动引擎的 QUEUE 级投递不经过 `NotificationService`，而是直接写入 `proactive_queued_actions` 表，前端通过 `ProactiveController` 拉取
 - 通知模板仍以调用方拼装内容为主，后续如需统一样式，可再引入模板层

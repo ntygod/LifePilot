@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-04
+> **最后更新**：2026-04-15
 
 ## 1. 模块概述
 
@@ -33,7 +33,12 @@ graph TB
         TOOL_SYS["工具系统"]
         MEM["记忆系统"]
         OBS["可观测性"]
-        PROACTIVE["主动推理"]
+    end
+
+    subgraph "主动智能引擎（独立管线）"
+        HB["HeartbeatRunner<br/>定时唤醒"]
+        PE["ProactiveEngine<br/>三级检测 + 行为插件"]
+        DE["DeliveryEngine<br/>四级投递"]
     end
 
     ORCH --> LOOP
@@ -49,7 +54,8 @@ graph TB
     LOOP --> LLM
     LOOP --> TOOL_SYS
     LOOP --> OBS
-    LOOP --> PROACTIVE
+    HB --> PE
+    PE --> DE
 ```
 
 ## 3. 核心组件
@@ -73,7 +79,8 @@ graph TB
 ### 3.3 ContextAssembler
 
 - 职责：组装 LLM 调用上下文，包括系统 Prompt、当前 session 最近完整轮次、L1 临时工作区、L3 用户画像与经验、运行时环境（位置、天气）
-- 运行时环境注入：通过 `LocationResolver` 解析用户位置（配置覆盖 > IP 自动检测），通过 `OpenMeteoWeatherService` 注入天气摘要（仅读缓存，零阻塞）
+- 运行时环境注入：通过 `LocationResolver` 解析用户位置（配置覆盖 > IP 自动检测），通过 `WeatherService`（实现为 `OpenMeteoWeatherService`）注入天气摘要到 `{weather}` 模板变量（仅读缓存，零阻塞）
+- 用户画像优先读取 `UserProfileConsolidator` 巩固后的连贯画像（`__consolidated_profile` CUSTOM 实体），降级为 L3 零散实体拼接
 - 当前主路径不再依赖旧的 `WorkingMemory` 对话缓存，也不再自动注入跨 session 原始对话
 - 跨会话历史检索通过记忆工具显式触发，而不是直接混入主 Prompt
 
@@ -158,6 +165,7 @@ sequenceDiagram
 - **可观测性**（`observability`）：TraceRecorder 记录每步执行轨迹
 - **程序记忆反馈**（`memory.procedural`）：L4 反馈闭环，通过 `ProceduralMemory` + `IntentMatcher` 在工具执行成功后异步记录经验（`Thread.startVirtualThread`），不阻塞主 Agent 循环
 - **多 Agent**（`multiagent`）：通过 `spawn_workers` 并行 Worker 执行，结果回传到主循环
+- **主动智能引擎**（`agent.task.proactive`）：`HeartbeatRunner` 定时唤醒 `ProactiveEngine`，通过 `ProactiveBehavior` 插件编排主动行为；`ConversationCompletionHook` 在对话完成后触发摘要生成（`ConversationSummaryGenerator`）和画像巩固（`UserProfileConsolidator`）
 
 ## 7. 配置参考
 
