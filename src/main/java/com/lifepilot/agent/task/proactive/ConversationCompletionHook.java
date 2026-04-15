@@ -1,6 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
+import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -20,9 +21,12 @@ public class ConversationCompletionHook {
     private static final Logger log = LoggerFactory.getLogger(ConversationCompletionHook.class);
 
     @Nullable private final ImplicitSignalCollector implicitSignalCollector;
+    @Nullable private final ConversationSummaryGenerator summaryGenerator;
 
-    public ConversationCompletionHook(@Nullable ImplicitSignalCollector implicitSignalCollector) {
+    public ConversationCompletionHook(@Nullable ImplicitSignalCollector implicitSignalCollector,
+                                      @Nullable ConversationSummaryGenerator summaryGenerator) {
         this.implicitSignalCollector = implicitSignalCollector;
+        this.summaryGenerator = summaryGenerator;
     }
 
     /**
@@ -54,7 +58,17 @@ public class ConversationCompletionHook {
     /** Spring 事件监听 — 自动响应 ConversationCompletedEvent。 */
     @EventListener
     public void handleEvent(ConversationCompletedEvent event) {
-        Thread.ofVirtual().name("conversation-hook-" + event.getSessionId()).start(() ->
-                onConversationCompleted(event.getUserId(), event.getSummary()));
+        Thread.ofVirtual().name("conversation-hook-" + event.getSessionId()).start(() -> {
+            onConversationCompleted(event.getUserId(), event.getSummary());
+
+            // 对话摘要生成
+            if (summaryGenerator != null) {
+                try {
+                    summaryGenerator.generateIfNeeded(event.getSessionId());
+                } catch (Exception e) {
+                    log.debug("对话完成钩子: 摘要生成跳过: {}", e.getMessage());
+                }
+            }
+        });
     }
 }

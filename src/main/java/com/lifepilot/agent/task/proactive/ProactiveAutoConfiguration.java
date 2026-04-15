@@ -168,8 +168,9 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ConversationCompletionHook conversationCompletionHook(
-            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector) {
-        return new ConversationCompletionHook(implicitSignalCollector);
+            @Autowired(required = false) com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector implicitSignalCollector,
+            @Autowired(required = false) com.lifepilot.interaction.web.service.ConversationSummaryGenerator summaryGenerator) {
+        return new ConversationCompletionHook(implicitSignalCollector, summaryGenerator);
     }
 
     // ── 隐式信号 ──

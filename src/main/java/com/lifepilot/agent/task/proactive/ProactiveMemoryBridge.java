@@ -150,10 +150,28 @@ public class ProactiveMemoryBridge {
 
     // ── 用户画像（替代 UserProfileService） ──
 
-    /** 组装用户画像 — 从 L3 USER_PROFILE 范围实体拼接自然语言。 */
+    /** 巩固画像实体名 — 与 UserProfileConsolidator 约定。 */
+    private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
+
+    /**
+     * 获取用户画像 — 优先读巩固后的连贯画像，降级拼接零散实体。
+     *
+     * <p>巩固画像由 UserProfileConsolidator 在定时巩固管线中 LLM 生成，
+     * 是一段 200 字的第三人称自然语言描述。如果尚未生成过，则降级为
+     * 从 L3 零散实体拼接列表形式。</p>
+     */
     public String getUserPortrait() {
         if (semanticMemory == null) return "";
         try {
+            // 优先读巩固后的画像
+            var consolidated = semanticMemory.findCurrentByNameAndType(
+                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, MemoryReadFilter.userProfile());
+            if (consolidated.isPresent()) {
+                var desc = consolidated.get().description();
+                if (desc != null && !desc.isBlank()) return desc;
+            }
+
+            // 降级：拼接零散实体
             var filter = MemoryReadFilter.userProfile();
             var sb = new StringBuilder();
             for (var type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL, EntityType.SKILL)) {

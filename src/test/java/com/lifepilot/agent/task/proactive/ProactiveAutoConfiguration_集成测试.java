@@ -96,7 +96,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgradeService);
         assertThat(signalCollector).isNotNull();
 
-        var hook = config.conversationCompletionHook(signalCollector);
+        var hook = config.conversationCompletionHook(signalCollector, null);
         assertThat(hook).isNotNull();
     }
 

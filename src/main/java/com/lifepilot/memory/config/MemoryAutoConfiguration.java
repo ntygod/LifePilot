@@ -11,6 +11,7 @@ import com.lifepilot.memory.consolidation.EntityDeduplicator;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
+import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.EpisodicCleanupJob;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.event.MemoryEventBus;
@@ -439,6 +440,21 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public UserProfileConsolidator userProfileConsolidator(
+            @Nullable SemanticMemory semanticMemory,
+            @Nullable EpisodicMemory episodicMemory,
+            @Nullable ProceduralMemory proceduralMemory,
+            @Nullable GenerationRouter generationRouter,
+            @Nullable PromptRegistry promptRegistry) {
+        log.info("记忆模块: 注册 UserProfileConsolidator, semanticMemory={}, generationRouter={}",
+                semanticMemory != null ? "available" : "missing",
+                generationRouter != null ? "available" : "missing");
+        return new UserProfileConsolidator(semanticMemory, episodicMemory,
+                proceduralMemory, generationRouter, promptRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnBean(EpisodicToSemanticConsolidator.class)
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
@@ -447,14 +463,16 @@ public class MemoryAutoConfiguration {
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
             @Nullable ProceduralMemory proceduralMemory,
-            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger) {
-        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}",
+            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger,
+            @Nullable UserProfileConsolidator userProfileConsolidator) {
+        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, profileConsolidation={}, experienceLift={}, experienceMerge={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
+                userProfileConsolidator != null ? "enabled" : "disabled",
                 semanticMemory != null && proceduralMemory != null ? "enabled" : "disabled",
                 experienceMerger != null ? "enabled" : "disabled");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
                 properties, preferenceConsolidator, semanticMemory, proceduralMemory,
-                experienceMerger);
+                experienceMerger, userProfileConsolidator);
     }
 
     // 遗忘 / 反馈 / 清理

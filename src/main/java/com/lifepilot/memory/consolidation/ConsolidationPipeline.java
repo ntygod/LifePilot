@@ -43,17 +43,20 @@ public class ConsolidationPipeline {
     private final ProceduralMemory proceduralMemory;
     @Nullable
     private final ExperienceMerger experienceMerger;
+    @Nullable
+    private final UserProfileConsolidator userProfileConsolidator;
 
     /**
      * 构造巩固管线。
      *
-     * @param semanticConsolidator   情景→语义巩固器
-     * @param proceduralConsolidator 情景→程序巩固器
-     * @param properties             记忆配置
-     * @param preferenceConsolidator L3→L4 偏好同步器（可选）
-     * @param semanticMemory         L3 语义记忆（可选，用于经验提升）
-     * @param proceduralMemory       L4 程序记忆（可选，用于经验提升）
-     * @param experienceMerger       经验合并器（可选，用于相似经验合并为元经验）
+     * @param semanticConsolidator    情景→语义巩固器
+     * @param proceduralConsolidator  情景→程序巩固器
+     * @param properties              记忆配置
+     * @param preferenceConsolidator  L3→L4 偏好同步器（可选）
+     * @param semanticMemory          L3 语义记忆（可选，用于经验提升）
+     * @param proceduralMemory        L4 程序记忆（可选，用于经验提升）
+     * @param experienceMerger        经验合并器（可选，用于相似经验合并为元经验）
+     * @param userProfileConsolidator 用户画像巩固器（可选）
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
@@ -61,7 +64,8 @@ public class ConsolidationPipeline {
                                   @Nullable PreferenceConsolidator preferenceConsolidator,
                                   @Nullable SemanticMemory semanticMemory,
                                   @Nullable ProceduralMemory proceduralMemory,
-                                  @Nullable ExperienceMerger experienceMerger) {
+                                  @Nullable ExperienceMerger experienceMerger,
+                                  @Nullable UserProfileConsolidator userProfileConsolidator) {
         this.semanticConsolidator = semanticConsolidator;
         this.proceduralConsolidator = proceduralConsolidator;
         this.properties = properties;
@@ -69,10 +73,12 @@ public class ConsolidationPipeline {
         this.semanticMemory = semanticMemory;
         this.proceduralMemory = proceduralMemory;
         this.experienceMerger = experienceMerger;
-        log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}, 经验合并={}",
+        this.userProfileConsolidator = userProfileConsolidator;
+        log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}, 经验合并={}, 画像巩固={}",
                 this.properties.getConsolidation().getCron(),
                 this.properties.getConsolidation().getTriggerMode(),
-                this.experienceMerger != null ? "启用" : "禁用");
+                this.experienceMerger != null ? "启用" : "禁用",
+                this.userProfileConsolidator != null ? "启用" : "禁用");
     }
 
     /**
@@ -134,7 +140,17 @@ public class ConsolidationPipeline {
             }
         }
 
-        // 3.5 经验合并（相似经验 → 元经验）
+        // 4. 用户画像巩固
+        if (userProfileConsolidator != null) {
+            try {
+                userProfileConsolidator.consolidate();
+                log.info("巩固管线: 用户画像巩固完成");
+            } catch (Exception e) {
+                log.warn("巩固管线: 用户画像巩固失败, error={}", e.getMessage(), e);
+            }
+        }
+
+        // 5. 经验合并（相似经验 → 元经验）
         if (experienceMerger != null) {
             try {
                 var mergeStats = experienceMerger.merge();
@@ -145,7 +161,7 @@ public class ConsolidationPipeline {
             }
         }
 
-        // 4. 高频经验提升为 L4 ProcedureTemplate
+        // 6. 高频经验提升为 L4 ProcedureTemplate
         if (semanticMemory != null && proceduralMemory != null) {
             try {
                 int promoted = promoteHighFrequencyExperiences();
