@@ -84,6 +84,7 @@ public class ContextAssembler {
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private final HybridRetriever hybridRetriever;
+    @Nullable private volatile WeatherService weatherService;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -192,6 +193,12 @@ public class ContextAssembler {
         this.mcpConfig = mcpConfig;
         this.hybridRetriever = hybridRetriever;
     }
+
+    /** 注入天气服务（可选，由 AutoConfiguration 调用）。 */
+    public void setWeatherService(@Nullable WeatherService weatherService) {
+        this.weatherService = weatherService;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -571,6 +578,17 @@ public class ContextAssembler {
 
     String buildUserPrompt(ReactAgentState state) {
         ZonedDateTime now = ZonedDateTime.now();
+        String weatherSuffix = "";
+        if (weatherService != null) {
+            try {
+                String summary = weatherService.getWeatherSummary();
+                if (summary != null && !summary.isBlank()) {
+                    weatherSuffix = "\n- 天气: " + summary;
+                }
+            } catch (Exception e) {
+                // 天气获取失败不影响对话
+            }
+        }
         String userPrompt = promptRegistry.render("agent/react-user-prompt", Map.of(
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", now.getZone().getId(),
@@ -578,6 +596,7 @@ public class ContextAssembler {
                 "osName", System.getProperty("os.name", "unknown"),
                 "osVersion", System.getProperty("os.version", "unknown"),
                 "channel", state.channel() != null ? state.channel() : "unknown",
+                "weather", weatherSuffix,
                 "userGoal", state.goal() != null ? state.goal() : ""
         ));
         // 已加载的 Skill 指南注入到 userPrompt 头部（紧邻 runtime_context 上方）
@@ -826,11 +845,25 @@ public class ContextAssembler {
         );
     }
 
+    /** 巩固画像实体名 — 与 UserProfileConsolidator 约定。 */
+    private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
+
     private String safeGetUserProfile(@Nullable String refinedQuery) {
         if (semanticMemory == null) {
             return "";
         }
         try {
+            // 优先读巩固后的连贯画像（由 UserProfileConsolidator 定时生成）
+            var consolidated = semanticMemory.findCurrentByNameAndType(
+                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, MemoryReadFilter.userProfile());
+            if (consolidated.isPresent()) {
+                var desc = consolidated.get().description();
+                if (desc != null && !desc.isBlank()) {
+                    return "用户画像:\n" + desc;
+                }
+            }
+
+            // 降级：碎片实体拼接
             List<TemporalEntity> candidates = new ArrayList<>();
             MemoryReadFilter profileFilter = MemoryReadFilter.userProfile();
             for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {

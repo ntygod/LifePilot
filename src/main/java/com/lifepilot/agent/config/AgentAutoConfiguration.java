@@ -186,12 +186,13 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CollectionRepository collectionRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
-            @Autowired(required = false) HybridRetriever hybridRetriever) {
+            @Autowired(required = false) HybridRetriever hybridRetriever,
+            @Autowired(required = false) com.lifepilot.agent.context.WeatherService weatherService) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
                 proceduralMemory != null ? "enabled" : "disabled");
-        return new ContextAssembler(
+        var assembler = new ContextAssembler(
                 config,
                 promptRegistry,
                 dataRedactor,
@@ -209,6 +210,8 @@ public class AgentAutoConfiguration {
                 toolRegistry,
                 mcpConfig,
                 hybridRetriever);
+        assembler.setWeatherService(weatherService);
+        return assembler;
     }
 
     @Bean
