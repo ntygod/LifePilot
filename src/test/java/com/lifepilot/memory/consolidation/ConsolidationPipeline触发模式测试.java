@@ -39,7 +39,7 @@ class ConsolidationPipelineModeTest {
                 new ConsolidationStats("PROCEDURAL", 0, 0, 0, 0, 0, 0, 0L));
 
         pipeline = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null);
 
         pipelineProvider = mock(ObjectProvider.class);
         when(pipelineProvider.getIfAvailable()).thenReturn(pipeline);
@@ -51,7 +51,7 @@ class ConsolidationPipelineModeTest {
     void idleModeSkipsScheduledConsolidation() {
         properties.getConsolidation().setTriggerMode("IDLE");
         var cp = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -63,7 +63,7 @@ class ConsolidationPipelineModeTest {
     void hybridModeAllowsScheduledConsolidation() {
         properties.getConsolidation().setTriggerMode("HYBRID");
         var cp = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -89,7 +89,7 @@ class ConsolidationPipelineModeTest {
     void cronModeAllowsScheduledConsolidation() {
         properties.getConsolidation().setTriggerMode("CRON");
         var cp = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null);
 
         cp.scheduledConsolidate();
 

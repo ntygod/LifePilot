@@ -41,7 +41,7 @@ class ConsolidationPipelineIdleTriggerIntegrationTest {
                 new ConsolidationStats("PROCEDURAL", 0, 0, 0, 0, 0, 0, 0L));
 
         pipeline = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null);
         pipelineProvider = mock(ObjectProvider.class);
         when(pipelineProvider.getIfAvailable()).thenReturn(pipeline);
 
