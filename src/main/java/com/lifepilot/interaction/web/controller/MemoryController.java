@@ -862,15 +862,29 @@ public class MemoryController {
         if (request.description().length() > 5000) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "画像描述不能超过 5000 字符");
         }
-        var entity = new TemporalEntity(
-                null, EntityType.CUSTOM, "__consolidated_profile", request.description(),
-                Map.of(), 1, true, Instant.now(), null, null,
-                1.0f, 1.0f, 0, null, Instant.now(), Instant.now());
-        var updated = semanticMemory.upsertWithConflictDetection(entity, "manual-edit");
-        return ApiResponse.ok(new ProfileDto(
-                updated.description() != null ? updated.description() : "",
-                updated.updatedAt().toString(),
-                updated.version()));
+        // 手动编辑直接覆盖描述，绕过 VersionMerger 的"无变化"判定
+        var existing = semanticMemory.findCurrentByNameAndType(
+                "__consolidated_profile", EntityType.CUSTOM);
+        if (existing.isPresent()) {
+            semanticMemory.updateDescription(existing.get().id(), request.description());
+            var refreshed = semanticMemory.findCurrentByNameAndType(
+                    "__consolidated_profile", EntityType.CUSTOM);
+            var e = refreshed.orElse(existing.get());
+            return ApiResponse.ok(new ProfileDto(
+                    e.description() != null ? e.description() : "",
+                    e.updatedAt().toString(),
+                    e.version()));
+        } else {
+            var entity = new TemporalEntity(
+                    null, EntityType.CUSTOM, "__consolidated_profile", request.description(),
+                    Map.of(), 1, true, Instant.now(), null, null,
+                    1.0f, 1.0f, 0, null, Instant.now(), Instant.now());
+            var created = semanticMemory.upsertWithConflictDetection(entity, "manual-edit");
+            return ApiResponse.ok(new ProfileDto(
+                    created.description() != null ? created.description() : "",
+                    created.updatedAt().toString(),
+                    created.version()));
+        }
     }
 
     record ProfileDto(String description, @Nullable String updatedAt, @Nullable Integer version) {}

@@ -323,6 +323,21 @@ public class SemanticMemory {
                 newScore, now, entityId);
     }
 
+    /**
+     * 直接更新实体描述 — 用于手动编辑场景，绕过 VersionMerger。
+     *
+     * @param entityId    实体 ID
+     * @param description 新描述
+     */
+    public void updateDescription(String entityId, String description) {
+        var now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE memory_entity_versions SET description = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
+                description, now, entityId);
+        updateVector(findById(entityId).orElse(null));
+        notifyWriteCallback();
+    }
+
     /** 添加关系。 */
     public void addRelation(TemporalRelation relation) {
         addRelation(relation, null);
