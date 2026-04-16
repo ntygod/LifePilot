@@ -144,7 +144,17 @@ public class UserProfileConsolidator {
                 .map(TemporalEntity::description)
                 .orElse("无");
 
-        // 5. 构建活跃目标列表
+        // 5. 构建已知偏好与习惯（L3 碎片实体）
+        String knownTraits = allFragments.stream()
+                .map(e -> "- [" + e.type().label() + "] " + e.name() +
+                        (e.description() != null && !e.description().isBlank()
+                                ? ": " + e.description() : ""))
+                .collect(Collectors.joining("\n"));
+        if (knownTraits.isBlank()) {
+            knownTraits = "无已知偏好";
+        }
+
+        // 6. 构建活跃目标列表
         String activeIntents = goals.stream()
                 .map(g -> "- " + g.name() +
                         (g.description() != null ? ": " + g.description() : ""))
@@ -153,9 +163,10 @@ public class UserProfileConsolidator {
             activeIntents = "无明确活跃目标";
         }
 
-        // 6. 渲染 prompt 并调用 LLM
+        // 7. 渲染 prompt 并调用 LLM
         String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
                 "currentPortrait", currentPortrait,
+                "knownTraits", knownTraits,
                 "recentConversations", recentConversations,
                 "recentFeedback", recentFeedback,
                 "activeIntents", activeIntents
