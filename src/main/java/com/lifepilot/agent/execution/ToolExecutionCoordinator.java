@@ -481,8 +481,10 @@ public class ToolExecutionCoordinator {
         try {
             rawOutput = planned.matchedCallback().call(planned.inputJson());
             success = inferToolExecutionSuccess(rawOutput);
-        } catch (Exception e) {
-            log.warn("工具执行失败: toolId={}, error={}", planned.toolId(), e.getMessage());
+        } catch (Throwable e) {
+            // 捕获 Throwable — 防止 Error 级别异常导致 ReAct 循环静默终止
+            log.error("工具执行失败: toolId={}, errorType={}, error={}",
+                    planned.toolId(), e.getClass().getSimpleName(), e.getMessage(), e);
             rawOutput = "工具执行异常: " + e.getMessage();
             success = false;
         }

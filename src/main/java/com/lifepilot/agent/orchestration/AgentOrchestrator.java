@@ -121,7 +121,7 @@ public class AgentOrchestrator {
         ReactAgentState state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
-        Exception error = null;
+        Throwable error = null;
         var loopContext = new AgentLoopContext();
 
         var token = new CancellationToken();
@@ -168,10 +168,11 @@ public class AgentOrchestrator {
 
             return buildAgentResponse(state, assistantEntryId, a2uiComponents, tokenUsage);
 
-        } catch (Exception e) {
-            log.error("ReAct 循环执行失败：error={}", e.getMessage(), e);
-            if (shouldDegradeUnexpectedException(state)) {
-                state = degradeForException(state, e);
+        } catch (Throwable e) {
+            log.error("ReAct 循环执行失败：errorType={}, error={}",
+                    e.getClass().getSimpleName(), e.getMessage(), e);
+            if (e instanceof Exception ex && shouldDegradeUnexpectedException(state)) {
+                state = degradeForException(state, ex);
                 saveCheckpoint(state, effectiveRequest);
                 boolean testSession = isTestSession(effectiveRequest.sessionId());
                 String assistantEntryId = null;
@@ -183,8 +184,9 @@ public class AgentOrchestrator {
                 return buildAgentResponse(state, assistantEntryId, null, aggregateTokenUsage(traceContext));
             }
             error = e;
-            executionPersistence.markTurnFailed(state, e);
-            return AgentResponse.error(state, e);
+            Exception wrapped = e instanceof Exception ex ? ex : new RuntimeException(e);
+            executionPersistence.markTurnFailed(state, wrapped);
+            return AgentResponse.error(state, wrapped);
         } finally {
             endTraceIfEnabled(traceContext, state, error);
         }
@@ -200,7 +202,7 @@ public class AgentOrchestrator {
         ReactAgentState state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
-        Exception error = null;
+        Throwable error = null;
         String finalContent = "";
         TokenUsage finalTokenUsage = null;
         String reasoningSummary = null;
@@ -307,10 +309,11 @@ public class AgentOrchestrator {
                 executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
                 finalTokenUsage = aggregateTokenUsage(traceContext);
             }
-        } catch (Exception e) {
-            log.error("流式执行 Agent 失败：error={}", e.getMessage(), e);
-            if (shouldDegradeUnexpectedException(state)) {
-                state = degradeForException(state, e);
+        } catch (Throwable e) {
+            log.error("流式执行 Agent 失败：errorType={}, error={}",
+                    e.getClass().getSimpleName(), e.getMessage(), e);
+            if (e instanceof Exception ex && shouldDegradeUnexpectedException(state)) {
+                state = degradeForException(state, ex);
                 finalContent = state.finalOutput() != null ? state.finalOutput() : "";
                 saveCheckpoint(state, effectiveRequest);
                 // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
@@ -341,7 +344,8 @@ public class AgentOrchestrator {
             }
 
             if (error != null) {
-                executionPersistence.markTurnFailed(state, error);
+                executionPersistence.markTurnFailed(state,
+                        error instanceof Exception ex ? ex : new RuntimeException(error));
                 if (eventBuffer != null && !eventBuffer.isClosed()) {
                     // 缓冲区模式：构建错误数据，通过 offerTerminal 排空后派发
                     var errorData = new HashMap<String, Object>();
@@ -583,7 +587,7 @@ public class AgentOrchestrator {
 
     /** 结束 Trace 追踪并记录最终输出、成功状态等信息 */
     private void endTraceIfEnabled(@Nullable TraceContext traceContext,
-                                   ReactAgentState state, @Nullable Exception error) {
+                                   ReactAgentState state, @Nullable Throwable error) {
         if (traceRecorder == null || traceContext == null) return;
         String finalOutput = state.finalOutput();
         boolean success = error == null && state.terminationReason() == null;
