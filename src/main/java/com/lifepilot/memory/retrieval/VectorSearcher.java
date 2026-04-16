@@ -6,8 +6,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import jakarta.annotation.Nullable;
+
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 向量语义检索器 — 基于 sqlite-vec 的实体向量检索，支持降级为 JVM 暴力搜索。
@@ -93,6 +96,66 @@ public class VectorSearcher {
             log.warn("向量检索: 检索异常，降级为 JVM 暴力搜索, error={}", e.getMessage());
             try {
                 return searchWithJvmFallback(queryVector, topK, threshold);
+            } catch (Exception fallbackEx) {
+                log.warn("向量检索: JVM 暴力搜索也失败, error={}", fallbackEx.getMessage());
+                return List.of();
+            }
+        }
+    }
+
+    /**
+     * 带候选过滤集的向量检索 — 仅返回 eligibleIds 中的实体。
+     *
+     * <p>当 filter 限制了 space_id / memory_scope 时，由 HybridRetriever 预查主库获取合规 ID 集合，
+     * 然后在向量检索结果上做内存过滤，避免返回大量不合规候选。</p>
+     *
+     * @param queryText   查询文本
+     * @param topK        返回前 K 个结果
+     * @param threshold   相似度阈值
+     * @param eligibleIds 合规实体 ID 集合，null 表示不过滤
+     * @return 检索结果列表
+     */
+    public List<VectorSearchResult> searchEntities(String queryText, int topK, float threshold,
+                                                    @Nullable Set<String> eligibleIds) {
+        if (eligibleIds != null && eligibleIds.isEmpty()) {
+            return List.of();
+        }
+        // 有过滤集时，扩大 topK 以弥补过滤损失
+        int effectiveTopK = eligibleIds != null ? topK * 3 : topK;
+        float[] queryVector;
+        try {
+            queryVector = embeddingRouter.embed(queryText, EmbeddingUseCase.MEMORY, null, null);
+        } catch (Exception e) {
+            log.warn("向量检索: embed 调用失败, error={}", e.getMessage());
+            return List.of();
+        }
+
+        try {
+            List<VectorSearchResult> results;
+            if (vecExtensionLoaded) {
+                results = searchWithVec(queryVector, effectiveTopK, threshold);
+            } else {
+                results = searchWithJvmFallback(queryVector, effectiveTopK, threshold);
+            }
+            // 应用候选过滤集
+            if (eligibleIds != null) {
+                results = results.stream()
+                        .filter(r -> eligibleIds.contains(r.entityId()))
+                        .limit(topK)
+                        .toList();
+            }
+            return results;
+        } catch (Exception e) {
+            log.warn("向量检索: 检索异常，降级为 JVM 暴力搜索, error={}", e.getMessage());
+            try {
+                var fallback = searchWithJvmFallback(queryVector, effectiveTopK, threshold);
+                if (eligibleIds != null) {
+                    fallback = fallback.stream()
+                            .filter(r -> eligibleIds.contains(r.entityId()))
+                            .limit(topK)
+                            .toList();
+                }
+                return fallback;
             } catch (Exception fallbackEx) {
                 log.warn("向量检索: JVM 暴力搜索也失败, error={}", fallbackEx.getMessage());
                 return List.of();

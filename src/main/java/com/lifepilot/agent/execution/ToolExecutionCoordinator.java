@@ -16,6 +16,8 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.experience.SubtaskReflector;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.workspace.WorkingSetItem;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -70,11 +72,18 @@ public class ToolExecutionCoordinator {
     private final MultimodalRouter multimodalRouter;
     @Nullable
     private final SemanticMemory semanticMemory;
+    @Nullable
+    private final SessionWorkspaceService workspaceService;
     private final int maxParallelToolCalls;
     /** 工具级经验缓存，按 toolId 索引，避免每次工具调用都查库。 */
     private final Map<String, String> toolTipCache = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Instant toolTipCacheTime = Instant.EPOCH;
     private static final Duration TOOL_TIP_CACHE_TTL = Duration.ofMinutes(30);
+
+    /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
+    private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
+            "memory.create", "memory.update", "memory.tag",
+            "workflow.execute", "code.execute", "datastore.query");
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
                                     ObjectMapper objectMapper,
@@ -84,7 +93,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable ProceduralMemory proceduralMemory,
                                     @Nullable IntentMatcher intentMatcher) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
-                mediaDataExtractor, proceduralMemory, intentMatcher, 4, null, null);
+                mediaDataExtractor, proceduralMemory, intentMatcher, 4, null, null, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -96,7 +105,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable IntentMatcher intentMatcher,
                                     int maxParallelToolCalls) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
-                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls, null, null);
+                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls, null, null, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -110,7 +119,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable MultimodalRouter multimodalRouter) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
                 mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls,
-                multimodalRouter, null);
+                multimodalRouter, null, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -123,6 +132,22 @@ public class ToolExecutionCoordinator {
                                     int maxParallelToolCalls,
                                     @Nullable MultimodalRouter multimodalRouter,
                                     @Nullable SemanticMemory semanticMemory) {
+        this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
+                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls,
+                multimodalRouter, semanticMemory, null);
+    }
+
+    public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
+                                    ObjectMapper objectMapper,
+                                    @Nullable TraceRecorder traceRecorder,
+                                    @Nullable TranscriptStore transcriptStore,
+                                    @Nullable MediaDataExtractor mediaDataExtractor,
+                                    @Nullable ProceduralMemory proceduralMemory,
+                                    @Nullable IntentMatcher intentMatcher,
+                                    int maxParallelToolCalls,
+                                    @Nullable MultimodalRouter multimodalRouter,
+                                    @Nullable SemanticMemory semanticMemory,
+                                    @Nullable SessionWorkspaceService workspaceService) {
         this.agentToolProvider = agentToolProvider;
         this.objectMapper = objectMapper;
         this.traceRecorder = traceRecorder;
@@ -133,6 +158,7 @@ public class ToolExecutionCoordinator {
         this.maxParallelToolCalls = Math.max(1, maxParallelToolCalls);
         this.multimodalRouter = multimodalRouter;
         this.semanticMemory = semanticMemory;
+        this.workspaceService = workspaceService;
     }
 
     /**
@@ -591,9 +617,44 @@ public class ToolExecutionCoordinator {
         recordToolCallStep(traceContext, state.stepCount() - 1, outcome.startedAt(),
                 outcome.completedAt(), outcome.duration(), planned.toolId(),
                 planned.inputJson(), outcome.rawOutput(), outcome.success(), planned.toolRiskLevel());
+
+        // 8. L1 工作区：关键工具执行结果写入 WorkingSetItem
+        if (outcome.success() && workspaceService != null && state.sessionId() != null) {
+            persistToolResultToWorkspace(state, planned, outcome);
+        }
+
         log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
                 planned.toolId(), outcome.success(), outcome.duration().toMillis());
         return state;
+    }
+
+    /**
+     * 将关键工具执行结果持久化到 L1 工作区，增强长对话上下文保持。
+     *
+     * <p>仅对 {@link #WORKSPACE_WORTHY_TOOLS} 中的工具生效，避免工作区被低价值条目淹没。</p>
+     */
+    private void persistToolResultToWorkspace(ReactAgentState state,
+                                               PlannedToolCall planned,
+                                               ToolExecutionOutcome outcome) {
+        if (!WORKSPACE_WORTHY_TOOLS.contains(planned.toolId())) {
+            return;
+        }
+        try {
+            String summary = outcome.observationOutput();
+            if (summary.length() > 300) {
+                summary = summary.substring(0, 300) + "…";
+            }
+            workspaceService.saveWorkingSet(state.sessionId(), new WorkingSetItem(
+                    planned.toolDisplayName() + " 执行结果",
+                    summary,
+                    Map.of("toolId", planned.toolId()),
+                    40,
+                    state.traceId(),
+                    state.traceId(),
+                    null));
+        } catch (Exception e) {
+            log.debug("工具结果工作区持久化失败: toolId={}, error={}", planned.toolId(), e.getMessage());
+        }
     }
 
     private ReactAgentState replayExtractedMedia(ReactAgentState state,

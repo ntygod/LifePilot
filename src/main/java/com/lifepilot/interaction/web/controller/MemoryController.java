@@ -6,6 +6,7 @@ import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EntityDeduplicator;
+import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.forgetting.ForgettingLogRepository;
@@ -27,6 +28,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,6 +55,7 @@ public class MemoryController {
     private final @Nullable HybridRetriever hybridRetriever;
     private final @Nullable ConsolidationPipeline consolidationPipeline;
     private final @Nullable EntityDeduplicator entityDeduplicator;
+    private final @Nullable UserProfileConsolidator userProfileConsolidator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
@@ -64,6 +67,7 @@ public class MemoryController {
                             @Nullable HybridRetriever hybridRetriever,
                             @Nullable ConsolidationPipeline consolidationPipeline,
                             @Nullable EntityDeduplicator entityDeduplicator,
+                            @Nullable UserProfileConsolidator userProfileConsolidator,
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository) {
         this.semanticMemory = semanticMemory;
@@ -72,6 +76,7 @@ public class MemoryController {
         this.hybridRetriever = hybridRetriever;
         this.consolidationPipeline = consolidationPipeline;
         this.entityDeduplicator = entityDeduplicator;
+        this.userProfileConsolidator = userProfileConsolidator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
     }
@@ -95,11 +100,8 @@ public class MemoryController {
         long entityCount = semanticMemory.countCurrent();
         long relationCount = semanticMemory.countCurrentRelations();
 
-        // 按 EntityType 分组统计
-        var allCurrent = semanticMemory.findAllCurrent();
-        Map<String, Long> entityCountByType = allCurrent.stream()
-                .filter(TemporalEntity::isCurrent)
-                .collect(Collectors.groupingBy(e -> e.type().name(), Collectors.counting()));
+        // SQL 聚合查询，避免全量加载实体到 JVM 内存
+        Map<String, Long> entityCountByType = semanticMemory.countCurrentByType();
 
         long conversationCount = episodicMemory != null ? episodicMemory.countConversations() : 0L;
 
@@ -124,6 +126,51 @@ public class MemoryController {
                 forgettingLogCount,
                 lastForgettingTime
         ));
+    }
+
+    // ========== 记忆健康度 ==========
+
+    /**
+     * 获取记忆系统健康度指标 — 各层统计、遗忘日志、访问活跃度。
+     */
+    @GetMapping("/health")
+    public ApiResponse<MemoryHealthDto> getHealth() {
+        requireMemoryEnabled();
+
+        long totalEntities = semanticMemory.countCurrent();
+        long totalRelations = semanticMemory.countCurrentRelations();
+
+        // SQL 聚合查询，避免全量加载实体到 JVM 内存
+        Map<String, Long> entityCountByType = semanticMemory.countCurrentByType();
+
+        long experienceCount = entityCountByType.getOrDefault("EXPERIENCE", 0L);
+        long preferenceCount = entityCountByType.getOrDefault("PREFERENCE", 0L);
+        long habitCount = entityCountByType.getOrDefault("HABIT", 0L);
+        long goalCount = entityCountByType.getOrDefault("GOAL", 0L);
+
+        long templateCount = 0L;
+        long ruleCount = 0L;
+        if (proceduralMemory != null) {
+            templateCount = proceduralMemory.listAllTemplates().size();
+            ruleCount = proceduralMemory.listAllPreferences().size();
+        }
+
+        long conversationCount = episodicMemory != null ? episodicMemory.countConversations() : 0L;
+
+        long forgettingLogCount = forgettingLogRepository.countAll();
+        String lastForgettingTime = forgettingLogRepository.getLastForgettingTime();
+
+        long recentlyAccessedCount = semanticMemory.countRecentlyAccessed(7);
+        float recentAccessRatio = totalEntities > 0 ? (float) recentlyAccessedCount / totalEntities : 0f;
+
+        float avgImportance = semanticMemory.averageImportanceScore();
+
+        return ApiResponse.ok(new MemoryHealthDto(
+                totalEntities, totalRelations, entityCountByType,
+                conversationCount, templateCount, ruleCount,
+                experienceCount, preferenceCount, habitCount, goalCount,
+                forgettingLogCount, lastForgettingTime,
+                recentAccessRatio, avgImportance));
     }
 
     // ========== Req 7: 统一记忆搜索 ==========
@@ -782,6 +829,66 @@ public class MemoryController {
         });
         return ApiResponse.ok(Map.of("status", "accepted", "message", "去重任务已提交"));
     }
+
+    // ========== 用户画像 ==========
+
+    /**
+     * 获取用户画像。
+     */
+    @GetMapping("/profile")
+    public ApiResponse<ProfileDto> getProfile() {
+        requireMemoryEnabled();
+        var entity = semanticMemory.findCurrentByNameAndType(
+                "__consolidated_profile", EntityType.CUSTOM);
+        if (entity.isEmpty()) {
+            return ApiResponse.ok(new ProfileDto("", null, null));
+        }
+        var e = entity.get();
+        return ApiResponse.ok(new ProfileDto(
+                e.description() != null ? e.description() : "",
+                e.updatedAt().toString(),
+                e.version()));
+    }
+
+    /**
+     * 更新用户画像。
+     */
+    @PutMapping("/profile")
+    public ApiResponse<ProfileDto> updateProfile(@RequestBody ProfileUpdateRequest request) {
+        requireMemoryEnabled();
+        if (request.description() == null || request.description().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "画像描述不能为空");
+        }
+        if (request.description().length() > 5000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "画像描述不能超过 5000 字符");
+        }
+        // 手动编辑直接覆盖描述，绕过 VersionMerger 的"无变化"判定
+        var existing = semanticMemory.findCurrentByNameAndType(
+                "__consolidated_profile", EntityType.CUSTOM);
+        if (existing.isPresent()) {
+            semanticMemory.updateDescription(existing.get().id(), request.description());
+            var refreshed = semanticMemory.findCurrentByNameAndType(
+                    "__consolidated_profile", EntityType.CUSTOM);
+            var e = refreshed.orElse(existing.get());
+            return ApiResponse.ok(new ProfileDto(
+                    e.description() != null ? e.description() : "",
+                    e.updatedAt().toString(),
+                    e.version()));
+        } else {
+            var entity = new TemporalEntity(
+                    null, EntityType.CUSTOM, "__consolidated_profile", request.description(),
+                    Map.of(), 1, true, Instant.now(), null, null,
+                    1.0f, 1.0f, 0, null, Instant.now(), Instant.now());
+            var created = semanticMemory.upsertWithConflictDetection(entity, "manual-edit");
+            return ApiResponse.ok(new ProfileDto(
+                    created.description() != null ? created.description() : "",
+                    created.updatedAt().toString(),
+                    created.version()));
+        }
+    }
+
+    record ProfileDto(String description, @Nullable String updatedAt, @Nullable Integer version) {}
+    record ProfileUpdateRequest(String description) {}
 
     // ========== 内部辅助方法 ==========
 

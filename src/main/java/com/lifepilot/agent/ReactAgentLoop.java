@@ -25,6 +25,7 @@ import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.memory.workspace.TaskStateItem;
+import com.lifepilot.memory.workspace.WorkingSetItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -102,6 +103,9 @@ public class ReactAgentLoop implements CallbackHelper {
     // ===== 可选依赖（MCP 工具激活） =====
     @Nullable private final DynamicToolRegistry toolRegistry;
 
+    // ===== 可选依赖（即时经验补丁） =====
+    @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
+
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
             ProviderMessageBuilder providerMessageBuilder,
@@ -120,7 +124,8 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable SessionWorkspaceService workspaceService,
             @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
             @Nullable DynamicToolRegistry toolRegistry,
-            @Nullable com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
+            @Nullable com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
+            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -137,7 +142,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 intentMatcher,
                 config.getLoop().getMaxParallelToolCalls(),
                 multimodalRouter,
-                semanticMemory
+                semanticMemory,
+                workspaceService
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
@@ -148,6 +154,7 @@ public class ReactAgentLoop implements CallbackHelper {
         this.workspaceService = workspaceService;
         this.skillRegistry = skillRegistry;
         this.toolRegistry = toolRegistry;
+        this.experienceSummarizer = experienceSummarizer;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
 
@@ -407,6 +414,31 @@ public class ReactAgentLoop implements CallbackHelper {
                 if (maybeReflect != null) {
                     state = appendAndPublishStep(state, maybeReflect, loopContext);
                     persistReflectToWorkspace(state, iteration);
+                    // 即时经验补丁：异步写入经验，避免在同步路径上做数据库写入
+                    if (experienceSummarizer != null) {
+                        final var snapshotState = state;
+                        final var reflectContent = maybeReflect.content();
+                        final var reflectTrigger = maybeReflect.trigger();
+                        Thread.startVirtualThread(() -> experienceSummarizer.quickLearn(snapshotState, reflectContent, reflectTrigger));
+                    }
+                    // 反思结论写入 L1 工作区，增强长对话的上下文保持
+                    if (workspaceService != null && state.sessionId() != null) {
+                        try {
+                            String reflectSummary = maybeReflect.content().length() > 300
+                                    ? maybeReflect.content().substring(0, 300) + "…"
+                                    : maybeReflect.content();
+                            workspaceService.saveWorkingSet(state.sessionId(), new WorkingSetItem(
+                                    "反思结论: " + maybeReflect.trigger().name(),
+                                    reflectSummary,
+                                    Map.of("trigger", maybeReflect.trigger().name(), "iteration", iteration),
+                                    70,
+                                    state.traceId(),
+                                    state.traceId(),
+                                    null));
+                        } catch (Exception e) {
+                            log.debug("反思工作区持久化失败: {}", e.getMessage());
+                        }
+                    }
                     cachedContext = null;
                     cachedToolCallbacks = null;
                 }

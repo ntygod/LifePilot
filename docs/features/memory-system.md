@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-04-14
+> **最后更新**：2026-04-16
 
 ## 1. 功能概述
 
@@ -34,6 +34,8 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 - `WorkingSetItem`：下一轮还要继续使用的中间摘要
 
 这些数据会落到 `session_workspace_items`，有 TTL 和清理任务，但不会进入长期记忆。
+
+`WorkingSetItem` 有三处主写入点：挂起/确认场景（`AgentPersistenceHandler`）、关键工具执行结果（`ToolExecutionCoordinator`，覆盖 `memory.create/update/tag`、`workflow.execute`、`code.execute`、`datastore.query`）、反思结论（`ReactAgentLoop`，反思触发后自动写入截断至 300 字符的结论摘要）。
 
 ### 2.3 跨会话回忆改为 snippet recall
 
@@ -69,15 +71,17 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 主上下文负责”当前会话连续性”，工具负责”按需回忆和检索”，职责比旧方案更清楚。
 
-`HybridRetriever` 支持可选的 `RerankRouter` 精排步骤和 `knownEmpty` 短路优化。
+`HybridRetriever` 支持可选的 `RerankRouter` 精排步骤、`knownEmpty` 短路优化和向量路径 pre-filter（当 MemoryReadFilter 限制 space/scope 时，先查合规实体 ID 集合做内存过滤，超过 1000 个时自动回退为后过滤）。
 
 `EntityType` 枚举包含 12 种类型：PERSON、ORGANIZATION、PLACE、EVENT、PROJECT、TOPIC、PREFERENCE、HABIT、GOAL、SKILL、EXPERIENCE、CUSTOM。
 
 ### 2.6 巩固与遗忘不再依赖 L1 flush
 
 - 空闲巩固由 `checkIdleConsolidation()` 驱动
-- 情景信息沉淀到 L3/L4 的链路不再依赖“先把 L1 flush 到 L2”
-- 遗忘引擎仍然负责清理低价值实体和归档过期内容
+- `ConsolidationPipeline` 顺序执行六步：语义巩固 → 程序巩固 → 偏好同步 → 经验合并 → 用户画像巩固 → 经验提升
+- 情景信息沉淀到 L3/L4 的链路不再依赖”先把 L1 flush 到 L2”
+- 遗忘引擎四维保护：按类型（PREFERENCE/HABIT/GOAL）、按重要度（≥0.9）、按高频访问（accessCount ≥ 10）、按近期访问（7 天内）
+- 反思触发时 `ExperienceSummarizer.quickLearn()` 异步写入即时经验，缩短学习反馈周期
 
 ## 3. 使用场景
 
@@ -117,12 +121,14 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 | `lifepilot.memory.retrieval.memoryContextMaxEntities` | memory_context 最大实体数（默认 5） |
 | `lifepilot.memory.retrieval.memoryContextTokenBudget` | memory_context token 预算（默认 800） |
 | `lifepilot.memory.retrieval.memoryContextScoreThreshold` | memory_context 最低相关度阈值（默认 0.6） |
-| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 false） |
+| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 true） |
 | `lifepilot.memory.consolidation.*` | 巩固触发与窗口参数 |
+| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 近期访问保护天数（默认 7） |
+| `lifepilot.memory.forgetting.highAccessCountProtection` | 高频访问保护阈值（默认 10） |
 | `lifepilot.memory.experience.*` | 经验注入、反馈、合并与隔离参数 |
 
 ## 5. 当前限制
 
-- `WorkingSetItem` 的业务写入场景还比较少，当前最成熟的是挂起/确认类工作区
+- `WorkingSetItem` 已在工具执行（关键工具结果）和反思结论两个场景形成主链路写入
 - 知识库和跨会话 recall 仍然主要依赖工具调用，而不是自动注入（但相关记忆实体已通过 memory_context 自动注入）
 - 配置类里仍保留少量历史字段，但主链路已经不再按旧的 `WorkingMemory`/`flush` 模型运行

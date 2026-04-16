@@ -18,8 +18,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -253,6 +255,26 @@ public class SemanticMemory {
                 params.toArray());
     }
 
+    /**
+     * 查询符合过滤条件的所有当前实体 ID 集合 — 用于向量检索 pre-filter。
+     *
+     * @param filter 读取过滤条件
+     * @return 符合条件的实体 ID 集合
+     */
+    public Set<String> findEligibleEntityIds(MemoryReadFilter filter) {
+        var sql = new StringBuilder("SELECT id FROM memory_entities WHERE status = 'ACTIVE'");
+        var params = new ArrayList<>();
+        appendEntityReadFilter(sql, params, filter);
+        var ids = new LinkedHashSet<>(
+                jdbcTemplate.queryForList(sql.toString(), String.class, params.toArray()));
+        // 结果集过大时返回 null，由调用方回退为后过滤
+        if (ids.size() > 1000) {
+            log.debug("语义记忆: pre-filter 候选集过大({}), 回退为后过滤", ids.size());
+            return null;
+        }
+        return ids;
+    }
+
     /** 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系。 */
     @Transactional
     public void archive(TemporalEntity entity) {
@@ -299,6 +321,21 @@ public class SemanticMemory {
         jdbcTemplate.update(
                 "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
                 newScore, now, entityId);
+    }
+
+    /**
+     * 直接更新实体描述 — 用于手动编辑场景，绕过 VersionMerger。
+     *
+     * @param entityId    实体 ID
+     * @param description 新描述
+     */
+    public void updateDescription(String entityId, String description) {
+        var now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE memory_entity_versions SET description = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
+                description, now, entityId);
+        updateVector(findById(entityId).orElse(null));
+        notifyWriteCallback();
     }
 
     /** 添加关系。 */
@@ -457,6 +494,36 @@ public class SemanticMemory {
                 "SELECT COUNT(*) FROM temporal_relations WHERE valid_to IS NULL",
                 Long.class);
         return count != null ? count : 0L;
+    }
+
+    /** 按类型统计当前实体数量 — 轻量 SQL 聚合，返回 type name → 数量映射。 */
+    public Map<String, Long> countCurrentByType() {
+        return jdbcTemplate.query(
+                "SELECT type, COUNT(*) AS cnt FROM temporal_entities WHERE is_current = 1 GROUP BY type",
+                rs -> {
+                    Map<String, Long> result = new java.util.LinkedHashMap<>();
+                    while (rs.next()) {
+                        result.put(rs.getString("type"), rs.getLong("cnt"));
+                    }
+                    return result;
+                });
+    }
+
+    /** 统计最近 N 天内被访问的当前实体数量。 */
+    public long countRecentlyAccessed(int days) {
+        String cutoff = Instant.now().minus(java.time.Duration.ofDays(days)).toString();
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM temporal_entities WHERE is_current = 1 AND last_accessed_at > ?",
+                Long.class, cutoff);
+        return count != null ? count : 0L;
+    }
+
+    /** 当前实体的平均重要度分数。 */
+    public float averageImportanceScore() {
+        var avg = jdbcTemplate.queryForObject(
+                "SELECT AVG(importance_score) FROM temporal_entities WHERE is_current = 1",
+                Double.class);
+        return avg != null ? avg.floatValue() : 0f;
     }
 
     /**

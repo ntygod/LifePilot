@@ -144,7 +144,17 @@ public class UserProfileConsolidator {
                 .map(TemporalEntity::description)
                 .orElse("无");
 
-        // 5. 构建活跃目标列表
+        // 5. 构建已知偏好与习惯（L3 碎片实体）
+        String knownTraits = allFragments.stream()
+                .map(e -> "- [" + e.type().label() + "] " + e.name() +
+                        (e.description() != null && !e.description().isBlank()
+                                ? ": " + e.description() : ""))
+                .collect(Collectors.joining("\n"));
+        if (knownTraits.isBlank()) {
+            knownTraits = "无已知偏好";
+        }
+
+        // 6. 构建活跃目标列表
         String activeIntents = goals.stream()
                 .map(g -> "- " + g.name() +
                         (g.description() != null ? ": " + g.description() : ""))
@@ -153,9 +163,10 @@ public class UserProfileConsolidator {
             activeIntents = "无明确活跃目标";
         }
 
-        // 6. 渲染 prompt 并调用 LLM
+        // 7. 渲染 prompt 并调用 LLM
         String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
                 "currentPortrait", currentPortrait,
+                "knownTraits", knownTraits,
                 "recentConversations", recentConversations,
                 "recentFeedback", recentFeedback,
                 "activeIntents", activeIntents
@@ -164,6 +175,7 @@ public class UserProfileConsolidator {
         log.debug("用户画像巩固: 发起 LLM 调用, fragmentCount={}, promptChars={}",
                 allFragments.size(), prompt.length());
 
+        // skipCache=true：画像巩固每次输入不同但模板相似，语义缓存会错误命中旧结果
         LlmResponse response = generationRouter.call(
                 LlmScene.BACKGROUND_ANALYSIS,
                 prompt,
@@ -171,7 +183,8 @@ public class UserProfileConsolidator {
                 null,
                 null,
                 GenerationCapability.CHAT,
-                LLM_TIMEOUT);
+                LLM_TIMEOUT,
+                true);
 
         String portraitText = response.content();
         if (portraitText == null || portraitText.isBlank()) {

@@ -156,6 +156,8 @@ public class ImplicitSignalCollector {
         if (memoryBridge != null && behaviorName != null) {
             float signal = positive ? 0.8f : 0.2f;
             memoryBridge.observePreference("proactive-domain", behaviorName, signal);
+            // L3 回写 — 使洞察可被 HybridRetriever 检索
+            memoryBridge.syncInsightToL3("proactive-domain", behaviorName, signal, evidence);
         }
 
         log.debug("隐式信号: behavior={}, topic={}, value={}, evidence={}",

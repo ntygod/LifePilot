@@ -103,7 +103,8 @@ class ReactAgentLoop_预算控制测试 {
                 null,  // workspaceService
                 null,  // skillRegistry
                 null,  // toolRegistry
-                null   // semanticMemory
+                null,  // semanticMemory
+                null   // experienceSummarizer
         );
     }
 
@@ -335,7 +336,8 @@ class ReactAgentLoop_预算控制测试 {
                 null,  // workspaceService
                 null,  // skillRegistry
                 null,  // toolRegistry
-                null   // semanticMemory
+                null,  // semanticMemory
+                null   // experienceSummarizer
         );
 
         when(contextAssembler.assemble(any())).thenReturn(baseContext("请执行测试任务"));

@@ -371,6 +371,47 @@ public class ExperienceSummarizer {
         }
     }
 
+    /**
+     * 即时经验补丁 — 在反思触发时同步写入轻量经验，不等异步后处理。
+     *
+     * <p>仅在工具失败反思时调用，跳过质量评估和 LLM 提炼，直接从反思内容提取关键教训。</p>
+     *
+     * @param state          当前 Agent 状态
+     * @param reflectContent 反思内容文本
+     * @param trigger        反思触发原因
+     * @return 写入的经验实体，写入失败或条件不满足时返回 null
+     */
+    @Nullable
+    public TemporalEntity quickLearn(ReactAgentState state, String reflectContent,
+                                      ReactStep.ReflectTrigger trigger) {
+        if (!config.isEnabled() || semanticMemory == null) {
+            return null;
+        }
+        // 仅对工具失败触发的反思进行即时学习
+        if (trigger != ReactStep.ReflectTrigger.TOOL_FAILURE) {
+            return null;
+        }
+        try {
+            String scenario = "工具失败反思_" + state.sessionId();
+            String description = reflectContent.length() > 500
+                    ? reflectContent.substring(0, 500)
+                    : reflectContent;
+
+            var entity = new TemporalEntity(
+                    UUID.randomUUID().toString(), EntityType.EXPERIENCE, scenario, description,
+                    Map.of("trigger", trigger.name(), "sessionId", state.sessionId(),
+                            "success", false, "source", "quick_learn"),
+                    1, true, Instant.now(), null, state.sessionId(),
+                    0.7f, 0.7f, 0, null, Instant.now(), Instant.now());
+            var written = semanticMemory.upsertWithConflictDetection(entity, state.sessionId());
+            log.info("即时经验: 写入完成, sessionId={}, scenario={}", state.sessionId(), scenario);
+            return written;
+        } catch (Exception e) {
+            log.warn("即时经验: 写入失败, sessionId={}, error={}", state.sessionId(), e.getMessage());
+            return null;
+        }
+    }
+
     /** 追加 eval 标签前缀到 applicableConditions。 */
     private List<String> appendEvalTags(List<String> conditions, List<String> tags) {
         if (tags == null || tags.isEmpty()) return conditions;
