@@ -606,7 +606,7 @@ defineExpose({
       </Transition>
 
       <div
-        class="chat-composer-shell overflow-hidden rounded-2xl border bg-card transition-all duration-200"
+        class="chat-composer-shell overflow-hidden rounded-[24px] border transition-all duration-200"
         :class="[
           dragActive
             ? 'border-primary/40 bg-primary/[0.02]'
@@ -666,7 +666,7 @@ defineExpose({
           <div class="flex flex-wrap items-center gap-0.5">
             <button
               type="button"
-              class="relative flex size-8 items-center justify-center rounded-xl transition-colors disabled:opacity-30"
+              class="relative flex size-8 items-center justify-center rounded-[10px] transition-colors disabled:opacity-30"
               :class="selectedContextCount > 0 || showContextPicker
                 ? 'text-primary hover:bg-primary/8'
                 : 'text-muted-foreground/70 hover:bg-accent/50 hover:text-foreground'"
@@ -686,7 +686,7 @@ defineExpose({
             <!-- 附件 -->
             <button
               type="button"
-              class="relative flex size-8 items-center justify-center rounded-xl text-muted-foreground/70 transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-30"
+              class="relative flex size-8 items-center justify-center rounded-[10px] text-muted-foreground/70 transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-30"
               :disabled="disabled"
               title="附件"
               @click="handleFileSelect"
@@ -730,7 +730,7 @@ defineExpose({
                 v-if="voiceSupported"
                 type="button"
                 :disabled="disabled || isUploading || voiceSending"
-                class="flex size-8 items-center justify-center rounded-xl text-muted-foreground/60 transition-all duration-150 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                class="flex size-8 items-center justify-center rounded-[10px] text-muted-foreground/60 transition-all duration-150 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
                 @click="handleMicClick"
               >
                 <Mic class="size-[18px]" />
@@ -885,18 +885,7 @@ defineExpose({
 
 .chat-composer-shell {
   position: relative;
-  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--card) h s l / 0.88));
-  box-shadow:
-    0 12px 22px -24px hsl(var(--shadow-color) / 0.1),
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.72);
-}
-
-.chat-composer-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, hsl(from var(--primary) h s l / 0.18) 18%, transparent 72%);
+  background: var(--card);
 }
 
 .chat-composer-continuation {

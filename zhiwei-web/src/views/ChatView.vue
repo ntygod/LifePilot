@@ -441,12 +441,6 @@ async function handleSend(payload: {
 
 const emptyInputRef = ref<InstanceType<typeof ChatInput> | null>(null)
 
-function handleEmptyStateFill(content: string) {
-  if (emptyInputRef.value) {
-    emptyInputRef.value.input = content
-  }
-}
-
 function getAttachmentIds(message: Message): string[] | undefined {
   const attachmentIds = message.attachments?.map(attachment => attachment.fileId).filter(Boolean)
   return attachmentIds && attachmentIds.length > 0 ? attachmentIds : undefined
@@ -712,9 +706,9 @@ function closeTracePanel() {
           class="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
           <!-- 空状态：问候 + 输入框居中 -->
-          <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center px-4 pt-[15vh] sm:px-6">
-            <EmptyState @fill="handleEmptyStateFill" />
-            <div class="w-full max-w-[540px] mt-xl">
+          <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center px-4 pt-[12vh] sm:px-6">
+            <EmptyState />
+            <div class="w-full max-w-[600px] mt-xl animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
               <ChatInput
                 ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
