@@ -175,6 +175,7 @@ public class UserProfileConsolidator {
         log.debug("用户画像巩固: 发起 LLM 调用, fragmentCount={}, promptChars={}",
                 allFragments.size(), prompt.length());
 
+        // skipCache=true：画像巩固每次输入不同但模板相似，语义缓存会错误命中旧结果
         LlmResponse response = generationRouter.call(
                 LlmScene.BACKGROUND_ANALYSIS,
                 prompt,
@@ -182,7 +183,8 @@ public class UserProfileConsolidator {
                 null,
                 null,
                 GenerationCapability.CHAT,
-                LLM_TIMEOUT);
+                LLM_TIMEOUT,
+                true);
 
         String portraitText = response.content();
         if (portraitText == null || portraitText.isBlank()) {
