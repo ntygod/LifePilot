@@ -20,7 +20,6 @@ com.lifepilot.media.config.MediaAutoConfiguration
 com.lifepilot.workflow.config.WorkflowAutoConfiguration
 com.lifepilot.sandbox.config.SandboxAutoConfiguration
 
-com.lifepilot.eval.config.EvalAutoConfiguration
 com.lifepilot.interaction.web.config.WebAutoConfiguration
 com.lifepilot.multiagent.config.MultiAgentAutoConfiguration
 com.lifepilot.a2a.config.A2aAutoConfiguration

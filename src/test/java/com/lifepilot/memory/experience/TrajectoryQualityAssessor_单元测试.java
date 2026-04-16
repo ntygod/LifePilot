@@ -4,7 +4,6 @@ import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.memory.config.MemoryProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,9 +11,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -88,22 +85,6 @@ class TrajectoryQualityAssessor_单元测试 {
         return 正常完成状态()
                 .steps(steps)
                 .stepCount(steps.size())
-                .build();
-    }
-
-    /** 构建 EvalResult 便捷方法。 */
-    private EvalResult 构建评估结果(double overallScore, Map<String, Double> dimensionScores) {
-        return EvalResult.builder()
-                .evalId("eval-1")
-                .traceId("trace-1")
-                .scenarioId("scenario-1")
-                .dimensionScores(dimensionScores)
-                .overallScore(overallScore)
-                .violations(List.of())
-                .suggestions(List.of())
-                .llmJudgeTokensUsed(0)
-                .evaluatedAt(Instant.now())
-                .evalRunId("run-1")
                 .build();
     }
 
@@ -379,84 +360,6 @@ class TrajectoryQualityAssessor_单元测试 {
         }
     }
 
-    // ==================== Eval 集成 ====================
-
-    @Nested
-    class Eval集成 {
-
-        @Test
-        void 无EvalResult时评估维度为null() {
-            var state = 正常完成状态().build();
-            var report = assessor.assess(state, null);
-
-            assertNull(report.evalOverallScore());
-            assertNull(report.evalDimensionScores());
-        }
-
-        @Test
-        void 有EvalResult时评估维度正确传递() {
-            var state = 正常完成状态().build();
-            var dimensions = Map.of("accuracy", 0.9, "fluency", 0.85);
-            var evalResult = 构建评估结果(0.88, dimensions);
-
-            var report = assessor.assess(state, evalResult);
-
-            assertNotNull(report.evalOverallScore());
-            assertEquals(0.88, report.evalOverallScore(), 0.001);
-            assertEquals(dimensions, report.evalDimensionScores());
-        }
-
-        @Test
-        void Eval高分时放宽工具成功率门控() {
-            // 默认 minToolSuccessRatio=0.3, evalQualityRelaxFactor=0.5
-            // 放宽后 effectiveMinRatio = 0.3 * 0.5 = 0.15
-            // 2 成功 + 8 失败 = 成功率 0.2，正常不通过但放宽后通过
-            var state = 含工具调用状态(2, 8);
-            var evalResult = 构建评估结果(0.75, Map.of("accuracy", 0.75));
-
-            var report = assessor.assess(state, evalResult);
-
-            assertEquals(0.2f, report.toolSuccessRatio(), 0.001f);
-            assertTrue(report.qualityPassed(), "Eval 高分（>= 0.7）应放宽工具成功率门控");
-        }
-
-        @Test
-        void Eval恰好0点7分时触发放宽() {
-            // 0.3 * 0.5 = 0.15，成功率 0.2 >= 0.15 通过
-            var state = 含工具调用状态(2, 8);
-            var evalResult = 构建评估结果(0.7, Map.of());
-
-            var report = assessor.assess(state, evalResult);
-
-            assertTrue(report.qualityPassed(), "overallScore == 0.7 应恰好触发放宽");
-        }
-
-        @Test
-        void Eval低于0点7分时不放宽() {
-            // 不放宽，minRatio 仍然是 0.3
-            // 2 成功 + 8 失败 = 成功率 0.2 < 0.3 不通过
-            var state = 含工具调用状态(2, 8);
-            var evalResult = 构建评估结果(0.69, Map.of());
-
-            var report = assessor.assess(state, evalResult);
-
-            assertFalse(report.qualityPassed(), "overallScore < 0.7 时不应放宽门控");
-        }
-
-        @Test
-        void Eval高分但成功率仍低于放宽后门控时不通过() {
-            // 放宽后 effectiveMinRatio = 0.3 * 0.5 = 0.15
-            // 1 成功 + 9 失败 = 成功率 0.1 < 0.15 不通过
-            var state = 含工具调用状态(1, 9);
-            var evalResult = 构建评估结果(0.9, Map.of());
-
-            var report = assessor.assess(state, evalResult);
-
-            assertEquals(0.1f, report.toolSuccessRatio(), 0.001f);
-            assertFalse(report.qualityPassed(), "即使 Eval 高分，成功率低于放宽后门控仍不通过");
-        }
-    }
-
     // ==================== 综合门控判定 ====================
 
     @Nested
@@ -538,29 +441,6 @@ class TrajectoryQualityAssessor_单元测试 {
         }
     }
 
-    // ==================== assess 单参数重载 ====================
-
-    @Nested
-    class 单参数重载 {
-
-        @Test
-        void 单参数assess等价于evalResult传null() {
-            var state = 正常完成状态().build();
-
-            var report1 = assessor.assess(state);
-            var report2 = assessor.assess(state, null);
-
-            assertEquals(report1.goalClarity(), report2.goalClarity());
-            assertEquals(report1.trajectoryCompleteness(), report2.trajectoryCompleteness());
-            assertEquals(report1.toolSuccessRatio(), report2.toolSuccessRatio());
-            assertEquals(report1.taskSuccess(), report2.taskSuccess());
-            assertEquals(report1.totalSteps(), report2.totalSteps());
-            assertEquals(report1.qualityPassed(), report2.qualityPassed());
-            assertNull(report1.evalOverallScore());
-            assertNull(report1.evalDimensionScores());
-        }
-    }
-
     // ==================== 边界条件 ====================
 
     @Nested
@@ -610,36 +490,6 @@ class TrajectoryQualityAssessor_单元测试 {
             assertEquals(101, report.totalSteps());
             assertEquals(1.0f, report.toolSuccessRatio(), 0.001f);
             assertTrue(report.qualityPassed());
-        }
-
-        @Test
-        void 自定义宽松系数为零时Eval高分不放宽() {
-            properties.getExperience().setEvalQualityRelaxFactor(0f);
-            assessor = new TrajectoryQualityAssessor(properties);
-
-            // effectiveMinRatio = 0.3 * 0 = 0，任何成功率都 >= 0
-            var state = 含工具调用状态(0, 5);
-            var evalResult = 构建评估结果(0.9, Map.of());
-
-            var report = assessor.assess(state, evalResult);
-
-            // 0f >= 0f 为 true，所以成功率门控通过
-            assertTrue(report.qualityPassed(), "宽松系数为 0 时 effectiveMinRatio=0，任何成功率都通过");
-        }
-
-        @Test
-        void 自定义宽松系数为一时Eval高分不改变门控() {
-            properties.getExperience().setEvalQualityRelaxFactor(1f);
-            assessor = new TrajectoryQualityAssessor(properties);
-
-            // effectiveMinRatio = 0.3 * 1 = 0.3，不放宽
-            // 2 成功 + 8 失败 = 成功率 0.2 < 0.3 不通过
-            var state = 含工具调用状态(2, 8);
-            var evalResult = 构建评估结果(0.9, Map.of());
-
-            var report = assessor.assess(state, evalResult);
-
-            assertFalse(report.qualityPassed(), "宽松系数为 1 时相当于不放宽");
         }
 
         @Test

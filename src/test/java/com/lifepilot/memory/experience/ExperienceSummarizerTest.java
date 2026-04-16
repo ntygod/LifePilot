@@ -44,7 +44,7 @@ class ExperienceSummarizerTest {
         properties.getExperience().setLlmTimeoutSeconds(120);
 
         when(qualityAssessor.assess(eq(buildState())))
-                .thenReturn(new TrajectoryQualityReport(true, true, 1.0f, true, 2, true, null, null));
+                .thenReturn(new TrajectoryQualityReport(true, true, 1.0f, true, 2, true));
         when(promptRegistry.render(eq("memory/experience-extraction"), anyMap())).thenReturn("prompt");
         when(vectorSearcher.searchEntities(eq("测试场景: 测试策略"), eq(1), eq(0.90f))).thenReturn(List.of());
         when(generationRouter.call(

@@ -11,7 +11,6 @@ import SettingsProactiveView from '@/views/SettingsProactiveView.vue'
 import AnalyticsUsageView from '@/views/AnalyticsUsageView.vue'
 import AnalyticsAgentsView from '@/views/AnalyticsAgentsView.vue'
 import AnalyticsToolsView from '@/views/AnalyticsToolsView.vue'
-import EvalView from '@/views/eval/EvalView.vue'
 import TraceReplayView from '@/views/TraceReplayView.vue'
 
 const route = useRoute()
@@ -27,7 +26,6 @@ const viewMap: Record<string, Component> = {
   '/analytics/usage': AnalyticsUsageView,
   '/analytics/agents': AnalyticsAgentsView,
   '/analytics/tools': AnalyticsToolsView,
-  '/eval': EvalView,
   '/traces': TraceReplayView,
 }
 
@@ -42,7 +40,6 @@ const labelMap: Record<string, string> = {
   '/analytics/usage': '用量统计',
   '/analytics/agents': '智能体分析',
   '/analytics/tools': '工具统计',
-  '/eval': '评估测试',
   '/traces': '轨迹回放',
 }
 

@@ -322,10 +322,6 @@ lifepilot:
       max-retention-days: 90
       llm-timeout-seconds: 120
       min-tool-success-ratio: 0.3
-      eval-integration-enabled: true
-      eval-improvement-threshold: 0.05
-      eval-tag-prefix: "eval:"
-      eval-quality-relax-factor: 0.5
       # 效果反馈配置
       effectiveness:
         success-ratio-threshold: 0.5
@@ -817,20 +813,6 @@ lifepilot:
       enabled: true
       snapshot-interval-seconds: 300
       max-latency-samples: 1000
-  eval:
-    enabled: true
-    scenario-directory: "${zhiwei.data-dir}/eval/scenarios"
-    default-pass-threshold: 0.7
-    degradation-threshold: 0.1
-    llm-judge:
-      scene: "eval-judge"
-      timeout-seconds: 30
-      fallback-score: 0.5
-      max-retries: 1
-    store:
-      default-query-limit: 50
-    execution:
-      default-timeout-seconds: 60
   # 元能力系统配置
   meta:
     infra:

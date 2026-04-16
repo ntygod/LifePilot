@@ -108,7 +108,6 @@ class ContextAssembler经验注入属性测试 {
         experience.setEnabled(true);
         experience.setMaxInjectionCount(5);
         experience.setInjectionTokenBudget(500);
-        experience.setEvalTagPrefix("eval:");
         var isolation = new MemoryProperties.Experience.Isolation();
         isolation.setCrossContextRetrieval(true);
         experience.setIsolation(isolation);

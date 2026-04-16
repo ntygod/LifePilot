@@ -3,7 +3,6 @@ package com.lifepilot.interaction.web.controller;
 import java.io.IOException;
 import java.time.Instant;
 
-import com.lifepilot.eval.scenario.ScenarioLoadException;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
@@ -59,23 +58,6 @@ public class WebExceptionHandler {
     @ExceptionHandler(DocumentNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocNotFound(DocumentNotFoundException ex) {
         log.warn("文档不存在: {}", ex.getMessage());
-        var error = new ErrorResponse(
-                HttpStatus.NOT_FOUND.value(),
-                ex.getMessage(),
-                Instant.now()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
-    }
-
-    /**
-     * 处理评估场景加载异常，返回 404 Not Found。
-     *
-     * @param ex 异常
-     * @return 标准化错误响应
-     */
-    @ExceptionHandler(ScenarioLoadException.class)
-    public ResponseEntity<ErrorResponse> handleScenarioLoadException(ScenarioLoadException ex) {
-        log.warn("评估场景加载失败: {}", ex.getMessage());
         var error = new ErrorResponse(
                 HttpStatus.NOT_FOUND.value(),
                 ex.getMessage(),

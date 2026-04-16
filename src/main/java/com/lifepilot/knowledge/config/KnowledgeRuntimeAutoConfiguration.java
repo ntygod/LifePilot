@@ -6,7 +6,6 @@ import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.chunking.*;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
 import com.lifepilot.knowledge.enricher.ChunkContextEnricher;
-import com.lifepilot.knowledge.eval.RetrievalEvaluator;
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
@@ -140,12 +139,6 @@ public class KnowledgeRuntimeAutoConfiguration {
                 meterRegistry,
                 eventPublisher
         );
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public RetrievalEvaluator retrievalEvaluator(DocumentRetriever documentRetriever) {
-        return new RetrievalEvaluator(documentRetriever);
     }
 
     @Bean

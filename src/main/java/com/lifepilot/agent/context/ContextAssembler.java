@@ -345,13 +345,10 @@ public class ContextAssembler {
                     })
                     .toList();
 
-            String evalPrefix = experience.getEvalTagPrefix();
             return experiences.stream()
                     .sorted((left, right) -> {
-                        boolean leftHit = hasMatchingEvalTag(left, query, evalPrefix);
-                        boolean rightHit = hasMatchingEvalTag(right, query, evalPrefix);
-                        float leftScore = computeInjectionScore(left, leftHit);
-                        float rightScore = computeInjectionScore(right, rightHit);
+                        float leftScore = computeInjectionScore(left, false);
+                        float rightScore = computeInjectionScore(right, false);
                         return Float.compare(rightScore, leftScore);
                     })
                     .limit(experience.getMaxInjectionCount())
@@ -977,28 +974,6 @@ public class ContextAssembler {
             }
         }
         return ids;
-    }
-
-    private boolean hasMatchingEvalTag(TemporalEntity entity,
-                                       @Nullable String query,
-                                       String evalPrefix) {
-        if (query == null || query.isBlank()) {
-            return false;
-        }
-        Object conditions = entity.properties().get("applicableConditions");
-        if (!(conditions instanceof List<?> items)) {
-            return false;
-        }
-        String lowerQuery = query.toLowerCase(Locale.ROOT);
-        for (Object item : items) {
-            if (item instanceof String tag && tag.startsWith(evalPrefix)) {
-                String tagValue = tag.substring(evalPrefix.length()).toLowerCase(Locale.ROOT);
-                if (lowerQuery.contains(tagValue)) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private TokenBudget buildTokenBudget(int totalTokens,

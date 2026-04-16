@@ -2,8 +2,6 @@ package com.lifepilot.memory.experience;
 
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.eval.model.EvalResult;
-import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
@@ -107,59 +105,6 @@ public class ExperienceSummarizer {
             log.info("经验提炼: 完成, sessionId={}, scenario={}", state.sessionId(), record.scenario());
         }
         return entity;
-    }
-
-    /**
-     * 从 Eval 批量评估结果中提炼经验。
-     *
-     * @param results   评估结果列表
-     * @param scenarios 基准场景列表
-     */
-    public void summarizeFromEval(List<EvalResult> results, List<BenchmarkScenario> scenarios) {
-        if (!config.isEnabled() || !config.isEvalIntegrationEnabled()) {
-            log.debug("经验提炼: Eval 集成已关闭");
-            return;
-        }
-
-        // 构建 scenarioId → BenchmarkScenario 映射
-        var scenarioMap = new HashMap<String, BenchmarkScenario>();
-        for (var s : scenarios) {
-            scenarioMap.put(s.id(), s);
-        }
-
-        for (var evalResult : results) {
-            try {
-                var scenario = scenarioMap.get(evalResult.scenarioId());
-                if (scenario == null) continue;
-
-                // Eval 结果低于通过阈值时标记失败
-                boolean success = evalResult.overallScore() >= 0.7;
-
-                // 构建简化的经验记录
-                var record = new ExperienceRecord(
-                        scenario.userInput(),
-                        success ? "Eval 评估通过的执行策略" : "Eval 评估未通过的执行策略",
-                        evalResult.suggestions(),
-                        appendEvalTags(List.of(), scenario.tags()),
-                        List.of(),
-                        success,
-                        null,
-                        0.0f,
-                        0,
-                        0,
-                        0
-                );
-
-                if (record.scenario() == null || record.scenario().isBlank()) continue;
-
-                persistExperience(record, evalResult.traceId(), success, null);
-                log.info("经验提炼(Eval): 完成, scenarioId={}, score={}",
-                        evalResult.scenarioId(), evalResult.overallScore());
-            } catch (Exception e) {
-                log.warn("经验提炼(Eval): 单条处理失败, evalId={}, error={}",
-                        evalResult.evalId(), e.getMessage());
-            }
-        }
     }
 
     // ===== 内部方法 =====
@@ -403,23 +348,14 @@ public class ExperienceSummarizer {
                             "success", false, "source", "quick_learn"),
                     1, true, Instant.now(), null, state.sessionId(),
                     0.7f, 0.7f, 0, null, Instant.now(), Instant.now());
-            var written = semanticMemory.upsertWithConflictDetection(entity, state.sessionId());
+            var written = SqliteBusyRetry.execute(
+                    () -> semanticMemory.upsertWithConflictDetection(entity, state.sessionId()));
             log.info("即时经验: 写入完成, sessionId={}, scenario={}", state.sessionId(), scenario);
             return written;
         } catch (Exception e) {
             log.warn("即时经验: 写入失败, sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
-    }
-
-    /** 追加 eval 标签前缀到 applicableConditions。 */
-    private List<String> appendEvalTags(List<String> conditions, List<String> tags) {
-        if (tags == null || tags.isEmpty()) return conditions;
-        var result = new ArrayList<>(conditions);
-        for (var tag : tags) {
-            result.add(config.getEvalTagPrefix() + tag);
-        }
-        return List.copyOf(result);
     }
 
 }

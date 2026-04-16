@@ -2,11 +2,9 @@ package com.lifepilot.memory.experience;
 
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.memory.config.MemoryProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 /**
  * 轨迹质量评估器 — 评估 ReAct 轨迹是否适合提炼经验。
@@ -34,17 +32,6 @@ public class TrajectoryQualityAssessor {
      * @return 质量报告
      */
     public TrajectoryQualityReport assess(ReactAgentState state) {
-        return assess(state, null);
-    }
-
-    /**
-     * 评估轨迹质量（含 Eval 补充维度）。
-     *
-     * @param state      Agent 最终状态
-     * @param evalResult Eval 评估结果（可选）
-     * @return 质量报告
-     */
-    public TrajectoryQualityReport assess(ReactAgentState state, @Nullable EvalResult evalResult) {
         // 1. goal 清晰度：非空且长度 ≥ 2
         boolean goalClarity = state.goal() != null && state.goal().length() >= 2;
 
@@ -68,16 +55,8 @@ public class TrajectoryQualityAssessor {
 
         int totalSteps = state.stepCount();
 
-        // 5. Eval 补充维度
-        Double evalOverallScore = evalResult != null ? evalResult.overallScore() : null;
-        var evalDimensionScores = evalResult != null ? evalResult.dimensionScores() : null;
-
-        // 6. 综合门控判定
+        // 5. 综合门控判定
         float effectiveMinRatio = config.getMinToolSuccessRatio();
-        if (evalResult != null && evalResult.overallScore() >= 0.7) {
-            // Eval 高分时放宽 toolSuccessRatio 门控
-            effectiveMinRatio *= config.getEvalQualityRelaxFactor();
-        }
 
         boolean qualityPassed = goalClarity
                 && trajectoryCompleteness
@@ -97,9 +76,7 @@ public class TrajectoryQualityAssessor {
                 toolSuccessRatio,
                 taskSuccess,
                 totalSteps,
-                qualityPassed,
-                evalOverallScore,
-                evalDimensionScores
+                qualityPassed
         );
     }
 }

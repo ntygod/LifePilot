@@ -220,20 +220,6 @@ const router = createRouter({
     },
 
     /**
-     * Eval / 评估（挂在 SettingsView 壳子下）
-     */
-    {
-      path: '/eval',
-      name: 'eval',
-      component: () => import('@/views/SettingsView.vue')
-    },
-    {
-      path: '/eval/:evalRunId',
-      name: 'evalRunDetail',
-      component: () => import('@/views/EvalRunDetailView.vue')
-    },
-
-    /**
      * Trace / 轨迹
      */
     {

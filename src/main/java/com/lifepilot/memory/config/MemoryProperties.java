@@ -844,14 +844,6 @@ public static class Retrieval {
         private int llmTimeoutSeconds = 120;
         /** 工具调用有效率门控阈值 [0.0, 1.0]，默认 0.3。 */
         private float minToolSuccessRatio = 0.3f;
-        /** Eval 集成开关，默认 true。 */
-        private boolean evalIntegrationEnabled = true;
-        /** 经验效果提升阈值，默认 0.05。 */
-        private float evalImprovementThreshold = 0.05f;
-        /** Eval 标签前缀，默认 "eval:"。 */
-        private String evalTagPrefix = "eval:";
-        /** Eval 高分时 toolSuccessRatio 宽松系数，默认 0.5。 */
-        private float evalQualityRelaxFactor = 0.5f;
 
         /** 效果反馈配置。 */
         private Effectiveness effectiveness = new Effectiveness();
@@ -887,18 +879,6 @@ public static class Retrieval {
 
         public float getMinToolSuccessRatio() { return minToolSuccessRatio; }
         public void setMinToolSuccessRatio(float minToolSuccessRatio) { this.minToolSuccessRatio = minToolSuccessRatio; }
-
-        public boolean isEvalIntegrationEnabled() { return evalIntegrationEnabled; }
-        public void setEvalIntegrationEnabled(boolean evalIntegrationEnabled) { this.evalIntegrationEnabled = evalIntegrationEnabled; }
-
-        public float getEvalImprovementThreshold() { return evalImprovementThreshold; }
-        public void setEvalImprovementThreshold(float evalImprovementThreshold) { this.evalImprovementThreshold = evalImprovementThreshold; }
-
-        public String getEvalTagPrefix() { return evalTagPrefix; }
-        public void setEvalTagPrefix(String evalTagPrefix) { this.evalTagPrefix = evalTagPrefix; }
-
-        public float getEvalQualityRelaxFactor() { return evalQualityRelaxFactor; }
-        public void setEvalQualityRelaxFactor(float evalQualityRelaxFactor) { this.evalQualityRelaxFactor = evalQualityRelaxFactor; }
 
         public Effectiveness getEffectiveness() { return effectiveness; }
         public void setEffectiveness(Effectiveness effectiveness) { this.effectiveness = effectiveness; }
