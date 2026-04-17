@@ -339,6 +339,11 @@ public class ProviderMessageBuilder {
             );
             body = preview.isBlank() ? observation.output() : preview;
         }
+        // 防御：Observation.output 合约上非 null，但上游异常场景（工具抛异常且被吞、
+        // 序列化反序列化边界）仍可能为 null。显式兜底为空串，避免字符串拼接产出 "null" 字面量。
+        if (body == null) {
+            body = "";
+        }
         // 工具级经验提示由呈现层动态拼接，保持 Observation.output 自身为纯净 JSON。
         if (toolTipResolver != null) {
             String tips = toolTipResolver.tipsFor(observation.toolId());

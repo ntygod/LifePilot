@@ -527,6 +527,27 @@ class ProviderMessageBuilderTest {
     }
 
     @Test
+    void Observation呈现层_output为null时呈现为空串不拼出字面量null() {
+        var resolver = mock(ToolTipResolver.class);
+        when(resolver.tipsFor("file.read")).thenReturn("[历史经验提示] 注意边界。");
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(new AgentConfigProperties()),
+                new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()),
+                resolver
+        );
+        // 异常场景：上游工具抛错被吞或反序列化边界可能产出 null output
+        var state = toolResultState("call-null", "file.read", "读取文件", null);
+
+        var result = builder.build(toolContext(), state);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+
+        // 验证：不应拼出字面量 "null"（Java 的 "tips\n" + null 会产出 "tips\nnull"）
+        assertThat(toolResponse.getResponses().getFirst().responseData())
+                .isEqualTo("[历史经验提示] 注意边界。\n")
+                .doesNotContain("null");
+    }
+
+    @Test
     void Observation呈现层_未注入ToolTipResolver时内容保持原始output() {
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties()),

@@ -10,21 +10,18 @@ import com.lifepilot.permission.service.PermissionApprovalService;
 import com.lifepilot.permission.service.PermissionRequestFactory;
 import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.ToolContextKeys;
-import com.lifepilot.tool.model.ToolInput;
-import com.lifepilot.tool.model.ToolResult;
-import com.lifepilot.tool.model.ToolResultMeta;
-import com.lifepilot.tool.model.ToolResultStatus;
-import com.lifepilot.tool.model.ValidationResult;
+import com.lifepilot.tool.model.*;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 
 /**
@@ -36,7 +33,7 @@ import java.util.concurrent.*;
  * @author zsg
  * @since 2026-02-24
  */
-public class ToolExecutionPipeline implements java.io.Closeable {
+public class ToolExecutionPipeline implements Closeable {
 
     private static final Logger log = LoggerFactory.getLogger(ToolExecutionPipeline.class);
 
@@ -231,7 +228,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
             if (attempt > 0) {
                 // RATE_LIMITED 时优先使用 retryAfterMs 作为等待时间
                 long actualDelay = delay;
-                if (lastResult != null && lastResult.status() == ToolResultStatus.RATE_LIMITED) {
+                if (lastResult.status() == ToolResultStatus.RATE_LIMITED) {
                     Object retryAfterMs = lastResult.data().get("retryAfterMs");
                     if (retryAfterMs instanceof Number n && n.longValue() > 0) {
                         actualDelay = n.longValue();
@@ -275,7 +272,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
             return parameters;
         }
         Map<String, Object> enriched = new LinkedHashMap<>(parameters);
-        enriched.put("taskId", java.util.UUID.randomUUID().toString());
+        enriched.put("taskId", UUID.randomUUID().toString());
         return Map.copyOf(enriched);
     }
 
