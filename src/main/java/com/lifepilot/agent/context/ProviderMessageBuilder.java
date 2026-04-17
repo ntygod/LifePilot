@@ -5,6 +5,7 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.memory.experience.ToolTipResolver;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -35,6 +36,8 @@ public class ProviderMessageBuilder {
 
     private final TranscriptHygieneEngine hygieneEngine;
     private final SessionPruningEngine pruningEngine;
+    @Nullable
+    private final ToolTipResolver toolTipResolver;
 
     public record BuildResult(
             List<Message> messages,
@@ -46,13 +49,20 @@ public class ProviderMessageBuilder {
     }
 
     public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine) {
-        this(hygieneEngine, new SessionPruningEngine(new com.lifepilot.agent.config.AgentConfigProperties(), new ObjectMapper()));
+        this(hygieneEngine, new SessionPruningEngine(new com.lifepilot.agent.config.AgentConfigProperties(), new ObjectMapper()), null);
     }
 
     public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine,
                                   SessionPruningEngine pruningEngine) {
+        this(hygieneEngine, pruningEngine, null);
+    }
+
+    public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine,
+                                  SessionPruningEngine pruningEngine,
+                                  @Nullable ToolTipResolver toolTipResolver) {
         this.hygieneEngine = Objects.requireNonNull(hygieneEngine);
         this.pruningEngine = Objects.requireNonNull(pruningEngine);
+        this.toolTipResolver = toolTipResolver;
     }
 
     public BuildResult build(AssembledContext context, ReactAgentState state) {
@@ -318,15 +328,25 @@ public class ProviderMessageBuilder {
     }
 
     private String formatObservationForPrompt(ReactStep.Observation observation) {
+        String body;
         if (!shouldUseObservationPreview(observation)) {
-            return observation.output();
+            body = observation.output();
+        } else {
+            String preview = pruningEngine.formatCurrentObservationPreview(
+                    observation.toolId(),
+                    observation.success(),
+                    observation.output()
+            );
+            body = preview.isBlank() ? observation.output() : preview;
         }
-        String preview = pruningEngine.formatCurrentObservationPreview(
-                observation.toolId(),
-                observation.success(),
-                observation.output()
-        );
-        return preview.isBlank() ? observation.output() : preview;
+        // 工具级经验提示由呈现层动态拼接，保持 Observation.output 自身为纯净 JSON。
+        if (toolTipResolver != null) {
+            String tips = toolTipResolver.tipsFor(observation.toolId());
+            if (!tips.isEmpty()) {
+                return tips + "\n" + body;
+            }
+        }
+        return body;
     }
 
     private boolean shouldUseObservationPreview(ReactStep.Observation observation) {

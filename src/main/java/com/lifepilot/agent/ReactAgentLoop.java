@@ -124,7 +124,6 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable SessionWorkspaceService workspaceService,
             @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
             @Nullable DynamicToolRegistry toolRegistry,
-            @Nullable com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
             @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
@@ -142,7 +141,6 @@ public class ReactAgentLoop implements CallbackHelper {
                 intentMatcher,
                 config.getLoop().getMaxParallelToolCalls(),
                 multimodalRouter,
-                semanticMemory,
                 workspaceService
         );
         this.compactionEngine = compactionEngine;

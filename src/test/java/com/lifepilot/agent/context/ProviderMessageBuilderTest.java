@@ -6,6 +6,7 @@ import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
+import com.lifepilot.memory.experience.ToolTipResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -16,6 +17,8 @@ import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * ProviderMessageBuilder 测试。
@@ -470,5 +473,133 @@ class ProviderMessageBuilderTest {
         var toolResponse = (ToolResponseMessage) result.messages().get(3);
 
         assertThat(toolResponse.getResponses().getFirst().responseData()).isEqualTo(rawOutput);
+    }
+
+    // ==================== 工具经验提示：呈现层动态拼接 ====================
+    //
+    // 回归测试锁：历史 bug 是 ToolExecutionCoordinator 把经验提示直接前置到
+    // Observation.output，导致 Jackson 解析该字段时失败（Skill 激活路径 / 审计
+    // 消费者全部受影响）。方案 C 纯版：Observation.output 保持纯净，经验提示
+    // 由 ProviderMessageBuilder 在构造 LLM 消息时从 ToolTipResolver 动态拼接。
+    // 以下两组测试确保：
+    //   1) Resolver 返回非空 tips 时 → ToolResponseMessage 内容为 "tips\n原始output"
+    //   2) Resolver 返回空串时 → 内容保持原始 output 不被污染
+
+    @Test
+    void Observation呈现层_ToolTipResolver非空时应前置拼接tips保留原始output() {
+        var resolver = mock(ToolTipResolver.class);
+        when(resolver.tipsFor("file.read"))
+                .thenReturn("[历史经验提示] 注意 path 参数不能为空。");
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(new AgentConfigProperties()),
+                new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()),
+                resolver
+        );
+        String rawOutput = "{\"content\":\"file body\"}";
+        var state = toolResultState("call-tip-1", "file.read", "读取文件", rawOutput);
+
+        var result = builder.build(toolContext(), state);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+        String responseData = toolResponse.getResponses().getFirst().responseData();
+
+        // 提示被前置，原始 output 保留在后半段
+        assertThat(responseData)
+                .startsWith("[历史经验提示] 注意 path 参数不能为空。\n")
+                .endsWith(rawOutput);
+    }
+
+    @Test
+    void Observation呈现层_ToolTipResolver返回空时内容保持原始output() {
+        var resolver = mock(ToolTipResolver.class);
+        when(resolver.tipsFor("file.read")).thenReturn("");
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(new AgentConfigProperties()),
+                new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()),
+                resolver
+        );
+        String rawOutput = "{\"content\":\"file body\"}";
+        var state = toolResultState("call-tip-2", "file.read", "读取文件", rawOutput);
+
+        var result = builder.build(toolContext(), state);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+
+        assertThat(toolResponse.getResponses().getFirst().responseData()).isEqualTo(rawOutput);
+    }
+
+    @Test
+    void Observation呈现层_未注入ToolTipResolver时内容保持原始output() {
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(new AgentConfigProperties()),
+                new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()),
+                null
+        );
+        String rawOutput = "{\"content\":\"file body\"}";
+        var state = toolResultState("call-tip-3", "file.read", "读取文件", rawOutput);
+
+        var result = builder.build(toolContext(), state);
+        var toolResponse = (ToolResponseMessage) result.messages().get(3);
+
+        assertThat(toolResponse.getResponses().getFirst().responseData()).isEqualTo(rawOutput);
+    }
+
+    // ==================== helpers ====================
+
+    private static AssembledContext toolContext() {
+        return new AssembledContext(
+                "system prompt",
+                List.of(),
+                List.of(),
+                "<current_request>继续</current_request>",
+                List.of(),
+                TokenBudget.allocateDefault(4096),
+                0,
+                0.0f,
+                0,
+                false,
+                List.of(),
+                null
+        );
+    }
+
+    private static ReactAgentState toolResultState(String callId,
+                                                   String toolId,
+                                                   String toolName,
+                                                   String rawOutput) {
+        return ReactAgentState.builder()
+                .traceId("trace-" + callId)
+                .sessionId("session-" + callId)
+                .goal("test")
+                .channel("web")
+                .steps(List.of(
+                        new ReactStep.ToolCall(toolId, toolName, "{}", 10, callId),
+                        new ReactStep.Observation(toolId, toolName, true, rawOutput, 12, callId)
+                ))
+                .stepCount(2)
+                .shortTermMemory(List.of())
+                .mentionedEntities(List.of())
+                .budget(Budget.builder()
+                        .maxTokens(4000)
+                        .tokensUsed(0)
+                        .tokensReserved(0)
+                        .maxSteps(10)
+                        .stepsUsed(0)
+                        .maxDuration(Duration.ofMinutes(1))
+                        .elapsed(Duration.ZERO)
+                        .build())
+                .parentTraceId(null)
+                .depth(0)
+                .preferredProvider(null)
+                .done(false)
+                .finalOutput(null)
+                .terminationReason(null)
+                .completionReason(null)
+                .reasoningSummary(null)
+                .completionMode(CompletionMode.NORMAL)
+                .allowedToolIds(null)
+                .pendingMedia(null)
+                .earlyStopRejectCount(0)
+                .suspended(false)
+                .suspendReason(null)
+                .build();
     }
 }

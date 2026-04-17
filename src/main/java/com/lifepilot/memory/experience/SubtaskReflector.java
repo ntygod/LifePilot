@@ -35,7 +35,7 @@ public class SubtaskReflector {
     private static final Logger log = LoggerFactory.getLogger(SubtaskReflector.class);
     private static final String PROMPT_KEY = "memory/subtask-reflection";
 
-    /** 工具级经验粒度标识 — 在 ContextAssembler、ToolExecutionCoordinator 中共享引用。 */
+    /** 工具级经验粒度标识 — 在 ContextAssembler、ToolTipResolver 中共享引用。 */
     public static final String TOOL_LEVEL = "TOOL_LEVEL";
 
     private final SemanticMemory semanticMemory;

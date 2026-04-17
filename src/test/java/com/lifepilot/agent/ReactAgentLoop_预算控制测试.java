@@ -103,7 +103,6 @@ class ReactAgentLoop_预算控制测试 {
                 null,  // workspaceService
                 null,  // skillRegistry
                 null,  // toolRegistry
-                null,  // semanticMemory
                 null   // experienceSummarizer
         );
     }
@@ -336,7 +335,6 @@ class ReactAgentLoop_预算控制测试 {
                 null,  // workspaceService
                 null,  // skillRegistry
                 null,  // toolRegistry
-                null,  // semanticMemory
                 null   // experienceSummarizer
         );
 

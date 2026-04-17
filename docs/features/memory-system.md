@@ -51,7 +51,7 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 当前自动注入到 Prompt 的长期信息包括三类：
 
 - L3 的 `PREFERENCE / HABIT / GOAL`（用户画像）
-- L3 的 `EXPERIENCE`（排除工具级经验，工具级经验由 `ToolExecutionCoordinator` 在工具执行前按 toolId 精准注入）
+- L3 的 `EXPERIENCE`（排除工具级经验；工具级经验由 `ProviderMessageBuilder` 在构造 LLM 消息时通过 `ToolTipResolver` 按 toolId 动态前置到工具输出之前，不写入 `Observation.output`）
 - 通过 `HybridRetriever` 检索的相关记忆实体（`memory_context`），排除已被画像和经验路径覆盖的类型
 
 注入权重由 `lifepilot.memory.retrieval.injectionWeights` 控制（relevance/importance/recency，默认 0.4/0.3/0.3）。
@@ -99,7 +99,7 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 ### 3.4 复用历史经验
 
-当任务与过去成功案例相似时，系统会自动注入少量非工具级经验实体；工具级经验则在工具执行前由 `ToolExecutionCoordinator` 按 toolId 精准注入到 observation 中，帮助 Agent 理解结果或纠正后续调用。如果还需要更主动地查找历史策略，Agent 还可以调用 `memory.search-experience`。
+当任务与过去成功案例相似时，系统会自动注入少量非工具级经验实体；工具级经验则由 `ProviderMessageBuilder` 在构造 LLM 消息时通过 `ToolTipResolver` 按 toolId 动态前置到工具输出之前（装饰走呈现层），帮助 Agent 理解结果或纠正后续调用。`Observation.output` 本身保持纯 JSON，不被装饰文本污染，Skill 激活、Trace 回放、审计等下游解析都能拿到干净的工具原始输出。如果还需要更主动地查找历史策略，Agent 还可以调用 `memory.search-experience`。
 
 ## 4. 配置项
 

@@ -93,10 +93,18 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public com.lifepilot.memory.experience.ToolTipResolver toolTipResolver(
+            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory) {
+        return new com.lifepilot.memory.experience.ToolTipResolver(semanticMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ProviderMessageBuilder providerMessageBuilder(
             TranscriptHygieneEngine transcriptHygieneEngine,
-            SessionPruningEngine sessionPruningEngine) {
-        return new ProviderMessageBuilder(transcriptHygieneEngine, sessionPruningEngine);
+            SessionPruningEngine sessionPruningEngine,
+            @Autowired(required = false) com.lifepilot.memory.experience.ToolTipResolver toolTipResolver) {
+        return new ProviderMessageBuilder(transcriptHygieneEngine, sessionPruningEngine, toolTipResolver);
     }
 
     @Bean
@@ -299,7 +307,6 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
-            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new ReactAgentLoop(
                 contextAssembler,
@@ -319,7 +326,6 @@ public class AgentAutoConfiguration {
                 workspaceService,
                 skillRegistry,
                 toolRegistry,
-                semanticMemory,
                 experienceSummarizer);
     }
 
