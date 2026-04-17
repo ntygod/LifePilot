@@ -55,3 +55,7 @@ docs/AI-Agent-Java面试复习手册.md
 # === Reference ===
 .openclaw-ref/
 /.claude/
+
+# === Local scratch ===
+.superpowers/
+/tmp/

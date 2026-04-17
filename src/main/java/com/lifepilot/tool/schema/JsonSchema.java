@@ -5,11 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.tool.model.ValidationError;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 轻量 JSON Schema 校验。
@@ -168,13 +164,6 @@ public class JsonSchema {
                         errors.add(ValidationError.typeMismatch(
                                 field, expectedType, value.getClass().getSimpleName()));
                     }
-                    // format 关键字检查
-                    String format = (String) propSchema.get("format");
-                    if (format != null && value instanceof String strValue) {
-                        if (!matchesFormat(strValue, format)) {
-                            errors.add(ValidationError.formatMismatch(field, format, strValue));
-                        }
-                    }
                 }
             }
         }
@@ -193,30 +182,6 @@ public class JsonSchema {
             case "array" -> value instanceof List;
             default -> true; // 未知类型不校验
         };
-    }
-
-    /** 检查字符串值是否匹配指定的 JSON Schema format。 */
-    private boolean matchesFormat(String value, String format) {
-        try {
-            return switch (format) {
-                case "date-time" -> {
-                    // 使用 ISO_DATE_TIME 解析，兼容带/不带时区偏移的格式
-                    java.time.format.DateTimeFormatter.ISO_DATE_TIME.parse(value);
-                    yield true;
-                }
-                case "date" -> {
-                    java.time.LocalDate.parse(value);
-                    yield true;
-                }
-                case "time" -> {
-                    java.time.LocalTime.parse(value);
-                    yield true;
-                }
-                default -> true; // 未知 format 不校验
-            };
-        } catch (java.time.format.DateTimeParseException e) {
-            return false;
-        }
     }
 
     /** 获取 Schema 定义。 */

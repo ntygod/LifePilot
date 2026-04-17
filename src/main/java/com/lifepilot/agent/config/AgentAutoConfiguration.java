@@ -18,6 +18,7 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -26,14 +27,12 @@ import com.lifepilot.interaction.web.service.SessionTitleGenerator;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.document.MemoryDocumentRepository;
-import com.lifepilot.memory.experience.ContrastiveLearner;
-import com.lifepilot.memory.experience.EffectivenessTracker;
-import com.lifepilot.memory.experience.ExperienceSummarizer;
-import com.lifepilot.memory.experience.SubtaskReflector;
+import com.lifepilot.memory.experience.*;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -47,13 +46,13 @@ import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -93,10 +92,20 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            SemanticMemory.class)
+    public ToolTipResolver toolTipResolver(
+            SemanticMemory semanticMemory) {
+        return new ToolTipResolver(semanticMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ProviderMessageBuilder providerMessageBuilder(
             TranscriptHygieneEngine transcriptHygieneEngine,
-            SessionPruningEngine sessionPruningEngine) {
-        return new ProviderMessageBuilder(transcriptHygieneEngine, sessionPruningEngine);
+            SessionPruningEngine sessionPruningEngine,
+            @Autowired(required = false) ToolTipResolver toolTipResolver) {
+        return new ProviderMessageBuilder(transcriptHygieneEngine, sessionPruningEngine, toolTipResolver);
     }
 
     @Bean
@@ -187,7 +196,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
             @Autowired(required = false) HybridRetriever hybridRetriever,
-            @Autowired(required = false) com.lifepilot.agent.context.WeatherService weatherService) {
+            @Autowired(required = false) WeatherService weatherService) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -297,9 +306,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
+            @Autowired(required = false) SkillRegistry skillRegistry,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
-            @Autowired(required = false) com.lifepilot.memory.semantic.SemanticMemory semanticMemory,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new ReactAgentLoop(
                 contextAssembler,
@@ -319,7 +327,6 @@ public class AgentAutoConfiguration {
                 workspaceService,
                 skillRegistry,
                 toolRegistry,
-                semanticMemory,
                 experienceSummarizer);
     }
 
@@ -340,7 +347,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SuspendStore suspendStore,
             @Autowired(required = false) ChatTurnService chatTurnService,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture uiEmitTreeCapture) {
+            @Autowired(required = false) UiEmitTreeCapture uiEmitTreeCapture) {
         return new AgentOrchestrator(
                 reactAgentLoop,
                 persistenceHandler,

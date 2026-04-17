@@ -128,7 +128,7 @@ graph TB
 - SQL 聚合方法（`countCurrentByType`、`countRecentlyAccessed`、`averageImportanceScore`）用于记忆健康度 API，避免全量加载实体到 JVM 内存
 - `ContextAssembler` 当前自动注入的长期信息主要来自：
   - `PREFERENCE / HABIT / GOAL`（用户画像）
-  - `EXPERIENCE`（排除工具级经验，工具级经验由 `ToolExecutionCoordinator` 在工具执行前精准注入）
+  - `EXPERIENCE`（排除工具级经验；工具级经验由 `ProviderMessageBuilder` + `ToolTipResolver` 在构造 LLM 消息时按 toolId 动态前置到工具输出之前，不污染 `Observation.output`）
   - 通过 `HybridRetriever` 检索的相关记忆实体（排除已由画像和经验路径覆盖的类型），注入到 `<memory_context>` 标签
 
 ### 3.5 ProceduralMemory（L4 程序记忆）
@@ -171,7 +171,10 @@ graph TB
 - `ContrastiveLearner` 不再创建独立的对比洞察实体，改为增强源经验（成功经验）的 lessons 列表，追加 `[对比]` 前缀的 lesson 条目并标记 `contrastiveEnriched=true`
 - `ContrastiveInsight` 记录包含 `failureReason`、`successFactor`、`contrastiveLessons` 三个字段（`avoidanceStrategy` 已删除）
 - `SubtaskReflector` 产出的经验带 `toolId`（主工具 ID）和 `granularity=TOOL_LEVEL` 标记
-- 工具级经验不在 `ContextAssembler` 的通用经验注入中出现，而是在工具执行前由 `ToolExecutionCoordinator.loadToolTips()` 按 toolId 精准注入到 observation 中
+- 工具级经验不在 `ContextAssembler` 的通用经验注入中出现，而是由 `ProviderMessageBuilder` 在构造 LLM 消息时借助 `ToolTipResolver.tipsFor(toolId)` 动态拼接到工具原始输出之前（呈现层装饰）
+- `ToolTipResolver`（`com.lifepilot.memory.experience.ToolTipResolver`）是独立 Bean，持有 `SemanticMemory` 引用，按 toolId 缓存 30 分钟，仅选取 `granularity=TOOL_LEVEL` 且 `toolId` 匹配的经验 top 2
+- 关注点分离：`Observation.output` 始终保持工具原始 JSON（事实源纯净），工具提示等装饰文本仅出现在发送给 LLM 的消息中；Skill 激活、Trace 回放、审计、经验提取等下游消费者解析 `Observation.output` 时都能拿到未被污染的纯 JSON
+- `ToolExecutionCoordinator` 不再感知工具级经验，内部不再持有 `semanticMemory` 字段或 `loadToolTips()` 缓存
 - `ContextAssembler` 会按重要度和适用条件自动注入非工具级经验
 - `memory.search-experience` 允许 Agent 主动检索经验
 
@@ -268,7 +271,7 @@ sequenceDiagram
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；`ToolExecutionCoordinator` 按 toolId 精准注入工具级经验，关键工具执行结果写入 L1 工作区；`ReactAgentLoop` 反思触发时异步写入即时经验并将反思结论写入 L1 工作区 |
+| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；`ProviderMessageBuilder` 借助 `ToolTipResolver` 在构造 LLM 消息时按 toolId 动态前置工具级经验提示（`Observation.output` 保持纯 JSON）；`ToolExecutionCoordinator` 在关键工具执行成功后写入 L1 工作区；`ReactAgentLoop` 反思触发时异步写入即时经验并将反思结论写入 L1 工作区 |
 | 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
 | 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
 | 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `knowledge.search` 工具通过知识库检索补充外部文档片段 |

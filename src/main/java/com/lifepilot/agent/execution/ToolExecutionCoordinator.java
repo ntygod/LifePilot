@@ -13,15 +13,10 @@ import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.memory.experience.SubtaskReflector;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkingSetItem;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
@@ -71,14 +66,8 @@ public class ToolExecutionCoordinator {
     @Nullable
     private final MultimodalRouter multimodalRouter;
     @Nullable
-    private final SemanticMemory semanticMemory;
-    @Nullable
     private final SessionWorkspaceService workspaceService;
     private final int maxParallelToolCalls;
-    /** 工具级经验缓存，按 toolId 索引，避免每次工具调用都查库。 */
-    private final Map<String, String> toolTipCache = new java.util.concurrent.ConcurrentHashMap<>();
-    private volatile Instant toolTipCacheTime = Instant.EPOCH;
-    private static final Duration TOOL_TIP_CACHE_TTL = Duration.ofMinutes(30);
 
     /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
     private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
@@ -93,7 +82,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable ProceduralMemory proceduralMemory,
                                     @Nullable IntentMatcher intentMatcher) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
-                mediaDataExtractor, proceduralMemory, intentMatcher, 4, null, null, null);
+                mediaDataExtractor, proceduralMemory, intentMatcher, 4, null, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -105,7 +94,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable IntentMatcher intentMatcher,
                                     int maxParallelToolCalls) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
-                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls, null, null, null);
+                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls, null, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -119,7 +108,7 @@ public class ToolExecutionCoordinator {
                                     @Nullable MultimodalRouter multimodalRouter) {
         this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
                 mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls,
-                multimodalRouter, null, null);
+                multimodalRouter, null);
     }
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
@@ -131,22 +120,6 @@ public class ToolExecutionCoordinator {
                                     @Nullable IntentMatcher intentMatcher,
                                     int maxParallelToolCalls,
                                     @Nullable MultimodalRouter multimodalRouter,
-                                    @Nullable SemanticMemory semanticMemory) {
-        this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
-                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls,
-                multimodalRouter, semanticMemory, null);
-    }
-
-    public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
-                                    ObjectMapper objectMapper,
-                                    @Nullable TraceRecorder traceRecorder,
-                                    @Nullable TranscriptStore transcriptStore,
-                                    @Nullable MediaDataExtractor mediaDataExtractor,
-                                    @Nullable ProceduralMemory proceduralMemory,
-                                    @Nullable IntentMatcher intentMatcher,
-                                    int maxParallelToolCalls,
-                                    @Nullable MultimodalRouter multimodalRouter,
-                                    @Nullable SemanticMemory semanticMemory,
                                     @Nullable SessionWorkspaceService workspaceService) {
         this.agentToolProvider = agentToolProvider;
         this.objectMapper = objectMapper;
@@ -157,7 +130,6 @@ public class ToolExecutionCoordinator {
         this.intentMatcher = intentMatcher;
         this.maxParallelToolCalls = Math.max(1, maxParallelToolCalls);
         this.multimodalRouter = multimodalRouter;
-        this.semanticMemory = semanticMemory;
         this.workspaceService = workspaceService;
     }
 
@@ -586,12 +558,9 @@ public class ToolExecutionCoordinator {
                     MediaDataExtractor.NO_VISION_PLACEHOLDER);
         }
 
-        // 工具级经验提示：将历史经验注入 observation，帮助 Agent 理解结果或纠正后续调用
-        String toolTips = loadToolTips(planned.toolId());
-        if (!toolTips.isEmpty()) {
-            observationOutput = toolTips + "\n" + observationOutput;
-        }
-
+        // Observation.output 始终保持工具原始输出 — 经验提示等装饰文本由呈现层
+        // （ProviderMessageBuilder + ToolTipResolver）在构造 LLM 消息时动态拼接，
+        // 避免污染 JSON 结构，影响 Skill 激活 / 审计 / trace 回放等下游解析。
         state = stepAppender.append(state, new ReactStep.Observation(
                 planned.toolId(),
                 planned.toolDisplayName(),
@@ -945,51 +914,6 @@ public class ToolExecutionCoordinator {
             log.debug("Trace 工具步骤记录失败: toolId={}, startedAt={}, error={}",
                     toolId, startTime, e.getMessage());
         }
-    }
-
-    /**
-     * 加载指定工具的历史经验提示。
-     *
-     * <p>从 L3 EXPERIENCE 中检索 granularity=TOOL_LEVEL 且 toolId 匹配的经验，
-     * 按 importanceScore 降序取 top 2，格式化为简短提示。缓存 30 分钟。</p>
-     */
-    private String loadToolTips(String toolId) {
-        if (semanticMemory == null || toolId == null) {
-            return "";
-        }
-        // 缓存过期则清空
-        if (Duration.between(toolTipCacheTime, Instant.now()).compareTo(TOOL_TIP_CACHE_TTL) > 0) {
-            toolTipCache.clear();
-            toolTipCacheTime = Instant.now();
-        }
-        return toolTipCache.computeIfAbsent(toolId, id -> {
-            try {
-                var experiences = semanticMemory.findCurrentByType(
-                        EntityType.EXPERIENCE, MemoryReadFilter.agentExperience());
-                var tips = experiences.stream()
-                        .filter(e -> SubtaskReflector.TOOL_LEVEL.equals(e.properties().get("granularity")))
-                        .filter(e -> id.equals(e.properties().get("toolId")))
-                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
-                        .limit(2)
-                        .toList();
-                if (tips.isEmpty()) {
-                    return "";
-                }
-                var sb = new StringBuilder("[历史经验提示] ");
-                for (var tip : tips) {
-                    var lessons = tip.properties().get("lessons");
-                    if (lessons instanceof List<?> lessonList && !lessonList.isEmpty()) {
-                        sb.append(lessonList.getFirst()).append("。");
-                    } else if (tip.description() != null) {
-                        sb.append(tip.description()).append("。");
-                    }
-                }
-                return sb.toString().strip();
-            } catch (Exception e) {
-                log.debug("工具经验提示加载失败: toolId={}, error={}", id, e.getMessage());
-                return "";
-            }
-        });
     }
 
     /** 对纯文本结果做轻量 token 估算，供 observation 步骤和预算扣减使用。 */
