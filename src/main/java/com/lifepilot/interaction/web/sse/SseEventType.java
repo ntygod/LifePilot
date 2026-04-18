@@ -122,4 +122,10 @@ public final class SseEventType {
 
     /** 后台进程状态变化事件 */
     public static final String PROCESS_STATE_CHANGE = "process-state-change";
+
+    /** 后台进程启动事件 */
+    public static final String PROCESS_STARTED = "process-started";
+
+    /** 后台进程初始快照事件（连接建立时推送当前所有活跃进程） */
+    public static final String PROCESS_SNAPSHOT = "process-snapshot";
 }

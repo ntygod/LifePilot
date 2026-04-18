@@ -6,6 +6,7 @@ import GlobalLoadingBar from '@/components/global/GlobalLoadingBar.vue'
 import { Button } from '@/components/ui/button'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useNotificationStream } from '@/composables/useNotificationStream'
+import { useProcessStream } from '@/composables/useProcessStream'
 import Sidebar from './Sidebar.vue'
 
 const sidebarOpen = ref(false)
@@ -15,6 +16,9 @@ const { install: installShortcuts, uninstall: uninstallShortcuts } = useKeyboard
 
 // 建立通知 SSE 连接，接收标题生成、通知推送等实时事件
 useNotificationStream()
+
+// 建立后台进程 SSE 连接（全局订阅，胶囊组件在各场景页自行渲染）
+useProcessStream()
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 768

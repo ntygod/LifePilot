@@ -13,6 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Info } from 'lucide-vue-next'
 import { logger } from '@/utils/logger'
 import { useSettings } from '@/composables/useSettings'
 import { settingsApi } from '@/api/client'
@@ -172,6 +179,72 @@ function handleWorkspaceInputKeydown(event: KeyboardEvent) {
   }
 }
 
+// ---- 外部 CLI Bash 依赖（Claude Code / Codex 在 Windows 上需要 Unix bash） ----
+const externalCliBashPath = ref('')
+const externalCliBashInputValue = ref('')
+const externalCliBashSaving = ref(false)
+
+async function loadExternalCliBash() {
+  try {
+    const r = await settingsApi.getExternalCliBashSettings()
+    externalCliBashPath.value = r.externalCliBashPath ?? ''
+    externalCliBashInputValue.value = r.externalCliBashPath ?? ''
+  } catch (e) {
+    logger.error('加载外部 CLI Bash 设置失败:', e)
+  }
+}
+
+async function saveExternalCliBash(value: string) {
+  externalCliBashSaving.value = true
+  try {
+    const r = await settingsApi.updateExternalCliBashSettings({
+      externalCliBashPath: value || null
+    })
+    externalCliBashPath.value = r.externalCliBashPath ?? ''
+    externalCliBashInputValue.value = r.externalCliBashPath ?? ''
+  } catch (e) {
+    logger.error('保存外部 CLI Bash 路径失败:', e)
+  } finally {
+    externalCliBashSaving.value = false
+  }
+}
+
+async function browseExternalCliBash() {
+  if (isTauri) {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        title: '选择 Bash 可执行文件',
+        filters: [{ name: 'bash', extensions: ['exe'] }],
+      })
+      if (selected && typeof selected === 'string') {
+        externalCliBashInputValue.value = selected
+        await saveExternalCliBash(selected)
+      }
+    } catch (e) {
+      logger.error('选择 Bash 文件失败:', e)
+    }
+  }
+}
+
+async function resetExternalCliBash() {
+  externalCliBashInputValue.value = ''
+  await saveExternalCliBash('')
+}
+
+function handleExternalCliBashBlur() {
+  const trimmed = externalCliBashInputValue.value.trim()
+  if (trimmed !== (externalCliBashPath.value || '')) {
+    saveExternalCliBash(trimmed)
+  }
+}
+
+function handleExternalCliBashKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    (event.target as HTMLInputElement)?.blur()
+  }
+}
+
 const saveError = ref<string | null>(null)
 const showRestartOnboardingConfirm = ref(false)
 
@@ -184,6 +257,7 @@ onMounted(() => {
   }
   loadDataDir()
   loadWorkspaceDir()
+  loadExternalCliBash()
 })
 
 async function applySettings() {
@@ -340,6 +414,63 @@ const fontSizeOptions = [
             />
             <Button v-if="supportsDirPicker" type="button" variant="outline" size="sm" :disabled="workspaceSaving" @click="browseWorkspaceDir">选择目录</Button>
             <Button type="button" variant="ghost" size="sm" :disabled="workspaceSaving" @click="resetWorkspaceDir">恢复默认</Button>
+          </div>
+        </SettingItem>
+      </SettingSection>
+
+      <SettingSection
+        title="外部 CLI 依赖"
+        description="为需要 Unix bash 的外部 CLI（Claude Code、Codex 等）提供 bash 可执行文件路径。仅 Windows 下需要配置。"
+      >
+        <SettingItem>
+          <template #label>
+            <div class="flex items-center gap-xs">
+              <span>Bash 可执行文件路径</span>
+              <TooltipProvider :delay-duration="200">
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <button
+                      type="button"
+                      class="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus:outline-none"
+                      aria-label="查看说明"
+                    >
+                      <Info class="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" class="max-w-[24rem] text-xs leading-relaxed">
+                    <p class="mb-xs font-medium">为什么需要这个？</p>
+                    <p class="mb-xs">
+                      Claude Code / Codex 等 CLI 在 Windows 上会自动调用 Unix 命令（<code>grep</code>、<code>sed</code>、<code>git</code> 等），
+                      需要一个兼容 POSIX 的 bash 环境。最常见的来源是 <strong>Git for Windows</strong> 附带的 <code>bash.exe</code>。
+                    </p>
+                    <p class="mb-xs font-medium">典型路径</p>
+                    <ul class="mb-xs list-disc space-y-xs pl-md">
+                      <li><code>C:\Program Files\Git\bin\bash.exe</code></li>
+                      <li><code>D:\WorkSpace\Git\usr\bin\bash.exe</code></li>
+                    </ul>
+                    <p class="text-muted-foreground">
+                      配置后，知微启动 claude/codex 时会自动注入 <code>CLAUDE_CODE_GIT_BASH_PATH</code> 环境变量。留空表示不注入，CLI 会自行处理失败。
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </template>
+          <template #description>
+            <span v-if="externalCliBashPath">当前配置：{{ externalCliBashPath }}</span>
+            <span v-else>未配置（Claude Code / Codex 在 Windows 上可能无法启动）</span>
+          </template>
+          <div class="flex items-center gap-sm">
+            <Input
+              v-model="externalCliBashInputValue"
+              class="min-w-2xl"
+              placeholder="留空不注入环境变量"
+              :disabled="externalCliBashSaving"
+              @blur="handleExternalCliBashBlur"
+              @keydown="handleExternalCliBashKeydown"
+            />
+            <Button v-if="isTauri" type="button" variant="outline" size="sm" :disabled="externalCliBashSaving" @click="browseExternalCliBash">选择文件</Button>
+            <Button type="button" variant="ghost" size="sm" :disabled="externalCliBashSaving" @click="resetExternalCliBash">清除</Button>
           </div>
         </SettingItem>
       </SettingSection>

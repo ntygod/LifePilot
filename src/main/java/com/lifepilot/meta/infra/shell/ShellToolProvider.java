@@ -70,7 +70,12 @@ public class ShellToolProvider {
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
-                .description("在操作系统中执行 Shell 命令并返回输出")
+                .description("""
+                        执行 Shell 命令。根据命令预期耗时选择模式：
+                        (1) 默认同步：秒级命令（git/ls/构建/测试），阻塞到完成或 timeoutSeconds 超时；
+                        (2) background=true：永不退出的服务（npm run dev 等）或明确需并发的长任务，立即返回 sessionId；
+                        (3) yieldMs=N：快慢不确定时用，快则同步返结果，慢则转后台返 sessionId。
+                        服务类命令必须用 background，否则会被超时强杀。background/yieldMs 转后台后，用 shell.process(action=output) 读输出、(action=kill) 终止。""")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -86,17 +91,22 @@ public class ShellToolProvider {
 
     private Map<String, Object> buildExecSchema() {
         var properties = new LinkedHashMap<String, Object>();
-        properties.put("command", Map.of("type", "string", "description", "Shell 命令"));
-        properties.put("workingDirectory", Map.of("type", "string", "description", "工作目录路径"));
-        properties.put("timeoutSeconds", Map.of("type", "integer", "description", "命令超时时间（秒）"));
-        properties.put("background", Map.of("type", "boolean", "description", "是否立即后台执行"));
-        properties.put("yieldMs", Map.of("type", "integer", "description", "同步等待毫秒数，超时后自动转后台"));
-        properties.put("pty", Map.of("type", "boolean", "description",
-                "分配伪终端（仅 Unix），仅在同步模式下生效"));
-        properties.put("shell", Map.of("type", "string", "description",
-                "指定 Unix 解释器（如 bash/zsh），仅在同步模式下生效，background 和 yieldMs 模式下使用默认 sh。Windows 固定使用 PowerShell"));
-        properties.put("env", Map.of("type", "object", "description",
-                "额外环境变量键值对，注入到子进程环境中",
+        properties.put("command", Map.of("type", "string",
+                "description", "Shell 命令原文。需要 bash 特性时显式写 `bash -c \"...\"`（后台模式不支持 shell 参数）。Windows 平台下 stderr 可能以 PowerShell CLIXML 格式返回（以 `#< CLIXML` 开头的 XML），这是 stderr 而非正常输出，不应视作 stdout 内容"));
+        properties.put("workingDirectory", Map.of("type", "string",
+                "description", "工作目录绝对路径。**不传**则使用用户配置的默认工作目录（推荐默认不传）。仅在明确需要其他目录时才显式传值，如 git worktree 路径、已知项目根目录等。不要传 `/` 或 `C:\\` 等盘根路径"));
+        properties.put("timeoutSeconds", Map.of("type", "integer",
+                "description", "同步模式超时（秒），默认 120。到期强杀进程并收集部分输出。仅同步模式生效"));
+        properties.put("background", Map.of("type", "boolean",
+                "description", "立即后台执行，返回 sessionId。success 仅代表启动成功，不代表命令成功 —— 必须后续用 shell.process(action=output) 检查真实 exitCode。服务类命令（永不退出）必选此模式"));
+        properties.put("yieldMs", Map.of("type", "integer",
+                "description", "同步等待毫秒数（上限 120000），超时自动转后台。典型值 2000-10000。快则返同步结果 {exitCode,stdout,stderr}，慢则返 {sessionId, backgrounded:true}。yieldMs=0 等价于 background=true"));
+        properties.put("pty", Map.of("type", "boolean",
+                "description", "分配伪终端（仅 Unix 同步模式）。Windows 会被忽略并降级"));
+        properties.put("shell", Map.of("type", "string",
+                "description", "Unix 解释器（bash/zsh 等），仅同步模式生效。background/yieldMs 转后台时固定用 sh。Windows 固定 PowerShell，此参数被忽略"));
+        properties.put("env", Map.of("type", "object",
+                "description", "额外环境变量键值对，合并到子进程环境",
                 "additionalProperties", Map.of("type", "string")));
 
         return Map.of(
@@ -132,7 +142,44 @@ public class ShellToolProvider {
     }
 
     private String buildProcessDescription() {
-        return "管理后台进程和持久终端会话";
+        var parts = new ArrayList<String>();
+        parts.add("管理通过 shell.exec(background=true|yieldMs=N) 启动的后台进程和持久 tmux 会话。按 action 选择操作：");
+        if (processManager != null) {
+            parts.add("""
+                    【后台进程】list 列出所有进程；output 读 sessionId 的增量输出（每次只返新内容，是监控长跑命令的主要手段）；\
+                    write 向 stdin 写内容（不能用于模拟 Ctrl+C）；kill 强制终止。后台进程用完必须 kill，否则占配额。""");
+        }
+        if (sessionManager != null) {
+            parts.add("""
+                    【持久会话】session-create 创建 tmux 会话；session-exec 在会话内执行命令（共享 cwd/env/变量）；\
+                    session-write/read 交互式 I/O；session-signal 发 SIGINT/SIGTERM 等信号（需要 Ctrl+C 场景用这个）；\
+                    session-list/close/resize 管理生命周期。适合 REPL、多步交互、需保留 shell 状态的场景。""");
+        }
+        return String.join(" ", parts);
+    }
+
+    private String buildActionDescription() {
+        var parts = new ArrayList<String>();
+        parts.add("操作类型。");
+        if (processManager != null) {
+            parts.add("""
+                    后台进程：list(无需 sessionId，返回所有进程摘要)、\
+                    output(读 sessionId 增量输出，多次调用每次只返新内容)、\
+                    write(向 sessionId 的 stdin 写 input)、\
+                    kill(强制终止 sessionId，对已完成/不存在的进程安全幂等)。""");
+        }
+        if (sessionManager != null) {
+            parts.add("""
+                    持久会话：session-create(创建，可带 name/workDir)、\
+                    session-exec(sessionId 执行 command)、\
+                    session-write(向 sessionId 写 input)、\
+                    session-read(读 sessionId 当前屏幕)、\
+                    session-signal(sessionId 发 signal，支持 SIGINT/SIGTERM 等)、\
+                    session-list(列出所有会话)、\
+                    session-close(关闭 sessionId)、\
+                    session-resize(调整 sessionId 的 cols/rows)。""");
+        }
+        return String.join(" ", parts);
     }
 
     private Map<String, Object> buildProcessSchema() {
@@ -149,20 +196,27 @@ public class ShellToolProvider {
         properties.put("action", Map.of(
                 "type", "string",
                 "enum", List.copyOf(actionEnum),
-                "description", "操作类型"
+                "description", buildActionDescription()
         ));
-        properties.put("sessionId", Map.of("type", "string", "description", "进程或持久会话的 sessionId"));
+        properties.put("sessionId", Map.of("type", "string",
+                "description", "进程或持久会话的 sessionId（list/session-list 不需要，其他 action 必填）"));
         if (processManager != null) {
-            properties.put("input", Map.of("type", "string", "description", "write/session-write 时写入的内容"));
+            properties.put("input", Map.of("type", "string",
+                    "description", "write/session-write 写入 stdin 的内容（通常需要以 \\n 结尾触发命令）"));
         }
         if (sessionManager != null) {
-            properties.put("command", Map.of("type", "string", "description", "session-exec 的 Shell 命令"));
+            properties.put("command", Map.of("type", "string",
+                    "description", "session-exec 要在会话内执行的 Shell 命令"));
             if (processManager == null) {
-                properties.put("input", Map.of("type", "string", "description", "session-write 时写入的内容"));
+                properties.put("input", Map.of("type", "string",
+                        "description", "session-write 写入 stdin 的内容（通常需要以 \\n 结尾触发命令）"));
             }
-            properties.put("name", Map.of("type", "string", "description", "session-create 会话名称"));
-            properties.put("workDir", Map.of("type", "string", "description", "session-create 初始工作目录"));
-            properties.put("signal", Map.of("type", "string", "description", "session-signal 信号名，如 SIGINT、SIGTERM"));
+            properties.put("name", Map.of("type", "string",
+                    "description", "session-create 会话名称（可选，默认自动生成）"));
+            properties.put("workDir", Map.of("type", "string",
+                    "description", "session-create 初始工作目录（可选，默认用户主目录）"));
+            properties.put("signal", Map.of("type", "string",
+                    "description", "session-signal 信号名，如 SIGINT（Ctrl+C）、SIGTERM（优雅终止）、SIGHUP"));
             properties.put("cols", Map.of("type", "integer", "description", "session-resize 终端列数"));
             properties.put("rows", Map.of("type", "integer", "description", "session-resize 终端行数"));
         }

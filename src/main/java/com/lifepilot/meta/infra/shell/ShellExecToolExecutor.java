@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra.shell;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
+import com.lifepilot.config.workspace.WorkspaceResolver.NormalizedPath;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -78,8 +79,11 @@ public class ShellExecToolExecutor {
             return ToolResult.error("缺少必需参数: command");
         }
 
-        String workingDirectory = input.getOptionalParam("workingDirectory", String.class)
-                .orElse(workspaceResolver.resolveAndCreate().toString());
+        // 工作目录：委托 WorkspaceResolver 统一规范化（空/盘根/相对路径都会回退默认）
+        NormalizedPath workDirInfo = workspaceResolver.normalizeWithInfo(
+                input.getOptionalParam("workingDirectory", String.class).orElse(null));
+        Path workDirResolved = workDirInfo.path();
+        String workingDirectory = workDirResolved.toString();
 
         int timeoutSeconds = input.getOptionalParam("timeoutSeconds", Number.class)
                 .map(Number::intValue)
@@ -92,7 +96,9 @@ public class ShellExecToolExecutor {
 
         // 新增参数：环境变量注入
         @SuppressWarnings("unchecked")
-        Map<String, String> env = input.getOptionalParam("env", Map.class).orElse(null);
+        Map<String, String> userEnv = input.getOptionalParam("env", Map.class).orElse(null);
+        // 自动补齐 CLAUDE_CODE_GIT_BASH_PATH（当命令是 claude/codex 且用户已在设置里配置时）
+        Map<String, String> env = mergeExternalCliEnv(command, userEnv);
 
         // 黑名单检查
         var rejection = checkBlacklist(command);
@@ -100,8 +106,8 @@ public class ShellExecToolExecutor {
             return rejection;
         }
 
-        // 验证工作目录
-        Path workDir = Path.of(workingDirectory);
+        // 验证工作目录存在（normalizeWorkingDirectory 已保证非空且为绝对路径）
+        Path workDir = workDirResolved;
         if (!Files.isDirectory(workDir)) {
             return ToolResult.error("工作目录不存在: " + workingDirectory);
         }
@@ -115,7 +121,7 @@ public class ShellExecToolExecutor {
         // 后台执行模式（background=true 立即后台化）
         boolean background = input.getOptionalParam("background", Boolean.class).orElse(false);
         if (background) {
-            return executeBackground(command, workDir, env);
+            return executeBackground(command, workDirInfo, env);
         }
 
         // yieldMs 模式：同步等待 yieldMs 毫秒，如果进程未结束则自动转后台
@@ -123,12 +129,12 @@ public class ShellExecToolExecutor {
                 .map(Number::intValue)
                 .orElse(-1); // -1 表示不使用 yieldMs，走纯同步模式
         if (yieldMs >= 0) {
-            return executeWithYield(command, workDir, yieldMs, env);
+            return executeWithYield(command, workDirInfo, yieldMs, env);
         }
 
         // 纯同步执行命令
         try {
-            return executeCommand(command, workDir, timeoutSeconds, pty, shellOverride, env);
+            return executeCommand(command, workDirInfo, timeoutSeconds, pty, shellOverride, env);
         } catch (IOException e) {
             log.error("Shell 命令执行失败: command={}, error={}", command, e.getMessage(), e);
             return ToolResult.error("命令执行失败: " + e.getMessage());
@@ -136,6 +142,67 @@ public class ShellExecToolExecutor {
             Thread.currentThread().interrupt();
             return ToolResult.transientError("命令执行被中断");
         }
+    }
+
+    /**
+     * 检测命令是否需要 Unix bash（Claude Code / Codex 等外部 CLI 在 Windows 上依赖）。
+     *
+     * <p>判定：命令开头或空格分隔 token 是否为 {@code claude} / {@code codex}。
+     * 匹配到时，后续 {@link #mergeExternalCliEnv} 会注入 CLAUDE_CODE_GIT_BASH_PATH env。</p>
+     */
+    private static boolean commandNeedsBash(String command) {
+        if (command == null || command.isBlank()) {
+            return false;
+        }
+        String lower = command.toLowerCase().trim();
+        return lower.startsWith("claude") || lower.startsWith("codex")
+                || lower.contains(" claude ") || lower.contains(" codex ")
+                || lower.contains("/claude ") || lower.contains("\\claude ")
+                || lower.contains("/codex ") || lower.contains("\\codex ");
+    }
+
+    /**
+     * 为需要 bash 的 CLI 命令自动注入 CLAUDE_CODE_GIT_BASH_PATH 环境变量。
+     *
+     * <p>策略：</p>
+     * <ul>
+     *   <li>命令不是 claude/codex → 原样返回</li>
+     *   <li>用户在设置里没配 bash 路径 → 原样返回（让 CLI 报错暴露问题）</li>
+     *   <li>用户 env 里已显式设了 CLAUDE_CODE_GIT_BASH_PATH → 不覆盖（显式优先）</li>
+     *   <li>否则 → 合并注入</li>
+     * </ul>
+     */
+    private Map<String, String> mergeExternalCliEnv(String command, @Nullable Map<String, String> userEnv) {
+        if (!commandNeedsBash(command)) {
+            return userEnv;
+        }
+        String bashPath = workspaceResolver.getExternalCliBashPath();
+        if (bashPath == null) {
+            return userEnv;
+        }
+        if (userEnv != null && userEnv.containsKey("CLAUDE_CODE_GIT_BASH_PATH")) {
+            return userEnv;
+        }
+        var merged = new LinkedHashMap<String, String>();
+        if (userEnv != null) {
+            merged.putAll(userEnv);
+        }
+        merged.put("CLAUDE_CODE_GIT_BASH_PATH", bashPath);
+        log.debug("已为命令自动注入 CLAUDE_CODE_GIT_BASH_PATH: command={}", command);
+        return Map.copyOf(merged);
+    }
+
+    /**
+     * 构建工作目录回退警告字符串 — 当 NormalizedPath.replaced=true 时使用。
+     *
+     * <p>向 LLM 透明告知"你传的值被回退了、原因是什么、下次建议怎么做"，
+     * 避免 LLM 基于"我传了 C:\\ 所以进程在 C:\\ 跑"的错误前提继续推理。</p>
+     */
+    private static String buildWorkDirWarning(NormalizedPath info) {
+        return "你传入的 workingDirectory='" + info.originalInput()
+                + "' 无效（" + info.reason()
+                + "），已回退到默认工作目录 '" + info.path()
+                + "'。下次建议不传此参数使用默认值";
     }
 
     /**
@@ -169,16 +236,22 @@ public class ShellExecToolExecutor {
         return output.substring(0, maxLength) + "...[输出已截断，原始长度: " + originalLength + " 字符]";
     }
 
-    private ToolResult executeBackground(String command, Path workDir, @Nullable Map<String, String> env) {
+    private ToolResult executeBackground(String command, NormalizedPath workDirInfo,
+                                          @Nullable Map<String, String> env) {
         if (backgroundProcessManager == null) {
             return ToolResult.error("后台进程管理器不可用，改用同步模式（不传 background）");
         }
         try {
+            Path workDir = workDirInfo.path();
             String sessionId = backgroundProcessManager.startProcess(command, workDir, env);
-            return ToolResult.success(Map.of(
-                    "sessionId", sessionId,
-                    "message", "后台进程已启动，使用 process.output 读取输出，process.kill 终止进程"
-            ));
+            var data = new LinkedHashMap<String, Object>();
+            data.put("sessionId", sessionId);
+            data.put("effectiveWorkingDirectory", workDir.toAbsolutePath().normalize().toString());
+            data.put("message", "后台进程已启动，使用 process.output 读取输出，process.kill 终止进程");
+            if (workDirInfo.replaced()) {
+                data.put("workingDirectoryWarning", buildWorkDirWarning(workDirInfo));
+            }
+            return ToolResult.success(Map.copyOf(data));
         } catch (IllegalStateException e) {
             return ToolResult.error(e.getMessage());
         } catch (IOException e) {
@@ -197,7 +270,7 @@ public class ShellExecToolExecutor {
      *   <li>N 毫秒后进程仍在运行，则将其转为后台进程并返回 sessionId</li>
      * </ul></p>
      */
-    private ToolResult executeWithYield(String command, Path workDir, int yieldMs,
+    private ToolResult executeWithYield(String command, NormalizedPath workDirInfo, int yieldMs,
                                          @Nullable Map<String, String> env) {
         if (backgroundProcessManager == null) {
             return ToolResult.error("后台进程管理器不可用，改用同步模式（不传 yieldMs）");
@@ -205,8 +278,11 @@ public class ShellExecToolExecutor {
 
         // yieldMs=0 等同于 background=true
         if (yieldMs == 0) {
-            return executeBackground(command, workDir, env);
+            return executeBackground(command, workDirInfo, env);
         }
+
+        Path workDir = workDirInfo.path();
+        String effectiveWorkDir = workDir.toAbsolutePath().normalize().toString();
 
         try {
             // 先启动为后台进程
@@ -233,7 +309,10 @@ public class ShellExecToolExecutor {
                 data.put("stdout", stdout);
                 data.put("stderr", stderr);
                 data.put("output", output);
-                data.put("workingDirectory", workDir.toAbsolutePath().normalize().toString());
+                data.put("effectiveWorkingDirectory", effectiveWorkDir);
+                if (workDirInfo.replaced()) {
+                    data.put("workingDirectoryWarning", buildWorkDirWarning(workDirInfo));
+                }
 
                 log.debug("yieldMs 模式: 进程在等待期间完成, sessionId={}, state={}", sessionId, processInfo.state());
 
@@ -252,11 +331,15 @@ public class ShellExecToolExecutor {
             // 进程仍在运行，返回后台 sessionId
             log.info("yieldMs 模式: 进程在 {}ms 后仍在运行，自动转后台, sessionId={}, command={}",
                     yieldMs, sessionId, command);
-            return ToolResult.success(Map.of(
-                    "sessionId", sessionId,
-                    "backgrounded", true,
-                    "message", "命令在 " + yieldMs + "ms 内未完成，已自动转为后台执行。使用 process.output 读取输出"
-            ));
+            var data = new LinkedHashMap<String, Object>();
+            data.put("sessionId", sessionId);
+            data.put("backgrounded", true);
+            data.put("effectiveWorkingDirectory", effectiveWorkDir);
+            data.put("message", "命令在 " + yieldMs + "ms 内未完成，已自动转为后台执行。使用 process.output 读取输出");
+            if (workDirInfo.replaced()) {
+                data.put("workingDirectoryWarning", buildWorkDirWarning(workDirInfo));
+            }
+            return ToolResult.success(Map.copyOf(data));
 
         } catch (IOException e) {
             log.error("yieldMs 模式启动失败: command={}, error={}", command, e.getMessage(), e);
@@ -267,7 +350,7 @@ public class ShellExecToolExecutor {
         }
     }
 
-    private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds,
+    private ToolResult executeCommand(String command, NormalizedPath workDirInfo, int timeoutSeconds,
                                        boolean pty, @Nullable String shellOverride,
                                        @Nullable Map<String, String> env)
             throws IOException, InterruptedException {
@@ -277,7 +360,7 @@ public class ShellExecToolExecutor {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                return doExecuteCommand(command, workDir, timeoutSeconds, pty, shellOverride, env);
+                return doExecuteCommand(command, workDirInfo, timeoutSeconds, pty, shellOverride, env);
             } catch (IOException e) {
                 lastException = e;
                 if (attempt < maxRetries && isTransientFailure(e)) {
@@ -306,11 +389,12 @@ public class ShellExecToolExecutor {
                 || msg.contains("No such file or directory"); // shell 可执行文件临时不可用
     }
 
-    private ToolResult doExecuteCommand(String command, Path workDir, int timeoutSeconds,
+    private ToolResult doExecuteCommand(String command, NormalizedPath workDirInfo, int timeoutSeconds,
                                          boolean pty, @Nullable String shellOverride,
                                          @Nullable Map<String, String> env)
             throws IOException, InterruptedException {
 
+        Path workDir = workDirInfo.path();
         // 通过工厂创建进程（消除重复的 PowerShell/Unix 构建逻辑）
         ProcessBuilder pb = ShellProcessFactory.createShellProcess(
                 command, workDir, shellOverride, pty, env);
@@ -366,7 +450,10 @@ public class ShellExecToolExecutor {
         data.put("exitCode", exitCode);
         data.put("stdout", stdout);
         data.put("stderr", stderr);
-        data.put("workingDirectory", workDir.toAbsolutePath().normalize().toString());
+        data.put("effectiveWorkingDirectory", workDir.toAbsolutePath().normalize().toString());
+        if (workDirInfo.replaced()) {
+            data.put("workingDirectoryWarning", buildWorkDirWarning(workDirInfo));
+        }
 
         log.debug("Shell 命令执行完成: command={}, exitCode={}, stdoutLen={}, stderrLen={}",
                 command, exitCode, stdout.length(), stderr.length());
@@ -400,4 +487,5 @@ public class ShellExecToolExecutor {
             return "";
         }
     }
+
 }
