@@ -36,9 +36,6 @@ interface ProcessSnapshotPayload {
 function connect() {
   if (eventSource) return
 
-  // 复位重连计数器 — 避免上次 disconnect() 把 attempts 拉满后再次 connect 首次失败就不重连
-  reconnectAttempts = 0
-
   const store = useProcessTaskStore()
   eventSource = new EventSource(`${getApiOrigin()}/api/processes/stream`)
 
@@ -125,6 +122,9 @@ export function useProcessStream() {
   onMounted(() => {
     refCount++
     if (refCount === 1) {
+      // 新一轮订阅：复位重连计数器（防止上轮 disconnect 把它拉满后无法重连），
+      // 不能放 connect() 入口，否则每次自动重连也会误复位、让指数退避失效
+      reconnectAttempts = 0
       connect()
     }
   })
