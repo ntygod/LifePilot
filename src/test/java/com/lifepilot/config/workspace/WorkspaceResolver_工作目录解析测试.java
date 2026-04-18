@@ -54,7 +54,7 @@ class WorkspaceResolver_工作目录解析测试 {
         void 返回默认的用户主目录下路径() {
             // given — settingsRepository 返回无 defaultWorkspace 的设置
             when(settingsRepository.getSettings()).thenReturn(
-                    new UserSettings("system", "zh-CN", true, true, true, true, null)
+                    new UserSettings("system", "zh-CN", true, true, true, true, null, null)
             );
 
             // when
@@ -92,7 +92,7 @@ class WorkspaceResolver_工作目录解析测试 {
         void 使用yml配置的路径() {
             // given — 用户设置中无自定义工作目录
             when(settingsRepository.getSettings()).thenReturn(
-                    new UserSettings("system", "zh-CN", true, true, true, true, null)
+                    new UserSettings("system", "zh-CN", true, true, true, true, null, null)
             );
 
             // when
@@ -124,7 +124,7 @@ class WorkspaceResolver_工作目录解析测试 {
             Path userWorkspace = tempDir.resolve("my-workspace");
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("dark", "zh-CN", true, true, true, true,
-                            userWorkspace.toAbsolutePath().toString())
+                            userWorkspace.toAbsolutePath().toString(), null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, "/some/yml/path");
 
@@ -139,7 +139,7 @@ class WorkspaceResolver_工作目录解析测试 {
         void 用户设置为非绝对路径时忽略并回退到yml配置() {
             // given — 相对路径应被忽略
             when(settingsRepository.getSettings()).thenReturn(
-                    new UserSettings("system", "zh-CN", true, true, true, true, "relative/path")
+                    new UserSettings("system", "zh-CN", true, true, true, true, "relative/path", null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
 
@@ -154,7 +154,7 @@ class WorkspaceResolver_工作目录解析测试 {
         void 用户设置为空字符串时忽略并回退() {
             // given
             when(settingsRepository.getSettings()).thenReturn(
-                    new UserSettings("system", "zh-CN", true, true, true, true, "")
+                    new UserSettings("system", "zh-CN", true, true, true, true, "", null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
 
@@ -169,7 +169,7 @@ class WorkspaceResolver_工作目录解析测试 {
         void 用户设置为纯空白字符串时忽略并回退() {
             // given
             when(settingsRepository.getSettings()).thenReturn(
-                    new UserSettings("system", "zh-CN", true, true, true, true, "   ")
+                    new UserSettings("system", "zh-CN", true, true, true, true, "   ", null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
 
@@ -254,7 +254,7 @@ class WorkspaceResolver_工作目录解析测试 {
             Path targetDir = tempDir.resolve("new-workspace");
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true,
-                            targetDir.toAbsolutePath().toString())
+                            targetDir.toAbsolutePath().toString(), null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, "");
 
@@ -272,7 +272,7 @@ class WorkspaceResolver_工作目录解析测试 {
             // given — tempDir 本身已存在
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true,
-                            tempDir.toAbsolutePath().toString())
+                            tempDir.toAbsolutePath().toString(), null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, "");
 
@@ -290,7 +290,7 @@ class WorkspaceResolver_工作目录解析测试 {
             Path deepDir = tempDir.resolve("a").resolve("b").resolve("c");
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true,
-                            deepDir.toAbsolutePath().toString())
+                            deepDir.toAbsolutePath().toString(), null)
             );
             var resolver = new WorkspaceResolver(settingsRepository, "");
 

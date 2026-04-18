@@ -58,6 +58,7 @@ lifepilot:
     core-tool-ids:
       - shell.exec
       - web.search
+      - shell.process
       - web.fetch
       - file.read
       - file.write

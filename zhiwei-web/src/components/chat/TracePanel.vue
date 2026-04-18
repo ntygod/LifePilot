@@ -21,6 +21,8 @@ const props = defineProps<{
   reactSteps?: ReactStepDto[]
   streaming?: boolean
   traceId?: string
+  /** 隐藏自带的标题栏（嵌入到带 tab 的外层面板时用） */
+  hideHeader?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -189,8 +191,8 @@ const hasRunning = computed(() => traceSteps.value.some(s => s.status === 'runni
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- 头部 -->
-    <div class="trace-header">
+    <!-- 头部（可由外层隐藏） -->
+    <div v-if="!hideHeader" class="trace-header">
       <h3 class="text-sm font-medium text-foreground">执行轨迹</h3>
       <button
         type="button"

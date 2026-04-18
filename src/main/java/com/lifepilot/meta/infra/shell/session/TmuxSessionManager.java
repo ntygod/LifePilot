@@ -78,7 +78,8 @@ public class TmuxSessionManager {
 
         String sessionId = UUID.randomUUID().toString().substring(0, 8);
         String tmuxName = SESSION_PREFIX + sessionId;
-        String cwd = workDir != null ? workDir : workspaceResolver.resolveAndCreate().toString();
+        // 委托 WorkspaceResolver 统一规范化（空/盘根/相对路径都会回退默认）
+        String cwd = workspaceResolver.normalize(workDir).toString();
 
         // 创建 tmux 会话
         tmuxCmd.newSession(tmuxName, cwd, config.getDefaultCols(), config.getDefaultRows());

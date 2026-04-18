@@ -27,7 +27,8 @@ import EmptyState from '@/components/chat/EmptyState.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
-import TracePanel from '@/components/chat/TracePanel.vue'
+import ChatRightPanel from '@/components/chat/ChatRightPanel.vue'
+import { useProcessTaskStore } from '@/stores/processTask'
 import { useChat } from '@/composables/useChat'
 import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
@@ -631,6 +632,11 @@ const activeTraceData = computed(() => {
 })
 
 const showTracePanel = computed(() => !!activeTraceMessageId.value && !!activeTraceData.value)
+const processTaskStore = useProcessTaskStore()
+/** 右侧面板显示条件：有轨迹数据、或有任何后台任务（含终态，避免最后一个任务结束瞬间面板消失） */
+const showRightPanel = computed(() =>
+  showTracePanel.value || processTaskStore.tasksOrdered.length > 0
+)
 
 // 流式结束后，把 'streaming' placeholder ID 更新为真实消息 ID
 watch(isStreaming, (streaming) => {
@@ -752,7 +758,7 @@ function closeTracePanel() {
           enter-from-class="translate-y-4 opacity-0"
           enter-to-class="translate-y-0 opacity-100"
         >
-        <div v-if="!isEmptyChat" class="shrink-0 border-t border-border/45 bg-background/72 px-4 pb-3 pt-2 sm:px-6">
+        <div v-if="!isEmptyChat" class="shrink-0 px-4 pb-3 pt-2 sm:px-6">
           <div class="mx-auto w-full max-w-[800px] relative">
             <!-- 回到底部按钮：固定在输入框上方 -->
             <Transition
@@ -801,16 +807,13 @@ function closeTracePanel() {
         </Transition>
       </section>
 
-      <!-- 轨迹面板：集成布局，和页面融为一体 -->
+      <!-- 右侧面板：执行轨迹 + 后台任务 tab 切换 -->
       <aside
-        v-if="showTracePanel && activeTraceData"
+        v-if="showRightPanel"
         class="w-[340px] shrink-0 border-l border-border/40 bg-background"
       >
-        <TracePanel
-          :reasoning-events="activeTraceData.reasoningEvents"
-          :react-steps="activeTraceData.reactSteps"
-          :streaming="activeTraceData.streaming"
-          :trace-id="activeTraceData.traceId"
+        <ChatRightPanel
+          :trace-data="activeTraceData"
           @close="closeTracePanel"
         />
       </aside>

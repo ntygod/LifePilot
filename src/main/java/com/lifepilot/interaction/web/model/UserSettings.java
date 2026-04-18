@@ -9,13 +9,14 @@ import org.springframework.lang.Nullable;
  * <p>这里只保留真正属于用户偏好的基础设置。
  * 模型服务与路由配置已经迁移到独立的 model routing 表中，不再经过 user_settings。</p>
  *
- * @param theme               主题
- * @param language            语言
- * @param enableStreaming     是否启用流式输出
- * @param enableFunctionCall  是否启用函数调用
- * @param enableKnowledgeBase 是否启用知识库
- * @param enableToolCall      是否启用工具调用
- * @param defaultWorkspace    默认工作目录（null 表示使用系统默认 ~/.zhiwei/workspace/）
+ * @param theme                 主题
+ * @param language              语言
+ * @param enableStreaming       是否启用流式输出
+ * @param enableFunctionCall    是否启用函数调用
+ * @param enableKnowledgeBase   是否启用知识库
+ * @param enableToolCall        是否启用工具调用
+ * @param defaultWorkspace      默认工作目录（null 表示使用系统默认 ~/.zhiwei/workspace/）
+ * @param externalCliBashPath   外部 CLI 所需的 Unix bash 路径（Claude Code / Codex 等在 Windows 上依赖）。null 表示未配置，不注入 env
  * @author zsg
  * @since 2026-03-24
  */
@@ -27,7 +28,8 @@ public record UserSettings(
         Boolean enableFunctionCall,
         Boolean enableKnowledgeBase,
         Boolean enableToolCall,
-        @Nullable String defaultWorkspace
+        @Nullable String defaultWorkspace,
+        @Nullable String externalCliBashPath
 ) {
 
     public UserSettings {

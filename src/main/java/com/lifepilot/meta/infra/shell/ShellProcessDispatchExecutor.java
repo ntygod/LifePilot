@@ -1,5 +1,7 @@
 package com.lifepilot.meta.infra.shell;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
@@ -16,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 后台进程与持久会话 action 路由执行器。
@@ -29,6 +32,14 @@ import java.util.Map;
 public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ShellProcessDispatchExecutor.class);
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** 识别为"任务最终结果"的 JSON Lines 事件类型（Claude Code / Codex / Gemini 通用）。 */
+    private static final Set<String> TERMINAL_EVENT_TYPES = Set.of(
+            "result",          // Claude Code
+            "task_complete",   // Codex
+            "session_ended"    // Codex
+    );
 
     @Nullable
     private final BackgroundProcessManager processManager;
@@ -165,10 +176,60 @@ public class ShellProcessDispatchExecutor extends ActionDispatchExecutor {
             data.put("stderr", chunk.stderr());
             data.put("state", chunk.state().name());
             if (chunk.exitCode() != null) data.put("exitCode", chunk.exitCode());
+
+            // 自动解析 stream-json 的最后一个"终态事件"（result / task_complete / session_ended）
+            // 让 LLM 不用扫整个日志就能拿到最终摘要
+            Map<String, Object> lastResult = extractLastTerminalEvent(chunk.stdout());
+            if (lastResult != null) {
+                data.put("lastResult", lastResult);
+            }
+
             return ToolResult.success(Map.copyOf(data));
         } catch (IllegalArgumentException e) {
             return ToolResult.error(e.getMessage());
         }
+    }
+
+    /**
+     * 从 stdout 的 JSON Lines 增量中扫描最后一个"终态事件"。
+     *
+     * <p>支持的事件类型在 {@link #TERMINAL_EVENT_TYPES}。对每个匹配事件，
+     * 只抽取常见摘要字段（subtype/result/is_error/duration_ms/total_cost_usd），
+     * 避免把完整 stream-json 内嵌到响应里。</p>
+     *
+     * @param stdout 当次 output 增量
+     * @return 最后一个终态事件的摘要；未检测到返回 null
+     */
+    @Nullable
+    private Map<String, Object> extractLastTerminalEvent(@Nullable String stdout) {
+        if (stdout == null || stdout.isBlank()) {
+            return null;
+        }
+        Map<String, Object> last = null;
+        for (String line : stdout.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || !trimmed.startsWith("{")) {
+                continue;
+            }
+            try {
+                JsonNode node = JSON.readTree(trimmed);
+                String type = node.path("type").asText(null);
+                if (type == null || !TERMINAL_EVENT_TYPES.contains(type)) {
+                    continue;
+                }
+                var summary = new LinkedHashMap<String, Object>();
+                summary.put("type", type);
+                if (node.hasNonNull("subtype")) summary.put("subtype", node.get("subtype").asText());
+                if (node.hasNonNull("result")) summary.put("result", node.get("result").asText());
+                if (node.hasNonNull("is_error")) summary.put("is_error", node.get("is_error").asBoolean());
+                if (node.hasNonNull("duration_ms")) summary.put("duration_ms", node.get("duration_ms").asLong());
+                if (node.hasNonNull("total_cost_usd")) summary.put("total_cost_usd", node.get("total_cost_usd").asDouble());
+                last = Map.copyOf(summary);
+            } catch (Exception ignore) {
+                // 非 JSON 行或解析失败，静默忽略
+            }
+        }
+        return last;
     }
 
     private ToolResult executeProcessWrite(ToolInput input) {

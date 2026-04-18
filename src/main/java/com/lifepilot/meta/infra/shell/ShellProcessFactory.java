@@ -39,7 +39,13 @@ public final class ShellProcessFactory {
             WINDOWS_COMMAND_ENV
     );
 
-    /** 预编译的 PowerShell UTF-16LE EncodedCommand，设置 UTF-8 编码并执行环境变量中的命令。 */
+    /**
+     * 预编译的 PowerShell UTF-16LE EncodedCommand，设置 UTF-8 编码并执行环境变量中的命令。
+     *
+     * <p>对 Claude Code / Codex 命令自动用 {@code $null |} 关闭 stdin，消除这些 CLI 的
+     * "no stdin data received in 3s" 无效警告。保护用户意图：命令自带 {@code |} 或 {@code <}
+     * （显式 pipe/重定向）时不处理。</p>
+     */
     static final String WINDOWS_POWERSHELL_ENCODED_COMMAND = Base64.getEncoder()
             .encodeToString("""
                     [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -47,7 +53,11 @@ public final class ShellProcessFactory {
                     $ErrorActionPreference = 'Stop'
                     $command = $env:LIFEPILOT_SHELL_COMMAND
                     try {
-                        Invoke-Expression $command
+                        if ($command -match '^\\s*(claude|codex)\\b' -and $command -notmatch '[|<]') {
+                            $null | Invoke-Expression $command
+                        } else {
+                            Invoke-Expression $command
+                        }
                         if ($null -ne $LASTEXITCODE) {
                             exit $LASTEXITCODE
                         }

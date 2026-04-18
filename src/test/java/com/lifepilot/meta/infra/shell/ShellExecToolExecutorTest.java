@@ -11,7 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
+import java.nio.file.Path;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -269,9 +271,13 @@ class ShellExecToolExecutorTest {
 
     @Test
     void execute_不存在的工作目录返回错误() {
+        // 用 tmp 下的唯一随机子目录，保证跨平台都是"绝对路径 + 不存在"（normalize 不回退）
+        Path nonexistent = Path.of(System.getProperty("java.io.tmpdir"))
+                .resolve("zhiwei-test-nonexistent-" + UUID.randomUUID())
+                .toAbsolutePath();
         ToolInput input = buildInput(Map.of(
                 "command", "echo test",
-                "workingDirectory", "/nonexistent/path/that/does/not/exist"
+                "workingDirectory", nonexistent.toString()
         ));
 
         ToolResult result = executor.execute(input);

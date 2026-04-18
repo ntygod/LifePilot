@@ -294,11 +294,60 @@ public class SettingsController {
                 current.theme(), current.language(),
                 current.enableStreaming(), current.enableFunctionCall(),
                 current.enableKnowledgeBase(), current.enableToolCall(),
-                workspace
+                workspace, current.externalCliBashPath()
         );
         settingsRepository.save(updated);
         log.info("工作目录设置已更新: workspace={}", workspace);
         return getWorkspaceSettings();
+    }
+
+    /**
+     * 获取外部 CLI Bash 依赖设置（Claude Code / Codex 等在 Windows 上需要 bash）。
+     *
+     * @return 当前配置路径及系统探测状态
+     */
+    @GetMapping("/external-cli-bash")
+    public ApiResponse<Map<String, Object>> getExternalCliBashSettings() {
+        UserSettings settings = settingsRepository.getSettings();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("externalCliBashPath", settings.externalCliBashPath());
+        return ApiResponse.ok(result);
+    }
+
+    /**
+     * 更新外部 CLI Bash 依赖路径（设为空字符串时清除配置）。
+     *
+     * @param request 含 externalCliBashPath 字段
+     * @return 更新后的设置
+     */
+    @PutMapping("/external-cli-bash")
+    public ApiResponse<Map<String, Object>> updateExternalCliBashSettings(
+            @RequestBody Map<String, String> request) {
+        String path = request.get("externalCliBashPath");
+        if (path != null && path.isBlank()) {
+            path = null;
+        }
+        if (path != null) {
+            if (path.length() > 1024) {
+                throw new IllegalArgumentException("Bash 路径过长");
+            }
+            if (path.contains("..")) {
+                throw new IllegalArgumentException("Bash 路径不允许包含 '..'");
+            }
+            if (!Path.of(path).isAbsolute()) {
+                throw new IllegalArgumentException("Bash 路径必须是绝对路径");
+            }
+        }
+        UserSettings current = settingsRepository.getSettings();
+        UserSettings updated = new UserSettings(
+                current.theme(), current.language(),
+                current.enableStreaming(), current.enableFunctionCall(),
+                current.enableKnowledgeBase(), current.enableToolCall(),
+                current.defaultWorkspace(), path
+        );
+        settingsRepository.save(updated);
+        log.info("外部 CLI Bash 依赖路径已更新: path={}", path);
+        return getExternalCliBashSettings();
     }
 
     @GetMapping("/channels")

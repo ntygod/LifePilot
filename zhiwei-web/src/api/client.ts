@@ -629,6 +629,19 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(workspace)
     })
+  },
+
+  /** 获取外部 CLI Bash 依赖路径 */
+  getExternalCliBashSettings(): Promise<ExternalCliBashSettings> {
+    return request('/settings/external-cli-bash')
+  },
+
+  /** 更新外部 CLI Bash 依赖路径 */
+  updateExternalCliBashSettings(payload: { externalCliBashPath: string | null }): Promise<ExternalCliBashSettings> {
+    return request('/settings/external-cli-bash', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
   }
 }
 
@@ -637,6 +650,11 @@ export interface WorkspaceSettings {
   defaultWorkspace: string | null
   resolvedPath: string
   systemDefault: string
+}
+
+/** 外部 CLI Bash 依赖配置响应 */
+export interface ExternalCliBashSettings {
+  externalCliBashPath: string | null
 }
 
 /** Reranker 配置响应 */

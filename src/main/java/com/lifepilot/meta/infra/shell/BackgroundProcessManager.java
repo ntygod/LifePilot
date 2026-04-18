@@ -116,6 +116,12 @@ public class BackgroundProcessManager {
         // 启动虚拟线程监控进程退出
         Thread.ofVirtual().name("process-monitor-" + sessionId).start(() -> monitorProcessExit(managed));
 
+        // 发布启动事件（供前端气泡 UI 立即感知新任务）
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new ProcessOutputEvent(
+                    this, sessionId, "state", "started", ProcessState.RUNNING, command));
+        }
+
         log.info("后台进程已启动: sessionId={}, command={}, workDir={}", sessionId, command, workDir);
         return sessionId;
     }
@@ -257,6 +263,12 @@ public class BackgroundProcessManager {
             managed.process().destroyForcibly();
             managed.state().set(ProcessState.KILLED);
             log.info("后台进程已终止: sessionId={}, command={}", sessionId, managed.command());
+            // 显式发布状态变化事件 — monitorProcessExit 检测到已非 RUNNING 时不会补发，
+            // 前端 UI 依赖此事件关闭胶囊/切换状态图标
+            if (eventPublisher != null) {
+                eventPublisher.publishEvent(new ProcessOutputEvent(
+                        this, sessionId, "state", "killed", ProcessState.KILLED));
+            }
         } else {
             log.debug("后台进程已结束，跳过 kill: sessionId={}, state={}", sessionId, managed.currentState());
         }
@@ -276,6 +288,11 @@ public class BackgroundProcessManager {
                     mp.process().destroyForcibly();
                     mp.state().set(ProcessState.KILLED);
                     log.info("后台进程空闲超时清理: sessionId={}, idleMinutes={}", id, idleMinutes);
+                    // 同 killProcess：显式发事件让前端 UI 同步状态
+                    if (eventPublisher != null) {
+                        eventPublisher.publishEvent(new ProcessOutputEvent(
+                                this, id, "state", "killed-idle", ProcessState.KILLED));
+                    }
                 }
                 processes.remove(id);
             }
