@@ -3,8 +3,10 @@ package com.lifepilot.meta.infra.file;
 import com.lifepilot.document.parser.DocumentParserService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository.AttachmentRecord;
+import com.lifepilot.knowledge.parser.ExcelParser;
 import com.lifepilot.knowledge.parser.MarkdownParser;
 import com.lifepilot.knowledge.parser.PlainTextParser;
+import com.lifepilot.knowledge.parser.PowerpointParser;
 import com.lifepilot.knowledge.parser.WordParser;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
@@ -61,9 +63,10 @@ class FileReadToolExecutor_多格式解析测试 {
         properties.getInfra().getFile().setAllowedDirectories(
                 List.of(tempDir.toAbsolutePath().toString()));
         securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
-        // 使用真实 parser,不 mock(MarkdownParser + PlainTextParser + WordParser 覆盖本测试所有格式）
+        // 使用真实 parser,不 mock(Markdown/PlainText/Word/Excel/Powerpoint 覆盖本测试所有格式）
         parserService = new DocumentParserService(List.of(
-                new MarkdownParser(), new PlainTextParser(), new WordParser()));
+                new MarkdownParser(), new PlainTextParser(), new WordParser(),
+                new ExcelParser(), new PowerpointParser()));
     }
 
     @Test
@@ -190,6 +193,44 @@ class FileReadToolExecutor_多格式解析测试 {
         assertThat((Boolean) docResult.data().get("truncated")).isTrue();
         // 文档路径应带有截断提示后缀
         assertThat((String) docResult.data().get("content")).contains("内容已截断");
+    }
+
+    @Test
+    void xlsx_文件走_DocumentParserService_路径() throws Exception {
+        Path file = tempDir.resolve("sales.xlsx");
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+             var out = Files.newOutputStream(file)) {
+            var sheet = wb.createSheet("Q1");
+            sheet.createRow(0).createCell(0).setCellValue("雪豹-星轨-X7");
+            wb.write(out);
+        }
+
+        var executor = newExecutor(null);
+        ToolResult result = executor.execute(newInput(Map.of("path", file.toString())));
+
+        assertThat(result.ok()).isTrue();
+        assertThat((String) result.data().get("content")).contains("雪豹-星轨-X7");
+        assertThat((String) result.data().get("content")).contains("Q1");
+    }
+
+    @Test
+    void pptx_文件走_DocumentParserService_路径() throws Exception {
+        Path file = tempDir.resolve("deck.pptx");
+        try (var ppt = new org.apache.poi.xslf.usermodel.XMLSlideShow();
+             var out = Files.newOutputStream(file)) {
+            var slide = ppt.createSlide();
+            var tb = slide.createTextBox();
+            tb.setAnchor(new java.awt.Rectangle(50, 50, 400, 100));
+            tb.setText("鲲鹏振翅 2077");
+            ppt.write(out);
+        }
+
+        var executor = newExecutor(null);
+        ToolResult result = executor.execute(newInput(Map.of("path", file.toString())));
+
+        assertThat(result.ok()).isTrue();
+        assertThat((String) result.data().get("content")).contains("鲲鹏振翅 2077");
+        assertThat((String) result.data().get("content")).contains("幻灯片 1");
     }
 
     // ====================================================================

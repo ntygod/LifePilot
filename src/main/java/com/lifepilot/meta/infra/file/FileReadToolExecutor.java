@@ -61,6 +61,8 @@ public class FileReadToolExecutor {
      *   <li>md / markdown / mkd —— MarkdownParser 抽取标题、代码块、表格</li>
      *   <li>csv / tsv —— PlainTextParser 段落识别对表格友好</li>
      *   <li>docx / pdf —— 二进制格式,必须 parser 才能拿到文本</li>
+     *   <li>xlsx —— ExcelParser 按工作表/行/单元格结构化抽取</li>
+     *   <li>pptx —— PowerpointParser 按幻灯片/文本占位符抽取</li>
      * </ul>
      *
      * <p>{@code .txt} / {@code .log} / {@code .text} / {@code .java} / {@code .json} 等
@@ -70,7 +72,8 @@ public class FileReadToolExecutor {
     private static final Set<String> FORMATTED_DOCUMENT_EXTENSIONS = Set.of(
             "md", "markdown", "mkd",
             "csv", "tsv",
-            "docx", "pdf"
+            "docx", "pdf",
+            "xlsx", "pptx"
     );
 
     private final PathSecurityChecker securityChecker;
@@ -481,7 +484,7 @@ public class FileReadToolExecutor {
     }
 
     /**
-     * 兜底构造 —— 单参数便捷构造器使用,装配一个包含 4 个 Phase 0 parser 的服务,
+     * 兜底构造 —— 单参数便捷构造器使用,装配 Phase 0+1B 的 6 个 parser 服务,
      * 保证测试和兜底路径不会 NPE。
      */
     private static DocumentParserService nullSafeDefaultParserService() {
@@ -489,7 +492,9 @@ public class FileReadToolExecutor {
                 new com.lifepilot.knowledge.parser.MarkdownParser(),
                 new com.lifepilot.knowledge.parser.PlainTextParser(),
                 new com.lifepilot.knowledge.parser.WordParser(),
-                new com.lifepilot.knowledge.parser.PdfParser()
+                new com.lifepilot.knowledge.parser.PdfParser(),
+                new com.lifepilot.knowledge.parser.ExcelParser(),
+                new com.lifepilot.knowledge.parser.PowerpointParser()
         ));
     }
 }

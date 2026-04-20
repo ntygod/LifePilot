@@ -3,9 +3,11 @@ package com.lifepilot.meta.infra.file;
 import com.lifepilot.document.parser.DocumentParserService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.knowledge.parser.DocumentParser;
+import com.lifepilot.knowledge.parser.ExcelParser;
 import com.lifepilot.knowledge.parser.MarkdownParser;
 import com.lifepilot.knowledge.parser.PdfParser;
 import com.lifepilot.knowledge.parser.PlainTextParser;
+import com.lifepilot.knowledge.parser.PowerpointParser;
 import com.lifepilot.knowledge.parser.WordParser;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
@@ -104,18 +106,21 @@ public class FileToolProvider {
     }
 
     /**
-     * 装配 {@link DocumentParserService} —— 使用 Phase 0 的 4 个无状态 parser。
+     * 装配 {@link DocumentParserService} —— 使用 Phase 0+1B 的 6 个无状态 parser。
      *
      * <p>parser 实现均无状态、无参构造,直接 new 以避免跨模块 Bean 依赖顺序问题。
-     * 顺序:MarkdownParser → PlainTextParser → WordParser → PdfParser,
-     * {@code DocumentParserService} 内部按顺序命中 {@link DocumentParser#canParse}。</p>
+     * 顺序:MarkdownParser → PlainTextParser → WordParser → PdfParser
+     * → ExcelParser → PowerpointParser,{@code DocumentParserService} 内部
+     * 按顺序命中 {@link DocumentParser#canParse}。</p>
      */
     private static DocumentParserService buildDocumentParserService() {
         List<DocumentParser> parsers = List.of(
                 new MarkdownParser(),
                 new PlainTextParser(),
                 new WordParser(),
-                new PdfParser());
+                new PdfParser(),
+                new ExcelParser(),
+                new PowerpointParser());
         return new DocumentParserService(parsers);
     }
 
@@ -159,7 +164,7 @@ public class FileToolProvider {
         var props = new LinkedHashMap<String, Object>();
         props.put("path", Map.of("type", "string",
                 "description", "本机文件绝对路径(主入口,与 attachmentId / skill 三选一)。" +
-                        "支持所有文本文件;docx / pdf / md / csv 等结构化文档按扩展名自动路由到文档解析器,其他(.java/.txt/.log/.json 等)按纯文本读取。"));
+                        "支持所有文本文件;docx / xlsx / pptx / pdf / md / csv 等结构化文档按扩展名自动路由到文档解析器,其他(.java/.txt/.log/.json 等)按纯文本读取。"));
         props.put("attachmentId", Map.of("type", "string",
                 "description", "对话附件 ID(与 path / skill 三选一,本机文件优先用 path)。" +
                         "附件仓储未启用时返回错误。"));
@@ -179,8 +184,8 @@ public class FileToolProvider {
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
                 .description("读取文件或加载技能指南。path / attachmentId / skill 三选一:" +
-                        "path 读取本机文件(docx / pdf / md / csv 按扩展名自动路由到文档解析,其他按纯文本),"
-                        + "attachmentId 读取对话附件(docx/pdf 等自动解析为文本),"
+                        "path 读取本机文件(docx / xlsx / pptx / pdf / md / csv 按扩展名自动路由到文档解析,其他按纯文本),"
+                        + "attachmentId 读取对话附件(docx / xlsx / pptx / pdf 等自动解析为文本),"
                         + "skill 加载技能(多个逗号分隔)并自动激活技能工具。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
