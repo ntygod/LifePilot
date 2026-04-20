@@ -137,6 +137,81 @@ describe('MessageBubble 文档附件卡片', () => {
     expect(wrapper.text()).toContain('data.bin')
     expect(wrapper.text()).not.toContain('AI 可读取')
   })
+
+  it('xlsx 附件不显示「AI 可读取」徽标（Phase 0 无 xlsx parser）', () => {
+    const message: Message = {
+      id: 'm-xlsx',
+      role: 'user',
+      content: '这是一份报表',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-xlsx',
+          url: '/api/attachments/att-xlsx',
+          filename: '报表.xlsx',
+          size: 204800,
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    // 文件名和通用卡片应正常渲染，但不能点亮「AI 可读取」徽标
+    expect(wrapper.text()).toContain('报表.xlsx')
+    expect(wrapper.text()).not.toContain('AI 可读取')
+  })
+
+  it('csv 附件显示「AI 可读取」徽标（PlainTextParser 支持 csv）', () => {
+    const message: Message = {
+      id: 'm-csv',
+      role: 'user',
+      content: '帮我看这份数据',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-csv',
+          url: '/api/attachments/att-csv',
+          filename: '销售数据.csv',
+          size: 8192,
+          type: 'text/csv',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('销售数据.csv')
+    expect(wrapper.text()).toContain('AI 可读取')
+  })
 })
 
 describe('MessageBubble 权限审批状态展示', () => {
