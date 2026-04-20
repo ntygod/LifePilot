@@ -69,6 +69,7 @@ lifepilot:
       - memory
       - knowledge.search
       - notify
+      - document.create_docx # Phase 2A：从 markdown 生成 docx 产物，落盘 + 挂到 assistant 消息
     loop:
       # ReAct 循环配置
       max-iterations: 45
