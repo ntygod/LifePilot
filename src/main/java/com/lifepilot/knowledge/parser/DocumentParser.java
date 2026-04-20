@@ -6,13 +6,13 @@ import java.util.List;
 /**
  * 文档解析器 sealed interface — 定义文档解析的统一契约。
  *
- * <p>permit MarkdownParser、PlainTextParser、PdfParser、WordParser。
+ * <p>permit MarkdownParser、PlainTextParser、PdfParser、WordParser、ExcelParser。
  *
  * @author zsg
  * @since 2026-02-25
  */
 public sealed interface DocumentParser
-        permits MarkdownParser, PlainTextParser, PdfParser, WordParser {
+        permits MarkdownParser, PlainTextParser, PdfParser, WordParser, ExcelParser {
 
     /**
      * 返回此解析器支持的文件扩展名列表（不含点号）。
