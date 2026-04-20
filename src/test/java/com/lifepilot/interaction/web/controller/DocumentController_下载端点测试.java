@@ -1,7 +1,7 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.document.model.DocumentRecord;
-import com.lifepilot.document.repository.DocumentRepository;
+import com.lifepilot.document.model.SessionDocumentRecord;
+import com.lifepilot.document.repository.SessionDocumentRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,7 +33,7 @@ import static org.mockito.Mockito.when;
 class DocumentController_下载端点测试 {
 
     @Mock
-    DocumentRepository documentRepository;
+    SessionDocumentRepository sessionDocumentRepository;
 
     @Test
     void 成功返回文档字节含正确_Content_Disposition(@TempDir Path tmp) throws IOException {
@@ -41,13 +41,13 @@ class DocumentController_下载端点测试 {
         byte[] payload = "fake docx bytes".getBytes();
         Files.write(file, payload);
 
-        when(documentRepository.findById("doc-1")).thenReturn(new DocumentRecord(
+        when(sessionDocumentRepository.findById("doc-1")).thenReturn(new SessionDocumentRecord(
                 "doc-1", "sess-1", "entry-1", "Q3 报表.docx", file.toString(),
                 payload.length,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                DocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now()));
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now()));
 
-        var controller = new DocumentController(documentRepository);
+        var controller = new DocumentController(sessionDocumentRepository);
         ResponseEntity<ByteArrayResource> response = controller.download("doc-1");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -60,9 +60,9 @@ class DocumentController_下载端点测试 {
 
     @Test
     void 文档不存在返回_404() {
-        when(documentRepository.findById("missing")).thenReturn(null);
+        when(sessionDocumentRepository.findById("missing")).thenReturn(null);
 
-        var controller = new DocumentController(documentRepository);
+        var controller = new DocumentController(sessionDocumentRepository);
 
         assertThatThrownBy(() -> controller.download("missing"))
                 .isInstanceOf(ResponseStatusException.class)
@@ -74,12 +74,12 @@ class DocumentController_下载端点测试 {
     void 记录存在但物理文件丢失返回_404(@TempDir Path tmp) {
         Path deleted = tmp.resolve("gone.docx");
         // 文件故意不创建
-        when(documentRepository.findById("doc-x")).thenReturn(new DocumentRecord(
+        when(sessionDocumentRepository.findById("doc-x")).thenReturn(new SessionDocumentRecord(
                 "doc-x", "sess-1", null, "gone.docx", deleted.toString(), 100L,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                DocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now()));
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now()));
 
-        var controller = new DocumentController(documentRepository);
+        var controller = new DocumentController(sessionDocumentRepository);
 
         assertThatThrownBy(() -> controller.download("doc-x"))
                 .isInstanceOf(ResponseStatusException.class)

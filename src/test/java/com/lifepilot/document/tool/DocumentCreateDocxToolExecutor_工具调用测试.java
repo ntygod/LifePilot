@@ -1,8 +1,8 @@
 package com.lifepilot.document.tool;
 
 import com.lifepilot.document.generator.MarkdownToDocxGenerator;
-import com.lifepilot.document.model.DocumentRecord;
-import com.lifepilot.document.repository.DocumentRepository;
+import com.lifepilot.document.model.SessionDocumentRecord;
+import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -33,12 +33,12 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DocumentCreateDocxToolExecutor_工具调用测试 {
 
-    @Mock DocumentRepository documentRepository;
+    @Mock SessionDocumentRepository sessionDocumentRepository;
     @Mock AttachmentRepository attachmentRepository;
 
     @Test
     void 成功生成_docx_落盘入两张表返回_downloadUrl(@TempDir Path tmp) {
-        when(documentRepository.save(any())).thenReturn("doc-1");
+        when(sessionDocumentRepository.save(any())).thenReturn("doc-1");
         when(attachmentRepository.saveForEntry(any(), anyString(), anyString(), anyString(),
                 any(Long.class), anyString(), anyString())).thenReturn("att-1");
 
@@ -58,9 +58,9 @@ class DocumentCreateDocxToolExecutor_工具调用测试 {
         assertThat(result.data()).containsKey("fileSize");
 
         // 落盘文件真的存在
-        ArgumentCaptor<DocumentRecord> recordCaptor = ArgumentCaptor.forClass(DocumentRecord.class);
-        verify(documentRepository).save(recordCaptor.capture());
-        DocumentRecord saved = recordCaptor.getValue();
+        ArgumentCaptor<SessionDocumentRecord> recordCaptor = ArgumentCaptor.forClass(SessionDocumentRecord.class);
+        verify(sessionDocumentRepository).save(recordCaptor.capture());
+        SessionDocumentRecord saved = recordCaptor.getValue();
         assertThat(Files.exists(Path.of(saved.filePath()))).isTrue();
         assertThat(saved.origin()).isEqualTo("agent_generated");
         assertThat(saved.sessionId()).isEqualTo("sess-1");
@@ -111,7 +111,7 @@ class DocumentCreateDocxToolExecutor_工具调用测试 {
 
     @Test
     void fileName_自动追加_docx_扩展名(@TempDir Path tmp) {
-        when(documentRepository.save(any())).thenReturn("doc-2");
+        when(sessionDocumentRepository.save(any())).thenReturn("doc-2");
         when(attachmentRepository.saveForEntry(any(), anyString(), anyString(), anyString(),
                 any(Long.class), anyString(), anyString())).thenReturn("att-2");
 
@@ -174,7 +174,7 @@ class DocumentCreateDocxToolExecutor_工具调用测试 {
             }
         };
         var executor = new DocumentCreateDocxToolExecutor(
-                failingGenerator, documentRepository, attachmentRepository, tmp.toString());
+                failingGenerator, sessionDocumentRepository, attachmentRepository, tmp.toString());
         var input = newInput(Map.of(
                 "fileName", "报告",
                 "markdown", "# 标题",
@@ -200,7 +200,7 @@ class DocumentCreateDocxToolExecutor_工具调用测试 {
 
         var executor = new DocumentCreateDocxToolExecutor(
                 new MarkdownToDocxGenerator(),
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 notADir.toString());  // storageDir 指向普通文件
         var input = newInput(Map.of(
@@ -218,7 +218,7 @@ class DocumentCreateDocxToolExecutor_工具调用测试 {
     private DocumentCreateDocxToolExecutor newExecutor(Path storageDir) {
         return new DocumentCreateDocxToolExecutor(
                 new MarkdownToDocxGenerator(),
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 storageDir.toString());
     }

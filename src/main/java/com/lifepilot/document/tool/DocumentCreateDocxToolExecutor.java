@@ -2,8 +2,8 @@ package com.lifepilot.document.tool;
 
 import com.lifepilot.document.generator.DocumentGenerationException;
 import com.lifepilot.document.generator.DocumentGenerator;
-import com.lifepilot.document.model.DocumentRecord;
-import com.lifepilot.document.repository.DocumentRepository;
+import com.lifepilot.document.model.SessionDocumentRecord;
+import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -45,16 +45,16 @@ public class DocumentCreateDocxToolExecutor {
     private static final int MAX_FILE_NAME_LENGTH = 240;
 
     private final DocumentGenerator generator;
-    private final DocumentRepository documentRepository;
+    private final SessionDocumentRepository sessionDocumentRepository;
     private final AttachmentRepository attachmentRepository;
     private final String storageDir;
 
     public DocumentCreateDocxToolExecutor(DocumentGenerator generator,
-                                          DocumentRepository documentRepository,
+                                          SessionDocumentRepository sessionDocumentRepository,
                                           AttachmentRepository attachmentRepository,
                                           String storageDir) {
         this.generator = generator;
-        this.documentRepository = documentRepository;
+        this.sessionDocumentRepository = sessionDocumentRepository;
         this.attachmentRepository = attachmentRepository;
         this.storageDir = storageDir;
     }
@@ -114,10 +114,10 @@ public class DocumentCreateDocxToolExecutor {
         }
 
         // 入 session_documents 表（origin=agent_generated，entry_id 暂空）
-        var record = new DocumentRecord(
+        var record = new SessionDocumentRecord(
                 documentId, sessionId, null, normalizedFileName, filePath.toString(),
-                bytes.length, DOCX_MIME, DocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now());
-        String savedId = documentRepository.save(record);
+                bytes.length, DOCX_MIME, SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now());
+        String savedId = sessionDocumentRepository.save(record);
 
         // 入 message_attachments 表（entry_id=null，由 AgentPersistenceHandler 回填）
         String downloadUrl = String.format(DOWNLOAD_URL_TEMPLATE, savedId);

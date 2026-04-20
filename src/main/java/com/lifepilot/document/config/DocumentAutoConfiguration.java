@@ -6,7 +6,7 @@ import com.lifepilot.document.generator.MarkdownToDocxGenerator;
 import com.lifepilot.document.generator.OutlineToPptxGenerator;
 import com.lifepilot.document.generator.PowerpointGenerator;
 import com.lifepilot.document.generator.StructuredDataToXlsxGenerator;
-import com.lifepilot.document.repository.DocumentRepository;
+import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.document.tool.DocumentCreateActionDispatchExecutor;
 import com.lifepilot.document.tool.DocumentCreateDocxToolExecutor;
 import com.lifepilot.document.tool.DocumentCreatePptxToolExecutor;
@@ -58,43 +58,43 @@ public class DocumentAutoConfiguration {
     // ===== 工具执行体 Bean（依赖 Repository）=====
 
     @Bean
-    @ConditionalOnBean({DocumentRepository.class, AttachmentRepository.class})
+    @ConditionalOnBean({SessionDocumentRepository.class, AttachmentRepository.class})
     DocumentCreateDocxToolExecutor documentCreateDocxToolExecutor(
             DocumentGenerator markdownToDocxGenerator,
-            DocumentRepository documentRepository,
+            SessionDocumentRepository sessionDocumentRepository,
             AttachmentRepository attachmentRepository,
             DocumentProperties properties) {
         return new DocumentCreateDocxToolExecutor(
                 markdownToDocxGenerator,
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 properties.getStorageDir());
     }
 
     @Bean
-    @ConditionalOnBean({DocumentRepository.class, AttachmentRepository.class})
+    @ConditionalOnBean({SessionDocumentRepository.class, AttachmentRepository.class})
     DocumentCreateXlsxToolExecutor documentCreateXlsxToolExecutor(
             ExcelGenerator structuredDataToXlsxGenerator,
-            DocumentRepository documentRepository,
+            SessionDocumentRepository sessionDocumentRepository,
             AttachmentRepository attachmentRepository,
             DocumentProperties properties) {
         return new DocumentCreateXlsxToolExecutor(
                 structuredDataToXlsxGenerator,
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 properties.getStorageDir());
     }
 
     @Bean
-    @ConditionalOnBean({DocumentRepository.class, AttachmentRepository.class})
+    @ConditionalOnBean({SessionDocumentRepository.class, AttachmentRepository.class})
     DocumentCreatePptxToolExecutor documentCreatePptxToolExecutor(
             PowerpointGenerator outlineToPptxGenerator,
-            DocumentRepository documentRepository,
+            SessionDocumentRepository sessionDocumentRepository,
             AttachmentRepository attachmentRepository,
             DocumentProperties properties) {
         return new DocumentCreatePptxToolExecutor(
                 outlineToPptxGenerator,
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 properties.getStorageDir());
     }

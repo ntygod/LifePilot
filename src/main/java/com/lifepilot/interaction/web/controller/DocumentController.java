@@ -1,7 +1,7 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.document.model.DocumentRecord;
-import com.lifepilot.document.repository.DocumentRepository;
+import com.lifepilot.document.model.SessionDocumentRecord;
+import com.lifepilot.document.repository.SessionDocumentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -26,7 +26,7 @@ import java.nio.file.Paths;
 /**
  * 文档产物访问控制器。
  *
- * <p>按 {@code documentId} 从 {@link DocumentRepository} 查找元数据后回读文件字节，
+ * <p>按 {@code documentId} 从 {@link SessionDocumentRepository} 查找元数据后回读文件字节，
  * 以 {@code attachment} 形式响应下载。Content-Disposition 采用 RFC 5987
  * {@code filename*=UTF-8''} 格式，确保中文文件名不乱码。</p>
  *
@@ -42,10 +42,10 @@ public class DocumentController {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentController.class);
 
-    private final DocumentRepository documentRepository;
+    private final SessionDocumentRepository sessionDocumentRepository;
 
-    public DocumentController(DocumentRepository documentRepository) {
-        this.documentRepository = documentRepository;
+    public DocumentController(SessionDocumentRepository sessionDocumentRepository) {
+        this.sessionDocumentRepository = sessionDocumentRepository;
     }
 
     /**
@@ -56,7 +56,7 @@ public class DocumentController {
      */
     @GetMapping("/{id}/download")
     public ResponseEntity<ByteArrayResource> download(@PathVariable String id) {
-        DocumentRecord record = documentRepository.findById(id);
+        SessionDocumentRecord record = sessionDocumentRepository.findById(id);
         if (record == null) {
             log.warn("文档不存在：id={}", id);
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);

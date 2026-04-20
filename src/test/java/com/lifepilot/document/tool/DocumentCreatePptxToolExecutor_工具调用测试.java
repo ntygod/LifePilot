@@ -1,8 +1,8 @@
 package com.lifepilot.document.tool;
 
 import com.lifepilot.document.generator.OutlineToPptxGenerator;
-import com.lifepilot.document.model.DocumentRecord;
-import com.lifepilot.document.repository.DocumentRepository;
+import com.lifepilot.document.model.SessionDocumentRecord;
+import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -34,12 +34,12 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DocumentCreatePptxToolExecutor_工具调用测试 {
 
-    @Mock DocumentRepository documentRepository;
+    @Mock SessionDocumentRepository sessionDocumentRepository;
     @Mock AttachmentRepository attachmentRepository;
 
     @Test
     void 成功生成_pptx_落盘入两张表返回_downloadUrl(@TempDir Path tmp) {
-        when(documentRepository.save(any())).thenReturn("doc-p");
+        when(sessionDocumentRepository.save(any())).thenReturn("doc-p");
         when(attachmentRepository.saveForEntry(any(), anyString(), anyString(), anyString(),
                 any(Long.class), anyString(), anyString())).thenReturn("att-p");
 
@@ -63,9 +63,9 @@ class DocumentCreatePptxToolExecutor_工具调用测试 {
         assertThat((String) result.data().get("fileName")).endsWith(".pptx");
         assertThat((String) result.data().get("downloadUrl")).isEqualTo("/api/documents/doc-p/download");
 
-        ArgumentCaptor<DocumentRecord> capt = ArgumentCaptor.forClass(DocumentRecord.class);
-        verify(documentRepository).save(capt.capture());
-        DocumentRecord saved = capt.getValue();
+        ArgumentCaptor<SessionDocumentRecord> capt = ArgumentCaptor.forClass(SessionDocumentRecord.class);
+        verify(sessionDocumentRepository).save(capt.capture());
+        SessionDocumentRecord saved = capt.getValue();
         assertThat(Files.exists(Path.of(saved.filePath()))).isTrue();
         assertThat(saved.origin()).isEqualTo("agent_generated");
         assertThat(saved.mimeType())
@@ -119,7 +119,7 @@ class DocumentCreatePptxToolExecutor_工具调用测试 {
 
     @Test
     void fileName_自动追加_pptx_扩展名(@TempDir Path tmp) {
-        when(documentRepository.save(any())).thenReturn("doc-q");
+        when(sessionDocumentRepository.save(any())).thenReturn("doc-q");
         when(attachmentRepository.saveForEntry(any(), anyString(), anyString(), anyString(),
                 any(Long.class), anyString(), anyString())).thenReturn("att-q");
 
@@ -148,7 +148,7 @@ class DocumentCreatePptxToolExecutor_工具调用测试 {
             }
         };
         var executor = new DocumentCreatePptxToolExecutor(
-                failingGenerator, documentRepository, attachmentRepository, tmp.toString());
+                failingGenerator, sessionDocumentRepository, attachmentRepository, tmp.toString());
         var input = newInput(Map.of(
                 "fileName", "方案",
                 "slides", List.of(),
@@ -174,7 +174,7 @@ class DocumentCreatePptxToolExecutor_工具调用测试 {
 
         var executor = new DocumentCreatePptxToolExecutor(
                 new OutlineToPptxGenerator(),
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 notADir.toString());
         var input = newInput(Map.of(
@@ -192,7 +192,7 @@ class DocumentCreatePptxToolExecutor_工具调用测试 {
     private DocumentCreatePptxToolExecutor newExecutor(Path storageDir) {
         return new DocumentCreatePptxToolExecutor(
                 new OutlineToPptxGenerator(),
-                documentRepository,
+                sessionDocumentRepository,
                 attachmentRepository,
                 storageDir.toString());
     }
