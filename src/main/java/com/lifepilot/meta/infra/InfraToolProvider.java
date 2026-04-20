@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
@@ -75,6 +76,7 @@ public class InfraToolProvider {
     @Nullable private final ChannelInstanceService channelInstanceService;
     @Nullable private final String skillDirectory;
     private final WorkspaceResolver workspaceResolver;
+    @Nullable private final AttachmentRepository attachmentRepository;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -94,7 +96,8 @@ public class InfraToolProvider {
                              @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                              @Nullable ChannelInstanceService channelInstanceService,
                              @Nullable String skillDirectory,
-                             WorkspaceResolver workspaceResolver) {
+                             WorkspaceResolver workspaceResolver,
+                             @Nullable AttachmentRepository attachmentRepository) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -114,6 +117,7 @@ public class InfraToolProvider {
         this.channelInstanceService = channelInstanceService;
         this.skillDirectory = skillDirectory;
         this.workspaceResolver = workspaceResolver;
+        this.attachmentRepository = attachmentRepository;
     }
 
     /**
@@ -138,7 +142,7 @@ public class InfraToolProvider {
                 fileEditConfig.getUndoMaxDepth(),
                 fileEditConfig.getMaxSnapshotSizeBytes());
         var lintHook = new LintHookExecutor();
-        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, skillDirectory, toolRegistry);
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, skillDirectory, toolRegistry, attachmentRepository);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 通知工具

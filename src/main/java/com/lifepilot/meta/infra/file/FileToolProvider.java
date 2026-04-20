@@ -1,5 +1,12 @@
 package com.lifepilot.meta.infra.file;
 
+import com.lifepilot.document.parser.DocumentParserService;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.knowledge.parser.DocumentParser;
+import com.lifepilot.knowledge.parser.MarkdownParser;
+import com.lifepilot.knowledge.parser.PdfParser;
+import com.lifepilot.knowledge.parser.PlainTextParser;
+import com.lifepilot.knowledge.parser.WordParser;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
@@ -22,8 +29,11 @@ import java.util.Map;
 /**
  * 文件工具提供者。
  *
- * <p>集中管理文件系统元能力工具：read / write / list / edit / manage。
+ * <p>集中管理文件系统元能力工具:read / write / list / edit / manage。
  * 所有 Executor 共享同一个 {@link PathSecurityChecker} 实例。</p>
+ *
+ * <p>Phase 0 后:{@code file.read} 合并了文档解析能力,通过内部 {@link DocumentParserService}
+ * 按扩展名自动路由(docx / pdf / md / txt / csv 等走文档解析,其他走 BufferedReader)。</p>
  *
  * @author zsg
  * @since 2026-03-16
@@ -43,24 +53,21 @@ public class FileToolProvider {
     /** 动态工具注册中心，用于 file.read 的 mcp: 前缀解析。 */
     @Nullable
     private final DynamicToolRegistry toolRegistry;
+    /** 附件仓储 —— 用于 file.read 的 attachmentId 分支,Web 未启用时为 null。 */
+    @Nullable
+    private final AttachmentRepository attachmentRepository;
+    /** 文档解析路由 facade —— file.read 的内部依赖,本类自装配,无需外部注入。 */
+    private final DocumentParserService documentParserService;
 
     public FileToolProvider(MetaProperties properties) {
-        this.properties = properties;
-        this.editHistory = null;
-        this.lintHook = null;
-        this.skillDirectory = null;
-        this.toolRegistry = null;
+        this(properties, null, null, null, null, null);
     }
 
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
                             @Nullable LintHookExecutor lintHook,
                             @Nullable String skillDirectory) {
-        this.properties = properties;
-        this.editHistory = editHistory;
-        this.lintHook = lintHook;
-        this.skillDirectory = skillDirectory;
-        this.toolRegistry = null;
+        this(properties, editHistory, lintHook, skillDirectory, null, null);
     }
 
     public FileToolProvider(MetaProperties properties,
@@ -68,11 +75,48 @@ public class FileToolProvider {
                             @Nullable LintHookExecutor lintHook,
                             @Nullable String skillDirectory,
                             @Nullable DynamicToolRegistry toolRegistry) {
+        this(properties, editHistory, lintHook, skillDirectory, toolRegistry, null);
+    }
+
+    /**
+     * 完整构造器 —— 支持 file.read 的文档解析路由和对话附件查询。
+     *
+     * @param properties            元能力配置
+     * @param editHistory           文件编辑历史,支持 undo
+     * @param lintHook              写入后 lint 回调
+     * @param skillDirectory        Skill 目录,null 表示不支持 file.read(skill=...）
+     * @param toolRegistry          动态工具注册中心,用于 file.read 的 mcp: 前缀
+     * @param attachmentRepository  附件仓储,null 时 file.read(attachmentId=...) 会返回"附件功能未启用"
+     */
+    public FileToolProvider(MetaProperties properties,
+                            @Nullable FileEditHistory editHistory,
+                            @Nullable LintHookExecutor lintHook,
+                            @Nullable String skillDirectory,
+                            @Nullable DynamicToolRegistry toolRegistry,
+                            @Nullable AttachmentRepository attachmentRepository) {
         this.properties = properties;
         this.editHistory = editHistory;
         this.lintHook = lintHook;
         this.skillDirectory = skillDirectory;
         this.toolRegistry = toolRegistry;
+        this.attachmentRepository = attachmentRepository;
+        this.documentParserService = buildDocumentParserService();
+    }
+
+    /**
+     * 装配 {@link DocumentParserService} —— 使用 Phase 0 的 4 个无状态 parser。
+     *
+     * <p>parser 实现均无状态、无参构造,直接 new 以避免跨模块 Bean 依赖顺序问题。
+     * 顺序:MarkdownParser → PlainTextParser → WordParser → PdfParser,
+     * {@code DocumentParserService} 内部按顺序命中 {@link DocumentParser#canParse}。</p>
+     */
+    private static DocumentParserService buildDocumentParserService() {
+        List<DocumentParser> parsers = List.of(
+                new MarkdownParser(),
+                new PlainTextParser(),
+                new WordParser(),
+                new PdfParser());
+        return new DocumentParserService(parsers);
     }
 
     /**
@@ -89,7 +133,8 @@ public class FileToolProvider {
         var fileEditConfig = properties.getInfra().getFileEdit();
 
         tools.add(buildFileReadTool(
-                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars(), skillDirectory, toolRegistry)));
+                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars(),
+                        skillDirectory, toolRegistry, attachmentRepository, documentParserService)));
         tools.add(buildFileWriteTool(
                 new FileWriteToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
         tools.add(buildFileListTool(new FileListActionDispatchExecutor(
@@ -111,28 +156,35 @@ public class FileToolProvider {
 
     /** 构建文件读取工具。 */
     private BuiltinTool buildFileReadTool(FileReadToolExecutor executor) {
+        var props = new LinkedHashMap<String, Object>();
+        props.put("path", Map.of("type", "string",
+                "description", "本机文件绝对路径(主入口,与 attachmentId / skill 三选一)。" +
+                        "支持所有文本文件;docx / pdf / md / csv 等结构化文档按扩展名自动路由到文档解析器,其他(.java/.txt/.log/.json 等)按纯文本读取。"));
+        props.put("attachmentId", Map.of("type", "string",
+                "description", "对话附件 ID(与 path / skill 三选一,本机文件优先用 path)。" +
+                        "附件仓储未启用时返回错误。"));
+        props.put("skill", Map.of("type", "string",
+                "description", "加载技能指南:传入 skill ID,多个逗号分隔,最多 3 个(与 path / attachmentId 三选一)"));
+        props.put("encoding", Map.of("type", "string",
+                "description", "文件编码(如 UTF-8、GBK),默认 UTF-8,仅对纯文本有效"));
+        props.put("startLine", Map.of("type", "integer",
+                "description", "起始行号(1-based),可选,仅对纯文本有效,结构化文档忽略"));
+        props.put("endLine", Map.of("type", "integer",
+                "description", "结束行号(1-based),可选,仅对纯文本有效,结构化文档忽略"));
+        props.put("maxChars", Map.of("type", "integer",
+                "description", "最大返回字符数,默认 30000,超出截断"));
+
         return BuiltinTool.builder()
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
-                .description("读取文件或加载技能指南。path 和 skill 二选一：" +
-                        "path 读取指定文件，skill 加载技能（多个逗号分隔）并自动激活技能工具")
+                .description("读取文件或加载技能指南。path / attachmentId / skill 三选一:" +
+                        "path 读取本机文件(docx / pdf / md / csv 按扩展名自动路由到文档解析,其他按纯文本),"
+                        + "attachmentId 读取对话附件(docx/pdf 等自动解析为文本),"
+                        + "skill 加载技能(多个逗号分隔)并自动激活技能工具。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "properties", new LinkedHashMap<>(Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "文件路径（与 skill 二选一）"),
-                                "skill", Map.of("type", "string",
-                                        "description", "加载技能指南：传入 skill ID，多个逗号分隔，最多 3 个"),
-                                "encoding", Map.of("type", "string",
-                                        "description", "文件编码（如 UTF-8、GBK），默认 UTF-8"),
-                                "startLine", Map.of("type", "integer",
-                                        "description", "起始行号（1-based），可选"),
-                                "endLine", Map.of("type", "integer",
-                                        "description", "结束行号（1-based），可选"),
-                                "maxChars", Map.of("type", "integer",
-                                        "description", "最大返回字符数，默认 30000")
-                        ))
+                        "properties", props
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.of(

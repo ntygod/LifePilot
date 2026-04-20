@@ -8,6 +8,7 @@ import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.service.ChannelInstanceService;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -120,9 +121,10 @@ public class MetaAutoConfiguration {
                                         @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                         @Nullable ChannelInstanceService channelInstanceService,
                                         @Nullable com.lifepilot.skill.config.SkillConfigProperties skillConfigProperties,
-                                        com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver) {
+                                        com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
+                                        @Nullable AttachmentRepository attachmentRepository) {
         String skillDir = skillConfigProperties != null ? skillConfigProperties.getDirectory() : null;
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver, attachmentRepository);
     }
 
     /**
