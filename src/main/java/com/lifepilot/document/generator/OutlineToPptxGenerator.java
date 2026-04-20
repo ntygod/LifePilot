@@ -56,6 +56,7 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
                 return out.toByteArray();
             }
 
+            int slideIdx = 0;
             for (SlideData data : slides) {
                 XSLFSlide slide = ppt.createSlide();
 
@@ -65,7 +66,7 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
                     titleBox.setText(data.title());
                 }
 
-                if (data.bullets() != null && !data.bullets().isEmpty()) {
+                if (!data.bullets().isEmpty()) {
                     XSLFTextBox bulletBox = slide.createTextBox();
                     bulletBox.setAnchor(new Rectangle(40, 110, 620, 400));
                     boolean first = true;
@@ -83,17 +84,18 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
                 if (data.notes() != null && !data.notes().isBlank()) {
                     // getNotesSlide 若 notes slide 不存在则创建,保证 notes 区域可写
                     XSLFNotes notes = ppt.getNotesSlide(slide);
-                    writeNotesText(notes, data.notes());
+                    writeNotesText(notes, data.notes(), slideIdx);
                 }
+                slideIdx++;
             }
 
             ppt.write(out);
-            log.info("OutlineToPptx 生成完成:slides={}, outputBytes={}",
+            log.info("OutlineToPptx 生成完成：slides={}，outputBytes={}",
                     slides.size(), out.size());
             return out.toByteArray();
 
         } catch (IOException e) {
-            throw new DocumentGenerationException("pptx 生成失败:" + e.getMessage(), e);
+            throw new DocumentGenerationException("pptx 生成失败：" + e.getMessage(), e);
         }
     }
 
@@ -103,8 +105,12 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
      * <p>POI 创建 notes slide 时会自带若干占位符形状（幻灯片编号、备注文本等）,
      * 这里遍历找到首个 {@link XSLFTextShape} 并覆盖其文本内容。找不到则不写入
      * （理论上 notes slide 总会有文本形状,但防御性处理避免 NPE）。</p>
+     *
+     * @param notes    当前幻灯片的 notes slide
+     * @param text     备注文本
+     * @param slideIdx 幻灯片索引（从 0 开始）,仅用于 WARN 日志定位
      */
-    private void writeNotesText(XSLFNotes notes, String text) {
+    private void writeNotesText(XSLFNotes notes, String text, int slideIdx) {
         for (XSLFShape shape : notes.getShapes()) {
             if (shape instanceof XSLFTextShape textShape) {
                 textShape.clearText();
@@ -112,6 +118,6 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
                 return;
             }
         }
-        log.warn("Notes slide 未找到可写文本形状,备注丢弃");
+        log.warn("Notes slide 未找到可写文本形状，备注丢弃：slideIdx={}", slideIdx);
     }
 }
