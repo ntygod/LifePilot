@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
 import java.util.List;
@@ -33,20 +34,19 @@ import java.util.List;
  * </ol>
  *
  * <p>通过 {@code lifepilot.document.enabled} 启停（默认开启）。
- * 注意：不依赖 knowledge 模块的 parser Bean（避免 {@code @ConditionalOnBean}
- * 在 auto-config 阶段的顺序陷阱），直接 new 各 parser 实现。</p>
+ * 注意：不依赖 knowledge 模块的 parser Bean（某些测试 profile 下
+ * {@code lifepilot.knowledge.enabled=false} 时 knowledge parser Bean 不存在，
+ * 注入 {@code List<DocumentParser>} 会得到空列表），直接 new 各 parser 实现。</p>
  *
  * @author zsg
  * @since 2026-04-20
  */
 @AutoConfiguration
 @ConditionalOnProperty(name = "lifepilot.document.enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties(DocumentProperties.class)
 public class DocumentAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentAutoConfiguration.class);
-
-    /** 默认解析内容最大字符数，超出会被截断。 */
-    private static final int DEFAULT_MAX_CHARS = 30000;
 
     /**
      * 文档解析路由 facade —— 组合 knowledge 模块的 4 个 parser 实现。
@@ -68,14 +68,18 @@ public class DocumentAutoConfiguration {
     /**
      * document.parse 工具的执行器 —— 依赖 AttachmentRepository 按附件 ID 解析路径。
      *
-     * <p>AttachmentRepository 来自 interaction/web 模块，Web 未启用时本 Bean 不注册，
+     * <p>AttachmentRepository 来自 interaction/web 模块，Web 未启用时本 Bean 不注册,
      * DocumentToolProvider 随之不注册，从而整条文档工具链按需启停。</p>
+     *
+     * <p>默认最大字符数取自 {@link DocumentProperties#getDefaultMaxChars()}，
+     * 可通过 {@code lifepilot.document.default-max-chars} 覆盖。</p>
      */
     @Bean
     @ConditionalOnBean(AttachmentRepository.class)
     DocumentParseToolExecutor documentParseToolExecutor(DocumentParserService parserService,
-                                                        AttachmentRepository attachmentRepository) {
-        return new DocumentParseToolExecutor(parserService, attachmentRepository, DEFAULT_MAX_CHARS);
+                                                        AttachmentRepository attachmentRepository,
+                                                        DocumentProperties properties) {
+        return new DocumentParseToolExecutor(parserService, attachmentRepository, properties.getDefaultMaxChars());
     }
 
     /** 文档工具提供者。 */
@@ -99,6 +103,9 @@ public class DocumentAutoConfiguration {
     @ConditionalOnBean(DocumentToolProvider.class)
     BuiltinTool documentParseTool(DocumentToolProvider provider) {
         var tools = provider.buildDocumentTools();
+        if (tools.isEmpty()) {
+            throw new IllegalStateException("DocumentToolProvider 未返回任何工具");
+        }
         if (tools.size() != 1) {
             log.warn("DocumentToolProvider 目前预期返回 1 个工具，实际 count={}；仅暴露首个为 Bean，其余需补充 @Bean 方法",
                     tools.size());

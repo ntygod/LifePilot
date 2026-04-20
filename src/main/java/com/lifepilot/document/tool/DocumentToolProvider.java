@@ -49,7 +49,7 @@ public class DocumentToolProvider {
         properties.put("path", Map.of("type", "string",
                 "description", "本地文件路径（与 attachmentId 二选一）"));
         properties.put("maxChars", Map.of("type", "integer",
-                "description", "返回内容最大字符数，默认 30000，超出截断；返回的 totalChars 为原始文本字符数（截断前）"));
+                "description", "返回内容最大字符数，默认值见 lifepilot.document.default-max-chars 配置，超出截断；返回的 totalChars 为原始文本字符数（截断前）"));
 
         return BuiltinTool.builder()
                 .id("document.parse")
