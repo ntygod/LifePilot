@@ -52,8 +52,7 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
                                 "headers", List.of("产品", "销售额"),
                                 "rows", List.of(List.of("A", 100))
                         )
-                ),
-                "sessionId", "sess-1"
+                )
         ));
 
         ToolResult result = executor.execute(input);
@@ -76,8 +75,7 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
     void 缺少_fileName_参数报错(@TempDir Path tmp) {
         var executor = newExecutor(tmp);
         ToolResult result = executor.execute(newInput(Map.of(
-                "sheets", List.of(),
-                "sessionId", "sess-1"
+                "sheets", List.of()
         )));
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.error()).contains("fileName");
@@ -87,22 +85,22 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
     void 缺少_sheets_参数报错(@TempDir Path tmp) {
         var executor = newExecutor(tmp);
         ToolResult result = executor.execute(newInput(Map.of(
-                "fileName", "报表",
-                "sessionId", "sess-1"
+                "fileName", "报表"
         )));
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.error()).contains("sheets");
     }
 
     @Test
-    void 缺少_sessionId_参数报错(@TempDir Path tmp) {
+    void 缺少_执行上下文_sessionId_报错(@TempDir Path tmp) {
         var executor = newExecutor(tmp);
+        // 显式传空 context, 模拟 runtime 漏注入 sessionId 的场景
         ToolResult result = executor.execute(newInput(Map.of(
                 "fileName", "报表",
                 "sheets", List.of()
-        )));
+        ), Map.of()));
         assertThat(result.isSuccess()).isFalse();
-        assertThat(result.error()).contains("sessionId");
+        assertThat(result.error()).contains("缺少执行上下文");
     }
 
     @Test
@@ -110,8 +108,7 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
         var executor = newExecutor(tmp);
         ToolResult result = executor.execute(newInput(Map.of(
                 "fileName", "../etc/passwd",
-                "sheets", List.of(),
-                "sessionId", "sess-1"
+                "sheets", List.of()
         )));
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.error()).contains("非法字符");
@@ -126,8 +123,7 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
         var executor = newExecutor(tmp);
         ToolResult result = executor.execute(newInput(Map.of(
                 "fileName", "已带扩展名.xlsx",
-                "sheets", List.of(),
-                "sessionId", "sess-1"
+                "sheets", List.of()
         )));
         assertThat(result.isSuccess()).isTrue();
         assertThat((String) result.data().get("fileName")).isEqualTo("已带扩展名.xlsx");
@@ -151,8 +147,7 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
                 failingGenerator, sessionDocumentRepository, attachmentRepository, tmp.toString());
         var input = newInput(Map.of(
                 "fileName", "报表",
-                "sheets", List.of(),
-                "sessionId", "sess-1"
+                "sheets", List.of()
         ));
 
         ToolResult result = executor.execute(input);
@@ -179,8 +174,7 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
                 notADir.toString());
         var input = newInput(Map.of(
                 "fileName", "报表",
-                "sheets", List.of(),
-                "sessionId", "sess-1"
+                "sheets", List.of()
         ));
 
         ToolResult result = executor.execute(input);
@@ -197,8 +191,13 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
                 storageDir.toString());
     }
 
+    // 默认注入 sess-1 context, 符合 runtime 行为
     private ToolInput newInput(Map<String, Object> params) {
+        return newInput(params, Map.of("sessionId", "sess-1"));
+    }
+
+    private ToolInput newInput(Map<String, Object> params, Map<String, Object> context) {
         return new ToolInput("document.create_xlsx", params,
-                JsonSchema.of(Map.of("type", "object")), null, null);
+                JsonSchema.of(Map.of("type", "object")), null, context);
     }
 }

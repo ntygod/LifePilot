@@ -73,13 +73,16 @@ public class DocumentCreateXlsxToolExecutor {
     public ToolResult execute(ToolInput input) {
         String fileName;
         List<?> sheetsRaw;
-        String sessionId;
         try {
             fileName = input.getParam("fileName", String.class);
             sheetsRaw = input.getParam("sheets", List.class);
-            sessionId = input.getParam("sessionId", String.class);
         } catch (IllegalArgumentException e) {
             return ToolResult.error("参数校验失败：" + e.getMessage());
+        }
+        // sessionId 属执行上下文, 由 ToolExecutionCoordinator 注入, 不在 LLM schema 中暴露
+        String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+        if (sessionId == null || sessionId.isBlank()) {
+            return ToolResult.error("缺少执行上下文 sessionId（应由 runtime 注入）");
         }
 
         // fileName 安全校验 —— LLM 可能产出含路径分隔符 / .. / NUL 等越界字符串，

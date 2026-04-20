@@ -52,8 +52,7 @@ class DocumentCreateActionDispatchExecutor_路由测试 {
         ToolResult result = dispatcher.execute(newInput(Map.of(
                 "action", "docx",
                 "fileName", "报告",
-                "markdown", "# 标题",
-                "sessionId", "sess-1"
+                "markdown", "# 标题"
         )));
 
         assertThat(result.isSuccess()).isTrue();
@@ -70,8 +69,7 @@ class DocumentCreateActionDispatchExecutor_路由测试 {
         ToolResult result = dispatcher.execute(newInput(Map.of(
                 "action", "xlsx",
                 "fileName", "报表",
-                "sheets", java.util.List.of(),
-                "sessionId", "sess-1"
+                "sheets", java.util.List.of()
         )));
 
         assertThat(result.isSuccess()).isTrue();
@@ -88,8 +86,7 @@ class DocumentCreateActionDispatchExecutor_路由测试 {
         ToolResult result = dispatcher.execute(newInput(Map.of(
                 "action", "pptx",
                 "fileName", "幻灯",
-                "slides", java.util.List.of(),
-                "sessionId", "sess-1"
+                "slides", java.util.List.of()
         )));
 
         assertThat(result.isSuccess()).isTrue();
@@ -103,8 +100,7 @@ class DocumentCreateActionDispatchExecutor_路由测试 {
     void action_未知时返回_不支持的操作_错误_底层_executor_均不调用() {
         ToolResult result = dispatcher.execute(newInput(Map.of(
                 "action", "txt",
-                "fileName", "随便",
-                "sessionId", "sess-1"
+                "fileName", "随便"
         )));
 
         assertThat(result.isSuccess()).isFalse();
@@ -120,7 +116,6 @@ class DocumentCreateActionDispatchExecutor_路由测试 {
         // HashMap 允许缺 action key（Map.of 不允许空值，用 HashMap 明确表达"字段缺失"）
         Map<String, Object> params = new HashMap<>();
         params.put("fileName", "随便");
-        params.put("sessionId", "sess-1");
 
         ToolResult result = dispatcher.execute(newInput(params));
 
@@ -131,8 +126,13 @@ class DocumentCreateActionDispatchExecutor_路由测试 {
         verify(pptxExecutor, never()).execute(any());
     }
 
+    // 默认注入 sess-1 context, 与底层 executor 测试保持一致（此处 mock executor 不读 context, 但保持约定）
     private ToolInput newInput(Map<String, Object> params) {
+        return newInput(params, Map.of("sessionId", "sess-1"));
+    }
+
+    private ToolInput newInput(Map<String, Object> params, Map<String, Object> context) {
         return new ToolInput("document.create", params,
-                JsonSchema.of(Map.of("type", "object")), null, null);
+                JsonSchema.of(Map.of("type", "object")), null, context);
     }
 }
