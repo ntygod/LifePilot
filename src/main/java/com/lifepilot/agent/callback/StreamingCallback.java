@@ -404,23 +404,24 @@ public class StreamingCallback implements IterationCallback {
         var timings = streamingTimings();
         long cachedTokens = accumulatedCachedTokens[0];
         long promptTokens = accumulatedPromptTokens[0];
-        // cache 命中率 = cached / (prompt - cached) 估算, 仅展示命中的 token 数与命中比
+        // cache 命中展示为 "cache=8063(92%)" 片段, 无命中省略 (避免噪音)
         String cacheInfo = cachedTokens > 0 && promptTokens > 0
-                ? ", cachedTokens=" + cachedTokens + "(" + (cachedTokens * 100 / promptTokens) + "%)"
-                : (lastNativeUsage[0] != null && cachedTokens == 0
-                        ? ", cachedTokens=0"
-                        : "");
-        log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
-                        "requestToFirstReasoning={}ms, requestToFirstTokenSse={}ms, modelStreamStartToFirstToken={}ms, " +
-                        "promptTokens={}, completionTokens={}{}, toolCallCount={}, contentLength={}",
-                scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
-                timingOrDefault(timings, "requestReceivedToFirstReasoningEventMs"),
-                timingOrDefault(timings, "requestReceivedToFirstTokenSseMs"),
-                timingOrDefault(timings, "modelStreamStartToFirstTokenMs"),
-                promptTokens, accumulatedCompletionTokens[0], cacheInfo,
-                toolCalls.size(), collectedContent.length());
-        if (lastNativeUsage[0] != null && log.isDebugEnabled()) {
-            log.debug("原生 usage 详情: {}", lastNativeUsage[0]);
+                ? " cache=" + cachedTokens + "(" + (cachedTokens * 100 / promptTokens) + "%)"
+                : "";
+        log.info("LLM 完成 scene={} model={} prompt={}{} out={} ttft={}ms total={}ms tools={}",
+                scene2, chatModelInfo.modelName(),
+                promptTokens, cacheInfo,
+                accumulatedCompletionTokens[0],
+                ttftMs, totalMs,
+                toolCalls.size());
+        // DEBUG 保留分段耗时 + provider id, 仅排查性能/路由问题时查看
+        if (log.isDebugEnabled()) {
+            log.debug("LLM 完成 DEBUG provider={} firstReasoning={}ms firstTokenSse={}ms streamToFirstToken={}ms contentLen={}",
+                    chatModelInfo.serviceId(),
+                    timingOrDefault(timings, "requestReceivedToFirstReasoningEventMs"),
+                    timingOrDefault(timings, "requestReceivedToFirstTokenSseMs"),
+                    timingOrDefault(timings, "modelStreamStartToFirstTokenMs"),
+                    collectedContent.length());
         }
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,

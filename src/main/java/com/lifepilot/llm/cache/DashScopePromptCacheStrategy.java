@@ -63,8 +63,6 @@ public final class DashScopePromptCacheStrategy implements PromptCacheStrategy {
                     return execution.execute(request, body);
                 }
                 modifiedBody = injected;
-                log.debug("DashScope cache_control 已注入 (RestClient): 原始 bodySize={}, 新 bodySize={}",
-                        body.length, modifiedBody.length);
             } catch (Exception e) {
                 // 线程被外层 timeout / cancel 打断时也会落到这里 — 通过 interrupted 状态区分,
                 // 避免把"外层超时"误报成"注入失败"
@@ -101,8 +99,6 @@ public final class DashScopePromptCacheStrategy implements PromptCacheStrategy {
                                         byte[] modified = injectCacheControl(originalBytes);
                                         if (modified != null) {
                                             bytesToWrite = modified;
-                                            log.debug("DashScope cache_control 已注入 (WebClient): 原始={}B, 新={}B",
-                                                    originalBytes.length, modified.length);
                                         }
                                     } catch (Exception e) {
                                         log.warn("DashScope cache_control 注入失败, 原样发送: {}",

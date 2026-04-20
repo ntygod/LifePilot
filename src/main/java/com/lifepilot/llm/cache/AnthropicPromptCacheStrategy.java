@@ -71,8 +71,6 @@ public final class AnthropicPromptCacheStrategy implements PromptCacheStrategy {
                     return execution.execute(request, body);
                 }
                 modifiedBody = injected;
-                log.debug("Anthropic cache_control 已注入 (RestClient): 原始 bodySize={}, 新 bodySize={}",
-                        body.length, modifiedBody.length);
             } catch (Exception e) {
                 if (Thread.currentThread().isInterrupted()
                         || e instanceof java.io.InterruptedIOException
@@ -107,8 +105,6 @@ public final class AnthropicPromptCacheStrategy implements PromptCacheStrategy {
                                         byte[] modified = injectCacheControl(originalBytes);
                                         if (modified != null) {
                                             bytesToWrite = modified;
-                                            log.debug("Anthropic cache_control 已注入 (WebClient): 原始={}B, 新={}B",
-                                                    originalBytes.length, modified.length);
                                         }
                                     } catch (Exception e) {
                                         log.warn("Anthropic cache_control 注入失败, 原样发送: {}",
