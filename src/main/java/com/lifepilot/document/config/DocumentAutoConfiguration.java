@@ -132,17 +132,18 @@ public class DocumentAutoConfiguration {
     }
 
     /**
-     * 按 tool id 从 provider 的工具列表中选出对应 BuiltinTool。
+     * 按 tool id 从 provider 的缓存中选出对应 BuiltinTool。
      *
-     * <p>取代 Phase 2A 的 "tools.size() != 1 warn"（Phase 2B 3 tools 会误报）。
+     * <p>provider 在构造时一次性构建 3 个工具并缓存到 {@code toolsById}，
+     * 此处每个 Bean 仅做一次 O(1) 查询，消除 Phase 2A 的 O(3×3) 重复构造开销。
+     * 取代 Phase 2A 的 "tools.size() != 1 warn"（Phase 2B 3 tools 会误报）。
      * 找不到即抛异常，说明 provider 装配不完整。</p>
      */
     private BuiltinTool selectTool(DocumentToolProvider provider, String toolId) {
-        var tool = provider.buildDocumentTools().stream()
-                .filter(t -> toolId.equals(t.id()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "DocumentToolProvider 未返回 " + toolId + " 工具"));
+        var tool = provider.getTool(toolId);
+        if (tool == null) {
+            throw new IllegalStateException("DocumentToolProvider 未返回 " + toolId + " 工具");
+        }
         log.info("已装配 document 工具：id={}", tool.id());
         return tool;
     }
