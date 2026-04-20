@@ -48,6 +48,10 @@ lifepilot:
       heartbeat-core-pool-size: 1
   prompt:
     base-path: "classpath:prompts/"
+  document:
+    # 文档产物落盘目录（Agent 生成的 docx / xlsx / pptx） —
+    # 跟随用户在设置页配置的 ${zhiwei.data-dir}, 默认 ~/.zhiwei/documents
+    storage-dir: "${zhiwei.data-dir}/documents"
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
