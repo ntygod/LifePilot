@@ -500,7 +500,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
                     <span
                       v-if="isParseableDocument(attachment)"
                       class="shrink-0 rounded-md bg-primary/10 px-xs py-xs text-xs text-primary"
-                      title="AI 可调用 document.parse 读取此文档内容"
+                      title="AI 可直接读取此文档内容"
                     >AI 可读取</span>
                   </div>
                   <div class="text-xs text-muted-foreground">

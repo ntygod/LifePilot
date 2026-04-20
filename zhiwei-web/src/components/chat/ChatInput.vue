@@ -261,7 +261,7 @@ async function submit() {
       uploadedAttachments = uploaded
     } catch (error) {
       logger.error('附件上传失败:', error)
-      uploadError.value = error instanceof Error ? error.message : '附件上传失败，请重试或移除附件'
+      uploadError.value = error instanceof Error ? error.message : '附件处理失败，请重试或移除附件'
       return
     } finally {
       isUploading.value = false
@@ -468,7 +468,7 @@ watch(audioBlob, async (blob) => {
     resetTemporaryContextSelection()
   } catch (error) {
     logger.error('语音消息上传失败:', error)
-    voiceError.value = error instanceof Error ? error.message : '语音消息上传失败，请重试'
+    voiceError.value = error instanceof Error ? error.message : '语音消息发送失败，请重试'
   } finally {
     voiceSending.value = false
   }
@@ -775,7 +775,7 @@ defineExpose({
 
       <!-- 状态提示：仅在上传/语音发送时显示 -->
       <div v-if="isUploading || voiceSending" class="px-1 text-[11px] text-muted-foreground/60">
-        <span v-if="isUploading">正在上传附件…</span>
+        <span v-if="isUploading">正在处理附件…</span>
         <span v-if="voiceSending">正在发送语音…</span>
       </div>
     </div>
