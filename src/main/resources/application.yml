@@ -69,9 +69,7 @@ lifepilot:
       - memory
       - knowledge.search
       - notify
-      - document.create_docx # Phase 2A：从 markdown 生成 docx 产物，落盘 + 挂到 assistant 消息
-      - document.create_xlsx # Phase 2B：从结构化 sheets 生成 xlsx 产物
-      - document.create_pptx # Phase 2B：从幻灯片大纲生成 pptx 产物
+      - document.create      # Phase 2B：单工具 + action 路由生成 docx/xlsx/pptx
     loop:
       # ReAct 循环配置
       max-iterations: 45

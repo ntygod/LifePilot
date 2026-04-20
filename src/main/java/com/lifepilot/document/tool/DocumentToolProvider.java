@@ -9,19 +9,17 @@ import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 文档工具提供者 —— Phase 2B 含 document.create_docx / create_xlsx / create_pptx。
+ * 文档工具提供者 —— Phase 2B refactor：单 {@code document.create} 工具 + action 路由。
  *
- * <p>Phase 0 曾因工具合并清理，Phase 2A 重建仅含 docx，Phase 2B 扩展至 3 种办公格式。</p>
- *
- * <p>实例构造时一次性构建 3 个 {@link BuiltinTool} 并缓存到 {@code toolsById}，
- * 供 {@link com.lifepilot.document.config.DocumentAutoConfiguration} 按 id 查询复用，
- * 避免每个工具 Bean 都重走 {@link #buildDocumentTools()} 导致启动期重复构造。</p>
+ * <p>早期（Phase 2A/2B 初版）按三种产物独立注册 3 个 BuiltinTool；此处对齐
+ * {@code git.mutate} / {@code git.query} 模式，合并为一个工具 + {@code action} 枚举，
+ * 由 {@link DocumentCreateActionDispatchExecutor} 分发到底层 docx/xlsx/pptx executor，
+ * 减少 LLM 侧 schema 噪声（3 份独立 schema → 1 份扁平 schema）。</p>
  *
  * @author zsg
  * @since 2026-04-20
@@ -31,92 +29,39 @@ public class DocumentToolProvider {
     private static final List<String> DOCUMENT_TAGS = List.of("infrastructure", "document");
 
     /**
-     * 产物挂接语义共用后缀 —— 统一 3 个工具的 description，避免三处维护漂移。
-     *
-     * <p>让 LLM 明确知道：调用这些工具后，产物会自动挂在当前 assistant 消息上，
-     * 下游只需把返回的 downloadUrl 读出来告知用户即可，不必自行二次落盘。</p>
+     * 产物挂接语义共用后缀 —— 让 LLM 明确：调用后产物会自动挂在当前 assistant 消息附件上，
+     * 下游只需把返回的 downloadUrl 告知用户即可，不必自行二次落盘。
      */
     private static final String ATTACHMENT_SUFFIX =
             "产物自动挂到当前 assistant 消息附件上并提供下载 URL。";
 
-    private final DocumentCreateDocxToolExecutor createDocxExecutor;
-    private final DocumentCreateXlsxToolExecutor createXlsxExecutor;
-    private final DocumentCreatePptxToolExecutor createPptxExecutor;
+    private final DocumentCreateActionDispatchExecutor dispatcher;
 
-    /** 工具 id → BuiltinTool 的保序缓存，构造时一次性填充，运行时只读。 */
-    private final Map<String, BuiltinTool> toolsById;
-
-    public DocumentToolProvider(DocumentCreateDocxToolExecutor createDocxExecutor,
-                                DocumentCreateXlsxToolExecutor createXlsxExecutor,
-                                DocumentCreatePptxToolExecutor createPptxExecutor) {
-        this.createDocxExecutor = createDocxExecutor;
-        this.createXlsxExecutor = createXlsxExecutor;
-        this.createPptxExecutor = createPptxExecutor;
-        this.toolsById = buildToolsByIdOnce();
+    public DocumentToolProvider(DocumentCreateActionDispatchExecutor dispatcher) {
+        this.dispatcher = dispatcher;
     }
 
     /**
-     * 返回全部文档工具（保序：docx, xlsx, pptx）。
+     * 返回全部文档工具（当前仅单一 {@code document.create}）。
      *
-     * <p>保留作为兼容入口；底层基于 {@link #toolsById} 缓存一次性构造。</p>
+     * <p>保留列表返回形态以便未来若再拆分（例如引入 {@code document.convert}）时无需改签名。</p>
      */
     public List<BuiltinTool> buildDocumentTools() {
-        return List.copyOf(toolsById.values());
+        return List.of(buildCreateTool());
     }
 
-    /**
-     * 按工具 id 查询对应 BuiltinTool。
-     *
-     * @param toolId 工具 id，如 {@code document.create_xlsx}；允许 {@code null}（返回 null）
-     * @return 对应 BuiltinTool；若 id 未知或为 null 则返回 {@code null}（由调用方决定是否抛）
-     */
-    public BuiltinTool getTool(String toolId) {
-        if (toolId == null) {
-            return null;
-        }
-        return toolsById.get(toolId);
-    }
-
-    /**
-     * 一次性构造 3 个 BuiltinTool，放入保序 map 缓存。
-     *
-     * <p>使用 {@link LinkedHashMap} + {@link Collections#unmodifiableMap} 而非
-     * {@link Map#copyOf}：后者不保证插入顺序、且 {@code get(null)} 会抛 NPE，
-     * 本方法需要同时保证保序迭代与 null 安全查询。</p>
-     */
-    private Map<String, BuiltinTool> buildToolsByIdOnce() {
-        var map = new LinkedHashMap<String, BuiltinTool>();
-        var docx = buildCreateDocxTool();
-        var xlsx = buildCreateXlsxTool();
-        var pptx = buildCreatePptxTool();
-        map.put(docx.id(), docx);
-        map.put(xlsx.id(), xlsx);
-        map.put(pptx.id(), pptx);
-        return Collections.unmodifiableMap(map);
-    }
-
-    private BuiltinTool buildCreateDocxTool() {
-        var properties = new LinkedHashMap<String, Object>();
-        properties.put("fileName", Map.of("type", "string",
-                "description", "产物文件名（不含扩展名会自动追加 .docx，禁止路径分隔符 / \\ 与 ..）"));
-        properties.put("markdown", Map.of("type", "string",
-                "description", "文档正文的 Markdown 源。支持一到三级标题（# ## ###）、" +
-                        "无序列表（- / *）、有序列表（1. / 2.）和普通段落。" +
-                        "当前不支持表格、代码块、内联格式与图片。"));
-
+    /** 构建统一 document.create 工具 —— schema 对齐 git.mutate 扁平模式。 */
+    private BuiltinTool buildCreateTool() {
         return BuiltinTool.builder()
-                .id("document.create_docx")
+                .id("document.create")
                 .category(ToolCategory.ACTION)
-                .name("生成 Word 文档")
-                .description("从 markdown 生成 Word 文档（.docx）并保存到本地 documents 目录。" +
-                        "适用于生成周报 / 报告 / 简短方案等不要求复杂排版的文档。" +
-                        "产物样式为基础级（标题 + 段落 + 列表，无表格）。" +
+                .name("生成文档产物")
+                .description("根据 action 生成 Word / Excel / PowerPoint 办公产物并保存到本地 documents 目录。" +
+                        "action=docx 从 markdown 生成 .docx（支持标题 + 列表 + 段落，不支持表格 / 代码块 / 图片）；" +
+                        "action=xlsx 从结构化 sheets 生成 .xlsx（不支持样式 / 公式 / 合并单元格）；" +
+                        "action=pptx 从幻灯片大纲生成 .pptx（标题 + 要点 + 可选备注，不支持主题 / 动画 / 图片）。" +
                         ATTACHMENT_SUFFIX)
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("fileName", "markdown"),
-                        "properties", properties
-                )))
+                .inputSchema(JsonSchema.of(buildCreateSchema()))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.of(
@@ -125,18 +70,33 @@ public class DocumentToolProvider {
                         ToolScopeResolvers.pathTrees()
                 ))
                 .tags(DOCUMENT_TAGS)
-                .executor(createDocxExecutor::execute)
+                .actionMetadataFrom(dispatcher)
+                .executor(dispatcher)
                 .build();
     }
 
-    private BuiltinTool buildCreateXlsxTool() {
+    /** 构建 document.create 输入 schema —— 扁平结构，按 action 分别说明字段用法。 */
+    private Map<String, Object> buildCreateSchema() {
         var properties = new LinkedHashMap<String, Object>();
-        properties.put("fileName", Map.of("type", "string",
-                "description", "产物文件名（不含扩展名会自动追加 .xlsx，禁止路径分隔符 / \\ 与 ..）"));
+        properties.put("action", Map.of(
+                "type", "string",
+                "enum", List.of("docx", "xlsx", "pptx"),
+                "description", "文档产物类型：docx=Word 文档，xlsx=Excel 表格，pptx=PowerPoint 幻灯片"
+        ));
+        properties.put("fileName", Map.of(
+                "type", "string",
+                "description", "产物文件名（不含扩展名会按 action 自动追加 .docx/.xlsx/.pptx，禁止路径分隔符 / \\ 与 ..）"
+        ));
+        properties.put("markdown", Map.of(
+                "type", "string",
+                "description", "action=docx 时必填，文档正文的 Markdown 源。" +
+                        "支持一到三级标题（# ## ###）、无序列表（- / *）、有序列表（1. / 2.）和普通段落。" +
+                        "当前不支持表格、代码块、内联格式与图片。"
+        ));
         properties.put("sheets", Map.of(
                 "type", "array",
-                "description", "工作表列表。每项含 name（工作表名，必需）、headers（表头列表，可选）、" +
-                        "rows（数据行二维数组，每行是单元格值列表，单元格可为 string / number / boolean）。",
+                "description", "action=xlsx 时必填，工作表列表。每项含 name（工作表名，必需）、" +
+                        "headers（表头列表，可选）、rows（数据行二维数组，每行是单元格值列表，单元格可为 string / number / boolean）。",
                 "items", Map.of(
                         "type", "object",
                         "required", List.of("name"),
@@ -147,39 +107,10 @@ public class DocumentToolProvider {
                         )
                 )
         ));
-
-        return BuiltinTool.builder()
-                .id("document.create_xlsx")
-                .category(ToolCategory.ACTION)
-                .name("生成 Excel 表格")
-                .description("从结构化数据生成 Excel 表格（.xlsx）并保存到本地 documents 目录。" +
-                        "适用于数据报表 / 台账 / 对账单。不支持样式 / 公式 / 合并单元格。" +
-                        ATTACHMENT_SUFFIX)
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("fileName", "sheets"),
-                        "properties", properties
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.pathTrees()
-                ))
-                .tags(DOCUMENT_TAGS)
-                .executor(createXlsxExecutor::execute)
-                .build();
-    }
-
-    private BuiltinTool buildCreatePptxTool() {
-        var properties = new LinkedHashMap<String, Object>();
-        properties.put("fileName", Map.of("type", "string",
-                "description", "产物文件名（不含扩展名会自动追加 .pptx，禁止路径分隔符 / \\ 与 ..）"));
         properties.put("slides", Map.of(
                 "type", "array",
-                "description", "幻灯片列表。每项含 title（标题，可选）、bullets（要点列表，必需但可空）、" +
-                        "notes（备注，可选）。",
+                "description", "action=pptx 时必填，幻灯片列表。每项含 title（标题，可选）、" +
+                        "bullets（要点列表，必需但可空）、notes（备注，可选）。",
                 "items", Map.of(
                         "type", "object",
                         "required", List.of("bullets"),
@@ -191,27 +122,10 @@ public class DocumentToolProvider {
                 )
         ));
 
-        return BuiltinTool.builder()
-                .id("document.create_pptx")
-                .category(ToolCategory.ACTION)
-                .name("生成 PowerPoint 幻灯片")
-                .description("从幻灯片大纲生成 PowerPoint（.pptx）并保存到本地 documents 目录。" +
-                        "每张幻灯片含标题 + 要点列表 + 可选备注。不支持主题 / 动画 / 图片 / 图表。" +
-                        ATTACHMENT_SUFFIX)
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("fileName", "slides"),
-                        "properties", properties
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.pathTrees()
-                ))
-                .tags(DOCUMENT_TAGS)
-                .executor(createPptxExecutor::execute)
-                .build();
+        var schema = new LinkedHashMap<String, Object>();
+        schema.put("type", "object");
+        schema.put("required", List.of("action", "fileName"));
+        schema.put("properties", properties);
+        return schema;
     }
 }
