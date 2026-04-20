@@ -168,6 +168,32 @@ public class AttachmentRepository {
         return jdbcTemplate.update("DELETE FROM message_attachments WHERE session_id = ?", sessionId);
     }
 
+    /**
+     * 回填孤儿附件的 entry_id —— 用于 Tool 生成产物时先入 entry_id=null 的场景，
+     * Assistant entry 持久化后调用本方法把本会话所有 orphan 的 attachment 挂到该 entry。
+     *
+     * <p>仅影响 {@code entry_id IS NULL} 的记录，不覆盖已挂载的。
+     * 设计假设：本方法在 assistant entry 刚持久化后立即调用，此时 session 内
+     * 同轮 turn 的 orphan 仅来自该 turn 的工具产物。如果出现跨轮 orphan 遗留
+     * （极少），也会被无害地挂到本轮 —— 可接受的近似，Phase 3 编辑链路引入
+     * 更严格关联时可以加 turn_id 过滤。</p>
+     *
+     * @param sessionId 会话 ID
+     * @param entryId   目标 assistant entry ID
+     * @return 回填行数
+     */
+    public int backfillOrphanEntryIds(String sessionId, String entryId) {
+        int rows = jdbcTemplate.update(
+                "UPDATE message_attachments SET entry_id = ? " +
+                        "WHERE session_id = ? AND entry_id IS NULL",
+                entryId, sessionId);
+        if (rows > 0) {
+            log.debug("回填孤儿附件 entry_id：sessionId={}, entryId={}, rows={}",
+                    sessionId, entryId, rows);
+        }
+        return rows;
+    }
+
     public void copyForFork(Map<String, String> entryIdMapping, String targetSessionId) {
         if (entryIdMapping == null || entryIdMapping.isEmpty()
                 || targetSessionId == null || targetSessionId.isBlank()) {

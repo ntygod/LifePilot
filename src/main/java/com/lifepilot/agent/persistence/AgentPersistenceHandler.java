@@ -340,7 +340,7 @@ public class AgentPersistenceHandler {
     public void persistToolMediaAttachments(@Nullable String assistantEntryId,
                                             @Nullable String sessionId,
                                             List<MediaDataExtractor.MediaItem> toolMediaItems) {
-        if (attachmentRepository == null || assistantEntryId == null || toolMediaItems.isEmpty()) {
+        if (attachmentRepository == null || assistantEntryId == null) {
             return;
         }
         for (MediaDataExtractor.MediaItem mediaItem : toolMediaItems) {
@@ -354,6 +354,15 @@ public class AgentPersistenceHandler {
             } catch (Exception e) {
                 log.warn("保存工具媒体附件失败：field={}, error={}",
                         mediaItem.fieldName(), e.getMessage());
+            }
+        }
+        // Phase 2A：回填本会话内由 Tool 生成的孤儿附件（如 document.create_docx 产物）
+        // 这些附件在 Tool 执行时 entry_id=null 入库，assistant entry 建成后挂到当前 entry
+        if (sessionId != null) {
+            int backfilled = attachmentRepository.backfillOrphanEntryIds(sessionId, assistantEntryId);
+            if (backfilled > 0) {
+                log.debug("Assistant entry 回填 orphan 附件：entryId={}, count={}",
+                        assistantEntryId, backfilled);
             }
         }
     }
