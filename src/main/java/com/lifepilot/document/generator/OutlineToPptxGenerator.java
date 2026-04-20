@@ -90,7 +90,7 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
             }
 
             ppt.write(out);
-            log.info("OutlineToPptx 生成完成：slides={}，outputBytes={}",
+            log.info("OutlineToPptx 生成完成：slides={}, outputBytes={}",
                     slides.size(), out.size());
             return out.toByteArray();
 
@@ -118,6 +118,6 @@ public class OutlineToPptxGenerator implements PowerpointGenerator {
                 return;
             }
         }
-        log.warn("Notes slide 未找到可写文本形状，备注丢弃：slideIdx={}", slideIdx);
+        log.warn("Notes slide 未找到可写文本形状, 备注丢弃：slideIdx={}", slideIdx);
     }
 }
