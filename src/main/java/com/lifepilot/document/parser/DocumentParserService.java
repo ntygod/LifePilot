@@ -2,7 +2,13 @@ package com.lifepilot.document.parser;
 
 import com.lifepilot.knowledge.parser.DocumentParseException;
 import com.lifepilot.knowledge.parser.DocumentParser;
+import com.lifepilot.knowledge.parser.ExcelParser;
+import com.lifepilot.knowledge.parser.MarkdownParser;
 import com.lifepilot.knowledge.parser.ParseResult;
+import com.lifepilot.knowledge.parser.PdfParser;
+import com.lifepilot.knowledge.parser.PlainTextParser;
+import com.lifepilot.knowledge.parser.PowerpointParser;
+import com.lifepilot.knowledge.parser.WordParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +35,27 @@ public class DocumentParserService {
     public DocumentParserService(List<DocumentParser> parsers) {
         this.parsers = List.copyOf(parsers);
         log.info("文档解析服务已就绪：parsers={}", this.parsers.size());
+    }
+
+    /**
+     * 使用默认 parser 集合构建服务。
+     *
+     * <p>parser 实现均无状态、无参构造, 直接 new 即可, 避免跨模块 Bean 依赖顺序问题。
+     * 顺序决定 {@link DocumentParser#canParse} 的命中先后, 目前为
+     * Markdown → PlainText → Word → Pdf → Excel → Powerpoint。</p>
+     *
+     * <p>生产 (FileToolProvider) 与测试 (FileReadToolExecutor 便捷构造器) 共用本入口,
+     * 避免 parser 列表漂移。</p>
+     */
+    public static DocumentParserService buildDefault() {
+        return new DocumentParserService(List.of(
+                new MarkdownParser(),
+                new PlainTextParser(),
+                new WordParser(),
+                new PdfParser(),
+                new ExcelParser(),
+                new PowerpointParser()
+        ));
     }
 
     /**

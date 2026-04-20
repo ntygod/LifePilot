@@ -2,13 +2,6 @@ package com.lifepilot.meta.infra.file;
 
 import com.lifepilot.document.parser.DocumentParserService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
-import com.lifepilot.knowledge.parser.DocumentParser;
-import com.lifepilot.knowledge.parser.ExcelParser;
-import com.lifepilot.knowledge.parser.MarkdownParser;
-import com.lifepilot.knowledge.parser.PdfParser;
-import com.lifepilot.knowledge.parser.PlainTextParser;
-import com.lifepilot.knowledge.parser.PowerpointParser;
-import com.lifepilot.knowledge.parser.WordParser;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
@@ -102,26 +95,7 @@ public class FileToolProvider {
         this.skillDirectory = skillDirectory;
         this.toolRegistry = toolRegistry;
         this.attachmentRepository = attachmentRepository;
-        this.documentParserService = buildDocumentParserService();
-    }
-
-    /**
-     * 装配 {@link DocumentParserService} —— 使用 Phase 0+1B 的 6 个无状态 parser。
-     *
-     * <p>parser 实现均无状态、无参构造,直接 new 以避免跨模块 Bean 依赖顺序问题。
-     * 顺序:MarkdownParser → PlainTextParser → WordParser → PdfParser
-     * → ExcelParser → PowerpointParser,{@code DocumentParserService} 内部
-     * 按顺序命中 {@link DocumentParser#canParse}。</p>
-     */
-    private static DocumentParserService buildDocumentParserService() {
-        List<DocumentParser> parsers = List.of(
-                new MarkdownParser(),
-                new PlainTextParser(),
-                new WordParser(),
-                new PdfParser(),
-                new ExcelParser(),
-                new PowerpointParser());
-        return new DocumentParserService(parsers);
+        this.documentParserService = DocumentParserService.buildDefault();
     }
 
     /**

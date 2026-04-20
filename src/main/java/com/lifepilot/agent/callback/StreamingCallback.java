@@ -292,7 +292,6 @@ public class StreamingCallback implements IterationCallback {
         final long[] accumulatedCompletionTokens = {0};
         // 记录 prompt cache 命中 token 数 — OpenAI / DashScope / Anthropic 自动缓存命中时返回该字段
         final long[] accumulatedCachedTokens = {0};
-        final Object[] lastNativeUsage = {null};
 
         Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
 
@@ -313,7 +312,6 @@ public class StreamingCallback implements IterationCallback {
                                 chunkUsage.getCompletionTokens() != null ? chunkUsage.getCompletionTokens() : 0);
                         Object nu = chunkUsage.getNativeUsage();
                         if (nu != null) {
-                            lastNativeUsage[0] = nu;
                             long cached = extractCachedTokens(nu);
                             if (cached > 0) {
                                 accumulatedCachedTokens[0] = Math.max(accumulatedCachedTokens[0], cached);

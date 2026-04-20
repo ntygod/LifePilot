@@ -94,7 +94,7 @@ public class FileReadToolExecutor {
      * 便捷构造器 —— 仅用于单元测试,不支持 skill / attachmentId / 结构化文档路径。
      */
     public FileReadToolExecutor(MetaProperties properties) {
-        this(properties, nullSafeDefaultParserService());
+        this(properties, DocumentParserService.buildDefault());
     }
 
     /**
@@ -483,18 +483,4 @@ public class FileReadToolExecutor {
         return ToolResult.success(Map.copyOf(data));
     }
 
-    /**
-     * 兜底构造 —— 单参数便捷构造器使用,装配 Phase 0+1B 的 6 个 parser 服务,
-     * 保证测试和兜底路径不会 NPE。
-     */
-    private static DocumentParserService nullSafeDefaultParserService() {
-        return new DocumentParserService(List.of(
-                new com.lifepilot.knowledge.parser.MarkdownParser(),
-                new com.lifepilot.knowledge.parser.PlainTextParser(),
-                new com.lifepilot.knowledge.parser.WordParser(),
-                new com.lifepilot.knowledge.parser.PdfParser(),
-                new com.lifepilot.knowledge.parser.ExcelParser(),
-                new com.lifepilot.knowledge.parser.PowerpointParser()
-        ));
-    }
 }

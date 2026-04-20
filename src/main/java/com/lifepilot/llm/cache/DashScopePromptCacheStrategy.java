@@ -1,20 +1,9 @@
 package com.lifepilot.llm.cache;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.core.io.buffer.DataBufferFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.lang.Nullable;
-import org.springframework.web.reactive.function.client.ClientRequest;
-import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
-import org.springframework.web.reactive.function.client.ExchangeFunction;
-import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 
@@ -28,11 +17,8 @@ import java.io.IOException;
  * Spring AI 的 {@code SystemMessage(String)} 默认发纯字符串, 不触发显式缓存,
  * 本策略在 HTTP 边界改写 request body。</p>
  *
- * <p>两端覆盖:</p>
- * <ul>
- *   <li>{@link #restClientInterceptor()} — 非流式调用 ({@code ChatModel.call}) 走 RestClient;</li>
- *   <li>{@link #webClientFilter()} — 流式调用 ({@code ChatModel.stream}) 走 WebClient。</li>
- * </ul>
+ * <p>两端拦截骨架 (RestClient / WebClient) 由 {@link AbstractJsonBodyRewritingStrategy}
+ * 统一提供, 本类只声明 JSON 改写细节。</p>
  *
  * <p>DashScope 限制单请求最多 4 个 cache_control marker, 且最小缓存块 1024 tokens —
  * 短 prompt 标了也不会触发, 不影响正确性。通常只有一条 system message, 标完即退。</p>
@@ -40,92 +26,26 @@ import java.io.IOException;
  * @author zsg
  * @since 2026-04-20
  */
-public final class DashScopePromptCacheStrategy implements PromptCacheStrategy {
+public final class DashScopePromptCacheStrategy extends AbstractJsonBodyRewritingStrategy {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopePromptCacheStrategy.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** 单例 — 策略无状态, 与 {@link NoopPromptCacheStrategy#INSTANCE} / {@link AnthropicPromptCacheStrategy#INSTANCE} 风格一致。 */
+    public static final DashScopePromptCacheStrategy INSTANCE = new DashScopePromptCacheStrategy();
+
+    private DashScopePromptCacheStrategy() {
+    }
 
     @Override
     public String name() {
         return "dashscope";
     }
 
-    @Override
-    public ClientHttpRequestInterceptor restClientInterceptor() {
-        return (request, body, execution) -> {
-            if (body.length == 0) {
-                return execution.execute(request, body);
-            }
-            byte[] modifiedBody;
-            try {
-                byte[] injected = injectCacheControl(body);
-                if (injected == null) {
-                    return execution.execute(request, body);
-                }
-                modifiedBody = injected;
-            } catch (Exception e) {
-                // 线程被外层 timeout / cancel 打断时也会落到这里 — 通过 interrupted 状态区分,
-                // 避免把"外层超时"误报成"注入失败"
-                if (Thread.currentThread().isInterrupted()
-                        || e instanceof java.io.InterruptedIOException
-                        || e.getCause() instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("请求被中断 (外层超时/取消)", e);
-                }
-                log.warn("DashScope cache_control 注入失败, 回退原始请求: error={}", e.getMessage());
-                return execution.execute(request, body);
-            }
-            return execution.execute(request, modifiedBody);
-        };
-    }
-
-    @Override
-    public ExchangeFilterFunction webClientFilter() {
-        return (ClientRequest request, ExchangeFunction next) -> {
-            @SuppressWarnings({"rawtypes", "unchecked"})
-            org.springframework.web.reactive.function.BodyInserter<?, ? super org.springframework.http.client.reactive.ClientHttpRequest> originalBody =
-                    (org.springframework.web.reactive.function.BodyInserter) request.body();
-
-            ClientRequest modifiedRequest = ClientRequest.from(request)
-                    .body((outputMessage, context) -> {
-                        DataBufferFactory bufferFactory = outputMessage.bufferFactory();
-                        CapturingClientHttpRequest capture =
-                                new CapturingClientHttpRequest(outputMessage, bufferFactory);
-                        return originalBody.insert(capture, context)
-                                .then(Mono.defer(() -> {
-                                    byte[] originalBytes = capture.getCapturedBytes();
-                                    byte[] bytesToWrite = originalBytes;
-                                    try {
-                                        byte[] modified = injectCacheControl(originalBytes);
-                                        if (modified != null) {
-                                            bytesToWrite = modified;
-                                        }
-                                    } catch (Exception e) {
-                                        log.warn("DashScope cache_control 注入失败, 原样发送: {}",
-                                                e.getMessage());
-                                    }
-                                    // 修正 Content-Length header 避免长度不一致
-                                    HttpHeaders realHeaders = outputMessage.getHeaders();
-                                    realHeaders.setContentLength(bytesToWrite.length);
-                                    DataBuffer buffer = bufferFactory.wrap(bytesToWrite);
-                                    return outputMessage.writeWith(Mono.just(buffer));
-                                }));
-                    })
-                    .build();
-
-            return next.exchange(modifiedRequest);
-        };
-    }
-
     /**
      * 解析 JSON 请求体, 把第一条 role=system message 的 content 从 String 改写为结构化数组
      * 含 cache_control ephemeral 标记。返回 {@code null} 表示无需改动 (非预期结构 / 已是数组 / 无 system)。
-     *
-     * @param body 原始请求体
-     * @return 改写后的请求体, 或 {@code null} 表示跳过
      */
+    @Override
     @Nullable
-    private static byte[] injectCacheControl(byte[] body) throws IOException {
+    protected byte[] rewriteBody(byte[] body) throws IOException {
         if (body == null || body.length == 0) {
             return null;
         }

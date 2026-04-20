@@ -41,10 +41,10 @@ public final class PromptCacheStrategies {
     public static PromptCacheStrategy resolve(ProviderConfig config) {
         ProviderType type = config.type();
         if (type == ProviderType.ANTHROPIC) {
-            return new AnthropicPromptCacheStrategy();
+            return AnthropicPromptCacheStrategy.INSTANCE;
         }
         if (type == ProviderType.OPENAI_COMPATIBLE && isDashScope(config.apiUrl())) {
-            return new DashScopePromptCacheStrategy();
+            return DashScopePromptCacheStrategy.INSTANCE;
         }
         // OpenAI 官方 / DeepSeek 官方 / Azure 等走 provider 自身的 auto caching;
         // Ollama / TEI 为本地模型无需缓存 — 统一 noop

@@ -8,6 +8,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.jdbc.core.RowMapper;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -29,6 +31,23 @@ import java.util.UUID;
 public class SessionDocumentRepository {
 
     private static final Logger log = LoggerFactory.getLogger(SessionDocumentRepository.class);
+
+    /** 所有查询共用的字段列清单 — 避免列漂移风险, 修字段时只改一处。 */
+    private static final String SELECT_COLUMNS =
+            "id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at";
+
+    /** 所有查询共用的 RowMapper — 与 {@link #SELECT_COLUMNS} 对应。 */
+    private static final RowMapper<SessionDocumentRecord> ROW_MAPPER = (rs, rowNum) -> new SessionDocumentRecord(
+            rs.getString("id"),
+            rs.getString("session_id"),
+            rs.getString("entry_id"),
+            rs.getString("file_name"),
+            rs.getString("file_path"),
+            rs.getLong("file_size"),
+            rs.getString("mime_type"),
+            rs.getString("origin"),
+            Instant.parse(rs.getString("created_at"))
+    );
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -57,20 +76,8 @@ public class SessionDocumentRepository {
     public SessionDocumentRecord findById(String id) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at " +
-                            "FROM session_documents WHERE id = ?",
-                    (rs, rowNum) -> new SessionDocumentRecord(
-                            rs.getString("id"),
-                            rs.getString("session_id"),
-                            rs.getString("entry_id"),
-                            rs.getString("file_name"),
-                            rs.getString("file_path"),
-                            rs.getLong("file_size"),
-                            rs.getString("mime_type"),
-                            rs.getString("origin"),
-                            Instant.parse(rs.getString("created_at"))
-                    ),
-                    id);
+                    "SELECT " + SELECT_COLUMNS + " FROM session_documents WHERE id = ?",
+                    ROW_MAPPER, id);
         } catch (EmptyResultDataAccessException e) {
             log.warn("未找到文档：id={}", id);
             return null;
@@ -79,20 +86,8 @@ public class SessionDocumentRepository {
 
     public List<SessionDocumentRecord> findBySessionId(String sessionId) {
         return jdbcTemplate.query(
-                "SELECT id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at " +
-                        "FROM session_documents WHERE session_id = ? ORDER BY created_at DESC",
-                (rs, rowNum) -> new SessionDocumentRecord(
-                        rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("entry_id"),
-                        rs.getString("file_name"),
-                        rs.getString("file_path"),
-                        rs.getLong("file_size"),
-                        rs.getString("mime_type"),
-                        rs.getString("origin"),
-                        Instant.parse(rs.getString("created_at"))
-                ),
-                sessionId);
+                "SELECT " + SELECT_COLUMNS + " FROM session_documents WHERE session_id = ? ORDER BY created_at DESC",
+                ROW_MAPPER, sessionId);
     }
 
     public int deleteBySessionId(String sessionId) {

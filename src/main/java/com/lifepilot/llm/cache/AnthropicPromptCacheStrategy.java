@@ -1,20 +1,9 @@
 package com.lifepilot.llm.cache;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.core.io.buffer.DataBufferFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.lang.Nullable;
-import org.springframework.web.reactive.function.client.ClientRequest;
-import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
-import org.springframework.web.reactive.function.client.ExchangeFunction;
-import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 
@@ -35,11 +24,8 @@ import java.io.IOException;
  *   <li>没有 {@code system} field 或结构不识别: pass-through 不改。</li>
  * </ul>
  *
- * <p>两端覆盖:</p>
- * <ul>
- *   <li>{@link #restClientInterceptor()} — 非流式调用 ({@code AnthropicChatModel.call});</li>
- *   <li>{@link #webClientFilter()} — 流式调用 ({@code AnthropicChatModel.stream})。</li>
- * </ul>
+ * <p>两端拦截骨架 (RestClient / WebClient) 由 {@link AbstractJsonBodyRewritingStrategy}
+ * 统一提供, 本类只声明 JSON 改写细节。</p>
  *
  * <p>响应命中信息 ({@code usage.cache_read_input_tokens} /
  * {@code usage.cache_creation_input_tokens}) 由 {@code StreamingCallback.extractCachedTokens}
@@ -48,88 +34,25 @@ import java.io.IOException;
  * @author zsg
  * @since 2026-04-20
  */
-public final class AnthropicPromptCacheStrategy implements PromptCacheStrategy {
+public final class AnthropicPromptCacheStrategy extends AbstractJsonBodyRewritingStrategy {
 
-    private static final Logger log = LoggerFactory.getLogger(AnthropicPromptCacheStrategy.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** 单例 — 策略无状态, 与 {@link NoopPromptCacheStrategy#INSTANCE} 风格一致。 */
+    public static final AnthropicPromptCacheStrategy INSTANCE = new AnthropicPromptCacheStrategy();
+
+    private AnthropicPromptCacheStrategy() {
+    }
 
     @Override
     public String name() {
         return "anthropic";
     }
 
-    @Override
-    public ClientHttpRequestInterceptor restClientInterceptor() {
-        return (request, body, execution) -> {
-            if (body.length == 0) {
-                return execution.execute(request, body);
-            }
-            byte[] modifiedBody;
-            try {
-                byte[] injected = injectCacheControl(body);
-                if (injected == null) {
-                    return execution.execute(request, body);
-                }
-                modifiedBody = injected;
-            } catch (Exception e) {
-                if (Thread.currentThread().isInterrupted()
-                        || e instanceof java.io.InterruptedIOException
-                        || e.getCause() instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("请求被中断 (外层超时/取消)", e);
-                }
-                log.warn("Anthropic cache_control 注入失败, 回退原始请求: error={}", e.getMessage());
-                return execution.execute(request, body);
-            }
-            return execution.execute(request, modifiedBody);
-        };
-    }
-
-    @Override
-    public ExchangeFilterFunction webClientFilter() {
-        return (ClientRequest request, ExchangeFunction next) -> {
-            @SuppressWarnings({"rawtypes", "unchecked"})
-            org.springframework.web.reactive.function.BodyInserter<?, ? super org.springframework.http.client.reactive.ClientHttpRequest> originalBody =
-                    (org.springframework.web.reactive.function.BodyInserter) request.body();
-
-            ClientRequest modifiedRequest = ClientRequest.from(request)
-                    .body((outputMessage, context) -> {
-                        DataBufferFactory bufferFactory = outputMessage.bufferFactory();
-                        CapturingClientHttpRequest capture =
-                                new CapturingClientHttpRequest(outputMessage, bufferFactory);
-                        return originalBody.insert(capture, context)
-                                .then(Mono.defer(() -> {
-                                    byte[] originalBytes = capture.getCapturedBytes();
-                                    byte[] bytesToWrite = originalBytes;
-                                    try {
-                                        byte[] modified = injectCacheControl(originalBytes);
-                                        if (modified != null) {
-                                            bytesToWrite = modified;
-                                        }
-                                    } catch (Exception e) {
-                                        log.warn("Anthropic cache_control 注入失败, 原样发送: {}",
-                                                e.getMessage());
-                                    }
-                                    HttpHeaders realHeaders = outputMessage.getHeaders();
-                                    realHeaders.setContentLength(bytesToWrite.length);
-                                    DataBuffer buffer = bufferFactory.wrap(bytesToWrite);
-                                    return outputMessage.writeWith(Mono.just(buffer));
-                                }));
-                    })
-                    .build();
-
-            return next.exchange(modifiedRequest);
-        };
-    }
-
     /**
      * 解析 JSON 请求体, 对根级 {@code system} field 注入 {@code cache_control: ephemeral}。
-     *
-     * @param body 原始请求体
-     * @return 改写后的请求体, 或 {@code null} 表示无需改动 (非预期结构 / 已标 / 无 system)
      */
+    @Override
     @Nullable
-    private static byte[] injectCacheControl(byte[] body) throws IOException {
+    protected byte[] rewriteBody(byte[] body) throws IOException {
         if (body == null || body.length == 0) {
             return null;
         }
