@@ -16,7 +16,8 @@ public interface ExcelGenerator {
     /**
      * 从工作表数据生成 xlsx 字节。
      *
-     * @param sheets 工作表列表（不能为空，至少含 1 个 SheetData）
+     * @param sheets 工作表列表。null 或空列表时生成含 Sheet1 占位的最小可打开 xlsx
+     *               （POI 规则：workbook 至少 1 张 sheet）
      * @return 生成的 xlsx 文件字节
      */
     byte[] generate(List<SheetData> sheets);

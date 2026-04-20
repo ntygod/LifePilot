@@ -1,5 +1,6 @@
 package com.lifepilot.document.generator;
 
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -84,7 +85,10 @@ class StructuredDataToXlsxGenerator_基础生成测试 {
             Sheet s = wb.getSheet("含空");
             Row row = s.getRow(0);
             assertThat(row.getCell(0).getStringCellValue()).isEqualTo("有值");
-            // cell 1 应为 blank 或 null —— 既然 POI 对空值处理各异，关键是不崩
+            // cell.setCellValue("") 建出的是字符串 cell，回读是空字符串而非 null
+            Cell c1 = row.getCell(1);
+            assertThat(c1).isNotNull();
+            assertThat(c1.getStringCellValue()).isEqualTo("");
             assertThat(row.getCell(2).getStringCellValue()).isEqualTo("有值2");
         }
     }
@@ -96,6 +100,41 @@ class StructuredDataToXlsxGenerator_基础生成测试 {
         try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
             // 空 sheets 时添加一个占位 "Sheet1"，保证 XSSFWorkbook 至少 1 张工作表
             assertThat(wb.getNumberOfSheets()).isGreaterThanOrEqualTo(1);
+        }
+    }
+
+    @Test
+    void 工作表名含非法字符与重名自动安全化() throws Exception {
+        byte[] bytes = generator.generate(List.of(
+                SheetData.of("2026/Q1", List.of(List.of("a"))),   // 含 / 非法
+                SheetData.of("2026/Q1", List.of(List.of("b")))    // 同名重复
+        ));
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            assertThat(wb.getNumberOfSheets()).isEqualTo(2);
+            // POI 替换非法字符的具体字符由 WorkbookUtil 决定，只断言不崩 + 两个 sheet 名不同
+            assertThat(wb.getSheetName(0)).isNotEqualTo(wb.getSheetName(1));
+        }
+    }
+
+    @Test
+    void 数据行中夹杂_null_行不崩() throws Exception {
+        // 注：Arrays.asList 允许 null 元素，此处必须 asList —— SheetData compact constructor
+        // 保留 null 行语义供生成器 null 行守卫消费
+        var sheet = SheetData.of("含空行",
+                Arrays.asList(
+                        Arrays.asList("第一行"),
+                        null,  // null 行
+                        Arrays.asList("第三行")
+                ));
+
+        byte[] bytes = generator.generate(List.of(sheet));
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            Sheet s = wb.getSheet("含空行");
+            assertThat(s.getRow(0).getCell(0).getStringCellValue()).isEqualTo("第一行");
+            // 第 1 行（null 行）存在但空
+            assertThat(s.getRow(2).getCell(0).getStringCellValue()).isEqualTo("第三行");
         }
     }
 }
