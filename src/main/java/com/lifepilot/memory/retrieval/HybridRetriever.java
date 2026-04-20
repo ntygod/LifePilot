@@ -380,19 +380,9 @@ public class HybridRetriever {
                             entity.importanceScore(),
                             entity.validTo(),
                             entity.updatedAt()));
-                } else if (filter == null || filter.isUnrestricted()) {
-                    // 实体可能已归档，仅用 entityId 和 similarity 构建
-                    items.add(new RankedItem(
-                            vr.entityId(),
-                            "UNKNOWN",
-                            vr.entityId(),
-                            null,
-                            vr.similarity(),
-                            null,
-                            0.0f,
-                            null,
-                            null));
                 }
+                // 未命中 findByIds 的向量结果不再以 UNKNOWN 回退：
+                // findByIds 已按 is_current=1 过滤，归档实体本就不应注入上下文。
             }
         } catch (Exception e) {
             log.warn("混合检索: 向量结果批量转换失败, error={}", e.getMessage());

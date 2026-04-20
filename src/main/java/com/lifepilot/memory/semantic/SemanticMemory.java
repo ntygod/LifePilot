@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -275,7 +277,14 @@ public class SemanticMemory {
         return ids;
     }
 
-    /** 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系。 */
+    /**
+     * 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系；
+     * 向量清理走 afterCommit 钩子在事务外执行，避免事务回滚后留下"向量已删、主库未改"的不一致。
+     *
+     * <p>跨库（vectors.db 与主库分离）写入不能加入本地事务，因此注册
+     * {@link TransactionSynchronization#afterCommit()}：主库事务真正提交后再删向量，
+     * 回滚路径下向量保持原状。钩子里的失败仅告警，由后续 archive 重试自然清理。</p>
+     */
     @Transactional
     public void archive(TemporalEntity entity) {
         var now = Instant.now();
@@ -299,7 +308,34 @@ public class SemanticMemory {
         jdbcTemplate.update(
                 "UPDATE memory_relations SET status = 'ARCHIVED', updated_at = ? WHERE (source_entity_id = ? OR target_entity_id = ?) AND status = 'ACTIVE'",
                 now.toString(), entity.id(), entity.id());
+
+        registerAfterCommitVectorCleanup(entity.id());
+
         log.debug("语义记忆: 归档实体, id={}, name={}", entity.id(), entity.name());
+    }
+
+    /**
+     * 注册事务提交后删除向量的钩子；无活跃事务（如单测直接调 archive）时立即删除。
+     */
+    private void registerAfterCommitVectorCleanup(String entityId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    safeDeleteEntityVector(entityId);
+                }
+            });
+        } else {
+            safeDeleteEntityVector(entityId);
+        }
+    }
+
+    private void safeDeleteEntityVector(String entityId) {
+        try {
+            vectorSearcher.deleteEntityVector(entityId);
+        } catch (Exception e) {
+            log.warn("语义记忆: 归档后清理向量失败, id={}, error={}", entityId, e.getMessage());
+        }
     }
 
     /** 增加访问计数。 */

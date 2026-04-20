@@ -201,7 +201,8 @@ class ForgettingEngine_单元测试 {
         when(generationRouter.call(
                 eq(LlmScene.MEMORY_COMPRESSION), anyString(),
                 isNull(), isNull(), isNull(),
-                eq(GenerationCapability.CHAT), isNull()))
+                eq(GenerationCapability.CHAT), isNull(),
+                eq(true)))
                 .thenReturn(llmResponse);
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
@@ -226,6 +227,36 @@ class ForgettingEngine_单元测试 {
     }
 
     @Test
+    void 压缩调用必须跳过语义缓存_避免张冠李戴() {
+        // 回归：两个不同实体轮流压缩时，若不 skipCache，会因 prompt 模板相似触发缓存误命中
+        var entityA = 创建实体("mid-a", EntityType.TOPIC, 0.5f, 0,
+                null, Instant.now().minus(400, ChronoUnit.DAYS));
+
+        when(semanticMemory.findAllCurrent()).thenReturn(List.of(entityA));
+        when(promptRegistry.render(eq("memory/entity-compression"), anyMap()))
+                .thenReturn("请压缩此实体");
+        var llmResponse = new LlmResponse("摘要", 10, 10,
+                "provider-1", "model-1", 50L, false);
+        when(generationRouter.call(
+                eq(LlmScene.MEMORY_COMPRESSION), anyString(),
+                isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), isNull(),
+                eq(true)))
+                .thenReturn(llmResponse);
+        when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
+
+        engine.forget();
+
+        // 关键断言：skipCache 必须为 true
+        verify(generationRouter).call(
+                eq(LlmScene.MEMORY_COMPRESSION), anyString(),
+                isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), isNull(),
+                eq(true));
+    }
+
+    @Test
     void LLM调用失败时_降级为归档() {
         var entity = 创建实体("mid-fail-1", EntityType.TOPIC, 0.5f, 0,
                 null, Instant.now().minus(400, ChronoUnit.DAYS));
@@ -236,7 +267,8 @@ class ForgettingEngine_单元测试 {
         when(generationRouter.call(
                 eq(LlmScene.MEMORY_COMPRESSION), anyString(),
                 isNull(), isNull(), isNull(),
-                eq(GenerationCapability.CHAT), isNull()))
+                eq(GenerationCapability.CHAT), isNull(),
+                eq(true)))
                 .thenThrow(new RuntimeException("LLM 调用超时"));
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);

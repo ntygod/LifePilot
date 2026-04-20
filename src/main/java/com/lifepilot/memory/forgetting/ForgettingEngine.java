@@ -196,6 +196,8 @@ public class ForgettingEngine {
                 && generationRouter != null) {
             try {
                 var prompt = buildCompressionPrompt(entity);
+                // skipCache=true：每个实体压缩 prompt 仅 name/description 差异，
+                // 语义缓存会按相似度张冠李戴，把首条摘要返回给后续所有实体。
                 var response = generationRouter.call(
                         LlmScene.MEMORY_COMPRESSION,
                         prompt,
@@ -203,7 +205,8 @@ public class ForgettingEngine {
                         null,
                         null,
                         GenerationCapability.CHAT,
-                        null);
+                        null,
+                        true);
                 var summary = response.content();
                 log.debug("遗忘引擎: 实体压缩成功, id={}, name={}, 摘要长度={}",
                         entity.id(), entity.name(), summary.length());

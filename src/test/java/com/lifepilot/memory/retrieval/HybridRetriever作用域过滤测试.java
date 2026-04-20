@@ -57,7 +57,9 @@ class HybridRetriever作用域过滤测试 {
         var userEntity = buildEntity("user-memory", EntityType.TOPIC, "个人偏好", "个人事实");
         var domainEntity = buildEntity("domain-memory", EntityType.TOPIC, "小说角色", "领域设定");
 
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(List.of(
+        // HybridRetriever 实际走 4 参重载（带 eligibleIds pre-filter 参数）
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(),
+                org.mockito.ArgumentMatchers.<java.util.Set<String>>any())).thenReturn(List.of(
                 new VectorSearchResult(userEntity.id(), 0.91f),
                 new VectorSearchResult(domainEntity.id(), 0.89f)
         ));

@@ -109,7 +109,12 @@ public class MemoryToolProvider {
                         "- recall：用户引用历史对话（\u201C上次聊的\u201D\u201C之前说过\u201D）时，回忆完整对话片段\n" +
                         "- create：用户明确要求记住某事，或表达了重要偏好/目标变更\n" +
                         "- update：已有实体信息需要修正或补充\n" +
-                        "- delete：用户要求遗忘某条记忆\n" +
+                        "- delete：用户要求遗忘**已知 ID** 的某条记忆（精确删除）\n" +
+                        "- cancel：**用户表达取消/撤销/不再做某事时必选**。根据语义描述批量归档相关 GOAL/EXPERIENCE/HABIT，" +
+                        "避免后续仍基于旧记忆提醒用户。\n" +
+                        "  典型触发词：\u201C取消 X\u201D、\u201C撤销 X\u201D、\u201C不要再 X\u201D、\u201C以后别提 X\u201D、\u201CX 不做了\u201D。\n" +
+                        "  重要：这类语义下**只 create PREFERENCE 是不够的**，老的 GOAL/EXPERIENCE 仍会继续被召回，" +
+                        "必须同时用 cancel 归档相关旧记忆。\n" +
                         "- search-experience：需要借鉴过往类似任务的执行经验\n" +
                         "- query-at-time：需要查询某个时间点的历史状态\n\n" +
                         "不需要调用的情况：当前上下文已有足够信息、纯闲聊、一般知识问答。\n" +
@@ -120,14 +125,20 @@ public class MemoryToolProvider {
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
-                                        "enum", List.of("search", "recall", "create", "update", "delete", "tag", "query-at-time", "search-experience"),
+                                        "enum", List.of("search", "recall", "create", "update", "delete", "cancel", "tag", "query-at-time", "search-experience"),
                                         "description", "记忆操作类型。search=搜索知识实体, recall=回忆历史对话, " +
-                                                "create/update/delete=实体 CRUD, tag=建立关系, " +
-                                                "query-at-time=时间点查询, search-experience=检索执行经验")),
-                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 使用")),
+                                                "create/update/delete=实体 CRUD, cancel=按语义批量归档已取消的目标/经验/习惯, " +
+                                                "tag=建立关系, query-at-time=时间点查询, search-experience=检索执行经验")),
+                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience/cancel 使用")),
                                 Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
                                 Map.entry("name", Map.of("type", "string", "description", "实体名称；create 必填，update 时可选改名")),
                                 Map.entry("entityType", Map.of("type", "string", "description", "实体类型；create 必填，query-at-time 时可选过滤", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM"))),
+                                Map.entry("entityTypes", Map.of(
+                                        "type", "array",
+                                        "items", Map.of("type", "string", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM")),
+                                        "description", "cancel 限定归档的实体类型集合，默认 [GOAL, EXPERIENCE, HABIT]")),
+                                Map.entry("maxArchive", Map.of("type", "integer", "description", "cancel 最多归档数量，默认 5")),
+                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 最小相关性阈值（0-1），默认 0.5")),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
                                 Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete 必填")),
@@ -324,6 +335,115 @@ public class MemoryToolProvider {
             log.error("删除记忆失败: {}", e.getMessage(), e);
             return ToolResult.error("删除记忆失败: " + e.getMessage());
         }
+    }
+
+    /** cancel 默认归档的实体类型 — 覆盖用户"不再做 X"最常踩到的三类持久意图。 */
+    private static final Set<EntityType> DEFAULT_CANCEL_TYPES =
+            Set.of(EntityType.GOAL, EntityType.EXPERIENCE, EntityType.HABIT);
+
+    /** cancel 默认最多归档数量 — 防止语义召回误伤过多实体。 */
+    private static final int DEFAULT_CANCEL_MAX_ARCHIVE = 5;
+
+    /** cancel 默认最小相关性阈值 — 低于此分数的候选不归档。 */
+    private static final float DEFAULT_CANCEL_MIN_SCORE = 0.5f;
+
+    /**
+     * 按语义批量归档已取消的目标/经验/习惯。
+     *
+     * <p>与 delete 的区别：delete 精确按 entityId 删单条；cancel 按语义描述召回候选集，
+     * 批量归档最相关的若干条。适配"取消定时任务"这类需要级联清理多个旧记忆的场景。</p>
+     */
+    ToolResult executeCancel(ToolInput input) {
+        String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+        try {
+            String query = input.getParam("query", String.class);
+            if (query == null || query.isBlank()) {
+                return ToolResult.error("cancel 需要传入 query 参数描述要取消的事物");
+            }
+
+            Set<EntityType> targetTypes = parseCancelTypes(input);
+            int maxArchive = input.getOptionalParam("maxArchive", Integer.class)
+                    .filter(n -> n > 0).orElse(DEFAULT_CANCEL_MAX_ARCHIVE);
+            float minScore = input.getOptionalParam("minScore", Number.class)
+                    .map(Number::floatValue).orElse(DEFAULT_CANCEL_MIN_SCORE);
+
+            // 召回候选：跨 USER_PROFILE/USER_FACT 与 AGENT_EXPERIENCE 两个域
+            // （EXPERIENCE 类实体落在 AGENT_EXPERIENCE，不能用 userMemory() 过滤掉）
+            int retrieveTopK = Math.max(maxArchive * 3, 10);
+            List<RetrievalResult> candidates = hybridRetriever.retrieve(
+                    query, retrieveTopK, RetrievalWeights.DEFAULT, MemoryReadFilter.all());
+
+            var toArchive = candidates.stream()
+                    .filter(r -> r.fusedScore() >= minScore)
+                    .filter(r -> matchesType(r.entityType(), targetTypes))
+                    .limit(maxArchive)
+                    .toList();
+
+            if (toArchive.isEmpty()) {
+                log.info("记忆 cancel: 无命中, query={}, types={}, sessionId={}",
+                        query, formatTypes(targetTypes), sessionId);
+                return ToolResult.success(Map.of(
+                        "archived", List.of(),
+                        "count", 0,
+                        "message", "未找到相关的 " + formatTypes(targetTypes) + " 记忆，无需归档"));
+            }
+
+            var archivedList = new ArrayList<Map<String, Object>>();
+            for (var r : toArchive) {
+                var entityOpt = semanticMemory.findById(r.entityId());
+                if (entityOpt.isEmpty()) {
+                    continue;
+                }
+                var entity = entityOpt.get();
+                SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
+                archivedList.add(Map.of(
+                        "id", entity.id(),
+                        "name", entity.name(),
+                        "type", entity.type().name(),
+                        "score", r.fusedScore()));
+                log.info("记忆 cancel: 归档实体, id={}, name={}, type={}, score={}, sessionId={}",
+                        entity.id(), entity.name(), entity.type(), r.fusedScore(), sessionId);
+            }
+
+            return ToolResult.success(Map.of(
+                    "archived", archivedList,
+                    "count", archivedList.size()));
+        } catch (Exception e) {
+            log.error("批量取消记忆失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
+            return ToolResult.error("批量取消记忆失败: " + e.getMessage());
+        }
+    }
+
+    /** 解析 cancel 的 entityTypes 参数，非法类型跳过，全非法则用默认集合。 */
+    private Set<EntityType> parseCancelTypes(ToolInput input) {
+        var raw = input.getOptionalParam("entityTypes", List.class);
+        if (raw.isEmpty() || raw.get().isEmpty()) {
+            return DEFAULT_CANCEL_TYPES;
+        }
+        var parsed = new LinkedHashSet<EntityType>();
+        for (Object item : raw.get()) {
+            if (item == null) continue;
+            try {
+                parsed.add(EntityType.valueOf(item.toString().toUpperCase()));
+            } catch (IllegalArgumentException ignore) {
+                log.debug("cancel: 跳过非法 entityType={}", item);
+            }
+        }
+        return parsed.isEmpty() ? DEFAULT_CANCEL_TYPES : parsed;
+    }
+
+    private boolean matchesType(String entityTypeName, Set<EntityType> targetTypes) {
+        if (entityTypeName == null) return false;
+        try {
+            return targetTypes.contains(EntityType.valueOf(entityTypeName));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private String formatTypes(Set<EntityType> types) {
+        return types.stream().map(Enum::name)
+                .collect(java.util.stream.Collectors.joining("/"));
     }
 
     ToolResult executeTag(ToolInput input) {
