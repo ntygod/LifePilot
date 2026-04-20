@@ -124,17 +124,26 @@ const fileAttachments = computed(() =>
   props.message.attachments?.filter(attachment => !attachment.isImage && !attachment.type?.startsWith('audio/')) ?? [],
 )
 
-/** 判断附件是否是 AI 可解析的文档类型（Phase 1B 实际可解析集合：pdf / docx / xlsx / pptx / md / txt / csv） */
+/**
+ * 判断附件是否是 AI 可解析的文档类型。
+ *
+ * Phase 1B 实际可解析集合：pdf / docx / xlsx / pptx / md / txt / csv / log / tsv。
+ *
+ * 与后端保持同步：`PlainTextParser.EXTENSIONS` + `MarkdownParser.EXTENSIONS` +
+ * `WordParser / PdfParser / ExcelParser / PowerpointParser` 的 supportedExtensions()，
+ * 以及 `BrowserIngressService.DOCUMENT_MIME_PREFIXES`。新增文档 parser 时需同步更新。
+ */
 function isParseableDocument(att: { type?: string; filename: string }): boolean {
   const t = att.type?.toLowerCase() ?? ''
   if (t === 'application/pdf') return true
   if (t.includes('wordprocessingml')) return true  // docx
   if (t.includes('spreadsheetml')) return true     // xlsx
   if (t.includes('presentationml')) return true    // pptx
-  if (t === 'text/markdown' || t === 'text/plain' || t === 'text/csv') return true
+  if (t === 'text/markdown' || t === 'text/plain' || t === 'text/csv'
+      || t === 'text/tab-separated-values') return true
   // 兜底按扩展名识别
   const ext = att.filename.split('.').pop()?.toLowerCase()
-  return ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt', 'csv'].includes(ext ?? '')
+  return ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt', 'csv', 'log', 'tsv'].includes(ext ?? '')
 }
 
 /** 按文件扩展名返回 lucide 图标组件 */
