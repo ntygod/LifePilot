@@ -51,11 +51,11 @@ public class AgentPersistenceHandler {
     );
 
     /**
-     * document.parse 系统提示块匹配正则：吃掉前置的空白行（含 \n\n）+ marker + 内容 + 闭合 marker。
+     * 文档附件提示块匹配正则：吃掉前置的空白行（含 \n\n）+ marker + 内容 + 闭合 marker。
      *
      * <p>{@link BrowserIngressService} 在用户消息末尾追加 hint 引导模型调用
-     * {@code document.parse}，模型仍然需要在 goal 原文中看到该 hint；但持久化到
-     * transcript 时必须剥离，避免前端历史回显时把"系统提示 + attachmentId"
+     * {@code file.read(attachmentId=...)}，模型仍然需要在 goal 原文中看到该 hint；
+     * 但持久化到 transcript 时必须剥离，避免前端历史回显时把"系统提示 + attachmentId"
      * 当作用户原话展示。</p>
      */
     private static final Pattern DOCUMENT_HINT_PATTERN = Pattern.compile(
@@ -200,7 +200,7 @@ public class AgentPersistenceHandler {
             }
             // A2UI 信号消息对模型可见但不展示给用户，避免原始信号数据作为气泡出现
             boolean visibleToUser = !isA2uiSignalMessage(state.goal());
-            // 持久化前剥离 document.parse hint，避免操作元数据回显到用户气泡
+            // 持久化前剥离文档附件 hint，避免操作元数据回显到用户气泡
             String persistedGoal = stripDocumentParseHint(state.goal());
             String entryId = transcriptStore.appendUserMessage(
                     state.sessionId(),
@@ -221,7 +221,7 @@ public class AgentPersistenceHandler {
     }
 
     /**
-     * 剥离用户消息中的 document.parse 系统提示块。
+     * 剥离用户消息中的文档附件提示块。
      *
      * <p>{@link BrowserIngressService} 用 sentinel marker 包裹 hint，模型推理时
      * 仍能看到（{@code state.goal()} 原文不变），仅在写入 user transcript 前由本方法

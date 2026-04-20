@@ -28,9 +28,9 @@ import static org.mockito.Mockito.when;
 /**
  * 文档附件提示注入测试。
  *
- * <p>验证：用户上传 docx/pdf 等文档附件时,BrowserIngressService 会在消息
+ * <p>验证：用户选择 docx/pdf 等文档附件时,BrowserIngressService 会在消息
  * content 末尾追加一段系统提示,列出附件名 + attachmentId,引导 LLM 调用
- * {@code document.parse} 工具读取内容。</p>
+ * {@code file.read(attachmentId=...)} 读取内容。</p>
  *
  * <p>非文档附件(如图片)不触发该提示,避免干扰多模态路由。</p>
  *
@@ -47,7 +47,7 @@ class BrowserIngressService_文档附件提示测试 {
     ChatTurnService chatTurnService;
 
     @Test
-    void docx附件触发document_parse系统提示(@TempDir Path tmp) throws Exception {
+    void docx附件触发file_read系统提示(@TempDir Path tmp) throws Exception {
         Path docx = tmp.resolve("contract.docx");
         Files.createFile(docx);
 
@@ -69,7 +69,8 @@ class BrowserIngressService_文档附件提示测试 {
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("请帮我读这份合同");
         assertThat(text).contains("contract.docx");
-        assertThat(text).contains("document.parse");
+        assertThat(text).contains("file.read");
+        assertThat(text).contains("用户选择了");
         assertThat(text).contains("att-doc");
     }
 
@@ -102,12 +103,12 @@ class BrowserIngressService_文档附件提示测试 {
         assertThat(begin).isGreaterThanOrEqualTo(0);
         assertThat(end).isGreaterThan(begin);
         String wrapped = text.substring(begin, end);
-        assertThat(wrapped).contains("document.parse");
+        assertThat(wrapped).contains("file.read");
         assertThat(wrapped).contains("att-marker");
     }
 
     @Test
-    void pdf附件触发document_parse系统提示(@TempDir Path tmp) throws Exception {
+    void pdf附件触发file_read系统提示(@TempDir Path tmp) throws Exception {
         Path pdf = tmp.resolve("paper.pdf");
         Files.createFile(pdf);
 
@@ -127,7 +128,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("paper.pdf");
-        assertThat(text).contains("document.parse");
+        assertThat(text).contains("file.read");
         assertThat(text).contains("att-pdf");
     }
 
@@ -150,12 +151,12 @@ class BrowserIngressService_文档附件提示测试 {
         GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
-        assertThat(text).doesNotContain("document.parse");
+        assertThat(text).doesNotContain("file.read");
         assertThat(text).isEqualTo("看这张图");
     }
 
     @Test
-    void csv附件也触发document_parse系统提示(@TempDir Path tmp) throws Exception {
+    void csv附件也触发file_read系统提示(@TempDir Path tmp) throws Exception {
         Path csv = tmp.resolve("data.csv");
         Files.createFile(csv);
 
@@ -175,7 +176,7 @@ class BrowserIngressService_文档附件提示测试 {
         var text = ((MessageContent.TextMessage) msg.content()).text();
 
         assertThat(text).contains("data.csv");
-        assertThat(text).contains("document.parse");
+        assertThat(text).contains("file.read");
         assertThat(text).contains("att-csv");
         assertThat(text).contains(BrowserIngressService.DOCUMENT_HINT_BEGIN);
     }
@@ -220,7 +221,7 @@ class BrowserIngressService_文档附件提示测试 {
         // 但不出现 png 文件名 / id
         assertThat(text).doesNotContain("preview.png");
         assertThat(text).doesNotContain("att-img");
-        assertThat(text).contains("document.parse");
+        assertThat(text).contains("file.read");
     }
 
     @Test
@@ -237,7 +238,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).isEqualTo("你好");
-        assertThat(text).doesNotContain("document.parse");
+        assertThat(text).doesNotContain("file.read");
     }
 
     private BrowserIngressService newService() {

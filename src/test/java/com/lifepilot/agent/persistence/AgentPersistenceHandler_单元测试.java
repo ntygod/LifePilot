@@ -110,10 +110,10 @@ class AgentPersistenceHandler_单元测试 {
     }
 
     @Test
-    void 持久化用户消息时剥离document_parse提示块() {
+    void 持久化用户消息时剥离文档附件提示块() {
         String userText = "请帮我读这份合同";
         String hint = "\n\n" + BrowserIngressService.DOCUMENT_HINT_BEGIN
-                + "\n[系统提示] 用户上传了以下文档附件，可调用 document.parse 工具读取内容：\n"
+                + "\n[系统提示] 用户选择了以下文档附件，可调用 file.read(attachmentId=...) 读取内容：\n"
                 + "- contract.docx（attachmentId=att-doc）\n"
                 + BrowserIngressService.DOCUMENT_HINT_END;
         ReactAgentState state = buildState("session-3", "turn-3", userText + hint);

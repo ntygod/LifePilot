@@ -66,7 +66,6 @@ lifepilot:
       - memory
       - knowledge.search
       - notify
-      - document.parse
     loop:
       # ReAct 循环配置
       max-iterations: 45

@@ -61,7 +61,7 @@ public class NonStreamingCallback implements IterationCallback {
         String scene = config.getLoop().getLlmScene();
 
         // 动态路由：仅当 UserMessage 含真正的多模态媒体（image / audio / video）时走多模态路径。
-        // 文档类附件（pdf / docx / md / txt / csv 等）通过 document.parse 工具按需解析，不走多模态通道。
+        // 文档类附件（pdf / docx / md / txt / csv 等）通过 file.read(attachmentId=...) 按需解析，不走多模态通道。
         boolean messagesHaveMultimodalMedia = messages.stream()
                 .filter(m -> m instanceof UserMessage)
                 .map(m -> (UserMessage) m)

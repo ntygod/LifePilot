@@ -48,7 +48,7 @@ public class BrowserIngressService {
     private static final String WEB_INSTANCE_ID = "web.default";
 
     /**
-     * document.parse 系统提示块起始 sentinel。
+     * 文档附件读取提示块起始 sentinel。
      *
      * <p>持久化层（{@code AgentPersistenceHandler}）依据该标记定位并剥离 hint，
      * 避免操作元数据污染 user transcript 在前端历史中回显。模型仍能在 goal
@@ -56,7 +56,7 @@ public class BrowserIngressService {
      */
     public static final String DOCUMENT_HINT_BEGIN = "<!--document-parse-hint-begin-->";
 
-    /** document.parse 系统提示块结束 sentinel。 */
+    /** 文档附件读取提示块结束 sentinel。 */
     public static final String DOCUMENT_HINT_END = "<!--document-parse-hint-end-->";
 
     private final AttachmentRepository attachmentRepository;
@@ -113,7 +113,7 @@ public class BrowserIngressService {
         List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
         var transcription = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
 
-        // 文档附件提示注入：对 docx/pdf/md/txt 附件，告诉 LLM 可调 document.parse 读取内容
+        // 文档附件提示注入：对 docx/pdf/md/txt 附件，告诉 LLM 可调 file.read(attachmentId=...) 读取内容
         String contentWithDocHint = appendDocumentParseHint(transcription.content(), attachments);
         var content = new MessageContent.TextMessage(contentWithDocHint);
 
@@ -289,7 +289,7 @@ public class BrowserIngressService {
     /**
      * 文档类附件的 MIME 类型前缀/精确匹配集合。
      *
-     * <p>这些类型的附件 LLM 无法直接看到内容，需要通过 {@code document.parse} 工具
+     * <p>这些类型的附件 LLM 无法直接看到内容，需要通过 {@code file.read(attachmentId=...)}
      * 读取文本后再交给模型。图片/音频/视频等多模态附件走各自的专用路由，不在此列。</p>
      *
      * <p>Phase 0 实际可解析集合与 knowledge/parser 对齐：pdf / docx / md / txt / csv。
@@ -306,10 +306,11 @@ public class BrowserIngressService {
 
     /**
      * 对包含文档类附件的消息，在末尾追加一段系统提示，告诉 LLM 可调用
-     * {@code document.parse} 工具读取附件内容。
+     * {@code file.read(attachmentId=...)} 读取附件内容。
      *
      * <p>只要附件列表中存在至少一个 docx/pdf/md/txt 类型的文件就会追加提示；
-     * 提示中列出所有文档附件的文件名与 attachmentId，供 LLM 按需选取。</p>
+     * 提示中列出所有文档附件的文件名与 attachmentId，供 LLM 按需选取；
+     * 并引导 LLM 对本机已有路径优先使用 {@code file.read(path=...)}。</p>
      *
      * @param originalContent 原始消息文本（可能已含语音转录结果）
      * @param attachments     当前轮次的全部附件
@@ -329,7 +330,8 @@ public class BrowserIngressService {
         // hint 用 sentinel 标记包裹，AgentPersistenceHandler 在持久化 user entry 前剥离，
         // 避免操作元数据污染 transcript 后被前端历史回显
         var hint = new StringBuilder("\n\n").append(DOCUMENT_HINT_BEGIN)
-                .append("\n[系统提示] 用户上传了以下文档附件，可调用 document.parse 工具读取内容：\n");
+                .append("\n[系统提示] 用户选择了以下文档附件，可调用 file.read(attachmentId=...) 读取内容。" +
+                        "对本机文件优先使用 file.read(path=...)：\n");
         for (var doc : docs) {
             hint.append("- ").append(doc.fileName())
                     .append("（attachmentId=").append(doc.attachmentId()).append("）\n");
@@ -338,7 +340,7 @@ public class BrowserIngressService {
         return originalContent + hint;
     }
 
-    /** 判断单个附件是否属于文档类（需要 document.parse 工具介入）。 */
+    /** 判断单个附件是否属于文档类（需要 file.read 工具介入）。 */
     private boolean isDocumentAttachment(GatewayMessage.Attachment att) {
         if (att.mimeType() == null) {
             return false;
