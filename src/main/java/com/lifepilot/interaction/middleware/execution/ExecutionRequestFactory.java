@@ -139,13 +139,21 @@ public final class ExecutionRequestFactory {
         return SessionConfigKeys.normalizeString(message.messageId());
     }
 
-    /** 将网关附件转换为 Agent 统一使用的多模态媒体对象。 */
+    /**
+     * 将网关附件转换为 Agent 统一使用的多模态媒体对象。
+     *
+     * <p>仅把真正的多模态媒体（image / audio / video）转为 {@link MediaContent}。
+     * 文档类附件（pdf / docx / md / txt / csv 等）不应进入多模态路径，否则会触发
+     * {@code StreamingCallback.callMultimodalStreaming}，导致 tools 被丢弃、工具调用能力失效。
+     * 文档内容应由 Agent 按需调用 {@code document.parse} 工具读取。</p>
+     */
     private List<MediaContent> buildMediaContents(GatewayMessage message) {
         var attachments = message.attachments();
         if (attachments == null || attachments.isEmpty()) {
             return List.of();
         }
         return attachments.stream()
+                .filter(att -> isMultimodalMedia(att.mimeType()))
                 .map(att -> new MediaContent(
                         att.attachmentId(),
                         att.mimeType(),
@@ -155,6 +163,21 @@ public final class ExecutionRequestFactory {
                         Map.of()
                 ))
                 .toList();
+    }
+
+    /**
+     * 判断 MIME 是否属于真正的多模态媒体（视觉模型、音频模型能直接消费的类型）。
+     *
+     * <p>文档类型（application/pdf、application/vnd.openxmlformats-*、text/*）即使可读也不属于多模态媒体 —
+     * 它们应通过 {@code document.parse} 工具按需解析，不应挤占多模态推理通道。</p>
+     */
+    private static boolean isMultimodalMedia(@Nullable String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return false;
+        }
+        return mimeType.startsWith("image/")
+                || mimeType.startsWith("audio/")
+                || mimeType.startsWith("video/");
     }
 
     /** 按“请求显式指定优先，会话默认次之”的顺序解析模型服务提供方。 */

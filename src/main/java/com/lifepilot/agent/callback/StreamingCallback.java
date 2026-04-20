@@ -101,26 +101,42 @@ public class StreamingCallback implements IterationCallback {
                                 @Nullable TraceContext traceContext) {
         String scene = config.getLoop().getLlmScene();
 
-        // 动态路由：检查 messages 中 UserMessage 是否包含 Media 对象
-        boolean messagesHaveMedia = messages.stream()
+        // 动态路由：仅当 UserMessage 含真正的多模态媒体（image / audio / video）时走多模态路径。
+        // 文档类附件（pdf / docx / md / txt / csv 等）通过 document.parse 工具按需解析，
+        // 不占用多模态通道 — 否则会导致 toolCallbacks 被丢弃（MultimodalRequest 架构上不承载 tools）。
+        boolean messagesHaveMultimodalMedia = messages.stream()
                 .filter(m -> m instanceof UserMessage)
                 .map(m -> (UserMessage) m)
-                .anyMatch(um -> !um.getMedia().isEmpty());
+                .flatMap(um -> um.getMedia().stream())
+                .anyMatch(StreamingCallback::isMultimodalMedia);
 
         // 多模态流式路由
-        if (messagesHaveMedia && multimodalRouter != null) {
-            return callMultimodalStreaming(req, messages, scene, traceContext);
+        if (messagesHaveMultimodalMedia && multimodalRouter != null) {
+            return callMultimodalStreaming(req, messages, toolCallbacks, scene, traceContext);
         }
 
-        if (messagesHaveMedia) {
+        if (messagesHaveMultimodalMedia) {
             log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
         }
 
         return callTextStreaming(req, messages, toolCallbacks, scene, traceContext);
     }
 
+    /** 判断 Media 是否属于真正的多模态类型（image / audio / video）。 */
+    private static boolean isMultimodalMedia(org.springframework.ai.content.Media media) {
+        var mime = media.getMimeType();
+        if (mime == null) {
+            return false;
+        }
+        String type = mime.getType();
+        return "image".equalsIgnoreCase(type)
+                || "audio".equalsIgnoreCase(type)
+                || "video".equalsIgnoreCase(type);
+    }
+
     /** 多模态流式路由。 */
     private ChatResponse callMultimodalStreaming(AgentRequest req, List<Message> messages,
+                                                 List<ToolCallback> toolCallbacks,
                                                  String scene, @Nullable TraceContext traceContext) {
         // 清空上一次迭代可能残留的 token 缓冲
         clearPendingTokenBatch();
@@ -130,10 +146,11 @@ public class StreamingCallback implements IterationCallback {
         String conversationText = helper.buildConversationContextText(messages);
         var multimodalRequest = new MultimodalRequest(
                 scene, conversationText,
-                mediaContents, null, req.preferredProvider(), null);
+                mediaContents, null, req.preferredProvider(), null,
+                toolCallbacks);
 
-        // 多模态路径也输出调试日志（无 toolCallbacks，传 null）
-        helper.logLlmPromptIfEnabled(scene, messages, null);
+        // 多模态路径调试日志 — 记录工具列表以便排查工具透传问题
+        helper.logLlmPromptIfEnabled(scene, messages, toolCallbacks);
 
         StreamingLlmResponse streamingResponse = multimodalRouter.streamWithInfo(multimodalRequest);
         this.providerId = streamingResponse.providerId();
