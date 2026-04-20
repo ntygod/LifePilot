@@ -290,6 +290,9 @@ public class StreamingCallback implements IterationCallback {
         // 累加流式 chunk 中的 Token 用量（部分 Provider 仅在最后一个 chunk 返回完整 usage）
         final long[] accumulatedPromptTokens = {0};
         final long[] accumulatedCompletionTokens = {0};
+        // 记录 prompt cache 命中 token 数 — OpenAI / DashScope / Anthropic 自动缓存命中时返回该字段
+        final long[] accumulatedCachedTokens = {0};
+        final Object[] lastNativeUsage = {null};
 
         Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
 
@@ -308,6 +311,14 @@ public class StreamingCallback implements IterationCallback {
                                 chunkUsage.getPromptTokens() != null ? chunkUsage.getPromptTokens() : 0);
                         accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0],
                                 chunkUsage.getCompletionTokens() != null ? chunkUsage.getCompletionTokens() : 0);
+                        Object nu = chunkUsage.getNativeUsage();
+                        if (nu != null) {
+                            lastNativeUsage[0] = nu;
+                            long cached = extractCachedTokens(nu);
+                            if (cached > 0) {
+                                accumulatedCachedTokens[0] = Math.max(accumulatedCachedTokens[0], cached);
+                            }
+                        }
                     }
 
                     // 部分 Provider 最后一个 chunk 仅含 usage 不含 generation，跳过
@@ -391,15 +402,26 @@ public class StreamingCallback implements IterationCallback {
                 ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
         long totalMs = Duration.between(callStart, callEnd).toMillis();
         var timings = streamingTimings();
+        long cachedTokens = accumulatedCachedTokens[0];
+        long promptTokens = accumulatedPromptTokens[0];
+        // cache 命中率 = cached / (prompt - cached) 估算, 仅展示命中的 token 数与命中比
+        String cacheInfo = cachedTokens > 0 && promptTokens > 0
+                ? ", cachedTokens=" + cachedTokens + "(" + (cachedTokens * 100 / promptTokens) + "%)"
+                : (lastNativeUsage[0] != null && cachedTokens == 0
+                        ? ", cachedTokens=0"
+                        : "");
         log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
                         "requestToFirstReasoning={}ms, requestToFirstTokenSse={}ms, modelStreamStartToFirstToken={}ms, " +
-                        "promptTokens={}, completionTokens={}, toolCallCount={}, contentLength={}",
+                        "promptTokens={}, completionTokens={}{}, toolCallCount={}, contentLength={}",
                 scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
                 timingOrDefault(timings, "requestReceivedToFirstReasoningEventMs"),
                 timingOrDefault(timings, "requestReceivedToFirstTokenSseMs"),
                 timingOrDefault(timings, "modelStreamStartToFirstTokenMs"),
-                accumulatedPromptTokens[0], accumulatedCompletionTokens[0],
+                promptTokens, accumulatedCompletionTokens[0], cacheInfo,
                 toolCalls.size(), collectedContent.length());
+        if (lastNativeUsage[0] != null && log.isDebugEnabled()) {
+            log.debug("原生 usage 详情: {}", lastNativeUsage[0]);
+        }
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
                 scene2, chatResponse, null);
@@ -468,6 +490,68 @@ public class StreamingCallback implements IterationCallback {
                     ChatResponseMetadata.builder().usage(usage).build());
         }
         return new ChatResponse(List.of(generation));
+    }
+
+    /**
+     * 从 Provider 原生 usage 对象中反射抽取 cached_tokens (prompt cache 命中数)。
+     *
+     * <p>Spring AI 的 {@code Usage} 抽象不暴露 cached_tokens, 但 OpenAI-compat / DashScope /
+     * Anthropic 的原生 usage 对象都有该字段 (名字略有差异):
+     * OpenAI/DashScope: {@code prompt_tokens_details.cached_tokens}
+     * Anthropic: {@code cache_read_input_tokens}。反射读取避免对具体 SDK 版本强耦合。</p>
+     *
+     * @return 命中 token 数, 未找到或解析失败返回 0
+     */
+    private long extractCachedTokens(Object nativeUsage) {
+        if (nativeUsage == null) {
+            return 0;
+        }
+        try {
+            // OpenAI / DashScope 风格: prompt_tokens_details.cached_tokens
+            Object details = invokeGetter(nativeUsage, "getPromptTokensDetails", "promptTokensDetails");
+            if (details != null) {
+                Object cached = invokeGetter(details, "getCachedTokens", "cachedTokens");
+                if (cached instanceof Number n) {
+                    return n.longValue();
+                }
+            }
+            // Anthropic 风格: cacheReadInputTokens
+            Object anthropicCached = invokeGetter(nativeUsage, "getCacheReadInputTokens", "cacheReadInputTokens");
+            if (anthropicCached instanceof Number n) {
+                return n.longValue();
+            }
+        } catch (Exception ignored) {
+            // 反射失败不影响主流程, 静默返回 0
+        }
+        return 0;
+    }
+
+    private Object invokeGetter(Object target, String getterName, String fieldName) {
+        // 1) JavaBean: getXxx()
+        try {
+            var m = target.getClass().getMethod(getterName);
+            return m.invoke(target);
+        } catch (NoSuchMethodException ignored) {
+            // 继续尝试其它形式
+        } catch (Exception e) {
+            return null;
+        }
+        // 2) Record accessor: xxx() — Spring AI OpenAI Usage/PromptTokensDetails 都是 record
+        try {
+            var m = target.getClass().getMethod(fieldName);
+            return m.invoke(target);
+        } catch (NoSuchMethodException ignored) {
+            // 继续
+        } catch (Exception e) {
+            return null;
+        }
+        // 3) 公共字段直接读
+        try {
+            var f = target.getClass().getField(fieldName);
+            return f.get(target);
+        } catch (NoSuchFieldException | IllegalAccessException ignored) {
+            return null;
+        }
     }
 
     /**
