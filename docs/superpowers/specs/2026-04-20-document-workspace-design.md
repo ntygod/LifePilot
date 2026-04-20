@@ -12,7 +12,105 @@ scope: 覆盖"读 / 写 / 改 / 协作"的全量文档能力规划，供后续�
 
 ---
 
+## 0. Phase 0 复盘修订（2026-04-20 收口）
+
+> 本节为 Phase 0 实施完成后的**定位级修订**，是对下方原始方案的校正。读本文档以本节为准，下方 1-10 节保留原始论述作为演进痕迹。
+
+### 0.1 核心定位校正：本地 AI 助手 ≠ SaaS 对话平台
+
+原 spec 隐含一个错误前提："用户上传文档 → AI 处理"。实际上**知微是本地 AI Agent 助手**：
+- 跑在用户电脑上（Tauri 桌面 + Spring Boot 本地后端）
+- AI 有权直接访问用户电脑的文件系统
+- **用户真实心智**是"帮我看看 `D:/合同/甲方.docx`"，不是"我把合同上传给你，你读一下"
+
+**推论**：
+- **主入口是本机路径**（`file.read(path=...)`），不是上传
+- **附件上传是兜底**（Web 端拿不到真实路径时 / 跨机器临时分享 / 移动场景）
+- UI 文案中 **"上传"→"选择"**（已在本次执行中改完对话场景；知识库的"上传"语义准确保留）
+
+### 0.2 工具合并：`file.read` 统一承载所有"读路径"
+
+**决策**：`document.parse` 作为独立工具是**设计债**（Phase 0 初期为绕开 `file.read` 读不了 docx/pdf 而新建），已合并回 `file.read`。
+
+合并后的 `file.read` 能力（单一入口，内部按扩展名路由）：
+- **纯文本类**（代码 / txt / json / yaml / log / config）→ 原 `BufferedReader` 按字节路径
+- **结构化文档类**（md / csv / docx / pdf）→ 走 `DocumentParserService` 拿结构化解析
+- **参数三选一**：`path`（主入口） / `attachmentId`（兜底） / `skill`（加载技能指南，与读路径无关但复用工具）
+
+**`document.*` 命名空间不废弃** —— 保留给 Phase 2+ 做**需要结构化数据 + 样式/模板才能输出的生成/编辑能力**（docx/xlsx/pptx/pdf 生成、保留样式修改、diff、模板渲染）。这类能力和 `file.write`（原子覆写纯文本）本质不同。
+
+### 0.3 document.\* 命名空间的边界（Phase 2+ 规划）
+
+`document.*` **只收录**封装格式的文档**生成/编辑**能力：
+- docx / xlsx / pptx / pdf（未来扩展 odt / rtf / epub）
+- 原因：需要 POI / PDFBox 做格式编解码，涉及样式 / 模板 / 图表 / 版本
+
+**不归属 `document.*`**（各归其位）：
+
+| 格式 | 归属 | 理由 |
+|---|---|---|
+| md / txt / json / yaml / csv / html / xml | `file.write` / `file.edit` | 纯文本即产物 |
+| 代码（py / js / sh / java / ...） | `file.write` / `file.edit` | 同上 |
+| mermaid / plantuml 文本 | `file.write` + 独立 `chart.render` 工具族 | 图表是独立能力域 |
+| png / jpg / svg 图表成品 | `chart.*` / `image.*` 独立工具族 | matplotlib / DALLE / FLUX 等 |
+| zip / tar | `archive.*` 独立工具族 | 打包属独立操作 |
+
+**原则**：一个工具域 = 一类心智模型 + 一类技术栈。避免 umbrella。
+
+### 0.4 多模态路径架构修复（Phase 0 e2e 暴露）
+
+触发源：`ExecutionRequestFactory.buildMediaContents` 原先把**所有附件类型**都塞 `MediaContent`（含 docx/pdf），导致 `StreamingCallback.callLlm` 误判进多模态路径，而 `MultimodalRequest` 架构上不承载 tools → LLM 收到 `tools=[]`，工具调用全部失效。
+
+**已修**：
+1. `ExecutionRequestFactory` 按 MIME 过滤，只 image/audio/video 进 MediaContent
+2. `StreamingCallback` / `NonStreamingCallback` 的 `messagesHaveMedia` 按 Media.mimeType 精化
+3. `MultimodalRequest` record 加 `@Nullable List<ToolCallback> toolCallbacks`（架构预留，为未来 vision + tools 同传给现代模型铺路）
+
+**未了架构债**：现代模型（Claude 3.5 / GPT-4o / Gemini 2.5）支持 vision + function calling 同时用，但 `GenerationRouter` / vision adapter 签名不承载 tools。Phase 1 重构时修。
+
+### 0.5 Phase 路线重排（覆盖原第 8 节）
+
+**原 Phase 7（Tauri 桌面深度集成）前置为 Phase 1** —— 这是"本地 AI 助手"定位的关键支撑，不能留到最后。新顺序：
+
+| Phase | 目标 | 状态 |
+|---|---|---|
+| **Phase 0** | 读懂 docx/pdf（合并 file.read）+ 前端附件卡片 + 多模态路径修复 | ✅ 已完成 |
+| **Phase 1** | **桌面深度集成**：Tauri 系统拖拽 + 右键"用知微处理" + 全局快捷键带当前文件 + xlsx/pptx parser 加入 `DocumentParserService` | 下一个 |
+| **Phase 2** | 原生文档**生成**：`document.create_docx` / `create_xlsx` / `create_pptx` + 文档产物下载链路 + `documents` 表建立 | 按需 |
+| **Phase 3** | **编辑与 diff**：`document.patch_*` 保留样式 + 版本管理 + diff UI | 按需 |
+| **Phase 4** | **双栏 Artifact** 工作台：类 Claude Artifacts 的文档工作区 | 按需 |
+| **Phase 5** | 模板与批量：`document.render_template` + 模板库 + 批量处理 | 按需 |
+| **Phase 6** | 渠道集成：飞书 / 钉钉 / 企微文件流转 | 按需 |
+| **Phase 7** | 在线文档：飞书文档 / 腾讯文档 / Notion API | 按需 |
+
+原 spec 第 8 节中 Phase 0 提到的"数据库 `documents` 表"已确认**延期到 Phase 2**（Phase 0 无文档实体生命周期需求，过早建表无意义）。
+
+### 0.6 Phase 0 实际交付清单
+
+提交分两段：
+- **主体（Phase 0 Task 1-7）**：`ed46d61f` 开始 `3cba3161` 结束，9 个 commit
+- **追加修复与定位收口**：
+  - `da357780`：`core-tool-ids` 加 `document.parse`（后被 Task 合并取代）
+  - `70cc531f`：多模态路径工具剥离 bug 彻底修
+  - `a9e6926c`：`file.read` 合并文档解析能力
+  - `2c98ef44`：清理 `document.parse` 工具层
+  - `728a6082`：前端"上传"文案去 SaaS 化
+
+**验证**：
+- `工具注册统计: JAVA_NATIVE=22`（从 23 降回 22，`document.parse` 合并进 `file.read`）
+- e2e 实测：LLM 收到 `tools=[11 items 含 file.read]`，真调 `file.read(attachmentId=...)` 读出 md 真实内容"鲲鹏振翅-2077"
+
+### 0.7 未了事项（留给 Phase 1 或并行）
+
+- Surefire 配置加入 `**/*测试.java` include pattern（项目级测试发现 bug）
+- Spec 本文档第 4 节场景示例措辞（"上传" / "AI 读取路径"）可顺手校正一波
+- `application.yml` 的 `core-tool-ids` 新增一条行内注释说明"此列表含所有内置 ReAct 常用工具，新增工具需显式加入"
+
+---
+
 ## 1. 背景与目标
+
+> ⚠️ 以下 1-10 节为 Phase 0 立项时的原始论述。**本文档以第 0 节为准**，下方保留演进历史。
 
 ### 1.1 背景
 
