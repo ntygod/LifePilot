@@ -28,7 +28,7 @@ import java.util.UUID;
  * <p>流程与 {@link DocumentCreateDocxToolExecutor} / {@link DocumentCreateXlsxToolExecutor}
  * 对称：接收 {@code fileName + slides + sessionId} → {@link #parseSlides} 把 Map
  * 反序列化为 {@link SlideData} 列表 → {@link PowerpointGenerator} 生成 pptx 字节 →
- * 落盘到 {@code storageDir}/{uuid}_{fileName} → 入 documents 表
+ * 落盘到 {@code storageDir}/{uuid}_{fileName} → 入 session_documents 表
  * （origin=agent_generated）+ 入 message_attachments（entry_id=null 占位，由
  * AgentPersistenceHandler 后续回填）→ 返回 documentId / fileName / fileSize /
  * downloadUrl。</p>
@@ -127,7 +127,7 @@ public class DocumentCreatePptxToolExecutor {
             return ToolResult.error("文档落盘失败：" + e.getMessage());
         }
 
-        // 入 documents 表（origin=agent_generated，entry_id 暂空）
+        // 入 session_documents 表（origin=agent_generated，entry_id 暂空）
         var record = new DocumentRecord(
                 documentId, sessionId, null, normalizedFileName, filePath.toString(),
                 bytes.length, PPTX_MIME, DocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now());

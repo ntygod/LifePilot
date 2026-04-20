@@ -8,7 +8,7 @@ import java.time.Instant;
  * 文档产物记录。
  *
  * <p>代表本地落盘的一份文档（docx / xlsx / pptx 等），origin 标识来源。
- * 和 message_attachments 的区别：documents 是文档资产的长期元数据，
+ * 和 message_attachments 的区别：session_documents 是文档资产的长期元数据，
  * message_attachments 负责把资产挂到特定消息气泡上做 UI 展示。</p>
  *
  * @param id         文档 UUID

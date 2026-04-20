@@ -38,7 +38,7 @@ class DocumentRepository_持久化测试 {
 
         // session_store 需要先建（外键依赖）
         jdbc.execute("CREATE TABLE session_store (session_id TEXT PRIMARY KEY)");
-        jdbc.execute("CREATE TABLE documents (" +
+        jdbc.execute("CREATE TABLE session_documents (" +
                 "id TEXT PRIMARY KEY, " +
                 "session_id TEXT NOT NULL, " +
                 "entry_id TEXT, " +
@@ -129,7 +129,7 @@ class DocumentRepository_持久化测试 {
 
         jdbc.update("DELETE FROM session_store WHERE session_id = ?", "sess-1");
 
-        // FK ON DELETE CASCADE 应自动清 documents 表的关联行
+        // FK ON DELETE CASCADE 应自动清 session_documents 表的关联行
         assertThat(repository.findBySessionId("sess-1")).isEmpty();
     }
 }

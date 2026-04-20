@@ -40,7 +40,7 @@ public class DocumentRepository {
     public String save(DocumentRecord record) {
         String id = record.id() != null ? record.id() : UUID.randomUUID().toString();
         jdbcTemplate.update(
-                "INSERT INTO documents (id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at) " +
+                "INSERT INTO session_documents (id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 id, record.sessionId(), record.entryId(),
                 record.fileName(), record.filePath(), record.fileSize(),
@@ -54,7 +54,7 @@ public class DocumentRepository {
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at " +
-                            "FROM documents WHERE id = ?",
+                            "FROM session_documents WHERE id = ?",
                     (rs, rowNum) -> new DocumentRecord(
                             rs.getString("id"),
                             rs.getString("session_id"),
@@ -76,7 +76,7 @@ public class DocumentRepository {
     public List<DocumentRecord> findBySessionId(String sessionId) {
         return jdbcTemplate.query(
                 "SELECT id, session_id, entry_id, file_name, file_path, file_size, mime_type, origin, created_at " +
-                        "FROM documents WHERE session_id = ? ORDER BY created_at DESC",
+                        "FROM session_documents WHERE session_id = ? ORDER BY created_at DESC",
                 (rs, rowNum) -> new DocumentRecord(
                         rs.getString("id"),
                         rs.getString("session_id"),
@@ -92,6 +92,6 @@ public class DocumentRepository {
     }
 
     public int deleteBySessionId(String sessionId) {
-        return jdbcTemplate.update("DELETE FROM documents WHERE session_id = ?", sessionId);
+        return jdbcTemplate.update("DELETE FROM session_documents WHERE session_id = ?", sessionId);
     }
 }

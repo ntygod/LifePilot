@@ -23,8 +23,8 @@ import java.util.UUID;
  * document.create_docx 工具执行体。
  *
  * <p>流程：接收 {@code fileName + markdown + sessionId} → 调用 DocumentGenerator
- * 生成 docx 字节 → 落盘到 {@code storageDir}/{uuid}_{fileName} → 入 documents 表
- * （origin=agent_generated） + 入 message_attachments（entry_id=null 占位，由
+ * 生成 docx 字节 → 落盘到 {@code storageDir}/{uuid}_{fileName} → 入 session_documents
+ * 表（origin=agent_generated） + 入 message_attachments（entry_id=null 占位，由
  * AgentPersistenceHandler 后续回填）→ 返回 documentId / fileName / fileSize / downloadUrl。</p>
  *
  * @author zsg
@@ -113,7 +113,7 @@ public class DocumentCreateDocxToolExecutor {
             return ToolResult.error("文档落盘失败：" + e.getMessage());
         }
 
-        // 入 documents 表（origin=agent_generated，entry_id 暂空）
+        // 入 session_documents 表（origin=agent_generated，entry_id 暂空）
         var record = new DocumentRecord(
                 documentId, sessionId, null, normalizedFileName, filePath.toString(),
                 bytes.length, DOCX_MIME, DocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now());
