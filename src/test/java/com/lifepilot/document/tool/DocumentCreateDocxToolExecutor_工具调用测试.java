@@ -129,6 +129,92 @@ class DocumentCreateDocxToolExecutor_工具调用测试 {
         assertThat((String) result.data().get("fileName")).isEqualTo("已带扩展名.docx");
     }
 
+    @Test
+    void fileName_含路径分隔符被拒绝(@TempDir Path tmp) {
+        var executor = newExecutor(tmp);
+        var input = newInput(Map.of(
+                "fileName", "../etc/passwd",
+                "markdown", "# 标题",
+                "sessionId", "sess-1"
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("非法字符");
+    }
+
+    @Test
+    void fileName_含正斜杠子目录被拒绝(@TempDir Path tmp) {
+        var executor = newExecutor(tmp);
+        var input = newInput(Map.of(
+                "fileName", "2026/Q3/report",
+                "markdown", "# 标题",
+                "sessionId", "sess-1"
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("非法字符");
+    }
+
+    @Test
+    void 生成异常时返回_文档生成失败_错误(@TempDir Path tmp) {
+        var failingGenerator = new com.lifepilot.document.generator.DocumentGenerator() {
+            @Override
+            public byte[] generate(String markdown) {
+                throw new com.lifepilot.document.generator.DocumentGenerationException(
+                        "模拟生成失败");
+            }
+
+            @Override
+            public String mimeType() {
+                return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            }
+        };
+        var executor = new DocumentCreateDocxToolExecutor(
+                failingGenerator, documentRepository, attachmentRepository, tmp.toString());
+        var input = newInput(Map.of(
+                "fileName", "报告",
+                "markdown", "# 标题",
+                "sessionId", "sess-1"
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("文档生成失败");
+        assertThat(result.error()).contains("模拟生成失败");
+    }
+
+    @Test
+    void 落盘失败时返回_文档落盘失败_错误(@TempDir Path tmp) {
+        // storageDir 指向一个"已存在但是普通文件"的路径 —— createDirectories 会抛 IOException
+        Path notADir = tmp.resolve("file-not-dir");
+        try {
+            java.nio.file.Files.writeString(notADir, "blocker");
+        } catch (java.io.IOException e) {
+            org.junit.jupiter.api.Assertions.fail("准备 fixture 失败", e);
+        }
+
+        var executor = new DocumentCreateDocxToolExecutor(
+                new MarkdownToDocxGenerator(),
+                documentRepository,
+                attachmentRepository,
+                notADir.toString());  // storageDir 指向普通文件
+        var input = newInput(Map.of(
+                "fileName", "报告",
+                "markdown", "# 标题",
+                "sessionId", "sess-1"
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("文档落盘失败");
+    }
+
     private DocumentCreateDocxToolExecutor newExecutor(Path storageDir) {
         return new DocumentCreateDocxToolExecutor(
                 new MarkdownToDocxGenerator(),
