@@ -1,6 +1,5 @@
 package com.lifepilot.document.config;
 
-import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -12,7 +11,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @author zsg
  * @since 2026-04-20
  */
-@Data
 @ConfigurationProperties(prefix = "lifepilot.document")
 public class DocumentProperties {
 
@@ -21,4 +19,10 @@ public class DocumentProperties {
 
     /** document.parse 工具默认返回内容最大字符数，超出会被截断，默认 30000。 */
     private int defaultMaxChars = 30000;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public int getDefaultMaxChars() { return defaultMaxChars; }
+    public void setDefaultMaxChars(int defaultMaxChars) { this.defaultMaxChars = defaultMaxChars; }
 }

@@ -164,20 +164,6 @@ public class AgentPersistenceHandler {
         }
     }
 
-    public void persistUserMessage(ReactAgentState state) {
-        if (state.goal() == null || state.goal().isBlank()) {
-            return;
-        }
-        try {
-            boolean visibleToUser = !isA2uiSignalMessage(state.goal());
-            transcriptStore.appendUserMessage(
-                    state.sessionId(), state.turnId(), state.goal(),
-                    state.traceId(), visibleToUser, null);
-        } catch (Exception e) {
-            log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
-        }
-    }
-
     @Nullable
     public String persistUserMessageReturningId(ReactAgentState state) {
         return persistUserMessageReturningId(state, ChatTurnAction.SEND);

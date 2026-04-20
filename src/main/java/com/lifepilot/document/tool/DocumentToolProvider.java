@@ -55,7 +55,7 @@ public class DocumentToolProvider {
                 .id("document.parse")
                 .category(ToolCategory.PERCEPTION)
                 .name("解析文档")
-                .description("解析 docx / pdf / md / txt 等文档为可读文本。" +
+                .description("解析 docx / pdf / md / txt / csv 等文档为可读文本。" +
                         "用户上传 docx/pdf 附件后可调此工具读取内容。" +
                         "attachmentId 和 path 二选一。")
                 .inputSchema(JsonSchema.of(Map.of(
