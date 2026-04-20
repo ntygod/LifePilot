@@ -133,6 +133,62 @@ class DocumentCreateXlsxToolExecutor_工具调用测试 {
         assertThat((String) result.data().get("fileName")).isEqualTo("已带扩展名.xlsx");
     }
 
+    @Test
+    void 生成异常时返回_文档生成失败_错误(@TempDir Path tmp) {
+        var failingGenerator = new com.lifepilot.document.generator.ExcelGenerator() {
+            @Override
+            public byte[] generate(List<com.lifepilot.document.generator.SheetData> sheets) {
+                throw new com.lifepilot.document.generator.DocumentGenerationException(
+                        "模拟 xlsx 生成失败");
+            }
+
+            @Override
+            public String mimeType() {
+                return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            }
+        };
+        var executor = new DocumentCreateXlsxToolExecutor(
+                failingGenerator, documentRepository, attachmentRepository, tmp.toString());
+        var input = newInput(Map.of(
+                "fileName", "报表",
+                "sheets", List.of(),
+                "sessionId", "sess-1"
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("文档生成失败");
+        assertThat(result.error()).contains("模拟 xlsx 生成失败");
+    }
+
+    @Test
+    void 落盘失败时返回_文档落盘失败_错误(@TempDir Path tmp) {
+        // storageDir 指向一个"已存在但是普通文件"的路径 —— createDirectories 会抛 IOException
+        Path notADir = tmp.resolve("file-not-dir");
+        try {
+            Files.writeString(notADir, "blocker");
+        } catch (java.io.IOException e) {
+            org.junit.jupiter.api.Assertions.fail("准备 fixture 失败", e);
+        }
+
+        var executor = new DocumentCreateXlsxToolExecutor(
+                new StructuredDataToXlsxGenerator(),
+                documentRepository,
+                attachmentRepository,
+                notADir.toString());
+        var input = newInput(Map.of(
+                "fileName", "报表",
+                "sheets", List.of(),
+                "sessionId", "sess-1"
+        ));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("文档落盘失败");
+    }
+
     private DocumentCreateXlsxToolExecutor newExecutor(Path storageDir) {
         return new DocumentCreateXlsxToolExecutor(
                 new StructuredDataToXlsxGenerator(),
