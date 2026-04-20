@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Check, Copy, FileText, Mic, Pencil } from 'lucide-vue-next'
+import { Check, Copy, FileCode2, FileText, FileType, Mic, Pencil, Presentation, Sheet } from 'lucide-vue-next'
 import type {
   A2uiComponent,
   Message,
@@ -123,6 +123,29 @@ const imageAttachments = computed(() =>
 const fileAttachments = computed(() =>
   props.message.attachments?.filter(attachment => !attachment.isImage && !attachment.type?.startsWith('audio/')) ?? [],
 )
+
+/** 判断附件是否是 AI 可解析的文档类型（docx / pdf / xlsx / pptx / md / txt） */
+function isParseableDocument(att: { type?: string; filename: string }): boolean {
+  const t = att.type?.toLowerCase() ?? ''
+  if (t === 'application/pdf') return true
+  if (t.includes('wordprocessingml')) return true  // docx
+  if (t.includes('spreadsheetml')) return true     // xlsx
+  if (t.includes('presentationml')) return true    // pptx
+  if (t === 'text/markdown' || t === 'text/plain') return true
+  // 兜底按扩展名识别
+  const ext = att.filename.split('.').pop()?.toLowerCase()
+  return ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt'].includes(ext ?? '')
+}
+
+/** 按文件扩展名返回 lucide 图标组件 */
+function documentIcon(att: { type?: string; filename: string }) {
+  const ext = att.filename.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return FileType
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') return Sheet
+  if (ext === 'pptx' || ext === 'ppt') return Presentation
+  if (ext === 'md') return FileCode2
+  return FileText  // docx / txt / 其他
+}
 
 const audioAttachments = computed(() =>
   props.message.attachments?.filter(attachment => attachment.type?.startsWith('audio/')) ?? [],
@@ -445,37 +468,54 @@ function approvalLogTone(log: PermissionApprovalLog) {
             </div>
           </div>
 
-          <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
-            <div
-              v-for="attachment in fileAttachments"
-              :key="attachment.fileId"
-              class="list-card flex flex-col gap-2 px-3 py-3 text-xs text-foreground"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate">{{ attachment.filename }}</span>
-                <span class="shrink-0 text-[11px] text-muted-foreground">
-                  {{ (attachment.size / 1024).toFixed(1) }} KB
-                </span>
-              </div>
-              <video
+          <div v-if="fileAttachments.length > 0" class="mt-md flex flex-col gap-sm">
+            <template v-for="attachment in fileAttachments" :key="attachment.fileId">
+              <!-- 视频附件：保留原 list-card + <video> 播放器布局 -->
+              <div
                 v-if="attachment.type?.startsWith('video/')"
-                :src="attachment.url"
-                controls
-                class="mt-1 w-full max-w-full max-h-[360px] rounded-lg"
+                class="list-card flex flex-col gap-sm px-md py-md text-xs text-foreground"
               >
-                当前浏览器不支持视频播放
-              </video>
-              <a
+                <div class="flex items-center justify-between gap-sm">
+                  <span class="truncate">{{ attachment.filename }}</span>
+                  <span class="shrink-0 text-xs text-muted-foreground">
+                    {{ (attachment.size / 1024).toFixed(1) }} KB
+                  </span>
+                </div>
+                <video
+                  :src="attachment.url"
+                  controls
+                  class="mt-xs w-full max-w-full max-h-[360px] rounded-lg"
+                >
+                  当前浏览器不支持视频播放
+                </video>
+              </div>
+
+              <!-- 文档附件：图标 + 「AI 可读取」徽标 + 下载链接 -->
+              <div
                 v-else
-                :href="attachment.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="mt-1 inline-flex items-center gap-1 text-[11px] text-primary underline-offset-2 hover:underline"
+                class="flex items-center gap-sm rounded-md border border-border bg-muted/40 p-sm"
               >
-                <FileText :size="14" class="text-muted-foreground" />
-                <span>下载文件</span>
-              </a>
-            </div>
+                <component :is="documentIcon(attachment)" class="h-md w-md shrink-0 text-muted-foreground" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-xs">
+                    <span class="truncate text-sm">{{ attachment.filename }}</span>
+                    <span
+                      v-if="isParseableDocument(attachment)"
+                      class="shrink-0 rounded-md bg-primary/10 px-xs py-xs text-xs text-primary"
+                      title="AI 可调用 document.parse 读取此文档内容"
+                    >AI 可读取</span>
+                  </div>
+                  <div class="text-xs text-muted-foreground">
+                    {{ (attachment.size / 1024).toFixed(1) }} KB
+                  </div>
+                </div>
+                <a
+                  :href="attachment.url"
+                  :download="attachment.filename"
+                  class="shrink-0 text-xs text-primary hover:underline"
+                >下载</a>
+              </div>
+            </template>
           </div>
         </div>
       </div>

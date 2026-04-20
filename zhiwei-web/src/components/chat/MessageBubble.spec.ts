@@ -63,6 +63,82 @@ describe('MessageBubble 视频附件渲染（Property 14）', () => {
   })
 })
 
+describe('MessageBubble 文档附件卡片', () => {
+  it('docx 附件显示「AI 可读取」徽标和文件名', () => {
+    const message: Message = {
+      id: 'm-docx',
+      role: 'user',
+      content: '请看这份合同',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-1',
+          url: '/api/attachments/att-1',
+          filename: '合同.docx',
+          size: 102400,
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('合同.docx')
+    expect(wrapper.text()).toContain('AI 可读取')
+  })
+
+  it('未知二进制附件不显示「AI 可读取」徽标', () => {
+    const message: Message = {
+      id: 'm-bin',
+      role: 'user',
+      content: '',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-2',
+          url: '/api/attachments/att-2',
+          filename: 'data.bin',
+          size: 2048,
+          type: 'application/octet-stream',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('data.bin')
+    expect(wrapper.text()).not.toContain('AI 可读取')
+  })
+})
+
 describe('MessageBubble 权限审批状态展示', () => {
   it('确认后会立即展示紧凑授权记录，不需要刷新页面', () => {
     const message: Message = {
