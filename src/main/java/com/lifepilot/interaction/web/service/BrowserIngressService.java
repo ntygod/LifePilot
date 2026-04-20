@@ -47,6 +47,18 @@ public class BrowserIngressService {
     private static final String WEB_PLATFORM = "web";
     private static final String WEB_INSTANCE_ID = "web.default";
 
+    /**
+     * document.parse 系统提示块起始 sentinel。
+     *
+     * <p>持久化层（{@code AgentPersistenceHandler}）依据该标记定位并剥离 hint，
+     * 避免操作元数据污染 user transcript 在前端历史中回显。模型仍能在 goal
+     * 原文中看到 hint，仅在写入 user entry 时移除。</p>
+     */
+    public static final String DOCUMENT_HINT_BEGIN = "<!--document-parse-hint-begin-->";
+
+    /** document.parse 系统提示块结束 sentinel。 */
+    public static final String DOCUMENT_HINT_END = "<!--document-parse-hint-end-->";
+
     private final AttachmentRepository attachmentRepository;
     private final ChatTurnService chatTurnService;
     @Nullable private final SseSessionManager sseSessionManager;
@@ -285,7 +297,8 @@ public class BrowserIngressService {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/msword",
             "text/markdown",
-            "text/plain"
+            "text/plain",
+            "text/csv"
     );
 
     /**
@@ -310,11 +323,15 @@ public class BrowserIngressService {
         if (docs.isEmpty()) {
             return originalContent;
         }
-        var hint = new StringBuilder("\n\n[系统提示] 用户上传了以下文档附件，可调用 document.parse 工具读取内容：\n");
+        // hint 用 sentinel 标记包裹，AgentPersistenceHandler 在持久化 user entry 前剥离，
+        // 避免操作元数据污染 transcript 后被前端历史回显
+        var hint = new StringBuilder("\n\n").append(DOCUMENT_HINT_BEGIN)
+                .append("\n[系统提示] 用户上传了以下文档附件，可调用 document.parse 工具读取内容：\n");
         for (var doc : docs) {
             hint.append("- ").append(doc.fileName())
                     .append("（attachmentId=").append(doc.attachmentId()).append("）\n");
         }
+        hint.append(DOCUMENT_HINT_END);
         return originalContent + hint;
     }
 

@@ -9,6 +9,7 @@ import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.service.SessionTitleGenerator;
 import com.lifepilot.llm.multimodal.MediaContent;
@@ -46,6 +47,22 @@ public class AgentPersistenceHandler {
     private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
     private static final Pattern RESUME_INPUT_PATTERN = Pattern.compile(
             "<resume_user_input>\\s*(.*?)\\s*</resume_user_input>",
+            Pattern.DOTALL
+    );
+
+    /**
+     * document.parse 系统提示块匹配正则：吃掉前置的空白行（含 \n\n）+ marker + 内容 + 闭合 marker。
+     *
+     * <p>{@link BrowserIngressService} 在用户消息末尾追加 hint 引导模型调用
+     * {@code document.parse}，模型仍然需要在 goal 原文中看到该 hint；但持久化到
+     * transcript 时必须剥离，避免前端历史回显时把"系统提示 + attachmentId"
+     * 当作用户原话展示。</p>
+     */
+    private static final Pattern DOCUMENT_HINT_PATTERN = Pattern.compile(
+            "\\s*"
+                    + Pattern.quote(BrowserIngressService.DOCUMENT_HINT_BEGIN)
+                    + ".*?"
+                    + Pattern.quote(BrowserIngressService.DOCUMENT_HINT_END),
             Pattern.DOTALL
     );
 
@@ -197,10 +214,12 @@ public class AgentPersistenceHandler {
             }
             // A2UI 信号消息对模型可见但不展示给用户，避免原始信号数据作为气泡出现
             boolean visibleToUser = !isA2uiSignalMessage(state.goal());
+            // 持久化前剥离 document.parse hint，避免操作元数据回显到用户气泡
+            String persistedGoal = stripDocumentParseHint(state.goal());
             String entryId = transcriptStore.appendUserMessage(
                     state.sessionId(),
                     state.turnId(),
-                    state.goal(),
+                    persistedGoal,
                     state.traceId(),
                     visibleToUser,
                     null
@@ -213,6 +232,28 @@ public class AgentPersistenceHandler {
             log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 剥离用户消息中的 document.parse 系统提示块。
+     *
+     * <p>{@link BrowserIngressService} 用 sentinel marker 包裹 hint，模型推理时
+     * 仍能看到（{@code state.goal()} 原文不变），仅在写入 user transcript 前由本方法
+     * 移除，避免前端回看历史时把"系统提示 + attachmentId"当作用户原话展示。</p>
+     *
+     * @param text 原始用户消息（可能含 hint）
+     * @return 剥离 hint 后的文本；若无 hint 或 text 为 null/空，原样返回
+     */
+    static String stripDocumentParseHint(@Nullable String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        if (!text.contains(BrowserIngressService.DOCUMENT_HINT_BEGIN)) {
+            return text;
+        }
+        String stripped = DOCUMENT_HINT_PATTERN.matcher(text).replaceAll("");
+        // 用户原文末尾尾随空白做轻量清理；不做 strip()，避免吃掉合法的内部缩进
+        return stripped.stripTrailing();
     }
 
     /**

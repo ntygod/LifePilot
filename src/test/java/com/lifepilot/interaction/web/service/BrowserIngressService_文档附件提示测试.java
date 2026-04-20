@@ -74,6 +74,39 @@ class BrowserIngressService_文档附件提示测试 {
     }
 
     @Test
+    void hint使用marker包裹便于下游剥离(@TempDir Path tmp) throws Exception {
+        Path docx = tmp.resolve("spec.docx");
+        Files.createFile(docx);
+
+        when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
+                "turn-marker", ChatTurnAction.SEND, "解析需求文档",
+                List.of("att-marker"), null));
+        when(attachmentRepository.findById("att-marker")).thenReturn(new AttachmentRecord(
+                "att-marker", "session-1", "spec.docx", docx.toString(),
+                Files.size(docx),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "/api/attachments/att-marker"));
+
+        var service = newService();
+        var request = new ChatRequest("turn-marker", ChatTurnAction.SEND,
+                "解析需求文档", "session-1", List.of("att-marker"), null);
+
+        GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
+        var text = ((MessageContent.TextMessage) msg.content()).text();
+
+        // 断言 hint 被 marker 包裹，且整段提示位于 marker 之间，便于下游剥离
+        assertThat(text).contains(BrowserIngressService.DOCUMENT_HINT_BEGIN);
+        assertThat(text).contains(BrowserIngressService.DOCUMENT_HINT_END);
+        int begin = text.indexOf(BrowserIngressService.DOCUMENT_HINT_BEGIN);
+        int end = text.indexOf(BrowserIngressService.DOCUMENT_HINT_END);
+        assertThat(begin).isGreaterThanOrEqualTo(0);
+        assertThat(end).isGreaterThan(begin);
+        String wrapped = text.substring(begin, end);
+        assertThat(wrapped).contains("document.parse");
+        assertThat(wrapped).contains("att-marker");
+    }
+
+    @Test
     void pdf附件触发document_parse系统提示(@TempDir Path tmp) throws Exception {
         Path pdf = tmp.resolve("paper.pdf");
         Files.createFile(pdf);
@@ -119,6 +152,75 @@ class BrowserIngressService_文档附件提示测试 {
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).doesNotContain("document.parse");
         assertThat(text).isEqualTo("看这张图");
+    }
+
+    @Test
+    void csv附件也触发document_parse系统提示(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("data.csv");
+        Files.createFile(csv);
+
+        when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
+                "turn-csv", ChatTurnAction.SEND, "分析这份数据",
+                List.of("att-csv"), null));
+        when(attachmentRepository.findById("att-csv")).thenReturn(new AttachmentRecord(
+                "att-csv", "session-1", "data.csv", csv.toString(),
+                Files.size(csv), "text/csv",
+                "/api/attachments/att-csv"));
+
+        var service = newService();
+        var request = new ChatRequest("turn-csv", ChatTurnAction.SEND,
+                "分析这份数据", "session-1", List.of("att-csv"), null);
+
+        GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
+        var text = ((MessageContent.TextMessage) msg.content()).text();
+
+        assertThat(text).contains("data.csv");
+        assertThat(text).contains("document.parse");
+        assertThat(text).contains("att-csv");
+        assertThat(text).contains(BrowserIngressService.DOCUMENT_HINT_BEGIN);
+    }
+
+    @Test
+    void 混合类型附件只对文档生成提示(@TempDir Path tmp) throws Exception {
+        Path docx = tmp.resolve("contract.docx");
+        Path img = tmp.resolve("preview.png");
+        Path pdf = tmp.resolve("report.pdf");
+        Files.createFile(docx);
+        Files.createFile(img);
+        Files.createFile(pdf);
+
+        when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
+                "turn-mix", ChatTurnAction.SEND, "把这些资料整合一下",
+                List.of("att-docx", "att-img", "att-pdf"), null));
+        when(attachmentRepository.findById("att-docx")).thenReturn(new AttachmentRecord(
+                "att-docx", "session-1", "contract.docx", docx.toString(),
+                Files.size(docx),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "/api/attachments/att-docx"));
+        when(attachmentRepository.findById("att-img")).thenReturn(new AttachmentRecord(
+                "att-img", "session-1", "preview.png", img.toString(),
+                Files.size(img), "image/png", "/api/attachments/att-img"));
+        when(attachmentRepository.findById("att-pdf")).thenReturn(new AttachmentRecord(
+                "att-pdf", "session-1", "report.pdf", pdf.toString(),
+                Files.size(pdf), "application/pdf", "/api/attachments/att-pdf"));
+
+        var service = newService();
+        var request = new ChatRequest("turn-mix", ChatTurnAction.SEND,
+                "把这些资料整合一下", "session-1",
+                List.of("att-docx", "att-img", "att-pdf"), null);
+
+        GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
+        var text = ((MessageContent.TextMessage) msg.content()).text();
+
+        // hint 列出 docx 和 pdf
+        assertThat(text).contains("contract.docx");
+        assertThat(text).contains("att-docx");
+        assertThat(text).contains("report.pdf");
+        assertThat(text).contains("att-pdf");
+        // 但不出现 png 文件名 / id
+        assertThat(text).doesNotContain("preview.png");
+        assertThat(text).doesNotContain("att-img");
+        assertThat(text).contains("document.parse");
     }
 
     @Test
