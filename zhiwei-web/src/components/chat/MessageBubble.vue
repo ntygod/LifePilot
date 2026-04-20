@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Check, Copy, FileCode2, FileText, FileType, Mic, Pencil, Sheet } from 'lucide-vue-next'
+import { Check, Copy, FileCode2, FileText, FileType, Mic, Pencil, Presentation, Sheet } from 'lucide-vue-next'
 import type {
   A2uiComponent,
   Message,
@@ -124,25 +124,27 @@ const fileAttachments = computed(() =>
   props.message.attachments?.filter(attachment => !attachment.isImage && !attachment.type?.startsWith('audio/')) ?? [],
 )
 
-/** 判断附件是否是 AI 可解析的文档类型（Phase 0 实际可解析集合：pdf / docx / md / txt / csv） */
+/** 判断附件是否是 AI 可解析的文档类型（Phase 1B 实际可解析集合：pdf / docx / xlsx / pptx / md / txt / csv） */
 function isParseableDocument(att: { type?: string; filename: string }): boolean {
   const t = att.type?.toLowerCase() ?? ''
   if (t === 'application/pdf') return true
   if (t.includes('wordprocessingml')) return true  // docx
-  if (t === 'text/markdown' || t === 'text/plain') return true
-  if (t === 'text/csv') return true
+  if (t.includes('spreadsheetml')) return true     // xlsx
+  if (t.includes('presentationml')) return true    // pptx
+  if (t === 'text/markdown' || t === 'text/plain' || t === 'text/csv') return true
   // 兜底按扩展名识别
   const ext = att.filename.split('.').pop()?.toLowerCase()
-  return ['pdf', 'docx', 'md', 'txt', 'csv'].includes(ext ?? '')
+  return ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt', 'csv'].includes(ext ?? '')
 }
 
 /** 按文件扩展名返回 lucide 图标组件 */
 function documentIcon(att: { type?: string; filename: string }) {
   const ext = att.filename.split('.').pop()?.toLowerCase() ?? ''
   if (ext === 'pdf') return FileType
-  if (ext === 'csv') return Sheet
+  if (ext === 'xlsx' || ext === 'csv') return Sheet
+  if (ext === 'pptx') return Presentation
   if (ext === 'md') return FileCode2
-  return FileText  // docx / txt / 其他（xlsx/pptx 不点亮 badge，走通用文件图标兜底）
+  return FileText
 }
 
 const audioAttachments = computed(() =>
