@@ -33,6 +33,9 @@ class DocumentRepository_持久化测试 {
                 "jdbc:sqlite::memory:", true);
         jdbc = new JdbcTemplate(dataSource);
 
+        // SQLite 默认 FK 校验关闭，手动开启以验证 CASCADE 语义（生产由 Flyway + runtime 启用）
+        jdbc.execute("PRAGMA foreign_keys = ON");
+
         // session_store 需要先建（外键依赖）
         jdbc.execute("CREATE TABLE session_store (session_id TEXT PRIMARY KEY)");
         jdbc.execute("CREATE TABLE documents (" +
@@ -115,6 +118,18 @@ class DocumentRepository_持久化测试 {
         int deleted = repository.deleteBySessionId("sess-1");
 
         assertThat(deleted).isEqualTo(1);
+        assertThat(repository.findBySessionId("sess-1")).isEmpty();
+    }
+
+    @Test
+    void 删除_session_store_时_FK_级联清理_documents() {
+        repository.save(new DocumentRecord("c", "sess-1", null, "c.docx", "/t/c", 1L, "x",
+                "agent_generated", Instant.now()));
+        assertThat(repository.findBySessionId("sess-1")).hasSize(1);
+
+        jdbc.update("DELETE FROM session_store WHERE session_id = ?", "sess-1");
+
+        // FK ON DELETE CASCADE 应自动清 documents 表的关联行
         assertThat(repository.findBySessionId("sess-1")).isEmpty();
     }
 }
