@@ -273,6 +273,7 @@ class BrowserIngressService_文档附件提示测试 {
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("deck.pptx");
         assertThat(text).contains("file.read");
+        assertThat(text).contains("att-pptx");
     }
 
     @Test
