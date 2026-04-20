@@ -55,12 +55,15 @@ lifepilot:
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: true
+    # ReAct Agent 默认可见的核心工具白名单 — 任何时候都会出现在 LLM 的 tool schema 里
+    # 未列入此处的工具只能通过 Skill 激活（LLM 调 file.read(skill="xx") 加载）或多 Agent 白名单暴露
+    # 新增基础能力工具需显式加入，否则 LLM 看不到（见 ToolBridgeAgentToolProvider 的分层过滤逻辑）
     core-tool-ids:
       - shell.exec
       - web.search
       - shell.process
       - web.fetch
-      - file.read
+      - file.read            # 统一读路径：纯文本 + docx/pdf/md/csv 等结构化文档 + 附件（attachmentId）
       - file.write
       - file.list
       - memory
