@@ -292,13 +292,14 @@ public class BrowserIngressService {
      * <p>这些类型的附件 LLM 无法直接看到内容，需要通过 {@code file.read(attachmentId=...)}
      * 读取文本后再交给模型。图片/音频/视频等多模态附件走各自的专用路由，不在此列。</p>
      *
-     * <p>Phase 0 实际可解析集合与 knowledge/parser 对齐：pdf / docx / md / txt / csv。
-     * 不包含 {@code application/msword}（.doc，WordParser 仅支持 docx），
-     * 也不包含 xlsx/pptx（Phase 1 才会有 parser）。</p>
+     * <p>Phase 1B 可解析集合与 knowledge/parser 对齐：pdf / docx / xlsx / pptx / md / txt / csv。
+     * 不包含 {@code application/msword}（.doc，WordParser 仅支持 docx）。</p>
      */
     private static final List<String> DOCUMENT_MIME_PREFIXES = List.of(
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "text/markdown",
             "text/plain",
             "text/csv"

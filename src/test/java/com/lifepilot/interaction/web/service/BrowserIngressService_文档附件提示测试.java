@@ -225,6 +225,57 @@ class BrowserIngressService_文档附件提示测试 {
     }
 
     @Test
+    void xlsx附件触发file_read系统提示(@TempDir Path tmp) throws Exception {
+        Path xlsx = tmp.resolve("sales.xlsx");
+        Files.createFile(xlsx);
+
+        when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
+                "turn-xlsx", ChatTurnAction.SEND, "看这份销售表",
+                List.of("att-xlsx"), null));
+        when(attachmentRepository.findById("att-xlsx")).thenReturn(new AttachmentRecord(
+                "att-xlsx", "session-1", "sales.xlsx", xlsx.toString(),
+                Files.size(xlsx),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "/api/attachments/att-xlsx"));
+
+        var service = newService();
+        var request = new ChatRequest("turn-xlsx", ChatTurnAction.SEND,
+                "看这份销售表", "session-1", List.of("att-xlsx"), null);
+
+        GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
+
+        var text = ((MessageContent.TextMessage) msg.content()).text();
+        assertThat(text).contains("sales.xlsx");
+        assertThat(text).contains("file.read");
+        assertThat(text).contains("att-xlsx");
+    }
+
+    @Test
+    void pptx附件触发file_read系统提示(@TempDir Path tmp) throws Exception {
+        Path pptx = tmp.resolve("deck.pptx");
+        Files.createFile(pptx);
+
+        when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
+                "turn-pptx", ChatTurnAction.SEND, "看这个方案",
+                List.of("att-pptx"), null));
+        when(attachmentRepository.findById("att-pptx")).thenReturn(new AttachmentRecord(
+                "att-pptx", "session-1", "deck.pptx", pptx.toString(),
+                Files.size(pptx),
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "/api/attachments/att-pptx"));
+
+        var service = newService();
+        var request = new ChatRequest("turn-pptx", ChatTurnAction.SEND,
+                "看这个方案", "session-1", List.of("att-pptx"), null);
+
+        GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
+
+        var text = ((MessageContent.TextMessage) msg.content()).text();
+        assertThat(text).contains("deck.pptx");
+        assertThat(text).contains("file.read");
+    }
+
+    @Test
     void 无附件时不注入任何提示() {
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-3", ChatTurnAction.SEND, "你好",
