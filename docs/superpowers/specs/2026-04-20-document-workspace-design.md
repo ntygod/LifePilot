@@ -70,18 +70,19 @@ scope: 覆盖"读 / 写 / 改 / 协作"的全量文档能力规划，供后续�
 
 ### 0.5 Phase 路线重排（覆盖原第 8 节）
 
-**原 Phase 7（Tauri 桌面深度集成）前置为 Phase 1** —— 这是"本地 AI 助手"定位的关键支撑，不能留到最后。新顺序：
+**Tauri 深度集成（原 Phase 7）暂不必做**（2026-04-20 老板决策）—— 现有 Web 端"文件选择 + 拖拽到对话"已覆盖"本地 AI 助手"最小交互需求。Tauri 系统级拖拽 / 右键菜单 / 全局快捷键属锦上添花，按需再做不影响核心体验。新顺序：
 
 | Phase | 目标 | 状态 |
 |---|---|---|
 | **Phase 0** | 读懂 docx/pdf（合并 file.read）+ 前端附件卡片 + 多模态路径修复 | ✅ 已完成 |
-| **Phase 1** | **桌面深度集成**：Tauri 系统拖拽 + 右键"用知微处理" + 全局快捷键带当前文件 + xlsx/pptx parser 加入 `DocumentParserService` | 下一个 |
+| **Phase 1** | **xlsx / pptx parser** 加入 `DocumentParserService`（延续 Phase 0） | 下一个 |
 | **Phase 2** | 原生文档**生成**：`document.create_docx` / `create_xlsx` / `create_pptx` + 文档产物下载链路 + `documents` 表建立 | 按需 |
 | **Phase 3** | **编辑与 diff**：`document.patch_*` 保留样式 + 版本管理 + diff UI | 按需 |
 | **Phase 4** | **双栏 Artifact** 工作台：类 Claude Artifacts 的文档工作区 | 按需 |
 | **Phase 5** | 模板与批量：`document.render_template` + 模板库 + 批量处理 | 按需 |
 | **Phase 6** | 渠道集成：飞书 / 钉钉 / 企微文件流转 | 按需 |
 | **Phase 7** | 在线文档：飞书文档 / 腾讯文档 / Notion API | 按需 |
+| **Phase N** | **Tauri 桌面深度集成**（按需）：系统拖拽 / 右键菜单 / 全局快捷键 | 可能不做 |
 
 原 spec 第 8 节中 Phase 0 提到的"数据库 `documents` 表"已确认**延期到 Phase 2**（Phase 0 无文档实体生命周期需求，过早建表无意义）。
 
