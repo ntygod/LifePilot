@@ -100,7 +100,10 @@ public class BrowserIngressService {
 
         List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
         var transcription = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
-        var content = new MessageContent.TextMessage(transcription.content());
+
+        // 文档附件提示注入：对 docx/pdf/md/txt 附件，告诉 LLM 可调 document.parse 读取内容
+        String contentWithDocHint = appendDocumentParseHint(transcription.content(), attachments);
+        var content = new MessageContent.TextMessage(contentWithDocHint);
 
         // 转录成功后移除已转录的音频附件，避免它们作为 mediaContents 触发多模态路由
         List<GatewayMessage.Attachment> effectiveAttachments = transcription.transcribed()
@@ -269,5 +272,57 @@ public class BrowserIngressService {
             }
         }
         return results;
+    }
+
+    /**
+     * 文档类附件的 MIME 类型前缀/精确匹配集合。
+     *
+     * <p>这些类型的附件 LLM 无法直接看到内容，需要通过 {@code document.parse} 工具
+     * 读取文本后再交给模型。图片/音频/视频等多模态附件走各自的专用路由，不在此列。</p>
+     */
+    private static final List<String> DOCUMENT_MIME_PREFIXES = List.of(
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+            "text/markdown",
+            "text/plain"
+    );
+
+    /**
+     * 对包含文档类附件的消息，在末尾追加一段系统提示，告诉 LLM 可调用
+     * {@code document.parse} 工具读取附件内容。
+     *
+     * <p>只要附件列表中存在至少一个 docx/pdf/md/txt 类型的文件就会追加提示；
+     * 提示中列出所有文档附件的文件名与 attachmentId，供 LLM 按需选取。</p>
+     *
+     * @param originalContent 原始消息文本（可能已含语音转录结果）
+     * @param attachments     当前轮次的全部附件
+     * @return 追加提示后的文本；若无文档附件则原样返回
+     */
+    private String appendDocumentParseHint(String originalContent,
+                                           List<GatewayMessage.Attachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return originalContent;
+        }
+        var docs = attachments.stream()
+                .filter(this::isDocumentAttachment)
+                .toList();
+        if (docs.isEmpty()) {
+            return originalContent;
+        }
+        var hint = new StringBuilder("\n\n[系统提示] 用户上传了以下文档附件，可调用 document.parse 工具读取内容：\n");
+        for (var doc : docs) {
+            hint.append("- ").append(doc.fileName())
+                    .append("（attachmentId=").append(doc.attachmentId()).append("）\n");
+        }
+        return originalContent + hint;
+    }
+
+    /** 判断单个附件是否属于文档类（需要 document.parse 工具介入）。 */
+    private boolean isDocumentAttachment(GatewayMessage.Attachment att) {
+        if (att.mimeType() == null) {
+            return false;
+        }
+        return DOCUMENT_MIME_PREFIXES.stream().anyMatch(att.mimeType()::startsWith);
     }
 }
