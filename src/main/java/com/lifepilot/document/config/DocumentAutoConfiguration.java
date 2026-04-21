@@ -9,6 +9,8 @@ import com.lifepilot.document.generator.StructuredDataToXlsxGenerator;
 import com.lifepilot.document.patch.docx.DocxDiffBuilder;
 import com.lifepilot.document.patch.docx.DocxPatchEngine;
 import com.lifepilot.document.patch.docx.TextAnchorLocator;
+import com.lifepilot.document.patch.xlsx.XlsxDiffBuilder;
+import com.lifepilot.document.patch.xlsx.XlsxPatchEngine;
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.document.tool.DocumentCreateActionDispatchExecutor;
@@ -179,12 +181,18 @@ public class DocumentAutoConfiguration {
         // PathSecurityChecker 与 FileToolProvider 共用同一份白名单/黑名单配置，
         // 由 MetaProperties.infra.file 驱动；不注册为独立 Bean 以对齐既有模式
         var pathSecurityChecker = new PathSecurityChecker(metaProperties.getInfra().getFile());
+        // P3B Task 8 新增：xlsx engine / diff builder 无状态，本方法内 new 即可；Task 9-11
+        // 引入 DocumentDispatcherProvider 链时再考虑是否抽出独立 @Bean
+        var xlsxPatchEngine = new XlsxPatchEngine();
+        var xlsxDiffBuilder = new XlsxDiffBuilder();
         return new DocumentVersionService(
                 documentRepository,
                 versionRepository,
                 attachmentRepository,
                 docxPatchEngine,
                 docxDiffBuilder,
+                xlsxPatchEngine,
+                xlsxDiffBuilder,
                 properties.getStorageDir(),
                 pathSecurityChecker);
     }

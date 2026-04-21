@@ -6,12 +6,16 @@ import com.lifepilot.document.model.SessionDocumentRecord;
 import com.lifepilot.document.patch.DocumentPatchOperation;
 import com.lifepilot.document.patch.DocumentPatchResult;
 import com.lifepilot.document.patch.DocxPatchOperation;
+import com.lifepilot.document.patch.XlsxPatchOperation;
 import com.lifepilot.document.patch.docx.DocxDiffBuilder;
 import com.lifepilot.document.patch.docx.DocxPatchEngine;
+import com.lifepilot.document.patch.xlsx.XlsxDiffBuilder;
+import com.lifepilot.document.patch.xlsx.XlsxPatchEngine;
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.meta.infra.file.PathSecurityChecker;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +30,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -45,6 +50,10 @@ import java.util.UUID;
  *       之后 file_path 切换到 working 路径。</li>
  * </ul>
  *
+ * <p>P3B 起支持 docx / xlsx 双格式：{@link #applyPatch} 按 {@link SessionDocumentRecord#mimeType()}
+ * 分支到 docx / xlsx engine；跨 MIME 混用的 op 由 {@link #castDocxOps} / {@link #castXlsxOps}
+ * 运行时 instanceof 校验拦截（抛 {@link IllegalArgumentException}）。</p>
+ *
  * <p>本类不标 {@code @Service}：构造器依赖 {@code storageDir} 字符串，
  * 由 {@code DocumentAutoConfiguration}（Task 12）显式 {@code @Bean} 装配。</p>
  *
@@ -58,14 +67,19 @@ public class DocumentVersionService {
     private static final DateTimeFormatter BACKUP_TS =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.systemDefault());
 
-    private static final String DOCX_MIME =
+    public static final String DOCX_MIME =
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    public static final String XLSX_MIME =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     private final SessionDocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
     private final AttachmentRepository attachmentRepository;
     private final DocxPatchEngine engine;
     private final DocxDiffBuilder diffBuilder;
+    private final XlsxPatchEngine xlsxEngine;
+    private final XlsxDiffBuilder xlsxDiffBuilder;
     private final String storageDir;
     private final PathSecurityChecker pathSecurityChecker;
 
@@ -74,6 +88,8 @@ public class DocumentVersionService {
                                   AttachmentRepository attachmentRepository,
                                   DocxPatchEngine engine,
                                   DocxDiffBuilder diffBuilder,
+                                  XlsxPatchEngine xlsxEngine,
+                                  XlsxDiffBuilder xlsxDiffBuilder,
                                   String storageDir,
                                   PathSecurityChecker pathSecurityChecker) {
         this.documentRepository = documentRepository;
@@ -81,6 +97,8 @@ public class DocumentVersionService {
         this.attachmentRepository = attachmentRepository;
         this.engine = engine;
         this.diffBuilder = diffBuilder;
+        this.xlsxEngine = xlsxEngine;
+        this.xlsxDiffBuilder = xlsxDiffBuilder;
         this.storageDir = storageDir;
         this.pathSecurityChecker = pathSecurityChecker;
     }
@@ -99,10 +117,13 @@ public class DocumentVersionService {
     }
 
     private String checkoutFromPath(String sessionId, String sourcePath) throws IOException {
-        // 扩展名白名单：Phase 3A 仅支持 .docx，避免 LLM 注入让 AI copy .exe/.bat 等文件到 working 目录
-        if (!sourcePath.toLowerCase().endsWith(".docx")) {
-            throw new IllegalArgumentException("只支持 .docx 源文件（P3A）：" + sourcePath);
+        // 扩展名白名单：Phase 3B 支持 .docx / .xlsx，避免 LLM 注入让 AI copy .exe/.bat 等文件到 working 目录
+        String lower = sourcePath.toLowerCase();
+        boolean supportedExt = lower.endsWith(".docx") || lower.endsWith(".xlsx");
+        if (!supportedExt) {
+            throw new IllegalArgumentException("只支持 .docx / .xlsx 源文件：" + sourcePath);
         }
+        String inferredMime = lower.endsWith(".xlsx") ? XLSX_MIME : DOCX_MIME;
         // 路径安全校验：读取场景（文件已存在），对齐 FileReadToolExecutor 的白名单/黑名单规则
         Path source = Paths.get(sourcePath);
         var rejection = pathSecurityChecker.check(source);
@@ -114,7 +135,7 @@ public class DocumentVersionService {
             return existing.id();
         }
         String documentId = UUID.randomUUID().toString();
-        Path workingV0 = workingPath(sessionId, documentId, 0);
+        Path workingV0 = workingPath(sessionId, documentId, 0, inferredMime);
         Files.createDirectories(workingV0.getParent());
         Files.copy(source, workingV0, StandardCopyOption.REPLACE_EXISTING);
         long size = Files.size(workingV0);
@@ -122,12 +143,13 @@ public class DocumentVersionService {
 
         documentRepository.save(new SessionDocumentRecord(
                 documentId, sessionId, null, fileName, workingV0.toString(), size,
-                DOCX_MIME, SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE,
+                inferredMime, SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE,
                 sourcePath, 0, Instant.now()));
         versionRepository.save(new DocumentVersionRecord(
                 UUID.randomUUID().toString(), documentId, 0, workingV0.toString(),
                 DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()));
-        log.info("checkout 本机路径：documentId={}, sourcePath={}", documentId, sourcePath);
+        log.info("checkout 本机路径：documentId={}, sourcePath={}, mime={}",
+                documentId, sourcePath, inferredMime);
         return documentId;
     }
 
@@ -136,29 +158,34 @@ public class DocumentVersionService {
         if (att == null) {
             throw new IllegalArgumentException("attachment 不存在：" + attachmentId);
         }
-        // 扩展名 / mime-type 白名单：Phase 3A 仅支持 docx，防止 LLM 注入非预期文件类型
-        boolean extDocx = att.fileName() != null && att.fileName().toLowerCase().endsWith(".docx");
+        // 扩展名 / mime-type 白名单：Phase 3B 支持 docx / xlsx，防止 LLM 注入非预期文件类型
+        String name = att.fileName() == null ? "" : att.fileName().toLowerCase();
+        boolean extDocx = name.endsWith(".docx");
+        boolean extXlsx = name.endsWith(".xlsx");
         boolean mimeDocx = DOCX_MIME.equals(att.mimeType());
-        if (!extDocx && !mimeDocx) {
-            throw new IllegalArgumentException("只支持 .docx 附件（P3A）：fileName=" + att.fileName()
-                    + ", mimeType=" + att.mimeType());
+        boolean mimeXlsx = XLSX_MIME.equals(att.mimeType());
+        if (!(extDocx || extXlsx || mimeDocx || mimeXlsx)) {
+            throw new IllegalArgumentException(
+                    "只支持 .docx / .xlsx 附件：fileName=" + att.fileName() + ", mimeType=" + att.mimeType());
         }
+        String inferredMime = (extXlsx || mimeXlsx) ? XLSX_MIME : DOCX_MIME;
         // 附件本地路径即源；沿用 PathSource checkout 但 origin 区分
         String documentId = UUID.randomUUID().toString();
         Path sourceFile = Paths.get(att.filePath());
-        Path workingV0 = workingPath(sessionId, documentId, 0);
+        Path workingV0 = workingPath(sessionId, documentId, 0, inferredMime);
         Files.createDirectories(workingV0.getParent());
         Files.copy(sourceFile, workingV0, StandardCopyOption.REPLACE_EXISTING);
         long size = Files.size(workingV0);
 
         documentRepository.save(new SessionDocumentRecord(
                 documentId, sessionId, null, att.fileName(), workingV0.toString(), size,
-                att.mimeType(), SessionDocumentRecord.ORIGIN_USER_ATTACHMENT_EDITED,
+                inferredMime, SessionDocumentRecord.ORIGIN_USER_ATTACHMENT_EDITED,
                 null, 0, Instant.now()));
         versionRepository.save(new DocumentVersionRecord(
                 UUID.randomUUID().toString(), documentId, 0, workingV0.toString(),
                 DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()));
-        log.info("checkout 附件：documentId={}, attachmentId={}", documentId, attachmentId);
+        log.info("checkout 附件：documentId={}, attachmentId={}, mime={}",
+                documentId, attachmentId, inferredMime);
         return documentId;
     }
 
@@ -172,7 +199,7 @@ public class DocumentVersionService {
         }
         // 首次从 Phase 2 AI 产物 checkout：复制到 working/v0
         Path oldFile = Paths.get(existing.filePath());
-        Path workingV0 = workingPath(existing.sessionId(), documentId, 0);
+        Path workingV0 = workingPath(existing.sessionId(), documentId, 0, existing.mimeType());
         Files.createDirectories(workingV0.getParent());
         Files.copy(oldFile, workingV0, StandardCopyOption.REPLACE_EXISTING);
         long size = Files.size(workingV0);
@@ -190,38 +217,77 @@ public class DocumentVersionService {
     public DocumentPatchResult applyPatch(String documentId, List<DocumentPatchOperation> ops)
             throws IOException, JsonProcessingException {
         var record = requireDocument(documentId);
+        return switch (record.mimeType()) {
+            case DOCX_MIME -> applyDocxPatch(record, castDocxOps(ops));
+            case XLSX_MIME -> applyXlsxPatch(record, castXlsxOps(ops));
+            default -> throw new IllegalStateException("不支持的 MIME：" + record.mimeType());
+        };
+    }
+
+    private DocumentPatchResult applyDocxPatch(SessionDocumentRecord record,
+                                               List<DocxPatchOperation> ops)
+            throws IOException, JsonProcessingException {
         int nextVersion = record.latestVersion() + 1;
         Path currentFile = Paths.get(record.filePath());
-        Path nextFile = workingPath(record.sessionId(), documentId, nextVersion);
+        Path nextFile = workingPath(record, nextVersion);
         Files.createDirectories(nextFile.getParent());
 
         try (InputStream in = Files.newInputStream(currentFile);
              XWPFDocument doc = new XWPFDocument(in)) {
-            // Task 1 桥接：engine.apply 已收窄为 List<DocxPatchOperation>，而 service 公共签名
-            // 暂保留为 List<DocumentPatchOperation>（Task 8 会改为 MIME 分支）。P3A 链路当前只会传入
-            // DocxPatchOperation 子类型，这里做一次 unchecked cast 让协议收窄不泄漏到调用方。
-            @SuppressWarnings("unchecked")
-            List<DocxPatchOperation> docxOps = (List<DocxPatchOperation>) (List<?>) ops;
-            var engineResult = engine.apply(doc, docxOps);
+            var engineResult = engine.apply(doc, ops);
             if (!engineResult.success()) {
                 return DocumentPatchResult.failure(engineResult.failedOps());
             }
             byte[] bytes = serializeDocx(doc);
             Files.write(nextFile, bytes);
 
-            String diffJson = diffBuilder.build(documentId, record.latestVersion(), nextVersion,
+            String diffJson = diffBuilder.build(record.id(), record.latestVersion(), nextVersion,
                     engineResult.appliedOps());
             String summary = diffBuilder.summarize(engineResult.appliedOps());
 
             versionRepository.save(new DocumentVersionRecord(
-                    UUID.randomUUID().toString(), documentId, nextVersion, nextFile.toString(),
+                    UUID.randomUUID().toString(), record.id(), nextVersion, nextFile.toString(),
                     DocumentVersionRecord.SOURCE_PATCH, summary, diffJson, Instant.now()));
-            documentRepository.updateLatestVersion(documentId, nextVersion);
-            documentRepository.updateFilePath(documentId, nextFile.toString(), bytes.length);
+            documentRepository.updateLatestVersion(record.id(), nextVersion);
+            documentRepository.updateFilePath(record.id(), nextFile.toString(), bytes.length);
             attachmentRepository.updateSizeByFilePath(nextFile.toString(), (long) bytes.length);
 
-            log.info("patch 成功：documentId={}, version={}→{}, {}",
-                    documentId, record.latestVersion(), nextVersion, summary);
+            log.info("docx patch 成功：documentId={}, version={}→{}, {}",
+                    record.id(), record.latestVersion(), nextVersion, summary);
+            return DocumentPatchResult.success(nextVersion, diffJson, summary);
+        }
+    }
+
+    private DocumentPatchResult applyXlsxPatch(SessionDocumentRecord record,
+                                               List<XlsxPatchOperation> ops)
+            throws IOException, JsonProcessingException {
+        int nextVersion = record.latestVersion() + 1;
+        Path currentFile = Paths.get(record.filePath());
+        Path nextFile = workingPath(record, nextVersion);
+        Files.createDirectories(nextFile.getParent());
+
+        try (InputStream in = Files.newInputStream(currentFile);
+             XSSFWorkbook wb = new XSSFWorkbook(in)) {
+            var engineResult = xlsxEngine.apply(wb, ops);
+            if (!engineResult.success()) {
+                return DocumentPatchResult.failure(engineResult.failedOps());
+            }
+            byte[] bytes = serializeXlsx(wb);
+            Files.write(nextFile, bytes);
+
+            String diffJson = xlsxDiffBuilder.build(record.id(), record.latestVersion(), nextVersion,
+                    engineResult.appliedOps());
+            String summary = xlsxDiffBuilder.summarize(engineResult.appliedOps());
+
+            versionRepository.save(new DocumentVersionRecord(
+                    UUID.randomUUID().toString(), record.id(), nextVersion, nextFile.toString(),
+                    DocumentVersionRecord.SOURCE_PATCH, summary, diffJson, Instant.now()));
+            documentRepository.updateLatestVersion(record.id(), nextVersion);
+            documentRepository.updateFilePath(record.id(), nextFile.toString(), bytes.length);
+            attachmentRepository.updateSizeByFilePath(nextFile.toString(), (long) bytes.length);
+
+            log.info("xlsx patch 成功：documentId={}, version={}→{}, {}",
+                    record.id(), record.latestVersion(), nextVersion, summary);
             return DocumentPatchResult.success(nextVersion, diffJson, summary);
         }
     }
@@ -278,7 +344,7 @@ public class DocumentVersionService {
                     "目标版本不存在：documentId=" + documentId + ", version=" + targetVersion);
         }
         int nextVersion = record.latestVersion() + 1;
-        Path nextFile = workingPath(record.sessionId(), documentId, nextVersion);
+        Path nextFile = workingPath(record, nextVersion);
         Files.createDirectories(nextFile.getParent());
         Files.copy(Paths.get(targetVer.filePath()), nextFile, StandardCopyOption.REPLACE_EXISTING);
         long size = Files.size(nextFile);
@@ -334,8 +400,22 @@ public class DocumentVersionService {
         return record;
     }
 
-    private Path workingPath(String sessionId, String documentId, int version) {
-        return Paths.get(storageDir, sessionId, "working", documentId, "v" + version + ".docx");
+    private Path workingPath(SessionDocumentRecord record, int version) {
+        return workingPath(record.sessionId(), record.id(), version, record.mimeType());
+    }
+
+    private Path workingPath(String sessionId, String documentId, int version, String mimeType) {
+        return Paths.get(storageDir, sessionId, "working", documentId,
+                "v" + version + workingExtension(mimeType));
+    }
+
+    /** 按 mimeType 返回工作副本的文件扩展名（含点）。 */
+    private static String workingExtension(String mimeType) {
+        return switch (mimeType) {
+            case DOCX_MIME -> ".docx";
+            case XLSX_MIME -> ".xlsx";
+            default -> throw new IllegalArgumentException("不支持的 MIME：" + mimeType);
+        };
     }
 
     private byte[] serializeDocx(XWPFDocument doc) throws IOException {
@@ -343,5 +423,42 @@ public class DocumentVersionService {
             doc.write(bos);
             return bos.toByteArray();
         }
+    }
+
+    private byte[] serializeXlsx(XSSFWorkbook wb) throws IOException {
+        try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            wb.write(bos);
+            return bos.toByteArray();
+        }
+    }
+
+    /** 运行时 instanceof 校验：docx 文档只能接受 DocxPatchOperation。 */
+    private static List<DocxPatchOperation> castDocxOps(List<DocumentPatchOperation> ops) {
+        List<DocxPatchOperation> result = new ArrayList<>(ops.size());
+        for (int i = 0; i < ops.size(); i++) {
+            DocumentPatchOperation op = ops.get(i);
+            if (!(op instanceof DocxPatchOperation d)) {
+                throw new IllegalArgumentException(
+                        "op #" + i + " 不是 docx 操作（" + op.getClass().getSimpleName()
+                                + "），目标文档是 docx 类型");
+            }
+            result.add(d);
+        }
+        return result;
+    }
+
+    /** 运行时 instanceof 校验：xlsx 文档只能接受 XlsxPatchOperation。 */
+    private static List<XlsxPatchOperation> castXlsxOps(List<DocumentPatchOperation> ops) {
+        List<XlsxPatchOperation> result = new ArrayList<>(ops.size());
+        for (int i = 0; i < ops.size(); i++) {
+            DocumentPatchOperation op = ops.get(i);
+            if (!(op instanceof XlsxPatchOperation x)) {
+                throw new IllegalArgumentException(
+                        "op #" + i + " 不是 xlsx 操作（" + op.getClass().getSimpleName()
+                                + "），目标文档是 xlsx 类型");
+            }
+            result.add(x);
+        }
+        return result;
     }
 }

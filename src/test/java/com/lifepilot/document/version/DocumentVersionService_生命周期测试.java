@@ -5,6 +5,8 @@ import com.lifepilot.document.patch.ReplaceTextOp;
 import com.lifepilot.document.patch.docx.DocxDiffBuilder;
 import com.lifepilot.document.patch.docx.DocxPatchEngine;
 import com.lifepilot.document.patch.docx.TextAnchorLocator;
+import com.lifepilot.document.patch.xlsx.XlsxDiffBuilder;
+import com.lifepilot.document.patch.xlsx.XlsxPatchEngine;
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
@@ -120,6 +122,8 @@ class DocumentVersionService_生命周期测试 {
                 documentRepository, versionRepository, attachmentRepository,
                 new DocxPatchEngine(new TextAnchorLocator()),
                 new DocxDiffBuilder(),
+                new XlsxPatchEngine(),
+                new XlsxDiffBuilder(),
                 tempDir.resolve("storage").toString(),
                 new PathSecurityChecker(new MetaProperties.Infra.FileAccess()));
     }
@@ -243,6 +247,8 @@ class DocumentVersionService_生命周期测试 {
                 documentRepository, versionRepository, attachmentRepository,
                 new DocxPatchEngine(new TextAnchorLocator()),
                 new DocxDiffBuilder(),
+                new XlsxPatchEngine(),
+                new XlsxDiffBuilder(),
                 tempDir.resolve("storage").toString(),
                 restrictiveChecker);
 
@@ -266,6 +272,8 @@ class DocumentVersionService_生命周期测试 {
                 documentRepository, versionRepository, attachmentRepository,
                 new DocxPatchEngine(new TextAnchorLocator()),
                 new DocxDiffBuilder(),
+                new XlsxPatchEngine(),
+                new XlsxDiffBuilder(),
                 tempDir.resolve("storage").toString(),
                 restrictiveChecker);
 
