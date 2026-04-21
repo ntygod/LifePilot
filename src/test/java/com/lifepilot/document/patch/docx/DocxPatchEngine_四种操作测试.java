@@ -1,6 +1,6 @@
 package com.lifepilot.document.patch.docx;
 
-import com.lifepilot.document.patch.DocumentPatchOperation;
+import com.lifepilot.document.patch.DocxPatchOperation;
 import com.lifepilot.document.patch.ReplaceTextOp;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -36,7 +36,7 @@ class DocxPatchEngine_四种操作测试 {
              XWPFDocument doc = new XWPFDocument(in)) {
             var op = new ReplaceTextOp("风险如下：", "付款期限 30 天", "，若超期", "付款期限 15 天", "缩短期限");
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isTrue();
             assertThat(result.appliedOps()).hasSize(1);
@@ -55,7 +55,7 @@ class DocxPatchEngine_四种操作测试 {
             // target "内容 结尾" 跨这两个 run
             var op = new ReplaceTextOp("重要", "内容 结尾", "段", "文字 尾部", null);
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isTrue();
             XWPFParagraph para = doc.getParagraphs().get(0);
@@ -78,7 +78,7 @@ class DocxPatchEngine_四种操作测试 {
              XWPFDocument doc = new XWPFDocument(in)) {
             var op = new ReplaceTextOp("", "第", "", "X", null);
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isFalse();
             assertThat(result.failedOps()).hasSize(1);
@@ -95,7 +95,7 @@ class DocxPatchEngine_四种操作测试 {
             var good = new ReplaceTextOp("风险如下：", "付款期限 30 天", "，若超期", "付款期限 15 天", null);
             var bad = new ReplaceTextOp("", "绝不存在的文字", "", "Y", null);
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(good, bad));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(good, bad));
 
             assertThat(result.success()).isFalse();
             // 引擎返回 failure；文档虽已被内存改动，但调用方会丢弃，不写盘。
@@ -115,7 +115,7 @@ class DocxPatchEngine_四种操作测试 {
                             "补充：违约金上限为合同总额的 20%。", "Normal")),
                     "补充违约条款");
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isTrue();
             String full = extractAllText(doc);
@@ -131,7 +131,7 @@ class DocxPatchEngine_四种操作测试 {
             var op = new com.lifepilot.document.patch.DeleteParagraphOp(
                     "任一方违约需承担实际损失的赔偿责任。", "冗余");
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isTrue();
             String full = extractAllText(doc);
@@ -148,7 +148,7 @@ class DocxPatchEngine_四种操作测试 {
                     "产品名称", "end", List.of("测试模块", "2026-07-01", "10000"), null);
 
             int beforeRows = doc.getTables().get(0).getNumberOfRows();
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isTrue();
             var table = doc.getTables().get(0);
@@ -168,7 +168,7 @@ class DocxPatchEngine_四种操作测试 {
             var op = new com.lifepilot.document.patch.AddTableRowOp(
                     "产品名称", "end", List.of("不够", "列"), null);
 
-            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+            var result = engine.apply(doc, List.<DocxPatchOperation>of(op));
 
             assertThat(result.success()).isFalse();
             assertThat(result.failedOps().get(0).reason()).isEqualTo("cells_mismatch");

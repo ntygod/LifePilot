@@ -1,6 +1,6 @@
 package com.lifepilot.document.patch.docx;
 
-import com.lifepilot.document.patch.DocumentPatchOperation;
+import com.lifepilot.document.patch.DocxPatchOperation;
 import org.springframework.lang.Nullable;
 
 /**
@@ -11,4 +11,4 @@ import org.springframework.lang.Nullable;
  * @author zsg
  * @since 2026-04-21
  */
-public record AppliedOp(DocumentPatchOperation op, @Nullable ParagraphRunRange range) {}
+public record AppliedOp(DocxPatchOperation op, @Nullable ParagraphRunRange range) {}

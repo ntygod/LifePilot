@@ -11,7 +11,7 @@ import org.springframework.lang.Nullable;
 public record DeleteParagraphOp(
         String paragraphText,
         @Nullable String reason
-) implements DocumentPatchOperation {
+) implements DocxPatchOperation {
 
     public DeleteParagraphOp {
         if (paragraphText == null || paragraphText.isBlank()) {

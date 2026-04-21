@@ -17,7 +17,7 @@ public record InsertParagraphAfterOp(
         String anchorParagraphText,
         List<NewParagraph> newParagraphs,
         @Nullable String reason
-) implements DocumentPatchOperation {
+) implements DocxPatchOperation {
 
     public InsertParagraphAfterOp {
         if (anchorParagraphText == null || anchorParagraphText.isBlank()) {

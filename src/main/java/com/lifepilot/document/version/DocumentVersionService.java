@@ -5,6 +5,7 @@ import com.lifepilot.document.model.DocumentVersionRecord;
 import com.lifepilot.document.model.SessionDocumentRecord;
 import com.lifepilot.document.patch.DocumentPatchOperation;
 import com.lifepilot.document.patch.DocumentPatchResult;
+import com.lifepilot.document.patch.DocxPatchOperation;
 import com.lifepilot.document.patch.docx.DocxDiffBuilder;
 import com.lifepilot.document.patch.docx.DocxPatchEngine;
 import com.lifepilot.document.repository.DocumentVersionRepository;
@@ -196,7 +197,12 @@ public class DocumentVersionService {
 
         try (InputStream in = Files.newInputStream(currentFile);
              XWPFDocument doc = new XWPFDocument(in)) {
-            var engineResult = engine.apply(doc, ops);
+            // Task 1 桥接：engine.apply 已收窄为 List<DocxPatchOperation>，而 service 公共签名
+            // 暂保留为 List<DocumentPatchOperation>（Task 8 会改为 MIME 分支）。P3A 链路当前只会传入
+            // DocxPatchOperation 子类型，这里做一次 unchecked cast 让协议收窄不泄漏到调用方。
+            @SuppressWarnings("unchecked")
+            List<DocxPatchOperation> docxOps = (List<DocxPatchOperation>) (List<?>) ops;
+            var engineResult = engine.apply(doc, docxOps);
             if (!engineResult.success()) {
                 return DocumentPatchResult.failure(engineResult.failedOps());
             }

@@ -23,7 +23,7 @@ public record ReplaceTextOp(
         String afterContext,
         String newText,
         @Nullable String reason
-) implements DocumentPatchOperation {
+) implements DocxPatchOperation {
 
     public ReplaceTextOp {
         if (target == null || target.isEmpty()) {

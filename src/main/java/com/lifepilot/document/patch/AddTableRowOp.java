@@ -16,7 +16,7 @@ public record AddTableRowOp(
         String position,
         List<String> cells,
         @Nullable String reason
-) implements DocumentPatchOperation {
+) implements DocxPatchOperation {
 
     public static final String POSITION_START = "start";
     public static final String POSITION_END = "end";

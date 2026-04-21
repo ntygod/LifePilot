@@ -2,7 +2,7 @@ package com.lifepilot.document.patch.docx;
 
 import com.lifepilot.document.patch.AddTableRowOp;
 import com.lifepilot.document.patch.DeleteParagraphOp;
-import com.lifepilot.document.patch.DocumentPatchOperation;
+import com.lifepilot.document.patch.DocxPatchOperation;
 import com.lifepilot.document.patch.FailedOp;
 import com.lifepilot.document.patch.InsertParagraphAfterOp;
 import com.lifepilot.document.patch.NewParagraph;
@@ -42,10 +42,10 @@ public class DocxPatchEngine {
     /** patch 执行结果：成功时 appliedOps 非空；失败时 failedOps 非空。 */
     public record EngineResult(boolean success, List<AppliedOp> appliedOps, List<FailedOp> failedOps) {}
 
-    public EngineResult apply(XWPFDocument document, List<DocumentPatchOperation> ops) {
+    public EngineResult apply(XWPFDocument document, List<DocxPatchOperation> ops) {
         List<AppliedOp> applied = new ArrayList<>();
         for (int i = 0; i < ops.size(); i++) {
-            DocumentPatchOperation op = ops.get(i);
+            DocxPatchOperation op = ops.get(i);
             try {
                 AppliedOp result = switch (op) {
                     case ReplaceTextOp r -> applyReplaceText(document, r);
@@ -231,7 +231,7 @@ public class DocxPatchEngine {
 
     // ===== 辅助 =====
 
-    static String opType(DocumentPatchOperation op) {
+    static String opType(DocxPatchOperation op) {
         return switch (op) {
             case ReplaceTextOp r -> "replace_text";
             case InsertParagraphAfterOp r -> "insert_paragraph_after";
