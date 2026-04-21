@@ -45,7 +45,7 @@ class DocumentController_下载端点测试 {
                 "doc-1", "sess-1", "entry-1", "Q3 报表.docx", file.toString(),
                 payload.length,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now()));
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
 
         var controller = new DocumentController(sessionDocumentRepository);
         ResponseEntity<ByteArrayResource> response = controller.download("doc-1");
@@ -77,7 +77,7 @@ class DocumentController_下载端点测试 {
         when(sessionDocumentRepository.findById("doc-x")).thenReturn(new SessionDocumentRecord(
                 "doc-x", "sess-1", null, "gone.docx", deleted.toString(), 100L,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now()));
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
 
         var controller = new DocumentController(sessionDocumentRepository);
 

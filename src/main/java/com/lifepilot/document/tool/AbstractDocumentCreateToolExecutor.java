@@ -151,9 +151,11 @@ public abstract class AbstractDocumentCreateToolExecutor {
         }
 
         // 6) 入 session_documents 表 (origin=agent_generated, entry_id 暂空)
+        // P3 扩展字段：sourcePath=null（AI 产物非 path 源）、latestVersion=0（未被 patch）
         var record = new SessionDocumentRecord(
                 documentId, sessionId, null, normalizedFileName, filePath.toString(),
-                bytes.length, mime(), SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now());
+                bytes.length, mime(), SessionDocumentRecord.ORIGIN_AGENT_GENERATED,
+                null, 0, Instant.now());
         String savedId = sessionDocumentRepository.save(record);
 
         // 入 message_attachments 表 (entry_id=null, 由 AgentPersistenceHandler 回填)

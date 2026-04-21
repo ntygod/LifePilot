@@ -38,6 +38,7 @@ class SessionDocumentRepository_持久化测试 {
 
         // session_store 需要先建（外键依赖）
         jdbc.execute("CREATE TABLE session_store (session_id TEXT PRIMARY KEY)");
+        // 建表 schema 需与 V12 + V13 保持同步（手动建表绕过 Flyway，避免拖入完整迁移链）
         jdbc.execute("CREATE TABLE session_documents (" +
                 "id TEXT PRIMARY KEY, " +
                 "session_id TEXT NOT NULL, " +
@@ -47,6 +48,8 @@ class SessionDocumentRepository_持久化测试 {
                 "file_size INTEGER NOT NULL, " +
                 "mime_type TEXT NOT NULL, " +
                 "origin TEXT NOT NULL, " +
+                "source_path TEXT, " +
+                "latest_version INTEGER NOT NULL DEFAULT 0, " +
                 "created_at TEXT NOT NULL, " +
                 "FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE)");
         jdbc.update("INSERT INTO session_store (session_id) VALUES (?)", "sess-1");
@@ -66,7 +69,7 @@ class SessionDocumentRepository_持久化测试 {
         var rec = new SessionDocumentRecord(null, "sess-1", null,
                 "Q3 报表.docx", "/tmp/q3.docx", 1024L,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.now());
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now());
 
         String id = repository.save(rec);
 
@@ -78,7 +81,8 @@ class SessionDocumentRepository_持久化测试 {
         var rec = new SessionDocumentRecord("doc-1", "sess-1", "entry-9",
                 "报告.docx", "/tmp/r.docx", 2048L,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, Instant.parse("2026-04-20T10:00:00Z"));
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0,
+                Instant.parse("2026-04-20T10:00:00Z"));
         repository.save(rec);
 
         var found = repository.findById("doc-1");
@@ -96,10 +100,10 @@ class SessionDocumentRepository_持久化测试 {
 
     @Test
     void findBySessionId_按创建时间倒序() {
-        var r1 = new SessionDocumentRecord("a", "sess-1", null, "a.docx", "/tmp/a", 1L, "x", "agent_generated",
-                Instant.parse("2026-04-20T10:00:00Z"));
-        var r2 = new SessionDocumentRecord("b", "sess-1", null, "b.docx", "/tmp/b", 1L, "x", "agent_generated",
-                Instant.parse("2026-04-20T11:00:00Z"));
+        var r1 = new SessionDocumentRecord("a", "sess-1", null, "a.docx", "/tmp/a", 1L, "x",
+                "agent_generated", null, 0, Instant.parse("2026-04-20T10:00:00Z"));
+        var r2 = new SessionDocumentRecord("b", "sess-1", null, "b.docx", "/tmp/b", 1L, "x",
+                "agent_generated", null, 0, Instant.parse("2026-04-20T11:00:00Z"));
         repository.save(r1);
         repository.save(r2);
 
@@ -113,7 +117,7 @@ class SessionDocumentRepository_持久化测试 {
     @Test
     void deleteBySessionId_级联清理() {
         repository.save(new SessionDocumentRecord("x", "sess-1", null, "x.docx", "/t/x", 1L, "x",
-                "agent_generated", Instant.now()));
+                "agent_generated", null, 0, Instant.now()));
 
         int deleted = repository.deleteBySessionId("sess-1");
 
@@ -124,7 +128,7 @@ class SessionDocumentRepository_持久化测试 {
     @Test
     void 删除_session_store_时_FK_级联清理_documents() {
         repository.save(new SessionDocumentRecord("c", "sess-1", null, "c.docx", "/t/c", 1L, "x",
-                "agent_generated", Instant.now()));
+                "agent_generated", null, 0, Instant.now()));
         assertThat(repository.findBySessionId("sess-1")).hasSize(1);
 
         jdbc.update("DELETE FROM session_store WHERE session_id = ?", "sess-1");
