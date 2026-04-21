@@ -1,17 +1,14 @@
 <script setup lang="ts">
 /**
- * 文档 Diff 卡片 —— Phase 3A 消息气泡附件渲染组件。
- *
- * 三状态：未加载 / 加载中 / 已加载；
- * 折叠态展示文件名 + 改动摘要 + 版本号；
- * 展开态逐条展示 change（含 inline diff）并提供三按钮：
- * 应用到原路径（仅 sourcePath 非空时可见）/ 另存为 / 丢弃。
+ * 文档 Diff 卡片 —— Phase 3A（docx），Phase 3B 接入共享 Header/Actions/VersionHistoryList。
  *
  * @author zsg
- * @since 2026-04-21
+ * @since 2026-04-21（P3B 重构）
  */
 import { computed, ref, onMounted } from 'vue'
-import { ChevronDown, ChevronUp, FileText, Upload, Save, Trash2 } from 'lucide-vue-next'
+import DocumentDiffHeader from './DocumentDiffHeader.vue'
+import DocumentDiffActions from './DocumentDiffActions.vue'
+import DocumentVersionHistoryList from './DocumentVersionHistoryList.vue'
 import {
   getDocument,
   getDiff,
@@ -99,25 +96,25 @@ async function onDiscard() {
   }
 }
 
+/** 回滚完成后重载 metadata + diff */
+async function onRollbackComplete() {
+  diff.value = null
+  await loadData()
+}
+
 onMounted(loadData)
 </script>
 
 <template>
   <div class="document-diff-card rounded-md border border-border bg-card p-md text-sm">
-    <button
-      type="button"
-      class="flex w-full items-center justify-between gap-sm text-left"
-      @click="expanded = !expanded"
-    >
-      <span class="flex min-w-0 items-center gap-xs">
-        <FileText class="size-md shrink-0 text-muted-foreground" />
-        <span class="truncate font-medium">{{ metadata?.fileName || '加载中…' }}</span>
-        <span v-if="diff" class="truncate text-muted-foreground">
-          · {{ diff.summary }} · v{{ diff.fromVersion }} → v{{ diff.toVersion }}
-        </span>
-      </span>
-      <component :is="expanded ? ChevronUp : ChevronDown" class="size-md shrink-0" />
-    </button>
+    <DocumentDiffHeader
+      :file-name="metadata?.fileName"
+      :summary="diff?.summary"
+      :from-version="diff?.fromVersion"
+      :to-version="diff?.toVersion"
+      :expanded="expanded"
+      @toggle="expanded = !expanded"
+    />
 
     <div v-if="expanded" class="mt-md">
       <div v-if="loading" class="text-muted-foreground">加载中…</div>
@@ -129,7 +126,9 @@ onMounted(loadData)
           class="rounded-md border border-border p-md"
         >
           <div class="mb-xs text-xs text-muted-foreground">修改 {{ idx + 1 }}：{{ c.op }}</div>
-          <div class="mb-xs text-xs text-muted-foreground">{{ c.paragraph_preview }}</div>
+          <div v-if="c.paragraph_preview" class="mb-xs text-xs text-muted-foreground">
+            {{ c.paragraph_preview }}
+          </div>
           <p class="leading-relaxed">
             <template v-for="(seg, i) in c.segments" :key="i">
               <span v-if="seg.type === 'keep'">{{ seg.text }}</span>
@@ -149,39 +148,27 @@ onMounted(loadData)
       <div v-else-if="hasChanges" class="text-muted-foreground">diff 数据暂不可用</div>
       <div v-else class="text-muted-foreground">尚无改动</div>
 
-      <div v-if="hasChanges" class="mt-md flex items-center gap-sm">
-        <button
-          v-if="canOverwrite"
-          type="button"
-          class="action-btn action-btn-primary"
-          @click="onOverwrite"
-        >
-          <Upload class="size-md" />
-          <span>应用到原路径</span>
-        </button>
-        <button
-          type="button"
-          class="action-btn action-btn-secondary"
-          @click="onSaveAs"
-        >
-          <Save class="size-md" />
-          <span>另存为…</span>
-        </button>
-        <button
-          type="button"
-          class="action-btn action-btn-secondary text-destructive"
-          @click="onDiscard"
-        >
-          <Trash2 class="size-md" />
-          <span>丢弃</span>
-        </button>
-      </div>
+      <DocumentVersionHistoryList
+        v-if="metadata"
+        :document-id="documentId"
+        :current-version="metadata.latestVersion"
+        class="mt-md"
+        @rollback-complete="onRollbackComplete"
+      />
+
+      <DocumentDiffActions
+        v-if="hasChanges"
+        :can-overwrite="canOverwrite"
+        class="mt-md"
+        @overwrite="onOverwrite"
+        @save-as="onSaveAs"
+        @discard="onDiscard"
+      />
     </div>
   </div>
 </template>
 
 <style scoped>
-/* inline diff 的删除/插入高亮；避免 Tailwind 任意值 bg-red-100/bg-green-100 */
 .diff-delete {
   background-color: hsl(0 80% 94%);
   color: hsl(0 72% 38%);
@@ -190,18 +177,5 @@ onMounted(loadData)
 .diff-insert {
   background-color: hsl(142 70% 92%);
   color: hsl(142 64% 30%);
-}
-
-/* 三按钮复用 class variant：内边距 / 圆角 / 图标对齐 */
-.action-btn {
-  @apply inline-flex items-center gap-xs rounded-md px-md py-xs text-sm;
-}
-
-.action-btn-primary {
-  @apply bg-primary text-primary-foreground;
-}
-
-.action-btn-secondary {
-  @apply border border-border bg-transparent;
 }
 </style>
