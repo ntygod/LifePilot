@@ -283,7 +283,8 @@ public class SemanticMemory {
      *
      * <p>跨库（vectors.db 与主库分离）写入不能加入本地事务，因此注册
      * {@link TransactionSynchronization#afterCommit()}：主库事务真正提交后再删向量，
-     * 回滚路径下向量保持原状。钩子里的失败仅告警，由后续 archive 重试自然清理。</p>
+     * 回滚路径下向量保持原状。钩子里的失败仅告警；残留向量最终由检索链路的
+     * {@code findByIds} + {@code is_current = 1} 过滤拦截，不会被注入上下文。</p>
      */
     @Transactional
     public void archive(TemporalEntity entity) {
