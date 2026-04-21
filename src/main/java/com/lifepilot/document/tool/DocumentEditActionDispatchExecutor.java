@@ -3,11 +3,15 @@ package com.lifepilot.document.tool;
 import com.lifepilot.document.model.DocumentVersionRecord;
 import com.lifepilot.document.patch.AddTableRowOp;
 import com.lifepilot.document.patch.DeleteParagraphOp;
+import com.lifepilot.document.patch.DeleteRowOp;
 import com.lifepilot.document.patch.DocumentPatchOperation;
 import com.lifepilot.document.patch.DocumentPatchResult;
 import com.lifepilot.document.patch.InsertParagraphAfterOp;
+import com.lifepilot.document.patch.InsertRowOp;
 import com.lifepilot.document.patch.NewParagraph;
 import com.lifepilot.document.patch.ReplaceTextOp;
+import com.lifepilot.document.patch.SetRangeOp;
+import com.lifepilot.document.patch.UpdateCellOp;
 import com.lifepilot.document.version.DocumentVersionService;
 import com.lifepilot.document.version.SourceRef;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -268,6 +272,33 @@ public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
                         String.valueOf(m.get("table_anchor_text")),
                         String.valueOf(m.get("position")),
                         cells, reason);
+            }
+            case "update_cell" -> new UpdateCellOp(
+                    String.valueOf(m.get("sheet")),
+                    String.valueOf(m.get("cell")),
+                    m.get("new_value"),  // 保留原始类型（Number / Boolean / String / null）
+                    reason);
+            case "insert_row" -> {
+                int beforeRow = m.get("before_row") instanceof Number n ? n.intValue()
+                        : Integer.parseInt(String.valueOf(m.get("before_row")));
+                List<Object> values = (List<Object>) m.getOrDefault("values", List.of());
+                yield new InsertRowOp(String.valueOf(m.get("sheet")), beforeRow, values, reason);
+            }
+            case "delete_row" -> {
+                int row = m.get("row") instanceof Number n ? n.intValue()
+                        : Integer.parseInt(String.valueOf(m.get("row")));
+                yield new DeleteRowOp(String.valueOf(m.get("sheet")), row, reason);
+            }
+            case "set_range" -> {
+                List<List<Object>> values = (List<List<Object>>) m.get("values");
+                if (values == null) {
+                    throw new IllegalArgumentException("set_range values 不能为空");
+                }
+                yield new SetRangeOp(
+                        String.valueOf(m.get("sheet")),
+                        String.valueOf(m.get("range")),
+                        values,
+                        reason);
             }
             default -> throw new IllegalArgumentException("未知 op：" + op);
         };
