@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import DocumentVersionHistoryList from '../DocumentVersionHistoryList.vue'
+import DocumentVersionHistoryList from './DocumentVersionHistoryList.vue'
 
 vi.mock('@/api/documents', () => ({
   listVersions: vi.fn(),
