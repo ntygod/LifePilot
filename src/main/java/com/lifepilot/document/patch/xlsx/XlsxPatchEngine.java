@@ -229,7 +229,8 @@ public class XlsxPatchEngine {
         if (!clashing.isEmpty()) {
             throw XlsxPatchException.inMerged(
                     "range_contains_merged_region",
-                    "range " + addr.formatAsString() + " 包含合并区域 " + clashing + "，请拆分操作");
+                    "range " + addr.formatAsString() + " 包含合并区域 "
+                            + String.join(", ", clashing) + "，请拆分操作");
         }
 
         for (int r = 0; r < rows; r++) {

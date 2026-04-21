@@ -169,7 +169,7 @@ function documentIcon(att: { type?: string; filename: string }) {
  *
  * 条件不满足 → 回落到既有附件卡片（非 docx / Phase 2A 产物 / 未编辑 docx）。
  */
-const docxMetaCache = ref<Record<string, DocumentMetadata | null>>({})
+const documentMetaCache = ref<Record<string, DocumentMetadata | null>>({})
 
 /** 按 download URL 提取 documentId；不匹配则返回 null */
 function extractDocumentId(url: string | undefined): string | null {
@@ -180,11 +180,11 @@ function extractDocumentId(url: string | undefined): string | null {
 
 /** 幂等加载文档元数据到缓存；失败写 null 避免反复触发 */
 async function resolveDocMeta(docId: string) {
-  if (docxMetaCache.value[docId] !== undefined) return
+  if (documentMetaCache.value[docId] !== undefined) return
   try {
-    docxMetaCache.value[docId] = await getDocument(docId)
+    documentMetaCache.value[docId] = await getDocument(docId)
   } catch {
-    docxMetaCache.value[docId] = null
+    documentMetaCache.value[docId] = null
   }
 }
 
@@ -194,7 +194,7 @@ function isEditedDocx(att: { type?: string; url?: string }): boolean {
   const docId = extractDocumentId(att.url)
   if (!docId) return false
   void resolveDocMeta(docId)
-  const meta = docxMetaCache.value[docId]
+  const meta = documentMetaCache.value[docId]
   return !!meta && meta.latestVersion > 0
 }
 
@@ -204,18 +204,18 @@ function isEditedXlsx(att: { type?: string; url?: string }): boolean {
   const docId = extractDocumentId(att.url)
   if (!docId) return false
   void resolveDocMeta(docId)
-  const meta = docxMetaCache.value[docId]
+  const meta = documentMetaCache.value[docId]
   return !!meta && meta.latestVersion > 0
 }
 
 /** DiffCard commit 成功 → 失效缓存，下次渲染重新拉取（可能 latestVersion 变化） */
 function onDocumentCommitted(documentId: string) {
-  delete docxMetaCache.value[documentId]
+  delete documentMetaCache.value[documentId]
 }
 
 /** DiffCard 丢弃工作副本 → 失效缓存（后端已删除该文档，下次拉取会 404 → null，回落原卡片） */
 function onDocumentDiscarded(documentId: string) {
-  delete docxMetaCache.value[documentId]
+  delete documentMetaCache.value[documentId]
 }
 
 const audioAttachments = computed(() =>

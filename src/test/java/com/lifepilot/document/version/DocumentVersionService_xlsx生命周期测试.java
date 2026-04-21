@@ -198,4 +198,68 @@ class DocumentVersionService_xlsx生命周期测试 {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("不是 xlsx 操作");
     }
+
+    @Test
+    @DisplayName("xlsx commitSaveAs 生成可读 xlsx —— cell 值等于 patch 结果")
+    void xlsx_commitSaveAs生成可读xlsx() throws Exception {
+        String documentId = service.checkout("sess-xlsx",
+                new SourceRef.PathSource(sourceCopy.toString()));
+        service.applyPatch(documentId, List.<DocumentPatchOperation>of(
+                new UpdateCellOp("Sheet1", "A2", "活页笔记本", null)));
+
+        // saveAs 目标放在 tempDir 下（PathSecurityChecker 默认黑名单仅拒绝 /etc、/var、C:\Windows 等）
+        Path saveAsTarget = tempDir.resolve("exported.xlsx");
+        var result = service.commitSaveAs(documentId, saveAsTarget.toString());
+
+        assertThat(result.committedPath()).isEqualTo(saveAsTarget.toString());
+        assertThat(Files.exists(saveAsTarget)).isTrue();
+        try (InputStream in = Files.newInputStream(saveAsTarget);
+             XSSFWorkbook wb = new XSSFWorkbook(in)) {
+            Cell c = wb.getSheet("Sheet1").getRow(1).getCell(0);
+            assertThat(c.getStringCellValue()).isEqualTo("活页笔记本");
+        }
+    }
+
+    @Test
+    @DisplayName("xlsx rollback 生成新版本 —— 新版本 xlsx 可打开且 A2 回到旧值")
+    void xlsx_rollback生成新版本且可打开() throws Exception {
+        String documentId = service.checkout("sess-xlsx",
+                new SourceRef.PathSource(sourceCopy.toString()));
+        // v1：A2 = X
+        service.applyPatch(documentId, List.<DocumentPatchOperation>of(
+                new UpdateCellOp("Sheet1", "A2", "X", null)));
+        // v2：A2 = Y
+        service.applyPatch(documentId, List.<DocumentPatchOperation>of(
+                new UpdateCellOp("Sheet1", "A2", "Y", null)));
+
+        // 回滚到 v1（A2 = X）—— rollback 产生 v3
+        var result = service.rollback(documentId, 1);
+        assertThat(result.newVersion()).isEqualTo(3);
+
+        var rec = documentRepository.findById(documentId);
+        assertThat(rec.latestVersion()).isEqualTo(3);
+        try (InputStream in = Files.newInputStream(Path.of(rec.filePath()));
+             XSSFWorkbook wb = new XSSFWorkbook(in)) {
+            Cell c = wb.getSheet("Sheet1").getRow(1).getCell(0);
+            assertThat(c.getStringCellValue()).isEqualTo("X");
+        }
+    }
+
+    @Test
+    @DisplayName("xlsx discard 删除 working 目录 + session_documents 行")
+    void xlsx_discard删除working目录() throws Exception {
+        String documentId = service.checkout("sess-xlsx",
+                new SourceRef.PathSource(sourceCopy.toString()));
+        service.applyPatch(documentId, List.<DocumentPatchOperation>of(
+                new UpdateCellOp("Sheet1", "A2", "X", null)));
+
+        Path workingDir = tempDir.resolve("storage/sess-xlsx/working/" + documentId);
+        assertThat(Files.exists(workingDir)).isTrue();
+
+        service.discard(documentId);
+
+        assertThat(Files.exists(workingDir)).isFalse();
+        assertThat(documentRepository.findById(documentId)).isNull();
+        assertThat(versionRepository.findByDocumentId(documentId)).isEmpty();
+    }
 }
