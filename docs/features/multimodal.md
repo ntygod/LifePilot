@@ -32,7 +32,7 @@
 
 ### 2.4 文档文本提取
 
-复用知识库模块的 `DocumentParser`，支持 PDF、Word（doc/docx）、Markdown、纯文本格式。通过临时文件中转，提取完成后自动清理。
+复用知识库模块的 `DocumentParser`，支持 PDF、Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）、Markdown、纯文本（txt / log / csv / tsv）六类格式。通过临时文件中转，提取完成后自动清理。
 
 ### 2.5 语音转文字（STT）
 

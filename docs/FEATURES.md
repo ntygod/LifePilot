@@ -45,7 +45,7 @@
 |------|------|---------|
 | 四层记忆系统 | L1 工作记忆 → L2 情景记忆 → L3 语义记忆 + 知识图谱 → L4 程序记忆 | [特性](features/memory-system.md) |
 | 记忆进阶能力 | 记忆巩固管线、MaRS 认知遗忘策略、混合检索 | [特性](features/memory-advanced.md) |
-| 知识库管理 | 多格式文档摄入（PDF/Word/Markdown/TXT）、智能分块、多知识库实例 | [特性](features/knowledge-base.md) |
+| 知识库管理 | 多格式文档摄入（PDF/Word/Excel/PowerPoint/Markdown/纯文本）、智能分块、多知识库实例 | [特性](features/knowledge-base.md) |
 | Prompt 管理 | 模板注册与管理，支持动态 Prompt 组装 | [特性](features/prompt-management.md) |
 
 ### 3.3 交互与技能

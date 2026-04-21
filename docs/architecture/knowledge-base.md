@@ -32,7 +32,7 @@ graph TB
     subgraph "文档摄入管线"
         DI["DocumentIngester<br/>(异步管线编排)"]
         FD["FormatDetector<br/>(Apache Tika)"]
-        DP["DocumentParser<br/>(sealed, 4 实现)"]
+        DP["DocumentParser<br/>(sealed, 6 实现)"]
         CS["ChunkingStrategy<br/>(sealed, 6 实现)"]
         SC["SmartChunker<br/>(三层结构分块)"]
         DSA["DocumentStructureAnalyzer<br/>(Layer 1 逐行结构分类)"]
@@ -128,11 +128,13 @@ graph TB
 
 ### 3.3 DocumentParser（文档解析器体系）
 
-- 通过 sealed interface 定义，当前 4 种实现：
+- 通过 sealed interface 定义，当前 6 种实现：
   - `MarkdownParser`：Markdown 文件解析，提取标题结构
-  - `PlainTextParser`：纯文本文件解析
+  - `PlainTextParser`：纯文本文件解析（支持 txt / text / log / csv / tsv）
   - `PdfParser`：PDF 文件解析（基于 Apache Tika）
-  - `WordParser`：Word 文档解析（基于 Apache Tika）
+  - `WordParser`：Word 文档解析（.docx，基于 Apache POI）
+  - `ExcelParser`：Excel 解析（.xlsx，基于 Apache POI XSSF）
+  - `PowerpointParser`：PowerPoint 解析（.pptx，基于 Apache POI XSLF）
 - `FormatDetector` 基于 Apache Tika 自动检测文件格式，路由到对应解析器
 - 解析结果包含文本内容、文档元素列表（`DocumentElement`）和元数据（`DocumentMetadata`）
 
@@ -402,7 +404,7 @@ sequenceDiagram
 | 多知识库实例 | 每个知识库独立配置 | 不同知识域可能需要不同的 Embedding 模型和分块策略 |
 | 分块策略 sealed interface | 6 种策略 + SmartChunker 三层结构分块 | SmartChunker 通过三层管线（结构分析 → 区域路由 → 合并后处理）自动适配不同文档结构 |
 | Parent-Child 分块 | 大块（parent）用于返回，小块（child）用于检索 | 兼顾检索精度（小块匹配更精准）和上下文完整性（返回大块） |
-| 文档解析 | Apache Tika 格式检测 + 4 种解析器 | Tika 提供可靠的格式检测，sealed interface 保证类型安全 |
+| 文档解析 | Apache Tika 格式检测 + 6 种解析器 | Tika 提供可靠的格式检测，sealed interface 保证类型安全 |
 | 三路检索融合 | 向量 + FTS5 + 知识图谱 + 自适应 RRF | 语义检索、关键词检索、图谱检索三路互补，自适应权重处理低置信度场景 |
 | FTS5 tokenizer | trigram tokenizer | 天然支持 CJK 子串匹配，无需外部中文分词器 |
 | 检索结果去重 | Jaccard trigram 相似度 | 多路融合后可能产生内容重叠的分块，去重后减少冗余 |

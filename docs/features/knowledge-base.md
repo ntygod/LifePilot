@@ -6,7 +6,7 @@
 
 ## 1. 功能概述
 
-知识库管理模块为知微提供文档级知识管理能力。用户可创建多个独立知识库，导入 PDF / Word / Markdown / TXT 等格式文档，系统自动完成格式检测、文本解析、智能分块（含 Parent-Child 两级分块）、向量索引和全文索引。检索时通过三路检索（向量 + FTS5 + 知识图谱）+ RRF 融合返回最相关的文档片段，为 Agent 对话提供知识增强。
+知识库管理模块为知微提供文档级知识管理能力。用户可创建多个独立知识库，导入 PDF / Word / Excel / PowerPoint / Markdown / 纯文本等格式文档，系统自动完成格式检测、文本解析、智能分块（含 Parent-Child 两级分块）、向量索引和全文索引。检索时通过三路检索（向量 + FTS5 + 知识图谱）+ RRF 融合返回最相关的文档片段，为 Agent 对话提供知识增强。
 
 ## 2. 核心特性
 
@@ -20,11 +20,13 @@
 
 ### 2.2 多格式文档导入
 
-基于 Apache Tika 自动检测文件格式，支持 4 种文档格式：
+基于 Apache Tika 自动检测文件格式，支持 6 种文档格式：
 - PDF 文件（通过 Tika 解析）
-- Word 文档（通过 Tika 解析）
+- Word 文档（.docx，基于 Apache POI）
+- Excel 表格（.xlsx，基于 Apache POI XSSF）
+- PowerPoint 演示文稿（.pptx，基于 Apache POI XSLF）
 - Markdown 文件（提取标题结构）
-- 纯文本文件
+- 纯文本文件（支持 txt / text / log / csv / tsv）
 
 文档解析器通过 sealed interface 定义，保证类型安全和穷举匹配。
 
@@ -120,12 +122,12 @@
 ## 5. 限制与未来方向
 
 当前限制：
-- 仅支持 4 种文档格式（PDF / Word / Markdown / TXT），不支持 Excel、HTML 等
+- 支持 PDF / Word / Excel / PowerPoint / Markdown / 纯文本 6 种文档格式，暂不支持 HTML 等
 - 语义分块依赖 Embedding 模型，处理速度较慢
 - 知识提取依赖 LLM，大量文档摄入时成本较高
 
 未来方向：
-- 支持更多文档格式（HTML、Excel、CSV 等）
+- 支持更多文档格式（HTML、ODT / ODS 等）
 - 增量更新：文档修改后仅重新处理变更部分
 - 知识库版本管理和快照
 - 跨知识库联合检索优化

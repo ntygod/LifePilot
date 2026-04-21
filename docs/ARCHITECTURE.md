@@ -190,7 +190,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V8）"
+    subgraph "Flyway 迁移（V1~V14）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -199,6 +199,12 @@ graph LR
         V6["V6: proactive_behavior_autonomy 行为自主度表"]
         V7["V7: queued_actions score 索引"]
         V8["V8: proactive_goal_tracking 目标追踪表"]
+        V9["V9: channel_user_mapping 渠道用户映射"]
+        V10["V10: 删除旧评估表"]
+        V11["V11: external_cli_bash_path 外部 CLI Bash 路径"]
+        V12["V12: session_documents 会话文档表（Phase 2A）"]
+        V13["V13: document_versions 文档版本链 + session_documents 扩 sourcePath/latestVersion（Phase 3A）"]
+        V14["V14: session_documents.source_path UNIQUE 索引"]
     end
 
     V1 --> SQL
