@@ -1,7 +1,9 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.document.model.SessionDocumentRecord;
+import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
+import com.lifepilot.document.version.DocumentVersionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +28,9 @@ import static org.mockito.Mockito.when;
  *
  * <p>覆盖：正常下载 + 中文文件名 URL 编码；记录缺失 404；物理文件缺失 404。</p>
  *
+ * <p>Phase 3A 后构造器三依赖（{@link SessionDocumentRepository} / {@link DocumentVersionRepository} /
+ * {@link DocumentVersionService}）；下载默认分支不读 versionRepository，故其 mock 不必打桩。</p>
+ *
  * @author zsg
  * @since 2026-04-20
  */
@@ -34,6 +39,12 @@ class DocumentController_下载端点测试 {
 
     @Mock
     SessionDocumentRepository sessionDocumentRepository;
+
+    @Mock
+    DocumentVersionRepository versionRepository;
+
+    @Mock
+    DocumentVersionService versionService;
 
     @Test
     void 成功返回文档字节含正确_Content_Disposition(@TempDir Path tmp) throws IOException {
@@ -47,8 +58,8 @@ class DocumentController_下载端点测试 {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
 
-        var controller = new DocumentController(sessionDocumentRepository);
-        ResponseEntity<ByteArrayResource> response = controller.download("doc-1");
+        var controller = new DocumentController(sessionDocumentRepository, versionRepository, versionService);
+        ResponseEntity<ByteArrayResource> response = controller.download("doc-1", null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().getByteArray()).isEqualTo(payload);
@@ -62,9 +73,9 @@ class DocumentController_下载端点测试 {
     void 文档不存在返回_404() {
         when(sessionDocumentRepository.findById("missing")).thenReturn(null);
 
-        var controller = new DocumentController(sessionDocumentRepository);
+        var controller = new DocumentController(sessionDocumentRepository, versionRepository, versionService);
 
-        assertThatThrownBy(() -> controller.download("missing"))
+        assertThatThrownBy(() -> controller.download("missing", null))
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.NOT_FOUND);
@@ -79,9 +90,9 @@ class DocumentController_下载端点测试 {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
 
-        var controller = new DocumentController(sessionDocumentRepository);
+        var controller = new DocumentController(sessionDocumentRepository, versionRepository, versionService);
 
-        assertThatThrownBy(() -> controller.download("doc-x"))
+        assertThatThrownBy(() -> controller.download("doc-x", null))
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.NOT_FOUND);
