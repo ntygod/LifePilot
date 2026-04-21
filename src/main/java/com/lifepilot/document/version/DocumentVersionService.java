@@ -10,6 +10,7 @@ import com.lifepilot.document.patch.docx.DocxPatchEngine;
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.meta.infra.file.PathSecurityChecker;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,19 +66,22 @@ public class DocumentVersionService {
     private final DocxPatchEngine engine;
     private final DocxDiffBuilder diffBuilder;
     private final String storageDir;
+    private final PathSecurityChecker pathSecurityChecker;
 
     public DocumentVersionService(SessionDocumentRepository documentRepository,
                                   DocumentVersionRepository versionRepository,
                                   AttachmentRepository attachmentRepository,
                                   DocxPatchEngine engine,
                                   DocxDiffBuilder diffBuilder,
-                                  String storageDir) {
+                                  String storageDir,
+                                  PathSecurityChecker pathSecurityChecker) {
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
         this.attachmentRepository = attachmentRepository;
         this.engine = engine;
         this.diffBuilder = diffBuilder;
         this.storageDir = storageDir;
+        this.pathSecurityChecker = pathSecurityChecker;
     }
 
     // ===== checkout =====
@@ -94,12 +98,21 @@ public class DocumentVersionService {
     }
 
     private String checkoutFromPath(String sessionId, String sourcePath) throws IOException {
+        // 扩展名白名单：Phase 3A 仅支持 .docx，避免 LLM 注入让 AI copy .exe/.bat 等文件到 working 目录
+        if (!sourcePath.toLowerCase().endsWith(".docx")) {
+            throw new IllegalArgumentException("只支持 .docx 源文件（P3A）：" + sourcePath);
+        }
+        // 路径安全校验：读取场景（文件已存在），对齐 FileReadToolExecutor 的白名单/黑名单规则
+        Path source = Paths.get(sourcePath);
+        var rejection = pathSecurityChecker.check(source);
+        if (rejection.isPresent()) {
+            throw new SecurityException(rejection.get());
+        }
         var existing = documentRepository.findBySessionAndSourcePath(sessionId, sourcePath);
         if (existing != null) {
             return existing.id();
         }
         String documentId = UUID.randomUUID().toString();
-        Path source = Paths.get(sourcePath);
         Path workingV0 = workingPath(sessionId, documentId, 0);
         Files.createDirectories(workingV0.getParent());
         Files.copy(source, workingV0, StandardCopyOption.REPLACE_EXISTING);
@@ -121,6 +134,13 @@ public class DocumentVersionService {
         var att = attachmentRepository.findById(attachmentId);
         if (att == null) {
             throw new IllegalArgumentException("attachment 不存在：" + attachmentId);
+        }
+        // 扩展名 / mime-type 白名单：Phase 3A 仅支持 docx，防止 LLM 注入非预期文件类型
+        boolean extDocx = att.fileName() != null && att.fileName().toLowerCase().endsWith(".docx");
+        boolean mimeDocx = DOCX_MIME.equals(att.mimeType());
+        if (!extDocx && !mimeDocx) {
+            throw new IllegalArgumentException("只支持 .docx 附件（P3A）：fileName=" + att.fileName()
+                    + ", mimeType=" + att.mimeType());
         }
         // 附件本地路径即源；沿用 PathSource checkout 但 origin 区分
         String documentId = UUID.randomUUID().toString();
@@ -210,7 +230,13 @@ public class DocumentVersionService {
         if (record.sourcePath() == null || record.sourcePath().isBlank()) {
             throw new IllegalStateException("此文档没有 sourcePath（非本机路径源），不能 overwrite");
         }
+        // 路径安全校验：写入场景（覆盖已存在的源文件）；即便 sourcePath 入库时校验过，
+        // 这里再校一次以防白名单配置变化或持久化后的路径被绕过
         Path target = Paths.get(record.sourcePath());
+        var rejection = pathSecurityChecker.checkForWrite(target);
+        if (rejection.isPresent()) {
+            throw new SecurityException(rejection.get());
+        }
         Path backup = Paths.get(record.sourcePath() + "." + BACKUP_TS.format(Instant.now()) + ".bak");
         if (Files.exists(target)) {
             Files.copy(target, backup, StandardCopyOption.REPLACE_EXISTING);
@@ -223,7 +249,13 @@ public class DocumentVersionService {
 
     public CommitResult commitSaveAs(String documentId, String saveAsPath) throws IOException {
         var record = requireDocument(documentId);
+        // 路径安全校验：saveAsPath 由 LLM / 用户提供，必须校验以防 AI 被注入写入
+        // 敏感路径（~/.ssh/authorized_keys、系统目录等）
         Path target = Paths.get(saveAsPath);
+        var rejection = pathSecurityChecker.checkForWrite(target);
+        if (rejection.isPresent()) {
+            throw new SecurityException(rejection.get());
+        }
         Files.createDirectories(target.getParent() == null ? Paths.get(".") : target.getParent());
         Files.copy(Paths.get(record.filePath()), target, StandardCopyOption.REPLACE_EXISTING);
         log.info("commit saveAs：documentId={}, target={}", documentId, target);

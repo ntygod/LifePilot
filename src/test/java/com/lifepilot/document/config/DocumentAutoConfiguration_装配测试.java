@@ -7,6 +7,7 @@ import com.lifepilot.document.tool.DocumentEditToolProvider;
 import com.lifepilot.document.tool.DocumentToolProvider;
 import com.lifepilot.document.version.DocumentVersionService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.BuiltinTool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -84,8 +86,12 @@ class DocumentAutoConfiguration_装配测试 {
      *
      * <p>DocumentVersionService 依赖 SessionDocumentRepository / DocumentVersionRepository /
      * AttachmentRepository；三者均由 JdbcTemplate 单参构造。</p>
+     *
+     * <p>P3A Critical 修复后 documentVersionService 还需要 MetaProperties 以构造
+     * PathSecurityChecker，这里通过 {@link EnableConfigurationProperties} 暴露默认值。</p>
      */
     @Configuration
+    @EnableConfigurationProperties(MetaProperties.class)
     static class TestRepositoryConfig {
         @Bean
         AttachmentRepository attachmentRepository(JdbcTemplate jdbc) {

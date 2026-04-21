@@ -8,6 +8,8 @@ import com.lifepilot.document.patch.docx.TextAnchorLocator;
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.file.PathSecurityChecker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +26,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * DocumentVersionService 生命周期集成测试 —— 真实 JdbcTemplate + fixture docx。
@@ -111,11 +114,14 @@ class DocumentVersionService_生命周期测试 {
         sourceCopy = tempDir.resolve("contract.docx");
         Files.copy(FIXTURE, sourceCopy, StandardCopyOption.REPLACE_EXISTING);
 
+        // 测试场景用宽松的 PathSecurityChecker —— 无白名单仅默认黑名单（/etc、/var、C:\Windows），
+        // tempDir 下的路径可自由读写；Critical 拒绝路径用例另行构造受限 checker
         service = new DocumentVersionService(
                 documentRepository, versionRepository, attachmentRepository,
                 new DocxPatchEngine(new TextAnchorLocator()),
                 new DocxDiffBuilder(),
-                tempDir.resolve("storage").toString());
+                tempDir.resolve("storage").toString(),
+                new PathSecurityChecker(new MetaProperties.Infra.FileAccess()));
     }
 
     @AfterEach
@@ -208,6 +214,65 @@ class DocumentVersionService_生命周期测试 {
             doc.getParagraphs().forEach(p -> sb.append(p.getText()).append("\n"));
             assertThat(sb.toString()).contains("付款期限 30 天");
         }
+    }
+
+    @Test
+    @DisplayName("Critical 修复 —— checkoutFromPath 拒绝非 .docx 扩展名")
+    void checkoutFromPath_拒绝非docx扩展名() throws Exception {
+        // 构造一个 .exe 文件（内容无所谓，扩展名先行校验）
+        Path fakeExe = tempDir.resolve("bad.exe");
+        Files.writeString(fakeExe, "not a docx");
+
+        assertThatThrownBy(() -> service.checkout(
+                "sess-life", new SourceRef.PathSource(fakeExe.toString())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("只支持 .docx");
+        // 无任何 session_documents / document_versions 落盘
+        assertThat(documentRepository.findBySessionAndSourcePath("sess-life", fakeExe.toString()))
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("Critical 修复 —— checkoutFromPath 命中 PathSecurityChecker 黑名单抛 SecurityException")
+    void checkoutFromPath_黑名单路径拒绝() throws Exception {
+        // 配置一个白名单只包含 tempDir 的 checker，让 tempDir 外的 .docx 也会被拒绝
+        var restrictiveConfig = new MetaProperties.Infra.FileAccess();
+        restrictiveConfig.setAllowedDirectories(List.of(tempDir.resolve("allowed").toString()));
+        var restrictiveChecker = new PathSecurityChecker(restrictiveConfig);
+        var restrictedService = new DocumentVersionService(
+                documentRepository, versionRepository, attachmentRepository,
+                new DocxPatchEngine(new TextAnchorLocator()),
+                new DocxDiffBuilder(),
+                tempDir.resolve("storage").toString(),
+                restrictiveChecker);
+
+        // sourceCopy 在 tempDir 根目录，不在 allowed 白名单内
+        assertThatThrownBy(() -> restrictedService.checkout(
+                "sess-life", new SourceRef.PathSource(sourceCopy.toString())))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("安全策略");
+    }
+
+    @Test
+    @DisplayName("Critical 修复 —— commitSaveAs 拒绝命中黑名单的另存路径")
+    void commitSaveAs_黑名单路径拒绝() throws Exception {
+        // 先用宽松 service 建 checkout，然后用严格 checker 的 service 调 commitSaveAs
+        String docId = service.checkout("sess-life", new SourceRef.PathSource(sourceCopy.toString()));
+
+        var restrictiveConfig = new MetaProperties.Infra.FileAccess();
+        restrictiveConfig.setAllowedDirectories(List.of(tempDir.resolve("allowed").toString()));
+        var restrictiveChecker = new PathSecurityChecker(restrictiveConfig);
+        var restrictedService = new DocumentVersionService(
+                documentRepository, versionRepository, attachmentRepository,
+                new DocxPatchEngine(new TextAnchorLocator()),
+                new DocxDiffBuilder(),
+                tempDir.resolve("storage").toString(),
+                restrictiveChecker);
+
+        Path outside = tempDir.resolve("evil.docx");
+        assertThatThrownBy(() -> restrictedService.commitSaveAs(docId, outside.toString()))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("安全策略");
     }
 
     @Test

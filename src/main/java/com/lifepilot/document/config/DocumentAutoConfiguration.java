@@ -20,6 +20,8 @@ import com.lifepilot.document.tool.DocumentEditToolProvider;
 import com.lifepilot.document.tool.DocumentToolProvider;
 import com.lifepilot.document.version.DocumentVersionService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.file.PathSecurityChecker;
 import com.lifepilot.tool.BuiltinTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -172,14 +174,19 @@ public class DocumentAutoConfiguration {
             AttachmentRepository attachmentRepository,
             DocxPatchEngine docxPatchEngine,
             DocxDiffBuilder docxDiffBuilder,
-            DocumentProperties properties) {
+            DocumentProperties properties,
+            MetaProperties metaProperties) {
+        // PathSecurityChecker 与 FileToolProvider 共用同一份白名单/黑名单配置，
+        // 由 MetaProperties.infra.file 驱动；不注册为独立 Bean 以对齐既有模式
+        var pathSecurityChecker = new PathSecurityChecker(metaProperties.getInfra().getFile());
         return new DocumentVersionService(
                 documentRepository,
                 versionRepository,
                 attachmentRepository,
                 docxPatchEngine,
                 docxDiffBuilder,
-                properties.getStorageDir());
+                properties.getStorageDir(),
+                pathSecurityChecker);
     }
 
     @Bean
