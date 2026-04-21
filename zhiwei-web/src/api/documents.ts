@@ -37,22 +37,38 @@ export interface DiffSegment {
   text: string
 }
 
-/** 单个改动：一个 patch operation 对应一条 change */
+/** 单个改动：docx 用 paragraph_index/paragraph_preview；xlsx 用 sheet/cell/range/row 等字段 */
 export interface DiffChange {
   patch_id: string
   op: string
-  paragraph_index: number
-  paragraph_preview: string
+  /** docx 场景：所在段落索引（xlsx 场景缺省） */
+  paragraph_index?: number
+  /** docx 场景：段落预览（xlsx 场景缺省） */
+  paragraph_preview?: string
+  /** xlsx 场景：工作表名 */
+  sheet?: string
+  /** xlsx update_cell：A1 地址 */
+  cell?: string
+  /** xlsx set_range：A1 区域 */
+  range?: string
+  /** xlsx insert_row / delete_row：1-based 行号 */
+  row?: number
+  /** xlsx set_range：区域行数 */
+  rows?: number
+  /** xlsx set_range：区域列数 */
+  cols?: number
   segments: DiffSegment[]
   reason: string
 }
 
-/** diffJson 解析后的完整负载（DocxDiffBuilder.build 的 JSON 结构） */
+/** diffJson 解析后的完整负载（docx / xlsx 共用，按 mime 字段区分） */
 export interface DiffPayload {
   documentId: string
   fromVersion: number
   toVersion: number
   summary: string
+  /** P3B 起：docx / xlsx；docx 后端可不写该字段，缺省视为 docx */
+  mime?: 'docx' | 'xlsx'
   changes: DiffChange[]
 }
 
