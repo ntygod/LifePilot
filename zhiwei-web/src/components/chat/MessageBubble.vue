@@ -25,6 +25,8 @@ import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
+import DocumentDiffCard from './DocumentDiffCard.vue'
+import { getDocument, type DocumentMetadata } from '@/api/documents'
 
 const props = defineProps<{
   message: Message
@@ -154,6 +156,55 @@ function documentIcon(att: { type?: string; filename: string }) {
   if (ext === 'pptx') return Presentation
   if (ext === 'md') return FileCode2
   return FileText
+}
+
+/**
+ * Phase 3A：识别「已被 document.edit 修改过的 docx」—— 需要换用 DocumentDiffCard 渲染。
+ *
+ * 判定条件：
+ * 1. MIME 包含 `wordprocessingml.document`（docx）
+ * 2. URL 形如 `/api/documents/{id}/download`，可解析出 documentId
+ * 3. GET `/api/documents/{id}` 返回 `latestVersion > 0`（经历过至少一次 patch）
+ *
+ * 条件不满足 → 回落到既有附件卡片（非 docx / Phase 2A 产物 / 未编辑 docx）。
+ */
+const docxMetaCache = ref<Record<string, DocumentMetadata | null>>({})
+
+/** 按 download URL 提取 documentId；不匹配则返回 null */
+function extractDocumentId(url: string | undefined): string | null {
+  if (!url) return null
+  const m = url.match(/\/api\/documents\/([^/]+)\/download/)
+  return m ? m[1] : null
+}
+
+/** 幂等加载文档元数据到缓存；失败写 null 避免反复触发 */
+async function resolveDocMeta(docId: string) {
+  if (docxMetaCache.value[docId] !== undefined) return
+  try {
+    docxMetaCache.value[docId] = await getDocument(docId)
+  } catch {
+    docxMetaCache.value[docId] = null
+  }
+}
+
+/** 判断附件是否为「已编辑的 docx」—— 同步返回，异步触发缓存填充，下次渲染自动切换 */
+function isEditedDocx(att: { type?: string; url?: string }): boolean {
+  if (!att.type?.includes('wordprocessingml.document')) return false
+  const docId = extractDocumentId(att.url)
+  if (!docId) return false
+  void resolveDocMeta(docId)
+  const meta = docxMetaCache.value[docId]
+  return !!meta && meta.latestVersion > 0
+}
+
+/** DiffCard commit 成功 → 失效缓存，下次渲染重新拉取（可能 latestVersion 变化） */
+function onDocumentCommitted(documentId: string) {
+  delete docxMetaCache.value[documentId]
+}
+
+/** DiffCard 丢弃工作副本 → 失效缓存（后端已删除该文档，下次拉取会 404 → null，回落原卡片） */
+function onDocumentDiscarded(documentId: string) {
+  delete docxMetaCache.value[documentId]
 }
 
 const audioAttachments = computed(() =>
@@ -479,9 +530,17 @@ function approvalLogTone(log: PermissionApprovalLog) {
 
           <div v-if="fileAttachments.length > 0" class="mt-md flex flex-col gap-sm">
             <template v-for="attachment in fileAttachments" :key="attachment.fileId">
+              <!-- Phase 3A：docx 被 document.edit 改过 → 挂 DiffCard；其余路径沿用原卡片 -->
+              <DocumentDiffCard
+                v-if="isEditedDocx(attachment)"
+                :document-id="extractDocumentId(attachment.url)!"
+                @committed="onDocumentCommitted"
+                @discarded="onDocumentDiscarded"
+              />
+
               <!-- 视频附件：保留原 list-card + <video> 播放器布局 -->
               <div
-                v-if="attachment.type?.startsWith('video/')"
+                v-else-if="attachment.type?.startsWith('video/')"
                 class="list-card flex flex-col gap-sm px-md py-md text-xs text-foreground"
               >
                 <div class="flex items-center justify-between gap-sm">
