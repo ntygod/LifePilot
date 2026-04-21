@@ -1,10 +1,12 @@
 package com.lifepilot;
 
+import com.lifepilot.tool.config.ToolConfigProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.event.EventListener;
@@ -31,6 +33,10 @@ import org.springframework.context.event.EventListener;
                 }
         )
 )
+// 无条件注册 ToolConfigProperties：permission 等模块通过 @ComponentScan 注册的 Bean
+// 会构造注入它；ToolAutoConfiguration 被 test profile 的 lifepilot.tool.enabled=false
+// 关闭时，ToolConfigProperties 仍然需要存在（用于读 enabled 字段判断是否启用 tool）
+@EnableConfigurationProperties(ToolConfigProperties.class)
 public class LifePilotApplication {
 
     private static final Logger log = LoggerFactory.getLogger(LifePilotApplication.class);

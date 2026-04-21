@@ -273,6 +273,25 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!--
+                Surefire include pattern 扩展 —— 中文命名测试类（以"测试"结尾）
+                默认不会被 surefire 发现。显式把默认 4 个 pattern 列出 + 追加中文 pattern，
+                确保 `mvn test` 能跑到 207+ 个以"测试.java"结尾的测试类。
+                修复主蓝图 §0.7 登记的历史遗留债。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*测试.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
