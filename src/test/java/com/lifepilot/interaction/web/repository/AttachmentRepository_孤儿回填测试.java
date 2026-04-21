@@ -82,4 +82,29 @@ class AttachmentRepository_孤儿回填测试 {
         assertThat(underExisting).isEqualTo(1);
         assertThat(underNew).isEqualTo(1);
     }
+
+    // ---------- P3 扩展：updateSizeByFilePath ----------
+
+    @Test
+    void 按文件路径更新尺寸() {
+        // 工作副本 commit / rollback 后需要刷新 message_attachments 显示的文件大小
+        repository.saveForEntry(null, "sess-1", "a.docx", "/p/working/a.docx",
+                100L, "application/docx", "/api/documents/x/download");
+
+        int affected = repository.updateSizeByFilePath("/p/working/a.docx", 250L);
+
+        assertThat(affected).isEqualTo(1);
+        Long newSize = jdbc.queryForObject(
+                "SELECT file_size FROM message_attachments WHERE file_path = ?",
+                Long.class, "/p/working/a.docx");
+        assertThat(newSize).isEqualTo(250L);
+    }
+
+    @Test
+    void 路径不存在返回零() {
+        // 文档尚未挂到消息气泡时（路径无匹配行）不应视为错误，返回 0 即可
+        int affected = repository.updateSizeByFilePath("/不存在.docx", 100L);
+
+        assertThat(affected).isZero();
+    }
 }
