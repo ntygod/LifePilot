@@ -2,6 +2,8 @@ package com.lifepilot.document.config;
 
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
+import com.lifepilot.document.patch.xlsx.XlsxDiffBuilder;
+import com.lifepilot.document.patch.xlsx.XlsxPatchEngine;
 import com.lifepilot.document.tool.DocumentEditActionDispatchExecutor;
 import com.lifepilot.document.tool.DocumentEditToolProvider;
 import com.lifepilot.document.tool.DocumentToolProvider;
@@ -78,6 +80,23 @@ class DocumentAutoConfiguration_装配测试 {
         runner.withPropertyValues("lifepilot.document.enabled=false").run(ctx -> {
             assertThat(ctx).doesNotHaveBean(DocumentVersionService.class);
             assertThat(ctx).doesNotHaveBean(DocumentEditToolProvider.class);
+        });
+    }
+
+    @Test
+    @DisplayName("Phase 3B：xlsx patchEngine 和 diffBuilder 装配")
+    void xlsx_engine_和_diffBuilder_装配() {
+        runner.run(ctx -> {
+            assertThat(ctx).hasSingleBean(XlsxPatchEngine.class);
+            assertThat(ctx).hasSingleBean(XlsxDiffBuilder.class);
+        });
+    }
+
+    @Test
+    @DisplayName("Phase 3B：DocumentVersionService 在 xlsx Bean 存在前提下仍单例装配")
+    void documentVersionService_包含xlsx依赖() {
+        runner.run(ctx -> {
+            assertThat(ctx).hasSingleBean(DocumentVersionService.class);
         });
     }
 

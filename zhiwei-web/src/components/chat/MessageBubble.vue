@@ -26,6 +26,7 @@ import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
 import DocumentDiffCard from './DocumentDiffCard.vue'
+import DocumentXlsxDiffCard from './DocumentXlsxDiffCard.vue'
 import { getDocument, type DocumentMetadata } from '@/api/documents'
 
 const props = defineProps<{
@@ -190,6 +191,16 @@ async function resolveDocMeta(docId: string) {
 /** 判断附件是否为「已编辑的 docx」—— 同步返回，异步触发缓存填充，下次渲染自动切换 */
 function isEditedDocx(att: { type?: string; url?: string }): boolean {
   if (!att.type?.includes('wordprocessingml.document')) return false
+  const docId = extractDocumentId(att.url)
+  if (!docId) return false
+  void resolveDocMeta(docId)
+  const meta = docxMetaCache.value[docId]
+  return !!meta && meta.latestVersion > 0
+}
+
+/** 判断附件是否为「已编辑的 xlsx」—— 与 isEditedDocx 同款机制，MIME 检查换成 spreadsheetml.sheet */
+function isEditedXlsx(att: { type?: string; url?: string }): boolean {
+  if (!att.type?.includes('spreadsheetml.sheet')) return false
   const docId = extractDocumentId(att.url)
   if (!docId) return false
   void resolveDocMeta(docId)
@@ -533,6 +544,14 @@ function approvalLogTone(log: PermissionApprovalLog) {
               <!-- Phase 3A：docx 被 document.edit 改过 → 挂 DiffCard；其余路径沿用原卡片 -->
               <DocumentDiffCard
                 v-if="isEditedDocx(attachment)"
+                :document-id="extractDocumentId(attachment.url)!"
+                @committed="onDocumentCommitted"
+                @discarded="onDocumentDiscarded"
+              />
+
+              <!-- Phase 3B：xlsx 被 document.edit 改过 → 挂 XlsxDiffCard -->
+              <DocumentXlsxDiffCard
+                v-else-if="isEditedXlsx(attachment)"
                 :document-id="extractDocumentId(attachment.url)!"
                 @committed="onDocumentCommitted"
                 @discarded="onDocumentDiscarded"
