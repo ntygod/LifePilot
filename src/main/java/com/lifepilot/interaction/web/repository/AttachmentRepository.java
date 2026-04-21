@@ -169,6 +169,24 @@ public class AttachmentRepository {
     }
 
     /**
+     * P3 工作副本流程：按 filePath 回写 file_size。
+     *
+     * <p>文档 patch / rollback 会生成新的 working 版本文件，SessionDocumentRepository
+     * 已经由 Service 调 updateFilePath 同步；对应的 message_attachments 行（若存在）
+     * 也需同步大小以避免 UI 显示旧值。返回受影响行数；路径无匹配行时返回 0，
+     * 不视为错误（文档可能尚未挂到消息气泡）。</p>
+     *
+     * @param filePath 文件路径（匹配 file_path 列）
+     * @param newSize  最新 file_size（字节）
+     * @return 受影响行数
+     */
+    public int updateSizeByFilePath(String filePath, long newSize) {
+        return jdbcTemplate.update(
+                "UPDATE message_attachments SET file_size = ? WHERE file_path = ?",
+                newSize, filePath);
+    }
+
+    /**
      * 回填孤儿附件的 entry_id —— 用于 Tool 生成产物时先入 entry_id=null 的场景，
      * Assistant entry 持久化后调用本方法把本会话所有 orphan 的 attachment 挂到该 entry。
      *
