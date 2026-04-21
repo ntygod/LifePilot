@@ -6,12 +6,19 @@ import com.lifepilot.document.generator.MarkdownToDocxGenerator;
 import com.lifepilot.document.generator.OutlineToPptxGenerator;
 import com.lifepilot.document.generator.PowerpointGenerator;
 import com.lifepilot.document.generator.StructuredDataToXlsxGenerator;
+import com.lifepilot.document.patch.docx.DocxDiffBuilder;
+import com.lifepilot.document.patch.docx.DocxPatchEngine;
+import com.lifepilot.document.patch.docx.TextAnchorLocator;
+import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.document.tool.DocumentCreateActionDispatchExecutor;
 import com.lifepilot.document.tool.DocumentCreateDocxToolExecutor;
 import com.lifepilot.document.tool.DocumentCreatePptxToolExecutor;
 import com.lifepilot.document.tool.DocumentCreateXlsxToolExecutor;
+import com.lifepilot.document.tool.DocumentEditActionDispatchExecutor;
+import com.lifepilot.document.tool.DocumentEditToolProvider;
 import com.lifepilot.document.tool.DocumentToolProvider;
+import com.lifepilot.document.version.DocumentVersionService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.tool.BuiltinTool;
 import org.slf4j.Logger;
@@ -23,10 +30,15 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 /**
- * 文档工作空间自动配置 —— Phase 2B refactor：3 个 create_* 工具合并为 document.create + action 路由。
+ * 文档工作空间自动配置 —— Phase 2B 合并 create 工具，Phase 3A 追加 edit 工具。
  *
- * <p>装配顺序：3 个生成器 → 3 个底层 executor → dispatcher → provider → 单个 BuiltinTool。
- * 对齐 {@code git.mutate} 模式，减少 LLM 侧 schema 噪声（3 份 → 1 份扁平 schema）。</p>
+ * <p>装配顺序：</p>
+ * <ol>
+ *   <li>Phase 2B：3 个生成器 → 3 个底层 create executor → create dispatcher → create provider → {@code document.create} BuiltinTool。</li>
+ *   <li>Phase 3A：locator / engine / diffBuilder → {@link DocumentVersionService} → edit dispatcher → edit provider → {@code document.edit} BuiltinTool。</li>
+ * </ol>
+ *
+ * <p>对齐 {@code git.mutate} 模式，减少 LLM 侧 schema 噪声（1 份扁平 schema + action 枚举）。</p>
  *
  * @author zsg
  * @since 2026-04-20
@@ -125,6 +137,69 @@ public class DocumentAutoConfiguration {
     BuiltinTool documentCreateTool(DocumentToolProvider provider) {
         var tool = provider.buildDocumentTools().get(0);
         log.info("已装配 document 工具：id={}", tool.id());
+        return tool;
+    }
+
+    // ===== Phase 3A 装配：docx 编辑引擎 + 版本服务 + document.edit 工具 =====
+
+    @Bean
+    TextAnchorLocator textAnchorLocator() {
+        return new TextAnchorLocator();
+    }
+
+    @Bean
+    @ConditionalOnBean(TextAnchorLocator.class)
+    DocxPatchEngine docxPatchEngine(TextAnchorLocator locator) {
+        return new DocxPatchEngine(locator);
+    }
+
+    @Bean
+    DocxDiffBuilder docxDiffBuilder() {
+        return new DocxDiffBuilder();
+    }
+
+    @Bean
+    @ConditionalOnBean({
+            SessionDocumentRepository.class,
+            DocumentVersionRepository.class,
+            AttachmentRepository.class,
+            DocxPatchEngine.class,
+            DocxDiffBuilder.class
+    })
+    DocumentVersionService documentVersionService(
+            SessionDocumentRepository documentRepository,
+            DocumentVersionRepository versionRepository,
+            AttachmentRepository attachmentRepository,
+            DocxPatchEngine docxPatchEngine,
+            DocxDiffBuilder docxDiffBuilder,
+            DocumentProperties properties) {
+        return new DocumentVersionService(
+                documentRepository,
+                versionRepository,
+                attachmentRepository,
+                docxPatchEngine,
+                docxDiffBuilder,
+                properties.getStorageDir());
+    }
+
+    @Bean
+    @ConditionalOnBean(DocumentVersionService.class)
+    DocumentEditActionDispatchExecutor documentEditActionDispatchExecutor(
+            DocumentVersionService documentVersionService) {
+        return new DocumentEditActionDispatchExecutor(documentVersionService);
+    }
+
+    @Bean
+    @ConditionalOnBean(DocumentEditActionDispatchExecutor.class)
+    DocumentEditToolProvider documentEditToolProvider(DocumentEditActionDispatchExecutor dispatcher) {
+        return new DocumentEditToolProvider(dispatcher);
+    }
+
+    @Bean
+    @ConditionalOnBean(DocumentEditToolProvider.class)
+    BuiltinTool documentEditTool(DocumentEditToolProvider provider) {
+        var tool = provider.buildEditTool();
+        log.info("已装配 document.edit 工具：id={}", tool.id());
         return tool;
     }
 }

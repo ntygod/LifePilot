@@ -74,6 +74,7 @@ lifepilot:
       - knowledge.search
       - notify
       - document.create      # Phase 2B：单工具 + action 路由生成 docx/xlsx/pptx
+      - document.edit        # Phase 3A：docx 编辑（patch/diff/commit/rollback/list_versions）
     loop:
       # ReAct 循环配置
       max-iterations: 45
