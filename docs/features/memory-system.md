@@ -62,14 +62,17 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 当前记忆相关工具包括：
 
-- `memory.search`：搜索知识实体
-- `memory.recall`：回忆别的会话里的对话片段
-- `knowledge.search`：搜索资料文档
-- `memory.create` / `update` / `delete` / `tag`
-- `memory.query-at-time`
-- `memory.search-experience`
+- `memory(action=search)`：搜索知识实体
+- `memory(action=recall)`：回忆别的会话里的对话片段
+- `knowledge.search`：搜索资料文档（独立工具）
+- `memory(action=create)` / `update` / `delete` / `tag`：实体 CRUD + 关系标记
+- `memory(action=cancel)`：用户表达"取消 / 撤销 / 不再做 / 以后别提"等语义时调用，按 `query` 语义描述批量归档相关 `GOAL / EXPERIENCE / HABIT`（默认集合，可通过 `entityTypes` 覆盖），默认最多归档 5 条、最小相关性阈值 0.5。与 `delete` 互补：`delete` 按已知 ID 精确删单条，`cancel` 按语义召回批量归档，覆盖"取消定时任务"这类需级联清理多个旧记忆的场景。仅 `create PREFERENCE` 不足以挡住后续对旧目标/经验的召回，取消语义下必须同时使用 `cancel`
+- `memory(action=query-at-time)`：时间点查询
+- `memory(action=search-experience)`：主动检索执行经验
 
 主上下文负责”当前会话连续性”，工具负责”按需回忆和检索”，职责比旧方案更清楚。
+
+归档链路（`delete` / `cancel` / 巩固 / 遗忘引擎）统一走 `SemanticMemory.archive()`，除主库置 `is_current=0` 外，还会在事务提交后级联删除向量索引中的实体向量，确保归档实体不再被向量检索召回。
 
 `HybridRetriever` 支持可选的 `RerankRouter` 精排步骤、`knownEmpty` 短路优化和向量路径 pre-filter（当 MemoryReadFilter 限制 space/scope 时，先查合规实体 ID 集合做内存过滤，超过 1000 个时自动回退为后过滤）。
 

@@ -143,6 +143,8 @@ graph TB
   - 最近 N 天内被访问过（`config.getRecentAccessProtectionDays()`，默认 7 天）
 - 遗忘动作决策：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档
 - LLM 压缩失败时降级为直接归档
+- 压缩调用走 `generationRouter.call(..., skipCache=true)` 8 参数重载：每个实体的压缩 prompt 仅在 name/description 上有差异，若不跳过语义缓存，首条摘要会被按相似度张冠李戴返回给后续所有实体（典型症状是不同实体被归档成同一句摘要）
+- 归档动作统一走 `SemanticMemory.archive()`：事务内 `is_current=0` + 关系收尾，`afterCommit` 钩子级联调 `VectorSearcher.deleteEntityVector()` 清理向量索引，保证归档实体不会再被向量路径召回
 
 ### 3.8 ForgettingPolicy（遗忘策略体系）
 
@@ -227,13 +229,14 @@ sequenceDiagram
 
     loop 每个选中实体
         alt 中等重要度 + LLM 可用
-            FE->>LLM: 压缩摘要
+            FE->>LLM: 压缩摘要（skipCache=true）
             FE->>SM: archive(entity)
             Note over FE: 动作=COMPRESSED
         else 其他
             FE->>SM: archive(entity)
             Note over FE: 动作=ARCHIVED
         end
+        Note over SM: archive 内置事务提交后级联<br/>VectorSearcher.deleteEntityVector
         FE->>FE: logForgetting(entity, strategy, action, priority)
     end
 ```
@@ -248,6 +251,8 @@ sequenceDiagram
 | 遗忘策略 sealed interface | 6 种策略 + HybridPolicy 编排 | 每种策略有明确适用场景，Hybrid 综合优势；sealed 保证穷举 |
 | 受保护实体机制 | 类型保护 + 重要度保护 + 高频访问保护 + 近期访问保护 | 四维保护：核心偏好按类型保护、关键知识按重要度保护、高频使用实体和近期活跃实体不应被遗忘 |
 | 遗忘动作分级 | 压缩归档 vs 直接归档 | 中等重要度实体值得保留核心信息，低重要度直接归档节省资源 |
+| 压缩跳过语义缓存 | `skipCache=true` | 实体压缩 prompt 仅 `name/description` 差异，开启缓存会张冠李戴把首条摘要复用给后续实体 |
+| 归档级联清理向量 | `SemanticMemory.archive()` 内置 `afterCommit` 钩子删向量 | 只改主库 `is_current=0` 不够，向量索引仍会召回"活着的"历史副本 |
 | 触发模式预留 | Cron + 手动调用接口 | 当前使用 Cron 定时触发，为未来 Idle-Driven 模式预留 consolidate() 入口 |
 
 ## 6. 集成点
@@ -255,7 +260,7 @@ sequenceDiagram
 | 依赖模块 | 交互方式 | 说明 |
 |---------|---------|------|
 | EpisodicMemory (L2) | 构造函数注入 | 巩固管线读取近期对话数据 |
-| SemanticMemory (L3) | 构造函数注入 | 巩固写入实体、遗忘归档实体 |
+| SemanticMemory (L3) | 构造函数注入 | 巩固写入实体、遗忘归档实体；`archive()` 事务提交后级联清理向量索引 |
 | VectorSearcher | 构造函数注入 | IntentMatcher 和 ProceduralMemory 的向量匹配 |
 | GenerationRouter | 构造函数注入（@Nullable） | ReflectionSummaryPolicy 摘要压缩、EpisodicToProcedural 模式识别 |
 | EmbeddingRouter | 构造函数注入（@Nullable） | EpisodicToProcedural 轨迹向量化与模板去重 |
