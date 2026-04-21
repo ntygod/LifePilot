@@ -5,6 +5,7 @@ import com.lifepilot.document.patch.DeleteParagraphOp;
 import com.lifepilot.document.patch.DocumentPatchOperation;
 import com.lifepilot.document.patch.FailedOp;
 import com.lifepilot.document.patch.InsertParagraphAfterOp;
+import com.lifepilot.document.patch.NewParagraph;
 import com.lifepilot.document.patch.ReplaceTextOp;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -23,7 +24,7 @@ import java.util.Optional;
  * 已改动的 XWPFDocument 由调用方丢弃（不写盘即天然回滚）。成功时返回已应用 op 列表供
  * DiffBuilder 使用。</p>
  *
- * <p>本 Task 只实现 replace_text；其他 3 个 op 在 Task 7 补齐。</p>
+ * <p>已覆盖全部 4 种 op：replace_text / insert_paragraph_after / delete_paragraph / add_table_row。</p>
  *
  * @author zsg
  * @since 2026-04-21
@@ -120,18 +121,112 @@ public class DocxPatchEngine {
         return t == null ? "" : t;
     }
 
-    // ===== 以下 3 个 op 在 Task 7 实现，当前先抛 UnsupportedOperationException =====
+    // ===== insert_paragraph_after =====
 
     private AppliedOp applyInsertAfter(XWPFDocument doc, InsertParagraphAfterOp op) {
-        throw new UnsupportedOperationException("insert_paragraph_after 将在 Task 7 实现");
+        int anchorIdx = locator.locateParagraphIndexByFullText(doc, op.anchorParagraphText());
+        if (anchorIdx < 0) {
+            throw PatchLocatorException.notUniqueOrMissing(
+                    "anchor_paragraph_not_unique_or_missing",
+                    "anchor_paragraph_text 在文档中未唯一匹配一个段落");
+        }
+        XWPFParagraph anchor = doc.getParagraphs().get(anchorIdx);
+        // POI XWPF 没有直接"在指定位置插入段落"的 high-level API，
+        // 但可以通过 org.apache.xmlbeans CTP 的 XmlCursor 在 anchor 的 XML 后插入新段落。
+        for (int i = op.newParagraphs().size() - 1; i >= 0; i--) {
+            NewParagraph np = op.newParagraphs().get(i);
+            org.apache.xmlbeans.XmlCursor cursor = anchor.getCTP().newCursor();
+            cursor.toEndToken();
+            cursor.toNextToken();
+            XWPFParagraph created = doc.insertNewParagraph(cursor);
+            applyStyle(created, np.style());
+            XWPFRun run = created.createRun();
+            run.setText(np.text());
+            cursor.dispose();
+        }
+        return new AppliedOp(op, new ParagraphRunRange(anchorIdx, -1, -1, -1, -1));
     }
+
+    /** 给段落套 styleId。缺失或系统不认识时退回不设（段落保持默认样式）。 */
+    private void applyStyle(XWPFParagraph para, String style) {
+        if (style == null || style.isBlank() || NewParagraph.STYLE_NORMAL.equals(style)) return;
+        try {
+            para.setStyle(style);
+        } catch (RuntimeException e) {
+            // 样式不存在等异常 — 安全退回
+        }
+    }
+
+    // ===== delete_paragraph =====
 
     private AppliedOp applyDeleteParagraph(XWPFDocument doc, DeleteParagraphOp op) {
-        throw new UnsupportedOperationException("delete_paragraph 将在 Task 7 实现");
+        int idx = locator.locateParagraphIndexByFullText(doc, op.paragraphText());
+        if (idx < 0) {
+            throw PatchLocatorException.notUniqueOrMissing(
+                    "paragraph_text_not_unique_or_missing",
+                    "paragraph_text 在文档中未唯一匹配一个段落");
+        }
+        // XWPFDocument.removeBodyElement(pos) 按 body element 下标删除；段落/表格混合时需要用整体下标
+        int bodyPos = doc.getPosOfParagraph(doc.getParagraphs().get(idx));
+        doc.removeBodyElement(bodyPos);
+        return new AppliedOp(op, new ParagraphRunRange(idx, -1, -1, -1, -1));
     }
 
+    // ===== add_table_row =====
+
     private AppliedOp applyAddTableRow(XWPFDocument doc, AddTableRowOp op) {
-        throw new UnsupportedOperationException("add_table_row 将在 Task 7 实现");
+        org.apache.poi.xwpf.usermodel.XWPFTable targetTable = findTableByAnchor(doc, op.tableAnchorText());
+        if (targetTable == null) {
+            throw PatchLocatorException.notUniqueOrMissing(
+                    "table_anchor_not_unique_or_missing",
+                    "table_anchor_text 在任何表格单元格中未唯一匹配");
+        }
+        int cols = targetTable.getRow(0).getTableCells().size();
+        if (op.cells().size() != cols) {
+            throw PatchLocatorException.cellsMismatch(cols, op.cells().size());
+        }
+        org.apache.poi.xwpf.usermodel.XWPFTableRow newRow;
+        if (AddTableRowOp.POSITION_START.equals(op.position())) {
+            // 在第 0 行前插入 — 需用 insertNewTableRow(0)
+            org.apache.xmlbeans.XmlCursor cursor = targetTable.getRow(0).getCtRow().newCursor();
+            newRow = targetTable.insertNewTableRow(0);
+            cursor.dispose();
+            fillRowCells(newRow, op.cells(), cols);
+        } else {
+            newRow = targetTable.createRow();
+            fillRowCells(newRow, op.cells(), cols);
+        }
+        return new AppliedOp(op, null);
+    }
+
+    /** 按 anchorText 在文档所有表格单元格里唯一查找表格。*/
+    private org.apache.poi.xwpf.usermodel.XWPFTable findTableByAnchor(XWPFDocument doc, String anchorText) {
+        org.apache.poi.xwpf.usermodel.XWPFTable hit = null;
+        for (org.apache.poi.xwpf.usermodel.XWPFTable table : doc.getTables()) {
+            for (var row : table.getRows()) {
+                for (var cell : row.getTableCells()) {
+                    if (cell.getText().contains(anchorText)) {
+                        if (hit != null && hit != table) return null;  // 多表命中
+                        hit = table;
+                    }
+                }
+            }
+        }
+        return hit;
+    }
+
+    /** createRow() 默认会给新行每 cell 创建 1 个空 cell（按首行列数对齐），此处只需 setText。
+     *  insertNewTableRow(0) 不会自动填充 cell —— 需要我们自己补齐到 {@code cols} 个。 */
+    private void fillRowCells(org.apache.poi.xwpf.usermodel.XWPFTableRow row, List<String> cells, int cols) {
+        while (row.getTableCells().size() < cols) {
+            row.createCell();
+        }
+        for (int i = 0; i < cols; i++) {
+            row.getCell(i).removeParagraph(0);
+            org.apache.poi.xwpf.usermodel.XWPFParagraph p = row.getCell(i).addParagraph();
+            XWPFRun r = p.createRun();
+            r.setText(cells.get(i));
+        }
     }
 
     // ===== 辅助 =====

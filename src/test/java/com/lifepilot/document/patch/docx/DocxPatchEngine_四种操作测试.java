@@ -16,7 +16,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * DocxPatchEngine 四种 op 行为测试 —— 本 Task 先覆盖 replace_text，Task 7 补齐其余。
+ * DocxPatchEngine 四种 op 行为测试 —— 覆盖 replace_text / insert_paragraph_after /
+ * delete_paragraph / add_table_row。
  *
  * @author zsg
  * @since 2026-04-21
@@ -100,6 +101,77 @@ class DocxPatchEngine_四种操作测试 {
             // 引擎返回 failure；文档虽已被内存改动，但调用方会丢弃，不写盘。
             // 这里验证返回的 failedOps.opIndex=1（bad 是第二个）。
             assertThat(result.failedOps().get(0).opIndex()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("insert_paragraph_after 在锚点段后插入新段")
+    void insert_paragraph_after在锚点后插入() throws Exception {
+        try (InputStream in = Files.newInputStream(CONTRACT);
+             XWPFDocument doc = new XWPFDocument(in)) {
+            var op = new com.lifepilot.document.patch.InsertParagraphAfterOp(
+                    "第三章 违约责任",
+                    List.of(new com.lifepilot.document.patch.NewParagraph(
+                            "补充：违约金上限为合同总额的 20%。", "Normal")),
+                    "补充违约条款");
+
+            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+
+            assertThat(result.success()).isTrue();
+            String full = extractAllText(doc);
+            assertThat(full).contains("补充：违约金上限为合同总额的 20%。");
+        }
+    }
+
+    @Test
+    @DisplayName("delete_paragraph 唯一命中后段落被移除")
+    void delete_paragraph移除段落() throws Exception {
+        try (InputStream in = Files.newInputStream(CONTRACT);
+             XWPFDocument doc = new XWPFDocument(in)) {
+            var op = new com.lifepilot.document.patch.DeleteParagraphOp(
+                    "任一方违约需承担实际损失的赔偿责任。", "冗余");
+
+            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+
+            assertThat(result.success()).isTrue();
+            String full = extractAllText(doc);
+            assertThat(full).doesNotContain("任一方违约需承担实际损失的赔偿责任。");
+        }
+    }
+
+    @Test
+    @DisplayName("add_table_row position=end 表格追加新行")
+    void add_table_row_end追加行() throws Exception {
+        try (InputStream in = Files.newInputStream(CONTRACT);
+             XWPFDocument doc = new XWPFDocument(in)) {
+            var op = new com.lifepilot.document.patch.AddTableRowOp(
+                    "产品名称", "end", List.of("测试模块", "2026-07-01", "10000"), null);
+
+            int beforeRows = doc.getTables().get(0).getNumberOfRows();
+            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+
+            assertThat(result.success()).isTrue();
+            var table = doc.getTables().get(0);
+            assertThat(table.getNumberOfRows()).isEqualTo(beforeRows + 1);
+            var lastRow = table.getRow(table.getNumberOfRows() - 1);
+            assertThat(lastRow.getCell(0).getText()).isEqualTo("测试模块");
+            assertThat(lastRow.getCell(1).getText()).isEqualTo("2026-07-01");
+            assertThat(lastRow.getCell(2).getText()).isEqualTo("10000");
+        }
+    }
+
+    @Test
+    @DisplayName("add_table_row cells 长度与列数不符失败")
+    void add_table_row长度不符失败() throws Exception {
+        try (InputStream in = Files.newInputStream(CONTRACT);
+             XWPFDocument doc = new XWPFDocument(in)) {
+            var op = new com.lifepilot.document.patch.AddTableRowOp(
+                    "产品名称", "end", List.of("不够", "列"), null);
+
+            var result = engine.apply(doc, List.<DocumentPatchOperation>of(op));
+
+            assertThat(result.success()).isFalse();
+            assertThat(result.failedOps().get(0).reason()).isEqualTo("cells_mismatch");
         }
     }
 
