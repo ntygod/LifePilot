@@ -162,13 +162,27 @@ public class DocumentAutoConfiguration {
         return new DocxDiffBuilder();
     }
 
+    // P3B Task 11：xlsx engine / diffBuilder 抽独立 @Bean，对齐 docx 分支命名；
+    // 无依赖、无条件，由 Spring 注入后交给 documentVersionService 组装
+    @Bean
+    XlsxPatchEngine xlsxPatchEngine() {
+        return new XlsxPatchEngine();
+    }
+
+    @Bean
+    XlsxDiffBuilder xlsxDiffBuilder() {
+        return new XlsxDiffBuilder();
+    }
+
     @Bean
     @ConditionalOnBean({
             SessionDocumentRepository.class,
             DocumentVersionRepository.class,
             AttachmentRepository.class,
             DocxPatchEngine.class,
-            DocxDiffBuilder.class
+            DocxDiffBuilder.class,
+            XlsxPatchEngine.class,
+            XlsxDiffBuilder.class
     })
     DocumentVersionService documentVersionService(
             SessionDocumentRepository documentRepository,
@@ -176,15 +190,13 @@ public class DocumentAutoConfiguration {
             AttachmentRepository attachmentRepository,
             DocxPatchEngine docxPatchEngine,
             DocxDiffBuilder docxDiffBuilder,
+            XlsxPatchEngine xlsxPatchEngine,
+            XlsxDiffBuilder xlsxDiffBuilder,
             DocumentProperties properties,
             MetaProperties metaProperties) {
         // PathSecurityChecker 与 FileToolProvider 共用同一份白名单/黑名单配置，
         // 由 MetaProperties.infra.file 驱动；不注册为独立 Bean 以对齐既有模式
         var pathSecurityChecker = new PathSecurityChecker(metaProperties.getInfra().getFile());
-        // P3B Task 8 新增：xlsx engine / diff builder 无状态，本方法内 new 即可；Task 9-11
-        // 引入 DocumentDispatcherProvider 链时再考虑是否抽出独立 @Bean
-        var xlsxPatchEngine = new XlsxPatchEngine();
-        var xlsxDiffBuilder = new XlsxDiffBuilder();
         return new DocumentVersionService(
                 documentRepository,
                 versionRepository,
