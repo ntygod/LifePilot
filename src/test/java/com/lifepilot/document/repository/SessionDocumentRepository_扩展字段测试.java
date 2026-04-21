@@ -111,6 +111,9 @@ class SessionDocumentRepository_扩展字段测试 {
         var found = repository.findById("doc-3");
         assertThat(found.filePath()).isEqualTo("/new/path/v1.docx");
         assertThat(found.fileSize()).isEqualTo(250L);
+        // 回归：updateFilePath 只碰 file_path / file_size，不应误伤 origin / sourcePath
+        assertThat(found.origin()).isEqualTo(SessionDocumentRecord.ORIGIN_AGENT_GENERATED);
+        assertThat(found.sourcePath()).isNull();
     }
 
     @Test
