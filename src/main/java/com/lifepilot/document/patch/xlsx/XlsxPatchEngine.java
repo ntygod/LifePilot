@@ -27,8 +27,7 @@ import java.util.List;
  * 任一 op 定位 / 校验失败立即中止，已改动的 workbook 由调用方丢弃（不写盘即天然回滚）。
  * 成功时返回 {@link AppliedXlsxOp} 列表供 {@link XlsxDiffBuilder} 使用。</p>
  *
- * <p>Task 5 仅实装 {@code update_cell};其余 3 个 op（insert_row / delete_row / set_range）
- * Task 6 补齐,当前抛 {@link UnsupportedOperationException}。</p>
+ * <p>Task 5 落地 {@code update_cell};Task 6 补齐 {@code insert_row / delete_row / set_range}。</p>
  *
  * @author zsg
  * @since 2026-04-21
@@ -129,18 +128,122 @@ public class XlsxPatchEngine {
         }
     }
 
-    // ===== 其余 3 op 暂时抛未实现（Task 6 补） =====
+    // ===== insert_row =====
 
     private AppliedXlsxOp applyInsertRow(XSSFWorkbook wb, InsertRowOp op) {
-        throw new UnsupportedOperationException("Task 6 补齐");
+        Sheet sheet = requireSheet(wb, op.sheet());
+        int targetIdx = op.beforeRow() - 1;
+        int lastRow = sheet.getLastRowNum();
+
+        if (targetIdx < 0 || targetIdx > lastRow + 1) {
+            throw XlsxPatchException.invalidRow(
+                    "invalid_row_number",
+                    "行号 " + op.beforeRow() + " 越界，合法范围 1.." + (lastRow + 2));
+        }
+
+        if (targetIdx > lastRow) {
+            Row newRow = sheet.createRow(targetIdx);
+            fillRow(newRow, op.values());
+            return new AppliedXlsxOp(op, "", 1, op.values().size());
+        }
+
+        sheet.shiftRows(targetIdx, lastRow, 1);
+        Row newRow = sheet.createRow(targetIdx);
+        fillRow(newRow, op.values());
+        return new AppliedXlsxOp(op, "", 1, op.values().size());
     }
+
+    private static void fillRow(Row row, List<Object> values) {
+        for (int c = 0; c < values.size(); c++) {
+            Cell cell = row.createCell(c);
+            writeCellValue(cell, values.get(c));
+        }
+    }
+
+    // ===== delete_row =====
 
     private AppliedXlsxOp applyDeleteRow(XSSFWorkbook wb, DeleteRowOp op) {
-        throw new UnsupportedOperationException("Task 6 补齐");
+        Sheet sheet = requireSheet(wb, op.sheet());
+        int idx = op.row() - 1;
+        int lastRow = sheet.getLastRowNum();
+        if (idx < 0 || idx > lastRow) {
+            throw XlsxPatchException.invalidRow(
+                    "row_not_found", "行 " + op.row() + " 不存在");
+        }
+        for (CellRangeAddress mr : sheet.getMergedRegions()) {
+            if (mr.getFirstRow() <= idx && idx <= mr.getLastRow()) {
+                throw XlsxPatchException.inMerged(
+                        "row_in_merged_region",
+                        "目标行横跨合并区域 " + mr.formatAsString() + "，无法删除");
+            }
+        }
+        String beforeSnapshot = rowSnapshot(sheet.getRow(idx));
+
+        Row row = sheet.getRow(idx);
+        if (row != null) sheet.removeRow(row);
+        if (idx < lastRow) {
+            sheet.shiftRows(idx + 1, lastRow, -1);
+        }
+        return new AppliedXlsxOp(op, beforeSnapshot, 1, 0);
     }
 
+    /** 把一行所有 cell 用 "|" 拼成人类可读预览（供 diff 里 delete segment 使用）。 */
+    private static String rowSnapshot(Row row) {
+        if (row == null) return "(空行)";
+        StringBuilder sb = new StringBuilder();
+        short last = row.getLastCellNum();
+        for (int c = 0; c < last; c++) {
+            if (sb.length() > 0) sb.append(" | ");
+            sb.append(cellToString(row.getCell(c)));
+        }
+        return sb.toString();
+    }
+
+    // ===== set_range =====
+
     private AppliedXlsxOp applySetRange(XSSFWorkbook wb, SetRangeOp op) {
-        throw new UnsupportedOperationException("Task 6 补齐");
+        Sheet sheet = requireSheet(wb, op.sheet());
+        CellRangeAddress addr = CellAddressResolver.parseRange(op.range())
+                .orElseThrow(() -> XlsxPatchException.invalidAddress(
+                        "invalid_range", "range 地址非法：" + op.range()));
+        int rows = addr.getLastRow() - addr.getFirstRow() + 1;
+        int cols = addr.getLastColumn() - addr.getFirstColumn() + 1;
+
+        if (op.values().size() != rows) {
+            throw XlsxPatchException.rangeMismatch(
+                    "range_size_mismatch",
+                    "values 外层长度 " + op.values().size() + " 与 range 行数 " + rows + " 不符");
+        }
+        for (int r = 0; r < rows; r++) {
+            if (op.values().get(r).size() != cols) {
+                throw XlsxPatchException.rangeMismatch(
+                        "range_size_mismatch",
+                        "values[" + r + "] 长度 " + op.values().get(r).size()
+                                + " 与 range 列数 " + cols + " 不符");
+            }
+        }
+        List<String> clashing = new ArrayList<>();
+        for (CellRangeAddress mr : sheet.getMergedRegions()) {
+            if (mr.intersects(addr)) clashing.add(mr.formatAsString());
+        }
+        if (!clashing.isEmpty()) {
+            throw XlsxPatchException.inMerged(
+                    "range_contains_merged_region",
+                    "range " + addr.formatAsString() + " 包含合并区域 " + clashing + "，请拆分操作");
+        }
+
+        for (int r = 0; r < rows; r++) {
+            int absRow = addr.getFirstRow() + r;
+            Row row = sheet.getRow(absRow);
+            if (row == null) row = sheet.createRow(absRow);
+            for (int c = 0; c < cols; c++) {
+                int absCol = addr.getFirstColumn() + c;
+                Cell cell = row.getCell(absCol);
+                if (cell == null) cell = row.createCell(absCol);
+                writeCellValue(cell, op.values().get(r).get(c));
+            }
+        }
+        return new AppliedXlsxOp(op, rows + "x" + cols + " 批量（预览略）", rows, cols);
     }
 
     // ===== 辅助 =====
