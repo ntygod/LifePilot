@@ -133,13 +133,15 @@ public class ChannelControlPlaneConfiguration {
                                                               ChannelInstanceEventService channelInstanceEventService,
                                                               RestClient channelControlPlaneRestClient,
                                                               ConnectorManager connectorManager,
-                                                              @Nullable SseSessionManager sseSessionManager) {
+                                                              @Nullable SseSessionManager sseSessionManager,
+                                                              @Nullable com.lifepilot.document.repository.SessionDocumentRepository documentRepository) {
         return new ChannelDeliveryDispatcher(
                 channelRegistry,
                 channelInstanceEventService,
                 channelControlPlaneRestClient,
                 connectorManager,
-                sseSessionManager
+                sseSessionManager,
+                documentRepository
         );
     }
 
