@@ -8,7 +8,12 @@ import {
   type DiffPayload,
   type DocumentMetadata,
 } from '@/api/documents'
-import { pickSavePath } from '@/composables/useSaveFilePicker'
+import {
+  pickSavePath,
+  isTauriEnv,
+  openDocumentPath,
+  revealInFileManager,
+} from '@/composables/useSaveFilePicker'
 import { useUiStore } from '@/stores/ui'
 
 export interface DiffCardEmits {
@@ -48,6 +53,8 @@ export function useDocumentDiffCard(
 
   const pendingConfirm = ref<PendingConfirm | null>(null)
   const pendingPrompt = ref<PendingPrompt | null>(null)
+  /** commit 成功后记录落盘路径，供 Tauri 环境下的"打开/定位"按钮使用 */
+  const lastCommittedPath = ref<string | null>(null)
 
   const canOverwrite = computed(() => !!metadata.value?.sourcePath)
   const hasChanges = computed(
@@ -82,6 +89,7 @@ export function useDocumentDiffCard(
         try {
           const result = await commit(documentId.value, 'overwrite')
           emit('committed', documentId.value, result.backupPath)
+          lastCommittedPath.value = result.committedPath
           ui.showToast('success', `已覆盖；备份：${result.backupPath || '无'}`)
         } catch (e) {
           console.error('覆盖失败', e)
@@ -117,10 +125,35 @@ export function useDocumentDiffCard(
     try {
       const result = await commit(documentId.value, 'saveAs', path)
       emit('committed', documentId.value, undefined)
+      lastCommittedPath.value = result.committedPath
       ui.showToast('success', `已另存到：${result.committedPath}`)
     } catch (e) {
       console.error('另存失败', e)
       ui.showToast('error', '另存失败，请查看控制台日志')
+    }
+  }
+
+  /** Tauri: 用系统默认程序打开已 commit 的本地文件 */
+  async function openCommittedFile() {
+    const path = lastCommittedPath.value
+    if (!path) return
+    try {
+      await openDocumentPath(path)
+    } catch (e) {
+      console.error('打开文件失败', e)
+      ui.showToast('error', '打开文件失败，请查看控制台日志')
+    }
+  }
+
+  /** Tauri: 在文件管理器中定位已 commit 的本地文件 */
+  async function revealCommittedFile() {
+    const path = lastCommittedPath.value
+    if (!path) return
+    try {
+      await revealInFileManager(path)
+    } catch (e) {
+      console.error('定位文件失败', e)
+      ui.showToast('error', '定位文件失败，请查看控制台日志')
     }
   }
 
@@ -169,6 +202,8 @@ export function useDocumentDiffCard(
     hasChanges,
     pendingConfirm,
     pendingPrompt,
+    lastCommittedPath,
+    isTauri: isTauriEnv(),
     loadData,
     onOverwrite,
     onSaveAs,
@@ -176,5 +211,7 @@ export function useDocumentDiffCard(
     onRollbackComplete,
     runPendingConfirm,
     runPendingPrompt,
+    openCommittedFile,
+    revealCommittedFile,
   }
 }

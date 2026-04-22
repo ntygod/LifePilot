@@ -73,3 +73,26 @@ function buildTauriFilters(mimeType?: string): Array<{ name: string; extensions:
   }
   return undefined
 }
+
+/** 当前是否运行在 Tauri 环境 —— 用于决定是否显示"打开文件/定位"等原生按钮 */
+export function isTauriEnv(): boolean {
+  return typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__
+}
+
+/** 用系统默认程序打开本地文件（如 .docx → Word）。仅 Tauri 可用 */
+export async function openDocumentPath(path: string): Promise<void> {
+  if (!isTauriEnv()) {
+    throw new Error('非 Tauri 环境不支持"系统默认程序打开"')
+  }
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('open_document_path', { path })
+}
+
+/** 在文件管理器中定位（Windows 资源管理器 /select、macOS Finder open -R、Linux xdg-open 父目录）*/
+export async function revealInFileManager(path: string): Promise<void> {
+  if (!isTauriEnv()) {
+    throw new Error('非 Tauri 环境不支持"在文件管理器中定位"')
+  }
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('reveal_document_in_file_manager', { path })
+}

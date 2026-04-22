@@ -83,6 +83,8 @@ pub fn run() {
             commands::check_whisper_status,
             commands::start_whisper_download,
             commands::cancel_whisper_download,
+            commands::open_document_path,
+            commands::reveal_document_in_file_manager,
             float_window::show_reminder_bubble,
             float_window::hide_reminder_bubble,
             float_window::resize_float_window,

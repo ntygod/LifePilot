@@ -36,12 +36,16 @@ const {
   hasChanges,
   pendingConfirm,
   pendingPrompt,
+  lastCommittedPath,
+  isTauri,
   onOverwrite,
   onSaveAs,
   onDiscard,
   onRollbackComplete,
   runPendingConfirm,
   runPendingPrompt,
+  openCommittedFile,
+  revealCommittedFile,
 } = useDocumentDiffCard(toRef(props, 'documentId'), emit)
 
 /** 为 update_cell 的 diff 生成 before / after 预览文本 */
@@ -145,6 +149,21 @@ function locationLabel(c: DiffChange): string {
         @save-as="onSaveAs"
         @discard="onDiscard"
       />
+
+      <!-- Tauri 环境：commit 成功后显示"打开 / 定位"按钮 -->
+      <div v-if="isTauri && lastCommittedPath" class="mt-md flex items-center gap-sm text-sm">
+        <span class="text-muted-foreground">已落盘：{{ lastCommittedPath }}</span>
+        <button
+          type="button"
+          class="inline-flex items-center gap-xs rounded-md border border-border px-md py-xs text-xs"
+          @click="openCommittedFile"
+        >用默认程序打开</button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-xs rounded-md border border-border px-md py-xs text-xs"
+          @click="revealCommittedFile"
+        >在文件管理器中定位</button>
+      </div>
     </div>
 
     <ConfirmDialog
