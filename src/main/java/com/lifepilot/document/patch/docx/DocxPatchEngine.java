@@ -7,6 +7,7 @@ import com.lifepilot.document.patch.FailedOp;
 import com.lifepilot.document.patch.InsertParagraphAfterOp;
 import com.lifepilot.document.patch.NewParagraph;
 import com.lifepilot.document.patch.ReplaceTextOp;
+import com.lifepilot.document.patch.SetParagraphStyleOp;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
@@ -52,6 +53,7 @@ public class DocxPatchEngine {
                     case InsertParagraphAfterOp r -> applyInsertAfter(document, r);
                     case DeleteParagraphOp r -> applyDeleteParagraph(document, r);
                     case AddTableRowOp r -> applyAddTableRow(document, r);
+                    case SetParagraphStyleOp r -> applySetParagraphStyle(document, r);
                 };
                 applied.add(result);
             } catch (PatchLocatorException e) {
@@ -229,6 +231,32 @@ public class DocxPatchEngine {
         }
     }
 
+    // ===== set_paragraph_style =====
+
+    private AppliedOp applySetParagraphStyle(XWPFDocument doc, SetParagraphStyleOp op) {
+        // 按 anchorText 精确唯一定位段落（整段 text 或子串唯一匹配）
+        List<Integer> matches = new ArrayList<>();
+        List<XWPFParagraph> paragraphs = doc.getParagraphs();
+        for (int i = 0; i < paragraphs.size(); i++) {
+            String text = paragraphs.get(i).getText();
+            if (text != null && text.contains(op.anchorText())) {
+                matches.add(i);
+            }
+        }
+        if (matches.isEmpty()) {
+            throw new PatchLocatorException("anchor_not_found", 0,
+                    "未在文档中找到 anchorText：" + op.anchorText());
+        }
+        if (matches.size() > 1) {
+            throw new PatchLocatorException("anchor_not_unique", matches.size(),
+                    "anchorText 在文档中有 " + matches.size() + " 处匹配，请换更长更独特的锚点");
+        }
+        int pIdx = matches.getFirst();
+        XWPFParagraph target = paragraphs.get(pIdx);
+        target.setStyle(op.newStyle());
+        return new AppliedOp(op, new ParagraphRunRange(pIdx, 0, 0, 0, 0));
+    }
+
     // ===== 辅助 =====
 
     static String opType(DocxPatchOperation op) {
@@ -237,6 +265,7 @@ public class DocxPatchEngine {
             case InsertParagraphAfterOp r -> "insert_paragraph_after";
             case DeleteParagraphOp r -> "delete_paragraph";
             case AddTableRowOp r -> "add_table_row";
+            case SetParagraphStyleOp r -> "set_paragraph_style";
         };
     }
 

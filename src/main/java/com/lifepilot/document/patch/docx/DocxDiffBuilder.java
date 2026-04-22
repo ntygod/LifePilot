@@ -7,6 +7,7 @@ import com.lifepilot.document.patch.DeleteParagraphOp;
 import com.lifepilot.document.patch.InsertParagraphAfterOp;
 import com.lifepilot.document.patch.NewParagraph;
 import com.lifepilot.document.patch.ReplaceTextOp;
+import com.lifepilot.document.patch.SetParagraphStyleOp;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -105,6 +106,11 @@ public class DocxDiffBuilder {
                 entry.put("paragraph_preview", "(表格新增一行,锚点:" + row.tableAnchorText() + ")");
                 entry.put("segments", List.of(segment("insert", String.join(" | ", row.cells()))));
                 entry.put("reason", row.reason() == null ? "" : row.reason());
+            }
+            case SetParagraphStyleOp style -> {
+                entry.put("paragraph_preview", "(设置段落样式 → " + style.newStyle() + ")");
+                entry.put("segments", List.of(segment("keep", style.anchorText())));
+                entry.put("reason", style.reason() == null ? "" : style.reason());
             }
         }
         return entry;

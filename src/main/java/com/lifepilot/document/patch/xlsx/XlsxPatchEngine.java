@@ -61,6 +61,14 @@ public class XlsxPatchEngine {
                         List.of(new FailedOp(i, opType(op), "execution_error", -1, e.getMessage())));
             }
         }
+        // P1-8：update_cell 写入公式（= 开头字符串）或改了公式依赖的 cell 值时，其它公式的缓存值会失效。
+        // 在所有 op 应用完成后调 evaluateAll 触发 workbook 级公式重算，让前端 DataFormatter 看到新值。
+        // 失败 soft fail：重算异常只记 warn，不影响 patch 主流程（下次打开文件 Excel 会自己重算）。
+        try {
+            wb.getCreationHelper().createFormulaEvaluator().evaluateAll();
+        } catch (RuntimeException e) {
+            log.warn("xlsx 公式重算失败，软降级：{}", e.getMessage());
+        }
         return new EngineResult(true, applied, List.of());
     }
 

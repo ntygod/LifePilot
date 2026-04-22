@@ -10,6 +10,7 @@ import com.lifepilot.document.patch.InsertParagraphAfterOp;
 import com.lifepilot.document.patch.InsertRowOp;
 import com.lifepilot.document.patch.NewParagraph;
 import com.lifepilot.document.patch.ReplaceTextOp;
+import com.lifepilot.document.patch.SetParagraphStyleOp;
 import com.lifepilot.document.patch.SetRangeOp;
 import com.lifepilot.document.patch.UpdateCellOp;
 import com.lifepilot.document.version.DocumentVersionService;
@@ -347,6 +348,10 @@ public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
                         String.valueOf(m.get("position")),
                         cells, reason);
             }
+            case "set_paragraph_style" -> new SetParagraphStyleOp(
+                    String.valueOf(m.get("anchor_text")),
+                    String.valueOf(m.get("new_style")),
+                    reason);
             case "update_cell" -> new UpdateCellOp(
                     String.valueOf(m.get("sheet")),
                     String.valueOf(m.get("cell")),

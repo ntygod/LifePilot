@@ -110,11 +110,12 @@ public class DocumentEditToolProvider {
         properties.put("operations", Map.of(
                 "type", "array",
                 "description", "patch action 必填；每个 op 形如 {op, ...字段, reason?}。" +
-                        "【docx op】op ∈ {replace_text, insert_paragraph_after, delete_paragraph, add_table_row}；" +
+                        "【docx op】op ∈ {replace_text, insert_paragraph_after, delete_paragraph, add_table_row, set_paragraph_style}；" +
                         "replace_text 需 before_context + target + after_context + new_text；" +
                         "insert_paragraph_after 需 anchor_paragraph_text + new_paragraphs（{text, style?}[]）；" +
                         "delete_paragraph 需 paragraph_text；" +
-                        "add_table_row 需 table_anchor_text + position(start/end：start 插到表头，end 追到表尾) + cells(string[])。" +
+                        "add_table_row 需 table_anchor_text + position(start/end：start 插到表头，end 追到表尾) + cells(string[])；" +
+                        "set_paragraph_style 需 anchor_text + new_style（docx styles.xml 里的 style id，如 Heading1/Heading2/Normal/Title）。" +
                         "【xlsx op】op ∈ {update_cell, insert_row, delete_row, set_range}；" +
                         "update_cell 需 sheet + cell + new_value（多态：number/boolean/string，= 开头为公式；null 清空）；" +
                         "insert_row 需 sheet + before_row（1-based 行号） + values(array)；" +

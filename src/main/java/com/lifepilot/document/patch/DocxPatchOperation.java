@@ -10,5 +10,5 @@ package com.lifepilot.document.patch;
  * @since 2026-04-21
  */
 public sealed interface DocxPatchOperation extends DocumentPatchOperation
-        permits ReplaceTextOp, InsertParagraphAfterOp, DeleteParagraphOp, AddTableRowOp {
+        permits ReplaceTextOp, InsertParagraphAfterOp, DeleteParagraphOp, AddTableRowOp, SetParagraphStyleOp {
 }
