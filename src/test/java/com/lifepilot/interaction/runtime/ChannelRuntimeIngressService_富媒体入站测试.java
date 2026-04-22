@@ -108,7 +108,10 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
         MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
         assertThat(fileMsg.fileName()).isEqualTo("report.pdf");
         assertThat(fileMsg.mimeType()).isEqualTo("application/pdf");
-        assertThat(fileMsg.caption()).isEqualTo("这是一个文档");
+        // P0-1 修复：file 类型 content 的 caption 末尾追加 document hint
+        // （pdf 是文档类附件，attachmentId 会暴露给 LLM）
+        assertThat(fileMsg.caption()).startsWith("这是一个文档");
+        assertThat(fileMsg.caption()).contains("attachmentId=att-1");
         assertThat(fileMsg.data()).isEqualTo("文件内容".getBytes());
     }
 

@@ -245,7 +245,7 @@ public class ChannelRuntimeIngressService {
             case "event" -> buildEventContent(content);
             case "text" -> new MessageContent.TextMessage(
                     DocumentAttachmentHintBuilder.appendHint(requireText(content.text(), "text"), persistedAttachments));
-            case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments);
+            case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments, persistedAttachments);
             case "card-action" -> buildCardActionContent(content);
             default -> throw new IllegalArgumentException("不支持的 connector 内容类型: " + type);
         };
@@ -272,7 +272,8 @@ public class ChannelRuntimeIngressService {
 
     private MessageContent.FileMessage buildFileContent(ChannelRuntimeEventRequest.Content content,
                                                          String type,
-                                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
+                                                         List<ChannelRuntimeEventRequest.Attachment> attachments,
+                                                         List<GatewayMessage.Attachment> persistedAttachments) {
         Map<String, Object> payload = content.payload();
         String fileName = payload != null && payload.get("fileName") instanceof String fn && !fn.isBlank()
                 ? fn.trim()
@@ -280,7 +281,14 @@ public class ChannelRuntimeIngressService {
         String mimeType = payload != null && payload.get("mimeType") instanceof String mt && !mt.isBlank()
                 ? mt.trim()
                 : defaultMimeType(type);
-        String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : null;
+        String rawCaption = content.text() != null && !content.text().isBlank() ? content.text().trim() : "";
+        // P0-1 修复：飞书等渠道发附件时 content.type=file/image/...，这里也要把
+        // DocumentAttachmentHintBuilder hint 注入到 caption，否则 LLM 看不到正确的 attachmentId
+        // （DB 主键 UUID），就会把 connector 塞进 content 原文的 fileName 当 id 传给 file.read
+        String caption = DocumentAttachmentHintBuilder.appendHint(rawCaption, persistedAttachments);
+        if (caption.isEmpty()) {
+            caption = null;  // 保持"无 caption" 语义
+        }
 
         byte[] data;
         if (attachments != null && !attachments.isEmpty()) {
