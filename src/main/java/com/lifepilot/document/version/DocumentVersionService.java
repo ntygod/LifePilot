@@ -278,7 +278,10 @@ public class DocumentVersionService {
         if (existing == null) {
             throw new IllegalArgumentException("document 不存在：" + documentId);
         }
-        if (existing.latestVersion() > 0) {
+        // 幂等判断：只要 v0 已存在就说明之前做过 checkout（无论是走 Path/Attachment 还是
+        // 此分支）。latestVersion 反映的是 patch 推进情况，patch 失败时它仍是 0，用它判断
+        // 会让二次 checkoutFromDocument 重复 save v0 触发 UNIQUE(document_id, version_no)。
+        if (versionRepository.findByDocumentIdAndVersion(documentId, 0) != null) {
             return documentId;
         }
         // 首次从 Phase 2 AI 产物 checkout：复制到 working/v0
@@ -289,9 +292,15 @@ public class DocumentVersionService {
         long size = Files.size(workingV0);
 
         documentRepository.updateFilePath(documentId, workingV0.toString(), size);
-        versionRepository.save(new DocumentVersionRecord(
-                UUID.randomUUID().toString(), documentId, 0, workingV0.toString(),
-                DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()));
+        try {
+            versionRepository.save(new DocumentVersionRecord(
+                    UUID.randomUUID().toString(), documentId, 0, workingV0.toString(),
+                    DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()));
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // 并发 race：另一线程已先 save v0。复制出来的 workingV0 与对方 v0 同路径、
+            // 内容幂等（同一 existing.filePath()），直接视为成功
+            log.info("checkoutFromDocument 并发 race 退让：documentId={}", documentId);
+        }
         log.info("checkout Phase2 产物：documentId={}", documentId);
         return documentId;
     }

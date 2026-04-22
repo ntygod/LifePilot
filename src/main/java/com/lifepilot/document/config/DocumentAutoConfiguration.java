@@ -248,7 +248,8 @@ public class DocumentAutoConfiguration {
      * gcIntervalMinutes <= 0 时禁用调度，返回 null 让 Spring 不装配定时任务。
      */
     @Bean
-    @ConditionalOnBean({SessionDocumentRepository.class, DocumentVersionRepository.class})
+    @ConditionalOnBean({SessionDocumentRepository.class, DocumentVersionRepository.class,
+            com.lifepilot.config.threadpool.SharedScheduler.class})
     com.lifepilot.document.version.DocumentGarbageCollector documentGarbageCollector(
             SessionDocumentRepository documentRepository,
             DocumentVersionRepository versionRepository,
