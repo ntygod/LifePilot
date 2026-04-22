@@ -336,9 +336,12 @@ public class ChannelRuntimeIngressService {
             String fileName = attachment.fileName() != null && !attachment.fileName().isBlank()
                     ? attachment.fileName().trim()
                     : UUID.randomUUID().toString();
-            String mimeType = attachment.mimeType() != null && !attachment.mimeType().isBlank()
+            String reportedMime = attachment.mimeType() != null && !attachment.mimeType().isBlank()
                     ? attachment.mimeType().trim()
                     : "application/octet-stream";
+            // connector 上报的 MIME 经常不准（飞书 xlsx 也报 application/octet-stream），按扩展名兜底校正。
+            // 校正后的 mimeType 是数据层的"真相"：存进 DB + GatewayMessage，下游 parser 路由 / 白名单匹配都靠它。
+            String mimeType = inferMimeFromFileName(fileName, reportedMime);
             long size = attachment.size() > 0 ? attachment.size() : data.length;
 
             String attachmentId;
@@ -391,6 +394,38 @@ public class ChannelRuntimeIngressService {
                     sessionId, fileName, e);
             return UUID.randomUUID().toString();
         }
+    }
+
+    /**
+     * 按文件名扩展名推断 MIME，纠正 connector 上报不准的情况。
+     *
+     * <p>规则：仅当 reportedMime 为 {@code application/octet-stream} 或空时触发兜底；
+     * reportedMime 明确且非 octet-stream 的信任原值（connector 可能有针对性识别）。
+     * 未知扩展名保持 octet-stream（下游会走通用二进制路径）。</p>
+     */
+    static String inferMimeFromFileName(String fileName, String reportedMime) {
+        boolean generic = reportedMime == null || reportedMime.isBlank()
+                || "application/octet-stream".equalsIgnoreCase(reportedMime);
+        if (!generic) return reportedMime;
+        if (fileName == null) return reportedMime;
+        String lower = fileName.toLowerCase();
+        int dot = lower.lastIndexOf('.');
+        if (dot < 0 || dot == lower.length() - 1) return reportedMime;
+        String ext = lower.substring(dot + 1);
+        return switch (ext) {
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case "pdf" -> "application/pdf";
+            case "md", "markdown", "mkd" -> "text/markdown";
+            case "csv" -> "text/csv";
+            case "tsv" -> "text/tab-separated-values";
+            case "txt", "text", "log" -> "text/plain";
+            case "json" -> "application/json";
+            case "xml" -> "application/xml";
+            case "html", "htm" -> "text/html";
+            default -> reportedMime;
+        };
     }
 
     private Map<String, String> buildTraceHeaders(ChannelInstance instance, ChannelRuntimeEventRequest request) {
