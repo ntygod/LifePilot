@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.service;
 
+import com.lifepilot.interaction.attachment.DocumentAttachmentHintBuilder;
 import com.lifepilot.interaction.model.ChannelMetadata;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.DeliveryMode;
@@ -48,16 +49,13 @@ public class BrowserIngressService {
     private static final String WEB_INSTANCE_ID = "web.default";
 
     /**
-     * 文档附件读取提示块起始 sentinel。
-     *
-     * <p>持久化层（{@code AgentPersistenceHandler}）依据该标记定位并剥离 hint，
-     * 避免操作元数据污染 user transcript 在前端历史中回显。模型仍能在 goal
-     * 原文中看到 hint，仅在写入 user entry 时移除。</p>
+     * 兼容位置：sentinel 常量已迁移到 {@link DocumentAttachmentHintBuilder}；
+     * 保留此处的转发引用，避免外部（如 {@code AgentPersistenceHandler}）改动过多。
      */
-    public static final String DOCUMENT_HINT_BEGIN = "<!--document-parse-hint-begin-->";
+    public static final String DOCUMENT_HINT_BEGIN = DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN;
 
-    /** 文档附件读取提示块结束 sentinel。 */
-    public static final String DOCUMENT_HINT_END = "<!--document-parse-hint-end-->";
+    /** 兼容位置。 */
+    public static final String DOCUMENT_HINT_END = DocumentAttachmentHintBuilder.DOCUMENT_HINT_END;
 
     private final AttachmentRepository attachmentRepository;
     private final ChatTurnService chatTurnService;
@@ -113,8 +111,8 @@ public class BrowserIngressService {
         List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
         var transcription = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
 
-        // 文档附件提示注入：对 docx/pdf/md/txt 附件，告诉 LLM 可调 file.read(attachmentId=...) 读取内容
-        String contentWithDocHint = appendDocumentParseHint(transcription.content(), attachments);
+        // 文档附件提示注入：对 docx/pdf/md/txt 附件注入 sentinel 包裹的系统提示，引导 file.read / document.edit
+        String contentWithDocHint = DocumentAttachmentHintBuilder.appendHint(transcription.content(), attachments);
         var content = new MessageContent.TextMessage(contentWithDocHint);
 
         // 转录成功后移除已转录的音频附件，避免它们作为 mediaContents 触发多模态路由
@@ -286,66 +284,4 @@ public class BrowserIngressService {
         return results;
     }
 
-    /**
-     * 文档类附件的 MIME 类型前缀/精确匹配集合。
-     *
-     * <p>这些类型的附件 LLM 无法直接看到内容，需要通过 {@code file.read(attachmentId=...)}
-     * 读取文本后再交给模型。图片/音频/视频等多模态附件走各自的专用路由，不在此列。</p>
-     *
-     * <p>Phase 1B 可解析集合与 knowledge/parser 对齐：pdf / docx / xlsx / pptx / md / txt / csv。
-     * 不包含 {@code application/msword}（.doc，WordParser 仅支持 docx）。</p>
-     */
-    private static final List<String> DOCUMENT_MIME_PREFIXES = List.of(
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "text/markdown",
-            "text/plain",
-            "text/csv"
-    );
-
-    /**
-     * 对包含文档类附件的消息，在末尾追加一段系统提示，告诉 LLM 可调用
-     * {@code file.read(attachmentId=...)} 读取附件内容。
-     *
-     * <p>只要附件列表中存在至少一个 docx/pdf/md/txt 类型的文件就会追加提示；
-     * 提示中列出所有文档附件的文件名与 attachmentId，供 LLM 按需选取；
-     * 并引导 LLM 对本机已有路径优先使用 {@code file.read(path=...)}。</p>
-     *
-     * @param originalContent 原始消息文本（可能已含语音转录结果）
-     * @param attachments     当前轮次的全部附件
-     * @return 追加提示后的文本；若无文档附件则原样返回
-     */
-    private String appendDocumentParseHint(String originalContent,
-                                           List<GatewayMessage.Attachment> attachments) {
-        if (attachments == null || attachments.isEmpty()) {
-            return originalContent;
-        }
-        var docs = attachments.stream()
-                .filter(this::isDocumentAttachment)
-                .toList();
-        if (docs.isEmpty()) {
-            return originalContent;
-        }
-        // hint 用 sentinel 标记包裹，AgentPersistenceHandler 在持久化 user entry 前剥离，
-        // 避免操作元数据污染 transcript 后被前端历史回显
-        var hint = new StringBuilder("\n\n").append(DOCUMENT_HINT_BEGIN)
-                .append("\n[系统提示] 用户选择了以下文档附件，可调用 file.read(attachmentId=...) 读取内容。" +
-                        "对本机文件优先使用 file.read(path=...)：\n");
-        for (var doc : docs) {
-            hint.append("- ").append(doc.fileName())
-                    .append("（attachmentId=").append(doc.attachmentId()).append("）\n");
-        }
-        hint.append(DOCUMENT_HINT_END);
-        return originalContent + hint;
-    }
-
-    /** 判断单个附件是否属于文档类（需要 file.read 工具介入）。 */
-    private boolean isDocumentAttachment(GatewayMessage.Attachment att) {
-        if (att.mimeType() == null) {
-            return false;
-        }
-        return DOCUMENT_MIME_PREFIXES.stream().anyMatch(att.mimeType()::startsWith);
-    }
 }

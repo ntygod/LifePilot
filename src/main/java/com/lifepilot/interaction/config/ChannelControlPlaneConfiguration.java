@@ -18,6 +18,8 @@ import com.lifepilot.interaction.service.ChannelIngressService;
 import com.lifepilot.interaction.service.ChannelInstanceEventService;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.gateway.MessageGateway;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.marketplace.install.InstalledExtensionRepository;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.beans.factory.ObjectProvider;
@@ -179,7 +181,11 @@ public class ChannelControlPlaneConfiguration {
                                                                     ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                                                     ChannelPermissionApprovalService channelApprovalService,
                                                                     ChannelUserMappingCache channelUserMappingCache,
+                                                                    AttachmentRepository attachmentRepository,
+                                                                    KnowledgeBaseProperties knowledgeBaseProperties,
                                                                     ConnectorManagerProperties connectorManagerProperties) {
+        // 与 ChatController 上传附件的落盘目录保持一致：<dataDir>/attachments
+        String attachmentStorageDir = knowledgeBaseProperties.dataDir() + "/attachments";
         return new ChannelRuntimeIngressService(
                 channelInstanceService,
                 channelIngressService,
@@ -188,6 +194,8 @@ public class ChannelControlPlaneConfiguration {
                 channelDeliveryDispatcher,
                 channelApprovalService,
                 channelUserMappingCache,
+                attachmentRepository,
+                attachmentStorageDir,
                 connectorManagerProperties.getMaxAttachmentSizeBytes(),
                 connectorManagerProperties.getEventDeduplicationCacheSize()
         );
