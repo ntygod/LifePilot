@@ -179,6 +179,20 @@ export function useDocumentDiffCard(
     await loadData()
   }
 
+  /** P1-7：用户在 VersionHistoryList 多选两版本对比，覆盖 diff.value 为对比结果 */
+  async function onCompareVersions(from: number, to: number) {
+    loading.value = true
+    try {
+      const payload = await getDiff(documentId.value, from, to)
+      diff.value = parseDiffJson(payload.diffJson)
+    } catch (e) {
+      console.error('两版本对比失败', e)
+      ui.showToast('error', '对比失败，请查看控制台日志')
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function runPendingConfirm() {
     const pending = pendingConfirm.value
     pendingConfirm.value = null
@@ -209,6 +223,7 @@ export function useDocumentDiffCard(
     onSaveAs,
     onDiscard,
     onRollbackComplete,
+    onCompareVersions,
     runPendingConfirm,
     runPendingPrompt,
     openCommittedFile,

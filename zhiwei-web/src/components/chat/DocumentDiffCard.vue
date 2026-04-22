@@ -39,6 +39,7 @@ const {
   onSaveAs,
   onDiscard,
   onRollbackComplete,
+  onCompareVersions,
   runPendingConfirm,
   runPendingPrompt,
   openCommittedFile,
@@ -95,6 +96,7 @@ const {
         :current-version="metadata.latestVersion"
         class="mt-md"
         @rollback-complete="onRollbackComplete"
+        @compare-versions="onCompareVersions"
       />
 
       <DocumentDiffActions

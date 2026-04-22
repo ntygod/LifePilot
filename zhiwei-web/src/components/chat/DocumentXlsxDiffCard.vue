@@ -42,6 +42,7 @@ const {
   onSaveAs,
   onDiscard,
   onRollbackComplete,
+  onCompareVersions,
   runPendingConfirm,
   runPendingPrompt,
   openCommittedFile,
@@ -139,6 +140,7 @@ function locationLabel(c: DiffChange): string {
         :current-version="metadata.latestVersion"
         class="mt-md"
         @rollback-complete="onRollbackComplete"
+        @compare-versions="onCompareVersions"
       />
 
       <DocumentDiffActions

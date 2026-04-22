@@ -214,6 +214,16 @@ public class DocumentController {
     /**
      * 返回指定区间（仅实现取 to 版本缓存 diff 的简化语义）。
      */
+    /**
+     * 返回 from → to 两版本的 diff（P1-7 真正的双向对比，不再依赖 patch 缓存）。
+     *
+     * <p>行为：</p>
+     * <ul>
+     *   <li>from == to-1 的相邻差：与历史行为一致（返回 to 版本的 patch 缓存 diffJson）</li>
+     *   <li>其它情况：走 {@link DocumentVersionService#compareVersions}
+     *       重新从两物理文件计算 diff（docx 段落级 LCS / xlsx cell 级对比）</li>
+     * </ul>
+     */
     @GetMapping("/{id}/diff")
     public ApiResponse<Map<String, Object>> diff(@PathVariable String id,
                                                   @RequestParam int from,
@@ -221,15 +231,28 @@ public class DocumentController {
         if (documentRepository.findById(id) == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        DocumentVersionRecord ver = versionRepository.findByDocumentIdAndVersion(id, to);
-        if (ver == null) {
+        DocumentVersionRecord toVer = versionRepository.findByDocumentIdAndVersion(id, to);
+        if (toVer == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("documentId", id);
         m.put("from", from);
         m.put("to", to);
-        m.put("diffJson", ver.diffJson() == null ? "" : ver.diffJson());
+
+        if (from == to - 1 && toVer.diffJson() != null && !toVer.diffJson().isBlank()) {
+            // 相邻版本命中 patch 缓存，直接返回避免重算
+            m.put("diffJson", toVer.diffJson());
+        } else {
+            try {
+                m.put("diffJson", versionService.compareVersions(id, from, to));
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+            } catch (IOException e) {
+                log.error("两版本对比失败：id={}, from={}, to={}", id, from, to, e);
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
+            }
+        }
         return ApiResponse.ok(m);
     }
 

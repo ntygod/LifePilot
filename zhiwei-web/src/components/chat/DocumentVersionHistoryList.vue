@@ -2,13 +2,15 @@
 /**
  * 文档版本历史列表 —— 共享子件，docx / xlsx DiffCard 都挂。
  *
- * 内置二次确认、成功后触发 rollback-complete 让父组件刷新 diff。
+ * 支持：
+ * - 回滚到任一历史版本（内置二次确认）
+ * - P1-7：多选任意两版本对比（emit compare-versions 让父组件拉 diff）
  *
  * @author zsg
  * @since 2026-04-21
  */
 import { ref, onMounted, computed } from 'vue'
-import { History, RotateCcw, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { History, RotateCcw, ChevronDown, ChevronUp, GitCompare, X } from 'lucide-vue-next'
 import {
   listVersions,
   rollback,
@@ -29,11 +31,16 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'rollback-complete', newVersion: number): void
+  (e: 'compare-versions', from: number, to: number): void
 }>()
 
 const expanded = ref(false)
 const loading = ref(false)
 const versions = ref<DocumentVersionInfo[]>([])
+
+// P1-7 对比模式：true 时每行出现选框，用户可选 1 个或 2 个版本
+const compareMode = ref(false)
+const selected = ref<number[]>([])
 
 async function toggleExpand() {
   expanded.value = !expanded.value
@@ -43,10 +50,8 @@ async function toggleExpand() {
 async function load() {
   loading.value = true
   try {
-    // pageSize=100 覆盖历史展开视图的全量需求；后续若版本数超 100 再做真正分页 UI
     const page = await listVersions(props.documentId, 1, 100)
     versions.value = page.items
-    // 倒序：最新在上
     versions.value.sort((a, b) => b.versionNo - a.versionNo)
   } catch (e) {
     console.warn('加载版本历史失败', e)
@@ -66,12 +71,39 @@ async function confirmRollback() {
   try {
     const r = await rollback(props.documentId, version)
     emit('rollback-complete', r.newVersion)
-    // 刷新列表
     await load()
   } catch (e) {
     console.error('回滚失败', e)
     ui.showToast('error', '回滚失败，请查看控制台日志')
   }
+}
+
+function toggleCompareMode() {
+  compareMode.value = !compareMode.value
+  selected.value = []
+}
+
+function toggleSelect(versionNo: number) {
+  const idx = selected.value.indexOf(versionNo)
+  if (idx >= 0) {
+    selected.value.splice(idx, 1)
+    return
+  }
+  if (selected.value.length >= 2) {
+    // 已选两个，新点击的替换第一个（FIFO）
+    selected.value.shift()
+  }
+  selected.value.push(versionNo)
+}
+
+function doCompare() {
+  if (selected.value.length !== 2) return
+  const [a, b] = selected.value
+  const from = Math.min(a, b)
+  const to = Math.max(a, b)
+  emit('compare-versions', from, to)
+  compareMode.value = false
+  selected.value = []
 }
 
 const headerLabel = computed(() =>
@@ -80,7 +112,6 @@ const headerLabel = computed(() =>
     : '版本历史'
 )
 
-// onMounted 不预加载（只有展开时才请求）
 void onMounted
 </script>
 
@@ -99,15 +130,66 @@ void onMounted
     </button>
 
     <div v-if="expanded" class="mt-md">
+      <!-- 对比模式工具栏 -->
+      <div v-if="versions.length >= 2" class="mb-sm flex items-center justify-between gap-sm">
+        <button
+          type="button"
+          class="inline-flex items-center gap-xs rounded-md border border-border px-md py-xs text-xs"
+          @click="toggleCompareMode"
+        >
+          <component :is="compareMode ? X : GitCompare" class="size-md" />
+          <span>{{ compareMode ? '取消对比' : '对比两版本' }}</span>
+        </button>
+        <button
+          v-if="compareMode && selected.length === 2"
+          type="button"
+          class="inline-flex items-center gap-xs rounded-md bg-primary px-md py-xs text-xs text-primary-foreground"
+          @click="doCompare"
+        >
+          <span>对比 v{{ Math.min(...selected) }} ↔ v{{ Math.max(...selected) }}</span>
+        </button>
+        <span v-else-if="compareMode" class="text-xs text-muted-foreground">
+          已选 {{ selected.length }} / 2
+        </span>
+      </div>
+
       <div v-if="loading" class="text-muted-foreground">加载中…</div>
 
       <ul v-else-if="versions.length > 0" class="space-y-xs">
         <li
           v-for="v in versions"
           :key="v.versionNo"
-          class="flex items-center justify-between gap-sm rounded-md border border-border bg-background p-sm"
+          class="flex items-center justify-between gap-sm rounded-md border p-sm"
+          :class="[
+            compareMode && selected.includes(v.versionNo)
+              ? 'border-primary bg-primary/10'
+              : 'border-border bg-background',
+          ]"
         >
-          <div class="min-w-0">
+          <label
+            v-if="compareMode"
+            class="flex min-w-0 flex-1 cursor-pointer items-center gap-sm"
+          >
+            <input
+              type="checkbox"
+              :checked="selected.includes(v.versionNo)"
+              @change="toggleSelect(v.versionNo)"
+            />
+            <div class="min-w-0 flex-1">
+              <div class="truncate">
+                <span class="font-medium">v{{ v.versionNo }}</span>
+                <span class="ml-xs text-muted-foreground">· {{ v.source }}</span>
+                <span v-if="v.patchSummary" class="ml-xs text-muted-foreground">
+                  · {{ v.patchSummary }}
+                </span>
+              </div>
+              <div class="text-xs text-muted-foreground">
+                {{ new Date(v.createdAt).toLocaleString() }}
+              </div>
+            </div>
+          </label>
+
+          <div v-else class="min-w-0">
             <div class="truncate">
               <span class="font-medium">v{{ v.versionNo }}</span>
               <span class="ml-xs text-muted-foreground">· {{ v.source }}</span>
@@ -119,8 +201,9 @@ void onMounted
               {{ new Date(v.createdAt).toLocaleString() }}
             </div>
           </div>
+
           <button
-            v-if="v.versionNo !== currentVersion"
+            v-if="!compareMode && v.versionNo !== currentVersion"
             type="button"
             class="shrink-0 inline-flex items-center gap-xs rounded-md border border-border px-md py-xs text-xs"
             @click="onRollback(v.versionNo)"
@@ -128,7 +211,10 @@ void onMounted
             <RotateCcw class="size-md" />
             <span>回滚</span>
           </button>
-          <span v-else class="shrink-0 text-xs text-muted-foreground">（当前）</span>
+          <span
+            v-else-if="!compareMode && v.versionNo === currentVersion"
+            class="shrink-0 text-xs text-muted-foreground"
+          >（当前）</span>
         </li>
       </ul>
 

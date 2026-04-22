@@ -496,6 +496,33 @@ public class DocumentVersionService {
         return versionRepository.findByDocumentId(documentId);
     }
 
+    /**
+     * P1-7 任意两版本 diff 计算 —— 不依赖 patch 缓存，从两版本物理文件重新对比。
+     *
+     * @param fromVersion 起始版本号（含），必须存在
+     * @param toVersion   目标版本号（含），必须存在
+     * @return diff JSON 字符串（结构对齐 DocxDiffBuilder / XlsxDiffBuilder 输出）
+     */
+    public String compareVersions(String documentId, int fromVersion, int toVersion) throws IOException {
+        var record = requireDocument(documentId);
+        var fromVer = versionRepository.findByDocumentIdAndVersion(documentId, fromVersion);
+        var toVer = versionRepository.findByDocumentIdAndVersion(documentId, toVersion);
+        if (fromVer == null || toVer == null) {
+            throw new IllegalArgumentException(
+                    "版本不存在：documentId=" + documentId + ", from=" + fromVersion + ", to=" + toVersion);
+        }
+        Path fromFile = Paths.get(fromVer.filePath());
+        Path toFile = Paths.get(toVer.filePath());
+        if (!Files.exists(fromFile) || !Files.exists(toFile)) {
+            throw new IOException("版本物理文件丢失");
+        }
+        return switch (record.mimeType()) {
+            case DOCX_MIME -> new DocxVersionComparator().compare(documentId, fromVersion, toVersion, fromFile, toFile);
+            case XLSX_MIME -> new XlsxVersionComparator().compare(documentId, fromVersion, toVersion, fromFile, toFile);
+            default -> throw new IllegalStateException("不支持的 MIME：" + record.mimeType());
+        };
+    }
+
     /** 分页列版本；page 从 1 起，pageSize 上限 100。防御性 clamp 非法入参。 */
     public VersionPage listVersions(String documentId, int page, int pageSize) {
         requireDocument(documentId);
