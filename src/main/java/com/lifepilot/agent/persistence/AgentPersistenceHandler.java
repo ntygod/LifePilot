@@ -470,8 +470,11 @@ public class AgentPersistenceHandler {
             var titleFuture = CompletableFuture.runAsync(() -> {
                 try {
                     if (sessionTitleGenerator != null) {
+                        // 透传 channelPlatform：channel 场景用固定标题（不调 LLM），Web 场景走 LLM 生成
+                        String channelPlatform = finalState.source() == null
+                                ? null : finalState.source().channelPlatform();
                         sessionTitleGenerator.generateIfNeeded(
-                                finalState.sessionId(), finalState.goal());
+                                finalState.sessionId(), finalState.goal(), channelPlatform);
                     }
                 } catch (Exception e) {
                     log.warn("会话标题生成失败：sessionId={}, error={}",
