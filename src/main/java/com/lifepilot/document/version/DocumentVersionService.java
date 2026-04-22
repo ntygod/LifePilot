@@ -179,16 +179,36 @@ public class DocumentVersionService {
         long size = Files.size(workingV0);
         String fileName = source.getFileName().toString();
 
-        documentRepository.save(new SessionDocumentRecord(
-                documentId, sessionId, null, fileName, workingV0.toString(), size,
-                inferredMime, SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE,
-                sourcePath, 0, Instant.now()));
-        versionRepository.save(new DocumentVersionRecord(
-                UUID.randomUUID().toString(), documentId, 0, workingV0.toString(),
-                DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()));
-        log.info("checkout 本机路径：documentId={}, sourcePath={}, mime={}",
-                documentId, sourcePath, inferredMime);
-        return documentId;
+        // P2-12：同 session 并发 check → save race 条件处理。V14 的 (session_id, source_path)
+        // UNIQUE 会让后到者 DataIntegrityViolationException；捕获后退回到 findBySessionAndSourcePath
+        // 拿已存在行的 documentId，达到"同 session 幂等"语义。
+        try {
+            documentRepository.save(new SessionDocumentRecord(
+                    documentId, sessionId, null, fileName, workingV0.toString(), size,
+                    inferredMime, SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE,
+                    sourcePath, 0, Instant.now()));
+            versionRepository.save(new DocumentVersionRecord(
+                    UUID.randomUUID().toString(), documentId, 0, workingV0.toString(),
+                    DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()));
+            log.info("checkout 本机路径：documentId={}, sourcePath={}, mime={}",
+                    documentId, sourcePath, inferredMime);
+            return documentId;
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // 并发 race：另一个线程已经先 save 了。删掉本线程创建的 workingV0 副本避免孤儿，
+            // 然后返回已存在记录的 id 达成幂等语义
+            try {
+                Files.deleteIfExists(workingV0);
+            } catch (IOException io) {
+                log.warn("并发 race 后清理 workingV0 失败：{}", workingV0, io);
+            }
+            var winner = documentRepository.findBySessionAndSourcePath(sessionId, sourcePath);
+            if (winner != null) {
+                log.info("checkoutFromPath 并发 race 退让：sessionId={}, sourcePath={}, winnerId={}",
+                        sessionId, sourcePath, winner.id());
+                return winner.id();
+            }
+            throw e;
+        }
     }
 
     private String checkoutFromAttachment(String sessionId, String attachmentId) throws IOException {
