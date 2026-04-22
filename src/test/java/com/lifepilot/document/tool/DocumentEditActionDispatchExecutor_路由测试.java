@@ -75,7 +75,7 @@ class DocumentEditActionDispatchExecutor_路由测试 {
     }
 
     @Test
-    @DisplayName("commit overwrite — 回填 committedPath 与 backupPath")
+    @DisplayName("commit overwrite — 带 userConfirmation 时回填 committedPath 与 backupPath")
     void commit_overwrite路由正确() throws Exception {
         when(versionService.commitOverwrite("doc-c1"))
                 .thenReturn(new DocumentVersionService.CommitResult("D:/x.docx", "D:/x.docx.20260421.bak"));
@@ -83,13 +83,42 @@ class DocumentEditActionDispatchExecutor_路由测试 {
         ToolResult result = dispatcher.execute(newInput(Map.of(
                 "action", "commit",
                 "documentId", "doc-c1",
-                "commitTarget", "overwrite"
+                "commitTarget", "overwrite",
+                "userConfirmation", "overwrite"
         )));
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.data())
                 .containsEntry("committedPath", "D:/x.docx")
                 .containsEntry("backupPath", "D:/x.docx.20260421.bak");
+    }
+
+    @Test
+    @DisplayName("commit 缺少 userConfirmation 直接拒绝（P0-2 硬化）")
+    void commit_缺少userConfirmation被拒() {
+        ToolResult result = dispatcher.execute(newInput(Map.of(
+                "action", "commit",
+                "documentId", "doc-c1",
+                "commitTarget", "overwrite"
+        )));
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("必须先取得用户明确同意");
+        assertThat(result.error()).contains("userConfirmation=\"overwrite\"");
+    }
+
+    @Test
+    @DisplayName("commit 的 userConfirmation 与 commitTarget 不一致时拒绝")
+    void commit_userConfirmation不匹配被拒() {
+        ToolResult result = dispatcher.execute(newInput(Map.of(
+                "action", "commit",
+                "documentId", "doc-c1",
+                "commitTarget", "overwrite",
+                "userConfirmation", "saveAs"   // 与 target 不一致
+        )));
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("必须先取得用户明确同意");
     }
 
     @Test

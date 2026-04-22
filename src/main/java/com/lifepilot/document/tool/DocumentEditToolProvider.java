@@ -80,7 +80,9 @@ public class DocumentEditToolProvider {
                 "(1) 先用 file.read 读文档内容再规划 locator，不要凭空猜测；" +
                 "(2) docx locator 的 before_context 和 after_context 各取 10-30 字（少于 10 字易有多处匹配导致 failedOps，多于 30 字容易和文档真实文本对不上）；xlsx 用精确 sheet 名 + A1 地址；" +
                 "(3) 单次 patch 内可传入多个 operations 事务执行；xlsx 与 docx op 不能跨 MIME 混用；" +
-                "(4) commit 是用户动作，LLM 不应主动 commit，应把 downloadUrl 告知用户由其决定是否落盘；" +
+                "(4) commit 是用户动作，LLM 不得主动 commit：必须先 reply 用户说明 target 和路径，" +
+                "收到用户明确同意（\"确认/是的/可以\"等）后才带上 userConfirmation（值等于 commitTarget）再调用；" +
+                "否则工具会直接拒绝；" +
                 "(5) 所有 op 都保留原样式（字体 / 数字格式 / 边框 / 填充），" +
                 "不要在 new_value / cells 里再自行拼装样式标记。";
     }
@@ -142,6 +144,13 @@ public class DocumentEditToolProvider {
         properties.put("saveAsPath", Map.of(
                 "type", "string",
                 "description", "commit + saveAs 时必填，目标路径（绝对路径）"
+        ));
+        properties.put("userConfirmation", Map.of(
+                "type", "string",
+                "enum", List.of("overwrite", "saveAs"),
+                "description", "commit action 必填：只有用户明确同意（说「确认/是的/覆盖/另存/可以」等）" +
+                        "后才能带此字段，值必须精确等于 commitTarget。禁止在没征询用户的情况下擅自填写 —— " +
+                        "commit 是写用户本地文件的破坏性操作，默认行为应是先 reply 用户求确认再调用。"
         ));
         properties.put("version", Map.of(
                 "type", "integer",

@@ -60,12 +60,14 @@ document.edit(action="patch", source={...}, operations=[...])
 
 - **永远不要用 `document.create` 重新生成已存在的文档**——会产生孤立 documentId，丢失版本链和回滚能力
 - docx op 和 xlsx op 不能同批混用
-- `commit` / `rollback` / `discard` 是**用户动作**，LLM 禁止主动调用，除非用户明确要求（"覆盖原文件"/"回滚到 v1"/"丢弃这份"）
+- `commit` 是**用户动作**，代码层硬控制：缺 `userConfirmation` 或值不等于 `commitTarget` 会直接拒绝。调用前必须先 reply 用户说明 target 与路径，收到"确认/是的/可以"等明确同意后再带上 `userConfirmation`（值精确等于 `commitTarget`，例如 `"overwrite"` 或 `"saveAs"`）。
+- `rollback` / `discard` 也是用户动作，LLM 不主动发起
 - patch 同一文档累计失败 ≥ 2 次就停下问用户，不要盲试；runtime 连续 3 次硬熔断
 - 不要用 `file.read` 读 docx/xlsx/pptx 正文（二进制格式）
 
 ## 反模式
 
+- ❌ patch 成功后立刻链式调用 commit —— commit 必须等用户明确同意，擅自带 `userConfirmation` 属于绕过安全校验
 - ❌ 发现上一轮没保留 documentId 就退而求其次用 `document.create` 重建——应引导用户重新提供源文件路径或附件，不要自行重建（会丢失版本链）
 - ❌ 把 `document.create` 当万能入口来"覆盖保存"——覆盖靠 `document.edit action=commit`，不是重新 create 同名文件
 - ❌ 一个 patch 里混合 docx 和 xlsx 的 op

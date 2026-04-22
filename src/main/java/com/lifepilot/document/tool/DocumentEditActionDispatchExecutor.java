@@ -181,14 +181,29 @@ public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
         try {
             String documentId = input.getParam("documentId", String.class);
             String target = input.getParam("commitTarget", String.class);
+            if (!"overwrite".equals(target) && !"saveAs".equals(target)) {
+                return ToolResult.error("commitTarget 必须是 overwrite 或 saveAs");
+            }
+            // 硬化约束：commit 会写入用户本地文件系统（overwrite 覆盖原文件 / saveAs 落到新路径），
+            // 是不可逆的破坏性操作。要求 LLM 必须先与用户对齐并取得明确同意后，才能带上精确等于
+            // commitTarget 值的 userConfirmation 字段。这个字段本身不构成"绝对"硬控（LLM 依然
+            // 能机械地塞值），但强制 LLM 的思考链里插入"先 reply 用户求确认"这一步，避免 patch
+            // 成功后直接链式调用 commit 导致用户来不及审查。
+            // 注意：用 getOptionalParam，字段缺失不抛"缺少必需参数"异常，由本方法给更精准的拒绝文案。
+            String confirmation = input.getOptionalParam("userConfirmation", String.class).orElse(null);
+            if (confirmation == null || !confirmation.equals(target)) {
+                return ToolResult.error(
+                        "commit 是写用户本地文件的破坏性操作（无法自动回滚），必须先取得用户明确同意。" +
+                        "请停下向用户说明：准备 commit 的 target=" + target +
+                        "（" + (target.equals("overwrite") ? "覆盖原文件，系统会自动生成 .bak 备份" : "另存到 saveAsPath") + "），" +
+                        "让用户回复'确认/是的/可以'等同意后，再调用本工具并带上 userConfirmation=\"" + target + "\"。");
+            }
             DocumentVersionService.CommitResult result;
             if ("overwrite".equals(target)) {
                 result = versionService.commitOverwrite(documentId);
-            } else if ("saveAs".equals(target)) {
+            } else {
                 String saveAsPath = input.getParam("saveAsPath", String.class);
                 result = versionService.commitSaveAs(documentId, saveAsPath);
-            } else {
-                return ToolResult.error("commitTarget 必须是 overwrite 或 saveAs");
             }
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("committedPath", result.committedPath());
