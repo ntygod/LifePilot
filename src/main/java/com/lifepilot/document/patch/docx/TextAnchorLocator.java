@@ -24,6 +24,14 @@ public class TextAnchorLocator {
     /**
      * 定位 target 在文档中的唯一出现。
      *
+     * <p>两阶段定位：</p>
+     * <ol>
+     *   <li>段内精确匹配（before + target + after 落在同一段）</li>
+     *   <li>P1-10 跨段 fallback：把全文段落用 {@code \n} 拼起来，在拼接串里找 full 的唯一出现；
+     *       约束 target 本身不跨换行（target 跨段的场景更复杂，留作后续）；
+     *       允许 before_context / after_context 跨到邻段</li>
+     * </ol>
+     *
      * @return Optional.empty 表示 0 次或 >1 次命中；命中时返回唯一 ParagraphRunRange
      */
     public Optional<ParagraphRunRange> locate(XWPFDocument document,
@@ -51,7 +59,73 @@ public class TextAnchorLocator {
                 fromIndex = hit + 1;
             }
         }
-        return hits.size() == 1 ? Optional.of(hits.get(0)) : Optional.empty();
+        if (hits.size() == 1) {
+            return Optional.of(hits.get(0));
+        }
+        if (!hits.isEmpty()) {
+            return Optional.empty();  // 段内多命中，直接失败
+        }
+        return locateCrossParagraph(paragraphs, beforeContext, target, afterContext, full);
+    }
+
+    /**
+     * P1-10 跨段 fallback：把所有段落用 \n 拼起来在全局字符串里查 full，确保 target 本身
+     * 不跨段落边界（含 \n 则放弃）；然后把 target 的全局偏移反向映射回 [paragraphIndex, charOffset]。
+     */
+    private Optional<ParagraphRunRange> locateCrossParagraph(List<XWPFParagraph> paragraphs,
+                                                              String beforeContext,
+                                                              String target,
+                                                              String afterContext,
+                                                              String full) {
+        StringBuilder joined = new StringBuilder();
+        int[] paragraphStarts = new int[paragraphs.size()];
+        for (int i = 0; i < paragraphs.size(); i++) {
+            paragraphStarts[i] = joined.length();
+            if (i > 0) joined.append('\n');
+            String text = paragraphs.get(i).getText();
+            joined.append(text == null ? "" : text);
+            paragraphStarts[i] = i == 0 ? 0 : paragraphStarts[i];
+        }
+        // 重算：第 i 段的全局起始 = 前 i-1 段文本长度之和 + (i-1) 个分隔符 \n
+        int offset = 0;
+        for (int i = 0; i < paragraphs.size(); i++) {
+            paragraphStarts[i] = offset;
+            String text = paragraphs.get(i).getText();
+            offset += (text == null ? 0 : text.length()) + 1;  // +1 for '\n'
+        }
+
+        String all = joined.toString();
+        int firstHit = all.indexOf(full);
+        if (firstHit < 0) return Optional.empty();
+        int secondHit = all.indexOf(full, firstHit + 1);
+        if (secondHit >= 0) return Optional.empty();  // 多处唯一性失败
+
+        int targetGlobalStart = firstHit + beforeContext.length();
+        int targetGlobalEnd = targetGlobalStart + target.length();
+
+        // 约束：target 自身不含换行（跨段 target 需要更复杂的 op 语义，留给后续扩展）
+        if (all.substring(targetGlobalStart, targetGlobalEnd).indexOf('\n') >= 0) {
+            return Optional.empty();
+        }
+
+        int pIndex = findParagraphIndex(paragraphStarts, targetGlobalStart);
+        if (pIndex < 0) return Optional.empty();
+        int intraStart = targetGlobalStart - paragraphStarts[pIndex];
+        int intraEnd = targetGlobalEnd - paragraphStarts[pIndex];
+        XWPFParagraph para = paragraphs.get(pIndex);
+        String paraText = para.getText();
+        if (paraText == null || intraEnd > paraText.length()) return Optional.empty();
+
+        ParagraphRunRange range = mapCharOffsetToRunRange(para, pIndex, intraStart, intraEnd);
+        return range == null ? Optional.empty() : Optional.of(range);
+    }
+
+    /** 在 paragraphStarts 中找第一个 start ≤ targetGlobal 的段落（简单线性扫描，段数通常 < 1000 可接受）。 */
+    private static int findParagraphIndex(int[] paragraphStarts, int targetGlobal) {
+        for (int i = paragraphStarts.length - 1; i >= 0; i--) {
+            if (paragraphStarts[i] <= targetGlobal) return i;
+        }
+        return -1;
     }
 
     /**
