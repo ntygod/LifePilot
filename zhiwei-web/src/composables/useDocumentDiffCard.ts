@@ -8,6 +8,7 @@ import {
   type DiffPayload,
   type DocumentMetadata,
 } from '@/api/documents'
+import { pickSavePath } from '@/composables/useSaveFilePicker'
 import { useUiStore } from '@/stores/ui'
 
 export interface DiffCardEmits {
@@ -90,7 +91,16 @@ export function useDocumentDiffCard(
     }
   }
 
-  function onSaveAs() {
+  async function onSaveAs() {
+    // Tauri 优先走 native 文件选择器拿绝对路径；不可用时降级到 PromptDialog 让用户手输
+    const nativePath = await pickSavePath({
+      suggestedName: metadata.value?.fileName,
+      mimeType: metadata.value?.mimeType,
+    })
+    if (nativePath) {
+      await doSaveAs(nativePath)
+      return
+    }
     pendingPrompt.value = {
       title: '另存为',
       message: '请输入绝对路径：',
@@ -98,15 +108,19 @@ export function useDocumentDiffCard(
       async onSubmit(path) {
         const trimmed = path.trim()
         if (!trimmed) return
-        try {
-          const result = await commit(documentId.value, 'saveAs', trimmed)
-          emit('committed', documentId.value, undefined)
-          ui.showToast('success', `已另存到：${result.committedPath}`)
-        } catch (e) {
-          console.error('另存失败', e)
-          ui.showToast('error', '另存失败，请查看控制台日志')
-        }
+        await doSaveAs(trimmed)
       },
+    }
+  }
+
+  async function doSaveAs(path: string) {
+    try {
+      const result = await commit(documentId.value, 'saveAs', path)
+      emit('committed', documentId.value, undefined)
+      ui.showToast('success', `已另存到：${result.committedPath}`)
+    } catch (e) {
+      console.error('另存失败', e)
+      ui.showToast('error', '另存失败，请查看控制台日志')
     }
   }
 
