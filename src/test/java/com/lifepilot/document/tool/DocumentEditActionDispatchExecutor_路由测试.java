@@ -1,6 +1,7 @@
 package com.lifepilot.document.tool;
 
 import com.lifepilot.document.model.DocumentVersionRecord;
+import com.lifepilot.document.model.SessionDocumentRecord;
 import com.lifepilot.document.patch.DocumentPatchResult;
 import com.lifepilot.document.version.DocumentVersionService;
 import com.lifepilot.document.version.SourceRef;
@@ -75,8 +76,9 @@ class DocumentEditActionDispatchExecutor_路由测试 {
     }
 
     @Test
-    @DisplayName("commit overwrite — 带 userConfirmation 时回填 committedPath 与 backupPath")
+    @DisplayName("commit overwrite — 有 sourcePath + userConfirmation 时回填 committedPath 与 backupPath")
     void commit_overwrite路由正确() throws Exception {
+        when(versionService.getDocumentRecord("doc-c1")).thenReturn(recordWithSource("D:/x.docx"));
         when(versionService.commitOverwrite("doc-c1"))
                 .thenReturn(new DocumentVersionService.CommitResult("D:/x.docx", "D:/x.docx.20260421.bak"));
 
@@ -91,6 +93,30 @@ class DocumentEditActionDispatchExecutor_路由测试 {
         assertThat(result.data())
                 .containsEntry("committedPath", "D:/x.docx")
                 .containsEntry("backupPath", "D:/x.docx.20260421.bak");
+    }
+
+    @Test
+    @DisplayName("commit overwrite — 无 sourcePath（附件/AI 生成）直接拒绝并引导 saveAs（P0-4）")
+    void commit_overwrite无sourcePath被拒() {
+        when(versionService.getDocumentRecord("doc-c1")).thenReturn(recordWithSource(null));
+
+        ToolResult result = dispatcher.execute(newInput(Map.of(
+                "action", "commit",
+                "documentId", "doc-c1",
+                "commitTarget", "overwrite",
+                "userConfirmation", "overwrite"
+        )));
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("该文档没有原路径");
+        assertThat(result.error()).contains("saveAs");
+    }
+
+    private SessionDocumentRecord recordWithSource(String sourcePath) {
+        return new SessionDocumentRecord(
+                "doc-c1", "sess", null, "x.docx", "/working/v1", 100L,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE, sourcePath, 1, Instant.now());
     }
 
     @Test

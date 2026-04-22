@@ -200,6 +200,16 @@ public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
             }
             DocumentVersionService.CommitResult result;
             if ("overwrite".equals(target)) {
+                // P0-4 降级：无 sourcePath 的场景（附件源 / Agent 生成 / 跨渠道通过云文件系统进来等）
+                // 无法 overwrite，必须走 saveAs。主动拦住并给精确引导，比让 service 抛 IllegalStateException
+                // 再被通用"执行失败"吞掉更易被 LLM / channel 响应消费。
+                var record = versionService.getDocumentRecord(documentId);
+                if (record.sourcePath() == null || record.sourcePath().isBlank()) {
+                    return ToolResult.error(
+                            "该文档没有原路径（附件源或 AI 生成），不能 overwrite。" +
+                            "请改用 commitTarget=\"saveAs\" 并提供 saveAsPath（绝对路径）重新调用，" +
+                            "同时把 userConfirmation 改为 \"saveAs\"。");
+                }
                 result = versionService.commitOverwrite(documentId);
             } else {
                 String saveAsPath = input.getParam("saveAsPath", String.class);
