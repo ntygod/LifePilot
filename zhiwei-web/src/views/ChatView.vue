@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
   EllipsisVertical,
+  FileText,
   LibraryBig,
   Settings2,
   SlidersHorizontal,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import DebugDrawer from '@/components/chat/DebugDrawer.vue'
+import DocumentWorkspacePanel from '@/components/chat/DocumentWorkspacePanel.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
@@ -72,6 +74,7 @@ const messagesReady = ref(false)
 const searchQuery = ref('')
 const activeSidebarPanel = ref<SidebarPanel>('session')
 const showMobileSidebar = ref(false)
+const showDocumentPanel = ref(false)
 const providers = ref<ModelService[]>([])
 
 const DEFAULT_SESSION_TEMPERATURE = 0.7
@@ -697,6 +700,10 @@ function closeTracePanel() {
                   <SlidersHorizontal class="size-4" />
                   调试
                 </DropdownMenuItem>
+                <DropdownMenuItem class="gap-2" @click="showDocumentPanel = true">
+                  <FileText class="size-4" />
+                  文档
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -915,5 +922,14 @@ function closeTracePanel() {
         </div>
       </Transition>
     </div>
+
+    <!-- P1-6 文档工作区抽屉：列出本 session 下的工作副本；点击暂时仅用于查看（open-document 跳转留给后续） -->
+    <DocumentWorkspacePanel
+      v-if="chatStore.activeSessionId"
+      :session-id="chatStore.activeSessionId"
+      :open="showDocumentPanel"
+      @close="showDocumentPanel = false"
+      @open-document="(id: string) => console.info('切换到文档', id)"
+    />
   </div>
 </template>

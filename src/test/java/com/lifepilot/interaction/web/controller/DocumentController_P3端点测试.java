@@ -58,6 +58,32 @@ class DocumentController_P3端点测试 {
     }
 
     @Test
+    @DisplayName("GET /api/documents?sessionId=... 列当前会话的工作副本（P1-6）")
+    void 列会话工作副本() throws Exception {
+        var working = new SessionDocumentRecord(
+                "d-w", "s-1", null, "w.docx", "/p/w", 200L,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE, "D:/w.docx", 3, Instant.now());
+        var untouched = new SessionDocumentRecord(
+                "d-u", "s-1", null, "u.docx", "/p/u", 100L,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                SessionDocumentRecord.ORIGIN_USER_LOCAL_FILE, "D:/u.docx", 0, Instant.now());
+        when(documentRepository.findBySessionId("s-1"))
+                .thenReturn(java.util.List.of(working, untouched));
+
+        mockMvc.perform(get("/api/documents?sessionId=s-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.length()").value(1))   // status=working 默认只返回 latestVersion>0
+                .andExpect(jsonPath("$.data[0].id").value("d-w"))
+                .andExpect(jsonPath("$.data[0].latestVersion").value(3));
+
+        mockMvc.perform(get("/api/documents?sessionId=s-1&status=all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2));
+    }
+
+    @Test
     @DisplayName("GET /api/documents/{id} 返回元数据")
     void getMetadata_成功() throws Exception {
         when(documentRepository.findById("d1")).thenReturn(new SessionDocumentRecord(

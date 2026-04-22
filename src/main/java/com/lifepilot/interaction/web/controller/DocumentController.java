@@ -131,6 +131,37 @@ public class DocumentController {
     // ===== P3 新增端点 =====
 
     /**
+     * 列出会话下的文档工作副本。
+     *
+     * <p>{@code status=working} 仅返回已开始编辑（latestVersion > 0）的文档 ——
+     * 这是前端"文档工作区"面板的主要场景，用户想回到之前改过的文档。</p>
+     * <p>{@code status=all} 返回该 session 下所有 session_documents 行。</p>
+     */
+    @GetMapping
+    public ApiResponse<List<Map<String, Object>>> listBySession(
+            @RequestParam String sessionId,
+            @RequestParam(defaultValue = "working") String status) {
+        List<SessionDocumentRecord> all = documentRepository.findBySessionId(sessionId);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (SessionDocumentRecord r : all) {
+            if ("working".equals(status) && r.latestVersion() <= 0) {
+                continue;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", r.id());
+            m.put("fileName", r.fileName());
+            m.put("mimeType", r.mimeType());
+            m.put("fileSize", r.fileSize());
+            m.put("origin", r.origin());
+            m.put("sourcePath", r.sourcePath());
+            m.put("latestVersion", r.latestVersion());
+            m.put("createdAt", r.createdAt().toString());
+            items.add(m);
+        }
+        return ApiResponse.ok(items);
+    }
+
+    /**
      * 获取文档元数据（供前端 diff 卡片渲染）。
      */
     @GetMapping("/{id}")

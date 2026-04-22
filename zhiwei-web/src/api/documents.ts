@@ -122,6 +122,20 @@ export async function getDocument(id: string): Promise<DocumentMetadata> {
   return request<DocumentMetadata>(`/documents/${id}`)
 }
 
+/**
+ * 列出指定 session 下的文档工作副本。
+ *
+ * @param sessionId 会话 id
+ * @param status `working` 只返回有未 commit 副本的（latestVersion>0），`all` 全部
+ */
+export async function listSessionDocuments(
+  sessionId: string,
+  status: 'working' | 'all' = 'working',
+): Promise<DocumentMetadata[]> {
+  const q = new URLSearchParams({ sessionId, status })
+  return request<DocumentMetadata[]>(`/documents?${q.toString()}`)
+}
+
 /** 分页响应结构 —— 对应后端 {@code /versions} 端点返回体 */
 export interface VersionPage {
   items: DocumentVersionInfo[]
