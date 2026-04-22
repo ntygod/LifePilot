@@ -144,24 +144,26 @@ graph TB
 - `HybridRetriever` 支持可选的 `RerankRouter` 步骤，对记忆候选进行精排重排序
 - `HybridRetriever` 实现 `knownEmpty` 短路优化：当检索空间已知为空时，跳过实际检索直接返回空结果
 - `HybridRetriever` 向量路径支持 pre-filter：当 `MemoryReadFilter` 限制了 space_id / memory_scope 时，先通过 `SemanticMemory.findEligibleEntityIds()` 查询合规实体 ID 集合，传入 `VectorSearcher` 做内存过滤；候选集超过 1000 时自动回退为后过滤，避免内存压力
-- `MemoryToolProvider` 当前注册 9 个记忆工具：
-  - `memory.search`
-  - `memory.recall`
-  - `knowledge.search`
-  - `memory.create`
-  - `memory.update`
-  - `memory.delete`
-  - `memory.tag`
-  - `memory.query-at-time`
-  - `memory.search-experience`
-- 其中 `recall` 只在工具调用时显式触发，不会自动把别的 session 对话塞进主 prompt
+- `MemoryToolProvider` 注册的 `memory` 工具通过单个 `action` 参数暴露 10 种操作，另加独立的 `knowledge.search` 工具：
+  - `memory(action=search)`：搜索知识实体
+  - `memory(action=recall)`：回忆别的会话里的对话片段
+  - `memory(action=create)` / `update` / `delete`：实体 CRUD，其中 `delete` 按已知 `entityId` 归档单条
+  - `memory(action=cancel)`：按语义描述批量归档已取消的 `GOAL / EXPERIENCE / HABIT`（默认类型集合可通过 `entityTypes` 覆盖）；必填 `query`，可选 `maxArchive`（默认 5）/ `minScore`（默认 0.5）；与 `delete` 互补——`delete` 精确按 ID 删单条，`cancel` 按语义召回后批量归档，覆盖"取消定时任务"这类需要清理多个旧目标/经验的场景
+  - `memory(action=tag)`：建立实体关系
+  - `memory(action=query-at-time)`：时间点查询
+  - `memory(action=search-experience)`：检索执行经验
+  - `knowledge.search`：独立工具，搜索会话绑定的资料文档
+- `cancel` 调用 `HybridRetriever.retrieve` + `MemoryReadFilter.all()` 召回候选（覆盖 USER_PROFILE/USER_FACT 与 AGENT_EXPERIENCE 双域），按类型和阈值过滤后逐条 `semanticMemory.archive()`；LLM 在用户表达"取消 / 撤销 / 不再做 / 以后别提 / X 不做了"等语义时应优先调用该 action，仅 `create PREFERENCE` 无法挡住后续对旧 GOAL/EXPERIENCE 的召回
+- `recall` 只在工具调用时显式触发，不会自动把别的 session 对话塞进主 prompt
+- 归档链路（`delete` / `cancel` / 巩固流程 / 遗忘引擎）统一走 `SemanticMemory.archive()`：事务内置 `is_current=0` + 关系收尾，通过 `afterCommit` 钩子调 `VectorSearcher.deleteEntityVector()` 级联清理向量索引，避免归档实体继续被向量路径召回；回滚路径下向量保持原状，失败仅告警由后续 archive 重试兜底
+- 检索链路对归档实体的屏蔽双保险：主库 `is_current = 1` 过滤 + 向量索引级联清理；`temporal_entities` / `temporal_relations` 视图仍然 `WHERE status <> 'DELETED'`，保留时间旅行查询能力
 
 ### 3.7 ConsolidationPipeline 与 ForgettingEngine
 
 - 巩固链路仍然负责将情景信息沉淀为语义和程序记忆
 - `ConsolidationPipeline` 顺序执行六步：语义巩固 → 程序巩固 → 偏好同步 → 经验合并 → 用户画像巩固 → 经验提升
 - `checkIdleConsolidation()` 基于空闲时间触发巩固，不依赖 L1 flush
-- `ForgettingEngine` 继续负责实体遗忘、压缩和归档
+- `ForgettingEngine` 继续负责实体遗忘、压缩和归档；LLM 压缩调用走 `skipCache=true`，避免不同实体共享同一条摘要；归档动作统一经由 `SemanticMemory.archive()` 在事务提交后级联清理向量索引（详见 `memory-advanced.md`）
 
 ### 3.8 经验学习子系统
 
