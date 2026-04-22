@@ -66,7 +66,7 @@ class ChannelDeliveryDispatcher_文件下载链接转换测试 {
         Files.write(physicalFile, bytes);
 
         when(documentRepository.findById(docId)).thenReturn(new SessionDocumentRecord(
-                docId, "sess", null, "炊事员入围人员名单.xlsx",
+                docId, "session-1", null, "炊事员入围人员名单.xlsx",
                 physicalFile.toString(), (long) bytes.length,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
@@ -76,7 +76,8 @@ class ChannelDeliveryDispatcher_文件下载链接转换测试 {
                         "📥 **[下载：炊事员入围人员名单.xlsx](/api/documents/" + docId + "/download)**\n\n" +
                         "### 筛选结果汇总\n岗位代码 | 入围线 | 人数"
         );
-        var response = GatewayResponse.success(ChannelType.FEISHU, reply);
+        var response = GatewayResponse.success(ChannelType.FEISHU, reply)
+                .toBuilder().responseId("resp-1").build();
         var request = dummyRequest();
 
         var eventResponse = dispatcher.buildEventResponse(instance, request, response);
@@ -91,15 +92,39 @@ class ChannelDeliveryDispatcher_文件下载链接转换测试 {
                 .contains("筛选结果汇总")
                 .doesNotContain("/api/documents/")
                 .doesNotContain("下载：炊事员");   // markdown 整体链接被剥离
+        assertThat(first.responseId()).isEqualTo("resp-1");
 
         var second = eventResponse.deliveries().get(1);
         assertThat(second.content().type()).isEqualTo("file");
         assertThat(second.content().payload()).containsEntry("documentId", docId);
         assertThat(second.content().payload()).containsEntry("fileName", "炊事员入围人员名单.xlsx");
+        // 第二条 delivery 的 responseId 必须独立，否则 connector 会当成流式更新 PATCH 吞掉文件路径
+        assertThat(second.responseId()).isEqualTo("resp-1:part1");
         // attachment 含真实 base64 数据
         assertThat(second.attachments()).hasSize(1);
         assertThat(second.attachments().getFirst().base64Data())
                 .isEqualTo(Base64.getEncoder().encodeToString(bytes));
+    }
+
+    @Test
+    @DisplayName("reply 引用的 documentId 属于他人会话：拒绝跨会话投递，仅保留文本")
+    void 跨会话documentId拒绝投递() {
+        String docId = "33333333-3333-3333-3333-333333333333";
+        when(documentRepository.findById(docId)).thenReturn(new SessionDocumentRecord(
+                docId, "other-session", null, "他人机密.xlsx",
+                "/tmp/victim.xlsx", 1L,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
+
+        var reply = new ResponseContent.MarkdownContent(
+                "提示：[下载](/api/documents/" + docId + "/download) 这个很重要");
+        var response = GatewayResponse.success(ChannelType.FEISHU, reply);
+
+        var eventResponse = dispatcher.buildEventResponse(instance, dummyRequest(), response);
+
+        // 只保留剥离后的文本，FileContent 被拒绝
+        assertThat(eventResponse.deliveries()).hasSize(1);
+        assertThat(eventResponse.deliveries().getFirst().content().type()).isEqualTo("markdown");
     }
 
     @Test
@@ -140,7 +165,7 @@ class ChannelDeliveryDispatcher_文件下载链接转换测试 {
         Path f = tmp.resolve("a.xlsx");
         Files.write(f, new byte[]{9});
         when(documentRepository.findById(docId)).thenReturn(new SessionDocumentRecord(
-                docId, "sess", null, "a.xlsx", f.toString(), 1L,
+                docId, "session-1", null, "a.xlsx", f.toString(), 1L,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 0, Instant.now()));
 

@@ -91,7 +91,15 @@ public class ChannelDeliveryDispatcher {
                                                           GatewayResponse response) {
         // 把 AI reply 里主服务生成的 /api/documents/<id>/download 链接拆成独立的 FileContent，
         // 让 connector 发成真实文件消息（web 场景也这么拆没有副作用：web 层走 SSE 不经过这个 dispatcher）
-        List<ResponseContent> contents = splitFileReferences(response.content());
+        // 传入当前 channel session 做归属校验：防 prompt injection 让 AI 引用他人 session 的 documentId 越权
+        List<ResponseContent> contents = splitFileReferences(response.content(), request.sessionId());
+        if (log.isDebugEnabled()) {
+            log.debug("[dispatcher] buildEventResponse: instanceId={}, platform={}, originalType={}, splitCount={}, types={}",
+                    instance.instanceId(), instance.platform(),
+                    response.content() != null ? response.content().getClass().getSimpleName() : "null",
+                    contents.size(),
+                    contents.stream().map(c -> c.getClass().getSimpleName()).toList());
+        }
         DeliveryMode mode = resolveDeliveryMode(request);
         ChannelRuntimeDeliveryRequest.Target target = buildTarget(request);
 
@@ -102,9 +110,15 @@ public class ChannelDeliveryDispatcher {
             List<ChannelRuntimeDeliveryRequest.Attachment> deliveryAttachments = i == 0
                     ? buildAttachments(response.attachments())
                     : buildAttachmentsForFileContent(c);
+            // 拆分后第 2+ 条必须用独立 responseId。connector 侧会按 responseId 去查 previousMessage
+            // 做"流式更新同一条消息"的 PATCH，共用 responseId 会导致后续 FileContent 被当成
+            // 前一条 markdown 消息的更新、被强制重渲染成 interactive 卡片、根本不走文件上传。
+            String deliveryResponseId = i == 0 || response.responseId() == null
+                    ? response.responseId()
+                    : response.responseId() + ":part" + i;
             deliveries.add(new ChannelRuntimeDeliveryRequest(
                     instance.instanceId(),
-                    response.responseId(),
+                    deliveryResponseId,
                     mode,
                     target,
                     buildContent(c),
@@ -127,7 +141,7 @@ public class ChannelDeliveryDispatcher {
      * 文本 + FileContent 的序列，保留文本里的说明（表格摘要等）。无匹配时原样单元素列表返回。
      * 依赖 documentRepository 查文件元信息；未注入时不拆分。
      */
-    private List<ResponseContent> splitFileReferences(ResponseContent content) {
+    private List<ResponseContent> splitFileReferences(ResponseContent content, @Nullable String sessionId) {
         if (documentRepository == null) {
             return List.of(content);
         }
@@ -177,6 +191,13 @@ public class ChannelDeliveryDispatcher {
             var record = documentRepository.findById(docId);
             if (record == null) {
                 log.warn("reply 里引用的 document 不存在，跳过文件消息：documentId={}", docId);
+                continue;
+            }
+            // 归属校验：防 AI 通过 prompt injection 引用他人 session 的 documentId 越权读文件
+            if (sessionId != null && record.sessionId() != null
+                    && !sessionId.equals(record.sessionId())) {
+                log.warn("reply 引用的 document 不属于当前会话，拒绝跨会话投递：documentId={}, docSession={}, currentSession={}",
+                        docId, record.sessionId(), sessionId);
                 continue;
             }
             result.add(new ResponseContent.FileContent(
