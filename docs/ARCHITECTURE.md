@@ -141,6 +141,7 @@ graph TB
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
+| `document` | 文档工作空间（docx / xlsx / pptx 新建、docx / xlsx 锚点编辑、工作副本 + 版本链 + diff + commit/rollback/discard） | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
 | `media` | 多模态处理（图片预处理、音频、文档格式检测） | [架构](architecture/multimodal.md) · [特性](features/multimodal.md) |

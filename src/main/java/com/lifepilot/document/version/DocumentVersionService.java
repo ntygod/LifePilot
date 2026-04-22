@@ -31,7 +31,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -350,9 +352,14 @@ public class DocumentVersionService {
         long size = Files.size(nextFile);
 
         String summary = "回滚到版本 " + targetVersion;
+        // rollback 的 diff_json 记录目标版本号，前端 DiffCard 据此渲染"回滚信息"而非"diff 数据暂不可用"
+        String rollbackDiffJson = String.format(
+                "{\"documentId\":\"%s\",\"fromVersion\":%d,\"toVersion\":%d,\"summary\":\"%s\"," +
+                        "\"rollbackFromVersion\":%d,\"changes\":[]}",
+                documentId, record.latestVersion(), nextVersion, summary, targetVersion);
         versionRepository.save(new DocumentVersionRecord(
                 UUID.randomUUID().toString(), documentId, nextVersion, nextFile.toString(),
-                DocumentVersionRecord.SOURCE_ROLLBACK, summary, null, Instant.now()));
+                DocumentVersionRecord.SOURCE_ROLLBACK, summary, rollbackDiffJson, Instant.now()));
         documentRepository.updateLatestVersion(documentId, nextVersion);
         documentRepository.updateFilePath(documentId, nextFile.toString(), size);
         attachmentRepository.updateSizeByFilePath(nextFile.toString(), size);
@@ -364,21 +371,61 @@ public class DocumentVersionService {
     // ===== discard / list =====
 
     public void discard(String documentId) throws IOException {
+        // 严格校验 documentId 为 UUID 格式：下面有按 <documentId>_ 前缀扫描 storageDir 的逻辑，
+        // 若 id 含 "/" ".." "*" 等字符可能误删/穿越；UUID.fromString 非法值会抛 IAE。
+        UUID.fromString(documentId);
         var record = requireDocument(documentId);
         if (record.latestVersion() == 0) {
             throw new IllegalStateException("文档无工作副本（latestVersion=0），不可丢弃");
         }
         Path workingDir = Paths.get(storageDir, record.sessionId(), "working", documentId);
         if (Files.exists(workingDir)) {
-            Files.walk(workingDir)
-                    .sorted((a, b) -> b.toString().length() - a.toString().length())
-                    .forEach(p -> {
-                        try {
-                            Files.deleteIfExists(p);
-                        } catch (IOException e) {
-                            log.warn("删除工作副本文件失败：{}", p, e);
-                        }
-                    });
+            // Files.walk 返回的 Stream 持有打开的目录句柄，必须 try-with-resources 关闭，
+            // 否则 Windows 下未释放的句柄会阻塞后续 deleteIfExists。
+            try (var stream = Files.walk(workingDir)) {
+                stream.sorted((a, b) -> b.toString().length() - a.toString().length())
+                        .forEach(p -> {
+                            try {
+                                Files.deleteIfExists(p);
+                            } catch (IOException e) {
+                                log.warn("删除工作副本文件失败：{}", p, e);
+                            }
+                        });
+            }
+        }
+        // 删 create_docx 落盘的原始文件（v0 字节）以及所有 document_versions 里的 file_path 指向。
+        // 原始文件路径是 <storageDir>/<documentId>_<fileName>，patch/rollback 后 record.filePath
+        // 会被更新为 working/vN 不再指向原始文件，需要按 documentId 前缀扫描 storageDir 清理孤儿
+        var versions = versionRepository.findByDocumentId(documentId);
+        for (var v : versions) {
+            try {
+                Files.deleteIfExists(Paths.get(v.filePath()));
+            } catch (IOException e) {
+                log.warn("删除版本物理文件失败：{}", v.filePath(), e);
+            }
+        }
+        try {
+            Files.deleteIfExists(Paths.get(record.filePath()));
+        } catch (IOException e) {
+            log.warn("删除文档当前 filePath 指向失败：{}", record.filePath(), e);
+        }
+        // 按 <documentId>_ 前缀扫描 storageDir 根目录，清理 create 时落盘的原始文件（孤儿）
+        Path storageRoot = Paths.get(storageDir);
+        if (Files.exists(storageRoot)) {
+            try (var stream = Files.list(storageRoot)) {
+                stream.filter(p -> {
+                    String name = p.getFileName().toString();
+                    return name.startsWith(documentId + "_");
+                }).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException e) {
+                        log.warn("删除原始落盘文件失败：{}", p, e);
+                    }
+                });
+            } catch (IOException e) {
+                log.warn("扫描 storageDir 清理孤儿文件失败：documentId={}", documentId, e);
+            }
         }
         versionRepository.deleteByDocumentId(documentId);
         documentRepository.deleteById(documentId);
@@ -388,6 +435,50 @@ public class DocumentVersionService {
     public List<DocumentVersionRecord> listVersions(String documentId) {
         requireDocument(documentId);
         return versionRepository.findByDocumentId(documentId);
+    }
+
+    /** 暴露 sessionDocument 记录给上层 tool 层，用于拿 sourcePath/fileName 等元信息做响应组装。 */
+    public SessionDocumentRecord getDocumentRecord(String documentId) {
+        return requireDocument(documentId);
+    }
+
+    /**
+     * 返回 docx 最新工作副本的段落预览列表 —— patch 锚点失败时给 LLM 的 hint，
+     * 让它基于真实文档内容调整 locator 而不是瞎猜。每段取前 80 字，空段落跳过。
+     * 非 docx MIME 返回空列表（xlsx/pptx 走各自的 outline 方法）。
+     */
+    public List<Map<String, Object>> getDocxOutline(String documentId) {
+        var record = requireDocument(documentId);
+        if (!DOCX_MIME.equals(record.mimeType())) {
+            return List.of();
+        }
+        Path filePath = Paths.get(record.filePath());
+        if (!Files.exists(filePath)) {
+            return List.of();
+        }
+        try (InputStream is = Files.newInputStream(filePath);
+             XWPFDocument doc = new XWPFDocument(is)) {
+            var result = new ArrayList<Map<String, Object>>();
+            int index = 0;
+            for (var p : doc.getParagraphs()) {
+                String text = p.getText() == null ? "" : p.getText();
+                if (!text.isBlank()) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("paragraphIndex", index);
+                    m.put("preview", text.length() > 80 ? text.substring(0, 80) + "…" : text);
+                    String style = p.getStyle();
+                    if (style != null && !style.isBlank()) {
+                        m.put("style", style);
+                    }
+                    result.add(m);
+                }
+                index++;
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("读取 docx 段落预览失败：documentId={}", documentId, e);
+            return List.of();
+        }
     }
 
     // ===== 辅助 =====

@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -118,6 +119,28 @@ public class WebExceptionHandler {
                 Instant.now()
         );
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    /**
+     * 处理 Spring 的 {@link ResponseStatusException}，尊重其原本 status code 与 reason。
+     *
+     * <p>Controller 里 throw {@code new ResponseStatusException(HttpStatus.NOT_FOUND)} 等
+     * 必须由本方法处理，否则会被后面 {@link #handleRuntimeException} 吞成 500。</p>
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+        if (status.is5xxServerError()) {
+            log.error("服务端错误: status={}, reason={}", status.value(), message, ex);
+        } else {
+            log.warn("请求失败: status={}, reason={}", status.value(), message);
+        }
+        var error = new ErrorResponse(status.value(), message, Instant.now());
+        return ResponseEntity.status(status).body(error);
     }
 
     /**

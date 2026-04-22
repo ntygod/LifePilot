@@ -27,7 +27,7 @@ import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
 import DocumentDiffCard from './DocumentDiffCard.vue'
 import DocumentXlsxDiffCard from './DocumentXlsxDiffCard.vue'
-import { getDocument, type DocumentMetadata } from '@/api/documents'
+import { useDocumentMeta } from '@/composables/useDocumentMeta'
 
 const props = defineProps<{
   message: Message
@@ -169,7 +169,9 @@ function documentIcon(att: { type?: string; filename: string }) {
  *
  * 条件不满足 → 回落到既有附件卡片（非 docx / Phase 2A 产物 / 未编辑 docx）。
  */
-const documentMetaCache = ref<Record<string, DocumentMetadata | null>>({})
+// 文档元数据缓存：从 composable 取模块级共享实例，所有 MessageBubble + useChat 都引用同一份。
+// useChat 在 AI 流式结束时调 invalidateAllDocumentMeta() 清空，触发下次 render 重新拉 latestVersion
+const { documentMetaCache, resolveDocumentMeta, invalidateDocumentMeta } = useDocumentMeta()
 
 /** 按 download URL 提取 documentId；不匹配则返回 null */
 function extractDocumentId(url: string | undefined): string | null {
@@ -178,22 +180,12 @@ function extractDocumentId(url: string | undefined): string | null {
   return m ? m[1] : null
 }
 
-/** 幂等加载文档元数据到缓存；失败写 null 避免反复触发 */
-async function resolveDocMeta(docId: string) {
-  if (documentMetaCache.value[docId] !== undefined) return
-  try {
-    documentMetaCache.value[docId] = await getDocument(docId)
-  } catch {
-    documentMetaCache.value[docId] = null
-  }
-}
-
 /** 判断附件是否为「已编辑的 docx」—— 同步返回，异步触发缓存填充，下次渲染自动切换 */
 function isEditedDocx(att: { type?: string; url?: string }): boolean {
   if (!att.type?.includes('wordprocessingml.document')) return false
   const docId = extractDocumentId(att.url)
   if (!docId) return false
-  void resolveDocMeta(docId)
+  void resolveDocumentMeta(docId)
   const meta = documentMetaCache.value[docId]
   return !!meta && meta.latestVersion > 0
 }
@@ -203,19 +195,17 @@ function isEditedXlsx(att: { type?: string; url?: string }): boolean {
   if (!att.type?.includes('spreadsheetml.sheet')) return false
   const docId = extractDocumentId(att.url)
   if (!docId) return false
-  void resolveDocMeta(docId)
+  void resolveDocumentMeta(docId)
   const meta = documentMetaCache.value[docId]
   return !!meta && meta.latestVersion > 0
 }
 
-/** DiffCard commit 成功 → 失效缓存，下次渲染重新拉取（可能 latestVersion 变化） */
+/** DiffCard commit / 丢弃工作副本 → 失效缓存，下次渲染重新拉取（latestVersion 变化 or 404） */
 function onDocumentCommitted(documentId: string) {
-  delete documentMetaCache.value[documentId]
+  invalidateDocumentMeta(documentId)
 }
-
-/** DiffCard 丢弃工作副本 → 失效缓存（后端已删除该文档，下次拉取会 404 → null，回落原卡片） */
 function onDocumentDiscarded(documentId: string) {
-  delete documentMetaCache.value[documentId]
+  invalidateDocumentMeta(documentId)
 }
 
 const audioAttachments = computed(() =>

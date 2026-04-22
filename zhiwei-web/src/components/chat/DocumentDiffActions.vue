@@ -25,7 +25,7 @@ defineEmits<{
     <button
       v-if="canOverwrite"
       type="button"
-      class="action-btn action-btn-primary"
+      class="inline-flex items-center gap-xs rounded-md bg-primary px-md py-xs text-sm text-primary-foreground"
       @click="$emit('overwrite')"
     >
       <Upload class="size-md" />
@@ -33,7 +33,7 @@ defineEmits<{
     </button>
     <button
       type="button"
-      class="action-btn action-btn-secondary"
+      class="inline-flex items-center gap-xs rounded-md border border-border bg-transparent px-md py-xs text-sm"
       @click="$emit('save-as')"
     >
       <Save class="size-md" />
@@ -41,7 +41,7 @@ defineEmits<{
     </button>
     <button
       type="button"
-      class="action-btn action-btn-secondary text-destructive"
+      class="inline-flex items-center gap-xs rounded-md border border-border bg-transparent px-md py-xs text-sm text-destructive"
       @click="$emit('discard')"
     >
       <Trash2 class="size-md" />
@@ -49,17 +49,3 @@ defineEmits<{
     </button>
   </div>
 </template>
-
-<style scoped>
-.action-btn {
-  @apply inline-flex items-center gap-xs rounded-md px-md py-xs text-sm;
-}
-
-.action-btn-primary {
-  @apply bg-primary text-primary-foreground;
-}
-
-.action-btn-secondary {
-  @apply border border-border bg-transparent;
-}
-</style>

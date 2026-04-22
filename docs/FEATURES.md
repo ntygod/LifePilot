@@ -53,7 +53,7 @@
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
 | Skill 系统 | Markdown SKILL.md 声明式 Skill 定义、热加载、file.read(skill=...) 按需激活 | [特性](features/skill-system.md) |
-| 预置 Skill | 25 个种子 Skill，首次启动自动提取到用户目录 | [特性](features/preset-skills.md) |
+| 预置 Skill | 26 个种子 Skill，首次启动自动提取到用户目录 | [特性](features/preset-skills.md) |
 | Skill 自扩展 | Gap 检测 + Markdown SKILL.md 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
@@ -66,6 +66,7 @@
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
 | 多模态处理 | 图片预处理、音频处理、文档格式检测（Apache Tika） | [特性](features/multimodal.md) |
+| 文档工作空间 | docx / xlsx / pptx 新建 + docx / xlsx 锚点编辑 + 版本链 + diff 卡片 + commit/rollback/discard | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | 工作流引擎 | YAML 声明式工作流、四种触发器（Cron/Event/Condition/Signal）、崩溃恢复 | [特性](features/workflow.md) |
 | 代码沙箱 | Process/Docker/Remote 三种沙箱模式、会话复用、危险操作预检 | [特性](features/sandbox.md) |
 | 外部数据同步 | CalDAV / Todoist / 滴答清单 / Obsidian 连接器、冲突解决策略（规划中） | [规划](planned/external-data-sync-feat.md) |

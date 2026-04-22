@@ -427,7 +427,7 @@
 
 来源：`DocumentController`，Base Path: `/api/documents`
 
-> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。服务 Agent 通过 `document.create` / `document.edit` 工具生成的工作副本，向前端提供元数据、版本链、diff 卡片数据以及 commit / rollback / 丢弃等用户侧动作。
+> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。服务 Agent 通过 `document.create`（docx / xlsx / pptx）与 `document.edit`（docx / xlsx，锚点增量编辑）工具生成的工作副本，向前端提供元数据、版本链、diff 卡片数据以及 commit / rollback / 丢弃等用户侧动作。pptx 目前只能从零创建，不支持增量 patch。
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|

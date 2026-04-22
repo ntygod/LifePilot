@@ -29,6 +29,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * document.edit action 路由 —— 5 个 action 分发到 {@link DocumentVersionService}。
@@ -52,6 +54,22 @@ import java.util.Map;
 public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentEditActionDispatchExecutor.class);
+
+    /** 同一 sessionId+documentId 上 patch 连续失败次数上限；达到上限强制熔断避免 LLM 死循环。 */
+    private static final int MAX_PATCH_FAILURES = 3;
+
+    /**
+     * patchFailCounter 容量告警阈值：正常场景远用不到这个量级（每个 active session × 每个
+     * in-flight patch 才占 1 条）；若日志出现此告警说明有 session 泄漏没清，需要排查。
+     */
+    private static final int FAIL_COUNTER_WARN_THRESHOLD = 1024;
+
+    /**
+     * patch 失败计数器：key=sessionId:documentId，value=连续失败次数。
+     * patch 成功 / 熔断 / rollback 时清理对应条目；异常 session 断连导致的漏清由
+     * {@link #FAIL_COUNTER_WARN_THRESHOLD} 告警暴露。实例字段而非静态，便于测试与 bean 生命周期对齐。
+     */
+    private final ConcurrentMap<String, Integer> patchFailCounter = new ConcurrentHashMap<>();
 
     private final DocumentVersionService versionService;
 
@@ -86,20 +104,47 @@ public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
             String sessionId = requireSession(input);
             SourceRef source = parseSource(input);
             String documentId = versionService.checkout(sessionId, source);
-            List<DocumentPatchOperation> ops = parseOperations(input);
+            String counterKey = sessionId + ":" + documentId;
 
+            // B10 熔断：达到连续失败上限就不让 LLM 再试了，返回 error 让它停下和用户确认
+            int prevFailures = patchFailCounter.getOrDefault(counterKey, 0);
+            if (prevFailures >= MAX_PATCH_FAILURES) {
+                patchFailCounter.remove(counterKey);
+                return ToolResult.error(
+                        "同一文档 patch 已连续失败 " + prevFailures + " 次，熔断以防死循环。" +
+                        "请停下向用户说明：当前文档的实际文本结构与你的锚点预期不一致，" +
+                        "请用户提供更精确的锚点描述或重新贴一次文档；不要再继续自动重试。"
+                );
+            }
+
+            List<DocumentPatchOperation> ops = parseOperations(input);
             DocumentPatchResult result = versionService.applyPatch(documentId, ops);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("success", result.success());
             data.put("documentId", documentId);
             if (result.success()) {
+                patchFailCounter.remove(counterKey);
                 data.put("newVersion", result.newVersion());
                 data.put("summary", result.patchSummary());
                 data.put("diffJson", result.diffJson());
                 data.put("downloadUrl", "/api/documents/" + documentId + "/download");
             } else {
+                int count = patchFailCounter.merge(counterKey, 1, Integer::sum);
+                if (patchFailCounter.size() >= FAIL_COUNTER_WARN_THRESHOLD) {
+                    log.warn("patchFailCounter 条目数 {} 达到告警阈值 {}，可能存在未清理的遗留 session",
+                            patchFailCounter.size(), FAIL_COUNTER_WARN_THRESHOLD);
+                }
                 data.put("failedOps", result.failedOps());
+                data.put("failureCount", count);
+                data.put("maxAllowedFailures", MAX_PATCH_FAILURES);
+                // B9：返回当前文档段落预览给 LLM，避免它只凭错误消息瞎猜锚点
+                var outline = versionService.getDocxOutline(documentId);
+                if (!outline.isEmpty()) {
+                    data.put("documentOutline", outline);
+                    data.put("hint", "failedOps 无法匹配，请对照 documentOutline 里每段的 preview 重写 locator 的 before_context/target/after_context；" +
+                            "若累计失败接近 " + MAX_PATCH_FAILURES + " 次请停下和用户确认。");
+                }
             }
             return ToolResult.success(data);
         } catch (IllegalArgumentException e) {
@@ -164,6 +209,10 @@ public class DocumentEditActionDispatchExecutor extends ActionDispatchExecutor {
             String documentId = input.getParam("documentId", String.class);
             int version = input.getParam("version", Integer.class);
             DocumentPatchResult result = versionService.rollback(documentId, version);
+            // rollback 本质上是一次"成功恢复"：之前 patch 连续失败累积的计数已不再有语义价值，
+            // 清掉避免下一次 patch 继承旧计数被提前熔断（document 通常只属于 1 个 session，
+            // 用 endsWith 做按 documentId 精确清理，不依赖 sessionId 入参）。
+            patchFailCounter.keySet().removeIf(k -> k.endsWith(":" + documentId));
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("success", result.success());
             data.put("newVersion", result.newVersion());
