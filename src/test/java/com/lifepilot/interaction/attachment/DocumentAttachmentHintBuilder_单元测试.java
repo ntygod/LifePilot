@@ -28,8 +28,8 @@ class DocumentAttachmentHintBuilder_单元测试 {
     }
 
     @Test
-    @DisplayName("docx 附件注入 hint：含 attachmentId + file.read + document.edit")
-    void docx附件注入含文件读写双引导() {
+    @DisplayName("docx 附件注入 sentinel 包裹的三元组事实")
+    void docx附件注入结构化事实() {
         var attachments = List.of(att("a1", "contract.docx", DOCX_MIME));
         String text = DocumentAttachmentHintBuilder.appendHint("改一下合同", attachments);
 
@@ -37,32 +37,26 @@ class DocumentAttachmentHintBuilder_单元测试 {
         assertThat(text).contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN);
         assertThat(text).contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_END);
         assertThat(text).contains("attachmentId=a1");
-        assertThat(text).contains("contract.docx");
-        assertThat(text).contains("file.read(attachmentId)");
-        assertThat(text).contains("document.edit(source={type:'attachment'");
+        assertThat(text).contains("fileName=contract.docx");
+        assertThat(text).contains("mimeType=" + DOCX_MIME);
+        // hint 不复述工具用法（工具用法是 schema 的职责），避免 separation-of-concerns 漂移
+        assertThat(text).doesNotContain("file.read");
+        assertThat(text).doesNotContain("document.edit");
     }
 
     @Test
-    @DisplayName("xlsx 附件也给 document.edit 引导（可编辑 MIME）")
-    void xlsx附件给document_edit引导() {
-        var attachments = List.of(att("x1", "report.xlsx", XLSX_MIME));
-        String text = DocumentAttachmentHintBuilder.appendHint("加一行汇总", attachments);
+    @DisplayName("xlsx / pdf / csv 所有文档类型一视同仁注入事实，MIME 差异不影响 hint 形态")
+    void 文档类附件一致注入() {
+        var attachments = List.of(
+                att("x1", "report.xlsx", XLSX_MIME),
+                att("p1", "paper.pdf", PDF_MIME)
+        );
+        String text = DocumentAttachmentHintBuilder.appendHint("", attachments);
 
-        assertThat(text).contains("document.edit(source={type:'attachment'");
-        assertThat(text).contains("report.xlsx");
-    }
-
-    @Test
-    @DisplayName("pdf 附件只给 file.read 引导（pdf 目前不可 edit）")
-    void pdf附件仅给file_read() {
-        var attachments = List.of(att("p1", "paper.pdf", PDF_MIME));
-        String text = DocumentAttachmentHintBuilder.appendHint("读一下论文", attachments);
-
-        assertThat(text).contains("file.read(attachmentId)");
-        assertThat(text).contains("paper.pdf");
+        assertThat(text).contains("attachmentId=x1");
         assertThat(text).contains("attachmentId=p1");
-        // pdf 没有 document.edit 支持 —— 不应出现 edit 引导
-        assertThat(text).doesNotContain("document.edit(source={type:'attachment'");
+        assertThat(text).contains("mimeType=" + XLSX_MIME);
+        assertThat(text).contains("mimeType=" + PDF_MIME);
     }
 
     @Test
@@ -76,36 +70,9 @@ class DocumentAttachmentHintBuilder_单元测试 {
     }
 
     @Test
-    @DisplayName("混合附件：至少一个可编辑文档时给出 edit 引导")
-    void 混合附件给edit引导() {
-        var attachments = List.of(
-                att("p1", "paper.pdf", PDF_MIME),
-                att("d1", "contract.docx", DOCX_MIME)
-        );
-        String text = DocumentAttachmentHintBuilder.appendHint("看一下然后改合同", attachments);
-
-        assertThat(text).contains("paper.pdf");
-        assertThat(text).contains("contract.docx");
-        assertThat(text).contains("document.edit(source={type:'attachment'");
-    }
-
-    @Test
     @DisplayName("空附件列表 / null 返回原文")
     void 空附件原样返回() {
         assertThat(DocumentAttachmentHintBuilder.appendHint("hello", List.of())).isEqualTo("hello");
         assertThat(DocumentAttachmentHintBuilder.appendHint("hello", null)).isEqualTo("hello");
-    }
-
-    @Test
-    @DisplayName("isEditableDocumentAttachment：仅 docx / xlsx 为 true")
-    void 可编辑判定正确() {
-        assertThat(DocumentAttachmentHintBuilder.isEditableDocumentAttachment(
-                att("x", "a.docx", DOCX_MIME))).isTrue();
-        assertThat(DocumentAttachmentHintBuilder.isEditableDocumentAttachment(
-                att("x", "a.xlsx", XLSX_MIME))).isTrue();
-        assertThat(DocumentAttachmentHintBuilder.isEditableDocumentAttachment(
-                att("x", "a.pdf", PDF_MIME))).isFalse();
-        assertThat(DocumentAttachmentHintBuilder.isEditableDocumentAttachment(
-                att("x", "a.png", PNG_MIME))).isFalse();
     }
 }

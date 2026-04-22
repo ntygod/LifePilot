@@ -5,18 +5,19 @@ import com.lifepilot.interaction.model.GatewayMessage;
 import java.util.List;
 
 /**
- * 文档类附件的 prompt 系统提示构造器 —— Web / Channel 两个 ingress 路径的共享工具。
+ * 文档类附件的 prompt 结构化事实注入器 —— Web / Channel 两个 ingress 路径的共享工具。
  *
- * <p>用户消息中挂载了 docx / xlsx / pptx / pdf / md / txt / csv 等文档类附件时，
- * 在消息末尾追加 sentinel 包裹的系统提示，给 LLM 通用语义：</p>
+ * <p>{@code GatewayMessage.attachments} 是结构化字段但 LLM 看到的是纯文本 UserMessage，
+ * 附件信息不会自动进 prompt。这里的职责：把本轮文档类附件的 {@code attachmentId /
+ * fileName / mimeType} 三个字段注入到消息末尾（sentinel 包裹），让 LLM 知道"本轮上下文里
+ * 有哪些附件可引用"。</p>
+ *
+ * <p><b>只放事实，不放用法</b>：如何用 {@code attachmentId} 调 {@code file.read} 或
+ * {@code document.edit} 是工具自己 schema description 的职责。这里复述工具用法会：</p>
  * <ul>
- *   <li>每个附件的 {@code attachmentId} + {@code fileName} + {@code mimeType}</li>
- *   <li>读取用 {@code file.read(attachmentId=...)}；修改用
- *       {@code document.edit(source={type:'attachment', id:'xxx'}, ...)}</li>
+ *   <li>违反 Schema/Skill/Hint 的 separation of concerns（用法散落多处易漂移）</li>
+ *   <li>变成"为了让 LLM 会用工具"的单点矫正（见 memory feedback_no_prompt_patching）</li>
  * </ul>
- *
- * <p>hint 内容仅列通用工具用法，不对具体 case 做矫正（禁止"不要用 X"式否定句堆砌）。
- * LLM 出现具体行为错误应在系统层修根因（转换层 / 工具契约），不在 prompt 里打补丁。</p>
  *
  * <p>sentinel 包裹的目的：{@code AgentPersistenceHandler} 在持久化 user transcript 前
  * 依据 sentinel 剥离 hint，避免前端历史回显时把"系统提示"当用户原话展示。</p>
@@ -46,20 +47,14 @@ public final class DocumentAttachmentHintBuilder {
             "text/csv"
     );
 
-    /** docx / xlsx MIME — 用于判断 hint 是否提"可编辑"段落（pdf/txt 目前仅支持读）。 */
-    private static final List<String> EDITABLE_DOCUMENT_MIME_PREFIXES = List.of(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-
     private DocumentAttachmentHintBuilder() {}
 
     /**
-     * 对含文档类附件的消息，在末尾追加系统提示；无文档附件时原样返回。
+     * 对含文档类附件的消息，在末尾追加结构化附件事实；无文档附件时原样返回。
      *
      * @param originalContent 原始消息文本
      * @param attachments     当前轮次的全部附件
-     * @return 追加提示后的文本
+     * @return 追加事实后的文本
      */
     public static String appendHint(String originalContent,
                                      List<GatewayMessage.Attachment> attachments) {
@@ -72,7 +67,6 @@ public final class DocumentAttachmentHintBuilder {
         if (docs.isEmpty()) {
             return originalContent;
         }
-        boolean anyEditable = docs.stream().anyMatch(DocumentAttachmentHintBuilder::isEditableDocumentAttachment);
 
         var hint = new StringBuilder("\n\n").append(DOCUMENT_HINT_BEGIN)
                 .append("\n[系统] 本轮附件：\n");
@@ -81,28 +75,15 @@ public final class DocumentAttachmentHintBuilder {
                     .append("; fileName=").append(doc.fileName())
                     .append("; mimeType=").append(doc.mimeType()).append('\n');
         }
-        hint.append("工具：file.read(attachmentId) 读取；");
-        if (anyEditable) {
-            hint.append("document.edit(source={type:'attachment', id:attachmentId}) 修改；");
-        }
-        hint.append("file.read(path) 读本机路径。");
         hint.append(DOCUMENT_HINT_END);
         return originalContent + hint;
     }
 
-    /** 判断单个附件是否属于文档类（需要 file.read 工具介入）。 */
+    /** 判断单个附件是否属于文档类（参与 hint 注入的 MIME 白名单）。 */
     public static boolean isDocumentAttachment(GatewayMessage.Attachment att) {
         if (att.mimeType() == null) {
             return false;
         }
         return DOCUMENT_MIME_PREFIXES.stream().anyMatch(att.mimeType()::startsWith);
-    }
-
-    /** 判断附件是否可通过 {@code document.edit} 工具编辑（仅 docx / xlsx，pptx 暂无 edit 实现）。 */
-    public static boolean isEditableDocumentAttachment(GatewayMessage.Attachment att) {
-        if (att.mimeType() == null) {
-            return false;
-        }
-        return EDITABLE_DOCUMENT_MIME_PREFIXES.stream().anyMatch(att.mimeType()::startsWith);
     }
 }

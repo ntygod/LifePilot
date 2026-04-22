@@ -69,7 +69,7 @@ class BrowserIngressService_文档附件提示测试 {
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("请帮我读这份合同");
         assertThat(text).contains("contract.docx");
-        assertThat(text).contains("file.read");
+        assertThat(text).contains("attachmentId=");
         assertThat(text).contains("attachmentId=att-doc");
     }
 
@@ -102,8 +102,7 @@ class BrowserIngressService_文档附件提示测试 {
         assertThat(begin).isGreaterThanOrEqualTo(0);
         assertThat(end).isGreaterThan(begin);
         String wrapped = text.substring(begin, end);
-        assertThat(wrapped).contains("file.read");
-        assertThat(wrapped).contains("att-marker");
+        assertThat(wrapped).contains("attachmentId=att-marker");
     }
 
     @Test
@@ -127,7 +126,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("paper.pdf");
-        assertThat(text).contains("file.read");
+        assertThat(text).contains("attachmentId=");
         assertThat(text).contains("att-pdf");
     }
 
@@ -150,7 +149,7 @@ class BrowserIngressService_文档附件提示测试 {
         GatewayMessage msg = service.buildChatMessage(request, null, DeliveryMode.SYNC);
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
-        assertThat(text).doesNotContain("file.read");
+        assertThat(text).doesNotContain(BrowserIngressService.DOCUMENT_HINT_BEGIN);
         assertThat(text).isEqualTo("看这张图");
     }
 
@@ -175,7 +174,7 @@ class BrowserIngressService_文档附件提示测试 {
         var text = ((MessageContent.TextMessage) msg.content()).text();
 
         assertThat(text).contains("data.csv");
-        assertThat(text).contains("file.read");
+        assertThat(text).contains("attachmentId=");
         assertThat(text).contains("att-csv");
         assertThat(text).contains(BrowserIngressService.DOCUMENT_HINT_BEGIN);
     }
@@ -220,7 +219,7 @@ class BrowserIngressService_文档附件提示测试 {
         // 但不出现 png 文件名 / id
         assertThat(text).doesNotContain("preview.png");
         assertThat(text).doesNotContain("att-img");
-        assertThat(text).contains("file.read");
+        assertThat(text).contains("attachmentId=");
     }
 
     @Test
@@ -245,7 +244,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("sales.xlsx");
-        assertThat(text).contains("file.read");
+        assertThat(text).contains("attachmentId=");
         assertThat(text).contains("att-xlsx");
     }
 
@@ -271,7 +270,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).contains("deck.pptx");
-        assertThat(text).contains("file.read");
+        assertThat(text).contains("attachmentId=");
         assertThat(text).contains("att-pptx");
     }
 
@@ -289,7 +288,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         var text = ((MessageContent.TextMessage) msg.content()).text();
         assertThat(text).isEqualTo("你好");
-        assertThat(text).doesNotContain("file.read");
+        assertThat(text).doesNotContain(BrowserIngressService.DOCUMENT_HINT_BEGIN);
     }
 
     private BrowserIngressService newService() {

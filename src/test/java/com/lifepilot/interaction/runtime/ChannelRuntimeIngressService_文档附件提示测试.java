@@ -127,16 +127,15 @@ class ChannelRuntimeIngressService_文档附件提示测试 {
         // 2. hint 用 sentinel 包裹
         assertThat(text).contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN);
         assertThat(text).contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_END);
-        // 3. 包含用户原文 + 文件名 + 从 repo 拿回的 attachmentId
+        // 3. 包含用户原文 + 三元组事实（attachmentId / fileName / mimeType）
         assertThat(text).contains("帮我改下合同第 3 段");
-        assertThat(text).contains("合同.docx");
         assertThat(text).contains("attachmentId=att-persisted-123");
-        // 4. docx 可编辑 → 含 document.edit 引导 + 反模式提醒
-        assertThat(text).contains("document.edit(source={type:'attachment'");
-        // 5. file.read 引导也在
-        assertThat(text).contains("file.read(attachmentId)");
+        assertThat(text).contains("fileName=合同.docx");
+        // 4. hint 不复述工具用法（是 schema 的职责）
+        assertThat(text).doesNotContain("file.read");
+        assertThat(text).doesNotContain("document.edit");
 
-        // 6. GatewayMessage.attachments 用了 repo 返回的 id
+        // 5. GatewayMessage.attachments 用了 repo 返回的 id
         assertThat(captured.attachments()).hasSize(1);
         assertThat(captured.attachments().getFirst().attachmentId()).isEqualTo("att-persisted-123");
 
@@ -150,8 +149,8 @@ class ChannelRuntimeIngressService_文档附件提示测试 {
     }
 
     @Test
-    @DisplayName("pdf 附件只含 file.read 引导，没有 document.edit（pdf 不可编辑）")
-    void pdf附件仅file_read() {
+    @DisplayName("pdf 附件同样走 attachmentId + mimeType 事实注入，不含任何工具用法")
+    void pdf附件事实注入() {
         setupMocks();
         when(attachmentRepository.saveForEntry(isNull(), eq("session-001"),
                 eq("paper.pdf"), any(String.class), any(Long.class),
@@ -167,9 +166,10 @@ class ChannelRuntimeIngressService_文档附件提示测试 {
         ingressService.processEvent("feishu.test", buildEventRequest(content, List.of(attachment)));
 
         String text = ((MessageContent.TextMessage) captureGatewayMessage().content()).text();
-        assertThat(text).contains("file.read(attachmentId)");
         assertThat(text).contains("attachmentId=att-pdf-456");
-        assertThat(text).doesNotContain("document.edit(source={type:'attachment'");
+        assertThat(text).contains("mimeType=" + PDF_MIME);
+        assertThat(text).doesNotContain("file.read");
+        assertThat(text).doesNotContain("document.edit");
     }
 
     @Test
