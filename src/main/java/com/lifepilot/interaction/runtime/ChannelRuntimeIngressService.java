@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.runtime;
 
+import com.lifepilot.interaction.attachment.DocumentAttachmentHintBuilder;
 import com.lifepilot.interaction.model.ChannelInstance;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.DeliveryMode;
@@ -15,10 +16,15 @@ import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.runtime.model.ChannelRuntimeEventRequest;
 import com.lifepilot.interaction.runtime.model.ChannelRuntimeEventResponse;
 import com.lifepilot.interaction.middleware.auth.TrustLevel;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -55,6 +61,17 @@ public class ChannelRuntimeIngressService {
     @Nullable
     private final ChannelUserMappingCache userMappingCache;
     private final long maxAttachmentSize;
+    /**
+     * 附件持久化仓储，可选。非 null 时 {@link #buildAttachments} 会把 base64 数据落盘到
+     * {@link #attachmentStorageDir} 并 {@code saveForEntry(entryId=null, ...)}（orphan 模式，
+     * 后续由 {@code AgentPersistenceHandler.backfillOrphanEntryIds} 关联 entry）；
+     * 为 null 时走 in-memory 兼容模式（仅测试场景）。
+     */
+    @Nullable
+    private final AttachmentRepository attachmentRepository;
+    /** 附件落盘目录，与 {@link #attachmentRepository} 成对存在。 */
+    @Nullable
+    private final String attachmentStorageDir;
     /** 事件去重缓存（FIFO，超过容量自动淘汰最早条目）。 */
     private final Map<String, Boolean> processedEventIds;
 
@@ -73,6 +90,7 @@ public class ChannelRuntimeIngressService {
                                         long maxAttachmentSize) {
         this(channelInstanceService, channelIngressService, connectorRuntimeManager,
                 channelInstanceEventService, channelDeliveryDispatcher, null, null,
+                null, null,
                 maxAttachmentSize, DEFAULT_EVENT_CACHE_MAX_SIZE);
     }
 
@@ -85,6 +103,24 @@ public class ChannelRuntimeIngressService {
                                         @Nullable ChannelUserMappingCache userMappingCache,
                                         long maxAttachmentSize,
                                         int eventCacheMaxSize) {
+        this(channelInstanceService, channelIngressService, connectorRuntimeManager,
+                channelInstanceEventService, channelDeliveryDispatcher,
+                channelApprovalService, userMappingCache,
+                null, null,
+                maxAttachmentSize, eventCacheMaxSize);
+    }
+
+    public ChannelRuntimeIngressService(ChannelInstanceService channelInstanceService,
+                                        ChannelIngressService channelIngressService,
+                                        ConnectorRuntimeManager connectorRuntimeManager,
+                                        ChannelInstanceEventService channelInstanceEventService,
+                                        ChannelDeliveryDispatcher channelDeliveryDispatcher,
+                                        @Nullable ChannelPermissionApprovalService channelApprovalService,
+                                        @Nullable ChannelUserMappingCache userMappingCache,
+                                        @Nullable AttachmentRepository attachmentRepository,
+                                        @Nullable String attachmentStorageDir,
+                                        long maxAttachmentSize,
+                                        int eventCacheMaxSize) {
         this.channelInstanceService = channelInstanceService;
         this.channelIngressService = channelIngressService;
         this.connectorRuntimeManager = connectorRuntimeManager;
@@ -92,6 +128,8 @@ public class ChannelRuntimeIngressService {
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.channelApprovalService = channelApprovalService;
         this.userMappingCache = userMappingCache;
+        this.attachmentRepository = attachmentRepository;
+        this.attachmentStorageDir = attachmentStorageDir;
         this.maxAttachmentSize = maxAttachmentSize > 0 ? maxAttachmentSize : DEFAULT_MAX_ATTACHMENT_SIZE;
         int cacheSize = eventCacheMaxSize > 0 ? eventCacheMaxSize : DEFAULT_EVENT_CACHE_MAX_SIZE;
         this.processedEventIds = Collections.synchronizedMap(
@@ -180,13 +218,18 @@ public class ChannelRuntimeIngressService {
                 resolveChannelSessionId(instance.instanceId(), request.userId().trim()));
         Instant timestamp = request.occurredAt() != null ? request.occurredAt() : Instant.now();
 
+        // 附件先落盘 + save repo（若 AttachmentRepository 已装配），拿到 attachmentId；
+        // 再让 text 类型 content 注入文档附件 hint，引导 LLM 用 file.read / document.edit
+        List<GatewayMessage.Attachment> attachments = buildAttachments(sessionId, request.attachments());
+        MessageContent content = buildContent(request.content(), request.attachments(), attachments);
+
         return GatewayMessage.builder()
                 .messageId(messageId)
                 .channelType(resolveChannelType(instance.platform()))
                 .userId(request.userId().trim())
                 .sessionId(sessionId)
-                .content(buildContent(request.content(), request.attachments()))
-                .attachments(buildAttachments(request.attachments()))
+                .content(content)
+                .attachments(attachments)
                 .channelMetadata(null)
                 .timestamp(timestamp)
                 .traceHeaders(buildTraceHeaders(instance, request))
@@ -194,16 +237,51 @@ public class ChannelRuntimeIngressService {
     }
 
     private MessageContent buildContent(ChannelRuntimeEventRequest.Content content,
-                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
+                                         List<ChannelRuntimeEventRequest.Attachment> attachments,
+                                         List<GatewayMessage.Attachment> persistedAttachments) {
         String type = content.type() != null ? content.type().trim().toLowerCase() : "text";
+        log.debug("channel buildContent 分支: type={}, rawText长度={}, persistedAttachments={}",
+                type,
+                content.text() == null ? -1 : content.text().length(),
+                persistedAttachments.size());
         return switch (type) {
             case "command" -> buildCommandContent(content);
             case "event" -> buildEventContent(content);
-            case "text" -> new MessageContent.TextMessage(requireText(content.text(), "text"));
-            case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments);
+            case "text" -> textContentWithHint(requireText(content.text(), "text"), persistedAttachments);
+            // 原本这些类型走 MessageContent.FileMessage，但整个代码库下游没有任何消费者处理 FileMessage
+            // （Agent / Router / Middleware 只看 TextMessage / CommandMessage），导致 LLM 收不到附件信息。
+            // 统一走 TextMessage：caption 作为 text，文档 hint 注入其中；binary 已独立在
+            // GatewayMessage.attachments 旁挂，LLM 通过 attachmentId 用 file.read 访问。
+            case "file", "image", "audio", "video" -> buildFileAsTextContent(content, type, persistedAttachments);
             case "card-action" -> buildCardActionContent(content);
             default -> throw new IllegalArgumentException("不支持的 connector 内容类型: " + type);
         };
+    }
+
+    /** text 分支封装：插入 hint 并把是否注入成功打到 DEBUG 日志便于排查。 */
+    private MessageContent.TextMessage textContentWithHint(String raw,
+                                                            List<GatewayMessage.Attachment> persistedAttachments) {
+        String withHint = DocumentAttachmentHintBuilder.appendHint(raw, persistedAttachments);
+        log.debug("channel text 分支 hint 注入: 原文长度={}, 注入后长度={}, 是否含 sentinel={}",
+                raw.length(), withHint.length(),
+                withHint.contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN));
+        return new MessageContent.TextMessage(withHint);
+    }
+
+    /** file/image/audio/video：统一生成 TextMessage(caption + hint)，binary 已独立旁挂。 */
+    private MessageContent.TextMessage buildFileAsTextContent(ChannelRuntimeEventRequest.Content content,
+                                                               String type,
+                                                               List<GatewayMessage.Attachment> persistedAttachments) {
+        String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : "";
+        String text = DocumentAttachmentHintBuilder.appendHint(caption, persistedAttachments);
+        log.debug("channel file 分支 hint 注入: type={}, caption长度={}, 注入后长度={}, 是否含 sentinel={}",
+                type, caption.length(), text.length(),
+                text.contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN));
+        if (text.isEmpty()) {
+            // 没 caption 也没文档附件（比如纯图片），给一行占位避免 TextMessage 空串
+            text = "[" + type + "]";
+        }
+        return new MessageContent.TextMessage(text);
     }
 
     private MessageContent.CommandMessage buildCommandContent(ChannelRuntimeEventRequest.Content content) {
@@ -225,51 +303,6 @@ public class ChannelRuntimeIngressService {
         );
     }
 
-    private MessageContent.FileMessage buildFileContent(ChannelRuntimeEventRequest.Content content,
-                                                         String type,
-                                                         List<ChannelRuntimeEventRequest.Attachment> attachments) {
-        Map<String, Object> payload = content.payload();
-        String fileName = payload != null && payload.get("fileName") instanceof String fn && !fn.isBlank()
-                ? fn.trim()
-                : defaultFileName(type);
-        String mimeType = payload != null && payload.get("mimeType") instanceof String mt && !mt.isBlank()
-                ? mt.trim()
-                : defaultMimeType(type);
-        String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : null;
-
-        byte[] data;
-        if (attachments != null && !attachments.isEmpty()) {
-            ChannelRuntimeEventRequest.Attachment first = attachments.getFirst();
-            try {
-                data = Base64.getDecoder().decode(first.base64Data());
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("富媒体附件 Base64 解码失败: " + fileName, e);
-            }
-        } else {
-            // 没有附件数据，可能只有 fileToken 引用，Agent 后续通过工具下载
-            data = new byte[0];
-        }
-        return new MessageContent.FileMessage(fileName, mimeType, data, caption);
-    }
-
-    private String defaultFileName(String type) {
-        return switch (type) {
-            case "image" -> "image.png";
-            case "audio" -> "audio.mp3";
-            case "video" -> "video.mp4";
-            default -> "file.bin";
-        };
-    }
-
-    private String defaultMimeType(String type) {
-        return switch (type) {
-            case "image" -> "image/png";
-            case "audio" -> "audio/mpeg";
-            case "video" -> "video/mp4";
-            default -> "application/octet-stream";
-        };
-    }
-
     private MessageContent.EventMessage buildCardActionContent(ChannelRuntimeEventRequest.Content content) {
         String eventType = content.name() != null && !content.name().isBlank()
                 ? content.name().trim()
@@ -278,10 +311,12 @@ public class ChannelRuntimeIngressService {
         return new MessageContent.EventMessage(eventType, payload);
     }
 
-    private List<GatewayMessage.Attachment> buildAttachments(List<ChannelRuntimeEventRequest.Attachment> attachments) {
+    private List<GatewayMessage.Attachment> buildAttachments(String sessionId,
+                                                              List<ChannelRuntimeEventRequest.Attachment> attachments) {
         if (attachments == null || attachments.isEmpty()) {
             return List.of();
         }
+        boolean persistEnabled = attachmentRepository != null && attachmentStorageDir != null;
         List<GatewayMessage.Attachment> results = new ArrayList<>(attachments.size());
         for (ChannelRuntimeEventRequest.Attachment attachment : attachments) {
             if (attachment.base64Data() == null || attachment.base64Data().isBlank()) {
@@ -298,16 +333,28 @@ public class ChannelRuntimeIngressService {
                         "附件大小超出限制（最大 %dMB）: fileName=%s, size=%d"
                                 .formatted(maxAttachmentSize / 1024 / 1024, attachment.fileName(), data.length));
             }
-            String attachmentId = attachment.attachmentId() != null && !attachment.attachmentId().isBlank()
-                    ? attachment.attachmentId().trim()
-                    : UUID.randomUUID().toString();
             String fileName = attachment.fileName() != null && !attachment.fileName().isBlank()
                     ? attachment.fileName().trim()
-                    : attachmentId;
+                    : UUID.randomUUID().toString();
+            // 信任 connector 上报的 MIME —— MIME 识别是 connector 的契约职责，主服务不兜底；
+            // 若某个 connector 报错 MIME 属于那个 connector 的 bug，不应让 ingress 层承担修复
             String mimeType = attachment.mimeType() != null && !attachment.mimeType().isBlank()
                     ? attachment.mimeType().trim()
                     : "application/octet-stream";
             long size = attachment.size() > 0 ? attachment.size() : data.length;
+
+            String attachmentId;
+            if (persistEnabled) {
+                // 落盘 + saveForEntry(null) orphan 模式：后续 AgentPersistenceHandler.backfillOrphanEntryIds
+                // 把本会话 orphan 附件统一挂到 user / assistant entry。
+                attachmentId = persistAttachment(sessionId, fileName, mimeType, data, size);
+            } else {
+                attachmentId = attachment.attachmentId() != null && !attachment.attachmentId().isBlank()
+                        ? attachment.attachmentId().trim()
+                        : UUID.randomUUID().toString();
+            }
+            log.debug("channel 附件出口: persistEnabled={}, attachmentId={}, fileName={}, mimeType={}",
+                    persistEnabled, attachmentId, fileName, mimeType);
             results.add(new GatewayMessage.Attachment(
                     attachmentId,
                     fileName,
@@ -317,6 +364,35 @@ public class ChannelRuntimeIngressService {
             ));
         }
         return List.copyOf(results);
+    }
+
+    /**
+     * 把 channel 附件落盘到 {@code <attachmentStorageDir>/<uuid>_<fileName>} 并 save 到
+     * {@code message_attachments} 表（entryId=null orphan 模式）。
+     * 失败 fallback：log.warn 后返回随机 UUID，保证 ingress 主流程不断裂。
+     */
+    private String persistAttachment(String sessionId, String fileName, String mimeType, byte[] data, long size) {
+        assert attachmentRepository != null && attachmentStorageDir != null;
+        try {
+            Path storageRoot = Paths.get(attachmentStorageDir);
+            Files.createDirectories(storageRoot);
+            String storedFileName = UUID.randomUUID() + "_" + fileName;
+            Path filePath = storageRoot.resolve(storedFileName);
+            Files.write(filePath, data);
+            return attachmentRepository.saveForEntry(
+                    null,             // entryId：orphan，后续 backfill 挂到 user/assistant entry
+                    sessionId,
+                    fileName,
+                    filePath.toString(),
+                    size,
+                    mimeType,
+                    null              // url：主服务内部引用通过 attachmentId 查，不依赖 url 字段
+            );
+        } catch (IOException e) {
+            log.warn("channel 附件落盘失败，降级为 in-memory 附件：sessionId={}, fileName={}",
+                    sessionId, fileName, e);
+            return UUID.randomUUID().toString();
+        }
     }
 
     private Map<String, String> buildTraceHeaders(ChannelInstance instance, ChannelRuntimeEventRequest request) {

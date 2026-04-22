@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.service;
 
+import com.lifepilot.interaction.attachment.DocumentAttachmentHintBuilder;
 import com.lifepilot.interaction.model.ChannelMetadata;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.DeliveryMode;
@@ -46,6 +47,15 @@ public class BrowserIngressService {
     private static final String DEFAULT_WEB_USER = "web-user";
     private static final String WEB_PLATFORM = "web";
     private static final String WEB_INSTANCE_ID = "web.default";
+
+    /**
+     * 兼容位置：sentinel 常量已迁移到 {@link DocumentAttachmentHintBuilder}；
+     * 保留此处的转发引用，避免外部（如 {@code AgentPersistenceHandler}）改动过多。
+     */
+    public static final String DOCUMENT_HINT_BEGIN = DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN;
+
+    /** 兼容位置。 */
+    public static final String DOCUMENT_HINT_END = DocumentAttachmentHintBuilder.DOCUMENT_HINT_END;
 
     private final AttachmentRepository attachmentRepository;
     private final ChatTurnService chatTurnService;
@@ -100,7 +110,10 @@ public class BrowserIngressService {
 
         List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
         var transcription = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
-        var content = new MessageContent.TextMessage(transcription.content());
+
+        // 文档附件提示注入：对 docx/pdf/md/txt 附件注入 sentinel 包裹的系统提示，引导 file.read / document.edit
+        String contentWithDocHint = DocumentAttachmentHintBuilder.appendHint(transcription.content(), attachments);
+        var content = new MessageContent.TextMessage(contentWithDocHint);
 
         // 转录成功后移除已转录的音频附件，避免它们作为 mediaContents 触发多模态路由
         List<GatewayMessage.Attachment> effectiveAttachments = transcription.transcribed()
@@ -270,4 +283,5 @@ public class BrowserIngressService {
         }
         return results;
     }
+
 }

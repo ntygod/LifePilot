@@ -286,7 +286,8 @@ class ContextAssemblerSkillCatalogTest {
                 "工作区",
                 "产物摘要",
                 "经验片段",
-                "记忆上下文"
+                "记忆上下文",
+                ContextAssembler.MemoryCounts.EMPTY
         );
 
         assertThat(messages).hasSize(5);

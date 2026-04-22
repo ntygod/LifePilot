@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Check, Copy, FileText, Mic, Pencil } from 'lucide-vue-next'
+import { Check, Copy, FileCode2, FileText, FileType, Mic, Pencil, Presentation, Sheet } from 'lucide-vue-next'
 import type {
   A2uiComponent,
   Message,
@@ -25,6 +25,9 @@ import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
+import DocumentDiffCard from './DocumentDiffCard.vue'
+import DocumentXlsxDiffCard from './DocumentXlsxDiffCard.vue'
+import { useDocumentMeta } from '@/composables/useDocumentMeta'
 
 const props = defineProps<{
   message: Message
@@ -123,6 +126,87 @@ const imageAttachments = computed(() =>
 const fileAttachments = computed(() =>
   props.message.attachments?.filter(attachment => !attachment.isImage && !attachment.type?.startsWith('audio/')) ?? [],
 )
+
+/**
+ * 判断附件是否是 AI 可解析的文档类型。
+ *
+ * Phase 1B 实际可解析集合：pdf / docx / xlsx / pptx / md / txt / csv / log / tsv。
+ *
+ * 与后端保持同步：`PlainTextParser.EXTENSIONS` + `MarkdownParser.EXTENSIONS` +
+ * `WordParser / PdfParser / ExcelParser / PowerpointParser` 的 supportedExtensions()，
+ * 以及 `BrowserIngressService.DOCUMENT_MIME_PREFIXES`。新增文档 parser 时需同步更新。
+ */
+function isParseableDocument(att: { type?: string; filename: string }): boolean {
+  const t = att.type?.toLowerCase() ?? ''
+  if (t === 'application/pdf') return true
+  if (t.includes('wordprocessingml')) return true  // docx
+  if (t.includes('spreadsheetml')) return true     // xlsx
+  if (t.includes('presentationml')) return true    // pptx
+  if (t === 'text/markdown' || t === 'text/plain' || t === 'text/csv'
+      || t === 'text/tab-separated-values') return true
+  // 兜底按扩展名识别
+  const ext = att.filename.split('.').pop()?.toLowerCase()
+  return ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt', 'csv', 'log', 'tsv'].includes(ext ?? '')
+}
+
+/** 按文件扩展名返回 lucide 图标组件 */
+function documentIcon(att: { type?: string; filename: string }) {
+  const ext = att.filename.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return FileType
+  if (ext === 'xlsx' || ext === 'csv') return Sheet
+  if (ext === 'pptx') return Presentation
+  if (ext === 'md') return FileCode2
+  return FileText
+}
+
+/**
+ * Phase 3A：识别「已被 document.edit 修改过的 docx」—— 需要换用 DocumentDiffCard 渲染。
+ *
+ * 判定条件：
+ * 1. MIME 包含 `wordprocessingml.document`（docx）
+ * 2. URL 形如 `/api/documents/{id}/download`，可解析出 documentId
+ * 3. GET `/api/documents/{id}` 返回 `latestVersion > 0`（经历过至少一次 patch）
+ *
+ * 条件不满足 → 回落到既有附件卡片（非 docx / Phase 2A 产物 / 未编辑 docx）。
+ */
+// 文档元数据缓存：从 composable 取模块级共享实例，所有 MessageBubble + useChat 都引用同一份。
+// useChat 在 AI 流式结束时调 invalidateAllDocumentMeta() 清空，触发下次 render 重新拉 latestVersion
+const { documentMetaCache, resolveDocumentMeta, invalidateDocumentMeta } = useDocumentMeta()
+
+/** 按 download URL 提取 documentId；不匹配则返回 null */
+function extractDocumentId(url: string | undefined): string | null {
+  if (!url) return null
+  const m = url.match(/\/api\/documents\/([^/]+)\/download/)
+  return m ? m[1] : null
+}
+
+/** 判断附件是否为「已编辑的 docx」—— 同步返回，异步触发缓存填充，下次渲染自动切换 */
+function isEditedDocx(att: { type?: string; url?: string }): boolean {
+  if (!att.type?.includes('wordprocessingml.document')) return false
+  const docId = extractDocumentId(att.url)
+  if (!docId) return false
+  void resolveDocumentMeta(docId)
+  const meta = documentMetaCache.value[docId]
+  return !!meta && meta.latestVersion > 0
+}
+
+/** 判断附件是否为「已编辑的 xlsx」—— 与 isEditedDocx 同款机制，MIME 检查换成 spreadsheetml.sheet */
+function isEditedXlsx(att: { type?: string; url?: string }): boolean {
+  if (!att.type?.includes('spreadsheetml.sheet')) return false
+  const docId = extractDocumentId(att.url)
+  if (!docId) return false
+  void resolveDocumentMeta(docId)
+  const meta = documentMetaCache.value[docId]
+  return !!meta && meta.latestVersion > 0
+}
+
+/** DiffCard commit / 丢弃工作副本 → 失效缓存，下次渲染重新拉取（latestVersion 变化 or 404） */
+function onDocumentCommitted(documentId: string) {
+  invalidateDocumentMeta(documentId)
+}
+function onDocumentDiscarded(documentId: string) {
+  invalidateDocumentMeta(documentId)
+}
 
 const audioAttachments = computed(() =>
   props.message.attachments?.filter(attachment => attachment.type?.startsWith('audio/')) ?? [],
@@ -445,37 +529,70 @@ function approvalLogTone(log: PermissionApprovalLog) {
             </div>
           </div>
 
-          <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
-            <div
-              v-for="attachment in fileAttachments"
-              :key="attachment.fileId"
-              class="list-card flex flex-col gap-2 px-3 py-3 text-xs text-foreground"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate">{{ attachment.filename }}</span>
-                <span class="shrink-0 text-[11px] text-muted-foreground">
-                  {{ (attachment.size / 1024).toFixed(1) }} KB
-                </span>
+          <div v-if="fileAttachments.length > 0" class="mt-md flex flex-col gap-sm">
+            <template v-for="attachment in fileAttachments" :key="attachment.fileId">
+              <!-- Phase 3A：docx 被 document.edit 改过 → 挂 DiffCard；其余路径沿用原卡片 -->
+              <DocumentDiffCard
+                v-if="isEditedDocx(attachment)"
+                :document-id="extractDocumentId(attachment.url)!"
+                @committed="onDocumentCommitted"
+                @discarded="onDocumentDiscarded"
+              />
+
+              <!-- Phase 3B：xlsx 被 document.edit 改过 → 挂 XlsxDiffCard -->
+              <DocumentXlsxDiffCard
+                v-else-if="isEditedXlsx(attachment)"
+                :document-id="extractDocumentId(attachment.url)!"
+                @committed="onDocumentCommitted"
+                @discarded="onDocumentDiscarded"
+              />
+
+              <!-- 视频附件：保留原 list-card + <video> 播放器布局 -->
+              <div
+                v-else-if="attachment.type?.startsWith('video/')"
+                class="list-card flex flex-col gap-sm px-md py-md text-xs text-foreground"
+              >
+                <div class="flex items-center justify-between gap-sm">
+                  <span class="truncate">{{ attachment.filename }}</span>
+                  <span class="shrink-0 text-xs text-muted-foreground">
+                    {{ (attachment.size / 1024).toFixed(1) }} KB
+                  </span>
+                </div>
+                <video
+                  :src="attachment.url"
+                  controls
+                  class="mt-xs w-full max-w-full max-h-[360px] rounded-lg"
+                >
+                  当前浏览器不支持视频播放
+                </video>
               </div>
-              <video
-                v-if="attachment.type?.startsWith('video/')"
-                :src="attachment.url"
-                controls
-                class="mt-1 w-full max-w-full max-h-[360px] rounded-lg"
-              >
-                当前浏览器不支持视频播放
-              </video>
-              <a
+
+              <!-- 文档附件：图标 + 「AI 可读取」徽标 + 下载链接 -->
+              <div
                 v-else
-                :href="attachment.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="mt-1 inline-flex items-center gap-1 text-[11px] text-primary underline-offset-2 hover:underline"
+                class="flex items-center gap-sm rounded-md border border-border bg-muted/40 p-sm"
               >
-                <FileText :size="14" class="text-muted-foreground" />
-                <span>下载文件</span>
-              </a>
-            </div>
+                <component :is="documentIcon(attachment)" class="h-md w-md shrink-0 text-muted-foreground" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-xs">
+                    <span class="truncate text-sm">{{ attachment.filename }}</span>
+                    <span
+                      v-if="isParseableDocument(attachment)"
+                      class="shrink-0 rounded-md bg-primary/10 px-xs py-xs text-xs text-primary"
+                      title="AI 可直接读取此文档内容"
+                    >AI 可读取</span>
+                  </div>
+                  <div class="text-xs text-muted-foreground">
+                    {{ (attachment.size / 1024).toFixed(1) }} KB
+                  </div>
+                </div>
+                <a
+                  :href="attachment.url"
+                  :download="attachment.filename"
+                  class="shrink-0 text-xs text-primary hover:underline"
+                >下载</a>
+              </div>
+            </template>
           </div>
         </div>
       </div>

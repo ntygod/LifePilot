@@ -71,7 +71,7 @@ flowchart TD
 ### 3.4 DocumentExtractor
 
 - 职责：从文档中提取纯文本，复用知识库模块的 `DocumentParser`
-- 支持格式：PDF、Word（doc/docx）、Markdown、纯文本
+- 支持格式：PDF、Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）、Markdown、纯文本（txt / log / csv / tsv）
 - 实现：写入临时文件 → 委托 DocumentParser 解析 → 返回文本 → 清理临时文件
 
 ### 3.5 AudioTranscriber

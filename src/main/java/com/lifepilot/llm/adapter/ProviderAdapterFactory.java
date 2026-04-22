@@ -1,5 +1,7 @@
 package com.lifepilot.llm.adapter;
 
+import com.lifepilot.llm.cache.PromptCacheStrategies;
+import com.lifepilot.llm.cache.PromptCacheStrategy;
 import com.lifepilot.llm.config.LlmConfigProperties.ConnectionPoolConfigEntry;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
@@ -19,9 +21,12 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -121,17 +126,9 @@ public class ProviderAdapterFactory {
                 .apiKey(apiKey)
                 .baseUrl(baseUrl);
 
-        // HTTP 超时配置（复用 OpenAI 兼容适配器的模式）
-        if (connectionPoolConfig != null) {
-            int httpTimeoutSeconds = Math.max(config.timeoutSeconds(), MIN_HTTP_TIMEOUT_SECONDS);
-            var httpClient = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(httpTimeoutSeconds))
-                    .build();
-            var requestFactory = new JdkClientHttpRequestFactory(httpClient);
-            requestFactory.setReadTimeout(Duration.ofSeconds(httpTimeoutSeconds));
-            var restClientBuilder = RestClient.builder().requestFactory(requestFactory);
-            anthropicApiBuilder.restClientBuilder(restClientBuilder);
-        }
+        // Prompt 缓存策略 — Anthropic 走显式 cache_control ephemeral 注入
+        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(config);
+        applyCacheStrategyToAnthropic(anthropicApiBuilder, cacheStrategy, config);
 
         var anthropicApi = anthropicApiBuilder.build();
 
@@ -145,7 +142,8 @@ public class ProviderAdapterFactory {
                 .build();
 
         // Anthropic 不提供 Embedding API，embeddingModel 始终为 null
-        log.info("创建 Anthropic 原生适配器: id={}, model={}", config.id(), config.modelName());
+        log.info("创建 Anthropic 原生适配器: id={}, model={}, cacheStrategy={}",
+                config.id(), config.modelName(), cacheStrategy.name());
         return new SpringAiProviderAdapter(config, chatModel, null, defaultAdvisors);
     }
 
@@ -159,18 +157,10 @@ public class ProviderAdapterFactory {
             openAiApiBuilder.apiKey(apiKey);
         }
 
-        if (connectionPoolConfig != null) {
-            int httpTimeoutSeconds = Math.max(config.timeoutSeconds(), MIN_HTTP_TIMEOUT_SECONDS);
-            var httpClient = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(httpTimeoutSeconds))
-                    .build();
-            var requestFactory = new JdkClientHttpRequestFactory(httpClient);
-            requestFactory.setReadTimeout(Duration.ofSeconds(httpTimeoutSeconds));
-            var restClientBuilder = RestClient.builder().requestFactory(requestFactory);
-            openAiApiBuilder.restClientBuilder(restClientBuilder);
-            log.debug("云端 Provider HTTP 连接池配置: id={}, httpTimeout={}s, logicalTimeout={}s",
-                    config.id(), httpTimeoutSeconds, config.timeoutSeconds());
-        }
+        // Prompt 缓存策略 — DashScope 需要显式 cache_control 注入; OpenAI 官方 / DeepSeek 等
+        // provider 侧自动缓存, 走 noop pass-through; 策略自行决定两端拦截点是否生效。
+        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(config);
+        applyCacheStrategyToOpenAi(openAiApiBuilder, cacheStrategy, config);
 
         var openAiApi = openAiApiBuilder.build();
 
@@ -188,9 +178,90 @@ public class ProviderAdapterFactory {
             embeddingModel = new OpenAiEmbeddingModel(openAiApi);
         }
 
-        log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}, hasEmbedding={}",
-                config.id(), config.type(), config.modelName(), embeddingModel != null);
+        log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}, hasEmbedding={}, cacheStrategy={}",
+                config.id(), config.type(), config.modelName(), embeddingModel != null,
+                cacheStrategy.name());
         return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
+    }
+
+    /**
+     * 把 prompt 缓存策略的拦截器 / filter 挂到 {@link OpenAiApi.Builder} 上。
+     *
+     * <p>装配顺序: 连接池 timeout 配置 → 缓存 RestClient 拦截器 → 挂 restClientBuilder →
+     * 缓存 WebClient filter (若策略提供) → 挂 webClientBuilder。与 Anthropic 分支对称。</p>
+     *
+     * @param apiBuilder    OpenAI 兼容 API builder
+     * @param strategy      已解析的缓存策略 (永不为 null; noop 策略两端均返回 null, 走 pass-through)
+     * @param config        Provider 配置 (读取 timeoutSeconds / id)
+     */
+    private void applyCacheStrategyToOpenAi(OpenAiApi.Builder apiBuilder,
+                                            PromptCacheStrategy strategy,
+                                            ProviderConfig config) {
+        ClientHttpRequestInterceptor restInterceptor = strategy.restClientInterceptor();
+        ExchangeFilterFunction webFilter = strategy.webClientFilter();
+
+        RestClient.Builder restClientBuilder = buildRestClientBuilder(config, true);
+        if (restInterceptor != null) {
+            restClientBuilder.requestInterceptor(restInterceptor);
+        }
+        apiBuilder.restClientBuilder(restClientBuilder);
+
+        if (webFilter != null) {
+            WebClient.Builder webClientBuilder = WebClient.builder().filter(webFilter);
+            apiBuilder.webClientBuilder(webClientBuilder);
+        }
+    }
+
+    /**
+     * 把 prompt 缓存策略的拦截器 / filter 挂到 {@link AnthropicApi.Builder} 上。
+     *
+     * <p>装配顺序与 {@link #applyCacheStrategyToOpenAi} 完全一致, 仅目标 builder 类型不同。</p>
+     *
+     * @param apiBuilder    Anthropic API builder
+     * @param strategy      已解析的缓存策略
+     * @param config        Provider 配置 (读取 timeoutSeconds / id)
+     */
+    private void applyCacheStrategyToAnthropic(AnthropicApi.Builder apiBuilder,
+                                               PromptCacheStrategy strategy,
+                                               ProviderConfig config) {
+        ClientHttpRequestInterceptor restInterceptor = strategy.restClientInterceptor();
+        ExchangeFilterFunction webFilter = strategy.webClientFilter();
+
+        // Anthropic 分支历史未打连接池 DEBUG 日志, 保持行为一致: logPool=false
+        RestClient.Builder restClientBuilder = buildRestClientBuilder(config, false);
+        if (restInterceptor != null) {
+            restClientBuilder.requestInterceptor(restInterceptor);
+        }
+        apiBuilder.restClientBuilder(restClientBuilder);
+
+        if (webFilter != null) {
+            WebClient.Builder webClientBuilder = WebClient.builder().filter(webFilter);
+            apiBuilder.webClientBuilder(webClientBuilder);
+        }
+    }
+
+    /**
+     * 构建 RestClient.Builder, 合并连接池超时配置 (若 {@link #connectionPoolConfig} 非空)。
+     *
+     * @param config  Provider 配置 (用于读取 timeoutSeconds 和 id)
+     * @param logPool 是否输出 "云端 Provider HTTP 连接池配置" DEBUG 日志 (仅 OpenAI 兼容分支历史有该日志)
+     * @return 已配置 request factory 但尚未挂拦截器的 builder
+     */
+    private RestClient.Builder buildRestClientBuilder(ProviderConfig config, boolean logPool) {
+        if (connectionPoolConfig == null) {
+            return RestClient.builder();
+        }
+        int httpTimeoutSeconds = Math.max(config.timeoutSeconds(), MIN_HTTP_TIMEOUT_SECONDS);
+        var httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(httpTimeoutSeconds))
+                .build();
+        var requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(httpTimeoutSeconds));
+        if (logPool) {
+            log.debug("云端 Provider HTTP 连接池配置: id={}, httpTimeout={}s, logicalTimeout={}s",
+                    config.id(), httpTimeoutSeconds, config.timeoutSeconds());
+        }
+        return RestClient.builder().requestFactory(requestFactory);
     }
 
     static String normalizeOpenAiCompatibleBaseUrl(String baseUrl, String providerId) {

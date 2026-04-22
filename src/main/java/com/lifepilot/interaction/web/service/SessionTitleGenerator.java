@@ -53,58 +53,123 @@ public class SessionTitleGenerator {
     }
 
     /**
-     * 若当前会话标题仍为默认值，则调用 LLM 生成新标题并推送。
+     * 若当前会话标题仍为默认值，按渠道决定标题生成方式：
+     * <ul>
+     *   <li>Web（channelPlatform = "web" / null）：调用 LLM 生成自然语言标题</li>
+     *   <li>Channel（其他）：直接用 "[平台中文] · 首条消息前 15 字" 固定格式，不调 LLM
+     *       —— 飞书/钉钉等渠道有自己的会话标题 UI，主服务标题主要是后台管理用，
+     *       不值得为此付超时重试的 LLM 调用成本</li>
+     * </ul>
      *
-     * @param sessionId   会话 ID
-     * @param userMessage 用户第一条消息内容
+     * @param sessionId       会话 ID
+     * @param userMessage     用户第一条消息内容
+     * @param channelPlatform 渠道平台名（feishu / wecom / dingtalk / web / null）
      */
-    public void generateIfNeeded(String sessionId, @Nullable String userMessage) {
-        if (generationRouter == null || promptRegistry == null) {
+    public void generateIfNeeded(String sessionId, @Nullable String userMessage,
+                                  @Nullable String channelPlatform) {
+        if (sessionId == null) {
             return;
         }
-        // 非 Web 渠道跳过
-        if (sessionId == null || sessionId.contains(":")) {
-            return;
-        }
-        if (userMessage == null || userMessage.isBlank()) {
-            return;
+        boolean isWeb = channelPlatform == null || channelPlatform.isBlank()
+                || "web".equalsIgnoreCase(channelPlatform);
+
+        // Web 路径特有的早期跳过（对齐旧行为）：依赖缺失 / 消息为空时不触发查库和调用
+        if (isWeb) {
+            if (generationRouter == null || promptRegistry == null) {
+                return;
+            }
+            if (userMessage == null || userMessage.isBlank()) {
+                return;
+            }
         }
 
-        // 检查当前标题是否为默认值
         var session = sessionRepository.findById(sessionId).orElse(null);
         if (session == null || !DEFAULT_TITLES.contains(session.title())) {
             return;
         }
 
+        if (isWeb) {
+            generateViaLlm(sessionId, userMessage);
+        } else {
+            generateFromChannelMeta(sessionId, userMessage, channelPlatform);
+        }
+    }
+
+    /** 兼容旧 2 参签名（仅用于测试或过渡期调用方）。 */
+    public void generateIfNeeded(String sessionId, @Nullable String userMessage) {
+        generateIfNeeded(sessionId, userMessage, null);
+    }
+
+    /** Web 场景：调 LLM 生成自然语言标题。 */
+    private void generateViaLlm(String sessionId, @Nullable String userMessage) {
+        if (generationRouter == null || promptRegistry == null) {
+            return;
+        }
+        if (userMessage == null || userMessage.isBlank()) {
+            return;
+        }
         try {
             String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
                     "userMessage", userMessage.length() > 500
                             ? userMessage.substring(0, 500) + "…"
                             : userMessage
             ));
-
             var response = generationRouter.call(
-                    LLM_SCENE,
-                    prompt,
-                    null,
-                    null,
-                    null,
-                    GenerationCapability.CHAT,
-                    TIMEOUT
-            );
-
+                    LLM_SCENE, prompt, null, null, null,
+                    GenerationCapability.CHAT, TIMEOUT);
             String title = cleanTitle(response.content());
             if (title.isEmpty() || DEFAULT_TITLES.contains(title)) {
                 return;
             }
-
             sessionRepository.updateTitle(sessionId, title);
-            log.info("自动生成会话标题：sessionId={}, title={}", sessionId, title);
-
+            log.info("自动生成会话标题（LLM）：sessionId={}, title={}", sessionId, title);
             pushTitleUpdate(sessionId, title);
         } catch (Exception e) {
             log.warn("会话标题生成失败：sessionId={}, error={}", sessionId, e.getMessage());
         }
+    }
+
+    /**
+     * Channel 场景：直接用 "[平台中文] · 首条消息前 N 字" 组装标题。userMessage 为空时退化为
+     * 仅平台名（如 "飞书对话"）。
+     */
+    private void generateFromChannelMeta(String sessionId, @Nullable String userMessage,
+                                          String channelPlatform) {
+        String platformCn = platformDisplay(channelPlatform);
+        String snippet = pickSnippet(userMessage);
+        String title = snippet.isEmpty()
+                ? platformCn + "对话"
+                : platformCn + " · " + snippet;
+        if (title.length() > MAX_TITLE_LENGTH) {
+            title = title.substring(0, MAX_TITLE_LENGTH) + "…";
+        }
+        sessionRepository.updateTitle(sessionId, title);
+        log.info("自动生成会话标题（channel）：sessionId={}, platform={}, title={}",
+                sessionId, channelPlatform, title);
+        pushTitleUpdate(sessionId, title);
+    }
+
+    private static String platformDisplay(String platform) {
+        return switch (platform.toLowerCase()) {
+            case "feishu" -> "飞书";
+            case "wecom" -> "企业微信";
+            case "dingtalk" -> "钉钉";
+            case "qq" -> "QQ";
+            default -> platform;
+        };
+    }
+
+    /**
+     * 取 userMessage 首行前 15 字作为标题后缀；
+     * 若消息是 connector 塞的文件名/键值串（含 {@code file_v3_} 前缀等），回退为空，只保留平台名。
+     */
+    private static String pickSnippet(@Nullable String userMessage) {
+        if (userMessage == null || userMessage.isBlank()) return "";
+        String firstLine = userMessage.strip().split("\\R", 2)[0].strip();
+        // 过滤 connector 自动塞的技术串（飞书 file_key / image_key 等），避免标题是 file_v3_xxxxx
+        if (firstLine.startsWith("file_v3_") || firstLine.startsWith("img_v3_")) return "";
+        int max = 15;
+        return firstLine.length() > max ? firstLine.substring(0, max) : firstLine;
     }
 
     /** 清理 LLM 输出：去引号、标点、空白，截断到最大长度 */

@@ -140,6 +140,10 @@ public class MultimodalRouter {
         boolean hasImages = mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
             log.debug("无图片附件，委托 GenerationRouter: scene={}", request.scene());
+            if (preparedRequest.hasToolCallbacks()) {
+                log.warn("多模态降级路径检测到 toolCallbacks 但 GenerationRouter 不承载 tools，工具将被丢弃: "
+                        + "scene={}, toolCount={}", request.scene(), preparedRequest.toolCallbacks().size());
+            }
             return generationRouter.call(
                     preparedRequest.scene(),
                     text,
@@ -218,6 +222,14 @@ public class MultimodalRouter {
         boolean hasImages = mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
             log.debug("无图片附件，委托 GenerationRouter.stream: scene={}", request.scene());
+            if (request.hasToolCallbacks()) {
+                // GenerationRouter.streamWithInfo 当前签名不承载 tools — 此处应由上游调用方
+                // 直接走 ChatModel + ChatOptions 路径（见 StreamingCallback.callTextStreaming）。
+                // 正常情况下不应走到这里：StreamingCallback 的 messagesHaveMultimodalMedia 判断
+                // 已经把无真多模态媒体 + 有 tools 的请求拦在纯文本路径里。此处作为防御性日志。
+                log.warn("多模态降级路径检测到 toolCallbacks 但 GenerationRouter 不承载 tools，工具将被丢弃: "
+                        + "scene={}, toolCount={}", request.scene(), request.toolCallbacks().size());
+            }
             var response = generationRouter.streamWithInfo(
                     request.scene(), text, request.preferredProviderId(), request.modelName());
             return new StreamingLlmResponse(response.stream(), response.serviceId(), response.modelName());
@@ -343,7 +355,8 @@ public class MultimodalRouter {
                 newMediaList,
                 request.outputSchema(),
                 request.preferredProviderId(),
-                request.modelName()
+                request.modelName(),
+                request.toolCallbacks()
         );
     }
 

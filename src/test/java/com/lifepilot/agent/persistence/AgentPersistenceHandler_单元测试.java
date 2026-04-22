@@ -9,6 +9,7 @@ import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnRecord;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
+import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,8 +21,9 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -105,6 +107,59 @@ class AgentPersistenceHandler_单元测试 {
 
         assertThat(entryId).isEqualTo("user-entry-2");
         verify(chatTurnService).bindUserEntry("session-2", "turn-2", "user-entry-2");
+    }
+
+    @Test
+    void 持久化用户消息时剥离文档附件提示块() {
+        String userText = "请帮我读这份合同";
+        String hint = "\n\n" + BrowserIngressService.DOCUMENT_HINT_BEGIN
+                + "\n[系统提示] 用户选择了以下文档附件，可调用 file.read(attachmentId=...) 读取内容：\n"
+                + "- contract.docx（attachmentId=att-doc）\n"
+                + BrowserIngressService.DOCUMENT_HINT_END;
+        ReactAgentState state = buildState("session-3", "turn-3", userText + hint);
+
+        when(chatTurnService.findBySessionIdAndTurnId("session-3", "turn-3"))
+                .thenReturn(Optional.empty());
+        when(transcriptStore.appendUserMessage(
+                eq("session-3"), eq("turn-3"), eq(userText),
+                eq(state.traceId()), eq(true), isNull()))
+                .thenReturn("user-entry-3");
+
+        String entryId = handler.persistUserMessageReturningId(state);
+
+        assertThat(entryId).isEqualTo("user-entry-3");
+        // 验证 transcriptStore 收到的是不含 hint 的纯净文本
+        verify(transcriptStore).appendUserMessage(
+                eq("session-3"), eq("turn-3"), eq(userText),
+                eq(state.traceId()), eq(true), isNull());
+        // 而 state.goal() 本身不应被改动，模型仍能在原文中看到 hint
+        assertThat(state.goal()).contains(BrowserIngressService.DOCUMENT_HINT_BEGIN);
+        assertThat(state.goal()).contains("att-doc");
+    }
+
+    @Test
+    void stripDocumentParseHint_无提示时原样返回() {
+        String text = "你好，请帮我处理这个问题";
+        assertThat(AgentPersistenceHandler.stripDocumentParseHint(text)).isEqualTo(text);
+    }
+
+    @Test
+    void stripDocumentParseHint_null与空文本安全返回() {
+        assertThat(AgentPersistenceHandler.stripDocumentParseHint(null)).isNull();
+        assertThat(AgentPersistenceHandler.stripDocumentParseHint("")).isEqualTo("");
+    }
+
+    @Test
+    void stripDocumentParseHint_剥离marker包裹块及前置空行() {
+        String pure = "总结这篇论文";
+        String hint = "\n\n" + BrowserIngressService.DOCUMENT_HINT_BEGIN
+                + "\n[系统提示] 文档列表：\n- paper.pdf（attachmentId=att-1）\n"
+                + BrowserIngressService.DOCUMENT_HINT_END;
+        String result = AgentPersistenceHandler.stripDocumentParseHint(pure + hint);
+        assertThat(result).isEqualTo(pure);
+        assertThat(result).doesNotContain(BrowserIngressService.DOCUMENT_HINT_BEGIN);
+        assertThat(result).doesNotContain(BrowserIngressService.DOCUMENT_HINT_END);
+        assertThat(result).doesNotContain("attachmentId");
     }
 
     private ReactAgentState buildState(String sessionId, String turnId, String goal) {

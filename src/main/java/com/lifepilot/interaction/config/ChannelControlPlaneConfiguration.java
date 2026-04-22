@@ -18,6 +18,8 @@ import com.lifepilot.interaction.service.ChannelIngressService;
 import com.lifepilot.interaction.service.ChannelInstanceEventService;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.gateway.MessageGateway;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.marketplace.install.InstalledExtensionRepository;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.beans.factory.ObjectProvider;
@@ -131,13 +133,15 @@ public class ChannelControlPlaneConfiguration {
                                                               ChannelInstanceEventService channelInstanceEventService,
                                                               RestClient channelControlPlaneRestClient,
                                                               ConnectorManager connectorManager,
-                                                              @Nullable SseSessionManager sseSessionManager) {
+                                                              @Nullable SseSessionManager sseSessionManager,
+                                                              @Nullable com.lifepilot.document.repository.SessionDocumentRepository documentRepository) {
         return new ChannelDeliveryDispatcher(
                 channelRegistry,
                 channelInstanceEventService,
                 channelControlPlaneRestClient,
                 connectorManager,
-                sseSessionManager
+                sseSessionManager,
+                documentRepository
         );
     }
 
@@ -179,7 +183,21 @@ public class ChannelControlPlaneConfiguration {
                                                                     ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                                                     ChannelPermissionApprovalService channelApprovalService,
                                                                     ChannelUserMappingCache channelUserMappingCache,
+                                                                    AttachmentRepository attachmentRepository,
+                                                                    ObjectProvider<KnowledgeBaseProperties> knowledgeBasePropertiesProvider,
                                                                     ConnectorManagerProperties connectorManagerProperties) {
+        // 与 ChatController 上传附件的落盘目录保持一致：<dataDir>/attachments
+        // test profile 下 knowledge 模块可禁用，KnowledgeBaseProperties 缺失时降级到 tmpdir
+        KnowledgeBaseProperties knowledgeBaseProperties = knowledgeBasePropertiesProvider.getIfAvailable();
+        String dataDir;
+        if (knowledgeBaseProperties != null) {
+            dataDir = knowledgeBaseProperties.dataDir();
+        } else {
+            dataDir = System.getProperty("java.io.tmpdir") + "/zhiwei";
+            log.warn("KnowledgeBaseProperties 不可用（knowledge 模块已禁用），channel 附件落盘目录降级到 {}；生产环境请确保 knowledge 模块已启用",
+                    dataDir);
+        }
+        String attachmentStorageDir = dataDir + "/attachments";
         return new ChannelRuntimeIngressService(
                 channelInstanceService,
                 channelIngressService,
@@ -188,6 +206,8 @@ public class ChannelControlPlaneConfiguration {
                 channelDeliveryDispatcher,
                 channelApprovalService,
                 channelUserMappingCache,
+                attachmentRepository,
+                attachmentStorageDir,
                 connectorManagerProperties.getMaxAttachmentSizeBytes(),
                 connectorManagerProperties.getEventDeduplicationCacheSize()
         );

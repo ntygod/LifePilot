@@ -219,11 +219,82 @@ class SessionTitleGenerator_标题生成测试 {
             verify(sessionRepository, never()).findById(anyString());
         }
 
-        @ParameterizedTest(name = "非Web渠道sessionId=\"{0}\"时跳过")
-        @ValueSource(strings = {"feishu:chat123:user456", "dingtalk:conv:uid", "wechat:room:member"})
-        void sessionId包含冒号时跳过_非Web渠道(String sessionId) {
-            generator.generateIfNeeded(sessionId, "你好");
-            verify(sessionRepository, never()).findById(anyString());
+        @Test
+        void channel会话不调LLM_走固定标题组装() {
+            String sessionId = "oc_bb66280a31f2a8cd8e42aba47966181e";  // 飞书真实格式
+            var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
+                    Instant.now(), Instant.now(), Instant.now());
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+            generator.generateIfNeeded(sessionId, "帮我筛选一下炊事员", "feishu");
+
+            // 不调用 LLM
+            verify(generationRouter, never()).call(anyString(), anyString(), any(), any(), any(), any(), any());
+            // 但会更新标题为 "飞书 · 帮我筛选一下炊事员"
+            verify(sessionRepository).updateTitle(eq(sessionId), eq("飞书 · 帮我筛选一下炊事员"));
+        }
+
+        @Test
+        void channel会话userMessage为空时退化为平台名对话() {
+            String sessionId = "oc_channel_session";
+            var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
+                    Instant.now(), Instant.now(), Instant.now());
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+            generator.generateIfNeeded(sessionId, "", "feishu");
+
+            verify(sessionRepository).updateTitle(eq(sessionId), eq("飞书对话"));
+            verify(generationRouter, never()).call(anyString(), anyString(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        void channel会话userMessage是connector技术串时过滤() {
+            String sessionId = "oc_file_session";
+            var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
+                    Instant.now(), Instant.now(), Instant.now());
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+            // 飞书纯文件消息，content 是 connector 塞的 file_key + fileName
+            generator.generateIfNeeded(sessionId,
+                    "file_v3_00110_abc123\n16392090_xxx.xlsx", "feishu");
+
+            // 识别出 file_v3_ 前缀是技术串，退化为 "飞书对话"
+            verify(sessionRepository).updateTitle(eq(sessionId), eq("飞书对话"));
+        }
+
+        @Test
+        void channel会话userMessage超长时截断() {
+            String sessionId = "oc_long_session";
+            var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
+                    Instant.now(), Instant.now(), Instant.now());
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+            generator.generateIfNeeded(sessionId,
+                    "这是一条非常非常非常非常非常非常非常长的用户消息", "feishu");
+
+            // 截断到 MAX_TITLE_LENGTH（20 字）+ …
+            var captor = org.mockito.ArgumentCaptor.forClass(String.class);
+            verify(sessionRepository).updateTitle(eq(sessionId), captor.capture());
+            String title = captor.getValue();
+            org.assertj.core.api.Assertions.assertThat(title).startsWith("飞书 · ");
+            org.assertj.core.api.Assertions.assertThat(title.length()).isLessThanOrEqualTo(21);  // 20 + "…"
+        }
+
+        @Test
+        void 钉钉企微QQ平台名映射到中文() {
+            java.util.Map<String, String> expected = java.util.Map.of(
+                    "dingtalk", "钉钉对话",
+                    "wecom", "企业微信对话",
+                    "qq", "QQ对话"
+            );
+            expected.forEach((platform, expectedTitle) -> {
+                String sessionId = "ch_" + platform;
+                var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
+                        Instant.now(), Instant.now(), Instant.now());
+                when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+                generator.generateIfNeeded(sessionId, "", platform);
+                verify(sessionRepository).updateTitle(eq(sessionId), eq(expectedTitle));
+            });
         }
 
         @ParameterizedTest(name = "userMessage=\"{0}\"时跳过")

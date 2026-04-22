@@ -113,7 +113,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                         false));
 
         var vectorResult = new VectorSearchResult("entity-travel-1", 0.85f);
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any()))
                 .thenReturn(List.of(vectorResult));
 
         Instant now = Instant.now();
@@ -182,7 +182,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 .thenThrow(new RuntimeException("生成模型不可用"));
 
         var vectorResult = new VectorSearchResult("entity-meeting-1", 0.75f);
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any()))
                 .thenReturn(List.of(vectorResult));
 
         Instant now = Instant.now();

@@ -60,15 +60,16 @@ public class NonStreamingCallback implements IterationCallback {
                                 @Nullable TraceContext traceContext) {
         String scene = config.getLoop().getLlmScene();
 
-        // 动态路由：检查 messages 中 UserMessage 是否包含 Media 对象
-        // 覆盖两种场景：用户上传的媒体（首轮）和工具产生的媒体（后续迭代 pendingMedia）
-        boolean messagesHaveMedia = messages.stream()
+        // 动态路由：仅当 UserMessage 含真正的多模态媒体（image / audio / video）时走多模态路径。
+        // 文档类附件（pdf / docx / md / txt / csv 等）通过 file.read(attachmentId=...) 按需解析，不走多模态通道。
+        boolean messagesHaveMultimodalMedia = messages.stream()
                 .filter(m -> m instanceof UserMessage)
                 .map(m -> (UserMessage) m)
-                .anyMatch(um -> !um.getMedia().isEmpty());
+                .flatMap(um -> um.getMedia().stream())
+                .anyMatch(NonStreamingCallback::isMultimodalMedia);
 
-        // 多模态路由：messages 中有 Media 且 MultimodalRouter 可用时走多模态路径
-        if (messagesHaveMedia && multimodalRouter != null) {
+        // 多模态路由：messages 中有真多模态媒体且 MultimodalRouter 可用时走多模态路径
+        if (messagesHaveMultimodalMedia && multimodalRouter != null) {
             var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
                     ? req.mediaContents()
                     : helper.extractMediaContentsFromMessages(messages);
@@ -78,7 +79,8 @@ public class NonStreamingCallback implements IterationCallback {
                     mediaContents,
                     null,
                     req.preferredProvider(),
-                    null
+                    null,
+                    toolCallbacks
             );
             LlmResponse llmResponse = multimodalRouter.call(multimodalRequest);
             this.providerId = llmResponse.providerId();
@@ -88,7 +90,7 @@ public class NonStreamingCallback implements IterationCallback {
             return helper.adaptToChatResponse(llmResponse);
         }
 
-        if (messagesHaveMedia) {
+        if (messagesHaveMultimodalMedia) {
             log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
         }
 
@@ -119,4 +121,16 @@ public class NonStreamingCallback implements IterationCallback {
 
     @Override public String getProviderId() { return providerId; }
     @Override public String getModelId() { return modelId; }
+
+    /** 判断 Media 是否属于真正的多模态类型（image / audio / video）。 */
+    private static boolean isMultimodalMedia(org.springframework.ai.content.Media media) {
+        var mime = media.getMimeType();
+        if (mime == null) {
+            return false;
+        }
+        String type = mime.getType();
+        return "image".equalsIgnoreCase(type)
+                || "audio".equalsIgnoreCase(type)
+                || "video".equalsIgnoreCase(type);
+    }
 }

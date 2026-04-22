@@ -29,6 +29,12 @@
   --ring: hsl(160 30% 42%);
   --ring-offset-background: hsl(0 0% 98%);
 
+  /* docx / xlsx diff 渲染色：delete=红，insert=绿。浅 bg + 深 fg，保证文字 AA 对比度 */
+  --diff-delete-bg: hsl(0 80% 94%);
+  --diff-delete-fg: hsl(0 72% 38%);
+  --diff-insert-bg: hsl(142 70% 92%);
+  --diff-insert-fg: hsl(142 64% 30%);
+
   --radius: 1.1rem;
 
   --sidebar-background: hsl(0 0% 96.5%);
@@ -81,6 +87,12 @@
   --input: hsl(0 0% 18%);
   --ring: hsl(160 32% 56%);
   --ring-offset-background: hsl(0 0% 8%);
+
+  /* dark mode：bg 加深，fg 变亮以保持可读性 */
+  --diff-delete-bg: hsl(0 60% 22%);
+  --diff-delete-fg: hsl(0 70% 82%);
+  --diff-insert-bg: hsl(142 48% 20%);
+  --diff-insert-fg: hsl(142 60% 78%);
 
   --sidebar-background: hsl(0 0% 9%);
   --sidebar-foreground: hsl(0 0% 94%);

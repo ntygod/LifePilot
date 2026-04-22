@@ -62,8 +62,16 @@ public class ContextAssembler {
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
 
     /** 记忆统计缓存（不可变 record，单字段原子读写）。 */
-    private record MetadataCache(String content, Instant cachedAt) {}
+    private record MetadataCache(MemoryCounts counts, Instant cachedAt) {}
     private volatile MetadataCache metadataCache;
+
+    /**
+     * 记忆分类计数, 供各 context section 首行展示 —
+     * 原先独立的 {@code <memory_metadata>} 标签块被拆分合并到对应 section, 标签与计数就近。
+     */
+    public record MemoryCounts(String profileLine, String experienceLine, String factLine) {
+        public static final MemoryCounts EMPTY = new MemoryCounts("", "", "");
+    }
     private static final Duration METADATA_CACHE_TTL = Duration.ofMinutes(5);
 
     private final AgentConfigProperties config;
@@ -235,12 +243,14 @@ public class ContextAssembler {
             String memorySection = safeRedact(formatMemorySection(relevantMemories));
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
+            MemoryCounts memoryCounts = buildMemoryCounts();
             List<Message> contextMessages = buildContextMessages(
                     profileSection,
                     workspaceSection,
                     artifactSection,
                     experienceSection,
-                    memorySection
+                    memorySection,
+                    memoryCounts
             );
             String userPrompt = buildUserPrompt(state);
 
@@ -500,23 +510,23 @@ public class ContextAssembler {
     }
 
     /**
-     * 构建记忆统计元数据 — 按实体类型分组计数，生成 XML 片段注入 system prompt。
-     * 使用 SQL GROUP BY 聚合避免全量加载实体，结果缓存 5 分钟。
+     * 构建记忆分类计数 — 按实体类型分组统计, 供各 context section 首行展示。
+     * 使用 SQL GROUP BY 聚合避免全量加载实体, 结果缓存 5 分钟。
      */
-    String buildMemoryMetadata() {
+    MemoryCounts buildMemoryCounts() {
         if (semanticMemory == null) {
-            return "";
+            return MemoryCounts.EMPTY;
         }
         MetadataCache cached = metadataCache;
         Instant now = Instant.now();
         if (cached != null && Duration.between(cached.cachedAt(), now).compareTo(METADATA_CACHE_TTL) < 0) {
-            return cached.content();
+            return cached.counts();
         }
         try {
             Map<EntityType, Integer> counts = semanticMemory.countByEntityType(MemoryReadFilter.userMemory());
             if (counts.isEmpty()) {
-                metadataCache = new MetadataCache("", now);
-                return "";
+                metadataCache = new MetadataCache(MemoryCounts.EMPTY, now);
+                return MemoryCounts.EMPTY;
             }
             // 分类统计
             int profileCount = 0;
@@ -540,23 +550,21 @@ public class ContextAssembler {
                     }
                 }
             }
-            var sb = new StringBuilder("<memory_metadata>\n");
-            if (profileCount > 0) {
-                sb.append("- 已存储 ").append(profileCount).append(" 条用户画像（").append(profileDetails).append("）\n");
-            }
-            if (experienceCount > 0) {
-                sb.append("- 已存储 ").append(experienceCount).append(" 条执行经验\n");
-            }
-            if (factCount > 0) {
-                sb.append("- 已存储 ").append(factCount).append(" 条事实性记忆（").append(factDetails).append("）\n");
-            }
-            sb.append("</memory_metadata>");
-            String result = sb.toString();
+            String profileLine = profileCount > 0
+                    ? "共 " + profileCount + " 条（" + profileDetails + "）"
+                    : "";
+            String experienceLine = experienceCount > 0
+                    ? "共 " + experienceCount + " 条执行经验"
+                    : "";
+            String factLine = factCount > 0
+                    ? "共 " + factCount + " 条（" + factDetails + "）"
+                    : "";
+            MemoryCounts result = new MemoryCounts(profileLine, experienceLine, factLine);
             metadataCache = new MetadataCache(result, now);
             return result;
         } catch (Exception e) {
             log.debug("记忆统计构建失败: {}", e.getMessage());
-            return "";
+            return MemoryCounts.EMPTY;
         }
     }
 
@@ -564,12 +572,11 @@ public class ContextAssembler {
         String baseSystemPrompt = safeReactSystemPrompt(state);
         String toolGuide = safeRenderToolGuide();
         String executionGuard = buildExecutionGuardPrompt(state);
-        String memoryMetadata = buildMemoryMetadata();
+        // 记忆计数不再独立成块, 已迁移到各 context section 首行 (见 buildContextMessages)
         return joinNonBlankSections(
                 baseSystemPrompt,
                 toolGuide,
-                executionGuard,
-                memoryMetadata
+                executionGuard
         );
     }
 
@@ -713,14 +720,31 @@ public class ContextAssembler {
                                        @Nullable String workspaceSection,
                                        @Nullable String artifactSection,
                                        @Nullable String experienceSection,
-                                       @Nullable String memorySection) {
+                                       @Nullable String memorySection,
+                                       MemoryCounts counts) {
         List<Message> messages = new ArrayList<>();
-        addTaggedContextMessage(messages, "user_profile_context", profileSection);
+        // 把计数作为各 section 首行注入, 标签与数据就近
+        addTaggedContextMessage(messages, "user_profile_context",
+                prependCountLine(counts.profileLine(), profileSection));
         addTaggedContextMessage(messages, "workspace_context", workspaceSection);
         addTaggedContextMessage(messages, "artifact_context", artifactSection);
-        addTaggedContextMessage(messages, "experience_context", experienceSection);
-        addTaggedContextMessage(messages, "memory_context", memorySection);
+        addTaggedContextMessage(messages, "experience_context",
+                prependCountLine(counts.experienceLine(), experienceSection));
+        addTaggedContextMessage(messages, "memory_context",
+                prependCountLine(counts.factLine(), memorySection));
         return List.copyOf(messages);
+    }
+
+    /** 在 section 内容前拼一行计数; 计数空或 section 空时原样返回 (避免制造空 section)。 */
+    @Nullable
+    private String prependCountLine(String countLine, @Nullable String section) {
+        if (section == null || section.isBlank()) {
+            return section;
+        }
+        if (countLine == null || countLine.isBlank()) {
+            return section;
+        }
+        return countLine + "\n" + section;
     }
 
     private void addTaggedContextMessage(List<Message> messages,
@@ -856,7 +880,8 @@ public class ContextAssembler {
             if (consolidated.isPresent()) {
                 var desc = consolidated.get().description();
                 if (desc != null && !desc.isBlank()) {
-                    return "用户画像:\n" + desc;
+                    // section 标签已由外层 <user_profile_context> 提供, 不再在内容前重复 "用户画像:"
+                    return desc;
                 }
             }
 
@@ -1040,7 +1065,8 @@ public class ContextAssembler {
         if (userProfile == null || userProfile.isBlank()) {
             return "";
         }
-        return "\n用户画像:\n" + userProfile;
+        // section 标签由 <user_profile_context> 提供, 不再在此重复加 "用户画像:" 前缀
+        return userProfile;
     }
 
     private String formatWorkspaceSection(List<WorkspaceItem> workspaceItems) {

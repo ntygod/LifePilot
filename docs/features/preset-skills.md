@@ -6,7 +6,7 @@
 
 ## 1. 功能概述
 
-知微内置 25 个预置 Skill（种子 Skill），覆盖日常管理、开发辅助、数据分析、内容创作、自动化等常见场景。这些 Skill 以 `SKILL.md` 形式打包在应用 classpath 中（`src/main/resources/skills/`），首次启动时由 `SkillDiscoveryRegistrar` 自动提取到用户 Skill 目录（`~/.zhiwei/skills/`）。
+知微内置 26 个预置 Skill（种子 Skill），覆盖日常管理、开发辅助、数据分析、内容创作、自动化等常见场景。这些 Skill 以 `SKILL.md` 形式打包在应用 classpath 中（`src/main/resources/skills/`），首次启动时由 `SkillDiscoveryRegistrar` 自动提取到用户 Skill 目录（`~/.zhiwei/skills/`）。
 
 提取后，预置 Skill 与用户自定义 Skill 完全等同——来源类型为 `UserDefined`，支持热加载、编辑覆盖和按需激活。
 
@@ -46,6 +46,7 @@
 | `datastore` | 数据存储 | 通用数据存取（Datastore CRUD） |
 | `desktop-automation` | 桌面自动化 | 桌面应用操作自动化 |
 | `doc-processor` | 文档处理 | 文档解析、转换与摘要 |
+| `document-workspace` | 文档工作副本编辑 | 已存在的 docx / xlsx / pptx 锚点增量修改 + 版本/回滚 |
 | `feishu` | 飞书集成 | 飞书消息发送、文档操作 |
 | `file-organizer` | 文件整理 | 文件分类、重命名、目录整理 |
 | `find-skills` | 能力发现与自扩展 | 搜索外部 Skill 或自动生成缺失 Skill |
@@ -64,7 +65,7 @@
 
 ### 4.1 用户首次启动
 
-用户安装知微后首次启动，`SkillDiscoveryRegistrar` 自动将 25 个预置 Skill 提取到 `~/.zhiwei/skills/`。Agent 在首次对话中即可发现和使用这些 Skill。
+用户安装知微后首次启动，`SkillDiscoveryRegistrar` 自动将 26 个预置 Skill 提取到 `~/.zhiwei/skills/`。Agent 在首次对话中即可发现和使用这些 Skill。
 
 ### 4.2 定制预置 Skill
 

@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-预置 Skill（种子 Skill）是知微随应用分发的 25 个 Skill 定义，打包在 classpath 的 `skills/` 目录下。启动时由 `SkillDiscoveryRegistrar` 提取到用户 Skill 目录，之后由 Skill 系统的 `MarkdownSkillLoader` + `SkillFileWatcher` 统一加载和管理。
+预置 Skill（种子 Skill）是知微随应用分发的 26 个 Skill 定义，打包在 classpath 的 `skills/` 目录下。启动时由 `SkillDiscoveryRegistrar` 提取到用户 Skill 目录，之后由 Skill 系统的 `MarkdownSkillLoader` + `SkillFileWatcher` 统一加载和管理。
 
 提取完成后，预置 Skill 的来源类型为 `SkillSource.UserDefined`——与用户手动创建的 Skill 完全等同，不存在单独的 "Builtin" 来源类型。
 
@@ -15,7 +15,7 @@
 ```mermaid
 graph TB
     subgraph "应用 classpath"
-        RES["src/main/resources/skills/<br/>25 个 SKILL.md"]
+        RES["src/main/resources/skills/<br/>26 个 SKILL.md"]
     end
 
     subgraph "启动提取 (meta.convenience)"
@@ -78,6 +78,7 @@ src/main/resources/skills/
 ├── datastore/SKILL.md
 ├── desktop-automation/SKILL.md
 ├── doc-processor/SKILL.md
+├── document-workspace/SKILL.md
 ├── feishu/SKILL.md
 ├── file-organizer/SKILL.md
 ├── find-skills/SKILL.md
@@ -119,7 +120,7 @@ sequenceDiagram
     Spring->>SDR: afterPropertiesSet()
     SDR->>SDR: 检查 skillDiscovery.enabled
     SDR->>CP: PathMatchingResourcePatternResolver.getResources()
-    CP-->>SDR: Resource[] (25 个 SKILL.md)
+    CP-->>SDR: Resource[] (26 个 SKILL.md)
     loop 逐个处理
         SDR->>SDR: extractSkillId(resource)
         SDR->>FS: Files.exists(targetFile)?
@@ -129,7 +130,7 @@ sequenceDiagram
             SDR->>SDR: 跳过
         end
     end
-    SDR->>SDR: 日志: 新增=N, 总扫描=25
+    SDR->>SDR: 日志: 新增=N, 总扫描=26
     Note over SFW: WatchService 异步感知新目录，触发加载注册
 ```
 

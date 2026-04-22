@@ -63,6 +63,193 @@ describe('MessageBubble 视频附件渲染（Property 14）', () => {
   })
 })
 
+describe('MessageBubble 文档附件卡片', () => {
+  it('docx 附件显示「AI 可读取」徽标和文件名', () => {
+    const message: Message = {
+      id: 'm-docx',
+      role: 'user',
+      content: '请看这份合同',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-1',
+          url: '/api/attachments/att-1',
+          filename: '合同.docx',
+          size: 102400,
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('合同.docx')
+    expect(wrapper.text()).toContain('AI 可读取')
+  })
+
+  it('未知二进制附件不显示「AI 可读取」徽标', () => {
+    const message: Message = {
+      id: 'm-bin',
+      role: 'user',
+      content: '',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-2',
+          url: '/api/attachments/att-2',
+          filename: 'data.bin',
+          size: 2048,
+          type: 'application/octet-stream',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('data.bin')
+    expect(wrapper.text()).not.toContain('AI 可读取')
+  })
+
+  it('xlsx 附件显示「AI 可读取」徽标', () => {
+    const message: Message = {
+      id: 'm3',
+      role: 'user',
+      content: '看销售表',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-3',
+          url: '/api/attachments/att-3',
+          filename: '销售.xlsx',
+          size: 51200,
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('销售.xlsx')
+    expect(wrapper.text()).toContain('AI 可读取')
+  })
+
+  it('pptx 附件显示「AI 可读取」徽标', () => {
+    const message: Message = {
+      id: 'm4',
+      role: 'user',
+      content: '看方案',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-4',
+          url: '/api/attachments/att-4',
+          filename: '方案.pptx',
+          size: 204800,
+          type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('方案.pptx')
+    expect(wrapper.text()).toContain('AI 可读取')
+  })
+
+  it('csv 附件显示「AI 可读取」徽标（PlainTextParser 支持 csv）', () => {
+    const message: Message = {
+      id: 'm-csv',
+      role: 'user',
+      content: '帮我看这份数据',
+      timestamp: Date.now(),
+      attachments: [
+        {
+          fileId: 'att-csv',
+          url: '/api/attachments/att-csv',
+          filename: '销售数据.csv',
+          size: 8192,
+          type: 'text/csv',
+          isImage: false
+        }
+      ]
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: false
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('销售数据.csv')
+    expect(wrapper.text()).toContain('AI 可读取')
+  })
+})
+
 describe('MessageBubble 权限审批状态展示', () => {
   it('确认后会立即展示紧凑授权记录，不需要刷新页面', () => {
     const message: Message = {

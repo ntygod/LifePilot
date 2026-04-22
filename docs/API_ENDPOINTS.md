@@ -28,6 +28,7 @@
 - [Settings（用户设置）](#settings用户设置)
 - [Channels（渠道管理）](#channels渠道管理)
 - [Attachments（附件）](#attachments附件)
+- [Documents（文档工作空间）](#documents文档工作空间)
 - [Dependencies（依赖关系）](#dependencies依赖关系)
 - [A2A（Agent-to-Agent 协议）](#a2a协议端点)
 - [Eval（评估）](#eval评估)
@@ -419,6 +420,24 @@
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | GET | `/api/attachments/{id}` | `getAttachment` | 获取附件（返回文件流） |
+
+---
+
+## Documents（文档工作空间）
+
+来源：`DocumentController`，Base Path: `/api/documents`
+
+> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。服务 Agent 通过 `document.create`（docx / xlsx / pptx）与 `document.edit`（docx / xlsx，锚点增量编辑）工具生成的工作副本，向前端提供元数据、版本链、diff 卡片数据以及 commit / rollback / 丢弃等用户侧动作。pptx 目前只能从零创建，不支持增量 patch。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/documents/{id}` | `getMetadata` | 文档元数据（id / fileName / mimeType / fileSize / origin / sourcePath / latestVersion / createdAt），404 不存在 |
+| GET | `/api/documents/{id}/download` | `download` | 下载文档二进制；可选 `?version=N` 指向历史版本，缺省下载当前工作副本；404 文档或版本缺失 / 物理文件丢失 |
+| GET | `/api/documents/{id}/versions` | `listVersions` | 版本链升序列表，元素包含 `versionNo` / `source` / `patchSummary` / `createdAt` |
+| GET | `/api/documents/{id}/diff` | `diff` | 取某区间 diff JSON（当前简化语义：只返回 `to` 版本缓存的 `diffJson`），必填 `from` / `to` 查询参数 |
+| POST | `/api/documents/{id}/commit` | `commit` | 提交工作副本。请求体：`{"target":"overwrite"\|"saveAs","saveAsPath":"..."}`；overwrite 覆盖 `sourcePath` 并生成 `.bak` 备份，saveAs 另存到指定绝对路径。返回 `{committedPath, backupPath?}` |
+| POST | `/api/documents/{id}/rollback` | `rollback` | 回滚到指定版本（生成新版本而非抹除历史）。请求体：`{"version":N}`。返回 `{newVersion, summary}` |
+| DELETE | `/api/documents/{id}/working-copy` | `discardWorkingCopy` | 丢弃工作副本（删除 working 目录 + 版本链 + session_documents 行，204）；404 不存在，400 状态不允许 |
 
 ---
 

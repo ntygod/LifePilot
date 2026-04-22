@@ -48,6 +48,10 @@ lifepilot:
       heartbeat-core-pool-size: 1
   prompt:
     base-path: "classpath:prompts/"
+  document:
+    # 文档产物落盘目录（Agent 生成的 docx / xlsx / pptx） —
+    # 跟随用户在设置页配置的 ${zhiwei.data-dir}, 默认 ~/.zhiwei/documents
+    storage-dir: "${zhiwei.data-dir}/documents"
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
@@ -55,17 +59,22 @@ lifepilot:
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: true
+    # ReAct Agent 默认可见的核心工具白名单 — 任何时候都会出现在 LLM 的 tool schema 里
+    # 未列入此处的工具只能通过 Skill 激活（LLM 调 file.read(skill="xx") 加载）或多 Agent 白名单暴露
+    # 新增基础能力工具需显式加入，否则 LLM 看不到（见 ToolBridgeAgentToolProvider 的分层过滤逻辑）
     core-tool-ids:
       - shell.exec
       - web.search
       - shell.process
       - web.fetch
-      - file.read
+      - file.read            # 统一读路径：纯文本 + docx/pdf/md/csv 等结构化文档 + 附件（attachmentId）
       - file.write
       - file.list
       - memory
       - knowledge.search
       - notify
+      - document.create      # Phase 2B：单工具 + action 路由生成 docx/xlsx/pptx
+      - document.edit        # Phase 3A：docx 编辑（patch/diff/commit/rollback/list_versions）
     loop:
       # ReAct 循环配置
       max-iterations: 45
