@@ -78,7 +78,7 @@ public class DocumentEditToolProvider {
                 "批量写矩形用 set_range（values 是 2D 数组，尺寸必须与 range 吻合）更高效。" +
                 "LLM 用法要点：" +
                 "(1) 先用 file.read 读文档内容再规划 locator，不要凭空猜测；" +
-                "(2) docx locator 的 before/after context 建议各带 10-30 字；xlsx 用精确 sheet 名 + A1 地址；" +
+                "(2) docx locator 的 before_context 和 after_context 各取 10-30 字（少于 10 字易有多处匹配导致 failedOps，多于 30 字容易和文档真实文本对不上）；xlsx 用精确 sheet 名 + A1 地址；" +
                 "(3) 单次 patch 内可传入多个 operations 事务执行；xlsx 与 docx op 不能跨 MIME 混用；" +
                 "(4) commit 是用户动作，LLM 不应主动 commit，应把 downloadUrl 告知用户由其决定是否落盘；" +
                 "(5) 所有 op 都保留原样式（字体 / 数字格式 / 边框 / 填充），" +
@@ -112,7 +112,7 @@ public class DocumentEditToolProvider {
                         "replace_text 需 before_context + target + after_context + new_text；" +
                         "insert_paragraph_after 需 anchor_paragraph_text + new_paragraphs（{text, style?}[]）；" +
                         "delete_paragraph 需 paragraph_text；" +
-                        "add_table_row 需 table_anchor_text + position(first/last) + cells(string[])。" +
+                        "add_table_row 需 table_anchor_text + position(start/end：start 插到表头，end 追到表尾) + cells(string[])。" +
                         "【xlsx op】op ∈ {update_cell, insert_row, delete_row, set_range}；" +
                         "update_cell 需 sheet + cell + new_value（多态：number/boolean/string，= 开头为公式；null 清空）；" +
                         "insert_row 需 sheet + before_row（1-based 行号） + values(array)；" +

@@ -119,11 +119,13 @@ class DocumentVersionService_xlsx生命周期测试 {
 
         // 测试用宽松 PathSecurityChecker：无白名单、仅默认黑名单；tempDir 下可自由读写
         service = new DocumentVersionService(
-                documentRepository, versionRepository, attachmentRepository,
-                new DocxPatchEngine(new TextAnchorLocator()),
-                new DocxDiffBuilder(),
-                new XlsxPatchEngine(),
-                new XlsxDiffBuilder(),
+                new DocumentVersionService.DocumentRepositories(
+                        documentRepository, versionRepository, attachmentRepository),
+                new DocumentVersionService.PatchEngines(
+                        new DocxPatchEngine(new TextAnchorLocator()),
+                        new DocxDiffBuilder(),
+                        new XlsxPatchEngine(),
+                        new XlsxDiffBuilder()),
                 tempDir.resolve("storage").toString(),
                 new PathSecurityChecker(new MetaProperties.Infra.FileAccess()));
     }

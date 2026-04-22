@@ -67,9 +67,10 @@ class DocumentController_P3端点测试 {
 
         mockMvc.perform(get("/api/documents/d1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("d1"))
-                .andExpect(jsonPath("$.latestVersion").value(2))
-                .andExpect(jsonPath("$.sourcePath").value("D:/x.docx"));
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").value("d1"))
+                .andExpect(jsonPath("$.data.latestVersion").value(2))
+                .andExpect(jsonPath("$.data.sourcePath").value("D:/x.docx"));
     }
 
     @Test
@@ -82,24 +83,29 @@ class DocumentController_P3端点测试 {
     }
 
     @Test
-    @DisplayName("GET /versions 按版本号升序返回版本列表")
+    @DisplayName("GET /versions 分页返回 items + total + page + pageSize")
     void 列版本列表() throws Exception {
         when(documentRepository.findById("d1")).thenReturn(new SessionDocumentRecord(
                 "d1", "s1", null, "x.docx", "/p/x", 1L, "a",
                 SessionDocumentRecord.ORIGIN_AGENT_GENERATED, null, 1, Instant.now()));
-        when(versionRepository.findByDocumentId("d1")).thenReturn(List.of(
-                new DocumentVersionRecord("v1", "d1", 0, "/p/v0",
-                        DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()),
-                new DocumentVersionRecord("v2", "d1", 1, "/p/v1",
-                        DocumentVersionRecord.SOURCE_PATCH, "共 1 处", "{}", Instant.now())
-        ));
+        when(versionService.listVersions("d1", 1, 20)).thenReturn(
+                new DocumentVersionService.VersionPage(List.of(
+                        new DocumentVersionRecord("v1", "d1", 0, "/p/v0",
+                                DocumentVersionRecord.SOURCE_INITIAL, null, null, Instant.now()),
+                        new DocumentVersionRecord("v2", "d1", 1, "/p/v1",
+                                DocumentVersionRecord.SOURCE_PATCH, "共 1 处", "{}", Instant.now())
+                ), 2, 1, 20));
 
         mockMvc.perform(get("/api/documents/d1/versions"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].versionNo").value(0))
-                .andExpect(jsonPath("$[0].source").value("initial"))
-                .andExpect(jsonPath("$[1].versionNo").value(1))
-                .andExpect(jsonPath("$[1].patchSummary").value("共 1 处"));
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.items[0].versionNo").value(0))
+                .andExpect(jsonPath("$.data.items[0].source").value("initial"))
+                .andExpect(jsonPath("$.data.items[1].versionNo").value(1))
+                .andExpect(jsonPath("$.data.items[1].patchSummary").value("共 1 处"))
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.pageSize").value(20));
     }
 
     @Test
@@ -112,8 +118,9 @@ class DocumentController_P3端点测试 {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("target", "overwrite"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.committedPath").value("D:/x.docx"))
-                .andExpect(jsonPath("$.backupPath").exists());
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.committedPath").value("D:/x.docx"))
+                .andExpect(jsonPath("$.data.backupPath").exists());
     }
 
     @Test
@@ -126,8 +133,9 @@ class DocumentController_P3端点测试 {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("version", 0))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.newVersion").value(2))
-                .andExpect(jsonPath("$.summary").value("回滚到版本 0"));
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.newVersion").value(2))
+                .andExpect(jsonPath("$.data.summary").value("回滚到版本 0"));
     }
 
     @Test

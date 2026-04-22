@@ -3,10 +3,14 @@ id: document-workspace
 name: "文档工作副本编辑"
 description: "修改已存在的 docx / xlsx / pptx 文档，保留版本链和回滚能力。用户说「在 XXX.docx 后加一段」「把第 3 行改成 X」「修改一下 YY.xlsx」「给表格加一行」「回滚到上一版」「保存这份改动」时使用。不适用于从零创建全新文档（用 document.create）。"
 version: "1.0.0"
-suggested-tools:
-  - document.edit
-  - document.create
 ---
+
+<!--
+  document.edit / document.create 已在 application.yml 的 core-tool-ids 白名单里（默认 LLM 可见），
+  此处不再通过 suggested-tools 重复激活，避免双重机制；若将来从 core-tool-ids 摘掉，
+  再在这里补 suggested-tools 字段即可。
+-->
+
 
 # 文档工作副本编辑指南
 
@@ -62,7 +66,7 @@ document.edit(action="patch", source={...}, operations=[...])
 
 ## 反模式
 
-- ❌ 发现上一轮没保留 documentId 就退而求其次用 `document.create` 重建——正确做法是问用户是否重新提供附件或路径
+- ❌ 发现上一轮没保留 documentId 就退而求其次用 `document.create` 重建——应引导用户重新提供源文件路径或附件，不要自行重建（会丢失版本链）
 - ❌ 把 `document.create` 当万能入口来"覆盖保存"——覆盖靠 `document.edit action=commit`，不是重新 create 同名文件
 - ❌ 一个 patch 里混合 docx 和 xlsx 的 op
 

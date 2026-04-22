@@ -119,11 +119,13 @@ class DocumentVersionService_生命周期测试 {
         // 测试场景用宽松的 PathSecurityChecker —— 无白名单仅默认黑名单（/etc、/var、C:\Windows），
         // tempDir 下的路径可自由读写；Critical 拒绝路径用例另行构造受限 checker
         service = new DocumentVersionService(
-                documentRepository, versionRepository, attachmentRepository,
-                new DocxPatchEngine(new TextAnchorLocator()),
-                new DocxDiffBuilder(),
-                new XlsxPatchEngine(),
-                new XlsxDiffBuilder(),
+                new DocumentVersionService.DocumentRepositories(
+                        documentRepository, versionRepository, attachmentRepository),
+                new DocumentVersionService.PatchEngines(
+                        new DocxPatchEngine(new TextAnchorLocator()),
+                        new DocxDiffBuilder(),
+                        new XlsxPatchEngine(),
+                        new XlsxDiffBuilder()),
                 tempDir.resolve("storage").toString(),
                 new PathSecurityChecker(new MetaProperties.Infra.FileAccess()));
     }
@@ -244,11 +246,13 @@ class DocumentVersionService_生命周期测试 {
         restrictiveConfig.setAllowedDirectories(List.of(tempDir.resolve("allowed").toString()));
         var restrictiveChecker = new PathSecurityChecker(restrictiveConfig);
         var restrictedService = new DocumentVersionService(
-                documentRepository, versionRepository, attachmentRepository,
-                new DocxPatchEngine(new TextAnchorLocator()),
-                new DocxDiffBuilder(),
-                new XlsxPatchEngine(),
-                new XlsxDiffBuilder(),
+                new DocumentVersionService.DocumentRepositories(
+                        documentRepository, versionRepository, attachmentRepository),
+                new DocumentVersionService.PatchEngines(
+                        new DocxPatchEngine(new TextAnchorLocator()),
+                        new DocxDiffBuilder(),
+                        new XlsxPatchEngine(),
+                        new XlsxDiffBuilder()),
                 tempDir.resolve("storage").toString(),
                 restrictiveChecker);
 
@@ -269,11 +273,13 @@ class DocumentVersionService_生命周期测试 {
         restrictiveConfig.setAllowedDirectories(List.of(tempDir.resolve("allowed").toString()));
         var restrictiveChecker = new PathSecurityChecker(restrictiveConfig);
         var restrictedService = new DocumentVersionService(
-                documentRepository, versionRepository, attachmentRepository,
-                new DocxPatchEngine(new TextAnchorLocator()),
-                new DocxDiffBuilder(),
-                new XlsxPatchEngine(),
-                new XlsxDiffBuilder(),
+                new DocumentVersionService.DocumentRepositories(
+                        documentRepository, versionRepository, attachmentRepository),
+                new DocumentVersionService.PatchEngines(
+                        new DocxPatchEngine(new TextAnchorLocator()),
+                        new DocxDiffBuilder(),
+                        new XlsxPatchEngine(),
+                        new XlsxDiffBuilder()),
                 tempDir.resolve("storage").toString(),
                 restrictiveChecker);
 

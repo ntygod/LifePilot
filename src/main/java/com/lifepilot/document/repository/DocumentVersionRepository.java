@@ -68,6 +68,21 @@ public class DocumentVersionRepository {
                 ROW_MAPPER, documentId);
     }
 
+    /** 分页变体：按 versionNo 升序取 [offset, offset+limit)。 */
+    public List<DocumentVersionRecord> findByDocumentId(String documentId, int offset, int limit) {
+        return jdbcTemplate.query(
+                "SELECT " + SELECT_COLUMNS + " FROM document_versions " +
+                        "WHERE document_id = ? ORDER BY version_no ASC LIMIT ? OFFSET ?",
+                ROW_MAPPER, documentId, limit, offset);
+    }
+
+    public int countByDocumentId(String documentId) {
+        Integer n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM document_versions WHERE document_id = ?",
+                Integer.class, documentId);
+        return n == null ? 0 : n;
+    }
+
     @Nullable
     public DocumentVersionRecord findByDocumentIdAndVersion(String documentId, int versionNo) {
         try {

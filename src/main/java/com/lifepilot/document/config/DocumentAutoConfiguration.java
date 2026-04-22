@@ -197,16 +197,12 @@ public class DocumentAutoConfiguration {
         // PathSecurityChecker 与 FileToolProvider 共用同一份白名单/黑名单配置，
         // 由 MetaProperties.infra.file 驱动；不注册为独立 Bean 以对齐既有模式
         var pathSecurityChecker = new PathSecurityChecker(metaProperties.getInfra().getFile());
+        var repositories = new DocumentVersionService.DocumentRepositories(
+                documentRepository, versionRepository, attachmentRepository);
+        var engines = new DocumentVersionService.PatchEngines(
+                docxPatchEngine, docxDiffBuilder, xlsxPatchEngine, xlsxDiffBuilder);
         return new DocumentVersionService(
-                documentRepository,
-                versionRepository,
-                attachmentRepository,
-                docxPatchEngine,
-                docxDiffBuilder,
-                xlsxPatchEngine,
-                xlsxDiffBuilder,
-                properties.getStorageDir(),
-                pathSecurityChecker);
+                repositories, engines, properties.getStorageDir(), pathSecurityChecker);
     }
 
     @Bean

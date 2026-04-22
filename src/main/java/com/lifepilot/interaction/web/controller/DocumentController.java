@@ -5,6 +5,7 @@ import com.lifepilot.document.model.SessionDocumentRecord;
 import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.document.version.DocumentVersionService;
+import com.lifepilot.interaction.web.model.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -133,7 +134,7 @@ public class DocumentController {
      * 获取文档元数据（供前端 diff 卡片渲染）。
      */
     @GetMapping("/{id}")
-    public Map<String, Object> getMetadata(@PathVariable String id) {
+    public ApiResponse<Map<String, Object>> getMetadata(@PathVariable String id) {
         SessionDocumentRecord record = documentRepository.findById(id);
         if (record == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -147,37 +148,45 @@ public class DocumentController {
         map.put("sourcePath", record.sourcePath());
         map.put("latestVersion", record.latestVersion());
         map.put("createdAt", record.createdAt().toString());
-        return map;
+        return ApiResponse.ok(map);
     }
 
     /**
-     * 列出文档所有版本（按 version_no 升序）。
+     * 列出文档版本（按 version_no 升序，分页）。
+     * 响应结构 {@code { items, total, page, pageSize }} 对齐项目 API 分页规范。
      */
     @GetMapping("/{id}/versions")
-    public List<Map<String, Object>> listVersions(@PathVariable String id) {
+    public ApiResponse<Map<String, Object>> listVersions(@PathVariable String id,
+                                                          @RequestParam(defaultValue = "1") int page,
+                                                          @RequestParam(defaultValue = "20") int pageSize) {
         if (documentRepository.findById(id) == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        List<DocumentVersionRecord> versions = versionRepository.findByDocumentId(id);
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (DocumentVersionRecord v : versions) {
+        var pageResult = versionService.listVersions(id, page, pageSize);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (DocumentVersionRecord v : pageResult.items()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("versionNo", v.versionNo());
             m.put("source", v.source());
             m.put("patchSummary", v.patchSummary());
             m.put("createdAt", v.createdAt().toString());
-            list.add(m);
+            items.add(m);
         }
-        return list;
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("items", items);
+        response.put("total", pageResult.total());
+        response.put("page", pageResult.page());
+        response.put("pageSize", pageResult.pageSize());
+        return ApiResponse.ok(response);
     }
 
     /**
      * 返回指定区间（仅实现取 to 版本缓存 diff 的简化语义）。
      */
     @GetMapping("/{id}/diff")
-    public Map<String, Object> diff(@PathVariable String id,
-                                    @RequestParam int from,
-                                    @RequestParam int to) {
+    public ApiResponse<Map<String, Object>> diff(@PathVariable String id,
+                                                  @RequestParam int from,
+                                                  @RequestParam int to) {
         if (documentRepository.findById(id) == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
@@ -190,7 +199,7 @@ public class DocumentController {
         m.put("from", from);
         m.put("to", to);
         m.put("diffJson", ver.diffJson() == null ? "" : ver.diffJson());
-        return m;
+        return ApiResponse.ok(m);
     }
 
     /** commit 请求体 —— target = overwrite / saveAs；saveAs 时 saveAsPath 不能为空。 */
@@ -200,7 +209,7 @@ public class DocumentController {
      * 提交工作副本 —— 覆盖原 sourcePath 或另存到新路径。
      */
     @PostMapping("/{id}/commit")
-    public Map<String, Object> commit(@PathVariable String id, @RequestBody CommitRequest body) {
+    public ApiResponse<Map<String, Object>> commit(@PathVariable String id, @RequestBody CommitRequest body) {
         try {
             DocumentVersionService.CommitResult result;
             if ("overwrite".equals(body.target())) {
@@ -218,7 +227,7 @@ public class DocumentController {
             if (result.backupPath() != null) {
                 m.put("backupPath", result.backupPath());
             }
-            return m;
+            return ApiResponse.ok(m);
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (IOException e) {
@@ -234,13 +243,13 @@ public class DocumentController {
      * 回滚到指定版本（生成新版本快照；不抹掉历史链）。
      */
     @PostMapping("/{id}/rollback")
-    public Map<String, Object> rollback(@PathVariable String id, @RequestBody RollbackRequest body) {
+    public ApiResponse<Map<String, Object>> rollback(@PathVariable String id, @RequestBody RollbackRequest body) {
         try {
             var result = versionService.rollback(id, body.version());
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("newVersion", result.newVersion());
             m.put("summary", result.patchSummary());
-            return m;
+            return ApiResponse.ok(m);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (IOException e) {

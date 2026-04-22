@@ -1,6 +1,7 @@
 package com.lifepilot.document.version;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.document.model.DocumentVersionRecord;
 import com.lifepilot.document.model.SessionDocumentRecord;
 import com.lifepilot.document.patch.DocumentPatchOperation;
@@ -75,6 +76,29 @@ public class DocumentVersionService {
     public static final String XLSX_MIME =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+    /** commit overwrite 自动备份的保留份数；超出则按时间戳最旧的优先删除。 */
+    private static final int BACKUP_RETENTION_COUNT = 5;
+
+    /** 同文件多次 backup 命名：{sourceFileName}.{yyyyMMddHHmmss}.bak —— 精确匹配自动备份，不误伤手工命名的 .bak。 */
+    private static final java.util.regex.Pattern BACKUP_FILENAME =
+            java.util.regex.Pattern.compile("^.+\\.(\\d{14})\\.bak$");
+
+    /** rollback / diff JSON 序列化复用实例；Jackson ObjectMapper 线程安全。 */
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** 聚合 3 个 repository，避免构造器膨胀；上层装配/测试只需构造一次 record。 */
+    public record DocumentRepositories(
+            SessionDocumentRepository documents,
+            DocumentVersionRepository versions,
+            AttachmentRepository attachments) {}
+
+    /** 聚合 docx / xlsx 两组 patch engine + diff builder，避免构造器膨胀。 */
+    public record PatchEngines(
+            DocxPatchEngine docxEngine,
+            DocxDiffBuilder docxDiffBuilder,
+            XlsxPatchEngine xlsxEngine,
+            XlsxDiffBuilder xlsxDiffBuilder) {}
+
     private final SessionDocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
     private final AttachmentRepository attachmentRepository;
@@ -85,22 +109,17 @@ public class DocumentVersionService {
     private final String storageDir;
     private final PathSecurityChecker pathSecurityChecker;
 
-    public DocumentVersionService(SessionDocumentRepository documentRepository,
-                                  DocumentVersionRepository versionRepository,
-                                  AttachmentRepository attachmentRepository,
-                                  DocxPatchEngine engine,
-                                  DocxDiffBuilder diffBuilder,
-                                  XlsxPatchEngine xlsxEngine,
-                                  XlsxDiffBuilder xlsxDiffBuilder,
+    public DocumentVersionService(DocumentRepositories repositories,
+                                  PatchEngines engines,
                                   String storageDir,
                                   PathSecurityChecker pathSecurityChecker) {
-        this.documentRepository = documentRepository;
-        this.versionRepository = versionRepository;
-        this.attachmentRepository = attachmentRepository;
-        this.engine = engine;
-        this.diffBuilder = diffBuilder;
-        this.xlsxEngine = xlsxEngine;
-        this.xlsxDiffBuilder = xlsxDiffBuilder;
+        this.documentRepository = repositories.documents();
+        this.versionRepository = repositories.versions();
+        this.attachmentRepository = repositories.attachments();
+        this.engine = engines.docxEngine();
+        this.diffBuilder = engines.docxDiffBuilder();
+        this.xlsxEngine = engines.xlsxEngine();
+        this.xlsxDiffBuilder = engines.xlsxDiffBuilder();
         this.storageDir = storageDir;
         this.pathSecurityChecker = pathSecurityChecker;
     }
@@ -316,9 +335,44 @@ public class DocumentVersionService {
             Files.copy(target, backup, StandardCopyOption.REPLACE_EXISTING);
         }
         Files.copy(Paths.get(record.filePath()), target, StandardCopyOption.REPLACE_EXISTING);
+        pruneOldBackups(target);
         log.info("commit overwrite：documentId={}, target={}, backup={}",
                 documentId, target, backup);
         return new CommitResult(target.toString(), backup.toString());
+    }
+
+    /**
+     * 保留最近 {@link #BACKUP_RETENTION_COUNT} 份自动备份（按文件名里的时间戳倒序），其余删除。
+     * best-effort：任何异常只 warn，不影响 commit 主流程。
+     * 仅匹配 {@link #BACKUP_FILENAME} 精确命名，不误伤手工命名的 .bak。
+     */
+    private void pruneOldBackups(Path target) {
+        Path parent = target.getParent();
+        if (parent == null || !Files.isDirectory(parent)) {
+            return;
+        }
+        String prefix = target.getFileName().toString() + ".";
+        try (var stream = Files.list(parent)) {
+            var backups = stream
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.startsWith(prefix) && BACKUP_FILENAME.matcher(name).matches();
+                    })
+                    // 时间戳字典序 == 时间序，倒序即新 → 旧，跳过前 N 份后全部删除
+                    .sorted((a, b) -> b.getFileName().toString().compareTo(a.getFileName().toString()))
+                    .skip(BACKUP_RETENTION_COUNT)
+                    .toList();
+            for (var old : backups) {
+                try {
+                    Files.deleteIfExists(old);
+                    log.debug("清理旧备份：{}", old);
+                } catch (IOException e) {
+                    log.warn("清理旧备份失败：{}", old, e);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("扫描旧备份失败：target={}", target, e);
+        }
     }
 
     public CommitResult commitSaveAs(String documentId, String saveAsPath) throws IOException {
@@ -352,11 +406,16 @@ public class DocumentVersionService {
         long size = Files.size(nextFile);
 
         String summary = "回滚到版本 " + targetVersion;
-        // rollback 的 diff_json 记录目标版本号，前端 DiffCard 据此渲染"回滚信息"而非"diff 数据暂不可用"
-        String rollbackDiffJson = String.format(
-                "{\"documentId\":\"%s\",\"fromVersion\":%d,\"toVersion\":%d,\"summary\":\"%s\"," +
-                        "\"rollbackFromVersion\":%d,\"changes\":[]}",
-                documentId, record.latestVersion(), nextVersion, summary, targetVersion);
+        // rollback 的 diff_json 记录目标版本号，前端 DiffCard 据此渲染"回滚信息"而非"diff 数据暂不可用"。
+        // 走 ObjectMapper 而非 String.format：后续若 summary 含用户可控内容也能自动转义，不炸 JSON。
+        Map<String, Object> diffPayload = new LinkedHashMap<>();
+        diffPayload.put("documentId", documentId);
+        diffPayload.put("fromVersion", record.latestVersion());
+        diffPayload.put("toVersion", nextVersion);
+        diffPayload.put("summary", summary);
+        diffPayload.put("rollbackFromVersion", targetVersion);
+        diffPayload.put("changes", List.of());
+        String rollbackDiffJson = JSON.writeValueAsString(diffPayload);
         versionRepository.save(new DocumentVersionRecord(
                 UUID.randomUUID().toString(), documentId, nextVersion, nextFile.toString(),
                 DocumentVersionRecord.SOURCE_ROLLBACK, summary, rollbackDiffJson, Instant.now()));
@@ -437,6 +496,19 @@ public class DocumentVersionService {
         return versionRepository.findByDocumentId(documentId);
     }
 
+    /** 分页列版本；page 从 1 起，pageSize 上限 100。防御性 clamp 非法入参。 */
+    public VersionPage listVersions(String documentId, int page, int pageSize) {
+        requireDocument(documentId);
+        int p = Math.max(1, page);
+        int ps = Math.min(100, Math.max(1, pageSize));
+        int offset = (p - 1) * ps;
+        var items = versionRepository.findByDocumentId(documentId, offset, ps);
+        int total = versionRepository.countByDocumentId(documentId);
+        return new VersionPage(items, total, p, ps);
+    }
+
+    public record VersionPage(List<DocumentVersionRecord> items, int total, int page, int pageSize) {}
+
     /** 暴露 sessionDocument 记录给上层 tool 层，用于拿 sourcePath/fileName 等元信息做响应组装。 */
     public SessionDocumentRecord getDocumentRecord(String documentId) {
         return requireDocument(documentId);
@@ -454,6 +526,14 @@ public class DocumentVersionService {
         }
         Path filePath = Paths.get(record.filePath());
         if (!Files.exists(filePath)) {
+            return List.of();
+        }
+        // 路径安全校验：record.filePath 来自 DB，理论上只指向 working 目录或 checkout 时校验过的源路径；
+        // 但 hint 函数恰是 patch 失败时频繁调用，多一层白名单校验可兜住历史脏数据或软链接攻击，
+        // 校验失败 soft fail 返回空列表不中断主流程。
+        var rejection = pathSecurityChecker.check(filePath);
+        if (rejection.isPresent()) {
+            log.warn("getDocxOutline 路径校验失败：documentId={}, reason={}", documentId, rejection.get());
             return List.of();
         }
         try (InputStream is = Files.newInputStream(filePath);
