@@ -240,11 +240,14 @@ public class ChannelRuntimeIngressService {
                                          List<ChannelRuntimeEventRequest.Attachment> attachments,
                                          List<GatewayMessage.Attachment> persistedAttachments) {
         String type = content.type() != null ? content.type().trim().toLowerCase() : "text";
+        log.debug("channel buildContent 分支: type={}, rawText长度={}, persistedAttachments={}",
+                type,
+                content.text() == null ? -1 : content.text().length(),
+                persistedAttachments.size());
         return switch (type) {
             case "command" -> buildCommandContent(content);
             case "event" -> buildEventContent(content);
-            case "text" -> new MessageContent.TextMessage(
-                    DocumentAttachmentHintBuilder.appendHint(requireText(content.text(), "text"), persistedAttachments));
+            case "text" -> textContentWithHint(requireText(content.text(), "text"), persistedAttachments);
             // 原本这些类型走 MessageContent.FileMessage，但整个代码库下游没有任何消费者处理 FileMessage
             // （Agent / Router / Middleware 只看 TextMessage / CommandMessage），导致 LLM 收不到附件信息。
             // 统一走 TextMessage：caption 作为 text，文档 hint 注入其中；binary 已独立在
@@ -255,12 +258,25 @@ public class ChannelRuntimeIngressService {
         };
     }
 
+    /** text 分支封装：插入 hint 并把是否注入成功打到 DEBUG 日志便于排查。 */
+    private MessageContent.TextMessage textContentWithHint(String raw,
+                                                            List<GatewayMessage.Attachment> persistedAttachments) {
+        String withHint = DocumentAttachmentHintBuilder.appendHint(raw, persistedAttachments);
+        log.debug("channel text 分支 hint 注入: 原文长度={}, 注入后长度={}, 是否含 sentinel={}",
+                raw.length(), withHint.length(),
+                withHint.contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN));
+        return new MessageContent.TextMessage(withHint);
+    }
+
     /** file/image/audio/video：统一生成 TextMessage(caption + hint)，binary 已独立旁挂。 */
     private MessageContent.TextMessage buildFileAsTextContent(ChannelRuntimeEventRequest.Content content,
                                                                String type,
                                                                List<GatewayMessage.Attachment> persistedAttachments) {
         String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : "";
         String text = DocumentAttachmentHintBuilder.appendHint(caption, persistedAttachments);
+        log.debug("channel file 分支 hint 注入: type={}, caption长度={}, 注入后长度={}, 是否含 sentinel={}",
+                type, caption.length(), text.length(),
+                text.contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_BEGIN));
         if (text.isEmpty()) {
             // 没 caption 也没文档附件（比如纯图片），给一行占位避免 TextMessage 空串
             text = "[" + type + "]";
@@ -335,6 +351,8 @@ public class ChannelRuntimeIngressService {
                         ? attachment.attachmentId().trim()
                         : UUID.randomUUID().toString();
             }
+            log.debug("channel 附件出口: persistEnabled={}, attachmentId={}, fileName={}, mimeType={}",
+                    persistEnabled, attachmentId, fileName, mimeType);
             results.add(new GatewayMessage.Attachment(
                     attachmentId,
                     fileName,
