@@ -99,8 +99,18 @@ public class XlsxDiffBuilder {
                 entry.put("range", sr.range().toUpperCase());
                 entry.put("rows", a.rowsAffected());
                 entry.put("cols", a.colsAffected());
+                // P1-9：携带真实 2D 值用于前端折叠展开，而不是只给 "X×Y 批量填充"
+                List<List<String>> valuePreview = new ArrayList<>();
+                for (List<Object> row : sr.values()) {
+                    List<String> rowCells = new ArrayList<>();
+                    for (Object v : row) {
+                        rowCells.add(valuePreview(v));
+                    }
+                    valuePreview.add(rowCells);
+                }
+                entry.put("values", valuePreview);
                 entry.put("segments", List.of(segment("insert",
-                        a.rowsAffected() + "x" + a.colsAffected() + " 批量填充（预览略）")));
+                        a.rowsAffected() + "x" + a.colsAffected() + " 批量填充")));
                 entry.put("reason", sr.reason() == null ? "" : sr.reason());
             }
         }

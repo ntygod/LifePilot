@@ -57,6 +57,8 @@ export interface DiffChange {
   rows?: number
   /** xlsx set_range：区域列数 */
   cols?: number
+  /** xlsx set_range：真实 2D 值，用于前端展开表格预览（P1-9） */
+  values?: string[][]
   segments: DiffSegment[]
   reason: string
 }

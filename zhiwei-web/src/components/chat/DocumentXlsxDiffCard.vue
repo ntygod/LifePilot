@@ -112,8 +112,28 @@ function locationLabel(c: DiffChange): string {
             <span class="diff-insert rounded px-xs">{{ cellAfter(c) }}</span>
           </div>
 
-          <!-- insert_row / set_range：单向 insert -->
-          <div v-else-if="c.op === 'insert_row' || c.op === 'set_range'">
+          <!-- set_range：折叠表格，点击展开看真实 2D 值（P1-9） -->
+          <div v-else-if="c.op === 'set_range' && c.values && c.values.length > 0">
+            <details class="text-xs">
+              <summary class="cursor-pointer diff-insert rounded px-xs py-xs">
+                {{ rowSingleText(c) }}（点击展开查看）
+              </summary>
+              <table class="mt-xs w-full border-collapse text-xs">
+                <tbody>
+                  <tr v-for="(row, rIdx) in c.values" :key="rIdx">
+                    <td
+                      v-for="(cell, cIdx) in row"
+                      :key="cIdx"
+                      class="diff-insert border border-border px-xs py-xs"
+                    >{{ cell }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </div>
+
+          <!-- insert_row：单向 insert -->
+          <div v-else-if="c.op === 'insert_row'">
             <span class="diff-insert rounded px-xs">{{ rowSingleText(c) }}</span>
           </div>
 

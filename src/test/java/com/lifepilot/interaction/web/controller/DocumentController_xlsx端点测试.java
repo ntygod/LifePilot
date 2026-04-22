@@ -60,9 +60,11 @@ class DocumentController_xlsx端点测试 {
         var body = mvc.perform(get("/api/documents/x-1"))
                 .andReturn().getResponse().getContentAsString();
         JsonNode json = new ObjectMapper().readTree(body);
-        assertThat(json.get("mimeType").asText()).isEqualTo(DocumentVersionService.XLSX_MIME);
-        assertThat(json.get("fileName").asText()).isEqualTo("报表.xlsx");
-        assertThat(json.get("latestVersion").asInt()).isEqualTo(1);
+        // P0-1 之后响应走 ApiResponse<T>，字段在 data 下
+        JsonNode data = json.get("data");
+        assertThat(data.get("mimeType").asText()).isEqualTo(DocumentVersionService.XLSX_MIME);
+        assertThat(data.get("fileName").asText()).isEqualTo("报表.xlsx");
+        assertThat(data.get("latestVersion").asInt()).isEqualTo(1);
     }
 
     @Test
@@ -100,7 +102,7 @@ class DocumentController_xlsx端点测试 {
                 .andReturn().getResponse().getContentAsString();
         // diffJson 在响应里是字符串字段，内部引号被 Jackson 转义；解析一层拿到原始 JSON 再断言
         JsonNode root = new ObjectMapper().readTree(body);
-        String diffJson = root.get("diffJson").asText();
+        String diffJson = root.get("data").get("diffJson").asText();
         assertThat(diffJson).contains("\"mime\":\"xlsx\"");
     }
 }
