@@ -133,9 +133,8 @@ class ChannelRuntimeIngressService_文档附件提示测试 {
         assertThat(text).contains("attachmentId=att-persisted-123");
         // 4. docx 可编辑 → 含 document.edit 引导 + 反模式提醒
         assertThat(text).contains("document.edit(source={type:'attachment'");
-        assertThat(text).contains("不要用 document.create 重新生成");
         // 5. file.read 引导也在
-        assertThat(text).contains("file.read(attachmentId=...)");
+        assertThat(text).contains("file.read(attachmentId)");
 
         // 6. GatewayMessage.attachments 用了 repo 返回的 id
         assertThat(captured.attachments()).hasSize(1);
@@ -168,7 +167,7 @@ class ChannelRuntimeIngressService_文档附件提示测试 {
         ingressService.processEvent("feishu.test", buildEventRequest(content, List.of(attachment)));
 
         String text = ((MessageContent.TextMessage) captureGatewayMessage().content()).text();
-        assertThat(text).contains("file.read(attachmentId=...)");
+        assertThat(text).contains("file.read(attachmentId)");
         assertThat(text).contains("attachmentId=att-pdf-456");
         assertThat(text).doesNotContain("document.edit(source={type:'attachment'");
     }

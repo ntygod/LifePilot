@@ -245,10 +245,27 @@ public class ChannelRuntimeIngressService {
             case "event" -> buildEventContent(content);
             case "text" -> new MessageContent.TextMessage(
                     DocumentAttachmentHintBuilder.appendHint(requireText(content.text(), "text"), persistedAttachments));
-            case "file", "image", "audio", "video" -> buildFileContent(content, type, attachments, persistedAttachments);
+            // 原本这些类型走 MessageContent.FileMessage，但整个代码库下游没有任何消费者处理 FileMessage
+            // （Agent / Router / Middleware 只看 TextMessage / CommandMessage），导致 LLM 收不到附件信息。
+            // 统一走 TextMessage：caption 作为 text，文档 hint 注入其中；binary 已独立在
+            // GatewayMessage.attachments 旁挂，LLM 通过 attachmentId 用 file.read 访问。
+            case "file", "image", "audio", "video" -> buildFileAsTextContent(content, type, persistedAttachments);
             case "card-action" -> buildCardActionContent(content);
             default -> throw new IllegalArgumentException("不支持的 connector 内容类型: " + type);
         };
+    }
+
+    /** file/image/audio/video：统一生成 TextMessage(caption + hint)，binary 已独立旁挂。 */
+    private MessageContent.TextMessage buildFileAsTextContent(ChannelRuntimeEventRequest.Content content,
+                                                               String type,
+                                                               List<GatewayMessage.Attachment> persistedAttachments) {
+        String caption = content.text() != null && !content.text().isBlank() ? content.text().trim() : "";
+        String text = DocumentAttachmentHintBuilder.appendHint(caption, persistedAttachments);
+        if (text.isEmpty()) {
+            // 没 caption 也没文档附件（比如纯图片），给一行占位避免 TextMessage 空串
+            text = "[" + type + "]";
+        }
+        return new MessageContent.TextMessage(text);
     }
 
     private MessageContent.CommandMessage buildCommandContent(ChannelRuntimeEventRequest.Content content) {
@@ -268,59 +285,6 @@ public class ChannelRuntimeIngressService {
                 eventName,
                 content.payload() != null ? content.payload() : Map.of()
         );
-    }
-
-    private MessageContent.FileMessage buildFileContent(ChannelRuntimeEventRequest.Content content,
-                                                         String type,
-                                                         List<ChannelRuntimeEventRequest.Attachment> attachments,
-                                                         List<GatewayMessage.Attachment> persistedAttachments) {
-        Map<String, Object> payload = content.payload();
-        String fileName = payload != null && payload.get("fileName") instanceof String fn && !fn.isBlank()
-                ? fn.trim()
-                : defaultFileName(type);
-        String mimeType = payload != null && payload.get("mimeType") instanceof String mt && !mt.isBlank()
-                ? mt.trim()
-                : defaultMimeType(type);
-        String rawCaption = content.text() != null && !content.text().isBlank() ? content.text().trim() : "";
-        // P0-1 修复：飞书等渠道发附件时 content.type=file/image/...，这里也要把
-        // DocumentAttachmentHintBuilder hint 注入到 caption，否则 LLM 看不到正确的 attachmentId
-        // （DB 主键 UUID），就会把 connector 塞进 content 原文的 fileName 当 id 传给 file.read
-        String caption = DocumentAttachmentHintBuilder.appendHint(rawCaption, persistedAttachments);
-        if (caption.isEmpty()) {
-            caption = null;  // 保持"无 caption" 语义
-        }
-
-        byte[] data;
-        if (attachments != null && !attachments.isEmpty()) {
-            ChannelRuntimeEventRequest.Attachment first = attachments.getFirst();
-            try {
-                data = Base64.getDecoder().decode(first.base64Data());
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("富媒体附件 Base64 解码失败: " + fileName, e);
-            }
-        } else {
-            // 没有附件数据，可能只有 fileToken 引用，Agent 后续通过工具下载
-            data = new byte[0];
-        }
-        return new MessageContent.FileMessage(fileName, mimeType, data, caption);
-    }
-
-    private String defaultFileName(String type) {
-        return switch (type) {
-            case "image" -> "image.png";
-            case "audio" -> "audio.mp3";
-            case "video" -> "video.mp4";
-            default -> "file.bin";
-        };
-    }
-
-    private String defaultMimeType(String type) {
-        return switch (type) {
-            case "image" -> "image/png";
-            case "audio" -> "audio/mpeg";
-            case "video" -> "video/mp4";
-            default -> "application/octet-stream";
-        };
     }
 
     private MessageContent.EventMessage buildCardActionContent(ChannelRuntimeEventRequest.Content content) {

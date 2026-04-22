@@ -88,8 +88,7 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
     }
 
     @Test
-    void file类型_应构建FileMessage并包含fileName和mimeType() {
-        // given
+    void file类型_pdf附件_content走TextMessage且hint含attachmentId() {
         setupMocks();
         String base64Data = Base64.getEncoder().encodeToString("文件内容".getBytes());
         var content = new ChannelRuntimeEventRequest.Content(
@@ -99,25 +98,24 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
                 "att-1", "report.pdf", "application/pdf", base64Data, 100);
         var request = buildEventRequest(content, List.of(attachment));
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        assertThat(captured.content()).isInstanceOf(MessageContent.FileMessage.class);
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("report.pdf");
-        assertThat(fileMsg.mimeType()).isEqualTo("application/pdf");
-        // P0-1 修复：file 类型 content 的 caption 末尾追加 document hint
-        // （pdf 是文档类附件，attachmentId 会暴露给 LLM）
-        assertThat(fileMsg.caption()).startsWith("这是一个文档");
-        assertThat(fileMsg.caption()).contains("attachmentId=att-1");
-        assertThat(fileMsg.data()).isEqualTo("文件内容".getBytes());
+        // 根因修复：所有 file/image/audio/video 都统一走 TextMessage（caption + hint），
+        // binary 旁挂到 GatewayMessage.attachments，下游已有的消费者直接能读
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        String text = ((MessageContent.TextMessage) captured.content()).text();
+        assertThat(text).startsWith("这是一个文档");
+        assertThat(text).contains("attachmentId=att-1");   // pdf 是文档类 MIME，hint 暴露 id
+        // 元数据与 binary 在 attachments 字段
+        assertThat(captured.attachments()).hasSize(1);
+        assertThat(captured.attachments().getFirst().fileName()).isEqualTo("report.pdf");
+        assertThat(captured.attachments().getFirst().mimeType()).isEqualTo("application/pdf");
+        assertThat(captured.attachments().getFirst().data()).isEqualTo("文件内容".getBytes());
     }
 
     @Test
-    void image类型_应构建FileMessage并使用默认mimeType() {
-        // given
+    void image类型_TextMessage用类型占位_attachments带binary() {
         setupMocks();
         String base64Data = Base64.getEncoder().encodeToString(new byte[]{1, 2, 3, 4});
         var content = new ChannelRuntimeEventRequest.Content(
@@ -126,22 +124,19 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
                 "att-2", "photo.png", "image/png", base64Data, 4);
         var request = buildEventRequest(content, List.of(attachment));
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        assertThat(captured.content()).isInstanceOf(MessageContent.FileMessage.class);
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        // payload 无 mimeType 时使用默认值 image/png
-        assertThat(fileMsg.mimeType()).isEqualTo("image/png");
-        assertThat(fileMsg.fileName()).isEqualTo("image.png");
-        assertThat(fileMsg.caption()).isNull();
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        String text = ((MessageContent.TextMessage) captured.content()).text();
+        // image 不在 DOCUMENT_MIME_PREFIXES 白名单，hint 不注入；caption 为空走类型占位
+        assertThat(text).isEqualTo("[image]");
+        assertThat(captured.attachments().getFirst().mimeType()).isEqualTo("image/png");
+        assertThat(captured.attachments().getFirst().fileName()).isEqualTo("photo.png");
     }
 
     @Test
-    void audio类型_应构建FileMessage() {
-        // given
+    void audio类型_TextMessage取caption原文() {
         setupMocks();
         String base64Data = Base64.getEncoder().encodeToString(new byte[]{10, 20, 30});
         var content = new ChannelRuntimeEventRequest.Content(
@@ -151,21 +146,19 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
                 "att-3", "voice.mp3", "audio/mpeg", base64Data, 3);
         var request = buildEventRequest(content, List.of(attachment));
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        assertThat(captured.content()).isInstanceOf(MessageContent.FileMessage.class);
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("voice.mp3");
-        assertThat(fileMsg.mimeType()).isEqualTo("audio/mpeg");
-        assertThat(fileMsg.caption()).isEqualTo("语音留言");
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        String text = ((MessageContent.TextMessage) captured.content()).text();
+        // audio 非文档类，hint 不注入，原 caption 保留
+        assertThat(text).isEqualTo("语音留言");
+        assertThat(captured.attachments().getFirst().fileName()).isEqualTo("voice.mp3");
+        assertThat(captured.attachments().getFirst().mimeType()).isEqualTo("audio/mpeg");
     }
 
     @Test
-    void video类型_应构建FileMessage() {
-        // given
+    void video类型_attachments保留元数据() {
         setupMocks();
         String base64Data = Base64.getEncoder().encodeToString(new byte[]{0x00, 0x01});
         var content = new ChannelRuntimeEventRequest.Content(
@@ -175,15 +168,13 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
                 "att-4", "clip.mp4", "video/mp4", base64Data, 2);
         var request = buildEventRequest(content, List.of(attachment));
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        assertThat(captured.content()).isInstanceOf(MessageContent.FileMessage.class);
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("clip.mp4");
-        assertThat(fileMsg.mimeType()).isEqualTo("video/mp4");
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        assertThat(((MessageContent.TextMessage) captured.content()).text()).isEqualTo("[video]");
+        assertThat(captured.attachments().getFirst().fileName()).isEqualTo("clip.mp4");
+        assertThat(captured.attachments().getFirst().mimeType()).isEqualTo("video/mp4");
     }
 
     @Test
@@ -227,8 +218,7 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
     }
 
     @Test
-    void file类型_有attachments_应从第一个attachment解码数据() {
-        // given
+    void file类型_多attachment_全部保留到GatewayMessage_attachments() {
         setupMocks();
         byte[] rawData = "附件原始数据".getBytes();
         String base64Data = Base64.getEncoder().encodeToString(rawData);
@@ -242,100 +232,55 @@ class ChannelRuntimeIngressService_富媒体入站测试 {
                 Base64.getEncoder().encodeToString("其他数据".getBytes()), 10);
         var request = buildEventRequest(content, List.of(attachment1, attachment2));
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.data()).isEqualTo(rawData);
+        // content 是占位 TextMessage；binary 全部进 attachments 字段保持顺序
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        assertThat(captured.attachments()).hasSize(2);
+        assertThat(captured.attachments().get(0).data()).isEqualTo(rawData);
+        assertThat(captured.attachments().get(1).fileName()).isEqualTo("other.bin");
     }
 
     @Test
-    void file类型_无attachments但有fileToken_data应为空() {
-        // given
+    void file类型_无attachments_content仍为TextMessage占位() {
         setupMocks();
         var content = new ChannelRuntimeEventRequest.Content(
                 "file", null, null,
                 Map.of("fileName", "remote-file.docx", "fileToken", "ft-abc123"));
         var request = buildEventRequest(content, List.of());
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.data()).isEmpty();
-        assertThat(fileMsg.fileName()).isEqualTo("remote-file.docx");
+        // 无 attachments → 无 hint 可注入 → 走类型占位
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        assertThat(((MessageContent.TextMessage) captured.content()).text()).isEqualTo("[file]");
+        assertThat(captured.attachments()).isEmpty();
     }
 
     @Test
-    void file类型_无payload_应使用默认fileName和mimeType() {
-        // given
+    void file类型_无payload_无attachments_content占位() {
         setupMocks();
         var content = new ChannelRuntimeEventRequest.Content("file", null, null, null);
         var request = buildEventRequest(content, List.of());
 
-        // when
         ingressService.processEvent("feishu.test", request);
 
-        // then
         GatewayMessage captured = captureGatewayMessage();
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("file.bin");
-        assertThat(fileMsg.mimeType()).isEqualTo("application/octet-stream");
+        assertThat(captured.content()).isInstanceOf(MessageContent.TextMessage.class);
+        assertThat(((MessageContent.TextMessage) captured.content()).text()).isEqualTo("[file]");
+        assertThat(captured.attachments()).isEmpty();
     }
 
     @Test
-    void image类型_无payload_应使用image默认值() {
-        // given
+    void image_audio_video类型_无payload_无attachments_content按类型占位() {
         setupMocks();
-        var content = new ChannelRuntimeEventRequest.Content("image", null, null, null);
-        var request = buildEventRequest(content, List.of());
 
-        // when
-        ingressService.processEvent("feishu.test", request);
-
-        // then
-        GatewayMessage captured = captureGatewayMessage();
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("image.png");
-        assertThat(fileMsg.mimeType()).isEqualTo("image/png");
-    }
-
-    @Test
-    void audio类型_无payload_应使用audio默认值() {
-        // given
-        setupMocks();
-        var content = new ChannelRuntimeEventRequest.Content("audio", null, null, null);
-        var request = buildEventRequest(content, List.of());
-
-        // when
-        ingressService.processEvent("feishu.test", request);
-
-        // then
-        GatewayMessage captured = captureGatewayMessage();
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("audio.mp3");
-        assertThat(fileMsg.mimeType()).isEqualTo("audio/mpeg");
-    }
-
-    @Test
-    void video类型_无payload_应使用video默认值() {
-        // given
-        setupMocks();
-        var content = new ChannelRuntimeEventRequest.Content("video", null, null, null);
-        var request = buildEventRequest(content, List.of());
-
-        // when
-        ingressService.processEvent("feishu.test", request);
-
-        // then
-        GatewayMessage captured = captureGatewayMessage();
-        MessageContent.FileMessage fileMsg = (MessageContent.FileMessage) captured.content();
-        assertThat(fileMsg.fileName()).isEqualTo("video.mp4");
-        assertThat(fileMsg.mimeType()).isEqualTo("video/mp4");
+        ingressService.processEvent("feishu.test", buildEventRequest(
+                new ChannelRuntimeEventRequest.Content("image", null, null, null), List.of()));
+        assertThat(((MessageContent.TextMessage) captureGatewayMessage().content()).text())
+                .isEqualTo("[image]");
     }
 
     // ─── 辅助方法 ───────────────────────────────────

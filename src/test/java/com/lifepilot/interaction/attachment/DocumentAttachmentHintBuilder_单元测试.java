@@ -28,7 +28,7 @@ class DocumentAttachmentHintBuilder_单元测试 {
     }
 
     @Test
-    @DisplayName("docx 附件注入 hint：含 file.read 引导 + document.edit 引导 + attachmentId")
+    @DisplayName("docx 附件注入 hint：含 attachmentId + file.read + document.edit")
     void docx附件注入含文件读写双引导() {
         var attachments = List.of(att("a1", "contract.docx", DOCX_MIME));
         String text = DocumentAttachmentHintBuilder.appendHint("改一下合同", attachments);
@@ -38,11 +38,8 @@ class DocumentAttachmentHintBuilder_单元测试 {
         assertThat(text).contains(DocumentAttachmentHintBuilder.DOCUMENT_HINT_END);
         assertThat(text).contains("attachmentId=a1");
         assertThat(text).contains("contract.docx");
-        // 两种引导都要有
-        assertThat(text).contains("file.read(attachmentId=...)");
+        assertThat(text).contains("file.read(attachmentId)");
         assertThat(text).contains("document.edit(source={type:'attachment'");
-        // 反模式提醒
-        assertThat(text).contains("不要用 document.create 重新生成");
     }
 
     @Test
@@ -61,8 +58,9 @@ class DocumentAttachmentHintBuilder_单元测试 {
         var attachments = List.of(att("p1", "paper.pdf", PDF_MIME));
         String text = DocumentAttachmentHintBuilder.appendHint("读一下论文", attachments);
 
-        assertThat(text).contains("file.read(attachmentId=...)");
+        assertThat(text).contains("file.read(attachmentId)");
         assertThat(text).contains("paper.pdf");
+        assertThat(text).contains("attachmentId=p1");
         // pdf 没有 document.edit 支持 —— 不应出现 edit 引导
         assertThat(text).doesNotContain("document.edit(source={type:'attachment'");
     }

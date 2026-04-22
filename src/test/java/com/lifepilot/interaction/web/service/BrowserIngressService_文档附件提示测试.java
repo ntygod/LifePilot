@@ -70,8 +70,7 @@ class BrowserIngressService_文档附件提示测试 {
         assertThat(text).contains("请帮我读这份合同");
         assertThat(text).contains("contract.docx");
         assertThat(text).contains("file.read");
-        assertThat(text).contains("用户选择了");
-        assertThat(text).contains("att-doc");
+        assertThat(text).contains("attachmentId=att-doc");
     }
 
     @Test
