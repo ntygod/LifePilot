@@ -14,6 +14,11 @@ import {
   rollback,
   type DocumentVersionInfo,
 } from '@/api/documents'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { useUiStore } from '@/stores/ui'
+
+const ui = useUiStore()
+const pendingRollbackVersion = ref<number | null>(null)
 
 interface Props {
   documentId: string
@@ -38,7 +43,9 @@ async function toggleExpand() {
 async function load() {
   loading.value = true
   try {
-    versions.value = await listVersions(props.documentId)
+    // pageSize=100 覆盖历史展开视图的全量需求；后续若版本数超 100 再做真正分页 UI
+    const page = await listVersions(props.documentId, 1, 100)
+    versions.value = page.items
     // 倒序：最新在上
     versions.value.sort((a, b) => b.versionNo - a.versionNo)
   } catch (e) {
@@ -48,8 +55,14 @@ async function load() {
   }
 }
 
-async function onRollback(version: number) {
-  if (!confirm(`确认回滚到版本 v${version}？将生成一个新版本,历史不会丢失。`)) return
+function onRollback(version: number) {
+  pendingRollbackVersion.value = version
+}
+
+async function confirmRollback() {
+  const version = pendingRollbackVersion.value
+  pendingRollbackVersion.value = null
+  if (version === null) return
   try {
     const r = await rollback(props.documentId, version)
     emit('rollback-complete', r.newVersion)
@@ -57,7 +70,7 @@ async function onRollback(version: number) {
     await load()
   } catch (e) {
     console.error('回滚失败', e)
-    alert('回滚失败,请查看控制台日志。')
+    ui.showToast('error', '回滚失败，请查看控制台日志')
   }
 }
 
@@ -121,5 +134,14 @@ void onMounted
 
       <div v-else class="text-muted-foreground">尚无历史版本</div>
     </div>
+
+    <ConfirmDialog
+      v-if="pendingRollbackVersion !== null"
+      :show="true"
+      title="回滚文档版本"
+      :message="`确认回滚到版本 v${pendingRollbackVersion}？将生成一个新版本，历史不会丢失。`"
+      @confirm="confirmRollback"
+      @cancel="pendingRollbackVersion = null"
+    />
   </div>
 </template>

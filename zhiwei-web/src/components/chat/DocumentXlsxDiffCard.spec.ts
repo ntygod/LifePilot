@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import DocumentXlsxDiffCard from './DocumentXlsxDiffCard.vue'
 
 vi.mock('@/api/documents', async (importActual) => {
@@ -44,6 +45,8 @@ function makeDiffJson(changes: Array<Record<string, unknown>>) {
 
 describe('DocumentXlsxDiffCard', () => {
   beforeEach(() => {
+    // composable 内部会调用 useUiStore().showToast，需先激活 Pinia 实例
+    setActivePinia(createPinia())
     vi.mocked(getDocument).mockReset()
     vi.mocked(getDiff).mockReset()
   })

@@ -1,23 +1,18 @@
 <script setup lang="ts">
 /**
- * 文档 Diff 卡片 —— Phase 3A（docx），Phase 3B 接入共享 Header/Actions/VersionHistoryList。
+ * 文档 Diff 卡片 —— docx 版，流程交互全部委托给 useDocumentDiffCard composable，
+ * 本组件只负责 docx 专属的"inline segment"渲染。
  *
  * @author zsg
- * @since 2026-04-21（P3B 重构）
+ * @since 2026-04-21
  */
-import { computed, ref, onMounted } from 'vue'
+import { toRef } from 'vue'
 import DocumentDiffHeader from './DocumentDiffHeader.vue'
 import DocumentDiffActions from './DocumentDiffActions.vue'
 import DocumentVersionHistoryList from './DocumentVersionHistoryList.vue'
-import {
-  getDocument,
-  getDiff,
-  commit,
-  discardWorkingCopy,
-  parseDiffJson,
-  type DocumentMetadata,
-  type DiffPayload,
-} from '@/api/documents'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import PromptDialog from '@/components/common/PromptDialog.vue'
+import { useDocumentDiffCard } from '@/composables/useDocumentDiffCard'
 
 interface Props {
   documentId: string
@@ -29,80 +24,22 @@ const emit = defineEmits<{
   (e: 'discarded', documentId: string): void
 }>()
 
-const expanded = ref(false)
-const loading = ref(false)
-const metadata = ref<DocumentMetadata | null>(null)
-const diff = ref<DiffPayload | null>(null)
-
-/** 覆盖按钮仅在原始路径存在时可用（外部导入的附件 sourcePath 为 null） */
-const canOverwrite = computed(() => !!metadata.value?.sourcePath)
-/** 是否存在可提交的改动 —— latestVersion > 0 意味着至少经历过一次 patch */
-const hasChanges = computed(
-  () => !!metadata.value && metadata.value.latestVersion > 0,
-)
-
-async function loadData() {
-  loading.value = true
-  try {
-    metadata.value = await getDocument(props.documentId)
-    if (metadata.value.latestVersion > 0) {
-      const from = metadata.value.latestVersion - 1
-      const to = metadata.value.latestVersion
-      const payload = await getDiff(props.documentId, from, to)
-      diff.value = parseDiffJson(payload.diffJson)
-    }
-  } catch (e) {
-    console.warn('加载文档 diff 失败', e)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function onOverwrite() {
-  if (!canOverwrite.value) return
-  const sourcePath = metadata.value?.sourcePath ?? ''
-  if (!confirm(`确认覆盖原文件 ${sourcePath} 吗？系统会自动生成 .bak 备份。`)) return
-  try {
-    const result = await commit(props.documentId, 'overwrite')
-    emit('committed', props.documentId, result.backupPath)
-    alert('已覆盖；备份：' + (result.backupPath || '无'))
-  } catch (e) {
-    console.error('覆盖失败', e)
-    alert('覆盖失败，请查看控制台日志。')
-  }
-}
-
-async function onSaveAs() {
-  const path = prompt('另存为绝对路径：')
-  if (!path || !path.trim()) return
-  try {
-    const result = await commit(props.documentId, 'saveAs', path.trim())
-    emit('committed', props.documentId, undefined)
-    alert('已另存到：' + result.committedPath)
-  } catch (e) {
-    console.error('另存失败', e)
-    alert('另存失败，请查看控制台日志。')
-  }
-}
-
-async function onDiscard() {
-  if (!confirm('丢弃工作副本将不可恢复，继续？')) return
-  try {
-    await discardWorkingCopy(props.documentId)
-    emit('discarded', props.documentId)
-  } catch (e) {
-    console.error('丢弃失败', e)
-    alert('丢弃失败，请查看控制台日志。')
-  }
-}
-
-/** 回滚完成后重载 metadata + diff */
-async function onRollbackComplete() {
-  diff.value = null
-  await loadData()
-}
-
-onMounted(loadData)
+const {
+  expanded,
+  loading,
+  metadata,
+  diff,
+  canOverwrite,
+  hasChanges,
+  pendingConfirm,
+  pendingPrompt,
+  onOverwrite,
+  onSaveAs,
+  onDiscard,
+  onRollbackComplete,
+  runPendingConfirm,
+  runPendingPrompt,
+} = useDocumentDiffCard(toRef(props, 'documentId'), emit)
 </script>
 
 <template>
@@ -165,17 +102,36 @@ onMounted(loadData)
         @discard="onDiscard"
       />
     </div>
+
+    <ConfirmDialog
+      v-if="pendingConfirm"
+      :show="true"
+      :title="pendingConfirm.title"
+      :message="pendingConfirm.message"
+      :confirm-variant="pendingConfirm.variant"
+      @confirm="runPendingConfirm"
+      @cancel="pendingConfirm = null"
+    />
+    <PromptDialog
+      v-if="pendingPrompt"
+      :show="true"
+      :title="pendingPrompt.title"
+      :message="pendingPrompt.message"
+      :placeholder="pendingPrompt.placeholder"
+      @confirm="runPendingPrompt"
+      @cancel="pendingPrompt = null"
+    />
   </div>
 </template>
 
 <style scoped>
 .diff-delete {
-  background-color: hsl(0 80% 94%);
-  color: hsl(0 72% 38%);
+  background-color: var(--diff-delete-bg);
+  color: var(--diff-delete-fg);
 }
 
 .diff-insert {
-  background-color: hsl(142 70% 92%);
-  color: hsl(142 64% 30%);
+  background-color: var(--diff-insert-bg);
+  color: var(--diff-insert-fg);
 }
 </style>

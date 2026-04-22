@@ -78,7 +78,10 @@ export interface CommitResult {
   backupPath?: string
 }
 
-/** 统一的 fetch 封装（与 client.ts 的 request 对齐：自动解包 ApiResponse、支持 204） */
+/**
+ * 统一 fetch 封装：强制要求后端走 ApiResponse<T> 包装（{code, message, data}），
+ * 自动解包 .data；204 / 空 body / 非 JSON 三种边界单独处理。
+ */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${getBase()}${url}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -103,19 +106,15 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       throw { code: res.status, message: '响应格式错误', timestamp: new Date().toISOString() }
     }
   }
-  const json = JSON.parse(body)
-  // ApiResponse 自动解包：{ code, message, data }
-  if (
-    json &&
-    typeof json === 'object' &&
-    'code' in json &&
-    typeof json.code === 'number' &&
-    'message' in json &&
-    'data' in json
-  ) {
-    return json.data as T
+  const json = JSON.parse(body) as { code?: number; message?: string; data?: T }
+  if (typeof json?.code !== 'number' || !('data' in json)) {
+    throw {
+      code: res.status,
+      message: '响应格式错误：缺少 ApiResponse 封装',
+      timestamp: new Date().toISOString(),
+    }
   }
-  return json as T
+  return json.data as T
 }
 
 /** 获取文档元数据 */
@@ -123,9 +122,18 @@ export async function getDocument(id: string): Promise<DocumentMetadata> {
   return request<DocumentMetadata>(`/documents/${id}`)
 }
 
-/** 列出所有版本（按版本号升序） */
-export async function listVersions(id: string): Promise<DocumentVersionInfo[]> {
-  return request<DocumentVersionInfo[]>(`/documents/${id}/versions`)
+/** 分页响应结构 —— 对应后端 {@code /versions} 端点返回体 */
+export interface VersionPage {
+  items: DocumentVersionInfo[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** 列出文档版本（默认 page=1, pageSize=20；pageSize 上限 100） */
+export async function listVersions(id: string, page = 1, pageSize = 20): Promise<VersionPage> {
+  const q = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  return request<VersionPage>(`/documents/${id}/versions?${q.toString()}`)
 }
 
 /** 获取 from → to 的 diff（diffJson 为序列化后的字符串，调用方需用 parseDiffJson 解析） */
