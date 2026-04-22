@@ -3,6 +3,9 @@ package com.lifepilot.document.version;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.document.model.DocumentVersionRecord;
+import org.springframework.lang.Nullable;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.lifepilot.document.model.SessionDocumentRecord;
 import com.lifepilot.document.patch.DocumentPatchOperation;
 import com.lifepilot.document.patch.DocumentPatchResult;
@@ -108,11 +111,22 @@ public class DocumentVersionService {
     private final XlsxDiffBuilder xlsxDiffBuilder;
     private final String storageDir;
     private final PathSecurityChecker pathSecurityChecker;
+    /** P2-11：DB 写入事务模板；null 时降级为非事务写入（向后兼容既有测试，不强制依赖）。 */
+    @Nullable
+    private final TransactionTemplate transactionTemplate;
 
     public DocumentVersionService(DocumentRepositories repositories,
                                   PatchEngines engines,
                                   String storageDir,
                                   PathSecurityChecker pathSecurityChecker) {
+        this(repositories, engines, storageDir, pathSecurityChecker, null);
+    }
+
+    public DocumentVersionService(DocumentRepositories repositories,
+                                  PatchEngines engines,
+                                  String storageDir,
+                                  PathSecurityChecker pathSecurityChecker,
+                                  @Nullable PlatformTransactionManager transactionManager) {
         this.documentRepository = repositories.documents();
         this.versionRepository = repositories.versions();
         this.attachmentRepository = repositories.attachments();
@@ -122,6 +136,9 @@ public class DocumentVersionService {
         this.xlsxDiffBuilder = engines.xlsxDiffBuilder();
         this.storageDir = storageDir;
         this.pathSecurityChecker = pathSecurityChecker;
+        this.transactionTemplate = transactionManager != null
+                ? new TransactionTemplate(transactionManager)
+                : null;
     }
 
     // ===== checkout =====
@@ -266,16 +283,44 @@ public class DocumentVersionService {
                     engineResult.appliedOps());
             String summary = diffBuilder.summarize(engineResult.appliedOps());
 
-            versionRepository.save(new DocumentVersionRecord(
-                    UUID.randomUUID().toString(), record.id(), nextVersion, nextFile.toString(),
-                    DocumentVersionRecord.SOURCE_PATCH, summary, diffJson, Instant.now()));
-            documentRepository.updateLatestVersion(record.id(), nextVersion);
-            documentRepository.updateFilePath(record.id(), nextFile.toString(), bytes.length);
-            attachmentRepository.updateSizeByFilePath(nextFile.toString(), (long) bytes.length);
+            // P2-11：4 个 DB 写入包在事务里；事务失败则删除已落盘的 nextFile 回滚
+            persistPatchTransactional(record.id(), nextVersion, nextFile, bytes.length, summary, diffJson);
 
             log.info("docx patch 成功：documentId={}, version={}→{}, {}",
                     record.id(), record.latestVersion(), nextVersion, summary);
             return DocumentPatchResult.success(nextVersion, diffJson, summary);
+        }
+    }
+
+    /**
+     * P2-11 将 4 条 DB 写入包在事务里，任一失败则整体回滚，并删除已写盘的 nextFile 保证
+     * "DB 状态 = 文件系统状态"一致。若未注入 TransactionTemplate（仅兼容旧测试场景）则直接顺序
+     * 写入，失败时尽力删掉 nextFile 作为 best-effort 回滚。
+     */
+    private void persistPatchTransactional(String documentId, int nextVersion, Path nextFile,
+                                            long size, String summary, String diffJson) {
+        Runnable dbWrites = () -> {
+            versionRepository.save(new DocumentVersionRecord(
+                    UUID.randomUUID().toString(), documentId, nextVersion, nextFile.toString(),
+                    DocumentVersionRecord.SOURCE_PATCH, summary, diffJson, Instant.now()));
+            documentRepository.updateLatestVersion(documentId, nextVersion);
+            documentRepository.updateFilePath(documentId, nextFile.toString(), size);
+            attachmentRepository.updateSizeByFilePath(nextFile.toString(), size);
+        };
+        try {
+            if (transactionTemplate != null) {
+                transactionTemplate.executeWithoutResult(status -> dbWrites.run());
+            } else {
+                dbWrites.run();
+            }
+        } catch (RuntimeException e) {
+            log.warn("patch DB 事务失败，尝试删除已落盘的 nextFile 回滚：file={}", nextFile, e);
+            try {
+                Files.deleteIfExists(nextFile);
+            } catch (IOException io) {
+                log.warn("删除 nextFile 失败，留给后台 GC 清孤儿：file={}", nextFile, io);
+            }
+            throw e;
         }
     }
 
@@ -300,12 +345,8 @@ public class DocumentVersionService {
                     engineResult.appliedOps());
             String summary = xlsxDiffBuilder.summarize(engineResult.appliedOps());
 
-            versionRepository.save(new DocumentVersionRecord(
-                    UUID.randomUUID().toString(), record.id(), nextVersion, nextFile.toString(),
-                    DocumentVersionRecord.SOURCE_PATCH, summary, diffJson, Instant.now()));
-            documentRepository.updateLatestVersion(record.id(), nextVersion);
-            documentRepository.updateFilePath(record.id(), nextFile.toString(), bytes.length);
-            attachmentRepository.updateSizeByFilePath(nextFile.toString(), (long) bytes.length);
+            // P2-11：同 docx 路径走事务化 DB 写入（updateSizeByFilePath 已包含在 persist 事务里）
+            persistPatchTransactional(record.id(), nextVersion, nextFile, bytes.length, summary, diffJson);
 
             log.info("xlsx patch 成功：documentId={}, version={}→{}, {}",
                     record.id(), record.latestVersion(), nextVersion, summary);
