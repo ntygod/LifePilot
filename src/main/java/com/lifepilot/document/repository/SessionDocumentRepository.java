@@ -118,4 +118,10 @@ public class SessionDocumentRepository {
     public int deleteBySessionId(String sessionId) {
         return jdbcTemplate.update("DELETE FROM session_documents WHERE session_id = ?", sessionId);
     }
+
+    /** P2-14：列所有 file_path 用于 GC 扫描孤儿文件对比。 */
+    public List<String> findAllFilePaths() {
+        return jdbcTemplate.queryForList(
+                "SELECT file_path FROM session_documents", String.class);
+    }
 }

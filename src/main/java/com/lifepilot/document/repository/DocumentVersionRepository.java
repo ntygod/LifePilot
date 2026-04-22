@@ -83,6 +83,12 @@ public class DocumentVersionRepository {
         return n == null ? 0 : n;
     }
 
+    /** P2-14：列所有 file_path 用于 GC 扫描孤儿文件对比。 */
+    public List<String> findAllFilePaths() {
+        return jdbcTemplate.queryForList(
+                "SELECT file_path FROM document_versions", String.class);
+    }
+
     @Nullable
     public DocumentVersionRecord findByDocumentIdAndVersion(String documentId, int versionNo) {
         try {

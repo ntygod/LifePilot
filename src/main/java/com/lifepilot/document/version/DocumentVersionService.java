@@ -3,6 +3,8 @@ package com.lifepilot.document.version;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.document.model.DocumentVersionRecord;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.lang.Nullable;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -114,6 +116,11 @@ public class DocumentVersionService {
     /** P2-11：DB 写入事务模板；null 时降级为非事务写入（向后兼容既有测试，不强制依赖）。 */
     @Nullable
     private final TransactionTemplate transactionTemplate;
+    /** P2-13：单次 checkout / applyPatch 允许的文件大小上限（字节），{@code <=0} 表示不限制。 */
+    private volatile long maxFileSize = 0L;
+    /** P2-15：可观测性指标注册；null 时不记录指标（向后兼容）。 */
+    @Nullable
+    private volatile MeterRegistry meterRegistry;
 
     public DocumentVersionService(DocumentRepositories repositories,
                                   PatchEngines engines,
@@ -139,6 +146,16 @@ public class DocumentVersionService {
         this.transactionTemplate = transactionManager != null
                 ? new TransactionTemplate(transactionManager)
                 : null;
+    }
+
+    /** P2-13：AutoConfiguration 装配后设置大小上限（0/负数表示不限制）。 */
+    public void setMaxFileSize(long maxFileSize) {
+        this.maxFileSize = maxFileSize;
+    }
+
+    /** P2-15：AutoConfiguration 装配后注入 MeterRegistry。 */
+    public void setMeterRegistry(@Nullable MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
     }
 
     // ===== checkout =====
@@ -167,6 +184,11 @@ public class DocumentVersionService {
         var rejection = pathSecurityChecker.check(source);
         if (rejection.isPresent()) {
             throw new SecurityException(rejection.get());
+        }
+        // P2-13：文件大小上限校验。POI 加载超大文件会吃大量堆内存，防御性拒绝
+        if (Files.exists(source)) {
+            long size = Files.size(source);
+            checkFileSize(size, sourcePath);
         }
         var existing = documentRepository.findBySessionAndSourcePath(sessionId, sourcePath);
         if (existing != null) {
@@ -230,6 +252,10 @@ public class DocumentVersionService {
         // 附件本地路径即源；沿用 PathSource checkout 但 origin 区分
         String documentId = UUID.randomUUID().toString();
         Path sourceFile = Paths.get(att.filePath());
+        // P2-13 大小上限校验（在 copy 之前，避免大文件被无谓复制）
+        if (Files.exists(sourceFile)) {
+            checkFileSize(Files.size(sourceFile), "attachment=" + attachmentId);
+        }
         Path workingV0 = workingPath(sessionId, documentId, 0, inferredMime);
         Files.createDirectories(workingV0.getParent());
         Files.copy(sourceFile, workingV0, StandardCopyOption.REPLACE_EXISTING);
@@ -275,11 +301,38 @@ public class DocumentVersionService {
     public DocumentPatchResult applyPatch(String documentId, List<DocumentPatchOperation> ops)
             throws IOException, JsonProcessingException {
         var record = requireDocument(documentId);
-        return switch (record.mimeType()) {
-            case DOCX_MIME -> applyDocxPatch(record, castDocxOps(ops));
-            case XLSX_MIME -> applyXlsxPatch(record, castXlsxOps(ops));
-            default -> throw new IllegalStateException("不支持的 MIME：" + record.mimeType());
+        String mimeTag = switch (record.mimeType()) {
+            case DOCX_MIME -> "docx";
+            case XLSX_MIME -> "xlsx";
+            default -> "other";
         };
+        long startNs = System.nanoTime();
+        DocumentPatchResult result;
+        try {
+            result = switch (record.mimeType()) {
+                case DOCX_MIME -> applyDocxPatch(record, castDocxOps(ops));
+                case XLSX_MIME -> applyXlsxPatch(record, castXlsxOps(ops));
+                default -> throw new IllegalStateException("不支持的 MIME：" + record.mimeType());
+            };
+        } finally {
+            recordPatchMetrics(mimeTag, startNs, /* willRecordResult */ true);
+        }
+        if (meterRegistry != null) {
+            String resultTag = result.success() ? "success" : "failed";
+            meterRegistry.counter("document.patch.count", "mime", mimeTag, "result", resultTag)
+                    .increment();
+        }
+        return result;
+    }
+
+    private void recordPatchMetrics(String mimeTag, long startNs, boolean willRecordResult) {
+        MeterRegistry m = this.meterRegistry;
+        if (m == null) return;
+        long elapsedNs = System.nanoTime() - startNs;
+        Timer.builder("document.patch.duration")
+                .tag("mime", mimeTag)
+                .register(m)
+                .record(java.time.Duration.ofNanos(elapsedNs));
     }
 
     private DocumentPatchResult applyDocxPatch(SessionDocumentRecord record,
@@ -688,6 +741,15 @@ public class DocumentVersionService {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             wb.write(bos);
             return bos.toByteArray();
+        }
+    }
+
+    /** P2-13 大小上限校验。maxFileSize <=0 不限制；超限抛 IllegalArgumentException。 */
+    private void checkFileSize(long size, String where) {
+        if (maxFileSize > 0 && size > maxFileSize) {
+            throw new IllegalArgumentException(String.format(
+                    "文件大小超限（%d MB），%s：%d 字节。请拆分或提高 lifepilot.document.max-file-size 限制。",
+                    maxFileSize / 1024 / 1024, where, size));
         }
     }
 

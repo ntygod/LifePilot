@@ -202,9 +202,24 @@ public class DocumentAutoConfiguration {
                 documentRepository, versionRepository, attachmentRepository);
         var engines = new DocumentVersionService.PatchEngines(
                 docxPatchEngine, docxDiffBuilder, xlsxPatchEngine, xlsxDiffBuilder);
-        return new DocumentVersionService(
+        var service = new DocumentVersionService(
                 repositories, engines, properties.getStorageDir(), pathSecurityChecker,
                 transactionManager);
+        // P2-13 大小上限：默认 20MB，配置 lifepilot.document.max-file-size 可覆盖
+        service.setMaxFileSize(properties.getMaxFileSize());
+        return service;
+    }
+
+    /** P2-15 把 MeterRegistry 注入到 Service。独立 Bean 以确保 DocumentVersionService 先装配好。 */
+    @Bean
+    @ConditionalOnBean({DocumentVersionService.class, io.micrometer.core.instrument.MeterRegistry.class})
+    org.springframework.boot.ApplicationRunner documentVersionServiceMetricsBinder(
+            DocumentVersionService service,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return args -> {
+            service.setMeterRegistry(meterRegistry);
+            log.info("DocumentVersionService 指标已挂载：document.patch.count / document.patch.duration");
+        };
     }
 
     @Bean
@@ -226,5 +241,32 @@ public class DocumentAutoConfiguration {
         var tool = provider.buildEditTool();
         log.info("已装配 document.edit 工具：id={}", tool.id());
         return tool;
+    }
+
+    /**
+     * P2-14 文档 GC：定时扫描 storageDir 删除 DB 未引用的孤儿文件。
+     * gcIntervalMinutes <= 0 时禁用调度，返回 null 让 Spring 不装配定时任务。
+     */
+    @Bean
+    @ConditionalOnBean({SessionDocumentRepository.class, DocumentVersionRepository.class})
+    com.lifepilot.document.version.DocumentGarbageCollector documentGarbageCollector(
+            SessionDocumentRepository documentRepository,
+            DocumentVersionRepository versionRepository,
+            DocumentProperties properties,
+            com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
+        var gc = new com.lifepilot.document.version.DocumentGarbageCollector(
+                documentRepository, versionRepository,
+                properties.getStorageDir(), properties.getWorkingRetentionDays());
+        int intervalMin = properties.getGcIntervalMinutes();
+        if (intervalMin > 0) {
+            sharedScheduler.cleanup().scheduleAtFixedRate(
+                    () -> {
+                        try { gc.runOnce(); }
+                        catch (RuntimeException e) { log.warn("文档 GC 任务异常", e); }
+                    },
+                    intervalMin, intervalMin, java.util.concurrent.TimeUnit.MINUTES);
+            log.info("文档 GC 定时任务已启动，间隔 {} 分钟", intervalMin);
+        }
+        return gc;
     }
 }
