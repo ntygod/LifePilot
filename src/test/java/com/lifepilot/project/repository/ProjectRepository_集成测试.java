@@ -124,6 +124,22 @@ class ProjectRepository_集成测试 {
     }
 
     @Test
+    void existsByNameAndIdNot_排除自身判断重名() {
+        Instant now = Instant.now();
+        String id1 = UUID.randomUUID().toString();
+        String id2 = UUID.randomUUID().toString();
+        repository.insert(new Project(id1, "论文", "", ProjectIsolation.ISOLATED, "s1", now, now));
+        repository.insert(new Project(id2, "小说", "", ProjectIsolation.ISOLATED, "s2", now, now));
+
+        // 排除自身时：原名不算重名
+        assertThat(repository.existsByNameAndIdNot("论文", id1)).isFalse();
+        // 改成别的已存在名字：视为重名
+        assertThat(repository.existsByNameAndIdNot("小说", id1)).isTrue();
+        // 改成一个新名字：不重名
+        assertThat(repository.existsByNameAndIdNot("随笔", id1)).isFalse();
+    }
+
+    @Test
     void deleteById_后_找不到() {
         Instant now = Instant.now();
         String id = UUID.randomUUID().toString();

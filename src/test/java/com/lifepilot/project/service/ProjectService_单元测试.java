@@ -123,6 +123,17 @@ class ProjectService_单元测试 {
     }
 
     @Test
+    void updateProject_重名抛异常() {
+        Project p = new Project("p-1", "原名", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(projectRepository.existsByNameAndIdNot("重名", "p-1")).thenReturn(true);
+        assertThrows(IllegalArgumentException.class, () ->
+                service.updateProject("p-1", "重名", "", ProjectIsolation.ISOLATED));
+        verify(projectRepository, never()).update(any());
+    }
+
+    @Test
     void updateProject_isolation为null_保持原值() {
         Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
                 Instant.now(), Instant.now());

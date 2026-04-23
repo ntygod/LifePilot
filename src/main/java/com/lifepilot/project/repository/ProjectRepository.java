@@ -75,6 +75,16 @@ public class ProjectRepository {
         return count != null && count > 0;
     }
 
+    /** 判断除指定 id 之外是否存在同名项目（用于更新改名时的重名校验）。 */
+    public boolean existsByNameAndIdNot(String name, String excludeId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM projects WHERE name = ? AND id != ?",
+                Integer.class,
+                name,
+                excludeId);
+        return count != null && count > 0;
+    }
+
     /** 更新项目名、指示词、隔离模式与 updated_at；id / memory_space_id / created_at 不可变。 */
     public void update(Project p) {
         jdbcTemplate.update("""

@@ -5,6 +5,8 @@ import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,8 @@ import java.util.UUID;
  */
 @Service
 public class ProjectService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
 
     private final ProjectRepository projectRepository;
     private final MemorySpaceRepository memorySpaceRepository;
@@ -59,6 +63,7 @@ public class ProjectService {
                 now
         );
         projectRepository.insert(project);
+        log.info("创建项目: id={}, name={}, memorySpaceId={}", id, name, space.id());
         return project;
     }
 
@@ -83,6 +88,10 @@ public class ProjectService {
                                  ProjectIsolation isolation) {
         Project existing = projectRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("项目不存在：" + id));
+        // 改名时做重名校验，与 createProject 对称，避免走到 DB UNIQUE 约束兜底导致异常类型不一致
+        if (!existing.name().equals(name) && projectRepository.existsByNameAndIdNot(name, id)) {
+            throw new IllegalArgumentException("项目名已存在：" + name);
+        }
         Project updated = new Project(
                 existing.id(),
                 name,
@@ -93,15 +102,26 @@ public class ProjectService {
                 Instant.now()
         );
         projectRepository.update(updated);
+        log.info("更新项目: id={}, name={}", id, name);
         return updated;
     }
 
-    /** 物理删除项目并级联删除其 MemorySpace。 */
+    /**
+     * 删除项目 + 关联 MemorySpace。
+     *
+     * <p><b>注意</b>：当前仅级联删除 MemorySpace；关联的 conversations 级联清理
+     * 将在 Plan 1 Task 16 统一实现（届时 ProjectService 将同时清理 conversations
+     * 及其 messages 等子表）。在 Task 16 完成前，Controller 层不应暴露此删除能力给 API。</p>
+     *
+     * @param id 项目 id
+     * @throws IllegalArgumentException 项目不存在时
+     */
     @Transactional
     public void deleteProject(String id) {
         Project existing = projectRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("项目不存在：" + id));
         projectRepository.deleteById(id);
         memorySpaceRepository.deleteById(existing.memorySpaceId());
+        log.info("删除项目: id={}, memorySpaceId={}", id, existing.memorySpaceId());
     }
 }
