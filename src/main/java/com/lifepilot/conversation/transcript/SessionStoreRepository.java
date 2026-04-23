@@ -55,7 +55,8 @@ public class SessionStoreRepository {
             int contextTokensEstimate,
             int compactionCount,
             @Nullable Instant memoryFlushAt,
-            String activeBranchId
+            String activeBranchId,
+            @Nullable String projectId
     ) {
     }
 
@@ -513,7 +514,9 @@ public class SessionStoreRepository {
                 rs.getInt("context_tokens_estimate"),
                 rs.getInt("compaction_count"),
                 parseInstant(rs.getString("memory_flush_at")),
-                rs.getString("active_branch_id")
+                rs.getString("active_branch_id"),
+                // Step D 会改成从 SELECT 列表读 project_id；Step B 仅占位，避免 record 与列数不一致
+                null
         );
     }
 

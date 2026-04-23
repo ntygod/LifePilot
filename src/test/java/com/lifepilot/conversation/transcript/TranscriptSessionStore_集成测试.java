@@ -156,7 +156,8 @@ class TranscriptSessionStoreTest {
                 false,
                 null,
                 Instant.now(),
-                Instant.now()
+                Instant.now(),
+                null
         );
         chatSessionRepository.save(session);
 

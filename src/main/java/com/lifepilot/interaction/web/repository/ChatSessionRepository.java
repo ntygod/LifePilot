@@ -114,7 +114,8 @@ public class ChatSessionRepository {
                 row.archived(),
                 row.lastMessageAt(),
                 row.createdAt(),
-                row.updatedAt()
+                row.updatedAt(),
+                row.projectId()
         );
     }
 }

@@ -187,7 +187,8 @@ class MessagePersistence_BugCondition_探索测试 {
                 false,
                 null,
                 Instant.now(),
-                Instant.now()
+                Instant.now(),
+                null
         ));
         return sessionId;
     }
