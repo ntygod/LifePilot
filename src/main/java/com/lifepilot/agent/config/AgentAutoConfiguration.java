@@ -47,7 +47,6 @@ import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
-import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -197,8 +196,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
             @Autowired(required = false) HybridRetriever hybridRetriever,
-            @Autowired(required = false) WeatherService weatherService,
-            @Autowired(required = false) ToolConfigProperties toolConfigProperties) {
+            @Autowired(required = false) WeatherService weatherService) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -222,9 +220,6 @@ public class AgentAutoConfiguration {
                 mcpConfig,
                 hybridRetriever);
         assembler.setWeatherService(weatherService);
-        if (toolConfigProperties != null) {
-            assembler.setCategoryHint(toolConfigProperties.getCategoryHint());
-        }
         return assembler;
     }
 

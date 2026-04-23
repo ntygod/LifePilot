@@ -34,53 +34,6 @@ public class ToolConfigProperties {
     /** describe 服务配置 — tools.describe 批量上限。 */
     private Describe describe = new Describe();
 
-    /**
-     * Category hint 文案，注入 system prompt 末尾。
-     *
-     * <p>核心意图：**强制** LLM 在声称"没有某个能力"或退到 shell.exec/code.execute
-     * 兜底之前先调 tools.search 核实；并且说明发现工作流是**抽象模式**（避免 LLM
-     * 对具体示例过拟合 hard-code 到某个真实工具 id 上）。</p>
-     */
-    private String categoryHint = """
-            ## Tool discovery — IMPORTANT
-
-            The tools you see above are NOT the complete set. They are only the
-            Tier 1 "always-loaded" high-frequency tools plus 3 discovery meta tools.
-            The full registry has many more specialized tools accessible on demand.
-
-            MUST-FOLLOW rules:
-
-            1. BEFORE claiming a capability does not exist, OR BEFORE falling back
-               to a generic tool (shell.exec / code.execute / file.write / ...),
-               you MUST call tools.search(<english keyword>) FIRST to verify no
-               dedicated tool exists. Never answer "I don't have that tool" based
-               on memory alone.
-
-            2. Discovery workflow (abstract pattern — use it for ANY request,
-               do not hard-code to any specific capability):
-                 step A: tools.search("<english keywords of desired capability>")
-                         -> returns top-k {id, description} hits, or empty
-                 step B: if step A empty/low-confidence, try tools.list(<category>)
-                         to browse all tools in a relevant category
-                 step C: tools.describe([<candidate id>]) to read the full schema
-                 step D: invoke the chosen tool
-
-            3. Category hints for step B:
-               - Query / read-only / observation operations are typically in
-                 PERCEPTION category (examples: read, fetch, query, search, list).
-               - Mutation / side-effect operations are typically in
-                 ACTION category (examples: write, edit, create, delete, send).
-               - Storage schema management is in STORAGE.
-               - User-facing notification / rendering is in INTERACTION.
-               If list(ACTION) does not contain the tool you need, also try
-               list(PERCEPTION) — read and write are often split between the two.
-
-            4. Use multiple parallel tools.search calls in a single turn if the
-               task needs several different capabilities (tools.search itself is
-               PARALLEL_SAFE — one turn can issue several search calls at once).
-
-            5. Available categories: PERCEPTION, ACTION, COGNITION, STORAGE,
-               INTERACTION, INTROSPECTION, EXTENSION.""";
 
     /** 信任工作区配置 — 在信任目录下降低 shell/code 执行的风险等级。 */
     @Setter

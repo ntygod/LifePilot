@@ -102,7 +102,7 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("Search and manage the user long-term memory. Typical actions: search (find entities), recall (retrieve historical conversation fragments), create (persist a new fact or preference), update (amend an existing entry), delete (remove by known ID), cancel (archive goal/experience entries when the user revokes intent), tag (attach labels), query-at-time (query historical state), search-experience (find prior similar task experiences). Not needed for plain chat. For document retrieval use knowledge.search.")
+                .description("Manage user long-term memory. Actions: search (entities), recall (conversation fragments), create, update, delete, cancel (archive goal/experience), tag, query-at-time, search-experience.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

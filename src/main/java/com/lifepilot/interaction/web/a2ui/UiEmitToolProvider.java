@@ -53,7 +53,7 @@ public class UiEmitToolProvider {
         return BuiltinTool.builder()
                 .id("ui.render")
                 .name("渲染交互组件")
-                .description("Render structured component trees to the frontend as interactive UI. Use only when interactivity is required (buttons, forms, signals). Plain display content (tables, lists, headings) should use Markdown instead.")
+                .description("Render interactive UI components (buttons, forms, signals) to the frontend. For plain display content use Markdown instead.")
                 .category(ToolCategory.INTERACTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",

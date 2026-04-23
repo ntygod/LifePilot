@@ -93,8 +93,6 @@ public class ContextAssembler {
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private final HybridRetriever hybridRetriever;
     @Nullable private volatile WeatherService weatherService;
-    /** Category hint 文案，追加到 system prompt 末尾，告诉 LLM 可以通过 tools.search/describe/list 发现更多工具。 */
-    @Nullable private volatile String categoryHint;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -207,15 +205,6 @@ public class ContextAssembler {
     /** 注入天气服务（可选，由 AutoConfiguration 调用）。 */
     public void setWeatherService(@Nullable WeatherService weatherService) {
         this.weatherService = weatherService;
-    }
-
-    /**
-     * 注入 category hint 文案（可选，由 AutoConfiguration 调用）。
-     *
-     * <p>文案追加到 system prompt 末尾，告诉 LLM 还有哪些 category 可以通过 tools.search 发现。</p>
-     */
-    public void setCategoryHint(@Nullable String categoryHint) {
-        this.categoryHint = categoryHint;
     }
 
     public AssembledContext assemble(ReactAgentState state) {
@@ -580,16 +569,11 @@ public class ContextAssembler {
     }
 
     String buildAugmentedSystemPrompt(ReactAgentState state) {
-        String baseSystemPrompt = safeReactSystemPrompt(state);
-        String toolGuide = safeRenderToolGuide();
-        String executionGuard = buildExecutionGuardPrompt(state);
-        String hint = categoryHint != null ? categoryHint.strip() : "";
-        // 记忆计数不再独立成块, 已迁移到各 context section 首行 (见 buildContextMessages)
+        // 工具使用规则集中在 react-system.st 的 <tool_protocol>；
+        // 记忆工具的使用建议由 context-guide.st 提供；不再在运行时额外拼接 toolGuide / categoryHint。
         return joinNonBlankSections(
-                baseSystemPrompt,
-                toolGuide,
-                executionGuard,
-                hint
+                safeReactSystemPrompt(state),
+                buildExecutionGuardPrompt(state)
         );
     }
 
@@ -1238,16 +1222,6 @@ public class ContextAssembler {
                 .map(ToolContract::description)
                 .filter(d -> d != null && !d.isBlank())
                 .collect(Collectors.joining("；"));
-    }
-
-    private String safeRenderToolGuide() {
-        try {
-            String guide = promptRegistry.render("memory/agentic-tool-guide");
-            return guide != null ? guide : "";
-        } catch (Exception e) {
-            log.warn("渲染记忆工具使用指引失败: error={}", e.getMessage());
-            return "";
-        }
     }
 
     private String safeReactSystemPrompt() {

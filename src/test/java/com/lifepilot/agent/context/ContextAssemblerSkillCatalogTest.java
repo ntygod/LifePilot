@@ -262,7 +262,6 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
-        when(promptRegistry.render(eq("memory/agentic-tool-guide"))).thenReturn("");
 
         var assembler = new ContextAssembler(config, promptRegistry,
                 null, null, null, null, null, null);

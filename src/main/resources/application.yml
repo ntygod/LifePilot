@@ -222,47 +222,8 @@ lifepilot:
     # ===== describe 服务 =====
     describe:
       max-batch-size: 10
-    # ===== Category hint — 注入 system prompt 末尾 =====
-    category-hint: |
-      ## Tool discovery — IMPORTANT
-
-      The tools you see above are NOT the complete set. They are only the
-      Tier 1 "always-loaded" high-frequency tools plus 3 discovery meta tools.
-      The full registry has many more specialized tools accessible on demand.
-
-      MUST-FOLLOW rules:
-
-      1. BEFORE claiming a capability does not exist, OR BEFORE falling back
-         to a generic tool (shell.exec / code.execute / file.write / ...),
-         you MUST call tools.search(<english keyword>) FIRST to verify no
-         dedicated tool exists. Never answer "I don't have that tool" based
-         on memory alone.
-
-      2. Discovery workflow (abstract pattern — use it for ANY request,
-         do not hard-code to any specific capability):
-           step A: tools.search("<english keywords of desired capability>")
-                   -> returns top-k {id, description} hits, or empty
-           step B: if step A empty/low-confidence, try tools.list(<category>)
-                   to browse all tools in a relevant category
-           step C: tools.describe([<candidate id>]) to read the full schema
-           step D: invoke the chosen tool
-
-      3. Category hints for step B:
-         - Query / read-only / observation operations are typically in
-           PERCEPTION category (examples: read, fetch, query, search, list).
-         - Mutation / side-effect operations are typically in
-           ACTION category (examples: write, edit, create, delete, send).
-         - Storage schema management is in STORAGE.
-         - User-facing notification / rendering is in INTERACTION.
-         If list(ACTION) does not contain the tool you need, also try
-         list(PERCEPTION) — read and write are often split between the two.
-
-      4. Use multiple parallel tools.search calls in a single turn if the
-         task needs several different capabilities (tools.search itself is
-         PARALLEL_SAFE — one turn can issue several search calls at once).
-
-      5. Available categories: PERCEPTION, ACTION, COGNITION, STORAGE,
-         INTERACTION, INTROSPECTION, EXTENSION.
+    # 注：工具使用决策（含 tools.search/describe/list 链路、PERCEPTION/ACTION 分布提示等）
+    # 已全部迁移到 prompts/agent/react-system.st 的 <tool_protocol> 段，不再从 yaml 硬编码。
   memory:
     # ===== 记忆系统配置 =====
     # 四层认知记忆：L1 工作记忆 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆

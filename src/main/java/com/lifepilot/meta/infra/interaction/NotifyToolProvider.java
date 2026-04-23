@@ -51,7 +51,7 @@ public class NotifyToolProvider {
                 .id("notify.send_message")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
-                .description("Push a non-blocking notification message to the user. Use for scheduled task results, background job completion, or alerts. For inline conversation replies, respond directly without this tool.")
+                .description("Push a non-blocking notification to the user via the active channel. For inline chat replies, respond directly instead.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("message"),
