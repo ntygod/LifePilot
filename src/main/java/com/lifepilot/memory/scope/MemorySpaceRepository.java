@@ -89,7 +89,14 @@ public class MemorySpaceRepository {
     /**
      * 按 id 物理删除记忆空间。
      *
-     * <p>项目归档/删除时由调用方触发，不处理级联。</p>
+     * <p><b>调用约束</b>：memory_entities / memory_relations 对 memory_spaces
+     * 的 FK 是 <b>RESTRICT</b>（V1:337/404），因此调用此方法前必须先清空归属
+     * 此 space 的 memory_entities / memory_relations，否则 FK 会阻断删除。
+     * 级联语义由调用方负责组织（参见 {@code ProjectService#deleteProject}
+     * 的级联顺序说明）。</p>
+     *
+     * <p>memory_space_knowledge_bases / memory_space_datastores 通过 FK
+     * CASCADE 自动清理。</p>
      */
     public void deleteById(String spaceId) {
         jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);

@@ -1,5 +1,6 @@
 package com.lifepilot.project.service;
 
+import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemorySpaceType;
@@ -12,8 +13,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -43,6 +47,12 @@ class ProjectService_单元测试 {
 
     @Mock
     MemorySpaceRepository memorySpaceRepository;
+
+    @Mock
+    SessionStoreRepository sessionStoreRepository;
+
+    @Mock
+    JdbcTemplate jdbcTemplate;
 
     @InjectMocks
     ProjectService service;
@@ -92,11 +102,38 @@ class ProjectService_单元测试 {
     }
 
     @Test
-    void deleteProject_会级联删除MemorySpace() {
+    void deleteProject_级联清理会话_记忆实体关系_后删project和space() {
         Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
                 Instant.now(), Instant.now());
         when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1"))
+                .thenReturn(List.of("s-1", "s-2"));
+
         service.deleteProject("p-1");
+
+        // 1) 查出归属此项目的 sessionId → batchDelete 触发 FK CASCADE 清 session 子表
+        verify(sessionStoreRepository).findIdsByProjectId("p-1");
+        verify(sessionStoreRepository).batchDelete(List.of("s-1", "s-2"));
+        // 2) 先清 memory_relations（FK 到 entities 无 CASCADE）再清 memory_entities
+        verify(jdbcTemplate).update(eq("DELETE FROM memory_relations WHERE space_id = ?"), eq("ms-1"));
+        verify(jdbcTemplate).update(eq("DELETE FROM memory_entities WHERE space_id = ?"), eq("ms-1"));
+        // 3) V15 FK RESTRICT：必须先删 project 再删 space
+        verify(projectRepository).deleteById("p-1");
+        verify(memorySpaceRepository).deleteById("ms-1");
+    }
+
+    @Test
+    void deleteProject_无归属会话时_不调用batchDelete() {
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1"))
+                .thenReturn(List.of());
+
+        service.deleteProject("p-1");
+
+        verify(sessionStoreRepository).findIdsByProjectId("p-1");
+        verify(sessionStoreRepository, never()).batchDelete(any());
         verify(projectRepository).deleteById("p-1");
         verify(memorySpaceRepository).deleteById("ms-1");
     }
@@ -106,6 +143,8 @@ class ProjectService_单元测试 {
         when(projectRepository.findById("nope")).thenReturn(Optional.empty());
         assertThrows(ProjectNotFoundException.class, () -> service.deleteProject("nope"));
         verify(projectRepository, never()).deleteById(anyString());
+        verifyNoInteractions(sessionStoreRepository);
+        verifyNoInteractions(jdbcTemplate);
     }
 
     @Test

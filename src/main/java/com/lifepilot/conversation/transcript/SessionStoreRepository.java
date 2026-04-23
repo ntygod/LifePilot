@@ -412,6 +412,27 @@ public class SessionStoreRepository {
         );
     }
 
+    /**
+     * 查询归属指定项目的所有会话 id（不限渠道）。
+     *
+     * <p>用于项目删除级联清理：获取到 sessionId 列表后交给 {@link #batchDelete}
+     * 触发 session_store FK CASCADE，连带清掉 chat_turns / session_transcript_entries
+     * 等所有子表。</p>
+     *
+     * @param projectId 项目 id，不可为 null
+     * @return 该项目下所有会话 id；无会话时返回空列表
+     */
+    public List<String> findIdsByProjectId(String projectId) {
+        if (projectId == null || projectId.isBlank()) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT session_id FROM session_store WHERE project_id = ?",
+                String.class,
+                projectId
+        );
+    }
+
     public Optional<SessionStoreRow> findBySessionId(String sessionId) {
         List<SessionStoreRow> rows = jdbcTemplate.query(
                 """

@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -105,6 +106,48 @@ class SessionStoreRepository_项目归属测试 {
         Optional<SessionStoreRepository.SessionStoreRow> row = repository.findBySessionId(sessionId);
         assertThat(row).isPresent();
         assertThat(row.get().projectId()).isNull();
+    }
+
+    @Test
+    void findIdsByProjectId_仅返回指定项目的会话id() {
+        Instant now = Instant.now();
+        String projectA = UUID.randomUUID().toString();
+        String projectB = UUID.randomUUID().toString();
+        String sessionA1 = UUID.randomUUID().toString();
+        String sessionA2 = UUID.randomUUID().toString();
+        String sessionB = UUID.randomUUID().toString();
+        String sessionMain = UUID.randomUUID().toString();
+
+        // 项目 A 两个会话 + 项目 B 一个 + 主账户一个
+        repository.save(new ChatSession(sessionA1, "A1", null, 0, false, false, null, now, now, projectA));
+        repository.save(new ChatSession(sessionA2, "A2", null, 0, false, false, null, now, now, projectA));
+        repository.save(new ChatSession(sessionB, "B", null, 0, false, false, null, now, now, projectB));
+        repository.save(new ChatSession(sessionMain, "主账户", null, 0, false, false, null, now, now, null));
+
+        List<String> idsOfA = repository.findIdsByProjectId(projectA);
+        assertThat(idsOfA).containsExactlyInAnyOrder(sessionA1, sessionA2);
+
+        List<String> idsOfB = repository.findIdsByProjectId(projectB);
+        assertThat(idsOfB).containsExactly(sessionB);
+    }
+
+    @Test
+    void findIdsByProjectId_无归属返回空列表() {
+        Instant now = Instant.now();
+        // 只有主账户会话
+        repository.save(new ChatSession(
+                UUID.randomUUID().toString(), "主账户", null, 0, false, false,
+                null, now, now, null
+        ));
+
+        assertThat(repository.findIdsByProjectId(UUID.randomUUID().toString())).isEmpty();
+    }
+
+    @Test
+    void findIdsByProjectId_空或null项目id返回空列表() {
+        assertThat(repository.findIdsByProjectId(null)).isEmpty();
+        assertThat(repository.findIdsByProjectId("")).isEmpty();
+        assertThat(repository.findIdsByProjectId("   ")).isEmpty();
     }
 
     @Test

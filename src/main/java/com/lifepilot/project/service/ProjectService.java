@@ -1,5 +1,6 @@
 package com.lifepilot.project.service;
 
+import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.project.exception.ProjectNotFoundException;
@@ -8,6 +9,7 @@ import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,7 +22,7 @@ import java.util.UUID;
  * 项目应用服务。
  *
  * <p>负责项目 CRUD 与关联 MemorySpace 的联动：创建项目时同步建对应的
- * PROJECT 级 MemorySpace，删除项目时级联删除 space。</p>
+ * PROJECT 级 MemorySpace，删除项目时完整级联清理项目下的会话和项目空间记忆。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -32,11 +34,17 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final MemorySpaceRepository memorySpaceRepository;
+    private final SessionStoreRepository sessionStoreRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     public ProjectService(ProjectRepository projectRepository,
-                          MemorySpaceRepository memorySpaceRepository) {
+                          MemorySpaceRepository memorySpaceRepository,
+                          SessionStoreRepository sessionStoreRepository,
+                          JdbcTemplate jdbcTemplate) {
         this.projectRepository = projectRepository;
         this.memorySpaceRepository = memorySpaceRepository;
+        this.sessionStoreRepository = sessionStoreRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -108,11 +116,25 @@ public class ProjectService {
     }
 
     /**
-     * 删除项目 + 关联 MemorySpace。
+     * 删除项目并完整级联清理所有关联资源。
      *
-     * <p><b>注意</b>：当前仅级联删除 MemorySpace；关联的 conversations 级联清理
-     * 将在 Plan 1 Task 16 统一实现（届时 ProjectService 将同时清理 conversations
-     * 及其 messages 等子表）。在 Task 16 完成前，Controller 层不应暴露此删除能力给 API。</p>
+     * <p>级联顺序（FK 约束决定，必须严格按此顺序执行）：</p>
+     * <ol>
+     *   <li>清理归属此项目的所有 session_store 行 —— FK CASCADE 连带清
+     *       chat_turns / session_transcript_entries 等全部子表；</li>
+     *   <li>清理项目记忆空间下的 memory_relations —— memory_relations FK 到
+     *       memory_entities 不带 CASCADE，必须先于 memory_entities 删；</li>
+     *   <li>清理项目记忆空间下的 memory_entities —— FK CASCADE 连带清
+     *       memory_entity_versions / memory_entity_provenances；</li>
+     *   <li>删 projects 行 —— V15 的 FK 对 memory_spaces 是 RESTRICT，必须先
+     *       删 project 再删 space；</li>
+     *   <li>删 memory_spaces 行 —— memory_space_knowledge_bases /
+     *       memory_space_datastores 通过 FK CASCADE 自动清理。</li>
+     * </ol>
+     *
+     * <p>注意 memory_entities / memory_relations 两张表 FK 到 memory_spaces
+     * 的是 <b>RESTRICT</b>（V1:337/404），因此不能依赖 memory_spaces 的删除
+     * 自动带走它们，必须在代码里显式清空。</p>
      *
      * @param id 项目 id
      * @throws ProjectNotFoundException 项目不存在时
@@ -121,8 +143,25 @@ public class ProjectService {
     public void deleteProject(String id) {
         Project existing = projectRepository.findById(id)
                 .orElseThrow(() -> new ProjectNotFoundException(id));
+        String spaceId = existing.memorySpaceId();
+
+        // 1) 清归属项目的会话（FK CASCADE 带走 session_* 所有子表）
+        List<String> sessionIds = sessionStoreRepository.findIdsByProjectId(id);
+        if (!sessionIds.isEmpty()) {
+            sessionStoreRepository.batchDelete(sessionIds);
+        }
+        // 2) 先删 memory_relations（它们 FK 到 memory_entities 无 CASCADE，必须先清）
+        int relationsDeleted = jdbcTemplate.update(
+                "DELETE FROM memory_relations WHERE space_id = ?", spaceId);
+        // 3) 再删 memory_entities（FK CASCADE 连带清 entity_versions / entity_provenances）
+        int entitiesDeleted = jdbcTemplate.update(
+                "DELETE FROM memory_entities WHERE space_id = ?", spaceId);
+        // 4) 先删 project（V15 FK 到 memory_spaces 是 RESTRICT，顺序不能反）
         projectRepository.deleteById(id);
-        memorySpaceRepository.deleteById(existing.memorySpaceId());
-        log.info("删除项目: id={}, memorySpaceId={}", id, existing.memorySpaceId());
+        // 5) 再删 memory_space（带走 memory_space_knowledge_bases / _datastores）
+        memorySpaceRepository.deleteById(spaceId);
+
+        log.info("删除项目级联完成: id={}, spaceId={}, sessions={}, entities={}, relations={}",
+                id, spaceId, sessionIds.size(), entitiesDeleted, relationsDeleted);
     }
 }
