@@ -1,5 +1,8 @@
 package com.lifepilot.memory.semantic;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -40,8 +43,18 @@ public class SemanticMemory {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticMemory.class);
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
     private static final String DEFAULT_PERSONAL_SPACE_ID = "memory-space-personal-default";
     private static final String DEFAULT_EXPERIENCE_SPACE_ID = "memory-space-experience-default";
+
+    /**
+     * temporal_entities 视图包含的全部列 — 含 V15 生命周期新字段。
+     * 集中声明以确保所有 SELECT 路径与 {@link #mapRowToEntity} 对齐。
+     */
+    private static final String ENTITY_SELECT_COLUMNS = "id, type, name, description, properties_json, "
+            + "version, is_current, valid_from, valid_to, source_conversation_id, "
+            + "extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at, "
+            + "lifecycle_state, lifecycle_reason, expires_at, temporality, succeeded_by, is_derived, derivation_sources";
 
     private final JdbcTemplate jdbcTemplate;
     private final ConflictDetector conflictDetector;
@@ -123,13 +136,18 @@ public class SemanticMemory {
             closeCurrentEntityVersion(existing.get().id(), now);
 
             var merged = mergeResult.mergedEntity();
+            // 合并分支：生命周期字段沿用 incoming（调用方最新意图），existing 的状态
+            // 由 Task 12 事件路径单独改写，这里不清零。
             var entity = new TemporalEntity(
                     existing.get().id(), merged.type(), merged.name(), merged.description(),
                     merged.properties(), merged.version(), true,
                     merged.validFrom(), null, resolvedContext.sourceConversationId(),
                     merged.extractionConfidence(), merged.importanceScore(),
                     merged.accessCount(), merged.lastAccessedAt(),
-                    existing.get().createdAt(), now);
+                    existing.get().createdAt(), now,
+                    incoming.lifecycleState(), incoming.lifecycleReason(), incoming.expiresAt(),
+                    incoming.temporality(), incoming.succeededBy(),
+                    incoming.isDerived(), incoming.derivationSources());
             insertEntityVersion(entity, resolvedContext, now);
             updateEntityRoot(entity, resolvedContext, now);
             updateVector(entity);
@@ -137,7 +155,7 @@ public class SemanticMemory {
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
             return entity;
         } else {
-            // 新建
+            // 新建 — 保留 incoming 的生命周期字段
             var now = Instant.now();
             var newId = incoming.id() != null ? incoming.id() : UUID.randomUUID().toString();
             var entity = new TemporalEntity(
@@ -145,7 +163,10 @@ public class SemanticMemory {
                     incoming.properties(), 1, true,
                     now, null, resolvedContext.sourceConversationId(),
                     incoming.extractionConfidence(), incoming.importanceScore(),
-                    0, null, now, now);
+                    0, null, now, now,
+                    incoming.lifecycleState(), incoming.lifecycleReason(), incoming.expiresAt(),
+                    incoming.temporality(), incoming.succeededBy(),
+                    incoming.isDerived(), incoming.derivationSources());
             insertEntityRoot(entity, resolvedContext, now);
             insertEntityVersion(entity, resolvedContext, now);
             updateVector(entity);
@@ -158,7 +179,7 @@ public class SemanticMemory {
     /** 时间旅行查询：返回指定时间点有效的所有实体。 */
     public List<TemporalEntity> queryAtTime(Instant point) {
         return jdbcTemplate.query(
-                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)",
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)",
                 (rs, rowNum) -> mapRowToEntity(rs),
                 point.toString(), point.toString());
     }
@@ -166,7 +187,7 @@ public class SemanticMemory {
     /** 变更历史：返回指定 name+type 的所有版本，按 version 升序。 */
     public List<TemporalEntity> getChangeHistory(String name, EntityType type) {
         return jdbcTemplate.query(
-                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE name = ? AND type = ? ORDER BY version ASC",
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE name = ? AND type = ? ORDER BY version ASC",
                 (rs, rowNum) -> mapRowToEntity(rs),
                 name, type.name());
     }
@@ -190,7 +211,13 @@ public class SemanticMemory {
                     JOIN related r ON (tr.source_entity_id = r.id OR tr.target_entity_id = r.id)
                     WHERE tr.valid_to IS NULL AND r.depth < ?
                 )
-                SELECT DISTINCT te.id, te.type, te.name, te.description, te.properties_json, te.version, te.is_current, te.valid_from, te.valid_to, te.source_conversation_id, te.extraction_confidence, te.importance_score, te.access_count, te.last_accessed_at, te.created_at, te.updated_at FROM temporal_entities te
+                SELECT DISTINCT te.id, te.type, te.name, te.description, te.properties_json,
+                                te.version, te.is_current, te.valid_from, te.valid_to, te.source_conversation_id,
+                                te.extraction_confidence, te.importance_score, te.access_count, te.last_accessed_at,
+                                te.created_at, te.updated_at,
+                                te.lifecycle_state, te.lifecycle_reason, te.expires_at, te.temporality,
+                                te.succeeded_by, te.is_derived, te.derivation_sources
+                FROM temporal_entities te
                 JOIN related r ON te.id = r.id
                 WHERE te.is_current = 1 AND te.id != ?
                 """,
@@ -215,7 +242,7 @@ public class SemanticMemory {
                                                              EntityType type,
                                                              @Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
-                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1");
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE name = ? AND type = ? AND is_current = 1");
         List<Object> params = new ArrayList<>();
         params.add(name);
         params.add(type.name());
@@ -246,7 +273,7 @@ public class SemanticMemory {
      */
     public List<TemporalEntity> findCurrentByType(EntityType type, @Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
-                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE type = ? AND is_current = 1");
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE type = ? AND is_current = 1");
         List<Object> params = new ArrayList<>();
         params.add(type.name());
         appendEntityReadFilter(sql, params, filter);
@@ -348,6 +375,31 @@ public class SemanticMemory {
     }
 
     /**
+     * 直接更新实体的生命周期状态 + 变更原因 — 只改 {@code memory_entities} 的 lifecycle_* 列，
+     * 不 touch 版本与其他字段。
+     *
+     * <p>Task 12 事件总线将在此方法返回前向 {@code MemoryEventBus} 发布
+     * {@code EntityLifecycleChanged}；当前阶段仅完成数据更新与日志，事件发布在 Task 12
+     * 补 C 中接入。</p>
+     *
+     * @param entityId 实体 ID
+     * @param newState 目标生命周期状态
+     * @param reason   变更原因（可为 null）
+     */
+    public void updateLifecycleState(String entityId, LifecycleState newState, @Nullable String reason) {
+        var now = Instant.now();
+        int affected = jdbcTemplate.update(
+                "UPDATE memory_entities SET lifecycle_state = ?, lifecycle_reason = ?, updated_at = ? WHERE id = ?",
+                newState.name(), reason, now.toString(), entityId);
+        if (affected == 0) {
+            log.warn("语义记忆: updateLifecycleState 未命中, entityId={}, newState={}", entityId, newState);
+            return;
+        }
+        log.debug("语义记忆: 更新生命周期状态, entityId={}, newState={}, reason={}", entityId, newState, reason);
+        // Task 12 将在此 publishEvent(EntityLifecycleChanged)
+    }
+
+    /**
      * 更新实体的 importanceScore。
      *
      * @param entityId 实体 ID
@@ -437,7 +489,7 @@ public class SemanticMemory {
      */
     public List<TemporalEntity> findAllCurrent(@Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
-                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE is_current = 1");
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE is_current = 1");
         List<Object> params = new ArrayList<>();
         appendEntityReadFilter(sql, params, filter);
         sql.append(" ORDER BY importance_score ASC, access_count ASC");
@@ -468,7 +520,7 @@ public class SemanticMemory {
         if (ids == null || ids.isEmpty()) {
             return Map.of();
         }
-        StringBuilder sql = new StringBuilder("SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE is_current = 1");
+        StringBuilder sql = new StringBuilder("SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE is_current = 1");
         List<Object> params = new ArrayList<>();
         appendEntityReadFilter(sql, params, filter);
         sql.append(" AND id IN (")
@@ -595,7 +647,7 @@ public class SemanticMemory {
      */
     public Optional<TemporalEntity> findById(String entityId) {
         var results = jdbcTemplate.query(
-                "SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities WHERE id = ? ORDER BY is_current DESC, version DESC",
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE id = ? ORDER BY is_current DESC, version DESC",
                 (rs, rowNum) -> mapRowToEntity(rs),
                 entityId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -614,7 +666,7 @@ public class SemanticMemory {
         }
     }
 
-    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突。 */
+    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突；同时写入 V15 生命周期字段。 */
     private void insertEntityRoot(TemporalEntity entity, MemoryWriteContext writeContext, Instant now) {
         String spaceId = writeContext.spaceId() != null
                 ? writeContext.spaceId()
@@ -627,8 +679,10 @@ public class SemanticMemory {
                 INSERT INTO memory_entities(
                     id, space_id, memory_scope, entity_type, canonical_name, normalized_name,
                     reality_type, status, access_count, last_accessed_at,
-                    first_seen_at, last_seen_at, created_at, updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    first_seen_at, last_seen_at, created_at, updated_at,
+                    lifecycle_state, lifecycle_reason, expires_at, temporality,
+                    succeeded_by, is_derived, derivation_sources
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     canonical_name = excluded.canonical_name,
                     normalized_name = excluded.normalized_name,
@@ -636,7 +690,14 @@ public class SemanticMemory {
                     access_count = excluded.access_count,
                     last_accessed_at = excluded.last_accessed_at,
                     last_seen_at = excluded.last_seen_at,
-                    updated_at = excluded.updated_at
+                    updated_at = excluded.updated_at,
+                    lifecycle_state = excluded.lifecycle_state,
+                    lifecycle_reason = excluded.lifecycle_reason,
+                    expires_at = excluded.expires_at,
+                    temporality = excluded.temporality,
+                    succeeded_by = excluded.succeeded_by,
+                    is_derived = excluded.is_derived,
+                    derivation_sources = excluded.derivation_sources
                 """,
                 entity.id(),
                 spaceId,
@@ -651,7 +712,14 @@ public class SemanticMemory {
                 now.toString(),
                 now.toString(),
                 entity.createdAt().toString(),
-                now.toString());
+                now.toString(),
+                entity.lifecycleState().name(),
+                entity.lifecycleReason(),
+                entity.expiresAt() != null ? entity.expiresAt().toString() : null,
+                entity.temporality().name(),
+                entity.succeededBy(),
+                entity.isDerived() ? 1 : 0,
+                serializeDerivationSources(entity.derivationSources()));
     }
 
     /** 插入实体版本与 provenance。 */
@@ -694,7 +762,14 @@ public class SemanticMemory {
                     access_count = ?,
                     last_accessed_at = ?,
                     last_seen_at = ?,
-                    updated_at = ?
+                    updated_at = ?,
+                    lifecycle_state = ?,
+                    lifecycle_reason = ?,
+                    expires_at = ?,
+                    temporality = ?,
+                    succeeded_by = ?,
+                    is_derived = ?,
+                    derivation_sources = ?
                 WHERE id = ?
                 """,
                 (writeContext.memoryScope() != null ? writeContext.memoryScope() : resolveDefaultScope(entity.type())).name(),
@@ -705,6 +780,13 @@ public class SemanticMemory {
                 entity.lastAccessedAt() != null ? entity.lastAccessedAt().toString() : null,
                 now.toString(),
                 now.toString(),
+                entity.lifecycleState().name(),
+                entity.lifecycleReason(),
+                entity.expiresAt() != null ? entity.expiresAt().toString() : null,
+                entity.temporality().name(),
+                entity.succeededBy(),
+                entity.isDerived() ? 1 : 0,
+                serializeDerivationSources(entity.derivationSources()),
                 entity.id());
     }
 
@@ -924,7 +1006,7 @@ public class SemanticMemory {
         }
     }
 
-    /** ResultSet 行映射为 TemporalEntity。 */
+    /** ResultSet 行映射为 TemporalEntity — 含 V15 生命周期字段。 */
     @SuppressWarnings("unchecked")
     private TemporalEntity mapRowToEntity(java.sql.ResultSet rs) throws java.sql.SQLException {
         String propsJson = rs.getString("properties_json");
@@ -939,6 +1021,12 @@ public class SemanticMemory {
 
         String validToStr = rs.getString("valid_to");
         String lastAccessedStr = rs.getString("last_accessed_at");
+        String expiresStr = rs.getString("expires_at");
+        String lifecycleStateStr = rs.getString("lifecycle_state");
+        String temporalityStr = rs.getString("temporality");
+
+        LifecycleState lifecycleState = parseLifecycleState(lifecycleStateStr);
+        Temporality temporality = parseTemporality(temporalityStr);
 
         return new TemporalEntity(
                 rs.getString("id"),
@@ -956,8 +1044,68 @@ public class SemanticMemory {
                 rs.getInt("access_count"),
                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
                 Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at"))
+                Instant.parse(rs.getString("updated_at")),
+                lifecycleState,
+                rs.getString("lifecycle_reason"),
+                expiresStr != null ? Instant.parse(expiresStr) : null,
+                temporality,
+                rs.getString("succeeded_by"),
+                rs.getInt("is_derived") == 1,
+                deserializeDerivationSources(rs.getString("derivation_sources"))
         );
+    }
+
+    /** 将 lifecycle_state 字符串解析为枚举，异常或空值回退 ACTIVE。 */
+    private static LifecycleState parseLifecycleState(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return LifecycleState.ACTIVE;
+        }
+        try {
+            return LifecycleState.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            log.warn("语义记忆: 未知 lifecycle_state={}，回退 ACTIVE", raw);
+            return LifecycleState.ACTIVE;
+        }
+    }
+
+    /** 将 temporality 字符串解析为枚举，异常或空值回退 PERSISTENT。 */
+    private static Temporality parseTemporality(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Temporality.PERSISTENT;
+        }
+        try {
+            return Temporality.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            log.warn("语义记忆: 未知 temporality={}，回退 PERSISTENT", raw);
+            return Temporality.PERSISTENT;
+        }
+    }
+
+    /** 将派生来源列表序列化为 JSON 数组字符串，空集合返回 null 以保持列稀疏。 */
+    @Nullable
+    private static String serializeDerivationSources(@Nullable List<String> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(sources);
+        } catch (Exception e) {
+            log.warn("语义记忆: derivation_sources 序列化失败, count={}", sources.size());
+            return null;
+        }
+    }
+
+    /** 反序列化 derivation_sources JSON 数组；解析失败回退空列表。 */
+    private static List<String> deserializeDerivationSources(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return MAPPER.readValue(json, STRING_LIST_TYPE);
+        } catch (Exception e) {
+            log.warn("语义记忆: derivation_sources 反序列化失败, error={}", e.getMessage());
+            return List.of();
+        }
     }
 
     /** ResultSet 行映射为 TemporalRelation。 */
