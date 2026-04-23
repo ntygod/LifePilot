@@ -13,8 +13,11 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
+import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryRealityType;
 import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -280,6 +283,33 @@ public class MemoryToolProvider {
                 scopes);
     }
 
+    /**
+     * 按 ProjectContext 构造工具级写入上下文。
+     *
+     * <p>ISOLATED 项目 → spaceId=ctx.projectSpaceId() 将实体落到项目域；
+     * 主账户或 SHARED → spaceId=null 让 SemanticMemory 按 entity type 推断默认 space。
+     * memoryScope 一律保留 null，避免错误限定 scope（同 RealtimeExtractor 的策略）。</p>
+     */
+    private MemoryWriteContext toProjectWriteContext(@Nullable ProjectContext ctx,
+                                                     @Nullable String sessionId) {
+        String spaceId = (ctx != null && ctx.isolated()) ? ctx.projectSpaceId() : null;
+        return new MemoryWriteContext(
+                spaceId,
+                null,
+                MemoryOriginType.TOOL,
+                MemoryRealityType.UNKNOWN,
+                sessionId,
+                sessionId,
+                sessionId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
     ToolResult executeSearch(ToolInput input) {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
@@ -331,7 +361,9 @@ public class MemoryToolProvider {
             var now = Instant.now();
             var incoming = new TemporalEntity(null, entityType, name, description, Map.of(), 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
-            var created = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(incoming, conversationId));
+            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), conversationId);
+            var created = SqliteBusyRetry.execute(() ->
+                    semanticMemory.upsertWithConflictDetection(incoming, conversationId, writeContext));
             return ToolResult.success(Map.of(
                     "id", created.id(), "name", created.name(), "type", created.type().name(), "version", created.version()));
         } catch (IllegalArgumentException e) {
@@ -354,6 +386,7 @@ public class MemoryToolProvider {
             String newDesc = input.getOptionalParam("description", String.class).orElse(entity.description());
             EntityType newType = input.getOptionalParam("entityType", String.class).map(s -> EntityType.valueOf(s.toUpperCase())).orElse(entity.type());
             String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), sessionId);
             var now = Instant.now();
 
             // 改名时 (name, type) 是冲突检测的 identity key，直接 upsert 会被当作新实体
@@ -365,7 +398,8 @@ public class MemoryToolProvider {
                         now, null, entity.sourceConversationId(),
                         entity.extractionConfidence(), entity.importanceScore(),
                         entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-                var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(renamed, sessionId));
+                var result = SqliteBusyRetry.execute(() ->
+                        semanticMemory.upsertWithConflictDetection(renamed, sessionId, writeContext));
                 return ToolResult.success(Map.of(
                         "id", result.id(), "name", result.name(), "type", result.type().name(),
                         "version", result.version(), "description", result.description() != null ? result.description() : ""));
@@ -376,7 +410,8 @@ public class MemoryToolProvider {
                     entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
                     entity.extractionConfidence(), entity.importanceScore(),
                     entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-            var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId));
+            var result = SqliteBusyRetry.execute(() ->
+                    semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
             return ToolResult.success(Map.of(
                     "id", result.id(), "name", result.name(), "type", result.type().name(),
                     "version", result.version(), "description", result.description() != null ? result.description() : ""));
@@ -527,10 +562,12 @@ public class MemoryToolProvider {
             String relationType = input.getParam("relationType", String.class);
             float strength = input.getOptionalParam("strength", Number.class).map(Number::floatValue).orElse(0.5f);
             String conversationId = input.getOptionalParam("conversationId", String.class).orElse(null);
+            String sessionId = input.getContextValue("sessionId", String.class).orElse(conversationId);
+            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), sessionId);
             var now = Instant.now();
             var relation = new TemporalRelation(UUID.randomUUID().toString(), sourceId, targetId, relationType, strength,
                     null, now, null, conversationId, now);
-            SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation));
+            SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
             return ToolResult.success(Map.of(
                     "id", relation.id(), "relationType", relationType,
                     "sourceEntityId", sourceId, "targetEntityId", targetId));
