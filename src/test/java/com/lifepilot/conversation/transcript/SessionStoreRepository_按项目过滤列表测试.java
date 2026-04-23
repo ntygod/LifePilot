@@ -20,11 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Plan 1 Task 13：对话列表 API 支持按 projectId 过滤。</p>
  *
- * <p>验证三种 ProjectScope 语义：</p>
+ * <p>验证两种 ProjectScope 语义：</p>
  * <ul>
  *   <li>{@link SessionStoreRepository.ProjectScope.MainAccount} — 只返回 project_id IS NULL 的主账户对话</li>
  *   <li>{@link SessionStoreRepository.ProjectScope.OfProject} — 只返回归属指定项目的对话</li>
- *   <li>{@link SessionStoreRepository.ProjectScope.All} — 不按项目维度过滤</li>
  * </ul>
  *
  * @author zsg
@@ -137,21 +136,6 @@ class SessionStoreRepository_按项目过滤列表测试 {
         );
 
         assertThat(rows).isEmpty();
-    }
-
-    @Test
-    void 全量作用域_返回所有Web会话() {
-        String mainId = saveSession("主账户对话", null);
-        String p1Id = saveSession("项目 P1 对话", "p-1");
-        String p2Id = saveSession("项目 P2 对话", "p-2");
-
-        List<SessionStoreRepository.SessionStoreRow> rows = repository.findWebSessionsByConditions(
-                null, null, null, null, null, null,
-                SessionStoreRepository.ProjectScope.all()
-        );
-
-        assertThat(rows).extracting(SessionStoreRepository.SessionStoreRow::sessionId)
-                .containsExactlyInAnyOrder(mainId, p1Id, p2Id);
     }
 
     @Test

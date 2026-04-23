@@ -297,6 +297,11 @@ public class ChatController {
      *   <li>{@code projectId=p-1} —— 仅返回归属该项目的对话</li>
      * </ul>
      *
+     * <p><b>Plan 1 语义变更（2026-04-23）</b>：不传 {@code projectId} 时返回
+     * "主账户对话"（project_id IS NULL），而非历史上的"全部 web 会话"。前端在
+     * 项目详情页显示对话时必须显式传 projectId。此变更在 Task 17+ 前端改造完成前
+     * 对现有数据（全部 project_id = NULL）无可见影响。</p>
+     *
      * @param q         关键词搜索（名称或最近消息内容）
      * @param pinned    过滤置顶状态（true/false）
      * @param archived  过滤归档状态（true/false）

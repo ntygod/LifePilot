@@ -41,7 +41,7 @@ public class SessionStoreRepository {
     /**
      * 会话列表查询的项目作用域过滤策略。
      *
-     * <p>三种语义互斥：主账户（project_id IS NULL）、指定项目、不过滤。</p>
+     * <p>两种语义互斥，对应 API 实际暴露：主账户（project_id IS NULL）、指定项目。</p>
      */
     public sealed interface ProjectScope {
         /** 仅主账户对话（project_id IS NULL）。 */
@@ -56,19 +56,12 @@ public class SessionStoreRepository {
             }
         }
 
-        /** 不按项目维度过滤（包含主账户 + 所有项目）。 */
-        record All() implements ProjectScope {}
-
         static ProjectScope mainAccount() {
             return new MainAccount();
         }
 
         static ProjectScope ofProject(String projectId) {
             return new OfProject(projectId);
-        }
-
-        static ProjectScope all() {
-            return new All();
         }
     }
 
@@ -468,7 +461,6 @@ public class SessionStoreRepository {
      * <ul>
      *   <li>{@link ProjectScope#mainAccount()} — 仅返回 project_id IS NULL 的主账户对话</li>
      *   <li>{@link ProjectScope#ofProject(String)} — 仅返回归属指定项目的对话</li>
-     *   <li>{@link ProjectScope#all()} — 不按项目维度过滤（包含主账户与所有项目）</li>
      * </ul>
      *
      * @param projectScope 项目作用域过滤策略，不可为 null
@@ -493,13 +485,15 @@ public class SessionStoreRepository {
         List<Object> params = new ArrayList<>();
 
         switch (projectScope) {
-            case ProjectScope.MainAccount ignored -> sql.append(" AND project_id IS NULL");
-            case ProjectScope.OfProject of -> {
-                sql.append(" AND project_id = ?");
-                params.add(of.projectId());
+            case ProjectScope.MainAccount ignored -> {
+                // project_id IS NULL 用 idx_session_store_channel(channel, last_activity_at DESC) 走索引；
+                // V17 建的 idx_session_store_project_id 是部分索引（WHERE project_id IS NOT NULL），
+                // 不覆盖主账户查询——by design
+                sql.append(" AND project_id IS NULL");
             }
-            case ProjectScope.All ignored -> {
-                // 不附加 project_id 约束
+            case ProjectScope.OfProject(String projectId) -> {
+                sql.append(" AND project_id = ?");
+                params.add(projectId);
             }
         }
 
