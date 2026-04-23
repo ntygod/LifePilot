@@ -43,10 +43,15 @@ public class ToolUsageStatsRecorder {
         rolloverIfNewDay(today);
 
         String sessionKey = event.sessionId() + "|" + today;
+        boolean newSessionToday = !sessionDailyTools.containsKey(sessionKey);
         Set<String> seen = sessionDailyTools.computeIfAbsent(
                 sessionKey, k -> ConcurrentHashMap.newKeySet());
         boolean firstTime = seen.add(event.toolId());
         try {
+            if (newSessionToday) {
+                // 当日首次见到该 session，登记到 daily_active_sessions 作为 coverage 分母来源
+                repository.recordActiveSession(event.sessionId(), today);
+            }
             repository.recordInvocation(event.toolId(), today, firstTime);
         } catch (Exception e) {
             log.warn("记录工具使用统计失败: toolId={}, session={}", event.toolId(), event.sessionId(), e);

@@ -85,6 +85,8 @@ public class ToolConfigProperties {
             private int windowDays = 30;
             private double sessionThreshold = 0.3;
             private int maxPromoted = 3;
+            /** AdvisoryJob cron 表达式（Spring @Scheduled 语义）；默认每日凌晨 3 点。 */
+            private String cron = "0 0 3 * * *";
         }
 
         /** Tier 1 降级策略 — 长期未使用的候选可被降回 Tier 2。 */

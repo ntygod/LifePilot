@@ -52,13 +52,25 @@ public class ToolValidator {
     );
 
     /**
+     * 不参与校验的 ID 前缀 — 外部生态工具（如 A2A 远端 agent、未来的 MCP 动态工具等）
+     * 的 ID 规范由外部协议控制，项目校验器对其豁免。
+     */
+    private static final Set<String> EXEMPTED_ID_PREFIXES = Set.of(
+            "a2a_remote_"
+    );
+
+    /**
      * 校验单个工具是否满足命名规范。
      *
      * @param tool 待校验工具
      * @throws IllegalStateException 任一硬规则违反
      */
     public void validate(ToolContract tool) {
-        if (EXEMPTED_IDS.contains(tool.id())) {
+        String id = tool.id();
+        if (EXEMPTED_IDS.contains(id)) {
+            return;
+        }
+        if (EXEMPTED_ID_PREFIXES.stream().anyMatch(id::startsWith)) {
             return;
         }
         validateId(tool);

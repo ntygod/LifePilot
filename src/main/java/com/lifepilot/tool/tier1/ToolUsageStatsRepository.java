@@ -9,8 +9,10 @@ import java.util.Map;
 /**
  * 工具使用统计持久化（SQLite）。
  *
- * <p>ON CONFLICT DO UPDATE 实现 upsert；会话覆盖率用当日 distinct session 数近似
- * （通过 session_count 累加，语义上 session_count 表示"本工具当日首次出现过的会话数"）。</p>
+ * <p>{@code tool_usage_stats} 记录每工具每日的 distinct session 数（session_count）和
+ * 调用次数（invocation_count）；{@code daily_active_sessions} 独立记录每日全局活跃
+ * session ID 集合。Tier 1 覆盖率 = 该工具当日 session_count / 当日活跃 session 总数，
+ * 真实反映"用此工具的会话占比"。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -42,19 +44,33 @@ public class ToolUsageStatsRepository {
     }
 
     /**
-     * 计算近 windowDays 天各工具的会话覆盖率（session_count / 总 session_count）。
+     * 记录某 session 当日首次活跃（幂等）。
      *
-     * <p>注意：分母取所有工具 session_count 之和，值域可能超过 1.0 如果同一会话用多个工具；
-     * 当前实现为粗略近似，供 AdvisoryJob 排序候选使用。</p>
+     * <p>(stat_date, session_id) 复合主键；重复调用 {@code INSERT OR IGNORE} 无副作用。
+     * 供 AdvisoryJob 计算覆盖率分母使用。</p>
+     */
+    public void recordActiveSession(String sessionId, String statDate) {
+        jdbcTemplate.update("""
+                INSERT OR IGNORE INTO daily_active_sessions (stat_date, session_id)
+                VALUES (?, ?)
+                """, statDate, sessionId);
+    }
+
+    /**
+     * 计算近 windowDays 天各工具的会话覆盖率。
+     *
+     * <p>分母 = 当日任一工具出现过的 distinct session 总数（来自 daily_active_sessions）；
+     * 分子 = 该工具 session_count 之和。值域 [0, 1]，真实反映"有多少会话用过此工具"。</p>
      *
      * @param windowDays 观察窗口天数
-     * @return toolId → 覆盖率（0-1+）；空窗口返回空 Map
+     * @return toolId → 覆盖率；空窗口或无数据时返回空 Map
      */
     public Map<String, Double> computeSessionCoverage(int windowDays) {
+        String sinceClause = "-%d days".formatted(windowDays);
         Integer totalSessions = jdbcTemplate.queryForObject("""
-                SELECT COALESCE(SUM(session_count), 0) FROM tool_usage_stats
+                SELECT COUNT(*) FROM daily_active_sessions
                 WHERE stat_date >= date('now', ?)
-                """, Integer.class, "-%d days".formatted(windowDays));
+                """, Integer.class, sinceClause);
         if (totalSessions == null || totalSessions == 0) {
             return Map.of();
         }
@@ -64,7 +80,7 @@ public class ToolUsageStatsRepository {
                 FROM tool_usage_stats
                 WHERE stat_date >= date('now', ?)
                 GROUP BY tool_id
-                """, "-%d days".formatted(windowDays));
+                """, sinceClause);
         for (var row : rows) {
             result.put((String) row.get("tool_id"), ((Number) row.get("s")).intValue() / (double) totalSessions);
         }

@@ -203,6 +203,7 @@ lifepilot:
         window-days: 30
         session-threshold: 0.3
         max-promoted: 3
+        cron: "0 0 3 * * *"
       demotion:
         enabled: true
         idle-days: 60

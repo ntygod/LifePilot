@@ -55,8 +55,9 @@ public class ToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DynamicToolRegistry dynamicToolRegistry(
-            ApplicationEventPublisher eventPublisher) {
-        return new DynamicToolRegistry(eventPublisher);
+            ApplicationEventPublisher eventPublisher,
+            com.lifepilot.tool.validation.ToolValidator validator) {
+        return new DynamicToolRegistry(eventPublisher, validator);
     }
 
     @Bean

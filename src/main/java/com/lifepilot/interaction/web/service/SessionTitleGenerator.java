@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
+import org.springframework.beans.factory.annotation.Value;
+
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
@@ -30,8 +32,6 @@ public class SessionTitleGenerator {
     private static final Logger log = LoggerFactory.getLogger(SessionTitleGenerator.class);
     private static final String PROMPT_KEY = "generation/session-title";
     private static final String LLM_SCENE = "session-title";
-    // 30s 兜底大模型偶发慢响应；真正提速靠 UI 把此 scene 绑到 flash 级模型
-    private static final Duration TIMEOUT = Duration.ofSeconds(30);
     private static final int MAX_TITLE_LENGTH = 20;
     private static final Set<String> DEFAULT_TITLES = Set.of("新对话", "New Chat");
 
@@ -42,15 +42,19 @@ public class SessionTitleGenerator {
     private final PromptRegistry promptRegistry;
     @Nullable
     private final SseSessionManager sseSessionManager;
+    /** 单次标题生成的外层超时；真正提速靠 UI 把 session-title scene 绑到 flash 级模型。 */
+    private final Duration timeout;
 
     public SessionTitleGenerator(ChatSessionRepository sessionRepository,
                                  @Nullable GenerationRouter generationRouter,
                                  @Nullable PromptRegistry promptRegistry,
-                                 @Nullable SseSessionManager sseSessionManager) {
+                                 @Nullable SseSessionManager sseSessionManager,
+                                 @Value("${lifepilot.interaction.session-title.timeout-seconds:30}") int timeoutSeconds) {
         this.sessionRepository = sessionRepository;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.sseSessionManager = sseSessionManager;
+        this.timeout = Duration.ofSeconds(timeoutSeconds);
     }
 
     /**
@@ -117,7 +121,7 @@ public class SessionTitleGenerator {
             ));
             var response = generationRouter.call(
                     LLM_SCENE, prompt, null, null, null,
-                    GenerationCapability.CHAT, TIMEOUT);
+                    GenerationCapability.CHAT, timeout);
             String title = cleanTitle(response.content());
             if (title.isEmpty() || DEFAULT_TITLES.contains(title)) {
                 return;
