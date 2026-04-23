@@ -189,6 +189,14 @@ public class SemanticMemory {
             insertEntityVersion(entity, resolvedContext, now);
             updateVector(entity);
             notifyWriteCallback();
+            // Task 12：新建实体发布 LifecycleChanged(null → newState)，source 由 provenance 推断
+            publishAfterCommit(new EntityLifecycleChanged(
+                    entity.id(),
+                    entity.type().name(),
+                    null,
+                    entity.lifecycleState(),
+                    "created by " + (sourceReference != null ? sourceReference : "unknown"),
+                    resolveChangeSource(sourceReference)));
             log.debug("语义记忆: 新建实体, name={}, id={}", entity.name(), entity.id());
             return entity;
         }
@@ -357,6 +365,17 @@ public class SemanticMemory {
 
         registerAfterCommitVectorCleanup(entity.id());
 
+        // Task 12：归档发布 LifecycleChanged(旧态 → ARCHIVED)，source=UI_EDIT
+        // archive 调用方多为显式动作（UI 删除 / tool archive / 经验淘汰 / 遗忘），
+        // 统一归 UI_EDIT；后续如需细分，调用方应改走 updateLifecycleState(entityId, ARCHIVED, reason, source)
+        publishAfterCommit(new EntityLifecycleChanged(
+                entity.id(),
+                entity.type().name(),
+                entity.lifecycleState(),
+                LifecycleState.ARCHIVED,
+                entity.lifecycleReason(),
+                ChangeSource.UI_EDIT));
+
         log.debug("语义记忆: 归档实体, id={}, name={}", entity.id(), entity.name());
     }
 
@@ -382,6 +401,30 @@ public class SemanticMemory {
         } catch (Exception e) {
             log.warn("语义记忆: 归档后清理向量失败, id={}, error={}", entityId, e.getMessage());
         }
+    }
+
+    /**
+     * 基于 provenance 字符串推断 {@link ChangeSource} — 用于 upsert 新建分支的事件归因。
+     *
+     * <p>已知值：
+     * <ul>
+     *   <li>{@code user-edit-description} / UI 触发 → {@code UI_EDIT}</li>
+     *   <li>{@code tool-cancel} / {@code tool-complete} / {@code tool-supersede} → {@code TOOL_EXPLICIT}</li>
+     *   <li>其他（含 null / 未知） → {@code LLM_SEMANTIC}（默认语义识别入口）</li>
+     * </ul></p>
+     *
+     * @param provenance 写入来源引用
+     * @return 推断出的 ChangeSource
+     */
+    private static ChangeSource resolveChangeSource(@Nullable String provenance) {
+        if (provenance == null) {
+            return ChangeSource.LLM_SEMANTIC;
+        }
+        return switch (provenance) {
+            case "user-edit-description" -> ChangeSource.UI_EDIT;
+            case "tool-cancel", "tool-complete", "tool-supersede" -> ChangeSource.TOOL_EXPLICIT;
+            default -> ChangeSource.LLM_SEMANTIC;
+        };
     }
 
     /**
@@ -424,18 +467,41 @@ public class SemanticMemory {
     }
 
     /**
-     * 直接更新实体的生命周期状态 + 变更原因 — 只改 {@code memory_entities} 的 lifecycle_* 列，
-     * 不 touch 版本与其他字段。
+     * 直接更新实体的生命周期状态 + 变更原因 — 默认 source={@link ChangeSource#TOOL_EXPLICIT}。
      *
-     * <p>Task 12 事件总线将在此方法返回前向 {@code MemoryEventBus} 发布
-     * {@code EntityLifecycleChanged}；当前阶段仅完成数据更新与日志，事件发布在 Task 12
-     * 补 C 中接入。</p>
+     * <p>调用方如有更精确来源（如负反馈触发），改走 {@link #updateLifecycleState(String, LifecycleState, String, ChangeSource)}。</p>
      *
      * @param entityId 实体 ID
      * @param newState 目标生命周期状态
      * @param reason   变更原因（可为 null）
      */
     public void updateLifecycleState(String entityId, LifecycleState newState, @Nullable String reason) {
+        updateLifecycleState(entityId, newState, reason, ChangeSource.TOOL_EXPLICIT);
+    }
+
+    /**
+     * 直接更新实体的生命周期状态 + 变更原因 — 只改 {@code memory_entities} 的 lifecycle_* 列，
+     * 不 touch 版本与其他字段，完成后发布 {@link EntityLifecycleChanged}。
+     *
+     * <p>Task 12（修补 C）接入：UPDATE 影响行为 0 则静默跳过不发事件；有效更新时以
+     * AFTER_COMMIT 发布事件，避免回滚时产生幻觉状态。</p>
+     *
+     * @param entityId 实体 ID
+     * @param newState 目标生命周期状态
+     * @param reason   变更原因（可为 null）
+     * @param source   变更来源（NEGATIVE_FEEDBACK / TOOL_EXPLICIT / LLM_SEMANTIC 等）
+     */
+    @Transactional
+    public void updateLifecycleState(String entityId,
+                                     LifecycleState newState,
+                                     @Nullable String reason,
+                                     ChangeSource source) {
+        // 先读旧状态：UPDATE 之后无法再得到 oldState，事件需携带
+        LifecycleRootSnapshot snapshot = loadLifecycleRootSnapshot(entityId);
+        if (snapshot == null) {
+            log.warn("语义记忆: updateLifecycleState 未命中, entityId={}, newState={}", entityId, newState);
+            return;
+        }
         var now = Instant.now();
         int affected = jdbcTemplate.update(
                 "UPDATE memory_entities SET lifecycle_state = ?, lifecycle_reason = ?, updated_at = ? WHERE id = ?",
@@ -444,9 +510,29 @@ public class SemanticMemory {
             log.warn("语义记忆: updateLifecycleState 未命中, entityId={}, newState={}", entityId, newState);
             return;
         }
-        log.debug("语义记忆: 更新生命周期状态, entityId={}, newState={}, reason={}", entityId, newState, reason);
-        // Task 12 将在此 publishEvent(EntityLifecycleChanged)
+        publishAfterCommit(new EntityLifecycleChanged(
+                entityId, snapshot.entityType(), snapshot.oldState(), newState, reason, source));
+        log.debug("语义记忆: 更新生命周期状态, entityId={}, newState={}, reason={}, source={}",
+                entityId, newState, reason, source);
     }
+
+    /** 查询实体生命周期根字段快照（entity_type + 当前 lifecycle_state）用于事件。 */
+    @Nullable
+    private LifecycleRootSnapshot loadLifecycleRootSnapshot(String entityId) {
+        var rows = jdbcTemplate.queryForList(
+                "SELECT entity_type, lifecycle_state FROM memory_entities WHERE id = ?",
+                entityId);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        var row = rows.getFirst();
+        String type = (String) row.get("entity_type");
+        LifecycleState oldState = parseLifecycleState((String) row.get("lifecycle_state"));
+        return new LifecycleRootSnapshot(type, oldState);
+    }
+
+    /** 生命周期根字段快照记录 — 仅用于 updateLifecycleState 事件发布。 */
+    private record LifecycleRootSnapshot(String entityType, LifecycleState oldState) {}
 
     /**
      * 更新实体的 importanceScore — 兼容旧签名，默认来源 {@link WeightSource#USER_FEEDBACK}。
