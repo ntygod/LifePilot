@@ -1,0 +1,124 @@
+/**
+ * 定时任务（Scheduled Task）REST 封装 —— Plan 2+3 Task A4。
+ *
+ * <p>沿用项目现有的 API client 模式（见 {@code src/api/project.ts}）：
+ * 通过 {@code getApiOrigin() + '/api'} 作为基地址，{@code request<T>} 自动解包
+ * {@code ApiResponse<T>} 响应结构（{code, message, data}），失败时抛出结构化错误对象。
+ *
+ * @author zsg
+ * @since 2026-04-23
+ */
+import { getApiOrigin } from '@/api/config'
+
+const getBase = () => getApiOrigin() + '/api'
+
+/**
+ * 定时任务 DTO —— 对应后端 {@code ScheduledTaskResponse}。
+ *
+ * <p>{@code createdAt} / {@code updatedAt} 为 ISO 8601 字符串；{@code skillIds}
+ * 在持久化层以逗号分隔字符串存储，后端原样透传（可能为 null）。
+ */
+export interface ScheduledTaskDto {
+  id: string
+  name: string
+  schedule: string
+  instruction: string
+  /** 状态：active / paused 等，后端以字符串返回 */
+  status: string
+  /** 逗号分隔的技能 ID 列表；无绑定技能时为 null */
+  skillIds: string | null
+  /** 绑定项目 ID；全局任务为 null */
+  projectId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * 更新定时任务请求 —— 字段全部可选，后端保留未提供字段的原值。
+ *
+ * <p>{@code status} 常用值：'active' / 'paused'。
+ */
+export interface UpdateScheduledTaskRequest {
+  name?: string
+  schedule?: string
+  instruction?: string
+  status?: string
+}
+
+/**
+ * 统一 fetch 封装：强制要求后端走 ApiResponse<T> 包装（{code, message, data}），
+ * 自动解包 .data；204 / 空 body / 非 JSON 三种边界单独处理。
+ */
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${getBase()}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let parsed: { code?: number; message?: string } | null = null
+    if (text) {
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        parsed = null
+      }
+    }
+    throw {
+      code: parsed?.code ?? res.status,
+      message: parsed?.message ?? text?.trim() ?? res.statusText ?? '请求失败',
+      timestamp: new Date().toISOString(),
+    }
+  }
+  if (res.status === 204) return undefined as T
+  const contentType = res.headers.get('content-type') ?? ''
+  const body = await res.text()
+  if (!body || !body.trim()) return undefined as T
+  if (!contentType.includes('application/json')) {
+    try {
+      return JSON.parse(body) as T
+    } catch {
+      throw {
+        code: res.status,
+        message: '响应格式错误',
+        timestamp: new Date().toISOString(),
+      }
+    }
+  }
+  const json = JSON.parse(body) as { code?: number; message?: string; data?: T }
+  // 自动解包 ApiResponse 结构：后端 delete 返回 data=null，此处直接透传为 undefined
+  if (json && typeof json === 'object' && 'code' in json && 'data' in json) {
+    return (json.data ?? undefined) as T
+  }
+  return json as T
+}
+
+/**
+ * 列出定时任务。
+ *
+ * @param projectId 项目 ID；传入时仅返回该项目的任务，未传或为 null 时返回全部
+ */
+export async function listScheduledTasks(
+  projectId?: string | null,
+): Promise<ScheduledTaskDto[]> {
+  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
+  return request<ScheduledTaskDto[]>(`/scheduled-tasks${qs}`)
+}
+
+/** 更新定时任务（name / schedule / instruction / status 全部可选） */
+export async function updateScheduledTask(
+  id: string,
+  req: UpdateScheduledTaskRequest,
+): Promise<ScheduledTaskDto> {
+  return request<ScheduledTaskDto>(`/scheduled-tasks/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  })
+}
+
+/** 删除定时任务 */
+export async function deleteScheduledTask(id: string): Promise<void> {
+  await request<void>(`/scheduled-tasks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
