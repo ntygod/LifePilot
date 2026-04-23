@@ -5,6 +5,7 @@ import com.lifepilot.agent.task.config.ReminderAutoConfiguration;
 import com.lifepilot.agent.task.proactive.behavior.*;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
@@ -74,8 +75,14 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository,
-                                                     @Autowired(required = false) AgentConfigProperties config) {
-        return new TrustUpgradeService(autonomyRepository, config);
+                                                     @Autowired(required = false) AgentConfigProperties config,
+                                                     @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
+                                                     @Autowired(required = false) SemanticMemory semanticMemory) {
+        // Task 25（解 S14）：注入 ReminderFeedbackRepository + SemanticMemory 后
+        // recordNegativeFeedback(userId, behaviorName, notificationId) 可溯源到
+        // L3 proactive_insight_* 实体做 importanceScore 惩罚
+        return new TrustUpgradeService(autonomyRepository, config,
+                reminderFeedbackRepository, semanticMemory);
     }
 
     @Bean

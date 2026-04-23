@@ -29,13 +29,15 @@ public class ReminderFeedbackRepository {
     public void saveFeedback(ReminderFeedbackRecord record) {
         jdbcTemplate.update("""
                 INSERT INTO proactive_reminder_feedback (
-                    id, notification_id, user_id, topic_key, feedback_type, comment, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    id, notification_id, user_id, topic_key, feedback_type, comment,
+                    insight_entity_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(notification_id) DO UPDATE SET
                     user_id = excluded.user_id,
                     topic_key = excluded.topic_key,
                     feedback_type = excluded.feedback_type,
                     comment = excluded.comment,
+                    insight_entity_id = excluded.insight_entity_id,
                     updated_at = excluded.updated_at
                 """,
                 record.id(),
@@ -44,9 +46,37 @@ public class ReminderFeedbackRepository {
                 record.topicKey(),
                 record.feedbackType().name(),
                 record.comment(),
+                record.insightEntityId(),
                 record.createdAt().toString(),
                 record.updatedAt().toString()
         );
+    }
+
+    /**
+     * 反查某条 notification 关联的 L3 {@code proactive_insight_*} 实体 ID 列表
+     * —— 供 {@link com.lifepilot.agent.task.proactive.TrustUpgradeService} 在用户
+     * 标记提醒为"无用"时溯源到 insight 实体，做 importanceScore 惩罚。
+     *
+     * <p>过滤条件：
+     * <ul>
+     *   <li>{@code notification_id = ?}</li>
+     *   <li>{@code insight_entity_id IS NOT NULL} —— 老反馈 / 非 insight 来源的提醒无关联</li>
+     * </ul>
+     *
+     * <p>正常情况下每条 notification 至多一条 feedback 行，返回列表可能 0 或 1 项；
+     * 若未来扩展为多关联也能自动兼容。</p>
+     *
+     * @param notificationId 通知 ID
+     * @return insight 实体 ID 列表（可能为空，保证非 null）
+     */
+    public List<String> findInsightEntityIdsByNotification(String notificationId) {
+        return jdbcTemplate.queryForList(
+                """
+                SELECT insight_entity_id
+                FROM proactive_reminder_feedback
+                WHERE notification_id = ? AND insight_entity_id IS NOT NULL
+                """,
+                String.class, notificationId);
     }
 
     public Optional<ReminderNotificationFeedbackView> findFeedbackViewByNotificationId(String notificationId) {
