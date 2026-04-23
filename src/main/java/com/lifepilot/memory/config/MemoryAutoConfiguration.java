@@ -66,6 +66,7 @@ import org.sqlite.SQLiteDataSource;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -100,6 +101,19 @@ public class MemoryAutoConfiguration {
     }
 
     // L1 临时工作区
+
+    /**
+     * 全局时钟 —— 生命周期 Listener 与再验证 / 反馈账本等时间敏感组件注入。
+     *
+     * <p>生产环境使用 {@link Clock#systemUTC()}；场景测试可通过 {@code @Primary}
+     * 覆盖为 {@code MutableClock} 以便推进时间。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public Clock memoryClock() {
+        log.debug("记忆模块: 注册默认 Clock (systemUTC)");
+        return Clock.systemUTC();
+    }
 
     @Bean
     @ConditionalOnMissingBean
