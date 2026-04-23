@@ -291,12 +291,19 @@ public class ChatController {
     /**
      * 获取会话列表。
      *
-     * @param q        关键词搜索（名称或最近消息内容）
-     * @param pinned   过滤置顶状态（true/false）
-     * @param archived 过滤归档状态（true/false）
+     * <p>projectId 过滤语义：</p>
+     * <ul>
+     *   <li>不传 {@code projectId} —— 返回主账户对话（project_id IS NULL）</li>
+     *   <li>{@code projectId=p-1} —— 仅返回归属该项目的对话</li>
+     * </ul>
+     *
+     * @param q         关键词搜索（名称或最近消息内容）
+     * @param pinned    过滤置顶状态（true/false）
+     * @param archived  过滤归档状态（true/false）
      * @param timeRange 时间范围（7d/30d）
-     * @param sortBy   排序字段（updatedAt/lastMessageAt）
-     * @param order   排序方向（asc/desc）
+     * @param sortBy    排序字段（updatedAt/lastMessageAt）
+     * @param order     排序方向（asc/desc）
+     * @param projectId 项目 ID（可选）；缺省返回主账户对话
      * @return 会话摘要列表
      */
     @GetMapping("/sessions")
@@ -306,11 +313,12 @@ public class ChatController {
             @RequestParam(required = false) Boolean archived,
             @RequestParam(required = false) String timeRange,
             @RequestParam(defaultValue = "updatedAt") String sortBy,
-            @RequestParam(defaultValue = "desc") String order
+            @RequestParam(defaultValue = "desc") String order,
+            @RequestParam(required = false) String projectId
     ) {
-        log.debug("获取会话列表: q={}, pinned={}, archived={}, timeRange={}, sortBy={}, order={}",
-                q, pinned, archived, timeRange, sortBy, order);
-        var sessions = sessionService.listSessions(q, pinned, archived, timeRange, sortBy, order);
+        log.debug("获取会话列表: q={}, pinned={}, archived={}, timeRange={}, sortBy={}, order={}, projectId={}",
+                q, pinned, archived, timeRange, sortBy, order, projectId);
+        var sessions = sessionService.listSessions(q, pinned, archived, timeRange, sortBy, order, projectId);
         return ResponseEntity.ok(sessions);
     }
 

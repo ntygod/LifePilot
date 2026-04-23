@@ -38,6 +38,40 @@ public class SessionStoreRepository {
     @Nullable
     private final MemoryEventBus memoryEventBus;
 
+    /**
+     * 会话列表查询的项目作用域过滤策略。
+     *
+     * <p>三种语义互斥：主账户（project_id IS NULL）、指定项目、不过滤。</p>
+     */
+    public sealed interface ProjectScope {
+        /** 仅主账户对话（project_id IS NULL）。 */
+        record MainAccount() implements ProjectScope {}
+
+        /** 归属指定项目的对话。 */
+        record OfProject(String projectId) implements ProjectScope {
+            public OfProject {
+                if (projectId == null || projectId.isBlank()) {
+                    throw new IllegalArgumentException("projectId 不能为空");
+                }
+            }
+        }
+
+        /** 不按项目维度过滤（包含主账户 + 所有项目）。 */
+        record All() implements ProjectScope {}
+
+        static ProjectScope mainAccount() {
+            return new MainAccount();
+        }
+
+        static ProjectScope ofProject(String projectId) {
+            return new OfProject(projectId);
+        }
+
+        static ProjectScope all() {
+            return new All();
+        }
+    }
+
     public record SessionStoreRow(
             String sessionId,
             String channel,
@@ -423,6 +457,30 @@ public class SessionStoreRepository {
                                                              @Nullable String timeRange,
                                                              @Nullable String sortBy,
                                                              @Nullable String order) {
+        return findWebSessionsByConditions(q, pinned, archived, timeRange, sortBy, order,
+                ProjectScope.mainAccount());
+    }
+
+    /**
+     * 按项目归属维度筛选 Web 会话。
+     *
+     * <p>项目作用域语义：</p>
+     * <ul>
+     *   <li>{@link ProjectScope#mainAccount()} — 仅返回 project_id IS NULL 的主账户对话</li>
+     *   <li>{@link ProjectScope#ofProject(String)} — 仅返回归属指定项目的对话</li>
+     *   <li>{@link ProjectScope#all()} — 不按项目维度过滤（包含主账户与所有项目）</li>
+     * </ul>
+     *
+     * @param projectScope 项目作用域过滤策略，不可为 null
+     */
+    @SuppressWarnings("null")
+    public List<SessionStoreRow> findWebSessionsByConditions(@Nullable String q,
+                                                             @Nullable Boolean pinned,
+                                                             @Nullable Boolean archived,
+                                                             @Nullable String timeRange,
+                                                             @Nullable String sortBy,
+                                                             @Nullable String order,
+                                                             ProjectScope projectScope) {
         StringBuilder sql = new StringBuilder("""
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
@@ -433,6 +491,17 @@ public class SessionStoreRepository {
                   AND instr(session_id, ':') = 0
                 """);
         List<Object> params = new ArrayList<>();
+
+        switch (projectScope) {
+            case ProjectScope.MainAccount ignored -> sql.append(" AND project_id IS NULL");
+            case ProjectScope.OfProject of -> {
+                sql.append(" AND project_id = ?");
+                params.add(of.projectId());
+            }
+            case ProjectScope.All ignored -> {
+                // 不附加 project_id 约束
+            }
+        }
 
         if (q != null && !q.isBlank()) {
             sql.append(" AND (title LIKE ? OR summary LIKE ?)");

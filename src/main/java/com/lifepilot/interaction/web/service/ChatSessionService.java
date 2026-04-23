@@ -102,7 +102,28 @@ public class ChatSessionService {
 
     public List<SessionInfo> listSessions(String q, Boolean pinned, Boolean archived,
                                           String timeRange, String sortBy, String order) {
-        return sessionRepository.findByConditions(q, pinned, archived, timeRange, sortBy, order)
+        return listSessions(q, pinned, archived, timeRange, sortBy, order, null);
+    }
+
+    /**
+     * 按项目维度获取会话列表。
+     *
+     * <p>projectId 语义：</p>
+     * <ul>
+     *   <li>{@code null}（默认）—— 只返回主账户对话（project_id IS NULL）</li>
+     *   <li>非空 —— 只返回归属该项目的对话</li>
+     * </ul>
+     *
+     * @param projectId 归属项目 ID（可选）
+     */
+    public List<SessionInfo> listSessions(String q, Boolean pinned, Boolean archived,
+                                          String timeRange, String sortBy, String order,
+                                          @Nullable String projectId) {
+        SessionStoreRepository.ProjectScope projectScope = projectId == null || projectId.isBlank()
+                ? SessionStoreRepository.ProjectScope.mainAccount()
+                : SessionStoreRepository.ProjectScope.ofProject(projectId);
+        return sessionRepository
+                .findByConditions(q, pinned, archived, timeRange, sortBy, order, projectScope)
                 .stream()
                 .map(this::toSessionInfo)
                 .toList();
