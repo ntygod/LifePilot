@@ -208,6 +208,7 @@ class ChatTurnService_集成测试 {
                     personal_space_id TEXT,
                     experience_space_id TEXT,
                     domain_write_space_id TEXT,
+                    project_space_id TEXT,
                     read_space_ids_json TEXT NOT NULL,
                     effective_knowledge_base_ids_json TEXT NOT NULL,
                     effective_datastore_ids_json TEXT NOT NULL,

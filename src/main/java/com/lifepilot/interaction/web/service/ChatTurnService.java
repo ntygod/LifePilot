@@ -313,6 +313,7 @@ public class ChatTurnService {
                 personalSpace.id(),
                 experienceSpace.id(),
                 domainWriteSpaceId,
+                null,  // projectSpaceId — Step B 接入 ProjectContextResolver 后填充
                 readSpaceIds,
                 knowledgeBaseIds,
                 datastoreIds,
