@@ -26,8 +26,6 @@ import java.util.Map;
  */
 public class NotifyToolProvider {
 
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
-
     private final NotificationService notificationService;
     private final NotificationProperties notificationProperties;
 
@@ -53,9 +51,7 @@ public class NotifyToolProvider {
                 .id("notify")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
-                .description("向用户推送通知消息（非阻塞）。" +
-                        "适用于定时任务结果、后台任务完成提醒、告警等场景。" +
-                        "正常对话中直接在回复里说即可，不需要此工具。")
+                .description("Push a non-blocking notification message to the user. Use for scheduled task results, background job completion, or alerts. For inline conversation replies, respond directly without this tool.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("message"),
@@ -72,7 +68,7 @@ public class NotifyToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.none()
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "notify", "message", "send", "alert", "notification", "push"))
                 .executor(executor::execute)
                 .build();
     }

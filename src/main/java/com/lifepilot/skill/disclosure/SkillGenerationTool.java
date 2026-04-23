@@ -66,13 +66,13 @@ public class SkillGenerationTool {
         BuiltinTool generateTool = BuiltinTool.builder()
                 .id("generate_skill")
                 .name("生成 Skill")
-                .description("根据需求自动生成新技能")
+                .description("Generate a new skill definition from a natural language request. Used when the agent detects a capability gap.")
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .category(ToolCategory.EXTENSION)
-                .tags(List.of("skill", "generation", "discovery"))
+                .tags(List.of("skill", "generate", "create", "discovery", "capability"))
                 .executor(this::handleGenerateSkill)
                 .build();
 

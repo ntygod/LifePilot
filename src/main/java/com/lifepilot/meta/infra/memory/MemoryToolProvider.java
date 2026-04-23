@@ -102,23 +102,7 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("搜索和管理用户的长期记忆。\n\n" +
-                        "自动行为：对话中的事实由系统自动提取存储，用户画像和相关经验已自动注入上下文。\n\n" +
-                        "手动使用场景：\n" +
-                        "- search：用户提到具体人/事/项目时，搜索相关知识实体\n" +
-                        "- recall：用户引用历史对话（\u201C上次聊的\u201D\u201C之前说过\u201D）时，回忆完整对话片段\n" +
-                        "- create：用户明确要求记住某事，或表达了重要偏好/目标变更\n" +
-                        "- update：已有实体信息需要修正或补充\n" +
-                        "- delete：用户要求遗忘**已知 ID** 的某条记忆（精确删除）\n" +
-                        "- cancel：**用户表达取消/撤销/不再做某事时必选**。根据语义描述批量归档相关 GOAL/EXPERIENCE/HABIT，" +
-                        "避免后续仍基于旧记忆提醒用户。\n" +
-                        "  典型触发词：\u201C取消 X\u201D、\u201C撤销 X\u201D、\u201C不要再 X\u201D、\u201C以后别提 X\u201D、\u201CX 不做了\u201D。\n" +
-                        "  重要：这类语义下**只 create PREFERENCE 是不够的**，老的 GOAL/EXPERIENCE 仍会继续被召回，" +
-                        "必须同时用 cancel 归档相关旧记忆。\n" +
-                        "- search-experience：需要借鉴过往类似任务的执行经验\n" +
-                        "- query-at-time：需要查询某个时间点的历史状态\n\n" +
-                        "不需要调用的情况：当前上下文已有足够信息、纯闲聊、一般知识问答。\n" +
-                        "资料文档检索请用 knowledge.search。")
+                .description("Search and manage the user long-term memory. Typical actions: search (find entities), recall (retrieve historical conversation fragments), create (persist a new fact or preference), update (amend an existing entry), delete (remove by known ID), cancel (archive goal/experience entries when the user revokes intent), tag (attach labels), query-at-time (query historical state), search-experience (find prior similar task experiences). Not needed for plain chat. For document retrieval use knowledge.search.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -156,6 +140,7 @@ public class MemoryToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("entityNames", false, "name", "entityId", "sourceEntityId", "targetEntityId")
                 ))
+                .tags(List.of("memory", "recall", "remember", "store", "save", "knowledge", "history", "search"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -167,7 +152,7 @@ public class MemoryToolProvider {
         return BuiltinTool.builder()
                 .id("knowledge.search")
                 .name("检索资料")
-                .description("搜索当前会话绑定的资料内容。搜索知识实体用 memory(action=search)，历史对话用 memory(action=recall)")
+                .description("Search documents bound to the current session by semantic similarity. Use memory(action=search) for entities and memory(action=recall) for conversations.")
                 .category(ToolCategory.PERCEPTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -180,6 +165,7 @@ public class MemoryToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
+                .tags(List.of("knowledge", "search", "rag", "retrieve", "query", "document", "session"))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);

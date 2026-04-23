@@ -49,7 +49,7 @@ public class StorageToolProvider {
         return BuiltinTool.builder()
                 .id("datastore")
                 .name("数据存储")
-                .description("结构化数据存储操作")
+                .description("Execute structured datastore operations on collections. Actions: create-collection, list-collections, update-collection, delete-collection, add, get, query, update, delete, aggregate.")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(buildSchema()))
                 .riskLevel(RiskLevel.MEDIUM)
@@ -59,6 +59,7 @@ public class StorageToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.exactValues("collections", "name", "collectionName", "documentId")
                 ))
+                .tags(List.of("datastore", "storage", "database", "collection", "query", "crud", "aggregate", "document"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

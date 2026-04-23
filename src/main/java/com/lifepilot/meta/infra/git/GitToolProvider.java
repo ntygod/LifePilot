@@ -24,8 +24,6 @@ import java.util.Map;
  */
 public class GitToolProvider {
 
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
-
     private final GitCommandExecutor gitCmd;
     private final MetaProperties.Infra.Git gitConfig;
 
@@ -63,7 +61,7 @@ public class GitToolProvider {
                 .id("git.query")
                 .category(ToolCategory.PERCEPTION)
                 .name("Git 查询")
-                .description("Git 仓库只读查询")
+                .description("Run read-only queries against a Git repository. Supported actions: status, diff, log, blame.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action", "path"),
@@ -99,7 +97,7 @@ public class GitToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "git", "query", "status", "diff", "log", "blame", "repository"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -111,7 +109,7 @@ public class GitToolProvider {
                 .id("git.mutate")
                 .category(ToolCategory.ACTION)
                 .name("Git 变更")
-                .description("Git 写操作")
+                .description("Perform write operations on a Git repository. Supported actions: commit, stash, branch.")
                 .inputSchema(JsonSchema.of(buildMutateSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -120,7 +118,7 @@ public class GitToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "git", "commit", "stash", "branch", "write", "repository"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

@@ -24,7 +24,7 @@ import java.util.Map;
  */
 public class UiEmitToolProvider {
 
-    private static final List<String> UI_TAGS = List.of("ui", "interaction");
+    private static final List<String> UI_TAGS = List.of("ui", "render", "component", "interactive", "emit", "frontend", "widget");
 
     private final SseSessionManager sseManager;
     private final int maxComponentsPerTree;
@@ -53,9 +53,7 @@ public class UiEmitToolProvider {
         return BuiltinTool.builder()
                 .id("ui.emit")
                 .name("渲染交互组件")
-                .description("将结构化组件树推送到前端渲染为交互式 UI。" +
-                        "仅在需要按钮、表单、signal 等交互能力时使用。" +
-                        "纯展示内容（表格、列表、标题）应使用 Markdown。")
+                .description("Render structured component trees to the frontend as interactive UI. Use only when interactivity is required (buttons, forms, signals). Plain display content (tables, lists, headings) should use Markdown instead.")
                 .category(ToolCategory.INTERACTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
