@@ -197,6 +197,56 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
+    # ===== Tier 1 分层注入（Task 0.4）=====
+    # pinned：人工固定的常驻完整 schema 工具（相当于旧 core-tool-ids，Phase B 删旧字段）
+    # 其余工具进 BM25 搜索池，通过 tools.search 被 LLM 发现
+    tier1:
+      pinned:
+        - tools.search
+        - tools.describe
+        - tools.list
+        - file.read
+        - file.write
+        - file.list
+        - web.search
+        - web.fetch
+        - shell.exec
+        - memory
+        - knowledge.search
+      promotion:
+        enabled: true
+        window-days: 30
+        session-threshold: 0.3
+        max-promoted: 3
+      demotion:
+        enabled: true
+        idle-days: 60
+        respect-pinned: true
+    # ===== 搜索服务 =====
+    search:
+      default-limit: 5
+      max-limit: 20
+      bm25-confidence-threshold: 1.0
+      cache:
+        layer-a-max-size: 500
+        layer-b-max-size: 1000
+        layer-b-ttl-minutes: 5
+      fallback:
+        # 向量 fallback 默认关闭，观察 BM25 召回率再决定是否启用
+        vector-enabled: false
+    # ===== describe 服务 =====
+    describe:
+      max-batch-size: 10
+    # ===== Category hint — 注入 system prompt 末尾 =====
+    category-hint: |
+      You have access to a tool registry indexed in English.
+      Besides the tools visible above, you can discover more via:
+        - tools.search(query, category?) to find tools by keyword
+        - tools.describe(ids[]) to inspect schemas
+        - tools.list(category?) to browse by capability category
+      Available categories: PERCEPTION, ACTION, COGNITION, STORAGE,
+        INTERACTION, INTROSPECTION, EXTENSION.
+      Always use English keywords in search queries.
   memory:
     # ===== 记忆系统配置 =====
     # 四层认知记忆：L1 工作记忆 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆
