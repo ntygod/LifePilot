@@ -307,6 +307,28 @@ public class MemoryProvenanceRepository {
                 String.class, sourceId);
     }
 
+    /**
+     * 列出 memory_entity_provenances 中当前仍 {@code VALID} 状态行引用过的所有
+     * document ID（去重），供 Task 27 {@code OrphanProvenanceScanner} 与
+     * {@code session_documents} 对照检测孤儿引用。
+     *
+     * <p>只扫 {@code status = 'VALID'}：已由 {@code ProvenanceStaleListener} 标为
+     * STALE 的行不再重复发 {@link com.lifepilot.memory.lifecycle.events.SourceInvalidated}
+     * 事件，避免幂等事件污染下游。</p>
+     *
+     * @return 去重后的 document ID 列表（非 null）
+     */
+    public List<String> listDistinctSourceDocumentIds() {
+        return jdbcTemplate.queryForList(
+                """
+                SELECT DISTINCT source_document_id
+                FROM memory_entity_provenances
+                WHERE source_document_id IS NOT NULL
+                  AND status = 'VALID'
+                """,
+                String.class);
+    }
+
     private String sourceColumn(SourceType type) {
         return switch (type) {
             case DOCUMENT -> "source_document_id";
