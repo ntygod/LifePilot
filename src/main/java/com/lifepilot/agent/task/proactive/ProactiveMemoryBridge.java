@@ -7,8 +7,11 @@ import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;
@@ -36,15 +39,41 @@ public class ProactiveMemoryBridge {
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final ProceduralMemory proceduralMemory;
     private final GoalTrackingRepository goalTrackingRepository;
+    /**
+     * 主动任务 → L3 insight 关联查询/写入。允许为 null 以兼容未通过 JDBC
+     * 装配的单测场景；生产 AutoConfiguration 始终注入。
+     */
+    @Nullable private final JdbcTemplate jdbcTemplate;
+    /** Spring 事件总线 — Task 13 发 ProactiveTaskCancelled；单测可为空。 */
+    @Nullable private ApplicationEventPublisher eventPublisher;
 
     public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
                                   @Nullable EpisodicMemory episodicMemory,
                                   @Nullable ProceduralMemory proceduralMemory,
                                   GoalTrackingRepository goalTrackingRepository) {
+        this(semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, null);
+    }
+
+    public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
+                                  @Nullable EpisodicMemory episodicMemory,
+                                  @Nullable ProceduralMemory proceduralMemory,
+                                  GoalTrackingRepository goalTrackingRepository,
+                                  @Nullable JdbcTemplate jdbcTemplate) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
         this.goalTrackingRepository = goalTrackingRepository;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * 注入 Spring {@link ApplicationEventPublisher} — setter 注入避免破坏
+     * 现有多参构造器签名和大量手工装配测试。
+     *
+     * @param eventPublisher 事件发布器
+     */
+    public void setEventPublisher(@Nullable ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
     }
 
     // ── 目标查询（替代 IntentMemoryService） ──
@@ -75,8 +104,22 @@ public class ProactiveMemoryBridge {
         }
     }
 
-    /** 标记目标完成 — 归档 L3 实体 + 清理追踪。 */
+    /**
+     * 标记目标完成 — 归档 L3 实体 + 清理追踪 + 发
+     * {@link com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled}。
+     *
+     * <p>事件 payload 中 {@code relatedInsightEntityIds} 来自
+     * {@link #findInsightEntityIdsByTask(String)}，在归档前查询以避免
+     * 外键级联清理掉关联行。事件订阅方（ProactiveTaskCancelListener，
+     * Phase 1 挂载）负责将这些 insight 转 CANCELLED。</p>
+     *
+     * <p>taskId 即为 L3 GOAL 实体 id。</p>
+     *
+     * @param entityId 主动任务 id（即 GOAL 实体 id）
+     */
     public void markGoalFulfilled(String entityId) {
+        // 归档前先查关联 insight，避免外键级联清理掉关联行
+        List<String> relatedInsightIds = findInsightEntityIdsByTask(entityId);
         if (semanticMemory != null) {
             try {
                 semanticMemory.findById(entityId).ifPresent(semanticMemory::archive);
@@ -85,6 +128,70 @@ public class ProactiveMemoryBridge {
             }
         }
         goalTrackingRepository.deleteByEntityId(entityId);
+        if (eventPublisher != null) {
+            try {
+                eventPublisher.publishEvent(new ProactiveTaskCancelled(entityId, relatedInsightIds));
+            } catch (Exception e) {
+                log.warn("记忆桥接: ProactiveTaskCancelled 发布失败, taskId={}, error={}",
+                        entityId, e.getMessage());
+            }
+        }
+        log.debug("记忆桥接: 目标归档完成, taskId={}, 级联 insight 数={}",
+                entityId, relatedInsightIds.size());
+    }
+
+    /**
+     * 查询指定主动任务（goal 实体 id 即为 taskId）关联的所有 L3 insight
+     * 实体 id — 用于发布 {@code ProactiveTaskCancelled} 事件时的 payload。
+     *
+     * <p>关联表 {@code proactive_task_insight_links} 在 V17 迁移中建立，
+     * 需要有明确 goal 归属的 insight 通过
+     * {@link #linkInsightToTask(String, String)} 显式挂钩。
+     * {@link ImplicitSignalCollector} 产出的全局隐式信号不走这里，因为
+     * 它们与特定 goal 无关。</p>
+     *
+     * @param taskId 主动任务 id（即 GOAL 实体 id）
+     * @return 关联的 insight 实体 id 列表；JdbcTemplate 未注入或表不存在时返回空
+     */
+    public List<String> findInsightEntityIdsByTask(String taskId) {
+        if (jdbcTemplate == null) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.queryForList(
+                    "SELECT entity_id FROM proactive_task_insight_links WHERE task_id = ?",
+                    String.class, taskId);
+        } catch (Exception e) {
+            log.debug("记忆桥接: insight 关联查询失败, taskId={}, error={}", taskId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 将 L3 insight 实体挂钩到主动任务 — 显式建立
+     * {@code (task_id, entity_id)} 关联，供 {@code markGoalFulfilled} 级联取消。
+     *
+     * <p>幂等：{@code PRIMARY KEY (task_id, entity_id)} 保证重复调用只留一条。</p>
+     *
+     * @param taskId   主动任务 id（即 GOAL 实体 id）
+     * @param entityId L3 insight 实体 id
+     */
+    public void linkInsightToTask(String taskId, String entityId) {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        try {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO proactive_task_insight_links(task_id, entity_id, created_at)
+                    VALUES(?, ?, ?)
+                    ON CONFLICT(task_id, entity_id) DO NOTHING
+                    """,
+                    taskId, entityId, Instant.now().toString());
+        } catch (Exception e) {
+            log.debug("记忆桥接: insight 关联写入失败, taskId={}, entityId={}, error={}",
+                    taskId, entityId, e.getMessage());
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ import com.lifepilot.prompt.PromptRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -49,8 +50,13 @@ public class ProactiveAutoConfiguration {
             @Autowired(required = false) SemanticMemory semanticMemory,
             @Autowired(required = false) EpisodicMemory episodicMemory,
             @Autowired(required = false) ProceduralMemory proceduralMemory,
-            GoalTrackingRepository goalTrackingRepository) {
-        return new ProactiveMemoryBridge(semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository);
+            GoalTrackingRepository goalTrackingRepository,
+            JdbcTemplate jdbcTemplate,
+            ApplicationEventPublisher eventPublisher) {
+        var bridge = new ProactiveMemoryBridge(
+                semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, jdbcTemplate);
+        bridge.setEventPublisher(eventPublisher);
+        return bridge;
     }
 
     @Bean
