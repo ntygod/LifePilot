@@ -306,27 +306,159 @@ public record SourceInvalidated(
 
 ## 6. 实施顺序（供 plan 拆分）
 
+0. **测试基础设施前置**（与 step 1 同一个 PR 完成）：
+   - 确认/抽出 `ReactAgentLoop.run(Session, UserMessage)` 可直接调用的入口；现有若只有 HTTP/SSE 入口，抽一层纯函数级 API（测试和生产都用）
+   - 新增 `MemoryQueryApi`：测试专用只读接口（不对外暴露 HTTP），统一断言入口
+   - 实现测试替身：`FixtureBackedGenerationRouter` / `MutableClock` / `ManualTaskScheduler`
+   - 抽 `场景测试基类` + Fixture 加载器（见 §7.4 / §7.5）
 1. **V15 迁移 + Repository 层**：新字段读写，默认值兼容
 2. **事件定义 + 发布点改造**：`SemanticMemory.archive()` / `cancel` / `upsert` 发事件
-3. **四个 Listener**：按 4.3 实现，每个独立可测
+3. **四个 Listener**：按 §4.3 实现，每个独立可测
 4. **memory 工具 action 扩展**：`complete` + `supersede` + `cancel` 扩覆盖
 5. **RealtimeExtractor + prompt 升级**：temporality 字段
 6. **LLM 冲突裁决**：`ConflictResolutionService` + 异步队列
 7. **Cron 作业**：三个 scanner
 8. **检索层过滤**：状态过滤 + STALE 标注
-9. **E2E 回归**：6 个症状场景
+9. **E2E 回归**：6 个症状场景全部通过
 
-每步独立可测、可回滚。建议按上述顺序一个 PR 一个 step（或前三步合并一个基础 PR）。
+每步独立可测、可回滚。建议 step 0+1 合并基础 PR，其余一步一 PR。
 
 ---
 
 ## 7. 测试策略
 
-- **单元**：每个 Listener 对各种事件的响应；状态机转换合法性（非法转换抛异常）
-- **集成**：事件总线在事务中的行为（`@TransactionalEventListener(AFTER_COMMIT)` 的提交/回滚场景）
-- **属性测试**（jqwik）：任意实体状态序列下不变量（"非 ACTIVE 实体不得出现在默认检索结果"）
-- **E2E**：6 个症状场景对应的对话脚本，跑 `ReactAgentLoop` 验证最终记忆状态
-- **回归**：现有记忆测试套件全绿
+### 7.1 核心原则
+
+1. **以用户可感知结果断言，不断言 LLM 内部路径**
+   测试不写"LLM 应该调 `memory.cancel`"，写"经过这轮对话，该 GOAL 的 `lifecycle_state = CANCELLED`"。LLM 若走错路径（调 update、漏调、调成 delete），状态达不到预期 → 测试 FAIL。这本身就是暴露 LLM 提取/决策缺陷的信号。
+
+2. **真实性从集成层开始**
+   单元测试可以 mock，但场景 E2E 必须走**真实** `ApplicationEventPublisher` + **真实** SQLite + **真实** `ReactAgentLoop` + **真实**工具实现。端到端禁止 mock 事件总线、监听器或数据库。**唯一的替身是 LLM 本身**。
+
+### 7.2 测试分层
+
+| 层级 | 范围 | 真实性 | 执行时机 |
+|---|---|---|---|
+| 单元 | Listener 逻辑 / 状态机转换 / 冲突裁决策略 | 单点 mock | 每次 `mvn test` |
+| 属性（jqwik） | 状态机不变量、检索过滤不变量 | 随机输入 | 每次 `mvn test` |
+| 集成 | 事件 × 事务行为 / Listener → 真 DB 副作用 | 真 Spring + 真 SQLite | 每次 `mvn test` |
+| **场景 E2E** | 6 个症状的完整对话故事线 | 真 ReactAgentLoop + 真 SQLite + LLM fixture | 每次 `mvn test` |
+| 真实 LLM 冒烟 | 同上 + 自由对话探索 | 全真 | `-Dsmoke.real-llm=true` / 发版前 |
+
+### 7.3 基础设施（`ScenarioTestConfiguration`）
+
+| 组件 | 测试期替换 | 理由 |
+|---|---|---|
+| `GenerationRouter` | `FixtureBackedGenerationRouter`：按对话上下文从 JSON fixture 读响应 | 唯一不走真实的一环 |
+| `EmbeddingRouter` | 保留真实（本地 Ollama）或返回固定向量的 stub | 冲突裁决阈值判断依赖，值不敏感 |
+| `java.time.Clock` | `MutableClock`：支持 `advance(Duration)` | 控 TTL 过期、下周一 tick |
+| `TaskScheduler` | `ManualTaskScheduler`：不跑真 cron，暴露 `triggerDueAt(Instant)` | 场景 S1 要手动触发"下周一早上 10 点" |
+| DB | `@TempDir` 下临时 SQLite，Flyway 真跑 V1~V15 | 每个 case 全新库 |
+| `ReactAgentLoop` / `MemoryTool` / `Scheduler` 写入 / 事件总线 / 监听器 | **全部真实** | 这就是"闭环"的被测对象 |
+
+### 7.4 测试基类
+
+```java
+@SpringBootTest
+@ActiveProfiles("scenario-test")
+@Import(ScenarioTestConfiguration.class)
+abstract class 场景测试基类 {
+    @Autowired ReactAgentLoop agentLoop;
+    @Autowired MutableClock clock;
+    @Autowired LlmFixture fixture;
+    @Autowired ManualTaskScheduler scheduler;
+    @Autowired MemoryQueryApi queryApi;
+    @Autowired ExpirationScanner expirationScanner;
+
+    protected TurnResult 模拟用户说(String text) {
+        return agentLoop.run(testSession, UserMessage.of(text));
+    }
+    protected void 时间推进(Duration d)               { clock.advance(d); }
+    protected List<Notification> 触发到期Scheduler()  { return scheduler.triggerDueAt(clock.instant()); }
+    protected void 运行过期扫描Cron()                 { expirationScanner.scanNow(); }
+    protected MemoryEntity 查实体(String id)          { return queryApi.findById(id); }
+}
+```
+
+### 7.5 Fixture 格式
+
+`src/test/resources/llm-fixtures/{scenario}.json`：
+
+```json
+[
+  { "when": { "last_user_contains": "每周一早上 10 点" },
+    "respond": {
+      "tool_calls": [
+        { "tool": "memory.create",        "args": { "type": "GOAL", "name": "每周一汇报" } },
+        { "tool": "scheduler.schedule",   "args": { "cron": "0 10 * * 1" } }
+      ],
+      "final": "已安排。"
+    } },
+  { "when": { "last_user_contains": "别做了|取消" },
+    "respond": {
+      "tool_calls": [ { "tool": "memory.cancel", "args": { "entity_id": "$last_goal_id" } } ],
+      "final": "已取消。"
+    } }
+]
+```
+
+- **匹配软**（contains / regex）—— prompt 轻微漂移不破坏测试
+- **tool_calls 硬**（逐字段断言）—— LLM 行为实质变化（调错工具、漏调）直接 FAIL
+- **`$变量`** —— 跨轮次引用上一轮的产物 id，由 Fixture 加载器捕获注入
+
+### 7.6 6 个场景脚本
+
+每个症状一个测试类，位于 `src/test/java/com/lifepilot/memory/scenarios/`，中文命名。
+
+| ID | 对话序列 | 核心断言 |
+|---|---|---|
+| S1 | "每周一 10 点汇报" → +3 天 → "别做了" → +4 天（下周一） → 触发 Scheduler | 实体 `CANCELLED` + procedure `is_active=false` + Scheduler 无通知产出 |
+| S3 | "加个任务：重构记忆" → "搞完了" → "还有哪些任务" | 实体 `COMPLETED` + 待办列表不含它 |
+| S4 | "最爱 Python" → "现在更爱 Rust" → "我爱什么语言" | 老实体 `SUPERSEDED`、`succeeded_by` 指向新实体，召回只见 Rust |
+| S5 | "最近忙不想碰代码" → +8 天 → 运行过期扫描 → "我想做什么" | `temporality=EPHEMERAL`，8 天后 `EXPIRED`，LLM 不引用 |
+| S6 | "我是素食" → Cron L3→L4 → "我又吃肉了" | L3 老实体 `SUPERSEDED` + L4 `preference_rules.is_active=false` + `deactivated_reason` 写入 |
+| S7 | 上传文档 → 提取偏好 → 删文档 → "我的工作习惯" | `provenance.status=STALE` + 召回结果带 `needsRevalidation=true` |
+
+### 7.7 S1 完整示例
+
+```java
+class 取消定时任务后不再提醒_场景测试 extends 场景测试基类 {
+    @Test
+    void 取消后下周一Scheduler不应产生提醒() {
+        fixture.load("S1_取消定时任务");
+
+        模拟用户说("每周一早上 10 点提醒我做汇报");
+        var goalId = queryApi.findLatestGoalId();
+        assertThat(查实体(goalId).lifecycleState()).isEqualTo(ACTIVE);
+
+        时间推进(Duration.ofDays(3));
+        模拟用户说("那个定时汇报别做了");
+        assertThat(查实体(goalId).lifecycleState()).isEqualTo(CANCELLED);
+        assertThat(queryApi.findProcedureBySourceEntity(goalId).isActive()).isFalse();
+
+        时间推进(Duration.ofDays(4));
+        var 提醒列表 = 触发到期Scheduler();
+        assertThat(提醒列表).isEmpty();
+    }
+}
+```
+
+### 7.8 LLM 非确定性处理
+
+- **默认 fixture**：如 §7.5
+- **真实 LLM 模式**：`-Dsmoke.real-llm=true` 切真 LLM、temperature=0；跑完把实际响应写回 fixture 做 diff（可看出 prompt 漂移）
+- **断言稳健化**：断结构化字段（entity_id / state / action_type），不断文本字面量
+
+### 7.9 负面场景（必测）
+
+- **LLM 调错工具**：fixture 里故意写成 `memory.update` 而非 `cancel` → 状态不到 CANCELLED → 测试 FAIL（验证信号不被吞掉）
+- **Listener 抛异常**：主事务已提交不回滚，事件进补偿队列；下次 Cron 重试后一致
+- **事件重放**：同一事件连续 publish 2 次，最终状态与 1 次相同（幂等）
+
+### 7.10 回归
+
+- 现有记忆相关测试必须全绿
+- 若某测试因 `lifecycle_state` 默认 `ACTIVE` 兼容而误通过，补一条状态断言明确期望
 
 ---
 
