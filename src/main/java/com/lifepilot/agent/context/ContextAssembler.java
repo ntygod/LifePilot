@@ -65,9 +65,35 @@ public class ContextAssembler {
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
 
-    /** 记忆统计缓存（不可变 record，单字段原子读写）。 */
+    /** 记忆统计缓存（不可变 record）。 */
     private record MetadataCache(MemoryCounts counts, Instant cachedAt) {}
-    private volatile MetadataCache metadataCache;
+
+    /**
+     * 记忆统计缓存上限 — 按 filter 为 key 分桶；LRU 淘汰。
+     *
+     * <p>32 足以覆盖"主账户 + N 个项目 × 若干 scope 组合"常见工作集；
+     * 超过后按访问顺序淘汰最旧项，控制内存占用。</p>
+     */
+    private static final int METADATA_CACHE_MAX_SIZE = 32;
+
+    /**
+     * 按 filter 分桶的记忆统计缓存。
+     *
+     * <p>为什么按 filter 分桶：{@code buildMemoryCounts(MemoryReadFilter)} 每个项目
+     * 传入的 filter 不同（spaceIds 不同），若仅按时间 TTL 单桶会导致主账户缓存被
+     * 当作隔离项目的返回值（跨项目污染）。 {@link MemoryReadFilter} 是 record，
+     * 天然支持 equals / hashCode，可直接作为 key。</p>
+     *
+     * <p>使用 {@link LinkedHashMap} accessOrder 模式 + 外部同步实现 LRU；每次访问更新顺序。
+     * 不用 {@link java.util.concurrent.ConcurrentHashMap} 是因为它无法原生支持 LRU 淘汰。</p>
+     */
+    private final Map<MemoryReadFilter, MetadataCache> metadataCache =
+            Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<MemoryReadFilter, MetadataCache> eldest) {
+                    return size() > METADATA_CACHE_MAX_SIZE;
+                }
+            });
 
     /**
      * 记忆分类计数, 供各 context section 首行展示 —
@@ -626,15 +652,15 @@ public class ContextAssembler {
         if (semanticMemory == null) {
             return MemoryCounts.EMPTY;
         }
-        MetadataCache cached = metadataCache;
         Instant now = Instant.now();
+        MetadataCache cached = metadataCache.get(filter);
         if (cached != null && Duration.between(cached.cachedAt(), now).compareTo(METADATA_CACHE_TTL) < 0) {
             return cached.counts();
         }
         try {
             Map<EntityType, Integer> counts = semanticMemory.countByEntityType(filter);
             if (counts.isEmpty()) {
-                metadataCache = new MetadataCache(MemoryCounts.EMPTY, now);
+                metadataCache.put(filter, new MetadataCache(MemoryCounts.EMPTY, now));
                 return MemoryCounts.EMPTY;
             }
             // 分类统计
@@ -669,7 +695,7 @@ public class ContextAssembler {
                     ? "共 " + factCount + " 条（" + factDetails + "）"
                     : "";
             MemoryCounts result = new MemoryCounts(profileLine, experienceLine, factLine);
-            metadataCache = new MetadataCache(result, now);
+            metadataCache.put(filter, new MetadataCache(result, now));
             return result;
         } catch (Exception e) {
             log.debug("记忆统计构建失败: {}", e.getMessage());
