@@ -45,7 +45,8 @@ class CronScheduler_AgentOrchestrator_集成测试 {
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule TEXT NOT NULL,
                     instruction TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    skill_ids TEXT
+                    skill_ids TEXT,
+                    project_id TEXT
                 )""");
         jdbc.execute("""
                 CREATE TABLE cron_task_logs (

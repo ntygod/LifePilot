@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +31,8 @@ public class CronTaskRepository {
             rs.getString("status"),
             rs.getString("created_at"),
             rs.getString("updated_at"),
-            rs.getString("skill_ids")
+            rs.getString("skill_ids"),
+            rs.getString("project_id")
     );
 
     private static final RowMapper<CronTaskLog> LOG_MAPPER = (rs, _) -> new CronTaskLog(
@@ -51,12 +53,13 @@ public class CronTaskRepository {
     /** 保存新任务。 */
     public void save(CronTaskEntry entry) {
         jdbc.update("""
-                INSERT INTO cron_tasks (id, name, schedule, instruction, status, created_at, updated_at, skill_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cron_tasks (id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 entry.id(), entry.name(), entry.schedule(), entry.instruction(),
-                entry.status(), entry.createdAt(), entry.updatedAt(), entry.skillIds());
-        log.debug("Cron 任务已保存: id={}, name={}", entry.id(), entry.name());
+                entry.status(), entry.createdAt(), entry.updatedAt(), entry.skillIds(), entry.projectId());
+        log.debug("Cron 任务已保存: id={}, name={}, projectId={}",
+                entry.id(), entry.name(), entry.projectId());
     }
 
     /** 更新任务。 */
@@ -80,7 +83,7 @@ public class CronTaskRepository {
     /** 按 ID 查询任务。 */
     public Optional<CronTaskEntry> findById(String id) {
         var results = jdbc.query("""
-                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
                 FROM cron_tasks WHERE id = ?""", TASK_MAPPER, id);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
@@ -89,7 +92,7 @@ public class CronTaskRepository {
     public List<CronTaskEntry> findByStatus(String status) {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
                 FROM cron_tasks WHERE status = ? ORDER BY created_at""",
                 TASK_MAPPER, status));
     }
@@ -98,8 +101,31 @@ public class CronTaskRepository {
     public List<CronTaskEntry> findAll() {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
                 FROM cron_tasks ORDER BY created_at""", TASK_MAPPER));
+    }
+
+    /**
+     * 按项目归属查询任务列表。
+     *
+     * <p>{@code projectId == null} 表示归属主账户，走 {@code project_id IS NULL} 匹配；
+     * 非 null 则按精确等值匹配。归属不可迁移，UPDATE 不会修改 project_id。</p>
+     *
+     * @param projectId 项目 ID；{@code null} 表示查询主账户任务
+     */
+    public List<CronTaskEntry> findByProjectId(@Nullable String projectId) {
+        if (projectId == null) {
+            return List.copyOf(jdbc.query(
+                    """
+                    SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
+                    FROM cron_tasks WHERE project_id IS NULL ORDER BY created_at DESC""",
+                    TASK_MAPPER));
+        }
+        return List.copyOf(jdbc.query(
+                """
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
+                FROM cron_tasks WHERE project_id = ? ORDER BY created_at DESC""",
+                TASK_MAPPER, projectId));
     }
 
     /** 保存执行日志。 */

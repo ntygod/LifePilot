@@ -38,7 +38,8 @@ class CronTaskRepository_集成测试 {
                     status      TEXT NOT NULL DEFAULT 'active',
                     created_at  TEXT NOT NULL,
                     updated_at  TEXT NOT NULL,
-                    skill_ids   TEXT
+                    skill_ids   TEXT,
+                    project_id  TEXT
                 )""");
         jdbc.execute("""
                 CREATE TABLE cron_task_logs (
