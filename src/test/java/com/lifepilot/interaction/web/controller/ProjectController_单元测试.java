@@ -4,6 +4,7 @@ import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.project.CreateProjectRequest;
 import com.lifepilot.interaction.web.model.project.ProjectResponse;
 import com.lifepilot.interaction.web.model.project.UpdateProjectRequest;
+import com.lifepilot.project.exception.ProjectNotFoundException;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.service.ProjectService;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -143,10 +145,19 @@ class ProjectController_单元测试 {
     }
 
     @Test
-    void 删除项目_委派给service() {
-        ApiResponse<Void> resp = controller.delete("p-1");
+    void 更新项目_项目不存在_向上抛ProjectNotFoundException交由advice转404() {
+        when(service.updateProject(eq("nope"), any(), any(), any()))
+                .thenThrow(new ProjectNotFoundException("nope"));
 
-        verify(service).deleteProject("p-1");
-        assertEquals(200, resp.code());
+        assertThrows(ProjectNotFoundException.class, () ->
+                controller.update("nope", new UpdateProjectRequest("新名", "", "ISOLATED")));
+    }
+
+    @Test
+    void 创建项目_非法isolation字符串_Controller转400() {
+        // ProjectIsolation.fromString("INVALID") 抛 IAE；Controller catch 后转 ResponseStatusException(400)
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                controller.create(new CreateProjectRequest("项目", "", "INVALID")));
+        assertEquals(400, ex.getStatusCode().value());
     }
 }

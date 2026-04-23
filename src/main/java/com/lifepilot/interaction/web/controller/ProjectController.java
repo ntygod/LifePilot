@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,10 +25,15 @@ import java.util.List;
 /**
  * 项目（Project）REST 端点。
  *
- * <p>提供 CRUD：创建 / 列表 / 详情 / 更新 / 删除。Controller 层只做参数规范化与
- * DTO 映射，业务与校验委派给 {@link ProjectService}。与其他 Controller 保持风格：
- * 返回 {@link ApiResponse}，错误通过 {@link ResponseStatusException} 抛出由
- * 全局异常处理器统一转换为 HTTP 状态码。</p>
+ * <p>提供：创建 / 列表 / 详情 / 更新。Controller 层只做参数规范化与 DTO 映射，
+ * 业务与校验委派给 {@link ProjectService}。与其他 Controller 保持风格：
+ * 返回 {@link ApiResponse}，错误通过 {@link ResponseStatusException} 或领域
+ * 异常（如 {@code ProjectNotFoundException}）抛出，由全局异常处理器统一转换。</p>
+ *
+ * <p><b>注意</b>：删除（DELETE）端点暂未开放——
+ * {@link ProjectService#deleteProject} 仅级联清理 MemorySpace，尚未覆盖
+ * conversations 及其子表。该能力将在 Plan 1 Task 16 完成后统一补齐并开放。
+ * 在此之前，Controller 层不暴露删除能力以避免产生孤儿 conversations。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -96,7 +100,9 @@ public class ProjectController {
     /**
      * 更新项目 name / instructions / isolation。
      *
-     * <p>{@code instructions} / {@code isolation} 为 null 时由 Service 保留原值。</p>
+     * <p>{@code instructions} / {@code isolation} 为 null 时由 Service 保留原值。
+     * 项目不存在时 Service 抛 {@code ProjectNotFoundException}，由 advice 转 404；
+     * 重名或非法 isolation 枚举抛 {@link IllegalArgumentException}，此处转 400。</p>
      */
     @PutMapping("/{id}")
     public ApiResponse<ProjectResponse> update(@PathVariable String id,
@@ -109,21 +115,8 @@ public class ProjectController {
             Project updated = service.updateProject(id, req.name(), req.instructions(), isolation);
             return ApiResponse.ok(ProjectResponse.from(updated));
         } catch (IllegalArgumentException e) {
-            // 项目不存在 / 重名 均由 Service 抛 IllegalArgumentException
+            // 重名 / 非法 isolation 枚举 → 400；项目不存在由 ProjectNotFoundException 冒泡走 404
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-    }
-
-    /**
-     * 删除项目（级联删除关联 MemorySpace）。
-     */
-    @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable String id) {
-        try {
-            service.deleteProject(id);
-            return ApiResponse.ok();
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 }

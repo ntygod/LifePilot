@@ -2,6 +2,7 @@ package com.lifepilot.project.service;
 
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.project.exception.ProjectNotFoundException;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
@@ -87,7 +88,7 @@ public class ProjectService {
     public Project updateProject(String id, String name, String instructions,
                                  ProjectIsolation isolation) {
         Project existing = projectRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("项目不存在：" + id));
+                .orElseThrow(() -> new ProjectNotFoundException(id));
         // 改名时做重名校验，与 createProject 对称，避免走到 DB UNIQUE 约束兜底导致异常类型不一致
         if (!existing.name().equals(name) && projectRepository.existsByNameAndIdNot(name, id)) {
             throw new IllegalArgumentException("项目名已存在：" + name);
@@ -114,12 +115,12 @@ public class ProjectService {
      * 及其 messages 等子表）。在 Task 16 完成前，Controller 层不应暴露此删除能力给 API。</p>
      *
      * @param id 项目 id
-     * @throws IllegalArgumentException 项目不存在时
+     * @throws ProjectNotFoundException 项目不存在时
      */
     @Transactional
     public void deleteProject(String id) {
         Project existing = projectRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("项目不存在：" + id));
+                .orElseThrow(() -> new ProjectNotFoundException(id));
         projectRepository.deleteById(id);
         memorySpaceRepository.deleteById(existing.memorySpaceId());
         log.info("删除项目: id={}, memorySpaceId={}", id, existing.memorySpaceId());

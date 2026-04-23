@@ -3,6 +3,7 @@ package com.lifepilot.project.service;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemorySpaceType;
+import com.lifepilot.project.exception.ProjectNotFoundException;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
@@ -101,10 +102,18 @@ class ProjectService_单元测试 {
     }
 
     @Test
-    void deleteProject_项目不存在_抛异常() {
+    void deleteProject_项目不存在_抛ProjectNotFoundException() {
         when(projectRepository.findById("nope")).thenReturn(Optional.empty());
-        assertThrows(IllegalArgumentException.class, () -> service.deleteProject("nope"));
+        assertThrows(ProjectNotFoundException.class, () -> service.deleteProject("nope"));
         verify(projectRepository, never()).deleteById(anyString());
+    }
+
+    @Test
+    void updateProject_项目不存在_抛ProjectNotFoundException() {
+        when(projectRepository.findById("nope")).thenReturn(Optional.empty());
+        assertThrows(ProjectNotFoundException.class, () ->
+                service.updateProject("nope", "新名", "", ProjectIsolation.ISOLATED));
+        verify(projectRepository, never()).update(any());
     }
 
     @Test

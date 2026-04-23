@@ -6,6 +6,7 @@ import java.time.Instant;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
+import com.lifepilot.project.exception.ProjectNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
@@ -59,6 +60,23 @@ public class WebExceptionHandler {
     @ExceptionHandler(DocumentNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocNotFound(DocumentNotFoundException ex) {
         log.warn("文档不存在: {}", ex.getMessage());
+        var error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                ex.getMessage(),
+                Instant.now()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    /**
+     * 处理项目不存在异常，返回 404 Not Found。
+     *
+     * @param ex 异常
+     * @return 标准化错误响应
+     */
+    @ExceptionHandler(ProjectNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleProjectNotFound(ProjectNotFoundException ex) {
+        log.warn("项目不存在: {}", ex.getMessage());
         var error = new ErrorResponse(
                 HttpStatus.NOT_FOUND.value(),
                 ex.getMessage(),
