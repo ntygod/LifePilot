@@ -983,6 +983,28 @@ public class SemanticMemory {
     }
 
     /**
+     * 查询所有 TTL 已过期且仍 {@code ACTIVE} 的实体 —— 供 Task 26
+     * {@code ExpirationScanner} 每小时扫描后转入 {@code EXPIRED}。
+     *
+     * <p>只关心当前版本行（{@code is_current = 1}）、有 {@code expires_at} 且在
+     * {@code now} 之前。temporal_entities 视图由 V16 投影 memory_entities 的
+     * {@code expires_at / lifecycle_state} 字段（PERSISTENT 时为 null 自动排除）。</p>
+     *
+     * @param now 当前时间
+     * @return 待转 EXPIRED 的实体列表；无过期时返回空列表
+     */
+    public List<TemporalEntity> findExpiredActive(Instant now) {
+        return jdbcTemplate.query(
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities "
+                        + "WHERE is_current = 1 "
+                        + "  AND lifecycle_state = 'ACTIVE' "
+                        + "  AND expires_at IS NOT NULL "
+                        + "  AND expires_at < ?",
+                (rs, rowNum) -> mapRowToEntity(rs),
+                now.toString());
+    }
+
+    /**
      * 反查所有 {@code ACTIVE} 派生实体，其 {@code derivation_sources} JSON 数组
      * 引用了指定 {@code sourceEntityId} —— 供 {@code DerivedEntityListener} 在源失效时
      * 定位需要进入 {@code REGENERATION_NEEDED} 的目标派生实体。
