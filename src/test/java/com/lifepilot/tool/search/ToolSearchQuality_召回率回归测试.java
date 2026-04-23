@@ -13,6 +13,7 @@ import com.lifepilot.tool.search.cache.SearchResultCache;
 import com.lifepilot.tool.search.cache.SessionSearchMemo;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.tier1.Tier1Service;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,7 +100,7 @@ class ToolSearchQuality_召回率回归测试 {
         ToolConfigProperties.Search config = new ToolConfigProperties.Search();
         searchService = new ToolSearchService(
                 jdbcTemplate, registry, new ToolSearchQuerySanitizer(),
-                tier1Service, searchCache, memo, config);
+                tier1Service, searchCache, memo, config, new SimpleMeterRegistry());
     }
 
     @AfterEach

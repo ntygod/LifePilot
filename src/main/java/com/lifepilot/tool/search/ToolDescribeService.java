@@ -4,6 +4,9 @@ import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.search.cache.SchemaCache;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,6 +20,8 @@ import java.util.Optional;
  * <p>超过批量上限时截断前 N 个并在 suggestion 字段给提示；
  * 部分 ID 找不到时同时返回 schemas 和 notFound。</p>
  *
+ * <p>Micrometer 指标：invocations / batch_size（DistributionSummary）/ not_found。</p>
+ *
  * @author zsg
  * @since 2026-04-23
  */
@@ -27,10 +32,23 @@ public class ToolDescribeService {
     private final SchemaCache schemaCache;
     private final int maxBatchSize;
 
-    public ToolDescribeService(DynamicToolRegistry registry, SchemaCache schemaCache, int maxBatchSize) {
+    // ── Micrometer 指标 ──
+    private final Counter invocationsCounter;
+    private final DistributionSummary batchSizeSummary;
+    private final Counter notFoundCounter;
+
+    public ToolDescribeService(DynamicToolRegistry registry,
+                               SchemaCache schemaCache,
+                               int maxBatchSize,
+                               MeterRegistry meterRegistry) {
         this.registry = registry;
         this.schemaCache = schemaCache;
         this.maxBatchSize = maxBatchSize;
+
+        this.invocationsCounter = meterRegistry.counter("tool_describe.invocations");
+        this.batchSizeSummary = DistributionSummary.builder("tool_describe.batch_size")
+                .register(meterRegistry);
+        this.notFoundCounter = meterRegistry.counter("tool_describe.not_found");
     }
 
     /**
@@ -40,7 +58,10 @@ public class ToolDescribeService {
      * @return 描述结果（永不为 null）
      */
     public ToolDescribeResult describe(List<String> requestedIds) {
+        invocationsCounter.increment();
+
         if (requestedIds == null || requestedIds.isEmpty()) {
+            batchSizeSummary.record(0);
             return new ToolDescribeResult(
                     Map.of(),
                     List.of(),
@@ -52,6 +73,8 @@ public class ToolDescribeService {
                 ? requestedIds.subList(0, maxBatchSize)
                 : requestedIds;
 
+        batchSizeSummary.record(effective.size());
+
         Map<String, Object> schemas = new LinkedHashMap<>();
         List<String> notFound = new ArrayList<>();
 
@@ -62,6 +85,10 @@ public class ToolDescribeService {
                 continue;
             }
             schemas.put(id, buildSchemaView(opt.get()));
+        }
+
+        if (!notFound.isEmpty()) {
+            notFoundCounter.increment();
         }
 
         String suggestion;

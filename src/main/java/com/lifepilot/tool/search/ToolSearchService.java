@@ -8,6 +8,9 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.search.cache.SearchResultCache;
 import com.lifepilot.tool.search.cache.SessionSearchMemo;
 import com.lifepilot.tool.tier1.Tier1Service;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,6 +27,10 @@ import java.util.Set;
  *
  * <p>过滤规则：排除 Tier 1 + activatedToolIds + meta 工具（避免重复暴露）；
  * 当 allowedToolIds 非空（受限代理场景）时，结果只能来自该集合。</p>
+ *
+ * <p>Micrometer 指标：invocations / duration / cache_hit{layer=b,c} /
+ * empty_results / low_confidence。Layer A（SchemaCache）在本服务未参与，
+ * 故不统计；describe 侧的 schema 命中单独在 ToolDescribeService 记录。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -44,6 +51,14 @@ public class ToolSearchService {
     private final SessionSearchMemo sessionMemo;
     private final ToolConfigProperties.Search config;
 
+    // ── Micrometer 指标 ──
+    private final Counter invocationsCounter;
+    private final Timer durationTimer;
+    private final Counter cacheHitB;
+    private final Counter cacheHitC;
+    private final Counter emptyResultsCounter;
+    private final Counter lowConfidenceCounter;
+
     public ToolSearchService(
             JdbcTemplate jdbcTemplate,
             DynamicToolRegistry registry,
@@ -51,7 +66,8 @@ public class ToolSearchService {
             Tier1Service tier1Service,
             SearchResultCache searchResultCache,
             SessionSearchMemo sessionMemo,
-            ToolConfigProperties.Search config) {
+            ToolConfigProperties.Search config,
+            MeterRegistry meterRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.registry = registry;
         this.sanitizer = sanitizer;
@@ -59,6 +75,13 @@ public class ToolSearchService {
         this.searchResultCache = searchResultCache;
         this.sessionMemo = sessionMemo;
         this.config = config;
+
+        this.invocationsCounter = meterRegistry.counter("tool_search.invocations");
+        this.durationTimer = meterRegistry.timer("tool_search.duration");
+        this.cacheHitB = meterRegistry.counter("tool_search.cache_hit", "layer", "b");
+        this.cacheHitC = meterRegistry.counter("tool_search.cache_hit", "layer", "c");
+        this.emptyResultsCounter = meterRegistry.counter("tool_search.empty_results");
+        this.lowConfidenceCounter = meterRegistry.counter("tool_search.low_confidence");
     }
 
     /**
@@ -76,6 +99,17 @@ public class ToolSearchService {
             @Nullable String category,
             @Nullable Integer limitArg) {
 
+        invocationsCounter.increment();
+        return durationTimer.record(() -> doSearch(state, rawQuery, category, limitArg));
+    }
+
+    /** 实际搜索逻辑 — 由 Timer.record 包裹以统计耗时。 */
+    private ToolSearchResult doSearch(
+            @Nullable ReactAgentState state,
+            String rawQuery,
+            @Nullable String category,
+            @Nullable Integer limitArg) {
+
         int limit = Math.min(
                 limitArg == null ? config.getDefaultLimit() : limitArg,
                 config.getMaxLimit());
@@ -86,6 +120,7 @@ public class ToolSearchService {
         if (traceId != null) {
             var layerC = sessionMemo.get(traceId, rawQuery, category, limit);
             if (layerC.isPresent()) {
+                cacheHitC.increment();
                 log.debug("搜索命中 Layer C: traceId={}, query={}", traceId, rawQuery);
                 return layerC.get();
             }
@@ -94,6 +129,7 @@ public class ToolSearchService {
         // Layer B 全局缓存
         var layerB = searchResultCache.get(rawQuery, category, limit);
         if (layerB.isPresent()) {
+            cacheHitB.increment();
             if (traceId != null) {
                 sessionMemo.put(traceId, rawQuery, category, limit, layerB.get());
             }
@@ -104,6 +140,7 @@ public class ToolSearchService {
         // FTS5 查询表达式
         String matchExpr = sanitizer.sanitize(rawQuery);
         if (matchExpr.isEmpty()) {
+            emptyResultsCounter.increment();
             return ToolSearchResult.empty();
         }
 
@@ -137,9 +174,11 @@ public class ToolSearchService {
         String hint = null;
         if (hits.isEmpty()) {
             confidence = ToolSearchConfidence.NONE;
+            emptyResultsCounter.increment();
             hint = "No tools matched. Try broader keywords or call tools.list(category) to browse by category.";
         } else if (hits.get(0).score() < config.getBm25ConfidenceThreshold()) {
             confidence = ToolSearchConfidence.LOW;
+            lowConfidenceCounter.increment();
             hint = "Low confidence match. Consider refining keywords or checking tools.list(category).";
         } else {
             confidence = ToolSearchConfidence.HIGH;

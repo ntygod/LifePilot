@@ -210,9 +210,11 @@ public class ToolAutoConfiguration {
             com.lifepilot.tool.tier1.Tier1Service tier1,
             com.lifepilot.tool.search.cache.SearchResultCache searchCache,
             com.lifepilot.tool.search.cache.SessionSearchMemo memo,
-            ToolConfigProperties properties) {
+            ToolConfigProperties properties,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         return new com.lifepilot.tool.search.ToolSearchService(
-                jdbcTemplate, registry, sanitizer, tier1, searchCache, memo, properties.getSearch());
+                jdbcTemplate, registry, sanitizer, tier1, searchCache, memo,
+                properties.getSearch(), meterRegistry);
     }
 
     @Bean
@@ -220,9 +222,24 @@ public class ToolAutoConfiguration {
     public com.lifepilot.tool.search.ToolDescribeService toolDescribeService(
             DynamicToolRegistry registry,
             com.lifepilot.tool.search.cache.SchemaCache schemaCache,
-            ToolConfigProperties properties) {
+            ToolConfigProperties properties,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         return new com.lifepilot.tool.search.ToolDescribeService(
-                registry, schemaCache, properties.getDescribe().getMaxBatchSize());
+                registry, schemaCache, properties.getDescribe().getMaxBatchSize(), meterRegistry);
+    }
+
+    /**
+     * 无 Actuator 环境下的 MeterRegistry 兜底。
+     *
+     * <p>正常 Spring Boot Web 应用会通过 spring-boot-starter-actuator 自动配置
+     * {@code MeterRegistry}；在独立使用 tool 模块的场景（如最小化集成测试）下
+     * 若上下文没有该 Bean，则提供一个 SimpleMeterRegistry 以维持服务可用。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean(io.micrometer.core.instrument.MeterRegistry.class)
+    public io.micrometer.core.instrument.MeterRegistry toolMeterRegistryFallback() {
+        log.info("工具模块未发现外部 MeterRegistry，降级使用 SimpleMeterRegistry");
+        return new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     }
 
     @Bean
