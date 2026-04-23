@@ -16,6 +16,7 @@ import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import NotificationBell from '@/components/notification/NotificationBell.vue'
 import WhisperDownloadCard from '@/components/global/WhisperDownloadCard.vue'
 import ProjectSection from '@/components/sidebar/ProjectSection.vue'
+import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
 import type { ChatSession } from '@/types'
@@ -36,7 +37,7 @@ const renameTitle = ref('')
 const showArchived = ref(false)
 /** 各管理分组的折叠状态，默认全部展开 */
 const collapsedGroups = ref<Set<string>>(new Set())
-/** 创建项目对话框显示状态 —— 由 Task 19 的 CreateProjectDialog 消费 */
+/** 创建项目对话框显示状态 */
 const showCreateProjectDialog = ref(false)
 
 type SidebarTab = 'chat' | 'manage'
@@ -314,7 +315,8 @@ function openSettings() {
       <!-- 项目分组 -->
       <ProjectSection @create="showCreateProjectDialog = true" />
 
-      <!-- TODO(Task 19): <CreateProjectDialog v-model:open="showCreateProjectDialog" /> -->
+      <!-- 创建项目对话框（Task 19） -->
+      <CreateProjectDialog v-model:open="showCreateProjectDialog" />
 
       <!-- 对话列表 -->
       <div class="flex-1 overflow-y-auto pb-sm scrollbar-thin">
