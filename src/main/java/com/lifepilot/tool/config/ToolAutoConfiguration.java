@@ -86,10 +86,17 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public com.lifepilot.tool.validation.ToolValidator toolValidator() {
+        return new com.lifepilot.tool.validation.ToolValidator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public BuiltinToolRegistrar builtinToolRegistrar(
             List<BuiltinTool> builtinTools,
-            DynamicToolRegistry registry) {
-        return new BuiltinToolRegistrar(builtinTools, registry);
+            DynamicToolRegistry registry,
+            com.lifepilot.tool.validation.ToolValidator validator) {
+        return new BuiltinToolRegistrar(builtinTools, registry, validator);
     }
 
     @Bean
