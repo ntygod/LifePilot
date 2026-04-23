@@ -1,6 +1,5 @@
 package com.lifepilot.tool.validation;
 
-import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -127,10 +126,7 @@ public class ToolValidator {
     }
 
     private void validateActions(ToolContract tool) {
-        // v1 不校验 action metadata：ActionMetadata 当前不承载 description 字段。
-        // 未来若扩展 action metadata（加 description）需要相应规则时再补。
-        if (!(tool instanceof BuiltinTool)) {
-            return;
-        }
+        // v1 no-op：ActionMetadata 当前不承载 description 字段。
+        // 未来若扩展 action metadata 需要对应规则时在此实现。
     }
 }
