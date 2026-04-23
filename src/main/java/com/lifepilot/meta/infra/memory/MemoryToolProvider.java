@@ -9,15 +9,19 @@ import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
@@ -57,6 +61,8 @@ public class MemoryToolProvider {
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
     @Nullable private final SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver;
     @Nullable private final MemoryProperties memoryProperties;
+    @Nullable private final ProjectContextResolver projectContextResolver;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
 
     public MemoryToolProvider(HybridRetriever hybridRetriever,
                               SemanticMemory semanticMemory,
@@ -65,6 +71,19 @@ public class MemoryToolProvider {
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
                               @Nullable MemoryProperties memoryProperties) {
+        this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
+                sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties, null, null);
+    }
+
+    public MemoryToolProvider(HybridRetriever hybridRetriever,
+                              SemanticMemory semanticMemory,
+                              @Nullable EpisodicMemory episodicMemory,
+                              @Nullable DocumentRetriever documentRetriever,
+                              @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
+                              @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
+                              @Nullable MemoryProperties memoryProperties,
+                              @Nullable ProjectContextResolver projectContextResolver,
+                              @Nullable ChatSessionRepository chatSessionRepository) {
         this.hybridRetriever = hybridRetriever;
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
@@ -72,6 +91,8 @@ public class MemoryToolProvider {
         this.sessionKbRepo = sessionKbRepo;
         this.sessionKnowledgeScopeResolver = sessionKnowledgeScopeResolver;
         this.memoryProperties = memoryProperties;
+        this.projectContextResolver = projectContextResolver;
+        this.chatSessionRepository = chatSessionRepository;
     }
 
     public void registerTools(DynamicToolRegistry toolRegistry) {
@@ -215,12 +236,69 @@ public class MemoryToolProvider {
                 .build();
     }
 
+    /**
+     * 从工具输入 context 中的 sessionId 反查 ProjectContext。
+     *
+     * <p>resolver / chatSessionRepo 缺失、sessionId 为空或查询异常时返回 null，
+     * 调用方按 null 走 fallback（{@link MemoryReadFilter#userMemory()} 等）。</p>
+     */
+    @Nullable
+    private ProjectContext resolveProjectContext(ToolInput input) {
+        if (projectContextResolver == null || chatSessionRepository == null) {
+            return null;
+        }
+        String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            var session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            return projectContextResolver.resolve(session.get().projectId());
+        } catch (Exception e) {
+            log.debug("记忆工具解析 ProjectContext 失败, 回退默认 filter: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * ctx 为 null 时按 scopes 走 fallback；非 null 时按项目/主账户 space + scope 组合。
+     */
+    private MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
+        if (ctx == null) {
+            if (scopes == null || scopes.isEmpty()) {
+                return MemoryReadFilter.all();
+            }
+            if (scopes.equals(Set.of(MemoryScope.AGENT_EXPERIENCE))) {
+                return MemoryReadFilter.agentExperience();
+            }
+            if (scopes.equals(Set.of(MemoryScope.USER_PROFILE))) {
+                return MemoryReadFilter.userProfile();
+            }
+            if (scopes.equals(Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT))) {
+                return MemoryReadFilter.userMemory();
+            }
+            return new MemoryReadFilter(Set.of(), scopes);
+        }
+        return MemoryReadFilter.buildForProject(
+                ctx.projectSpaceId(),
+                ctx.personalSpaceId(),
+                ctx.experienceSpaceId(),
+                ctx.isolated(),
+                scopes);
+    }
+
     ToolResult executeSearch(ToolInput input) {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
             String query = input.getParam("query", String.class);
             int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
-            List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+            MemoryReadFilter filter = toProjectFilter(resolveProjectContext(input),
+                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+            List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT, filter);
             if (!results.isEmpty()) {
                 hybridRetriever.updateAccessCounts(results);
             }
@@ -369,9 +447,11 @@ public class MemoryToolProvider {
 
             // 召回候选：跨 USER_PROFILE/USER_FACT 与 AGENT_EXPERIENCE 两个域
             // （EXPERIENCE 类实体落在 AGENT_EXPERIENCE，不能用 userMemory() 过滤掉）
+            // 有 ProjectContext 时按 project + 主账户 space 限定；无则回退全量
             int retrieveTopK = Math.max(maxArchive * 3, 10);
+            MemoryReadFilter cancelFilter = toProjectFilter(resolveProjectContext(input), Set.of());
             List<RetrievalResult> candidates = hybridRetriever.retrieve(
-                    query, retrieveTopK, RetrievalWeights.DEFAULT, MemoryReadFilter.all());
+                    query, retrieveTopK, RetrievalWeights.DEFAULT, cancelFilter);
 
             var toArchive = candidates.stream()
                     .filter(r -> r.fusedScore() >= minScore)
@@ -511,8 +591,8 @@ public class MemoryToolProvider {
                 return ToolResult.error("query 参数不能为空");
             }
 
-            // 三路混合检索，限定 AGENT_EXPERIENCE scope
-            var filter = MemoryReadFilter.agentExperience();
+            // 三路混合检索，限定 AGENT_EXPERIENCE scope；有 ProjectContext 时同时限定 space
+            var filter = toProjectFilter(resolveProjectContext(input), Set.of(MemoryScope.AGENT_EXPERIENCE));
             List<RetrievalResult> ranked = hybridRetriever.retrieve(query, topK * 3, RetrievalWeights.DEFAULT, filter);
 
             // 批量查询完整实体（含 properties: lessons, toolsUsed 等）
