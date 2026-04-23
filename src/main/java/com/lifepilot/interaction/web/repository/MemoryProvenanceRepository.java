@@ -308,6 +308,39 @@ public class MemoryProvenanceRepository {
     }
 
     /**
+     * 批量查询存在 {@code STALE} 状态 provenance 的实体 ID 子集 —— 供检索层给结果
+     * 打 {@code needsRevalidation=true} 标注。
+     *
+     * <p>一次 SQL IN 查询，避免每条检索结果单独走 {@code findEntityProvenances} 的 N+1。
+     * 仅返回入参集合中"至少有一条 provenance 处于 STALE"的实体 ID；若入参为空则直接返回空集。</p>
+     *
+     * @param entityIds 待检查的实体 ID 集合（通常是单次检索的 topK 结果）
+     * @return 需要复核的实体 ID 集合（去重），不含未命中的 ID
+     */
+    public Set<String> findStaleEntityIds(Collection<String> entityIds) {
+        if (entityIds == null || entityIds.isEmpty()) {
+            return Set.of();
+        }
+        List<String> uniqueIds = entityIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> !id.isBlank())
+                .distinct()
+                .toList();
+        if (uniqueIds.isEmpty()) {
+            return Set.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(uniqueIds.size(), "?"));
+        String sql = """
+                SELECT DISTINCT entity_id
+                FROM memory_entity_provenances
+                WHERE status = 'STALE'
+                  AND entity_id IN (%s)
+                """.formatted(placeholders);
+        return new LinkedHashSet<>(jdbcTemplate.queryForList(sql, String.class, uniqueIds.toArray()));
+    }
+
+    /**
      * 列出 memory_entity_provenances 中当前仍 {@code VALID} 状态行引用过的所有
      * document ID（去重），供 Task 27 {@code OrphanProvenanceScanner} 与
      * {@code session_documents} 对照检测孤儿引用。

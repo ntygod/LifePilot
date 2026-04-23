@@ -722,6 +722,11 @@ public class MemoryToolProvider {
         if (result.description() != null) map.put("description", result.description());
         map.put("score", result.fusedScore());
         map.put("sourcePath", result.sourcePath());
+        // Task 30：生命周期闭环标注 — 仅在 true 时输出以节省 token，
+        // LLM 据此区分"已完成/派生源失效/需复核"的语义。
+        if (result.isHistorical()) map.put("isHistorical", true);
+        if (result.isStale()) map.put("isStale", true);
+        if (result.needsRevalidation()) map.put("needsRevalidation", true);
         return Map.copyOf(map);
     }
 

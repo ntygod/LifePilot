@@ -412,12 +412,15 @@ public class MemoryAutoConfiguration {
             EpisodicMemory episodicMemory,
             @Nullable IntentMatcher intentMatcher,
             @Nullable RerankRouter rerankRouter,
-            JdbcTemplate jdbcTemplate) {
-        log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}",
+            JdbcTemplate jdbcTemplate,
+            @Nullable com.lifepilot.interaction.web.repository.MemoryProvenanceRepository provenanceRepository) {
+        log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
                 intentMatcher != null ? "enabled" : "disabled",
-                rerankRouter != null ? "enabled" : "disabled");
+                rerankRouter != null ? "enabled" : "disabled",
+                provenanceRepository != null ? "enabled" : "disabled");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter);
+                semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter,
+                provenanceRepository);
         semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
         episodicMemory.setWriteCallback(retriever::resetEmptyFlag);
         return retriever;
