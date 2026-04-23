@@ -44,7 +44,7 @@ function openProject(id: string) {
       @click="$emit('create')"
     >
       <FolderPlus class="size-md" />
-      <span class="text-md">新建项目</span>
+      <span class="text-sm">新建项目</span>
     </button>
 
     <button
@@ -55,7 +55,7 @@ function openProject(id: string) {
       @click="openProject(p.id)"
     >
       <Folder class="size-md shrink-0" />
-      <span class="text-md truncate">{{ p.name }}</span>
+      <span class="text-sm truncate">{{ p.name }}</span>
     </button>
   </div>
 </template>
