@@ -474,7 +474,8 @@ public class ChatSessionService {
         String title = newTitle != null && !newTitle.isBlank()
                 ? newTitle
                 : originalSession.title() + " (fork)";
-        ChatSession newSession = ChatSession.create(title);
+        // 分叉会话必须继承源会话的 projectId，避免归属项目的对话被 fork 到主账户
+        ChatSession newSession = ChatSession.create(title, originalSession.projectId());
         sessionRepository.save(newSession);
         return newSession;
     }
