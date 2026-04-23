@@ -90,6 +90,28 @@ public record MemoryReadFilter(
         return new MemoryReadFilter(spaces, Set.of());
     }
 
+    /**
+     * 构造项目上下文 + scope 过滤器的组合。
+     *
+     * <p>等价于在 {@link #buildForProject(String, String, String, boolean)} 基础上再限定 scopes。
+     * 当 userProfile / userMemory / agentExperience 路径依赖 scope 约束时使用。</p>
+     *
+     * @param projectSpaceId    项目 MemorySpace id（主账户对话时为 null）
+     * @param personalSpaceId   主账户 personal MemorySpace id
+     * @param experienceSpaceId 主账户 experience MemorySpace id
+     * @param isolated          当前项目是否 ISOLATED
+     * @param scopes            需要限定的 scope 集合；为 null 时等同 {@code Set.of()}（不限定 scope）
+     */
+    public static MemoryReadFilter buildForProject(
+            @Nullable String projectSpaceId,
+            String personalSpaceId,
+            String experienceSpaceId,
+            boolean isolated,
+            @Nullable Set<MemoryScope> scopes) {
+        MemoryReadFilter base = buildForProject(projectSpaceId, personalSpaceId, experienceSpaceId, isolated);
+        return new MemoryReadFilter(base.spaceIds(), scopes != null ? scopes : Set.of());
+    }
+
     private static Set<String> normalizeSpaceIds(@Nullable Collection<String> spaceIds) {
         if (spaceIds == null || spaceIds.isEmpty()) {
             return Set.of();

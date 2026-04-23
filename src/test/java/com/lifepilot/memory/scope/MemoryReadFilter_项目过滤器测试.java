@@ -2,6 +2,8 @@ package com.lifepilot.memory.scope;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,6 +49,34 @@ class MemoryReadFilter_项目过滤器测试 {
     void 主账户对话_即便isolated为true也忽略null项目space() {
         MemoryReadFilter f = MemoryReadFilter.buildForProject(
                 null, "ms-personal", "ms-experience", true);
+        assertEquals(2, f.spaceIds().size());
+    }
+
+    @Test
+    void 五参重载_限定scopes_且保留spaces() {
+        MemoryReadFilter f = MemoryReadFilter.buildForProject(
+                "ms-project", "ms-personal", "ms-experience", true,
+                Set.of(MemoryScope.USER_PROFILE));
+        assertEquals(3, f.spaceIds().size());
+        assertTrue(f.spaceIds().contains("ms-project"));
+        assertTrue(f.restrictsScopes());
+        assertEquals(Set.of(MemoryScope.USER_PROFILE), f.scopes());
+    }
+
+    @Test
+    void 五参重载_scopes传null等同不限定scope() {
+        MemoryReadFilter f = MemoryReadFilter.buildForProject(
+                null, "ms-personal", "ms-experience", false, null);
+        assertEquals(2, f.spaceIds().size());
+        assertFalse(f.restrictsScopes());
+    }
+
+    @Test
+    void 五参重载_多scope组合正确() {
+        MemoryReadFilter f = MemoryReadFilter.buildForProject(
+                null, "ms-personal", "ms-experience", false,
+                Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+        assertEquals(Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT), f.scopes());
         assertEquals(2, f.spaceIds().size());
     }
 }
