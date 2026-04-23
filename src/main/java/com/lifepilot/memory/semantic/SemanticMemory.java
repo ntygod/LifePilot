@@ -413,18 +413,54 @@ public class SemanticMemory {
     }
 
     /**
-     * 直接更新实体描述 — 用于手动编辑场景，绕过 VersionMerger。
+     * 手动编辑描述 — Task 10（修补 A）：不再直接 SQL 覆盖当前版本，改为产生新版本。
      *
-     * @param entityId    实体 ID
-     * @param description 新描述
+     * <p>语义：关闭现行 {@code is_current=1} 的版本，插入 {@code version+1} 新版本，
+     * 仅描述字段与 {@code withDescription} 构造的副本不同。走版本化是为了保留历史，
+     * 避免 UI 编辑与 VersionMerger 的「取更长者」启发式冲突丢失短描述。</p>
+     *
+     * <p>采用专用版本化路径（而非 {@link #upsertWithConflictDetection}），因后者
+     * 依赖 {@link VersionMerger#merge} 的「取更长者」合并规则，会在新描述更短或等长时
+     * 被判为无变化 → 丢失用户编辑。这里直接复用 {@link #closeCurrentEntityVersion}
+     * 与 {@link #insertEntityVersion} 完成 v→v+1 的版本化写入。</p>
+     *
+     * @param entityId       实体 ID
+     * @param newDescription 新描述（可为 null）
      */
-    public void updateDescription(String entityId, String description) {
-        var now = Instant.now().toString();
+    @Transactional
+    public void updateDescription(String entityId, @Nullable String newDescription) {
+        var existing = findById(entityId)
+                .orElseThrow(() -> new IllegalArgumentException("实体不存在: " + entityId));
+        // 描述未变化时直接短路，不产生冗余版本
+        if (java.util.Objects.equals(existing.description(), newDescription)) {
+            log.debug("语义记忆: updateDescription 无变化, entityId={}", entityId);
+            return;
+        }
+
+        var now = Instant.now();
+        closeCurrentEntityVersion(entityId, now);
+
+        var updated = new TemporalEntity(
+                existing.id(), existing.type(), existing.name(), newDescription,
+                existing.properties(), existing.version() + 1, true,
+                now, null, existing.sourceConversationId(),
+                existing.extractionConfidence(), existing.importanceScore(),
+                existing.accessCount(), existing.lastAccessedAt(),
+                existing.createdAt(), now,
+                existing.lifecycleState(), existing.lifecycleReason(), existing.expiresAt(),
+                existing.temporality(), existing.succeededBy(),
+                existing.isDerived(), existing.derivationSources());
+
+        var writeContext = defaultWriteContext(updated, "user-edit-description");
+        insertEntityVersion(updated, writeContext, now);
+        // 同步根表的 updated_at（画像等场景需要感知时间刷新）
         jdbcTemplate.update(
-                "UPDATE memory_entity_versions SET description = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
-                description, now, entityId);
-        updateVector(findById(entityId).orElse(null));
+                "UPDATE memory_entities SET updated_at = ?, last_seen_at = ? WHERE id = ?",
+                now.toString(), now.toString(), entityId);
+        updateVector(updated);
         notifyWriteCallback();
+        log.debug("语义记忆: updateDescription 版本化, entityId={}, newVersion={}",
+                entityId, updated.version());
     }
 
     /** 添加关系。 */
