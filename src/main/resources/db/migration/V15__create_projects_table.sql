@@ -4,12 +4,13 @@ CREATE TABLE projects (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
     instructions    TEXT NOT NULL DEFAULT '',
-    isolation       TEXT NOT NULL DEFAULT 'ISOLATED',  -- 'ISOLATED' | 'SHARED'
+    isolation       TEXT NOT NULL DEFAULT 'ISOLATED'
+                    CHECK (isolation IN ('ISOLATED', 'SHARED')),
     memory_space_id TEXT NOT NULL,                     -- 关联 memory_spaces.id
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     UNIQUE(name),
-    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id)
+    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_projects_created_at ON projects(created_at DESC);
