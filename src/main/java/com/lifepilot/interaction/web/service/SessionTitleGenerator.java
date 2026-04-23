@@ -30,7 +30,8 @@ public class SessionTitleGenerator {
     private static final Logger log = LoggerFactory.getLogger(SessionTitleGenerator.class);
     private static final String PROMPT_KEY = "generation/session-title";
     private static final String LLM_SCENE = "session-title";
-    private static final Duration TIMEOUT = Duration.ofSeconds(15);
+    // 30s 兜底大模型偶发慢响应；真正提速靠 UI 把此 scene 绑到 flash 级模型
+    private static final Duration TIMEOUT = Duration.ofSeconds(30);
     private static final int MAX_TITLE_LENGTH = 20;
     private static final Set<String> DEFAULT_TITLES = Set.of("新对话", "New Chat");
 
