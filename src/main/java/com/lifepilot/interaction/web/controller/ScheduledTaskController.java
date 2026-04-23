@@ -1,0 +1,125 @@
+package com.lifepilot.interaction.web.controller;
+
+import com.lifepilot.agent.task.CronTaskEntry;
+import com.lifepilot.agent.task.CronTaskRepository;
+import com.lifepilot.interaction.web.model.ApiResponse;
+import com.lifepilot.interaction.web.model.scheduled.ScheduledTaskResponse;
+import com.lifepilot.interaction.web.model.scheduled.UpdateScheduledTaskRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * 定时任务（Scheduled Task）REST 端点。
+ *
+ * <p>提供：列表 / 更新 / 删除。故意不提供 POST 创建端点——创建入口保持在
+ * LLM 对话中，由自然语言触发现有的 cron 工具（Task A6 会扩展工具能力）；
+ * 本 Controller 只管存量管理（列出、编辑、暂停、删除）。</p>
+ *
+ * <p>暂停/恢复通过 PUT 更新 {@code status} 字段实现（active ↔ paused），
+ * 避免为每个状态变更单独建端点。</p>
+ *
+ * <p>Controller 层只做参数规范化与 DTO 映射，持久化委派给
+ * {@link CronTaskRepository}。返回 {@link ApiResponse}，错误通过
+ * {@link ResponseStatusException} 抛出，由全局异常处理器统一转换。</p>
+ *
+ * @author zsg
+ * @since 2026-04-23
+ */
+@RestController
+@RequestMapping("/api/scheduled-tasks")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
+public class ScheduledTaskController {
+
+    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskController.class);
+
+    private final CronTaskRepository repository;
+
+    public ScheduledTaskController(CronTaskRepository repository) {
+        this.repository = repository;
+    }
+
+    /**
+     * 列出定时任务。
+     *
+     * <p>{@code projectId} 为空（{@code null} 或空串）时返回所有归属的任务（主账户 +
+     * 所有项目）；非空时按项目过滤（精确等值）。归属主账户任务的查询由调用方
+     * 传入显式的 {@code "null"} 字符串——本接口不支持此语义，主账户任务
+     * 只在"不过滤"列表里返回。</p>
+     */
+    @GetMapping
+    public ApiResponse<List<ScheduledTaskResponse>> list(
+            @RequestParam(required = false) @Nullable String projectId) {
+        List<CronTaskEntry> entries = (projectId == null || projectId.isBlank())
+                ? repository.findAll()
+                : repository.findByProjectId(projectId);
+        List<ScheduledTaskResponse> items = entries.stream()
+                .map(ScheduledTaskResponse::from)
+                .toList();
+        return ApiResponse.ok(items);
+    }
+
+    /**
+     * 更新定时任务的 name / schedule / instruction / status。
+     *
+     * <p>请求体字段为 {@code null} 时保留原值；{@code projectId} 不可更新
+     * （归属不可迁移）；{@code createdAt} 不可更新（不可变）；{@code updatedAt}
+     * 自动刷新为当前时间。</p>
+     *
+     * @param id  任务 id
+     * @param req 更新请求
+     * @return 更新后的任务 DTO
+     */
+    @PutMapping("/{id}")
+    public ApiResponse<ScheduledTaskResponse> update(
+            @PathVariable String id,
+            @RequestBody UpdateScheduledTaskRequest req) {
+        CronTaskEntry existing = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "定时任务不存在：" + id));
+        CronTaskEntry updated = new CronTaskEntry(
+                existing.id(),
+                req.name() != null ? req.name() : existing.name(),
+                req.schedule() != null ? req.schedule() : existing.schedule(),
+                req.instruction() != null ? req.instruction() : existing.instruction(),
+                req.status() != null ? req.status() : existing.status(),
+                existing.createdAt(),
+                Instant.now().toString(),
+                existing.skillIds(),
+                existing.projectId()
+        );
+        repository.update(updated);
+        log.info("更新定时任务: id={}, status={}", id, updated.status());
+        return ApiResponse.ok(ScheduledTaskResponse.from(updated));
+    }
+
+    /**
+     * 删除定时任务。
+     *
+     * <p>级联删除执行日志由 Repository 层的外键约束（ON DELETE CASCADE）保证。
+     * 任务不存在不抛异常——幂等删除。</p>
+     *
+     * @param id 任务 id
+     * @return 空数据的成功响应
+     */
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable String id) {
+        repository.deleteById(id);
+        log.info("删除定时任务: id={}", id);
+        return ApiResponse.ok(null);
+    }
+}
