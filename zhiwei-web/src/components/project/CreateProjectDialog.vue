@@ -100,8 +100,7 @@ async function handleSubmit() {
       isolation: isolation.value,
     })
     emit('update:open', false)
-    // 导航失败不应阻断用户 —— Task 20 实装路由前这里会命中通配 404 fallback
-    router.push(`/projects/${created.id}`).catch(() => {})
+    await router.push(`/projects/${created.id}`)
   } catch (err: any) {
     submitError.value = err?.message ?? '创建项目失败'
   } finally {

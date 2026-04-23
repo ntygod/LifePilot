@@ -235,11 +235,11 @@ export const chatApi = {
     return res.body
   },
 
-  /** 创建会话 */
-  createSession(title?: string): Promise<ChatSession> {
+  /** 创建会话，可选传入 projectId 将会话归入指定项目 */
+  createSession(title?: string, projectId?: string | null): Promise<ChatSession> {
     return request('/chat/sessions', {
       method: 'POST',
-      body: JSON.stringify({ title })
+      body: JSON.stringify({ title, projectId: projectId ?? null })
     })
   },
 

@@ -129,7 +129,7 @@ async function confirmDelete() {
     showDeleteConfirm.value = false
     emit('update:open', false)
     // 项目已删除，继续停留在详情页毫无意义 —— 回首页
-    router.replace({ name: 'home' }).catch(() => {})
+    await router.replace({ name: 'home' })
   } catch (err: any) {
     submitError.value = err?.message ?? '删除失败，请稍后再试'
   } finally {

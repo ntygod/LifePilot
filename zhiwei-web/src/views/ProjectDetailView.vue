@@ -51,7 +51,7 @@ onMounted(async () => {
   }
 })
 
-/** 跳转到新建对话页，把当前 projectId 带入 query（供 Task 23 接续使用） */
+/** 跳转到新建对话页，把当前 projectId 带入 query，供 ChatView 懒创建时继承项目上下文 */
 function createNewConversation() {
   router.push({
     name: 'newConversation',
