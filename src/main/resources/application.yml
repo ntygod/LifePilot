@@ -313,6 +313,9 @@ lifepilot:
       like-boost: 0.1
       dislike-penalty: 0.05
       expiration-cron: "0 0 * * * *"
+      # 负反馈阈值：任一满足触发 SUPERSEDED 状态转换
+      negative-threshold-count: 3
+      negative-threshold-score: -1.0
     # Agentic Tool 配置
     agentic-tool:
       default-top-k: 10
