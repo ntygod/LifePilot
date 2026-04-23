@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,15 +26,15 @@ import java.util.List;
 /**
  * 项目（Project）REST 端点。
  *
- * <p>提供：创建 / 列表 / 详情 / 更新。Controller 层只做参数规范化与 DTO 映射，
- * 业务与校验委派给 {@link ProjectService}。与其他 Controller 保持风格：
- * 返回 {@link ApiResponse}，错误通过 {@link ResponseStatusException} 或领域
- * 异常（如 {@code ProjectNotFoundException}）抛出，由全局异常处理器统一转换。</p>
+ * <p>提供：创建 / 列表 / 详情 / 更新 / 删除。Controller 层只做参数规范化与
+ * DTO 映射，业务与校验委派给 {@link ProjectService}。与其他 Controller 保持
+ * 风格：返回 {@link ApiResponse}，错误通过 {@link ResponseStatusException}
+ * 或领域异常（如 {@code ProjectNotFoundException}）抛出，由全局异常处理器
+ * 统一转换。</p>
  *
- * <p><b>注意</b>：删除（DELETE）端点暂未开放——
- * {@link ProjectService#deleteProject} 仅级联清理 MemorySpace，尚未覆盖
- * conversations 及其子表。该能力将在 Plan 1 Task 16 完成后统一补齐并开放。
- * 在此之前，Controller 层不暴露删除能力以避免产生孤儿 conversations。</p>
+ * <p>删除端点的级联语义由 Service 统一实现：一次调用完整清空项目下的会话、
+ * 项目空间记忆实体/关系以及项目自身和记忆空间，详见
+ * {@link ProjectService#deleteProject}。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -118,5 +119,22 @@ public class ProjectController {
             // 重名 / 非法 isolation 枚举 → 400；项目不存在由 ProjectNotFoundException 冒泡走 404
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    /**
+     * 删除项目并级联清理所有关联资源。
+     *
+     * <p>完整级联范围由 Service 层保证（会话 / 项目空间记忆实体/关系 / project /
+     * memory_space），调用方只需提供项目 id。项目不存在时 Service 抛
+     * {@code ProjectNotFoundException}，由全局异常处理器转 404。</p>
+     *
+     * @param id 项目 id
+     * @return 空数据的成功响应
+     */
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable String id) {
+        log.debug("删除项目请求: id={}", id);
+        service.deleteProject(id);
+        return ApiResponse.ok(null);
     }
 }

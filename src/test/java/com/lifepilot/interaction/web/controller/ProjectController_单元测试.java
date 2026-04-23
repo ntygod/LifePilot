@@ -21,10 +21,12 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -159,5 +161,22 @@ class ProjectController_单元测试 {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
                 controller.create(new CreateProjectRequest("项目", "", "INVALID")));
         assertEquals(400, ex.getStatusCode().value());
+    }
+
+    @Test
+    void 删除项目_代理到service_返回空数据的成功响应() {
+        // service.deleteProject 内部级联由 Service 自身覆盖，Controller 只校验代理 + 响应格式
+        ApiResponse<Void> resp = controller.delete("p-1");
+
+        verify(service).deleteProject("p-1");
+        assertEquals(200, resp.code());
+        assertNull(resp.data());
+    }
+
+    @Test
+    void 删除项目_项目不存在_向上抛ProjectNotFoundException交由advice转404() {
+        doThrow(new ProjectNotFoundException("nope")).when(service).deleteProject("nope");
+
+        assertThrows(ProjectNotFoundException.class, () -> controller.delete("nope"));
     }
 }
