@@ -33,7 +33,7 @@ import org.springframework.core.io.ClassPathResource;
  */
 public class LlmFixture {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper OM = new ObjectMapper();
     private List<FixtureEntry> entries = List.of();
     private final Map<String, String> capturedVars = new HashMap<>();
 
@@ -47,7 +47,7 @@ public class LlmFixture {
         try {
             var resource = new ClassPathResource("llm-fixtures/" + scenario + ".json");
             try (var in = resource.getInputStream()) {
-                JsonNode arr = objectMapper.readTree(in);
+                JsonNode arr = OM.readTree(in);
                 var list = new ArrayList<FixtureEntry>();
                 for (JsonNode node : arr) {
                     list.add(new FixtureEntry(
@@ -78,11 +78,17 @@ public class LlmFixture {
                 return new FixtureResponse(renderVars(entry.toolCallsJson()), entry.finalText());
             }
         }
-        throw new IllegalStateException("fixture 未命中: " + lastUserMessage);
+        var patterns = entries.stream()
+                .map(FixtureEntry::pattern)
+                .toList();
+        throw new IllegalStateException(
+                "fixture 未命中。last_user_message=" + lastUserMessage
+                + "；已加载的 patterns=" + patterns);
     }
 
     /**
      * 捕获变量，供后续 fixture 项的 {@code "$key"} 占位符渲染。
+     * 值会通过 Jackson 序列化为 JSON 字面量，所以含引号 / 反斜杠 / 换行等特殊字符的值是安全的。
      *
      * @param key   变量名（不含 {@code $}）
      * @param value 变量值（原始文本，占位符渲染时会被包入引号）
@@ -94,7 +100,13 @@ public class LlmFixture {
     private String renderVars(String json) {
         var result = json;
         for (var kv : capturedVars.entrySet()) {
-            result = result.replace("\"$" + kv.getKey() + "\"", "\"" + kv.getValue() + "\"");
+            String literal;
+            try {
+                literal = OM.writeValueAsString(kv.getValue());
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalStateException("变量 " + kv.getKey() + " 无法序列化为 JSON", e);
+            }
+            result = result.replace("\"$" + kv.getKey() + "\"", literal);
         }
         return result;
     }

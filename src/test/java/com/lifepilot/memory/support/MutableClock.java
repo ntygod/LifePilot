@@ -28,8 +28,8 @@ public class MutableClock extends Clock {
      * @param zone    时区
      */
     public MutableClock(Instant initial, ZoneId zone) {
-        this.now = initial;
-        this.zone = zone;
+        this.now = java.util.Objects.requireNonNull(initial, "initial");
+        this.zone = java.util.Objects.requireNonNull(zone, "zone");
     }
 
     /**

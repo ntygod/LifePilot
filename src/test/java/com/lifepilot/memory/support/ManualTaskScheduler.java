@@ -1,5 +1,6 @@
 package com.lifepilot.memory.support;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -43,6 +44,22 @@ public class ManualTaskScheduler implements TaskScheduler {
     }
 
     private final List<PendingTask> tasks = Collections.synchronizedList(new ArrayList<>());
+
+    private final Clock clock;
+
+    /** 默认构造器（系统时钟，主要用于简单单元测试）。 */
+    public ManualTaskScheduler() {
+        this(Clock.systemUTC());
+    }
+
+    /**
+     * 构造可注入时钟的调度器，主要用于场景测试场景下将 {@link MutableClock} 与调度器时间源对齐。
+     *
+     * @param clock 任务注册时读取当前时刻的 {@link Clock}
+     */
+    public ManualTaskScheduler(Clock clock) {
+        this.clock = java.util.Objects.requireNonNull(clock, "clock");
+    }
 
     /**
      * 触发所有到期任务并从队列移除。
@@ -110,7 +127,7 @@ public class ManualTaskScheduler implements TaskScheduler {
 
     @Override
     public ScheduledFuture<?> scheduleAtFixedRate(Runnable task, Duration period) {
-        Instant fireAt = Instant.now().plus(period);
+        Instant fireAt = clock.instant().plus(period);
         tasks.add(new PendingTask(task, fireAt, "fixedRate:" + period));
         return new FakeScheduledFuture<>();
     }
@@ -123,7 +140,7 @@ public class ManualTaskScheduler implements TaskScheduler {
 
     @Override
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task, Duration delay) {
-        Instant fireAt = Instant.now().plus(delay);
+        Instant fireAt = clock.instant().plus(delay);
         tasks.add(new PendingTask(task, fireAt, "fixedDelay:" + delay));
         return new FakeScheduledFuture<>();
     }
