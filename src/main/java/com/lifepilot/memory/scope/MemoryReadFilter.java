@@ -58,6 +58,38 @@ public record MemoryReadFilter(
         );
     }
 
+    /**
+     * 构造项目上下文的读取过滤器。
+     *
+     * <p>语义（Plan 1 基础版本）：
+     * <ul>
+     *   <li>隔离项目：允许读取 [项目 space + 主账户 personal + 主账户 experience]</li>
+     *   <li>不隔离项目：等同主账户读取（项目 space 不加入）</li>
+     *   <li>主账户对话（projectSpaceId = null）：只读主账户 space</li>
+     * </ul>
+     *
+     * <p><b>注</b>：Plan 1 先做 space-level 合并，不做 key-level override；
+     * L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续 plan。</p>
+     *
+     * @param projectSpaceId    项目 MemorySpace id（主账户对话时为 null）
+     * @param personalSpaceId   主账户 personal MemorySpace id
+     * @param experienceSpaceId 主账户 experience MemorySpace id
+     * @param isolated          当前项目是否 ISOLATED
+     */
+    public static MemoryReadFilter buildForProject(
+            @Nullable String projectSpaceId,
+            String personalSpaceId,
+            String experienceSpaceId,
+            boolean isolated) {
+        Set<String> spaces = new LinkedHashSet<>();
+        if (projectSpaceId != null && isolated) {
+            spaces.add(projectSpaceId);
+        }
+        spaces.add(personalSpaceId);
+        spaces.add(experienceSpaceId);
+        return new MemoryReadFilter(spaces, Set.of());
+    }
+
     private static Set<String> normalizeSpaceIds(@Nullable Collection<String> spaceIds) {
         if (spaceIds == null || spaceIds.isEmpty()) {
             return Set.of();
