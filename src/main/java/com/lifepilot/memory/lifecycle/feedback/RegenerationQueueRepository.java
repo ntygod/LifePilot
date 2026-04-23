@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -72,4 +73,73 @@ public class RegenerationQueueRepository {
                 Integer.class, derivedEntityId);
         return n == null ? 0 : n;
     }
+
+    /**
+     * Phase 3 Task 29 DerivationRegenerator 使用 —— 按 created_at 升序拉取最多 {@code limit}
+     * 条 {@code PENDING} 队列项。
+     *
+     * <p>消费端对拿到的每条结果调 {@link #markDone} 或 {@link #markFailed} 推进状态。</p>
+     *
+     * @param limit 批次大小上限
+     * @return 队列项列表（按 created_at 升序）
+     */
+    public List<QueueItem> findPending(int limit) {
+        return jdbc.query(
+                """
+                SELECT id, derived_entity_id, trigger_source_entity_id
+                FROM derivation_regeneration_queue
+                WHERE status = 'PENDING'
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new QueueItem(
+                        rs.getString("id"),
+                        rs.getString("derived_entity_id"),
+                        rs.getString("trigger_source_entity_id")),
+                limit);
+    }
+
+    /**
+     * 将队列项标记为 {@code DONE} 并回填 {@code processed_at}。
+     *
+     * @param id 队列项 id
+     */
+    public void markDone(String id) {
+        jdbc.update(
+                """
+                UPDATE derivation_regeneration_queue
+                SET status = 'DONE', processed_at = ?
+                WHERE id = ?
+                """,
+                Instant.now().toString(), id);
+    }
+
+    /**
+     * 将队列项标记为 {@code FAILED}。
+     *
+     * <p>V15 表结构未保留 {@code rationale} 列，失败原因仅通过 {@code logger.warn}
+     * 打印到日志 —— 后续如需持久化可在迁移里补列。</p>
+     *
+     * @param id     队列项 id
+     * @param reason 失败原因（仅用于日志）
+     */
+    public void markFailed(String id, String reason) {
+        jdbc.update(
+                """
+                UPDATE derivation_regeneration_queue
+                SET status = 'FAILED', processed_at = ?
+                WHERE id = ?
+                """,
+                Instant.now().toString(), id);
+        log.warn("派生实体重算失败: queueId={}, reason={}", id, reason);
+    }
+
+    /**
+     * 队列项轻量视图 —— 承载消费端需要的最小字段。
+     *
+     * @param id                    队列项 id
+     * @param derivedEntityId       待重算的派生实体 ID
+     * @param triggerSourceEntityId 触发本次重算的源实体 ID
+     */
+    public record QueueItem(String id, String derivedEntityId, String triggerSourceEntityId) {}
 }
