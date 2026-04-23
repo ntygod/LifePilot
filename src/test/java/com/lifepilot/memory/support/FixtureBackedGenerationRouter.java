@@ -4,6 +4,7 @@ import java.time.Duration;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import org.springframework.lang.Nullable;
 
@@ -19,10 +20,13 @@ import org.springframework.lang.Nullable;
  *       及其 skipCache 重载：按最后一行 prompt 匹配 fixture，返回 {@code finalText}（或 fallback 到
  *       {@code toolCallsJson}）作为 {@link LlmResponse#content()}</li>
  * </ul>
- * 其余方法（callEntity / getChatClientWithInfo / getChatModelWithInfo / streamWithInfo /
- * resolveMaxContextWindow）在 Phase 0 Task 8 阶段未用到，显式抛 {@link UnsupportedOperationException}。
- * 若后续场景测试需要流式 ChatModel 路径（ReactAgentLoop 默认走 StreamingCallback），需要在 Task 9
- * {@code ScenarioTestConfiguration} 做更上层的替身（例如拦截 ChatModel 而不是 GenerationRouter）。</p>
+ * 其余方法（callEntity / getChatClientWithInfo / streamWithInfo / resolveMaxContextWindow）在
+ * Phase 0 阶段未用到，显式抛 {@link UnsupportedOperationException}。</p>
+ *
+ * <p>Task 9 补齐：{@link #getChatModelWithInfo} 返回包装 {@link FixtureBackedChatModel} 的
+ * {@link ChatModelInfo}，使 {@code ReactAgentLoop.run(...)}（默认走
+ * {@link com.lifepilot.agent.callback.NonStreamingCallback}）能在场景 E2E 测试里完整跑通
+ * {@code ChatModel.call(Prompt)} 路径。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -33,6 +37,7 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
     private static final String FIXTURE_MODEL = "fixture-llm";
 
     private final LlmFixture fixture;
+    private final FixtureBackedChatModel chatModel;
 
     /**
      * 构造 fixture-backed router。
@@ -42,6 +47,7 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
     public FixtureBackedGenerationRouter(LlmFixture fixture) {
         super(null, null, null, null);
         this.fixture = fixture;
+        this.chatModel = new FixtureBackedChatModel(fixture);
     }
 
     @Override
@@ -100,9 +106,20 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
     public ChatModelInfo getChatModelWithInfo(String scene,
                                               @Nullable String serviceId,
                                               @Nullable String modelName) {
-        throw new UnsupportedOperationException(
-                "FixtureBackedGenerationRouter 暂不支持 ChatModel 路径；如场景测试需要走 "
-                        + "ReactAgentLoop 默认流式入口，请在 ScenarioTestConfiguration 提供 ChatModel 替身");
+        return new ChatModelInfo(
+                chatModel,
+                FIXTURE_PROVIDER,
+                FIXTURE_MODEL,
+                ProviderType.OPENAI_COMPATIBLE,
+                /* apiUrl = */ "http://fixture.local",
+                /* supportsStreaming = */ false);
+    }
+
+    /**
+     * 对外暴露内部 ChatModel 替身，便于场景测试断言或复用。
+     */
+    public FixtureBackedChatModel chatModel() {
+        return chatModel;
     }
 
     @Override
