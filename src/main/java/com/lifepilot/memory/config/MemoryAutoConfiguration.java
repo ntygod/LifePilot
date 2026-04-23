@@ -33,6 +33,8 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.semantic.ConflictDetector;
+import com.lifepilot.memory.semantic.ConflictResolutionRepository;
+import com.lifepilot.memory.semantic.ConflictResolutionService;
 import com.lifepilot.memory.semantic.ExtractionValidator;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -326,6 +328,37 @@ public class MemoryAutoConfiguration {
                 jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
         semanticMemory.setEventPublisher(eventPublisher);
         return semanticMemory;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ConflictResolutionRepository conflictResolutionRepository(JdbcTemplate jdbcTemplate) {
+        log.info("记忆模块: 注册 ConflictResolutionRepository");
+        return new ConflictResolutionRepository(jdbcTemplate);
+    }
+
+    /**
+     * Task 24：语义冲突裁决服务。注入到 {@link SemanticMemory} 后，
+     * upsert 末尾会异步触发 LLM 裁决（REPLACE / COEXIST / TIMELINE）。
+     *
+     * <p>采用 setter 注入挂到 semanticMemory 上，避免构造器循环依赖
+     * （ConflictResolutionService 的 applyVerdict 路径需要回调 semanticMemory）。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({GenerationRouter.class, SemanticMemory.class, VectorSearcher.class})
+    public ConflictResolutionService conflictResolutionService(
+            GenerationRouter generationRouter,
+            PromptRegistry promptRegistry,
+            VectorSearcher vectorSearcher,
+            ConflictResolutionRepository conflictResolutionRepository,
+            SemanticMemory semanticMemory) {
+        log.info("记忆模块: 注册 ConflictResolutionService");
+        var service = new ConflictResolutionService(
+                generationRouter, promptRegistry, vectorSearcher,
+                conflictResolutionRepository, semanticMemory);
+        semanticMemory.setConflictResolutionService(service);
+        return service;
     }
 
     @Bean

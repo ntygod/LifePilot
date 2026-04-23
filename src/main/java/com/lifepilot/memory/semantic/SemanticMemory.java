@@ -75,6 +75,13 @@ public class SemanticMemory {
     @Nullable
     private Runnable writeCallback;
 
+    /**
+     * 冲突裁决服务 — 在 upsert 末尾对新/合并实体触发语义冲突 LLM 裁决；为保持单测轻量，
+     * 允许为空（setter 注入，不改构造器签名）。
+     */
+    @Nullable
+    private ConflictResolutionService conflictResolutionService;
+
     public SemanticMemory(JdbcTemplate jdbcTemplate,
                           ConflictDetector conflictDetector,
                           VersionMerger versionMerger,
@@ -113,6 +120,17 @@ public class SemanticMemory {
      */
     public void setWriteCallback(@Nullable Runnable writeCallback) {
         this.writeCallback = writeCallback;
+    }
+
+    /**
+     * 注入冲突裁决服务 —— setter 注入避免 {@code SemanticMemory ↔ ConflictResolutionService}
+     * 的循环依赖（裁决服务内部又需要回调 {@code updateLifecycleState / updateSucceededBy /
+     * findById}）。Bean 装配由 {@code MemoryAutoConfiguration} 串联。
+     *
+     * @param conflictResolutionService 冲突裁决服务，{@code null} 表示关闭裁决
+     */
+    public void setConflictResolutionService(@Nullable ConflictResolutionService conflictResolutionService) {
+        this.conflictResolutionService = conflictResolutionService;
     }
 
     /**
@@ -170,6 +188,7 @@ public class SemanticMemory {
             updateEntityRoot(entity, resolvedContext, now);
             updateVector(entity);
             notifyWriteCallback();
+            triggerConflictResolution(entity);
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
             return entity;
         } else {
@@ -197,6 +216,7 @@ public class SemanticMemory {
                     entity.lifecycleState(),
                     "created by " + (sourceReference != null ? sourceReference : "unknown"),
                     resolveChangeSource(sourceReference)));
+            triggerConflictResolution(entity);
             log.debug("语义记忆: 新建实体, name={}, id={}", entity.name(), entity.id());
             return entity;
         }
@@ -417,6 +437,63 @@ public class SemanticMemory {
             vectorSearcher.deleteEntityVector(entityId);
         } catch (Exception e) {
             log.warn("语义记忆: 归档后清理向量失败, id={}, error={}", entityId, e.getMessage());
+        }
+    }
+
+    /**
+     * Task 24：upsert 完成后触发异步 LLM 冲突裁决。
+     *
+     * <p>调用链：查 top-5 语义相似邻居 → 过滤掉自己 → 交 {@link ConflictResolutionService}
+     * 异步裁决；裁决服务自身再做一次阈值过滤与 LLM 调用。触发流程与主事务解耦，任何
+     * 异常都只记 warn 日志，不影响 upsert 返回。
+     *
+     * <p>若存在活跃事务，钩子注册到 {@code afterCommit}，确保新实体已对后续查询可见；
+     * 否则（测试直接调 upsert）立即触发。
+     *
+     * @param savedEntity upsert 产出的新/合并实体
+     */
+    private void triggerConflictResolution(TemporalEntity savedEntity) {
+        if (conflictResolutionService == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    safeTriggerConflictResolution(savedEntity);
+                }
+            });
+        } else {
+            safeTriggerConflictResolution(savedEntity);
+        }
+    }
+
+    private void safeTriggerConflictResolution(TemporalEntity savedEntity) {
+        try {
+            var results = vectorSearcher.searchEntities(
+                    savedEntity.textRepresentation(), 5, 0.0f);
+            if (results == null || results.isEmpty()) {
+                return;
+            }
+            // 查候选实体（排除自己 + 排除非 ACTIVE）
+            var candidateIds = results.stream()
+                    .map(r -> r.entityId())
+                    .filter(id -> id != null && !id.equals(savedEntity.id()))
+                    .toList();
+            if (candidateIds.isEmpty()) {
+                return;
+            }
+            var candidateMap = findByIds(candidateIds);
+            var candidates = candidateMap.values().stream()
+                    .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
+                    .toList();
+            if (candidates.isEmpty()) {
+                return;
+            }
+            conflictResolutionService.resolveAsync(savedEntity, candidates);
+        } catch (Exception e) {
+            log.warn("语义记忆: 冲突裁决触发失败, entityId={}, error={}",
+                    savedEntity.id(), e.getMessage());
         }
     }
 
