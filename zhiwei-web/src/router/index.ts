@@ -76,6 +76,18 @@ const router = createRouter({
     },
 
     /**
+     * 定时任务全局管理 —— Plan 2+3 Task A5
+     *
+     * 侧栏 {@code scheduled-tasks-entry} 一级入口对应的页面，
+     * 展示主账户 + 所有项目下的定时任务，带暂停/恢复/删除操作。
+     */
+    {
+      path: '/scheduled-tasks',
+      name: 'scheduledTasks',
+      component: () => import('@/views/ScheduledTasksView.vue')
+    },
+
+    /**
      * 知识库模块
      */
     {
