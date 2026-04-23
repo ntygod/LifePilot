@@ -1321,9 +1321,6 @@ public class ReactAgentLoop implements CallbackHelper {
      * @return 激活结果，包含工具 ID 集合和 Skill 指南内容
      */
     private SkillActivationResult detectSkillToolActivation(ReactAgentState state, int fromStepIndex) {
-        if (config.getCoreToolIds().isEmpty()) {
-            return new SkillActivationResult(Set.of(), null);
-        }
         if (skillRegistry == null && toolRegistry == null) {
             return new SkillActivationResult(Set.of(), null);
         }
