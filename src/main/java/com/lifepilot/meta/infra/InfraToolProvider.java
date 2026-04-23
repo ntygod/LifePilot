@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
@@ -77,6 +78,7 @@ public class InfraToolProvider {
     @Nullable private final String skillDirectory;
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -97,7 +99,8 @@ public class InfraToolProvider {
                              @Nullable ChannelInstanceService channelInstanceService,
                              @Nullable String skillDirectory,
                              WorkspaceResolver workspaceResolver,
-                             @Nullable AttachmentRepository attachmentRepository) {
+                             @Nullable AttachmentRepository attachmentRepository,
+                             @Nullable ChatSessionRepository chatSessionRepository) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -118,6 +121,7 @@ public class InfraToolProvider {
         this.skillDirectory = skillDirectory;
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
+        this.chatSessionRepository = chatSessionRepository;
     }
 
     /**
@@ -161,9 +165,10 @@ public class InfraToolProvider {
             log.warn("WorkflowRegistry 或 WorkflowCommandService 不可用，跳过工作流管理工具注册");
         }
 
-        // 自主任务工具
+        // 自主任务工具（创建路径会通过 ChatSessionRepository 反查当前会话的 projectId，
+        // 填入新建任务的归属 —— Plan 2 Task A6）
         if (cronTaskRepository != null && cronScheduler != null) {
-            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler);
+            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, chatSessionRepository);
             totalTools += registerBuiltinTools(toolRegistry, taskToolProvider.buildCronTools());
         } else {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");

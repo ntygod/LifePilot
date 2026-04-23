@@ -3,9 +3,12 @@ package com.lifepilot.meta.infra.task;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskEntry;
 import com.lifepilot.agent.task.CronTaskRepository;
+import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.dispatch.ActionDispatchExecutor;
+import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
@@ -26,6 +29,10 @@ import java.util.stream.Collectors;
  *
  * <p>统一承接 create / list / update / remove 四类定时任务操作。</p>
  *
+ * <p>create 路径会通过 {@link ChatSessionRepository} 反查当前会话的 projectId，
+ * 填入新建的 {@link CronTaskEntry} —— 使得在隔离项目对话中创建的定时任务
+ * 自动归属该项目（Plan 2 Task A6）。</p>
+ *
  * @author zsg
  * @since 2026-03-31
  */
@@ -35,11 +42,20 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
 
     private final CronTaskRepository cronTaskRepository;
     private final CronScheduler cronScheduler;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
 
+    /** 兼容旧调用点的构造器（无 ChatSessionRepository，projectId 始终为 null）。 */
     public CronActionDispatchExecutor(CronTaskRepository cronTaskRepository,
                                       CronScheduler cronScheduler) {
+        this(cronTaskRepository, cronScheduler, null);
+    }
+
+    public CronActionDispatchExecutor(CronTaskRepository cronTaskRepository,
+                                      CronScheduler cronScheduler,
+                                      @Nullable ChatSessionRepository chatSessionRepository) {
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
+        this.chatSessionRepository = chatSessionRepository;
 
         register("create",
                 RiskLevel.LOW,
@@ -62,11 +78,13 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         CronExpression.parse(schedule);
 
                         String now = Instant.now().toString();
-                        var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now, skillIds);
+                        String projectId = resolveProjectIdOrNull(input);
+                        var entry = new CronTaskEntry(taskId, name, schedule, instruction, "active", now, now, skillIds, projectId);
                         cronTaskRepository.save(entry);
                         cronScheduler.schedule(entry);
 
-                        log.info("定时任务创建成功: id={}, name={}, schedule={}", entry.id(), name, schedule);
+                        log.info("定时任务创建成功: id={}, name={}, schedule={}, projectId={}",
+                                entry.id(), name, schedule, projectId);
                         return ToolResult.success(Map.of(
                                 "id", entry.id(),
                                 "name", name,
@@ -183,6 +201,35 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                         return ToolResult.error("删除定时任务失败: " + e.getMessage());
                     }
                 });
+    }
+
+    /**
+     * 反查当前 session 的 projectId。
+     *
+     * <p>ChatSessionRepository 缺失、sessionId 为空 / 未提供、session 不存在或查询异常时
+     * 一律回退 {@code null}，表示归属主账户。这保证 Task A6 的功能降级时不破坏 cron 创建
+     * 路径本身（例如未装载 interaction 模块的独立部署场景）。</p>
+     *
+     * @param input 工具输入（从 context 读取 sessionId）
+     * @return projectId；无法反查时为 {@code null}
+     */
+    private @Nullable String resolveProjectIdOrNull(ToolInput input) {
+        if (chatSessionRepository == null) {
+            return null;
+        }
+        String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            return chatSessionRepository.findById(sessionId)
+                    .map(ChatSession::projectId)
+                    .orElse(null);
+        } catch (Exception e) {
+            log.debug("反查 session 项目归属失败，回退主账户: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
     }
 
     /**
