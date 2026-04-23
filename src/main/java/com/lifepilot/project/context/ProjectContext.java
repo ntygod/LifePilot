@@ -9,7 +9,9 @@ import org.springframework.lang.Nullable;
  * 下游记忆检索/写入路径依据本 context 决定 MemorySpace 的读写范围。</p>
  *
  * @param projectId         项目 id（主账户对话时为 null）
- * @param projectSpaceId    项目 MemorySpace id（主账户对话时为 null）
+ * @param projectSpaceId    项目 MemorySpace id。主账户对话时为 null；SHARED 项目仍非 null——
+ *                          下游写入路径可选择性使用，但读取路径不应使用
+ *                          （{@code MemoryReadFilter.buildForProject} 已按 isolated 标志正确处理）
  * @param personalSpaceId   主账户 personal MemorySpace id（永远非 null）
  * @param experienceSpaceId 主账户 experience MemorySpace id（永远非 null）
  * @param isolated          当前项目是否 ISOLATED（主账户对话时为 false）

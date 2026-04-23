@@ -94,6 +94,10 @@ class ProjectContextResolver_单元测试 {
 
     @Test
     void projectId不存在_抛异常() {
+        when(memorySpaceRepository.ensureDefaultPersonalSpace())
+                .thenReturn(space("ms-personal", MemorySpaceType.PERSONAL));
+        when(memorySpaceRepository.ensureDefaultExperienceSpace())
+                .thenReturn(space("ms-experience", MemorySpaceType.EXPERIENCE));
         when(projectRepository.findById("nope")).thenReturn(Optional.empty());
         assertThrows(com.lifepilot.project.exception.ProjectNotFoundException.class,
                 () -> resolver.resolve("nope"));
