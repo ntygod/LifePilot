@@ -34,16 +34,46 @@ public class ToolConfigProperties {
     /** describe 服务配置 — tools.describe 批量上限。 */
     private Describe describe = new Describe();
 
-    /** Category hint 文案，注入到 system prompt 末尾告诉 LLM 还有哪些 category 可搜索。 */
+    /**
+     * Category hint 文案，注入 system prompt 末尾。
+     *
+     * <p>核心意图：**强制** LLM 在声称"没有某个能力"或退到 shell.exec/code.execute
+     * 兜底之前先调 tools.search 核实。避免 Agent 凭记忆断言工具不存在。</p>
+     */
     private String categoryHint = """
-            You have access to a tool registry indexed in English.
-            Besides the tools visible above, you can discover more via:
-              - tools.search(query, category?) to find tools by keyword
-              - tools.describe(ids[]) to inspect schemas
-              - tools.list(category?) to browse by capability category
-            Available categories: PERCEPTION, ACTION, COGNITION, STORAGE,
-              INTERACTION, INTROSPECTION, EXTENSION.
-            Always use English keywords in search queries.""";
+            ## Tool discovery — IMPORTANT
+
+            The tools you see above are NOT the complete set. They are only the
+            Tier 1 "always-loaded" high-frequency tools plus 3 discovery meta tools.
+            The full registry has many more specialized tools (git, browser,
+            document editing, datastore queries, cron, workflow, etc.) accessible
+            on demand.
+
+            MUST-FOLLOW rules:
+
+            1. BEFORE claiming a capability does not exist, OR BEFORE falling back
+               to a generic tool (shell.exec / code.execute / file.write / ...),
+               you MUST call tools.search(<english keyword>) FIRST to verify no
+               dedicated tool exists. Never answer "I don't have that tool" based
+               on memory alone.
+
+            2. Discovery workflow:
+                 tools.search("keyword")        -> returns top-k {id, description}
+                 tools.describe(["tool.id"])    -> get full JSON schema
+                 invoke the tool with that id
+               Use English keywords for search ("git log commits", "edit docx",
+               "send feishu message", "query datastore documents" ...).
+
+            3. tools.list(category) browses all tools in one category when the
+               search keyword is unclear. Available categories:
+               PERCEPTION, ACTION, COGNITION, STORAGE, INTERACTION,
+               INTROSPECTION, EXTENSION.
+
+            Example:
+              User: "查看 git 最近 3 次提交"
+              You: tools.search("git log commits") -> finds git.query
+                   -> tools.describe(["git.query"]) -> call git.query(action=log, limit=3)
+              Do NOT say "I have no git tool, let me use shell.exec".""";
 
     /** 信任工作区配置 — 在信任目录下降低 shell/code 执行的风险等级。 */
     @Setter
