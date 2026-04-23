@@ -342,12 +342,14 @@ public class MemoryAutoConfiguration {
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
-                                               @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
+                                               @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                                               Clock clock) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }
         log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
-        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry, snapshotRepository);
+        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
+                jdbcTemplate, promptRegistry, snapshotRepository, clock);
     }
 
     // 检索
