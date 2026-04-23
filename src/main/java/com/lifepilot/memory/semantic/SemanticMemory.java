@@ -881,6 +881,30 @@ public class SemanticMemory {
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
+    /**
+     * 反查所有 {@code ACTIVE} 派生实体，其 {@code derivation_sources} JSON 数组
+     * 引用了指定 {@code sourceEntityId} —— 供 {@code DerivedEntityListener} 在源失效时
+     * 定位需要进入 {@code REGENERATION_NEEDED} 的目标派生实体。
+     *
+     * <p>SQLite 原生无 JSON 查询方便路径，此处借助 {@code LIKE '%"id"%'}：将
+     * sourceEntityId 用双引号包裹匹配 JSON 数组里的字面元素，避免 id 是另一 id 子串
+     * 的误匹配（UUID 形态下已足够安全）。</p>
+     *
+     * @param sourceEntityId 源实体 ID
+     * @return 引用该源的所有 ACTIVE 派生实体
+     */
+    public List<TemporalEntity> findDerivedBySourceEntity(String sourceEntityId) {
+        String jsonPattern = "%\"" + sourceEntityId + "\"%";
+        return jdbcTemplate.query(
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities "
+                        + "WHERE is_current = 1 "
+                        + "  AND is_derived = 1 "
+                        + "  AND lifecycle_state = 'ACTIVE' "
+                        + "  AND derivation_sources LIKE ?",
+                (rs, rowNum) -> mapRowToEntity(rs),
+                jsonPattern);
+    }
+
     // --- 内部方法 ---
 
     /** 通知检索引擎数据已变更，重置 knownEmpty 短路标记。 */
