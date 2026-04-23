@@ -533,6 +533,30 @@ public class SemanticMemory {
                 entityId, newState, reason, source);
     }
 
+    /**
+     * 更新 {@code succeeded_by} 外键 — 不触发版本化，也不发布事件。
+     *
+     * <p>供 {@code memory.supersede} 工具使用：先记录「被谁替代」关系，再由调用方
+     * 通过 {@link #updateLifecycleState} 将实体转入 {@link LifecycleState#SUPERSEDED}
+     * 并发布事件。二次写入放在同一事务（由 Spring 管理），保证原子性。</p>
+     *
+     * @param entityId     被替代实体 ID
+     * @param newEntityId  新实体 ID（继承者）
+     */
+    @Transactional
+    public void updateSucceededBy(String entityId, String newEntityId) {
+        var now = Instant.now();
+        int affected = jdbcTemplate.update(
+                "UPDATE memory_entities SET succeeded_by = ?, updated_at = ? WHERE id = ?",
+                newEntityId, now.toString(), entityId);
+        if (affected == 0) {
+            log.warn("语义记忆: updateSucceededBy 未命中, entityId={}, newEntityId={}",
+                    entityId, newEntityId);
+            return;
+        }
+        log.debug("语义记忆: 更新 succeeded_by, entityId={}, newEntityId={}", entityId, newEntityId);
+    }
+
     /** 查询实体生命周期根字段快照（entity_type + 当前 lifecycle_state）用于事件。 */
     @Nullable
     private LifecycleRootSnapshot loadLifecycleRootSnapshot(String entityId) {
