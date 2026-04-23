@@ -76,9 +76,21 @@ public class ChatSessionService {
 
     @Transactional
     public ChatSession createSession(String title) {
-        ChatSession session = ChatSession.create(title);
+        return createSession(title, null);
+    }
+
+    /**
+     * 创建会话并指定归属项目。
+     *
+     * @param title     会话标题（可选）
+     * @param projectId 归属项目 ID（可选，NULL = 归属主账户）
+     * @return 新创建的会话实例
+     */
+    @Transactional
+    public ChatSession createSession(String title, @Nullable String projectId) {
+        ChatSession session = ChatSession.create(title, projectId);
         sessionRepository.save(session);
-        log.info("创建会话: id={}, title={}", session.id(), session.title());
+        log.info("创建会话: id={}, title={}, projectId={}", session.id(), session.title(), projectId);
         return session;
     }
 

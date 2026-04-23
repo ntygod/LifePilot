@@ -266,9 +266,9 @@ public class ChatController {
      */
     @PostMapping("/sessions")
     public ResponseEntity<?> createSession(@RequestBody CreateSessionRequest request) {
-        log.debug("创建会话: title={}", request.title());
+        log.debug("创建会话: title={}, projectId={}", request.title(), request.projectId());
         try {
-            var session = sessionService.createSession(request.title());
+            var session = sessionService.createSession(request.title(), request.projectId());
             // 转换为 SessionInfo
             var sessionInfo = new SessionInfo(
                     session.id(),
