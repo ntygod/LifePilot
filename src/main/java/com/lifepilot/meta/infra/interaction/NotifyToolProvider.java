@@ -48,7 +48,7 @@ public class NotifyToolProvider {
     /** 构建通知工具。 */
     private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("notify")
+                .id("notify.send_message")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
                 .description("Push a non-blocking notification message to the user. Use for scheduled task results, background job completion, or alerts. For inline conversation replies, respond directly without this tool.")

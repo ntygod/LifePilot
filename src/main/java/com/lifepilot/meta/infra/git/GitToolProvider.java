@@ -97,7 +97,8 @@ public class GitToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "git", "query", "status", "diff", "log", "blame", "repository"))
+                .tags(List.of("infrastructure", "git", "query", "status", "diff", "log", "blame", "repository",
+                        "commits", "history", "recent", "show"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -118,7 +119,8 @@ public class GitToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "git", "commit", "stash", "branch", "write", "repository"))
+                .tags(List.of("infrastructure", "git", "commit", "stash", "branch", "write", "repository",
+                        "changes", "record", "push"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

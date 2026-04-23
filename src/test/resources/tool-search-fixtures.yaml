@@ -75,6 +75,6 @@ fixtures:
   - query: "generate skill"
     expected_top_3: ["generate_skill"]
   - query: "render widget"
-    expected_top_3: ["ui.emit"]
+    expected_top_3: ["ui.render"]
   - query: "system health"
     expected_top_3: ["system.status"]

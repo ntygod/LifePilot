@@ -25,7 +25,8 @@ import java.util.Map;
  */
 public class TaskToolProvider {
 
-    private static final List<String> TASK_TAGS = List.of("cron", "schedule", "task", "automation", "timer", "job", "recurring");
+    private static final List<String> TASK_TAGS = List.of("cron", "schedule", "task", "automation", "timer", "job", "recurring",
+            "create", "list", "update", "remove", "delete");
 
     private final CronTaskRepository cronTaskRepository;
     private final CronScheduler cronScheduler;

@@ -37,7 +37,7 @@ class UiEmitToolExecutor_单元测试 {
                 )
         );
         var input = new ToolInput(
-                "ui.emit",
+                "ui.render",
                 Map.of("components", components),
                 JsonSchema.empty(),
                 null,
@@ -62,7 +62,7 @@ class UiEmitToolExecutor_单元测试 {
                 )
         );
         var input = new ToolInput(
-                "ui.emit",
+                "ui.render",
                 Map.of("components", components),
                 JsonSchema.empty(),
                 null,
@@ -84,7 +84,7 @@ class UiEmitToolExecutor_单元测试 {
     void 缺少streamId时返回错误() {
         var executor = new UiEmitToolExecutor(sseManager, 50, treeCapture);
         var input = new ToolInput(
-                "ui.emit",
+                "ui.render",
                 Map.of("components", List.of()),
                 JsonSchema.empty(),
                 null,
@@ -108,7 +108,7 @@ class UiEmitToolExecutor_单元测试 {
                 )
         );
         var input = new ToolInput(
-                "ui.emit",
+                "ui.render",
                 Map.of("components", components),
                 JsonSchema.empty(),
                 null,

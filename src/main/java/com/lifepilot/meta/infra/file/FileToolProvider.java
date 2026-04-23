@@ -251,7 +251,8 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "list", "file", "browse", "search", "directory", "enumerate", "info"))
+                .tags(List.of("infrastructure", "list", "file", "browse", "search", "directory", "enumerate", "info",
+                        "find", "stat", "metadata"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -346,7 +347,8 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("source", "destination", "path")
                 ))
-                .tags(List.of("infrastructure", "manage", "move", "copy", "delete", "create", "mkdir", "file", "directory"))
+                .tags(List.of("infrastructure", "manage", "move", "copy", "delete", "create", "mkdir", "file", "directory",
+                        "rename", "trash"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

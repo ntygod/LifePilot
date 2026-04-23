@@ -128,7 +128,8 @@ public class ShellToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("sessionIds", "sessionId")
                 ))
-                .tags(List.of("infrastructure", "process", "background", "session", "tmux", "shell", "manage", "kill", "signal"))
+                .tags(List.of("infrastructure", "process", "background", "session", "tmux", "shell", "manage", "kill", "signal",
+                        "output", "list", "write", "resize"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

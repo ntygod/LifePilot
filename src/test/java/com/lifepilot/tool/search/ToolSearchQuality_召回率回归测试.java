@@ -263,7 +263,7 @@ class ToolSearchQuality_召回率回归测试 {
                 ToolCategory.ACTION);
 
         // Tier 2 ui.emit —— 镜像 UiEmitToolProvider
-        reg("ui.emit", "Render an interactive UI widget or component for the frontend.",
+        reg("ui.render", "Render an interactive UI widget or component for the frontend.",
                 List.of("ui", "render", "component", "interactive", "emit", "frontend", "widget"),
                 ToolCategory.INTERACTION);
 

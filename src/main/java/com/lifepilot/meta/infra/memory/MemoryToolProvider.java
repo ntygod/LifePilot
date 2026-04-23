@@ -140,7 +140,8 @@ public class MemoryToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("entityNames", false, "name", "entityId", "sourceEntityId", "targetEntityId")
                 ))
-                .tags(List.of("memory", "recall", "remember", "store", "save", "knowledge", "history", "search"))
+                .tags(List.of("memory", "recall", "remember", "store", "save", "knowledge", "history", "search",
+                        "forget", "cancel", "tag", "update", "delete", "create", "archive"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

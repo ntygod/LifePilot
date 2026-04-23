@@ -59,7 +59,9 @@ public class StorageToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.exactValues("collections", "name", "collectionName", "documentId")
                 ))
-                .tags(List.of("datastore", "storage", "database", "collection", "query", "crud", "aggregate", "document"))
+                .tags(List.of("datastore", "storage", "database", "collection", "query", "crud", "aggregate", "document",
+                        "add", "get", "insert", "update", "delete", "list_collections",
+                        "create_collection", "update_collection", "delete_collection"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
