@@ -74,14 +74,16 @@ public class ToolAutoConfiguration {
             PermissionService permissionService,
             PermissionRequestFactory permissionRequestFactory,
             PermissionApprovalService permissionApprovalService,
-            ToolConfigProperties config) {
+            ToolConfigProperties config,
+            ApplicationEventPublisher eventPublisher) {
         var p = config.getPipeline();
         log.info("工具执行管线初始化: timeout={}s, maxRetries={}, retryDelay={}ms",
                 p.getDefaultTimeoutSeconds(), p.getDefaultMaxRetries(), p.getRetryInitialDelayMs());
         return new ToolExecutionPipeline(
                 toolRegistry, guardrailEngine, idempotencyManager,
                 permissionService, permissionRequestFactory, permissionApprovalService,
-                p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs());
+                p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs(),
+                eventPublisher);
     }
 
     @Bean
@@ -156,6 +158,29 @@ public class ToolAutoConfiguration {
             ToolConfigProperties p,
             com.lifepilot.tool.tier1.Tier1AdvisoryRepository repo) {
         return new com.lifepilot.tool.tier1.Tier1Service(p, repo);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.ToolUsageStatsRepository toolUsageStatsRepository(
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        return new com.lifepilot.tool.tier1.ToolUsageStatsRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.ToolUsageStatsRecorder toolUsageStatsRecorder(
+            com.lifepilot.tool.tier1.ToolUsageStatsRepository repo) {
+        return new com.lifepilot.tool.tier1.ToolUsageStatsRecorder(repo);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.Tier1AdvisoryJob tier1AdvisoryJob(
+            ToolConfigProperties p,
+            com.lifepilot.tool.tier1.ToolUsageStatsRepository statsRepo,
+            com.lifepilot.tool.tier1.Tier1AdvisoryRepository advisoryRepo) {
+        return new com.lifepilot.tool.tier1.Tier1AdvisoryJob(p, statsRepo, advisoryRepo);
     }
 
     @Bean
