@@ -3,6 +3,7 @@ package com.lifepilot.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
+import com.lifepilot.agent.callback.NonStreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
@@ -14,6 +15,8 @@ import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -106,6 +109,11 @@ public class ReactAgentLoop implements CallbackHelper {
     // ===== 可选依赖（即时经验补丁） =====
     @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
 
+    // ===== 可选依赖（run(Session, UserMessage) 便捷入口依赖） =====
+    // 通过 setter 注入，避免破坏既有 18 参构造器签名；生产环境由 AgentAutoConfiguration 注入，
+    // 测试环境若不调用 run() 则无需提供。
+    @Nullable private GenerationRouter generationRouter;
+
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
             ProviderMessageBuilder providerMessageBuilder,
@@ -162,8 +170,138 @@ public class ReactAgentLoop implements CallbackHelper {
         return multimodalRouter;
     }
 
+    /**
+     * 注入文本生成路由器 — 仅在使用 {@link #run(String, UserMessage)} 便捷入口时必需。
+     *
+     * <p>采用 setter 注入而非构造器注入，避免破坏既有 18 参构造器签名和全量测试用例；
+     * 生产环境由 {@code AgentAutoConfiguration} 装配，单元测试若不走 run() 路径可直接忽略。</p>
+     *
+     * @param generationRouter 文本生成路由器
+     */
+    public void setGenerationRouter(@Nullable GenerationRouter generationRouter) {
+        this.generationRouter = generationRouter;
+    }
+
     ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
         return providerMessageBuilder.build(ctx, state);
+    }
+
+    // ===== 便捷入口：run(Session, UserMessage) =====
+
+    /**
+     * 以最小入参运行一次 ReAct 循环，返回结构化的 {@link TurnResult}。
+     *
+     * <p>本方法是为 SDK 调用方与场景 E2E 测试准备的纯函数式入口，内部复用
+     * {@link #coreLoop} — 与 HTTP/SSE 入口（{@code AgentOrchestrator.run}）共享
+     * 同一核心循环，不绕过 suspend/resume、retry、预算降级等语义。</p>
+     *
+     * <p>与 HTTP 入口的差异：
+     * <ul>
+     *   <li>不做 checkpoint 保存/恢复（每次都是一轮全新的循环）</li>
+     *   <li>不持久化 transcript、turn、workspace 进度快照</li>
+     *   <li>不发送 SSE 事件（{@link AgentLoopContext} 为纯 no-op 模式）</li>
+     *   <li>不做多模态预处理，用户需传入已校验好的消息</li>
+     * </ul>
+     *
+     * <p>调用前需通过 {@link #setGenerationRouter(GenerationRouter)} 注入文本生成路由器，
+     * 否则抛出 {@link IllegalStateException}。</p>
+     *
+     * @param sessionId   会话标识（不可为空）
+     * @param userMessage 用户消息（Spring AI {@link UserMessage}，文本通过 {@code getText()} 读取）
+     * @return 本轮执行结果快照
+     * @throws IllegalArgumentException 入参为 null 或 sessionId 空白
+     * @throws IllegalStateException    未通过 setter 注入 GenerationRouter
+     */
+    public TurnResult run(String sessionId, UserMessage userMessage) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId 不能为空");
+        }
+        if (userMessage == null) {
+            throw new IllegalArgumentException("userMessage 不能为空");
+        }
+        if (generationRouter == null) {
+            throw new IllegalStateException(
+                    "ReactAgentLoop.run(...) 依赖 GenerationRouter，请先调用 setGenerationRouter 注入");
+        }
+
+        // 1. 构造最小 AgentRequest：仅携带会话标识与用户消息，其他参数走默认值
+        var request = new AgentRequest(
+                userMessage.getText() != null ? userMessage.getText() : "",
+                sessionId,
+                InteractionSource.system("react-agent-loop-run"));
+
+        // 2. 初始化 ReactAgentState — 与 AgentOrchestrator.run 一致的初始化路径
+        var state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
+
+        // 3. 构造无 SSE 的 loopContext（纯内存模式，不推送事件）
+        var loopContext = new AgentLoopContext();
+        var cancellationToken = new CancellationToken();
+
+        // 4. 构造 NonStreamingCallback — 走与 HTTP 同步入口完全相同的 LLM 调用路径
+        var callback = new NonStreamingCallback(
+                config, generationRouter, multimodalRouter, request, this);
+
+        // 5. 调用核心循环（与 AgentOrchestrator.run 共享同一方法）
+        var loopStart = Instant.now();
+        ReactAgentState finalState = coreLoop(
+                state, request, null, loopStart, callback, cancellationToken, loopContext);
+
+        // 6. 从 steps 中收集工具调用序列（ToolCall 与 Observation 按 callId / 顺序配对）
+        List<TurnResult.ToolInvocation> invocations = collectToolInvocations(finalState);
+
+        // 7. 判断本轮是否"正常结束"：非挂起、非降级终止、且 done=true
+        boolean completed = finalState.isDone()
+                && !finalState.suspended()
+                && finalState.completionMode() != CompletionMode.DEGRADED
+                && finalState.terminationReason() == null;
+
+        return new TurnResult(
+                finalState.sessionId(),
+                finalState.turnId(),
+                invocations,
+                finalState.finalOutput(),
+                completed);
+    }
+
+    /**
+     * 从 ReAct 步骤序列中提取 ToolCall + Observation 配对，按原始调用顺序汇总。
+     *
+     * <p>优先通过 {@code callId} 精确匹配；callId 缺失时退回到按顺序的 toolId 首匹配，
+     * 与 transcript 回放逻辑保持一致。</p>
+     */
+    private List<TurnResult.ToolInvocation> collectToolInvocations(ReactAgentState state) {
+        var result = new ArrayList<TurnResult.ToolInvocation>();
+        var steps = state.steps();
+        // Observation 按 callId 建立索引，没有 callId 的放到 fallback 队列
+        var observationByCallId = new LinkedHashMap<String, ReactStep.Observation>();
+        var fallbackObservations = new ArrayList<ReactStep.Observation>();
+        for (var step : steps) {
+            if (step instanceof ReactStep.Observation obs) {
+                if (obs.callId() != null) {
+                    observationByCallId.put(obs.callId(), obs);
+                } else {
+                    fallbackObservations.add(obs);
+                }
+            }
+        }
+
+        int fallbackCursor = 0;
+        for (var step : steps) {
+            if (!(step instanceof ReactStep.ToolCall toolCall)) continue;
+            ReactStep.Observation matched = null;
+            if (toolCall.callId() != null) {
+                matched = observationByCallId.remove(toolCall.callId());
+            }
+            if (matched == null && fallbackCursor < fallbackObservations.size()) {
+                matched = fallbackObservations.get(fallbackCursor++);
+            }
+            String resultJson = matched != null ? matched.output() : "";
+            result.add(new TurnResult.ToolInvocation(
+                    toolCall.toolId(),
+                    toolCall.inputJson() != null ? toolCall.inputJson() : "",
+                    resultJson));
+        }
+        return result;
     }
 
     // ===== 核心 ReAct 循环 =====

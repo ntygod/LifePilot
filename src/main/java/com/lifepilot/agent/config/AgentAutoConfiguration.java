@@ -296,6 +296,7 @@ public class AgentAutoConfiguration {
             AgentToolProvider agentToolProvider,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
+            GenerationRouter generationRouter,
             @Autowired(required = false) TraceRecorder traceRecorder,
             @Autowired(required = false) TranscriptStore transcriptStore,
             @Autowired(required = false) MultimodalRouter multimodalRouter,
@@ -309,7 +310,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SkillRegistry skillRegistry,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
-        return new ReactAgentLoop(
+        var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
                 agentToolProvider,
@@ -328,6 +329,9 @@ public class AgentAutoConfiguration {
                 skillRegistry,
                 toolRegistry,
                 experienceSummarizer);
+        // 注入 run(sessionId, UserMessage) 便捷入口所需的路由器
+        loop.setGenerationRouter(generationRouter);
+        return loop;
     }
 
     @Bean
