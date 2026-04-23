@@ -64,13 +64,13 @@ export const GENERATION_SCENE_OPTIONS: GenerationSceneOption[] = [
   },
   {
     value: 'knowledge_rerank',
-    label: '知识重排',
-    hint: '批量打分任务，延迟敏感，建议用 Flash / Turbo 级小模型',
+    label: 'LLM 重排打分',
+    hint: '用 LLM 对检索结果做 pointwise / listwise 打分，不是专用 reranker 模型（专用请在精排服务页配置）。延迟敏感，建议用 Flash / Turbo 级小模型',
   },
   {
     value: 'retrieval_quality_eval',
-    label: '检索质量评估',
-    hint: '轻量打分，建议用 Flash / Turbo 级小模型',
+    label: 'LLM 检索评估',
+    hint: '用 LLM 评估检索结果相关度的轻量打分场景，不是专用 reranker。建议用 Flash / Turbo 级小模型',
   },
 ]
 
