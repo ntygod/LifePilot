@@ -96,6 +96,29 @@ class ToolValidator_启动校验测试 {
         assertThatCode(() -> validator.validate(tool)).doesNotThrowAnyException();
     }
 
+    @Test
+    void 无namespace但含动词词根的单段ID_应通过() {
+        // 现有工具如 spawn_workers / generate_skill 没有点号结构，但 ID 本身含动词词根
+        BuiltinTool tool = baseBuilder()
+                .id("spawn_workers")
+                .name("并行派发任务")
+                .description("Spawn multiple parallel workers to process independent subtasks")
+                .tags(List.of("spawn", "worker", "parallel", "multiagent"))
+                .build();
+        assertThatCode(() -> validator.validate(tool)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void 多段namespace_应通过() {
+        BuiltinTool tool = baseBuilder()
+                .id("code.kernel.list")
+                .name("列出代码内核")
+                .description("List the active code kernels managed by the sandbox runtime")
+                .tags(List.of("kernel", "code", "list", "session"))
+                .build();
+        assertThatCode(() -> validator.validate(tool)).doesNotThrowAnyException();
+    }
+
     private BuiltinTool.Builder baseBuilder() {
         return BuiltinTool.builder()
                 .riskLevel(RiskLevel.LOW)

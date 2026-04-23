@@ -22,12 +22,13 @@ public class ToolValidator {
     private static final Logger log = LoggerFactory.getLogger(ToolValidator.class);
 
     private static final Pattern ID_PATTERN =
-            Pattern.compile("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9_]*)+$");
+            Pattern.compile("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$");
 
     private static final Set<String> SELF_DESCRIPTIVE_NAMESPACES = Set.of(
             "memory", "knowledge", "notify", "shell", "web",
             "file", "document", "datastore", "cron", "channel",
-            "process", "tools", "ui", "system"
+            "process", "tools", "ui", "system",
+            "git", "code", "workflow"
     );
 
     private static final Set<String> VERB_ROOTS = Set.of(
@@ -36,7 +37,8 @@ public class ToolValidator {
             "send", "emit", "notify", "exec", "execute", "run",
             "patch", "commit", "rollback", "store", "save", "load",
             "start", "stop", "restart", "cancel", "schedule", "trigger",
-            "describe", "inspect", "status"
+            "describe", "inspect", "status",
+            "spawn", "generate", "browse"
     );
 
     private static final Pattern CHINESE_PATTERN = Pattern.compile("[\\u4e00-\\u9fff]");
