@@ -83,8 +83,9 @@ public class SessionStoreRepository {
         jdbcTemplate.update("""
                 INSERT INTO session_store (
                     session_id, channel, chat_type, title, summary, message_count,
-                    is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at, active_branch_id
-                ) VALUES (?, ?, 'chat', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'main')
+                    is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at,
+                    active_branch_id, project_id
+                ) VALUES (?, ?, 'chat', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'main', ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     channel = excluded.channel,
                     chat_type = excluded.chat_type,
@@ -96,7 +97,8 @@ public class SessionStoreRepository {
                     last_message_at = excluded.last_message_at,
                     updated_at = excluded.updated_at,
                     last_activity_at = excluded.last_activity_at,
-                    active_branch_id = excluded.active_branch_id
+                    active_branch_id = excluded.active_branch_id,
+                    project_id = excluded.project_id
                 """,
                 session.id(),
                 channel,
@@ -108,7 +110,8 @@ public class SessionStoreRepository {
                 session.lastMessageAt() != null ? session.lastMessageAt().toString() : null,
                 session.createdAt().toString(),
                 updatedAt,
-                lastActivityAt
+                lastActivityAt,
+                session.projectId()
         );
         if (created) {
             publishEvent(new MemoryEvent.SessionStarted(
@@ -388,7 +391,7 @@ public class SessionStoreRepository {
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
                        last_activity_at, config_json, context_tokens_estimate,
-                       compaction_count, memory_flush_at, active_branch_id
+                       compaction_count, memory_flush_at, active_branch_id, project_id
                 FROM session_store WHERE session_id = ?
                 """,
                 this::mapRow,
@@ -403,7 +406,7 @@ public class SessionStoreRepository {
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
                        last_activity_at, config_json, context_tokens_estimate,
-                       compaction_count, memory_flush_at, active_branch_id
+                       compaction_count, memory_flush_at, active_branch_id, project_id
                 FROM session_store
                 WHERE channel = 'web'
                   AND instr(session_id, ':') = 0
@@ -424,7 +427,7 @@ public class SessionStoreRepository {
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
                        last_activity_at, config_json, context_tokens_estimate,
-                       compaction_count, memory_flush_at, active_branch_id
+                       compaction_count, memory_flush_at, active_branch_id, project_id
                 FROM session_store
                 WHERE channel = 'web'
                   AND instr(session_id, ':') = 0
@@ -515,8 +518,7 @@ public class SessionStoreRepository {
                 rs.getInt("compaction_count"),
                 parseInstant(rs.getString("memory_flush_at")),
                 rs.getString("active_branch_id"),
-                // Step D 会改成从 SELECT 列表读 project_id；Step B 仅占位，避免 record 与列数不一致
-                null
+                rs.getString("project_id")
         );
     }
 

@@ -77,7 +77,8 @@ class ChatTurnService_集成测试 {
                     total_tokens INTEGER NOT NULL DEFAULT 0,
                     compaction_count INTEGER NOT NULL DEFAULT 0,
                     memory_flush_at TEXT,
-                    active_branch_id TEXT NOT NULL DEFAULT 'main'
+                    active_branch_id TEXT NOT NULL DEFAULT 'main',
+                    project_id TEXT
                 )
                 """);
         jdbcTemplate.execute("""
