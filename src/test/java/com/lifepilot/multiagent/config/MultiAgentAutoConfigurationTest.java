@@ -18,6 +18,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -116,6 +117,11 @@ class MultiAgentAutoConfigurationTest {
         @Bean
         AgentOrchestrator agentOrchestrator() {
             return mock(AgentOrchestrator.class);
+        }
+
+        @Bean
+        JdbcTemplate jdbcTemplate() {
+            return mock(JdbcTemplate.class);
         }
 
         @Bean
