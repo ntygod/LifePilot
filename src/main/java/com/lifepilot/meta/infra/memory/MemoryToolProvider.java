@@ -266,28 +266,17 @@ public class MemoryToolProvider {
 
     /**
      * ctx 为 null 时按 scopes 走 fallback；非 null 时按项目/主账户 space + scope 组合。
+     *
+     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
+     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
      */
     private MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
-        if (ctx == null) {
-            if (scopes == null || scopes.isEmpty()) {
-                return MemoryReadFilter.all();
-            }
-            if (scopes.equals(Set.of(MemoryScope.AGENT_EXPERIENCE))) {
-                return MemoryReadFilter.agentExperience();
-            }
-            if (scopes.equals(Set.of(MemoryScope.USER_PROFILE))) {
-                return MemoryReadFilter.userProfile();
-            }
-            if (scopes.equals(Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT))) {
-                return MemoryReadFilter.userMemory();
-            }
-            return new MemoryReadFilter(Set.of(), scopes);
-        }
-        return MemoryReadFilter.buildForProject(
-                ctx.projectSpaceId(),
-                ctx.personalSpaceId(),
-                ctx.experienceSpaceId(),
-                ctx.isolated(),
+        return MemoryReadFilter.fromProjectContextOrFallback(
+                ctx != null,
+                ctx != null ? ctx.projectSpaceId() : null,
+                ctx != null ? ctx.personalSpaceId() : null,
+                ctx != null ? ctx.experienceSpaceId() : null,
+                ctx != null && ctx.isolated(),
                 scopes);
     }
 
@@ -448,6 +437,11 @@ public class MemoryToolProvider {
             // 召回候选：跨 USER_PROFILE/USER_FACT 与 AGENT_EXPERIENCE 两个域
             // （EXPERIENCE 类实体落在 AGENT_EXPERIENCE，不能用 userMemory() 过滤掉）
             // 有 ProjectContext 时按 project + 主账户 space 限定；无则回退全量
+            //
+            // 跨 scope 说明：隔离项目的 cancel 允许跨主账户归档 — 符合 ProjectContext 读主账户
+            // 的设计（参见 MemoryReadFilter.buildForProject 的 space 合并策略）。用户在项目内
+            // 说"取消 X"时，希望清掉的是包括主账户同名目标/习惯/经验在内的全量匹配，
+            // 而非只在项目 space 内生效。此处不做额外限制，保持与 search/searchExperience 一致。
             int retrieveTopK = Math.max(maxArchive * 3, 10);
             MemoryReadFilter cancelFilter = toProjectFilter(resolveProjectContext(input), Set.of());
             List<RetrievalResult> candidates = hybridRetriever.retrieve(

@@ -53,6 +53,8 @@ public class ProactiveMemoryBridge {
     public List<GoalView> getActiveGoals() {
         if (semanticMemory == null) return List.of();
         try {
+            // TODO(plan-1-后续): 接入 ProjectContext，主动任务按所属项目读取目标；
+            // Plan 1 先按主账户维度读取，隔离项目的活跃目标暂不参与 proactive 追问。
             var goals = semanticMemory.findCurrentByType(EntityType.GOAL, MemoryReadFilter.userProfile());
             return goals.stream()
                     .map(this::toGoalView)
@@ -163,6 +165,8 @@ public class ProactiveMemoryBridge {
     public String getUserPortrait() {
         if (semanticMemory == null) return "";
         try {
+            // TODO(plan-1-后续): 接入 ProjectContext，按当前项目读取画像；
+            // Plan 1 先按主账户维度读取巩固画像和零散实体。
             // 优先读巩固后的画像
             var consolidated = semanticMemory.findCurrentByNameAndType(
                     CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, MemoryReadFilter.userProfile());
@@ -197,6 +201,8 @@ public class ProactiveMemoryBridge {
     public String getRecentExperiences() {
         if (semanticMemory == null) return "";
         try {
+            // TODO(plan-1-后续): 接入 ProjectContext，按当前项目读取经验；
+            // Plan 1 先按主账户维度读取所有 agent 经验。
             var experiences = semanticMemory.findCurrentByType(
                     EntityType.EXPERIENCE, MemoryReadFilter.agentExperience());
             if (experiences.isEmpty()) return "";

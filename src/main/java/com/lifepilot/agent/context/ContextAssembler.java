@@ -382,33 +382,18 @@ public class ContextAssembler {
      * <p>ctx 为 null 时按 scopes 回退到 {@link MemoryReadFilter#userProfile()} /
      * {@link MemoryReadFilter#userMemory()} / {@link MemoryReadFilter#agentExperience()} 原行为，
      * 保证新旧路径向后兼容。</p>
+     *
+     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
+     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
      */
     MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
-        if (ctx == null) {
-            return fallbackFilter(scopes);
-        }
-        return MemoryReadFilter.buildForProject(
-                ctx.projectSpaceId(),
-                ctx.personalSpaceId(),
-                ctx.experienceSpaceId(),
-                ctx.isolated(),
+        return MemoryReadFilter.fromProjectContextOrFallback(
+                ctx != null,
+                ctx != null ? ctx.projectSpaceId() : null,
+                ctx != null ? ctx.personalSpaceId() : null,
+                ctx != null ? ctx.experienceSpaceId() : null,
+                ctx != null && ctx.isolated(),
                 scopes);
-    }
-
-    private MemoryReadFilter fallbackFilter(Set<MemoryScope> scopes) {
-        if (scopes == null || scopes.isEmpty()) {
-            return MemoryReadFilter.all();
-        }
-        if (scopes.equals(Set.of(MemoryScope.AGENT_EXPERIENCE))) {
-            return MemoryReadFilter.agentExperience();
-        }
-        if (scopes.equals(Set.of(MemoryScope.USER_PROFILE))) {
-            return MemoryReadFilter.userProfile();
-        }
-        if (scopes.equals(Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT))) {
-            return MemoryReadFilter.userMemory();
-        }
-        return new MemoryReadFilter(Set.of(), scopes);
     }
 
     private AssembledContext buildFallbackContext(ReactAgentState state) {
