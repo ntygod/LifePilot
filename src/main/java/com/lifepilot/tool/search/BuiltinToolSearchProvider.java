@@ -7,6 +7,7 @@ import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
@@ -51,7 +52,7 @@ public class BuiltinToolSearchProvider {
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(
@@ -78,7 +79,7 @@ public class BuiltinToolSearchProvider {
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(
@@ -103,7 +104,7 @@ public class BuiltinToolSearchProvider {
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(

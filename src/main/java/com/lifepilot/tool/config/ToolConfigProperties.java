@@ -38,16 +38,15 @@ public class ToolConfigProperties {
      * Category hint 文案，注入 system prompt 末尾。
      *
      * <p>核心意图：**强制** LLM 在声称"没有某个能力"或退到 shell.exec/code.execute
-     * 兜底之前先调 tools.search 核实。避免 Agent 凭记忆断言工具不存在。</p>
+     * 兜底之前先调 tools.search 核实；并且说明发现工作流是**抽象模式**（避免 LLM
+     * 对具体示例过拟合 hard-code 到某个真实工具 id 上）。</p>
      */
     private String categoryHint = """
             ## Tool discovery — IMPORTANT
 
             The tools you see above are NOT the complete set. They are only the
             Tier 1 "always-loaded" high-frequency tools plus 3 discovery meta tools.
-            The full registry has many more specialized tools (git, browser,
-            document editing, datastore queries, cron, workflow, etc.) accessible
-            on demand.
+            The full registry has many more specialized tools accessible on demand.
 
             MUST-FOLLOW rules:
 
@@ -57,23 +56,31 @@ public class ToolConfigProperties {
                dedicated tool exists. Never answer "I don't have that tool" based
                on memory alone.
 
-            2. Discovery workflow:
-                 tools.search("keyword")        -> returns top-k {id, description}
-                 tools.describe(["tool.id"])    -> get full JSON schema
-                 invoke the tool with that id
-               Use English keywords for search ("git log commits", "edit docx",
-               "send feishu message", "query datastore documents" ...).
+            2. Discovery workflow (abstract pattern — use it for ANY request,
+               do not hard-code to any specific capability):
+                 step A: tools.search("<english keywords of desired capability>")
+                         -> returns top-k {id, description} hits, or empty
+                 step B: if step A empty/low-confidence, try tools.list(<category>)
+                         to browse all tools in a relevant category
+                 step C: tools.describe([<candidate id>]) to read the full schema
+                 step D: invoke the chosen tool
 
-            3. tools.list(category) browses all tools in one category when the
-               search keyword is unclear. Available categories:
-               PERCEPTION, ACTION, COGNITION, STORAGE, INTERACTION,
-               INTROSPECTION, EXTENSION.
+            3. Category hints for step B:
+               - Query / read-only / observation operations are typically in
+                 PERCEPTION category (examples: read, fetch, query, search, list).
+               - Mutation / side-effect operations are typically in
+                 ACTION category (examples: write, edit, create, delete, send).
+               - Storage schema management is in STORAGE.
+               - User-facing notification / rendering is in INTERACTION.
+               If list(ACTION) does not contain the tool you need, also try
+               list(PERCEPTION) — read and write are often split between the two.
 
-            Example:
-              User: "查看 git 最近 3 次提交"
-              You: tools.search("git log commits") -> finds git.query
-                   -> tools.describe(["git.query"]) -> call git.query(action=log, limit=3)
-              Do NOT say "I have no git tool, let me use shell.exec".""";
+            4. Use multiple parallel tools.search calls in a single turn if the
+               task needs several different capabilities (tools.search itself is
+               PARALLEL_SAFE — one turn can issue several search calls at once).
+
+            5. Available categories: PERCEPTION, ACTION, COGNITION, STORAGE,
+               INTERACTION, INTROSPECTION, EXTENSION.""";
 
     /** 信任工作区配置 — 在信任目录下降低 shell/code 执行的风险等级。 */
     @Setter
