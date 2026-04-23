@@ -4,6 +4,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -83,7 +84,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -101,7 +102,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -113,7 +114,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -148,7 +149,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -164,7 +165,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertTrue(count > 0, "importanceScore 低于保护阈值的实体不受保护，应被遗忘");
-        verify(semanticMemory, atLeastOnce()).archive(entity);
+        verify(semanticMemory, atLeastOnce()).archive(entity, ChangeSource.CRON_EXPIRE);
     }
 
     @Test
@@ -180,7 +181,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertTrue(count > 0, "应成功遗忘至少一个实体");
-        verify(semanticMemory, atLeastOnce()).archive(oldEntity);
+        verify(semanticMemory, atLeastOnce()).archive(oldEntity, ChangeSource.CRON_EXPIRE);
         // 验证日志写入
         verify(jdbcTemplate, atLeastOnce()).update(
                 contains("INSERT INTO forgetting_log"),
@@ -210,7 +211,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertTrue(count > 0);
-        verify(semanticMemory, atLeastOnce()).archive(entity);
+        verify(semanticMemory, atLeastOnce()).archive(entity, ChangeSource.CRON_EXPIRE);
         // 验证日志中记录了压缩摘要
         verify(jdbcTemplate, atLeastOnce()).update(
                 contains("INSERT INTO forgetting_log"),
@@ -276,7 +277,7 @@ class ForgettingEngine_单元测试 {
         int count = engine.forget();
 
         assertTrue(count > 0);
-        verify(semanticMemory, atLeastOnce()).archive(entity);
+        verify(semanticMemory, atLeastOnce()).archive(entity, ChangeSource.CRON_EXPIRE);
         // 验证日志中 action 为 ARCHIVED，compression_summary 为 null
         verify(jdbcTemplate, atLeastOnce()).update(
                 contains("INSERT INTO forgetting_log"),
@@ -303,7 +304,7 @@ class ForgettingEngine_单元测试 {
         int count = engineWithoutLlm.forget();
 
         assertTrue(count > 0);
-        verify(semanticMemory, atLeastOnce()).archive(entity);
+        verify(semanticMemory, atLeastOnce()).archive(entity, ChangeSource.CRON_EXPIRE);
         // 不应调用 LLM
         verifyNoInteractions(generationRouter);
     }
@@ -319,7 +320,7 @@ class ForgettingEngine_单元测试 {
         // entity1 归档时抛出异常
         doThrow(new RuntimeException("数据库写入失败"))
                 .doNothing()
-                .when(semanticMemory).archive(any());
+                .when(semanticMemory).archive(any(), any(ChangeSource.class));
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
 
@@ -350,9 +351,9 @@ class ForgettingEngine_单元测试 {
 
         assertTrue(count > 0);
         // 只有 forgettable 应该被归档
-        verify(semanticMemory, atLeastOnce()).archive(forgettable);
-        verify(semanticMemory, never()).archive(protectedEntity);
-        verify(semanticMemory, never()).archive(highImportance);
+        verify(semanticMemory, atLeastOnce()).archive(forgettable, ChangeSource.CRON_EXPIRE);
+        verify(semanticMemory, never()).archive(eq(protectedEntity), any(ChangeSource.class));
+        verify(semanticMemory, never()).archive(eq(highImportance), any(ChangeSource.class));
     }
 
     // ==================== FifoPolicy 测试 ====================

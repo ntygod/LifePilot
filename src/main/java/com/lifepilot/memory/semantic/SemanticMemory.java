@@ -331,6 +331,17 @@ public class SemanticMemory {
     }
 
     /**
+     * 归档（2-arg 兼容签名）— 等价 {@code archive(entity, ChangeSource.UI_EDIT)}。
+     *
+     * <p>保留给 UI/前端删除、Tool delete 等未显式指定来源的调用方：默认按"用户 UI 编辑"
+     * 归因。定时清理 / 合并 / 冲突裁决等路径必须走 3-arg 重载以携带正确 {@link ChangeSource}，
+     * 否则下游 DerivedEntityListener / L4SyncListener 无法区分 cron 与 UI 动作。</p>
+     */
+    public void archive(TemporalEntity entity) {
+        archive(entity, ChangeSource.UI_EDIT);
+    }
+
+    /**
      * 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系；
      * 向量清理走 afterCommit 钩子在事务外执行，避免事务回滚后留下"向量已删、主库未改"的不一致。
      *
@@ -338,9 +349,17 @@ public class SemanticMemory {
      * {@link TransactionSynchronization#afterCommit()}：主库事务真正提交后再删向量，
      * 回滚路径下向量保持原状。钩子里的失败仅告警；残留向量最终由检索链路的
      * {@code findByIds} + {@code is_current = 1} 过滤拦截，不会被注入上下文。</p>
+     *
+     * <p>B5 follow-up：增加 {@code source} 入参，替代原先写死的 {@link ChangeSource#UI_EDIT}。
+     * 允许 {@code ForgettingEngine} / {@code ExperienceMerger} / {@code EntityDeduplicator}
+     * 等调用方显式传 {@link ChangeSource#CRON_EXPIRE} 或 {@link ChangeSource#CONFLICT_RESOLVE}，
+     * 保证事件 source 与实际触发原因对齐。</p>
+     *
+     * @param entity 待归档实体
+     * @param source 归档来源 — 决定 LifecycleChanged 事件的 source 字段
      */
     @Transactional
-    public void archive(TemporalEntity entity) {
+    public void archive(TemporalEntity entity, ChangeSource source) {
         var now = Instant.now();
         closeCurrentEntityVersion(entity.id(), now);
         jdbcTemplate.update(
@@ -365,18 +384,16 @@ public class SemanticMemory {
 
         registerAfterCommitVectorCleanup(entity.id());
 
-        // Task 12：归档发布 LifecycleChanged(旧态 → ARCHIVED)，source=UI_EDIT
-        // archive 调用方多为显式动作（UI 删除 / tool archive / 经验淘汰 / 遗忘），
-        // 统一归 UI_EDIT；后续如需细分，调用方应改走 updateLifecycleState(entityId, ARCHIVED, reason, source)
+        // Task 12：归档发布 LifecycleChanged(旧态 → ARCHIVED)
         publishAfterCommit(new EntityLifecycleChanged(
                 entity.id(),
                 entity.type().name(),
                 entity.lifecycleState(),
                 LifecycleState.ARCHIVED,
                 entity.lifecycleReason(),
-                ChangeSource.UI_EDIT));
+                source));
 
-        log.debug("语义记忆: 归档实体, id={}, name={}", entity.id(), entity.name());
+        log.debug("语义记忆: 归档实体, id={}, name={}, source={}", entity.id(), entity.name(), source);
     }
 
     /**

@@ -113,6 +113,28 @@ class SemanticMemory_生命周期事件_集成测试 {
     }
 
     @Test
+    void archive带ChangeSource参数应透传到事件() {
+        var entity = 构造ACTIVE实体("entity-归档-2", EntityType.EXPERIENCE);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        captured.clear();
+
+        // 3-arg 重载：模拟 ForgettingEngine 的 CRON_EXPIRE 归档
+        semanticMemory.archive(persisted, ChangeSource.CRON_EXPIRE);
+
+        var lifecycleEvents = captured.stream()
+                .filter(e -> e instanceof EntityLifecycleChanged)
+                .map(e -> (EntityLifecycleChanged) e)
+                .toList();
+        assertThat(lifecycleEvents).hasSize(1);
+        var event = lifecycleEvents.getFirst();
+        assertThat(event.entityId()).isEqualTo(persisted.id());
+        assertThat(event.newState()).isEqualTo(LifecycleState.ARCHIVED);
+        assertThat(event.source())
+                .as("archive 的 3-arg 重载必须把 ChangeSource 透传到 LifecycleChanged 事件")
+                .isEqualTo(ChangeSource.CRON_EXPIRE);
+    }
+
+    @Test
     void upsertWithConflictDetection新建分支应发布ACTIVE事件且oldState为null() {
         var entity = 构造ACTIVE实体("entity-新建-1", EntityType.PREFERENCE);
 

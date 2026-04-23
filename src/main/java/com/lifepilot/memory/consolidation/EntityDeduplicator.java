@@ -2,6 +2,7 @@ package com.lifepilot.memory.consolidation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -193,8 +194,8 @@ public class EntityDeduplicator {
             // 5. 迁移关系
             migrateRelations(secondary.id(), primary.id(), now);
 
-            // 6. 归档从实体
-            semanticMemory.archive(secondary);
+            // 6. 归档从实体 — 去重合并属冲突裁决，事件 source=CONFLICT_RESOLVE
+            semanticMemory.archive(secondary, ChangeSource.CONFLICT_RESOLVE);
 
             // 7. 记录合并日志
             logMerge(primary.id(), secondary.id(), pair.similarity,
