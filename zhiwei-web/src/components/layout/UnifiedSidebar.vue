@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   Archive,
   ChevronRight,
+  Clock,
   Pencil,
   Pin,
   Plus,
@@ -14,6 +15,7 @@ import {
 import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
 import NotificationBell from '@/components/notification/NotificationBell.vue'
 import WhisperDownloadCard from '@/components/global/WhisperDownloadCard.vue'
+import ProjectSection from '@/components/sidebar/ProjectSection.vue'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
 import type { ChatSession } from '@/types'
@@ -34,6 +36,8 @@ const renameTitle = ref('')
 const showArchived = ref(false)
 /** 各管理分组的折叠状态，默认全部展开 */
 const collapsedGroups = ref<Set<string>>(new Set())
+/** 创建项目对话框显示状态 —— 由 Task 19 的 CreateProjectDialog 消费 */
+const showCreateProjectDialog = ref(false)
 
 type SidebarTab = 'chat' | 'manage'
 const activeTab = ref<SidebarTab>('chat')
@@ -284,6 +288,16 @@ function openSettings() {
           <Search class="qw-action-icon" />
           <span>搜索对话</span>
         </button>
+        <!-- 定时任务入口占位 —— 路由由 Plan 2 建，当前点击会 404 -->
+        <button
+          type="button"
+          class="qw-action-row"
+          data-testid="scheduled-tasks-entry"
+          @click="navigateTo('/scheduled-tasks')"
+        >
+          <Clock class="qw-action-icon" />
+          <span>定时任务</span>
+        </button>
       </div>
 
       <!-- 搜索框 -->
@@ -296,6 +310,11 @@ function openSettings() {
           autofocus
         />
       </div>
+
+      <!-- 项目分组 -->
+      <ProjectSection @create="showCreateProjectDialog = true" />
+
+      <!-- TODO(Task 19): <CreateProjectDialog v-model:open="showCreateProjectDialog" /> -->
 
       <!-- 对话列表 -->
       <div class="flex-1 overflow-y-auto pb-sm scrollbar-thin">
