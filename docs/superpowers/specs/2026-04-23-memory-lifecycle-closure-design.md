@@ -18,6 +18,11 @@
 
 用户感知是"AI 记忆力差"，根因是**反向失效机制缺失 + 反馈信号未转化为 lifecycle 信号 + 前端修改未入事件总线**。本 spec 目标：一次性把失效路径系统化，事件驱动 + 状态机贯穿 14 条写入源，避免未来每多一个症状修一次。
 
+**本次工作本质是数据治理**，source of truth 是数据流拓扑而非代码规范。因此：
+- 本 spec（`docs/superpowers/specs/`）只承担"为什么这么做"的设计说明，**一次性归档**
+- 同时产出 `docs/architecture/memory-data-flow.md` 作为**长期数据流参照物**：现状图 + 目标图 + 14 写入源详表 + 对账校验清单，后续任何记忆模块的改动必须先更新此文档
+- 实施完成后派审计 Agent 做"图 vs 代码"对账，验收门槛：14 场景测试通过 + 图代码零 diff
+
 ### 1.1 14 条写入/影响源一览
 
 **直接写 L3（`SemanticMemory` 层）**：
@@ -493,6 +498,21 @@ Schema 硬约束：`complete` 仅对特定 type 开放（工具层校验，不�
    - **修补 B**：`SemanticMemory.updateImportanceScore` 调用后 publishEvent `EntityWeightChanged`
    - **修补 C**：`SemanticMemory.upsertWithConflictDetection` / `archive` publishEvent `EntityLifecycleChanged`
    - **ProactiveEngine 接入**：`markGoalFulfilled` publishEvent `ProactiveTaskCancelled`
+
+0.5. **产出数据流长期文档**（与 step 0 同 PR 或紧随其后）：
+   - 新建 `docs/architecture/memory-data-flow.md`（**模块级长期文档，不放 specs 目录**）
+   - 必含内容：
+     - **现状图**：14 写入源 + 现有 3 条级联 + 11 个断点（对照组，让人看清改前痛点）
+     - **目标图**：事件总线（4 事件）+ 7 监听器 + 状态机交互
+     - **14 写入源详表**：每条附实际 `file:line` 代码锚点
+     - **事件契约 & 监听器矩阵**：事件 × 监听器订阅关系
+     - **7 态状态机图**
+     - **对账校验清单**（约 30 条，形如"RealtimeExtractor 写入后发 `EntityLifecycleChanged(source=LLM_SEMANTIC)`"、"`DerivedEntityListener` 只处理 `is_derived=1` 的目标"……每条可机械对照代码验证）
+   - 作用：
+     - 实施期间的**北极星**，每步实施完对照一次
+     - step 12 对账的 **source of truth**
+   - 后续原则：任何对记忆模块的改动必须**先更新此文档再改代码**
+
 1. **V15 迁移 + Repository 层**：新字段读写，兼容旧数据
 2. **事件定义 + 发布点改造**（承接 step 0 的发布点，补上 reason/source 字段语义）
 3. **七个 Listener**：按 §4.3 实现，每个独立可测
@@ -505,7 +525,15 @@ Schema 硬约束：`complete` 仅对特定 type 开放（工具层校验，不�
 10. **检索层过滤**：状态过滤 + STALE 标注 + REGENERATION_NEEDED 降权
 11. **E2E 回归**：14 个症状场景全部通过
 
-每步独立可测、可回滚。建议 step 0+1 合并基础 PR，其余一步一 PR。
+12. **图 vs 代码对账**（最终验收）：
+   - 派审计 Agent 读 `docs/architecture/memory-data-flow.md` + 扫代码
+   - 产出两栏 diff：
+     - **图上有 / 代码无**（功能漏实现）
+     - **代码有 / 图上无**（暗箱实现 / 文档漂移）
+   - 任何不一致必须解决：要么改代码贴合图，要么改图并在 commit 中明确说明原因
+   - **验收门槛**：对账零 diff + 14 场景测试全绿
+
+每步独立可测、可回滚。建议 step 0 + 0.5 + 1 合并基础 PR，其余一步一 PR。
 
 ---
 
