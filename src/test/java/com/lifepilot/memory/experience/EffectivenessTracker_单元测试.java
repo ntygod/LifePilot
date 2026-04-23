@@ -5,6 +5,7 @@ import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -127,7 +128,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 有效，分数从 0.5 提升 0.05 到 0.55
-            verify(semanticMemory).updateImportanceScore("entity-1", 0.55f);
+            verify(semanticMemory).updateImportanceScore("entity-1", 0.55f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -147,7 +148,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 无效，分数从 0.5 衰减 0.03 到 0.47
-            verify(semanticMemory).updateImportanceScore("entity-2", 0.47f);
+            verify(semanticMemory).updateImportanceScore("entity-2", 0.47f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -165,7 +166,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 无效（因 terminationReason 非 null），分数从 0.5 衰减 0.03 到 0.47
-            verify(semanticMemory).updateImportanceScore("entity-3", 0.47f);
+            verify(semanticMemory).updateImportanceScore("entity-3", 0.47f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -188,11 +189,11 @@ class EffectivenessTracker_单元测试 {
 
             // then — 有效，三个实体分别提升 0.05（float 精度容差）
             verify(semanticMemory).updateImportanceScore(eq("entity-a"),
-                    floatThat(v -> Math.abs(v - 0.65f) < 0.001f));
+                    floatThat(v -> Math.abs(v - 0.65f) < 0.001f), eq(WeightSource.EFFECTIVENESS));
             verify(semanticMemory).updateImportanceScore(eq("entity-b"),
-                    floatThat(v -> Math.abs(v - 0.35f) < 0.001f));
+                    floatThat(v -> Math.abs(v - 0.35f) < 0.001f), eq(WeightSource.EFFECTIVENESS));
             verify(semanticMemory).updateImportanceScore(eq("entity-c"),
-                    floatThat(v -> Math.abs(v - 0.95f) < 0.001f));
+                    floatThat(v -> Math.abs(v - 0.95f) < 0.001f), eq(WeightSource.EFFECTIVENESS));
         }
 
         @Test
@@ -225,7 +226,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — entity-err 失败但 entity-ok 仍应被处理
-            verify(semanticMemory).updateImportanceScore("entity-ok", 0.75f);
+            verify(semanticMemory).updateImportanceScore("entity-ok", 0.75f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -243,7 +244,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 不应调用 updateImportanceScore 或 archive
-            verify(semanticMemory, never()).updateImportanceScore(any(), any(float.class));
+            verify(semanticMemory, never()).updateImportanceScore(any(), any(float.class), any(WeightSource.class));
             verify(semanticMemory, never()).archive(any());
         }
     }
@@ -268,7 +269,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then
-            verify(semanticMemory).updateImportanceScore("entity-high", 1.0f);
+            verify(semanticMemory).updateImportanceScore("entity-high", 1.0f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -288,7 +289,7 @@ class EffectivenessTracker_单元测试 {
 
             // then — 应归档而非更新分数
             verify(semanticMemory).archive(entity);
-            verify(semanticMemory, never()).updateImportanceScore(eq("entity-low"), any(float.class));
+            verify(semanticMemory, never()).updateImportanceScore(eq("entity-low"), any(float.class), any(WeightSource.class));
         }
 
         @Test
@@ -307,7 +308,7 @@ class EffectivenessTracker_单元测试 {
 
             // then — 分数 ~0.17 > 0.1 淘汰阈值，不应归档
             verify(semanticMemory).updateImportanceScore(eq("entity-boundary"),
-                    floatThat(v -> Math.abs(v - 0.17f) < 0.001f));
+                    floatThat(v -> Math.abs(v - 0.17f) < 0.001f), eq(WeightSource.EFFECTIVENESS));
             verify(semanticMemory, never()).archive(any());
         }
 
@@ -328,7 +329,7 @@ class EffectivenessTracker_单元测试 {
 
             // then — 分数 0.0 < 0.1 淘汰阈值，应归档
             verify(semanticMemory).archive(entity);
-            verify(semanticMemory, never()).updateImportanceScore(eq("entity-zero"), any(float.class));
+            verify(semanticMemory, never()).updateImportanceScore(eq("entity-zero"), any(float.class), any(WeightSource.class));
         }
     }
 
@@ -350,7 +351,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 成功率 0.0 < 0.5 阈值，判定无效，衰减
-            verify(semanticMemory).updateImportanceScore("entity-empty", 0.47f);
+            verify(semanticMemory).updateImportanceScore("entity-empty", 0.47f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -369,7 +370,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 无 Observation，totalObs=0，成功率 0.0 < 0.5 阈值
-            verify(semanticMemory).updateImportanceScore("entity-no-obs", 0.47f);
+            verify(semanticMemory).updateImportanceScore("entity-no-obs", 0.47f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -392,7 +393,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 成功率 0.5 >= 0.5 阈值，判定有效，提升
-            verify(semanticMemory).updateImportanceScore("entity-mix", 0.55f);
+            verify(semanticMemory).updateImportanceScore("entity-mix", 0.55f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -411,7 +412,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 成功率 0.5 >= 0.5，有效 → 提升
-            verify(semanticMemory).updateImportanceScore("entity-exact", 0.55f);
+            verify(semanticMemory).updateImportanceScore("entity-exact", 0.55f, WeightSource.EFFECTIVENESS);
         }
     }
 
@@ -440,7 +441,7 @@ class EffectivenessTracker_单元测试 {
             tracker.evaluate(state, "trace-001");
 
             // then — 使用自定义步长 0.2 提升，0.5 + 0.2 = 0.7
-            verify(semanticMemory).updateImportanceScore("entity-custom", 0.7f);
+            verify(semanticMemory).updateImportanceScore("entity-custom", 0.7f, WeightSource.EFFECTIVENESS);
         }
 
         @Test
@@ -495,7 +496,7 @@ class EffectivenessTracker_单元测试 {
 
             // then — 成功率 0.8 < 0.9 阈值，判定无效，衰减（float 精度误差 0.6-0.03 ≈ 0.57000005）
             verify(semanticMemory).updateImportanceScore(eq("entity-strict"),
-                    floatThat(v -> Math.abs(v - 0.57f) < 0.001f));
+                    floatThat(v -> Math.abs(v - 0.57f) < 0.001f), eq(WeightSource.EFFECTIVENESS));
         }
     }
 

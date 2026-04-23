@@ -305,9 +305,13 @@ public class MemoryAutoConfiguration {
             ConflictDetector conflictDetector,
             VersionMerger versionMerger,
             VectorSearcher vectorSearcher,
-            MemorySpaceRepository memorySpaceRepository) {
+            MemorySpaceRepository memorySpaceRepository,
+            org.springframework.context.ApplicationEventPublisher eventPublisher) {
         log.info("记忆模块: 注册 SemanticMemory");
-        return new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
+        var semanticMemory = new SemanticMemory(
+                jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
+        semanticMemory.setEventPublisher(eventPublisher);
+        return semanticMemory;
     }
 
     @Bean

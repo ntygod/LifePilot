@@ -1,8 +1,12 @@
 package com.lifepilot.memory.semantic;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
+import com.lifepilot.memory.lifecycle.WeightSource;
+import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -13,6 +17,7 @@ import com.lifepilot.memory.scope.MemoryWriteContext;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -62,6 +67,9 @@ public class SemanticMemory {
     private final VectorSearcher vectorSearcher;
     @Nullable
     private final MemorySpaceRepository memorySpaceRepository;
+    /** Spring 事件总线 — Task 11/12 发布权重与生命周期变化事件；为保持单测轻量，允许为空。 */
+    @Nullable
+    private ApplicationEventPublisher eventPublisher;
 
     /** 记忆写入回调 — 通知检索引擎数据已变更（重置 knownEmpty 短路标记）。 */
     @Nullable
@@ -84,6 +92,16 @@ public class SemanticMemory {
         this.versionMerger = versionMerger;
         this.vectorSearcher = vectorSearcher;
         this.memorySpaceRepository = memorySpaceRepository;
+    }
+
+    /**
+     * 注入 Spring {@link ApplicationEventPublisher} — 用 setter 而非构造器注入，
+     * 避免破坏现有 2-/3- 参构造器签名以及大量手工装配测试。
+     *
+     * @param eventPublisher 事件发布器
+     */
+    public void setEventPublisher(@Nullable ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -366,6 +384,37 @@ public class SemanticMemory {
         }
     }
 
+    /**
+     * 事务提交后发布事件；无活跃事务时立即发布。
+     *
+     * <p>确保回滚路径下不产生幻觉事件（consumer 若基于事件更新派生存储，回滚后数据会漂移）。</p>
+     *
+     * @param event 任意 Spring ApplicationEvent（{@link EntityLifecycleChanged} / {@link EntityWeightChanged}）
+     */
+    private void publishAfterCommit(Object event) {
+        if (eventPublisher == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        eventPublisher.publishEvent(event);
+                    } catch (Exception e) {
+                        log.warn("语义记忆: 事件发布失败, event={}, error={}", event, e.getMessage());
+                    }
+                }
+            });
+        } else {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (Exception e) {
+                log.warn("语义记忆: 事件发布失败, event={}, error={}", event, e.getMessage());
+            }
+        }
+    }
+
     /** 增加访问计数。 */
     public void incrementAccessCount(String entityId) {
         var now = Instant.now().toString();
@@ -400,16 +449,56 @@ public class SemanticMemory {
     }
 
     /**
-     * 更新实体的 importanceScore。
+     * 更新实体的 importanceScore — 兼容旧签名，默认来源 {@link WeightSource#USER_FEEDBACK}。
+     *
+     * <p>新代码建议显式指定 {@link WeightSource} 走 3-arg 重载。</p>
      *
      * @param entityId 实体 ID
      * @param newScore 新的 importanceScore（已裁剪到 [0.0, 1.0]）
      */
     public void updateImportanceScore(String entityId, float newScore) {
+        updateImportanceScore(entityId, newScore, WeightSource.USER_FEEDBACK);
+    }
+
+    /**
+     * 更新实体的 importanceScore — Task 11（修补 B）：带来源标识并发布
+     * {@link EntityWeightChanged} 事件。
+     *
+     * <p>delta 在服务端计算：{@code newScore - oldScore}，由调用方只需提供目标分数
+     * （已裁剪到 [0.0, 1.0]）。事件中的 {@code cumulativeScore} 字段承载新分数本身，
+     * 供下游（如 NegativeFeedbackListener）直接比较阈值。</p>
+     *
+     * <p>事件在事务提交后（或无事务上下文时立刻）发布，确保回滚时不产生幻觉事件。</p>
+     *
+     * @param entityId 实体 ID
+     * @param newScore 新的 importanceScore（已裁剪到 [0.0, 1.0]）
+     * @param source   权重变化来源
+     */
+    @Transactional
+    public void updateImportanceScore(String entityId, float newScore, WeightSource source) {
+        Float oldScore = loadCurrentImportanceScore(entityId);
         var now = Instant.now().toString();
-        jdbcTemplate.update(
+        int affected = jdbcTemplate.update(
                 "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
                 newScore, now, entityId);
+        if (affected == 0) {
+            log.warn("语义记忆: updateImportanceScore 未命中当前版本, entityId={}, newScore={}",
+                    entityId, newScore);
+            return;
+        }
+        if (eventPublisher != null) {
+            double delta = oldScore == null ? newScore : (double) newScore - (double) oldScore;
+            publishAfterCommit(new EntityWeightChanged(entityId, delta, newScore, source));
+        }
+    }
+
+    /** 读取当前版本的 importanceScore，不存在时返回 null（delta 计算回退为 newScore 本身）。 */
+    @Nullable
+    private Float loadCurrentImportanceScore(String entityId) {
+        var list = jdbcTemplate.queryForList(
+                "SELECT importance_score FROM memory_entity_versions WHERE entity_id = ? AND is_current = 1",
+                Float.class, entityId);
+        return list.isEmpty() ? null : list.getFirst();
     }
 
     /**
