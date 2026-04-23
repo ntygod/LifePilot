@@ -9,5 +9,7 @@ package com.lifepilot.memory.scope;
 public enum MemorySpaceType {
     PERSONAL,
     DOMAIN,
-    EXPERIENCE
+    EXPERIENCE,
+    /** 项目级记忆空间（Plan 1 引入）。 */
+    PROJECT
 }

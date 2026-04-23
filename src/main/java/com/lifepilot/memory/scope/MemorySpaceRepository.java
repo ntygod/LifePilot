@@ -69,6 +69,32 @@ public class MemorySpaceRepository {
         );
     }
 
+    /**
+     * 确保给定项目的项目级记忆空间存在（Plan 1 引入）。
+     *
+     * @param projectId 项目 id
+     * @return 已存在或新建的项目记忆空间
+     */
+    public MemorySpace ensureProjectSpace(String projectId) {
+        return ensureSpace(
+                MemorySpaceKeys.project(projectId),
+                MemorySpaceType.PROJECT,
+                "项目记忆",
+                "PROJECT",
+                projectId,
+                Map.of("projectId", projectId)
+        );
+    }
+
+    /**
+     * 按 id 物理删除记忆空间。
+     *
+     * <p>项目归档/删除时由调用方触发，不处理级联。</p>
+     */
+    public void deleteById(String spaceId) {
+        jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);
+    }
+
     public MemorySpace ensureSpace(String spaceKey,
                                    MemorySpaceType spaceType,
                                    String displayName,
