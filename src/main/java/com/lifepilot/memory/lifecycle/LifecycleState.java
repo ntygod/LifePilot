@@ -1,8 +1,5 @@
 package com.lifepilot.memory.lifecycle;
 
-import java.util.EnumSet;
-import java.util.Set;
-
 /**
  * 实体生命周期状态（7 态）。
  *
@@ -17,9 +14,6 @@ public enum LifecycleState {
     SUPERSEDED,
     REGENERATION_NEEDED,
     ARCHIVED;
-
-    /** 非 ACTIVE / REGENERATION_NEEDED 的终态集合。 */
-    private static final Set<LifecycleState> TERMINAL = EnumSet.of(CANCELLED, EXPIRED, SUPERSEDED, ARCHIVED);
 
     /** 合法状态转换检查；非法转换由调用方抛 IllegalStateException。 */
     public boolean canTransitionTo(LifecycleState next) {

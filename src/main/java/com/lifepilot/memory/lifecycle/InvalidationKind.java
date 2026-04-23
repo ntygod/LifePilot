@@ -7,5 +7,10 @@ package com.lifepilot.memory.lifecycle;
  * @since 2026-04-23
  */
 public enum InvalidationKind {
-    DELETED, ARCHIVED, CONTENT_CHANGED
+    /** 源对象被物理删除。 */
+    DELETED,
+    /** 源对象被归档（仍存在但逻辑失效）。 */
+    ARCHIVED,
+    /** 源对象内容发生显著变化。 */
+    CONTENT_CHANGED
 }

@@ -7,5 +7,10 @@ package com.lifepilot.memory.lifecycle;
  * @since 2026-04-23
  */
 public enum SourceType {
-    DOCUMENT, KNOWLEDGE_BASE, SESSION
+    /** 文档（document workspace）。 */
+    DOCUMENT,
+    /** 知识库（knowledge base）。 */
+    KNOWLEDGE_BASE,
+    /** 会话（预留，当前未由事件生产者使用）。 */
+    SESSION
 }
