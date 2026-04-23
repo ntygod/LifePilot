@@ -368,7 +368,7 @@ Base Path `/api/documents`，`@ConditionalOnProperty(lifepilot.gateway.channels.
 1. **Phase 2B（create 链）**：3 个 generator → 3 个 `DocumentCreate*ToolExecutor` → `DocumentCreateActionDispatchExecutor` → `DocumentToolProvider` → `document.create` BuiltinTool。
 2. **Phase 3A/3B（edit 链）**：`TextAnchorLocator` → `DocxPatchEngine` + `DocxDiffBuilder`；`XlsxPatchEngine` + `XlsxDiffBuilder` 无依赖直接装配 → `DocumentVersionService`（显式 new `PathSecurityChecker(metaProperties.getInfra().getFile())` 注入）→ `DocumentEditActionDispatchExecutor` → `DocumentEditToolProvider` → `document.edit` BuiltinTool。
 
-两个 BuiltinTool 由 `ReactAgentLoop` 通过 `lifepilot.agent.core-tool-ids` 默认可见。
+两个 BuiltinTool 通过 `lifepilot.tool.tier1.pinned` 纳入 Tier 1 常驻可见集合（参见 [工具系统架构](tool-ecosystem.md)）；未在 pinned 时也可通过 `tools.search` 被 LLM 发现。
 
 ### 4.7 前端渲染（Vue）
 
@@ -523,7 +523,7 @@ sequenceDiagram
 
 | 依赖模块 | 交互方式 | 说明 |
 |----------|---------|------|
-| Tool System（`com.lifepilot.tool`） | BuiltinTool 注册 | `document.create` + `document.edit` 两个 BuiltinTool 由 `DocumentAutoConfiguration` 装配，默认进入 `lifepilot.agent.core-tool-ids` 白名单 |
+| Tool System（`com.lifepilot.tool`） | BuiltinTool 注册 | `document.create` + `document.edit` 两个 BuiltinTool 由 `DocumentAutoConfiguration` 装配；Tier 1 可见性由 `lifepilot.tool.tier1.pinned` 控制，未 pin 时由 `tools.search` 按需发现 |
 | Skill System（`com.lifepilot.skill`） | Skill 定义 | `src/main/resources/skills/document-workspace/SKILL.md`，`file.read(skill="document-workspace")` 按需激活 |
 | Web Gateway（`com.lifepilot.interaction.web`） | REST 暴露 | `DocumentController` 依赖 Web 通道开关；`MessageBubble.vue` 通过附件 MIME 分派 DiffCard |
 | Meta File（`com.lifepilot.meta.infra.file`） | 路径安全 | `PathSecurityChecker` 从 `MetaProperties.infra.file` 读取白/黑名单，不注册为独立 Bean |

@@ -191,4 +191,5 @@ sequenceDiagram
 | `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词（仅限受控环境） |
 | `lifepilot.agent.location` | `""` | 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测 |
 | `lifepilot.agent.ip-api-url` | `http://ip-api.com/json/...` | IP 地理定位 API 地址，为空时禁用自动检测 |
-| `lifepilot.agent.core-tool-ids` | `[]` | 核心工具 ID 列表 — 非空时启用分层工具注入，仅核心工具始终可见，其余工具随 Skill 加载动态激活 |
+
+> 工具可见性由 `lifepilot.tool.tier1.pinned`（常驻）+ `activatedToolIds`（Skill 加载）+ 3 个 Meta 工具（`tools.search` / `tools.describe` / `tools.list`）共同决定，配置详见 [工具系统架构](tool-ecosystem.md)。旧的 `lifepilot.agent.core-tool-ids` 已在 2026-04 工具暴露重构中移除。

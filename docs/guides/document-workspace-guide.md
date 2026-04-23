@@ -32,7 +32,7 @@
 
 `document.create` 的产物会自动挂到当前 assistant 消息附件上；`document.edit` 的产物以「工作副本 + 版本链」形式存在会话私有目录，直到用户显式 commit / discard 才落盘或回收。
 
-两个工具都默认在 `lifepilot.agent.core-tool-ids` 白名单里，LLM 不需要额外激活 skill 即可调用。
+工具可见性通过 `lifepilot.tool.tier1.pinned` 配置：在 pinned 列表中的工具 schema 常驻 prompt，LLM 直接可用；未 pin 的工具通过 `tools.search` 按需发现（BM25 检索）。`document.create` / `document.edit` 默认未 pin，LLM 有"文档编辑"相关意图时会先调 `tools.search` 找到这两个工具再用（参见 [工具系统架构](../architecture/tool-ecosystem.md)）。
 
 ---
 

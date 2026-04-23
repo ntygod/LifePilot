@@ -2,13 +2,17 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-04
+> **最后更新**：2026-04-23
 
 ## 1. 功能概述
 
 工具系统为 Agent 提供与外部世界交互的能力，支持两种工具来源：Java 内置工具（BuiltinTool）和 MCP 外部工具（McpTool）。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
 
-> **重要变更**：原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。`load_skill` 独立工具已删除，Skill 加载迁移至 `file.read(skill=...)` 参数，ReactAgentLoop 自动检测并激活工具。`generate_skill` 工具保留用于 LLM 驱动的 Skill 自扩展。
+工具对 LLM 的暴露采用 Tier 1（常驻完整 schema）+ Tier 2（FTS5 BM25 可搜索）+ 3 个 Meta 工具（`tools.search` / `tools.describe` / `tools.list`）的三层模型，简单任务保持 2 轮响应低延迟，长尾能力通过按需搜索无限扩展。
+
+> **重要变更**：
+> - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。`load_skill` 独立工具已删除，Skill 加载迁移至 `file.read(skill=...)` 参数，ReactAgentLoop 自动检测并激活工具。`generate_skill` 工具保留用于 LLM 驱动的 Skill 自扩展。
+> - 旧的 `lifepilot.agent.core-tool-ids` 配置已删除，由 `lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 动态晋升替代。
 
 ## 2. 核心架构
 
@@ -70,6 +74,26 @@ LLM 通过工具描述和 Schema 理解工具用途。
 
 确保内置工具行为不被外部工具意外替换。
 
+### 2.7 三层工具暴露
+
+- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 审批通过的工具，完整 schema 常驻 prompt，LLM 可直接调用
+- **Meta 层（始终可见）**：`tools.search` / `tools.describe` / `tools.list`，LLM 用它们发现 Tier 2 工具
+- **Tier 2（延迟加载）**：其余 Java 内置工具 + MCP 工具 + Skill 动态生成的工具，进 FTS5 BM25 搜索索引
+
+Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`，合并进当前可见集。
+
+### 2.8 工具搜索与 Tier 1 晋升
+
+- `ToolSearchService` 走"sanitize → 三层缓存 → FTS5 MATCH + BM25 排序 → 排除 Tier1/activated/meta/权限外"链路；`bm25-confidence-threshold` 决定返回的 confidence 标签
+- `ToolUsageStatsRecorder` 每次工具执行成功后日粒度写入 `tool_usage_stats`
+- `Tier1AdvisoryJob` 每日凌晨分析 `window-days` 窗口的会话覆盖率，对超过 `session-threshold` 的候选写 `tier1_advisory`（`PENDING`），由管理员 UI 审批，**不自动改配置**
+
+### 2.9 启动期命名强校验（ToolValidator）
+
+- `id`：`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`，namespace 必须自描述或含动词词根
+- `name`：中文；`description`：英文且 ≥ 40 字符；`tags`：英文 ≥ 3 个且不重复
+- 硬规则违反抛 `IllegalStateException` 阻止启动；`tools.search / describe / list` 豁免
+
 ## 3. 核心类说明
 
 | 类 | 职责 |
@@ -80,6 +104,12 @@ LLM 通过工具描述和 Schema 理解工具用途。
 | `ToolExecutor` | 工具执行器 |
 | `ToolExecutionPipeline` | 执行管道 |
 | `DynamicToolRegistry` | 动态注册表 |
+| `ToolBridgeAgentToolProvider` | Tier 1 ∪ activated ∪ meta 统一过滤，生成 Spring AI ToolCallback |
+| `Tier1Service` / `Tier1AdvisoryJob` / `ToolUsageStatsRecorder` | Tier 1 动态管理链路 |
+| `ToolSearchService` / `ToolDescribeService` / `ToolListService` | 搜索链路 3 服务 |
+| `BuiltinToolSearchProvider` | 注册 `tools.search/describe/list` 3 个 meta BuiltinTool |
+| `ToolSearchIndexBuilder` / `ToolSearchIndexMaintainer` | FTS5 索引全量 / 增量维护 |
+| `ToolValidator` | 启动期工具命名规范强校验 |
 
 ## 3. 使用场景
 
@@ -92,15 +122,50 @@ lifepilot:
   tool:
     enabled: true
     pipeline:
-      default-timeout: 30s
-      max-retries: 2
+      default-timeout-seconds: 30
+      default-max-retries: 2
+    tier1:
+      pinned:
+        - tools.search
+        - tools.describe
+        - tools.list
+        - file.read
+        - file.write
+        - file.list
+        - web.search
+        - web.fetch
+        - shell.exec
+        - memory
+        - knowledge.search
+      promotion:
+        enabled: true
+        window-days: 30
+        session-threshold: 0.3
+        max-promoted: 3
+    search:
+      default-limit: 5
+      max-limit: 20
+      bm25-confidence-threshold: 1.0
+    describe:
+      max-batch-size: 10
 ```
+
+关键配置键：
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.tool.enabled` | `true` | 是否启用工具系统 |
-| `lifepilot.tool.pipeline.default-timeout` | `30s` | 默认执行超时 |
-| `lifepilot.tool.pipeline.max-retries` | `2` | 默认最大重试次数 |
+| `lifepilot.tool.enabled` | `true` | 工具系统总开关 |
+| `lifepilot.tool.pipeline.default-timeout-seconds` | `30` | 默认执行超时 |
+| `lifepilot.tool.pipeline.default-max-retries` | `2` | 默认最大重试次数 |
+| `lifepilot.tool.tier1.pinned` | 11 项（见上） | 人工固定的 Tier 1 工具 ID |
+| `lifepilot.tool.tier1.promotion.window-days` | `30` | 会话覆盖率统计窗口 |
+| `lifepilot.tool.tier1.promotion.session-threshold` | `0.3` | 晋升建议的最小会话覆盖率 |
+| `lifepilot.tool.search.default-limit` | `5` | `tools.search` 默认 limit |
+| `lifepilot.tool.search.max-limit` | `20` | `tools.search` 单次上限 |
+| `lifepilot.tool.search.bm25-confidence-threshold` | `1.0` | BM25 高置信度阈值 |
+| `lifepilot.tool.describe.max-batch-size` | `10` | `tools.describe` 批量上限 |
+
+完整字段见 [工具系统架构文档](../architecture/tool-ecosystem.md#7-配置参考)。
 
 ## 5. 限制与未来方向
 
