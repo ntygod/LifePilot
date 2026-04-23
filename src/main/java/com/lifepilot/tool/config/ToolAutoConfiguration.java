@@ -221,11 +221,10 @@ public class ToolAutoConfiguration {
     @ConditionalOnMissingBean
     public com.lifepilot.tool.search.ToolDescribeService toolDescribeService(
             DynamicToolRegistry registry,
-            com.lifepilot.tool.search.cache.SchemaCache schemaCache,
             ToolConfigProperties properties,
             io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         return new com.lifepilot.tool.search.ToolDescribeService(
-                registry, schemaCache, properties.getDescribe().getMaxBatchSize(), meterRegistry);
+                registry, properties.getDescribe().getMaxBatchSize(), meterRegistry);
     }
 
     /**

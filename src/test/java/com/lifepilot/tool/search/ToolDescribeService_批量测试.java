@@ -6,7 +6,6 @@ import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
-import com.lifepilot.tool.search.cache.SchemaCache;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +32,7 @@ class ToolDescribeService_批量测试 {
     void setUp() {
         registry = new DynamicToolRegistry(_ -> {});
         registry.registerBuiltinTool(sample("file.read"));
-        service = new ToolDescribeService(registry, new SchemaCache(100), 10, new SimpleMeterRegistry());
+        service = new ToolDescribeService(registry, 10, new SimpleMeterRegistry());
     }
 
     @Test

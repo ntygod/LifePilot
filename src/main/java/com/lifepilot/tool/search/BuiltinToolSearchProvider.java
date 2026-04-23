@@ -133,9 +133,13 @@ public class BuiltinToolSearchProvider {
         ));
     }
 
-    @SuppressWarnings("unchecked")
     private ToolResult executeDescribe(ToolInput input) {
-        List<String> ids = (List<String>) input.parameters().getOrDefault("tool_ids", List.of());
+        Object raw = input.parameters().getOrDefault("tool_ids", List.of());
+        List<String> ids = switch (raw) {
+            case List<?> list -> list.stream().map(String::valueOf).toList();
+            case String s when !s.isBlank() -> List.of(s);
+            default -> List.of();
+        };
         ToolDescribeResult result = describeService.describe(ids);
         return ToolResult.success(Map.of(
                 "schemas", result.schemas(),

@@ -3,7 +3,6 @@ package com.lifepilot.tool.search;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
-import com.lifepilot.tool.search.cache.SchemaCache;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -28,8 +27,6 @@ import java.util.Optional;
 public class ToolDescribeService {
 
     private final DynamicToolRegistry registry;
-    @SuppressWarnings("unused")
-    private final SchemaCache schemaCache;
     private final int maxBatchSize;
 
     // ── Micrometer 指标 ──
@@ -38,11 +35,9 @@ public class ToolDescribeService {
     private final Counter notFoundCounter;
 
     public ToolDescribeService(DynamicToolRegistry registry,
-                               SchemaCache schemaCache,
                                int maxBatchSize,
                                MeterRegistry meterRegistry) {
         this.registry = registry;
-        this.schemaCache = schemaCache;
         this.maxBatchSize = maxBatchSize;
 
         this.invocationsCounter = meterRegistry.counter("tool_describe.invocations");
