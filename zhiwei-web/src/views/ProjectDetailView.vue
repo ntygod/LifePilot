@@ -5,8 +5,8 @@
  * 布局参考 spec §3.3：
  * - 顶栏：Folder 图标 + 项目名 + 右上角「资料 / 设置」入口
  * - 主区：居中「开始新对话」按钮，下方为本项目下的对话列表占位
- * - 抽屉：项目资料抽屉（Task 21 已接入 {@link ProjectResourcePanel}）；
- *   项目设置抽屉将在 Task 22 接入
+ * - 抽屉：项目资料抽屉（Task 21 接入 {@link ProjectResourcePanel}）、
+ *   项目设置抽屉（Task 22 接入 {@link ProjectSettingsPanel}）
  *
  * 对话列表暂留占位：后端 `GET /api/chat/sessions?projectId=` 已支持（Task 13），
  * 前端 {@link chatApi.listSessions} / {@link useChatStore.loadSessions} 尚未暴露
@@ -20,6 +20,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Folder, Paperclip, Settings } from 'lucide-vue-next'
 import { useProjectStore } from '@/stores/project'
 import ProjectResourcePanel from '@/components/project/ProjectResourcePanel.vue'
+import ProjectSettingsPanel from '@/components/project/ProjectSettingsPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,7 +33,7 @@ const project = computed(() =>
 
 /** 项目资料抽屉（Task 21 实装真正的面板，本 task 仅占位状态） */
 const showResource = ref(false)
-/** 项目设置抽屉（Task 22 实装真正的面板，本 task 仅占位状态） */
+/** 项目设置抽屉（Task 22 接入 {@link ProjectSettingsPanel}） */
 const showSettings = ref(false)
 
 onMounted(async () => {
@@ -116,7 +117,10 @@ function createNewConversation() {
       :project-id="projectId"
     />
 
-    <!-- 项目设置抽屉 —— Task 22 实装后接入 -->
+    <ProjectSettingsPanel
+      v-model:open="showSettings"
+      :project="project"
+    />
   </div>
 
   <div v-else class="flex h-full items-center justify-center p-xl text-sm text-muted-foreground">
