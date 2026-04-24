@@ -25,7 +25,6 @@ import ChatInput from '@/components/chat/ChatInput.vue'
 import ProjectResourcePanel from '@/components/project/ProjectResourcePanel.vue'
 import ProjectSettingsPanel from '@/components/project/ProjectSettingsPanel.vue'
 import { useChatStore } from '@/stores/chat'
-import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useProjectStore } from '@/stores/project'
 import type { ChatAttachment, ChatSession, SessionConfig } from '@/types'
@@ -35,7 +34,6 @@ const router = useRouter()
 const projectStore = useProjectStore()
 const chatStore = useChatStore()
 const kbStore = useKnowledgeBaseStore()
-const datastoreStore = useDatastoreStore()
 
 const projectId = computed(() => route.params.id as string)
 const project = computed(() =>
@@ -88,7 +86,6 @@ onMounted(async () => {
   if (project.value) {
     void loadProjectSessions(projectId.value)
     void kbStore.fetchList()
-    void datastoreStore.fetchList()
   }
 })
 
@@ -228,7 +225,7 @@ function formatSessionTime(iso: string): string {
             :disabled="submitting"
             placeholder="有什么我能帮您的吗？"
             :knowledge-bases="kbStore.list"
-            :datastores="datastoreStore.list"
+            :datastores="[]"
             data-testid="project-detail-chat-input"
             @send="handleSend"
           />
