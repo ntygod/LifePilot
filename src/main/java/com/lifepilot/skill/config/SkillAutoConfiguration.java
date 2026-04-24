@@ -1,32 +1,19 @@
 package com.lifepilot.skill.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.embedding.router.EmbeddingRouter;
-import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
-import com.lifepilot.skill.disclosure.SkillGenerationTool;
 import com.lifepilot.skill.hub.SkillHubClient;
-import com.lifepilot.skill.generation.SkillGapDetector;
-import com.lifepilot.skill.generation.SkillGenerator;
-import com.lifepilot.skill.generation.SkillTemplateLibrary;
-import com.lifepilot.skill.generation.ToolCapabilityManifest;
 import com.lifepilot.skill.markdown.MarkdownSkillLoader;
-import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.skill.markdown.SkillFileWatcher;
 import com.lifepilot.skill.registry.SkillDefinitionValidator;
 import com.lifepilot.skill.registry.SkillEmbeddingCacheRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
-import com.lifepilot.skill.validation.FormatValidator;
-import com.lifepilot.skill.validation.SandboxValidator;
-import com.lifepilot.skill.validation.SecurityValidator;
-import com.lifepilot.skill.validation.SkillValidationPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,9 +34,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * Skill 系统 Spring Boot 自动配置。
  *
  * <p>通过 {@code lifepilot.skills.enabled=true}（默认）激活，
- * 注册 Skill 框架核心组件、Markdown 解析与热加载、安全验证管线、
- * Skill 自扩展和审计追溯。
+ * 注册 Skill 框架核心组件、Markdown 解析与热加载、审计追溯。
  * 每个 Bean 使用 {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
+ *
+ * <p>TODO Phase C.1 后续：旧 MarkdownSkillParser（{@code com.lifepilot.skill.markdown}）
+ * 已在 v2 重写中迁至 {@code com.lifepilot.skill.MarkdownSkillParser}，产出 ParsedSkill 而非 SkillDefinition。
+ * MarkdownSkillLoader / REST Controller / SkillFileWatcher 等下游待 Phase B 重接新解析器 + SkillInstaller。
+ * 本配置暂时不再注册旧 Parser 与三件套校验器（FormatValidator / SecurityValidator / SandboxValidator /
+ * SkillValidationPipeline）以及 SkillGenerator / SkillGapDetector / SkillGenerationTool 等。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -128,24 +120,10 @@ public class SkillAutoConfiguration {
         return new SkillDisclosureTool(toolRegistry, skillActivator, skillRegistry);
     }
 
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
-            name = "enabled", havingValue = "true", matchIfMissing = true)
-    public SkillGenerationTool skillGenerationTool(DynamicToolRegistry toolRegistry,
-                                                   SkillGenerator skillGenerator) {
-        log.info("Skill 系统: 注册 SkillGenerationTool（HIGH 风险）");
-        return new SkillGenerationTool(toolRegistry, skillGenerator);
-    }
-
     // ==================== Markdown 解析与热加载 ====================
 
-    @Bean
-    @ConditionalOnMissingBean
-    public MarkdownSkillParser markdownSkillParser() {
-        log.info("Skill 系统: 注册 MarkdownSkillParser");
-        return new MarkdownSkillParser();
-    }
+    // TODO Phase B.3: 新 MarkdownSkillParser（com.lifepilot.skill）产出 ParsedSkill，
+    // 待接入 SkillInstaller 后在此注册为 Bean。
 
     @Bean
     @ConditionalOnMissingBean
@@ -156,11 +134,10 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MarkdownSkillLoader markdownSkillLoader(MarkdownSkillParser parser,
-                                                   SkillRegistry registry,
+    public MarkdownSkillLoader markdownSkillLoader(SkillRegistry registry,
                                                    SkillConfigProperties config) {
         log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", config.getDirectory());
-        return new MarkdownSkillLoader(parser, registry, config);
+        return new MarkdownSkillLoader(registry, config);
     }
 
     @Bean
@@ -171,89 +148,6 @@ public class SkillAutoConfiguration {
                                             SharedScheduler sharedScheduler) {
         log.info("Skill 系统: 注册 SkillFileWatcher");
         return new SkillFileWatcher(loader, registry, config, sharedScheduler);
-    }
-
-    // ==================== 安全验证管线 ====================
-
-    @Bean
-    @ConditionalOnMissingBean
-    public FormatValidator formatValidator(MarkdownSkillParser markdownParser) {
-        log.info("Skill 系统: 注册 FormatValidator");
-        return new FormatValidator(markdownParser);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public SecurityValidator securityValidator(DynamicToolRegistry toolRegistry) {
-        log.info("Skill 系统: 注册 SecurityValidator");
-        return new SecurityValidator(toolRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public SandboxValidator sandboxValidator(MarkdownSkillParser markdownParser) {
-        log.info("Skill 系统: 注册 SandboxValidator");
-        return new SandboxValidator(markdownParser);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public SkillValidationPipeline skillValidationPipeline(FormatValidator format,
-                                                           SecurityValidator security,
-                                                           SandboxValidator sandbox) {
-        log.info("Skill 系统: 注册 SkillValidationPipeline");
-        return new SkillValidationPipeline(format, security, sandbox);
-    }
-
-    // ==================== Skill 自扩展（条件装配） ====================
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
-            name = "enabled", havingValue = "true", matchIfMissing = true)
-    public SkillGapDetector skillGapDetector(SkillRegistry registry,
-                                            GenerationRouter generationRouter,
-                                            SkillConfigProperties config,
-                                            PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 SkillGapDetector, gapThreshold={}",
-                config.getAutoGeneration().getGapThreshold());
-        return new SkillGapDetector(registry, generationRouter, config, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
-            name = "enabled", havingValue = "true", matchIfMissing = true)
-    public ToolCapabilityManifest toolCapabilityManifest(DynamicToolRegistry toolRegistry) {
-        log.info("Skill 系统: 注册 ToolCapabilityManifest");
-        return new ToolCapabilityManifest(toolRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
-            name = "enabled", havingValue = "true", matchIfMissing = true)
-    public SkillTemplateLibrary skillTemplateLibrary() {
-        log.info("Skill 系统: 注册 SkillTemplateLibrary");
-        return new SkillTemplateLibrary();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
-            name = "enabled", havingValue = "true", matchIfMissing = true)
-    public SkillGenerator skillGenerator(GenerationRouter generationRouter,
-                                         SkillValidationPipeline pipeline,
-                                         MarkdownSkillParser markdownParser,
-                                         MarkdownSkillSerializer markdownSerializer,
-                                         SkillRegistry registry,
-                                         SkillConfigProperties config,
-                                         PromptRegistry promptRegistry,
-                                         ToolCapabilityManifest toolCapabilityManifest,
-                                         SkillTemplateLibrary skillTemplateLibrary) {
-        log.info("Skill 系统: 注册 SkillGenerator（增强模式）");
-        return new SkillGenerator(generationRouter, pipeline, markdownParser, markdownSerializer,
-                registry, config, promptRegistry, toolCapabilityManifest, skillTemplateLibrary);
     }
 
     // ==================== 审计 ====================
@@ -282,7 +176,7 @@ public class SkillAutoConfiguration {
      * 应用启动完成后触发 Markdown Skill 初始加载、文件监听启动和 L2 工具注册。
      *
      * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
-     * 然后启动 WatchService 监听文件变更。之后注册 disclosure 和 generate_skill 工具。</p>
+     * 然后启动 WatchService 监听文件变更。之后注册 disclosure 工具。</p>
      *
      * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE - 1)} 确保在各 AutoConfiguration
      * 的 registerTools()（HIGHEST_PRECEDENCE）之后执行，
@@ -312,9 +206,6 @@ public class SkillAutoConfiguration {
             ctx.getBean(SkillDisclosureTool.class).registerTools();
             log.debug("ApplicationReady: SkillDisclosureTool.registerTools() 已调用");
         }
-        if (ctx.containsBean("skillGenerationTool")) {
-            ctx.getBean(SkillGenerationTool.class).registerTools();
-            log.info("ApplicationReady: generate_skill 工具已注册");
-        }
+        // TODO Phase B.5: SkillGenerationTool 接入新 SkillSynthesizer 后在此重新启用
     }
 }
