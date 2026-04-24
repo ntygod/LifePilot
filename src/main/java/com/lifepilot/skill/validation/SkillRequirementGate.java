@@ -2,6 +2,7 @@ package com.lifepilot.skill.validation;
 
 import com.lifepilot.skill.spec.SkillRequires;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -24,6 +25,7 @@ public class SkillRequirementGate {
     private final Function<String, String> envResolver;
 
     /** 生产构造器：自动检测当前 OS + shell 探测 bin + 读 env 变量。 */
+    @Autowired
     public SkillRequirementGate(DynamicToolRegistry toolRegistry) {
         this(toolRegistry, SkillRequirementGate::currentOs,
                 SkillRequirementGate::binaryExistsOnPath, System::getenv);

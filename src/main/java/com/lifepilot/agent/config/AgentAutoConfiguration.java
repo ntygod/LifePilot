@@ -45,7 +45,9 @@ import com.lifepilot.observability.context.ContextReportRepository;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -196,7 +198,9 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
             @Autowired(required = false) HybridRetriever hybridRetriever,
-            @Autowired(required = false) WeatherService weatherService) {
+            @Autowired(required = false) WeatherService weatherService,
+            @Autowired(required = false) SkillInstallationRepository skillInstallationRepository,
+            @Autowired(required = false) SkillRequirementGate skillRequirementGate) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -220,6 +224,8 @@ public class AgentAutoConfiguration {
                 mcpConfig,
                 hybridRetriever);
         assembler.setWeatherService(weatherService);
+        assembler.setSkillInstallationRepository(skillInstallationRepository);
+        assembler.setSkillRequirementGate(skillRequirementGate);
         return assembler;
     }
 

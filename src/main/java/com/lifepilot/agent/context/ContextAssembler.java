@@ -27,7 +27,13 @@ import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.install.SkillInstallation;
+import com.lifepilot.skill.install.SkillInstallationRepository;
+import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.spec.SkillPriority;
+import com.lifepilot.skill.spec.SkillZhiweiMeta;
+import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -93,6 +99,10 @@ public class ContextAssembler {
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private final HybridRetriever hybridRetriever;
     @Nullable private volatile WeatherService weatherService;
+    /** Skill 安装事实源 — Phase A.7 新增，driven by {@code skills} 表判断 enabled。 */
+    @Nullable private volatile SkillInstallationRepository skillInstallationRepository;
+    /** Skill 运行期依赖门控 — Phase A.7 新增，过滤 bins/env/os/tools 不满足的 skill。 */
+    @Nullable private volatile SkillRequirementGate skillRequirementGate;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -205,6 +215,16 @@ public class ContextAssembler {
     /** 注入天气服务（可选，由 AutoConfiguration 调用）。 */
     public void setWeatherService(@Nullable WeatherService weatherService) {
         this.weatherService = weatherService;
+    }
+
+    /** 注入 Skill 安装仓库（可选，由 AutoConfiguration 调用，Phase A.7）。 */
+    public void setSkillInstallationRepository(@Nullable SkillInstallationRepository repository) {
+        this.skillInstallationRepository = repository;
+    }
+
+    /** 注入 Skill 依赖门控（可选，由 AutoConfiguration 调用，Phase A.7）。 */
+    public void setSkillRequirementGate(@Nullable SkillRequirementGate gate) {
+        this.skillRequirementGate = gate;
     }
 
     public AssembledContext assemble(ReactAgentState state) {
@@ -1120,21 +1140,48 @@ public class ContextAssembler {
         return w.getRelevance() * relevance + w.getImportance() * importance + w.getRecency() * recency;
     }
 
+    /**
+     * 构建 Skill Catalog 段 — 查 skills 表（enabled=true） → 读 registry 拿 SkillDefinition →
+     * SkillRequirementGate 过滤 bins/env/os/tools 不满足的 skill → 按 category 分组 + 组内按 priority 排序 →
+     * 输出 XML 结构（{@code <category name="X"><skill>...</skill></category>}）。
+     *
+     * <p>输出为渲染进 {@code agent/skill-catalog.st} 模板的 {@code skillEntries} 片段；
+     * 模板外框 {@code <skill_catalog>} 标签保留以沿用 LLM 侧文案与使用规则。</p>
+     */
     private String buildSkillCatalog() {
-        if (skillRegistry == null) {
-            return "";
-        }
-        var skills = skillRegistry.listAll();
-        if (skills.isEmpty()) {
+        if (skillRegistry == null || skillInstallationRepository == null) {
             return "";
         }
 
-        // 两阶段披露 — system prompt 展示 XML 摘要（id + name + description），
-        // LLM 根据 description 匹配意图后通过 skill.load(names=[...]) 加载完整指南
-        String skillEntries = skills.stream()
-                .map(s -> s.toDiscoverySummary())
-                .collect(Collectors.joining("\n"));
+        List<SkillInstallation> enabled;
+        try {
+            enabled = skillInstallationRepository.findAllByEnabled(true);
+        } catch (Exception e) {
+            log.warn("加载已启用 skill 失败: error={}", e.getMessage());
+            return "";
+        }
+        if (enabled.isEmpty()) {
+            return "";
+        }
 
+        // 查表 + 过滤：注册表存在 + requires 满足
+        List<SkillCatalogEntry> entries = enabled.stream()
+                .map(install -> skillRegistry.find(install.name()).orElse(null))
+                .filter(Objects::nonNull)
+                .filter(def -> skillRequirementGate == null
+                        || skillRequirementGate.satisfies(def.zhiweiMeta().requires()))
+                .map(ContextAssembler::toCatalogEntry)
+                .sorted(Comparator
+                        .comparing(SkillCatalogEntry::category, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparingInt(entry -> priorityOrder(entry.priority()))
+                        .thenComparing(SkillCatalogEntry::name))
+                .toList();
+
+        if (entries.isEmpty()) {
+            return "";
+        }
+
+        String skillEntries = renderCategoryGroupedXml(entries);
         try {
             return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
         } catch (Exception e) {
@@ -1143,42 +1190,80 @@ public class ContextAssembler {
         }
     }
 
+    /** Skill catalog 一行映射：name + description + category + priority。 */
+    private record SkillCatalogEntry(String name, String description, String category, SkillPriority priority) {}
+
+    /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
+    private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
+        SkillZhiweiMeta meta = def.zhiweiMeta();
+        String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
+        String category = meta.category() == null ? "other" : meta.category();
+        return new SkillCatalogEntry(displayName, def.description(), category, meta.priority());
+    }
+
+    /**
+     * 按 category 分组拼装 XML：同 category 的 skill 放在同一个 {@code <category>} 标签内；
+     * 组内按 priority 排序（HIGH → NORMAL → LOW）由调用方预排好。
+     */
+    private static String renderCategoryGroupedXml(List<SkillCatalogEntry> entries) {
+        var sb = new StringBuilder();
+        String currentCategory = null;
+        for (SkillCatalogEntry e : entries) {
+            if (!Objects.equals(currentCategory, e.category())) {
+                if (currentCategory != null) {
+                    sb.append("</category>\n");
+                }
+                sb.append("<category name=\"").append(escapeXml(e.category())).append("\">\n");
+                currentCategory = e.category();
+            }
+            sb.append("  <skill name=\"").append(escapeXml(e.name())).append("\">\n");
+            sb.append("    <description>").append(escapeXml(e.description())).append("</description>\n");
+            sb.append("  </skill>\n");
+        }
+        if (currentCategory != null) {
+            sb.append("</category>");
+        }
+        return sb.toString();
+    }
+
+    /** HIGH=0, NORMAL=1, LOW=2 — 排序权重。 */
+    private static int priorityOrder(SkillPriority p) {
+        if (p == null) {
+            return 1;
+        }
+        return switch (p) {
+            case HIGH -> 0;
+            case NORMAL -> 1;
+            case LOW -> 2;
+        };
+    }
+
+    /** XML 文本转义 — 仅覆盖标签属性/文本中可能出现的 5 个特殊字符。 */
+    private static String escapeXml(@Nullable String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
+    }
+
     /**
      * 构建已加载 Skill 指南段 — 注入到 userPrompt 头部（runtime_context 上方），
      * 利用近因效应确保 LLM 优先注意到 Skill 指南中的约束。
      *
-     * <p>仅注入 Markdown body 部分，剥离 YAML frontmatter（id/name/description/version
-     * 等元数据对 LLM 执行无意义，节省 token）。</p>
+     * <p>{@code state.loadedSkillContent()} 由 {@link com.lifepilot.agent.execution.ToolExecutionCoordinator}
+     * 从 {@code skill.load} 工具输出中提取，形如 {@code <skill name="X">body</skill>}，
+     * 已经是 {@link com.lifepilot.skill.MarkdownSkillParser} 解析后的 body 部分，
+     * 不再含 YAML frontmatter，直接拼接即可。</p>
      */
     private String buildLoadedSkillsSection(@Nullable ReactAgentState state) {
         if (state == null || state.loadedSkillContent() == null || state.loadedSkillContent().isBlank()) {
             return "";
         }
-        String content = stripYamlFrontmatter(state.loadedSkillContent());
-        if (content.isBlank()) {
-            return "";
-        }
-        return "<loaded_skills>\n" + content + "\n</loaded_skills>";
-    }
-
-    /**
-     * 剥离 SKILL.md 中的 YAML frontmatter（--- ... --- 之间的部分），只保留 Markdown body。
-     */
-    static String stripYamlFrontmatter(String content) {
-        String normalized = content.replace("\r\n", "\n").replace("\r", "\n");
-        if (!normalized.startsWith("---")) {
-            return content;
-        }
-        int secondDelimiter = normalized.indexOf("\n---", 3);
-        if (secondDelimiter < 0) {
-            return content;
-        }
-        // 跳过第二个 --- 及其后的换行
-        int bodyStart = secondDelimiter + 4;
-        if (bodyStart >= normalized.length()) {
-            return "";
-        }
-        return normalized.substring(bodyStart).strip();
+        return "<loaded_skills>\n" + state.loadedSkillContent().strip() + "\n</loaded_skills>";
     }
 
     /**

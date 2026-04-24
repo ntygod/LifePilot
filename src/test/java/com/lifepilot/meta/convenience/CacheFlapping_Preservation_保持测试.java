@@ -11,6 +11,7 @@ import com.lifepilot.skill.event.SkillRegistryEvent;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import com.lifepilot.tool.event.ToolRegistryEvent;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -85,7 +86,7 @@ class CacheFlapping_Preservation_保持测试 {
         var skillDef = new SkillDefinition(
                 "test-skill", "测试技能", "测试用技能描述", "1.0.0",
                 new SkillSource.UserDefined("/test", null), "测试指令内容",
-                List.of(), Map.of());
+                List.of(), Map.of(), SkillZhiweiMeta.empty());
         var event = new SkillRegistryEvent.SkillRegistered(skillDef);
 
         // 发布单个事件

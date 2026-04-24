@@ -10,9 +10,16 @@ import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.install.SkillInstallation;
+import com.lifepilot.skill.install.SkillInstallationRepository;
+import com.lifepilot.skill.install.SkillSourceType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.spec.SkillPriority;
+import com.lifepilot.skill.spec.SkillRequires;
+import com.lifepilot.skill.spec.SkillZhiweiMeta;
+import com.lifepilot.skill.validation.SkillRequirementGate;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -41,6 +48,7 @@ class ContextAssemblerSkillCatalogTest {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var skillRegistry = mock(SkillRegistry.class);
+        var installationRepository = mock(SkillInstallationRepository.class);
 
         when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
@@ -50,7 +58,7 @@ class ContextAssemblerSkillCatalogTest {
 
         var skill = SkillDefinition.builder()
                 .id("todo")
-                .name("task management")
+                .name("task-management")
                 .description("manage tasks")
                 .version("1.0")
                 .instructions("instructions")
@@ -58,10 +66,13 @@ class ContextAssemblerSkillCatalogTest {
                 .source(new SkillSource.UserDefined("/test", null))
                 .metadata(Map.of())
                 .build();
-        when(skillRegistry.listAll()).thenReturn(List.of(skill));
+        when(installationRepository.findAllByEnabled(true))
+                .thenReturn(List.of(buildInstallation("task-management")));
+        when(skillRegistry.find("task-management")).thenReturn(java.util.Optional.of(skill));
 
         var assembler = new ContextAssembler(config, promptRegistry,
                 null, null, null, null, null, skillRegistry);
+        assembler.setSkillInstallationRepository(installationRepository);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -75,14 +86,16 @@ class ContextAssemblerSkillCatalogTest {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var skillRegistry = mock(SkillRegistry.class);
+        var installationRepository = mock(SkillInstallationRepository.class);
 
         when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
-        when(skillRegistry.listAll()).thenReturn(List.of());
+        when(installationRepository.findAllByEnabled(true)).thenReturn(List.of());
 
         var assembler = new ContextAssembler(config, promptRegistry,
                 null, null, null, null, null, skillRegistry);
+        assembler.setSkillInstallationRepository(installationRepository);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -113,6 +126,7 @@ class ContextAssemblerSkillCatalogTest {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var skillRegistry = mock(SkillRegistry.class);
+        var installationRepository = mock(SkillInstallationRepository.class);
 
         when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
@@ -128,16 +142,34 @@ class ContextAssemblerSkillCatalogTest {
                 .source(new SkillSource.UserDefined("/test", null))
                 .metadata(Map.of())
                 .build();
-        when(skillRegistry.listAll()).thenReturn(List.of(skill));
+        when(installationRepository.findAllByEnabled(true))
+                .thenReturn(List.of(buildInstallation("test")));
+        when(skillRegistry.find("test")).thenReturn(java.util.Optional.of(skill));
         when(promptRegistry.render(eq("agent/skill-catalog"), anyMap()))
                 .thenThrow(new RuntimeException("missing template"));
 
         var assembler = new ContextAssembler(config, promptRegistry,
                 null, null, null, null, null, skillRegistry);
+        assembler.setSkillInstallationRepository(installationRepository);
 
         String result = assembler.buildReactSystemPrompt();
 
         assertThat(result).isEqualTo("system prompt");
+    }
+
+    private static SkillInstallation buildInstallation(String name) {
+        return new SkillInstallation(
+                name,
+                SkillSourceType.USER_IMPORTED,
+                "/test/" + name,
+                "/test/" + name + "/SKILL.md",
+                "1.0",
+                true,
+                null,
+                null,
+                Instant.now(),
+                Instant.now(),
+                null);
     }
 
     @Test
@@ -343,35 +375,4 @@ class ContextAssemblerSkillCatalogTest {
                 .build();
     }
 
-    // ── stripYamlFrontmatter 测试 ──
-
-    @Test
-    void stripYamlFrontmatter_正常剥离frontmatter() {
-        String input = "---\nid: test\nname: 测试\n---\n# 标题\n正文内容";
-        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文内容");
-    }
-
-    @Test
-    void stripYamlFrontmatter_无frontmatter时原样返回() {
-        String input = "# 标题\n正文内容";
-        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文内容");
-    }
-
-    @Test
-    void stripYamlFrontmatter_仅有开头分隔符时原样返回() {
-        String input = "---\nid: test\nname: 测试";
-        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo(input);
-    }
-
-    @Test
-    void stripYamlFrontmatter_frontmatter后无内容时返回空() {
-        String input = "---\nid: test\n---";
-        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEmpty();
-    }
-
-    @Test
-    void stripYamlFrontmatter_处理CRLF换行() {
-        String input = "---\r\nid: test\r\n---\r\n# 标题\r\n正文";
-        assertThat(ContextAssembler.stripYamlFrontmatter(input)).isEqualTo("# 标题\n正文");
-    }
 }
