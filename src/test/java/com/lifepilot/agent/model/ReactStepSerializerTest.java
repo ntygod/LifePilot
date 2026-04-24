@@ -311,6 +311,6 @@ class ReactStepSerializerTest {
 
     @Test
     void extractOutputDetail_无有效内容_返回null() {
-        assertNull(ReactStepSerializer.extractOutputDetail("notify", "{\"success\":true}", true));
+        assertNull(ReactStepSerializer.extractOutputDetail("notify.send_message", "{\"success\":true}", true));
     }
 }

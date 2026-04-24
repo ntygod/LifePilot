@@ -27,7 +27,8 @@ import java.util.Map;
  */
 public class TaskToolProvider {
 
-    private static final List<String> TASK_TAGS = List.of("task", "automation");
+    private static final List<String> TASK_TAGS = List.of("cron", "schedule", "task", "automation", "timer", "job", "recurring",
+            "create", "list", "update", "remove", "delete");
 
     private final CronTaskRepository cronTaskRepository;
     private final CronScheduler cronScheduler;
@@ -63,7 +64,7 @@ public class TaskToolProvider {
                 .id("cron")
                 .category(ToolCategory.ACTION)
                 .name("定时任务")
-                .description("定时任务管理")
+                .description("Schedule and manage cron jobs. Actions: create, list, update, remove recurring tasks.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

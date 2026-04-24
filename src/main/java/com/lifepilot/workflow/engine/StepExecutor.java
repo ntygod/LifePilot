@@ -149,10 +149,10 @@ public class StepExecutor {
                     step.id(), "Skill 激活失败: skillId=" + step.skillId() + ", error=" + e.getMessage(), e);
         }
 
-        // 2. 返回激活结果
+        // 2. 返回激活结果（WorkflowStep 仍以 skillId 为键名，映射到新 Activation 的 name）
         Map<String, Object> output = new HashMap<>();
         output.put("success", true);
-        output.put("skillId", activation.skillId());
+        output.put("skillId", activation.name());
         output.put("instructions", activation.instructions());
         output.put("suggestedTools", activation.suggestedTools());
         return Map.copyOf(output);

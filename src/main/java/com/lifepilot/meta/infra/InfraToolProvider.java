@@ -30,7 +30,8 @@ import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
-import com.lifepilot.workflow.tool.WorkflowToolProvider;
+// WorkflowToolProvider 暂时下线（2026-04-23）；源码保留，等未来决定是否重启用再取消此注释
+// import com.lifepilot.workflow.tool.WorkflowToolProvider;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
@@ -39,6 +40,7 @@ import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.tool.validation.SkillPathWhitelist;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,10 +77,10 @@ public class InfraToolProvider {
     @Nullable private final ChannelOperationDispatcher channelOperationDispatcher;
     @Nullable private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
     @Nullable private final ChannelInstanceService channelInstanceService;
-    @Nullable private final String skillDirectory;
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
     @Nullable private final ChatSessionRepository chatSessionRepository;
+    @Nullable private final SkillPathWhitelist skillPathWhitelist;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -97,10 +99,10 @@ public class InfraToolProvider {
                              @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                              @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                              @Nullable ChannelInstanceService channelInstanceService,
-                             @Nullable String skillDirectory,
                              WorkspaceResolver workspaceResolver,
                              @Nullable AttachmentRepository attachmentRepository,
-                             @Nullable ChatSessionRepository chatSessionRepository) {
+                             @Nullable ChatSessionRepository chatSessionRepository,
+                             @Nullable SkillPathWhitelist skillPathWhitelist) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -118,10 +120,10 @@ public class InfraToolProvider {
         this.channelOperationDispatcher = channelOperationDispatcher;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.channelInstanceService = channelInstanceService;
-        this.skillDirectory = skillDirectory;
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
         this.chatSessionRepository = chatSessionRepository;
+        this.skillPathWhitelist = skillPathWhitelist;
     }
 
     /**
@@ -146,7 +148,7 @@ public class InfraToolProvider {
                 fileEditConfig.getUndoMaxDepth(),
                 fileEditConfig.getMaxSnapshotSizeBytes());
         var lintHook = new LintHookExecutor();
-        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, skillDirectory, toolRegistry, attachmentRepository);
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, skillPathWhitelist);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 通知工具
@@ -157,13 +159,8 @@ public class InfraToolProvider {
             log.warn("NotificationService 不可用，跳过通知工具注册");
         }
 
-        // 工作流管理工具
-        if (workflowRegistry != null && workflowCommandService != null) {
-            var workflowToolProvider = new WorkflowToolProvider(workflowRegistry, workflowCommandService);
-            totalTools += registerBuiltinTools(toolRegistry, workflowToolProvider.buildWorkflowTools());
-        } else {
-            log.warn("WorkflowRegistry 或 WorkflowCommandService 不可用，跳过工作流管理工具注册");
-        }
+        // workflow 工具已下线：使用频率低、与 LLM 直接编排相比优势有限，
+        // 保留 WorkflowToolProvider 源码待需要时重启用。
 
         // 自主任务工具（创建路径会通过 ChatSessionRepository 反查当前会话的 projectId，
         // 填入新建任务的归属 —— Plan 2 Task A6）

@@ -1,13 +1,23 @@
 ---
-id: api-debugger
-name: "API 调试"
-description: "REST/GraphQL 接口测试与调试。用户说「测试接口」「调试 API」「发个请求」「HTTP 请求」「接口返回不对」「Postman」「curl 一下」时使用。不适用于浏览器自动化测试（用 browser-automation）或代码级单元测试（用 code-assistant）。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - code.execute
-  - file.read
-  - file.write
+name: api-debugger
+description: 当用户要测试或调试 REST / GraphQL 接口、验证响应格式、对比接口文档与实际行为、生成 Mock 数据时使用。关键词：测试接口、调试 API、HTTP 请求、curl、Postman、接口返回、GraphQL、响应格式。浏览器自动化测试用 browser-automation，代码级单元测试用 code-assistant，单次 curl 直接用 shell.exec。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: external-integration
+    priority: normal
+    tags:
+      - api
+      - rest
+      - graphql
+      - curl
+      - http
+      - testing
+    suggested_tools:
+      - shell.exec
+      - code.execute
+      - file.read
+      - file.write
 ---
 
 # API 调试指南
@@ -30,7 +40,7 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 发送请求
+### 发送请求
 
 **GET：**
 ```bash
@@ -52,7 +62,7 @@ shell.exec(command="curl -s -H 'Authorization: Bearer TOKEN' 'https://api.exampl
 shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"query\":\"{ users { id name } }\"}' 'https://api.example.com/graphql'")
 ```
 
-### 2. 分析响应
+### 分析响应
 
 检查要点：
 - HTTP 状态码是否符合预期
@@ -65,7 +75,7 @@ shell.exec(command="curl -s -X POST -H 'Content-Type: application/json' -d '{\"q
 shell.exec(command="curl -s 'URL' | python -m json.tool")
 ```
 
-### 3. 批量测试
+### 批量测试
 
 读取接口文档或 OpenAPI spec：
 ```
@@ -77,7 +87,7 @@ file.read(path="openapi.yaml")
 file.write(path="api-test-report.md", content="测试报告")
 ```
 
-### 4. Mock 数据生成
+### Mock 数据生成
 
 ```python
 code.execute(language="python", code="

@@ -8,14 +8,14 @@ import java.util.List;
  * <p>由 {@link com.lifepilot.skill.activation.SkillActivator} 在激活成功后返回，
  * 供 ContextAssembler 将 Skill 指令插入 Agent 上下文。</p>
  *
- * @param skillId        Skill ID
- * @param instructions   Skill 指令（注入 Agent 上下文）
+ * @param name           Skill 名称（v2 规范：name 取代旧的 id）
+ * @param instructions   Skill 指令（注入 Agent 上下文，已完成占位符替换）
  * @param suggestedTools 建议工具列表
  * @author zsg
- * @since 2026-03-07
+ * @since 2026-04-24
  */
 public record SkillActivation(
-        String skillId,
+        String name,
         String instructions,
         List<String> suggestedTools
 ) {

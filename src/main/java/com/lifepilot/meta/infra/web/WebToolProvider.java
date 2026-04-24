@@ -25,8 +25,6 @@ import java.util.Map;
  */
 public class WebToolProvider {
 
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
-
     private final MetaProperties properties;
     private final WebSearchConfigProvider webSearchConfigProvider;
     @Nullable
@@ -60,8 +58,7 @@ public class WebToolProvider {
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
-                .description("搜索互联网信息。知识不足或用户要求联网搜索时使用。" +
-                        "返回标题、URL 和摘要。需要获取完整页面内容时用 web.fetch。")
+                .description("Search the internet by keywords. Use when knowledge is insufficient or the user requests live search. Returns title, URL, and snippet. Call web.fetch to retrieve full page content.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -82,7 +79,7 @@ public class WebToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.none()
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "search", "web", "internet", "query", "find", "lookup"))
                 .executor(executor::execute)
                 .build();
     }
@@ -93,9 +90,7 @@ public class WebToolProvider {
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
-                .description("抓取 URL 内容或调用外部 REST API。" +
-                        "默认 GET 并提取正文，支持 CSS 选择器定向提取。" +
-                        "禁止访问内网地址。")
+                .description("Fetch a URL content or call an external REST API. Defaults to GET and extracts main text; supports CSS selector for targeted extraction. Internal network addresses are blocked.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -123,7 +118,7 @@ public class WebToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.origins("url")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "fetch", "web", "http", "url", "scrape", "content", "api", "rest"))
                 .executor(executor::execute)
                 .build();
     }

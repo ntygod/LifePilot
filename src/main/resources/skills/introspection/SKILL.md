@@ -1,10 +1,17 @@
 ---
-id: introspection
-name: "系统自省"
-description: "查看知微运行时状态：Skill 数量、工具分布、工作流实例、MCP 连接状态、JVM 内存。用户说「系统状态」「有什么在运行」「查看能力」「MCP 连接」「工作流状态」时使用。系统级资源检查（CPU/内存/磁盘）用 healthcheck。"
-version: "2.0.0"
-suggested-tools:
-  - system.status
+name: introspection
+description: 当用户询问"系统状态""有什么在运行""查看能力""MCP 连接""工作流状态"等需要查看知微运行时信息时使用；覆盖 Skill 数量、工具分布、工作流实例、MCP 连接状态、JVM 内存。系统级资源检查（CPU/内存/磁盘）不在本 Skill 范围，应用 healthcheck。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: system
+    priority: normal
+    suggested_tools:
+      - system.status
+    tags:
+      - introspection
+      - runtime
+      - status
 ---
 
 # 系统自省指南

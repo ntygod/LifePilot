@@ -26,7 +26,7 @@
 
 | 扩展途径 | 当前存储能力 | 缺口 |
 |---------|------------|------|
-| YAML Skill | Skill 通过 `file.read(skill=...)` 按需激活，无数据存储 | 完全缺失 |
+| Markdown Skill | Skill 通过 `skill.load(names=[...])` 按需激活，无领域数据存储 | 完全缺失 |
 | 自定义 Agent | `AgentOrchestrator.run()` 执行，无持久化状态 | 完全缺失 |
 | Workflow | `WorkflowContext` 为内存 HashMap，仅持久化执行状态 | 领域数据缺失 |
 | MCP | 外部服务器自行管理存储 | 不在本模块范围 |
@@ -410,7 +410,7 @@ sequenceDiagram
 | 依赖模块 | 交互方式 | 说明 |
 |---------|---------|------|
 | Tool System (`com.lifepilot.meta.infra.storage`) | BuiltinTool 注册 | `StorageToolProvider` 注册 `datastore` 工具，`DatastoreActionDispatchExecutor` 路由 9 个 action |
-| Skill System (`com.lifepilot.skill`) | Skill 定义 | `src/main/resources/skills/datastore/SKILL.md`，通过 `file.read(skill="datastore")` 按需激活 |
+| Skill System (`com.lifepilot.skill`) | Skill 定义 | `src/main/resources/skills/datastore/SKILL.md`，通过 `skill.load(names=["datastore"])` 按需激活 |
 | Knowledge System (`com.lifepilot.knowledge`) | 文档存储 + ingest | 文档直接存入 `documents` 表，通过 `DocumentIngester` 异步分块 + embedding |
 | Knowledge System (`com.lifepilot.knowledge`) | 语义检索 | Agent 调用 `knowledge.search(datastoreId=X)` 检索 datastore 文档 |
 

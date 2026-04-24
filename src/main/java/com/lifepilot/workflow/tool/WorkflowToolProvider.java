@@ -48,7 +48,7 @@ public class WorkflowToolProvider {
         return BuiltinTool.builder()
                 .id("workflow")
                 .name("工作流管理")
-                .description("工作流管理")
+                .description("Manage workflows. Actions: list, start, status, cancel, resume long-running process orchestrations.")
                 .category(ToolCategory.ACTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -76,6 +76,7 @@ public class WorkflowToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("workflowIds", false, "workflowId", "instanceId")
                 ))
+                .tags(List.of("workflow", "process", "orchestration", "manage", "flow", "automation"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

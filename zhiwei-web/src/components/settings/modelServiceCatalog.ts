@@ -25,13 +25,53 @@ export const GENERATION_CAPABILITY_OPTIONS = [
   { value: 'NATIVE_VIDEO', label: '原生视频' },
 ]
 
-export const GENERATION_SCENE_OPTIONS = [
+/** 生成场景可选项。hint 非空时，UI 渲染 info 图标 + tooltip 提示用户适合的模型档位。 */
+export interface GenerationSceneOption {
+  value: string
+  label: string
+  /** 配置提示（一般是"建议用 X 级模型"之类），非空时 UI 显示感叹号 tooltip。 */
+  hint?: string
+}
+
+export const GENERATION_SCENE_OPTIONS: GenerationSceneOption[] = [
   { value: 'chat', label: '通用对话' },
   { value: 'agent_react', label: 'Agent 推理' },
-  { value: 'knowledge_extraction', label: '知识提取' },
+  {
+    value: 'knowledge_extraction',
+    label: '知识提取',
+    hint: '输入较长、对结构化输出准确度要求高，建议用 Pro / Plus 级模型',
+  },
   { value: 'background_analysis', label: '后台分析' },
-  { value: 'memory_compression', label: '记忆压缩' },
-  { value: 'skill_generation', label: '技能生成' },
+  {
+    value: 'memory_compression',
+    label: '记忆压缩',
+    hint: '高频后台任务，建议用 Flash / Turbo 级小模型，在成本与延迟之间取舍',
+  },
+  {
+    value: 'skill_generation',
+    label: '技能生成',
+    hint: '对生成质量与结构化要求高，建议用 Pro / Plus 级模型',
+  },
+  {
+    value: 'session-title',
+    label: '会话标题',
+    hint: '仅生成 ≤ 20 字中文标题，延迟敏感，建议用 Flash / Turbo 级小模型',
+  },
+  {
+    value: 'conversation-summary',
+    label: '对话摘要',
+    hint: '后台派生任务，输出数百字总结，建议用 Flash / Turbo 级小模型',
+  },
+  {
+    value: 'knowledge_rerank',
+    label: 'LLM 重排打分',
+    hint: '用 LLM 对检索结果做 pointwise / listwise 打分，不是专用 reranker 模型（专用请在精排服务页配置）。延迟敏感，建议用 Flash / Turbo 级小模型',
+  },
+  {
+    value: 'retrieval_quality_eval',
+    label: 'LLM 检索评估',
+    hint: '用 LLM 评估检索结果相关度的轻量打分场景，不是专用 reranker。建议用 Flash / Turbo 级小模型',
+  },
 ]
 
 export function buildEmptyModelServiceRequest(): CreateModelServiceRequest {

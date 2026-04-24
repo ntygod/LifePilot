@@ -1076,50 +1076,93 @@ export const skillApi = {
   list(): Promise<SkillSummary[]> {
     return request('/skills')
   },
-  get(id: string): Promise<SkillDetail> {
-    return request(`/skills/${id}`)
+  get(name: string): Promise<SkillDetail> {
+    return request(`/skills/${encodeURIComponent(name)}`)
   },
-  create(data: Partial<SkillDetail>): Promise<SkillDetail> {
+  create(data: { skillMdContent: string }): Promise<import('@/types').SkillInstallation> {
     return request('/skills', {
       method: 'POST',
       body: JSON.stringify(data)
     })
   },
-  update(id: string, data: Partial<SkillDetail>): Promise<SkillDetail> {
-    return request(`/skills/${id}`, {
+  update(name: string, data: Partial<SkillDetail>): Promise<SkillDetail> {
+    return request(`/skills/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(data)
     })
   },
-  unregister(id: string): Promise<void> {
-    return request(`/skills/${id}`, { method: 'DELETE' })
+  unregister(name: string): Promise<void> {
+    return request(`/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
-  enable(id: string): Promise<void> {
-    return request(`/skills/${id}/enable`, { method: 'POST' })
+  /** 显式设置启用状态（Phase B.6 新端点） */
+  setEnabled(name: string, enabled: boolean): Promise<void> {
+    return request(`/skills/${encodeURIComponent(name)}/enabled`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled })
+    })
   },
-  disable(id: string): Promise<void> {
-    return request(`/skills/${id}/disable`, { method: 'POST' })
+  /** 兼容旧端点：启用 Skill */
+  enable(name: string): Promise<void> {
+    return request(`/skills/${encodeURIComponent(name)}/enable`, { method: 'POST' })
   },
-  test(id: string, data: { userMessage: string; context?: Record<string, unknown> }): Promise<any> {
-    return request(`/skills/${id}/test`, {
+  /** 兼容旧端点：禁用 Skill */
+  disable(name: string): Promise<void> {
+    return request(`/skills/${encodeURIComponent(name)}/disable`, { method: 'POST' })
+  },
+  test(name: string, data: { userMessage: string; context?: Record<string, unknown> }): Promise<any> {
+    return request(`/skills/${encodeURIComponent(name)}/test`, {
       method: 'POST',
       body: JSON.stringify(data)
     })
   },
   /** 获取 Skill Markdown 定义 */
-  getSkillMarkdown(skillId: string): Promise<string> {
-    return fetch(`${getBase()}/skills/${skillId}/markdown`).then(res => {
+  getSkillMarkdown(name: string): Promise<string> {
+    return fetch(`${getBase()}/skills/${encodeURIComponent(name)}/markdown`).then(res => {
       if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
   },
   /** 更新 Skill Markdown 定义 */
-  updateSkillMarkdown(skillId: string, content: string): Promise<void> {
-    return request(`/skills/${skillId}/markdown`, {
+  updateSkillMarkdown(name: string, content: string): Promise<void> {
+    return request(`/skills/${encodeURIComponent(name)}/markdown`, {
       method: 'PUT',
       headers: { 'Content-Type': 'text/plain' },
       body: content
     } as any)
+  },
+  /** 上传 .skill 压缩包导入 Skill（multipart/form-data，字段名 file） */
+  async importPackage(file: File): Promise<import('@/types').SkillInstallation> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${getBase()}/skills/import`, {
+      method: 'POST',
+      body: formData
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      let error: ErrorResponse
+      try {
+        error = text
+          ? JSON.parse(text) as ErrorResponse
+          : { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
+      } catch {
+        error = { code: res.status, message: text?.trim() || res.statusText || '请求失败', timestamp: new Date().toISOString() }
+      }
+      throw error
+    }
+    const text = await res.text()
+    if (!text) return undefined as unknown as import('@/types').SkillInstallation
+    const json = JSON.parse(text)
+    return (json && typeof json === 'object' && 'code' in json && 'data' in json)
+      ? json.data as import('@/types').SkillInstallation
+      : json as import('@/types').SkillInstallation
+  },
+  /** 从市场索引按 marketplaceId 安装 Skill */
+  installFromMarketplace(marketplaceId: string): Promise<import('@/types').SkillInstallation> {
+    return request('/skills/install-from-marketplace', {
+      method: 'POST',
+      body: JSON.stringify({ marketplaceId })
+    })
   }
 }
 

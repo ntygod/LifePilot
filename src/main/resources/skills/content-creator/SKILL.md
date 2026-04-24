@@ -1,15 +1,25 @@
 ---
-id: content-creator
-name: "内容创作"
-description: "文章撰写、报告生成、文案优化。用户说「写一篇文章」「帮我写报告」「起草邮件」「写文案」「润色一下」「写博客」「写提案」「改写这段」时使用。不适用于摘要提炼（用 summarizer）或网文连载创作（用 web-novel-writer）。"
-version: "2.0.0"
-suggested-tools:
-  - web.search
-  - web.fetch
-  - file.read
-  - file.write
-  - knowledge.search
-  - memory
+name: content-creator
+description: 当用户要撰写文章、报告、邮件、博客、提案或对已有文本做润色改写时使用。关键词：写文章、写报告、起草邮件、写文案、润色、改写、博客、提案、演讲稿、工作总结。从已有内容提炼摘要用 summarizer，网文长篇连载用 web-novel-writer，技术文档/代码注释用 code-assistant，数据报表用 data-analyst。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: content-creation
+    priority: normal
+    tags:
+      - writing
+      - article
+      - report
+      - email
+      - copywriting
+      - blog
+    suggested_tools:
+      - web.search
+      - web.fetch
+      - file.read
+      - file.write
+      - knowledge.search
+      - memory
 ---
 
 # 内容创作指南
@@ -33,7 +43,7 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 确认需求
+### 确认需求
 
 和用户确认以下要素，缺失的主动询问：
 - 内容类型（文章 / 报告 / 邮件 / 文案）
@@ -41,7 +51,7 @@ suggested-tools:
 - 篇幅要求
 - 风格基调
 
-### 2. 素材收集
+### 素材收集
 
 ```
 web.search(query="主题关键词")
@@ -53,16 +63,11 @@ memory(action="search", query="写作风格偏好")
 
 仅在需要外部信息时执行此步骤。用户已提供充分素材时跳过。
 
-### 3. 大纲构建
+### 大纲构建
 
-先输出大纲供用户确认，包含：
-- 标题
-- 各章节要点
-- 预估篇幅
+先输出大纲供用户确认，包含标题、各章节要点、预估篇幅。用户确认后再进入撰写；用户明确说"直接写"则跳过大纲。
 
-用户确认后再进入撰写。如果用户明确说"直接写"，跳过大纲确认。
-
-### 4. 撰写
+### 撰写
 
 按大纲逐节撰写。参考结构：
 
@@ -73,7 +78,7 @@ memory(action="search", query="写作风格偏好")
 | 邮件 | 主旨 → 背景 → 要求/建议 → 收尾 |
 | 文案 | 痛点引入 → 解决方案 → 价值主张 → 行动号召 |
 
-### 5. 交付
+### 交付
 
 ```
 file.write(path="output/文章标题.md", content="最终内容")
@@ -85,7 +90,7 @@ file.write(path="output/文章标题.md", content="最终内容")
 - 引用外部数据时标注来源，不编造统计数字和案例
 - 润色/改写任务保持原文的核心观点不变，只调整表达方式
 - 长文（>2000 字）先出大纲再撰写，除非用户明确跳过
-- 不主动添加原文没要求的章节（如用户要邮件，不追加"附录"）
+- 不主动添加原文没要求的章节
 
 ## 常见错误处理
 

@@ -78,7 +78,7 @@ public class ChannelToolProvider {
                                           List<ChannelOperationDescriptor> ops) {
         String platform = plugin.platform();
         String toolId = "channel." + platform;
-        List<String> tags = List.of("channel", platform);
+        List<String> tags = List.of("channel", platform, "message", "communication", "integration", "send");
 
         var executor = new ChannelActionDispatchExecutor(
                 operationDispatcher, deliveryDispatcher, channelInstanceService, platform, ops);
@@ -104,15 +104,14 @@ public class ChannelToolProvider {
     private String buildDescription(ChannelPluginDescriptor plugin,
                                      List<ChannelOperationDescriptor> ops) {
         var sb = new StringBuilder();
-        sb.append("通过").append(plugin.name()).append("渠道执行各类操作。");
-        sb.append("通过 action 参数支持以下操作：");
+        sb.append("Execute operations on the ").append(plugin.platform()).append(" channel. Supported actions: ");
 
-        var joiner = new StringJoiner("，");
+        var joiner = new StringJoiner(", ");
         for (var op : ops) {
-            joiner.add(op.action() + "=" + op.name());
+            joiner.add(op.action());
         }
         sb.append(joiner);
-        sb.append("。");
+        sb.append(".");
         return sb.toString();
     }
 

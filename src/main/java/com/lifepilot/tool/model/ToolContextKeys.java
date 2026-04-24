@@ -23,6 +23,8 @@ public final class ToolContextKeys {
     public static final String ALLOWED_TOOL_IDS = "allowedToolIds";
     public static final String TASK_ID = "taskId";
     public static final String WORKSPACE_ID = "workspaceId";
+    /** 调用方 ReactAgentState 引用 — 供 meta 工具（tools.search/describe/list）访问 activatedToolIds 等当轮状态。 */
+    public static final String CALLER_STATE = "callerState";
     private ToolContextKeys() {
     }
 }

@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * A2UI 组件输出工具提供者。
  *
- * <p>注册 {@code ui.emit} 内置工具，供 LLM 通过 tool call 提交结构化组件树。
+ * <p>注册 {@code ui.render} 内置工具，供 LLM 通过 tool call 提交结构化组件树。
  * 该工具通过 a2ui skill 的 suggested-tools 按需激活，未加载 skill 时不暴露。</p>
  *
  * @author zsg
@@ -24,7 +24,7 @@ import java.util.Map;
  */
 public class UiEmitToolProvider {
 
-    private static final List<String> UI_TAGS = List.of("ui", "interaction");
+    private static final List<String> UI_TAGS = List.of("ui", "render", "component", "interactive", "frontend", "widget", "display", "card");
 
     private final SseSessionManager sseManager;
     private final int maxComponentsPerTree;
@@ -44,18 +44,16 @@ public class UiEmitToolProvider {
     }
 
     /**
-     * 构建 ui.emit 工具。
+     * 构建 ui.render 工具。
      *
-     * @return ui.emit BuiltinTool 实例
+     * @return ui.render BuiltinTool 实例
      */
     public BuiltinTool buildTool() {
         var executor = new UiEmitToolExecutor(sseManager, maxComponentsPerTree, treeCapture);
         return BuiltinTool.builder()
-                .id("ui.emit")
+                .id("ui.render")
                 .name("渲染交互组件")
-                .description("将结构化组件树推送到前端渲染为交互式 UI。" +
-                        "仅在需要按钮、表单、signal 等交互能力时使用。" +
-                        "纯展示内容（表格、列表、标题）应使用 Markdown。")
+                .description("Render interactive UI components (buttons, forms, signals) to the frontend. For plain display content use Markdown instead.")
                 .category(ToolCategory.INTERACTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",

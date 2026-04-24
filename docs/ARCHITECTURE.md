@@ -137,7 +137,7 @@ graph TB
 | `mcp` | Model Context Protocol 客户端、懒连接生命周期、工具缓存、自动发现、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
 | `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
-| `skill` | Skill 注册/激活/热加载、自扩展（Gap 检测 + Markdown SKILL.md 生成）、SkillHub 远程市场 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
+| `skill` | SKILL.md 三级分层（L1/L2/L3）、四来源安装（BUILTIN/USER_IMPORTED/MARKETPLACE/AUTO_GENERATED）、`skill.load` 统一激活、`SkillSynthesizer` 自生成 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `project` | 项目（领域级任务容器）CRUD、项目级 MemorySpace 联动、ProjectContext 解析、级联删除 | [架构](architecture/project.md) |
@@ -192,7 +192,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V20）"
+    subgraph "Flyway 迁移（V1~V23）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -211,8 +211,11 @@ graph LR
         V16["V16: conversations 加 project_id（死表，V17 已迁移）"]
         V17["V17: project_id 从 conversations 迁移到 session_store 并建部分索引"]
         V18["V18: chat_turn_memory_snapshots 加 project_space_id（项目隔离 turn 级写入路由）"]
-        V19["V19: cron_tasks 加 project_id + 部分索引（Plan 2 定时任务按项目归属）"]
-        V20["V20: cron_task_logs 加 trigger_source（cron / manual，区分定时与立即运行）"]
+        V19["V19: 工具暴露重构 — tool_search_index(FTS5) + tool_usage_stats + tier1_advisory"]
+        V20["V20: daily_active_sessions 日活会话统计表"]
+        V21["V21: 技能系统重构相关表与索引"]
+        V22["V22: cron_tasks 加 project_id + 部分索引（Plan 2 定时任务按项目归属）"]
+        V23["V23: cron_task_logs 加 trigger_source（cron / manual，区分定时与立即运行）"]
     end
 
     V1 --> SQL

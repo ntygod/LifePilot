@@ -150,6 +150,12 @@
             <version>${jtokkit.version}</version>
         </dependency>
 
+        <!-- Caffeine — 高性能内存缓存（Spring Boot BOM 管理版本） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Thumbnailator — 图片压缩和缩放 -->
         <dependency>
             <groupId>net.coobird</groupId>

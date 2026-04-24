@@ -44,7 +44,6 @@ class ContextAssembler_ContextEngine测试 {
         when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
         when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
-        when(promptRegistry.render(eq("memory/agentic-tool-guide"))).thenReturn("");
         when(promptRegistry.render(eq("agent/react-user-prompt"), anyMap())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> vars = invocation.getArgument(1, Map.class);

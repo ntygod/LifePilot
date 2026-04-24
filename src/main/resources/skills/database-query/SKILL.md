@@ -1,12 +1,22 @@
 ---
-id: database-query
-name: "数据库查询"
-description: "外部数据库连接、SQL 查询与数据导出。用户说「查数据库」「写个 SQL」「导出数据」「查一下表」「数据库结构」「MySQL 查询」「PostgreSQL」「SQLite 查询」时使用。不适用于知微内置 Datastore（用 datastore）或内存中的数据分析（用 data-analyst）。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - file.write
-  - file.read
+name: database-query
+description: 当用户要连接外部数据库（SQLite / MySQL / PostgreSQL）编写 SQL、查询数据、导出结果或分析库表结构时使用。关键词：查数据库、SQL、数据库结构、导出数据、MySQL、PostgreSQL、SQLite、查表、select。知微内置 Datastore 用 datastore，内存 CSV/Excel 分析用 data-analyst，日志分析用 log-analyzer。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: external-integration
+    priority: normal
+    tags:
+      - database
+      - sql
+      - mysql
+      - postgresql
+      - sqlite
+      - data-export
+    suggested_tools:
+      - shell.exec
+      - file.write
+      - file.read
 ---
 
 # 数据库查询指南
@@ -28,14 +38,14 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 确认连接信息
+### 确认连接信息
 
 向用户询问：
 - 数据库类型（SQLite / MySQL / PostgreSQL）
 - 连接地址、用户名、数据库名
 - 密码通过环境变量传递，不明文输入
 
-### 2. 探索数据库结构
+### 探索数据库结构
 
 **SQLite：**
 ```bash
@@ -55,7 +65,7 @@ shell.exec(command="psql -c \"\\dt\" database")
 shell.exec(command="psql -c \"\\d table_name\" database")
 ```
 
-### 3. 编写和执行查询
+### 编写和执行查询
 
 先用 LIMIT 限制结果集预览：
 
@@ -65,7 +75,7 @@ shell.exec(command="sqlite3 -header db.db \"SELECT col1, col2 FROM table_name LI
 
 用户确认后执行完整查询。
 
-### 4. 导出结果
+### 导出结果
 
 ```bash
 shell.exec(command="sqlite3 -header -csv db.db \"SELECT col1, col2 FROM table_name;\" > output.csv")

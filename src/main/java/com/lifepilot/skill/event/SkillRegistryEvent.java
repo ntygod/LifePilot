@@ -6,7 +6,7 @@ import com.lifepilot.skill.model.SkillDefinition;
  * Skill 注册中心事件 — 穷举注册、注销、更新三种事件类型。
  *
  * <p>通过 Spring {@link org.springframework.context.ApplicationEventPublisher} 发布，
- * 由 SkillDisclosureTool 等组件监听处理。</p>
+ * 由 SkillAuditRepository、CapabilityAggregator 等组件监听处理。</p>
  *
  * @author zsg
  * @since 2026-07-28

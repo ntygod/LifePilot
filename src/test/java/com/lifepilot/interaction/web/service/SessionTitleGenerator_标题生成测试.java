@@ -61,7 +61,8 @@ class SessionTitleGenerator_标题生成测试 {
                 sessionRepository,
                 generationRouter,
                 promptRegistry,
-                sseSessionManager
+                sseSessionManager,
+                30
         );
     }
 
@@ -201,14 +202,14 @@ class SessionTitleGenerator_标题生成测试 {
 
         @Test
         void 路由器为null时直接返回() {
-            var gen = new SessionTitleGenerator(sessionRepository, null, promptRegistry, sseSessionManager);
+            var gen = new SessionTitleGenerator(sessionRepository, null, promptRegistry, sseSessionManager, 30);
             gen.generateIfNeeded("session-1", "你好");
             verify(sessionRepository, never()).findById(anyString());
         }
 
         @Test
         void 提示注册器为null时直接返回() {
-            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, null, sseSessionManager);
+            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, null, sseSessionManager, 30);
             gen.generateIfNeeded("session-1", "你好");
             verify(sessionRepository, never()).findById(anyString());
         }
@@ -400,7 +401,7 @@ class SessionTitleGenerator_标题生成测试 {
 
         @Test
         void SseSessionManager为null时不推送但仍更新数据库() {
-            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, promptRegistry, null);
+            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, promptRegistry, null, 30);
             String sessionId = "session-no-sse";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
                     Instant.now(), Instant.now(), Instant.now(), null);

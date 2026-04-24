@@ -1,12 +1,21 @@
 ---
-id: log-analyzer
-name: "日志分析"
-description: "应用日志分析、错误追踪与模式识别。用户说「分析日志」「查看日志」「报错了」「查错误日志」「日志统计」「排查问题」时使用。不适用于系统级健康检查（用 healthcheck）或代码调试（用 code-assistant）。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - file.read
-  - file.list
+name: log-analyzer
+description: 当用户要分析应用日志、排查错误、追踪异常、统计错误频率分布或从大量日志中提取关键信息时使用。关键词：分析日志、查看日志、报错了、查错误日志、日志统计、排查问题、堆栈追踪、ERROR、Exception。系统级健康检查用 healthcheck，代码级 bug 调试用 code-assistant，实时监控告警用 cron-scheduler + shell.exec。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: infrastructure
+    priority: normal
+    tags:
+      - log
+      - error-tracking
+      - debugging
+      - pattern
+      - stack-trace
+    suggested_tools:
+      - shell.exec
+      - file.read
+      - file.list
 ---
 
 # 日志分析指南
@@ -36,13 +45,13 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 定位日志文件
+### 定位日志文件
 
 ```
 file.list(action="list", path="~/.zhiwei/logs", pattern="*.log")
 ```
 
-### 2. 快速扫描错误
+### 快速扫描错误
 
 **Windows：**
 ```bash
@@ -54,7 +63,7 @@ shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Ta
 shell.exec(command="grep -rn -E 'ERROR|FATAL|Exception' /path/to/logs/ -C 3")
 ```
 
-### 3. 统计错误分布
+### 统计错误分布
 
 **Windows：**
 ```bash
@@ -66,7 +75,7 @@ shell.exec(command="powershell -c \"Get-Content app.log | Select-String 'ERROR' 
 shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20")
 ```
 
-### 4. 生成分析报告
+### 生成分析报告
 
 按以下结构输出：
 
