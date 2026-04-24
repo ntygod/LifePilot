@@ -246,11 +246,6 @@ function navigateTo(path: string) {
   emit('close')
 }
 
-function openSettings() {
-  activeTab.value = 'manage'
-  router.push('/settings/general')
-  emit('close')
-}
 </script>
 
 <template>
@@ -258,17 +253,11 @@ function openSettings() {
     <!-- Whisper 下载进度 -->
     <WhisperDownloadCard />
 
-    <!-- 顶部：品牌（logo + 产品名 + 拉丁副品牌） -->
+    <!-- 顶部：品牌（logo + 产品名） -->
     <div class="sidebar-header">
       <RouterLink to="/conversations/new" class="flex items-center gap-sm" @click="emit('close')">
         <ZhiweiMark class="size-[1.3rem] text-primary" />
-        <span class="flex items-baseline gap-xs">
-          <span class="text-sm font-semibold tracking-tight text-foreground">知微</span>
-          <span
-            class="text-[10px] font-medium tracking-[0.12em] text-muted-foreground"
-            aria-hidden="true"
-          >ZHI·WEI</span>
-        </span>
+        <span class="text-sm font-semibold tracking-tight text-foreground">知微</span>
       </RouterLink>
       <NotificationBell />
     </div>
@@ -473,22 +462,8 @@ function openSettings() {
       </div>
     </template>
 
-    <!-- 底部：用户身份卡 + 主题切换 -->
+    <!-- 底部：主题切换（高频功能独占，右对齐） -->
     <div class="sidebar-footer">
-      <button
-        type="button"
-        class="identity-card"
-        data-testid="sidebar-identity-card"
-        @click="openSettings"
-      >
-        <div class="identity-avatar">
-          <ZhiweiMark class="size-[1rem] text-primary" />
-        </div>
-        <div class="flex min-w-0 flex-1 flex-col text-left">
-          <span class="identity-title">Ziwei Pro</span>
-          <span class="identity-subtitle">本地优先</span>
-        </div>
-      </button>
       <button
         type="button"
         class="theme-toggle"
@@ -664,59 +639,14 @@ function openSettings() {
   color: var(--foreground);
 }
 
-/* ═══ 底部身份卡 ═══ */
+/* ═══ 底部 ═══ */
 
 .sidebar-footer {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem 0.75rem;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem 0.625rem;
   border-top: 1px solid hsl(from var(--sidebar-border) h s l / 0.4);
-}
-
-.identity-card {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  flex: 1;
-  min-width: 0;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid transparent;
-  border-radius: 0.625rem;
-  background: transparent;
-  cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease;
-}
-
-.identity-card:hover {
-  background: hsl(from var(--muted) h s l / 0.4);
-  border-color: hsl(from var(--border) h s l / 0.5);
-}
-
-.identity-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 0.5rem;
-  background: hsl(from var(--primary) h s l / 0.12);
-  color: var(--primary);
-  flex-shrink: 0;
-}
-
-.identity-title {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.1;
-  color: var(--foreground);
-  letter-spacing: -0.01em;
-}
-
-.identity-subtitle {
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--muted-foreground);
 }
 
 .theme-toggle {
