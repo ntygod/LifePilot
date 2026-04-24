@@ -13,6 +13,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -115,8 +118,15 @@ public class ProactiveMemoryBridge {
      *
      * <p>taskId 即为 L3 GOAL 实体 id。</p>
      *
+     * <p><b>事务语义</b>：整个方法在 {@code @Transactional} 事务内完成（归档 + 清理追踪 +
+     * 事件发布注册），事件通过 {@link #publishAfterCommit(Object)} 走 AFTER_COMMIT，
+     * 与 {@code SemanticMemory#publishAfterCommit} 同范式 —— 若主事务回滚，
+     * {@link com.lifepilot.memory.lifecycle.listeners.ProactiveTaskCancelListener}
+     * 不会被幻觉触发导致 insight 误置 CANCELLED。</p>
+     *
      * @param entityId 主动任务 id（即 GOAL 实体 id）
      */
+    @Transactional
     public void markGoalFulfilled(String entityId) {
         // 归档前先查关联 insight，避免外键级联清理掉关联行
         List<String> relatedInsightIds = findInsightEntityIdsByTask(entityId);
@@ -128,16 +138,41 @@ public class ProactiveMemoryBridge {
             }
         }
         goalTrackingRepository.deleteByEntityId(entityId);
-        if (eventPublisher != null) {
-            try {
-                eventPublisher.publishEvent(new ProactiveTaskCancelled(entityId, relatedInsightIds));
-            } catch (Exception e) {
-                log.warn("记忆桥接: ProactiveTaskCancelled 发布失败, taskId={}, error={}",
-                        entityId, e.getMessage());
-            }
-        }
+        publishAfterCommit(new ProactiveTaskCancelled(entityId, relatedInsightIds));
         log.debug("记忆桥接: 目标归档完成, taskId={}, 级联 insight 数={}",
                 entityId, relatedInsightIds.size());
+    }
+
+    /**
+     * 事务提交后发布事件；无活跃事务时立即发布（fallback，保持单测/手工装配可用）。
+     *
+     * <p>与 {@link com.lifepilot.memory.semantic.SemanticMemory} 的同名方法语义一致：
+     * 回滚路径下不产生幻觉事件，避免下游 listener 基于幻觉事件更新派生存储。</p>
+     *
+     * @param event Spring ApplicationEvent
+     */
+    private void publishAfterCommit(Object event) {
+        if (eventPublisher == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        eventPublisher.publishEvent(event);
+                    } catch (Exception e) {
+                        log.warn("记忆桥接: 事件发布失败, event={}, error={}", event, e.getMessage());
+                    }
+                }
+            });
+        } else {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (Exception e) {
+                log.warn("记忆桥接: 事件发布失败, event={}, error={}", event, e.getMessage());
+            }
+        }
     }
 
     /**
@@ -344,19 +379,23 @@ public class ProactiveMemoryBridge {
                 var rule = existing.get();
                 float oldValue = parseFloat(rule.value(), 0.5f);
                 float newValue = oldValue * (1 - PREFERENCE_ALPHA) + signal * PREFERENCE_ALPHA;
+                // 强化已有规则 — 保留原有 sourceEntityId / deactivatedReason，避免被主动写入覆盖。
                 proceduralMemory.savePreference(new PreferenceRule(
                         rule.ruleId(), category, key,
                         String.format("%.3f", newValue),
                         Math.min(1f, rule.confidence() + 0.05f),
                         "proactive-engine",
                         rule.observationCount() + 1,
-                        rule.createdAt(), now));
+                        rule.createdAt(), now,
+                        rule.sourceEntityId(), rule.deactivatedReason()));
             } else {
+                // 主动引擎自生偏好无 L3 源实体，sourceEntityId 保持 null；
+                // L4SyncListener 的 WHERE source_entity_id = ? 不会命中这些记录，no-op 即可。
                 proceduralMemory.savePreference(new PreferenceRule(
                         UUID.randomUUID().toString(), category, key,
                         String.format("%.3f", signal),
                         0.3f, "proactive-engine", 1,
-                        now, now));
+                        now, now, null, null));
             }
         } catch (Exception e) {
             log.debug("记忆桥接: 偏好写入失败: category={}, key={}, error={}", category, key, e.getMessage());
