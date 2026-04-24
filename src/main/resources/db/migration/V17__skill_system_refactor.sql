@@ -20,4 +20,3 @@ CREATE TABLE skills (
 );
 
 CREATE INDEX idx_skills_source_enabled ON skills(source_type, enabled);
-CREATE INDEX idx_skills_enabled ON skills(enabled);
