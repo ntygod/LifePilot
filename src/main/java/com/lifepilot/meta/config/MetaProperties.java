@@ -249,8 +249,14 @@ public class MetaProperties {
             /** JavaScript 执行超时（秒），默认 10。 */
             private int jsExecutionTimeoutSeconds = 10;
 
-            /** 自定义 User-Agent。版本号需跟随 Chromium 更新，当前基于 Chrome 131。 */
-            private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+            /**
+             * 自定义 User-Agent。
+             *
+             * <p>默认 {@code "auto"}：运行时读取 Chromium 版本号动态拼 UA，
+             * 避免硬编码漂移导致的反爬指纹识别。配置任意其它字符串 → 原样使用。
+             * 拼接细节见 {@link com.lifepilot.meta.infra.browser.UserAgentBuilder}。</p>
+             */
+            private String userAgent = "auto";
 
             /** 视口宽度（像素），默认 1920。 */
             private int viewportWidth = 1920;

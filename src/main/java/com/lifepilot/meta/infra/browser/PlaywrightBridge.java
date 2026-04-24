@@ -272,6 +272,19 @@ final class PlaywrightBridge {
     }
 
     /**
+     * 读取 Browser 的 Chromium 版本号（如 {@code 135.0.7000.0}）。
+     *
+     * <p>用于动态拼接 User-Agent，避免硬编码版本号漂移导致的指纹识别。
+     * PERSISTENT 模式下 Playwright 不暴露独立 Browser 对象，调用方需处理此场景。</p>
+     *
+     * @param browserObj Browser 实例
+     * @return Chromium 版本号字符串
+     */
+    static String getBrowserVersion(Object browserObj) {
+        return ((Browser) browserObj).version();
+    }
+
+    /**
      * 关闭 BrowserContext。
      *
      * @param browserContextObj BrowserContext 实例

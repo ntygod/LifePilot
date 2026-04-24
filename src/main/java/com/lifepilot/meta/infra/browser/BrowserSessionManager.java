@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.ToIntFunction;
 
 /**
@@ -64,6 +65,17 @@ public class BrowserSessionManager {
 
     /** 共享上下文的 stealth 脚本注入守卫，保证只注入一次。 */
     private final AtomicBoolean stealthInjected = new AtomicBoolean(false);
+
+    /**
+     * 首次构造的最终 User-Agent 字符串，后续 createContext 复用。
+     *
+     * <p>null 表示"未初始化"或"auto 模式但无法拿到 Chromium 版本号"，
+     * 后者语义为跳过 {@code setUserAgent()}，让 Chromium 自身 UA 生效。</p>
+     */
+    private final AtomicReference<String> resolvedUserAgent = new AtomicReference<>();
+
+    /** 标记 resolvedUserAgent 是否已完成首次解析（区分 null 语义：未解析 vs. 解析结果为 null）。 */
+    private final AtomicBoolean userAgentResolved = new AtomicBoolean(false);
 
     /** 会话级多标签页管理：sessionId → SessionPages。 */
     private final ConcurrentHashMap<String, SessionPages> sessions = new ConcurrentHashMap<>();
@@ -477,7 +489,7 @@ public class BrowserSessionManager {
                     selectedIndex, contexts.size(), withPages);
         } else {
             sharedBrowserContext = browserRuntime.createContext(browserInstance,
-                    browserConfig.getUserAgent(), browserConfig.getViewportWidth(),
+                    resolveUserAgent(browserInstance), browserConfig.getViewportWidth(),
                     browserConfig.getViewportHeight(), browserConfig.getLocale(),
                     browserConfig.getTimezoneId(), null);
         }
@@ -500,9 +512,12 @@ public class BrowserSessionManager {
         }
         playwrightInstance = browserRuntime.createPlaywright();
         try {
+            // PERSISTENT 模式无独立 Browser 对象，无法读取 Chromium 版本号；
+            // auto 配置下 resolveUserAgent(null) 返回 null → 跳过 setUserAgent，
+            // 让 Chromium 自身真实 UA 生效（反指纹效果最优）。
             sharedBrowserContext = browserRuntime.launchPersistentContext(
                     playwrightInstance, Path.of(dir), browserConfig.isHeadless(),
-                    browserConfig.getExtraLaunchArgs(), browserConfig.getUserAgent(),
+                    browserConfig.getExtraLaunchArgs(), resolveUserAgent(null),
                     browserConfig.getViewportWidth(), browserConfig.getViewportHeight(),
                     browserConfig.getLocale(), browserConfig.getTimezoneId());
         } catch (Exception e) {
@@ -525,7 +540,7 @@ public class BrowserSessionManager {
         Path storageStatePath = resolveStorageStatePath(sessionId);
         var browserContext = browserRuntime.createContext(
                 browser,
-                browserConfig.getUserAgent(),
+                resolveUserAgent(browser),
                 browserConfig.getViewportWidth(),
                 browserConfig.getViewportHeight(),
                 browserConfig.getLocale(),
@@ -608,6 +623,44 @@ public class BrowserSessionManager {
     }
 
     /**
+     * 解析最终 User-Agent — 配置为 "auto" 时从 Chromium 运行时版本拼 UA。
+     *
+     * <p>首次调用时用 {@link UserAgentBuilder} 计算结果并缓存，后续直接复用。
+     * PERSISTENT 模式传入 null browser（Playwright 不暴露独立 Browser 对象），
+     * auto 模式下返回 null 表示跳过 {@code setUserAgent}，保留 Chromium 真实 UA。</p>
+     *
+     * @param browserObj Browser 实例，PERSISTENT 模式下为 null
+     * @return 最终 UA 字符串；返回 null 表示不设置 UA
+     */
+    @Nullable
+    private String resolveUserAgent(@Nullable Object browserObj) {
+        if (userAgentResolved.get()) {
+            return resolvedUserAgent.get();
+        }
+        String configured = browserConfig.getUserAgent();
+        String chromiumVersion = null;
+        if (browserObj != null) {
+            try {
+                chromiumVersion = browserRuntime.getBrowserVersion(browserObj);
+            } catch (Exception e) {
+                log.warn("读取 Chromium 版本号失败，将回退为空版本处理: {}", e.getMessage());
+            }
+        }
+        String finalUa = UserAgentBuilder.build(configured, chromiumVersion);
+        // 借 CAS 确保日志只打一次，后续线程直接用缓存结果
+        if (userAgentResolved.compareAndSet(false, true)) {
+            resolvedUserAgent.set(finalUa);
+            if (finalUa != null) {
+                log.info("浏览器 UA: {}", finalUa);
+            } else {
+                log.info("浏览器 UA: <未设置，使用 Chromium 默认 UA>（configured={}, chromiumVersion={}）",
+                        configured, chromiumVersion);
+            }
+        }
+        return resolvedUserAgent.get();
+    }
+
+    /**
      * 获取当前活跃会话数。
      *
      * @return 活跃会话数
@@ -674,6 +727,9 @@ public class BrowserSessionManager {
         /** 获取 BrowserContext 当前打开的 page 数量，用于 CDP 选活跃 context。 */
         int getPageCount(Object browserContextObj);
 
+        /** 读取 Browser 的 Chromium 版本号（如 "135.0.7000.0"），用于动态拼接 User-Agent。 */
+        String getBrowserVersion(Object browserObj);
+
         Object createContext(Object browserObj, String userAgent, int viewportWidth, int viewportHeight,
                              String locale, String timezoneId, @Nullable Path storageStatePath);
 
@@ -726,6 +782,11 @@ public class BrowserSessionManager {
         @Override
         public int getPageCount(Object browserContextObj) {
             return PlaywrightBridge.getPageCount(browserContextObj);
+        }
+
+        @Override
+        public String getBrowserVersion(Object browserObj) {
+            return PlaywrightBridge.getBrowserVersion(browserObj);
         }
 
         @Override

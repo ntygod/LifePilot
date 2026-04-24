@@ -226,6 +226,76 @@ class BrowserSessionManagerTest {
                 .hasMessageContaining("user-data-dir");
     }
 
+    // ==================== User-Agent 动态解析测试 ====================
+
+    @Test
+    void LAUNCH模式_默认auto配置时按Chromium版本拼UA传给createContext() {
+        // MetaProperties 默认 userAgent="auto"，stub browser.version()=135.0.7000.0
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        manager.getOrCreatePage("ua-launch");
+
+        assertThat(runtime.lastCreateContextUserAgent)
+                .isNotNull()
+                .contains("Chrome/135.0.7000.0 Safari/537.36")
+                .startsWith("Mozilla/5.0");
+    }
+
+    @Test
+    void LAUNCH模式_显式UA配置时原样透传给createContext() {
+        String customUa = "MyCustomBot/2.0 (+https://example.com)";
+        properties.getInfra().getBrowser().setUserAgent(customUa);
+
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        manager.getOrCreatePage("ua-custom");
+
+        assertThat(runtime.lastCreateContextUserAgent).isEqualTo(customUa);
+    }
+
+    @Test
+    void PERSISTENT模式_默认auto配置时传null使Chromium真实UA生效() {
+        // PERSISTENT 模式无独立 Browser 对象，auto 下 resolveUserAgent 返回 null
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
+        properties.getInfra().getBrowser().setUserDataDir("/tmp/ua-profile");
+
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        manager.getOrCreatePage("ua-persistent");
+
+        assertThat(runtime.lastPersistentContextUserAgent).isNull();
+    }
+
+    @Test
+    void PERSISTENT模式_显式UA配置时仍原样透传() {
+        String customUa = "PersistentBot/1.0";
+        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
+        properties.getInfra().getBrowser().setUserDataDir("/tmp/ua-profile");
+        properties.getInfra().getBrowser().setUserAgent(customUa);
+
+        BrowserContext sharedContext = mock(BrowserContext.class);
+        var runtime = new StubBrowserRuntime(List.of(
+                stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
+        ), sharedContext);
+        var manager = new BrowserSessionManager(properties, null, runtime);
+
+        manager.getOrCreatePage("ua-persistent-custom");
+
+        assertThat(runtime.lastPersistentContextUserAgent).isEqualTo(customUa);
+    }
+
     // ==================== 共享上下文标签页保护测试 ====================
 
     @Test
@@ -300,6 +370,10 @@ class BrowserSessionManagerTest {
         private int closeContextCount;
         private int launchBrowserCount;
         private int launchPersistentContextCount;
+        /** 记录最后一次 createContext 收到的 userAgent 参数，供 UA 动态解析测试断言。 */
+        private String lastCreateContextUserAgent;
+        /** 记录最后一次 launchPersistentContext 收到的 userAgent 参数。 */
+        private String lastPersistentContextUserAgent;
 
         private StubBrowserRuntime(List<Page> pages, BrowserContext sharedContext) {
             this.pages = new ArrayDeque<>(pages);
@@ -330,6 +404,7 @@ class BrowserSessionManagerTest {
                                               int viewportWidth, int viewportHeight,
                                               String locale, String timezoneId) {
             launchPersistentContextCount++;
+            lastPersistentContextUserAgent = userAgent;
             return sharedContext;
         }
 
@@ -345,9 +420,16 @@ class BrowserSessionManagerTest {
         }
 
         @Override
+        public String getBrowserVersion(Object browserObj) {
+            // 测试桩 — 返回固定版本号用于 UA 拼接验证
+            return "135.0.7000.0";
+        }
+
+        @Override
         public Object createContext(Object browserObj, String userAgent, int viewportWidth, int viewportHeight,
                                     String locale, String timezoneId, Path storageStatePath) {
             createContextCount++;
+            lastCreateContextUserAgent = userAgent;
             return sharedContext;
         }
 
