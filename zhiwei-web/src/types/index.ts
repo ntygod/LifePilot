@@ -479,6 +479,8 @@ export interface ToolCallSummary {
   inputSummary?: string
   /** 输出摘要 */
   outputSummary?: string
+  /** 工具原始输出（可能是 JSON 字符串或已反序列化对象），用于特化卡片渲染 */
+  output?: unknown
 }
 
 /** 错误响应 */
