@@ -832,9 +832,9 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                   </div>
                 </div>
 
-                <!-- 底部：工具 tags -->
+                <!-- 底部：工具 tags + 操作（始终可见，不再遮挡状态 badge） -->
                 <div class="sched-card__foot flex items-center justify-between gap-sm pt-sm">
-                  <div class="flex flex-wrap gap-xs">
+                  <div class="flex flex-wrap gap-xs min-w-0">
                     <span
                       v-for="skill in parseSkillIds(task.skillIds).slice(0, 3)"
                       :key="skill"
@@ -849,59 +849,59 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                       class="sched-tool font-mono italic"
                     >agent</span>
                   </div>
-                </div>
 
-                <!-- 右上角操作（hover 显示）：暂停/启用 + 编辑 + 更多菜单 -->
-                <div class="sched-card__actions flex items-center gap-xs">
-                  <button
-                    type="button"
-                    class="sched-icon-btn"
-                    :data-testid="`pause-${task.id}`"
-                    :title="task.status === 'active' ? '暂停' : '启用'"
-                    @click.stop="togglePause(task.id, task.status)"
-                  >
-                    <PauseCircle v-if="task.status === 'active'" class="size-xs" />
-                    <Play v-else class="size-xs" />
-                  </button>
-                  <button
-                    type="button"
-                    class="sched-icon-btn"
-                    :data-testid="`edit-${task.id}`"
-                    title="编辑"
-                    @click.stop="openEdit(task)"
-                  >
-                    <Edit3 class="size-xs" />
-                  </button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger as-child>
-                      <button
-                        type="button"
-                        class="sched-icon-btn"
-                        :data-testid="`more-${task.id}`"
-                        title="更多"
-                        @click.stop
-                      >
-                        <MoreHorizontal class="size-xs" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" class="w-36">
-                      <DropdownMenuItem @click.stop="showPlaceholder('立即运行即将推出')">
-                        立即运行
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click.stop="selectTask(task.id)">
-                        查看日志
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        :data-testid="`delete-${task.id}`"
-                        class="text-destructive focus:text-destructive"
-                        @click.stop="deleteTask(task.id, task.name)"
-                      >
-                        <Trash2 class="size-xs" />
-                        删除
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div class="sched-card__actions flex items-center gap-xs shrink-0">
+                    <button
+                      type="button"
+                      class="sched-action-btn"
+                      :data-testid="`pause-${task.id}`"
+                      @click.stop="togglePause(task.id, task.status)"
+                    >
+                      <PauseCircle v-if="task.status === 'active'" class="size-xs" />
+                      <Play v-else class="size-xs" />
+                      <span>{{ task.status === 'active' ? '暂停' : '启用' }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="sched-action-btn"
+                      :data-testid="`edit-${task.id}`"
+                      @click.stop="openEdit(task)"
+                    >
+                      <Edit3 class="size-xs" />
+                      <span>编辑</span>
+                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button
+                          type="button"
+                          class="sched-icon-btn"
+                          :data-testid="`more-${task.id}`"
+                          title="更多操作"
+                          @click.stop
+                        >
+                          <MoreHorizontal class="size-xs" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" class="w-36">
+                        <DropdownMenuItem @click.stop="showPlaceholder('立即运行即将推出')">
+                          <Sparkles class="size-xs" />
+                          立即运行
+                        </DropdownMenuItem>
+                        <DropdownMenuItem @click.stop="selectTask(task.id)">
+                          查看日志
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          :data-testid="`delete-${task.id}`"
+                          class="text-destructive focus:text-destructive"
+                          @click.stop="deleteTask(task.id, task.name)"
+                        >
+                          <Trash2 class="size-xs" />
+                          删除
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
                 <!-- 隐形 toggle：给测试用（触发卡片点击展开） -->
                 <span
@@ -1768,18 +1768,32 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
 
 .sched-tool--dim { opacity: 0.6; }
 
-/* 卡片右上角操作 —— 仅 hover / selected 时可见；简化为 3 按钮（暂停 + 编辑 + 更多菜单） */
+/* 卡片底部操作区 —— 始终可见，不再遮挡右上角状态 badge */
 .sched-card__actions {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  opacity: 0;
-  transition: opacity 0.15s;
+  /* 无额外样式，使用 utility class 控制布局（flex + gap-xs） */
 }
 
-.sched-card:hover .sched-card__actions,
-.sched-card--active .sched-card__actions {
-  opacity: 1;
+/* 主操作按钮：图标 + 文字，一目了然（暂停/启用 / 编辑） */
+.sched-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.sched-action-btn:hover {
+  background: hsl(from var(--muted) h s l / 0.7);
+  color: var(--foreground);
+  border-color: hsl(from var(--border) h s l / 0.9);
 }
 
 .sched-icon-btn {
