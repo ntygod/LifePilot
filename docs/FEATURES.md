@@ -52,9 +52,9 @@
 
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
-| Skill 系统 | Markdown SKILL.md 声明式 Skill 定义、热加载、file.read(skill=...) 按需激活 | [特性](features/skill-system.md) |
-| 预置 Skill | 26 个种子 Skill，首次启动自动提取到用户目录 | [特性](features/preset-skills.md) |
-| Skill 自扩展 | Gap 检测 + Markdown SKILL.md 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
+| Skill 系统 | Markdown SKILL.md 三级分层（L1 frontmatter + L2 body + L3 references）、四来源（BUILTIN / USER_IMPORTED / MARKETPLACE / AUTO_GENERATED）、`skill.load` 统一激活 | [特性](features/skill-system.md) |
+| 预置 Skill | 27 个 BUILTIN Skill，启动时走统一安装流水线入 skills 表 | [特性](features/preset-skills.md) |
+| Skill 自扩展 | `SkillSynthesizer` 驱动 LLM 生成 + 严格校验（拒未知/HIGH/CRITICAL 工具）+ SSE 广播到前端 toast | [特性](features/skill-development.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |

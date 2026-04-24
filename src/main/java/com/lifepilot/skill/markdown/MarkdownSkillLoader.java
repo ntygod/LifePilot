@@ -1,9 +1,13 @@
 package com.lifepilot.skill.markdown;
 
+import com.lifepilot.skill.MarkdownSkillParser;
+import com.lifepilot.skill.MarkdownSkillParser.ParsedSkill;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillBodyValidator;
+import com.lifepilot.skill.validation.SkillDescriptionValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,21 +16,21 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * Markdown Skill 加载器 — 扫描 Skill 目录，加载所有 Skill 文件夹。
+ * Markdown Skill 加载器 — 扫描 Skill 目录并注册到 {@link SkillRegistry}。
  *
- * <p>每个 Skill 以文件夹形式存在，文件夹内包含 {@code SKILL.md} 主定义文件
- * 和可选的 {@code references/} 子目录。加载流程：
- * <ol>
- *   <li>扫描 Skill 根目录下所有子目录</li>
- *   <li>过滤包含 SKILL.md 的子目录（忽略旧格式 .yml 文件）</li>
- *   <li>解析 SKILL.md 并注册到 {@link SkillRegistry}</li>
- * </ol>
+ * <p>Phase B.3 重接：改用 v2 {@link MarkdownSkillParser} 解析 SKILL.md，
+ * 经 {@link SkillDescriptionValidator} + {@link SkillBodyValidator} 校验，
+ * 然后将 {@link ParsedSkill} 映射为 {@link SkillDefinition} 交给 {@link SkillRegistry} 注册。</p>
+ *
+ * <p>本加载器只负责"文件系统 → 内存注册表"的扫描路径。持久化（skills 表 upsert）由
+ * {@link com.lifepilot.skill.install.SkillInstaller} 在首次安装时完成，热重载阶段不回写 DB
+ * 避免与 {@link SkillFileWatcher} 产生循环事件（TODO Phase B.4 再补 checksum-diff 回写）。</p>
  *
  * @author zsg
  * @since 2026-03-07
@@ -35,209 +39,207 @@ public class MarkdownSkillLoader {
 
     private static final Logger log = LoggerFactory.getLogger(MarkdownSkillLoader.class);
 
-    private final MarkdownSkillParser parser;
+    /** references 子目录名。 */
+    private static final String REFERENCES_DIR = "references";
+
     private final SkillRegistry skillRegistry;
     private final SkillConfigProperties config;
+    private final MarkdownSkillParser parser;
+    private final SkillDescriptionValidator descriptionValidator;
+    private final SkillBodyValidator bodyValidator;
     private final Path skillsDirectory;
 
-    public MarkdownSkillLoader(MarkdownSkillParser parser,
-                               SkillRegistry skillRegistry,
-                               SkillConfigProperties config) {
-        this.parser = parser;
+    public MarkdownSkillLoader(SkillRegistry skillRegistry,
+                               SkillConfigProperties config,
+                               MarkdownSkillParser parser,
+                               SkillDescriptionValidator descriptionValidator,
+                               SkillBodyValidator bodyValidator) {
         this.skillRegistry = skillRegistry;
         this.config = config;
+        this.parser = parser;
+        this.descriptionValidator = descriptionValidator;
+        this.bodyValidator = bodyValidator;
         this.skillsDirectory = Path.of(config.getDirectory());
     }
 
     /**
      * 用于测试的构造器 — 允许指定自定义目录路径。
      */
-    MarkdownSkillLoader(MarkdownSkillParser parser,
-                        SkillRegistry skillRegistry,
+    MarkdownSkillLoader(SkillRegistry skillRegistry,
                         SkillConfigProperties config,
+                        MarkdownSkillParser parser,
+                        SkillDescriptionValidator descriptionValidator,
+                        SkillBodyValidator bodyValidator,
                         Path skillsDirectory) {
-        this.parser = parser;
         this.skillRegistry = skillRegistry;
         this.config = config;
+        this.parser = parser;
+        this.descriptionValidator = descriptionValidator;
+        this.bodyValidator = bodyValidator;
         this.skillsDirectory = skillsDirectory;
     }
 
     /**
-     * 扫描 Skill 目录，加载所有包含 SKILL.md 的子文件夹。
+     * 扫描 Skill 根目录下所有子文件夹，逐个加载并注册。
      *
-     * <p>目录不存在时自动创建。旧格式 .yml 文件被忽略，仅加载文件夹结构的 Skill。
-     * 单个文件夹解析失败不影响其他文件夹加载。</p>
+     * <p>包含 {@code auto/} 子目录下的自生成 Skill（作为一级目录同级扫描）。
+     * 解析或校验失败的文件夹只记 WARN 并跳过，不阻断其他 Skill 加载。</p>
      *
-     * @return 成功加载的 Skill 数量
+     * @return 成功注册到 {@link SkillRegistry} 的 Skill 数量
      */
     public int loadAll() {
-        // 目录不存在时自动创建
-        if (!Files.exists(skillsDirectory)) {
-            try {
-                Files.createDirectories(skillsDirectory);
-                log.info("Skill 目录不存在，已自动创建: path={}", skillsDirectory);
-            } catch (IOException e) {
-                log.warn("创建 Skill 目录失败: path={}, error={}", skillsDirectory, e.getMessage());
-                return 0;
-            }
+        if (!Files.exists(skillsDirectory) || !Files.isDirectory(skillsDirectory)) {
+            log.debug("Skill 目录不存在，跳过加载: path={}", skillsDirectory);
+            return 0;
         }
 
-        int count = 0;
-        String skillFilename = config.getSkillFilename();
+        int loaded = loadFromDirectory(skillsDirectory);
 
-        try (Stream<Path> entries = Files.list(skillsDirectory)) {
-            var skillFolders = entries
-                    .filter(Files::isDirectory)
-                    .filter(dir -> !dir.getFileName().toString().equals("auto"))
-                    .filter(dir -> Files.exists(dir.resolve(skillFilename)))
-                    .toList();
-
-            for (Path folder : skillFolders) {
-                Optional<SkillDefinition> result = loadFolder(folder);
-                if (result.isPresent()) {
-                    boolean registered = skillRegistry.register(result.get());
-                    if (registered) {
-                        count++;
-                    }
-                }
-            }
-        } catch (IOException e) {
-            log.warn("扫描 Skill 目录失败: path={}, error={}", skillsDirectory, e.getMessage());
-        }
-
-        // 扫描 auto/ 子目录（自生成 Skill）
+        // 额外扫描 auto/ 子目录（自生成 Skill 的默认安装位置）
         Path autoDir = skillsDirectory.resolve("auto");
         if (Files.exists(autoDir) && Files.isDirectory(autoDir)) {
-            count += loadSubdirectorySkills(autoDir, "自生成");
+            loaded += loadFromDirectory(autoDir);
         }
 
-        log.info("Skill 加载完成: 成功={}, 目录={}", count, skillsDirectory);
-        return count;
+        log.info("MarkdownSkillLoader 扫描完成: loaded={}, directory={}", loaded, skillsDirectory);
+        return loaded;
     }
 
     /**
-     * 扫描指定父目录下的所有 Skill 子文件夹并加载注册。
-     *
-     * @param parentDir 父目录路径
-     * @param label     日志标签（如 "自生成"）
-     * @return 成功加载的 Skill 数量
+     * 扫描指定目录下所有包含 {@code SKILL.md} 的子目录并加载。
      */
-    private int loadSubdirectorySkills(Path parentDir, String label) {
+    private int loadFromDirectory(Path dir) {
         int count = 0;
-        try (Stream<Path> entries = Files.list(parentDir)) {
-            var skillFolders = entries
-                    .filter(Files::isDirectory)
-                    .filter(dir -> Files.exists(dir.resolve(config.getSkillFilename())))
-                    .toList();
-            for (Path folder : skillFolders) {
-                Optional<SkillDefinition> result = loadFolder(folder);
-                if (result.isPresent()) {
-                    if (skillRegistry.register(result.get())) count++;
-                    else log.warn("{} Skill 注册失败: folder={}", label, folder);
+        try (Stream<Path> entries = Files.list(dir)) {
+            for (Path sub : (Iterable<Path>) entries::iterator) {
+                if (!Files.isDirectory(sub)) continue;
+                if (!Files.exists(sub.resolve(config.getSkillFilename()))) continue;
+                // 避免将 auto/ 当做 skill 自身加载
+                if (sub.getFileName().toString().equals("auto")) continue;
+                Optional<SkillDefinition> def = loadFolder(sub);
+                if (def.isPresent() && skillRegistry.register(def.get())) {
+                    count++;
                 }
             }
         } catch (IOException e) {
-            log.warn("扫描{} Skill 目录失败: path={}, error={}", label, parentDir, e.getMessage());
+            log.warn("扫描 Skill 目录失败: dir={}, error={}", dir, e.getMessage());
         }
-        log.info("{} Skill 加载完成: 成功={}, 目录={}", label, count, parentDir);
         return count;
     }
 
     /**
-     * 加载单个 Skill 文件夹。
+     * 加载单个 Skill 文件夹（解析 + 校验 + 构造 {@link SkillDefinition}）。
      *
-     * <p>读取文件夹中的 SKILL.md 文件，解析为 SkillDefinition，
-     * 并构建 {@link SkillSource.UserDefined}（folderPath 指向文件夹路径）。</p>
+     * <p>解析/校验失败时记 WARN 并返回空，不抛异常（热加载保留上一个有效版本）。</p>
      *
-     * @param skillFolder Skill 文件夹路径
-     * @return 解析出的 SkillDefinition，失败返回 Optional.empty()
+     * @param skillFolder Skill 文件夹路径（需包含 {@code SKILL.md}）
+     * @return 解析出的 {@link SkillDefinition}，失败返回 {@link Optional#empty()}
      */
     public Optional<SkillDefinition> loadFolder(Path skillFolder) {
         Path skillFile = skillFolder.resolve(config.getSkillFilename());
-
         if (!Files.exists(skillFile)) {
-            log.warn("Skill 文件夹中缺少 {}: folder={}", config.getSkillFilename(), skillFolder);
+            log.debug("文件夹中不存在 {}: folder={}", config.getSkillFilename(), skillFolder);
             return Optional.empty();
         }
-
         try {
             String content = Files.readString(skillFile, StandardCharsets.UTF_8);
-            var parseResult = parser.parse(content);
-
-            if (!parseResult.success() || parseResult.definition() == null) {
-                log.warn("SKILL.md 解析失败: folder={}, errors={}", skillFolder, parseResult.errors());
-                return Optional.empty();
-            }
-
-            // 构建 SkillSource.UserDefined，folderPath 指向文件夹路径
-            Instant lastModified = getLastModified(skillFile);
-            var source = new SkillSource.UserDefined(skillFolder.toString(), lastModified);
-
-            // 用正确的 source 替换解析器中的占位 source
-            SkillDefinition definition = parseResult.definition().toBuilder()
-                    .source(source)
-                    .build();
-
-            return Optional.of(definition);
+            ParsedSkill parsed = parser.parse(content);
+            descriptionValidator.validate(parsed.frontmatter().description());
+            bodyValidator.validate(parsed.body());
+            return Optional.of(toDefinition(parsed, skillFolder));
+        } catch (IllegalArgumentException e) {
+            // 解析/校验失败：老格式或结构不符合 v2 规范
+            log.warn("Skill 解析/校验失败，跳过: folder={}, error={}", skillFolder, e.getMessage());
+            return Optional.empty();
         } catch (IOException e) {
-            log.error("读取 SKILL.md 文件失败: folder={}, error={}", skillFolder, e.getMessage());
+            log.warn("读取 SKILL.md 失败: folder={}, error={}", skillFolder, e.getMessage());
             return Optional.empty();
         } catch (Exception e) {
-            log.warn("加载 Skill 文件夹失败: folder={}, error={}", skillFolder, e.getMessage());
+            log.warn("Skill 加载异常，跳过: folder={}, error={}", skillFolder, e.getMessage());
             return Optional.empty();
         }
     }
 
     /**
-     * 加载 Skill 文件夹中的 references 目录内容。
-     *
-     * <p>如果 {@code {skillFolder}/references/} 目录存在，读取其中所有文件
-     * 为 {@code Map<String, String>}（文件名 → 内容）。不存在时返回空 Map。</p>
+     * 读取 Skill 文件夹下 {@code references/} 目录的全部文件内容。
      *
      * @param skillFolder Skill 文件夹路径
-     * @return references 文件内容的不可变 Map（文件名 → 内容），无 references 目录时返回空 Map
+     * @return 文件名 → 内容映射；无 references 目录或读取失败时返回空 Map
      */
     public Map<String, String> loadReferences(Path skillFolder) {
-        Path referencesDir = skillFolder.resolve("references");
-
+        Path referencesDir = skillFolder.resolve(REFERENCES_DIR);
         if (!Files.exists(referencesDir) || !Files.isDirectory(referencesDir)) {
             return Map.of();
         }
-
-        var result = new HashMap<String, String>();
+        var result = new LinkedHashMap<String, String>();
         try (Stream<Path> files = Files.list(referencesDir)) {
-            var refFiles = files.filter(Files::isRegularFile).toList();
-            for (Path file : refFiles) {
-                try {
-                    String content = Files.readString(file, StandardCharsets.UTF_8);
-                    result.put(file.getFileName().toString(), content);
-                } catch (IOException e) {
-                    log.warn("读取 reference 文件失败: file={}, error={}", file, e.getMessage());
-                }
-            }
+            files.filter(Files::isRegularFile)
+                    .sorted()
+                    .forEach(file -> {
+                        try {
+                            result.put(file.getFileName().toString(),
+                                    Files.readString(file, StandardCharsets.UTF_8));
+                        } catch (IOException e) {
+                            log.warn("读取 reference 文件失败: file={}, error={}", file, e.getMessage());
+                        }
+                    });
         } catch (IOException e) {
             log.warn("扫描 references 目录失败: dir={}, error={}", referencesDir, e.getMessage());
+            return Map.of();
         }
-
         return Map.copyOf(result);
     }
 
     /**
      * 获取 Skill 根目录路径。
-     *
-     * @return Skill 根目录
      */
     public Path getSkillsDirectory() {
         return skillsDirectory;
     }
 
-    // ─────────────────────────────────────────────
-    //  内部辅助方法
-    // ─────────────────────────────────────────────
+    /**
+     * 将 {@link ParsedSkill} 映射为运行期 {@link SkillDefinition}。
+     *
+     * <p>约定：
+     * <ul>
+     *   <li>{@code id} 取自 frontmatter.name（v2 规范 name 已取代老 id）</li>
+     *   <li>{@code instructions} 取自 body 原文（含标题和工作流段落）</li>
+     *   <li>{@code source} 用 {@link SkillSource.UserDefined} 承载（后续 B.x 可按 SkillSourceType 细分）</li>
+     *   <li>{@code suggestedTools} / {@code zhiweiMeta} 直接转自 frontmatter 的 metadata.zhiwei 块</li>
+     *   <li>{@code metadata} 平坦视图保留 category 一项，方便老 caller 直接 map 取值</li>
+     * </ul>
+     */
+    private SkillDefinition toDefinition(ParsedSkill parsed, Path skillFolder) {
+        var fm = parsed.frontmatter();
+        var zhiwei = fm.zhiweiMeta();
 
-    private Instant getLastModified(Path filePath) {
+        Map<String, String> flatMetadata;
+        if (zhiwei.category() != null) {
+            flatMetadata = Map.of("category", zhiwei.category());
+        } else {
+            flatMetadata = Map.of();
+        }
+
+        return SkillDefinition.builder()
+                .id(fm.name())
+                .name(fm.name())
+                .description(fm.description())
+                .version(fm.version())
+                .source(new SkillSource.UserDefined(skillFolder.toString(),
+                        safeLastModified(skillFolder.resolve(config.getSkillFilename()))))
+                .instructions(parsed.body())
+                .suggestedTools(zhiwei.suggestedTools())
+                .metadata(flatMetadata)
+                .zhiweiMeta(zhiwei)
+                .build();
+    }
+
+    /**
+     * 读取文件最后修改时间，失败返回 null（UserDefined.lastModified 允许为空）。
+     */
+    private static Instant safeLastModified(Path file) {
         try {
-            return Files.getLastModifiedTime(filePath).toInstant();
+            return Files.exists(file) ? Files.getLastModifiedTime(file).toInstant() : null;
         } catch (IOException e) {
             return null;
         }

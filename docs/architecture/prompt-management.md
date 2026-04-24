@@ -25,7 +25,7 @@ graph TB
         T_KNOWLEDGE["knowledge/<br/>chunk-context / rerank-listwise / rerank-pointwise"]
         T_SEMANTIC["semantic/<br/>entity-disambiguation"]
         T_SKILL["skill/<br/>todo / schedule / habit / memory / sync"]
-        T_GEN["generation/<br/>skill-generation"]
+        T_GEN["generation/<br/>skill-synthesis / skill-fix"]
     end
 
     subgraph consumers["消费方模块"]
@@ -35,8 +35,7 @@ graph TB
         FE["ForgettingEngine"]
         LR["LlmReranker"]
         CE["ChunkContextEnricher"]
-        SP["SkillDisclosureTool / SkillGenerator"]
-        SG["SkillGenerator"]
+        SS["SkillSynthesizer"]
     end
 
     PAC -->|"启动时扫描 .st 文件"| PR
@@ -49,8 +48,7 @@ graph TB
     FE -->|"render()"| PR
     LR -->|"render()"| PR
     CE -->|"render()"| PR
-    SP -->|"render()"| PR
-    SG -->|"render()"| PR
+    SS -->|"render()"| PR
 
 ```
 
@@ -123,8 +121,7 @@ sequenceDiagram
 | memory（CompressionService / ForgettingEngine） | memory → prompt | 渲染对话压缩和实体压缩提示词 |
 | memory（ConflictDetector） | memory → prompt | 渲染实体消歧义提示词 |
 | knowledge（RerankRouter / ChunkContextEnricher） | knowledge → prompt | 渲染重排序和分块上下文提示词 |
-| skill（SkillDisclosureTool / SkillGenerator） | skill → prompt | 渲染 Skill 的 instructions 提示词 |
-| skill（SkillGenerator） | skill → prompt | 渲染 Skill 自动生成提示词 |
+| skill（SkillSynthesizer） | skill → prompt | 渲染 `generation/skill-synthesis` 和 `generation/skill-fix` 模板，用于 AUTO_GENERATED Skill 自生成与迭代修正 |
 | sync（SyncSkillProvider） | sync → prompt | 渲染同步 Skill 的 instructions 提示词 |
 
 ## 7. 配置参考
@@ -156,6 +153,7 @@ prompts/
 │   └── entity-disambiguation.st  # 实体消歧义
 ├── skill/                    # 内置 Skill 提示词
 │   ├── todo.st / schedule.st / habit.st / memory.st / sync.st
-└── generation/               # Skill 生成提示词
-    └── skill-generation.st
+└── generation/               # Skill 自生成与迭代修正提示词
+    ├── skill-synthesis.st    # SkillSynthesizer 首次生成
+    └── skill-fix.st          # SkillSynthesizer 迭代修正
 ```

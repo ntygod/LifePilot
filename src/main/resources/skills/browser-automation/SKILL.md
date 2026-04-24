@@ -1,13 +1,22 @@
 ---
-id: browser-automation
-name: "浏览器自动化"
-description: "控制浏览器完成网页交互、信息抓取和自动化操作。用户说「打开网页」「帮我爬取」「截个图」「填表单」「登录这个网站」「自动化操作网页」「抓取数据」时使用。静态页面优先用 web.fetch，不需要浏览器。"
-version: "2.0.0"
-suggested-tools:
-  - browser
-  - web.fetch
-  - web.search
-  - file.write
+name: browser-automation
+description: 当用户要控制浏览器完成需要 JavaScript 渲染、登录态或交互操作的网页任务时使用。关键词：打开网页、爬取、截图、填表单、登录网站、自动化网页、抓取动态数据、SPA。静态页面优先用 web.fetch，搜索多源信息用 web.search，桌面应用操作用 desktop-automation。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: external-integration
+    priority: normal
+    tags:
+      - browser
+      - web-scraping
+      - automation
+      - selenium
+      - playwright
+    suggested_tools:
+      - browser
+      - web.fetch
+      - web.search
+      - file.write
 ---
 
 # 浏览器自动化指南
@@ -29,7 +38,9 @@ suggested-tools:
 - 桌面应用操作 → 用 desktop-automation
 - 搜索多个来源的信息 → 用 `web.search`
 
-## 工具选择决策
+## 工作流
+
+### 工具选择决策
 
 ```
 需要网页内容？
@@ -39,9 +50,7 @@ suggested-tools:
 └── 需要登录或交互 → browser
 ```
 
-## 工作流
-
-### 1. 导航并获取内容
+### 导航并获取内容
 
 ```
 browser(action="navigate", url="https://example.com", sessionId="task-name")
@@ -49,7 +58,7 @@ browser(action="navigate", url="https://example.com", sessionId="task-name")
 
 同一任务用相同 `sessionId`，复用 cookie 和页面状态。导航返回 `partial: true` 时内容仍可用。
 
-### 2. 截图确认状态
+### 截图确认状态
 
 ```
 browser(action="screenshot", sessionId="task-name")
@@ -57,33 +66,20 @@ browser(action="screenshot", sessionId="task-name")
 
 操作前截图确认页面状态，避免盲操作。
 
-### 3. 交互操作
+### 交互操作
 
 ```
 browser(action="click", selector="#search-btn", sessionId="task-name")
 browser(action="input", selector="#search-input", value="搜索内容", sessionId="task-name")
 browser(action="scroll", direction="down", pixels=500, sessionId="task-name")
 browser(action="wait", selector=".result-list", state="visible", timeout=10, sessionId="task-name")
-browser(action="select", selector="#country", value="CN", sessionId="task-name")
-browser(action="keyboard", key="Enter", type="key", sessionId="task-name")
-browser(action="hover", selector=".menu-item", sessionId="task-name")
+browser(action="evaluate", expression="JSON.stringify(...)", sessionId="task-name")
 ```
 
-### 4. 提取结构化数据
-
-```
-browser(action="evaluate", expression="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))", sessionId="task-name")
-```
-
-### 5. 保存结果
+### 保存结果与关闭会话
 
 ```
 file.write(path="output/data.json", content="抓取的数据")
-```
-
-### 6. 关闭会话
-
-```
 browser(action="close", sessionId="task-name")
 ```
 
@@ -93,9 +89,9 @@ browser(action="close", sessionId="task-name")
 
 | 模式 | 登录态 | 适用场景 |
 |------|--------|---------|
-| **LAUNCH**（默认） | 会话内保持，关闭后丢失 | 一般抓取和交互 |
-| **CDP** | 复用用户已登录的 Chrome | 需要登录或遇到验证码的站点 |
-| **PERSISTENT** | 首次登录后永久保留 | 长期反复访问需登录的站点 |
+| LAUNCH（默认） | 会话内保持，关闭后丢失 | 一般抓取和交互 |
+| CDP | 复用用户已登录的 Chrome | 需要登录或遇到验证码的站点 |
+| PERSISTENT | 首次登录后永久保留 | 长期反复访问需登录的站点 |
 
 ## 元素定位策略
 
@@ -113,28 +109,13 @@ browser(action="close", sessionId="task-name")
 - 不创建过多并行会话，浏览器资源有限
 - 任务完成后必须关闭会话
 
+## 详细参考
+
+- 完整 action 列表与参数：参见 {skill_dir}/references/browser-actions.md
+
 ## 常见错误处理
 
 - **导航失败** → 检查 `partial` 字段，有部分内容则直接使用；否则换 `web.fetch`
 - **页面内容为空** → 可能 JS 未渲染完，用 `evaluate` 等待特定元素；或被反爬拦截，换 `web.search`
 - **元素未找到** → 先 `screenshot` 确认状态，可能需要 `scroll` 或检查 iframe
 - **登录墙/验证码** → CDP 模式复用已登录浏览器，或 PERSISTENT 模式保留登录态
-
-## 完整 action 列表
-
-| action | 说明 | 关键参数 |
-|--------|------|---------|
-| `navigate` | 导航到 URL | `url` |
-| `click` | 点击元素 | `selector` |
-| `input` | 输入文本 | `selector`, `value` |
-| `scroll` | 滚动页面 | `direction`, `pixels` |
-| `wait` | 等待元素 | `selector`, `state`, `timeout` |
-| `hover` | 鼠标悬停 | `selector` |
-| `select` | 选择下拉项 | `selector`, `value` |
-| `keyboard` | 键盘操作 | `type`, `key` |
-| `screenshot` | 截图 | `fullPage` |
-| `evaluate` | 执行 JS | `expression` |
-| `accessibility` | 获取无障碍树 | `rootSelector`, `maxDepth` |
-| `tab` | 标签页管理 | `tabAction`, `tabId`, `url` |
-| `storage` | Cookie/localStorage | `target`, `storageAction` |
-| `close` | 关闭会话 | `sessionId` |

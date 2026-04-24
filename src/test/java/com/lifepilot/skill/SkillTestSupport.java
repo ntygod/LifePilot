@@ -9,7 +9,12 @@ import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.config.SkillAutoConfiguration;
+import com.lifepilot.skill.install.SkillInstallationRepository;
+import com.lifepilot.skill.install.SkillInstaller;
+import com.lifepilot.skill.validation.SkillBodyValidator;
+import com.lifepilot.skill.validation.SkillDescriptionValidator;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -17,6 +22,7 @@ import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.concurrent.Executors;
 
@@ -82,6 +88,34 @@ public class SkillTestSupport {
     @Bean
     ObjectMapper objectMapper() {
         return new ObjectMapper();
+    }
+
+    @Bean
+    SkillInstallationRepository skillInstallationRepository(JdbcTemplate jdbcTemplate) {
+        return new SkillInstallationRepository(jdbcTemplate);
+    }
+
+    @Bean
+    SkillDescriptionValidator skillDescriptionValidator() {
+        return new SkillDescriptionValidator();
+    }
+
+    @Bean
+    SkillBodyValidator skillBodyValidator() {
+        return new SkillBodyValidator();
+    }
+
+    @Bean
+    MarkdownSkillParser markdownSkillParser() {
+        return new MarkdownSkillParser();
+    }
+
+    @Bean
+    SkillInstaller skillInstaller(MarkdownSkillParser parser,
+                                  SkillDescriptionValidator descriptionValidator,
+                                  SkillBodyValidator bodyValidator,
+                                  SkillInstallationRepository repository) {
+        return new SkillInstaller(parser, descriptionValidator, bodyValidator, repository);
     }
 
     @Bean

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
-import { ArrowLeft, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Info, Trash2 } from 'lucide-vue-next'
 import {
   modelServiceApi,
   type CreateModelServiceRequest,
@@ -32,6 +32,12 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   availableVendorsForKind,
   buildEmptyModelServiceRequest,
@@ -716,19 +722,38 @@ onMounted(() => {
 
                     <div class="space-y-2">
                       <Label>支持场景</Label>
-                      <div class="grid gap-4 sm:grid-cols-2">
-                        <label
-                          v-for="option in generationSceneOptions"
-                          :key="option.value"
-                          class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
-                        >
-                          <Checkbox
-                            :model-value="formData.scenes?.includes(option.value)"
-                            @update:model-value="() => toggleScene(option.value)"
-                          />
-                          <span class="text-sm">{{ option.label }}</span>
-                        </label>
-                      </div>
+                      <TooltipProvider :delay-duration="200">
+                        <div class="grid gap-4 sm:grid-cols-2">
+                          <label
+                            v-for="option in generationSceneOptions"
+                            :key="option.value"
+                            class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2"
+                          >
+                            <Checkbox
+                              :model-value="formData.scenes?.includes(option.value)"
+                              @update:model-value="() => toggleScene(option.value)"
+                            />
+                            <span class="flex items-center gap-sm text-sm">
+                              {{ option.label }}
+                              <Tooltip v-if="option.hint">
+                                <TooltipTrigger as-child>
+                                  <button
+                                    type="button"
+                                    class="inline-flex items-center text-muted-foreground hover:text-foreground"
+                                    :aria-label="`${option.label} 配置建议`"
+                                    @click.prevent
+                                  >
+                                    <Info class="h-xs w-xs" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent class="max-w-xs text-xs">
+                                  {{ option.hint }}
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                          </label>
+                        </div>
+                      </TooltipProvider>
                     </div>
 
                     <div class="space-y-2">

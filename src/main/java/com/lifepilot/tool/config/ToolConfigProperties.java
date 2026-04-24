@@ -25,6 +25,16 @@ public class ToolConfigProperties {
     private Yaml yaml = new Yaml();
     private TrustedWorkspace trustedWorkspace = new TrustedWorkspace();
 
+    /** Tier 1 分层注入配置 — 高频工具常驻 prompt schema，其余进 BM25 搜索池。 */
+    private Tier1 tier1 = new Tier1();
+
+    /** 搜索服务配置 — tools.search / FTS5 / 三层缓存。 */
+    private Search search = new Search();
+
+    /** describe 服务配置 — tools.describe 批量上限。 */
+    private Describe describe = new Describe();
+
+
     /** 信任工作区配置 — 在信任目录下降低 shell/code 执行的风险等级。 */
     @Setter
     @Getter
@@ -55,5 +65,71 @@ public class ToolConfigProperties {
         private double retryMultiplier = 2.0;
         private long retryMaxDelayMs = 5000;
 
+    }
+
+    /** Tier 1 分层注入配置。 */
+    @Setter
+    @Getter
+    public static class Tier1 {
+        /** 人工固定的 Tier 1 工具 ID 列表（pinned），永不自动降级。 */
+        private List<String> pinned = List.of();
+
+        private Promotion promotion = new Promotion();
+        private Demotion demotion = new Demotion();
+
+        /** Tier 1 晋升策略 — 基于使用数据生成 advisory 建议，不自动改配置。 */
+        @Setter
+        @Getter
+        public static class Promotion {
+            private boolean enabled = true;
+            private int windowDays = 30;
+            private double sessionThreshold = 0.3;
+            private int maxPromoted = 3;
+            /** AdvisoryJob cron 表达式（Spring @Scheduled 语义）；默认每日凌晨 3 点。 */
+            private String cron = "0 0 3 * * *";
+        }
+
+        /** Tier 1 降级策略 — 长期未使用的候选可被降回 Tier 2。 */
+        @Setter
+        @Getter
+        public static class Demotion {
+            private boolean enabled = true;
+            private int idleDays = 60;
+            private boolean respectPinned = true;
+        }
+    }
+
+    /** 搜索服务配置。 */
+    @Setter
+    @Getter
+    public static class Search {
+        private int defaultLimit = 5;
+        private int maxLimit = 20;
+        private double bm25ConfidenceThreshold = 1.0;
+        private Cache cache = new Cache();
+        private Fallback fallback = new Fallback();
+
+        /** 三层缓存容量配置。 */
+        @Setter
+        @Getter
+        public static class Cache {
+            private int layerAMaxSize = 500;
+            private int layerBMaxSize = 1000;
+            private int layerBTtlMinutes = 5;
+        }
+
+        /** 向量 fallback — BM25 不自信时可选补救，默认关闭。 */
+        @Setter
+        @Getter
+        public static class Fallback {
+            private boolean vectorEnabled = false;
+        }
+    }
+
+    /** describe 服务配置。 */
+    @Setter
+    @Getter
+    public static class Describe {
+        private int maxBatchSize = 10;
     }
 }

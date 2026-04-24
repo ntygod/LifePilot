@@ -482,10 +482,12 @@ public class AgentPersistenceHandler {
                 }
             }, VIRTUAL_EXECUTOR);
 
-            // 等待所有并行任务完成（fire-and-forget 语义不变，但内部并行化）
+            // 等待记忆类/反思类任务完成（这些产物影响下一轮上下文，必须同步完成）
+            // 标题生成 titleFuture 是纯前端展示用的派生任务，fire-and-forget 不 join——
+            // 避免慢 LLM 响应阻塞对话最终确认
             CompletableFuture.allOf(
                     compactionFuture, extractionFuture, experienceFuture,
-                    effectivenessFuture, reflectionFuture, titleFuture
+                    effectivenessFuture, reflectionFuture
             ).join();
         });
     }

@@ -1,15 +1,24 @@
 ---
-id: teaching-assistant
-name: "教学辅助"
-description: "知识讲解、学习路径规划与练习生成。用户说「教我」「学习」「解释一下」「这是什么意思」「教程」「入门」「练习题」「怎么理解」时使用。不适用于代码编写任务（用 code-assistant）或信息调研（用 research-assistant）。"
-version: "2.0.0"
-suggested-tools:
-  - web.search
-  - code.execute
-  - file.write
-  - file.read
-  - knowledge.search
-  - memory
+name: teaching-assistant
+description: 当用户要学习技术概念、让你解释原理、生成练习题、规划学习路径、通过代码演示理解知识点时使用。关键词：教我、学习、解释一下、这是什么意思、教程、入门、练习题、怎么理解、代码示例、学习路径。代码编写任务用 code-assistant，信息调研用 research-assistant，文档撰写用 content-creator。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: content-creation
+    priority: normal
+    tags:
+      - teaching
+      - learning
+      - tutorial
+      - explain
+      - exercises
+    suggested_tools:
+      - web.search
+      - code.execute
+      - file.write
+      - file.read
+      - knowledge.search
+      - memory
 ---
 
 # 教学辅助指南
@@ -32,13 +41,13 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 评估学习者水平
+### 评估学习者水平
 
 通过对话了解已有基础、学习目标、偏好方式（理论优先 / 实践优先）。
 
-### 2. 概念讲解
+### 概念讲解
 
-结构化讲解：
+结构化讲解模板：
 
 ```
 概念名称
@@ -49,7 +58,7 @@ suggested-tools:
 └── 常见误区
 ```
 
-### 3. 代码演示
+### 代码演示
 
 ```python
 code.execute(language="python", code="
@@ -61,20 +70,20 @@ print(f'平方: {squares}')
 ")
 ```
 
-### 4. 练习引导
+### 练习引导
 
 难度递进：
 - **基础**：模仿示例，修改参数
 - **进阶**：组合多个概念
 - **挑战**：解决实际问题
 
-### 5. 记录学习进度
+### 记录学习进度
 
 ```
 memory(action="create", name="Python 学习进度", entityType="TOPIC", description="已学习：列表推导式、生成器...")
 ```
 
-### 6. 资料检索
+### 资料检索
 
 ```
 knowledge.search(query="相关技术概念")

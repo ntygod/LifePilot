@@ -31,7 +31,6 @@ import java.util.Map;
 public class CodeKernelToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(CodeKernelToolProvider.class);
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final PersistentKernelManager kernelManager;
 
@@ -58,7 +57,7 @@ public class CodeKernelToolProvider {
                 .id("code.kernel.list")
                 .category(ToolCategory.PERCEPTION)
                 .name("列出代码内核")
-                .description("列出活跃的代码内核")
+                .description("List the active code kernels and their metadata managed by the sandbox runtime.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of()
@@ -70,7 +69,7 @@ public class CodeKernelToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.none()
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "kernel", "list", "code", "enumerate", "session"))
                 .executor(this::executeList)
                 .build();
     }
@@ -81,7 +80,7 @@ public class CodeKernelToolProvider {
                 .id("code.kernel.reset")
                 .category(ToolCategory.ACTION)
                 .name("重置代码内核")
-                .description("重置代码内核状态")
+                .description("Reset a code kernel to clear variables and imported modules in the sandbox runtime.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("kernelId"),
@@ -97,7 +96,7 @@ public class CodeKernelToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("kernelIds", "kernelId")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "kernel", "reset", "restart", "code", "clean", "clear"))
                 .executor(this::executeReset)
                 .build();
     }
@@ -108,7 +107,7 @@ public class CodeKernelToolProvider {
                 .id("code.kernel.inspect")
                 .category(ToolCategory.PERCEPTION)
                 .name("检查代码内核")
-                .description("检查代码内核变量")
+                .description("Inspect a code kernel variables and current state in the sandbox runtime.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("kernelId"),
@@ -123,7 +122,7 @@ public class CodeKernelToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.exactValues("kernelIds", "kernelId")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "kernel", "inspect", "variables", "state", "code", "debug"))
                 .executor(this::executeInspect)
                 .build();
     }

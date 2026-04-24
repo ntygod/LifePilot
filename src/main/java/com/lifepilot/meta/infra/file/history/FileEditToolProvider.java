@@ -28,7 +28,6 @@ import java.util.Map;
 public class FileEditToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(FileEditToolProvider.class);
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final FileEditHistory editHistory;
 
@@ -55,7 +54,7 @@ public class FileEditToolProvider {
                 .id("file.undo")
                 .category(ToolCategory.ACTION)
                 .name("撤销文件编辑")
-                .description("撤销文件的最近一次修改")
+                .description("Undo the most recent edit applied to a file, restoring the previous content.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -71,7 +70,7 @@ public class FileEditToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "undo", "revert", "rollback", "file", "edit"))
                 .executor(this::executeUndo)
                 .build();
     }
@@ -82,7 +81,7 @@ public class FileEditToolProvider {
                 .id("file.redo")
                 .category(ToolCategory.ACTION)
                 .name("重做文件编辑")
-                .description("重做最近一次撤销")
+                .description("Redo the last undone edit on a file, reapplying the reverted changes.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -98,7 +97,7 @@ public class FileEditToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "redo", "reapply", "file", "edit"))
                 .executor(this::executeRedo)
                 .build();
     }
@@ -109,7 +108,7 @@ public class FileEditToolProvider {
                 .id("file.diff")
                 .category(ToolCategory.PERCEPTION)
                 .name("文件差异对比")
-                .description("查看文件修改差异")
+                .description("Compute and display differences between file versions after edits.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(
@@ -124,7 +123,7 @@ public class FileEditToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "diff", "compare", "file", "difference", "changes", "inspect"))
                 .executor(this::executeDiff)
                 .build();
     }

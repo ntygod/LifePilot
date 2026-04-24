@@ -34,8 +34,6 @@ public class AgentConfigProperties {
     private ExecutionRetryConfig executionRetry = new ExecutionRetryConfig();
     private DebugConfig debug = new DebugConfig();
     private TaskConfig task = new TaskConfig();
-    /** 核心工具 ID 列表 — 非空时启用分层工具注入，仅核心工具始终可见，其余随 Skill 加载动态激活。 */
-    private List<String> coreToolIds = List.of();
 
     /** ReAct 循环配置（替代原 LoopConfig）。 */
     public static class LoopConfig {

@@ -33,7 +33,6 @@ import java.util.Map;
 public class IntrospectionToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(IntrospectionToolProvider.class);
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final CapabilityAggregator aggregator;
     private final DynamicToolRegistry toolRegistry;
@@ -73,11 +72,11 @@ public class IntrospectionToolProvider {
         return BuiltinTool.builder()
                 .id("system.status")
                 .name("查看系统状态")
-                .description("查看系统状态概览")
+                .description("Query the current system status and runtime introspection overview including version, uptime, and health indicators.")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "system", "status", "health", "runtime", "introspection", "query"))
                 .executor(this::executeStatus)
                 .build();
     }

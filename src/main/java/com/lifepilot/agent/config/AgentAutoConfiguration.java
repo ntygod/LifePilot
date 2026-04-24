@@ -47,7 +47,9 @@ import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -199,6 +201,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) McpConfigProperties mcpConfig,
             @Autowired(required = false) HybridRetriever hybridRetriever,
             @Autowired(required = false) WeatherService weatherService,
+            @Autowired(required = false) SkillInstallationRepository skillInstallationRepository,
+            @Autowired(required = false) SkillRequirementGate skillRequirementGate,
             @Autowired(required = false) ProjectContextResolver projectContextResolver,
             @Autowired(required = false) ChatSessionRepository chatSessionRepository) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，projectContext={}",
@@ -225,6 +229,8 @@ public class AgentAutoConfiguration {
                 mcpConfig,
                 hybridRetriever);
         assembler.setWeatherService(weatherService);
+        assembler.setSkillInstallationRepository(skillInstallationRepository);
+        assembler.setSkillRequirementGate(skillRequirementGate);
         assembler.setProjectContextResolver(projectContextResolver);
         assembler.setChatSessionRepository(chatSessionRepository);
         return assembler;
@@ -313,8 +319,6 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) SkillRegistry skillRegistry,
-            @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new ReactAgentLoop(
                 contextAssembler,
@@ -332,8 +336,6 @@ public class AgentAutoConfiguration {
                 compactionEngine,
                 sharedScheduler,
                 workspaceService,
-                skillRegistry,
-                toolRegistry,
                 experienceSummarizer);
     }
 

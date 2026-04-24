@@ -26,14 +26,7 @@ import java.util.Map;
  */
 public class DocumentToolProvider {
 
-    private static final List<String> DOCUMENT_TAGS = List.of("infrastructure", "document");
-
-    /**
-     * 产物挂接语义共用后缀 —— 让 LLM 明确：调用后产物会自动挂在当前 assistant 消息附件上，
-     * 下游只需把返回的 downloadUrl 告知用户即可，不必自行二次落盘。
-     */
-    private static final String ATTACHMENT_SUFFIX =
-            "产物自动挂到当前 assistant 消息附件上并提供下载 URL。";
+    private static final List<String> DOCUMENT_TAGS = List.of("infrastructure", "document", "create", "docx", "xlsx", "pptx", "word", "excel", "powerpoint", "generate");
 
     private final DocumentCreateActionDispatchExecutor dispatcher;
 
@@ -56,11 +49,7 @@ public class DocumentToolProvider {
                 .id("document.create")
                 .category(ToolCategory.ACTION)
                 .name("生成文档产物")
-                .description("根据 action 生成 Word / Excel / PowerPoint 办公产物并保存到本地 documents 目录。" +
-                        "action=docx 从 markdown 生成 .docx（支持标题 + 列表 + 段落，不支持表格 / 代码块 / 图片）；" +
-                        "action=xlsx 从结构化 sheets 生成 .xlsx（不支持样式 / 公式 / 合并单元格）；" +
-                        "action=pptx 从幻灯片大纲生成 .pptx（标题 + 要点 + 可选备注，不支持主题 / 动画 / 图片）。" +
-                        ATTACHMENT_SUFFIX)
+                .description("Create Word/Excel/PowerPoint artifacts and save to local documents directory. action=docx generates .docx from markdown (headings, lists, paragraphs only); action=xlsx generates .xlsx from structured sheets (no styles or formulas); action=pptx generates .pptx from slide outline (title, bullets, optional notes). Output is auto-attached to the current assistant message.")
                 .inputSchema(JsonSchema.of(buildCreateSchema()))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)

@@ -1,14 +1,23 @@
 ---
-id: file-organizer
-name: "文件管理"
-description: "文件批量重命名、分类归档与目录整理。用户说「整理文件」「文件分类」「批量重命名」「清理文件」「文件归档」「磁盘空间」「文件管理」时使用。不适用于单个文件读写（直接用 file.read/write）或文档格式转换（用 doc-processor）。"
-version: "2.0.0"
-suggested-tools:
-  - file.list
-  - file.read
-  - file.write
-  - file.manage
-  - shell.exec
+name: file-organizer
+description: 当用户要整理文件、批量重命名、按类型/日期/项目分类归档、清理重复文件或分析磁盘空间占用时使用。关键词：整理文件、文件分类、批量重命名、清理文件、文件归档、磁盘空间、文件管理、按日期归档、按项目归档。单个文件读写直接用 file.read / file.write，代码文件重构用 code-assistant，文档格式转换用 doc-processor。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: automation
+    priority: normal
+    tags:
+      - file
+      - organize
+      - rename
+      - archive
+      - disk-cleanup
+    suggested_tools:
+      - file.list
+      - file.read
+      - file.write
+      - file.manage
+      - shell.exec
 ---
 
 # 文件管理指南
@@ -31,14 +40,14 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 了解当前状态
+### 了解当前状态
 
 ```
 file.list(action="list", path="目标目录", maxDepth=3)
 file.list(action="info", path="目标文件")
 ```
 
-### 2. 制定整理方案
+### 制定整理方案
 
 | 分类依据 | 适用场景 | 示例 |
 |---------|---------|------|
@@ -47,11 +56,11 @@ file.list(action="info", path="目标文件")
 | 项目名 | 工作文件整理 | 按项目归档 |
 | 文件大小 | 磁盘清理 | 大文件单独归类 |
 
-### 3. 预览变更
+### 预览变更
 
 **在执行任何文件操作前，先输出变更预览供用户确认。**
 
-### 4. 执行操作
+### 执行操作
 
 优先使用 `file.manage`（跨平台）：
 
@@ -62,7 +71,7 @@ file.manage(action="mkdir", path="docs/2026")
 file.manage(action="delete", path="temp/useless.tmp")
 ```
 
-### 5. 验证结果
+### 验证结果
 
 ```
 file.list(action="list", path="目标目录", maxDepth=3)

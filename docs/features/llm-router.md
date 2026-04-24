@@ -51,17 +51,18 @@ TEI 和 OpenAI 兼容类型底层共用 OpenAI 兼容 API 协议。
 
 ### 2.5 场景路由
 
-定义 7 种调用场景（`LlmScene` 常量）：
+`com.lifepilot.llm.LlmScene` 定义 6 个常量（对应 GenerationRouter 的核心场景）：
 
-- `chat`：通用对话
+- `chat`：通用对话（含主动提醒）
 - `agent_react`：ReAct Agent 循环
 - `knowledge_extraction`：知识实体提取
 - `memory_compression`：记忆压缩
-- `embedding`：向量化
 - `skill_generation`：Skill 自动生成
-- `knowledge_rerank`：知识精排
+- `background_analysis`：后台分析（经验/反思/对比学习/子任务反思）
 
-每个模型服务声明自己支持的场景列表，路由器优先选择场景匹配的服务，未声明场景的通用服务作为兜底。生成路由还支持通过 `GenerationSettingsEntity.sceneServiceBindings` 将场景硬绑定到指定服务。
+EmbeddingRouter 和 RerankRouter 不使用 `LlmScene`，分别按 `EmbeddingUseCase` 和 `RerankExecutionMode` 路由。
+
+前端模型服务配置页额外提供 `session-title` / `conversation-summary` / `knowledge_rerank` / `retrieval_quality_eval` 等 scene 值供绑定使用，对应后端模块散落的场景字符串（未进 LlmScene 常量集）。每个模型服务声明自己支持的场景列表，路由器优先选择场景匹配的服务；生成路由还支持通过 `GenerationSettingsEntity.sceneServiceBindings` 将场景硬绑定到指定服务。
 
 ### 2.6 生成子能力
 

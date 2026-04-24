@@ -102,7 +102,7 @@ public final class ReflectContentBuilder {
      *
      * <p>格式示例：
      * <pre>
-     * ✓ file.read(skill=browser-automation)
+     * ✓ skill.load(names=[browser-automation])
      * ✓ browser: navigate(京东搜索) → 触发风控验证
      * ✗ browser: wait(.J_MouserOnverReq) → 超时
      * </pre>
@@ -159,11 +159,23 @@ public final class ReflectContentBuilder {
                 case "code.execute" -> "code.execute(" + textFieldOr(root, "language", "python") + ")";
                 case "file.write" -> "file.write(" + truncate(textField(root, "path"), 30) + ")";
                 case "file.read" -> {
-                    String skill = textField(root, "skill");
-                    if (skill != null && !skill.isBlank()) {
-                        yield "file.read(skill=" + truncate(skill, 30) + ")";
+                    String attachmentId = textField(root, "attachmentId");
+                    if (attachmentId != null && !attachmentId.isBlank()) {
+                        yield "file.read(attachmentId=" + truncate(attachmentId, 30) + ")";
                     }
                     yield "file.read(path=" + truncate(textField(root, "path"), 30) + ")";
+                }
+                case "skill.load" -> {
+                    JsonNode names = root.get("names");
+                    if (names != null && names.isArray() && !names.isEmpty()) {
+                        var joined = new StringBuilder();
+                        for (int i = 0; i < names.size(); i++) {
+                            if (i > 0) joined.append(",");
+                            joined.append(names.get(i).asText());
+                        }
+                        yield "skill.load(names=[" + truncate(joined.toString(), 40) + "])";
+                    }
+                    yield "skill.load";
                 }
                 case "memory" -> "memory: " + textFieldOr(root, "action", "?");
                 case "shell.exec" -> "shell.exec";

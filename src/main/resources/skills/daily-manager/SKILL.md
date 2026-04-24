@@ -1,14 +1,23 @@
 ---
-id: daily-manager
-name: "日常管理"
-description: "多步任务规划、优先级排序与跨 Skill 协调。用户说「安排一下」「今天做什么」「帮我规划」「任务排优先级」「整理一下待办」「生成周报」「汇总一下」时使用。不适用于定时任务（用 cron-scheduler）或单一领域深度任务（用对应专业 Skill）。"
-version: "2.0.0"
-suggested-tools:
-  - memory
-  - notify
-  - web.search
-  - file.read
-  - file.write
+name: daily-manager
+description: 当用户要做多步任务规划、优先级排序、跨 Skill 协调执行、生成日报/周报或汇总多个领域的信息时使用。关键词：安排一下、今天做什么、帮我规划、任务排优先级、整理待办、生成周报、汇总一下、任务分解。定时任务管理用 cron-scheduler，单一领域深度任务用对应专业 Skill，模糊持续关注记到记忆。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: automation
+    priority: normal
+    tags:
+      - planning
+      - task-management
+      - priority
+      - weekly-report
+      - coordination
+    suggested_tools:
+      - memory
+      - notify
+      - web.search
+      - file.read
+      - file.write
 ---
 
 # 日常管理指南

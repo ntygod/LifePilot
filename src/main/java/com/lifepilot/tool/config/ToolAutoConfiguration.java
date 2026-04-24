@@ -55,8 +55,9 @@ public class ToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DynamicToolRegistry dynamicToolRegistry(
-            ApplicationEventPublisher eventPublisher) {
-        return new DynamicToolRegistry(eventPublisher);
+            ApplicationEventPublisher eventPublisher,
+            com.lifepilot.tool.validation.ToolValidator validator) {
+        return new DynamicToolRegistry(eventPublisher, validator);
     }
 
     @Bean
@@ -74,22 +75,31 @@ public class ToolAutoConfiguration {
             PermissionService permissionService,
             PermissionRequestFactory permissionRequestFactory,
             PermissionApprovalService permissionApprovalService,
-            ToolConfigProperties config) {
+            ToolConfigProperties config,
+            ApplicationEventPublisher eventPublisher) {
         var p = config.getPipeline();
         log.info("工具执行管线初始化: timeout={}s, maxRetries={}, retryDelay={}ms",
                 p.getDefaultTimeoutSeconds(), p.getDefaultMaxRetries(), p.getRetryInitialDelayMs());
         return new ToolExecutionPipeline(
                 toolRegistry, guardrailEngine, idempotencyManager,
                 permissionService, permissionRequestFactory, permissionApprovalService,
-                p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs());
+                p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs(),
+                eventPublisher);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.validation.ToolValidator toolValidator() {
+        return new com.lifepilot.tool.validation.ToolValidator();
     }
 
     @Bean
     @ConditionalOnMissingBean
     public BuiltinToolRegistrar builtinToolRegistrar(
             List<BuiltinTool> builtinTools,
-            DynamicToolRegistry registry) {
-        return new BuiltinToolRegistrar(builtinTools, registry);
+            DynamicToolRegistry registry,
+            com.lifepilot.tool.validation.ToolValidator validator) {
+        return new BuiltinToolRegistrar(builtinTools, registry, validator);
     }
 
     @Bean
@@ -99,14 +109,171 @@ public class ToolAutoConfiguration {
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
             @Nullable MetaProperties metaProperties,
-            @Nullable com.lifepilot.agent.config.AgentConfigProperties agentConfig) {
+            com.lifepilot.tool.tier1.Tier1Service tier1Service) {
         log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider");
         int maxToolOutputChars = metaProperties != null
                 ? metaProperties.getInfra().getMaxToolOutputChars()
                 : new MetaProperties().getInfra().getMaxToolOutputChars();
-        var coreToolIds = agentConfig != null ? agentConfig.getCoreToolIds() : null;
         return new ToolBridgeAgentToolProvider(
-                toolRegistry, pipeline, objectMapper, maxToolOutputChars, coreToolIds);
+                toolRegistry, pipeline, objectMapper, maxToolOutputChars, tier1Service);
+    }
+
+    // ==== 搜索服务 / Tier1 / Meta BuiltinTool 基础件注册 ====
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolSearchQuerySanitizer toolSearchQuerySanitizer() {
+        return new com.lifepilot.tool.search.ToolSearchQuerySanitizer();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.cache.SchemaCache schemaCache(ToolConfigProperties p) {
+        return new com.lifepilot.tool.search.cache.SchemaCache(p.getSearch().getCache().getLayerAMaxSize());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.cache.SearchResultCache searchResultCache(ToolConfigProperties p) {
+        return new com.lifepilot.tool.search.cache.SearchResultCache(
+                p.getSearch().getCache().getLayerBMaxSize(),
+                java.time.Duration.ofMinutes(p.getSearch().getCache().getLayerBTtlMinutes()));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.cache.SessionSearchMemo sessionSearchMemo() {
+        return new com.lifepilot.tool.search.cache.SessionSearchMemo();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.Tier1AdvisoryRepository tier1AdvisoryRepository(
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        return new com.lifepilot.tool.tier1.Tier1AdvisoryRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.Tier1Service tier1Service(
+            ToolConfigProperties p,
+            com.lifepilot.tool.tier1.Tier1AdvisoryRepository repo) {
+        return new com.lifepilot.tool.tier1.Tier1Service(p, repo);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.ToolUsageStatsRepository toolUsageStatsRepository(
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        return new com.lifepilot.tool.tier1.ToolUsageStatsRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.ToolUsageStatsRecorder toolUsageStatsRecorder(
+            com.lifepilot.tool.tier1.ToolUsageStatsRepository repo) {
+        return new com.lifepilot.tool.tier1.ToolUsageStatsRecorder(repo);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.tier1.Tier1AdvisoryJob tier1AdvisoryJob(
+            ToolConfigProperties p,
+            com.lifepilot.tool.tier1.ToolUsageStatsRepository statsRepo,
+            com.lifepilot.tool.tier1.Tier1AdvisoryRepository advisoryRepo) {
+        return new com.lifepilot.tool.tier1.Tier1AdvisoryJob(p, statsRepo, advisoryRepo);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolSearchIndexBuilder toolSearchIndexBuilder(
+            DynamicToolRegistry registry,
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        return new com.lifepilot.tool.search.ToolSearchIndexBuilder(registry, jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolSearchIndexMaintainer toolSearchIndexMaintainer(
+            com.lifepilot.tool.search.ToolSearchIndexBuilder builder,
+            DynamicToolRegistry registry,
+            com.lifepilot.tool.search.cache.SchemaCache schemaCache,
+            com.lifepilot.tool.search.cache.SearchResultCache searchCache) {
+        return new com.lifepilot.tool.search.ToolSearchIndexMaintainer(builder, registry, schemaCache, searchCache);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolSearchService toolSearchService(
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+            DynamicToolRegistry registry,
+            com.lifepilot.tool.search.ToolSearchQuerySanitizer sanitizer,
+            com.lifepilot.tool.tier1.Tier1Service tier1,
+            com.lifepilot.tool.search.cache.SearchResultCache searchCache,
+            com.lifepilot.tool.search.cache.SessionSearchMemo memo,
+            ToolConfigProperties properties,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.lifepilot.tool.search.ToolSearchService(
+                jdbcTemplate, registry, sanitizer, tier1, searchCache, memo,
+                properties.getSearch(), meterRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolDescribeService toolDescribeService(
+            DynamicToolRegistry registry,
+            ToolConfigProperties properties,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.lifepilot.tool.search.ToolDescribeService(
+                registry, properties.getDescribe().getMaxBatchSize(), meterRegistry);
+    }
+
+    /**
+     * 无 Actuator 环境下的 MeterRegistry 兜底。
+     *
+     * <p>正常 Spring Boot Web 应用会通过 spring-boot-starter-actuator 自动配置
+     * {@code MeterRegistry}；在独立使用 tool 模块的场景（如最小化集成测试）下
+     * 若上下文没有该 Bean，则提供一个 SimpleMeterRegistry 以维持服务可用。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean(io.micrometer.core.instrument.MeterRegistry.class)
+    public io.micrometer.core.instrument.MeterRegistry toolMeterRegistryFallback() {
+        log.info("工具模块未发现外部 MeterRegistry，降级使用 SimpleMeterRegistry");
+        return new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolListService toolListService(DynamicToolRegistry registry) {
+        return new com.lifepilot.tool.search.ToolListService(registry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.BuiltinToolSearchProvider builtinToolSearchProvider(
+            com.lifepilot.tool.search.ToolSearchService search,
+            com.lifepilot.tool.search.ToolDescribeService describe,
+            com.lifepilot.tool.search.ToolListService list) {
+        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe, list);
+    }
+
+    // 三个 Meta BuiltinTool 暴露成 Bean，会被 BuiltinToolRegistrar 自动扫描注册
+    @Bean
+    public com.lifepilot.tool.BuiltinTool toolsSearchBuiltin(
+            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
+        return provider.searchTool();
+    }
+
+    @Bean
+    public com.lifepilot.tool.BuiltinTool toolsDescribeBuiltin(
+            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
+        return provider.describeTool();
+    }
+
+    @Bean
+    public com.lifepilot.tool.BuiltinTool toolsListBuiltin(
+            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
+        return provider.listTool();
     }
 
     /**
