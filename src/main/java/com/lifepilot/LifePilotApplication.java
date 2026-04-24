@@ -1,5 +1,6 @@
 package com.lifepilot;
 
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,10 +36,15 @@ import java.nio.charset.StandardCharsets;
                 ".*Test\\$.*Config"
         })
 )
-// 无条件注册 ToolConfigProperties：permission 等通过 @ComponentScan 注册的 Bean 会
-// 构造注入它；即使 test profile 下 lifepilot.tool.enabled=false 关闭 ToolAutoConfiguration，
-// 仍需读取其 enabled 字段来判断是否启用 tool。
-@EnableConfigurationProperties(ToolConfigProperties.class)
+// 无条件注册 ToolConfigProperties / SkillConfigProperties：
+//   - ToolConfigProperties：permission 等通过 @ComponentScan 注册的 Bean 会构造注入它；
+//     即使 test profile 下 lifepilot.tool.enabled=false 关闭 ToolAutoConfiguration，
+//     仍需读取其 enabled 字段来判断是否启用 tool。
+//   - SkillConfigProperties：SkillInstaller / SkillImportService / SkillMarketplaceInstaller
+//     通过 @Service 组件扫描注册（与 SkillAutoConfiguration 的 enabled 条件解耦），
+//     即便 test profile 下 lifepilot.skills.enabled=false 关闭 SkillAutoConfiguration，
+//     仍需把 SkillConfigProperties 注入到这些 @Service。
+@EnableConfigurationProperties({ToolConfigProperties.class, SkillConfigProperties.class})
 public class LifePilotApplication {
 
     private static final Logger log = LoggerFactory.getLogger(LifePilotApplication.class);
