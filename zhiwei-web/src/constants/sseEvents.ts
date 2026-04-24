@@ -46,6 +46,8 @@ export const SSE_EVENT_TYPES = {
   PROCESS_STARTED: 'process-started',
   PROCESS_OUTPUT: 'process-output',
   PROCESS_STATE_CHANGE: 'process-state-change',
+
+  SKILL_GENERATED: 'skill-generated',
 } as const
 
 export type SseEventType = typeof SSE_EVENT_TYPES[keyof typeof SSE_EVENT_TYPES]
