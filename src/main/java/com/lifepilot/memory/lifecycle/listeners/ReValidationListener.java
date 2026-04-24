@@ -57,7 +57,7 @@ public class ReValidationListener {
      *
      * @param event 源失效事件
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSourceInvalidated(SourceInvalidated event) {
         List<String> entityIds;
         try {

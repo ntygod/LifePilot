@@ -48,7 +48,7 @@ public class ProvenanceStaleListener {
      *
      * @param event 源对象失效事件
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSourceInvalidated(SourceInvalidated event) {
         try {
             repo.markStale(event.sourceType(), event.sourceId(), clock.instant());

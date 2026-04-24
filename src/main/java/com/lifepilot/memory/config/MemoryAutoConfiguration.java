@@ -346,7 +346,6 @@ public class MemoryAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({GenerationRouter.class, SemanticMemory.class, VectorSearcher.class})
     public ConflictResolutionService conflictResolutionService(
             GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
