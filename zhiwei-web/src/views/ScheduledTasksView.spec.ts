@@ -1,5 +1,5 @@
 /**
- * ScheduledTasksView 组件测试 —— Plan 2+3 Task A5。
+ * ScheduledTasksView 组件测试 —— Plan 2+3 Task A5 + UI 增强。
  *
  * 沿用仓库既有测试风格（见 {@code ProjectDetailView.spec.ts}）：
  * 通过 {@code vi.mock} 替换 `@/api/scheduledTask` 与 `@/api/project`，用真实
@@ -17,6 +17,7 @@ vi.mock('@/api/scheduledTask', () => ({
   listScheduledTasks: vi.fn(),
   updateScheduledTask: vi.fn(),
   deleteScheduledTask: vi.fn(),
+  listScheduledTaskLogs: vi.fn(),
 }))
 
 vi.mock('@/api/project', () => ({
@@ -54,6 +55,23 @@ function mountView(router = buildRouter()) {
   })
 }
 
+/** 构造一个任务 DTO——填充所有必需字段，让 spec 里写得少些。 */
+function buildTask(overrides: Partial<taskApi.ScheduledTaskDto> = {}): taskApi.ScheduledTaskDto {
+  return {
+    id: 't1',
+    name: '任务',
+    schedule: '0 0 * * * *',
+    instruction: '',
+    status: 'active',
+    skillIds: null,
+    projectId: null,
+    createdAt: '',
+    updatedAt: '',
+    nextExecutionAt: null,
+    ...overrides,
+  }
+}
+
 describe('ScheduledTasksView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -78,17 +96,14 @@ describe('ScheduledTasksView', () => {
 
   it('展示任务 name / schedule / 项目 tag', async () => {
     taskApiMock.listScheduledTasks.mockResolvedValue([
-      {
+      buildTask({
         id: 't1',
         name: '周报提醒',
         schedule: '0 0 21 ? * SUN',
         instruction: '写周报',
         status: 'active',
-        skillIds: null,
         projectId: 'p-1',
-        createdAt: '',
-        updatedAt: '',
-      },
+      }),
     ])
     projectApiMock.listProjects.mockResolvedValue([
       {
@@ -110,17 +125,7 @@ describe('ScheduledTasksView', () => {
 
   it('主账户任务（projectId=null）展示"主"tag', async () => {
     taskApiMock.listScheduledTasks.mockResolvedValue([
-      {
-        id: 't2',
-        name: '天气',
-        schedule: '0 0 8 * * *',
-        instruction: '',
-        status: 'active',
-        skillIds: null,
-        projectId: null,
-        createdAt: '',
-        updatedAt: '',
-      },
+      buildTask({ id: 't2', name: '天气', schedule: '0 0 8 * * *' }),
     ])
     projectApiMock.listProjects.mockResolvedValue([])
     const wrapper = mountView()
@@ -130,30 +135,12 @@ describe('ScheduledTasksView', () => {
 
   it('点击暂停按钮调 store.pauseTask', async () => {
     taskApiMock.listScheduledTasks.mockResolvedValue([
-      {
-        id: 't1',
-        name: '任务',
-        schedule: '0 0 * * * *',
-        instruction: '',
-        status: 'active',
-        skillIds: null,
-        projectId: null,
-        createdAt: '',
-        updatedAt: '',
-      },
+      buildTask({ id: 't1', name: '任务', schedule: '0 0 * * * *', status: 'active' }),
     ])
     projectApiMock.listProjects.mockResolvedValue([])
-    taskApiMock.updateScheduledTask.mockResolvedValue({
-      id: 't1',
-      name: '任务',
-      schedule: '0 0 * * * *',
-      instruction: '',
-      status: 'paused',
-      skillIds: null,
-      projectId: null,
-      createdAt: '',
-      updatedAt: '',
-    })
+    taskApiMock.updateScheduledTask.mockResolvedValue(
+      buildTask({ id: 't1', name: '任务', schedule: '0 0 * * * *', status: 'paused' }),
+    )
     const wrapper = mountView()
     await flushPromises()
     await wrapper.find('[data-testid="pause-t1"]').trigger('click')
@@ -163,19 +150,7 @@ describe('ScheduledTasksView', () => {
 
   it('点击删除按钮_确认弹窗取消_不调 store', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
-    taskApiMock.listScheduledTasks.mockResolvedValue([
-      {
-        id: 't1',
-        name: '任务',
-        schedule: '0 0 * * * *',
-        instruction: '',
-        status: 'active',
-        skillIds: null,
-        projectId: null,
-        createdAt: '',
-        updatedAt: '',
-      },
-    ])
+    taskApiMock.listScheduledTasks.mockResolvedValue([buildTask({ id: 't1' })])
     projectApiMock.listProjects.mockResolvedValue([])
     const wrapper = mountView()
     await flushPromises()
@@ -185,19 +160,7 @@ describe('ScheduledTasksView', () => {
 
   it('点击删除按钮_确认弹窗确定_调 store.deleteTask', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    taskApiMock.listScheduledTasks.mockResolvedValue([
-      {
-        id: 't1',
-        name: '任务',
-        schedule: '0 0 * * * *',
-        instruction: '',
-        status: 'active',
-        skillIds: null,
-        projectId: null,
-        createdAt: '',
-        updatedAt: '',
-      },
-    ])
+    taskApiMock.listScheduledTasks.mockResolvedValue([buildTask({ id: 't1' })])
     projectApiMock.listProjects.mockResolvedValue([])
     taskApiMock.deleteScheduledTask.mockResolvedValue(undefined)
     const wrapper = mountView()
@@ -205,5 +168,122 @@ describe('ScheduledTasksView', () => {
     await wrapper.find('[data-testid="delete-t1"]').trigger('click')
     await flushPromises()
     expect(taskApiMock.deleteScheduledTask).toHaveBeenCalledWith('t1')
+  })
+
+  it('active 任务 + nextExecutionAt 展示"下次"文本', async () => {
+    // 明天 08:00 当地时间
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(8, 0, 0, 0)
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({
+        id: 't1',
+        name: '天气',
+        status: 'active',
+        nextExecutionAt: tomorrow.toISOString(),
+      }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="next-execution-t1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="next-execution-t1"]').text()).toContain('明天')
+    expect(wrapper.find('[data-testid="next-execution-t1"]').text()).toContain('08:00')
+  })
+
+  it('paused 任务不展示"下次"文本', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({
+        id: 't1',
+        status: 'paused',
+        nextExecutionAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="next-execution-t1"]').exists()).toBe(false)
+  })
+
+  it('点击编辑按钮打开编辑弹窗', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({ id: 't1', name: '任务', schedule: '0 0 * * * *' }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-testid="edit-t1"]').trigger('click')
+    await flushPromises()
+    // Dialog 挂载到 body，通过 document 查询
+    expect(document.querySelector('[data-testid="scheduled-task-edit-dialog"]')).not.toBeNull()
+    // Unmount 后清理 Dialog
+    wrapper.unmount()
+  })
+
+  it('点击卡片展开_触发 listScheduledTaskLogs + 展示历史', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({ id: 't1', name: '任务', instruction: '执行指令' }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    taskApiMock.listScheduledTaskLogs.mockResolvedValue([
+      {
+        id: 'log-1',
+        executedAt: new Date().toISOString(),
+        status: 'success',
+        durationMs: 1234,
+        tokensUsed: 100,
+        summary: '完成',
+      },
+    ])
+    const wrapper = mountView()
+    await flushPromises()
+    // 点卡片主体（toggle 区域）
+    await wrapper.find('[data-testid="task-card-toggle-t1"]').trigger('click')
+    await flushPromises()
+    expect(taskApiMock.listScheduledTaskLogs).toHaveBeenCalledWith('t1', 5)
+    // 展开区域应可见
+    expect(wrapper.find('[data-testid="task-expanded-t1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('执行指令')
+    expect(wrapper.text()).toContain('1234 ms')
+    expect(wrapper.text()).toContain('完成')
+  })
+
+  it('展开时日志 API 失败_展示错误提示', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([buildTask({ id: 't1' })])
+    projectApiMock.listProjects.mockResolvedValue([])
+    taskApiMock.listScheduledTaskLogs.mockRejectedValue({ message: '服务端挂了' })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-testid="task-card-toggle-t1"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="logs-error-t1"]').text()).toContain('服务端挂了')
+  })
+
+  it('点击项目 tag_不触发卡片展开_跳转项目详情', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({ id: 't1', projectId: 'p-1' }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([
+      {
+        id: 'p-1',
+        name: '毕业论文',
+        instructions: '',
+        isolation: 'ISOLATED',
+        memorySpaceId: 'ms-1',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ])
+    const router = buildRouter()
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mountView(router)
+    await flushPromises()
+    await wrapper.find('[data-testid="project-tag-t1"]').trigger('click')
+    await flushPromises()
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'projectDetail', params: { id: 'p-1' } })
+    // 卡片不该展开
+    expect(wrapper.find('[data-testid="task-expanded-t1"]').exists()).toBe(false)
+    // 日志 API 不应被调用
+    expect(taskApiMock.listScheduledTaskLogs).not.toHaveBeenCalled()
   })
 })

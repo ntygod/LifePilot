@@ -27,6 +27,7 @@ function makeTask(
     projectId: null,
     createdAt: '2026-04-23T00:00:00Z',
     updatedAt: '2026-04-23T00:00:00Z',
+    nextExecutionAt: null,
     ...overrides,
   }
 }

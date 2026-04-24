@@ -31,6 +31,26 @@ export interface ScheduledTaskDto {
   projectId: string | null
   createdAt: string
   updatedAt: string
+  /**
+   * 下次预计执行时间（ISO 8601）；仅 active 任务由后端填充，
+   * paused / completed / 非法 cron 均为 null。
+   */
+  nextExecutionAt: string | null
+}
+
+/**
+ * 定时任务执行日志 DTO —— 对应后端 {@code ScheduledTaskLogResponse}。
+ *
+ * <p>{@code executedAt} 为 ISO 8601 字符串；{@code status} 可能为
+ * 'success' / 'failed' / 'timeout'；{@code summary} 为 Agent 回复摘要前 500 字符。</p>
+ */
+export interface ScheduledTaskLogDto {
+  id: string
+  executedAt: string
+  status: string
+  durationMs: number
+  tokensUsed: number
+  summary: string | null
 }
 
 /**
@@ -121,4 +141,20 @@ export async function deleteScheduledTask(id: string): Promise<void> {
   await request<void>(`/scheduled-tasks/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
+}
+
+/**
+ * 查询指定任务的最近执行日志（按 executed_at 倒序）。
+ *
+ * @param id    任务 ID
+ * @param limit 返回条数上限；后端默认 5，上限 50
+ */
+export async function listScheduledTaskLogs(
+  id: string,
+  limit = 5,
+): Promise<ScheduledTaskLogDto[]> {
+  const qs = `?limit=${encodeURIComponent(String(limit))}`
+  return request<ScheduledTaskLogDto[]>(
+    `/scheduled-tasks/${encodeURIComponent(id)}/logs${qs}`,
+  )
 }
