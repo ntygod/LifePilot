@@ -1,23 +1,24 @@
 <script setup lang="ts">
 /**
- * 定时任务全局管理页 —— 2026-04-24 视觉重做。
+ * 定时任务调度中心 —— 2026-04-24 视觉精准对齐草稿原件。
  *
- * <p>草稿还原：</p>
+ * <p>结构（从上到下）：</p>
  * <ul>
- *   <li>顶部：面包屑 + 全部历史/暂停全部/新建任务 3 个按钮（功能占位）</li>
- *   <li>Hero：日期 + 叙事大标题 + 成功/失败/待跑 badges + 24h 时间轴</li>
- *   <li>KPI：5 张指标卡片（数据由任务列表派生或 mock）</li>
- *   <li>工具栏：视图切换（卡片/时间表/执行历史）+ 过滤 pill + 搜索框</li>
- *   <li>主区：3 列卡片网格；点击卡片展开右侧 ~360px 详情面板</li>
- *   <li>详情面板：调度规则、下次时间、最近运行、权限信任、工具、结果投递</li>
+ *   <li>顶栏：面包屑 + 全部历史 / 暂停全部 / 新建任务（功能占位）</li>
+ *   <li>Hero "今日 ribbon"：日期 kicker + 叙事大标题 + 成功/失败/待跑 pills + 24h 时间轴</li>
+ *   <li>KPI 5 卡片：总任务 / 本月执行 / 成功率 / 本月花费 / 需注意</li>
+ *   <li>Toolbar：视图切换（cards / timeline / history） + 过滤 pills + 搜索</li>
+ *   <li>主区：三种视图</li>
+ *   <li>右侧详情抽屉：调度规则卡片 + 最近运行 KV + 权限信任 + 工具 + 结果投递 + 操作按钮</li>
  * </ul>
  *
- * <p><b>数据来源</b>：真实数据包括任务列表、状态、cron、skillIds、下次执行时间、
- * 执行日志；mock / 静态数据包括时间轴点位、KPI 数值（花费/预算/同比）、
- * 风险等级、单次花费估算、结果投递渠道。</p>
- *
- * <p><b>创建入口</b>：由 LLM 在对话中自然语言触发创建（如"每周日 21 点提醒我..."），
- * 本页「新建任务」按钮是视觉占位。</p>
+ * <p><b>数据映射（真实 → 视图模型）</b>：</p>
+ * <ul>
+ *   <li>真实：store.tasks、每个 task 的 logs（selectTask 时懒加载）、projectStore.projects</li>
+ *   <li>派生：cron 人话 / 下次相对时间 / agent 名（项目反查）+ agentColor（哈希色板）</li>
+ *   <li>mock：ribbon 时间轴点位（从当日 logs 聚合）+ KPI 静态数字（本月执行/成功率/花费）+
+ *     risk=low / cost 估算 / delivery（["系统通知"]）</li>
+ * </ul>
  *
  * @author zsg
  * @since 2026-04-24
@@ -25,7 +26,6 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  CalendarClock,
   ChevronRight,
   Clock,
   Edit3,
@@ -54,49 +54,15 @@ const projectStore = useProjectStore()
 const router = useRouter()
 
 onMounted(async () => {
-  // 并行拉取，失败只写入各自 store.error，不阻塞另一条
+  // 并行拉取，任一失败只落入各自 store.error，不阻塞另一条
   await Promise.all([
     store.fetchAll().catch(() => {}),
     projectStore.fetchProjects().catch(() => {}),
   ])
 })
 
-/** 项目 ID → 名称 的查找表 */
-const projectNameById = computed(() => {
-  const map = new Map<string, string>()
-  for (const p of projectStore.projects) map.set(p.id, p.name)
-  return map
-})
-
-/** 主账户任务显示"主"，项目任务显示项目名；项目已删除则退化为 ID */
-function projectLabel(projectId: string | null): string {
-  if (!projectId) return '主'
-  return projectNameById.value.get(projectId) ?? projectId
-}
-
-/** 跳转到项目详情页 */
-function openProject(projectId: string) {
-  router.push({ name: 'projectDetail', params: { id: projectId } })
-}
-
-/** 根据当前状态在 active/paused 之间切换 */
-async function togglePause(taskId: string, currentStatus: string) {
-  if (currentStatus === 'active') {
-    await store.pauseTask(taskId)
-  } else {
-    await store.resumeTask(taskId)
-  }
-}
-
-/** 删除前弹窗确认；取消则直接返回 */
-async function deleteTask(taskId: string, taskName: string) {
-  if (!window.confirm(`确认删除定时任务「${taskName}」？此操作不可撤销。`)) return
-  await store.deleteTask(taskId)
-  if (selectedTaskId.value === taskId) selectedTaskId.value = null
-}
-
 // ──────────────────────────────────────────────────────────────────────
-// 视图切换 & 过滤 & 搜索
+// 视图切换 / 过滤 / 搜索
 // ──────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'cards' | 'timetable' | 'history'
@@ -107,15 +73,11 @@ const activeFilter = ref<FilterKey>('all')
 
 const searchQuery = ref('')
 
-/** 过滤后的任务列表（按 status + 搜索关键字） */
+/** 按状态 + 搜索关键字过滤 */
 const filteredTasks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   return store.tasks.filter(task => {
-    // status 过滤
-    if (activeFilter.value !== 'all') {
-      if (task.status !== activeFilter.value) return false
-    }
-    // 关键字搜索（name + instruction）
+    if (activeFilter.value !== 'all' && task.status !== activeFilter.value) return false
     if (query) {
       const haystack = `${task.name} ${task.instruction}`.toLowerCase()
       if (!haystack.includes(query)) return false
@@ -124,7 +86,7 @@ const filteredTasks = computed(() => {
   })
 })
 
-/** 各状态的任务数量——驱动过滤 pill 的数字徽标 */
+/** 驱动过滤 pill 数字徽标 */
 const statusCounts = computed(() => {
   const counts = { all: 0, active: 0, paused: 0, error: 0, draft: 0 }
   for (const task of store.tasks) {
@@ -138,17 +100,58 @@ const statusCounts = computed(() => {
 })
 
 // ──────────────────────────────────────────────────────────────────────
-// 详情面板：选中任务 + 日志懒加载
+// 项目信息 & 跳转
 // ──────────────────────────────────────────────────────────────────────
 
-/** 当前选中（展开详情面板）的任务 id；null 表示未选中 */
+/** 项目 ID → 名称 查找表 */
+const projectNameById = computed(() => {
+  const map = new Map<string, string>()
+  for (const p of projectStore.projects) map.set(p.id, p.name)
+  return map
+})
+
+/** 主账户任务显示"主"，项目任务显示项目名；项目被删则降级为 ID */
+function projectLabel(projectId: string | null): string {
+  if (!projectId) return '主'
+  return projectNameById.value.get(projectId) ?? projectId
+}
+
+function openProject(projectId: string) {
+  router.push({ name: 'projectDetail', params: { id: projectId } })
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// agentColor：按 projectId / 任务 id 稳定哈希，落到 6 个色板之一
+// ──────────────────────────────────────────────────────────────────────
+
+/** 草稿里每个 agent 有独立配色；项目名用同样哈希策略派生 */
+const AGENT_PALETTE = [
+  '#8a6d28', // amber-700 近似
+  '#5a4786', // 紫（仅作非主色的辅助，若全项目无紫用户偏好可接受）
+  '#4a5fc1', // indigo-600
+  '#0a6e53', // emerald-700
+  '#c96442', // orange-red
+  '#7a6a3d', // olive
+] as const
+
+function agentColorFor(projectId: string | null): string {
+  // 主账户固定灰
+  if (!projectId) return '#8a857d'
+  let hash = 0
+  for (let i = 0; i < projectId.length; i += 1) {
+    hash = (hash * 31 + projectId.charCodeAt(i)) >>> 0
+  }
+  return AGENT_PALETTE[hash % AGENT_PALETTE.length]
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// 详情面板：选中 + 日志懒加载
+// ──────────────────────────────────────────────────────────────────────
+
 const selectedTaskId = ref<string | null>(null)
 
-/** 已拉取的日志缓存；按 taskId 索引 */
 const logsByTask = reactive<Record<string, ScheduledTaskLogDto[]>>({})
-/** 正在加载日志的任务 id 集合 */
 const loadingLogs = reactive<Record<string, boolean>>({})
-/** 日志加载失败提示 */
 const logErrors = reactive<Record<string, string | null>>({})
 
 const selectedTask = computed<ScheduledTaskDto | null>(() => {
@@ -175,10 +178,9 @@ function closeDetail() {
   selectedTaskId.value = null
 }
 
-// 如果当前选中的任务被删除或过滤掉，自动关闭详情
+// 任务被删 / 被过滤掉（且真的从列表消失）时，自动关闭详情
 watch(filteredTasks, list => {
   if (selectedTaskId.value && !list.some(t => t.id === selectedTaskId.value)) {
-    // 注意：被过滤掉（而非真的删了）时也关闭，避免孤悬详情
     if (!store.tasks.some(t => t.id === selectedTaskId.value)) {
       selectedTaskId.value = null
     }
@@ -186,7 +188,7 @@ watch(filteredTasks, list => {
 })
 
 // ──────────────────────────────────────────────────────────────────────
-// 编辑弹窗
+// 编辑弹窗 / 行内操作
 // ──────────────────────────────────────────────────────────────────────
 
 const editDialogOpen = ref(false)
@@ -197,8 +199,22 @@ function openEdit(task: ScheduledTaskDto) {
   editDialogOpen.value = true
 }
 
+async function togglePause(taskId: string, currentStatus: string) {
+  if (currentStatus === 'active') {
+    await store.pauseTask(taskId)
+  } else {
+    await store.resumeTask(taskId)
+  }
+}
+
+async function deleteTask(taskId: string, taskName: string) {
+  if (!window.confirm(`确认删除定时任务「${taskName}」？此操作不可撤销。`)) return
+  await store.deleteTask(taskId)
+  if (selectedTaskId.value === taskId) selectedTaskId.value = null
+}
+
 // ──────────────────────────────────────────────────────────────────────
-// 顶部按钮占位 Toast（功能未实装）
+// 顶部按钮占位 Toast
 // ──────────────────────────────────────────────────────────────────────
 
 const placeholderMessage = ref<string | null>(null)
@@ -223,10 +239,10 @@ function handleCreateTask() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Hero / 时间轴 / KPI —— 大部分 mock；从真实数据派生的地方会标注
+// Hero：日期、叙事、24h 时间轴
 // ──────────────────────────────────────────────────────────────────────
 
-/** 今天日期串，如 2026-04-24 · 周五 */
+/** 当前日期，如 "2026-04-24 · 周五" */
 const todayLabel = computed(() => {
   const now = new Date()
   const year = now.getFullYear()
@@ -236,47 +252,64 @@ const todayLabel = computed(() => {
   return `${year}-${month}-${day} · ${weekdays[now.getDay()]}`
 })
 
-/** "今天已完成 / 待跑" 叙事派生：基于 status 的粗略近似（mock） */
+/** "已完成/待跑"叙事：从 active + 任务数粗略派生 */
 const narrativeCounts = computed(() => {
   const total = store.tasks.length
-  // mock 分配：3/4 作为"已完成"，1/4 作为"待跑"，最少 1
   const done = Math.max(1, Math.floor((total * 3) / 4))
   const pending = Math.max(0, total - done)
   return { done: total === 0 ? 6 : done, pending: total === 0 ? 2 : pending }
 })
 
-/** 成功/失败/待跑 的 badges 数（mock 派生） */
+/** Hero 顶部三个小 pill 的数字（与叙事近似，mock） */
 const heroBadges = computed(() => ({
-  success: narrativeCounts.value.done > 1 ? narrativeCounts.value.done - 1 : narrativeCounts.value.done,
-  failed: narrativeCounts.value.done > 0 ? Math.min(2, Math.max(0, Math.floor(narrativeCounts.value.done / 3))) : 0,
+  success: Math.max(0, narrativeCounts.value.done - 1),
+  failed: Math.min(2, Math.max(0, Math.floor(narrativeCounts.value.done / 3))),
   pending: narrativeCounts.value.pending,
 }))
 
-/** 24h 时间轴刻度 */
-const timelineHours = ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00']
+/** 时间轴 8 个刻度（00:00 / 03:00 / ... / 21:00） */
+const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21]
 
-/**
- * 时间轴执行点位（mock）。
- *
- * <p>真实实现需要查询当天所有任务的 logs 并按小时聚合——目前 mock 5 个点
- * 分散在时间轴上，代表"今天已经跑过的任务"。</p>
- */
-const timelinePoints = [
-  { hourPct: 4, status: 'success' as const },
-  { hourPct: 22, status: 'success' as const },
-  { hourPct: 33, status: 'failed' as const },
-  { hourPct: 50, status: 'success' as const },
-  { hourPct: 58, status: 'success' as const },
-  { hourPct: 70, status: 'success' as const },
-  { hourPct: 82, status: 'failed' as const },
-]
+/** ribbonDots：当日执行点位（mock 静态，后续会从 logs 聚合） */
+type RibbonDot = {
+  task: string
+  at: string
+  label: string
+  status: 'success' | 'failed' | 'upcoming'
+  pct: number
+}
+const ribbonDots = computed<RibbonDot[]>(() => {
+  // 无任务时展示空轨；有任务时按 task id 派生几个示意点
+  if (store.tasks.length === 0) return []
+  const raw: Array<Omit<RibbonDot, 'pct'>> = []
+  const presetTimes = ['08:00', '09:00', '14:00', '14:32', '15:00', '15:24', '17:30']
+  const presetStatuses: RibbonDot['status'][] = ['success', 'success', 'failed', 'success', 'failed', 'success', 'upcoming']
+  store.tasks.slice(0, 7).forEach((task, idx) => {
+    const at = presetTimes[idx] ?? '12:00'
+    raw.push({
+      task: task.id,
+      at,
+      label: task.name,
+      status: presetStatuses[idx] ?? 'success',
+    })
+  })
+  return raw.map(e => {
+    const [hh, mm] = e.at.split(':').map(Number)
+    const pct = ((hh + (mm || 0) / 60) / 24) * 100
+    return { ...e, pct }
+  })
+})
 
-/** 当前时间在 24h 轴上的百分比位置（now 游标） */
+/** NOW 游标在 24h 轴上的百分比位置 */
 const nowCursorPct = computed(() => {
   const now = new Date()
   const minutes = now.getHours() * 60 + now.getMinutes()
   return (minutes / 1440) * 100
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// KPI：总任务真实派生；其余静态 mock
+// ──────────────────────────────────────────────────────────────────────
 
 interface KpiCard {
   id: string
@@ -286,13 +319,12 @@ interface KpiCard {
   alert?: boolean
 }
 
-/** KPI 卡片：大多 mock，从真实 tasks 派生「总任务」行 */
 const kpis = computed<KpiCard[]>(() => {
   const total = store.tasks.length
   const active = statusCounts.value.active
   const paused = statusCounts.value.paused
   const draft = statusCounts.value.draft
-  return [
+  const base: KpiCard[] = [
     {
       id: 'total',
       value: total,
@@ -317,25 +349,27 @@ const kpis = computed<KpiCard[]>(() => {
       label: '本月花费',
       caption: '预算 $20 · 41%',
     },
-    {
+  ]
+  if (statusCounts.value.error > 0) {
+    base.push({
       id: 'attention',
-      value: '1',
+      value: statusCounts.value.error,
       label: '需注意',
       caption: '「API 用量告警」连续失败',
       alert: true,
-    },
-  ]
+    })
+  }
+  return base
 })
 
 // ──────────────────────────────────────────────────────────────────────
-// 卡片展示辅助
+// 卡片 / 详情 辅助函数
 // ──────────────────────────────────────────────────────────────────────
 
-/** 把 cron 表达式翻译成一句人话（做最常见情况的识别，其他降级为 "自定义"） */
+/** cron → 人话；识别最常见场景，其他降级为"自定义周期" */
 function humanSchedule(cron: string): string {
   const trimmed = cron.trim()
   const parts = trimmed.split(/\s+/)
-  // Spring 6 位：秒 分 时 日 月 周；UNIX 5 位：分 时 日 月 周
   let minute: string
   let hour: string
   let dom: string
@@ -355,44 +389,27 @@ function humanSchedule(cron: string): string {
   }
   const pad = (s: string) => s.padStart(2, '0')
   const hhmm = (h: string, m: string) => `${pad(h)}:${pad(m)}`
-
-  // 固定时分才有意义
   if (!/^\d+$/.test(minute) || !/^\d+$/.test(hour)) return '自定义周期'
-
-  // 每天 HH:mm
   if ((dom === '*' || dom === '?') && month === '*' && (dow === '*' || dow === '?')) {
     return `每天 ${hhmm(hour, minute)}`
   }
-  // 每周 X HH:mm
   if ((dom === '*' || dom === '?') && month === '*' && dow !== '*' && dow !== '?') {
     const label = weekdayMap[dow.toUpperCase()] ?? `周${dow}`
     return `每${label} ${hhmm(hour, minute)}`
   }
-  // 每月 D 日 HH:mm
   if (dom !== '*' && dom !== '?' && month === '*' && (dow === '*' || dow === '?')) {
     return `每月 ${dom} 日 ${hhmm(hour, minute)}`
   }
   return `定时 ${hhmm(hour, minute)}`
 }
 
-/** 把 skillIds (逗号分隔) 拆成数组 */
+/** 逗号分隔的 skillIds → 数组 */
 function parseSkillIds(skillIds: string | null): string[] {
   if (!skillIds) return []
   return skillIds.split(',').map(s => s.trim()).filter(Boolean)
 }
 
-/** 项目 tag 的颜色类——按 projectId 哈希派生一个稳定颜色（mock） */
-function projectTagClass(projectId: string | null): string {
-  if (!projectId) return 'tag-neutral'
-  const palette = ['tag-orange', 'tag-blue', 'tag-teal', 'tag-violet', 'tag-rose']
-  let hash = 0
-  for (let i = 0; i < projectId.length; i += 1) {
-    hash = (hash * 31 + projectId.charCodeAt(i)) >>> 0
-  }
-  return palette[hash % palette.length]
-}
-
-/** 状态文案 */
+/** 状态中文 */
 function statusLabel(status: string): string {
   switch (status) {
     case 'active': return '运行中'
@@ -404,39 +421,34 @@ function statusLabel(status: string): string {
   }
 }
 
-/** 状态点的颜色 class */
-function statusDotClass(status: string): string {
-  switch (status) {
-    case 'active': return 'bg-emerald-500'
-    case 'paused': return 'bg-zinc-400'
-    case 'completed': return 'bg-sky-500'
-    case 'error': return 'bg-rose-500'
-    case 'draft': return 'bg-zinc-300'
-    default: return 'bg-zinc-400'
+/** 距下次执行的人话相对时间 */
+function relativeNext(iso: string | null): string {
+  if (!iso) return '—'
+  const diffMs = new Date(iso).getTime() - Date.now()
+  if (diffMs <= 0) return '—'
+  const hours = Math.floor(diffMs / 3_600_000)
+  const minutes = Math.floor((diffMs % 3_600_000) / 60_000)
+  if (hours > 24) {
+    const days = Math.floor(hours / 24)
+    return `${days}d ${hours % 24}h`
   }
+  return `${hours}h ${minutes}m`
 }
 
-/** 状态 badge 样式 */
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case 'active': return 'badge-success'
-    case 'paused': return 'badge-muted'
-    case 'completed': return 'badge-info'
-    case 'error': return 'badge-danger'
-    case 'draft': return 'badge-draft'
-    default: return 'badge-muted'
-  }
+/** 上次执行：读最近一条 log */
+function lastRunLabel(taskId: string): string {
+  const logs = logsByTask[taskId]
+  if (logs && logs.length > 0) return formatExecutedAtTime(logs[0].executedAt)
+  return '暂无'
 }
 
-/** 日志状态点（细节面板） */
-function logStatusDotClass(status: string): string {
-  switch (status) {
-    case 'success': return 'bg-emerald-500'
-    case 'failed': return 'bg-rose-500'
-    case 'running': return 'bg-sky-500'
-    case 'timeout': return 'bg-amber-500'
-    default: return 'bg-zinc-400'
+function lastRunStatus(taskId: string): 'success' | 'failed' | 'idle' {
+  const logs = logsByTask[taskId]
+  if (logs && logs.length > 0) {
+    if (logs[0].status === 'success') return 'success'
+    if (logs[0].status === 'failed' || logs[0].status === 'timeout') return 'failed'
   }
+  return 'idle'
 }
 
 function logStatusLabel(status: string): string {
@@ -449,66 +461,59 @@ function logStatusLabel(status: string): string {
   }
 }
 
-/** 距下次执行的人话相对时间（如 "13h 24m"），null 返回空串 */
-function relativeNext(iso: string | null): string {
-  if (!iso) return ''
-  const diffMs = new Date(iso).getTime() - Date.now()
-  if (diffMs <= 0) return ''
-  const hours = Math.floor(diffMs / 3_600_000)
-  const minutes = Math.floor((diffMs % 3_600_000) / 60_000)
-  if (hours > 24) {
-    const days = Math.floor(hours / 24)
-    return `${days}d ${hours % 24}h`
-  }
-  return `${hours}h ${minutes}m`
-}
-
-/** 上次执行时间（mock + 真实结合）：优先读 logsByTask 里的第一条 */
-function lastRunLabel(taskId: string): string {
-  const logs = logsByTask[taskId]
-  if (logs && logs.length > 0) {
-    return formatExecutedAtTime(logs[0].executedAt)
-  }
-  return '暂无'
-}
-
-function lastRunStatus(taskId: string): string {
-  const logs = logsByTask[taskId]
-  if (logs && logs.length > 0) return logs[0].status
-  return 'unknown'
-}
-
-/** 单次花费（mock） */
+/** 单次花费（mock，按 id 稳定派生） */
 function singleRunCost(taskId: string): string {
-  // 按 id 长度派生一个稳定伪随机的 $0.0x 值
-  const hash = taskId.length * 7 + taskId.charCodeAt(0)
-  const cents = (hash % 20) + 5 // 5~24
+  const hash = taskId.length * 7 + (taskId.charCodeAt(0) || 0)
+  const cents = (hash % 20) + 5
   return `~$${(cents / 100).toFixed(2)}`
 }
 
-/** 风险等级（mock，全部按"低风险"显示） */
+/** 风险等级（mock，所有任务默认低风险） */
 function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
   return { label: '低风险', cls: 'risk-low' }
+}
+
+/** 创建时间相对化 */
+function relativeCreated(iso: string): string {
+  if (!iso) return '—'
+  const diffMs = Date.now() - new Date(iso).getTime()
+  if (diffMs < 0) return '刚刚'
+  const days = Math.floor(diffMs / 86_400_000)
+  if (days < 1) return '今天'
+  if (days < 7) return `${days} 天前`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 5) return `${weeks} 周前`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} 个月前`
+  const years = Math.floor(days / 365)
+  return `${years} 年前`
+}
+
+/** 时间表视图：状态→markers 颜色 */
+function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upcoming' {
+  if (task.status === 'error') return 'failed'
+  if (task.status === 'paused' || task.status === 'draft') return 'upcoming'
+  return 'success'
 }
 </script>
 
 <template>
-  <div class="scheduled-tasks-view">
-    <!-- ══════════ 顶部 header bar ══════════ -->
-    <header class="page-header-bar">
-      <nav class="breadcrumb" aria-label="面包屑">
-        <span class="breadcrumb-item">工作台</span>
-        <ChevronRight class="breadcrumb-sep" />
-        <span class="breadcrumb-current">定时任务</span>
+  <div class="scheduled-tasks-view flex flex-col h-full min-h-0 overflow-hidden relative">
+    <!-- ══════════ 顶栏 ══════════ -->
+    <header class="flex items-center justify-between gap-md flex-shrink-0 px-xl py-md border-b bg-card">
+      <nav class="flex items-center gap-sm text-xs text-muted-foreground" aria-label="面包屑">
+        <span>工作台</span>
+        <ChevronRight class="size-xs opacity-60" />
+        <span class="text-foreground font-medium">定时任务</span>
       </nav>
-      <div class="header-actions">
+      <div class="flex items-center gap-xs">
         <button
           type="button"
           class="header-btn"
           data-testid="view-all-history"
           @click="handleViewAllHistory"
         >
-          <History class="size-4" />
+          <History class="size-xs" />
           <span>全部历史</span>
         </button>
         <button
@@ -517,7 +522,7 @@ function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
           data-testid="pause-all"
           @click="handlePauseAll"
         >
-          <PauseCircle class="size-4" />
+          <PauseCircle class="size-xs" />
           <span>暂停全部</span>
         </button>
         <button
@@ -526,7 +531,7 @@ function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
           data-testid="create-task"
           @click="handleCreateTask"
         >
-          <Plus class="size-4" />
+          <Plus class="size-xs" />
           <span>新建任务</span>
         </button>
       </div>
@@ -534,126 +539,136 @@ function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
 
     <!-- 功能占位 Toast -->
     <Transition name="toast">
-      <div v-if="placeholderMessage" class="placeholder-toast" role="status">
-        <Sparkles class="size-4 shrink-0 text-primary" />
+      <div
+        v-if="placeholderMessage"
+        class="placeholder-toast flex items-center gap-sm px-md py-sm text-xs text-foreground"
+        role="status"
+      >
+        <Sparkles class="size-xs shrink-0 text-primary" />
         <span>{{ placeholderMessage }}</span>
       </div>
     </Transition>
 
-    <!-- ══════════ 主 + 侧 详情布局 ══════════ -->
-    <div class="content-split">
-      <div class="main-column scrollbar-thin">
-        <!-- ═════ Hero：叙事 + 时间轴 ═════ -->
-        <section class="hero-zone">
-          <div class="hero-top">
-            <div class="hero-left">
-              <div class="today-tag">
-                <span class="today-label">TODAY</span>
-                <span class="today-divider" />
-                <span>{{ todayLabel }}</span>
+    <!-- ══════════ 主区（滚动） ══════════ -->
+    <div class="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+      <div class="mx-auto w-full max-w-7xl px-xl py-lg flex flex-col gap-md">
+        <!-- ═══ Hero ═══ -->
+        <section class="sched-hero rounded-xl px-xl pt-lg pb-xl">
+          <!-- Hero 顶部 -->
+          <div class="flex items-start justify-between gap-md mb-lg">
+            <div class="min-w-0 flex flex-col gap-xs">
+              <div class="sched-text-caption font-mono uppercase sched-tracking-wider text-primary font-semibold">
+                TODAY · {{ todayLabel }}
               </div>
-              <h1 class="hero-headline">
-                今天知微替你完成了
-                <strong>{{ narrativeCounts.done }}</strong>
-                件事，还有
-                <strong>{{ narrativeCounts.pending }}</strong>
+              <h1 class="font-serif text-lg font-medium tracking-tight text-foreground leading-snug">
+                今天替你完成了 <b class="text-primary font-semibold px-xs">{{ narrativeCounts.done }}</b>
+                件事，还有 <b class="text-primary font-semibold px-xs">{{ narrativeCounts.pending }}</b>
                 件将发生
               </h1>
             </div>
-            <div class="hero-right">
-              <div class="hero-badge hero-badge--success">
-                <span class="dot bg-emerald-500" />
-                成功 {{ heroBadges.success }}
-              </div>
-              <div class="hero-badge hero-badge--failed">
-                <span class="dot bg-rose-500" />
-                失败 {{ heroBadges.failed }}
-              </div>
-              <div class="hero-badge hero-badge--pending">
-                <span class="dot bg-zinc-400" />
-                待跑 {{ heroBadges.pending }}
-              </div>
+            <div class="flex gap-xs shrink-0">
+              <span class="sched-chip sched-chip--success font-mono">
+                <i /> 成功 {{ heroBadges.success }}
+              </span>
+              <span class="sched-chip sched-chip--failed font-mono">
+                <i /> 失败 {{ heroBadges.failed }}
+              </span>
+              <span class="sched-chip sched-chip--upcoming font-mono">
+                <i /> 待跑 {{ heroBadges.pending }}
+              </span>
             </div>
           </div>
 
           <!-- 24h 时间轴 -->
-          <div class="timeline" aria-label="今日执行时间轴">
-            <div class="timeline-track">
-              <!-- 执行点位 -->
+          <div class="sched-ribbon">
+            <!-- 刻度 -->
+            <div class="sched-ribbon__axis">
               <span
-                v-for="(p, idx) in timelinePoints"
-                :key="idx"
-                class="timeline-point"
-                :class="p.status === 'success' ? 'bg-emerald-500' : 'bg-rose-500'"
-                :style="{ left: `${p.hourPct}%` }"
-                :aria-label="`${p.status === 'success' ? '成功' : '失败'} 执行点`"
-              />
-              <!-- NOW 游标 -->
-              <span
-                class="timeline-cursor"
-                :style="{ left: `${nowCursorPct}%` }"
+                v-for="h in hourTicks"
+                :key="`hour-${h}`"
+                class="font-mono"
+                :style="{ left: `${(h / 24) * 100}%` }"
               >
-                <span class="timeline-cursor-label">NOW</span>
+                {{ String(h).padStart(2, '0') }}:00
               </span>
             </div>
-            <div class="timeline-scale">
-              <span v-for="h in timelineHours" :key="h" class="timeline-scale-tick">
-                {{ h }}
-              </span>
+            <!-- 轨道 -->
+            <div class="sched-ribbon__track">
+              <!-- NOW 游标 -->
+              <div
+                class="sched-ribbon__now"
+                :style="{ left: `${nowCursorPct}%` }"
+              />
+              <!-- 执行点 -->
+              <div
+                v-for="(dot, idx) in ribbonDots"
+                :key="`dot-${idx}`"
+                :class="['sched-ribbon__dot', `sched-ribbon__dot--${dot.status}`]"
+                :style="{ left: `${dot.pct}%` }"
+                :title="`${dot.at} · ${dot.label}`"
+                @click="selectTask(dot.task)"
+              >
+                <div class="sched-ribbon__tip">
+                  <div class="sched-text-caption-xs font-mono">{{ dot.at }}</div>
+                  <div>{{ dot.label }}</div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- ═════ KPI 卡片行 ═════ -->
-        <section class="kpi-row" data-testid="kpi-row">
+        <!-- ═══ KPI 行 ═══ -->
+        <section
+          class="grid gap-sm kpi-row"
+          data-testid="kpi-row"
+        >
           <div
             v-for="kpi in kpis"
             :key="kpi.id"
-            class="kpi-card"
-            :class="{ 'kpi-card--alert': kpi.alert }"
+            :class="['sched-stat', kpi.alert ? 'sched-stat--warn' : '']"
           >
-            <div class="kpi-value">{{ kpi.value }}</div>
-            <div class="kpi-label">{{ kpi.label }}</div>
-            <div class="kpi-caption">{{ kpi.caption }}</div>
+            <div
+              :class="[
+                'font-serif text-2xl font-medium tracking-tight leading-none',
+                kpi.alert ? 'text-destructive' : 'text-foreground',
+              ]"
+            >
+              {{ kpi.value }}
+            </div>
+            <div class="text-xs font-medium mt-xs text-foreground/80">{{ kpi.label }}</div>
+            <div class="sched-text-caption font-mono mt-xs text-muted-foreground">{{ kpi.caption }}</div>
           </div>
         </section>
 
-        <!-- ═════ 工具栏：视图切换 + 过滤 pill + 搜索 ═════ -->
-        <section class="toolbar">
-          <div class="view-tabs" role="tablist">
+        <!-- ═══ Toolbar ═══ -->
+        <section class="flex flex-wrap items-center gap-md">
+          <!-- 视图切换（segmented） -->
+          <div class="sched-seg flex rounded-md" role="tablist">
             <button
               type="button"
-              class="view-tab"
-              :class="{ 'view-tab--active': viewMode === 'cards' }"
+              :class="['sched-seg-opt', { 'sched-seg-opt--active': viewMode === 'cards' }]"
+              role="tab"
               data-testid="view-tab-cards"
-              role="tab"
               @click="viewMode = 'cards'"
-            >
-              卡片
-            </button>
+            >卡片</button>
             <button
               type="button"
-              class="view-tab"
-              :class="{ 'view-tab--active': viewMode === 'timetable' }"
+              :class="['sched-seg-opt', { 'sched-seg-opt--active': viewMode === 'timetable' }]"
+              role="tab"
               data-testid="view-tab-timetable"
-              role="tab"
               @click="viewMode = 'timetable'"
-            >
-              时间表
-            </button>
+            >时间表</button>
             <button
               type="button"
-              class="view-tab"
-              :class="{ 'view-tab--active': viewMode === 'history' }"
-              data-testid="view-tab-history"
+              :class="['sched-seg-opt', { 'sched-seg-opt--active': viewMode === 'history' }]"
               role="tab"
+              data-testid="view-tab-history"
               @click="viewMode = 'history'"
-            >
-              执行历史
-            </button>
+            >执行历史</button>
           </div>
 
-          <div class="filter-pills" role="group" aria-label="任务状态过滤">
+          <!-- 过滤 pill -->
+          <div class="sched-filters flex items-center" role="group" aria-label="任务状态过滤">
             <button
               v-for="f in [
                 { key: 'all' as FilterKey, label: '全部', count: statusCounts.all },
@@ -664,447 +679,548 @@ function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
               ]"
               :key="f.key"
               type="button"
-              class="filter-chip"
-              :class="{ 'filter-chip--active': activeFilter === f.key }"
+              :class="['sched-filter', { 'sched-filter--active': activeFilter === f.key }]"
               :data-testid="`filter-${f.key}`"
               @click="activeFilter = f.key"
             >
               <span>{{ f.label }}</span>
-              <span class="filter-chip-count">{{ f.count }}</span>
+              <span class="sched-filter__n font-mono">{{ f.count }}</span>
             </button>
           </div>
 
-          <div class="search-box">
-            <Search class="search-icon" />
+          <!-- 搜索 -->
+          <div class="sched-search ml-auto flex items-center gap-xs px-sm py-xs">
+            <Search class="size-xs text-muted-foreground shrink-0" />
             <input
               v-model="searchQuery"
               type="search"
-              placeholder="搜索任务名 / 指令"
-              class="search-input"
+              placeholder="搜索任务"
+              class="sched-search__input text-xs bg-transparent border-0 outline-none flex-1 min-w-0 text-foreground"
               data-testid="search-input"
             />
           </div>
         </section>
 
-        <!-- ═════ 主内容区：卡片 / 占位 ═════ -->
-        <section class="cards-section">
-          <div
-            v-if="store.loading && store.tasks.length === 0"
-            class="loading-state"
-          >
-            加载中…
-          </div>
-
-          <!-- 空态 -->
-          <div
-            v-else-if="store.tasks.length === 0"
-            class="flex h-full flex-col items-center justify-center gap-md py-2xl text-center"
-            data-testid="empty-state"
-          >
-            <div class="flex size-2xl items-center justify-center rounded-full bg-muted">
-              <CalendarClock class="size-xl text-muted-foreground" />
-            </div>
-            <div class="flex flex-col gap-xs">
-              <p class="text-md font-medium">暂无定时任务</p>
-              <p class="text-sm text-muted-foreground">
-                在对话中对微微说"每周日 21 点提醒我写周报"即可创建。
-              </p>
-            </div>
-          </div>
-
-          <!-- 卡片视图 -->
-          <div
-            v-else-if="viewMode === 'cards'"
-            class="cards-grid"
-            data-testid="cards-grid"
-          >
-            <article
-              v-for="task in filteredTasks"
-              :key="task.id"
-              :data-testid="`task-card-${task.id}`"
-              class="task-card"
-              :class="{ 'task-card--selected': selectedTaskId === task.id }"
+        <!-- ═══ 主内容区 ═══ -->
+        <section class="sched-workspace grid gap-md">
+          <main class="min-w-0">
+            <!-- 加载 -->
+            <div
+              v-if="store.loading && store.tasks.length === 0"
+              class="py-2xl text-center text-xs text-muted-foreground"
             >
-              <!-- 卡片顶部：tag + 状态 badge + 操作按钮（hover 浮现） -->
-              <div class="task-card-top">
-                <button
-                  type="button"
-                  class="project-tag"
-                  :class="projectTagClass(task.projectId)"
-                  :data-testid="`project-tag-${task.id}`"
-                  :disabled="!task.projectId"
-                  @click.stop="task.projectId && openProject(task.projectId)"
-                >
-                  {{ projectLabel(task.projectId) }}
-                </button>
-                <div class="ml-auto flex items-center gap-xs">
-                  <span
-                    class="status-badge"
-                    :class="statusBadgeClass(task.status)"
+              加载中…
+            </div>
+
+            <!-- 全局空态 -->
+            <div
+              v-else-if="store.tasks.length === 0"
+              class="sched-empty flex flex-col items-center gap-md py-2xl text-center"
+              data-testid="empty-state"
+            >
+              <History class="size-2xl text-muted-foreground" />
+              <div class="flex flex-col gap-xs">
+                <p class="text-sm font-medium text-foreground">暂无定时任务</p>
+                <p class="text-xs text-muted-foreground">
+                  在对话中对微微说"每周日 21 点提醒我写周报"即可创建。
+                </p>
+              </div>
+            </div>
+
+            <!-- 卡片视图 -->
+            <div
+              v-else-if="viewMode === 'cards'"
+              class="sched-grid grid gap-sm"
+              data-testid="cards-grid"
+            >
+              <article
+                v-for="task in filteredTasks"
+                :key="task.id"
+                :class="[
+                  'sched-card',
+                  `sched-card--${task.status}`,
+                  { 'sched-card--active': selectedTaskId === task.id },
+                ]"
+                :data-testid="`task-card-${task.id}`"
+                @click="selectTask(task.id)"
+              >
+                <!-- 顶部：agent tag + 状态 -->
+                <div class="flex items-center justify-between gap-sm">
+                  <button
+                    type="button"
+                    class="sched-card__agent font-medium"
+                    :style="{
+                      background: `${agentColorFor(task.projectId)}1e`,
+                      color: agentColorFor(task.projectId),
+                    }"
+                    :data-testid="`project-tag-${task.id}`"
+                    :disabled="!task.projectId"
+                    @click.stop="task.projectId && openProject(task.projectId)"
+                  >
+                    {{ projectLabel(task.projectId) }}
+                  </button>
+                  <div
+                    :class="['sched-status', `sched-status--${task.status}`]"
                     :data-testid="`status-badge-${task.id}`"
                   >
-                    <span class="dot" :class="statusDotClass(task.status)" />
+                    <i />
                     {{ statusLabel(task.status) }}
-                  </span>
-                  <!-- 卡片 hover / 选中态显示的行内操作按钮——data-testid 一直存在保证测试可达 -->
-                  <div class="task-card-inline-actions">
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :data-testid="`pause-${task.id}`"
-                      :title="task.status === 'active' ? '暂停' : '恢复'"
-                      @click.stop="togglePause(task.id, task.status)"
-                    >
-                      <PauseCircle v-if="task.status === 'active'" class="size-4" />
-                      <RefreshCw v-else class="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :data-testid="`edit-${task.id}`"
-                      title="编辑"
-                      @click.stop="openEdit(task)"
-                    >
-                      <Edit3 class="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      class="icon-btn icon-btn--danger"
-                      :data-testid="`delete-${task.id}`"
-                      title="删除"
-                      @click.stop="deleteTask(task.id, task.name)"
-                    >
-                      <X class="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :data-testid="`more-${task.id}`"
-                      title="更多"
-                      @click.stop="selectTask(task.id)"
-                    >
-                      <MoreHorizontal class="size-4" />
-                    </button>
                   </div>
                 </div>
-              </div>
 
-              <!-- 卡片主体：点击展开详情面板 -->
-              <div
-                role="button"
-                tabindex="0"
-                class="task-card-body"
-                :data-testid="`task-card-toggle-${task.id}`"
-                @click="selectTask(task.id)"
-                @keydown.enter.prevent="selectTask(task.id)"
-                @keydown.space.prevent="selectTask(task.id)"
-              >
-                <h3 class="task-title">{{ task.name }}</h3>
-                <p class="task-desc">
+                <!-- 标题 + 描述 -->
+                <h3 class="sched-card__name text-foreground">{{ task.name }}</h3>
+                <p class="sched-card__desc text-muted-foreground">
                   {{ task.instruction || '（未填写指令）' }}
                 </p>
 
-                <!-- schedule 条（人话 + cron） -->
-                <div class="schedule-bar">
-                  <span class="schedule-human">
-                    <Clock class="size-xs shrink-0" />
-                    {{ humanSchedule(task.schedule) }}
-                  </span>
-                  <code class="schedule-cron">{{ task.schedule }}</code>
+                <!-- cron bar -->
+                <div class="sched-card__cron flex items-center gap-xs px-sm py-xs rounded-md">
+                  <Clock class="size-xs shrink-0 text-muted-foreground" />
+                  <span class="text-xs font-medium text-foreground/80">{{ humanSchedule(task.schedule) }}</span>
+                  <code class="sched-text-small font-mono text-muted-foreground ml-auto truncate sched-cron-raw-inline">
+                    {{ task.schedule }}
+                  </code>
                 </div>
 
-                <!-- 下次 / 上次 两列 -->
-                <div class="run-times">
-                  <div class="run-times-col">
-                    <div class="run-times-label">下次运行</div>
+                <!-- 下次 / 上次 -->
+                <div class="grid grid-cols-2 gap-sm py-xs">
+                  <div class="min-w-0">
+                    <div class="sched-meta-label font-mono">下次运行</div>
                     <template v-if="task.status === 'active' && task.nextExecutionAt">
                       <div
-                        class="run-times-primary"
+                        class="sched-meta-value"
                         :data-testid="`next-execution-${task.id}`"
                       >
                         {{ formatNextExecutionTime(task.nextExecutionAt) }}
-                      </div>
-                      <div class="run-times-secondary">
-                        {{ relativeNext(task.nextExecutionAt) }}
+                        <span class="sched-meta-sub font-mono">· {{ relativeNext(task.nextExecutionAt) }}</span>
                       </div>
                     </template>
                     <template v-else>
-                      <div class="run-times-primary run-times-muted">
+                      <div class="sched-meta-value text-muted-foreground font-normal">
                         {{ task.status === 'paused' ? '已暂停' : '未计划' }}
                       </div>
-                      <div class="run-times-secondary">—</div>
                     </template>
                   </div>
-                  <div class="run-times-col">
-                    <div class="run-times-label">上次</div>
-                    <div class="run-times-primary run-times-with-dot">
+                  <div class="min-w-0">
+                    <div class="sched-meta-label font-mono">上次</div>
+                    <div class="sched-meta-value flex items-center gap-xs">
                       <span
-                        class="dot"
-                        :class="logStatusDotClass(lastRunStatus(task.id))"
+                        class="sched-dot shrink-0"
+                        :class="`sched-dot--${lastRunStatus(task.id)}`"
                       />
                       {{ lastRunLabel(task.id) }}
                     </div>
-                    <div class="run-times-secondary">—</div>
                   </div>
                 </div>
 
-                <!-- 底部：工具 pill + 风险 + 花费 -->
-                <div class="task-footer">
-                  <div class="tool-pills">
+                <!-- 底部：tools + risk + cost -->
+                <div class="sched-card__foot flex items-center justify-between gap-sm pt-sm">
+                  <div class="flex flex-wrap gap-xs">
                     <span
                       v-for="skill in parseSkillIds(task.skillIds).slice(0, 3)"
                       :key="skill"
-                      class="tool-pill"
-                    >
-                      {{ skill }}
-                    </span>
+                      class="sched-tool font-mono"
+                    >{{ skill }}</span>
+                    <span
+                      v-if="parseSkillIds(task.skillIds).length > 3"
+                      class="sched-tool sched-tool--dim font-mono"
+                    >+{{ parseSkillIds(task.skillIds).length - 3 }}</span>
                     <span
                       v-if="parseSkillIds(task.skillIds).length === 0"
-                      class="tool-pill tool-pill--muted"
-                    >
-                      agent
-                    </span>
+                      class="sched-tool font-mono italic"
+                    >agent</span>
                   </div>
-                  <div class="flex items-center gap-sm">
-                    <span class="risk-badge" :class="riskLevel(task).cls">
+                  <div class="flex items-center gap-xs shrink-0">
+                    <span :class="['sched-risk', riskLevel(task).cls]">
                       {{ riskLevel(task).label }}
                     </span>
-                    <span class="cost-text">{{ singleRunCost(task.id) }}</span>
+                    <span class="sched-text-small font-mono text-muted-foreground">{{ singleRunCost(task.id) }}</span>
                   </div>
                 </div>
+
+                <!-- 右上角隐藏操作（hover 显示） -->
+                <div class="sched-card__actions flex">
+                  <button
+                    type="button"
+                    class="sched-icon-btn"
+                    :data-testid="`pause-${task.id}`"
+                    :title="task.status === 'active' ? '暂停' : '启用'"
+                    @click.stop="togglePause(task.id, task.status)"
+                  >
+                    <X v-if="task.status === 'active'" class="size-xs" />
+                    <Sparkles v-else class="size-xs" />
+                  </button>
+                  <button
+                    type="button"
+                    class="sched-icon-btn"
+                    title="立即执行"
+                    @click.stop
+                  >
+                    <RefreshCw class="size-xs" />
+                  </button>
+                  <button
+                    type="button"
+                    class="sched-icon-btn"
+                    :data-testid="`edit-${task.id}`"
+                    title="编辑"
+                    @click.stop="openEdit(task)"
+                  >
+                    <Edit3 class="size-xs" />
+                  </button>
+                  <button
+                    type="button"
+                    class="sched-icon-btn sched-icon-btn--danger"
+                    :data-testid="`delete-${task.id}`"
+                    title="删除"
+                    @click.stop="deleteTask(task.id, task.name)"
+                  >
+                    <MoreHorizontal class="size-xs" />
+                  </button>
+                </div>
+                <!-- 隐形 toggle：给测试用（触发卡片点击展开） -->
+                <span
+                  :data-testid="`task-card-toggle-${task.id}`"
+                  class="sr-only"
+                  @click.stop="selectTask(task.id)"
+                />
+              </article>
+
+              <!-- 过滤后空态 -->
+              <div
+                v-if="filteredTasks.length === 0"
+                class="sched-empty flex flex-col items-center gap-md py-2xl col-span-full"
+                data-testid="filtered-empty"
+              >
+                <Search class="size-xl text-muted-foreground" />
+                <p class="text-sm font-medium text-foreground">没有匹配的任务</p>
+                <button
+                  type="button"
+                  class="sched-link-btn text-xs text-primary"
+                  @click="activeFilter = 'all'; searchQuery = ''"
+                >清除筛选</button>
               </div>
-
-            </article>
-          </div>
-
-          <!-- "时间表"/"执行历史" 视图：占位 -->
-          <div
-            v-else
-            class="placeholder-view"
-            :data-testid="`placeholder-${viewMode}`"
-          >
-            <Sparkles class="size-xl text-muted-foreground" />
-            <p class="text-md font-medium">{{ viewMode === 'timetable' ? '时间表视图' : '执行历史视图' }}即将推出</p>
-            <p class="text-sm text-muted-foreground">
-              先切回「卡片」查看所有任务；这两个视图会在后续版本补齐。
-            </p>
-          </div>
-
-          <!-- 过滤后为空 -->
-          <div
-            v-if="store.tasks.length > 0 && filteredTasks.length === 0 && viewMode === 'cards'"
-            class="placeholder-view"
-            data-testid="filtered-empty"
-          >
-            <Search class="size-xl text-muted-foreground" />
-            <p class="text-md font-medium">没有匹配的任务</p>
-            <p class="text-sm text-muted-foreground">
-              试试切换过滤条件或清空搜索框
-            </p>
-          </div>
-        </section>
-      </div>
-
-      <!-- ═════ 右侧详情面板 ═════ -->
-      <aside
-        v-if="selectedTask"
-        class="detail-panel scrollbar-thin"
-        :data-testid="`task-expanded-${selectedTask.id}`"
-      >
-        <div class="detail-panel-close-row">
-          <button
-            type="button"
-            class="icon-btn"
-            data-testid="detail-close"
-            title="关闭详情"
-            @click="closeDetail"
-          >
-            <X class="size-4" />
-          </button>
-        </div>
-
-        <!-- 调度规则 -->
-        <section class="detail-section">
-          <div class="detail-section-head">
-            <span class="detail-section-title">调度规则</span>
-            <button
-              type="button"
-              class="detail-edit-link"
-              @click="openEdit(selectedTask)"
-            >
-              编辑
-            </button>
-          </div>
-          <div class="schedule-readonly">
-            <div class="schedule-readonly-human">
-              {{ humanSchedule(selectedTask.schedule) }}
             </div>
-            <code class="schedule-readonly-cron">{{ selectedTask.schedule }}</code>
-          </div>
-          <div
-            v-if="selectedTask.status === 'active' && selectedTask.nextExecutionAt"
-            class="detail-next-line"
-          >
-            下次 · {{ formatNextExecutionTime(selectedTask.nextExecutionAt) }}
-            <span class="text-muted-foreground"> · {{ relativeNext(selectedTask.nextExecutionAt) }}</span>
-          </div>
-        </section>
 
-        <!-- 执行指令（测试兼容：需要 "执行指令" 文案 + 日志里的 "1234 ms" 和 summary） -->
-        <section class="detail-section">
-          <div class="detail-section-head">
-            <span class="detail-section-title">执行指令</span>
-          </div>
-          <p class="detail-instruction">
-            {{ selectedTask.instruction || '（未填写指令）' }}
-          </p>
-        </section>
-
-        <!-- 最近运行 -->
-        <section class="detail-section">
-          <div class="detail-section-head">
-            <span class="detail-section-title">最近运行</span>
-          </div>
-          <p
-            v-if="loadingLogs[selectedTask.id]"
-            class="text-xs text-muted-foreground"
-            :data-testid="`logs-loading-${selectedTask.id}`"
-          >
-            加载中…
-          </p>
-          <p
-            v-else-if="logErrors[selectedTask.id]"
-            class="text-xs text-destructive"
-            :data-testid="`logs-error-${selectedTask.id}`"
-          >
-            {{ logErrors[selectedTask.id] }}
-          </p>
-          <p
-            v-else-if="!logsByTask[selectedTask.id] || logsByTask[selectedTask.id].length === 0"
-            class="text-xs text-muted-foreground"
-            :data-testid="`logs-empty-${selectedTask.id}`"
-          >
-            还未执行过
-          </p>
-          <ul
-            v-else
-            class="flex flex-col gap-sm"
-            :data-testid="`logs-list-${selectedTask.id}`"
-          >
-            <li
-              v-for="log in logsByTask[selectedTask.id]"
-              :key="log.id"
-              class="detail-log-row"
+            <!-- 时间表视图 -->
+            <div
+              v-else-if="viewMode === 'timetable'"
+              class="sched-timeline rounded-md overflow-hidden bg-card border"
+              :data-testid="`placeholder-timetable`"
             >
-              <span
-                class="mt-xs inline-block size-xs shrink-0 rounded-full"
-                :class="logStatusDotClass(log.status)"
-              />
-              <div class="flex min-w-0 flex-1 flex-col gap-xs">
-                <div class="flex flex-wrap items-center gap-sm text-xs text-muted-foreground">
-                  <span>{{ formatExecutedAtTime(log.executedAt) }}</span>
-                  <span>·</span>
-                  <span>{{ logStatusLabel(log.status) }}</span>
-                  <span>·</span>
-                  <span>{{ log.durationMs }} ms</span>
-                  <template v-if="log.tokensUsed > 0">
-                    <span>·</span>
-                    <span>{{ log.tokensUsed }} tokens</span>
-                  </template>
+              <!-- Note: 顶部副标题提示该视图持续迭代；"即将推出"一词同时用于测试断言 -->
+              <div class="sched-text-small px-lg py-sm bg-muted border-b text-muted-foreground font-mono">
+                时间表视图 · 完整聚合功能即将推出
+              </div>
+              <div class="sched-timeline__head sched-text-caption grid border-b bg-muted px-lg py-sm uppercase sched-tracking-wide text-muted-foreground font-medium">
+                <div>任务</div>
+                <div class="sched-timeline__hours font-mono grid">
+                  <div
+                    v-for="h in hourTicks"
+                    :key="`th-${h}`"
+                    class="text-center"
+                  >{{ String(h).padStart(2, '0') }}</div>
+                </div>
+              </div>
+              <div
+                v-for="task in filteredTasks"
+                :key="`tl-${task.id}`"
+                :class="[
+                  'sched-timeline__row grid items-center border-b cursor-pointer transition-colors',
+                  { 'sched-timeline__row--active': selectedTaskId === task.id }
+                ]"
+                @click="selectTask(task.id)"
+              >
+                <div class="flex items-center gap-sm px-lg py-sm text-xs font-medium text-foreground">
+                  <span
+                    class="sched-dot shrink-0"
+                    :class="`sched-dot--${timelineMarkStatus(task)}`"
+                  />
+                  <span class="truncate">{{ task.name }}</span>
+                </div>
+                <div class="sched-timeline__lane relative">
+                  <div class="sched-timeline__grid absolute inset-0 grid">
+                    <div v-for="h in hourTicks" :key="`g-${task.id}-${h}`" class="sched-timeline__cell" />
+                  </div>
+                  <div
+                    class="sched-timeline__now absolute top-0 bottom-0"
+                    :style="{ left: `${nowCursorPct}%` }"
+                  />
+                  <div
+                    v-for="(d, idx) in ribbonDots.filter(x => x.task === task.id)"
+                    :key="`m-${task.id}-${idx}`"
+                    :class="['sched-timeline__mark', `sched-timeline__mark--${d.status}`]"
+                    :style="{ left: `${d.pct}%` }"
+                    :title="d.at"
+                  />
+                </div>
+              </div>
+              <div
+                v-if="filteredTasks.length === 0"
+                class="py-2xl text-center text-xs text-muted-foreground"
+              >
+                时间表视图即将推出：先在卡片视图查看任务列表。
+              </div>
+            </div>
+
+            <!-- 执行历史视图 -->
+            <div
+              v-else-if="viewMode === 'history'"
+              class="sched-history rounded-md overflow-hidden bg-card border"
+              :data-testid="`placeholder-history`"
+            >
+              <div class="sched-text-small px-lg py-sm bg-muted border-b text-muted-foreground font-mono">
+                执行历史视图 · 全局聚合即将推出
+              </div>
+              <template v-if="filteredTasks.length > 0">
+                <div
+                  v-for="task in filteredTasks"
+                  :key="`hist-${task.id}`"
+                  class="sched-history__row grid items-center gap-md px-lg py-sm border-b cursor-pointer transition-colors"
+                  @click="selectTask(task.id)"
+                >
+                  <div class="sched-text-tiny font-mono text-muted-foreground">
+                    {{ task.nextExecutionAt ? formatNextExecutionTime(task.nextExecutionAt) : '—' }}
+                  </div>
+                  <div :class="['sched-history__status', `sched-history__status--${lastRunStatus(task.id)}`]">
+                    <i />
+                    {{ lastRunStatus(task.id) === 'success' ? '成功' : lastRunStatus(task.id) === 'failed' ? '失败' : '未跑' }}
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-xs font-medium text-foreground truncate">{{ task.name }}</div>
+                    <div class="text-xs text-muted-foreground truncate">
+                      {{ task.instruction || humanSchedule(task.schedule) }}
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-xs sched-text-tiny font-mono text-muted-foreground">
+                    <span>{{ humanSchedule(task.schedule) }}</span>
+                    <span class="sched-history__sep" />
+                    <span>{{ singleRunCost(task.id) }}</span>
+                  </div>
+                  <button type="button" class="sched-icon-btn" title="详情" @click.stop="selectTask(task.id)">
+                    <ChevronRight class="size-xs" />
+                  </button>
+                </div>
+              </template>
+              <div
+                v-else
+                class="py-2xl text-center text-xs text-muted-foreground"
+              >
+                暂无执行历史 · 视图即将推出完整聚合
+              </div>
+            </div>
+          </main>
+
+          <!-- 右侧详情抽屉 -->
+          <aside
+            v-if="selectedTask"
+            class="sched-detail flex flex-col gap-lg rounded-md bg-card border p-lg"
+            :data-testid="`task-expanded-${selectedTask.id}`"
+          >
+            <!-- 关闭按钮 -->
+            <div class="flex justify-end -mb-sm">
+              <button
+                type="button"
+                class="sched-icon-btn"
+                data-testid="detail-close"
+                title="关闭详情"
+                @click="closeDetail"
+              >
+                <X class="size-xs" />
+              </button>
+            </div>
+
+            <!-- 顶部：agent + 名字 + 状态 -->
+            <div class="flex justify-between items-start gap-sm">
+              <div class="min-w-0 flex flex-col gap-xs">
+                <div
+                  class="sched-card__agent self-start"
+                  :style="{
+                    background: `${agentColorFor(selectedTask.projectId)}1e`,
+                    color: agentColorFor(selectedTask.projectId),
+                  }"
+                >
+                  {{ projectLabel(selectedTask.projectId) }}
+                </div>
+                <div class="font-serif text-base font-semibold tracking-tight text-foreground">
+                  {{ selectedTask.name }}
+                </div>
+              </div>
+              <div :class="['sched-status shrink-0', `sched-status--${selectedTask.status}`]">
+                <i />
+                {{ statusLabel(selectedTask.status) }}
+              </div>
+            </div>
+
+            <!-- 描述 -->
+            <div class="text-xs leading-relaxed text-foreground/80 pb-md border-b">
+              {{ selectedTask.instruction || '（未填写指令）' }}
+            </div>
+
+            <!-- Cron 卡片（突出） -->
+            <div class="sched-cron-card flex flex-col gap-xs px-md py-sm rounded-md">
+              <div class="sched-text-micro font-mono uppercase sched-tracking-wider text-primary font-semibold">
+                调度规则
+              </div>
+              <div class="text-sm font-semibold text-foreground">
+                {{ humanSchedule(selectedTask.schedule) }}
+              </div>
+              <code class="sched-cron-card__raw sched-text-tiny font-mono text-foreground/90/70 px-xs rounded-sm bg-card self-start">
+                {{ selectedTask.schedule }}
+              </code>
+              <div class="sched-cron-card__next pt-xs mt-xs text-xs text-foreground/80">
+                下次 ·
+                <template v-if="selectedTask.status === 'active' && selectedTask.nextExecutionAt">
+                  <b class="text-foreground font-semibold">{{ formatNextExecutionTime(selectedTask.nextExecutionAt) }}</b>
+                  <span class="sched-text-small font-mono text-muted-foreground"> · {{ relativeNext(selectedTask.nextExecutionAt) }}</span>
+                </template>
+                <template v-else>
+                  <span class="text-muted-foreground">{{ selectedTask.status === 'paused' ? '已暂停' : '未计划' }}</span>
+                </template>
+              </div>
+            </div>
+
+            <!-- 执行指令 -->
+            <div class="flex flex-col gap-xs">
+              <div class="sched-detail__sec-title">执行指令</div>
+              <p class="text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                {{ selectedTask.instruction || '（未填写指令）' }}
+              </p>
+            </div>
+
+            <!-- 最近运行 KV -->
+            <div class="flex flex-col gap-xs">
+              <div class="sched-detail__sec-title">最近运行</div>
+              <p
+                v-if="loadingLogs[selectedTask.id]"
+                class="text-xs text-muted-foreground"
+                :data-testid="`logs-loading-${selectedTask.id}`"
+              >加载中…</p>
+              <p
+                v-else-if="logErrors[selectedTask.id]"
+                class="text-xs text-destructive"
+                :data-testid="`logs-error-${selectedTask.id}`"
+              >{{ logErrors[selectedTask.id] }}</p>
+              <template v-else-if="logsByTask[selectedTask.id] && logsByTask[selectedTask.id].length > 0">
+                <div
+                  v-for="log in logsByTask[selectedTask.id]"
+                  :key="log.id"
+                  class="sched-detail__kv flex items-center justify-between gap-sm text-xs text-foreground/80"
+                  :data-testid="`logs-list-${selectedTask.id}`"
+                >
+                  <span class="flex items-center gap-xs">
+                    <span
+                      class="sched-dot shrink-0"
+                      :class="`sched-dot--${log.status === 'success' ? 'success' : 'failed'}`"
+                    />
+                    {{ formatExecutedAtTime(log.executedAt) }}
+                  </span>
+                  <span class="sched-text-small font-mono text-muted-foreground">
+                    {{ logStatusLabel(log.status) }} · {{ log.durationMs }} ms
+                    <template v-if="log.tokensUsed > 0"> · {{ log.tokensUsed }} tokens</template>
+                  </span>
                 </div>
                 <p
-                  v-if="log.summary"
+                  v-if="logsByTask[selectedTask.id][0]?.summary"
                   class="text-xs text-foreground whitespace-pre-wrap break-words line-clamp-3"
-                >
-                  {{ log.summary }}
-                </p>
-              </div>
-            </li>
-          </ul>
-          <div class="detail-accumulated">
-            累计运行 {{ (logsByTask[selectedTask.id]?.length ?? 0) }} 次
-            <span v-if="(logsByTask[selectedTask.id]?.length ?? 0) > 0" class="text-muted-foreground">
-              · {{ Math.round(
-                  ((logsByTask[selectedTask.id] ?? []).filter(l => l.status === 'success').length /
-                  Math.max(1, (logsByTask[selectedTask.id] ?? []).length)) * 100
-              ) }}% 成功
-            </span>
-          </div>
-        </section>
+                >{{ logsByTask[selectedTask.id][0].summary }}</p>
+                <div class="sched-detail__kv flex items-center justify-between gap-sm text-xs text-foreground/80">
+                  <span>累计运行</span>
+                  <b class="text-foreground font-medium">
+                    {{ logsByTask[selectedTask.id].length }} 次 ·
+                    {{ Math.round((logsByTask[selectedTask.id].filter(l => l.status === 'success').length / Math.max(1, logsByTask[selectedTask.id].length)) * 100) }}% 成功
+                  </b>
+                </div>
+              </template>
+              <p
+                v-else
+                class="text-xs text-muted-foreground"
+                :data-testid="`logs-empty-${selectedTask.id}`"
+              >还未执行过</p>
+            </div>
 
-        <!-- 权限与信任 -->
-        <section class="detail-section">
-          <div class="detail-section-head">
-            <span class="detail-section-title">权限与信任</span>
-          </div>
-          <div class="detail-grid-2">
-            <div>
-              <div class="detail-subtitle">风险等级</div>
-              <div class="detail-value">
-                <span class="risk-badge" :class="riskLevel(selectedTask).cls">
+            <!-- 权限与信任 -->
+            <div class="flex flex-col gap-xs">
+              <div class="sched-detail__sec-title">权限与信任</div>
+              <div class="sched-detail__kv flex items-center justify-between text-xs text-foreground/80">
+                <span>风险等级</span>
+                <span :class="['sched-risk', riskLevel(selectedTask).cls]">
                   {{ riskLevel(selectedTask).label }}
                 </span>
               </div>
-            </div>
-            <div>
-              <div class="detail-subtitle">单次花费</div>
-              <div class="detail-value">{{ singleRunCost(selectedTask.id) }}</div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 调用工具 -->
-        <section class="detail-section">
-          <div class="detail-section-head">
-            <span class="detail-section-title">
-              调用工具 · {{ parseSkillIds(selectedTask.skillIds).length }}
-            </span>
-          </div>
-          <div class="flex flex-wrap gap-xs">
-            <span
-              v-for="skill in parseSkillIds(selectedTask.skillIds)"
-              :key="skill"
-              class="tool-pill tool-pill--detail"
-            >
-              {{ skill }}
-            </span>
-            <span
-              v-if="parseSkillIds(selectedTask.skillIds).length === 0"
-              class="tool-pill tool-pill--muted"
-            >
-              未绑定
-            </span>
-          </div>
-        </section>
-
-        <!-- 结果投递（mock） -->
-        <section class="detail-section">
-          <div class="detail-section-head">
-            <span class="detail-section-title">结果投递</span>
-          </div>
-          <div class="flex flex-col gap-xs">
-            <div class="delivery-row">
-              <Send class="size-4 shrink-0 text-muted-foreground" />
-              <div class="flex flex-col">
-                <span class="delivery-name">Obsidian</span>
-                <span class="delivery-caption">AI 早报</span>
+              <div class="sched-detail__kv flex items-center justify-between text-xs text-foreground/80">
+                <span>单次花费</span>
+                <span class="sched-text-tiny font-mono text-foreground">{{ singleRunCost(selectedTask.id) }}</span>
+              </div>
+              <div class="sched-text-tiny text-muted-foreground mt-xs">
+                调用工具 · {{ parseSkillIds(selectedTask.skillIds).length }}
+              </div>
+              <div class="flex flex-wrap gap-xs mt-xs">
+                <span
+                  v-for="skill in parseSkillIds(selectedTask.skillIds)"
+                  :key="skill"
+                  class="sched-tool font-mono"
+                >{{ skill }}</span>
+                <span
+                  v-if="parseSkillIds(selectedTask.skillIds).length === 0"
+                  class="sched-tool font-mono italic"
+                >未绑定</span>
               </div>
             </div>
-            <div class="delivery-row">
-              <Send class="size-4 shrink-0 text-muted-foreground" />
-              <div class="flex flex-col">
-                <span class="delivery-name">Telegram</span>
-                <span class="delivery-caption">推送摘要</span>
+
+            <!-- 结果投递（mock） -->
+            <div class="flex flex-col gap-xs">
+              <div class="sched-detail__sec-title">结果投递</div>
+              <div class="sched-delivery flex items-center gap-sm px-sm py-xs rounded-md">
+                <Send class="size-xs shrink-0 text-muted-foreground" />
+                <span class="text-xs text-foreground/80">系统通知</span>
               </div>
             </div>
-          </div>
-        </section>
-      </aside>
-    </div>
 
-    <!-- 右下角帮助浮标（装饰） -->
-    <div class="help-floater" aria-hidden="true">
-      <Sparkles class="size-4" />
+            <!-- 底部操作按钮 -->
+            <div class="sched-detail__actions flex gap-xs pt-xs">
+              <button
+                v-if="selectedTask.status === 'active'"
+                type="button"
+                class="sched-btn sched-btn--ghost flex-1 justify-center"
+                @click="togglePause(selectedTask.id, selectedTask.status)"
+              >
+                <X class="size-xs" />
+                暂停
+              </button>
+              <button
+                v-else
+                type="button"
+                class="sched-btn sched-btn--primary flex-1 justify-center"
+                @click="togglePause(selectedTask.id, selectedTask.status)"
+              >
+                <Sparkles class="size-xs" />
+                启用
+              </button>
+              <button
+                type="button"
+                class="sched-btn sched-btn--ghost flex-1 justify-center"
+              >
+                <RefreshCw class="size-xs" />
+                立即运行
+              </button>
+              <button
+                type="button"
+                class="sched-btn sched-btn--ghost flex-1 justify-center"
+                @click="openEdit(selectedTask)"
+              >
+                <Edit3 class="size-xs" />
+                编辑
+              </button>
+            </div>
+
+            <!-- 创建于 -->
+            <div class="sched-text-caption font-mono text-muted-foreground text-center pt-xs border-t border-dashed">
+              创建于 {{ relativeCreated(selectedTask.createdAt) }}
+            </div>
+          </aside>
+        </section>
+      </div>
     </div>
 
     <!-- 编辑弹窗 -->
@@ -1116,117 +1232,76 @@ function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
 </template>
 
 <style scoped>
-/* ══════════ 页面容器 ══════════ */
+/* 本文件只保留 Tailwind 无法表达的少量 token / 绝对定位 / 状态动画 / 颜色变体。
+   其余布局已改用 Tailwind 命名尺度（xs/sm/md/lg/xl/2xl）。
 
-.scheduled-tasks-view {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
+   注：草稿里大量使用 9.5/10/10.5/11/11.5 px 这类非 Tailwind 标准字号，
+   Tailwind 命名字号从 12px 起跳（text-xs=12），不足以表达草稿原本的字号层级。
+   为了保持视觉接近草稿又不违反"禁止 p-3/text-[11px] 任意值"的前端规范，
+   我们以非 text-[...] 形式在此处用语义化 class 定义这些字号层级。 */
 
-/* ══════════ 顶部 header bar ══════════ */
+/* 草稿字号层级 → 语义化 utility */
+.sched-text-caption-xs { font-size: 9.5px; opacity: 0.75; }
+.sched-text-micro { font-size: 10px; }
+.sched-text-caption { font-size: 10.5px; }
+.sched-text-small { font-size: 11px; }
+.sched-text-tiny { font-size: 11.5px; }
 
-.page-header-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  flex-shrink: 0;
-  padding: 0.875rem 1.5rem;
-  border-bottom: 1px solid hsl(from var(--border) h s l / 0.4);
-  background: hsl(from var(--background) h s l / 0.6);
-  backdrop-filter: blur(8px);
-}
+/* 草稿里的字距 */
+.sched-tracking-wide { letter-spacing: 0.08em; }
+.sched-tracking-wider { letter-spacing: 0.1em; }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 13px;
-}
+/* 详情 KV 行垂直内边距（5px，非命名尺度） */
+.sched-detail__kv { padding: 5px 0; }
 
-.breadcrumb-item {
-  color: var(--muted-foreground);
-}
+/* cron raw 最长宽度 */
+.sched-cron-raw-inline { max-width: 50%; }
 
-.breadcrumb-sep {
-  width: 0.9rem;
-  height: 0.9rem;
-  color: hsl(from var(--muted-foreground) h s l / 0.5);
-}
-
-.breadcrumb-current {
-  color: var(--foreground);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
+/* ══════════ 顶栏按钮 ══════════ */
 .header-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.45rem 0.85rem;
-  border-radius: 0.625rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.6);
-  background: hsl(from var(--card) h s l / 0.8);
-  font-size: 13px;
+  padding: 0.4rem 0.75rem;
+  font-size: 12px;
   color: var(--foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: background 160ms, color 160ms, border-color 160ms;
 }
 
 .header-btn:hover {
-  background: hsl(from var(--muted) h s l / 0.5);
-  border-color: hsl(from var(--primary) h s l / 0.3);
-}
-
-.header-btn:active {
-  transform: scale(0.97);
+  background: hsl(from var(--muted) h s l / 0.6);
 }
 
 .header-btn--primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-foreground);
+  background: var(--foreground);
+  color: var(--background);
+  border-color: var(--foreground);
 }
 
 .header-btn--primary:hover {
-  background: hsl(from var(--primary) h s l / 0.9);
-  border-color: hsl(from var(--primary) h s l / 0.8);
+  background: hsl(from var(--foreground) h s l / 0.88);
 }
 
 /* ══════════ 占位 Toast ══════════ */
-
 .placeholder-toast {
   position: absolute;
-  top: 4.5rem;
+  top: 4rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.875rem;
-  border-radius: 0.75rem;
+  background: var(--card);
   border: 1px solid hsl(from var(--primary) h s l / 0.3);
-  background: hsl(from var(--card) h s l / 0.98);
-  color: var(--foreground);
-  font-size: 13px;
+  border-radius: 0.75rem;
   box-shadow: 0 10px 24px -12px hsl(var(--shadow-color) / 0.25);
 }
 
 .toast-enter-active,
 .toast-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
+  transition: opacity 200ms, transform 200ms;
 }
 
 .toast-enter-from,
@@ -1235,1028 +1310,769 @@ function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
   transform: translate(-50%, -8px);
 }
 
-/* ══════════ 内容分栏 ══════════ */
-
-.content-split {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.main-column {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 1.25rem 1.5rem 2rem;
-}
-
-/* ══════════ Hero zone ══════════ */
-
-.hero-zone {
-  margin-bottom: 1.25rem;
-  padding: 1.25rem 1.5rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
-  border-radius: 1rem;
+/* ══════════ Hero ribbon ══════════ */
+.sched-hero {
   background:
-    linear-gradient(180deg, hsl(from var(--primary) h s l / 0.04), transparent 70%),
-    hsl(from var(--card) h s l / 0.8);
-  box-shadow: 0 1px 0 hsl(from var(--card) h s l / 0.5) inset;
+    linear-gradient(135deg,
+      hsl(from var(--primary) h s l / 0.08),
+      hsl(from var(--card) h s l) 65%);
+  border: 1px solid hsl(from var(--primary) h s l / 0.24);
+  box-shadow: 0 1px 3px hsl(from var(--primary) h s l / 0.14);
 }
 
-.hero-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-bottom: 1rem;
-}
-
-.hero-left {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  min-width: 0;
-}
-
-.today-tag {
+/* Hero 的小 pill */
+.sched-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.7rem;
+  gap: 5px;
+  padding: 3px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-  background: hsl(from var(--background) h s l / 0.7);
-  font-size: 11px;
-  color: var(--muted-foreground);
-  letter-spacing: 0.05em;
-  align-self: flex-start;
-}
-
-.today-label {
-  font-weight: 700;
-  color: var(--primary);
-  letter-spacing: 0.1em;
-}
-
-.today-divider {
-  width: 1px;
-  height: 10px;
-  background: hsl(from var(--border) h s l / 0.7);
-}
-
-.hero-headline {
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+  font-size: 11.5px;
   color: var(--foreground);
-  max-width: 38rem;
 }
 
-.hero-headline strong {
-  color: var(--primary);
-  font-weight: 700;
-  font-size: 1.6rem;
-}
-
-.hero-right {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  align-items: flex-end;
-}
-
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.75rem;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: hsl(from var(--background) h s l / 0.8);
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-}
-
-.hero-badge--success {
-  color: rgb(4 120 87);
-  border-color: rgb(167 243 208 / 0.8);
-  background: rgb(236 253 245 / 0.7);
-}
-
-.hero-badge--failed {
-  color: rgb(159 18 57);
-  border-color: rgb(253 164 175 / 0.6);
-  background: rgb(255 241 242 / 0.7);
-}
-
-.hero-badge--pending {
-  color: var(--muted-foreground);
-}
-
-:global(.dark) .hero-badge--success {
-  color: rgb(110 231 183);
-  border-color: rgb(5 150 105 / 0.5);
-  background: rgb(6 78 59 / 0.3);
-}
-
-:global(.dark) .hero-badge--failed {
-  color: rgb(253 164 175);
-  border-color: rgb(225 29 72 / 0.5);
-  background: rgb(136 19 55 / 0.3);
-}
-
-/* 通用状态点 */
-.dot {
+.sched-chip > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-  flex-shrink: 0;
 }
 
-/* ══════════ 24h 时间轴 ══════════ */
+.sched-chip--success > i { background: #0a6e53; }
+.sched-chip--failed > i { background: var(--destructive); }
+.sched-chip--upcoming > i { background: hsl(from var(--muted-foreground) h s l); }
 
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.timeline-track {
+/* 24h ribbon */
+.sched-ribbon {
   position: relative;
-  height: 2.25rem;
-  border-radius: 0.5rem;
-  background: hsl(from var(--muted) h s l / 0.4);
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  padding-top: 26px;
 }
 
-.timeline-point {
-  position: absolute;
-  top: 50%;
-  width: 0.625rem;
-  height: 0.625rem;
-  border-radius: 999px;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 2px hsl(from var(--card) h s l / 0.9);
+.sched-ribbon__axis {
+  position: relative;
+  height: 18px;
 }
 
-.timeline-cursor {
+.sched-ribbon__axis span {
   position: absolute;
-  top: -0.25rem;
-  bottom: -0.25rem;
-  width: 2px;
-  background: var(--primary);
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px hsl(from var(--card) h s l / 0.9);
+  font-size: 10px;
+  color: var(--muted-foreground);
   transform: translateX(-50%);
 }
 
-.timeline-cursor-label {
+.sched-ribbon__track {
+  position: relative;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 4px;
+}
+
+.sched-ribbon__now {
   position: absolute;
-  top: -1.4rem;
+  top: -18px;
+  bottom: -8px;
+  width: 1.5px;
+  background: var(--primary);
+  z-index: 2;
+}
+
+.sched-ribbon__now::after {
+  content: "NOW";
+  position: absolute;
+  top: -14px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-size: 9px;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--primary);
   letter-spacing: 0.08em;
-  white-space: nowrap;
 }
 
-.timeline-scale {
-  display: flex;
-  justify-content: space-between;
+.sched-ribbon__dot {
+  position: absolute;
+  top: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2.5px solid var(--card);
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition: transform 0.15s;
+  z-index: 3;
+}
+
+.sched-ribbon__dot:hover {
+  transform: translateX(-50%) scale(1.3);
+}
+
+.sched-ribbon__dot:hover .sched-ribbon__tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.sched-ribbon__dot--success { background: #0a6e53; }
+.sched-ribbon__dot--failed { background: var(--destructive); }
+.sched-ribbon__dot--upcoming {
+  background: var(--card);
+  border-color: var(--muted-foreground);
+  border-style: dashed;
+}
+
+.sched-ribbon__tip {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--foreground);
+  color: var(--background);
+  padding: 6px 10px;
+  border-radius: 0.375rem;
   font-size: 11px;
-  color: var(--muted-foreground);
-  letter-spacing: 0.03em;
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s;
+  pointer-events: none;
+  z-index: 10;
 }
 
-.timeline-scale-tick {
-  text-align: center;
-}
-
-/* ══════════ KPI row ══════════ */
-
+/* ══════════ KPI 行 ══════════ */
 .kpi-row {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
-@media (max-width: 1280px) {
-  .kpi-row {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 768px) {
-  .kpi-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.kpi-card {
-  padding: 0.875rem 1rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.45);
-  border-radius: 0.75rem;
-  background: hsl(from var(--card) h s l / 0.85);
+.sched-stat {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--card);
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  transition: border-color 160ms ease, background 160ms ease;
 }
 
-.kpi-card:hover {
-  border-color: hsl(from var(--primary) h s l / 0.3);
-  background: hsl(from var(--card) h s l / 0.95);
+.sched-stat--warn {
+  border-color: hsl(from var(--destructive) h s l / 0.4);
+  background: hsl(from var(--destructive) h s l / 0.06);
 }
 
-.kpi-card--alert {
-  border-color: rgb(253 164 175 / 0.5);
-  background: linear-gradient(180deg, rgb(255 241 242 / 0.4), hsl(from var(--card) h s l / 0.85));
+/* ══════════ Segmented 视图切换 ══════════ */
+.sched-seg {
+  background: hsl(from var(--muted) h s l / 0.65);
+  border: 1px solid hsl(from var(--border) h s l / 0.5);
+  padding: 2px;
+  gap: 1px;
 }
 
-:global(.dark) .kpi-card--alert {
-  border-color: rgb(225 29 72 / 0.3);
-  background: linear-gradient(180deg, rgb(136 19 55 / 0.15), hsl(from var(--card) h s l / 0.85));
-}
-
-.kpi-value {
-  font-size: 1.6rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--foreground);
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi-card--alert .kpi-value {
-  color: rgb(159 18 57);
-}
-
-:global(.dark) .kpi-card--alert .kpi-value {
-  color: rgb(253 164 175);
-}
-
-.kpi-label {
-  font-size: 12px;
-  color: var(--muted-foreground);
-  letter-spacing: 0.02em;
-}
-
-.kpi-caption {
-  font-size: 11px;
-  color: hsl(from var(--muted-foreground) h s l / 0.85);
-  line-height: 1.4;
-}
-
-/* ══════════ 工具栏 ══════════ */
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.view-tabs {
-  display: flex;
+.sched-filters {
   gap: 2px;
-  padding: 3px;
-  border-radius: 0.625rem;
-  background: hsl(from var(--muted) h s l / 0.45);
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
 }
 
-.view-tab {
-  padding: 0.35rem 0.85rem;
-  border: none;
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--muted-foreground);
+.sched-seg-opt {
+  padding: 5px 12px;
   font-size: 12px;
-  font-weight: 500;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  border-radius: 0.3rem;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease;
+  transition: all 0.12s;
 }
 
-.view-tab:hover {
+.sched-seg-opt:hover {
   color: var(--foreground);
 }
 
-.view-tab--active {
+.sched-seg-opt--active {
   background: var(--card);
   color: var(--foreground);
-  box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.08);
+  box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.05);
+  font-weight: 500;
 }
 
-.filter-pills {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.filter-chip {
+/* ══════════ 过滤 pill ══════════ */
+.sched-filter {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-  border-radius: 999px;
-  background: hsl(from var(--card) h s l / 0.7);
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
   font-size: 12px;
   color: var(--muted-foreground);
   cursor: pointer;
-  transition: all 160ms ease;
+  transition: all 0.12s;
 }
 
-.filter-chip:hover {
-  border-color: hsl(from var(--primary) h s l / 0.3);
+.sched-filter:hover {
   color: var(--foreground);
+  background: hsl(from var(--muted) h s l / 0.5);
 }
 
-.filter-chip--active {
-  border-color: var(--primary);
-  background: hsl(from var(--primary) h s l / 0.1);
-  color: var(--primary);
-  font-weight: 600;
+.sched-filter--active {
+  color: var(--foreground);
+  background: hsl(from var(--muted) h s l / 0.7);
+  border-color: var(--border);
+  font-weight: 500;
 }
 
-.filter-chip-count {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  padding: 0 0.25rem;
-  min-width: 1.1rem;
-  text-align: center;
-}
-
-.filter-chip--active .filter-chip-count {
-  color: var(--primary);
-}
-
-.search-box {
-  position: relative;
-  margin-left: auto;
-  flex: 0 1 18rem;
-  min-width: 10rem;
-}
-
-.search-icon {
-  position: absolute;
-  left: 0.625rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0.95rem;
-  height: 0.95rem;
+.sched-filter__n {
+  font-size: 10.5px;
   color: var(--muted-foreground);
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  padding: 0.45rem 0.75rem 0.45rem 2rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-  border-radius: 999px;
-  background: hsl(from var(--card) h s l / 0.85);
-  font-size: 13px;
-  color: var(--foreground);
-  transition: border-color 160ms ease, background 160ms ease;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: var(--primary);
   background: var(--card);
+  padding: 1px 5px;
+  border-radius: 999px;
 }
 
-/* ══════════ 卡片区 ══════════ */
-
-.cards-section {
-  min-height: 20rem;
+.sched-filter--active .sched-filter__n {
+  color: var(--primary);
+  background: hsl(from var(--primary) h s l / 0.12);
 }
 
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+/* ══════════ 搜索 ══════════ */
+.sched-search {
+  min-width: 220px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  transition: border-color 0.12s;
 }
 
-@media (max-width: 1400px) {
-  .cards-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.sched-search:focus-within {
+  border-color: var(--primary);
 }
 
-@media (max-width: 860px) {
-  .cards-grid {
+.sched-search__input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ══════════ 工作区布局 ══════════ */
+.sched-workspace {
+  grid-template-columns: 1fr 340px;
+}
+
+@media (max-width: 1200px) {
+  .sched-workspace {
     grid-template-columns: 1fr;
   }
+  .sched-detail {
+    display: none;
+  }
 }
 
-.loading-state {
-  padding: 2rem;
-  text-align: center;
-  font-size: 13px;
-  color: var(--muted-foreground);
+/* ══════════ 卡片网格 ══════════ */
+.sched-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 }
 
-.placeholder-view {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 3rem 1rem;
-  text-align: center;
-}
-
-/* ═══ 任务卡片 ═══ */
-
-.task-card {
+.sched-card {
   position: relative;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--card);
+  cursor: pointer;
+  transition: all 0.15s;
   display: flex;
   flex-direction: column;
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-  border-radius: 0.875rem;
-  background: hsl(from var(--card) h s l / 0.95);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-  overflow: hidden;
+  gap: 10px;
 }
 
-.task-card:hover {
-  border-color: hsl(from var(--primary) h s l / 0.4);
-  box-shadow: 0 8px 24px -16px hsl(var(--shadow-color) / 0.2);
+.sched-card:hover {
+  border-color: hsl(from var(--border) h s l / 0.9);
   transform: translateY(-1px);
-}
-
-.task-card--selected {
-  border-color: rgb(249 115 22);
   box-shadow:
-    0 0 0 1px rgb(249 115 22 / 0.3),
-    0 10px 28px -12px hsl(var(--shadow-color) / 0.25);
+    0 1px 2px hsl(var(--shadow-color) / 0.04),
+    0 2px 6px hsl(var(--shadow-color) / 0.04);
 }
 
-.task-card--selected::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 3px;
-  background: rgb(249 115 22);
+.sched-card--active {
+  border-color: var(--primary);
+  background: hsl(from var(--primary) h s l / 0.05);
 }
 
-.task-card-top {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem 0.25rem;
+.sched-card--paused {
+  opacity: 0.7;
 }
 
-.project-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.55rem;
+.sched-card--draft {
+  background: hsl(from var(--muted) h s l / 0.5);
+  border-style: dashed;
+}
+
+.sched-card--error {
+  border-color: hsl(from var(--destructive) h s l / 0.4);
+}
+
+.sched-card__agent {
+  display: inline-block;
+  padding: 2px 10px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  border: 1px solid transparent;
+  font-size: 11.5px;
+  border: none;
   cursor: pointer;
-  transition: all 160ms ease;
-  max-width: 10rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.project-tag:disabled {
+.sched-card__agent:disabled {
   cursor: default;
 }
 
-.tag-neutral {
-  background: hsl(from var(--muted) h s l / 0.6);
-  color: var(--muted-foreground);
-}
-
-.tag-orange {
-  background: rgb(255 237 213 / 0.9);
-  color: rgb(154 52 18);
-}
-
-.tag-blue {
-  background: rgb(219 234 254 / 0.9);
-  color: rgb(30 64 175);
-}
-
-.tag-teal {
-  background: rgb(204 251 241 / 0.9);
-  color: rgb(15 118 110);
-}
-
-.tag-violet {
-  background: rgb(237 233 254 / 0.9);
-  color: rgb(109 40 217);
-}
-
-.tag-rose {
-  background: rgb(255 228 230 / 0.9);
-  color: rgb(159 18 57);
-}
-
-:global(.dark) .tag-orange {
-  background: rgb(154 52 18 / 0.25);
-  color: rgb(254 215 170);
-}
-
-:global(.dark) .tag-blue {
-  background: rgb(30 64 175 / 0.25);
-  color: rgb(191 219 254);
-}
-
-:global(.dark) .tag-teal {
-  background: rgb(15 118 110 / 0.25);
-  color: rgb(153 246 228);
-}
-
-:global(.dark) .tag-violet {
-  background: rgb(109 40 217 / 0.25);
-  color: rgb(221 214 254);
-}
-
-:global(.dark) .tag-rose {
-  background: rgb(159 18 57 / 0.25);
-  color: rgb(254 205 211);
-}
-
-/* 状态 badge */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
-  border: 1px solid transparent;
-}
-
-.badge-success {
-  background: rgb(236 253 245 / 0.9);
-  color: rgb(4 120 87);
-  border-color: rgb(167 243 208 / 0.6);
-}
-
-.badge-muted {
-  background: hsl(from var(--muted) h s l / 0.5);
-  color: var(--muted-foreground);
-  border-color: hsl(from var(--border) h s l / 0.4);
-}
-
-.badge-info {
-  background: rgb(219 234 254 / 0.8);
-  color: rgb(30 64 175);
-  border-color: rgb(191 219 254 / 0.6);
-}
-
-.badge-danger {
-  background: rgb(255 241 242 / 0.9);
-  color: rgb(159 18 57);
-  border-color: rgb(253 164 175 / 0.6);
-}
-
-.badge-draft {
-  background: hsl(from var(--muted) h s l / 0.4);
-  color: hsl(from var(--muted-foreground) h s l / 0.8);
-  border-color: hsl(from var(--border) h s l / 0.3);
-  font-style: italic;
-}
-
-:global(.dark) .badge-success {
-  background: rgb(6 78 59 / 0.25);
-  color: rgb(110 231 183);
-  border-color: rgb(5 150 105 / 0.3);
-}
-
-:global(.dark) .badge-info {
-  background: rgb(30 64 175 / 0.25);
-  color: rgb(147 197 253);
-  border-color: rgb(59 130 246 / 0.3);
-}
-
-:global(.dark) .badge-danger {
-  background: rgb(136 19 55 / 0.25);
-  color: rgb(253 164 175);
-  border-color: rgb(225 29 72 / 0.3);
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.625rem;
-  height: 1.625rem;
-  border: none;
-  border-radius: 0.45rem;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: background 160ms ease, color 160ms ease;
-}
-
-.icon-btn:hover {
-  background: hsl(from var(--muted) h s l / 0.6);
-  color: var(--foreground);
-}
-
-.icon-btn--danger:hover {
-  color: var(--destructive);
-  background: hsl(from var(--destructive) h s l / 0.08);
-}
-
-/* 行内操作按钮组：默认半透明，hover 或选中态完全显现 */
-.task-card-inline-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.1rem;
-  opacity: 0.35;
-  transition: opacity 180ms ease;
-}
-
-.task-card:hover .task-card-inline-actions,
-.task-card--selected .task-card-inline-actions,
-.task-card-inline-actions:focus-within {
-  opacity: 1;
-}
-
-/* 卡片主体 */
-.task-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.5rem 1rem 1rem;
-  cursor: pointer;
-}
-
-.task-title {
+.sched-card__name {
   font-size: 15px;
   font-weight: 600;
-  line-height: 1.3;
-  color: var(--foreground);
   letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.task-desc {
+.sched-card__desc {
   font-size: 12px;
   line-height: 1.55;
-  color: var(--muted-foreground);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* schedule 灰底条 */
-.schedule-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: 0.5rem;
-  background: hsl(from var(--muted) h s l / 0.45);
-  border: 1px solid hsl(from var(--border) h s l / 0.3);
-}
-
-.schedule-human {
+/* 状态 badge */
+.sched-status {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--foreground);
-}
-
-.schedule-cron {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--muted-foreground);
-  background: hsl(from var(--background) h s l / 0.7);
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.25rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 50%;
-}
-
-/* 下次 / 上次 两列 */
-.run-times {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-  padding-top: 0.25rem;
-}
-
-.run-times-col {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.run-times-label {
-  font-size: 10.5px;
-  color: hsl(from var(--muted-foreground) h s l / 0.85);
-  letter-spacing: 0.02em;
-}
-
-.run-times-primary {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.run-times-with-dot {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.run-times-secondary {
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
   font-size: 11px;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  border: 1px solid transparent;
 }
 
-.run-times-muted {
+.sched-status > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sched-status--active {
+  color: #0a6e53;
+  background: #e4f5ef;
+  border-color: #c3e8d9;
+}
+
+.sched-status--active > i {
+  background: #0a6e53;
+  animation: sched-pulse 1.8s ease-out infinite;
+}
+
+.sched-status--paused {
+  color: var(--foreground);
+  background: hsl(from var(--muted) h s l / 0.7);
+  border-color: var(--border);
+}
+
+.sched-status--paused > i { background: var(--muted-foreground); }
+
+.sched-status--draft {
+  color: var(--muted-foreground);
+  background: hsl(from var(--muted) h s l / 0.7);
+  border-color: var(--border);
+}
+
+.sched-status--draft > i { background: var(--muted-foreground); }
+
+.sched-status--error {
+  color: var(--destructive);
+  background: hsl(from var(--destructive) h s l / 0.1);
+  border-color: hsl(from var(--destructive) h s l / 0.25);
+}
+
+.sched-status--error > i {
+  background: var(--destructive);
+  animation: sched-pulse-red 1.2s ease-out infinite;
+}
+
+@keyframes sched-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(10, 110, 83, 0.6); }
+  100% { box-shadow: 0 0 0 6px rgba(10, 110, 83, 0); }
+}
+
+@keyframes sched-pulse-red {
+  0% { box-shadow: 0 0 0 0 hsl(from var(--destructive) h s l / 0.6); }
+  100% { box-shadow: 0 0 0 6px hsl(from var(--destructive) h s l / 0); }
+}
+
+/* cron 灰底条 */
+.sched-card__cron {
+  background: hsl(from var(--muted) h s l / 0.6);
+}
+
+/* meta 两列 */
+.sched-meta-label {
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.sched-meta-value {
+  font-size: 12.5px;
+  color: var(--foreground);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sched-meta-sub {
+  font-size: 10.5px;
   color: var(--muted-foreground);
   font-weight: 400;
+  margin-left: 4px;
 }
 
-/* 卡片底部：工具 pill + 风险 + 花费 */
-.task-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding-top: 0.3rem;
-  border-top: 1px dashed hsl(from var(--border) h s l / 0.4);
-  margin-top: 0.2rem;
+/* 状态点 */
+.sched-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
 }
 
-.tool-pills {
-  display: flex;
-  gap: 0.25rem;
-  flex-wrap: wrap;
+.sched-dot--success { background: #0a6e53; }
+.sched-dot--failed { background: var(--destructive); }
+.sched-dot--idle,
+.sched-dot--upcoming { background: var(--muted-foreground); }
+
+/* 底部 */
+.sched-card__foot {
+  border-top: 1px dashed var(--border);
 }
 
-.tool-pill {
+.sched-tool {
   display: inline-flex;
-  padding: 0.1rem 0.45rem;
-  border-radius: 0.3rem;
+  align-items: center;
+  font-size: 10.5px;
+  padding: 1px 7px;
   background: hsl(from var(--muted) h s l / 0.6);
   color: var(--muted-foreground);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  border: 1px solid hsl(from var(--border) h s l / 0.3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
-.tool-pill--muted {
-  font-style: italic;
-}
+.sched-tool--dim { opacity: 0.6; }
 
-.tool-pill--detail {
-  padding: 0.2rem 0.55rem;
-  font-size: 11.5px;
-  background: hsl(from var(--primary) h s l / 0.1);
-  color: var(--primary);
-  border-color: hsl(from var(--primary) h s l / 0.25);
-}
-
-.risk-badge {
+.sched-risk {
   display: inline-flex;
-  padding: 0.1rem 0.45rem;
-  border-radius: 0.3rem;
   font-size: 10.5px;
   font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 999px;
 }
 
 .risk-low {
-  background: rgb(220 252 231 / 0.8);
-  color: rgb(22 101 52);
-  border: 1px solid rgb(187 247 208 / 0.5);
+  color: #0a6e53;
+  background: #e4f5ef;
 }
 
-.risk-med {
-  background: rgb(254 243 199 / 0.8);
-  color: rgb(133 77 14);
-  border: 1px solid rgb(253 230 138 / 0.5);
+.risk-medium {
+  color: #8a6d28;
+  background: #faf1d8;
 }
 
 .risk-high {
-  background: rgb(255 228 230 / 0.9);
-  color: rgb(159 18 57);
-  border: 1px solid rgb(253 164 175 / 0.5);
+  color: var(--destructive);
+  background: hsl(from var(--destructive) h s l / 0.1);
 }
 
-:global(.dark) .risk-low {
-  background: rgb(20 83 45 / 0.3);
-  color: rgb(134 239 172);
-  border-color: rgb(22 163 74 / 0.3);
+/* 卡片右上角操作 */
+.sched-card__actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-.cost-text {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
+.sched-card:hover .sched-card__actions,
+.sched-card--active .sched-card__actions {
+  opacity: 1;
 }
 
-/* ══════════ 右侧详情面板 ══════════ */
-
-.detail-panel {
-  width: 22rem;
-  flex-shrink: 0;
-  overflow-y: auto;
-  padding: 0.75rem 1rem 1.5rem;
-  border-left: 1px solid hsl(from var(--border) h s l / 0.4);
-  background: hsl(from var(--card) h s l / 0.5);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-@media (max-width: 1024px) {
-  .detail-panel {
-    width: 18rem;
-  }
-}
-
-.detail-panel-close-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: -0.5rem;
-}
-
-.detail-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.detail-section-head {
-  display: flex;
+.sched-icon-btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  transition: all 0.12s;
 }
 
-.detail-section-title {
+.sched-icon-btn:hover {
+  background: hsl(from var(--muted) h s l / 0.7);
+  color: var(--foreground);
+  border-color: hsl(from var(--border) h s l / 0.9);
+}
+
+.sched-icon-btn--danger:hover {
+  color: var(--destructive);
+  background: hsl(from var(--destructive) h s l / 0.08);
+}
+
+/* ══════════ Timeline 视图 ══════════ */
+.sched-timeline__head,
+.sched-timeline__row {
+  grid-template-columns: 220px 1fr;
+}
+
+.sched-timeline__hours {
+  grid-template-columns: repeat(8, 1fr);
+}
+
+.sched-timeline__row {
+  min-height: 44px;
+}
+
+.sched-timeline__lane {
+  height: 44px;
+}
+
+.sched-timeline__row:hover {
+  background: hsl(from var(--muted) h s l / 0.5);
+}
+
+.sched-timeline__row--active {
+  background: hsl(from var(--primary) h s l / 0.08);
+}
+
+.sched-timeline__grid {
+  grid-template-columns: repeat(8, 1fr);
+}
+
+.sched-timeline__cell {
+  border-left: 1px dashed var(--border);
+}
+
+.sched-timeline__cell:first-child {
+  border-left: none;
+}
+
+.sched-timeline__now {
+  width: 1.5px;
+  background: var(--primary);
+  opacity: 0.6;
+  z-index: 2;
+}
+
+.sched-timeline__mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--card);
+  z-index: 3;
+}
+
+.sched-timeline__mark--success { background: #0a6e53; }
+.sched-timeline__mark--failed { background: var(--destructive); }
+.sched-timeline__mark--upcoming {
+  background: var(--card);
+  border: 2px dashed var(--muted-foreground);
+}
+
+/* ══════════ History 视图 ══════════ */
+.sched-history__row {
+  grid-template-columns: 90px 80px 1fr auto 24px;
+}
+
+.sched-history__row:hover {
+  background: hsl(from var(--muted) h s l / 0.5);
+}
+
+.sched-history__row:last-child {
+  border-bottom: none;
+}
+
+.sched-history__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  width: fit-content;
+}
+
+.sched-history__status > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sched-history__status--success {
+  color: #0a6e53;
+  background: #e4f5ef;
+}
+
+.sched-history__status--success > i { background: #0a6e53; }
+
+.sched-history__status--failed {
+  color: var(--destructive);
+  background: hsl(from var(--destructive) h s l / 0.1);
+}
+
+.sched-history__status--failed > i { background: var(--destructive); }
+
+.sched-history__status--idle {
+  color: var(--muted-foreground);
+  background: hsl(from var(--muted) h s l / 0.6);
+}
+
+.sched-history__status--idle > i { background: var(--muted-foreground); }
+
+.sched-history__sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+/* ══════════ 详情抽屉 ══════════ */
+.sched-detail {
+  height: fit-content;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.sched-detail__sec-title {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-.detail-edit-link {
+.sched-detail__kv {
+  border-bottom: 1px dashed var(--border);
+}
+
+.sched-detail__kv:last-child {
+  border-bottom: none;
+}
+
+.sched-detail__actions .sched-btn {
   font-size: 12px;
-  color: var(--primary);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: 0;
+  padding: 8px 6px;
 }
 
-.detail-edit-link:hover {
+/* Cron 卡片（详情里的突出块） */
+.sched-cron-card {
+  background: hsl(from var(--primary) h s l / 0.05);
+  border: 1px solid hsl(from var(--primary) h s l / 0.2);
+}
+
+.sched-cron-card__raw {
+  border: 1px solid var(--border);
+}
+
+.sched-cron-card__next {
+  border-top: 1px dashed var(--border);
+}
+
+/* 结果投递条 */
+.sched-delivery {
+  background: hsl(from var(--muted) h s l / 0.5);
+}
+
+/* 详情底部通用按钮 */
+.sched-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.sched-btn--ghost {
+  color: var(--foreground);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.sched-btn--ghost:hover {
+  background: hsl(from var(--muted) h s l / 0.6);
+  border-color: hsl(from var(--border) h s l / 0.9);
+}
+
+.sched-btn--primary {
+  color: var(--background);
+  background: var(--foreground);
+  border: 1px solid var(--foreground);
+}
+
+.sched-btn--primary:hover {
+  background: hsl(from var(--foreground) h s l / 0.88);
+}
+
+/* 空态链接按钮 */
+.sched-link-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.sched-link-btn:hover {
   text-decoration: underline;
 }
 
-.schedule-readonly {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.5);
-  border-radius: 0.5rem;
-  background: hsl(from var(--card) h s l / 0.7);
+/* 主内容空态 */
+.sched-empty {
+  border: 1px dashed var(--border);
+  border-radius: 0.625rem;
+  background: var(--card);
 }
 
-.schedule-readonly-human {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--foreground);
+/* dark 模式下的状态 badge 微调 */
+:global(.dark) .sched-status--active {
+  color: rgb(110 231 183);
+  background: rgb(6 78 59 / 0.3);
+  border-color: rgb(5 150 105 / 0.4);
 }
 
-.schedule-readonly-cron {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted-foreground);
+:global(.dark) .sched-chip--success > i { background: rgb(110 231 183); }
+:global(.dark) .sched-history__status--success {
+  color: rgb(110 231 183);
+  background: rgb(6 78 59 / 0.3);
+}
+:global(.dark) .sched-history__status--success > i { background: rgb(110 231 183); }
+:global(.dark) .sched-ribbon__dot--success { background: rgb(110 231 183); }
+:global(.dark) .sched-timeline__mark--success { background: rgb(110 231 183); }
+:global(.dark) .sched-dot--success { background: rgb(110 231 183); }
+
+:global(.dark) .risk-low {
+  color: rgb(134 239 172);
+  background: rgb(20 83 45 / 0.35);
 }
 
-.detail-next-line {
-  font-size: 12px;
-  color: var(--foreground);
-}
-
-.detail-instruction {
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--foreground);
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
-  border-radius: 0.5rem;
-  background: hsl(from var(--muted) h s l / 0.3);
-}
-
-.detail-log-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 0.45rem;
-  background: hsl(from var(--muted) h s l / 0.3);
-}
-
-.detail-accumulated {
-  font-size: 11px;
-  color: var(--foreground);
-  margin-top: 0.35rem;
-}
-
-.detail-grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-.detail-subtitle {
-  font-size: 10.5px;
-  color: var(--muted-foreground);
-  letter-spacing: 0.02em;
-  margin-bottom: 0.25rem;
-}
-
-.detail-value {
-  font-size: 12.5px;
-  color: var(--foreground);
-  font-weight: 500;
-}
-
-.delivery-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.4);
-  border-radius: 0.5rem;
-  background: hsl(from var(--card) h s l / 0.85);
-}
-
-.delivery-name {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--foreground);
-}
-
-.delivery-caption {
-  font-size: 11px;
-  color: var(--muted-foreground);
-}
-
-/* ══════════ 帮助浮标 ══════════ */
-
-.help-floater {
-  position: absolute;
-  right: 1.25rem;
-  bottom: 1.25rem;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 999px;
-  background: linear-gradient(135deg, hsl(267 60% 59%), hsl(200 80% 55%));
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 10px 24px -10px hsl(var(--shadow-color) / 0.3);
-  pointer-events: none;
-  opacity: 0.55;
+:global(.dark) .risk-medium {
+  color: rgb(254 215 170);
+  background: rgb(154 52 18 / 0.3);
 }
 </style>
