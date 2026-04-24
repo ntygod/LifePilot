@@ -277,12 +277,12 @@ async function loadData() {
   error.value = null
 
   try {
+    // Plan 3: datastore 已从用户侧下架，不再拉取 datastore 列表
     const [kbResponse, statsResponse, documentsResponse, providerList] = await Promise.all([
       knowledgeBaseApi.get(kbId.value),
       knowledgeBaseApi.getStats(kbId.value),
       knowledgeBaseApi.listDocuments(kbId.value),
       modelServiceApi.listEnabledServices().catch(() => [] as ModelService[]),
-      datastoreStore.fetchList(),
     ])
     kb.value = kbResponse
     stats.value = statsResponse
@@ -293,10 +293,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-function refreshDatastores() {
-  void datastoreStore.fetchList()
 }
 
 function formatSize(bytes: number): string {
@@ -900,9 +896,6 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                         <div class="space-y-2">
                           <div class="flex items-center justify-between gap-2">
                             <Label class="text-xs text-muted-foreground">关联 Datastore</Label>
-                            <Button type="button" variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="refreshDatastores()">
-                              刷新
-                            </Button>
                           </div>
                           <p class="text-xs leading-5 text-muted-foreground">决定知识库服务哪些领域，不影响单篇文档的归属覆盖。</p>
                           <Popover>
@@ -1099,10 +1092,6 @@ async function updateDocumentDatastore(doc: KbDocument, rawValue: string) {
                               <div v-else class="kb-inline-note rounded-md px-3 py-2.5 text-sm text-muted-foreground">
                                 当前没有可选的 Datastore。
                               </div>
-
-                              <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
-                                刷新
-                              </Button>
                             </div>
                           </div>
                         </div>

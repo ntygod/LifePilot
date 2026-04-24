@@ -32,7 +32,6 @@ import SessionSidebar from '@/components/chat/SessionSidebar.vue'
 import ChatRightPanel from '@/components/chat/ChatRightPanel.vue'
 import { useProcessTaskStore } from '@/stores/processTask'
 import { useChat } from '@/composables/useChat'
-import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
 import { useSkillStore } from '@/stores/skill'
@@ -42,7 +41,6 @@ import { copyToClipboard } from '@/utils/clipboard'
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
-const datastoreStore = useDatastoreStore()
 const kbStore = useKnowledgeBaseStore()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
@@ -290,7 +288,6 @@ onMounted(async () => {
   }
 
   void kbStore.fetchList()
-  void datastoreStore.fetchList()
   void skillStore.fetchSkills()
 
   try {
@@ -738,7 +735,7 @@ function closeTracePanel() {
                 ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
                 :knowledge-bases="kbStore.list"
-                :datastores="datastoreStore.list"
+                :datastores="[]"
                 :base-session-config="activeSessionConfig"
                 @send="handleSend"
               />
@@ -817,7 +814,7 @@ function closeTracePanel() {
               :continuation-title="continuationTitle"
               :continuation-detail="continuationDetail"
               :knowledge-bases="kbStore.list"
-              :datastores="datastoreStore.list"
+              :datastores="[]"
               :base-session-config="activeSessionConfig"
               @send="handleSend"
             />
@@ -900,7 +897,7 @@ function closeTracePanel() {
                   :datastore-ids="activeSessionConfig.datastoreIds"
                   :providers="chatProviders"
                   :knowledge-bases="kbStore.list"
-                  :datastores="datastoreStore.list"
+                  :datastores="[]"
                   @close="closeMobileSidebar"
                   @update="handleConfigUpdate"
                 />
