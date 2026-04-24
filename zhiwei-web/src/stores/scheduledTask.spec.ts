@@ -6,6 +6,7 @@ vi.mock('@/api/scheduledTask', () => ({
   listScheduledTasks: vi.fn(),
   updateScheduledTask: vi.fn(),
   deleteScheduledTask: vi.fn(),
+  listTodayScheduledTaskLogs: vi.fn(),
 }))
 
 import * as scheduledTaskApi from '@/api/scheduledTask'
@@ -152,5 +153,54 @@ describe('useScheduledTaskStore', () => {
     expect(store.error).toBe('网络错误')
     expect(store.tasks).toEqual([])
     expect(store.loading).toBe(false)
+  })
+
+  it('fetchTodayLogs 默认按本地日期调 API 并保存', async () => {
+    apiMock.listTodayScheduledTaskLogs.mockResolvedValueOnce([
+      {
+        id: 'log-1',
+        taskId: 't1',
+        executedAt: '2026-04-24T08:00:00Z',
+        status: 'success',
+        durationMs: 1000,
+        tokensUsed: 50,
+        summary: '完成',
+      },
+    ])
+
+    const store = useScheduledTaskStore()
+    const logs = await store.fetchTodayLogs()
+
+    expect(apiMock.listTodayScheduledTaskLogs).toHaveBeenCalledTimes(1)
+    // 第一个参数为本地日期 YYYY-MM-DD；不做具体匹配（按运行时环境时区），仅校验正则
+    const call = apiMock.listTodayScheduledTaskLogs.mock.calls[0][0]
+    expect(call).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(logs).toHaveLength(1)
+    expect(store.todayLogs).toHaveLength(1)
+    expect(store.todayLogsError).toBeNull()
+  })
+
+  it('fetchTodayLogs 接收显式日期时透传给 API', async () => {
+    apiMock.listTodayScheduledTaskLogs.mockResolvedValueOnce([])
+
+    const store = useScheduledTaskStore()
+    await store.fetchTodayLogs('2026-01-01')
+
+    expect(apiMock.listTodayScheduledTaskLogs).toHaveBeenCalledWith('2026-01-01')
+  })
+
+  it('fetchTodayLogs 失败时写入 todayLogsError 不 rethrow', async () => {
+    apiMock.listTodayScheduledTaskLogs.mockRejectedValueOnce({
+      code: 500,
+      message: '日期解析失败',
+    })
+
+    const store = useScheduledTaskStore()
+    // 不应抛错——视图层 onMounted 并行调用时不希望被打断
+    const logs = await store.fetchTodayLogs('2026-04-24')
+
+    expect(logs).toEqual([])
+    expect(store.todayLogsError).toBe('日期解析失败')
+    expect(store.todayLogsLoading).toBe(false)
   })
 })

@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 /**
@@ -149,6 +151,35 @@ public class ScheduledTaskController {
             @RequestParam(defaultValue = "" + DEFAULT_LOG_LIMIT) int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), MAX_LOG_LIMIT);
         List<ScheduledTaskLogResponse> items = repository.findLogsByTaskId(id, safeLimit).stream()
+                .map(ScheduledTaskLogResponse::from)
+                .toList();
+        return ApiResponse.ok(items);
+    }
+
+    /**
+     * 按日期查询所有任务的执行日志（跨任务聚合），按 executed_at 倒序。
+     *
+     * <p>定时任务总览页的"今日叙事 / KPI / 24h ribbon"多处都要用当日日志，单独
+     * 为每个任务调 {@link #getLogs} 会产生 N+1 查询；此端点一次性按 date 过滤
+     * 返回当日所有日志，前端按 taskId 自行分桶聚合。</p>
+     *
+     * <p>{@code date} 必须是 ISO 8601 日期（YYYY-MM-DD），非法格式返回 400——
+     * 防御性校验，避免 SQLite 的 {@code DATE()} 函数在异常输入下返回空集合时
+     * 掩盖客户端 bug。</p>
+     *
+     * @param date ISO 8601 日期字符串（YYYY-MM-DD）
+     */
+    @GetMapping("/logs")
+    public ApiResponse<List<ScheduledTaskLogResponse>> getLogsByDate(
+            @RequestParam String date) {
+        // 防御性校验：非法日期直接 400，避免异常参数污染查询
+        try {
+            LocalDate.parse(date);
+        } catch (DateTimeParseException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "date 参数必须是 ISO 8601 日期（YYYY-MM-DD）：" + date);
+        }
+        List<ScheduledTaskLogResponse> items = repository.findLogsByDate(date).stream()
                 .map(ScheduledTaskLogResponse::from)
                 .toList();
         return ApiResponse.ok(items);

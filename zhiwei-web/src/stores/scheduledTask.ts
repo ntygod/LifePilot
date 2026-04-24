@@ -16,6 +16,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type {
   ScheduledTaskDto,
+  ScheduledTaskLogDto,
   UpdateScheduledTaskRequest,
 } from '@/api/scheduledTask'
 import * as scheduledTaskApi from '@/api/scheduledTask'
@@ -24,6 +25,11 @@ export const useScheduledTaskStore = defineStore('scheduledTask', () => {
   const tasks = ref<ScheduledTaskDto[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  /** 今日执行日志（跨所有任务）—— 供总览页 KPI / 叙事 / ribbon 一次性聚合 */
+  const todayLogs = ref<ScheduledTaskLogDto[]>([])
+  const todayLogsLoading = ref(false)
+  const todayLogsError = ref<string | null>(null)
 
   /**
    * 拉取定时任务列表。
@@ -43,6 +49,40 @@ export const useScheduledTaskStore = defineStore('scheduledTask', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /**
+   * 拉取指定日期的全部执行日志（跨任务聚合）。
+   *
+   * <p>失败时保持 {@code todayLogs} 为上次成功值（避免闪烁为空态），
+   * 错误信息写入 {@code todayLogsError} 由视图层按需提示；不 rethrow，
+   * 视图挂载时与 fetchAll 并行调用，互不阻塞。</p>
+   *
+   * @param date ISO 8601 日期字符串（YYYY-MM-DD）；默认取今日本地日期
+   */
+  async function fetchTodayLogs(date?: string): Promise<ScheduledTaskLogDto[]> {
+    const target = date ?? todayDateString()
+    todayLogsLoading.value = true
+    todayLogsError.value = null
+    try {
+      const items = await scheduledTaskApi.listTodayScheduledTaskLogs(target)
+      todayLogs.value = items
+      return items
+    } catch (e: any) {
+      todayLogsError.value = e?.message ?? '加载今日执行日志失败'
+      return todayLogs.value
+    } finally {
+      todayLogsLoading.value = false
+    }
+  }
+
+  /** 本地日期 → ISO 8601 日期字符串（YYYY-MM-DD） */
+  function todayDateString(): string {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
   }
 
   /** 更新定时任务 —— 成功后就地替换列表对应项 */
@@ -92,7 +132,11 @@ export const useScheduledTaskStore = defineStore('scheduledTask', () => {
     tasks,
     loading,
     error,
+    todayLogs,
+    todayLogsLoading,
+    todayLogsError,
     fetchAll,
+    fetchTodayLogs,
     updateTask,
     deleteTask,
     pauseTask,

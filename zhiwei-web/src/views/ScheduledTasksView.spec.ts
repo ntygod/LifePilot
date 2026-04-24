@@ -18,6 +18,7 @@ vi.mock('@/api/scheduledTask', () => ({
   updateScheduledTask: vi.fn(),
   deleteScheduledTask: vi.fn(),
   listScheduledTaskLogs: vi.fn(),
+  listTodayScheduledTaskLogs: vi.fn(),
 }))
 
 vi.mock('@/api/project', () => ({
@@ -76,6 +77,8 @@ describe('ScheduledTasksView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    // 统一给 todayLogs 一个空默认值，避免每个用例重复 mock；单测需要具体 logs 时按需 override
+    taskApiMock.listTodayScheduledTaskLogs.mockResolvedValue([])
   })
 
   it('页面挂载时 fetchAll 拉取任务', async () => {
@@ -228,6 +231,7 @@ describe('ScheduledTasksView', () => {
     taskApiMock.listScheduledTaskLogs.mockResolvedValue([
       {
         id: 'log-1',
+        taskId: 't1',
         executedAt: new Date().toISOString(),
         status: 'success',
         durationMs: 1234,

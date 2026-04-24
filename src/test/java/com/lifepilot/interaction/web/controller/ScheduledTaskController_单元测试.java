@@ -220,4 +220,39 @@ class ScheduledTaskController_单元测试 {
         assertEquals(200, resp.code());
         assertTrue(resp.data().isEmpty());
     }
+
+    @Test
+    void 按日期查询日志_合法日期_代理到repository() {
+        when(repository.findLogsByDate(eq("2026-04-24"))).thenReturn(List.of(
+                new CronTaskLog("log-a", "t1", "2026-04-24T08:00:00Z",
+                        "success", 1500, 120, "执行完成", "2026-04-24T08:00:00Z"),
+                new CronTaskLog("log-b", "t2", "2026-04-24T09:00:00Z",
+                        "failed", 800, 50, null, "2026-04-24T09:00:00Z")
+        ));
+
+        ApiResponse<List<ScheduledTaskLogResponse>> resp = controller.getLogsByDate("2026-04-24");
+
+        assertEquals(200, resp.code());
+        assertEquals(2, resp.data().size());
+        assertEquals("t1", resp.data().get(0).taskId(),
+                "响应 DTO 必须包含 taskId，供前端聚合分桶");
+        assertEquals("t2", resp.data().get(1).taskId());
+    }
+
+    @Test
+    void 按日期查询日志_非法日期_抛400异常() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                controller.getLogsByDate("not-a-date"));
+        assertEquals(400, ex.getStatusCode().value());
+    }
+
+    @Test
+    void 按日期查询日志_空结果_返回空列表() {
+        when(repository.findLogsByDate(eq("2026-04-24"))).thenReturn(List.of());
+
+        ApiResponse<List<ScheduledTaskLogResponse>> resp = controller.getLogsByDate("2026-04-24");
+
+        assertEquals(200, resp.code());
+        assertTrue(resp.data().isEmpty());
+    }
 }

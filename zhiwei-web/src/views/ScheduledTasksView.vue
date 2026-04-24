@@ -6,19 +6,23 @@
  * <ul>
  *   <li>顶栏：面包屑 + 全部历史 / 暂停全部 / 新建任务（功能占位）</li>
  *   <li>Hero "今日 ribbon"：日期 kicker + 叙事大标题 + 成功/失败/待跑 pills + 24h 时间轴</li>
- *   <li>KPI 5 卡片：总任务 / 本月执行 / 成功率 / 本月花费 / 需注意</li>
+ *   <li>KPI 卡片：总任务（真实）+ 需注意（仅在 error 任务 > 0 时显示）</li>
  *   <li>Toolbar：视图切换（cards / timeline / history） + 过滤 pills + 搜索</li>
  *   <li>主区：三种视图</li>
- *   <li>右侧详情抽屉：调度规则卡片 + 最近运行 KV + 权限信任 + 工具 + 结果投递 + 操作按钮</li>
+ *   <li>右侧详情抽屉：调度规则卡片 + 最近运行 KV + 调用工具 + 操作按钮</li>
  * </ul>
  *
- * <p><b>数据映射（真实 → 视图模型）</b>：</p>
+ * <p><b>数据来源（全部真实）</b>：</p>
  * <ul>
- *   <li>真实：store.tasks、每个 task 的 logs（selectTask 时懒加载）、projectStore.projects</li>
- *   <li>派生：cron 人话 / 下次相对时间 / agent 名（项目反查）+ agentColor（哈希色板）</li>
- *   <li>mock：ribbon 时间轴点位（从当日 logs 聚合）+ KPI 静态数字（本月执行/成功率/花费）+
- *     risk=low / cost 估算 / delivery（["系统通知"]）</li>
+ *   <li>任务列表：{@code store.tasks}</li>
+ *   <li>当日执行日志（跨任务）：{@code store.todayLogs} —— 供 KPI / 叙事 / ribbon 一次性聚合</li>
+ *   <li>单任务详细日志：selectTask 懒加载 {@code logsByTask}</li>
+ *   <li>项目名：{@code projectStore.projects}</li>
+ *   <li>agentColor：按 projectId 稳定哈希到 6 色板（非数据，仅视觉标识）</li>
  * </ul>
+ *
+ * <p><b>已移除的无后端数据 mock</b>（2026-04-24 反馈）：本月执行 / 成功率 / 本月花费
+ * KPI；风险等级；单次花费；结果投递——这些都没有持久化来源，保留只会误导用户。</p>
  *
  * @author zsg
  * @since 2026-04-24
@@ -32,10 +36,9 @@ import {
   History,
   MoreHorizontal,
   PauseCircle,
+  Play,
   Plus,
-  RefreshCw,
   Search,
-  Send,
   Sparkles,
   X,
 } from 'lucide-vue-next'
@@ -58,6 +61,8 @@ onMounted(async () => {
   await Promise.all([
     store.fetchAll().catch(() => {}),
     projectStore.fetchProjects().catch(() => {}),
+    // 当日日志用于 KPI / 叙事 / ribbon 聚合；失败时 store 内部已兜底，不 throw
+    store.fetchTodayLogs(),
   ])
 })
 
@@ -252,25 +257,50 @@ const todayLabel = computed(() => {
   return `${year}-${month}-${day} · ${weekdays[now.getDay()]}`
 })
 
-/** "已完成/待跑"叙事：从 active + 任务数粗略派生 */
-const narrativeCounts = computed(() => {
-  const total = store.tasks.length
-  const done = Math.max(1, Math.floor((total * 3) / 4))
-  const pending = Math.max(0, total - done)
-  return { done: total === 0 ? 6 : done, pending: total === 0 ? 2 : pending }
+/**
+ * 基于真实 todayLogs 聚合的今日执行统计。
+ *
+ * <p>done：已完成次数（success + failed + timeout 均计）；success / failed 分别计数；
+ * pending：剩余将要执行的 active 任务数（已过当前时间的 nextExecutionAt 不计）。</p>
+ *
+ * <p>没有日志时数字归 0，模板层通过兜底文案展示空态；不再派生伪造数字。</p>
+ */
+const todayStats = computed(() => {
+  const logs = store.todayLogs
+  let success = 0
+  let failed = 0
+  for (const log of logs) {
+    if (log.status === 'success') success += 1
+    else if (log.status === 'failed' || log.status === 'timeout') failed += 1
+  }
+  // pending：active 任务里 nextExecutionAt 位于"今日剩余"的条数
+  const now = Date.now()
+  const endOfToday = endOfLocalDay(now)
+  let pending = 0
+  for (const task of store.tasks) {
+    if (task.status !== 'active' || !task.nextExecutionAt) continue
+    const t = Date.parse(task.nextExecutionAt)
+    if (Number.isFinite(t) && t > now && t <= endOfToday) pending += 1
+  }
+  return {
+    done: success + failed,
+    success,
+    failed,
+    pending,
+  }
 })
 
-/** Hero 顶部三个小 pill 的数字（与叙事近似，mock） */
-const heroBadges = computed(() => ({
-  success: Math.max(0, narrativeCounts.value.done - 1),
-  failed: Math.min(2, Math.max(0, Math.floor(narrativeCounts.value.done / 3))),
-  pending: narrativeCounts.value.pending,
-}))
+/** 本地当天 23:59:59.999 的 UTC 毫秒数，用于 pending 判定 */
+function endOfLocalDay(ms: number): number {
+  const d = new Date(ms)
+  d.setHours(23, 59, 59, 999)
+  return d.getTime()
+}
 
 /** 时间轴 8 个刻度（00:00 / 03:00 / ... / 21:00） */
 const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21]
 
-/** ribbonDots：当日执行点位（mock 静态，后续会从 logs 聚合） */
+/** ribbonDots：当日执行点位，从真实 todayLogs 派生 */
 type RibbonDot = {
   task: string
   at: string
@@ -279,25 +309,28 @@ type RibbonDot = {
   pct: number
 }
 const ribbonDots = computed<RibbonDot[]>(() => {
-  // 无任务时展示空轨；有任务时按 task id 派生几个示意点
-  if (store.tasks.length === 0) return []
-  const raw: Array<Omit<RibbonDot, 'pct'>> = []
-  const presetTimes = ['08:00', '09:00', '14:00', '14:32', '15:00', '15:24', '17:30']
-  const presetStatuses: RibbonDot['status'][] = ['success', 'success', 'failed', 'success', 'failed', 'success', 'upcoming']
-  store.tasks.slice(0, 7).forEach((task, idx) => {
-    const at = presetTimes[idx] ?? '12:00'
-    raw.push({
-      task: task.id,
+  const taskNameById = new Map<string, string>()
+  for (const t of store.tasks) taskNameById.set(t.id, t.name)
+
+  const dots: RibbonDot[] = []
+  for (const log of store.todayLogs) {
+    const ts = Date.parse(log.executedAt)
+    if (!Number.isFinite(ts)) continue
+    const d = new Date(ts)
+    const hh = d.getHours()
+    const mm = d.getMinutes()
+    const at = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+    const pct = ((hh + mm / 60) / 24) * 100
+    const status: RibbonDot['status'] = log.status === 'success' ? 'success' : 'failed'
+    dots.push({
+      task: log.taskId,
       at,
-      label: task.name,
-      status: presetStatuses[idx] ?? 'success',
+      label: taskNameById.get(log.taskId) ?? log.taskId,
+      status,
+      pct,
     })
-  })
-  return raw.map(e => {
-    const [hh, mm] = e.at.split(':').map(Number)
-    const pct = ((hh + (mm || 0) / 60) / 24) * 100
-    return { ...e, pct }
-  })
+  }
+  return dots
 })
 
 /** NOW 游标在 24h 轴上的百分比位置 */
@@ -308,8 +341,12 @@ const nowCursorPct = computed(() => {
 })
 
 // ──────────────────────────────────────────────────────────────────────
-// KPI：总任务真实派生；其余静态 mock
+// KPI：全部基于真实数据
 // ──────────────────────────────────────────────────────────────────────
+//
+// 移除了本月执行 / 成功率 / 本月花费——后端没有持久化来源，保留只是把"我不知道"
+// 变成"一个假数字"，反而误导用户。需要这些指标时先在后端补聚合 SQL + API，
+// 再回来接视图层。
 
 interface KpiCard {
   id: string
@@ -331,31 +368,16 @@ const kpis = computed<KpiCard[]>(() => {
       label: '总任务',
       caption: `${active} 运行 · ${paused} 暂停 · ${draft} 草稿`,
     },
-    {
-      id: 'monthly-runs',
-      value: '2,675',
-      label: '本月执行',
-      caption: '相比上月 +12%',
-    },
-    {
-      id: 'success-rate',
-      value: '96.2%',
-      label: '成功率',
-      caption: '7 日滚动平均',
-    },
-    {
-      id: 'cost',
-      value: '$8.42',
-      label: '本月花费',
-      caption: '预算 $20 · 41%',
-    },
   ]
   if (statusCounts.value.error > 0) {
+    // "需注意" 只在真有 error 任务时显示；caption 指向第一条 error 任务的名字，
+    // 避免写死"某某连续失败"这种虚假文案。
+    const firstError = store.tasks.find(t => t.status === 'error')
     base.push({
       id: 'attention',
       value: statusCounts.value.error,
       label: '需注意',
-      caption: '「API 用量告警」连续失败',
+      caption: firstError ? `「${firstError.name}」状态异常` : '存在异常任务',
       alert: true,
     })
   }
@@ -461,18 +483,6 @@ function logStatusLabel(status: string): string {
   }
 }
 
-/** 单次花费（mock，按 id 稳定派生） */
-function singleRunCost(taskId: string): string {
-  const hash = taskId.length * 7 + (taskId.charCodeAt(0) || 0)
-  const cents = (hash % 20) + 5
-  return `~$${(cents / 100).toFixed(2)}`
-}
-
-/** 风险等级（mock，所有任务默认低风险） */
-function riskLevel(_task: ScheduledTaskDto): { label: string; cls: string } {
-  return { label: '低风险', cls: 'risk-low' }
-}
-
 /** 创建时间相对化 */
 function relativeCreated(iso: string): string {
   if (!iso) return '—'
@@ -561,20 +571,20 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                 TODAY · {{ todayLabel }}
               </div>
               <h1 class="font-serif text-lg font-medium tracking-tight text-foreground leading-snug">
-                今天替你完成了 <b class="text-primary font-semibold px-xs">{{ narrativeCounts.done }}</b>
-                件事，还有 <b class="text-primary font-semibold px-xs">{{ narrativeCounts.pending }}</b>
+                今天替你完成了 <b class="text-primary font-semibold px-xs">{{ todayStats.done }}</b>
+                件事，还有 <b class="text-primary font-semibold px-xs">{{ todayStats.pending }}</b>
                 件将发生
               </h1>
             </div>
             <div class="flex gap-xs shrink-0">
               <span class="sched-chip sched-chip--success font-mono">
-                <i /> 成功 {{ heroBadges.success }}
+                <i /> 成功 {{ todayStats.success }}
               </span>
               <span class="sched-chip sched-chip--failed font-mono">
-                <i /> 失败 {{ heroBadges.failed }}
+                <i /> 失败 {{ todayStats.failed }}
               </span>
               <span class="sched-chip sched-chip--upcoming font-mono">
-                <i /> 待跑 {{ heroBadges.pending }}
+                <i /> 待跑 {{ todayStats.pending }}
               </span>
             </div>
           </div>
@@ -814,7 +824,7 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                   </div>
                 </div>
 
-                <!-- 底部：tools + risk + cost -->
+                <!-- 底部：工具 tags -->
                 <div class="sched-card__foot flex items-center justify-between gap-sm pt-sm">
                   <div class="flex flex-wrap gap-xs">
                     <span
@@ -831,12 +841,6 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                       class="sched-tool font-mono italic"
                     >agent</span>
                   </div>
-                  <div class="flex items-center gap-xs shrink-0">
-                    <span :class="['sched-risk', riskLevel(task).cls]">
-                      {{ riskLevel(task).label }}
-                    </span>
-                    <span class="sched-text-small font-mono text-muted-foreground">{{ singleRunCost(task.id) }}</span>
-                  </div>
                 </div>
 
                 <!-- 右上角隐藏操作（hover 显示） -->
@@ -848,16 +852,8 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                     :title="task.status === 'active' ? '暂停' : '启用'"
                     @click.stop="togglePause(task.id, task.status)"
                   >
-                    <X v-if="task.status === 'active'" class="size-xs" />
-                    <Sparkles v-else class="size-xs" />
-                  </button>
-                  <button
-                    type="button"
-                    class="sched-icon-btn"
-                    title="立即执行"
-                    @click.stop
-                  >
-                    <RefreshCw class="size-xs" />
+                    <PauseCircle v-if="task.status === 'active'" class="size-xs" />
+                    <Play v-else class="size-xs" />
                   </button>
                   <button
                     type="button"
@@ -994,8 +990,6 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                   </div>
                   <div class="flex items-center gap-xs sched-text-tiny font-mono text-muted-foreground">
                     <span>{{ humanSchedule(task.schedule) }}</span>
-                    <span class="sched-history__sep" />
-                    <span>{{ singleRunCost(task.id) }}</span>
                   </div>
                   <button type="button" class="sched-icon-btn" title="详情" @click.stop="selectTask(task.id)">
                     <ChevronRight class="size-xs" />
@@ -1139,20 +1133,9 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
               >还未执行过</p>
             </div>
 
-            <!-- 权限与信任 -->
+            <!-- 调用工具 -->
             <div class="flex flex-col gap-xs">
-              <div class="sched-detail__sec-title">权限与信任</div>
-              <div class="sched-detail__kv flex items-center justify-between text-xs text-foreground/80">
-                <span>风险等级</span>
-                <span :class="['sched-risk', riskLevel(selectedTask).cls]">
-                  {{ riskLevel(selectedTask).label }}
-                </span>
-              </div>
-              <div class="sched-detail__kv flex items-center justify-between text-xs text-foreground/80">
-                <span>单次花费</span>
-                <span class="sched-text-tiny font-mono text-foreground">{{ singleRunCost(selectedTask.id) }}</span>
-              </div>
-              <div class="sched-text-tiny text-muted-foreground mt-xs">
+              <div class="sched-detail__sec-title">
                 调用工具 · {{ parseSkillIds(selectedTask.skillIds).length }}
               </div>
               <div class="flex flex-wrap gap-xs mt-xs">
@@ -1168,15 +1151,6 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
               </div>
             </div>
 
-            <!-- 结果投递（mock） -->
-            <div class="flex flex-col gap-xs">
-              <div class="sched-detail__sec-title">结果投递</div>
-              <div class="sched-delivery flex items-center gap-sm px-sm py-xs rounded-md">
-                <Send class="size-xs shrink-0 text-muted-foreground" />
-                <span class="text-xs text-foreground/80">系统通知</span>
-              </div>
-            </div>
-
             <!-- 底部操作按钮 -->
             <div class="sched-detail__actions flex gap-xs pt-xs">
               <button
@@ -1185,7 +1159,7 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                 class="sched-btn sched-btn--ghost flex-1 justify-center"
                 @click="togglePause(selectedTask.id, selectedTask.status)"
               >
-                <X class="size-xs" />
+                <PauseCircle class="size-xs" />
                 暂停
               </button>
               <button
@@ -1194,14 +1168,15 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                 class="sched-btn sched-btn--primary flex-1 justify-center"
                 @click="togglePause(selectedTask.id, selectedTask.status)"
               >
-                <Sparkles class="size-xs" />
+                <Play class="size-xs" />
                 启用
               </button>
               <button
                 type="button"
                 class="sched-btn sched-btn--ghost flex-1 justify-center"
+                @click="showPlaceholder('立即运行即将推出')"
               >
-                <RefreshCw class="size-xs" />
+                <Sparkles class="size-xs" />
                 立即运行
               </button>
               <button
@@ -1764,29 +1739,6 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
 
 .sched-tool--dim { opacity: 0.6; }
 
-.sched-risk {
-  display: inline-flex;
-  font-size: 10.5px;
-  font-weight: 500;
-  padding: 1px 8px;
-  border-radius: 999px;
-}
-
-.risk-low {
-  color: #0a6e53;
-  background: #e4f5ef;
-}
-
-.risk-medium {
-  color: #8a6d28;
-  background: #faf1d8;
-}
-
-.risk-high {
-  color: var(--destructive);
-  background: hsl(from var(--destructive) h s l / 0.1);
-}
-
 /* 卡片右上角操作 */
 .sched-card__actions {
   position: absolute;
@@ -1993,11 +1945,6 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
   border-top: 1px dashed var(--border);
 }
 
-/* 结果投递条 */
-.sched-delivery {
-  background: hsl(from var(--muted) h s l / 0.5);
-}
-
 /* 详情底部通用按钮 */
 .sched-btn {
   display: inline-flex;
@@ -2065,14 +2012,4 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
 :global(.dark) .sched-ribbon__dot--success { background: rgb(110 231 183); }
 :global(.dark) .sched-timeline__mark--success { background: rgb(110 231 183); }
 :global(.dark) .sched-dot--success { background: rgb(110 231 183); }
-
-:global(.dark) .risk-low {
-  color: rgb(134 239 172);
-  background: rgb(20 83 45 / 0.35);
-}
-
-:global(.dark) .risk-medium {
-  color: rgb(254 215 170);
-  background: rgb(154 52 18 / 0.3);
-}
 </style>

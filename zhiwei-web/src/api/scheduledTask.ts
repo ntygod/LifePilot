@@ -43,9 +43,13 @@ export interface ScheduledTaskDto {
  *
  * <p>{@code executedAt} 为 ISO 8601 字符串；{@code status} 可能为
  * 'success' / 'failed' / 'timeout'；{@code summary} 为 Agent 回复摘要前 500 字符。</p>
+ *
+ * <p>{@code taskId} 在按日期聚合（listTodayLogs）时必填以便前端分桶到各任务，
+ * 单任务日志端点也会返回（前端可忽略）。</p>
  */
 export interface ScheduledTaskLogDto {
   id: string
+  taskId: string
   executedAt: string
   status: string
   durationMs: number
@@ -157,4 +161,20 @@ export async function listScheduledTaskLogs(
   return request<ScheduledTaskLogDto[]>(
     `/scheduled-tasks/${encodeURIComponent(id)}/logs${qs}`,
   )
+}
+
+/**
+ * 查询指定日期的全部执行日志（跨所有任务）。
+ *
+ * <p>用于定时任务总览页聚合当日数据（KPI、叙事、24h ribbon），一次性按 date
+ * 过滤返回当日所有日志，前端按 taskId 自行分桶；避免对每个任务单独调用
+ * {@link listScheduledTaskLogs} 造成 N+1 查询。</p>
+ *
+ * @param date ISO 8601 日期字符串（YYYY-MM-DD）
+ */
+export async function listTodayScheduledTaskLogs(
+  date: string,
+): Promise<ScheduledTaskLogDto[]> {
+  const qs = `?date=${encodeURIComponent(date)}`
+  return request<ScheduledTaskLogDto[]>(`/scheduled-tasks/logs${qs}`)
 }

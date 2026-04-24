@@ -164,4 +164,27 @@ public class CronTaskRepository {
                 LIMIT ?""",
                 LOG_MAPPER, taskId, limit));
     }
+
+    /**
+     * 查询指定日期的全部执行日志（跨所有任务），按 executed_at 倒序。
+     *
+     * <p>入参为 ISO 8601 日期字符串（如 {@code "2026-04-24"}），基于 SQLite 的
+     * {@code DATE()} 函数在 executed_at 上做日历匹配——executed_at 本身为
+     * ISO 8601 UTC 字符串，SQLite 可直接截断到日期部分。</p>
+     *
+     * <p>供前端定时任务总览页聚合当日统计（KPI、叙事、ribbon 点位）一次性拉取，
+     * 避免对每个任务单独调用 {@link #findLogsByTaskId} 造成 N+1 查询。</p>
+     *
+     * @param date ISO 8601 日期字符串（YYYY-MM-DD）
+     * @return 当日所有任务的执行日志
+     */
+    public List<CronTaskLog> findLogsByDate(String date) {
+        return List.copyOf(jdbc.query(
+                """
+                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at
+                FROM cron_task_logs
+                WHERE DATE(executed_at) = ?
+                ORDER BY executed_at DESC""",
+                LOG_MAPPER, date));
+    }
 }
