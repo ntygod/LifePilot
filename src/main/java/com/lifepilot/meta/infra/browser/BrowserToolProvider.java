@@ -68,7 +68,13 @@ public class BrowserToolProvider {
                                 Map.entry("url", Map.of("type", "string",
                                         "description", "navigate 时的目标 URL；tab open 时的目标 URL")),
                                 Map.entry("selector", Map.of("type", "string",
-                                        "description", "CSS 选择器；click/input/scroll/wait/hover/select 使用")),
+                                        "description", "CSS 选择器；click/input/scroll/wait/hover/select 使用。"
+                                                + "对于 click/input/hover，selector 与 index 二选一；"
+                                                + "若已调用 browser.snapshot，优先用 index（定位更稳，抗 layout 抖动）")),
+                                Map.entry("index", Map.of("type", "integer",
+                                        "description", "基于 browser.snapshot 注入的可交互元素编号（0 起算）；"
+                                                + "click/input/hover 使用，与 selector 二选一；"
+                                                + "若已调用 browser.snapshot，优先用 index 而非 selector")),
                                 Map.entry("value", Map.of("type", "string",
                                         "description", "input/select 时的输入值或 option value")),
                                 Map.entry("label", Map.of("type", "string",
