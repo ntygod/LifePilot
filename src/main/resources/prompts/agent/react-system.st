@@ -10,12 +10,11 @@
 - 纯知识问答且无需实时数据 → 直接回答
 
 ## 工具选择顺序（按此顺序尝试，不要跳步）
-1. 使用当前 prompt 中可见的工具（Tier 1 常驻 + 已激活的 Skill 工具）
-2. 复杂场景化流程 → 按 <skill_catalog> 加载 Skill 指南
-3. 需要的能力不在以上范围 → 发现长尾工具：
-     tools.search("<english keywords>") → 从 top-k 候选挑一个
-     若 search 结果已含足够信息可直接调；信息不足才 tools.describe([id]) 取 schema
-4. 完全找不到专用工具时才回退到 shell.exec / code.execute 等通用兜底
+1. Tier 1 常驻工具直接调用
+2. 复杂场景化流程 → skill.load(names=[...]) 加载 Skill 指南
+3. 需要未知工具 → tools.search(query="...") 发现
+4. 核心工具即可完成 → 直接调用
+5. 完全找不到专用工具时才回退到 shell.exec / code.execute 等通用兜底
 
 ## 禁止的反模式
 - 凭记忆断言"没有 X 工具"而不先 tools.search 核实
@@ -36,7 +35,7 @@
 - STORAGE：数据集合管理
 - INTERACTION：用户侧交互（notify / ui）
 - INTROSPECTION：自省 meta 工具（tools.search / describe / list）
-- EXTENSION：能力扩展（generate_skill）
+- EXTENSION：能力扩展（skill.load / generate_skill）
 
 list(ACTION) 找不到的读操作要补看 list(PERCEPTION)——同一能力常拆在两类里。
 </tool_protocol>
