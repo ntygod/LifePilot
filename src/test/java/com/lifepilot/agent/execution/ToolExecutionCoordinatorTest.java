@@ -576,6 +576,121 @@ class ToolExecutionCoordinatorTest {
         assertThat(maxConcurrent.get()).isGreaterThanOrEqualTo(2);
     }
 
+    @Test
+    void 工具返回activatedToolIds时应并入state激活集合() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolDisplayName("skill.load")).thenReturn("激活技能");
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        ToolCallback callback = new ToolCallback() {
+            private final ToolDefinition definition = DefaultToolDefinition.builder()
+                    .name("skill.load")
+                    .description("激活技能")
+                    .inputSchema("{}")
+                    .build();
+
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return definition;
+            }
+
+            @Override
+            public String call(String toolInput) {
+                // 模拟 skill.load 序列化后的 JSON 信封：content 为 <skill> 包装，activated_tool_ids 为建议工具集合。
+                return "{\"content\":\"<skill name=\\\"demo\\\">hello</skill>\",\"activated_tool_ids\":[\"datastore.query\",\"web.search\"]}";
+            }
+        };
+
+        var toolCall = new AssistantMessage.ToolCall(
+                "call-skill-load",
+                "function",
+                "skill.load",
+                "{\"names\":[\"demo\"]}"
+        );
+
+        ReactAgentState result = coordinator.execute(
+                baseState(),
+                toolCall,
+                List.of(callback),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(result.activatedToolIds())
+                .as("工具返回的 activated_tool_ids 应被通用合并到 state")
+                .containsExactlyInAnyOrder("datastore.query", "web.search");
+        assertThat(result.loadedSkillContent())
+                .as("<skill> 包装的 content 应被追加到 state.loadedSkillContent")
+                .isEqualTo("<skill name=\"demo\">hello</skill>");
+    }
+
+    @Test
+    void 非JSON输出或缺少激活字段时不应改动state激活集合() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolDisplayName("web.search")).thenReturn("Web 搜索");
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        ToolCallback callback = new ToolCallback() {
+            private final ToolDefinition definition = DefaultToolDefinition.builder()
+                    .name("web.search")
+                    .description("Web 搜索")
+                    .inputSchema("{}")
+                    .build();
+
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return definition;
+            }
+
+            @Override
+            public String call(String toolInput) {
+                // 普通工具输出：无 activated_tool_ids，无 <skill> content。
+                return "{\"hits\":[{\"title\":\"a\"}]}";
+            }
+        };
+
+        var toolCall = new AssistantMessage.ToolCall(
+                "call-web",
+                "function",
+                "web.search",
+                "{\"query\":\"zhiwei\"}"
+        );
+
+        ReactAgentState result = coordinator.execute(
+                baseState(),
+                toolCall,
+                List.of(callback),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        // 初始 state 没有激活工具，普通工具输出不应触发合并。
+        assertThat(result.activatedToolIds()).isNull();
+        assertThat(result.loadedSkillContent()).isNull();
+    }
+
     private ReactAgentState baseState() {
         var budget = Budget.builder()
                 .maxTokens(4096)

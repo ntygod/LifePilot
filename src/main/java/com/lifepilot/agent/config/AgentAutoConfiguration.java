@@ -306,8 +306,6 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) SkillRegistry skillRegistry,
-            @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new ReactAgentLoop(
                 contextAssembler,
@@ -325,8 +323,6 @@ public class AgentAutoConfiguration {
                 compactionEngine,
                 sharedScheduler,
                 workspaceService,
-                skillRegistry,
-                toolRegistry,
                 experienceSummarizer);
     }
 
