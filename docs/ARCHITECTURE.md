@@ -1,7 +1,7 @@
 # 知微（ZhiWei）— 系统架构总览
 
 > **文档性质**：架构总览文档
-> **最后更新**：2026-04-23
+> **最后更新**：2026-04-24
 
 ## 1. 项目概述
 
@@ -141,7 +141,7 @@ graph TB
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `project` | 项目（领域级任务容器）CRUD、项目级 MemorySpace 联动、ProjectContext 解析、级联删除 | [架构](architecture/project.md) |
-| `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
+| `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合）。**Plan 3（2026-04-23）**：LLM 工具集下线、前端 `/datastores` 路由与侧栏入口下架；后端 `DataStoreManager` 完整能力保留（供内置 Skill 与泛型 CRUD 适配器继续使用） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
 | `document` | 文档工作空间（docx / xlsx / pptx 新建、docx / xlsx 锚点编辑、工作副本 + 版本链 + diff + commit/rollback/discard） | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
@@ -192,7 +192,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V21）"
+    subgraph "Flyway 迁移（V1~V23）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -214,6 +214,8 @@ graph LR
         V19["V19: 工具暴露重构 — tool_search_index(FTS5) + tool_usage_stats + tier1_advisory"]
         V20["V20: daily_active_sessions 日活会话统计表"]
         V21["V21: 技能系统重构相关表与索引"]
+        V22["V22: cron_tasks 加 project_id + 部分索引（Plan 2 定时任务按项目归属）"]
+        V23["V23: cron_task_logs 加 trigger_source（cron / manual，区分定时与立即运行）"]
     end
 
     V1 --> SQL

@@ -2,8 +2,21 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.datastore`
-> **最后更新**：2026-04-13
-> **实现状态**：✅ 已完成
+> **最后更新**：2026-04-24
+> **实现状态**：✅ 后端能力保留；Plan 3（2026-04-23）LLM 工具集下线、前端用户入口下架
+
+## Plan 3 用户侧下架（2026-04-23）
+
+`StorageToolProvider.buildStorageTools()` 当前返回 `List.of()` —— LLM 不再通过 `datastore` 工具直接操作数据存储。前端 `/datastores` 路由、`/datastores/:id` 详情路由与侧栏"资料仓库"菜单入口均已移除（`src/router/index.ts` 保留注释说明，`zhiwei-web/src/views/DatastoreView.vue` / `DatastoreDetailView.vue` 组件文件及 `stores/api` 保留不调用）。
+
+**保留的能力**：
+
+- `DataStoreManager` 及其全部仓储、索引、集合编排能力
+- 后端 Datastore REST CRUD（`/api/datastores`，`DatastoreController`）——用于后续管理面恢复
+- `DataStoreCrudAdapter<T>`（内置 Skill 如 Todo / Schedule / Habit 使用的泛型领域适配器）
+- 知识库侧的 `DATASTORE_DOCUMENT` 同步与检索路径（`KnowledgeSyncWorker` 等）
+
+下文的工具 action 描述（§4.7）与 Skill 使用示例保留作为后端能力参考；如需复活 LLM 工具集，取消 `StorageToolProvider.buildStorageTools()` 中被注释的返回语句即可。
 
 ## 1. 模块概述
 

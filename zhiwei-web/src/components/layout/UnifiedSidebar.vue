@@ -5,11 +5,13 @@ import {
   Archive,
   ChevronRight,
   Clock,
+  Monitor,
+  Moon,
   Pencil,
   Pin,
   Plus,
   Search,
-  Settings,
+  Sun,
   Trash2,
 } from 'lucide-vue-next'
 import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
@@ -19,6 +21,7 @@ import ProjectSection from '@/components/sidebar/ProjectSection.vue'
 import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
+import { useTheme } from '@/composables/useTheme'
 import type { ChatSession } from '@/types'
 import { manageNavGroups, manageRoutePrefixes, isNavItemActive } from './appNavigation'
 
@@ -29,6 +32,7 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+const theme = useTheme()
 
 const searchQuery = ref('')
 const searchVisible = ref(false)
@@ -74,11 +78,17 @@ watch(
 
 /* ── 会话列表 ── */
 
-const sortedSessions = computed(() => [...chatStore.sessions].sort((left, right) => {
-  if (left.pinned && !right.pinned) return -1
-  if (!left.pinned && right.pinned) return 1
-  return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
-}))
+/**
+ * 侧栏"今天/昨天"分组只显示主账户对话（projectId 为空）。
+ * 项目对话归属 {@link ProjectSection} 展开项嵌套展示，避免两处重复。
+ */
+const sortedSessions = computed(() => [...chatStore.sessions]
+  .filter(s => !s.projectId)
+  .sort((left, right) => {
+    if (left.pinned && !right.pinned) return -1
+    if (!left.pinned && right.pinned) return 1
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  }))
 
 function matchesSearch(session: ChatSession) {
   const query = searchQuery.value.trim().toLowerCase()
@@ -236,11 +246,6 @@ function navigateTo(path: string) {
   emit('close')
 }
 
-function openSettings() {
-  activeTab.value = 'manage'
-  router.push('/settings/general')
-  emit('close')
-}
 </script>
 
 <template>
@@ -248,7 +253,7 @@ function openSettings() {
     <!-- Whisper 下载进度 -->
     <WhisperDownloadCard />
 
-    <!-- 顶部：品牌 -->
+    <!-- 顶部：品牌（logo + 产品名） -->
     <div class="sidebar-header">
       <RouterLink to="/conversations/new" class="flex items-center gap-sm" @click="emit('close')">
         <ZhiweiMark class="size-[1.3rem] text-primary" />
@@ -289,7 +294,7 @@ function openSettings() {
           <Search class="qw-action-icon" />
           <span>搜索对话</span>
         </button>
-        <!-- 定时任务入口占位 —— 路由由 Plan 2 建，当前点击会 404 -->
+        <!-- 定时任务全局入口（Plan 2+3 Task A5 已落地 /scheduled-tasks 路由） -->
         <button
           type="button"
           class="qw-action-row"
@@ -457,16 +462,18 @@ function openSettings() {
       </div>
     </template>
 
-    <!-- 底部工具栏 -->
-    <div class="flex items-center justify-between border-t border-sidebar-border/40 px-md py-sm">
-      <div />
+    <!-- 底部：主题切换（高频功能独占，右对齐） -->
+    <div class="sidebar-footer">
       <button
         type="button"
-        class="flex items-center gap-xs rounded-xl px-sm py-xs text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-        @click="openSettings"
+        class="theme-toggle"
+        :title="`主题：${theme.mode.value === 'light' ? '浅色' : theme.mode.value === 'dark' ? '深色' : '跟随系统'}`"
+        data-testid="sidebar-theme-toggle"
+        @click="theme.cycleTheme()"
       >
-        <Settings class="size-4" />
-        设置
+        <Sun v-if="theme.mode.value === 'light'" class="size-4" />
+        <Moon v-else-if="theme.mode.value === 'dark'" class="size-4" />
+        <Monitor v-else class="size-4" />
       </button>
     </div>
   </div>
@@ -629,6 +636,36 @@ function openSettings() {
 }
 
 .qw-link:hover {
+  color: var(--foreground);
+}
+
+/* ═══ 底部 ═══ */
+
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem 0.625rem;
+  border-top: 1px solid hsl(from var(--sidebar-border) h s l / 0.4);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.theme-toggle:hover {
+  background: hsl(from var(--muted) h s l / 0.5);
+  border-color: hsl(from var(--border) h s l / 0.5);
   color: var(--foreground);
 }
 </style>

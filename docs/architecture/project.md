@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.project`
-> **最后更新**：2026-04-23
+> **最后更新**：2026-04-24
 
 ## 1. 模块概述
 
@@ -16,9 +16,12 @@
 
 不在本模块职责内：
 
-- 定时任务全局入口（后续 Plan）
-- Datastore 用户侧下架（后续 Plan）
 - L3 用户偏好 / L4 程序记忆的 key-level override（后续 Plan）
+
+已在后续 Plan 落地：
+
+- **Plan 2（定时任务全局入口）**：`cron_tasks.project_id` 字段（V19） + `/api/scheduled-tasks` REST + 前端 `/scheduled-tasks` 管理页。详见本文 §5.4 与 §7 集成点表。
+- **Plan 3（Datastore 用户侧下架）**：LLM 工具集下线 + 前端路由/侧栏入口下架；后端能力保留。详见 [通用数据存储架构](./generic-data-store.md)。
 
 ## 2. 数据模型
 
@@ -64,6 +67,17 @@ chat_turn_memory_snapshots.project_space_id TEXT
 ### 2.4 `MemorySpaceType.PROJECT`
 
 `memory_spaces` 表已有字段 `space_type`，V15 引入新的枚举值 `PROJECT`。对应 `MemorySpaceKeys.project(projectId)` 生成的 `space_key` 形如 `project:{uuid}`。
+
+### 2.5 `cron_tasks.project_id`（V19，Plan 2）
+
+```
+cron_tasks.project_id TEXT                     -- NULL = 归属主账户；非 NULL = 归属具体项目
+idx_cron_tasks_project_id                      -- 部分索引：WHERE project_id IS NOT NULL
+```
+
+不加 FK 到 `projects(id)`：级联策略由应用层 `ProjectService.deleteProject` 统一实现（与 V15 / V17 思路一致），避免跨迁移的 FK 依赖环。
+
+`CronTaskEntry` record 新增 `@Nullable String projectId` 字段并保留两种兼容构造器（无 skillIds 的旧调用点和无 projectId 的旧调用点均等价于归属主账户）。
 
 ## 3. 核心组件
 
@@ -140,14 +154,15 @@ graph TB
 
 `@Transactional` 方法：
 
-- **createProject(name, instructions, isolation)**：同名重复校验 → `MemorySpaceRepository.ensureProjectSpace(newId)` 创建 PROJECT 级空间 → 持久化 `Project` 行。规范化：`instructions=null → ""`，`isolation=null → ISOLATED`
+- **createProject(name, instructions, isolation)**：同名重复校验 → `MemorySpaceRepository.ensureProjectSpace(newId)` 创建 PROJECT 级空间 → 持久化 `Project` 行 → 若 `KnowledgeBaseManager` 可用则创建"项目默认知识库"（tags=`["project"]`）并绑定到项目 MemorySpace（KB 建失败不中止，记 warn）。规范化：`instructions=null → ""`，`isolation=null → ISOLATED`
 - **updateProject(id, name, instructions, isolation)**：改名重名校验；`instructions` / `isolation` 传 null 时保留原值
-- **deleteProject(id)**：严格 5 步级联（见下节）
+- **deleteProject(id)**：6 步级联（见下节）
 
 ### 3.6 级联删除顺序（`ProjectService.deleteProject`）
 
-FK 约束决定的固定顺序：
+FK 约束决定的固定顺序（代码中编号 0–5）：
 
+0. **级联删项目默认 KB 本体**（仅 `KnowledgeBaseManager` 可用时） —— 通过 `memory_space_knowledge_bases` 反查项目 space 下的 KB id，仅对 `tags` 含 `"project"` 的调 `KnowledgeBaseManager.deleteKnowledgeBase`；避免误删用户手动挂到项目的非默认 KB，也避免 Step 5 级联清关联表后留下孤儿 KB 本体
 1. **清归属项目的会话**（`SessionStoreRepository.batchDelete(sessionIds)`）—— FK CASCADE 连带清 `chat_turns` / `session_transcript_entries` 等全部子表
 2. **清项目记忆空间下的 `memory_relations`** —— `memory_relations` FK 到 `memory_entities` 不带 CASCADE，必须先于 `memory_entities` 删
 3. **清项目记忆空间下的 `memory_entities`** —— FK CASCADE 连带清 `memory_entity_versions` / `memory_entity_provenances`
@@ -205,6 +220,15 @@ L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续
 
 `POST /api/chat/sessions/{id}/fork` 产生的新会话继承源会话的 `projectId`，保证项目内 fork 不泄漏到主账户。
 
+### 5.4 定时任务归属（Plan 2）
+
+- **创建**：`CronActionDispatchExecutor` 在 `action=create` 路径上通过 `ChatSessionRepository.findById(sessionId)` 反查 `ChatSession.projectId`，填入新建的 `CronTaskEntry`——在隔离项目对话中创建的定时任务自动归属该项目；`ChatSessionRepository` 缺失、sessionId 缺失或 session 不存在时一律回退 `null`（归属主账户），保证功能降级不破坏 cron 创建路径
+- **归属不可迁移**：`PUT /api/scheduled-tasks/{id}` 故意不接受 `projectId` 字段；要换归属需删除重建
+- **全局管理**：`GET /api/scheduled-tasks` 不传 `projectId` 时返回主账户 + 所有项目的任务（供全局管理页使用）；传 `projectId=xxx` 时精确等值过滤
+- **项目删除级联**：`ProjectService.deleteProject` 未显式清理 cron_tasks（V19 不带 FK）；按当前实现，归属被删项目的定时任务会被留成"孤儿 project_id"，由前端按项目 tag 显示时过滤处理
+
+内部 `CronTaskRepository.findByProjectId(projectId)` 对应 Plan 2 新增的按项目过滤查询。
+
 ## 6. 前端入口
 
 - **侧栏项目分组**（`src/components/sidebar/ProjectSection.vue`）：展示项目列表入口
@@ -213,8 +237,9 @@ L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续
 - **项目资料抽屉**（`src/components/project/ProjectResourcePanel.vue`）：知识库/文档 tab 骨架
 - **项目设置抽屉**（`src/components/project/ProjectSettingsPanel.vue`）：编辑 + 删除
 - **新建对话继承**：`ChatView.vue` 读取 `route.query.projectId` 作为创建新对话时的项目归属
+- **定时任务全局管理**（Plan 2）：侧栏"定时任务"一级入口 `data-testid=scheduled-tasks-entry` → `/scheduled-tasks` 路由 → `src/views/ScheduledTasksView.vue`，列表带项目 tag + 暂停/恢复/删除操作
 
-前端 API 客户端：`src/api/project.ts`；Pinia store：`src/stores/project.ts`。
+前端 API 客户端：`src/api/project.ts` / `src/api/scheduledTask.ts`；Pinia store：`src/stores/project.ts` / `src/stores/scheduledTask.ts`。
 
 ## 7. 集成点
 
@@ -226,10 +251,12 @@ L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续
 | 记忆工具（`com.lifepilot.meta.infra.memory`） | Tool → Project | `MemoryToolProvider` 从 `ToolInput.context.sessionId` 反查 ctx，构造 `toProjectFilter` 读 / `toProjectWriteContext` 写 |
 | 对话轮持久化（`com.lifepilot.conversation.chatturn`） | Turn → Project | `ChatTurnService.persistTurnMemorySnapshot` 按 session 的 projectId 填 `project_space_id`，固化到 snapshot |
 | 经验学习（`com.lifepilot.memory.experience`） | Memory → Project | `ExperienceSummarizer` / `SubtaskReflector` 写入按 `ProjectContext.writeContext` 路由 |
+| 定时任务（`com.lifepilot.agent.task` + `com.lifepilot.meta.infra.task`） | Project → Cron | `cron_tasks.project_id`；`CronActionDispatchExecutor` 创建时按 `ChatSession.projectId` 填充；`CronTaskRepository.findByProjectId` 供 `ScheduledTaskController` 过滤查询使用 |
 
 ## 8. 当前限制
 
 - Plan 1 仅做 space-level 合并，不做 key-level override：同名的用户偏好 / 程序记忆条目不会按项目版本优先覆盖主账户版本
-- `session_store.project_id` / `chat_turn_memory_snapshots.project_space_id` 均不在 DB 层加 FK，依赖应用层级联，误操作裸 SQL 可能产生孤立数据
+- `session_store.project_id` / `chat_turn_memory_snapshots.project_space_id` / `cron_tasks.project_id` 均不在 DB 层加 FK，依赖应用层级联，误操作裸 SQL 可能产生孤立数据
+- `ProjectService.deleteProject` 未显式清理 `cron_tasks`：归属被删项目的定时任务会留成"孤儿 project_id"，前端按项目 tag 显示时需自行过滤；如果严格清理需求出现再补充级联步骤
 - 未做项目级配额、审计、多用户共享语义
 - 前端项目资料 tab（知识库 / 文档归属）目前仅为骨架，完整的项目内知识库 / 文档管理是后续 Plan 范围

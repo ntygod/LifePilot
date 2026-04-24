@@ -243,9 +243,15 @@ export const chatApi = {
     })
   },
 
-  /** 获取会话列表 */
-  listSessions(): Promise<ChatSession[]> {
-    return request('/chat/sessions')
+  /**
+   * 获取会话列表。
+   *
+   * @param projectId 项目 ID；传入时仅返回该项目下的会话，
+   *                  不传或为 null 时返回主账户会话（project_id IS NULL）
+   */
+  listSessions(projectId?: string | null): Promise<ChatSession[]> {
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
+    return request(`/chat/sessions${qs}`)
   },
 
   /** 获取会话历史消息 */

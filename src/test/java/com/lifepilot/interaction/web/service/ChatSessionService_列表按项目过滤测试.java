@@ -60,6 +60,7 @@ class ChatSessionService_列表按项目过滤测试 {
                 null,
                 null,
                 null,
+                null,
                 null
         );
     }

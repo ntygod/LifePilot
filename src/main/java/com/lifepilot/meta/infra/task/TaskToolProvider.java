@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra.task;
 
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -10,6 +11,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -30,11 +32,20 @@ public class TaskToolProvider {
 
     private final CronTaskRepository cronTaskRepository;
     private final CronScheduler cronScheduler;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
 
+    /** 兼容旧调用点的构造器（无 ChatSessionRepository，新建任务 projectId 始终为 null）。 */
     public TaskToolProvider(CronTaskRepository cronTaskRepository,
                             CronScheduler cronScheduler) {
+        this(cronTaskRepository, cronScheduler, null);
+    }
+
+    public TaskToolProvider(CronTaskRepository cronTaskRepository,
+                            CronScheduler cronScheduler,
+                            @Nullable ChatSessionRepository chatSessionRepository) {
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
+        this.chatSessionRepository = chatSessionRepository;
     }
 
     /**
@@ -43,7 +54,7 @@ public class TaskToolProvider {
      * @return Cron 工具列表
      */
     public List<BuiltinTool> buildCronTools() {
-        var executor = new CronActionDispatchExecutor(cronTaskRepository, cronScheduler);
+        var executor = new CronActionDispatchExecutor(cronTaskRepository, cronScheduler, chatSessionRepository);
         return List.of(buildCronTool(executor));
     }
 

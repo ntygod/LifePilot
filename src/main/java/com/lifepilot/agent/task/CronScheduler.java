@@ -106,8 +106,8 @@ public class CronScheduler {
             var current = repository.findById(taskId);
             if (current.isEmpty() || !"active".equals(current.get().status())) return;
 
-            // 执行任务
-            executeTask(current.get());
+            // 执行任务（定时器触发）
+            executeTask(current.get(), CronTaskLog.TRIGGER_CRON);
 
             // 注册下一次触发
             scheduleNext(taskId, cron, instruction, name);
@@ -119,9 +119,31 @@ public class CronScheduler {
     }
 
     /**
-     * 执行 Cron 任务：构造 prompt → 调用 AgentOrchestrator → 写入日志 → 通知。
+     * 立即异步执行指定任务一次（跳过 cron 等待），主要供 HTTP 端点
+     * {@code POST /api/scheduled-tasks/{id}/run} 调用。
+     *
+     * <p>与 cron 触发路径复用同一份 {@link #executeTask} 逻辑，只在日志里把
+     * {@code trigger_source='manual'} 与定时触发区分开，供前端打 tag 和运维分析
+     * "定时失败 vs 人工重试"。</p>
+     *
+     * <p>异步派发原因：{@link AgentOrchestrator#run} 通常需要数秒~数十秒完成，
+     * 如果在 HTTP 请求线程里同步执行会阻塞整个请求；此处丢到调度线程池即可，
+     * HTTP 端点立即返回"已触发"，用户通过刷新日志列表查看进度。</p>
+     *
+     * @param task 要立即运行的任务（由上层从 repository 拿到并做 null/status 校验）
      */
-    void executeTask(CronTaskEntry task) {
+    public void runOnce(CronTaskEntry task) {
+        log.info("Cron 任务手动触发立即运行: taskId={}, name={}", task.id(), task.name());
+        scheduler.execute(() -> executeTask(task, CronTaskLog.TRIGGER_MANUAL));
+    }
+
+    /**
+     * 执行 Cron 任务：构造 prompt → 调用 AgentOrchestrator → 写入日志 → 通知。
+     *
+     * @param task          任务条目
+     * @param triggerSource 触发来源（cron / manual），会原样写入 cron_task_logs.trigger_source
+     */
+    void executeTask(CronTaskEntry task, String triggerSource) {
         Instant start = Instant.now();
         String status = "success";
         String summary = null;
@@ -179,7 +201,8 @@ public class CronScheduler {
             repository.saveLog(new CronTaskLog(
                     UUID.randomUUID().toString(), task.id(),
                     Instant.now().toString(), status, durationMs, tokensUsed, summary,
-                    Instant.now().toString()
+                    Instant.now().toString(),
+                    triggerSource
             ));
         }
     }

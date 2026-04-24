@@ -278,7 +278,8 @@ public class ChatController {
                     session.isPinned(),
                     session.archived(),
                     session.summary(),
-                    session.lastMessageAt()
+                    session.lastMessageAt(),
+                    session.projectId()
             );
             return ResponseEntity.status(201).body(sessionInfo);
         } catch (Exception e) {

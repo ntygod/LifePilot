@@ -67,7 +67,8 @@ class ProjectIsolation_端到端测试 {
         projectRepo = new ProjectRepository(jdbcTemplate);
         SessionStoreRepository sessionRepo = new SessionStoreRepository(
                 jdbcTemplate, new ObjectMapper(), null);
-        projectService = new ProjectService(projectRepo, spaceRepo, sessionRepo, jdbcTemplate);
+        // KnowledgeBaseManager = null：端到端验证项目隔离语义，不触达 KB 自动创建路径
+        projectService = new ProjectService(projectRepo, spaceRepo, sessionRepo, jdbcTemplate, null);
         resolver = new ProjectContextResolver(projectRepo, spaceRepo);
     }
 

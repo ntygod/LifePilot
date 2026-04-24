@@ -32,7 +32,6 @@ import SessionSidebar from '@/components/chat/SessionSidebar.vue'
 import ChatRightPanel from '@/components/chat/ChatRightPanel.vue'
 import { useProcessTaskStore } from '@/stores/processTask'
 import { useChat } from '@/composables/useChat'
-import { useDatastoreStore } from '@/stores/datastore'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
 import { useSkillStore } from '@/stores/skill'
@@ -42,7 +41,6 @@ import { copyToClipboard } from '@/utils/clipboard'
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
-const datastoreStore = useDatastoreStore()
 const kbStore = useKnowledgeBaseStore()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
@@ -290,7 +288,6 @@ onMounted(async () => {
   }
 
   void kbStore.fetchList()
-  void datastoreStore.fetchList()
   void skillStore.fetchSkills()
 
   try {
@@ -300,7 +297,19 @@ onMounted(async () => {
   }
 
   // 处理首屏传递的待发送消息
-  if (chatStore.pendingFirstMessage) {
+  // 1) 项目详情页等场景：使用完整结构（含附件 / sessionConfig）
+  // 2) 首屏纯文本链路：保留兼容字段
+  if (chatStore.pendingFirstSend) {
+    const payload = chatStore.pendingFirstSend
+    chatStore.pendingFirstSend = null
+    await sendMessage(
+      payload.content,
+      payload.attachmentIds,
+      payload.attachments,
+      payload.sessionConfig,
+      payload.restoreSessionConfig,
+    )
+  } else if (chatStore.pendingFirstMessage) {
     const content = chatStore.pendingFirstMessage
     chatStore.pendingFirstMessage = null
     await sendMessage(content)
@@ -726,7 +735,7 @@ function closeTracePanel() {
                 ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
                 :knowledge-bases="kbStore.list"
-                :datastores="datastoreStore.list"
+                :datastores="[]"
                 :base-session-config="activeSessionConfig"
                 @send="handleSend"
               />
@@ -805,7 +814,7 @@ function closeTracePanel() {
               :continuation-title="continuationTitle"
               :continuation-detail="continuationDetail"
               :knowledge-bases="kbStore.list"
-              :datastores="datastoreStore.list"
+              :datastores="[]"
               :base-session-config="activeSessionConfig"
               @send="handleSend"
             />
@@ -888,7 +897,7 @@ function closeTracePanel() {
                   :datastore-ids="activeSessionConfig.datastoreIds"
                   :providers="chatProviders"
                   :knowledge-bases="kbStore.list"
-                  :datastores="datastoreStore.list"
+                  :datastores="[]"
                   @close="closeMobileSidebar"
                   @update="handleConfigUpdate"
                 />

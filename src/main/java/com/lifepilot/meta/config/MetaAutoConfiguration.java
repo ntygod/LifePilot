@@ -126,8 +126,9 @@ public class MetaAutoConfiguration {
                                         @Nullable ChannelInstanceService channelInstanceService,
                                         com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
                                         @Nullable AttachmentRepository attachmentRepository,
+                                        @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
                                         @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, skillPathWhitelist);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist);
     }
 
     /**

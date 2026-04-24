@@ -1,5 +1,7 @@
 package com.lifepilot.agent.suspend.model;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
@@ -14,9 +16,21 @@ import java.time.Instant;
  * ScheduledWakeup -> WakeupSignal，
  * ExternalDataWait -> DataReady。</p>
  *
+ * <p>Jackson 多态标注：作为 {@code ReactStep.Resume.payload} 的字段类型，
+ * 会随 checkpoint 整体 roundtrip；sealed interface 默认不写类型信息，
+ * 必须显式声明否则反序列化崩溃（与 {@code ReactStep} 同理）。</p>
+ *
  * @author zsg
  * @since 2026-03-17
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ResumePayload.WorkflowResult.class, name = "WORKFLOW_RESULT"),
+        @JsonSubTypes.Type(value = ResumePayload.UserDecision.class, name = "USER_DECISION"),
+        @JsonSubTypes.Type(value = ResumePayload.RemoteResult.class, name = "REMOTE_RESULT"),
+        @JsonSubTypes.Type(value = ResumePayload.WakeupSignal.class, name = "WAKEUP_SIGNAL"),
+        @JsonSubTypes.Type(value = ResumePayload.DataReady.class, name = "DATA_READY")
+})
 public sealed interface ResumePayload permits
         ResumePayload.WorkflowResult,
         ResumePayload.UserDecision,

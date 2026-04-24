@@ -259,6 +259,7 @@ public class ContextAssembler {
         this.skillRequirementGate = gate;
     }
 
+
     /**
      * 注入项目上下文解析器（可选）。
      *

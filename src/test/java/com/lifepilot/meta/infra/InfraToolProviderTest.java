@@ -43,7 +43,14 @@ class InfraToolProviderTest {
                 true
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
-        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, workspaceResolver, null, null);
+        // 构造签名：21 参数 —— workspaceResolver 位于第 18 位，
+        // 之后是 attachmentRepository / chatSessionRepository / skillPathWhitelist。
+        provider = new InfraToolProvider(
+                properties,
+                webSearchConfigProvider,
+                null, null, null, null, null, null, null, null, null, null, null, null, null,
+                workspaceResolver,
+                null, null, null);
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
@@ -78,6 +79,7 @@ public class InfraToolProvider {
     @Nullable private final ChannelInstanceService channelInstanceService;
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
     @Nullable private final SkillPathWhitelist skillPathWhitelist;
 
     public InfraToolProvider(MetaProperties properties,
@@ -99,6 +101,7 @@ public class InfraToolProvider {
                              @Nullable ChannelInstanceService channelInstanceService,
                              WorkspaceResolver workspaceResolver,
                              @Nullable AttachmentRepository attachmentRepository,
+                             @Nullable ChatSessionRepository chatSessionRepository,
                              @Nullable SkillPathWhitelist skillPathWhitelist) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
@@ -119,6 +122,7 @@ public class InfraToolProvider {
         this.channelInstanceService = channelInstanceService;
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
+        this.chatSessionRepository = chatSessionRepository;
         this.skillPathWhitelist = skillPathWhitelist;
     }
 
@@ -158,9 +162,10 @@ public class InfraToolProvider {
         // workflow 工具已下线：使用频率低、与 LLM 直接编排相比优势有限，
         // 保留 WorkflowToolProvider 源码待需要时重启用。
 
-        // 自主任务工具
+        // 自主任务工具（创建路径会通过 ChatSessionRepository 反查当前会话的 projectId，
+        // 填入新建任务的归属 —— Plan 2 Task A6）
         if (cronTaskRepository != null && cronScheduler != null) {
-            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler);
+            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, chatSessionRepository);
             totalTools += registerBuiltinTools(toolRegistry, taskToolProvider.buildCronTools());
         } else {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
