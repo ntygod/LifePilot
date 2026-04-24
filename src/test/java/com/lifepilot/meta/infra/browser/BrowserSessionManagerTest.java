@@ -339,6 +339,12 @@ class BrowserSessionManagerTest {
         }
 
         @Override
+        public int getPageCount(Object browserContextObj) {
+            // 桩行为：只有一个 sharedContext，page 数无需真实统计，返回 0 即可走兜底分支
+            return 0;
+        }
+
+        @Override
         public Object createContext(Object browserObj, String userAgent, int viewportWidth, int viewportHeight,
                                     String locale, String timezoneId, Path storageStatePath) {
             createContextCount++;

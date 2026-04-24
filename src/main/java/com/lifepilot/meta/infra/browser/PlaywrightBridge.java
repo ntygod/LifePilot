@@ -238,6 +238,18 @@ final class PlaywrightBridge {
     }
 
     /**
+     * 获取 BrowserContext 当前打开的 page 数量。
+     *
+     * <p>用于 CDP 模式下选择最活跃的 context：page 数多的更可能是用户正在使用的窗口。</p>
+     *
+     * @param browserContextObj BrowserContext 实例
+     * @return 当前 page 数量
+     */
+    static int getPageCount(Object browserContextObj) {
+        return ((BrowserContext) browserContextObj).pages().size();
+    }
+
+    /**
      * 保存 BrowserContext 的 storageState 到指定路径。
      *
      * @param browserContextObj BrowserContext 实例

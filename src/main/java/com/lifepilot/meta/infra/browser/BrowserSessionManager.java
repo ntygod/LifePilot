@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.ToIntFunction;
 
 /**
  * 浏览器会话管理器 — 单例管理 Playwright Browser 实例。
@@ -466,7 +467,14 @@ public class BrowserSessionManager {
         }
         var contexts = browserRuntime.getContexts(browserInstance);
         if (!contexts.isEmpty()) {
-            sharedBrowserContext = contexts.getFirst();
+            // 按活跃度挑选 context：优先选有 page 的，其次选 page 数最多的
+            sharedBrowserContext = selectActiveContext(contexts, browserRuntime::getPageCount);
+            int selectedIndex = contexts.indexOf(sharedBrowserContext);
+            int withPages = (int) contexts.stream()
+                    .filter(c -> browserRuntime.getPageCount(c) > 0)
+                    .count();
+            log.info("CDP 选中 context[{}]（共 {} 个 context，其中 {} 个有 page）",
+                    selectedIndex, contexts.size(), withPages);
         } else {
             sharedBrowserContext = browserRuntime.createContext(browserInstance,
                     browserConfig.getUserAgent(), browserConfig.getViewportWidth(),
@@ -608,6 +616,44 @@ public class BrowserSessionManager {
         return sessions.size();
     }
 
+    /**
+     * 从 CDP 返回的 context 列表中选择最可能是用户活跃窗口的那个。
+     *
+     * <p>选择策略：
+     * <ol>
+     *   <li>优先选有 page 的 context（空 context 基本没用）</li>
+     *   <li>相同"有 page"条件下选 page 数最多的（活跃度信号）</li>
+     *   <li>相同 page 数时选列表中靠前的（保证确定性）</li>
+     *   <li>全部 context 都无 page 时退回第 0 个（保留原行为避免异常）</li>
+     * </ol>
+     *
+     * <p>该方法泛型化以便单测可传入 Playwright {@code BrowserContext} mock；
+     * 真实调用点使用 {@link BrowserRuntime#getPageCount(Object)} 作为 page 计数器。</p>
+     *
+     * @param contexts    CDP 返回的 context 列表，不可为空
+     * @param pageCounter 读取单个 context page 数量的函数
+     * @param <T>         context 实际类型
+     * @return 选中的 context
+     * @throws IllegalArgumentException 当 contexts 为空列表时
+     */
+    public static <T> T selectActiveContext(List<T> contexts, ToIntFunction<? super T> pageCounter) {
+        if (contexts.isEmpty()) {
+            throw new IllegalArgumentException("CDP 返回的 context 列表为空");
+        }
+        T best = contexts.getFirst();
+        int bestPageCount = pageCounter.applyAsInt(best);
+        for (int i = 1; i < contexts.size(); i++) {
+            T ctx = contexts.get(i);
+            int n = pageCounter.applyAsInt(ctx);
+            // 严格大于才替换，保证相同 page 数时选列表靠前的
+            if (n > bestPageCount) {
+                best = ctx;
+                bestPageCount = n;
+            }
+        }
+        return best;
+    }
+
     interface BrowserRuntime {
         Object createPlaywright();
 
@@ -624,6 +670,9 @@ public class BrowserSessionManager {
 
         /** 获取 Browser 的所有 BrowserContext 列表。 */
         List<Object> getContexts(Object browserObj);
+
+        /** 获取 BrowserContext 当前打开的 page 数量，用于 CDP 选活跃 context。 */
+        int getPageCount(Object browserContextObj);
 
         Object createContext(Object browserObj, String userAgent, int viewportWidth, int viewportHeight,
                              String locale, String timezoneId, @Nullable Path storageStatePath);
@@ -672,6 +721,11 @@ public class BrowserSessionManager {
         @Override
         public List<Object> getContexts(Object browserObj) {
             return PlaywrightBridge.getContexts(browserObj);
+        }
+
+        @Override
+        public int getPageCount(Object browserContextObj) {
+            return PlaywrightBridge.getPageCount(browserContextObj);
         }
 
         @Override
