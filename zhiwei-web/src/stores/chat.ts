@@ -60,16 +60,16 @@ export const useChatStore = defineStore('chat', () => {
     messages.value[index] = { ...messages.value[index], id: newId }
   }
 
-  /** 创建会话。 */
-  async function createSession(title?: string): Promise<ChatSession> {
-    const session = await chatApi.createSession(title)
+  /** 创建会话。可选传入 projectId 将会话归入指定项目。 */
+  async function createSession(title?: string, projectId?: string | null): Promise<ChatSession> {
+    const session = await chatApi.createSession(title, projectId)
     sessions.value.unshift(session)
     return session
   }
 
-  /** 开始新对话，立即创建并激活一个新会话。 */
-  async function startNewSession(title?: string): Promise<ChatSession> {
-    const session = await createSession(title)
+  /** 开始新对话，立即创建并激活一个新会话。可选传入 projectId 继承项目上下文。 */
+  async function startNewSession(title?: string, projectId?: string | null): Promise<ChatSession> {
+    const session = await createSession(title, projectId)
     // 新建会话没有历史消息，跳过 watch 中的 loadMessages 避免竞态覆盖
     skipNextLoad = true
     activeSessionId.value = session.id

@@ -2,8 +2,10 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-03-27
+> **最后更新**：2026-04-23
 > **状态**：最终态方案已落地核心链路，持续完善中
+
+> **关联文档**：用户显式创建的"项目（Project）"容器及其记忆隔离语义（`type=PROJECT` space + ISOLATED/SHARED 模式 + `ProjectContext` 上下文）详见 [项目工作空间架构](./project.md)。本文所述的 `DOMAIN` space 与 Plan 1 新增的 `PROJECT` space 在用途上有差异：`DOMAIN` 是知识源容器（Datastore / 知识库）派生的记忆空间，`PROJECT` 是用户显式创建的领域级任务容器所关联的记忆空间。
 
 ## 1. 设计目标
 
@@ -130,7 +132,8 @@
     - `domain:datastore:{id}`
     - `domain:knowledge-base:{id}`
 - `space_type`
-  - `PERSONAL | DOMAIN | EXPERIENCE`
+  - `PERSONAL | DOMAIN | EXPERIENCE | PROJECT`
+  - `PROJECT` 为 Plan 1 引入的新类型，对应用户显式创建的"项目（Project）"容器，由 `ProjectService.createProject` 在建项目时通过 `MemorySpaceRepository.ensureProjectSpace` 自动联动创建；`space_key` 形如 `project:{projectId}`
 - `display_name`
 - `owner_type`
   - `SYSTEM | DATASTORE | KNOWLEDGE_BASE`
@@ -368,6 +371,29 @@ L2 到 L3 的抽取 / 巩固必须完全服从 turn snapshot：
 - 不能在 `PERSONAL` 和 `DOMAIN` 之间跨 space 合并实体
 
 这条规则是避免“单轮 @ 命中小说素材，结果隔几分钟被巩固成用户事实”的关键。
+
+### 4.5 Plan 1 项目（Project）隔离语义
+
+Plan 1 引入用户显式创建的"项目（Project）"容器，每个项目对应一个 `type=PROJECT` 的 MemorySpace。隔离模式由 `ProjectIsolation` 控制：
+
+- **ISOLATED（默认）**：写入只落项目 space；读取合并主账户 space（继承）
+- **SHARED**：写入路由到主账户 space（合流语义），等同主账户对话
+
+`ProjectContext` 是运行时载体，承载 `projectId` / `projectSpaceId` / `personalSpaceId` / `experienceSpaceId` / `isolated` 五个字段。下游记忆读写路径的决策：
+
+- **读取**：`MemoryReadFilter.buildForProject`
+  - ISOLATED 项目 → `[projectSpaceId, personalSpaceId, experienceSpaceId]`
+  - SHARED 项目 / 主账户对话 → 仅主账户 space
+- **写入**：`ChatTurnService.persistTurnMemorySnapshot` 按 `ChatSession.projectId` 反查 ctx，ISOLATED 时把 `projectSpaceId` 固化到 `chat_turn_memory_snapshots.project_space_id`（V18 字段）
+- **下游异步抽取**（`RealtimeExtractor` / `ExperienceSummarizer` / `SubtaskReflector`）从 snapshot 拿该字段决定 `writeContext.spaceId`
+
+Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续 plan。
+
+`DOMAIN` 与 `PROJECT` 的关系：
+
+- `DOMAIN` space 从知识源（Datastore / 知识库）派生，承载"从知识源学到的领域记忆"
+- `PROJECT` space 由用户显式创建的项目驱动，承载"项目上下文下的用户偏好、事实、经验"
+- 两者并存，不互相覆盖；`DOMAIN` 仍负责 datastore/knowledge-base 外挂检索语义，`PROJECT` 专注于项目内对话和 Agent 学习的隔离
 
 ## 5. 最终态检索模型
 

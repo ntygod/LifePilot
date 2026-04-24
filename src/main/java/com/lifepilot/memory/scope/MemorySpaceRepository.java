@@ -69,6 +69,39 @@ public class MemorySpaceRepository {
         );
     }
 
+    /**
+     * 确保给定项目的项目级记忆空间存在（Plan 1 引入）。
+     *
+     * @param projectId 项目 id
+     * @return 已存在或新建的项目记忆空间
+     */
+    public MemorySpace ensureProjectSpace(String projectId) {
+        return ensureSpace(
+                MemorySpaceKeys.project(projectId),
+                MemorySpaceType.PROJECT,
+                "项目记忆",
+                "PROJECT",
+                projectId,
+                Map.of("projectId", projectId)
+        );
+    }
+
+    /**
+     * 按 id 物理删除记忆空间。
+     *
+     * <p><b>调用约束</b>：memory_entities / memory_relations 对 memory_spaces
+     * 的 FK 是 <b>RESTRICT</b>（V1:337/404），因此调用此方法前必须先清空归属
+     * 此 space 的 memory_entities / memory_relations，否则 FK 会阻断删除。
+     * 级联语义由调用方负责组织（参见 {@code ProjectService#deleteProject}
+     * 的级联顺序说明）。</p>
+     *
+     * <p>memory_space_knowledge_bases / memory_space_datastores 通过 FK
+     * CASCADE 自动清理。</p>
+     */
+    public void deleteById(String spaceId) {
+        jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);
+    }
+
     public MemorySpace ensureSpace(String spaceKey,
                                    MemorySpaceType spaceType,
                                    String displayName,

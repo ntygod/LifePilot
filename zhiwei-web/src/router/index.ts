@@ -64,6 +64,18 @@ const router = createRouter({
     },
 
     /**
+     * 项目工作空间 —— Plan 1 Task 20
+     *
+     * 承载"清爽款"项目详情页：顶部为项目名 + 资料/设置入口，
+     * 主区为"开始新对话"按钮与该项目下的对话列表（列表将在后续 task 接入）。
+     */
+    {
+      path: '/projects/:id',
+      name: 'projectDetail',
+      component: () => import('@/views/ProjectDetailView.vue')
+    },
+
+    /**
      * 知识库模块
      */
     {

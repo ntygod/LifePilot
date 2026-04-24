@@ -11,6 +11,7 @@ import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
@@ -32,6 +33,7 @@ import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
@@ -205,9 +207,12 @@ public class MetaAutoConfiguration {
                                           @Nullable DocumentRetriever documentRetriever,
                                           @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                                           @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                                          @Nullable MemoryProperties memoryProperties) {
+                                          @Nullable MemoryProperties memoryProperties,
+                                          @Nullable ProjectContextResolver projectContextResolver,
+                                          @Nullable ChatSessionRepository chatSessionRepository) {
         return new MemoryToolProvider(hybridRetriever, semanticMemory,
-                episodicMemory, documentRetriever, sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties);
+                episodicMemory, documentRetriever, sessionKbRepo, sessionKnowledgeScopeResolver,
+                memoryProperties, projectContextResolver, chatSessionRepository);
     }
 
     // ==================== 启动后工具注册 ====================

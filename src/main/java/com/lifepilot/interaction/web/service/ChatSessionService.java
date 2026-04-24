@@ -76,9 +76,21 @@ public class ChatSessionService {
 
     @Transactional
     public ChatSession createSession(String title) {
-        ChatSession session = ChatSession.create(title);
+        return createSession(title, null);
+    }
+
+    /**
+     * 创建会话并指定归属项目。
+     *
+     * @param title     会话标题（可选）
+     * @param projectId 归属项目 ID（可选，NULL = 归属主账户）
+     * @return 新创建的会话实例
+     */
+    @Transactional
+    public ChatSession createSession(String title, @Nullable String projectId) {
+        ChatSession session = ChatSession.create(title, projectId);
         sessionRepository.save(session);
-        log.info("创建会话: id={}, title={}", session.id(), session.title());
+        log.info("创建会话: id={}, title={}, projectId={}", session.id(), session.title(), projectId);
         return session;
     }
 
@@ -90,7 +102,28 @@ public class ChatSessionService {
 
     public List<SessionInfo> listSessions(String q, Boolean pinned, Boolean archived,
                                           String timeRange, String sortBy, String order) {
-        return sessionRepository.findByConditions(q, pinned, archived, timeRange, sortBy, order)
+        return listSessions(q, pinned, archived, timeRange, sortBy, order, null);
+    }
+
+    /**
+     * 按项目维度获取会话列表。
+     *
+     * <p>projectId 语义：</p>
+     * <ul>
+     *   <li>{@code null}（默认）—— 只返回主账户对话（project_id IS NULL）</li>
+     *   <li>非空 —— 只返回归属该项目的对话</li>
+     * </ul>
+     *
+     * @param projectId 归属项目 ID（可选）
+     */
+    public List<SessionInfo> listSessions(String q, Boolean pinned, Boolean archived,
+                                          String timeRange, String sortBy, String order,
+                                          @Nullable String projectId) {
+        SessionStoreRepository.ProjectScope projectScope = projectId == null || projectId.isBlank()
+                ? SessionStoreRepository.ProjectScope.mainAccount()
+                : SessionStoreRepository.ProjectScope.ofProject(projectId);
+        return sessionRepository
+                .findByConditions(q, pinned, archived, timeRange, sortBy, order, projectScope)
                 .stream()
                 .map(this::toSessionInfo)
                 .toList();
@@ -441,7 +474,8 @@ public class ChatSessionService {
         String title = newTitle != null && !newTitle.isBlank()
                 ? newTitle
                 : originalSession.title() + " (fork)";
-        ChatSession newSession = ChatSession.create(title);
+        // 分叉会话必须继承源会话的 projectId，避免归属项目的对话被 fork 到主账户
+        ChatSession newSession = ChatSession.create(title, originalSession.projectId());
         sessionRepository.save(newSession);
         return newSession;
     }

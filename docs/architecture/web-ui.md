@@ -79,10 +79,12 @@ graph TB
 |------|------|------|
 | POST | `/api/chat/messages` | 发送消息（非流式，返回完整响应） |
 | POST | `/api/chat/messages/stream` | 发送消息（SSE 流式响应） |
-| GET | `/api/chat/sessions` | 获取会话列表 |
+| POST | `/api/chat/sessions` | 创建会话；请求体含可选 `projectId`（NULL = 主账户，非 NULL = 项目归属） |
+| GET | `/api/chat/sessions` | 获取会话列表；可选 `projectId` 过滤，不传时仅返回主账户对话（project_id IS NULL） |
 | GET | `/api/chat/sessions/{id}/messages` | 获取会话历史消息 |
 | DELETE | `/api/chat/sessions/{id}` | 删除会话 |
 | POST | `/api/chat/signals` | A2UI 信号回传（用户与 Generative UI 组件交互） |
+| GET / POST / PUT / DELETE | `/api/projects` 系列 | 项目工作空间 CRUD，详见 [API 端点清单](../API_ENDPOINTS.md#projects项目工作空间) |
 | GET | `/api/settings` | 获取用户设置 |
 | PUT | `/api/settings` | 更新用户设置 |
 | GET | `/api/settings/workspace` | 获取工作目录设置（defaultWorkspace / resolvedPath / systemDefault） |

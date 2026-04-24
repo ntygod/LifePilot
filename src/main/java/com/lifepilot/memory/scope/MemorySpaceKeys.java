@@ -26,4 +26,11 @@ public final class MemorySpaceKeys {
     public static String knowledgeBaseDomain(String knowledgeBaseId) {
         return "domain:knowledge-base:" + knowledgeBaseId;
     }
+
+    /**
+     * 项目级记忆空间的 space_key（Plan 1 引入）。
+     */
+    public static String project(String projectId) {
+        return "project:" + projectId;
+    }
 }

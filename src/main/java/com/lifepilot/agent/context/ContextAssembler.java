@@ -21,12 +21,16 @@ import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -61,9 +65,35 @@ public class ContextAssembler {
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
 
-    /** 记忆统计缓存（不可变 record，单字段原子读写）。 */
+    /** 记忆统计缓存（不可变 record）。 */
     private record MetadataCache(MemoryCounts counts, Instant cachedAt) {}
-    private volatile MetadataCache metadataCache;
+
+    /**
+     * 记忆统计缓存上限 — 按 filter 为 key 分桶；LRU 淘汰。
+     *
+     * <p>32 足以覆盖"主账户 + N 个项目 × 若干 scope 组合"常见工作集；
+     * 超过后按访问顺序淘汰最旧项，控制内存占用。</p>
+     */
+    private static final int METADATA_CACHE_MAX_SIZE = 32;
+
+    /**
+     * 按 filter 分桶的记忆统计缓存。
+     *
+     * <p>为什么按 filter 分桶：{@code buildMemoryCounts(MemoryReadFilter)} 每个项目
+     * 传入的 filter 不同（spaceIds 不同），若仅按时间 TTL 单桶会导致主账户缓存被
+     * 当作隔离项目的返回值（跨项目污染）。 {@link MemoryReadFilter} 是 record，
+     * 天然支持 equals / hashCode，可直接作为 key。</p>
+     *
+     * <p>使用 {@link LinkedHashMap} accessOrder 模式 + 外部同步实现 LRU；每次访问更新顺序。
+     * 不用 {@link java.util.concurrent.ConcurrentHashMap} 是因为它无法原生支持 LRU 淘汰。</p>
+     */
+    private final Map<MemoryReadFilter, MetadataCache> metadataCache =
+            Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<MemoryReadFilter, MetadataCache> eldest) {
+                    return size() > METADATA_CACHE_MAX_SIZE;
+                }
+            });
 
     /**
      * 记忆分类计数, 供各 context section 首行展示 —
@@ -93,6 +123,8 @@ public class ContextAssembler {
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private final HybridRetriever hybridRetriever;
     @Nullable private volatile WeatherService weatherService;
+    @Nullable private volatile ProjectContextResolver projectContextResolver;
+    @Nullable private volatile ChatSessionRepository chatSessionRepository;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -207,6 +239,26 @@ public class ContextAssembler {
         this.weatherService = weatherService;
     }
 
+    /**
+     * 注入项目上下文解析器（可选）。
+     *
+     * <p>用于在 {@link #assemble(ReactAgentState)} 入口一次性 resolve ProjectContext，
+     * 供四路并行检索按项目上下文构造记忆 filter。缺失时回退 userMemory/agentExperience/userProfile 原行为。</p>
+     */
+    public void setProjectContextResolver(@Nullable ProjectContextResolver projectContextResolver) {
+        this.projectContextResolver = projectContextResolver;
+    }
+
+    /**
+     * 注入 Web 会话仓库（可选）。
+     *
+     * <p>用于根据 {@code state.sessionId()} 反查 projectId，再配合
+     * {@link ProjectContextResolver} 得到 ProjectContext。</p>
+     */
+    public void setChatSessionRepository(@Nullable ChatSessionRepository chatSessionRepository) {
+        this.chatSessionRepository = chatSessionRepository;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -215,19 +267,27 @@ public class ContextAssembler {
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
+            // 入口一次性 resolve ProjectContext，四路并行检索复用同一上下文
+            ProjectContext projectContext = resolveProjectContext(state);
+            MemoryReadFilter experienceFilter = toProjectFilter(projectContext, Set.of(MemoryScope.AGENT_EXPERIENCE));
+            MemoryReadFilter userMemoryFilter = toProjectFilter(projectContext,
+                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+            MemoryReadFilter userProfileFilter = toProjectFilter(projectContext, Set.of(MemoryScope.USER_PROFILE));
             // 四路独立检索并行化：contextSnapshot、userProfile、experiences、relevantMemories 互不依赖
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
             var profileFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture("")
-                    : CompletableFuture.supplyAsync(() -> safeGetUserProfile(state.goal()), VIRTUAL_EXECUTOR);
+                    : CompletableFuture.supplyAsync(
+                        () -> safeGetUserProfile(state.goal(), userProfileFilter), VIRTUAL_EXECUTOR);
             var experiencesFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
-                    : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()), VIRTUAL_EXECUTOR);
+                    : CompletableFuture.supplyAsync(
+                        () -> safeRetrieveExperiences(state.goal(), experienceFilter), VIRTUAL_EXECUTOR);
             var memoryFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
                     : CompletableFuture.supplyAsync(
-                        () -> safeRetrieveRelevantMemories(state.goal()), VIRTUAL_EXECUTOR);
+                        () -> safeRetrieveRelevantMemories(state.goal(), userMemoryFilter), VIRTUAL_EXECUTOR);
             CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture, memoryFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
@@ -243,7 +303,7 @@ public class ContextAssembler {
             String memorySection = safeRedact(formatMemorySection(relevantMemories));
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
-            MemoryCounts memoryCounts = buildMemoryCounts();
+            MemoryCounts memoryCounts = buildMemoryCounts(userMemoryFilter);
             List<Message> contextMessages = buildContextMessages(
                     profileSection,
                     workspaceSection,
@@ -288,6 +348,54 @@ public class ContextAssembler {
         }
     }
 
+    /**
+     * 从 {@code state.sessionId()} 反查 ChatSession 的 projectId，经 resolver 得到 ProjectContext。
+     *
+     * <p>依赖任一缺失（resolver / chatSessionRepo 为 null）或查询/解析抛错时返回 null，
+     * 调用方需在 {@link #toProjectFilter(ProjectContext, Set)} 中按 null 走 fallback 分支。</p>
+     */
+    @Nullable
+    ProjectContext resolveProjectContext(ReactAgentState state) {
+        if (projectContextResolver == null || chatSessionRepository == null) {
+            return null;
+        }
+        String sessionId = state.sessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            var session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            return projectContextResolver.resolve(session.get().projectId());
+        } catch (Exception e) {
+            log.debug("解析 ProjectContext 失败, 回退到默认 filter: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 按 ProjectContext + scopes 构造记忆读取 filter。
+     *
+     * <p>ctx 为 null 时按 scopes 回退到 {@link MemoryReadFilter#userProfile()} /
+     * {@link MemoryReadFilter#userMemory()} / {@link MemoryReadFilter#agentExperience()} 原行为，
+     * 保证新旧路径向后兼容。</p>
+     *
+     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
+     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
+     */
+    MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
+        return MemoryReadFilter.fromProjectContextOrFallback(
+                ctx != null,
+                ctx != null ? ctx.projectSpaceId() : null,
+                ctx != null ? ctx.personalSpaceId() : null,
+                ctx != null ? ctx.experienceSpaceId() : null,
+                ctx != null && ctx.isolated(),
+                scopes);
+    }
+
     private AssembledContext buildFallbackContext(ReactAgentState state) {
         String systemPrompt = buildAugmentedSystemPrompt(state);
         String userPrompt = buildUserPrompt(state);
@@ -322,6 +430,10 @@ public class ContextAssembler {
     }
 
     List<TemporalEntity> safeRetrieveExperiences(@Nullable String query) {
+        return safeRetrieveExperiences(query, MemoryReadFilter.agentExperience());
+    }
+
+    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query, MemoryReadFilter filter) {
         if (semanticMemory == null || memoryProperties == null) {
             return List.of();
         }
@@ -333,7 +445,7 @@ public class ContextAssembler {
 
             List<TemporalEntity> experiences = semanticMemory.findCurrentByType(
                     EntityType.EXPERIENCE,
-                    MemoryReadFilter.agentExperience());
+                    filter);
             if (experiences.isEmpty()) {
                 return List.of();
             }
@@ -397,6 +509,10 @@ public class ContextAssembler {
      * 排除已由 userProfile 和 experience 路径覆盖的类型。
      */
     List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query) {
+        return safeRetrieveRelevantMemories(query, MemoryReadFilter.userMemory());
+    }
+
+    List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query, MemoryReadFilter filter) {
         if (hybridRetriever == null || semanticMemory == null || memoryProperties == null) {
             return List.of();
         }
@@ -410,7 +526,7 @@ public class ContextAssembler {
             // 用 HybridRetriever 检索全类型实体（userMemory scope）
             List<RetrievalResult> results = hybridRetriever.retrieve(
                     query != null ? query : "", maxEntities * 2,
-                    RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+                    RetrievalWeights.DEFAULT, filter);
             // 过滤已由 userProfile 和 experience 路径覆盖的类型（entityType 是 String）
             Set<String> excludedTypeNames = Set.of(
                     EntityType.PREFERENCE.name(), EntityType.HABIT.name(),
@@ -425,7 +541,7 @@ public class ContextAssembler {
             }
             // 批量加载完整实体
             Set<String> ids = results.stream().map(RetrievalResult::entityId).collect(Collectors.toSet());
-            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, MemoryReadFilter.userMemory());
+            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, filter);
             return results.stream()
                     .map(r -> entityMap.get(r.entityId()))
                     .filter(Objects::nonNull)
@@ -514,18 +630,22 @@ public class ContextAssembler {
      * 使用 SQL GROUP BY 聚合避免全量加载实体, 结果缓存 5 分钟。
      */
     MemoryCounts buildMemoryCounts() {
+        return buildMemoryCounts(MemoryReadFilter.userMemory());
+    }
+
+    MemoryCounts buildMemoryCounts(MemoryReadFilter filter) {
         if (semanticMemory == null) {
             return MemoryCounts.EMPTY;
         }
-        MetadataCache cached = metadataCache;
         Instant now = Instant.now();
+        MetadataCache cached = metadataCache.get(filter);
         if (cached != null && Duration.between(cached.cachedAt(), now).compareTo(METADATA_CACHE_TTL) < 0) {
             return cached.counts();
         }
         try {
-            Map<EntityType, Integer> counts = semanticMemory.countByEntityType(MemoryReadFilter.userMemory());
+            Map<EntityType, Integer> counts = semanticMemory.countByEntityType(filter);
             if (counts.isEmpty()) {
-                metadataCache = new MetadataCache(MemoryCounts.EMPTY, now);
+                metadataCache.put(filter, new MetadataCache(MemoryCounts.EMPTY, now));
                 return MemoryCounts.EMPTY;
             }
             // 分类统计
@@ -560,7 +680,7 @@ public class ContextAssembler {
                     ? "共 " + factCount + " 条（" + factDetails + "）"
                     : "";
             MemoryCounts result = new MemoryCounts(profileLine, experienceLine, factLine);
-            metadataCache = new MetadataCache(result, now);
+            metadataCache.put(filter, new MetadataCache(result, now));
             return result;
         } catch (Exception e) {
             log.debug("记忆统计构建失败: {}", e.getMessage());
@@ -870,13 +990,17 @@ public class ContextAssembler {
     private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
 
     private String safeGetUserProfile(@Nullable String refinedQuery) {
+        return safeGetUserProfile(refinedQuery, MemoryReadFilter.userProfile());
+    }
+
+    private String safeGetUserProfile(@Nullable String refinedQuery, MemoryReadFilter profileFilter) {
         if (semanticMemory == null) {
             return "";
         }
         try {
             // 优先读巩固后的连贯画像（由 UserProfileConsolidator 定时生成）
             var consolidated = semanticMemory.findCurrentByNameAndType(
-                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, MemoryReadFilter.userProfile());
+                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, profileFilter);
             if (consolidated.isPresent()) {
                 var desc = consolidated.get().description();
                 if (desc != null && !desc.isBlank()) {
@@ -887,7 +1011,6 @@ public class ContextAssembler {
 
             // 降级：碎片实体拼接
             List<TemporalEntity> candidates = new ArrayList<>();
-            MemoryReadFilter profileFilter = MemoryReadFilter.userProfile();
             for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
                 candidates.addAll(semanticMemory.findCurrentByType(type, profileFilter));
             }

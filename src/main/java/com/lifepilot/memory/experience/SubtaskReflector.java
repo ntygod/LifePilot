@@ -4,18 +4,25 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.scope.MemoryOriginType;
+import com.lifepilot.memory.scope.MemoryRealityType;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -44,18 +51,35 @@ public class SubtaskReflector {
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Subtask config;
     private final float dedupThreshold;
+    @Nullable
+    private final ChatSessionRepository chatSessionRepository;
+    @Nullable
+    private final ProjectContextResolver projectContextResolver;
 
     public SubtaskReflector(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
                             GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties) {
+        this(semanticMemory, vectorSearcher, generationRouter, promptRegistry,
+                memoryProperties, null, null);
+    }
+
+    public SubtaskReflector(SemanticMemory semanticMemory,
+                            VectorSearcher vectorSearcher,
+                            GenerationRouter generationRouter,
+                            PromptRegistry promptRegistry,
+                            MemoryProperties memoryProperties,
+                            @Nullable ChatSessionRepository chatSessionRepository,
+                            @Nullable ProjectContextResolver projectContextResolver) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = memoryProperties.getExperience().getSubtask();
         this.dedupThreshold = memoryProperties.getExperience().getDedupSimilarityThreshold();
+        this.chatSessionRepository = chatSessionRepository;
+        this.projectContextResolver = projectContextResolver;
     }
 
     /**
@@ -262,12 +286,62 @@ public class SubtaskReflector {
                 now
         );
 
+        MemoryWriteContext writeContext = resolveWriteContext(state.sessionId());
         SqliteBusyRetry.run(() -> {
-            semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection");
+            semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection", writeContext);
             vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
         });
 
         log.info("子任务反思: 子任务经验已写入, entityId={}, name={}", entity.id(), name);
+    }
+
+    /**
+     * 构造子任务经验写入上下文。
+     *
+     * <p>ISOLATED 项目 → spaceId=项目 space；主账户/SHARED/异常 → spaceId=null
+     * 让 SemanticMemory 按 entity type 推断默认 space。memoryScope 保持 null。</p>
+     */
+    private MemoryWriteContext resolveWriteContext(@Nullable String sessionId) {
+        String spaceId = resolveProjectSpaceId(sessionId);
+        return new MemoryWriteContext(
+                spaceId,
+                null,
+                MemoryOriginType.CONSOLIDATION,
+                MemoryRealityType.UNKNOWN,
+                sessionId,
+                sessionId,
+                sessionId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    @Nullable
+    private String resolveProjectSpaceId(@Nullable String sessionId) {
+        if (chatSessionRepository == null || projectContextResolver == null
+                || sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.Optional<ChatSession> session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            String projectId = session.get().projectId();
+            if (projectId == null) {
+                return null;
+            }
+            var ctx = projectContextResolver.resolve(projectId);
+            return ctx.isolated() ? ctx.projectSpaceId() : null;
+        } catch (Exception e) {
+            log.debug("子任务反思: 项目上下文解析失败，回退主账户 space, sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
     }
 
     /** ToolCall → Observation 步骤对。 */

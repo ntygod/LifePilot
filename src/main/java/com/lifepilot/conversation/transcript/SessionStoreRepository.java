@@ -38,6 +38,33 @@ public class SessionStoreRepository {
     @Nullable
     private final MemoryEventBus memoryEventBus;
 
+    /**
+     * 会话列表查询的项目作用域过滤策略。
+     *
+     * <p>两种语义互斥，对应 API 实际暴露：主账户（project_id IS NULL）、指定项目。</p>
+     */
+    public sealed interface ProjectScope {
+        /** 仅主账户对话（project_id IS NULL）。 */
+        record MainAccount() implements ProjectScope {}
+
+        /** 归属指定项目的对话。 */
+        record OfProject(String projectId) implements ProjectScope {
+            public OfProject {
+                if (projectId == null || projectId.isBlank()) {
+                    throw new IllegalArgumentException("projectId 不能为空");
+                }
+            }
+        }
+
+        static ProjectScope mainAccount() {
+            return new MainAccount();
+        }
+
+        static ProjectScope ofProject(String projectId) {
+            return new OfProject(projectId);
+        }
+    }
+
     public record SessionStoreRow(
             String sessionId,
             String channel,
@@ -55,7 +82,8 @@ public class SessionStoreRepository {
             int contextTokensEstimate,
             int compactionCount,
             @Nullable Instant memoryFlushAt,
-            String activeBranchId
+            String activeBranchId,
+            @Nullable String projectId
     ) {
     }
 
@@ -82,8 +110,9 @@ public class SessionStoreRepository {
         jdbcTemplate.update("""
                 INSERT INTO session_store (
                     session_id, channel, chat_type, title, summary, message_count,
-                    is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at, active_branch_id
-                ) VALUES (?, ?, 'chat', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'main')
+                    is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at,
+                    active_branch_id, project_id
+                ) VALUES (?, ?, 'chat', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'main', ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     channel = excluded.channel,
                     chat_type = excluded.chat_type,
@@ -95,7 +124,8 @@ public class SessionStoreRepository {
                     last_message_at = excluded.last_message_at,
                     updated_at = excluded.updated_at,
                     last_activity_at = excluded.last_activity_at,
-                    active_branch_id = excluded.active_branch_id
+                    active_branch_id = excluded.active_branch_id,
+                    project_id = excluded.project_id
                 """,
                 session.id(),
                 channel,
@@ -107,7 +137,8 @@ public class SessionStoreRepository {
                 session.lastMessageAt() != null ? session.lastMessageAt().toString() : null,
                 session.createdAt().toString(),
                 updatedAt,
-                lastActivityAt
+                lastActivityAt,
+                session.projectId()
         );
         if (created) {
             publishEvent(new MemoryEvent.SessionStarted(
@@ -381,13 +412,34 @@ public class SessionStoreRepository {
         );
     }
 
+    /**
+     * 查询归属指定项目的所有会话 id（不限渠道）。
+     *
+     * <p>用于项目删除级联清理：获取到 sessionId 列表后交给 {@link #batchDelete}
+     * 触发 session_store FK CASCADE，连带清掉 chat_turns / session_transcript_entries
+     * 等所有子表。</p>
+     *
+     * @param projectId 项目 id，不可为 null
+     * @return 该项目下所有会话 id；无会话时返回空列表
+     */
+    public List<String> findIdsByProjectId(String projectId) {
+        if (projectId == null || projectId.isBlank()) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT session_id FROM session_store WHERE project_id = ?",
+                String.class,
+                projectId
+        );
+    }
+
     public Optional<SessionStoreRow> findBySessionId(String sessionId) {
         List<SessionStoreRow> rows = jdbcTemplate.query(
                 """
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
                        last_activity_at, config_json, context_tokens_estimate,
-                       compaction_count, memory_flush_at, active_branch_id
+                       compaction_count, memory_flush_at, active_branch_id, project_id
                 FROM session_store WHERE session_id = ?
                 """,
                 this::mapRow,
@@ -402,7 +454,7 @@ public class SessionStoreRepository {
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
                        last_activity_at, config_json, context_tokens_estimate,
-                       compaction_count, memory_flush_at, active_branch_id
+                       compaction_count, memory_flush_at, active_branch_id, project_id
                 FROM session_store
                 WHERE channel = 'web'
                   AND instr(session_id, ':') = 0
@@ -419,16 +471,52 @@ public class SessionStoreRepository {
                                                              @Nullable String timeRange,
                                                              @Nullable String sortBy,
                                                              @Nullable String order) {
+        return findWebSessionsByConditions(q, pinned, archived, timeRange, sortBy, order,
+                ProjectScope.mainAccount());
+    }
+
+    /**
+     * 按项目归属维度筛选 Web 会话。
+     *
+     * <p>项目作用域语义：</p>
+     * <ul>
+     *   <li>{@link ProjectScope#mainAccount()} — 仅返回 project_id IS NULL 的主账户对话</li>
+     *   <li>{@link ProjectScope#ofProject(String)} — 仅返回归属指定项目的对话</li>
+     * </ul>
+     *
+     * @param projectScope 项目作用域过滤策略，不可为 null
+     */
+    @SuppressWarnings("null")
+    public List<SessionStoreRow> findWebSessionsByConditions(@Nullable String q,
+                                                             @Nullable Boolean pinned,
+                                                             @Nullable Boolean archived,
+                                                             @Nullable String timeRange,
+                                                             @Nullable String sortBy,
+                                                             @Nullable String order,
+                                                             ProjectScope projectScope) {
         StringBuilder sql = new StringBuilder("""
                 SELECT session_id, channel, chat_type, title, summary, message_count,
                        is_pinned, archived, last_message_at, created_at, updated_at,
                        last_activity_at, config_json, context_tokens_estimate,
-                       compaction_count, memory_flush_at, active_branch_id
+                       compaction_count, memory_flush_at, active_branch_id, project_id
                 FROM session_store
                 WHERE channel = 'web'
                   AND instr(session_id, ':') = 0
                 """);
         List<Object> params = new ArrayList<>();
+
+        switch (projectScope) {
+            case ProjectScope.MainAccount ignored -> {
+                // project_id IS NULL 用 idx_session_store_channel(channel, last_activity_at DESC) 走索引；
+                // V17 建的 idx_session_store_project_id 是部分索引（WHERE project_id IS NOT NULL），
+                // 不覆盖主账户查询——by design
+                sql.append(" AND project_id IS NULL");
+            }
+            case ProjectScope.OfProject(String projectId) -> {
+                sql.append(" AND project_id = ?");
+                params.add(projectId);
+            }
+        }
 
         if (q != null && !q.isBlank()) {
             sql.append(" AND (title LIKE ? OR summary LIKE ?)");
@@ -513,7 +601,8 @@ public class SessionStoreRepository {
                 rs.getInt("context_tokens_estimate"),
                 rs.getInt("compaction_count"),
                 parseInstant(rs.getString("memory_flush_at")),
-                rs.getString("active_branch_id")
+                rs.getString("active_branch_id"),
+                rs.getString("project_id")
         );
     }
 
