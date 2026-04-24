@@ -1,13 +1,25 @@
 ---
-id: gitee
-name: "Gitee 代码托管"
-description: "Gitee 仓库、PR、Issue 管理。用户说「Gitee」「码云」「Gitee PR」「Gitee Issue」「推到 Gitee」时使用。GitHub 操作用 github-workflow。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - web.fetch
-  - git.query
-  - git.mutate
+name: gitee
+description: 当用户要在 Gitee（码云）上操作仓库、PR、Issue，或向 Gitee 推送代码、查看 Gitee CI 状态时使用。关键词：Gitee、码云、Gitee PR、Gitee Issue、码云仓库、gitee.com。GitHub 操作用 github-workflow，纯本地 Git 操作用 git.query / git.mutate。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: external-integration
+    priority: normal
+    tags:
+      - gitee
+      - 码云
+      - pr
+      - issue
+      - openapi
+    suggested_tools:
+      - shell.exec
+      - web.fetch
+      - git.query
+      - git.mutate
+    requires:
+      env:
+        - GITEE_TOKEN
 ---
 
 # Gitee 代码托管指南
@@ -27,11 +39,11 @@ suggested-tools:
 - 纯本地 Git → 直接用 `git.query` / `git.mutate`
 - 代码编写 → 用 code-assistant
 
-## 前置条件
-
-需要配置 Gitee 私人令牌：`GITEE_TOKEN`（在 gitee.com/profile/personal_access_tokens 创建）
-
 ## 工作流
+
+### 前置条件
+
+需要配置 Gitee 私人令牌 `GITEE_TOKEN`（在 gitee.com/profile/personal_access_tokens 创建）。
 
 ### 查看仓库
 

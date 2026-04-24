@@ -1,13 +1,25 @@
 ---
-id: desktop-automation
-name: "桌面自动化"
-description: "Windows 桌面 UI 自动化操作。用户说「桌面自动化」「操作桌面应用」「鼠标点击」「键盘操作」「窗口管理」「自动化桌面」「截屏」时使用。仅支持 Windows。网页自动化用 browser-automation。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - code.execute
-  - file.read
-  - file.write
+name: desktop-automation
+description: 当用户要在 Windows 桌面上做 UI 自动化——窗口管理、鼠标点击、键盘模拟、桌面截屏、弹窗处理、应用控件定位时使用。关键词：桌面自动化、操作桌面应用、鼠标点击、键盘模拟、窗口管理、截屏、pyautogui、pywinauto。网页自动化用 browser-automation，仅 Windows 平台。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: external-integration
+    priority: normal
+    tags:
+      - desktop
+      - ui-automation
+      - windows
+      - pyautogui
+      - pywinauto
+    suggested_tools:
+      - shell.exec
+      - code.execute
+      - file.read
+      - file.write
+    requires:
+      os:
+        - windows
 ---
 
 # 桌面自动化指南
@@ -29,7 +41,9 @@ suggested-tools:
 - 命令行操作 → 直接用 `shell.exec`
 - Linux / macOS 桌面 → 当前不支持
 
-## 工具依赖
+## 工作流
+
+### 工具依赖
 
 ```bash
 shell.exec(command="pip install pyautogui pywinauto pillow")
@@ -41,9 +55,7 @@ shell.exec(command="pip install pyautogui pywinauto pillow")
 | `pywinauto` | Windows UI 元素控制、窗口管理 |
 | `pillow` | 图像处理 |
 
-## 工作流
-
-### 1. 截图分析当前状态
+### 截图分析当前状态
 
 ```python
 code.execute(language="python", code="
@@ -54,7 +66,7 @@ print(f'屏幕分辨率: {pyautogui.size()}')
 ")
 ```
 
-### 2. 定位目标窗口
+### 定位目标窗口
 
 ```python
 code.execute(language="python", code="
@@ -65,7 +77,7 @@ for w in desktop.windows():
 ")
 ```
 
-### 3. 操作应用
+### 操作应用
 
 ```python
 code.execute(language="python", code="
@@ -76,7 +88,7 @@ dlg.Edit.type_keys('Hello World', with_spaces=True)
 ")
 ```
 
-### 4. 键鼠模拟
+### 键鼠模拟
 
 ```python
 code.execute(language="python", code="
@@ -88,7 +100,7 @@ pyautogui.hotkey('ctrl', 's')
 ")
 ```
 
-### 5. 脚本保存复用
+### 脚本保存复用
 
 ```
 file.write(path="scripts/auto_task.py", content="脚本内容")
