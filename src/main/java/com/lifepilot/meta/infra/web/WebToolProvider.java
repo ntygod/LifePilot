@@ -94,8 +94,9 @@ public class WebToolProvider {
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
                 .description("抓取 URL 内容或调用外部 REST API。" +
-                        "默认 GET 并提取正文，支持 CSS 选择器定向提取。" +
-                        "禁止访问内网地址。")
+                        "默认 GET：HEAD 探测 Content-Type，HTML 走 Jsoup 正文提取（支持 CSS 选择器），" +
+                        "非 HTML 直连获取原文；renderJs=true 时走浏览器渲染。" +
+                        "非 GET（POST/PUT/DELETE/PATCH）直接走 HttpClient 并返回原始响应体。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -103,18 +104,18 @@ public class WebToolProvider {
                                 Map.entry("url", Map.of("type", "string",
                                         "description", "目标网页 URL 或 API 地址")),
                                 Map.entry("method", Map.of("type", "string",
-                                        "description", "HTTP 方法（GET/POST/PUT/DELETE/PATCH），默认 GET")),
+                                        "description", "HTTP 方法（GET/POST/PUT/DELETE/PATCH），默认 GET；非 GET 不走 Jsoup/浏览器")),
                                 Map.entry("headers", Map.of("type", "object",
-                                        "description", "请求头 Map",
+                                        "description", "自定义请求头 Map（键值均为字符串），默认仅包含 User-Agent",
                                         "additionalProperties", Map.of("type", "string"))),
                                 Map.entry("body", Map.of("type", "string",
-                                        "description", "请求体（POST/PUT/PATCH 时使用）")),
+                                        "description", "请求体（POST/PUT/PATCH 时使用），GET/DELETE 通常留空")),
                                 Map.entry("selector", Map.of("type", "string",
-                                        "description", "CSS 选择器，提取页面特定区域（仅 GET 有效）")),
+                                        "description", "CSS 选择器，提取页面特定区域（仅 GET + HTML/XML 有效）")),
                                 Map.entry("renderJs", Map.of("type", "boolean",
-                                        "description", "强制浏览器渲染（JS 动态页面），默认 false")),
+                                        "description", "强制浏览器渲染（JS 动态页面），默认 false；非 GET 忽略")),
                                 Map.entry("timeoutSeconds", Map.of("type", "integer",
-                                        "description", "请求超时秒数，默认 30"))
+                                        "description", "请求超时秒数，默认使用 infra.web-fetch.timeout-seconds 配置"))
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
