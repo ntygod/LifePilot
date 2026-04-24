@@ -184,7 +184,8 @@ lifepilot:
 | `lifepilot.agent.checkpoint.enabled` | `true` | 检查点功能开关 |
 | `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
 | `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词 |
-| `lifepilot.agent.core-tool-ids` | `[]` | 核心工具 ID 列表 — 非空时启用分层工具注入，仅核心工具始终可见，其余随 Skill 加载动态激活 |
+
+> 工具可见性由 `lifepilot.tool.tier1.pinned` + `activatedToolIds` + 3 个 Meta 工具共同决定，详见 [工具系统](tool-ecosystem.md)。
 
 ## 6. 使用场景
 

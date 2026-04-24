@@ -62,7 +62,7 @@ McpServerRegistry 实现 `DisposableBean`，Spring 容器关闭时自动取消�
 
 ## 3. 使用场景
 
-用户通过 `~/.zhiwei/mcp/servers.json`（推荐）或 `application.yml` 配置 MCP 服务器。系统启动后注册所有配置并从缓存加载工具桩。MCP server 条目自动出现在系统提示词的 Skill 目录中（`<available_mcp_servers>` 标签），Agent 根据用户请求调用 `file.read(skill="mcp:server-name")` 加载该 Server 的所有工具。MCP 工具不再全量注入上下文，而是随 Skill 激活动态加载。长时间无调用后 Server 自动断开，下次调用时再次连接。
+用户通过 `~/.zhiwei/mcp/servers.json`（推荐）或 `application.yml` 配置 MCP 服务器。系统启动后注册所有配置并从缓存加载工具桩。MCP 工具不进 Tier 1 常驻集合，也不进 system prompt 中的 skill 目录——LLM 通过 `tools.search` 语义检索找到合适的 MCP 工具，再用 `tools.describe` 取完整 schema 直接调用。长时间无调用后 Server 自动断开，下次调用时再次连接。
 
 ## 4. 配置项
 

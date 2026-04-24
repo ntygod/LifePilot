@@ -15,6 +15,7 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.io.Closeable;
 import java.time.Duration;
@@ -47,7 +48,12 @@ public class ToolExecutionPipeline implements Closeable {
     private final double retryMultiplier;
     private final long retryMaxDelayMs;
     private final ExecutorService virtualThreadExecutor;
+    @Nullable
+    private final ApplicationEventPublisher eventPublisher;
 
+    /**
+     * 便捷构造器 — 不带事件发布器（测试和兼容用）。
+     */
     public ToolExecutionPipeline(
             DynamicToolRegistry toolRegistry,
             GuardrailEngine guardrailEngine,
@@ -58,6 +64,22 @@ public class ToolExecutionPipeline implements Closeable {
             long retryInitialDelayMs,
             double retryMultiplier,
             long retryMaxDelayMs) {
+        this(toolRegistry, guardrailEngine, idempotencyManager,
+                permissionService, permissionRequestFactory, permissionApprovalService,
+                retryInitialDelayMs, retryMultiplier, retryMaxDelayMs, null);
+    }
+
+    public ToolExecutionPipeline(
+            DynamicToolRegistry toolRegistry,
+            GuardrailEngine guardrailEngine,
+            IdempotencyManager idempotencyManager,
+            PermissionService permissionService,
+            PermissionRequestFactory permissionRequestFactory,
+            PermissionApprovalService permissionApprovalService,
+            long retryInitialDelayMs,
+            double retryMultiplier,
+            long retryMaxDelayMs,
+            @Nullable ApplicationEventPublisher eventPublisher) {
         this.toolRegistry = toolRegistry;
         this.guardrailEngine = guardrailEngine;
         this.idempotencyManager = idempotencyManager;
@@ -68,6 +90,7 @@ public class ToolExecutionPipeline implements Closeable {
         this.retryMultiplier = retryMultiplier;
         this.retryMaxDelayMs = retryMaxDelayMs;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -207,9 +230,36 @@ public class ToolExecutionPipeline implements Closeable {
                 .timestamp(start)
                 .build();
 
+        // 9. 发布调用事件 — 供 ToolUsageStatsRecorder 等监听者采集
+        publishInvocationEvent(toolId, context, result.ok(), duration.toMillis(), start);
+
         log.debug("管线完成: toolId={}, ok={}, duration={}ms",
                 toolId, result.ok(), duration.toMillis());
         return result.toBuilder().meta(meta).build();
+    }
+
+    /**
+     * 发布工具调用事件；无 publisher 时静默跳过（测试场景）。
+     *
+     * <p>事件监听器异常被吞掉 —— 采集链路失败不能影响工具执行结果。</p>
+     */
+    private void publishInvocationEvent(String toolId, @Nullable Map<String, Object> context,
+                                        boolean success, long durationMs, Instant at) {
+        if (eventPublisher == null) {
+            return;
+        }
+        String sessionId = null;
+        if (context != null) {
+            Object raw = context.get(ToolContextKeys.SESSION_ID);
+            if (raw instanceof String s && !s.isBlank()) {
+                sessionId = s;
+            }
+        }
+        try {
+            eventPublisher.publishEvent(new ToolInvocationEvent(toolId, sessionId, success, durationMs, at));
+        } catch (Exception e) {
+            log.warn("发布工具调用事件失败: toolId={}", toolId, e);
+        }
     }
 
     /**

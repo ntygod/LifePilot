@@ -31,8 +31,6 @@ import java.util.Map;
  */
 public class ShellToolProvider {
 
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
-
     private final ShellExecToolExecutor shellExecExecutor;
     @Nullable
     private final BackgroundProcessManager processManager;
@@ -70,12 +68,7 @@ public class ShellToolProvider {
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
-                .description("""
-                        执行 Shell 命令。根据命令预期耗时选择模式：
-                        (1) 默认同步：秒级命令（git/ls/构建/测试），阻塞到完成或 timeoutSeconds 超时；
-                        (2) background=true：永不退出的服务（npm run dev 等）或明确需并发的长任务，立即返回 sessionId；
-                        (3) yieldMs=N：快慢不确定时用，快则同步返结果，慢则转后台返 sessionId。
-                        服务类命令必须用 background，否则会被超时强杀。background/yieldMs 转后台后，用 shell.process(action=output) 读输出、(action=kill) 终止。""")
+                .description("Execute a shell command. Choose mode by expected duration: default synchronous for second-scale commands (git/ls/build/test), blocks until completion or timeoutSeconds expires; background=true for long-running services (npm run dev) or concurrent tasks, returns sessionId immediately; yieldMs=N for uncertain duration, returns synchronous result if fast, otherwise yields to background with sessionId. Service processes must use background=true to avoid timeout kill. Use shell.process (action=output/kill) to read or terminate afterwards.")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -84,7 +77,7 @@ public class ShellToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.workspacePaths("workingDirectory", "cwd")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "shell", "exec", "command", "bash", "terminal", "run", "execute", "script"))
                 .executor(shellExecExecutor::execute)
                 .build();
     }
@@ -135,27 +128,15 @@ public class ShellToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("sessionIds", "sessionId")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "process", "background", "session", "tmux", "shell", "manage", "kill", "signal",
+                        "output", "list", "write", "resize"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
     }
 
     private String buildProcessDescription() {
-        var parts = new ArrayList<String>();
-        parts.add("管理通过 shell.exec(background=true|yieldMs=N) 启动的后台进程和持久 tmux 会话。按 action 选择操作：");
-        if (processManager != null) {
-            parts.add("""
-                    【后台进程】list 列出所有进程；output 读 sessionId 的增量输出（每次只返新内容，是监控长跑命令的主要手段）；\
-                    write 向 stdin 写内容（不能用于模拟 Ctrl+C）；kill 强制终止。后台进程用完必须 kill，否则占配额。""");
-        }
-        if (sessionManager != null) {
-            parts.add("""
-                    【持久会话】session-create 创建 tmux 会话；session-exec 在会话内执行命令（共享 cwd/env/变量）；\
-                    session-write/read 交互式 I/O；session-signal 发 SIGINT/SIGTERM 等信号（需要 Ctrl+C 场景用这个）；\
-                    session-list/close/resize 管理生命周期。适合 REPL、多步交互、需保留 shell 状态的场景。""");
-        }
-        return String.join(" ", parts);
+        return "Manage background processes and persistent tmux sessions started via shell.exec. Actions include list/output/write/kill for background processes and session-create/session-exec/session-write/session-read/session-signal/session-list/session-close/session-resize for tmux sessions.";
     }
 
     private String buildActionDescription() {

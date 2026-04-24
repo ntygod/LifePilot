@@ -29,7 +29,7 @@ import java.util.Map;
  */
 public class DocumentEditToolProvider {
 
-    private static final List<String> EDIT_TAGS = List.of("infrastructure", "document", "edit");
+    private static final List<String> EDIT_TAGS = List.of("infrastructure", "document", "edit", "docx", "xlsx", "patch", "diff", "commit", "rollback", "version");
 
     private final DocumentEditActionDispatchExecutor dispatcher;
 
@@ -58,33 +58,9 @@ public class DocumentEditToolProvider {
                 .build();
     }
 
-    /** 工具 description —— 嵌入 spec §7.3 LLM 用法要点。 */
+    /** 工具 description —— 英文短描述。 */
     private String buildDescription() {
-        return "对 docx / xlsx 文档施加锚点编辑并管理版本。" +
-                "action=patch 提交一批 operations（事务性，整批成败一致），整批成功后生成新版本工作副本；" +
-                "action=diff 拉取某次 patch 的 diff JSON；" +
-                "action=commit 把工作副本覆盖回源路径（overwrite，自动生成 .bak 备份）或另存到新路径（saveAs）；" +
-                "action=rollback 回滚到指定历史版本（生成新版本而非物理撤销历史）；" +
-                "action=list_versions 列出文档的版本历史。" +
-                "【docx op 集】（在 docx 文档上使用）" +
-                "replace_text / insert_paragraph_after / delete_paragraph / add_table_row；" +
-                "locator 是文本锚点（before_context + target + after_context 整体在文档中唯一匹配）；" +
-                "保留原 run 样式（字体/字号/颜色/粗斜体）。" +
-                "【xlsx op 集】（在 xlsx 文档上使用）" +
-                "update_cell / insert_row / delete_row / set_range；" +
-                "locator 是 A1 地址（sheet 名区分大小写，cell 如 B5，range 如 B2:D4）；" +
-                "update_cell.new_value 多态：数字→数值格；布尔→布尔格；以 = 开头的字符串→公式；其它字符串→字面量；null→清空；" +
-                "合并单元格只允许改 anchor（左上角），中间位置会被拒；" +
-                "批量写矩形用 set_range（values 是 2D 数组，尺寸必须与 range 吻合）更高效。" +
-                "LLM 用法要点：" +
-                "(1) 先用 file.read 读文档内容再规划 locator，不要凭空猜测；" +
-                "(2) docx locator 的 before_context 和 after_context 各取 10-30 字（少于 10 字易有多处匹配导致 failedOps，多于 30 字容易和文档真实文本对不上）；xlsx 用精确 sheet 名 + A1 地址；" +
-                "(3) 单次 patch 内可传入多个 operations 事务执行；xlsx 与 docx op 不能跨 MIME 混用；" +
-                "(4) commit 是用户动作，LLM 不得主动 commit：必须先 reply 用户说明 target 和路径，" +
-                "收到用户明确同意（\"确认/是的/可以\"等）后才带上 userConfirmation（值等于 commitTarget）再调用；" +
-                "否则工具会直接拒绝；" +
-                "(5) 所有 op 都保留原样式（字体 / 数字格式 / 边框 / 填充），" +
-                "不要在 new_value / cells 里再自行拼装样式标记。";
+        return "Edit an existing docx or xlsx working copy via anchor-based patches with version management. action=patch applies incremental edits; action=diff inspects pending changes; action=commit finalizes the working copy to disk; action=rollback reverts to a previous version; action=list_versions enumerates version history.";
     }
 
     /** 构建 document.edit 输入 schema —— 扁平结构，按 action 分别说明字段用法。 */

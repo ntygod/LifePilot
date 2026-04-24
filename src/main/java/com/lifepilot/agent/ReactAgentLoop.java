@@ -26,7 +26,6 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.memory.workspace.TaskStateItem;
 import com.lifepilot.memory.workspace.WorkingSetItem;
 import com.lifepilot.observability.trace.LlmCallStep;
@@ -100,12 +99,6 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
 
-    // ===== 可选依赖（Skill 工具激活） =====
-    @Nullable private final com.lifepilot.skill.registry.SkillRegistry skillRegistry;
-
-    // ===== 可选依赖（MCP 工具激活） =====
-    @Nullable private final DynamicToolRegistry toolRegistry;
-
     // ===== 可选依赖（即时经验补丁） =====
     @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
 
@@ -130,8 +123,6 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Nullable SessionWorkspaceService workspaceService,
-            @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
-            @Nullable DynamicToolRegistry toolRegistry,
             @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
@@ -158,8 +149,6 @@ public class ReactAgentLoop implements CallbackHelper {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.workspaceService = workspaceService;
-        this.skillRegistry = skillRegistry;
-        this.toolRegistry = toolRegistry;
         this.experienceSummarizer = experienceSummarizer;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
@@ -505,7 +494,10 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
-                int preExecStepCount = state.stepCount();
+                // Skill 激活前快照 — 用于事后检测 ToolExecutionCoordinator 是否合并了 activated_tool_ids / skillContent
+                int preExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                String preExecSkillContent = state.loadedSkillContent();
+
                 state = toolExecutionCoordinator.executeBatch(
                         state,
                         toolCalls,
@@ -515,17 +507,13 @@ public class ReactAgentLoop implements CallbackHelper {
                         loopContext,
                         this::appendAndPublishStep);
 
-                // ★ Skill 工具激活 — 检测 file.read 返回的 _skillIds 并激活对应工具，同时提取指南内容
-                var activation = detectSkillToolActivation(state, preExecStepCount);
-                if (activation.hasActivation()) {
-                    state = state.withActivatedToolIds(activation.toolIds());
-                    cachedToolCallbacks = null;
-                    log.info("Skill 工具已激活: traceId={}, skills={}, totalActivated={}",
-                            state.traceId(), activation.toolIds(),
-                            state.activatedToolIds() != null ? state.activatedToolIds().size() : 0);
+                // ★ Skill 激活缓存失效 — 工具执行结果中的 activated_tool_ids / skill content
+                // 已由 ToolExecutionCoordinator 统一合并进 state；这里仅根据状态变化决定是否重建缓存。
+                int postExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                if (postExecActivatedCount > preExecActivatedCount) {
+                    cachedToolCallbacks = null;  // 工具可见集合扩充，需重建回调
                 }
-                if (activation.skillContent() != null) {
-                    state = state.appendSkillContent(activation.skillContent());
+                if (!Objects.equals(preExecSkillContent, state.loadedSkillContent())) {
                     cachedContext = null;  // Skill 指南已注入 state，需重建系统提示词
                 }
 
@@ -1441,86 +1429,4 @@ public class ReactAgentLoop implements CallbackHelper {
                 scene, toolNames, messages.size(), sb);
     }
 
-    /**
-     * Skill 激活检测结果 — 包含需要激活的工具 ID 和 Skill 指南内容。
-     */
-    private record SkillActivationResult(Set<String> toolIds, @Nullable String skillContent) {
-        boolean hasActivation() {
-            return !toolIds.isEmpty();
-        }
-    }
-
-    /**
-     * 检测 file.read 工具结果中的 _skillIds 字段，合并所有相关 Skill 的 suggestedTools，
-     * 同时提取 Skill 指南内容用于注入系统提示词。
-     *
-     * @param state 当前状态（包含新增的 Observation 步骤）
-     * @param fromStepIndex 扫描起始步骤索引
-     * @return 激活结果，包含工具 ID 集合和 Skill 指南内容
-     */
-    private SkillActivationResult detectSkillToolActivation(ReactAgentState state, int fromStepIndex) {
-        if (config.getCoreToolIds().isEmpty()) {
-            return new SkillActivationResult(Set.of(), null);
-        }
-        if (skillRegistry == null && toolRegistry == null) {
-            return new SkillActivationResult(Set.of(), null);
-        }
-        Set<String> toolIds = new LinkedHashSet<>();
-        String skillContent = null;
-        for (int i = fromStepIndex; i < state.steps().size(); i++) {
-            if (!(state.steps().get(i) instanceof ReactStep.Observation obs)) continue;
-            if (!obs.success() || obs.output() == null) continue;
-
-            // 尝试解析 _skillIds 和 content 字段
-            var parsed = extractSkillData(obs.output());
-            if (parsed == null) continue;
-
-            // 提取 Skill 指南内容
-            if (parsed.content() != null && !parsed.content().isBlank()) {
-                skillContent = parsed.content();
-            }
-
-            for (String skillId : parsed.skillIds()) {
-                if (skillId.startsWith("mcp:")) {
-                    // MCP server — 从 registry 获取该 server 的所有工具 ID
-                    String serverName = skillId.substring(4);
-                    if (toolRegistry != null) {
-                        toolRegistry.getToolsByServer(serverName)
-                                .forEach(tool -> toolIds.add(tool.id()));
-                    }
-                } else {
-                    // 内置 Skill — 从 SkillRegistry 获取 suggestedTools
-                    if (skillRegistry != null) {
-                        skillRegistry.find(skillId).ifPresent(def -> toolIds.addAll(def.suggestedTools()));
-                    }
-                }
-            }
-        }
-        return new SkillActivationResult(toolIds, skillContent);
-    }
-
-    /** Skill 数据解析结果。 */
-    private record SkillData(List<String> skillIds, @Nullable String content) {}
-
-    /** 从工具输出 JSON 中提取 _skillIds 列表和 content 字段。 */
-    @SuppressWarnings("unchecked")
-    @Nullable
-    private SkillData extractSkillData(String output) {
-        try {
-            var data = objectMapper.readValue(output, Map.class);
-            Object raw = data.get("_skillIds");
-            if (!(raw instanceof List<?> list)) {
-                return null;
-            }
-            var skillIds = list.stream()
-                    .filter(String.class::isInstance)
-                    .map(String.class::cast)
-                    .toList();
-            String content = data.get("content") instanceof String s ? s : null;
-            return new SkillData(skillIds, content);
-        } catch (Exception ignored) {
-            // 非 JSON 或不含 _skillIds — 正常，忽略
-            return null;
-        }
-    }
 }

@@ -313,7 +313,7 @@ public final class ReactStepSerializer {
                     default -> action != null ? "浏览器 " + action : "浏览器操作";
                 };
             }
-            case "notify" -> {
+            case "notify.send_message" -> {
                 String title = textField(root, "title");
                 yield title != null ? "通知「" + truncate(title, 30) + "」" : "推送通知";
             }
@@ -390,7 +390,7 @@ public final class ReactStepSerializer {
             case "git.query" -> "查询完成";
             case "git.mutate" -> "操作成功";
             case "browser" -> "操作成功";
-            case "notify" -> "通知已发送";
+            case "notify.send_message" -> "通知已发送";
             default -> "操作成功";
         };
     }

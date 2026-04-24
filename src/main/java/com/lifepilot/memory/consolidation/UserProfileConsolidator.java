@@ -116,6 +116,9 @@ public class UserProfileConsolidator {
     }
 
     private void doConsolidate() {
+        // Plan 1 设计：后台巩固任务语义为"主账户画像"—— 项目空间不参与巩固，
+        // 项目实体维持在各自 space 内，避免跨项目画像串味。后续若需要项目级巩固
+        // 应新开一个 per-project consolidator，而非在此处接 ProjectContext。
         var filter = MemoryReadFilter.userProfile();
 
         // 1. 从 L3 读取碎片实体

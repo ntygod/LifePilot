@@ -1,13 +1,22 @@
 ---
-id: summarizer
-name: "内容摘要"
-description: "从 URL、文件或知识库提取关键信息并生成结构化摘要。用户说「总结一下」「这个链接讲了什么」「帮我概括」「提炼要点」「对比这几份文档」「整理会议纪要」时使用。不适用于从零创作内容或翻译。"
-version: "2.0.0"
-suggested-tools:
-  - web.fetch
-  - file.read
-  - file.write
-  - knowledge.search
+name: summarizer
+description: 当用户要从 URL、文件或知识库提取关键信息、生成结构化摘要、整理会议纪要、对比多份文档要点时使用。关键词：总结、概括、提炼要点、摘要、这个链接讲了什么、会议纪要、对比文档、长文精简。从零创作用 content-creator，数据统计报告用 data-analyst，调研多个来源用 research-assistant。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: content-creation
+    priority: normal
+    tags:
+      - summary
+      - abstract
+      - meeting-notes
+      - condense
+      - extraction
+    suggested_tools:
+      - web.fetch
+      - file.read
+      - file.write
+      - knowledge.search
 ---
 
 # 内容摘要指南
@@ -30,7 +39,7 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 获取内容
+### 获取内容
 
 根据来源类型选择工具：
 
@@ -46,9 +55,6 @@ web.fetch(url="目标URL", selector="article, .content, main")
 **本地文件：**
 ```
 file.read(path="文件路径")
-```
-大文件分段读取：
-```
 file.read(path="文件路径", maxChars=10000)
 ```
 
@@ -57,7 +63,7 @@ file.read(path="文件路径", maxChars=10000)
 knowledge.search(query="主题关键词")
 ```
 
-### 2. 选择摘要格式
+### 选择摘要格式
 
 | 场景 | 格式 |
 |------|------|
@@ -66,7 +72,7 @@ knowledge.search(query="主题关键词")
 | 会议纪要 | 讨论要点 + 决策 + 行动项 |
 | 多文档对比 | 对比表格 + 共识与分歧 |
 
-### 3. 生成摘要
+### 生成摘要
 
 按选定格式输出。会议纪要使用以下结构：
 
@@ -83,7 +89,7 @@ knowledge.search(query="主题关键词")
 - [ ] 任务 1（负责人，截止日期）
 ```
 
-### 4. 保存（按需）
+### 保存（按需）
 
 ```
 file.write(path="output/摘要.md", content="摘要内容")

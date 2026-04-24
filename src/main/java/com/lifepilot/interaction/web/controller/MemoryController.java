@@ -189,6 +189,8 @@ public class MemoryController {
         if (hybridRetriever == null) {
             return ApiResponse.ok(List.of());
         }
+        // TODO(plan-1-后续): 接入 ProjectContext，按当前查看项目构造 filter；
+        // Plan 1 先按主账户维度读取，UI 端点保留原行为。
         var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 results.stream().map(r -> r.entityId()).toList()

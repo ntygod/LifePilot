@@ -14,6 +14,7 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.project.service.ProjectService;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,13 @@ public class ChatSessionService {
     private final GenerationRouter generationRouter;
     @Nullable
     private final ChatTurnService chatTurnService;
+    /**
+     * 项目服务 —— 可选依赖。创建项目会话时用于查询项目默认 KB 并自动关联到 session，
+     * 让项目内的对话自动带上项目知识库的 RAG 检索。KB 未启用或极简部署下可为 null，
+     * 此时退化为不做自动关联。
+     */
+    @Nullable
+    private final ProjectService projectService;
 
     public ChatSessionService(ChatSessionRepository sessionRepository,
                               SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
@@ -60,7 +68,8 @@ public class ChatSessionService {
                               @Nullable AgentConfigProperties agentConfig,
                               @Nullable TranscriptCompactionBoundaryResolver compactionBoundaryResolver,
                               @Nullable GenerationRouter generationRouter,
-                              @Nullable ChatTurnService chatTurnService) {
+                              @Nullable ChatTurnService chatTurnService,
+                              @Nullable ProjectService projectService) {
         this.sessionRepository = sessionRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.sessionDatastoreRepository = sessionDatastoreRepository;
@@ -72,14 +81,57 @@ public class ChatSessionService {
         this.compactionBoundaryResolver = compactionBoundaryResolver;
         this.generationRouter = generationRouter;
         this.chatTurnService = chatTurnService;
+        this.projectService = projectService;
     }
 
     @Transactional
     public ChatSession createSession(String title) {
-        ChatSession session = ChatSession.create(title);
+        return createSession(title, null);
+    }
+
+    /**
+     * 创建会话并指定归属项目。
+     *
+     * <p>若 {@code projectId} 非空且 {@link ProjectService} 已注入，会把项目默认 KB
+     * 自动关联到新会话的 session_knowledge_bases 表——让"在项目里开的对话"默认
+     * 继承项目知识库的 RAG 检索，避免用户每次还要手动在 ChatInput 里选 KB。</p>
+     *
+     * <p>KB 查询/写入失败不抛出，只记警告 —— 会话创建作为主路径不应被 KB 偶发故障阻断。</p>
+     *
+     * @param title     会话标题（可选）
+     * @param projectId 归属项目 ID（可选，NULL = 归属主账户）
+     * @return 新创建的会话实例
+     */
+    @Transactional
+    public ChatSession createSession(String title, @Nullable String projectId) {
+        ChatSession session = ChatSession.create(title, projectId);
         sessionRepository.save(session);
-        log.info("创建会话: id={}, title={}", session.id(), session.title());
+        log.info("创建会话: id={}, title={}, projectId={}", session.id(), session.title(), projectId);
+        inheritProjectKnowledgeBases(session.id(), projectId);
         return session;
+    }
+
+    /**
+     * 把项目默认 KB 关联到会话。projectId 为空或 ProjectService 未注入时静默跳过。
+     */
+    private void inheritProjectKnowledgeBases(String sessionId, @Nullable String projectId) {
+        if (projectId == null || projectId.isBlank() || projectService == null) {
+            return;
+        }
+        try {
+            List<String> kbIds = projectService.findKnowledgeBaseIds(projectId);
+            if (kbIds.isEmpty()) {
+                return;
+            }
+            for (String kbId : kbIds) {
+                sessionKnowledgeBaseRepository.addAssociation(sessionId, kbId);
+            }
+            log.info("项目会话自动关联项目默认 KB: sessionId={}, projectId={}, kbIds={}",
+                    sessionId, projectId, kbIds);
+        } catch (RuntimeException e) {
+            log.warn("项目会话关联项目默认 KB 失败（会话仍正常创建）: sessionId={}, projectId={}, error={}",
+                    sessionId, projectId, e.getMessage());
+        }
     }
 
     public List<SessionInfo> listSessions() {
@@ -90,7 +142,28 @@ public class ChatSessionService {
 
     public List<SessionInfo> listSessions(String q, Boolean pinned, Boolean archived,
                                           String timeRange, String sortBy, String order) {
-        return sessionRepository.findByConditions(q, pinned, archived, timeRange, sortBy, order)
+        return listSessions(q, pinned, archived, timeRange, sortBy, order, null);
+    }
+
+    /**
+     * 按项目维度获取会话列表。
+     *
+     * <p>projectId 语义：</p>
+     * <ul>
+     *   <li>{@code null}（默认）—— 只返回主账户对话（project_id IS NULL）</li>
+     *   <li>非空 —— 只返回归属该项目的对话</li>
+     * </ul>
+     *
+     * @param projectId 归属项目 ID（可选）
+     */
+    public List<SessionInfo> listSessions(String q, Boolean pinned, Boolean archived,
+                                          String timeRange, String sortBy, String order,
+                                          @Nullable String projectId) {
+        SessionStoreRepository.ProjectScope projectScope = projectId == null || projectId.isBlank()
+                ? SessionStoreRepository.ProjectScope.mainAccount()
+                : SessionStoreRepository.ProjectScope.ofProject(projectId);
+        return sessionRepository
+                .findByConditions(q, pinned, archived, timeRange, sortBy, order, projectScope)
                 .stream()
                 .map(this::toSessionInfo)
                 .toList();
@@ -441,7 +514,8 @@ public class ChatSessionService {
         String title = newTitle != null && !newTitle.isBlank()
                 ? newTitle
                 : originalSession.title() + " (fork)";
-        ChatSession newSession = ChatSession.create(title);
+        // 分叉会话必须继承源会话的 projectId，避免归属项目的对话被 fork 到主账户
+        ChatSession newSession = ChatSession.create(title, originalSession.projectId());
         sessionRepository.save(newSession);
         return newSession;
     }
@@ -525,7 +599,8 @@ public class ChatSessionService {
                 session.isPinned(),
                 session.archived(),
                 session.summary(),
-                session.lastMessageAt()
+                session.lastMessageAt(),
+                session.projectId()
         );
     }
 

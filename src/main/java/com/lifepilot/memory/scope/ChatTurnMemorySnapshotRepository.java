@@ -41,15 +41,17 @@ public class ChatTurnMemorySnapshotRepository {
         jdbcTemplate.update("""
                 INSERT INTO chat_turn_memory_snapshots (
                     turn_id, session_id, personal_space_id, experience_space_id, domain_write_space_id,
+                    project_space_id,
                     read_space_ids_json, effective_knowledge_base_ids_json, effective_datastore_ids_json,
                     personal_learning_enabled, domain_learning_enabled, experience_learning_enabled,
                     resolution_source_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(turn_id) DO UPDATE SET
                     session_id = excluded.session_id,
                     personal_space_id = excluded.personal_space_id,
                     experience_space_id = excluded.experience_space_id,
                     domain_write_space_id = excluded.domain_write_space_id,
+                    project_space_id = excluded.project_space_id,
                     read_space_ids_json = excluded.read_space_ids_json,
                     effective_knowledge_base_ids_json = excluded.effective_knowledge_base_ids_json,
                     effective_datastore_ids_json = excluded.effective_datastore_ids_json,
@@ -63,6 +65,7 @@ public class ChatTurnMemorySnapshotRepository {
                 snapshot.personalSpaceId(),
                 snapshot.experienceSpaceId(),
                 snapshot.domainWriteSpaceId(),
+                snapshot.projectSpaceId(),
                 writeJson(snapshot.readSpaceIds()),
                 writeJson(snapshot.effectiveKnowledgeBaseIds()),
                 writeJson(snapshot.effectiveDatastoreIds()),
@@ -77,6 +80,7 @@ public class ChatTurnMemorySnapshotRepository {
     public Optional<ChatTurnMemorySnapshot> findByTurnId(String turnId) {
         List<ChatTurnMemorySnapshot> rows = jdbcTemplate.query("""
                 SELECT turn_id, session_id, personal_space_id, experience_space_id, domain_write_space_id,
+                       project_space_id,
                        read_space_ids_json, effective_knowledge_base_ids_json, effective_datastore_ids_json,
                        personal_learning_enabled, domain_learning_enabled, experience_learning_enabled,
                        resolution_source_json, created_at
@@ -93,6 +97,7 @@ public class ChatTurnMemorySnapshotRepository {
                 rs.getString("personal_space_id"),
                 rs.getString("experience_space_id"),
                 rs.getString("domain_write_space_id"),
+                rs.getString("project_space_id"),
                 readStringList(rs.getString("read_space_ids_json")),
                 readStringList(rs.getString("effective_knowledge_base_ids_json")),
                 readStringList(rs.getString("effective_datastore_ids_json")),

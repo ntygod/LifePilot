@@ -21,11 +21,9 @@
 - **依赖**：无；是飞书 A+C 的**前置**
 
 ### P0-2 SKILL 流程约束可能被 LLM 绕过
-- **问题**：`document.edit` 已在 `application.yml` 的 `core-tool-ids` 默认可见，LLM 不触发 `document-workspace` skill 也能调工具 → skill 里的"不要主动 commit / 锚点 10-30 字 / 连续失败停下问用户 / 不要用 document.create 重建"全是软约束，没硬控住。违背 memory `feedback_hard_vs_soft_control`。
-- **证据**：`src/main/resources/application.yml` core-tool-ids 含 `document.edit` / `document.create`；`DocumentEditActionDispatchExecutor` 只做熔断（硬）；其余规则只在 skill description 和 tool description 里（软）。
-- **方向**：两选一。
-  - (a) 从 core-tool-ids 摘掉，只靠 skill 激活 —— 简单但影响用户"无触发词也能改文档"的流畅度
-  - (b) 把软约束中值得硬化的移到代码层：例如"commit 只在用户显式请求时允许"可以做成参数校验（要求 toolCall 附带 `userConfirmed=true` 标记）
+- **问题（方向 a 已自然解决）**：工具暴露机制重构后，`document.edit` / `document.create` 不在 `lifepilot.tool.tier1.pinned` 列表里 —— LLM 只能通过触发 `document-workspace` skill 或走 `tools.search` 才看得到 schema，变相加了触发门槛。仍然存在的软约束风险：skill 命中后的"不要主动 commit / 锚点 10-30 字 / 连续失败停下问用户 / 不要用 document.create 重建"全靠 description，没硬控住。违背 memory `feedback_hard_vs_soft_control`。
+- **证据**：`src/main/resources/application.yml` `lifepilot.tool.tier1.pinned` 当前仅含通用工具（file / web / shell / memory / knowledge / tools.* meta），document 工具不在列；`DocumentEditActionDispatchExecutor` 只做熔断（硬）；其余规则只在 skill description 和 tool description 里（软）。
+- **方向**：把软约束中值得硬化的移到代码层：例如"commit 只在用户显式请求时允许"可以做成参数校验（要求 toolCall 附带 `userConfirmed=true` 标记）
 - **预估**：M（~1-2d 设计 + 实施，要改契约）
 - **依赖**：无；是飞书 A+C 的**前置**
 

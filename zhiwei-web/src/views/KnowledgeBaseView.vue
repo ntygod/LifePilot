@@ -138,7 +138,9 @@ const showDeleteConfirm = computed({
 
 onMounted(() => {
   void store.fetchList()
-  refreshDatastores()
+  // Plan 3 §5.1：移除 mount 时自动拉 datastore 列表（/api/datastores 不再自动请求）；
+  // store 保持 list=[] 让模板的"当前没有可选的 Datastore"空态自然呈现。
+  // refreshDatastores 仍保留给模板里"刷新"按钮按需触发，用户主动点击时才发请求。
   modelServiceApi.listEnabledServices('EMBEDDING').then(list => { providers.value = list }).catch(() => {})
 })
 

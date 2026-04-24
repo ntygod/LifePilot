@@ -11,6 +11,7 @@ import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
@@ -32,10 +33,13 @@ import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
+import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.install.SkillInstaller;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
@@ -120,11 +124,11 @@ public class MetaAutoConfiguration {
                                         @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                                         @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                                         @Nullable ChannelInstanceService channelInstanceService,
-                                        @Nullable com.lifepilot.skill.config.SkillConfigProperties skillConfigProperties,
                                         com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
-                                        @Nullable AttachmentRepository attachmentRepository) {
-        String skillDir = skillConfigProperties != null ? skillConfigProperties.getDirectory() : null;
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver, attachmentRepository);
+                                        @Nullable AttachmentRepository attachmentRepository,
+                                        @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
+                                        @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist) {
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist);
     }
 
     /**
@@ -167,17 +171,22 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册 find-skills Skill 提取器 — 启动时将内置 SKILL.md 提取到用户 Skill 目录。
+     * 注册 BUILTIN Skill 安装器 — 启动时扫描 classpath 下 {@code skills/*&#47;SKILL.md}
+     * 走 {@link SkillInstaller} 流水线安装（validate → writeFile → upsertDb），
+     * 并注册到 {@link SkillRegistry} 使激活器可见。
      *
      * <p>通过 {@code lifepilot.meta.skill-discovery.enabled} 配置控制启用，默认 true。
-     * 提取后由 MarkdownSkillLoader 在 ApplicationReadyEvent 时作为 UserDefined Skill 加载。</p>
+     * 解析/校验失败（多为 v1 老格式）只记 WARN 跳过，不阻断启动，待 Phase D 迁移。</p>
      */
     @Bean
     @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
                            havingValue = "true", matchIfMissing = true)
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
-                                                    SkillConfigProperties skillConfig) {
-        return new SkillDiscoveryRegistrar(properties, skillConfig);
+                                                    SkillConfigProperties skillConfig,
+                                                    SkillInstaller installer,
+                                                    MarkdownSkillParser parser,
+                                                    SkillRegistry skillRegistry) {
+        return new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, skillRegistry);
     }
 
     /**
@@ -205,9 +214,12 @@ public class MetaAutoConfiguration {
                                           @Nullable DocumentRetriever documentRetriever,
                                           @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                                           @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                                          @Nullable MemoryProperties memoryProperties) {
+                                          @Nullable MemoryProperties memoryProperties,
+                                          @Nullable ProjectContextResolver projectContextResolver,
+                                          @Nullable ChatSessionRepository chatSessionRepository) {
         return new MemoryToolProvider(hybridRetriever, semanticMemory,
-                episodicMemory, documentRetriever, sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties);
+                episodicMemory, documentRetriever, sessionKbRepo, sessionKnowledgeScopeResolver,
+                memoryProperties, projectContextResolver, chatSessionRepository);
     }
 
     // ==================== 启动后工具注册 ====================

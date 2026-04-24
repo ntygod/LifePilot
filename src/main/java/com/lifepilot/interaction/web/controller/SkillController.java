@@ -1,33 +1,37 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.ApiResponse;
-import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.mcp.transport.TransportType;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.install.SkillImportService;
+import com.lifepilot.skill.install.SkillInstallation;
+import com.lifepilot.skill.install.SkillInstallationRepository;
+import com.lifepilot.skill.install.SkillInstaller;
+import com.lifepilot.skill.install.SkillMarketplaceInstaller;
+import com.lifepilot.skill.install.SkillSourceType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.markdown.MarkdownSkillLoader;
-import com.lifepilot.skill.markdown.MarkdownSkillParser;
-import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -37,7 +41,11 @@ import java.util.Optional;
 /**
  * Skill / MCP Server 管理 REST Controller。
  *
- * <p>提供 Skill 列表/详情/注销和 MCP Server 列表/连接/断开/工具查询端点。</p>
+ * <p>Phase B.6 重接：Skill 安装/编辑相关端点接入 {@link SkillInstaller} 统一安装流水线，
+ * {@link SkillImportService}（.skill 包导入）与 {@link SkillMarketplaceInstaller}（市场渠道）
+ * 提供多渠道安装入口，{@link SkillInstallationRepository} 作为启用状态的事实源。</p>
+ *
+ * <p>路径变量统一为 {@code {name}}（对齐 v2 Skill 规范，{@code id} 已退为同值别名）。</p>
  *
  * @author zsg
  * @since 2026-02-27
@@ -52,27 +60,33 @@ public class SkillController {
     private final SkillRegistry skillRegistry;
     private final McpServerRegistry mcpServerRegistry;
     private final DynamicToolRegistry toolRegistry;
-    private final MarkdownSkillParser markdownParser;
-    private final MarkdownSkillSerializer markdownSerializer;
-    private final MarkdownSkillLoader markdownLoader;
     private final SkillConfigProperties skillConfig;
     private final Path skillsDirectory;
 
+    // B.6 新增依赖：多渠道安装 + enable 持久化
+    private final SkillInstaller skillInstaller;
+    private final SkillInstallationRepository installationRepository;
+    private final SkillImportService skillImportService;
+    @Nullable private final SkillMarketplaceInstaller marketplaceInstaller;
+
+    @Autowired
     public SkillController(SkillRegistry skillRegistry,
                            McpServerRegistry mcpServerRegistry,
                            DynamicToolRegistry toolRegistry,
-                           MarkdownSkillParser markdownParser,
-                           MarkdownSkillSerializer markdownSerializer,
-                           MarkdownSkillLoader markdownLoader,
-                           SkillConfigProperties skillConfig) {
+                           SkillConfigProperties skillConfig,
+                           SkillInstaller skillInstaller,
+                           SkillInstallationRepository installationRepository,
+                           SkillImportService skillImportService,
+                           @Nullable SkillMarketplaceInstaller marketplaceInstaller) {
         this.skillRegistry = skillRegistry;
         this.mcpServerRegistry = mcpServerRegistry;
         this.toolRegistry = toolRegistry;
-        this.markdownParser = markdownParser;
-        this.markdownSerializer = markdownSerializer;
-        this.markdownLoader = markdownLoader;
         this.skillConfig = skillConfig;
         this.skillsDirectory = Path.of(skillConfig.getDirectory());
+        this.skillInstaller = skillInstaller;
+        this.installationRepository = installationRepository;
+        this.skillImportService = skillImportService;
+        this.marketplaceInstaller = marketplaceInstaller;
     }
 
     // ── Skill 端点 ──────────────────────────────────────────
@@ -115,18 +129,21 @@ public class SkillController {
                         }
                     }
 
-                    // 来源类型筛选
+                    // 来源类型筛选 —— 接受 DB 层枚举值（BUILTIN/USER_IMPORTED/MARKETPLACE/AUTO_GENERATED）
                     if (sourceType != null && !sourceType.isBlank()) {
-                        SkillSource source = skill.source();
-                        String normalized = sourceType.trim().toLowerCase();
+                        SkillSourceType resolved = resolveSourceType(skill);
+                        String normalized = sourceType.trim().toUpperCase()
+                                .replace('-', '_');
                         boolean match = switch (normalized) {
-                            case "userdefined", "user-defined", "yaml", "markdown" ->
-                                    source instanceof SkillSource.UserDefined;
-                            case "autogenerated", "auto-generated", "auto" ->
-                                    source instanceof SkillSource.AutoGenerated;
-                            case "marketplace" ->
-                                    source instanceof SkillSource.Marketplace;
-                            default -> true; // 未识别的值时不做过滤，避免意外返回空
+                            case "BUILTIN" -> resolved == SkillSourceType.BUILTIN;
+                            case "USER_IMPORTED", "USERIMPORTED", "USERDEFINED", "USER_DEFINED",
+                                 "YAML", "MARKDOWN" ->
+                                    resolved == SkillSourceType.USER_IMPORTED;
+                            case "AUTO_GENERATED", "AUTOGENERATED", "AUTO" ->
+                                    resolved == SkillSourceType.AUTO_GENERATED;
+                            case "MARKETPLACE" ->
+                                    resolved == SkillSourceType.MARKETPLACE;
+                            default -> true;
                         };
                         if (!match) {
                             return false;
@@ -144,6 +161,7 @@ public class SkillController {
 
                     return true;
                 })
+                .map(this::toSkillDto)
                 .toList();
 
         return ApiResponse.ok(filtered);
@@ -152,288 +170,143 @@ public class SkillController {
     /**
      * 获取指定 Skill 详情。
      *
-     * @param id Skill ID
-     * @return Skill 定义，不存在返回 404
+     * @param name Skill 名称（v2 规范唯一标识，{@code id} 为同值别名）
+     * @return Skill 定义（含 sourceType/enabled 字段），不存在返回 404
      */
-    @GetMapping("/skills/{id}")
-    public ApiResponse<?> getSkill(@PathVariable String id) {
-        var skill = skillRegistry.find(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id));
-        return ApiResponse.ok(skill);
+    @GetMapping("/skills/{name}")
+    public ApiResponse<?> getSkill(@PathVariable String name) {
+        var skill = skillRegistry.find(name)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: name=" + name));
+        return ApiResponse.ok(toSkillDto(skill));
     }
 
     /**
-     * 创建 Skill。
+     * 把 {@link SkillDefinition} 序列化为前端 DTO —— 保留原结构并附加 {@code sourceType}
+     * （DB 层四值枚举）与 {@code enabled}（{@link SkillInstallationRepository} 事实源）。
      *
-     * @param request 创建请求（包含 markdownContent 或完整 Skill 定义）
-     * @return 201 创建成功，400 参数错误
+     * <p>当一个 Skill 在内存注册表但 DB 中未入表（例如已注册但旧版数据未迁移）时，
+     * {@code sourceType} 通过 {@link #resolveSourceType(SkillDefinition)} 从内存
+     * {@link SkillSource} 回退推断（UserDefined→USER_IMPORTED 等），{@code enabled} 默认 true。</p>
+     */
+    private Map<String, Object> toSkillDto(SkillDefinition skill) {
+        Optional<SkillInstallation> installOpt = installationRepository.findByName(skill.name());
+        SkillSourceType resolvedType = installOpt.map(SkillInstallation::sourceType)
+                .orElseGet(() -> resolveSourceType(skill));
+        boolean enabled = installOpt.map(SkillInstallation::enabled).orElse(true);
+
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", skill.id());
+        dto.put("name", skill.name());
+        dto.put("description", skill.description());
+        dto.put("version", skill.version());
+        dto.put("source", skill.source());
+        dto.put("instructions", skill.instructions());
+        dto.put("suggestedTools", skill.suggestedTools());
+        dto.put("metadata", skill.metadata());
+        dto.put("zhiweiMeta", skill.zhiweiMeta());
+        // Phase B.7 新增：前端统一按 sourceType(DB 枚举) 渲染来源徽章、按 enabled 渲染开关
+        dto.put("sourceType", resolvedType.name());
+        dto.put("enabled", enabled);
+        return dto;
+    }
+
+    /**
+     * 从内存 {@link SkillSource} 推断 DB 层 {@link SkillSourceType}。
+     *
+     * <p>注册表里的 UserDefined 覆盖两种 DB 来源：{@code BUILTIN}（classpath 预置）和
+     * {@code USER_IMPORTED}（用户本地导入）。这里根据 folderPath 是否位于 Skill 根目录下判断：
+     * 位于配置目录下视为 USER_IMPORTED；其他（jar classpath / 外部路径）视为 BUILTIN。</p>
+     */
+    private SkillSourceType resolveSourceType(SkillDefinition skill) {
+        return switch (skill.source()) {
+            case SkillSource.UserDefined ud -> {
+                String folder = ud.folderPath();
+                if (folder == null) yield SkillSourceType.BUILTIN;
+                try {
+                    Path folderPath = Path.of(folder).toAbsolutePath().normalize();
+                    Path rootPath = skillsDirectory.toAbsolutePath().normalize();
+                    yield folderPath.startsWith(rootPath) ? SkillSourceType.USER_IMPORTED : SkillSourceType.BUILTIN;
+                } catch (Exception e) {
+                    yield SkillSourceType.BUILTIN;
+                }
+            }
+            case SkillSource.AutoGenerated _ -> SkillSourceType.AUTO_GENERATED;
+            case SkillSource.Marketplace _ -> SkillSourceType.MARKETPLACE;
+        };
+    }
+
+    /**
+     * 创建 Skill —— 接收 {@code { skillMdContent }} 原始 SKILL.md 文本，走 {@link SkillInstaller}
+     * 统一流水线（USER_IMPORTED 来源），自动解析 frontmatter / 校验 / 写文件 / 入表。
+     *
+     * <p>B.7/B.8 前端迁移前的 {@code {id, name, description, instructions, ...}} 结构化表单提交
+     * 暂不支持（B.8 会在前端切到 Markdown 编辑直提交模式后自然对齐）。</p>
+     *
+     * @param request 至少包含 {@code skillMdContent}（SKILL.md 完整文本）
+     * @return 安装完成的 {@link SkillInstallation} 元数据
      */
     @PostMapping("/skills")
     public ApiResponse<?> createSkill(@RequestBody Map<String, Object> request) {
-        log.debug("创建 Skill: request={}", request);
+        String content = getString(request, "skillMdContent");
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "请提供 skillMdContent（SKILL.md 完整文本），结构化字段提交待 B.8 前端适配");
+        }
 
         try {
-            // 优先支持 markdownContent（SKILL.md 格式），否则走结构化 JSON 创建路径
-            String markdownContent = getString(request, "markdownContent");
-            if (markdownContent != null && !markdownContent.isBlank()) {
-                // ── 路径 1：客户端直接提交 SKILL.md 内容 ─────────────────
-                var parseResult = markdownParser.parse(markdownContent);
-
-                if (!parseResult.success() || parseResult.definition() == null) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()));
-                }
-
-                SkillDefinition definition = parseResult.definition();
-
-                // 检查是否已存在
-                if (skillRegistry.find(definition.id()).isPresent()) {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill ID 已存在: " + definition.id());
-                }
-
-                // 保存到文件系统（文件夹结构）
-                Path skillFolder = skillsDirectory.resolve(definition.id());
-                if (!Files.exists(skillFolder)) {
-                    Files.createDirectories(skillFolder);
-                }
-                Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-                Files.writeString(skillFile, markdownContent);
-
-                // 通过 MarkdownSkillLoader 加载（设置正确的 source）
-                Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
-                if (loaded.isEmpty()) {
-                    Files.deleteIfExists(skillFile);
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 注册失败，请检查定义");
-                }
-
-                boolean registered = skillRegistry.register(loaded.get());
-                if (!registered) {
-                    Files.deleteIfExists(skillFile);
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 注册失败，请检查定义");
-                }
-
-                log.info("Skill 创建成功: id={}, name={}", definition.id(), definition.name());
-                return ApiResponse.ok(loaded.get());
-            }
-
-            // ── 路径 2：Web UI 通过结构化 JSON 创建 Skill ─────────────────
-            String id = getString(request, "id");
-            String name = getString(request, "name");
-            String description = getString(request, "description");
-            String version = getString(request, "version");
-            String instructions = getString(request, "instructions");
-
-            if (id == null || id.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill ID 不能为空");
-            }
-            if (name == null || name.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 名称不能为空");
-            }
-            if (instructions == null || instructions.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "instructions 不能为空");
-            }
-
-            // 检查是否已存在
-            if (skillRegistry.find(id).isPresent()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill ID 已存在: " + id);
-            }
-
-            @SuppressWarnings("unchecked")
-            List<String> suggestedTools = (List<String>) request.getOrDefault("suggestedTools", List.of());
-            @SuppressWarnings("unchecked")
-            Map<String, String> metadata = (Map<String, String>) request.getOrDefault("metadata", Map.of());
-
-            // 构建 SkillDefinition
-            SkillDefinition definition = SkillDefinition.builder()
-                    .id(id)
-                    .name(name)
-                    .description(description != null ? description : "")
-                    .version(version != null && !version.isBlank() ? version : "1.0.0")
-                    .source(new SkillSource.UserDefined(
-                            skillsDirectory.resolve(id).toString()
-                    ))
-                    .instructions(instructions)
-                    .suggestedTools(suggestedTools)
-                    .metadata(metadata)
-                    .build();
-
-            // 序列化为 SKILL.md 并保存到文件系统（文件夹结构）
-            String serializedMarkdown = markdownSerializer.serialize(definition);
-            Path skillFolder = skillsDirectory.resolve(id);
-            if (!Files.exists(skillFolder)) {
-                Files.createDirectories(skillFolder);
-            }
-            Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-            Files.writeString(skillFile, serializedMarkdown);
-
-            // 注册到 SkillRegistry
-            boolean registered = skillRegistry.register(definition);
-            if (!registered) {
-                Files.deleteIfExists(skillFile);
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 注册失败，请检查定义");
-            }
-
-            log.info("Skill 创建成功: id={}, name={}", definition.id(), definition.name());
-            return ApiResponse.ok(definition);
-        } catch (ResponseStatusException e) {
-            throw e;
+            Files.createDirectories(skillsDirectory);
+            SkillInstallation install = skillInstaller.install(new SkillInstaller.InstallRequest(
+                    SkillSourceType.USER_IMPORTED,
+                    null,
+                    null,
+                    content,
+                    skillsDirectory));
+            log.info("Skill 创建成功: name={}", install.name());
+            return ApiResponse.ok(install);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (IOException e) {
-            log.error("创建 Skill 失败", e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
-        } catch (Exception e) {
-            log.error("创建 Skill 失败", e);
+            log.error("Skill 创建写入失败", e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "创建失败: " + e.getMessage());
         }
     }
 
     /**
-     * 更新 Skill（仅用户定义的 Skill 可编辑）。
+     * 更新 Skill —— 结构化字段提交入口。
      *
-     * @param id Skill ID
-     * @param request 更新请求（包含 markdownContent）
-     * @return 200 更新成功，404 不存在，400 参数错误
+     * <p>B.8 前端适配前保留 501；结构化字段（id/name/description/instructions/suggestedTools/metadata）
+     * 需要先 serialize 回 SKILL.md frontmatter 再走安装流水线，实现放到 B.8 和前端一起翻页。
+     * 当前前端要改 Markdown 应使用 {@link #updateSkillMarkdown(String, String)}。</p>
      */
-    @PutMapping("/skills/{id}")
-    public ApiResponse<?> updateSkill(@PathVariable String id,
-                                         @RequestBody Map<String, Object> request) {
-        log.debug("更新 Skill: id={}, request={}", id, request);
-        
-        // 检查 Skill 是否存在
-        Optional<SkillDefinition> existingOpt = skillRegistry.find(id);
-        if (existingOpt.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
-        }
-
-        SkillDefinition existing = existingOpt.get();
-
-        // 检查是否为用户定义类型（只有用户定义的 Skill 可以更新）
-        if (!(existing.source() instanceof SkillSource.UserDefined)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能更新用户创建的 Skill");
-        }
-
-        try {
-            // 优先处理 markdownContent 更新路径
-            String markdownContent = getString(request, "markdownContent");
-            if (markdownContent != null && !markdownContent.isBlank()) {
-                var parseResult = markdownParser.parse(markdownContent);
-
-                if (!parseResult.success() || parseResult.definition() == null) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()));
-                }
-
-                SkillDefinition definition = parseResult.definition();
-
-                // 检查 ID 是否匹配
-                if (!definition.id().equals(id)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 中的 ID 必须与路径参数一致");
-                }
-
-                // 更新文件系统（文件夹结构）
-                Path skillFolder = skillsDirectory.resolve(id);
-                if (!Files.exists(skillFolder)) {
-                    Files.createDirectories(skillFolder);
-                }
-                Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-                Files.writeString(skillFile, markdownContent);
-
-                // 通过 MarkdownSkillLoader 加载（设置正确的 source）
-                Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
-                if (loaded.isEmpty()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
-                }
-
-                boolean registered = skillRegistry.register(loaded.get());
-                if (!registered) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
-                }
-
-                log.info("Skill 更新成功: id={}", id);
-                return ApiResponse.ok(loaded.get());
-            }
-
-            // ── 结构化 JSON 更新路径（供 Web UI 使用） ─────────────────
-            SkillDefinition.SkillDefinitionBuilder builder = existing.toBuilder();
-
-            String name = getString(request, "name");
-            if (name != null && !name.isBlank()) {
-                builder.name(name);
-            }
-
-            String description = getString(request, "description");
-            if (description != null) {
-                builder.description(description);
-            }
-
-            String version = getString(request, "version");
-            if (version != null && !version.isBlank()) {
-                builder.version(version);
-            }
-
-            String instructions = getString(request, "instructions");
-            if (instructions != null && !instructions.isBlank()) {
-                builder.instructions(instructions);
-            }
-
-            @SuppressWarnings("unchecked")
-            List<String> suggestedTools = (List<String>) request.get("suggestedTools");
-            if (suggestedTools != null) {
-                builder.suggestedTools(suggestedTools);
-            }
-
-            @SuppressWarnings("unchecked")
-            Map<String, String> metadata = (Map<String, String>) request.get("metadata");
-            if (metadata != null) {
-                builder.metadata(metadata);
-            }
-
-            SkillDefinition updated = builder.build();
-
-            // 序列化为 SKILL.md 并写回文件（文件夹结构）
-            String serializedMarkdown = markdownSerializer.serialize(updated);
-            Path skillFolder = skillsDirectory.resolve(id);
-            if (!Files.exists(skillFolder)) {
-                Files.createDirectories(skillFolder);
-            }
-            Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-            Files.writeString(skillFile, serializedMarkdown);
-
-            boolean registered = skillRegistry.register(updated);
-            if (!registered) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
-            }
-
-            log.info("Skill 更新成功: id={}", id);
-            return ApiResponse.ok(updated);
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (IOException e) {
-            log.error("更新 Skill 失败: id={}", id, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
-        } catch (Exception e) {
-            log.error("更新 Skill 失败: id={}", id, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
-        }
+    @PutMapping("/skills/{name}")
+    public ApiResponse<?> updateSkill(@PathVariable String name,
+                                      @RequestBody Map<String, Object> request) {
+        // TODO Phase B.8: 前端切到 Markdown 直提交后移除；或补 serializer 支持结构化字段 → SKILL.md 重建
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
+                "结构化字段更新端点待 Phase B.8 与前端一起适配（当前请使用 PUT /skills/{name}/markdown）");
     }
 
     /**
-     * 注销指定 Skill。
+     * 注销指定 Skill —— 注销内存注册表、删除 {@code skills} 表记录、删除文件夹。
      *
-     * @param id Skill ID
-     * @return 204 成功，404 不存在
+     * @param name Skill 名称
+     * @return 200 成功，404 不存在
      */
-    @DeleteMapping("/skills/{id}")
-    public ApiResponse<?> unregisterSkill(@PathVariable String id) {
-        var skillOpt = skillRegistry.find(id);
-        if (skillOpt.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
+    @DeleteMapping("/skills/{name}")
+    public ApiResponse<?> unregisterSkill(@PathVariable String name) {
+        var skillOpt = skillRegistry.find(name);
+        var installOpt = installationRepository.findByName(name);
+        if (skillOpt.isEmpty() && installOpt.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: name=" + name);
         }
 
-        skillRegistry.unregister(id);
-        
+        skillRegistry.unregister(name);
+        installationRepository.delete(name);
+
         // 删除 Skill 文件夹
         try {
-            Path skillFolder = skillsDirectory.resolve(id);
+            Path skillFolder = skillsDirectory.resolve(name);
             if (Files.exists(skillFolder) && Files.isDirectory(skillFolder)) {
-                // 递归删除文件夹内容
                 try (var walk = Files.walk(skillFolder)) {
                     walk.sorted(java.util.Comparator.reverseOrder())
                             .forEach(path -> {
@@ -442,196 +315,255 @@ public class SkillController {
                 }
             }
         } catch (IOException e) {
-            log.warn("删除 Skill 文件夹失败: id={}, error={}", id, e.getMessage());
+            log.warn("删除 Skill 文件夹失败: name={}, error={}", name, e.getMessage());
         }
-        
-        log.info("Skill 已注销: id={}", id);
+
+        log.info("Skill 已注销: name={}", name);
         return ApiResponse.ok();
     }
 
     /**
-     * 启用 Skill（通过 metadata.status=enabled 控制）。
+     * 启用/禁用 Skill —— 写入 {@code skills.enabled} 事实源并同步内存注册表标记。
      *
-     * <p>仅允许用户定义或市场安装的 Skill 修改状态。</p>
+     * <p>v2 语义：{@link SkillInstallationRepository#setEnabled(String, boolean)} 是
+     * {@link com.lifepilot.skill.activation.SkillActivator} 拦截非启用 Skill 的唯一依据。</p>
      *
-     * @param id Skill ID
-     * @return 204 成功，404 不存在，400 类型不支持
+     * @param name    Skill 名称
+     * @param request {@code { "enabled": true|false }}
+     * @return 200 成功，404 未安装
      */
-    @PostMapping("/skills/{id}/enable")
-    public ApiResponse<?> enableSkill(@PathVariable String id) {
-        log.info("启用 Skill: id={}", id);
-
-        Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
-        if (skillOpt.isEmpty()) {
-            log.warn("Skill 不存在: id={}", id);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
+    @PutMapping("/skills/{name}/enabled")
+    public ApiResponse<?> setSkillEnabled(@PathVariable String name,
+                                          @RequestBody Map<String, Object> request) {
+        Object enabledRaw = request.get("enabled");
+        if (enabledRaw == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "enabled 字段不能为空");
         }
+        boolean enabled = enabledRaw instanceof Boolean b
+                ? b
+                : Boolean.parseBoolean(enabledRaw.toString());
 
-        SkillDefinition skill = skillOpt.get();
-
-        // 仅允许用户定义或市场安装的 Skill 修改状态
-        if (!(skill.source() instanceof SkillSource.UserDefined)
-                && !(skill.source() instanceof SkillSource.Marketplace)) {
-            log.warn("尝试启用非用户定义 Skill 被拒绝: id={}", id);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能启用/禁用用户创建或市场安装的 Skill");
+        if (installationRepository.findByName(name).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 未安装: name=" + name);
         }
+        installationRepository.setEnabled(name, enabled);
+        log.info("Skill 启用状态已更新: name={}, enabled={}", name, enabled);
 
-        Map<String, String> metadata = new HashMap<>(skill.metadata() != null ? skill.metadata() : Map.of());
-        metadata.put("status", "enabled");
-
-        SkillDefinition updated = skill.toBuilder()
-                .metadata(metadata)
-                .build();
-
-        // 写回 SKILL.md 文件
-        try {
-            String serializedMarkdown = markdownSerializer.serialize(updated);
-            Path skillFolder = skillsDirectory.resolve(id);
-            if (!Files.exists(skillFolder)) {
-                Files.createDirectories(skillFolder);
-            }
-            Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-            Files.writeString(skillFile, serializedMarkdown);
-        } catch (IOException e) {
-            log.error("写回 Skill 文件失败（启用）: id={}", id, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "启用失败: " + e.getMessage());
-        }
-
-        skillRegistry.register(updated);
-        log.info("Skill 启用成功: id={}", id);
-        return ApiResponse.ok();
+        // 同步更新内存注册表的 metadata.status（便于前端列表显示，非运行期事实源）
+        syncRegistryStatus(name, enabled);
+        return ApiResponse.ok(Map.of("name", name, "enabled", enabled));
     }
 
     /**
-     * 禁用 Skill（通过 metadata.status=disabled 控制）。
+     * 启用 Skill —— 兼容旧端点，内部转发到 {@link #setSkillEnabled(String, Map)}。
      *
-     * <p>仅允许用户定义或市场安装的 Skill 修改状态。</p>
-     *
-     * @param id Skill ID
-     * @return 204 成功，404 不存在，400 类型不支持
+     * @param name Skill 名称
+     * @return 200 成功，404 未安装
      */
-    @PostMapping("/skills/{id}/disable")
-    public ApiResponse<?> disableSkill(@PathVariable String id) {
-        log.info("禁用 Skill: id={}", id);
+    @PostMapping("/skills/{name}/enable")
+    public ApiResponse<?> enableSkill(@PathVariable String name) {
+        log.info("启用 Skill: name={}", name);
+        return setSkillEnabled(name, Map.of("enabled", true));
+    }
 
-        Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
-        if (skillOpt.isEmpty()) {
-            log.warn("Skill 不存在: id={}", id);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
-        }
+    /**
+     * 禁用 Skill —— 兼容旧端点，内部转发到 {@link #setSkillEnabled(String, Map)}。
+     *
+     * @param name Skill 名称
+     * @return 200 成功，404 未安装
+     */
+    @PostMapping("/skills/{name}/disable")
+    public ApiResponse<?> disableSkill(@PathVariable String name) {
+        log.info("禁用 Skill: name={}", name);
+        return setSkillEnabled(name, Map.of("enabled", false));
+    }
 
+    /** 把 enabled 布尔映射到内存注册表的 metadata.status 字符串，便于前端列表视图展示。 */
+    private void syncRegistryStatus(String name, boolean enabled) {
+        Optional<SkillDefinition> skillOpt = skillRegistry.find(name);
+        if (skillOpt.isEmpty()) return;
         SkillDefinition skill = skillOpt.get();
-
-        // 仅允许用户定义或市场安装的 Skill 修改状态
-        if (!(skill.source() instanceof SkillSource.UserDefined)
-                && !(skill.source() instanceof SkillSource.Marketplace)) {
-            log.warn("尝试禁用非用户定义 Skill 被拒绝: id={}", id);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能启用/禁用用户创建或市场安装的 Skill");
-        }
-
         Map<String, String> metadata = new HashMap<>(skill.metadata() != null ? skill.metadata() : Map.of());
-        metadata.put("status", "disabled");
+        metadata.put("status", enabled ? "enabled" : "disabled");
+        skillRegistry.register(skill.toBuilder().metadata(metadata).build());
+    }
 
-        SkillDefinition updated = skill.toBuilder()
-                .metadata(metadata)
-                .build();
+    // ── Skill 多渠道安装端点 ─────────────────────────────────
 
-        // 写回 SKILL.md 文件
+    /**
+     * 上传 .skill 压缩包导入 Skill —— 委托 {@link SkillImportService#importFromPackage(MultipartFile)}，
+     * 带 zip slip / zip bomb 防护，辅助目录（references/scripts/assets）会被完整复制。
+     *
+     * @param file 前端 multipart/form-data 字段名 {@code file}
+     * @return 安装完成的 {@link SkillInstallation} 元数据
+     */
+    @PostMapping(value = "/skills/import", consumes = "multipart/form-data")
+    public ApiResponse<?> importSkillPackage(@RequestParam("file") MultipartFile file) {
         try {
-            String serializedMarkdown = markdownSerializer.serialize(updated);
-            Path skillFolder = skillsDirectory.resolve(id);
-            if (!Files.exists(skillFolder)) {
-                Files.createDirectories(skillFolder);
-            }
-            Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-            Files.writeString(skillFile, serializedMarkdown);
+            SkillInstallation install = skillImportService.importFromPackage(file);
+            log.info("Skill .skill 包导入成功: name={}, sourceUri={}", install.name(), install.sourceUri());
+            return ApiResponse.ok(install);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (SecurityException e) {
+            log.warn("Skill 包安全违规: error={}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "安全校验未通过: " + e.getMessage());
         } catch (IOException e) {
-            log.error("写回 Skill 文件失败（禁用）: id={}", id, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "禁用失败: " + e.getMessage());
+            log.error("Skill 包导入失败", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "导入失败: " + e.getMessage());
         }
+    }
 
-        skillRegistry.register(updated);
-        log.info("Skill 禁用成功: id={}", id);
-        return ApiResponse.ok();
+    /**
+     * 从市场索引按 marketplaceId 安装 Skill —— 委托 {@link SkillMarketplaceInstaller#installById(String)}，
+     * 自动识别 ClawHub zip 或自有索引单文件两种下载通道。
+     *
+     * @param request {@code { "marketplaceId": "..." }}
+     * @return 安装完成的 {@link SkillInstallation} 元数据；市场模块禁用时返回 503
+     */
+    @PostMapping("/skills/install-from-marketplace")
+    public ApiResponse<?> installFromMarketplace(@RequestBody Map<String, Object> request) {
+        if (marketplaceInstaller == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "市场功能未启用（lifepilot.marketplace.enabled=false）");
+        }
+        String marketplaceId = getString(request, "marketplaceId");
+        if (marketplaceId == null || marketplaceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "marketplaceId 不能为空");
+        }
+        try {
+            SkillInstallation install = marketplaceInstaller.installById(marketplaceId);
+            log.info("市场 Skill 安装成功: marketplaceId={}, name={}", marketplaceId, install.name());
+            return ApiResponse.ok(install);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        } catch (IOException e) {
+            log.error("市场 Skill 安装失败: marketplaceId={}", marketplaceId, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "安装失败: " + e.getMessage());
+        }
     }
 
     // ── Skill Markdown 端点 ─────────────────────────────────
 
     /**
-     * 获取指定 Skill 的 Markdown 内容。
+     * 获取指定 Skill 的 SKILL.md 原始文本。
      *
-     * @param id Skill ID
-     * @return Markdown 文本（text/markdown），不存在返回 404
+     * <p>路径优先取 {@code skills} 表的 {@code file_path}；未入表时回退到 {@code config.directory/{name}/SKILL.md}。</p>
+     *
+     * @param name Skill 名称
+     * @return SKILL.md 文本，未找到返回 404
      */
-    @GetMapping(value = "/skills/{id}/markdown", produces = "text/markdown")
-    public ApiResponse<?> getSkillMarkdown(@PathVariable String id) {
-        Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
-        if (skillOpt.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
+    @GetMapping(value = "/skills/{name}/markdown", produces = "text/markdown;charset=UTF-8")
+    public String getSkillMarkdown(@PathVariable String name) {
+        Path skillMd = resolveSkillMdPath(name);
+        if (!Files.exists(skillMd)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Skill Markdown 文件不存在: name=" + name);
         }
-
-        String markdown = markdownSerializer.serialize(skillOpt.get());
-        return ApiResponse.ok(markdown);
+        try {
+            return Files.readString(skillMd, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("读取 Skill Markdown 失败: name={}", name, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "读取失败: " + e.getMessage());
+        }
     }
 
     /**
-     * 通过 Markdown 内容更新指定 Skill。
+     * 通过 Markdown 内容更新指定 Skill —— 保留原 {@link SkillSourceType} 走 {@link SkillInstaller} 重刷。
      *
-     * <p>接收纯文本 SKILL.md 内容，解析后写入文件并注册到 SkillRegistry。</p>
+     * <p>约束：
+     * <ul>
+     *   <li>frontmatter 的 {@code name} 必须与路径变量一致，否则 400（避免改名造成孤儿文件）</li>
+     *   <li>原 {@code sourceType} 保留（BUILTIN 除外 —— 编辑内置 Skill 会转为 {@code USER_IMPORTED}，
+     *       防止覆盖仓库里的预置定义）</li>
+     *   <li>原 {@code sourceUri} / {@code marketplaceId} 保留，维持溯源链</li>
+     * </ul>
      *
-     * @param id      Skill ID
-     * @param content Markdown 文本内容
-     * @return 更新后的 SkillDefinition JSON，解析失败返回 400，不存在返回 404
+     * @param name    Skill 名称（路径变量）
+     * @param content SKILL.md 完整文本（{@code text/plain} 或 {@code text/markdown}）
+     * @return 更新后的 {@link SkillInstallation} 元数据
      */
-    @PutMapping(value = "/skills/{id}/markdown", consumes = "text/plain")
-    public ApiResponse<?> updateSkillMarkdown(@PathVariable String id,
-                                                  @RequestBody String content) {
-        // 检查 Skill 是否存在
-        Optional<SkillDefinition> existingOpt = skillRegistry.find(id);
-        if (existingOpt.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill 不存在: id=" + id);
+    @PutMapping(value = "/skills/{name}/markdown", consumes = {"text/plain", "text/markdown"})
+    public ApiResponse<?> updateSkillMarkdown(@PathVariable String name,
+                                              @RequestBody String content) {
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 内容不能为空");
         }
 
-        // 仅用户定义的 Skill 可通过 Markdown 更新
-        if (!(existingOpt.get().source() instanceof SkillSource.UserDefined)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能更新用户创建的 Skill");
-        }
+        Optional<SkillInstallation> existingOpt = installationRepository.findByName(name);
 
-        // 解析 Markdown 内容
-        var parseResult = markdownParser.parse(content);
-        if (!parseResult.success() || parseResult.definition() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()));
-        }
-
-        SkillDefinition parsed = parseResult.definition();
-
-        // 验证 ID 一致性
-        if (!parsed.id().equals(id)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SKILL.md 中的 ID 必须与路径参数一致");
+        // 决定要用的 sourceType：BUILTIN 转 USER_IMPORTED，其他保留
+        SkillSourceType sourceType;
+        String sourceUri;
+        String marketplaceId;
+        if (existingOpt.isPresent()) {
+            SkillInstallation existing = existingOpt.get();
+            sourceType = existing.sourceType() == SkillSourceType.BUILTIN
+                    ? SkillSourceType.USER_IMPORTED
+                    : existing.sourceType();
+            sourceUri = existing.sourceUri();
+            marketplaceId = existing.marketplaceId();
+        } else {
+            // 未入表：按首次创建处理，走 USER_IMPORTED
+            sourceType = SkillSourceType.USER_IMPORTED;
+            sourceUri = null;
+            marketplaceId = null;
         }
 
         try {
-            // 写入文件
-            Path skillFolder = skillsDirectory.resolve(id);
-            if (!Files.exists(skillFolder)) {
-                Files.createDirectories(skillFolder);
-            }
-            Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
-            Files.writeString(skillFile, content);
+            Files.createDirectories(skillsDirectory);
+            SkillInstallation install = skillInstaller.install(new SkillInstaller.InstallRequest(
+                    sourceType,
+                    sourceUri,
+                    marketplaceId,
+                    content,
+                    skillsDirectory));
 
-            // 通过 MarkdownSkillLoader 加载（设置正确的 source）
-            Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
-            if (loaded.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill 更新失败，请检查定义");
+            // 防御：frontmatter name 必须和 URL 变量一致
+            if (!install.name().equals(name)) {
+                // 已写入新目录 —— 回滚：删 installer 新写入的目录和表记录
+                installationRepository.delete(install.name());
+                try {
+                    Path newDir = Path.of(install.filePath());
+                    if (Files.exists(newDir) && Files.isDirectory(newDir)) {
+                        try (var walk = Files.walk(newDir)) {
+                            walk.sorted(java.util.Comparator.reverseOrder())
+                                    .forEach(p -> {
+                                        try { Files.deleteIfExists(p); } catch (IOException ignored) {}
+                                    });
+                        }
+                    }
+                } catch (IOException cleanupErr) {
+                    log.warn("清理新写入目录失败: path={}", install.filePath(), cleanupErr);
+                }
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "SKILL.md frontmatter.name (" + install.name()
+                                + ") 与路径变量 (" + name + ") 不一致，改名请走 POST /skills");
             }
 
-            skillRegistry.register(loaded.get());
-            log.info("Skill Markdown 更新成功: id={}", id);
-            return ApiResponse.ok(loaded.get());
+            log.info("Skill Markdown 更新成功: name={}, sourceType={}", name, sourceType);
+            return ApiResponse.ok(install);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (IOException e) {
-            log.error("Skill Markdown 更新失败: id={}", id, e);
+            log.error("Skill Markdown 更新失败: name={}", name, e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 解析 Skill 的 SKILL.md 文件路径：优先使用 {@code skills} 表的 {@code file_path}，
+     * 未入表时退化到 {@code skillsDirectory/{name}/SKILL.md}。
+     */
+    private Path resolveSkillMdPath(String name) {
+        var installOpt = installationRepository.findByName(name);
+        if (installOpt.isPresent()) {
+            return Path.of(installOpt.get().filePath(), skillConfig.getSkillFilename());
+        }
+        return skillsDirectory.resolve(name).resolve(skillConfig.getSkillFilename());
     }
 
     // ── 辅助方法 ──────────────────────────────────────────
@@ -762,7 +694,7 @@ public class SkillController {
     @PostMapping("/mcp/servers")
     public ApiResponse<?> createMcpServer(@RequestBody Map<String, Object> request) {
         log.debug("创建 MCP Server: request={}", request);
-        
+
         try {
             String name = getString(request, "name");
             if (name == null || name.isBlank()) {
@@ -776,7 +708,7 @@ public class SkillController {
 
             // 构建配置
             McpServerConfig config = buildMcpServerConfig(name, request);
-            
+
             // 初始化并连接
             mcpServerRegistry.initializeAll(List.of(config));
             if (config.autoConnect()) {
@@ -802,9 +734,9 @@ public class SkillController {
      */
     @PutMapping("/mcp/servers/{name}")
     public ApiResponse<?> updateMcpServer(@PathVariable String name,
-                                             @RequestBody Map<String, Object> request) {
+                                          @RequestBody Map<String, Object> request) {
         log.debug("更新 MCP Server: name={}, request={}", name, request);
-        
+
         // 检查是否存在
         var existingOpt = mcpServerRegistry.getServer(name);
         if (existingOpt.isEmpty()) {
@@ -817,7 +749,7 @@ public class SkillController {
 
             // 构建新配置（保持名称不变）
             McpServerConfig config = buildMcpServerConfig(name, request);
-            
+
             // 重新初始化并连接
             mcpServerRegistry.initializeAll(List.of(config));
             if (config.autoConnect()) {
@@ -843,7 +775,7 @@ public class SkillController {
     @DeleteMapping("/mcp/servers/{name}")
     public ApiResponse<?> deleteMcpServer(@PathVariable String name) {
         log.debug("删除 MCP Server: name={}", name);
-        
+
         var serverOpt = mcpServerRegistry.getServer(name);
         if (serverOpt.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "MCP Server 不存在: name=" + name);
@@ -851,10 +783,10 @@ public class SkillController {
 
         // 断开连接（这会注销工具）
         mcpServerRegistry.disconnectServer(name);
-        
+
         // 注意：McpServerRegistry 没有公开的 remove 方法，但断开连接后工具已注销
         // 如果需要完全移除注册表条目，需要扩展 McpServerRegistry
-        
+
         log.info("MCP Server 已删除: name={}", name);
         return ApiResponse.ok();
     }
@@ -878,8 +810,8 @@ public class SkillController {
         // 解析其他字段
         String command = getString(configMap, "command");
         @SuppressWarnings("unchecked")
-        List<String> args = configMap.get("args") instanceof List<?> 
-                ? (List<String>) configMap.get("args") 
+        List<String> args = configMap.get("args") instanceof List<?>
+                ? (List<String>) configMap.get("args")
                 : new ArrayList<>();
         String url = getString(configMap, "url");
         @SuppressWarnings("unchecked")
@@ -891,11 +823,11 @@ public class SkillController {
         Duration timeout = parseDuration(configMap.get("timeout"), McpServerConfig.DEFAULT_TIMEOUT);
         boolean autoConnect = getBooleanOrDefault(configMap, "autoConnect", false);
         boolean reconnect = getBooleanOrDefault(configMap, "reconnect", true);
-        Duration reconnectDelay = parseDuration(configMap.get("reconnectDelay"), 
+        Duration reconnectDelay = parseDuration(configMap.get("reconnectDelay"),
                 McpServerConfig.DEFAULT_RECONNECT_DELAY);
-        int maxReconnectAttempts = getIntOrDefault(configMap, "maxReconnectAttempts", 
+        int maxReconnectAttempts = getIntOrDefault(configMap, "maxReconnectAttempts",
                 McpServerConfig.DEFAULT_MAX_RECONNECT_ATTEMPTS);
-        Duration healthCheckInterval = parseDuration(configMap.get("healthCheckInterval"), 
+        Duration healthCheckInterval = parseDuration(configMap.get("healthCheckInterval"),
                 McpServerConfig.DEFAULT_HEALTH_CHECK_INTERVAL);
 
         return McpServerConfig.builder()

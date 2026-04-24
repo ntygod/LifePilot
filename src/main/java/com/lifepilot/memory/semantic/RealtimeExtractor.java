@@ -505,15 +505,17 @@ public class RealtimeExtractor {
     @Nullable
     private MemoryWriteContext resolveWriteContext(String sessionId, @Nullable String turnId) {
         if (snapshotRepository == null || turnId == null || turnId.isBlank()) {
-            return personalWriteContext(sessionId, turnId);
+            return personalWriteContext(sessionId, turnId, null);
         }
         var snapshot = snapshotRepository.findByTurnId(turnId);
         if (snapshot.isEmpty()) {
-            return personalWriteContext(sessionId, turnId);
+            return personalWriteContext(sessionId, turnId, null);
         }
         var record = snapshot.get();
         if (record.personalLearningEnabled()) {
-            return personalWriteContext(sessionId, turnId);
+            // 快照里的 projectSpaceId 非空代表当前对话归属隔离项目，
+            // 对话学习按项目 space 落盘；为空则走主账户默认 space（spaceId=null）。
+            return personalWriteContext(sessionId, turnId, record.projectSpaceId());
         }
         if (record.domainLearningEnabled() && record.domainWriteSpaceId() != null && !record.domainWriteSpaceId().isBlank()) {
             return new MemoryWriteContext(
@@ -535,9 +537,20 @@ public class RealtimeExtractor {
         return null;
     }
 
-    private MemoryWriteContext personalWriteContext(String sessionId, @Nullable String turnId) {
+    /**
+     * 构造对话学习（personal learning）写入上下文。
+     *
+     * <p>{@code projectSpaceId} 非空时，spaceId 用项目 space（ISOLATED 项目）；
+     * null 时 spaceId 留空交由 SemanticMemory 按 entity type 选择默认主账户 space。
+     * memoryScope 永远保持 null，避免错误限定 scope——SemanticMemory.upsertWithConflictDetection
+     * 内部 resolveWriteContext 会按 entity type 推断（PREFERENCE/HABIT → USER_PROFILE，
+     * EXPERIENCE → AGENT_EXPERIENCE，其他 → USER_FACT）。</p>
+     */
+    private MemoryWriteContext personalWriteContext(String sessionId,
+                                                    @Nullable String turnId,
+                                                    @Nullable String projectSpaceId) {
         return new MemoryWriteContext(
-                null,
+                projectSpaceId,
                 null,
                 MemoryOriginType.CHAT,
                 MemoryRealityType.UNKNOWN,

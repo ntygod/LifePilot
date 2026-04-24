@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   ArrowUp,
   AtSign,
@@ -49,6 +50,7 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
+const route = useRoute()
 const input = ref('')
 const maxLength = 4000
 
@@ -243,9 +245,13 @@ async function submit() {
     uploadError.value = null
 
     // 懒创建：上传附件需要 sessionId，如果还没有会话则先创建
+    // 若 URL 携带 projectId（来自项目详情页「开始新对话」），会话归入该项目
     if (!chatStore.activeSessionId) {
+      const projectIdFromQuery = typeof route.query.projectId === 'string'
+        ? route.query.projectId
+        : null
       try {
-        await chatStore.startNewSession()
+        await chatStore.startNewSession(undefined, projectIdFromQuery)
       } catch {
         uploadError.value = '创建会话失败，请重试'
         isUploading.value = false

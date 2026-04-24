@@ -618,10 +618,14 @@ public class MemoryAutoConfiguration {
             GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties,
-            TrajectoryQualityAssessor qualityAssessor) {
-        log.info("记忆模块: 注册 ExperienceSummarizer");
+            TrajectoryQualityAssessor qualityAssessor,
+            @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
+            @Nullable com.lifepilot.project.context.ProjectContextResolver projectContextResolver) {
+        log.info("记忆模块: 注册 ExperienceSummarizer, projectAware={}",
+                projectContextResolver != null && chatSessionRepository != null);
         return new ExperienceSummarizer(semanticMemory, vectorSearcher, generationRouter,
-                promptRegistry, properties, qualityAssessor);
+                promptRegistry, properties, qualityAssessor,
+                chatSessionRepository, projectContextResolver);
     }
 
     @Bean
@@ -658,10 +662,14 @@ public class MemoryAutoConfiguration {
             VectorSearcher vectorSearcher,
             GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
-            MemoryProperties properties) {
-        log.info("记忆模块: 注册 SubtaskReflector");
+            MemoryProperties properties,
+            @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
+            @Nullable com.lifepilot.project.context.ProjectContextResolver projectContextResolver) {
+        log.info("记忆模块: 注册 SubtaskReflector, projectAware={}",
+                projectContextResolver != null && chatSessionRepository != null);
         return new com.lifepilot.memory.experience.SubtaskReflector(
-                semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
+                semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties,
+                chatSessionRepository, projectContextResolver);
     }
 
     @Bean

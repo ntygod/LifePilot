@@ -1,7 +1,7 @@
 ﻿# 知微（ZhiWei）— 特性总览
 
 > **文档性质**：特性总览文档
-> **最后更新**：2026-04
+> **最后更新**：2026-04-24
 
 ## 1. 产品定位与核心价值
 
@@ -52,13 +52,15 @@
 
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
-| Skill 系统 | Markdown SKILL.md 声明式 Skill 定义、热加载、file.read(skill=...) 按需激活 | [特性](features/skill-system.md) |
-| 预置 Skill | 26 个种子 Skill，首次启动自动提取到用户目录 | [特性](features/preset-skills.md) |
-| Skill 自扩展 | Gap 检测 + Markdown SKILL.md 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
+| Skill 系统 | Markdown SKILL.md 三级分层（L1 frontmatter + L2 body + L3 references）、四来源（BUILTIN / USER_IMPORTED / MARKETPLACE / AUTO_GENERATED）、`skill.load` 统一激活 | [特性](features/skill-system.md) |
+| 预置 Skill | 27 个 BUILTIN Skill，启动时走统一安装流水线入 skills 表 | [特性](features/preset-skills.md) |
+| Skill 自扩展 | `SkillSynthesizer` 驱动 LLM 生成 + 严格校验（拒未知/HIGH/CRITICAL 工具）+ SSE 广播到前端 toast | [特性](features/skill-development.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |
+| 项目工作空间 | 用户显式创建的领域级任务容器，每个项目对应一个 PROJECT 类型 MemorySpace；ISOLATED / SHARED 两种记忆隔离模式 | [架构](architecture/project.md) |
 | 自主任务执行 | cron 定时 + 主动智能引擎（三级检测管线 + 8 个行为插件 + 四级投递 + 信任阶梯） + 自主工作流 | [架构](architecture/proactive-reminder-engine.md) |
+| 定时任务全局管理 | `cron_tasks.project_id` 按项目归属；`/scheduled-tasks` 全局管理页（列表 + 项目 tag + 暂停/恢复/删除）。创建入口保持在对话中由 LLM 自然语言触发 | [API 端点](API_ENDPOINTS.md#scheduled-tasks定时任务管理) |
 | 通知系统 | 统一通知服务、直接通知、多渠道广播、富媒体支持、通知历史管理 | [特性](features/notification.md) |
 
 ### 3.4 高级能力

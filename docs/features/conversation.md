@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.conversation`
-> **最后更新**：2026-03-20
+> **最后更新**：2026-04-23
 
 ## 1. 功能概述
 
@@ -35,6 +35,13 @@
 - 当前会话连续性来自 conversation 模块
 - 跨会话 recall 来自 memory 模块
 - 两者职责分开后，调用链和问题定位都更简单
+
+### 2.5 会话按项目归属
+
+- `session_store.project_id` 标识会话归属：NULL = 主账户对话，非 NULL = 归属具体项目
+- 创建会话时可显式传 `projectId`；不传则归属主账户
+- 列表接口按 `projectId` 过滤：不传时仅返回主账户对话，传 `projectId=xxx` 时仅返回该项目下的对话
+- Fork 会话继承源会话的 `projectId`，保证项目内 fork 不泄漏到主账户
 
 ## 3. 使用场景
 

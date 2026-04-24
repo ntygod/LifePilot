@@ -14,12 +14,14 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
+import com.lifepilot.tool.tier1.Tier1Service;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,7 +68,7 @@ class ToolBridgeAgentToolProviderTest {
                 pipeline,
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For("datastore.query_documents")
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -100,7 +102,7 @@ class ToolBridgeAgentToolProviderTest {
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For("process.list")
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -135,7 +137,7 @@ class ToolBridgeAgentToolProviderTest {
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For("process.items")
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -170,7 +172,7 @@ class ToolBridgeAgentToolProviderTest {
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For()
         );
 
         var hint = provider.resolveSchedulingHint(
@@ -211,7 +213,7 @@ class ToolBridgeAgentToolProviderTest {
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For()
         );
 
         var hint = provider.resolveSchedulingHint("file.write", "{not-json");
@@ -253,7 +255,7 @@ class ToolBridgeAgentToolProviderTest {
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For()
         );
 
         var callbacks = provider.getToolCallbacks(baseState(List.of("custom.echo")), null);
@@ -297,7 +299,7 @@ class ToolBridgeAgentToolProviderTest {
                 mock(ToolExecutionPipeline.class),
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For("foo_bar", "foo.bar")
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
@@ -335,7 +337,7 @@ class ToolBridgeAgentToolProviderTest {
                 pipeline,
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For("web.search")
         );
         var callback = provider.getToolCallbacks(baseState(), null).getFirst();
 
@@ -373,13 +375,20 @@ class ToolBridgeAgentToolProviderTest {
                 pipeline,
                 new ObjectMapper(),
                 30000,
-                null
+                tier1For("file.read")
         );
         var callback = provider.getToolCallbacks(baseState(), null).getFirst();
 
         callback.call("{\"path\":\"demo.txt\"}");
 
         verify(pipeline).execute(eq("file.read"), anyMap(), anyString(), isNull(), isNull(), anyMap());
+    }
+
+    /** 构建一个 Tier1Service mock，其 getCurrentTier1Ids() 返回指定 ID 集合。 */
+    private Tier1Service tier1For(String... toolIds) {
+        Tier1Service mock = mock(Tier1Service.class);
+        when(mock.getCurrentTier1Ids()).thenReturn(Set.of(toolIds));
+        return mock;
     }
 
     private ReactAgentState baseState() {

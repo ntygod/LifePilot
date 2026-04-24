@@ -1,15 +1,24 @@
 ---
-id: web-novel-writer
-name: "网文写作"
-description: "网文长篇连载创作与管理——开书立项、设定搭建、大纲章纲、正文续写、改稿、资料沉淀。用户说「写网文」「写一章」「续写」「小说设定」「卷纲」「章纲」「黄金三章」「帮我改这一章」「建个小说工作台」时使用。不适用于通用文章报告（用 content-creator）。"
-version: "2.0.0"
-suggested-tools:
-  - knowledge.search
-  - datastore
-  - file.read
-  - file.write
-  - web.search
-  - memory
+name: web-novel-writer
+description: 当用户要进行网文长篇连载创作——开书立项、设定搭建、大纲/卷纲/章纲、正文续写、改稿、资料沉淀时使用。关键词：写网文、写一章、续写、小说设定、卷纲、章纲、黄金三章、改稿、小说工作台、开书、金手指。通用文章/报告/邮件用 content-creator，外部资料调研用 research-assistant。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: content-creation
+    priority: normal
+    tags:
+      - web-novel
+      - 网文
+      - fiction
+      - serialization
+      - storytelling
+    suggested_tools:
+      - knowledge.search
+      - datastore
+      - file.read
+      - file.write
+      - web.search
+      - memory
 ---
 
 # 网文写作指南
@@ -33,13 +42,11 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 判断任务类型
+### 判断任务类型
 
-先判断用户当前要的是哪一种：立项 / 设定 / 大纲 / 章纲 / 正文 / 续写 / 改稿 / 资料整理。
+先判断用户当前要的是哪一种：立项 / 设定 / 大纲 / 章纲 / 正文 / 续写 / 改稿 / 资料整理。不要把"想法讨论"直接写成正文，也不要把"写正文"回成空泛建议。
 
-不要把"想法讨论"直接写成正文，也不要把"写正文"回成空泛建议。
-
-### 2. 检索已有资料
+### 检索已有资料
 
 当前会话如果已绑定 Datastore 或 Knowledge Base，且用户问题可能涉及角色设定、世界规则、前文事件、伏笔、卷纲/章纲、术语地名：
 
@@ -49,25 +56,17 @@ knowledge.search(query="相关设定主题")
 
 优先检索再继续写作或判断。
 
-### 3. 按任务类型执行
+### 按任务类型执行
 
-**立项**：至少给出题材、受众、一句话卖点、主角目标、核心冲突、持续爽点机制。模糊想法先收束为：`题材 + 主角 + 金手指/优势 + 主线目标 + 最大障碍`
+- **立项**：至少给出题材、受众、一句话卖点、主角目标、核心冲突、持续爽点机制。模糊想法先收束为：`题材 + 主角 + 金手指/优势 + 主线目标 + 最大障碍`
+- **设定搭建**：世界观（规则、资源、代价、阶梯、敌人、禁忌）；角色（外在身份、核心欲望、明面目标、隐性创伤、关键关系、冲突来源）
+- **卷纲**：本卷目标、主要敌人、中段反转、卷末高潮、下卷钩子
+- **章纲**：开场钩子 → 当前目标 → 冲突升级 → 结果变化 → 章末悬念
+- **正文**：开头尽快进入事件；对话、动作、信息揭示交替推进；每 300-800 字有一次变化点；结尾留未解决问题
+- **续写**：先锁定当前时间点、地点、出场人物、人物状态、未回收伏笔、叙事视角
+- **改稿**：先指出问题（开头慢？冲突弱？动机虚？信息密度低？章末无钩子？对话同质？），再给重写版
 
-**设定搭建**：
-- 世界观：规则、资源、代价、阶梯、敌人、禁忌
-- 角色：外在身份、核心欲望、明面目标、隐性创伤、关键关系、能制造什么冲突
-
-**卷纲**：本卷目标、主要敌人、中段反转、卷末高潮、下卷钩子。如果只是"换地图升级"，补关系变化、资源争夺、身份暴露、旧伏笔回收、新主线抛出。
-
-**章纲**：开场钩子 → 当前目标 → 冲突升级 → 结果变化 → 章末悬念。
-
-**正文**：开头尽快进入事件；对话、动作、信息揭示交替推进；每 300-800 字有一次变化点；一章至少推进剧情/关系/秘密/资源/危机之一；结尾留未解决问题。
-
-**续写**：先锁定当前时间点、地点、出场人物、人物状态、未回收伏笔、叙事视角。上下文不足时从绑定资料补齐，不擅自改设定。
-
-**改稿**：先指出问题（开头慢？冲突弱？动机虚？信息密度低？章末无钩子？对话同质？），再给重写版或精修版。
-
-### 4. 保存正文
+### 保存正文
 
 正文和续写生成成稿后，默认追加保存到本地文件：
 
@@ -79,27 +78,17 @@ file.write(path="novels/<书名>/正文.md", content="章节内容", mode="appen
 
 写入前用 `file.read` 查看已有内容末尾，避免章节号重复。讨论思路、章纲、设定不写入正文文件。
 
-### 5. 资料沉淀（按需）
+### 资料沉淀（按需）
 
-用户要求维护设定时，使用 Datastore 单集合工作台：
+用户要求维护设定时，使用 Datastore 单集合工作台。content 包含完整设定描述（供语义检索），metadata 只放需要过滤的字段：
 
-```
-datastore(action="create-collection", name="书名", description="小说创作素材与设定",
-    fieldHints=[{"name":"docType","type":"TEXT","description":"文档类型：setting/character/faction/outline/foreshadowing/chapter"},
-                {"name":"name","type":"TEXT","description":"设定名称"},
-                {"name":"status","type":"TEXT","description":"状态：draft/active/archived"}])
-```
-
-写入时 content 包含完整设定描述（供语义检索），metadata 只放需要过滤的字段：
 ```
 datastore(action="add", collectionName="书名",
-    content="林夜是本书主角，出身寒门，性格坚韧沉稳，擅长剑术，身怀神秘传承...",
+    content="林夜是本书主角，出身寒门，性格坚韧沉稳...",
     metadata={"docType":"character","name":"林夜","status":"active"})
 ```
 
-`docType` 值：`setting` / `character` / `faction` / `outline` / `foreshadowing` / `chapter`
-
-仅当用户明确要求时才建库，不主动建。
+`docType` 值：`setting` / `character` / `faction` / `outline` / `foreshadowing` / `chapter`。仅当用户明确要求时才建库，不主动建。
 
 ## 规则
 

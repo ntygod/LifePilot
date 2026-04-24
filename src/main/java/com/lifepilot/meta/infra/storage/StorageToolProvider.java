@@ -35,13 +35,20 @@ public class StorageToolProvider {
     }
 
     /**
-     * 构建数据存储工具列表（1 个）。
+     * 构建数据存储工具列表。
      *
-     * @return 数据存储工具列表
+     * <p><b>Plan 3 §5.2（2026-04-23）</b>：datastore 工具从 LLM 工具集下线。
+     * 后端 {@link DataStoreManager} 及完整能力保留（spec §5.3），仅 LLM 不再接触
+     * 这个工具；未来若决定复活（例如百万级结构化数据高频 CRUD 场景），恢复下面
+     * 被注释的返回语句即可。</p>
+     *
+     * @return 空列表（Plan 3 下架）
      */
     public List<BuiltinTool> buildStorageTools() {
-        var executor = new DatastoreActionDispatchExecutor(dataStoreManager, objectMapper);
-        return List.of(buildDatastoreTool(executor));
+        return List.of();
+        // Plan 3 之前的实现：
+        // var executor = new DatastoreActionDispatchExecutor(dataStoreManager, objectMapper);
+        // return List.of(buildDatastoreTool(executor));
     }
 
     /** 构建统一数据存储工具。 */
@@ -49,7 +56,7 @@ public class StorageToolProvider {
         return BuiltinTool.builder()
                 .id("datastore")
                 .name("数据存储")
-                .description("结构化数据存储操作")
+                .description("Execute structured datastore operations on collections. Actions: create-collection, list-collections, update-collection, delete-collection, add, get, query, update, delete, aggregate.")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(buildSchema()))
                 .riskLevel(RiskLevel.MEDIUM)
@@ -59,6 +66,9 @@ public class StorageToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.exactValues("collections", "name", "collectionName", "documentId")
                 ))
+                .tags(List.of("datastore", "storage", "database", "collection", "query", "crud", "aggregate", "document",
+                        "add", "get", "insert", "update", "delete", "list_collections",
+                        "create_collection", "update_collection", "delete_collection"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

@@ -1,10 +1,19 @@
 ---
-id: cron-scheduler
-name: "定时任务调度"
-description: "定时任务创建与管理。用户说「每天早上」「每周一」「定时提醒」「定时任务」「每小时」「定时搜索」「cron」时使用。不适用于模糊关注类需求（记录到记忆）或一次性任务（直接执行）。"
-version: "2.0.0"
-suggested-tools:
-  - cron
+name: cron-scheduler
+description: 当用户要创建精确时间调度的定时任务（每天/每周/每小时）、周期性提醒或重复执行的 Agent 任务时使用。关键词：每天早上、每周一、定时提醒、定时任务、每小时、定时搜索、cron、定期执行。模糊持续关注类需求记到记忆，一次性任务直接执行，工作流编排用 workflow-creator。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: automation
+    priority: normal
+    tags:
+      - cron
+      - schedule
+      - reminder
+      - timer
+      - recurring
+    suggested_tools:
+      - cron
 ---
 
 # 定时任务调度指南
@@ -13,9 +22,9 @@ suggested-tools:
 
 ## 适用场景
 
-- 精确时间调度："每天早上8点"、"每周一"、"每小时"
+- 精确时间调度："每天早上 8 点"、"每周一"、"每小时"
 - 定时提醒："提醒我每天…"
-- 周期性任务："每天搜索最新AI资讯"、"每周生成周报"
+- 周期性任务："每天搜索最新 AI 资讯"、"每周生成周报"
 
 ## 不适用场景
 
@@ -65,7 +74,7 @@ cron(action="update", taskId="task-xxx", status="paused")
 cron(action="remove", taskId="task-xxx")
 ```
 
-## 静默协议
+### 静默协议
 
 任务执行后如果没有需要汇报的内容（例行检查一切正常），回复 `TASK_SILENT`（必须出现在回复的开头或结尾）。
 

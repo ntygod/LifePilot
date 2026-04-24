@@ -225,9 +225,9 @@ stateDiagram-v2
 
 ---
 
-## 6. Schema 快照（V1 + V15 + V16 + V17 后）
+## 6. Schema 快照（V1 + V24 + V25 + V26 后）
 
-### 6.1 `memory_entities`（基表 + V15 扩 7 字段）
+### 6.1 `memory_entities`（基表 + V24 扩 7 字段）
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -238,26 +238,26 @@ stateDiagram-v2
 | `canonical_name` | TEXT | NOT NULL | |
 | `normalized_name` | TEXT | NOT NULL | |
 | `reality_type` | TEXT | NOT NULL DEFAULT 'UNKNOWN' | |
-| `status` | TEXT | NOT NULL DEFAULT 'ACTIVE' | V1 二态 ARCHIVED/ACTIVE；V15 后代码读取以 `lifecycle_state` 为准 |
+| `status` | TEXT | NOT NULL DEFAULT 'ACTIVE' | V1 二态 ARCHIVED/ACTIVE；V24 后代码读取以 `lifecycle_state` 为准 |
 | `access_count` | INTEGER | NOT NULL DEFAULT 0 | |
 | `last_accessed_at` | TEXT | — | ISO-8601 |
 | `first_seen_at` / `last_seen_at` / `created_at` / `updated_at` | TEXT | NOT NULL | |
-| `lifecycle_state` **(V15)** | TEXT | NOT NULL DEFAULT 'ACTIVE' | LifecycleState 枚举 |
-| `lifecycle_reason` **(V15)** | TEXT | — | 状态变更原因 |
-| `expires_at` **(V15)** | TEXT | — | TTL（`ExpirationScanner` 消费） |
-| `temporality` **(V15)** | TEXT | NOT NULL DEFAULT 'PERSISTENT' | Temporality 枚举 |
-| `succeeded_by` **(V15)** | TEXT | — | TIMELINE 指向新实体 |
-| `is_derived` **(V15)** | INTEGER | NOT NULL DEFAULT 0 | 1=派生实体 |
-| `derivation_sources` **(V15)** | TEXT | — | JSON 数组 of 源实体 id |
+| `lifecycle_state` **(V24)** | TEXT | NOT NULL DEFAULT 'ACTIVE' | LifecycleState 枚举 |
+| `lifecycle_reason` **(V24)** | TEXT | — | 状态变更原因 |
+| `expires_at` **(V24)** | TEXT | — | TTL（`ExpirationScanner` 消费） |
+| `temporality` **(V24)** | TEXT | NOT NULL DEFAULT 'PERSISTENT' | Temporality 枚举 |
+| `succeeded_by` **(V24)** | TEXT | — | TIMELINE 指向新实体 |
+| `is_derived` **(V24)** | INTEGER | NOT NULL DEFAULT 0 | 1=派生实体 |
+| `derivation_sources` **(V24)** | TEXT | — | JSON 数组 of 源实体 id |
 
 **索引**：
 - `idx_memory_entities_scope`（space_id, memory_scope, entity_type）
 - `idx_memory_entities_name`（normalized_name, entity_type）
 - `idx_memory_entities_status`（status）
-- `idx_memory_entities_lifecycle`（lifecycle_state, expires_at） **(V15)**
-- `idx_memory_entities_derived`（is_derived, lifecycle_state） **(V15)**
+- `idx_memory_entities_lifecycle`（lifecycle_state, expires_at） **(V24)**
+- `idx_memory_entities_derived`（is_derived, lifecycle_state） **(V24)**
 
-### 6.2 `memory_entity_versions`（V1 已有，V15 无变更）
+### 6.2 `memory_entity_versions`（V1 已有，V24 无变更）
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
@@ -273,7 +273,7 @@ stateDiagram-v2
 | `created_at` / `updated_at` | TEXT | NOT NULL |
 | UNIQUE | (entity_id, version_no) | |
 
-### 6.3 `memory_entity_provenances`（V1 + V15 扩 2 字段）
+### 6.3 `memory_entity_provenances`（V1 + V24 扩 2 字段）
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
@@ -287,10 +287,10 @@ stateDiagram-v2
 | `evidence_excerpt` / `evidence_hash` | TEXT | — |
 | `confidence` | REAL | NOT NULL DEFAULT 0.0 |
 | `created_at` | TEXT | NOT NULL |
-| `status` **(V15)** | TEXT | NOT NULL DEFAULT 'VALID' |
-| `invalidated_at` **(V15)** | TEXT | — |
+| `status` **(V24)** | TEXT | NOT NULL DEFAULT 'VALID' |
+| `invalidated_at` **(V24)** | TEXT | — |
 
-### 6.4 `preference_rules`（V1 + V15 扩 2 字段）
+### 6.4 `preference_rules`（V1 + V24 扩 2 字段）
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
@@ -301,14 +301,14 @@ stateDiagram-v2
 | `learned_from_json` | TEXT | NOT NULL DEFAULT '[]' |
 | `observation_count` | INTEGER | NOT NULL DEFAULT 1 |
 | `created_at` / `updated_at` | TEXT | NOT NULL |
-| `source_entity_id` **(V15)** | TEXT | — `SQLite ALTER TABLE ADD COLUMN` 不支持 REFERENCES，FK 由应用层保证 |
-| `deactivated_reason` **(V15)** | TEXT | — |
+| `source_entity_id` **(V24)** | TEXT | — `SQLite ALTER TABLE ADD COLUMN` 不支持 REFERENCES，FK 由应用层保证 |
+| `deactivated_reason` **(V24)** | TEXT | — |
 
-### 6.5 `procedure_templates`（V1 + V15 扩 2 字段）
+### 6.5 `procedure_templates`（V1 + V24 扩 2 字段）
 
-类似 `preference_rules`，V15 新增 `source_entity_id` + `deactivated_reason`（应用层 FK）。V1 已有字段：`template_id` / `name` / `description` / `trigger_intent` / `steps_json` / `variables_json` / `success_rate` / `use_count` / `last_used_at` / `source_trace_ids_json` / `created_at` / `updated_at`。
+类似 `preference_rules`，V24 新增 `source_entity_id` + `deactivated_reason`（应用层 FK）。V1 已有字段：`template_id` / `name` / `description` / `trigger_intent` / `steps_json` / `variables_json` / `success_rate` / `use_count` / `last_used_at` / `source_trace_ids_json` / `created_at` / `updated_at`。
 
-### 6.6 `memory_feedback_ledger`（V15 新增）
+### 6.6 `memory_feedback_ledger`（V24 新增）
 
 ```sql
 CREATE TABLE memory_feedback_ledger (
@@ -325,7 +325,7 @@ CREATE TABLE memory_feedback_ledger (
 
 索引：`idx_feedback_ledger_entity(entity_id, created_at)`。`source` CHECK 约束硬挡非法值，阈值判定由 `NegativeFeedbackListener` 消费。
 
-### 6.7 `memory_revalidation_queue`（V15 新增）
+### 6.7 `memory_revalidation_queue`（V24 新增）
 
 ```sql
 CREATE TABLE memory_revalidation_queue (
@@ -342,7 +342,7 @@ CREATE TABLE memory_revalidation_queue (
 
 索引：`idx_revalidation_pending(status, created_at)`。
 
-### 6.8 `conflict_resolution_queue`（V15 新增）
+### 6.8 `conflict_resolution_queue`（V24 新增）
 
 ```sql
 CREATE TABLE conflict_resolution_queue (
@@ -362,7 +362,7 @@ CREATE TABLE conflict_resolution_queue (
 
 索引：`idx_conflict_queue_status(status, created_at)`。
 
-### 6.9 `derivation_regeneration_queue`（V15 新增）
+### 6.9 `derivation_regeneration_queue`（V24 新增）
 
 ```sql
 CREATE TABLE derivation_regeneration_queue (
@@ -380,7 +380,7 @@ CREATE TABLE derivation_regeneration_queue (
 
 索引：`idx_regeneration_pending(status, created_at)`。
 
-### 6.10 `proactive_task_insight_links`（V17 新增）
+### 6.10 `proactive_task_insight_links`（V26 新增）
 
 ```sql
 CREATE TABLE proactive_task_insight_links (
@@ -394,15 +394,15 @@ CREATE TABLE proactive_task_insight_links (
 
 索引：`idx_proactive_task_insight_task(task_id)`、`idx_proactive_task_insight_entity(entity_id)`。写入入口 `ProactiveMemoryBridge.linkInsightToTask`（`ProactiveMemoryBridge.java:179`）；读取入口 `findInsightEntityIdsByTask`（`:156`）。
 
-### 6.11 `temporal_entities` 视图（V1 定义 + V16 重建）
+### 6.11 `temporal_entities` 视图（V1 定义 + V25 重建）
 
-V16 DROP + CREATE 重建视图以纳入 V15 新列（SQLite 不支持 `ALTER VIEW`）：
+V25 DROP + CREATE 重建视图以纳入 V24 新列（SQLite 不支持 `ALTER VIEW`）：
 
 - 来源表：`memory_entities me` JOIN `memory_entity_versions mev`，LEFT JOIN `memory_entity_provenances` 子查询取 latest
 - 筛选：`WHERE me.status <> 'DELETED'`
-- 暴露字段含：7 V15 新字段全部透传（`lifecycle_state / lifecycle_reason / expires_at / temporality / succeeded_by / is_derived / derivation_sources`）
+- 暴露字段含：7 V24 新字段全部透传（`lifecycle_state / lifecycle_reason / expires_at / temporality / succeeded_by / is_derived / derivation_sources`）
 
-参见 `src/main/resources/db/migration/V16__extend_temporal_entities_view_with_lifecycle.sql:9-52`。
+参见 `src/main/resources/db/migration/V25__extend_temporal_entities_view_with_lifecycle.sql:9-52`。
 
 ---
 
@@ -437,13 +437,13 @@ V16 DROP + CREATE 重建视图以纳入 V15 新列（SQLite 不支持 `ALTER VIE
 | 21 | `SemanticMemory.publishAfterCommit` 用 `TransactionSynchronization.afterCommit()` 而非即时 publish | `SemanticMemory.java:454-476` | ✅ |
 | 22 | `ProactiveEngine.markGoalFulfilled` 委派给 `ProactiveMemoryBridge.markGoalFulfilled` | `ProactiveEngine.java:103-109` | ✅ |
 | 23 | `ProactiveMemoryBridge.markGoalFulfilled` 发 `ProactiveTaskCancelled(taskId, relatedInsightIds)` | `ProactiveMemoryBridge.java:131-138` | ✅ |
-| 24 | 关联表 `proactive_task_insight_links` 存在（V17） | `V17__proactive_task_insight_links.sql:17` | ✅ |
+| 24 | 关联表 `proactive_task_insight_links` 存在（V26） | `V26__proactive_task_insight_links.sql:17` | ✅ |
 | 25 | `MemoryProvenanceRepository.markStale` 支持 `UPDATE status='STALE', invalidated_at=?` | `MemoryProvenanceRepository.java:287-294` | ✅ |
 | 26 | `LifecycleState.canTransitionTo` 实现 7 态转换校验 | `LifecycleState.java:19-27` | ✅ |
 | 27 | `LifecycleState.isRetrievable` 返回 {ACTIVE, COMPLETED, REGENERATION_NEEDED} | `LifecycleState.java:30-32` | ✅ |
-| 28 | V15 迁移加 `memory_entities` 7 字段 + 2 索引 | `V15__memory_lifecycle_closure.sql:5-14` | ✅ |
-| 29 | V15 迁移加 4 队列/账本表（`feedback_ledger` / `revalidation_queue` / `conflict_resolution_queue` / `derivation_regeneration_queue`） | `V15__memory_lifecycle_closure.sql:31-85` | ✅ |
-| 30 | V16 重建 `temporal_entities` 视图包含 7 生命周期字段 | `V16__extend_temporal_entities_view_with_lifecycle.sql:42-48` | ✅ |
+| 28 | V24 迁移加 `memory_entities` 7 字段 + 2 索引 | `V24__memory_lifecycle_closure.sql:5-14` | ✅ |
+| 29 | V24 迁移加 4 队列/账本表（`feedback_ledger` / `revalidation_queue` / `conflict_resolution_queue` / `derivation_regeneration_queue`） | `V24__memory_lifecycle_closure.sql:31-85` | ✅ |
+| 30 | V25 重建 `temporal_entities` 视图包含 7 生命周期字段 | `V25__extend_temporal_entities_view_with_lifecycle.sql:42-48` | ✅ |
 
 ### 7.2 Phase 1–4 待实施
 
@@ -456,7 +456,7 @@ V16 DROP + CREATE 重建视图以纳入 V15 新列（SQLite 不支持 `ALTER VIE
 | 35 | `ReValidationListener` 订阅 `SourceInvalidated` 写 `memory_revalidation_queue` | Task 19 | 🕐 |
 | 36 | `NegativeFeedbackListener` 订阅 `EntityWeightChanged`，写 `memory_feedback_ledger` + 阈值达成发 `EntityLifecycleChanged(SUPERSEDED, NEGATIVE_FEEDBACK)` | Task 20 | 🕐 |
 | 37 | `ProactiveTaskCancelListener` 订阅 `ProactiveTaskCancelled`，逐 insight 转 CANCELLED | Task 21 | 🕐 |
-| 38 | `RealtimeExtractor` prompt 升级产出 `temporality` + `expires_at` 字段，上传时写入 V15 列 | Task 22 | 🕐 |
+| 38 | `RealtimeExtractor` prompt 升级产出 `temporality` + `expires_at` 字段，上传时写入 V24 列 | Task 22 | 🕐 |
 | 39 | `memory` 工具新增 `complete` / `supersede` action，`cancel` 扩到所有类型 | Task 23 | 🕐 |
 | 40 | `ConflictResolutionService` 基于相似度 ≥0.85 触发 LLM 裁决 REPLACE/COEXIST/TIMELINE，失败入 `conflict_resolution_queue` | Task 24 | 🕐 |
 | 41 | `TrustUpgradeService` 负反馈时根据 `proactive_insight_entity_id` 发 `EntityWeightChanged(USER_FEEDBACK, 负 delta)` | Task 25 | 🕐 |
@@ -483,10 +483,10 @@ V16 DROP + CREATE 重建视图以纳入 V15 新列（SQLite 不支持 `ALTER VIE
 
 | 漂移点 | 现状 | 目标（spec） | 修复 Task |
 |---|---|---|---|
-| `UserProfileConsolidator` 产出 `__consolidated_profile` 未标 `isDerived=true` / `derivationSources` | 字段未设置，V15 列 DEFAULT 0 / NULL | 标 `isDerived=true` + 源偏好实体 id 列表 | Task 17 依赖 |
+| `UserProfileConsolidator` 产出 `__consolidated_profile` 未标 `isDerived=true` / `derivationSources` | 字段未设置，V24 列 DEFAULT 0 / NULL | 标 `isDerived=true` + 源偏好实体 id 列表 | Task 17 依赖 |
 | `EntityDeduplicator` 合并后 primary 未标 `isDerived` / `derivationSources` | 字段未设置 | 标 `isDerived=true` + [primary, secondary] | Task 17 |
 | `ContrastiveLearner` 未产出独立 `CONTRASTIVE_INSIGHT` 实体 | 仅原地增强 `EXPERIENCE.properties.lessons` | 产出独立 INSIGHT 实体，标派生 | Task 17 / 22 |
-| `ProceduralMemory.savePreference` / `save` INSERT 不含 V15 新列 `source_entity_id` / `deactivated_reason` | `PreferenceConsolidator` / `promoteHighFrequencyExperiences` 无法追溯源 L3 实体 | INSERT 语句覆盖新列 | Task 15 前置 |
+| `ProceduralMemory.savePreference` / `save` INSERT 不含 V24 新列 `source_entity_id` / `deactivated_reason` | `PreferenceConsolidator` / `promoteHighFrequencyExperiences` 无法追溯源 L3 实体 | INSERT 语句覆盖新列 | Task 15 前置 |
 | `ProactiveMemoryBridge.markGoalFulfilled` 直接 `publishEvent` 而非 `publishAfterCommit` | 无 `@Transactional` 注解，事件立即发 | 长期应与其他三事件一致走 AFTER_COMMIT（若扩入事务） | Phase 1 补齐 |
 | `RealtimeExtractor` 未输出 `temporality` / `expires_at` 字段 | 走 TemporalEntity 16-param 兼容构造器，默认 PERSISTENT / 无过期 | Task 22 补 prompt + 字段 | Task 22 |
 | `upsertWithConflictDetection` 合并分支不发 `EntityLifecycleChanged` | 仅产新版本，不改 lifecycle | `ConflictResolutionService` 接入后，冲突裁决 REPLACE 时发 SUPERSEDED 事件 | Task 24 |

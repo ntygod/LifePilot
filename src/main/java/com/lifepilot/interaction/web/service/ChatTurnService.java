@@ -16,7 +16,10 @@ import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.notification.config.NotificationProperties;
+import com.lifepilot.project.context.ProjectContextResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +58,10 @@ public class ChatTurnService {
     private final ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository;
     @Nullable
     private final MemorySpaceRepository memorySpaceRepository;
+    @Nullable
+    private final ChatSessionRepository chatSessionRepository;
+    @Nullable
+    private final ProjectContextResolver projectContextResolver;
 
     @Autowired
     public ChatTurnService(ChatTurnRepository chatTurnRepository,
@@ -65,7 +72,9 @@ public class ChatTurnService {
                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
                            @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
-                           @Nullable MemorySpaceRepository memorySpaceRepository) {
+                           @Nullable MemorySpaceRepository memorySpaceRepository,
+                           @Nullable ChatSessionRepository chatSessionRepository,
+                           @Nullable ProjectContextResolver projectContextResolver) {
         this.chatTurnRepository = chatTurnRepository;
         this.transcriptRepository = transcriptRepository;
         this.objectMapper = objectMapper;
@@ -75,6 +84,8 @@ public class ChatTurnService {
         this.sessionDatastoreRepository = sessionDatastoreRepository;
         this.chatTurnMemorySnapshotRepository = chatTurnMemorySnapshotRepository;
         this.memorySpaceRepository = memorySpaceRepository;
+        this.chatSessionRepository = chatSessionRepository;
+        this.projectContextResolver = projectContextResolver;
     }
 
     /** 便捷构造器（测试用）— 由 Spring 管理时使用主构造器。 */
@@ -83,7 +94,22 @@ public class ChatTurnService {
                            ObjectMapper objectMapper,
                            ApplicationEventPublisher eventPublisher) {
         this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                null, null, null, null, null);
+                null, null, null, null, null, null, null);
+    }
+
+    /** 旧版测试构造器 — 不提供 ProjectContext 依赖时使用，保持二进制兼容。 */
+    public ChatTurnService(ChatTurnRepository chatTurnRepository,
+                           SessionTranscriptRepository transcriptRepository,
+                           ObjectMapper objectMapper,
+                           ApplicationEventPublisher eventPublisher,
+                           @Nullable NotificationProperties notificationProperties,
+                           @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                           @Nullable SessionDatastoreRepository sessionDatastoreRepository,
+                           @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
+                           @Nullable MemorySpaceRepository memorySpaceRepository) {
+        this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
+                notificationProperties, sessionKnowledgeBaseRepository, sessionDatastoreRepository,
+                chatTurnMemorySnapshotRepository, memorySpaceRepository, null, null);
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -287,6 +313,7 @@ public class ChatTurnService {
         }
         var personalSpace = memorySpaceRepository.ensureDefaultPersonalSpace();
         var experienceSpace = memorySpaceRepository.ensureDefaultExperienceSpace();
+        String projectSpaceId = resolveProjectSpaceId(sessionId);
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository != null
                 ? sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)
                 : List.of();
@@ -307,12 +334,16 @@ public class ChatTurnService {
         if (domainWriteSpaceId != null && !domainWriteSpaceId.isBlank()) {
             resolutionSource.put("resolvedDomainWriteSpaceId", domainWriteSpaceId);
         }
+        if (projectSpaceId != null) {
+            resolutionSource.put("resolvedProjectSpaceId", projectSpaceId);
+        }
         ChatTurnMemorySnapshot snapshot = new ChatTurnMemorySnapshot(
                 turnId,
                 sessionId,
                 personalSpace.id(),
                 experienceSpace.id(),
                 domainWriteSpaceId,
+                projectSpaceId,
                 readSpaceIds,
                 knowledgeBaseIds,
                 datastoreIds,
@@ -323,6 +354,35 @@ public class ChatTurnService {
                 now
         );
         chatTurnMemorySnapshotRepository.save(snapshot);
+    }
+
+    /**
+     * 解析当前会话对应的项目 MemorySpace id。
+     *
+     * <p>语义：仅 ISOLATED 项目对话返回非空；SHARED 项目 / 主账户对话 / 解析异常均返回 null，
+     * 下游写入路径据此走"主账户默认空间"fallback，避免污染项目域或因 resolver 缺失阻断对话。</p>
+     */
+    @Nullable
+    private String resolveProjectSpaceId(String sessionId) {
+        if (chatSessionRepository == null || projectContextResolver == null) {
+            return null;
+        }
+        try {
+            Optional<ChatSession> session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            String projectId = session.get().projectId();
+            if (projectId == null) {
+                return null;
+            }
+            var ctx = projectContextResolver.resolve(projectId);
+            return ctx.isolated() ? ctx.projectSpaceId() : null;
+        } catch (Exception e) {
+            log.debug("解析项目空间失败，走主账户 fallback: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
     }
 
     private List<String> resolveDomainReadSpaceIds(List<String> knowledgeBaseIds, List<String> datastoreIds) {

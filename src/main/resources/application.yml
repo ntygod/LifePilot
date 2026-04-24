@@ -32,7 +32,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics
   endpoint:
     health:
       show-details: always
@@ -59,22 +59,6 @@ lifepilot:
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: true
-    # ReAct Agent 默认可见的核心工具白名单 — 任何时候都会出现在 LLM 的 tool schema 里
-    # 未列入此处的工具只能通过 Skill 激活（LLM 调 file.read(skill="xx") 加载）或多 Agent 白名单暴露
-    # 新增基础能力工具需显式加入，否则 LLM 看不到（见 ToolBridgeAgentToolProvider 的分层过滤逻辑）
-    core-tool-ids:
-      - shell.exec
-      - web.search
-      - shell.process
-      - web.fetch
-      - file.read            # 统一读路径：纯文本 + docx/pdf/md/csv 等结构化文档 + 附件（attachmentId）
-      - file.write
-      - file.list
-      - memory
-      - knowledge.search
-      - notify
-      - document.create      # Phase 2B：单工具 + action 路由生成 docx/xlsx/pptx
-      - document.edit        # Phase 3A：docx 编辑（patch/diff/commit/rollback/list_versions）
     loop:
       # ReAct 循环配置
       max-iterations: 45
@@ -197,6 +181,50 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
+    # ===== Tier 1 分层注入 =====
+    # pinned：人工固定的常驻完整 schema 工具
+    # 其余工具进 BM25 搜索池，通过 tools.search 被 LLM 发现
+    tier1:
+      pinned:
+        - tools.search
+        - tools.describe
+        - tools.list
+        - file.read
+        - file.write
+        - file.list
+        - web.search
+        - web.fetch
+        - shell.exec
+        - memory
+        - knowledge.search
+        - skill.load
+      promotion:
+        enabled: true
+        window-days: 30
+        session-threshold: 0.3
+        max-promoted: 3
+        cron: "0 0 3 * * *"
+      demotion:
+        enabled: true
+        idle-days: 60
+        respect-pinned: true
+    # ===== 搜索服务 =====
+    search:
+      default-limit: 5
+      max-limit: 20
+      bm25-confidence-threshold: 1.0
+      cache:
+        layer-a-max-size: 500
+        layer-b-max-size: 1000
+        layer-b-ttl-minutes: 5
+      fallback:
+        # 向量 fallback 默认关闭，观察 BM25 召回率再决定是否启用
+        vector-enabled: false
+    # ===== describe 服务 =====
+    describe:
+      max-batch-size: 10
+    # 注：工具使用决策（含 tools.search/describe/list 链路、PERCEPTION/ACTION 分布提示等）
+    # 已全部迁移到 prompts/agent/react-system.st 的 <tool_protocol> 段，不再从 yaml 硬编码。
   memory:
     # ===== 记忆系统配置 =====
     # 四层认知记忆：L1 工作记忆 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆
@@ -934,29 +962,8 @@ lifepilot:
       cache-ttl-seconds: 60
       debounce-millis: 500
     skill-discovery:
+      # 种子 Skill 扫描基于 classpath:skills/*/SKILL.md 通配符自动发现，无需列出路径
       enabled: true
-      skill-paths:
-        - skills/find-skills
-        - skills/workflow-creator
-        - skills/memory
-        - skills/infrastructure
-        - skills/introspection
-        - skills/datastore
-        - skills/code-assistant
-        - skills/research-assistant
-        - skills/content-creator
-        - skills/data-analyst
-        - skills/browser-automation
-        - skills/daily-manager
-        - skills/file-organizer
-        - skills/summarizer
-        - skills/github-workflow
-        - skills/translator
-        - skills/api-debugger
-        - skills/doc-processor
-        - skills/project-scaffolder
-        - skills/teaching-assistant
-        - skills/desktop-automation
     onboarding:
       auto-trigger: true
       agent-definition: preset-agents/onboarding-guide.md
