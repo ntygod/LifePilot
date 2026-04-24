@@ -13,9 +13,12 @@ public record SkillFrontmatter(
         SkillZhiweiMeta zhiweiMeta
 ) {
     public SkillFrontmatter {
-        if (name == null || name.isBlank()) throw new IllegalArgumentException("name 不能为空");
-        if (description == null || description.isBlank()) throw new IllegalArgumentException("description 不能为空");
-        if (version == null || version.isBlank()) throw new IllegalArgumentException("version 不能为空");
+        name = name == null ? null : name.strip();
+        description = description == null ? null : description.strip();
+        version = version == null ? null : version.strip();
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("SKILL.md frontmatter name 字段不能为空");
+        if (description == null || description.isBlank()) throw new IllegalArgumentException("SKILL.md frontmatter description 字段不能为空");
+        if (version == null || version.isBlank()) throw new IllegalArgumentException("SKILL.md frontmatter version 字段不能为空");
         zhiweiMeta = zhiweiMeta == null ? SkillZhiweiMeta.empty() : zhiweiMeta;
     }
 }

@@ -22,6 +22,7 @@ public record SkillZhiweiMeta(
     public SkillZhiweiMeta {
         suggestedTools = suggestedTools == null ? List.of() : List.copyOf(suggestedTools);
         tags = tags == null ? List.of() : List.copyOf(tags);
+        category = (category == null || category.isBlank()) ? null : category.strip();
         priority = priority == null ? SkillPriority.NORMAL : priority;
         requires = requires == null ? SkillRequires.empty() : requires;
     }
