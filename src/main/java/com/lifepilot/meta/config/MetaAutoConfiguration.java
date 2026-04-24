@@ -157,22 +157,29 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册浏览器会话管理器 — 仅在 Playwright 类可用时注册。
+     * 注册浏览器会话管理器 — 仅在 Playwright 类可用且浏览器能力开关开启时注册。
+     *
+     * <p>通过 {@code lifepilot.meta.infra.browser.enabled} 控制（默认 true），
+     * 关闭后不再占用 Playwright 初始化开销。</p>
      */
     @Bean
     @ConditionalOnClass(name = "com.microsoft.playwright.Playwright")
+    @ConditionalOnProperty(name = "lifepilot.meta.infra.browser.enabled",
+                           havingValue = "true", matchIfMissing = true)
     BrowserSessionManager browserSessionManager(MetaProperties properties) {
         return new BrowserSessionManager(properties);
     }
 
     /**
-     * 注册浏览器会话空闲清理调度器 — 仅在 BrowserSessionManager 可用时注册。
+     * 注册浏览器会话空闲清理调度器 — 仅在 BrowserSessionManager 可用且浏览器开关开启时注册。
      *
      * <p>依托 WorkflowAutoConfiguration/MemoryAutoConfiguration 已启用的
      * {@code @EnableScheduling}，每 60 秒触发一次清理。</p>
      */
     @Bean
     @ConditionalOnBean(BrowserSessionManager.class)
+    @ConditionalOnProperty(name = "lifepilot.meta.infra.browser.enabled",
+                           havingValue = "true", matchIfMissing = true)
     BrowserSessionScheduler browserSessionScheduler(BrowserSessionManager browserSessionManager) {
         return new BrowserSessionScheduler(browserSessionManager);
     }

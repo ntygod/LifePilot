@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import org.slf4j.Logger;
@@ -29,6 +30,12 @@ public class BrowserHumanTakeoverExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(BrowserHumanTakeoverExecutor.class);
 
+    private final MetaProperties properties;
+
+    public BrowserHumanTakeoverExecutor(MetaProperties properties) {
+        this.properties = properties;
+    }
+
     /**
      * 触发 Agent 挂起等待人工接管。
      *
@@ -48,12 +55,15 @@ public class BrowserHumanTakeoverExecutor {
 
         String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");
         Instant requestedAt = Instant.now();
+        // 从 MetaProperties 读取接管超时秒数，供前端弹窗统一使用，避免双端硬编码不同步。
+        int timeoutSeconds = properties.getInfra().getBrowser().getTakeover().getTimeoutSeconds();
 
         var suspendReasonPayload = new LinkedHashMap<String, Object>();
         suspendReasonPayload.put("type", "BrowserTakeover");
         suspendReasonPayload.put("sessionId", sessionId);
         suspendReasonPayload.put("reason", reason);
         suspendReasonPayload.put("requestedAt", requestedAt.toString());
+        suspendReasonPayload.put("timeoutSeconds", timeoutSeconds);
 
         var data = new LinkedHashMap<String, Object>();
         data.put("_suspend", true);
@@ -61,7 +71,8 @@ public class BrowserHumanTakeoverExecutor {
         data.put("message", "等待用户在浏览器中完成人工接管：" + reason);
         data.put("sessionId", sessionId);
 
-        log.info("浏览器请求人机接管: sessionId={}, reason={}", sessionId, reason);
+        log.info("浏览器请求人机接管: sessionId={}, reason={}, timeoutSeconds={}",
+                sessionId, reason, timeoutSeconds);
         return ToolResult.success(Map.copyOf(data));
     }
 }

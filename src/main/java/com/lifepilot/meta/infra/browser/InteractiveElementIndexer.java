@@ -59,16 +59,20 @@ public class InteractiveElementIndexer {
             return new IndexedSnapshot(List.of(), 0, new int[]{0, 0}, false);
         }
         try {
-            String json = objectMapper.writeValueAsString(map);
-            var tree = objectMapper.readTree(json);
+            // 脚本返回已是 Map 结构，直接 convertValue 比 writeValueAsString→readTree 链路省一次 JSON 序列化开销。
+            @SuppressWarnings("unchecked")
+            Map<String, Object> root = (Map<String, Object>) map;
             List<IndexedElement> elements = objectMapper.convertValue(
-                    tree.get("elements"),
+                    root.get("elements"),
                     new TypeReference<List<IndexedElement>>() {}
             );
-            int total = tree.get("total").asInt();
-            var viewportNode = tree.get("viewport");
-            int[] viewport = {viewportNode.get(0).asInt(), viewportNode.get(1).asInt()};
-            boolean truncated = tree.get("truncated").asBoolean();
+            List<?> viewportList = (List<?>) root.get("viewport");
+            int[] viewport = {
+                    ((Number) viewportList.get(0)).intValue(),
+                    ((Number) viewportList.get(1)).intValue()
+            };
+            int total = ((Number) root.get("total")).intValue();
+            boolean truncated = (Boolean) root.get("truncated");
             return new IndexedSnapshot(elements, total, viewport, truncated);
         } catch (Exception e) {
             log.error("解析 DOM 标号结果失败", e);

@@ -582,7 +582,8 @@ export function useChat() {
                 turnId: resolvedTurnId,
                 sessionId: event.reasonSourceId,
                 reason: suspendReasonDetail || '需要你在浏览器中完成操作',
-                timeoutSeconds: 300,
+                // 优先使用后端下发的配置值，缺省时回退到本地 300 秒默认值
+                timeoutSeconds: event.timeoutSeconds ?? 300,
               }
             }
           }

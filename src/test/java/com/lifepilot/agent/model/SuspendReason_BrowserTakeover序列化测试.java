@@ -24,7 +24,8 @@ class SuspendReason_BrowserTakeover序列化测试 {
         var reason = new SuspendReason.BrowserTakeover(
                 "task-login",
                 "需要短信验证码",
-                Instant.parse("2026-04-24T10:00:00Z")
+                Instant.parse("2026-04-24T10:00:00Z"),
+                300
         );
 
         String json = mapper.writeValueAsString(reason);
@@ -33,12 +34,13 @@ class SuspendReason_BrowserTakeover序列化测试 {
         assertThat(parsed.sessionId()).isEqualTo("task-login");
         assertThat(parsed.reason()).isEqualTo("需要短信验证码");
         assertThat(parsed.requestedAt()).isEqualTo(Instant.parse("2026-04-24T10:00:00Z"));
+        assertThat(parsed.timeoutSeconds()).isEqualTo(300);
     }
 
     @Test
     void 模式匹配_穷举_命中_BrowserTakeover() {
         SuspendReason reason = new SuspendReason.BrowserTakeover(
-                "s", "r", Instant.parse("2026-04-24T10:00:00Z"));
+                "s", "r", Instant.parse("2026-04-24T10:00:00Z"), null);
         String label = switch (reason) {
             case SuspendReason.WorkflowWait _ -> "workflow";
             case SuspendReason.UserConfirmation _ -> "confirm";

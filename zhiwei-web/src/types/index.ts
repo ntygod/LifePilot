@@ -365,6 +365,8 @@ export interface SseAgentSuspendedEvent {
   terminationReason?: string
   content?: string
   suspendedAt?: string
+  /** 挂起超时秒数（BrowserTakeover 等场景由后端下发，前端为空时采用本地默认值） */
+  timeoutSeconds?: number
 }
 
 /** 权限审批请求 SSE 事件 payload */

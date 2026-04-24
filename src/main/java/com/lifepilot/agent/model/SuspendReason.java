@@ -42,10 +42,11 @@ public sealed interface SuspendReason permits
     /**
      * 等待用户在浏览器中完成人工接管（验证码、登录、扫码、人机验证、账号保护）。
      *
-     * @param sessionId 浏览器会话 ID
-     * @param reason    展示给用户的接管原因说明
-     * @param requestedAt 请求时刻
+     * @param sessionId      浏览器会话 ID
+     * @param reason         展示给用户的接管原因说明
+     * @param requestedAt    请求时刻
+     * @param timeoutSeconds 前端提示的挂起等待超时秒数，可空则由前端采用默认值
      */
-    record BrowserTakeover(String sessionId, String reason, Instant requestedAt)
+    record BrowserTakeover(String sessionId, String reason, Instant requestedAt, Integer timeoutSeconds)
             implements SuspendReason {}
 }

@@ -518,8 +518,8 @@ public class WebFetchToolExecutor {
             if (selector != null && !selector.isBlank()) {
                 try {
                     page.waitForSelector(selector, "visible", renderTimeoutMs);
-                    content = page.evaluate("document.querySelector('%s')?.textContent || ''"
-                            .formatted(selector.replace("'", "\\'")));
+                    // 使用 Playwright locator 原生 API 避免 JS 字符串拼接带来的转义漏洞
+                    content = page.locatorTextContent(selector);
                 } catch (Exception e) {
                     log.warn("浏览器渲染中选择器等待失败: selector={}, error={}", selector, e.getMessage());
                     content = "";

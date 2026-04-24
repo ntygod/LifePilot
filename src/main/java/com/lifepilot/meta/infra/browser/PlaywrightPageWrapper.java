@@ -181,6 +181,27 @@ public class PlaywrightPageWrapper {
     }
 
     /**
+     * 通过 CSS 选择器读取第一个匹配元素的文本内容。
+     *
+     * <p>使用 Playwright 原生 {@code locator().first().textContent()} 避免
+     * 手写 {@code querySelector} 的 JS 字符串拼接和选择器转义漏洞。</p>
+     *
+     * @param selector CSS 选择器
+     * @return 元素的 textContent，未匹配或读取失败返回空串
+     */
+    public String locatorTextContent(String selector) {
+        touch();
+        ensureOpen();
+        try {
+            String content = page.locator(selector).first().textContent();
+            return content != null ? content : "";
+        } catch (Exception e) {
+            log.debug("locatorTextContent 读取失败: selector={}, error={}", selector, e.getMessage());
+            return "";
+        }
+    }
+
+    /**
      * 扫描页面可交互元素并注入 {@code data-zhiwei-idx} 属性。
      *
      * <p>为后续 {@link #clickByIndex(int)}、{@link #inputByIndex(int, String)}、
@@ -205,6 +226,7 @@ public class PlaywrightPageWrapper {
      */
     public void clickByIndex(int index) {
         touch();
+        ensureOpen();
         humanDelay();
         log.debug("点击 index 元素: index={}", index);
         page.click("[data-zhiwei-idx='" + index + "']");
@@ -218,6 +240,7 @@ public class PlaywrightPageWrapper {
      */
     public void inputByIndex(int index, String value) {
         touch();
+        ensureOpen();
         humanDelay();
         page.fill("[data-zhiwei-idx='" + index + "']", value);
     }
@@ -229,6 +252,7 @@ public class PlaywrightPageWrapper {
      */
     public void hoverByIndex(int index) {
         touch();
+        ensureOpen();
         humanDelay();
         page.hover("[data-zhiwei-idx='" + index + "']");
     }

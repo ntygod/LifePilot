@@ -781,6 +781,11 @@ public class AgentOrchestrator {
         if (reasonSourceId != null && !reasonSourceId.isBlank()) {
             suspendedEvent.put("reasonSourceId", reasonSourceId);
         }
+        // BrowserTakeover 场景下把后端配置的挂起超时秒数带到事件里，让前端弹窗读取统一值而非本地硬编码。
+        if (suspendedState.suspendReason() instanceof SuspendReason.BrowserTakeover browserTakeover
+                && browserTakeover.timeoutSeconds() != null) {
+            suspendedEvent.put("timeoutSeconds", browserTakeover.timeoutSeconds());
+        }
         suspendedEvent.put("reasonDetail", agentLoop.formatSuspendReason(suspendedState.suspendReason()));
         suspendedEvent.put("terminationReason", resolveSuspendTerminationReason(suspendedState));
         suspendedEvent.put("content", suspendMessage);

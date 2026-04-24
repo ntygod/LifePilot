@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -18,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class BrowserHumanTakeoverExecutor_挂起测试 {
 
-    private final BrowserHumanTakeoverExecutor executor = new BrowserHumanTakeoverExecutor();
+    private final BrowserHumanTakeoverExecutor executor = new BrowserHumanTakeoverExecutor(new MetaProperties());
 
     @Test
     void 传入_reason_返回携带_suspend_信号的成功结果() {
@@ -41,6 +42,8 @@ class BrowserHumanTakeoverExecutor_挂起测试 {
         assertThat(suspendReason).containsEntry("sessionId", "task-login");
         assertThat(suspendReason).containsEntry("reason", "需要扫码登录");
         assertThat(suspendReason.get("requestedAt")).asString().isNotBlank();
+        // MetaProperties 默认 takeover.timeoutSeconds=300，应原样透出
+        assertThat(suspendReason).containsEntry("timeoutSeconds", 300);
     }
 
     @Test

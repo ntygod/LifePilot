@@ -809,10 +809,17 @@ public class ToolExecutionCoordinator {
                 case "ExternalDataWait" -> new SuspendReason.ExternalDataWait(
                         reasonNode.path("dataSourceId").asText(""),
                         reasonNode.path("description").asText(""));
-                case "BrowserTakeover" -> new SuspendReason.BrowserTakeover(
-                        reasonNode.path("sessionId").asText("default"),
-                        reasonNode.path("reason").asText(""),
-                        Instant.parse(reasonNode.path("requestedAt").asText(Instant.now().toString())));
+                case "BrowserTakeover" -> {
+                    // 允许工具输出不携带 timeoutSeconds；为空时传 null 由前端回退默认值。
+                    Integer timeoutSeconds = reasonNode.hasNonNull("timeoutSeconds")
+                            ? reasonNode.get("timeoutSeconds").asInt()
+                            : null;
+                    yield new SuspendReason.BrowserTakeover(
+                            reasonNode.path("sessionId").asText("default"),
+                            reasonNode.path("reason").asText(""),
+                            Instant.parse(reasonNode.path("requestedAt").asText(Instant.now().toString())),
+                            timeoutSeconds);
+                }
                 default -> {
                     log.warn("未知的 SuspendReason 类型: type={}", type);
                     yield null;
