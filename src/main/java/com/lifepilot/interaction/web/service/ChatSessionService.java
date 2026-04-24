@@ -559,7 +559,8 @@ public class ChatSessionService {
                 session.isPinned(),
                 session.archived(),
                 session.summary(),
-                session.lastMessageAt()
+                session.lastMessageAt(),
+                session.projectId()
         );
     }
 
