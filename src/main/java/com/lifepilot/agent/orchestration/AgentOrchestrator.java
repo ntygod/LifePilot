@@ -800,6 +800,7 @@ public class AgentOrchestrator {
             case SuspendReason.RemoteDelegation remoteDelegation -> remoteDelegation.remoteTaskId();
             case SuspendReason.ScheduledWakeup _ -> null;
             case SuspendReason.ExternalDataWait externalDataWait -> externalDataWait.dataSourceId();
+            case SuspendReason.BrowserTakeover browserTakeover -> browserTakeover.sessionId();
         };
     }
 

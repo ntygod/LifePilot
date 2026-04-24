@@ -828,6 +828,8 @@ public class ReactAgentLoop implements CallbackHelper {
                     "定时唤醒 [%s] 原因: %s".formatted(s.wakeupAt(), s.reason());
             case SuspendReason.ExternalDataWait e ->
                     "等待外部数据就绪 [%s] %s".formatted(e.dataSourceId(), e.description());
+            case SuspendReason.BrowserTakeover bt ->
+                    "等待浏览器人工接管 [%s] %s".formatted(bt.sessionId(), bt.reason());
         };
     }
 
@@ -850,6 +852,7 @@ public class ReactAgentLoop implements CallbackHelper {
             case SuspendReason.RemoteDelegation _ -> payload instanceof ResumePayload.RemoteResult;
             case SuspendReason.ScheduledWakeup _ -> payload instanceof ResumePayload.WakeupSignal;
             case SuspendReason.ExternalDataWait _ -> payload instanceof ResumePayload.DataReady;
+            case SuspendReason.BrowserTakeover _ -> payload instanceof ResumePayload.BrowserTakeoverCompleted;
         };
         if (!valid) {
             throw new IllegalArgumentException(
@@ -880,6 +883,9 @@ public class ReactAgentLoop implements CallbackHelper {
             case ResumePayload.DataReady d ->
                     "外部数据就绪: dataSourceId=%s, data=%s".formatted(
                             d.dataSourceId(), d.dataLocationOrContent());
+            case ResumePayload.BrowserTakeoverCompleted c ->
+                    "浏览器人工接管完成: sessionId=%s, note=%s".formatted(
+                            c.sessionId(), c.note() == null ? "" : c.note());
         };
     }
 

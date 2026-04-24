@@ -60,6 +60,7 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
         var tabExecutor = new BrowserTabToolExecutor(browserSessionManager);
         var storageExecutor = new BrowserStorageToolExecutor(browserSessionManager);
         var snapshotExecutor = new BrowserSnapshotToolExecutor(browserSessionManager, indexer, properties);
+        var takeoverExecutor = new BrowserHumanTakeoverExecutor();
 
         // 注册 action
         ToolExecutionSemantics browserSessionSemantics = ToolExecutionSemantics.of(
@@ -93,6 +94,7 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
         register("tab", RiskLevel.MEDIUM, browserSessionSemantics, tabExecutor::execute);
         register("storage", RiskLevel.MEDIUM, browserSessionSemantics, storageExecutor::execute);
         register("snapshot", RiskLevel.LOW, browserSessionSemantics, snapshotExecutor::execute);
+        register("requestHumanTakeover", RiskLevel.LOW, browserSessionSemantics, takeoverExecutor::execute);
         register("close",
                 RiskLevel.LOW,
                 browserSessionSemantics,

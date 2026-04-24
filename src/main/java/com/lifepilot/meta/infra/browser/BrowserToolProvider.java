@@ -61,10 +61,12 @@ public class BrowserToolProvider {
                                         "type", "string",
                                         "enum", List.of("navigate", "click", "input", "scroll", "wait", "hover",
                                                 "select", "keyboard", "screenshot", "evaluate", "accessibility",
-                                                "tab", "storage", "snapshot", "close"),
+                                                "tab", "storage", "snapshot", "requestHumanTakeover", "close"),
                                         "description", "浏览器操作类型。navigate 返回文本快照，screenshot 返回 Base64 图片，"
                                                 + "snapshot 扫描可交互元素并返回截图+编号表（elements[].{index,tag,role,text,bbox}），"
-                                                + "后续 click/input/hover 应优先用 index 而非选择器——定位更稳且抗 layout 抖动")),
+                                                + "后续 click/input/hover 应优先用 index 而非选择器——定位更稳且抗 layout 抖动。"
+                                                + "requestHumanTakeover 让 Agent 挂起等待用户在浏览器中完成人工操作"
+                                                + "（验证码、登录、扫码、人机验证、账号保护），用户完成后点击继续 Agent 自动恢复")),
                                 Map.entry("url", Map.of("type", "string",
                                         "description", "navigate 时的目标 URL；tab open 时的目标 URL")),
                                 Map.entry("selector", Map.of("type", "string",
@@ -123,6 +125,9 @@ public class BrowserToolProvider {
                                         "description", "storage 操作类型")),
                                 Map.entry("name", Map.of("type", "string",
                                         "description", "storage set/get 时的键名")),
+                                Map.entry("reason", Map.of("type", "string",
+                                        "description", "requestHumanTakeover 时展示给用户的接管原因说明（用简短用户语言，"
+                                                + "如 '需要扫码登录' '请输入短信验证码' '遇到人机验证'），让用户明白为什么需要接管")),
                                 Map.entry("sessionId", Map.of("type", "string",
                                         "description", "浏览器会话 ID，默认 default")),
                                 Map.entry("acquisitionMode", Map.of("type", "string",

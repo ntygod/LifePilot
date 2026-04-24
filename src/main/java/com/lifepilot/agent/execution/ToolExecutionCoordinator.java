@@ -809,6 +809,10 @@ public class ToolExecutionCoordinator {
                 case "ExternalDataWait" -> new SuspendReason.ExternalDataWait(
                         reasonNode.path("dataSourceId").asText(""),
                         reasonNode.path("description").asText(""));
+                case "BrowserTakeover" -> new SuspendReason.BrowserTakeover(
+                        reasonNode.path("sessionId").asText("default"),
+                        reasonNode.path("reason").asText(""),
+                        Instant.parse(reasonNode.path("requestedAt").asText(Instant.now().toString())));
                 default -> {
                     log.warn("未知的 SuspendReason 类型: type={}", type);
                     yield null;

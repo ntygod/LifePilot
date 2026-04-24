@@ -16,7 +16,8 @@ public sealed interface SuspendReason permits
         SuspendReason.UserConfirmation,
         SuspendReason.RemoteDelegation,
         SuspendReason.ScheduledWakeup,
-        SuspendReason.ExternalDataWait {
+        SuspendReason.ExternalDataWait,
+        SuspendReason.BrowserTakeover {
 
     /** 等待异步工作流完成。 */
     record WorkflowWait(String executionId, String workflowId, String workflowName)
@@ -36,5 +37,15 @@ public sealed interface SuspendReason permits
 
     /** 等待外部数据就绪，如爬虫、ETL 或文件上传。 */
     record ExternalDataWait(String dataSourceId, String description)
+            implements SuspendReason {}
+
+    /**
+     * 等待用户在浏览器中完成人工接管（验证码、登录、扫码、人机验证、账号保护）。
+     *
+     * @param sessionId 浏览器会话 ID
+     * @param reason    展示给用户的接管原因说明
+     * @param requestedAt 请求时刻
+     */
+    record BrowserTakeover(String sessionId, String reason, Instant requestedAt)
             implements SuspendReason {}
 }

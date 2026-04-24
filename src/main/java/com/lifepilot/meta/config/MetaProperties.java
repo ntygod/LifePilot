@@ -300,6 +300,9 @@ public class MetaProperties {
             /** 页面标号快照配置。 */
             private Snapshot snapshot = new Snapshot();
 
+            /** 人工接管挂起配置。 */
+            private Takeover takeover = new Takeover();
+
             /**
              * 页面标号快照配置 — 控制 browser.snapshot 返回的元素数量、范围和视觉标签。
              *
@@ -317,6 +320,19 @@ public class MetaProperties {
 
                 /** 是否叠加视觉编号标签（桌面 headless=false 场景建议 true），默认 false。 */
                 private boolean injectLabels = false;
+            }
+
+            /**
+             * 人工接管挂起配置 — 控制 browser.requestHumanTakeover 相关行为。
+             *
+             * @author zsg
+             * @since 2026-04-24
+             */
+            @Data
+            public static class Takeover {
+
+                /** 挂起等待超时（秒），默认 300（5 分钟）。超时后可由上层强制恢复或失败。 */
+                private int timeoutSeconds = 300;
             }
         }
 

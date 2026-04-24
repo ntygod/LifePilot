@@ -882,6 +882,8 @@ lifepilot:
           max-elements: 200
           viewport-only: true
           inject-labels: false
+        takeover:
+          timeout-seconds: 300        # 人工接管挂起等待超时（秒），5 分钟
       git:
         enabled: true
         timeout-seconds: 30
