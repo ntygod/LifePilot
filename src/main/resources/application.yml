@@ -59,7 +59,6 @@ lifepilot:
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: true
-    # 注：旧的 core-tool-ids 白名单已移除，由 lifepilot.tool.tier1.pinned + Tier1AdvisoryJob 晋升机制替代。
     loop:
       # ReAct 循环配置
       max-iterations: 45
@@ -182,8 +181,8 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
-    # ===== Tier 1 分层注入（Task 0.4）=====
-    # pinned：人工固定的常驻完整 schema 工具（相当于旧 core-tool-ids，Phase B 删旧字段）
+    # ===== Tier 1 分层注入 =====
+    # pinned：人工固定的常驻完整 schema 工具
     # 其余工具进 BM25 搜索池，通过 tools.search 被 LLM 发现
     tier1:
       pinned:
@@ -960,29 +959,8 @@ lifepilot:
       cache-ttl-seconds: 60
       debounce-millis: 500
     skill-discovery:
+      # 种子 Skill 扫描基于 classpath:skills/*/SKILL.md 通配符自动发现，无需列出路径
       enabled: true
-      skill-paths:
-        - skills/find-skills
-        - skills/workflow-creator
-        - skills/memory
-        - skills/infrastructure
-        - skills/introspection
-        - skills/datastore
-        - skills/code-assistant
-        - skills/research-assistant
-        - skills/content-creator
-        - skills/data-analyst
-        - skills/browser-automation
-        - skills/daily-manager
-        - skills/file-organizer
-        - skills/summarizer
-        - skills/github-workflow
-        - skills/translator
-        - skills/api-debugger
-        - skills/doc-processor
-        - skills/project-scaffolder
-        - skills/teaching-assistant
-        - skills/desktop-automation
     onboarding:
       auto-trigger: true
       agent-definition: preset-agents/onboarding-guide.md
