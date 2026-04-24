@@ -5,7 +5,7 @@
 每个 skill 是 `<skills 根目录>/<skill-name>/` 下的一个文件夹：
 
     skills/<name>/
-    ├── SKILL.md              # 必需。L1 frontmatter + L2 骨架 body
+    ├── SKILL.md              # 必需。L1 frontmatter + L2 body（前 3 小节必需）
     ├── references/           # 可选。L3 按需加载的详细参考
     │   └── *.md              #   LLM 用 file.read(path=...) 主动加载
     ├── scripts/              # 可选。可执行脚本（不入 context）
@@ -20,7 +20,7 @@
 | 字段 | 必需 | 类型 | 约束 |
 |---|---|---|---|
 | `name` | 是 | string | 正则 `^[a-z0-9][a-z0-9-]{0,62}$`，等于目录名 |
-| `description` | 是 | string | ≤1024 字符，"当…时使用" 或 "Use when…" 开头，不得含工作流词（步骤 1 / 首先 / 然后） |
+| `description` | 是 | string | ≤1024 字符，"当…时使用" 或 "Use when…" 开头，不得含工作流词（步骤 N / 首先 / 然后 / 接下来 / Step N / First / Then） |
 | `version` | 是 | string | 语义化版本 semver，如 `1.0.0` |
 | `metadata.zhiwei` | 否 | object | 下表字段 |
 
@@ -56,7 +56,10 @@
     - 常见错误：参见 {skill_dir}/references/error-handbook.md
 
 - Body 硬限 ≤ 5000 字符。超长强制拆 references。
-- `{skill_dir}` / `{skill_references_dir}` 占位符由 `SkillActivator` 替换为实际路径。
+- 可用占位符（由 SkillActivator 替换为绝对路径）：
+  - `{skill_dir}` → skill 安装目录
+  - `{skill_references_dir}` → `{skill_dir}/references`
+  - `{skill_scripts_dir}` → `{skill_dir}/scripts`
 
 ## 3. References 文件
 
@@ -70,14 +73,14 @@
 - `BUILTIN`：ZhiWei 内置，随 classpath 分发
 - `USER_IMPORTED`：用户上传 .skill 包或 Git URL 导入
 - `MARKETPLACE`：从 ZhiWei 市场下载
-- `AUTO_GENERATED`：SkillSynthesizer 自动产出，安装后即启用但在前端显眼标识
+- `AUTO_GENERATED`：SkillSynthesizer 自动产出，默认 `enabled=1`，前端标识为"自动生成"以示区分
 
 ## 5. 校验规则
 
 | 校验器 | 规则 |
 |---|---|
-| `SkillFrontmatterValidator` | 必需字段存在 + name 正则 + version semver |
+| 解析期校验（`MarkdownSkillParser`） | 必需字段存在 + name 正则 + version semver + 拒绝老 `id` 字段 |
 | `SkillDescriptionValidator` | 描述 ≤1024 + 开头触发词 + 禁工作流词 |
 | `SkillBodyValidator` | body ≤5000 + 必需 3 小节 |
-| `SkillValidator`（合一） | format + 无命令注入风险 + 无 secrets |
+| `SkillValidator`（合一） | 调用 description/body validator + secret 模式检测 + 工具引用校验（generated 路径额外禁 HIGH/CRITICAL） |
 | `SkillRequirementGate` | 加载期检查 requires.bins/env/os/tools，未满足不进 catalog |
