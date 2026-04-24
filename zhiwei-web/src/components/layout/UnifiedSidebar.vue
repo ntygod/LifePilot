@@ -74,11 +74,17 @@ watch(
 
 /* ── 会话列表 ── */
 
-const sortedSessions = computed(() => [...chatStore.sessions].sort((left, right) => {
-  if (left.pinned && !right.pinned) return -1
-  if (!left.pinned && right.pinned) return 1
-  return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
-}))
+/**
+ * 侧栏"今天/昨天"分组只显示主账户对话（projectId 为空）。
+ * 项目对话归属 {@link ProjectSection} 展开项嵌套展示，避免两处重复。
+ */
+const sortedSessions = computed(() => [...chatStore.sessions]
+  .filter(s => !s.projectId)
+  .sort((left, right) => {
+    if (left.pinned && !right.pinned) return -1
+    if (!left.pinned && right.pinned) return 1
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  }))
 
 function matchesSearch(session: ChatSession) {
   const query = searchQuery.value.trim().toLowerCase()

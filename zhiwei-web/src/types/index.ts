@@ -14,6 +14,12 @@ export interface ChatSession {
   lastMessagePreview?: string
   /** 会话类型标识 */
   type?: string
+  /**
+   * 归属项目 ID。
+   * - `null` / `undefined`：主账户对话（侧栏"今天/昨天"分组显示）
+   * - 非空字符串：归属该项目，仅在项目展开项下嵌套显示
+   */
+  projectId?: string | null
 }
 
 export interface ChatSessionDetail extends ChatSession {
