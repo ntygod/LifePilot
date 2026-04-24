@@ -2,8 +2,11 @@ package com.lifepilot.interaction.web.repository;
 
 import com.lifepilot.interaction.web.model.EntityProvenanceDto;
 import com.lifepilot.interaction.web.model.MemoryProvenanceSummaryDto;
+import com.lifepilot.memory.lifecycle.SourceType;
 import com.lifepilot.memory.semantic.EntityType;
 import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -18,6 +21,8 @@ import java.util.*;
  */
 @Repository
 public class MemoryProvenanceRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryProvenanceRepository.class);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -265,6 +270,104 @@ public class MemoryProvenanceRepository {
      */
     public Map<String, String> loadDocumentNames(Collection<String> ids) {
         return loadNames("documents", "id", "file_name", ids);
+    }
+
+    // ========== (H) 生命周期闭环 — 失效标记 & 按来源回查实体 ==========
+
+    /**
+     * 将指定来源对象关联的 provenance 记录全部置为 {@code STALE} —— 源对象失效 / 删除时调用。
+     *
+     * <p>V15 为 {@code memory_entity_provenances} 新增了 {@code status} / {@code invalidated_at}
+     * 两列，此方法将匹配来源对象的行批量置为 {@code STALE}，用于后续再验证与 L4 同步。</p>
+     *
+     * @param type     来源对象类型
+     * @param sourceId 来源对象主键
+     * @param when     失效时刻
+     */
+    public void markStale(SourceType type, String sourceId, Instant when) {
+        String column = sourceColumn(type);
+        int affected = jdbcTemplate.update(
+                "UPDATE memory_entity_provenances SET status = 'STALE', invalidated_at = ? WHERE "
+                        + column + " = ?",
+                when.toString(), sourceId);
+        log.debug("记忆溯源: markStale type={}, sourceId={}, affected={}", type, sourceId, affected);
+    }
+
+    /**
+     * 查找所有由指定来源对象贡献过 provenance 的实体 ID（去重）。
+     *
+     * @param type     来源对象类型
+     * @param sourceId 来源对象主键
+     * @return 实体 ID 列表（可能为空）
+     */
+    public List<String> findEntityIdsBySource(SourceType type, String sourceId) {
+        String column = sourceColumn(type);
+        return jdbcTemplate.queryForList(
+                "SELECT DISTINCT entity_id FROM memory_entity_provenances WHERE " + column + " = ?",
+                String.class, sourceId);
+    }
+
+    /**
+     * 批量查询存在 {@code STALE} 状态 provenance 的实体 ID 子集 —— 供检索层给结果
+     * 打 {@code needsRevalidation=true} 标注。
+     *
+     * <p>一次 SQL IN 查询，避免每条检索结果单独走 {@code findEntityProvenances} 的 N+1。
+     * 仅返回入参集合中"至少有一条 provenance 处于 STALE"的实体 ID；若入参为空则直接返回空集。</p>
+     *
+     * @param entityIds 待检查的实体 ID 集合（通常是单次检索的 topK 结果）
+     * @return 需要复核的实体 ID 集合（去重），不含未命中的 ID
+     */
+    public Set<String> findStaleEntityIds(Collection<String> entityIds) {
+        if (entityIds == null || entityIds.isEmpty()) {
+            return Set.of();
+        }
+        List<String> uniqueIds = entityIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> !id.isBlank())
+                .distinct()
+                .toList();
+        if (uniqueIds.isEmpty()) {
+            return Set.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(uniqueIds.size(), "?"));
+        String sql = """
+                SELECT DISTINCT entity_id
+                FROM memory_entity_provenances
+                WHERE status = 'STALE'
+                  AND entity_id IN (%s)
+                """.formatted(placeholders);
+        return new LinkedHashSet<>(jdbcTemplate.queryForList(sql, String.class, uniqueIds.toArray()));
+    }
+
+    /**
+     * 列出 memory_entity_provenances 中当前仍 {@code VALID} 状态行引用过的所有
+     * document ID（去重），供 Task 27 {@code OrphanProvenanceScanner} 与
+     * {@code session_documents} 对照检测孤儿引用。
+     *
+     * <p>只扫 {@code status = 'VALID'}：已由 {@code ProvenanceStaleListener} 标为
+     * STALE 的行不再重复发 {@link com.lifepilot.memory.lifecycle.events.SourceInvalidated}
+     * 事件，避免幂等事件污染下游。</p>
+     *
+     * @return 去重后的 document ID 列表（非 null）
+     */
+    public List<String> listDistinctSourceDocumentIds() {
+        return jdbcTemplate.queryForList(
+                """
+                SELECT DISTINCT source_document_id
+                FROM memory_entity_provenances
+                WHERE source_document_id IS NOT NULL
+                  AND status = 'VALID'
+                """,
+                String.class);
+    }
+
+    private String sourceColumn(SourceType type) {
+        return switch (type) {
+            case DOCUMENT -> "source_document_id";
+            case KNOWLEDGE_BASE -> "source_knowledge_base_id";
+            case SESSION -> "source_conversation_id";
+        };
     }
 
     // ========== 内部辅助 ==========

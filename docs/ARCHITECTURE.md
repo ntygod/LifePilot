@@ -192,7 +192,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V23）"
+    subgraph "Flyway 迁移（V1~V27）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -216,6 +216,10 @@ graph LR
         V21["V21: 技能系统重构相关表与索引"]
         V22["V22: cron_tasks 加 project_id + 部分索引（Plan 2 定时任务按项目归属）"]
         V23["V23: cron_task_logs 加 trigger_source（cron / manual，区分定时与立即运行）"]
+        V24["V24: 记忆 lifecycle 闭环（status/completed_at/superseded_by/cancelled_reason 等字段 + 4 队列表）"]
+        V25["V25: temporal_entities_view 扩展 lifecycle 字段"]
+        V26["V26: proactive_task ↔ insight 关联表"]
+        V27["V27: proactive_reminder ↔ insight 关联"]
     end
 
     V1 --> SQL

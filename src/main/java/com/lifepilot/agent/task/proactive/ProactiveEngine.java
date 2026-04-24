@@ -4,6 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
+import com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.config.NotificationProperties;
@@ -79,6 +80,32 @@ public class ProactiveEngine {
         this.memoryBridge = memoryBridge;
         this.trustUpgradeService = trustUpgradeService;
         this.implicitSignalCollector = implicitSignalCollector;
+    }
+
+    /**
+     * 标记主动任务完成 — 面向外部的统一入口，委派给
+     * {@link ProactiveMemoryBridge#markGoalFulfilled(String)}（后者负责归档
+     * L3 GOAL 实体 + 清理 goal tracking + 发 {@link ProactiveTaskCancelled}
+     * 事件，供 {@code ProactiveTaskCancelListener}（Phase 1 挂载）级联将
+     * 关联 insight 转 CANCELLED）。
+     *
+     * <p>之所以让 Bridge 发事件而非在本方法里发：{@link com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior}
+     * 等行为插件会在 {@code reason} 中直接调 {@code bridge.markGoalFulfilled}
+     * 自主归档目标，如果事件只在 Engine 发，那些路径会漏事件；把事件发布
+     * 下沉到 Bridge 保证所有调用路径都触发级联。若将来需要将调用强制收拢到
+     * Engine，改法是在 Bridge 的 markGoalFulfilled 上加 {@code @Deprecated}
+     * 或改包私有，再逐步迁移。</p>
+     *
+     * <p>taskId 即为 L3 GOAL 实体 id。memoryBridge 为空时退化为 no-op。</p>
+     *
+     * @param taskId 主动任务 id（即 GOAL 实体 id）
+     */
+    public void markGoalFulfilled(String taskId) {
+        if (memoryBridge == null) {
+            log.debug("主动引擎: markGoalFulfilled 无记忆桥接, 跳过, taskId={}", taskId);
+            return;
+        }
+        memoryBridge.markGoalFulfilled(taskId);
     }
 
     /** 生产入口：自行构建 ContextPacket 并执行心跳。 */

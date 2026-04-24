@@ -172,6 +172,8 @@ public class NotificationController {
 
         String topicKey = extractTopicKey(record.metadataJson())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "通知缺少提醒主题"));
+        // 通知携带的 insightEntityId 用于 Task 25 溯源惩罚 —— 生成端未写入时为 null
+        String insightEntityId = extractInsightEntityId(record.metadataJson()).orElse(null);
         Instant now = Instant.now();
         reminderFeedbackRepository.saveFeedback(new ReminderFeedbackRecord(
                 UUID.randomUUID().toString(),
@@ -180,6 +182,7 @@ public class NotificationController {
                 topicKey,
                 feedbackType,
                 request.comment(),
+                insightEntityId,
                 now,
                 now
         ));
@@ -217,13 +220,14 @@ public class NotificationController {
                 || feedbackType == ReminderFeedbackType.SNOOZED;
         String behaviorName = extractBehaviorName(record.metadataJson()).orElse("reminder");
 
-        // 信任升级/降级
+        // 信任升级/降级 —— 负反馈时携带 notificationId，TrustUpgradeService 反查
+        // 关联 L3 proactive_insight 实体做 importanceScore 惩罚（Task 25，解 S14）
         if (trustUpgradeService != null) {
             try {
                 if (positive) {
                     trustUpgradeService.recordPositiveFeedback(record.userId(), behaviorName);
                 } else {
-                    trustUpgradeService.recordNegativeFeedback(record.userId(), behaviorName);
+                    trustUpgradeService.recordNegativeFeedback(record.userId(), behaviorName, record.id());
                 }
             } catch (Exception e) {
                 log.warn("反馈闭环: 信任更新失败: {}", e.getMessage());
@@ -249,6 +253,24 @@ public class NotificationController {
         try {
             Map<String, String> metadata = MAPPER.readValue(metadataJson, new TypeReference<>() {});
             return Optional.ofNullable(metadata.get("behaviorName"));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 从通知 metadata JSON 提取生成该提醒时依据的 {@code insightEntityId} —— Task 25
+     * 用于溯源惩罚。提醒生成端将 L3 {@code proactive_insight_*} 实体 id 写入该字段；
+     * 未写入 / 非 insight 来源的提醒解析结果为空。
+     */
+    private Optional<String> extractInsightEntityId(@Nullable String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) return Optional.empty();
+        try {
+            Map<String, Object> metadata = MAPPER.readValue(metadataJson, new TypeReference<>() {});
+            Object value = metadata.get("insightEntityId");
+            if (value == null) return Optional.empty();
+            String trimmed = value.toString().trim();
+            return trimmed.isEmpty() ? Optional.empty() : Optional.of(trimmed);
         } catch (Exception e) {
             return Optional.empty();
         }

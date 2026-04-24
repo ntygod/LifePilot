@@ -52,6 +52,7 @@ class ReminderFeedbackRepository_集成测试 {
                     topic_key TEXT NOT NULL,
                     feedback_type TEXT NOT NULL,
                     comment TEXT,
+                    insight_entity_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (notification_id) REFERENCES notification_history(id) ON DELETE CASCADE

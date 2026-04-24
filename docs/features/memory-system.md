@@ -66,7 +66,9 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 - `memory(action=recall)`：回忆别的会话里的对话片段
 - `knowledge.search`：搜索资料文档（独立工具）
 - `memory(action=create)` / `update` / `delete` / `tag`：实体 CRUD + 关系标记
-- `memory(action=cancel)`：用户表达"取消 / 撤销 / 不再做 / 以后别提"等语义时调用，按 `query` 语义描述批量归档相关 `GOAL / EXPERIENCE / HABIT`（默认集合，可通过 `entityTypes` 覆盖），默认最多归档 5 条、最小相关性阈值 0.5。与 `delete` 互补：`delete` 按已知 ID 精确删单条，`cancel` 按语义召回批量归档，覆盖"取消定时任务"这类需级联清理多个旧记忆的场景。仅 `create PREFERENCE` 不足以挡住后续对旧目标/经验的召回，取消语义下必须同时使用 `cancel`
+- `memory(action=cancel)`：用户表达"取消 / 撤销 / 不再做 / 以后别提"等语义时调用，按 `query` 语义描述批量归档相关实体（默认 `GOAL / EXPERIENCE / HABIT`，可通过 `entityTypes` 覆盖到任意类型），默认最多归档 5 条、最小相关性阈值 0.5。与 `delete` 互补：`delete` 按已知 ID 精确删单条，`cancel` 按语义召回批量归档，覆盖"取消定时任务"这类需级联清理多个旧记忆的场景。仅 `create PREFERENCE` 不足以挡住后续对旧目标/经验的召回，取消语义下必须同时使用 `cancel`
+- `memory(action=complete)`：标记 `GOAL / PROJECT` 已完成，驱动 lifecycle 状态机进入终态
+- `memory(action=supersede)`：旧实体被新实体替代，在 lifecycle 上建立 superseded_by 关系
 - `memory(action=query-at-time)`：时间点查询
 - `memory(action=search-experience)`：主动检索执行经验
 

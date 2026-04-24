@@ -1,0 +1,248 @@
+package com.lifepilot.memory.lifecycle.query;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.web.model.EntityProvenanceDto;
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
+import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.lifecycle.SourceType;
+import com.lifepilot.memory.lifecycle.Temporality;
+import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.semantic.TemporalEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * 记忆只读查询接口（测试专用）。
+ *
+ * <p>生命周期闭环场景测试的统一断言入口，封装 {@link SemanticMemory} 与
+ * {@link MemoryProvenanceRepository}，只暴露 {@code findXxx} 只读方法；任何 mutator
+ * 请走 {@link SemanticMemory} 本身或 {@link MemoryProvenanceRepository}。</p>
+ *
+ * <p>L4 相关查询（preference_rules / procedure_templates）当前仅占位：
+ * 待 Task 15 {@code L4SyncListener} 引入 PreferenceRuleRepository / ProcedureTemplateRepository 后再接入。</p>
+ *
+ * @author zsg
+ * @since 2026-04-23
+ */
+@Service
+public class MemoryQueryApi {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryQueryApi.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> PROPERTIES_TYPE = new TypeReference<>() {};
+
+    private final SemanticMemory semanticMemory;
+    private final MemoryProvenanceRepository provenanceRepository;
+    private final JdbcTemplate jdbcTemplate;
+
+    public MemoryQueryApi(SemanticMemory semanticMemory,
+                          MemoryProvenanceRepository provenanceRepository,
+                          JdbcTemplate jdbcTemplate) {
+        this.semanticMemory = semanticMemory;
+        this.provenanceRepository = provenanceRepository;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    // ========== 实体查询 ==========
+
+    /** 按 ID 查找实体。 */
+    public Optional<TemporalEntity> findById(String id) {
+        return semanticMemory.findById(id);
+    }
+
+    /**
+     * 按类型查找最新一条当前实体（按 {@code updatedAt} 降序）。
+     *
+     * <p>仅在当前有效版本（{@code is_current = 1}）范围内筛选，排除已归档实体。</p>
+     */
+    public Optional<TemporalEntity> findLatestByType(String typeName) {
+        EntityType type = parseEntityType(typeName);
+        if (type == null) {
+            return Optional.empty();
+        }
+        return semanticMemory.findCurrentByType(type).stream()
+                .max((a, b) -> a.updatedAt().compareTo(b.updatedAt()));
+    }
+
+    /** 语法糖：{@code findLatestByType("GOAL")} 的常用别名。必须存在，否则抛 {@code NoSuchElementException}。 */
+    public String findLatestGoalId() {
+        return findLatestByType(EntityType.GOAL.name())
+                .map(TemporalEntity::id)
+                .orElseThrow();
+    }
+
+    /** 按类型找所有生命周期处于 {@code ACTIVE} 的当前实体（按重要度降序）。 */
+    public List<TemporalEntity> findActiveByType(String typeName) {
+        EntityType type = parseEntityType(typeName);
+        if (type == null) {
+            return List.of();
+        }
+        return semanticMemory.findCurrentByType(type).stream()
+                .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
+                .toList();
+    }
+
+    /**
+     * 查询指定实体的所有历史版本 — 按 {@code version_no} 升序返回。
+     *
+     * <p>扫描 {@code temporal_entities} 视图中同一 {@code id} 的全部行（含 is_current=0
+     * 的历史版本），用于 Task 10（updateDescription 版本化）断言两次修改产生两条版本记录。</p>
+     *
+     * @param entityId 实体 ID
+     * @return 按版本号升序的所有版本实体列表
+     */
+    public List<TemporalEntity> findAllVersions(String entityId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, type, name, description, properties_json,
+                       version, is_current, valid_from, valid_to, source_conversation_id,
+                       extraction_confidence, importance_score, access_count, last_accessed_at,
+                       created_at, updated_at,
+                       lifecycle_state, lifecycle_reason, expires_at, temporality,
+                       succeeded_by, is_derived, derivation_sources
+                FROM temporal_entities
+                WHERE id = ?
+                ORDER BY version ASC
+                """,
+                (rs, rowNum) -> mapVersionRow(rs),
+                entityId);
+    }
+
+    /** 视图行映射为 {@link TemporalEntity}（轻量版，字段对齐 SemanticMemory.mapRowToEntity）。 */
+    @SuppressWarnings("unchecked")
+    private static TemporalEntity mapVersionRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String propsJson = rs.getString("properties_json");
+        Map<String, Object> properties = Map.of();
+        if (propsJson != null && !propsJson.isBlank()) {
+            try {
+                properties = MAPPER.readValue(propsJson, PROPERTIES_TYPE);
+            } catch (Exception e) {
+                log.warn("MemoryQueryApi: properties_json 解析失败, id={}", rs.getString("id"));
+            }
+        }
+        String validToStr = rs.getString("valid_to");
+        String lastAccessedStr = rs.getString("last_accessed_at");
+        String expiresStr = rs.getString("expires_at");
+        String derivationSourcesJson = rs.getString("derivation_sources");
+        List<String> derivationSources = List.of();
+        if (derivationSourcesJson != null && !derivationSourcesJson.isBlank()) {
+            try {
+                derivationSources = MAPPER.readValue(
+                        derivationSourcesJson, new TypeReference<List<String>>() {});
+            } catch (Exception e) {
+                log.warn("MemoryQueryApi: derivation_sources 解析失败, id={}", rs.getString("id"));
+            }
+        }
+        LifecycleState lifecycleState = parseLifecycleState(rs.getString("lifecycle_state"));
+        Temporality temporality = parseTemporality(rs.getString("temporality"));
+        return new TemporalEntity(
+                rs.getString("id"),
+                EntityType.valueOf(rs.getString("type")),
+                rs.getString("name"),
+                rs.getString("description"),
+                properties,
+                rs.getInt("version"),
+                rs.getInt("is_current") == 1,
+                Instant.parse(rs.getString("valid_from")),
+                validToStr != null ? Instant.parse(validToStr) : null,
+                rs.getString("source_conversation_id"),
+                rs.getFloat("extraction_confidence"),
+                rs.getFloat("importance_score"),
+                rs.getInt("access_count"),
+                lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
+                Instant.parse(rs.getString("created_at")),
+                Instant.parse(rs.getString("updated_at")),
+                lifecycleState,
+                rs.getString("lifecycle_reason"),
+                expiresStr != null ? Instant.parse(expiresStr) : null,
+                temporality,
+                rs.getString("succeeded_by"),
+                rs.getInt("is_derived") == 1,
+                derivationSources
+        );
+    }
+
+    private static LifecycleState parseLifecycleState(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return LifecycleState.ACTIVE;
+        }
+        try {
+            return LifecycleState.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            return LifecycleState.ACTIVE;
+        }
+    }
+
+    private static Temporality parseTemporality(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Temporality.PERSISTENT;
+        }
+        try {
+            return Temporality.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            return Temporality.PERSISTENT;
+        }
+    }
+
+    // ========== Provenance 查询 ==========
+
+    /** 查找指定来源对象关联的所有实体 ID（去重）。 */
+    public List<String> findEntityIdsBySource(SourceType sourceType, String sourceId) {
+        return provenanceRepository.findEntityIdsBySource(sourceType, sourceId);
+    }
+
+    /**
+     * 查询指定实体的所有 provenance 明细（按创建时间降序）。
+     *
+     * @param entityId 实体 ID
+     * @return provenance 明细列表
+     */
+    public List<EntityProvenanceDto> findProvenancesByEntityId(String entityId) {
+        return provenanceRepository.findEntityProvenances(entityId, null, null, null, null);
+    }
+
+    // ========== L4 查询（占位） ==========
+
+    /**
+     * 按来源实体 ID 查找 L4 偏好规则 —— 占位实现。
+     *
+     * @throws UnsupportedOperationException 等 Task 15 {@code L4SyncListener} 接入 PreferenceRuleRepository
+     */
+    public Object findRuleBySourceEntity(String sourceEntityId) {
+        throw new UnsupportedOperationException(
+                "L4 偏好规则查询将在 Task 15 L4SyncListener 接入 PreferenceRuleRepository 后实现");
+    }
+
+    /**
+     * 按来源实体 ID 查找 L4 程序模板 —— 占位实现。
+     *
+     * @throws UnsupportedOperationException 等 Task 15 {@code L4SyncListener} 接入 ProcedureTemplateRepository
+     */
+    public Object findProcedureBySourceEntity(String sourceEntityId) {
+        throw new UnsupportedOperationException(
+                "L4 程序模板查询将在 Task 15 L4SyncListener 接入 ProcedureTemplateRepository 后实现");
+    }
+
+    // ========== 内部辅助 ==========
+
+    /** 尝试解析实体类型字符串为枚举；非法值返回 null（调用方视作空结果）。 */
+    private static EntityType parseEntityType(String typeName) {
+        if (typeName == null || typeName.isBlank()) {
+            return null;
+        }
+        try {
+            return EntityType.valueOf(typeName);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+}

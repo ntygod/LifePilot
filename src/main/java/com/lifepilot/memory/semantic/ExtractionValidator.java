@@ -103,7 +103,8 @@ public class ExtractionValidator {
 
         if (needsFix) {
             return new AudnDecision(d.operation(), d.entityName(), d.entityType(),
-                    d.description(), d.properties(), confidence, importance);
+                    d.description(), d.properties(), confidence, importance,
+                    d.temporalityRaw(), d.expiresAtRaw());
         }
         return d;
     }

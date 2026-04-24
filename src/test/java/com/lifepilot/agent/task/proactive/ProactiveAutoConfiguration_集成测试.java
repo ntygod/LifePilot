@@ -48,7 +48,7 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(autonomyRepository).isNotNull();
 
         // ── 服务层 Bean ──
-        TrustUpgradeService trustUpgradeService = config.trustUpgradeService(autonomyRepository, null);
+        TrustUpgradeService trustUpgradeService = config.trustUpgradeService(autonomyRepository, null, null, null);
         assertThat(trustUpgradeService).isNotNull();
 
         DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, memoryBridge);
@@ -112,7 +112,7 @@ class ProactiveAutoConfiguration_集成测试 {
 
         var queuedActionRepo = config.queuedActionRepository(jdbcTemplate);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
-        var trustUpgrade = config.trustUpgradeService(autonomyRepo, null);
+        var trustUpgrade = config.trustUpgradeService(autonomyRepo, null, null, null);
         var gate = config.proactiveDecisionGate(trustUpgrade, memoryBridge);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
         var buffer = config.clipboardIntentBuffer();
@@ -157,7 +157,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var memoryBridge = mock(ProactiveMemoryBridge.class);
         var jdbcTemplate = mock(JdbcTemplate.class);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
-        var trustUpgrade = config.trustUpgradeService(autonomyRepo, null);
+        var trustUpgrade = config.trustUpgradeService(autonomyRepo, null, null, null);
         var buffer = config.clipboardIntentBuffer();
 
         var behaviors = java.util.List.<ProactiveBehavior>of(

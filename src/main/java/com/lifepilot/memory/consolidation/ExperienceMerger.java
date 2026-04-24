@@ -6,6 +6,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.ExperienceRecord;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.EntityType;
@@ -238,12 +239,12 @@ public class ExperienceMerger {
                 now
         );
 
-        // 写入合并后的元经验并归档原始经验
+        // 写入合并后的元经验并归档原始经验 — 经验合并属冲突裁决，事件 source=CONFLICT_RESOLVE
         SqliteBusyRetry.run(() -> {
             semanticMemory.upsertWithConflictDetection(mergedEntity, "experience-merge");
             vectorSearcher.upsertEntityVector(mergedEntity.id(), mergedEntity.textRepresentation());
-            semanticMemory.archive(entityA);
-            semanticMemory.archive(entityB);
+            semanticMemory.archive(entityA, ChangeSource.CONFLICT_RESOLVE);
+            semanticMemory.archive(entityB, ChangeSource.CONFLICT_RESOLVE);
         });
 
         log.info("经验合并: 元经验已写入, mergedId={}, entityA={}, entityB={}",

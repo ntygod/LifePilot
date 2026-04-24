@@ -125,6 +125,11 @@
 - properties: 可选键值对，仅在信息明确时填写
 - extractionConfidence: 0.0-1.0（<0.6 不提取）
 - importanceScore: 0.0-1.0
+- temporality: 记忆持久度，三选一：
+    * EPHEMERAL — 临时情绪或短期吐槽（"最近不想碰 X"、"这阵子在忙 Y"），TTL 约 7 天
+    * SHORT_TERM — 短期计划或状态（"下周去出差"、"这个月在学 Rust"），TTL 约 30 天
+    * PERSISTENT — 长期偏好、价值观、稳定事实（"我不吃牛肉"、"我习惯早起"）。默认为此类
+- expires_at: （可选）ISO 8601 时间（如 "2026-05-01T00:00:00Z"），LLM 若从上下文推断出具体时间可直接填；否则可省略，系统按 temporality 自动计算
 
 </instructions>
 

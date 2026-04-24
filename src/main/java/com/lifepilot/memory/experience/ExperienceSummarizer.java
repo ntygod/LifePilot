@@ -8,6 +8,7 @@ import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryRealityType;
@@ -272,7 +273,8 @@ public class ExperienceSummarizer {
                 String existingId = similar.getFirst().entityId();
                 semanticMemory.findById(existingId).ifPresent(existing -> {
                     float boosted = Math.min(existing.importanceScore() + 0.1f, 1.0f);
-                    SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(existingId, boosted));
+                    SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(
+                            existingId, boosted, WeightSource.EFFECTIVENESS));
                     log.debug("经验提炼: 去重命中，提升已有经验分数, entityId={}, newScore={}",
                             existingId, boosted);
                 });
