@@ -9,6 +9,8 @@ import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -25,6 +27,8 @@ import java.util.Map;
  * @since 2026-03-08
  */
 public class PlaywrightPageWrapper {
+
+    private static final Logger log = LoggerFactory.getLogger(PlaywrightPageWrapper.class);
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
             .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
@@ -174,6 +178,59 @@ public class PlaywrightPageWrapper {
         touch();
         humanDelay();
         page.fill(selector, value);
+    }
+
+    /**
+     * 扫描页面可交互元素并注入 {@code data-zhiwei-idx} 属性。
+     *
+     * <p>为后续 {@link #clickByIndex(int)}、{@link #inputByIndex(int, String)}、
+     * {@link #hoverByIndex(int)} 提供稳定选择器基础。</p>
+     *
+     * @param indexer      标号扫描器
+     * @param injectLabels 是否叠加红色视觉编号标签
+     * @param maxElements  最大返回数，超出部分仍计入 total
+     * @return 标号快照
+     */
+    public IndexedSnapshot indexInteractiveElements(
+            InteractiveElementIndexer indexer, boolean injectLabels, int maxElements) {
+        touch();
+        humanDelay();
+        return indexer.index(page, injectLabels, maxElements);
+    }
+
+    /**
+     * 通过 {@link #indexInteractiveElements} 注入的编号点击元素。
+     *
+     * @param index 可交互元素编号（0 起算）
+     */
+    public void clickByIndex(int index) {
+        touch();
+        humanDelay();
+        log.debug("点击 index 元素: index={}", index);
+        page.click("[data-zhiwei-idx='" + index + "']");
+    }
+
+    /**
+     * 通过 {@link #indexInteractiveElements} 注入的编号填充表单字段。
+     *
+     * @param index 可交互元素编号（0 起算）
+     * @param value 填充值
+     */
+    public void inputByIndex(int index, String value) {
+        touch();
+        humanDelay();
+        page.fill("[data-zhiwei-idx='" + index + "']", value);
+    }
+
+    /**
+     * 通过 {@link #indexInteractiveElements} 注入的编号悬停到元素。
+     *
+     * @param index 可交互元素编号（0 起算）
+     */
+    public void hoverByIndex(int index) {
+        touch();
+        humanDelay();
+        page.hover("[data-zhiwei-idx='" + index + "']");
     }
 
     /**
