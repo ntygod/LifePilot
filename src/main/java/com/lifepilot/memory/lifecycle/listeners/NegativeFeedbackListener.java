@@ -9,6 +9,7 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -37,6 +38,7 @@ import java.time.Clock;
  * @author zsg
  * @since 2026-04-23
  */
+@ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled", havingValue = "true", matchIfMissing = true)
 @Component
 public class NegativeFeedbackListener {
 

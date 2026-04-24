@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * 孤儿 provenance 扫描器 —— 每日凌晨扫描 {@code memory_entity_provenances} 中仍
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Component;
  * @author zsg
  * @since 2026-04-23
  */
+@ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled", havingValue = "true", matchIfMissing = true)
 @Component
 public class OrphanProvenanceScanner {
 
