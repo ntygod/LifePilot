@@ -96,4 +96,27 @@ class SkillRequirementGate_门控测试 {
         var req = new SkillRequires(List.of(), List.of(), List.of(), List.of("gh.pr.create"));
         assertThat(gate.satisfies(req)).isTrue();
     }
+
+    @Test
+    void 非法bin名应立即拒绝_不fork子进程() {
+        // 使用生产构造器（走缓存 + 白名单 + ProcessBuilder 探测）
+        var gate = new SkillRequirementGate(toolRegistry);
+
+        // 含 / 的路径 —— 白名单拒绝
+        var withSlash = new SkillRequires(List.of("/bin/sh"), List.of(), List.of(), List.of());
+        assertThat(gate.satisfies(withSlash)).isFalse();
+
+        // 超过 64 字符 —— 白名单拒绝
+        String longName = "a".repeat(65);
+        var tooLong = new SkillRequires(List.of(longName), List.of(), List.of(), List.of());
+        assertThat(gate.satisfies(tooLong)).isFalse();
+
+        // 空串 —— 白名单拒绝
+        var empty = new SkillRequires(List.of(""), List.of(), List.of(), List.of());
+        assertThat(gate.satisfies(empty)).isFalse();
+
+        // 含引号等控制字符 —— 白名单拒绝
+        var withQuote = new SkillRequires(List.of("bad\"name"), List.of(), List.of(), List.of());
+        assertThat(gate.satisfies(withQuote)).isFalse();
+    }
 }

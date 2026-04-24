@@ -48,7 +48,7 @@ class InfraToolProviderTest {
         provider = new InfraToolProvider(
                 properties,
                 webSearchConfigProvider,
-                null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 workspaceResolver,
                 null, null, null);
     }

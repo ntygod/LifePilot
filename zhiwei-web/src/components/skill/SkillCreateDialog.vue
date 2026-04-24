@@ -113,8 +113,8 @@ async function submit() {
             取消
           </Button>
           <Button :disabled="submitting" @click="submit">
-            <Loader2 v-if="submitting" class="size-4 animate-spin" />
-            <Plus v-else class="size-4" />
+            <Loader2 v-if="submitting" class="h-sm w-sm animate-spin" />
+            <Plus v-else class="h-sm w-sm" />
             {{ submitting ? '创建中...' : '创建技能' }}
           </Button>
         </div>

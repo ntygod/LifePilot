@@ -191,4 +191,15 @@ class SkillInstaller_四来源测试 {
                 .hasSize(64)
                 .matches("[a-f0-9]+");
     }
+
+    @Test
+    void skillMdContent超过100000字符应拒绝构造请求() {
+        String huge = "x".repeat(SkillInstaller.InstallRequest.MAX_SKILL_MD_LENGTH + 1);
+
+        assertThatThrownBy(() -> new SkillInstaller.InstallRequest(
+                SkillSourceType.BUILTIN, null, null, huge, tempDir))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("skillMdContent")
+                .hasMessageContaining("超过");
+    }
 }

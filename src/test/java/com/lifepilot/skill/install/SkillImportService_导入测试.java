@@ -48,7 +48,7 @@ class SkillImportService_导入测试 {
                 repository);
         config = new SkillConfigProperties();
         config.setDirectory(skillsRoot.toString());
-        service = new SkillImportService(installer, config);
+        service = new SkillImportService(installer, repository, config);
     }
 
     @Test
