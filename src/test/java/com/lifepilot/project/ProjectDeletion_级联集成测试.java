@@ -61,8 +61,9 @@ class ProjectDeletion_级联集成测试 {
         memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, new ObjectMapper());
         projectRepository = new ProjectRepository(jdbcTemplate);
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, new ObjectMapper(), null);
+        // KnowledgeBaseManager = null：本测试集中于删除级联，不覆盖 KB 自动创建路径
         service = new ProjectService(projectRepository, memorySpaceRepository,
-                sessionStoreRepository, jdbcTemplate);
+                sessionStoreRepository, jdbcTemplate, null);
     }
 
     @AfterEach
