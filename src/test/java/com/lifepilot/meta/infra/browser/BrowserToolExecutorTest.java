@@ -28,7 +28,7 @@ class BrowserToolExecutorTest {
 
         @Test
         void sessionManagerNull时dispatch层统一返回降级提示() {
-            var executor = new BrowserActionDispatchExecutor(null, mockMetaProperties(), new TextSnapshotCleaner(10000));
+            var executor = new BrowserActionDispatchExecutor(null, mockMetaProperties(), new TextSnapshotCleaner(10000), mock(InteractiveElementIndexer.class));
             ToolResult result = executor.execute(buildInput(Map.of("action", "navigate", "url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();
@@ -41,7 +41,7 @@ class BrowserToolExecutorTest {
             when(manager.isAvailable()).thenReturn(false);
             when(manager.getUnavailableMessage()).thenReturn("浏览器功能未配置");
 
-            var executor = new BrowserActionDispatchExecutor(manager, mockMetaProperties(), new TextSnapshotCleaner(10000));
+            var executor = new BrowserActionDispatchExecutor(manager, mockMetaProperties(), new TextSnapshotCleaner(10000), mock(InteractiveElementIndexer.class));
             ToolResult result = executor.execute(buildInput(Map.of("action", "navigate", "url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();

@@ -29,18 +29,21 @@ public class BrowserToolProvider {
     @Nullable
     private final BrowserSessionManager browserSessionManager;
     private final MetaProperties properties;
+    private final InteractiveElementIndexer indexer;
 
     public BrowserToolProvider(@Nullable BrowserSessionManager browserSessionManager,
-                               MetaProperties properties) {
+                               MetaProperties properties,
+                               InteractiveElementIndexer indexer) {
         this.browserSessionManager = browserSessionManager;
         this.properties = properties;
+        this.indexer = indexer;
     }
 
     public List<BuiltinTool> buildBrowserTools() {
         var textSnapshotCleaner = new TextSnapshotCleaner(
                 properties.getInfra().getBrowser().getTextSnapshotMaxLength());
         var executor = new BrowserActionDispatchExecutor(
-                browserSessionManager, properties, textSnapshotCleaner);
+                browserSessionManager, properties, textSnapshotCleaner, indexer);
         return List.of(buildBrowserTool(executor));
     }
 
@@ -58,8 +61,10 @@ public class BrowserToolProvider {
                                         "type", "string",
                                         "enum", List.of("navigate", "click", "input", "scroll", "wait", "hover",
                                                 "select", "keyboard", "screenshot", "evaluate", "accessibility",
-                                                "tab", "storage", "close"),
-                                        "description", "浏览器操作类型。navigate 返回文本快照，screenshot 返回 Base64 图片")),
+                                                "tab", "storage", "snapshot", "close"),
+                                        "description", "浏览器操作类型。navigate 返回文本快照，screenshot 返回 Base64 图片，"
+                                                + "snapshot 扫描可交互元素并返回截图+编号表（elements[].{index,tag,role,text,bbox}），"
+                                                + "后续 click/input/hover 应优先用 index 而非选择器——定位更稳且抗 layout 抖动")),
                                 Map.entry("url", Map.of("type", "string",
                                         "description", "navigate 时的目标 URL；tab open 时的目标 URL")),
                                 Map.entry("selector", Map.of("type", "string",
@@ -87,6 +92,12 @@ public class BrowserToolProvider {
                                         "description", "keyboard 操作类型")),
                                 Map.entry("fullPage", Map.of("type", "boolean",
                                         "description", "screenshot 是否截取整页")),
+                                Map.entry("injectLabels", Map.of("type", "boolean",
+                                        "description", "snapshot 是否在页面叠加视觉编号标签，默认 false（headless=false 场景可开）")),
+                                Map.entry("maxElements", Map.of("type", "integer",
+                                        "description", "snapshot 最多返回元素数，默认 200；超出部分仍计入 total 和 truncated")),
+                                Map.entry("viewportOnly", Map.of("type", "boolean",
+                                        "description", "snapshot 截图是否只截 viewport，默认 true；false 则截全页")),
                                 Map.entry("expression", Map.of("type", "string",
                                         "description", "evaluate 时的 JavaScript 表达式")),
                                 Map.entry("rootSelector", Map.of("type", "string",

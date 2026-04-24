@@ -8,6 +8,7 @@ import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
+import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.meta.infra.channel.ChannelToolProvider;
 import com.lifepilot.meta.infra.code.CodeToolProvider;
@@ -79,6 +80,7 @@ public class InfraToolProvider {
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
     private final SsrfGuard ssrfGuard;
+    private final InteractiveElementIndexer interactiveElementIndexer;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -100,7 +102,8 @@ public class InfraToolProvider {
                              @Nullable String skillDirectory,
                              WorkspaceResolver workspaceResolver,
                              @Nullable AttachmentRepository attachmentRepository,
-                             SsrfGuard ssrfGuard) {
+                             SsrfGuard ssrfGuard,
+                             InteractiveElementIndexer interactiveElementIndexer) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -122,6 +125,7 @@ public class InfraToolProvider {
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
         this.ssrfGuard = ssrfGuard;
+        this.interactiveElementIndexer = interactiveElementIndexer;
     }
 
     /**
@@ -137,7 +141,7 @@ public class InfraToolProvider {
         totalTools += registerBuiltinTools(toolRegistry, webToolProvider.buildWebTools());
 
         // 浏览器自动化工具
-        var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties);
+        var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties, interactiveElementIndexer);
         totalTools += registerBuiltinTools(toolRegistry, browserToolProvider.buildBrowserTools());
 
         // 文件系统工具

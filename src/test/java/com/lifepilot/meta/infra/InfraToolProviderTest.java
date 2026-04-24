@@ -1,7 +1,9 @@
 package com.lifepilot.meta.infra;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.meta.infra.web.WebSearchConfig;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.tool.BuiltinTool;
@@ -43,7 +45,8 @@ class InfraToolProviderTest {
                 true
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
-        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, workspaceResolver, null, com.lifepilot.meta.infra.web.SsrfGuard.disabled());
+        var indexer = new InteractiveElementIndexer(new ObjectMapper());
+        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, workspaceResolver, null, com.lifepilot.meta.infra.web.SsrfGuard.disabled(), indexer);
     }
 
     @Test

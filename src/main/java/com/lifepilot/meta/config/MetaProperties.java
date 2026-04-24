@@ -296,6 +296,28 @@ public class MetaProperties {
 
             /** Chrome 用户数据目录，仅 PERSISTENT 模式使用。 */
             private String userDataDir = "";
+
+            /** 页面标号快照配置。 */
+            private Snapshot snapshot = new Snapshot();
+
+            /**
+             * 页面标号快照配置 — 控制 browser.snapshot 返回的元素数量、范围和视觉标签。
+             *
+             * @author zsg
+             * @since 2026-04-24
+             */
+            @Data
+            public static class Snapshot {
+
+                /** 单次 snapshot 最大返回元素数，默认 200。 */
+                private int maxElements = 200;
+
+                /** true 则默认只截 viewport，false 截全页，默认 true。 */
+                private boolean viewportOnly = true;
+
+                /** 是否叠加视觉编号标签（桌面 headless=false 场景建议 true），默认 false。 */
+                private boolean injectLabels = false;
+            }
         }
 
         /**

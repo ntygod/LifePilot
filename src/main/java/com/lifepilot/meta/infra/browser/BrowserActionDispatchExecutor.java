@@ -37,7 +37,8 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
 
     public BrowserActionDispatchExecutor(@Nullable BrowserSessionManager browserSessionManager,
                                          MetaProperties properties,
-                                         TextSnapshotCleaner textSnapshotCleaner) {
+                                         TextSnapshotCleaner textSnapshotCleaner,
+                                         InteractiveElementIndexer indexer) {
         this.browserSessionManager = browserSessionManager;
 
         var browserConfig = properties.getInfra().getBrowser();
@@ -58,6 +59,7 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
         var accessibilityExecutor = new BrowserAccessibilityToolExecutor(browserSessionManager, properties);
         var tabExecutor = new BrowserTabToolExecutor(browserSessionManager);
         var storageExecutor = new BrowserStorageToolExecutor(browserSessionManager);
+        var snapshotExecutor = new BrowserSnapshotToolExecutor(browserSessionManager, indexer, properties);
 
         // 注册 action
         ToolExecutionSemantics browserSessionSemantics = ToolExecutionSemantics.of(
@@ -90,6 +92,7 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
         register("accessibility", RiskLevel.LOW, browserSessionSemantics, accessibilityExecutor::execute);
         register("tab", RiskLevel.MEDIUM, browserSessionSemantics, tabExecutor::execute);
         register("storage", RiskLevel.MEDIUM, browserSessionSemantics, storageExecutor::execute);
+        register("snapshot", RiskLevel.LOW, browserSessionSemantics, snapshotExecutor::execute);
         register("close",
                 RiskLevel.LOW,
                 browserSessionSemantics,

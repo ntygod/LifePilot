@@ -28,6 +28,7 @@ import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserSessionScheduler;
+import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
@@ -137,9 +138,22 @@ public class MetaAutoConfiguration {
                                         @Nullable com.lifepilot.skill.config.SkillConfigProperties skillConfigProperties,
                                         com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
                                         @Nullable AttachmentRepository attachmentRepository,
-                                        SsrfGuard ssrfGuard) {
+                                        SsrfGuard ssrfGuard,
+                                        InteractiveElementIndexer interactiveElementIndexer) {
         String skillDir = skillConfigProperties != null ? skillConfigProperties.getDirectory() : null;
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver, attachmentRepository, ssrfGuard);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver, attachmentRepository, ssrfGuard, interactiveElementIndexer);
+    }
+
+    /**
+     * 注册 DOM 可交互元素标号扫描器。
+     *
+     * <p>启动时即加载 classpath 上的 {@code interactive-elements.js}，
+     * 供 browser.snapshot 和后续 clickByIndex 等使用。不依赖 Playwright 运行时，
+     * 即便 BrowserSessionManager 缺失也可注册（仅在真正调用时才触发 Playwright 加载）。</p>
+     */
+    @Bean
+    InteractiveElementIndexer interactiveElementIndexer(ObjectMapper objectMapper) {
+        return new InteractiveElementIndexer(objectMapper);
     }
 
     /**

@@ -878,6 +878,10 @@ lifepilot:
         acquisition-mode: LAUNCH        # LAUNCH / CDP / PERSISTENT
         cdp-url: ""                      # CDP 模式的远程调试端口 URL
         user-data-dir: "${zhiwei.data-dir}/cache/browser/profile"  # PERSISTENT 模式的用户数据目录
+        snapshot:
+          max-elements: 200
+          viewport-only: true
+          inject-labels: false
       git:
         enabled: true
         timeout-seconds: 30
