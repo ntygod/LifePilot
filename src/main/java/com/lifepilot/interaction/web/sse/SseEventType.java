@@ -128,4 +128,8 @@ public final class SseEventType {
 
     /** 后台进程初始快照事件（连接建立时推送当前所有活跃进程） */
     public static final String PROCESS_SNAPSHOT = "process-snapshot";
+
+    // Skill 模块事件类型
+    /** Skill 自动生成完成事件（SkillSynthesizer 落库 + 校验通过后广播） */
+    public static final String SKILL_GENERATED = "skill-generated";
 }
