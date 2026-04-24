@@ -93,7 +93,8 @@ class ToolSearchQuality_召回率回归测试 {
                 "tools.search", "tools.describe", "tools.list",
                 "file.read", "file.write", "file.list",
                 "web.search", "web.fetch", "shell.exec",
-                "memory", "knowledge.search"));
+                "memory", "knowledge.search",
+                "skill.load"));
 
         searchCache = new SearchResultCache(100, Duration.ofMinutes(5));
         memo = new SessionSearchMemo();
@@ -188,6 +189,12 @@ class ToolSearchQuality_召回率回归测试 {
                 List.of("infrastructure", "memory", "recall", "save"), ToolCategory.STORAGE);
         reg("knowledge.search", "Search the knowledge base with hybrid retrieval.",
                 List.of("infrastructure", "knowledge", "search", "rag"), ToolCategory.PERCEPTION);
+        reg("skill.load", "Activate one to three ZhiWei skills by name. Returns the SKILL.md body "
+                        + "(with {skill_dir}/{references_dir}/{scripts_dir} placeholders resolved) and "
+                        + "merges each skill's suggested_tools into the activated tool visibility set "
+                        + "for subsequent turns.",
+                List.of("skill", "activate", "load", "guide", "extension", "capability"),
+                ToolCategory.EXTENSION);
 
         // Tier 2 file.* —— 镜像 FileToolProvider / FileEditToolProvider
         reg("file.edit", "Precisely modify file content via line-level operations (insert/replace/delete) or text match replace.",

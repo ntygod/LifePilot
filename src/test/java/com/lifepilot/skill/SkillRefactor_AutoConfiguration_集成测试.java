@@ -1,9 +1,14 @@
 package com.lifepilot.skill;
 
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.tool.SkillLoadTool;
+import com.lifepilot.skill.tool.SkillLoadToolExecutor;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,6 +82,33 @@ class SkillRefactor_AutoConfiguration_集成测试 {
     void 新Bean_SkillRegistry_存在且类型正确() {
         assertThat(ctx.containsBean("skillRegistry")).isTrue();
         assertThat(ctx.getBean("skillRegistry")).isInstanceOf(SkillRegistry.class);
+    }
+
+    @Test
+    void 新Bean_SkillLoadToolExecutor_存在且类型正确() {
+        assertThat(ctx.containsBean("skillLoadToolExecutor")).isTrue();
+        assertThat(ctx.getBean("skillLoadToolExecutor")).isInstanceOf(SkillLoadToolExecutor.class);
+    }
+
+    @Test
+    void 新Bean_SkillLoadTool_存在且类型正确() {
+        assertThat(ctx.containsBean("skillLoadTool")).isTrue();
+        assertThat(ctx.getBean("skillLoadTool")).isInstanceOf(SkillLoadTool.class);
+    }
+
+    @Test
+    void skill_load_已暴露为BuiltinTool_Bean_且元数据符合预期() {
+        assertThat(ctx.containsBean("skillLoadBuiltin")).isTrue();
+        BuiltinTool tool = ctx.getBean("skillLoadBuiltin", BuiltinTool.class);
+
+        assertThat(tool.id()).isEqualTo("skill.load");
+        assertThat(tool.category()).isEqualTo(ToolCategory.EXTENSION);
+        assertThat(tool.riskLevel()).isEqualTo(RiskLevel.LOW);
+        assertThat(tool.idempotent()).isTrue();
+        // tags 供 BM25 召回用，必须包含至少 skill/activate/load 三个核心关键词
+        assertThat(tool.tags()).contains("skill", "activate", "load");
+        // executor 非空才能被 BuiltinToolRegistrar 正常挂到 pipeline
+        assertThat(tool.executor()).isNotNull();
     }
 
     @Test

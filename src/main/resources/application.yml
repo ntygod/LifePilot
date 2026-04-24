@@ -198,6 +198,7 @@ lifepilot:
         - shell.exec
         - memory
         - knowledge.search
+        - skill.load
       promotion:
         enabled: true
         window-days: 30

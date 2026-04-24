@@ -15,6 +15,9 @@ import com.lifepilot.skill.registry.SkillDefinitionValidator;
 import com.lifepilot.skill.registry.SkillEmbeddingCacheRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
+import com.lifepilot.skill.tool.SkillLoadTool;
+import com.lifepilot.skill.tool.SkillLoadToolExecutor;
+import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -119,6 +122,39 @@ public class SkillAutoConfiguration {
                                                    SkillRegistry skillRegistry) {
         log.info("Skill 系统: 注册 SkillDisclosureTool（L1 搜索 + L2 加载）");
         return new SkillDisclosureTool(toolRegistry, skillActivator, skillRegistry);
+    }
+
+    // ==================== skill.load BuiltinTool（统一激活入口） ====================
+
+    /**
+     * {@code skill.load} 执行器 —— 负责参数校验 + 委托 SkillActivator 完成激活。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public SkillLoadToolExecutor skillLoadToolExecutor(SkillActivator skillActivator,
+                                                       SkillInstallationRepository installationRepository) {
+        log.info("Skill 系统: 注册 SkillLoadToolExecutor");
+        return new SkillLoadToolExecutor(skillActivator, installationRepository);
+    }
+
+    /**
+     * {@code skill.load} BuiltinTool 定义载体（持有 executor，提供工具元数据）。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public SkillLoadTool skillLoadTool(SkillLoadToolExecutor skillLoadToolExecutor) {
+        log.info("Skill 系统: 注册 SkillLoadTool");
+        return new SkillLoadTool(skillLoadToolExecutor);
+    }
+
+    /**
+     * 将 {@code skill.load} 暴露为 {@link BuiltinTool} Bean —— 由
+     * {@link com.lifepilot.tool.registry.BuiltinToolRegistrar} 在 ApplicationReady 时
+     * 自动校验并注册到 {@link DynamicToolRegistry}，进入 Tier 1 pinned 白名单后常驻 prompt。
+     */
+    @Bean
+    public BuiltinTool skillLoadBuiltin(SkillLoadTool skillLoadTool) {
+        return skillLoadTool.tool();
     }
 
     // ==================== Markdown 解析与热加载 ====================
