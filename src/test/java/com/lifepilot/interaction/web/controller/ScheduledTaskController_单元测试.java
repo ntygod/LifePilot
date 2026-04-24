@@ -44,6 +44,9 @@ class ScheduledTaskController_单元测试 {
     @Mock
     CronTaskRepository repository;
 
+    @Mock
+    com.lifepilot.agent.task.CronScheduler scheduler;
+
     @InjectMocks
     ScheduledTaskController controller;
 
@@ -178,11 +181,34 @@ class ScheduledTaskController_单元测试 {
         assertNull(resp.data());
     }
 
+    // ---- POST /{id}/run 立即运行 ----
+
+    @Test
+    void 立即运行_任务存在_派发到scheduler并返回200() {
+        CronTaskEntry task = 构造任务("t-run", null);
+        when(repository.findById("t-run")).thenReturn(Optional.of(task));
+
+        ApiResponse<Void> resp = controller.runNow("t-run");
+
+        verify(scheduler).runOnce(task);
+        assertEquals(200, resp.code());
+        assertNull(resp.data());
+    }
+
+    @Test
+    void 立即运行_任务不存在_抛404() {
+        when(repository.findById("nope")).thenReturn(Optional.empty());
+
+        var ex = assertThrows(ResponseStatusException.class, () -> controller.runNow("nope"));
+        assertEquals(404, ex.getStatusCode().value());
+    }
+
     @Test
     void 查询日志_默认limit_5() {
         when(repository.findLogsByTaskId(eq("t1"), eq(5))).thenReturn(List.of(
                 new CronTaskLog("log-1", "t1", Instant.now().toString(),
-                        "success", 1500, 120, "执行完成", Instant.now().toString())
+                        "success", 1500, 120, "执行完成", Instant.now().toString(),
+                        CronTaskLog.TRIGGER_CRON)
         ));
 
         ApiResponse<List<ScheduledTaskLogResponse>> resp = controller.getLogs("t1", 5);
@@ -225,9 +251,11 @@ class ScheduledTaskController_单元测试 {
     void 按日期查询日志_合法日期_代理到repository() {
         when(repository.findLogsByDate(eq("2026-04-24"))).thenReturn(List.of(
                 new CronTaskLog("log-a", "t1", "2026-04-24T08:00:00Z",
-                        "success", 1500, 120, "执行完成", "2026-04-24T08:00:00Z"),
+                        "success", 1500, 120, "执行完成", "2026-04-24T08:00:00Z",
+                        CronTaskLog.TRIGGER_CRON),
                 new CronTaskLog("log-b", "t2", "2026-04-24T09:00:00Z",
-                        "failed", 800, 50, null, "2026-04-24T09:00:00Z")
+                        "failed", 800, 50, null, "2026-04-24T09:00:00Z",
+                        CronTaskLog.TRIGGER_MANUAL)
         ));
 
         ApiResponse<List<ScheduledTaskLogResponse>> resp = controller.getLogsByDate("2026-04-24");

@@ -43,14 +43,15 @@ class CronTaskRepository_单元测试 {
                 )""");
         jdbc.execute("""
                 CREATE TABLE cron_task_logs (
-                    id          TEXT PRIMARY KEY,
-                    task_id     TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
-                    executed_at TEXT NOT NULL,
-                    status      TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    tokens_used INTEGER NOT NULL DEFAULT 0,
-                    summary     TEXT,
-                    created_at  TEXT NOT NULL
+                    id             TEXT PRIMARY KEY,
+                    task_id        TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
+                    executed_at    TEXT NOT NULL,
+                    status         TEXT NOT NULL,
+                    duration_ms    INTEGER NOT NULL,
+                    tokens_used    INTEGER NOT NULL DEFAULT 0,
+                    summary        TEXT,
+                    created_at     TEXT NOT NULL,
+                    trigger_source TEXT NOT NULL DEFAULT 'cron'
                 )""");
         repository = new CronTaskRepository(jdbc);
     }
@@ -66,7 +67,7 @@ class CronTaskRepository_单元测试 {
     private CronTaskLog 创建日志(String taskId) {
         return new CronTaskLog(UUID.randomUUID().toString(), taskId,
                 Instant.now().toString(), "success", 1500, 100,
-                "执行完成", Instant.now().toString());
+                "执行完成", Instant.now().toString(), CronTaskLog.TRIGGER_CRON);
     }
 
     // ---- save + findById ----
@@ -172,17 +173,17 @@ class CronTaskRepository_单元测试 {
                 "log-1", "task-logs",
                 Instant.parse("2026-04-24T08:00:00Z").toString(),
                 "success", 100, 10, "第一次",
-                Instant.now().toString()));
+                Instant.now().toString(), CronTaskLog.TRIGGER_CRON));
         repository.saveLog(new CronTaskLog(
                 "log-2", "task-logs",
                 Instant.parse("2026-04-24T09:00:00Z").toString(),
                 "failed", 200, 20, "第二次",
-                Instant.now().toString()));
+                Instant.now().toString(), CronTaskLog.TRIGGER_CRON));
         repository.saveLog(new CronTaskLog(
                 "log-3", "task-logs",
                 Instant.parse("2026-04-24T10:00:00Z").toString(),
                 "success", 300, 30, "第三次",
-                Instant.now().toString()));
+                Instant.now().toString(), CronTaskLog.TRIGGER_MANUAL));
 
         var recent = repository.findLogsByTaskId("task-logs", 2);
 

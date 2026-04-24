@@ -55,6 +55,8 @@ export interface ScheduledTaskLogDto {
   durationMs: number
   tokensUsed: number
   summary: string | null
+  /** 触发来源：'cron' 定时器 / 'manual' 用户点「立即运行」API 触发 */
+  triggerSource: 'cron' | 'manual'
 }
 
 /**
@@ -144,6 +146,20 @@ export async function updateScheduledTask(
 export async function deleteScheduledTask(id: string): Promise<void> {
   await request<void>(`/scheduled-tasks/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  })
+}
+
+/**
+ * 立即执行一次指定任务（跳过 cron 等待）。
+ *
+ * <p>后端异步派发，API 立即返回；日志会以 {@code triggerSource='manual'} 入库，
+ * 前端需要在调用后刷新日志列表才能看到新一条记录。</p>
+ *
+ * @param id 任务 ID
+ */
+export async function runScheduledTaskNow(id: string): Promise<void> {
+  await request<void>(`/scheduled-tasks/${encodeURIComponent(id)}/run`, {
+    method: 'POST',
   })
 }
 

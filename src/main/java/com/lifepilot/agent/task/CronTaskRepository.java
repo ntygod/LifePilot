@@ -43,7 +43,8 @@ public class CronTaskRepository {
             rs.getLong("duration_ms"),
             rs.getInt("tokens_used"),
             rs.getString("summary"),
-            rs.getString("created_at")
+            rs.getString("created_at"),
+            rs.getString("trigger_source")
     );
 
     public CronTaskRepository(JdbcTemplate jdbc) {
@@ -131,11 +132,12 @@ public class CronTaskRepository {
     /** 保存执行日志。 */
     public void saveLog(CronTaskLog logEntry) {
         jdbc.update("""
-                INSERT INTO cron_task_logs (id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cron_task_logs (id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at, trigger_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 logEntry.id(), logEntry.taskId(), logEntry.executedAt(), logEntry.status(),
-                logEntry.durationMs(), logEntry.tokensUsed(), logEntry.summary(), logEntry.createdAt());
+                logEntry.durationMs(), logEntry.tokensUsed(), logEntry.summary(), logEntry.createdAt(),
+                logEntry.triggerSource());
     }
 
     /** 删除指定任务的所有执行日志。 */
@@ -157,7 +159,7 @@ public class CronTaskRepository {
         if (limit <= 0) return List.of();
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at
+                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at, trigger_source
                 FROM cron_task_logs
                 WHERE task_id = ?
                 ORDER BY executed_at DESC
@@ -181,7 +183,7 @@ public class CronTaskRepository {
     public List<CronTaskLog> findLogsByDate(String date) {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at
+                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at, trigger_source
                 FROM cron_task_logs
                 WHERE DATE(executed_at) = ?
                 ORDER BY executed_at DESC""",

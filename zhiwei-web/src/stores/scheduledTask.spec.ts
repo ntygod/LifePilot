@@ -7,6 +7,7 @@ vi.mock('@/api/scheduledTask', () => ({
   updateScheduledTask: vi.fn(),
   deleteScheduledTask: vi.fn(),
   listTodayScheduledTaskLogs: vi.fn(),
+  runScheduledTaskNow: vi.fn(),
 }))
 
 import * as scheduledTaskApi from '@/api/scheduledTask'
@@ -165,6 +166,7 @@ describe('useScheduledTaskStore', () => {
         durationMs: 1000,
         tokensUsed: 50,
         summary: '完成',
+        triggerSource: 'cron',
       },
     ])
 
@@ -202,5 +204,23 @@ describe('useScheduledTaskStore', () => {
     expect(logs).toEqual([])
     expect(store.todayLogsError).toBe('日期解析失败')
     expect(store.todayLogsLoading).toBe(false)
+  })
+
+  it('runNow 代理到 api 调用', async () => {
+    apiMock.runScheduledTaskNow.mockResolvedValueOnce(undefined)
+    const store = useScheduledTaskStore()
+
+    await store.runNow('t1')
+
+    expect(apiMock.runScheduledTaskNow).toHaveBeenCalledWith('t1')
+    expect(store.error).toBeNull()
+  })
+
+  it('runNow 失败时写入 error 并 rethrow（视图层需要提示用户）', async () => {
+    apiMock.runScheduledTaskNow.mockRejectedValueOnce({ code: 404, message: '任务不存在' })
+    const store = useScheduledTaskStore()
+
+    await expect(store.runNow('nope')).rejects.toMatchObject({ code: 404 })
+    expect(store.error).toBe('任务不存在')
   })
 })

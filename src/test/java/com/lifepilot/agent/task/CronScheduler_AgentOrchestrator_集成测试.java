@@ -52,7 +52,8 @@ class CronScheduler_AgentOrchestrator_集成测试 {
                 CREATE TABLE cron_task_logs (
                     id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
                     executed_at TEXT NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL,
-                    tokens_used INTEGER NOT NULL DEFAULT 0, summary TEXT, created_at TEXT NOT NULL
+                    tokens_used INTEGER NOT NULL DEFAULT 0, summary TEXT, created_at TEXT NOT NULL,
+                    trigger_source TEXT NOT NULL DEFAULT 'cron'
                 )""");
         repository = new CronTaskRepository(jdbc);
 
@@ -113,7 +114,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
         when(agentOrchestrator.run(any(AgentRequest.class))).thenReturn(response);
 
         // 直接调用 executeTask
-        cronScheduler.executeTask(task);
+        cronScheduler.executeTask(task, CronTaskLog.TRIGGER_CRON);
 
         // 验证 AgentOrchestrator 被调用
         verify(agentOrchestrator, times(1)).run(any(AgentRequest.class));
@@ -133,7 +134,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
                 50, 1, null, null, null, null, null, null);
         when(agentOrchestrator.run(any(AgentRequest.class))).thenReturn(response);
 
-        cronScheduler.executeTask(task);
+        cronScheduler.executeTask(task, CronTaskLog.TRIGGER_CRON);
 
         verify(agentOrchestrator, times(1)).run(any());
         verify(notificationService, never()).send(any());
@@ -149,7 +150,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
         when(agentOrchestrator.run(any(AgentRequest.class)))
                 .thenThrow(new RuntimeException("模拟执行异常"));
 
-        cronScheduler.executeTask(task);
+        cronScheduler.executeTask(task, CronTaskLog.TRIGGER_CRON);
 
         // 不应抛出异常（内部捕获）
         verify(agentOrchestrator, times(1)).run(any());

@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskEntry;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.interaction.web.model.ApiResponse;
@@ -14,6 +15,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -56,9 +58,11 @@ public class ScheduledTaskController {
     private static final int MAX_LOG_LIMIT = 50;
 
     private final CronTaskRepository repository;
+    private final CronScheduler scheduler;
 
-    public ScheduledTaskController(CronTaskRepository repository) {
+    public ScheduledTaskController(CronTaskRepository repository, CronScheduler scheduler) {
         this.repository = repository;
+        this.scheduler = scheduler;
     }
 
     /**
@@ -131,6 +135,34 @@ public class ScheduledTaskController {
     public ApiResponse<Void> delete(@PathVariable String id) {
         repository.deleteById(id);
         log.info("删除定时任务: id={}", id);
+        return ApiResponse.ok(null);
+    }
+
+    /**
+     * 立即异步执行一次任务（跳过 cron 等待）。
+     *
+     * <p>API 立即返回，{@link CronScheduler#runOnce} 内部把执行派发到调度线程池；
+     * 日志会以 {@code trigger_source='manual'} 入库，供前端打 "手动" tag 与定时触发区分。</p>
+     *
+     * <p>状态码语义：
+     * <ul>
+     *   <li>200 —— 任务存在、已成功派发（不等待执行结果）</li>
+     *   <li>404 —— 任务不存在（与 delete 幂等不同，run 需要明确反馈）</li>
+     * </ul></p>
+     *
+     * <p>并发策略：不做互斥。用户若连点多次会触发多次并行执行，各自独立写 log；
+     * 简单直观，避免引入额外去重窗口；真并发冲突罕见，后续如果需要再加。</p>
+     *
+     * @param id 任务 id
+     * @return 空数据的成功响应；任务不存在时 404
+     */
+    @PostMapping("/{id}/run")
+    public ApiResponse<Void> runNow(@PathVariable String id) {
+        CronTaskEntry task = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "定时任务不存在：" + id));
+        scheduler.runOnce(task);
+        log.info("定时任务手动触发: id={}, name={}", task.id(), task.name());
         return ApiResponse.ok(null);
     }
 

@@ -128,6 +128,20 @@ export const useScheduledTaskStore = defineStore('scheduledTask', () => {
     return updateTask(id, { status: 'active' })
   }
 
+  /**
+   * 立即执行一次任务（跳过 cron 等待）。后端异步派发，API 立即返回；
+   * 调用方需自行刷新 todayLogs / 任务详情日志才能看到新写入的 `manual` 触发日志。
+   */
+  async function runNow(id: string): Promise<void> {
+    error.value = null
+    try {
+      await scheduledTaskApi.runScheduledTaskNow(id)
+    } catch (e: any) {
+      error.value = e?.message ?? '立即运行失败'
+      throw e
+    }
+  }
+
   return {
     tasks,
     loading,
@@ -141,5 +155,6 @@ export const useScheduledTaskStore = defineStore('scheduledTask', () => {
     deleteTask,
     pauseTask,
     resumeTask,
+    runNow,
   }
 })

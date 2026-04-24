@@ -43,14 +43,15 @@ class CronTaskRepository_集成测试 {
                 )""");
         jdbc.execute("""
                 CREATE TABLE cron_task_logs (
-                    id          TEXT PRIMARY KEY,
-                    task_id     TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
-                    executed_at TEXT NOT NULL,
-                    status      TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    tokens_used INTEGER NOT NULL DEFAULT 0,
-                    summary     TEXT,
-                    created_at  TEXT NOT NULL
+                    id             TEXT PRIMARY KEY,
+                    task_id        TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
+                    executed_at    TEXT NOT NULL,
+                    status         TEXT NOT NULL,
+                    duration_ms    INTEGER NOT NULL,
+                    tokens_used    INTEGER NOT NULL DEFAULT 0,
+                    summary        TEXT,
+                    created_at     TEXT NOT NULL,
+                    trigger_source TEXT NOT NULL DEFAULT 'cron'
                 )""");
         repository = new CronTaskRepository(jdbc);
     }
@@ -101,7 +102,8 @@ class CronTaskRepository_集成测试 {
             repository.saveLog(new CronTaskLog(
                     UUID.randomUUID().toString(), task.id(),
                     Instant.now().toString(), "success", 1000 + i, 50,
-                    "执行摘要 " + i, Instant.now().toString()
+                    "执行摘要 " + i, Instant.now().toString(),
+                    CronTaskLog.TRIGGER_CRON
             ));
         }
 
@@ -132,9 +134,11 @@ class CronTaskRepository_集成测试 {
         repository.save(task2);
 
         repository.saveLog(new CronTaskLog(UUID.randomUUID().toString(), task1.id(),
-                Instant.now().toString(), "success", 1000, 50, "摘要", Instant.now().toString()));
+                Instant.now().toString(), "success", 1000, 50, "摘要", Instant.now().toString(),
+                CronTaskLog.TRIGGER_CRON));
         repository.saveLog(new CronTaskLog(UUID.randomUUID().toString(), task2.id(),
-                Instant.now().toString(), "success", 2000, 80, "摘要", Instant.now().toString()));
+                Instant.now().toString(), "success", 2000, 80, "摘要", Instant.now().toString(),
+                CronTaskLog.TRIGGER_CRON));
 
         repository.deleteLogsByTaskId(task1.id());
 
@@ -153,13 +157,13 @@ class CronTaskRepository_集成测试 {
         // 2026-04-24 两条（跨两个任务），2026-04-23 一条（应被过滤）
         repository.saveLog(new CronTaskLog(UUID.randomUUID().toString(), task1.id(),
                 "2026-04-24T08:00:00Z", "success", 1000, 50, "摘要1",
-                Instant.now().toString()));
+                Instant.now().toString(), CronTaskLog.TRIGGER_CRON));
         repository.saveLog(new CronTaskLog(UUID.randomUUID().toString(), task2.id(),
                 "2026-04-24T09:00:00Z", "failed", 2000, 80, "摘要2",
-                Instant.now().toString()));
+                Instant.now().toString(), CronTaskLog.TRIGGER_MANUAL));
         repository.saveLog(new CronTaskLog(UUID.randomUUID().toString(), task1.id(),
                 "2026-04-23T08:00:00Z", "success", 1500, 60, "前一天",
-                Instant.now().toString()));
+                Instant.now().toString(), CronTaskLog.TRIGGER_CRON));
 
         var logs = repository.findLogsByDate("2026-04-24");
 

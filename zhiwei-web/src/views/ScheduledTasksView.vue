@@ -175,15 +175,21 @@ const selectedTask = computed<ScheduledTaskDto | null>(() => {
 async function selectTask(taskId: string) {
   selectedTaskId.value = taskId
   if (!logsByTask[taskId] && !loadingLogs[taskId]) {
-    loadingLogs[taskId] = true
-    logErrors[taskId] = null
-    try {
-      logsByTask[taskId] = await listScheduledTaskLogs(taskId, 5)
-    } catch (e: any) {
-      logErrors[taskId] = e?.message ?? '加载执行历史失败'
-    } finally {
-      loadingLogs[taskId] = false
-    }
+    await loadLogs(taskId)
+  }
+}
+
+/** 强制刷新指定任务的详情日志（供"立即运行"后触发最新记录显示）。 */
+async function loadLogs(taskId: string) {
+  if (loadingLogs[taskId]) return
+  loadingLogs[taskId] = true
+  logErrors[taskId] = null
+  try {
+    logsByTask[taskId] = await listScheduledTaskLogs(taskId, 5)
+  } catch (e: any) {
+    logErrors[taskId] = e?.message ?? '加载执行历史失败'
+  } finally {
+    loadingLogs[taskId] = false
   }
 }
 
@@ -224,6 +230,25 @@ async function deleteTask(taskId: string, taskName: string) {
   if (!window.confirm(`确认删除定时任务「${taskName}」？此操作不可撤销。`)) return
   await store.deleteTask(taskId)
   if (selectedTaskId.value === taskId) selectedTaskId.value = null
+}
+
+/**
+ * 立即执行一次任务：调 POST /run → 后端异步派发 → 提示用户 → 延迟刷新今日日志。
+ *
+ * 延迟 800ms 刷新一次，大多数 Agent 执行数秒起，最早也不会在 1s 内落日志；
+ * 首次刷新只是让状态面板"表现出反馈"，真实日志到位前用户可手动再点刷新或看进度。
+ */
+async function runNow(taskId: string, taskName: string) {
+  try {
+    await store.runNow(taskId)
+    showPlaceholder(`已触发「${taskName}」，执行中...`)
+    setTimeout(() => {
+      void store.fetchTodayLogs()
+      if (selectedTaskId.value === taskId) void loadLogs(taskId)
+    }, 800)
+  } catch (err: any) {
+    showPlaceholder(err?.message ?? '立即运行失败')
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -883,7 +908,10 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" class="w-36">
-                        <DropdownMenuItem @click.stop="showPlaceholder('立即运行即将推出')">
+                        <DropdownMenuItem
+                          :data-testid="`run-now-${task.id}`"
+                          @click.stop="runNow(task.id, task.name)"
+                        >
                           <Sparkles class="size-xs" />
                           立即运行
                         </DropdownMenuItem>
@@ -1137,6 +1165,11 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                       :class="`sched-dot--${log.status === 'success' ? 'success' : 'failed'}`"
                     />
                     {{ formatExecutedAtTime(log.executedAt) }}
+                    <span
+                      v-if="log.triggerSource === 'manual'"
+                      class="sched-manual-tag font-mono"
+                      title="手动触发（立即运行）"
+                    >手动</span>
                   </span>
                   <span class="sched-text-small font-mono text-muted-foreground">
                     {{ logStatusLabel(log.status) }} · {{ log.durationMs }} ms
@@ -1203,7 +1236,8 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
               <button
                 type="button"
                 class="sched-btn sched-btn--ghost flex-1 justify-center"
-                @click="showPlaceholder('立即运行即将推出')"
+                :data-testid="`run-now-detail-${selectedTask.id}`"
+                @click="runNow(selectedTask.id, selectedTask.name)"
               >
                 <Sparkles class="size-xs" />
                 立即运行
@@ -1767,6 +1801,19 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
 }
 
 .sched-tool--dim { opacity: 0.6; }
+
+/* 手动触发（立即运行）日志的小 tag —— 区别于 cron 定时触发 */
+.sched-manual-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  padding: 0 5px;
+  background: hsl(from var(--primary) h s l / 0.12);
+  color: var(--primary);
+  border: 1px solid hsl(from var(--primary) h s l / 0.3);
+  border-radius: 4px;
+  margin-left: 2px;
+}
 
 /* 卡片底部操作区 —— 始终可见，不再遮挡右上角状态 badge */
 .sched-card__actions {

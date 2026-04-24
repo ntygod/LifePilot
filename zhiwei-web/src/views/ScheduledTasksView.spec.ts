@@ -250,6 +250,7 @@ describe('ScheduledTasksView', () => {
         durationMs: 1234,
         tokensUsed: 100,
         summary: '完成',
+        triggerSource: 'cron',
       },
     ])
     const wrapper = mountView()
