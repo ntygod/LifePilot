@@ -52,18 +52,17 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  * <ol>
  *   <li><b>path-A</b>（E2E 路径）：走 {@link PreferenceConsolidator#consolidate}
  *       把 L3 PREFERENCE 巩固到 L4 preference_rules。
- *       <b>当前项目状态</b>：{@code PreferenceConsolidator.consolidate()} 的
- *       {@code savePreference} 路径不填 {@code source_entity_id}（PreferenceRule record
- *       无该字段，INSERT OR REPLACE 也不写该列）。
- *       <b>后果</b>：{@code PreferenceRuleRepository.findRuleIdsBySourceEntity}
- *       返回空 → 使用 {@link Assumptions#assumeTrue} 跳过 path-A 的下游断言，
- *       诚实记录"当前巩固链路尚未完整支持 S6"，留给下一阶段修 PreferenceRule record
- *       + savePreference SQL 时接起。</li>
+ *       <b>当前项目状态</b>：漂移 #4 收尾 hotfix 后，
+ *       {@link PreferenceConsolidator#consolidate()} 新建规则已填
+ *       {@code source_entity_id = L3 PREFERENCE 实体 id}，整条 L3→L4 级联闭环已通。
+ *       {@link Assumptions#assumeTrue} 现在作为"巩固链路回退哨兵"保留 —— 如果后续
+ *       某次重构又把 source_entity_id 写入漏掉，测试仍然会优雅降级为 skip
+ *       （配合 path-B 的回归覆盖兜底）。</li>
  *   <li><b>path-B</b>（单元覆盖）：直接向 {@code preference_rules} 表插入带
  *       {@code source_entity_id} 的规则，然后手动触发 {@link L4SyncListener#onLifecycleChanged}
  *       事件（模拟 {@code SemanticMemory.updateLifecycleState} 提交事务后的 AFTER_COMMIT
  *       回调），断言 {@code deactivated_reason} 被写入。此路径验证 V15 schema 与
- *       L4SyncListener 的失活 SQL 本身可用，为未来 path-A 联通后留下稳定回归。</li>
+ *       L4SyncListener 的失活 SQL 本身可用，与 path-A 互为回归底座。</li>
  * </ol></p>
  *
  * <p><b>降级说明</b>：
@@ -153,12 +152,12 @@ class L3归档时L4规则同步失效_场景测试 {
 
         // 3. 查 L4 规则是否带 source_entity_id
         List<String> ruleIds = ruleRepo.findRuleIdsBySourceEntity(prefId);
-        // 当前巩固链路（ProceduralMemory.savePreference）未写 source_entity_id 列 →
-        // 此断言必然失败；诚实 assumeTrue 跳过下游联动断言，等 PreferenceRule record
-        // 扩 sourceEntityId 字段 + savePreference SQL 接上该列后再激活。
+        // 漂移 #4 hotfix 后正常路径：PreferenceConsolidator 已写 source_entity_id。
+        // assumeTrue 作为"后续重构回退哨兵"保留 —— 如果该字段写入再度漏掉，
+        // 测试会优雅 skip 而非死失败，留给 path-B 兜底。
         Assumptions.assumeTrue(!ruleIds.isEmpty(),
-                "[path-A skipped] PreferenceConsolidator 巩固链路当前未把 source_entity_id 写入 preference_rules; "
-                        + "跳过 L3→L4 联动断言（留待接通后回归）");
+                "[path-A skipped] PreferenceConsolidator 巩固链路未把 source_entity_id 写入 preference_rules; "
+                        + "本次漂移 #4 hotfix 后应当命中，跳过仅作兜底");
 
         // 4. （一旦 path-A 通了）L3 用户改口"不再素食" → PREFERENCE 转 CANCELLED
         semanticMemory.updateLifecycleState(

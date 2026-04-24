@@ -38,7 +38,7 @@ class ProceduralMemoryTest {
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         jdbcTemplate = new JdbcTemplate(dataSource);
 
-        // 创建 procedure_templates 表（与 V20 迁移脚本一致）
+        // 创建 procedure_templates 表（V1 + V15 新增 source_entity_id / deactivated_reason 列）
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS procedure_templates (
                     template_id         TEXT PRIMARY KEY,
@@ -52,10 +52,12 @@ class ProceduralMemoryTest {
                     last_used_at        TEXT,
                     source_trace_ids_json TEXT NOT NULL DEFAULT '[]',
                     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-                    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+                    updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                    source_entity_id    TEXT,
+                    deactivated_reason  TEXT
                 )""");
 
-        // 创建 preference_rules 表（与 V20 迁移脚本一致）
+        // 创建 preference_rules 表（V1 + V15 新增 source_entity_id / deactivated_reason 列）
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS preference_rules (
                     rule_id             TEXT PRIMARY KEY,
@@ -67,6 +69,8 @@ class ProceduralMemoryTest {
                     observation_count   INTEGER NOT NULL DEFAULT 1,
                     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
                     updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                    source_entity_id    TEXT,
+                    deactivated_reason  TEXT,
                     UNIQUE(category, key)
                 )""");
 
