@@ -2,7 +2,7 @@
 id: browser-automation
 name: "浏览器自动化"
 description: "控制浏览器完成网页交互、信息抓取和自动化操作。用户说「打开网页」「帮我爬取」「截个图」「填表单」「登录这个网站」「自动化操作网页」「抓取数据」时使用。静态页面优先用 web.fetch，不需要浏览器。"
-version: "3.0.0"
+version: "3.1.0"
 suggested-tools:
   - browser
   - web.fetch
@@ -78,15 +78,21 @@ suggested-tools:
 - 连续 2 次 index 失败 → 回落到 selector
 - selector 也 2 次失败 → 换策略（browser → web.fetch → web.search）
 
-### 登录墙识别（触发条件）
+### 登录墙识别与人机接管
 
-满足任一：
+**客观触发条件**（任一满足即调 `requestHumanTakeover`）：
 - navigate 后 URL 含 `login` / `signin` / `auth` 关键词
-- snapshot elements 中存在 `type=password` input
-- 截图明显是登录页 / 验证码
-- 连续 2 次 snapshot 的 elements 完全相同且无进展
+- snapshot elements 中存在 `type=password` 的 input
+- 截图明显是登录页 / 验证码 / 人机验证
+- 连续 2 次 snapshot 的 elements 完全相同且 Agent 无法推进（说明操作没生效）
 
-**Phase 2 引入 `requestHumanTakeover` 后应直接调用该 action 让用户接管**。当前（Phase 1）遇此场景应提示用户切 CDP 模式预先登录。
+**调用方式**：`browser(action="requestHumanTakeover", sessionId="...", reason="...")`
+
+- `reason` 要简短、用户语言（如"需要扫码登录"、"请输入短信验证码"、"触发了人机验证"），具体措辞 Agent 根据观察自行组织
+- 当前回合自动挂起，前端弹窗提示用户在浏览器内完成操作
+- 用户点"继续"后 Agent 自动恢复，从下一步继续
+
+**不要**用于：页面加载慢、元素暂时未出现 — 这些用 `wait`。
 
 ## 会话模式
 
@@ -139,4 +145,5 @@ suggested-tools:
 | `accessibility` | 获取无障碍树 | `rootSelector`, `maxDepth` |
 | `tab` | 标签页管理 | `tabAction`, `tabId`, `url` |
 | `storage` | Cookie/localStorage | `target`, `storageAction` |
+| `requestHumanTakeover` | 暂停让用户接管（验证码/登录/扫码） | `reason` |
 | `close` | 关闭会话 | `sessionId` |
