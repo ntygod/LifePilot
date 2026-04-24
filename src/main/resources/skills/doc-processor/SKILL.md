@@ -1,13 +1,23 @@
 ---
-id: doc-processor
-name: "文档处理"
-description: "文档格式转换、内容提取、批量处理。用户说「转换成 PDF」「提取 PDF 文本」「Word 转 Markdown」「合并文档」「批量转换」「处理 Excel」「生成 Word」时使用。不适用于纯文本/Markdown 编辑（直接用 file.write）或内容创作（用 content-creator）。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - code.execute
-  - file.read
-  - file.write
+name: doc-processor
+description: 当用户要做文档格式转换（Markdown ↔ HTML ↔ DOCX ↔ PDF）、PDF 文本提取、Excel 读写、Word 程序化生成、多文档合并或批量转换时使用。关键词：转 PDF、提取 PDF 文本、Word 转 Markdown、合并文档、批量转换、处理 Excel、生成 Word、pandoc。纯文本/Markdown 编辑直接用 file.write，内容创作用 content-creator，数据分析用 data-analyst。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: content-creation
+    priority: normal
+    tags:
+      - document
+      - pandoc
+      - pdf
+      - docx
+      - excel
+      - conversion
+    suggested_tools:
+      - shell.exec
+      - code.execute
+      - file.read
+      - file.write
 ---
 
 # 文档处理指南
@@ -30,7 +40,9 @@ suggested-tools:
 - 数据分析 → 用 data-analyst
 - 在线文档操作 → 用对应集成 Skill
 
-## 工具选择决策
+## 工作流
+
+### 工具选择决策
 
 ```
 需要什么操作？
@@ -42,11 +54,7 @@ suggested-tools:
 └── 批量处理 → shell 脚本循环
 ```
 
-## 工作流
-
-### 1. 确认工具可用性
-
-首次使用时检查工具是否安装：
+### 确认工具可用性
 
 ```bash
 shell.exec(command="pandoc --version")
@@ -58,46 +66,24 @@ shell.exec(command="pandoc --version")
 - wkhtmltopdf：`choco install wkhtmltopdf`
 - Python 库：`pip install openpyxl python-docx`
 
-### 2. 格式转换
+### 格式转换
 
-**Markdown → HTML：**
 ```bash
 shell.exec(command="pandoc input.md -o output.html --standalone")
-```
-
-**Markdown → DOCX：**
-```bash
 shell.exec(command="pandoc input.md -o output.docx")
-```
-
-**Markdown → PDF：**
-```bash
 shell.exec(command="pandoc input.md -o output.pdf --pdf-engine=wkhtmltopdf")
-```
-
-**HTML → Markdown：**
-```bash
 shell.exec(command="pandoc input.html -t markdown -o output.md")
-```
-
-**多文档合并：**
-```bash
 shell.exec(command="pandoc part1.md part2.md part3.md -o combined.pdf")
 ```
 
-### 3. PDF 处理
+### PDF 处理
 
-**文本提取：**
 ```bash
 shell.exec(command="pdftotext input.pdf output.txt")
-```
-
-**PDF 元数据：**
-```bash
 shell.exec(command="pdfinfo input.pdf")
 ```
 
-### 4. Excel 读写
+### Excel 读写
 
 ```python
 code.execute(language="python", code="
@@ -109,7 +95,7 @@ for row in ws.iter_rows(values_only=True):
 ")
 ```
 
-### 5. Word 程序化生成
+### Word 程序化生成
 
 ```python
 code.execute(language="python", code="
@@ -121,13 +107,13 @@ doc.save('output.docx')
 ")
 ```
 
-### 6. 批量转换
+### 批量转换
 
 ```bash
 shell.exec(command="for f in docs/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" --standalone; done")
 ```
 
-### 7. 验证结果
+### 验证结果
 
 ```
 file.read(path="output.html", maxChars=5000)
