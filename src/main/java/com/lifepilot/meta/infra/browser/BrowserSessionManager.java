@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra.browser;
 
 import com.lifepilot.meta.config.MetaProperties;
 import jakarta.annotation.Nullable;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -302,7 +303,11 @@ public class BrowserSessionManager {
 
     /**
      * 清理所有资源 — 关闭所有 Page、Browser 和 Playwright 实例。
+     *
+     * <p>通过 {@link PreDestroy} 注解在 Spring 容器关闭时自动触发，
+     * 保证 JVM 正常退出时 Chromium 进程和持久 profile 得到优雅释放。</p>
      */
+    @PreDestroy
     public synchronized void close() {
         // 关闭所有 Page
         sessions.forEach(this::closeSessionPages);

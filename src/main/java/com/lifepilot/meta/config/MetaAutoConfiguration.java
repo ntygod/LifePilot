@@ -27,6 +27,7 @@ import com.lifepilot.meta.infra.memory.MemoryToolProvider;
 import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
+import com.lifepilot.meta.infra.browser.BrowserSessionScheduler;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
@@ -134,6 +135,18 @@ public class MetaAutoConfiguration {
     @ConditionalOnClass(name = "com.microsoft.playwright.Playwright")
     BrowserSessionManager browserSessionManager(MetaProperties properties) {
         return new BrowserSessionManager(properties);
+    }
+
+    /**
+     * 注册浏览器会话空闲清理调度器 — 仅在 BrowserSessionManager 可用时注册。
+     *
+     * <p>依托 WorkflowAutoConfiguration/MemoryAutoConfiguration 已启用的
+     * {@code @EnableScheduling}，每 60 秒触发一次清理。</p>
+     */
+    @Bean
+    @ConditionalOnBean(BrowserSessionManager.class)
+    BrowserSessionScheduler browserSessionScheduler(BrowserSessionManager browserSessionManager) {
+        return new BrowserSessionScheduler(browserSessionManager);
     }
 
     /**
