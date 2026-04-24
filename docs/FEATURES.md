@@ -1,7 +1,7 @@
 ﻿# 知微（ZhiWei）— 特性总览
 
 > **文档性质**：特性总览文档
-> **最后更新**：2026-04-23
+> **最后更新**：2026-04-24
 
 ## 1. 产品定位与核心价值
 
@@ -60,6 +60,7 @@
 | 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |
 | 项目工作空间 | 用户显式创建的领域级任务容器，每个项目对应一个 PROJECT 类型 MemorySpace；ISOLATED / SHARED 两种记忆隔离模式 | [架构](architecture/project.md) |
 | 自主任务执行 | cron 定时 + 主动智能引擎（三级检测管线 + 8 个行为插件 + 四级投递 + 信任阶梯） + 自主工作流 | [架构](architecture/proactive-reminder-engine.md) |
+| 定时任务全局管理 | `cron_tasks.project_id` 按项目归属；`/scheduled-tasks` 全局管理页（列表 + 项目 tag + 暂停/恢复/删除）。创建入口保持在对话中由 LLM 自然语言触发 | [API 端点](API_ENDPOINTS.md#scheduled-tasks定时任务管理) |
 | 通知系统 | 统一通知服务、直接通知、多渠道广播、富媒体支持、通知历史管理 | [特性](features/notification.md) |
 
 ### 3.4 高级能力
