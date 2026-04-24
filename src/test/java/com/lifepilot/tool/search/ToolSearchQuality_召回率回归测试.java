@@ -169,8 +169,8 @@ class ToolSearchQuality_召回率回归测试 {
                 List.of("meta", "describe", "schema"), ToolCategory.INTROSPECTION);
         reg("tools.list", "List all available tool ids grouped by category.",
                 List.of("meta", "list", "category"), ToolCategory.INTROSPECTION);
-        reg("file.read", "Read a file or load a skill manual. Accepts path (local file; docx/xlsx/pptx/pdf/md/csv auto-parsed), attachmentId (attachment; office formats auto-extracted), or skill (comma-separated skill names to load and auto-activate).",
-                List.of("infrastructure", "read", "file", "load", "fetch", "content", "document"),
+        reg("file.read", "Read a local file or a conversation attachment. Accepts path (local file; docx/xlsx/pptx/pdf/md/csv auto-parsed; restricted to skills + workspace) or attachmentId (conversation attachment; office formats auto-extracted). For activating a Skill by name use skill.load; file.read no longer supports a skill parameter.",
+                List.of("infrastructure", "read", "file", "fetch", "content", "document"),
                 ToolCategory.PERCEPTION);
         reg("file.write", "Create a new file or overwrite/append content to an existing file. mode=write atomically overwrites (default); mode=append adds to the end. Parent directories are created automatically.",
                 List.of("infrastructure", "write", "file", "save", "create", "append", "overwrite"),

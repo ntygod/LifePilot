@@ -43,7 +43,7 @@ class InfraToolProviderTest {
                 true
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
-        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, workspaceResolver, null);
+        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, workspaceResolver, null, null);
     }
 
     @Test

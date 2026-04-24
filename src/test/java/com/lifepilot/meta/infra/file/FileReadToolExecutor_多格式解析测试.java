@@ -31,15 +31,16 @@ import static org.mockito.Mockito.when;
 /**
  * {@link FileReadToolExecutor} 多格式解析测试。
  *
- * <p>覆盖 file.read 工具合并文档解析能力后的全量路由分支:</p>
+ * <p>覆盖 file.read 工具合并文档解析能力后的全量路由分支：</p>
  * <ul>
- *   <li>纯文本(.java/.json 等):走 BufferedReader</li>
- *   <li>结构化文档(.md/.txt/.docx/.pdf/.csv):走 DocumentParserService</li>
- *   <li>attachmentId 参数:通过 AttachmentRepository 查路径后按扩展名路由</li>
- *   <li>skill 参数:加载技能指南(原行为保留)</li>
- *   <li>异常分支:AttachmentRepository 缺失、附件不存在、三参数都空</li>
- *   <li>maxChars 截断:对纯文本和结构化文档均生效</li>
+ *   <li>纯文本（.java/.json 等）：走 BufferedReader</li>
+ *   <li>结构化文档（.md/.txt/.docx/.pdf/.csv）：走 DocumentParserService</li>
+ *   <li>attachmentId 参数：通过 AttachmentRepository 查路径后按扩展名路由</li>
+ *   <li>异常分支：AttachmentRepository 缺失、附件不存在、两参数都空</li>
+ *   <li>maxChars 截断：对纯文本和结构化文档均生效</li>
  * </ul>
+ *
+ * <p>Skill 加载分支已于 2026-04-24 迁出至 skill.load 工具，此处不再覆盖。</p>
  *
  * @author zsg
  * @since 2026-04-20
@@ -63,7 +64,7 @@ class FileReadToolExecutor_多格式解析测试 {
         properties.getInfra().getFile().setAllowedDirectories(
                 List.of(tempDir.toAbsolutePath().toString()));
         securityChecker = new PathSecurityChecker(properties.getInfra().getFile());
-        // 使用真实 parser,不 mock(Markdown/PlainText/Word/Excel/Powerpoint 覆盖本测试所有格式）
+        // 使用真实 parser，不 mock（Markdown/PlainText/Word/Excel/Powerpoint 覆盖本测试所有格式）
         parserService = new DocumentParserService(List.of(
                 new MarkdownParser(), new PlainTextParser(), new WordParser(),
                 new ExcelParser(), new PowerpointParser()));
@@ -78,7 +79,7 @@ class FileReadToolExecutor_多格式解析测试 {
         ToolResult result = executor.execute(newInput(Map.of("path", javaFile.toString())));
 
         assertThat(result.ok()).isTrue();
-        // BufferedReader 路径的标志:totalLines / size 字段均出现,没有 metadata / fileName / totalChars
+        // BufferedReader 路径的标志：totalLines / size 字段均出现，没有 metadata / fileName / totalChars
         assertThat(result.data()).containsKeys("content", "path", "size", "totalLines", "truncated");
         assertThat(result.data()).doesNotContainKeys("metadata", "totalChars");
         assertThat((Integer) result.data().get("totalLines")).isGreaterThanOrEqualTo(2);
@@ -94,7 +95,7 @@ class FileReadToolExecutor_多格式解析测试 {
         ToolResult result = executor.execute(newInput(Map.of("path", md.toString())));
 
         assertThat(result.ok()).isTrue();
-        // 文档路径的标志:返回 metadata / fileName / totalChars,没有 totalLines
+        // 文档路径的标志：返回 metadata / fileName / totalChars，没有 totalLines
         assertThat(result.data()).containsKeys("content", "fileName", "totalChars", "metadata");
         assertThat(result.data()).doesNotContainKey("totalLines");
         assertThat(result.data().get("fileName")).isEqualTo("note.md");
@@ -103,8 +104,8 @@ class FileReadToolExecutor_多格式解析测试 {
 
     @Test
     void docx_文件通过_AttachmentId_参数按仓储查路径读取() throws IOException {
-        // 造一个最小可解析的 docx(空 docx 也能走到 WordParser,主要验证路由走对)
-        // 用 md 代替演示 —— attachmentId 路径通用,不局限于特定后缀
+        // 造一个最小可解析的 docx（空 docx 也能走到 WordParser，主要验证路由走对）
+        // 用 md 代替演示 —— attachmentId 路径通用，不局限于特定后缀
         Path md = tempDir.resolve("attached.md");
         Files.writeString(md, "# 从附件来的内容");
 
@@ -116,7 +117,7 @@ class FileReadToolExecutor_多格式解析测试 {
         ToolResult result = executor.execute(newInput(Map.of("attachmentId", "att-1")));
 
         assertThat(result.ok()).isTrue();
-        // attachmentId 分支同样走文档路径(md 是结构化文档）
+        // attachmentId 分支同样走文档路径（md 是结构化文档）
         assertThat(result.data().get("fileName")).isEqualTo("attached.md");
         assertThat((String) result.data().get("content")).contains("从附件来的内容");
     }
@@ -142,33 +143,12 @@ class FileReadToolExecutor_多格式解析测试 {
     }
 
     @Test
-    void skill_参数仍然能加载技能指南() throws IOException {
-        // 构造一个最小 skill 目录 —— ~/skills/demo/SKILL.md
-        Path skillsRoot = tempDir.resolve("skills");
-        Path demoSkill = skillsRoot.resolve("demo");
-        Files.createDirectories(demoSkill);
-        Files.writeString(demoSkill.resolve("SKILL.md"), "# Demo Skill\n\n技能说明");
-
-        FileReadToolExecutor executor = new FileReadToolExecutor(
-                securityChecker, 30000,
-                skillsRoot.toString(), null, null, parserService);
-
-        ToolResult result = executor.execute(newInput(Map.of("skill", "demo")));
-
-        assertThat(result.ok()).isTrue();
-        assertThat((String) result.data().get("content")).contains("Demo Skill");
-        @SuppressWarnings("unchecked")
-        List<String> skillIds = (List<String>) result.data().get("_skillIds");
-        assertThat(skillIds).containsExactly("demo");
-    }
-
-    @Test
-    void 三个参数都未提供时报错() {
+    void 两个参数都未提供时报错() {
         var executor = newExecutor(null);
         ToolResult result = executor.execute(newInput(Map.of()));
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("path").contains("attachmentId").contains("skill");
+        assertThat(result.error()).contains("path").contains("attachmentId");
     }
 
     @Test
@@ -241,7 +221,7 @@ class FileReadToolExecutor_多格式解析测试 {
         return new FileReadToolExecutor(
                 securityChecker,
                 properties.getInfra().getFile().getDefaultMaxChars(),
-                null, null,
+                null,  // SkillPathWhitelist —— 本测试用 PathSecurityChecker 白名单兜底
                 attachmentRepo,
                 parserService);
     }

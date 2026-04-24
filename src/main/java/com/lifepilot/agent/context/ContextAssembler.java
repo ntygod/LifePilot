@@ -1130,7 +1130,7 @@ public class ContextAssembler {
         }
 
         // 两阶段披露 — system prompt 展示 XML 摘要（id + name + description），
-        // LLM 根据 description 匹配意图后通过 file.read(skill=...) 加载完整指南
+        // LLM 根据 description 匹配意图后通过 skill.load(names=[...]) 加载完整指南
         String skillEntries = skills.stream()
                 .map(s -> s.toDiscoverySummary())
                 .collect(Collectors.joining("\n"));

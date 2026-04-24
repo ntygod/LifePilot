@@ -10,10 +10,10 @@ import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolSchedulingMode;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
+import com.lifepilot.tool.validation.SkillPathWhitelist;
 import jakarta.annotation.Nullable;
 
 import java.util.ArrayList;
@@ -24,11 +24,15 @@ import java.util.Map;
 /**
  * 文件工具提供者。
  *
- * <p>集中管理文件系统元能力工具:read / write / list / edit / manage。
+ * <p>集中管理文件系统元能力工具：read / write / list / edit / manage。
  * 所有 Executor 共享同一个 {@link PathSecurityChecker} 实例。</p>
  *
- * <p>Phase 0 后:{@code file.read} 合并了文档解析能力,通过内部 {@link DocumentParserService}
- * 按扩展名自动路由(docx / pdf / md / txt / csv 等走文档解析,其他走 BufferedReader)。</p>
+ * <p>Phase 0 后：{@code file.read} 合并了文档解析能力，通过内部 {@link DocumentParserService}
+ * 按扩展名自动路由（docx / pdf / md / txt / csv 等走文档解析，其他走 BufferedReader）。</p>
+ *
+ * <p>2026-04-24 重构：{@code file.read} 的 {@code skill} 参数已下线，Skill 加载改由
+ * {@code skill.load} 工具承担；同时新增 {@link SkillPathWhitelist} 硬约束白名单，
+ * 防 LLM 通过绝对路径读取系统敏感文件。</p>
  *
  * @author zsg
  * @since 2026-03-16
@@ -40,59 +44,44 @@ public class FileToolProvider {
     private final FileEditHistory editHistory;
     @Nullable
     private final LintHookExecutor lintHook;
-    /** Skill 文件目录路径（如 ~/.zhiwei/skills），为 null 时 file.read 不支持 skill 参数。 */
-    @Nullable
-    private final String skillDirectory;
-    /** 动态工具注册中心，用于 file.read 的 mcp: 前缀解析。 */
-    @Nullable
-    private final DynamicToolRegistry toolRegistry;
-    /** 附件仓储 —— 用于 file.read 的 attachmentId 分支,Web 未启用时为 null。 */
+    /** 附件仓储 —— 用于 file.read 的 attachmentId 分支，Web 未启用时为 null。 */
     @Nullable
     private final AttachmentRepository attachmentRepository;
-    /** 文档解析路由 facade —— file.read 的内部依赖,本类自装配,无需外部注入。 */
+    /** Skill / 工作区硬约束白名单，null 时跳过校验（仅测试场景）。 */
+    @Nullable
+    private final SkillPathWhitelist skillPathWhitelist;
+    /** 文档解析路由 facade —— file.read 的内部依赖，本类自装配，无需外部注入。 */
     private final DocumentParserService documentParserService;
 
     public FileToolProvider(MetaProperties properties) {
-        this(properties, null, null, null, null, null);
+        this(properties, null, null, null, null);
     }
 
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
-                            @Nullable LintHookExecutor lintHook,
-                            @Nullable String skillDirectory) {
-        this(properties, editHistory, lintHook, skillDirectory, null, null);
-    }
-
-    public FileToolProvider(MetaProperties properties,
-                            @Nullable FileEditHistory editHistory,
-                            @Nullable LintHookExecutor lintHook,
-                            @Nullable String skillDirectory,
-                            @Nullable DynamicToolRegistry toolRegistry) {
-        this(properties, editHistory, lintHook, skillDirectory, toolRegistry, null);
+                            @Nullable LintHookExecutor lintHook) {
+        this(properties, editHistory, lintHook, null, null);
     }
 
     /**
      * 完整构造器 —— 支持 file.read 的文档解析路由和对话附件查询。
      *
      * @param properties            元能力配置
-     * @param editHistory           文件编辑历史,支持 undo
+     * @param editHistory           文件编辑历史，支持 undo
      * @param lintHook              写入后 lint 回调
-     * @param skillDirectory        Skill 目录,null 表示不支持 file.read(skill=...）
-     * @param toolRegistry          动态工具注册中心,用于 file.read 的 mcp: 前缀
-     * @param attachmentRepository  附件仓储,null 时 file.read(attachmentId=...) 会返回"附件功能未启用"
+     * @param attachmentRepository  附件仓储，null 时 file.read(attachmentId=...) 会返回"附件功能未启用"
+     * @param skillPathWhitelist    Skill / 工作区白名单，null 时跳过硬约束校验（仅测试）
      */
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
                             @Nullable LintHookExecutor lintHook,
-                            @Nullable String skillDirectory,
-                            @Nullable DynamicToolRegistry toolRegistry,
-                            @Nullable AttachmentRepository attachmentRepository) {
+                            @Nullable AttachmentRepository attachmentRepository,
+                            @Nullable SkillPathWhitelist skillPathWhitelist) {
         this.properties = properties;
         this.editHistory = editHistory;
         this.lintHook = lintHook;
-        this.skillDirectory = skillDirectory;
-        this.toolRegistry = toolRegistry;
         this.attachmentRepository = attachmentRepository;
+        this.skillPathWhitelist = skillPathWhitelist;
         this.documentParserService = DocumentParserService.buildDefault();
     }
 
@@ -111,7 +100,7 @@ public class FileToolProvider {
 
         tools.add(buildFileReadTool(
                 new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars(),
-                        skillDirectory, toolRegistry, attachmentRepository, documentParserService)));
+                        skillPathWhitelist, attachmentRepository, documentParserService)));
         tools.add(buildFileWriteTool(
                 new FileWriteToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
         tools.add(buildFileListTool(new FileListActionDispatchExecutor(
@@ -135,27 +124,25 @@ public class FileToolProvider {
     private BuiltinTool buildFileReadTool(FileReadToolExecutor executor) {
         var props = new LinkedHashMap<String, Object>();
         props.put("path", Map.of("type", "string",
-                "description", "本机文件绝对路径(主入口,与 attachmentId / skill 三选一)。" +
-                        "支持所有文本文件;docx / xlsx / pptx / pdf / md / csv 等结构化文档按扩展名自动路由到文档解析器,其他(.java/.txt/.log/.json 等)按纯文本读取。"));
+                "description", "本机文件绝对路径（与 attachmentId 二选一）。" +
+                        "支持所有文本文件；docx / xlsx / pptx / pdf / md / csv 等结构化文档按扩展名自动路由到文档解析器，其他（.java / .txt / .log / .json 等）按纯文本读取。" +
+                        "仅允许访问 Skill 目录（~/.zhiwei/skills）和工作区（~/.zhiwei/workspace）内的文件，系统敏感路径会被硬约束拒绝。"));
         props.put("attachmentId", Map.of("type", "string",
-                "description", "对话附件 ID(与 path / skill 三选一,本机文件优先用 path)。" +
-                        "附件仓储未启用时返回错误。"));
-        props.put("skill", Map.of("type", "string",
-                "description", "加载技能指南:传入 skill ID,多个逗号分隔,最多 3 个(与 path / attachmentId 三选一)"));
+                "description", "对话附件 ID（与 path 二选一，本机文件优先用 path）。附件仓储未启用时返回错误。"));
         props.put("encoding", Map.of("type", "string",
-                "description", "文件编码(如 UTF-8、GBK),默认 UTF-8,仅对纯文本有效"));
+                "description", "文件编码（如 UTF-8、GBK），默认 UTF-8，仅对纯文本有效"));
         props.put("startLine", Map.of("type", "integer",
-                "description", "起始行号(1-based),可选,仅对纯文本有效,结构化文档忽略"));
+                "description", "起始行号（1-based），可选，仅对纯文本有效，结构化文档忽略"));
         props.put("endLine", Map.of("type", "integer",
-                "description", "结束行号(1-based),可选,仅对纯文本有效,结构化文档忽略"));
+                "description", "结束行号（1-based），可选，仅对纯文本有效，结构化文档忽略"));
         props.put("maxChars", Map.of("type", "integer",
-                "description", "最大返回字符数,默认 30000,超出截断"));
+                "description", "最大返回字符数，默认 30000，超出截断"));
 
         return BuiltinTool.builder()
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
-                .description("Read a file or load a skill manual. Accepts path (local file; docx/xlsx/pptx/pdf/md/csv auto-parsed), attachmentId (attachment; office formats auto-extracted), or skill (comma-separated skill names to load and auto-activate).")
+                .description("Read a local file or a conversation attachment. Accepts path (local file; docx/xlsx/pptx/pdf/md/csv auto-parsed; restricted to skills + workspace) or attachmentId (conversation attachment; office formats auto-extracted). For activating a Skill by name use skill.load; file.read no longer supports a skill parameter.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", props
@@ -166,7 +153,7 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "read", "file", "load", "fetch", "content", "document"))
+                .tags(List.of("infrastructure", "read", "file", "fetch", "content", "document"))
                 .executor(executor::execute)
                 .build();
     }
