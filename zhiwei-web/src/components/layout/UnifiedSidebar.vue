@@ -289,7 +289,7 @@ function openSettings() {
           <Search class="qw-action-icon" />
           <span>搜索对话</span>
         </button>
-        <!-- 定时任务入口占位 —— 路由由 Plan 2 建，当前点击会 404 -->
+        <!-- 定时任务全局入口（Plan 2+3 Task A5 已落地 /scheduled-tasks 路由） -->
         <button
           type="button"
           class="qw-action-row"

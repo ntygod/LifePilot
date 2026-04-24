@@ -4,7 +4,6 @@ import {
   BookOpen,
   Bot,
   Brain,
-  Database,
   GitBranch,
   Key,
   MessageSquare,
@@ -50,7 +49,7 @@ export const sidebarNavGroups: NavGroup[] = [
     label: '资料库',
     items: [
       { label: '知识库', path: '/knowledge-bases', icon: BookOpen, matchPrefixes: ['/knowledge-bases'] },
-      { label: '资料仓库', path: '/datastores', icon: Database, matchPrefixes: ['/datastores'] },
+      // 资料仓库菜单入口已于 Plan 3 Task B2 下架，组件文件保留但不再对外暴露。
       { label: '记忆', path: '/memories', icon: Brain, matchPrefixes: ['/memories'] },
     ],
   },
