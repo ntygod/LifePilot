@@ -310,7 +310,7 @@ function formatSessionTime(iso: string): string {
 
     <ProjectResourcePanel
       v-model:open="showResource"
-      :project-id="projectId"
+      :project="project"
     />
 
     <ProjectSettingsPanel
