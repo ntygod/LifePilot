@@ -1,7 +1,19 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { ChatSession, Message } from '@/types'
+import type { ChatAttachment, ChatSession, Message, SessionConfig } from '@/types'
 import { chatApi } from '@/api/client'
+
+/**
+ * 首轮待发送消息 —— 承载从非 ChatView 页面（项目详情页、首屏等）
+ * 跨路由到 ChatView 的用户输入。包含附件以支持项目详情页就地输入框。
+ */
+export interface PendingFirstSend {
+  content: string
+  attachmentIds?: string[]
+  attachments?: ChatAttachment[]
+  sessionConfig?: SessionConfig
+  restoreSessionConfig?: SessionConfig
+}
 
 export const useChatStore = defineStore('chat', () => {
   // 会话列表
@@ -14,8 +26,10 @@ export const useChatStore = defineStore('chat', () => {
   const isStreaming = ref(false)
   // 当前流式增量内容
   const streamingContent = ref('')
-  // 首屏输入的待发送消息（HomeView → ChatView 传递）
+  // 首屏输入的待发送消息（纯文本形态，历史路径保留兼容）
   const pendingFirstMessage = ref<string | null>(null)
+  // 首轮完整待发送结构（项目详情页等页面跨路由使用，支持附件 / sessionConfig）
+  const pendingFirstSend = ref<PendingFirstSend | null>(null)
 
   /** 加载会话列表。 */
   async function loadSessions() {
@@ -142,6 +156,7 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming,
     streamingContent,
     pendingFirstMessage,
+    pendingFirstSend,
     loadSessions,
     loadMessages,
     addMessage,

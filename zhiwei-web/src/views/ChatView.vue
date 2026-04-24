@@ -300,7 +300,19 @@ onMounted(async () => {
   }
 
   // 处理首屏传递的待发送消息
-  if (chatStore.pendingFirstMessage) {
+  // 1) 项目详情页等场景：使用完整结构（含附件 / sessionConfig）
+  // 2) 首屏纯文本链路：保留兼容字段
+  if (chatStore.pendingFirstSend) {
+    const payload = chatStore.pendingFirstSend
+    chatStore.pendingFirstSend = null
+    await sendMessage(
+      payload.content,
+      payload.attachmentIds,
+      payload.attachments,
+      payload.sessionConfig,
+      payload.restoreSessionConfig,
+    )
+  } else if (chatStore.pendingFirstMessage) {
     const content = chatStore.pendingFirstMessage
     chatStore.pendingFirstMessage = null
     await sendMessage(content)
