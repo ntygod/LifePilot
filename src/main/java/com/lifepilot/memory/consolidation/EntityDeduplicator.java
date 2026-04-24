@@ -173,15 +173,23 @@ public class EntityDeduplicator {
         String propsJson = mergedProps.isEmpty() ? null : serializeProps(mergedProps);
         String now = Instant.now().toString();
 
+        // 合并后 primary 是派生产物 — 本次合并的 primary + secondary ids 共同构成 derivation_sources，
+        // 这样 DerivedEntityListener 能在任一源失效时通过 LIKE 反查命中该 primary 并触发级联。
+        // 若 primary 已带 derivation_sources，采用"追加去重合并"：合并旧 + 新 ids。
+        List<String> combinedSources = mergeDerivationSources(
+                primary.derivationSources(), primary.id(), secondary.id());
+        String derivationSourcesJson = serializeDerivationSources(combinedSources);
+
         // 事务包裹：更新主实体 + 迁移关系 + 归档从实体 + 记录日志，保证原子性
         SqliteBusyRetry.run(() -> transactionTemplate.executeWithoutResult(status -> {
-            // 4. 更新主实体属性
+            // 4. 更新主实体属性 — 同时标记为派生实体并写入 derivation_sources
             jdbcTemplate.update("""
                     UPDATE memory_entities
-                    SET access_count = ?, last_seen_at = ?, updated_at = ?
+                    SET access_count = ?, last_seen_at = ?, updated_at = ?,
+                        is_derived = 1, derivation_sources = ?
                     WHERE id = ?
                     """,
-                    mergedAccessCount, now, now, primary.id());
+                    mergedAccessCount, now, now, derivationSourcesJson, primary.id());
             jdbcTemplate.update("""
                     UPDATE memory_entity_versions
                     SET description = COALESCE(?, description),
@@ -271,6 +279,33 @@ public class EntityDeduplicator {
     private static String serializeProps(Map<String, Object> props) {
         try {
             return OBJECT_MAPPER.writeValueAsString(props);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 合并派生来源 ID 集：保留 primary 已有的 sources，追加本次合并的 primary + secondary ids。
+     * 去重后保持插入顺序，便于人工审查。
+     */
+    private static List<String> mergeDerivationSources(
+            @jakarta.annotation.Nullable List<String> existing, String primaryId, String secondaryId) {
+        var combined = new LinkedHashSet<String>();
+        if (existing != null) {
+            combined.addAll(existing);
+        }
+        combined.add(primaryId);
+        combined.add(secondaryId);
+        return List.copyOf(combined);
+    }
+
+    /** 将派生来源列表序列化为 JSON 数组字符串，空集合返回 null 保持列稀疏。 */
+    private static String serializeDerivationSources(List<String> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(sources);
         } catch (Exception e) {
             return null;
         }
