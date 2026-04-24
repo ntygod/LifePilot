@@ -4,7 +4,6 @@ import {
   BookOpen,
   Bot,
   Brain,
-  Clock,
   GitBranch,
   Key,
   MessageSquare,
@@ -39,8 +38,8 @@ export const sidebarNavGroups: NavGroup[] = [
     items: [
       { label: '智能体', path: '/agents', icon: Bot, matchPrefixes: ['/agents'] },
       { label: '工作流', path: '/workflows', icon: Workflow, matchPrefixes: ['/workflows'] },
-      // Plan 2+3 Task A5：定时任务作为工作台一级入口
-      { label: '定时任务', path: '/scheduled-tasks', icon: Clock, matchPrefixes: ['/scheduled-tasks'] },
+      // 定时任务入口不再挂在管理 Tab 的工作台组——作为高频入口常驻对话 Tab 顶部的操作行，
+      // 见 {@link UnifiedSidebar} 对话 Tab 顶部的 `🕐 定时任务` 按钮。
       { label: '技能', path: '/skills', icon: Puzzle, matchPrefixes: ['/skills'] },
       { label: '扩展市场', path: '/marketplace', icon: ShoppingBag, matchPrefixes: ['/marketplace'] },
       { label: '工具', path: '/tools', icon: Wrench, matchPrefixes: ['/tools'] },
