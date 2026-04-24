@@ -27,7 +27,7 @@
  * @author zsg
  * @since 2026-04-24
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ChevronRight,
@@ -149,10 +149,10 @@ function openProject(projectId: string) {
 // agentColor：按 projectId / 任务 id 稳定哈希，落到 6 个色板之一
 // ──────────────────────────────────────────────────────────────────────
 
-/** 草稿里每个 agent 有独立配色；项目名用同样哈希策略派生 */
+/** 每个项目/主账户的配色；项目 id 哈希稳定映射 —— 遵循"禁用紫色"偏好。 */
 const AGENT_PALETTE = [
   '#8a6d28', // amber-700 近似
-  '#5a4786', // 紫（仅作非主色的辅助，若全项目无紫用户偏好可接受）
+  '#475569', // slate-600（替代原紫色）
   '#4a5fc1', // indigo-600
   '#0a6e53', // emerald-700
   '#c96442', // orange-red
@@ -250,11 +250,27 @@ async function deleteTask(taskId: string, taskName: string) {
  * 延迟 800ms 刷新一次，大多数 Agent 执行数秒起，最早也不会在 1s 内落日志；
  * 首次刷新只是让状态面板"表现出反馈"，真实日志到位前用户可手动再点刷新或看进度。
  */
+/** 统一管理组件存活期内的所有 setTimeout，卸载时一起清理，避免"已卸载组件上的无效 store 调用"。 */
+const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
+
+function scheduleTimer(cb: () => void, delayMs: number): void {
+  const timer = setTimeout(() => {
+    pendingTimers.delete(timer)
+    cb()
+  }, delayMs)
+  pendingTimers.add(timer)
+}
+
+onBeforeUnmount(() => {
+  pendingTimers.forEach(clearTimeout)
+  pendingTimers.clear()
+})
+
 async function runNow(taskId: string, taskName: string) {
   try {
     await store.runNow(taskId)
     showPlaceholder(`已触发「${taskName}」，执行中...`)
-    setTimeout(() => {
+    scheduleTimer(() => {
       void store.fetchTodayLogs()
       if (selectedTaskId.value === taskId) void loadLogs(taskId)
     }, 800)
@@ -271,7 +287,7 @@ const placeholderMessage = ref<string | null>(null)
 
 function showPlaceholder(msg: string) {
   placeholderMessage.value = msg
-  setTimeout(() => {
+  scheduleTimer(() => {
     if (placeholderMessage.value === msg) placeholderMessage.value = null
   }, 2200)
 }

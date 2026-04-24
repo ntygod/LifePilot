@@ -45,11 +45,14 @@ The system is layered: **Interaction → Gateway → Agent Engine → Capability
 
 Key source files:
 - `src/main/java/com/lifepilot/agent/ReactAgentLoop.java` — core agent loop
+- `src/main/java/com/lifepilot/agent/task/CronScheduler.java` — cron 定时任务调度（含 `runOnce` 立即执行）
+- `src/main/java/com/lifepilot/project/service/ProjectService.java` — project CRUD + 级联删除
+- `src/main/java/com/lifepilot/interaction/web/controller/ScheduledTaskController.java` — 定时任务全局管理 REST
 - `src/main/java/com/lifepilot/generation/router/GenerationRouter.java` — text generation routing with circuit breaker
 - `src/main/java/com/lifepilot/embedding/router/EmbeddingRouter.java` — embedding routing
 - `src/main/java/com/lifepilot/rerank/router/RerankRouter.java` — rerank routing
 - `src/main/resources/application.yml` — all runtime configuration
-- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V14, V1 is the merged init schema)
+- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V20, V1 is the merged init schema; next migration starts at V21)
 - `src/main/resources/prompts/` — StringTemplate prompt files
 - `src/main/resources/skills/` — preset skill definitions (26 skills)
 - `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)

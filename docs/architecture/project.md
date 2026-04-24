@@ -154,14 +154,15 @@ graph TB
 
 `@Transactional` 方法：
 
-- **createProject(name, instructions, isolation)**：同名重复校验 → `MemorySpaceRepository.ensureProjectSpace(newId)` 创建 PROJECT 级空间 → 持久化 `Project` 行。规范化：`instructions=null → ""`，`isolation=null → ISOLATED`
+- **createProject(name, instructions, isolation)**：同名重复校验 → `MemorySpaceRepository.ensureProjectSpace(newId)` 创建 PROJECT 级空间 → 持久化 `Project` 行 → 若 `KnowledgeBaseManager` 可用则创建"项目默认知识库"（tags=`["project"]`）并绑定到项目 MemorySpace（KB 建失败不中止，记 warn）。规范化：`instructions=null → ""`，`isolation=null → ISOLATED`
 - **updateProject(id, name, instructions, isolation)**：改名重名校验；`instructions` / `isolation` 传 null 时保留原值
-- **deleteProject(id)**：严格 5 步级联（见下节）
+- **deleteProject(id)**：6 步级联（见下节）
 
 ### 3.6 级联删除顺序（`ProjectService.deleteProject`）
 
-FK 约束决定的固定顺序：
+FK 约束决定的固定顺序（代码中编号 0–5）：
 
+0. **级联删项目默认 KB 本体**（仅 `KnowledgeBaseManager` 可用时） —— 通过 `memory_space_knowledge_bases` 反查项目 space 下的 KB id，仅对 `tags` 含 `"project"` 的调 `KnowledgeBaseManager.deleteKnowledgeBase`；避免误删用户手动挂到项目的非默认 KB，也避免 Step 5 级联清关联表后留下孤儿 KB 本体
 1. **清归属项目的会话**（`SessionStoreRepository.batchDelete(sessionIds)`）—— FK CASCADE 连带清 `chat_turns` / `session_transcript_entries` 等全部子表
 2. **清项目记忆空间下的 `memory_relations`** —— `memory_relations` FK 到 `memory_entities` 不带 CASCADE，必须先于 `memory_entities` 删
 3. **清项目记忆空间下的 `memory_entities`** —— FK CASCADE 连带清 `memory_entity_versions` / `memory_entity_provenances`

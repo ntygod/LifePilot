@@ -192,7 +192,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V19）"
+    subgraph "Flyway 迁移（V1~V20）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -212,6 +212,7 @@ graph LR
         V17["V17: project_id 从 conversations 迁移到 session_store 并建部分索引"]
         V18["V18: chat_turn_memory_snapshots 加 project_space_id（项目隔离 turn 级写入路由）"]
         V19["V19: cron_tasks 加 project_id + 部分索引（Plan 2 定时任务按项目归属）"]
+        V20["V20: cron_task_logs 加 trigger_source（cron / manual，区分定时与立即运行）"]
     end
 
     V1 --> SQL
