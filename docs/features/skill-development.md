@@ -1,87 +1,157 @@
 # Skill 开发指南 — 特性说明
 
-> **文档性质**：特性说明文档
+> **文档性质**：开发者视角的特性说明
 > **模块归属**：`com.lifepilot.skill`
-> **最后更新**：2026-04
+> **最后更新**：2026-04-24
 
-## 1. 功能概述
+## 1. 开发起点
 
-知微通过 Markdown 声明式 Skill 扩展 Agent 能力。用户在 `~/.zhiwei/skills/` 目录下创建 SKILL.md 文件夹即可定义自定义 Skill，系统自动热加载。此外，系统还能通过 LLM 自动检测能力缺口并生成新 Skill。
+- **规范文档**：[`docs/skill-spec.md`](../skill-spec.md) 是 SKILL.md 的正式元规范（frontmatter 字段表、body 结构、校验规则）。
+- **自举样本**：预置 skill `skill-creator`（`src/main/resources/skills/skill-creator/SKILL.md`）本身就是 v2 规范的参考样例——读它学 v2 写法最快。
+- **架构全貌**：详见 [`docs/architecture/skill-system.md`](../architecture/skill-system.md)。
 
-## 2. 核心特性
+知微通过 Markdown 声明式 Skill 扩展 Agent 能力。每个 skill 是一个目录，目录名即 skill 的 `name`，路径形如 `~/.zhiwei/skills/<name>/`（预置 skill 从 classpath 提取到同一目录）。目录根下必须有 `SKILL.md`，可以选配 `references/` / `scripts/` / `assets/` 三个子目录。
 
-### 2.1 Markdown 声明式 Skill（推荐）
-
-每个 Skill 以文件夹形式存在，文件夹内包含 `SKILL.md` 主定义文件和可选的 `references/` 子目录：
+## 2. 目录结构
 
 ```
-~/.zhiwei/skills/
-  └── my-skill/
-      ├── SKILL.md          # 主定义文件
-      └── references/       # 可选参考文件
-          └── example.md
+~/.zhiwei/skills/<name>/
+├── SKILL.md              # 必需：L1 frontmatter + L2 骨架 body
+├── references/           # 可选：详细参考，LLM 按需 file.read 加载
+│   └── *.md
+├── scripts/              # 可选：可执行脚本（不入 context）
+│   └── *.{sh,py,js}
+└── assets/               # 可选：模板、schema、静态资源（不入 context）
+    └── *
 ```
 
-`SKILL.md` 采用 YAML Frontmatter + Markdown Body 格式：
-- YAML Frontmatter 定义元数据（id、name、description、version、suggestedTools 等）
-- Markdown Body 定义 Skill 指令（instructions），即激活后注入 Agent 上下文的专业指导
+- **SKILL.md** 硬限 5000 字符，只写"骨架"——超长详细内容拆到 `references/`。
+- **references/** 里是普通 Markdown，SKILL.md body 用自然语言引用（如 "参见 `{skill_dir}/references/api.md`"），LLM 运行时自行决定是否 `file.read`。
+- **scripts/assets/** 不会注入 context，仅供 skill body 引用后由 Agent 调用对应工具执行。
 
-### 2.2 热加载
+## 3. 最小可用 SKILL.md 模板
 
-保存 SKILL.md 后系统自动检测变更并重新加载，无需重启：
-- 新建文件夹：自动加载并注册
-- 修改 SKILL.md：500ms 防抖后重新解析注册
-- 删除文件夹：自动注销对应 Skill
-- 解析失败：保留上一个有效版本，不影响已注册的 Skill
+```markdown
+---
+name: my-skill
+description: 当用户需要...时使用。关键词：A、B、C。反例场景 → 用其他 Skill
+version: 1.0.0
+metadata:
+  zhiwei:
+    category: automation
+    priority: normal
+    tags: [keyword1, keyword2]
+    suggested_tools:
+      - tool.id1
+      - tool.id2
+    requires:
+      bins: []
+      env: []
+      os: []
+      tools: []
+---
 
-### 2.3 三重安全验证
+# <中文标题>
 
-所有用户定义和自动生成的 Skill 必须通过三阶段验证：
+## 适用场景
+- 场景一：...
+- 场景二：...
 
-1. **格式验证**（FormatValidator）：校验 YAML Frontmatter 格式和必填字段
-2. **安全验证**（SecurityValidator）：校验 suggestedTools 白名单、风险等级、预算上限，检测 Prompt 注入
-3. **沙箱验证**（SandboxValidator）：在隔离环境中验证 Skill 定义的内部一致性
+## 不适用场景
+- 反例一：... → 用 <其他 skill>
+- 反例二：...
 
-### 2.4 LLM 驱动的 Skill 自生成
+## 工作流
+1. 第一步高层动作
+2. 第二步高层动作（细节参见 {skill_dir}/references/details.md）
+3. ...
 
-当用户请求超出现有 Skill 能力范围时，系统可自动生成新 Skill：
+## 详细参考（可选）
+- 参数详表：{skill_dir}/references/api.md
+- 常见错误：{skill_dir}/references/errors.md
+```
 
-1. `SkillGapDetector` 检测能力缺口
-2. `SkillGenerator` 调用 LLM 生成 SKILL.md 内容（利用 `SkillTemplateLibrary` 提供模板参考，`ToolCapabilityManifest` 提供可用工具清单）
-3. 生成的 Skill 经过三重验证
-4. 用户确认后持久化到 `~/.zhiwei/skills/auto/{skill-id}/SKILL.md`
+## 4. Frontmatter 字段
 
-自动生成的 Skill 默认 `userConfirmed=false`，必须用户确认后才能激活。
+| 字段 | 必需 | 约束 |
+|---|---|---|
+| `name` | 是 | 正则 `^[a-z0-9][a-z0-9-]{0,62}$`，必须等于目录名 |
+| `description` | 是 | ≤1024 字符；以 "当…" / "用于…" / "Use when…" / "Use this when…" 开头；**不得含工作流词**（步骤 N / 首先 / 然后 / 接下来 / Step N / First / Then）|
+| `version` | 是 | 语义化版本，如 `1.0.0` |
+| `metadata.zhiwei.category` | 否 | 约定五类：`external-integration` / `content-creation` / `automation` / `infrastructure` / `utility`；其他值会原样渲染到 catalog 为 category 名 |
+| `metadata.zhiwei.priority` | 否 | `high` / `normal` / `low`，影响 catalog 排序 |
+| `metadata.zhiwei.tags` | 否 | `List<string>`，辅助检索 |
+| `metadata.zhiwei.suggested_tools` | 否 | `List<string>`，激活后合并进 `activatedToolIds` |
+| `metadata.zhiwei.requires.bins` | 否 | `List<string>`，运行依赖的二进制（如 `git`, `gh`）|
+| `metadata.zhiwei.requires.env` | 否 | `List<string>`，必需环境变量名（不含值）|
+| `metadata.zhiwei.requires.os` | 否 | OS 白名单 `windows` / `darwin` / `linux` |
+| `metadata.zhiwei.requires.tools` | 否 | `List<string>`，必需已注册工具 id |
 
-## 3. 使用场景
+字段 `id:`（v1 规范）已废弃——`MarkdownSkillParser.parse` 会直接拒绝并抛 `IllegalArgumentException`。
 
-**场景一：创建自定义领域 Skill**
+## 5. body 约束
 
-用户在 `~/.zhiwei/skills/code-review/` 目录下创建 `SKILL.md`，定义代码审查的专业指令和建议工具。保存后系统自动热加载，Agent 在后续对话中即可发现和激活该 Skill。
+硬规则（`SkillBodyValidator`，见 `src/main/java/com/lifepilot/skill/validation/SkillBodyValidator.java`）：
 
-**场景二：系统自动补全能力**
+- ≤5000 字符
+- 必须包含三个小节标题（**完全一致**）：`## 适用场景` / `## 不适用场景` / `## 工作流`
 
-用户请求"帮我分析这份财务报表"，系统检测到没有匹配的 Skill，自动生成财务分析 Skill。经验证和用户确认后，Skill 持久化并可在后续对话中复用。
+占位符（激活时由 `SkillActivator.resolvePlaceholders` 替换为绝对路径）：
 
-## 4. 配置项
+- `{skill_dir}` → skill 安装目录
+- `{skill_references_dir}` → `{skill_dir}/references`
+- `{skill_scripts_dir}` → `{skill_dir}/scripts`
 
-| 配置键 | 默认值 | 说明 |
-|--------|--------|------|
-| `lifepilot.skills.directory` | `~/.zhiwei/skills` | Skill 文件目录 |
-| `lifepilot.skills.skill-filename` | `SKILL.md` | Skill 定义文件名 |
-| `lifepilot.skills.hot-reload-debounce-ms` | `500` | 热加载防抖间隔（毫秒） |
-| `lifepilot.skills.auto-generation.enabled` | `true` | 自生成功能开关 |
-| `lifepilot.skills.validation.max-name-length` | `128` | 名称最大长度 |
-| `lifepilot.skills.validation.max-instructions-length` | `10000` | 指令最大长度 |
+## 6. 安装方式
 
-## 5. 限制与未来方向
+### 6.1 前端 UI（推荐）
 
-**当前限制**：
-- Markdown Skill 不支持直接定义工具执行逻辑，只能通过 suggestedTools 引用已注册的工具
-- 自动生成的 Skill 质量受 LLM 能力限制，复杂领域可能需要人工调整
-- 热加载仅监听一级子目录，不支持嵌套目录结构
+- **新建**：前端"技能目录"页面 → 点击"新建技能" → `SkillEditor` 提供客户端软校验 → 后端 `SkillInstaller` 执行硬校验
+- **导入 .skill 包**：点击"导入技能" → "上传"Tab → 选择 `.skill` / `.zip`（根目录含 SKILL.md）→ 后端自动解压 + 安装
+- **从市场下载**：导入对话框的"市场"Tab → 搜索 → 下载
 
-**未来方向**：
-- Skill 模板市场：提供常用领域的 SKILL.md 模板
-- Skill 版本管理：支持 Skill 的版本迭代和回滚
-- 可视化 Skill 编辑器：通过 Web UI 创建和编辑 Skill
+对应后端端点：
+
+| 端点 | 说明 |
+|---|---|
+| `POST /api/skills` | 新建（JSON body 含 SKILL.md 原文）|
+| `POST /api/skills/import` | 上传 `.skill` 压缩包 |
+| `POST /api/skills/install-from-marketplace` | 从市场下载 |
+| `PUT /api/skills/{name}/enabled` | 切换启用状态 |
+| `GET /api/skills/events` | SSE 订阅自生成事件 |
+
+### 6.2 直接写文件（热加载）
+
+在 `~/.zhiwei/skills/<name>/SKILL.md` 下放文件，`SkillFileWatcher` 500ms 防抖后自动加载。此路径不走 `skills` 表 upsert（表记录由 `SkillInstaller` 维护），所以前端 UI 的启用开关和徽章不会显示这类"纯文件"skill——推荐仍通过 UI 新建，确保表与文件一致。
+
+## 7. 校验错误诊断
+
+| 错误消息 | 触发条件 | 修法 |
+|---|---|---|
+| `字段 'id' 已废弃，请用 'name'` | frontmatter 含老 `id` 字段 | 改为 `name:` |
+| `name 必须匹配正则 ^[a-z0-9][a-z0-9-]{0,62}$` | name 含大写/下划线/中文等 | 用 kebab-case 小写 |
+| `description 长度超过 ≤1024 字符限制` | description 过长 | 删除赘述，核心一句话 + 关键词 |
+| `description 必须以 '当...' / '用于...' / 'Use when...' 开头` | 起手触发词不对 | 改写开头 |
+| `description 不得含工作流词（步骤/首先/然后/Step N/First/Then）` | 描述里写了流程 | 流程写到 body `## 工作流`，描述只说"什么时候用" |
+| `body 长度超过 ≤5000 字符限制` | body 过长 | 拆到 `references/`，body 只留骨架 |
+| `body 缺少必需小节: ## 适用场景` / 等 | 三个必需小节缺一或标题拼写错 | 标题必须完全一致，前导 `## ` 不可丢 |
+| `body 命中疑似 secret 模式` | 文本含 `BEGIN PRIVATE KEY` / `api_key = "..."` / `sk-...` 等 | 删除或脱敏 |
+| `自生成 skill '...' 引用了未知工具` | AUTO_GENERATED 路径 `suggested_tools` 写了不存在的工具 | 只引用 `DynamicToolRegistry` 已注册的 tool id |
+| `自生成 skill 不得声明 HIGH/CRITICAL 风险工具` | AUTO_GENERATED 引用了高危工具 | 自生成路径只能走 LOW/MEDIUM，手写 skill 不受此限 |
+
+BUILTIN 和 USER_IMPORTED 路径 `suggested_tools` 引用未知工具只 WARN 不阻断（真正的工具可用性由 `SkillRequirementGate` 在 `requires.tools` 层做硬过滤）。
+
+## 8. 常见陷阱
+
+- **目录名必须等于 `name` 字段**：`SkillInstaller` 按 frontmatter 的 `name` 推导安装路径，手动调整目录名不会同步 skills 表。
+- **`category` 五个值是约定而不是硬约束**：其他值不会拒绝，但 catalog 会原样渲染出奇怪的分组。建议沿用 `external-integration` / `content-creation` / `automation` / `infrastructure` / `utility`。
+- **`suggested_tools` 软约束**：不存在的工具 id 在 BUILTIN / USER_IMPORTED / MARKETPLACE 路径只 WARN，但 `requires.tools` 中的依赖必须实际可用——否则 skill 直接从 catalog 剔除。
+- **热加载保留最后有效版本**：修改 SKILL.md 解析失败时，系统不会把已有 skill 注销，而是保留上一次成功解析的版本；日志中会看到 WARN 记录失败原因。
+- **BUILTIN 覆盖策略**：`SkillDiscoveryRegistrar` 检查文件存在即跳过，已存在不覆盖。升级知微时如需刷新某个预置 skill，需手动删除用户目录下对应文件夹再重启。
+
+## 9. 深入阅读
+
+- [`docs/skill-spec.md`](../skill-spec.md) — 正式规范
+- [`docs/architecture/skill-system.md`](../architecture/skill-system.md) — 架构设计
+- `src/main/resources/skills/skill-creator/` — 自举样本与参考文件
+- `src/main/java/com/lifepilot/skill/validation/` — 校验器源码（错误消息的定义在这里）
