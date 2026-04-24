@@ -128,8 +128,9 @@ public class DerivedEntityListener {
      * @return 是否应当重算
      */
     private boolean shouldRegenerateProfile(TemporalEntity profile) {
+        // TemporalEntity 紧凑构造器已把 null 转为 List.of()，这里只需判空
         List<String> sources = profile.derivationSources();
-        if (sources == null || sources.isEmpty()) {
+        if (sources.isEmpty()) {
             // 没有源的画像无法验证覆盖比例，保守触发一次让 regenerator 决定
             return true;
         }
