@@ -41,6 +41,9 @@ public class SkillConfigProperties {
     /** Skill 自扩展配置。 */
     private AutoGeneration autoGeneration = new AutoGeneration();
 
+    /** Skill 自生成流水线配置。 */
+    private Synthesis synthesis = new Synthesis();
+
     /** Shell 动作配置。 */
     private ShellAction shellAction = new ShellAction();
 
@@ -55,6 +58,9 @@ public class SkillConfigProperties {
 
     /** SkillHub 远程市场配置。 */
     private SkillHub skillHub = new SkillHub();
+
+    public Synthesis getSynthesis() { return synthesis; }
+    public void setSynthesis(Synthesis synthesis) { this.synthesis = synthesis; }
 
     public Builtin getBuiltin() { return builtin; }
     public void setBuiltin(Builtin builtin) { this.builtin = builtin; }
@@ -159,6 +165,21 @@ public class SkillConfigProperties {
 
         public int getMaxValidationIterations() { return maxValidationIterations; }
         public void setMaxValidationIterations(int maxValidationIterations) { this.maxValidationIterations = maxValidationIterations; }
+    }
+
+    /**
+     * Skill 自生成（SkillSynthesizer）流水线配置。
+     *
+     * @author zsg
+     * @since 2026-04-24
+     */
+    public static class Synthesis {
+
+        /** 首次生成失败后允许的修正轮数（总尝试次数为 1 + maxFixAttempts），默认 2。 */
+        private int maxFixAttempts = 2;
+
+        public int getMaxFixAttempts() { return maxFixAttempts; }
+        public void setMaxFixAttempts(int maxFixAttempts) { this.maxFixAttempts = maxFixAttempts; }
     }
 
     /**

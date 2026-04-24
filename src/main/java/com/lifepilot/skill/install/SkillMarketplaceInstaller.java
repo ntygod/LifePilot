@@ -62,6 +62,7 @@ public class SkillMarketplaceInstaller {
     private static final Logger log = LoggerFactory.getLogger(SkillMarketplaceInstaller.class);
 
     private final SkillInstaller installer;
+    private final SkillInstallationRepository repository;
     private final IndexManager indexManager;
     private final SkillConfigProperties config;
     private final RestClient restClient;
@@ -69,12 +70,14 @@ public class SkillMarketplaceInstaller {
     @Nullable private final ClawHubZipExtractor clawHubZipExtractor;
 
     public SkillMarketplaceInstaller(SkillInstaller installer,
+                                     SkillInstallationRepository repository,
                                      IndexManager indexManager,
                                      SkillConfigProperties config,
                                      RestClient.Builder restClientBuilder,
                                      @Nullable ClawHubClient clawHubClient,
                                      @Nullable ClawHubZipExtractor clawHubZipExtractor) {
         this.installer = installer;
+        this.repository = repository;
         this.indexManager = indexManager;
         this.config = config;
         this.restClient = restClientBuilder.build();
@@ -144,11 +147,36 @@ public class SkillMarketplaceInstaller {
                     content,
                     skillsRoot));
 
-            copyAuxFiles(tempDir, Path.of(install.filePath()));
+            // aux 复制失败必须回滚：避免 skills 表记录存在但 references/scripts/assets 缺失的脏态
+            try {
+                copyAuxFiles(tempDir, Path.of(install.filePath()));
+            } catch (IOException | RuntimeException auxError) {
+                rollbackInstall(install, auxError);
+                throw auxError;
+            }
             log.info("市场 Skill 安装成功（ClawHub）: marketplaceId={}, name={}", pkg.id(), install.name());
             return install;
         } finally {
             deleteDirRecursive(tempDir);
+        }
+    }
+
+    /**
+     * 安装后 aux 复制失败回滚：删 DB 记录 + 删文件系统目录，恢复到未安装态。
+     * 清理过程中的异常只记 WARN，不再抛出（避免掩盖原始 auxError）。
+     */
+    private void rollbackInstall(SkillInstallation install, Exception cause) {
+        log.warn("市场 Skill aux 复制失败，回滚安装: name={}, error={}",
+                install.name(), cause.getMessage());
+        try {
+            repository.delete(install.name());
+        } catch (Exception dbErr) {
+            log.warn("回滚 skills 表失败（忽略）: name={}, error={}", install.name(), dbErr.getMessage());
+        }
+        try {
+            deleteDirRecursive(Path.of(install.filePath()));
+        } catch (Exception fsErr) {
+            log.warn("回滚 skill 目录失败（忽略）: path={}, error={}", install.filePath(), fsErr.getMessage());
         }
     }
 

@@ -30,8 +30,9 @@ import java.util.Map;
  * <ol>
  *   <li><b>首次生成</b>：渲染 {@code generation/skill-synthesis} 模板 → 调 LLM → 得到 SKILL.md 原文</li>
  *   <li><b>校验</b>：{@link MarkdownSkillParser#parse(String)} + {@link SkillValidator#validateGenerated(ParsedSkill)}</li>
- *   <li><b>迭代修正</b>：失败时渲染 {@code generation/skill-fix} 模板（带上次产物 + 错误信息）→ 重新生成；最多
- *       重试 {@value #MAX_FIX_ATTEMPTS} 次（即"首次 + MAX_FIX_ATTEMPTS 次修正"）</li>
+ *   <li><b>迭代修正</b>：失败时渲染 {@code generation/skill-fix} 模板（带上次产物 + 错误信息）→ 重新生成；
+ *       最多重试 {@link SkillConfigProperties.Synthesis#getMaxFixAttempts()} 次
+ *       （默认 2；即"首次 + 2 次修正"）</li>
  *   <li><b>落库</b>：通过 {@link SkillInstaller#install(SkillInstaller.InstallRequest)} 统一流水线写入
  *       {@code {skillDir}/auto/<name>/SKILL.md}，{@code source_type = AUTO_GENERATED}；
  *       随后发布 {@link SkillGeneratedEvent} 供 SSE / 审计监听器消费</li>
@@ -51,9 +52,6 @@ import java.util.Map;
 public class SkillSynthesizer {
 
     private static final Logger log = LoggerFactory.getLogger(SkillSynthesizer.class);
-
-    /** 首次生成失败后允许的修正轮数（总尝试次数为 1 + MAX_FIX_ATTEMPTS）。 */
-    private static final int MAX_FIX_ATTEMPTS = 2;
 
     /** 自生成 SKILL.md 相对子目录（相对于 {@link SkillConfigProperties#getDirectory()}）。 */
     private static final String AUTO_SUBDIR = "auto";
@@ -95,8 +93,9 @@ public class SkillSynthesizer {
     public SkillInstallation synthesize(SkillSynthesisContext ctx) {
         String generated = firstGenerate(ctx);
         Exception lastFailure = null;
+        int maxFixAttempts = config.getSynthesis().getMaxFixAttempts();
 
-        for (int attempt = 0; attempt <= MAX_FIX_ATTEMPTS; attempt++) {
+        for (int attempt = 0; attempt <= maxFixAttempts; attempt++) {
             try {
                 ParsedSkill parsed = parser.parse(generated);
                 validator.validateGenerated(parsed);
@@ -118,9 +117,9 @@ public class SkillSynthesizer {
             } catch (Exception e) {
                 lastFailure = e;
                 log.warn("SkillSynthesizer 尝试 {}/{} 失败: error={}, message={}",
-                        attempt + 1, MAX_FIX_ATTEMPTS + 1,
+                        attempt + 1, maxFixAttempts + 1,
                         e.getClass().getSimpleName(), e.getMessage());
-                if (attempt == MAX_FIX_ATTEMPTS) {
+                if (attempt == maxFixAttempts) {
                     break;
                 }
                 try {
@@ -134,7 +133,7 @@ public class SkillSynthesizer {
             }
         }
         throw new SkillSynthesisException(
-                "SkillSynthesizer 失败（已尝试 " + (MAX_FIX_ATTEMPTS + 1) + " 次）",
+                "SkillSynthesizer 失败（已尝试 " + (maxFixAttempts + 1) + " 次）",
                 lastFailure);
     }
 

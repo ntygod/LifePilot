@@ -12,7 +12,6 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Skill 激活器 — 将 Skill 从注册表中激活为上下文注入包。
@@ -89,8 +88,8 @@ public class SkillActivator {
         // 4. 占位符替换
         String resolvedInstructions = resolvePlaceholders(definition.instructions(), install.filePath());
 
-        // 5. 异步更新 last_activated_at（不阻塞激活返回）
-        CompletableFuture.runAsync(() -> {
+        // 5. 异步更新 last_activated_at（不阻塞激活返回 —— 用 virtual thread 避免占用公共 ForkJoinPool 资源）
+        Thread.startVirtualThread(() -> {
             try {
                 installationRepository.updateLastActivatedAt(name, Instant.now());
             } catch (Exception e) {

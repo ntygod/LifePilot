@@ -109,4 +109,45 @@ class MarkdownSkillParser_新规范测试 {
         assertThatThrownBy(() -> parser.parse(md))
                 .hasMessageContaining("缺少必需字段");
     }
+
+    @Test
+    void category超过64字符应拒绝() {
+        String longCategory = "a".repeat(65);
+        var md = """
+                ---
+                name: x
+                description: 当用时
+                version: 1.0.0
+                metadata:
+                  zhiwei:
+                    category: %s
+                ---
+                body
+                """.formatted(longCategory);
+
+        assertThatThrownBy(() -> parser.parse(md))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("category 长度超过");
+    }
+
+    @Test
+    void priority值非法应抛自定义异常_不泄露Java枚举错误() {
+        var md = """
+                ---
+                name: x
+                description: 当用时
+                version: 1.0.0
+                metadata:
+                  zhiwei:
+                    priority: urgent
+                ---
+                body
+                """;
+
+        assertThatThrownBy(() -> parser.parse(md))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("priority 字段值非法")
+                .hasMessageContaining("urgent")
+                .hasMessageContaining("high/normal/low");
+    }
 }

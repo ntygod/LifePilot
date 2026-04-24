@@ -44,10 +44,14 @@ public class SkillImportService {
     private static final long MAX_ZIP_TOTAL_BYTES = 10L * 1024 * 1024;
 
     private final SkillInstaller installer;
+    private final SkillInstallationRepository repository;
     private final SkillConfigProperties config;
 
-    public SkillImportService(SkillInstaller installer, SkillConfigProperties config) {
+    public SkillImportService(SkillInstaller installer,
+                              SkillInstallationRepository repository,
+                              SkillConfigProperties config) {
         this.installer = installer;
+        this.repository = repository;
         this.config = config;
     }
 
@@ -80,11 +84,36 @@ public class SkillImportService {
                     null,
                     content,
                     skillsRoot));
-            copyAuxFiles(tempDir, Paths.get(install.filePath()));
+            // aux 复制失败必须回滚：否则 skills 表与文件系统会进入 "入表但 references 缺失" 的脏态
+            try {
+                copyAuxFiles(tempDir, Paths.get(install.filePath()));
+            } catch (IOException | RuntimeException auxError) {
+                rollbackInstall(install, auxError);
+                throw auxError;
+            }
             log.info("导入 Skill 成功：name={}, source=USER_IMPORTED", install.name());
             return install;
         } finally {
             deleteDirRecursive(tempDir);
+        }
+    }
+
+    /**
+     * 安装后 aux 复制失败回滚：删 DB 记录 + 删文件系统目录，恢复到未安装态。
+     * 清理过程中的异常只记 WARN，不再抛出（避免掩盖原始 auxError）。
+     */
+    private void rollbackInstall(SkillInstallation install, Exception cause) {
+        log.warn("Skill 导入 aux 复制失败，回滚安装: name={}, error={}",
+                install.name(), cause.getMessage());
+        try {
+            repository.delete(install.name());
+        } catch (Exception dbErr) {
+            log.warn("回滚 skills 表失败（忽略）: name={}, error={}", install.name(), dbErr.getMessage());
+        }
+        try {
+            deleteDirRecursive(Paths.get(install.filePath()));
+        } catch (Exception fsErr) {
+            log.warn("回滚 skill 目录失败（忽略）: path={}, error={}", install.filePath(), fsErr.getMessage());
         }
     }
 

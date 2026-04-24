@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * ReAct Agent 不可变状态快照。
@@ -215,8 +217,20 @@ public record ReactAgentState(
                 .build();
     }
 
+    /** loadedSkillContent 硬上限（20KB），超限时从头部裁掉以保留最新加载的 skill 指南。 */
+    private static final int MAX_SKILL_CONTENT_CHARS = 20 * 1024;
+
+    /** 已加载内容中提取 {@code <skill name="X">} 的 skill 名称，用于去重。 */
+    private static final Pattern SKILL_NAME_PATTERN = Pattern.compile("<skill\\s+name=\"([^\"]+)\"");
+
     /**
      * 追加已加载的 Skill 指南内容，累积拼接到已有内容之后。
+     *
+     * <p>实现两道防线防止 LLM 多轮重复 {@code skill.load(["same-skill"])} 撑爆上下文：</p>
+     * <ol>
+     *   <li>去重：按 {@code <skill name="X">} 的 name 比对，已加载过的 skill 整段跳过</li>
+     *   <li>硬上限：{@value #MAX_SKILL_CONTENT_CHARS} 字符，超限时从头部截断，保留最新加载的尾部内容</li>
+     * </ol>
      *
      * @param newContent 新加载的 Skill 指南文本
      * @return 包含累积内容的新状态
@@ -225,9 +239,28 @@ public record ReactAgentState(
         if (newContent == null || newContent.isBlank()) {
             return this;
         }
+
+        // 去重：若新内容中的 skill name 已在已加载内容里，整段跳过
+        if (loadedSkillContent != null) {
+            Matcher nameMatcher = SKILL_NAME_PATTERN.matcher(newContent);
+            while (nameMatcher.find()) {
+                String name = nameMatcher.group(1);
+                if (loadedSkillContent.contains("<skill name=\"" + name + "\"")) {
+                    return this;
+                }
+            }
+        }
+
         String merged = loadedSkillContent != null
                 ? loadedSkillContent + "\n\n" + newContent
                 : newContent;
+
+        // 硬上限：超限从头部截断，保留最新加载的尾部
+        if (merged.length() > MAX_SKILL_CONTENT_CHARS) {
+            merged = "...[已截断更早的 skill 指南]...\n\n"
+                    + merged.substring(merged.length() - MAX_SKILL_CONTENT_CHARS);
+        }
+
         return this.toBuilder()
                 .loadedSkillContent(merged)
                 .build();

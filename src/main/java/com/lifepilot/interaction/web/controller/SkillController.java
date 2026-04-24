@@ -303,23 +303,42 @@ public class SkillController {
         skillRegistry.unregister(name);
         installationRepository.delete(name);
 
-        // 删除 Skill 文件夹
+        // 删除 Skill 文件夹 —— 收集单文件删除失败路径，非空时 WARN 一次；响应体返回 warning 方便前端提示
+        Path skillFolder = skillsDirectory.resolve(name);
+        List<String> deleteFailures = new ArrayList<>();
         try {
-            Path skillFolder = skillsDirectory.resolve(name);
             if (Files.exists(skillFolder) && Files.isDirectory(skillFolder)) {
                 try (var walk = Files.walk(skillFolder)) {
                     walk.sorted(java.util.Comparator.reverseOrder())
                             .forEach(path -> {
-                                try { Files.deleteIfExists(path); } catch (IOException e) { log.debug("删除文件失败: {}", path, e); }
+                                try {
+                                    Files.deleteIfExists(path);
+                                } catch (IOException e) {
+                                    deleteFailures.add(path.toString());
+                                }
                             });
                 }
             }
         } catch (IOException e) {
-            log.warn("删除 Skill 文件夹失败: name={}, error={}", name, e.getMessage());
+            log.warn("遍历 Skill 文件夹失败: name={}, error={}", name, e.getMessage());
+            deleteFailures.add(skillFolder.toString());
+        }
+
+        Map<String, Object> responsePayload = new HashMap<>();
+        responsePayload.put("name", name);
+        if (!deleteFailures.isEmpty()) {
+            log.warn("删除 Skill 目录有 {} 个文件失败: name={}, paths={}",
+                    deleteFailures.size(), name, deleteFailures);
+            responsePayload.put("warning",
+                    "部分文件删除失败（" + deleteFailures.size() + " 个），可能需要手动清理: " + skillFolder);
+        } else if (Files.exists(skillFolder)) {
+            // 兜底：目录还在且没归入 failures，也给出 warning
+            log.warn("Skill 目录未完全清空: name={}, path={}", name, skillFolder);
+            responsePayload.put("warning", "Skill 目录未完全清空: " + skillFolder);
         }
 
         log.info("Skill 已注销: name={}", name);
-        return ApiResponse.ok();
+        return ApiResponse.ok(responsePayload);
     }
 
     /**

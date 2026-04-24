@@ -312,6 +312,7 @@ watch(activeTab, tab => {
             还没有匹配的市场 Skill。试试更换关键词？
           </div>
 
+          <!-- max-h-80 保留：Tailwind 默认高度尺度，项目未定义 max-h-* 命名别名 -->
           <div v-else class="max-h-80 space-y-sm overflow-y-auto pr-xs">
             <article
               v-for="pkg in marketplacePackages"

@@ -110,9 +110,7 @@ public class MarkdownSkillParser {
         var suggestedTools = asStringList(zhiwei.get("suggested_tools"));
         var tags = asStringList(zhiwei.get("tags"));
         var category = zhiwei.get("category") == null ? null : zhiwei.get("category").toString();
-        var priority = zhiwei.get("priority") == null
-                ? SkillPriority.NORMAL
-                : SkillPriority.valueOf(zhiwei.get("priority").toString().toUpperCase());
+        var priority = parsePriority(zhiwei.get("priority"));
 
         Object reqObj = zhiwei.get("requires");
         Map<String, Object> req = (reqObj instanceof Map<?, ?>)
@@ -138,5 +136,22 @@ public class MarkdownSkillParser {
             return l.stream().map(Object::toString).toList();
         }
         return List.of(o.toString());
+    }
+
+    /**
+     * 解析 {@code priority} 字段并包装非法值异常信息，避免 {@link Enum#valueOf} 默认异常
+     * 抛出 {@code "No enum constant ..."} 混淆用户。
+     */
+    private static SkillPriority parsePriority(Object raw) {
+        if (raw == null) {
+            return SkillPriority.NORMAL;
+        }
+        String value = raw.toString().trim().toUpperCase();
+        try {
+            return SkillPriority.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "priority 字段值非法: " + raw + "（允许: high/normal/low）");
+        }
     }
 }
