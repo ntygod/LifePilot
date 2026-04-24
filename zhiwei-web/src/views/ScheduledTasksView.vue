@@ -40,6 +40,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-vue-next'
 import { useScheduledTaskStore } from '@/stores/scheduledTask'
@@ -51,6 +52,13 @@ import {
   type ScheduledTaskLogDto,
 } from '@/api/scheduledTask'
 import ScheduledTaskEditDialog from '@/components/scheduled/ScheduledTaskEditDialog.vue'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const store = useScheduledTaskStore()
 const projectStore = useProjectStore()
@@ -843,8 +851,8 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                   </div>
                 </div>
 
-                <!-- 右上角隐藏操作（hover 显示） -->
-                <div class="sched-card__actions flex">
+                <!-- 右上角操作（hover 显示）：暂停/启用 + 编辑 + 更多菜单 -->
+                <div class="sched-card__actions flex items-center gap-xs">
                   <button
                     type="button"
                     class="sched-icon-btn"
@@ -864,15 +872,36 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                   >
                     <Edit3 class="size-xs" />
                   </button>
-                  <button
-                    type="button"
-                    class="sched-icon-btn sched-icon-btn--danger"
-                    :data-testid="`delete-${task.id}`"
-                    title="删除"
-                    @click.stop="deleteTask(task.id, task.name)"
-                  >
-                    <MoreHorizontal class="size-xs" />
-                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <button
+                        type="button"
+                        class="sched-icon-btn"
+                        :data-testid="`more-${task.id}`"
+                        title="更多"
+                        @click.stop
+                      >
+                        <MoreHorizontal class="size-xs" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" class="w-36">
+                      <DropdownMenuItem @click.stop="showPlaceholder('立即运行即将推出')">
+                        立即运行
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click.stop="selectTask(task.id)">
+                        查看日志
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        :data-testid="`delete-${task.id}`"
+                        class="text-destructive focus:text-destructive"
+                        @click.stop="deleteTask(task.id, task.name)"
+                      >
+                        <Trash2 class="size-xs" />
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <!-- 隐形 toggle：给测试用（触发卡片点击展开） -->
                 <span
@@ -1739,12 +1768,11 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
 
 .sched-tool--dim { opacity: 0.6; }
 
-/* 卡片右上角操作 */
+/* 卡片右上角操作 —— 仅 hover / selected 时可见；简化为 3 按钮（暂停 + 编辑 + 更多菜单） */
 .sched-card__actions {
   position: absolute;
   top: 10px;
   right: 10px;
-  gap: 3px;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -1758,8 +1786,8 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 0.375rem;

@@ -157,8 +157,15 @@ describe('ScheduledTasksView', () => {
     projectApiMock.listProjects.mockResolvedValue([])
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.find('[data-testid="delete-t1"]').trigger('click')
+    // 2026-04-24 视觉简化：删除挪进「更多菜单」，需先打开菜单再点删除。
+    // DropdownMenuContent 走 portal 挂到 document.body，需用 document.querySelector 查
+    await wrapper.find('[data-testid="more-t1"]').trigger('click')
+    await flushPromises()
+    const deleteItem = document.querySelector('[data-testid="delete-t1"]')
+    expect(deleteItem).not.toBeNull()
+    ;(deleteItem as HTMLElement).click()
     expect(taskApiMock.deleteScheduledTask).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('点击删除按钮_确认弹窗确定_调 store.deleteTask', async () => {
@@ -168,9 +175,15 @@ describe('ScheduledTasksView', () => {
     taskApiMock.deleteScheduledTask.mockResolvedValue(undefined)
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.find('[data-testid="delete-t1"]').trigger('click')
+    // 2026-04-24 视觉简化：删除挪进「更多菜单」
+    await wrapper.find('[data-testid="more-t1"]').trigger('click')
+    await flushPromises()
+    const deleteItem = document.querySelector('[data-testid="delete-t1"]') as HTMLElement | null
+    expect(deleteItem).not.toBeNull()
+    deleteItem?.click()
     await flushPromises()
     expect(taskApiMock.deleteScheduledTask).toHaveBeenCalledWith('t1')
+    wrapper.unmount()
   })
 
   it('active 任务 + nextExecutionAt 展示"下次"文本', async () => {
