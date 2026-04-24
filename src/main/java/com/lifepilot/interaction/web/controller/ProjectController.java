@@ -57,6 +57,9 @@ public class ProjectController {
      *
      * <p>{@code instructions} 为 null 时规范化为空串；{@code isolation} 为 null
      * 时使用 {@link ProjectIsolation#defaultValue()}（当前为 ISOLATED）。</p>
+     *
+     * <p>创建成功时响应会附带项目默认知识库 id —— 前端据此上传创建时选中的
+     * 初始文件到项目知识库。</p>
      */
     @PostMapping
     public ApiResponse<ProjectResponse> create(@RequestBody CreateProjectRequest req) {
@@ -67,7 +70,7 @@ public class ProjectController {
                     : ProjectIsolation.defaultValue();
             String instructions = req.instructions() != null ? req.instructions() : "";
             Project created = service.createProject(req.name(), instructions, isolation);
-            return ApiResponse.ok(ProjectResponse.from(created));
+            return ApiResponse.ok(ProjectResponse.from(created, service.findKnowledgeBaseIds(created.id())));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
@@ -75,6 +78,9 @@ public class ProjectController {
 
     /**
      * 列出所有项目（按创建时间倒序）。
+     *
+     * <p>列表接口不附 {@code knowledgeBaseIds}，避免对每一行额外反查；
+     * 前端需要时走 {@link #get} 单项查询。</p>
      */
     @GetMapping
     public ApiResponse<List<ProjectResponse>> list() {
@@ -95,7 +101,7 @@ public class ProjectController {
         Project p = service.getProject(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "项目不存在：" + id));
-        return ApiResponse.ok(ProjectResponse.from(p));
+        return ApiResponse.ok(ProjectResponse.from(p, service.findKnowledgeBaseIds(id)));
     }
 
     /**
@@ -114,7 +120,7 @@ public class ProjectController {
                     ? ProjectIsolation.fromString(req.isolation())
                     : null;
             Project updated = service.updateProject(id, req.name(), req.instructions(), isolation);
-            return ApiResponse.ok(ProjectResponse.from(updated));
+            return ApiResponse.ok(ProjectResponse.from(updated, service.findKnowledgeBaseIds(id)));
         } catch (IllegalArgumentException e) {
             // 重名 / 非法 isolation 枚举 → 400；项目不存在由 ProjectNotFoundException 冒泡走 404
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());

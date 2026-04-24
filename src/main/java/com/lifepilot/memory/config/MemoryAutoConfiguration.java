@@ -33,6 +33,8 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.semantic.ConflictDetector;
+import com.lifepilot.memory.semantic.ConflictResolutionRepository;
+import com.lifepilot.memory.semantic.ConflictResolutionService;
 import com.lifepilot.memory.semantic.ExtractionValidator;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -66,6 +68,7 @@ import org.sqlite.SQLiteDataSource;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -100,6 +103,19 @@ public class MemoryAutoConfiguration {
     }
 
     // L1 临时工作区
+
+    /**
+     * 全局时钟 —— 生命周期 Listener 与再验证 / 反馈账本等时间敏感组件注入。
+     *
+     * <p>生产环境使用 {@link Clock#systemUTC()}；场景测试可通过 {@code @Primary}
+     * 覆盖为 {@code MutableClock} 以便推进时间。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public Clock memoryClock() {
+        log.debug("记忆模块: 注册默认 Clock (systemUTC)");
+        return Clock.systemUTC();
+    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -305,9 +321,43 @@ public class MemoryAutoConfiguration {
             ConflictDetector conflictDetector,
             VersionMerger versionMerger,
             VectorSearcher vectorSearcher,
-            MemorySpaceRepository memorySpaceRepository) {
+            MemorySpaceRepository memorySpaceRepository,
+            org.springframework.context.ApplicationEventPublisher eventPublisher) {
         log.info("记忆模块: 注册 SemanticMemory");
-        return new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
+        var semanticMemory = new SemanticMemory(
+                jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
+        semanticMemory.setEventPublisher(eventPublisher);
+        return semanticMemory;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ConflictResolutionRepository conflictResolutionRepository(JdbcTemplate jdbcTemplate) {
+        log.info("记忆模块: 注册 ConflictResolutionRepository");
+        return new ConflictResolutionRepository(jdbcTemplate);
+    }
+
+    /**
+     * Task 24：语义冲突裁决服务。注入到 {@link SemanticMemory} 后，
+     * upsert 末尾会异步触发 LLM 裁决（REPLACE / COEXIST / TIMELINE）。
+     *
+     * <p>采用 setter 注入挂到 semanticMemory 上，避免构造器循环依赖
+     * （ConflictResolutionService 的 applyVerdict 路径需要回调 semanticMemory）。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ConflictResolutionService conflictResolutionService(
+            GenerationRouter generationRouter,
+            PromptRegistry promptRegistry,
+            VectorSearcher vectorSearcher,
+            ConflictResolutionRepository conflictResolutionRepository,
+            SemanticMemory semanticMemory) {
+        log.info("记忆模块: 注册 ConflictResolutionService");
+        var service = new ConflictResolutionService(
+                generationRouter, promptRegistry, vectorSearcher,
+                conflictResolutionRepository, semanticMemory);
+        semanticMemory.setConflictResolutionService(service);
+        return service;
     }
 
     @Bean
@@ -324,12 +374,14 @@ public class MemoryAutoConfiguration {
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
-                                               @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
+                                               @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                                               Clock clock) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }
         log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
-        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry, snapshotRepository);
+        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
+                jdbcTemplate, promptRegistry, snapshotRepository, clock);
     }
 
     // 检索
@@ -359,12 +411,15 @@ public class MemoryAutoConfiguration {
             EpisodicMemory episodicMemory,
             @Nullable IntentMatcher intentMatcher,
             @Nullable RerankRouter rerankRouter,
-            JdbcTemplate jdbcTemplate) {
-        log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}",
+            JdbcTemplate jdbcTemplate,
+            @Nullable com.lifepilot.interaction.web.repository.MemoryProvenanceRepository provenanceRepository) {
+        log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
                 intentMatcher != null ? "enabled" : "disabled",
-                rerankRouter != null ? "enabled" : "disabled");
+                rerankRouter != null ? "enabled" : "disabled",
+                provenanceRepository != null ? "enabled" : "disabled");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter);
+                semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter,
+                provenanceRepository);
         semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
         episodicMemory.setWriteCallback(retriever::resetEmptyFlag);
         return retriever;

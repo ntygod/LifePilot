@@ -69,7 +69,9 @@ public class PreferenceConsolidator {
             try {
                 var existing = ruleByKey.get(entity.name());
                 if (existing == null) {
-                    // L3 有 + L4 无 → 新建
+                    // L3 有 + L4 无 → 新建 —— 填 sourceEntityId = L3 PREFERENCE 实体 id，
+                    // 让后续 L3 CANCELLED/EXPIRED/SUPERSEDED 能通过 L4SyncListener
+                    // 的 source_entity_id 反查命中并级联失活。
                     var rule = new PreferenceRule(
                             UUID.randomUUID().toString(),
                             PREFERENCE_CATEGORY,
@@ -79,7 +81,9 @@ public class PreferenceConsolidator {
                             "consolidation",
                             1,
                             Instant.now(),
-                            Instant.now());
+                            Instant.now(),
+                            entity.id(),
+                            null);
                     proceduralMemory.savePreference(rule);
                     created++;
                 } else {

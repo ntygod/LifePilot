@@ -64,8 +64,9 @@ class ProjectLifecycle_集成测试 {
         memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, new ObjectMapper());
         projectRepository = new ProjectRepository(jdbcTemplate);
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, new ObjectMapper(), null);
+        // KnowledgeBaseManager = null：本测试聚焦项目生命周期，不覆盖 KB 自动创建路径
         projectService = new ProjectService(
-                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate);
+                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate, null);
     }
 
     @AfterEach

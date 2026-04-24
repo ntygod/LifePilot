@@ -76,6 +76,18 @@ const router = createRouter({
     },
 
     /**
+     * 定时任务全局管理 —— Plan 2+3 Task A5
+     *
+     * 侧栏 {@code scheduled-tasks-entry} 一级入口对应的页面，
+     * 展示主账户 + 所有项目下的定时任务，带暂停/恢复/删除操作。
+     */
+    {
+      path: '/scheduled-tasks',
+      name: 'scheduledTasks',
+      component: () => import('@/views/ScheduledTasksView.vue')
+    },
+
+    /**
      * 知识库模块
      */
     {
@@ -93,16 +105,12 @@ const router = createRouter({
       name: 'knowledgeBaseDocumentDetail',
       component: () => import('@/views/KnowledgeBaseDocumentView.vue')
     },
-    {
-      path: '/datastores',
-      name: 'datastores',
-      component: () => import('@/views/DatastoreView.vue')
-    },
-    {
-      path: '/datastores/:id',
-      name: 'datastoreDetail',
-      component: () => import('@/views/DatastoreDetailView.vue')
-    },
+
+    /**
+     * Datastore 路由已于 Plan 3 Task B2 下架（spec §5.1/§5.3）。
+     * DatastoreView.vue / DatastoreDetailView.vue 组件文件保留以便后续需要时复用，
+     * 但不再注册为用户可达路由；相关后端 API 也保留，仅移除前端入口。
+     */
 
     /**
      * 记忆管理

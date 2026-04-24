@@ -8,6 +8,8 @@ import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.lifecycle.ChangeSource;
+import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -126,30 +128,52 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("Manage user long-term memory. Actions: search (entities), recall (conversation fragments), create, update, delete, cancel (archive goal/experience), tag, query-at-time, search-experience.")
+                .description("搜索和管理用户的长期记忆。\n\n" +
+                        "自动行为：对话中的事实由系统自动提取存储，用户画像和相关经验已自动注入上下文。\n\n" +
+                        "手动使用场景：\n" +
+                        "- search：用户提到具体人/事/项目时，搜索相关知识实体\n" +
+                        "- recall：用户引用历史对话（\u201C上次聊的\u201D\u201C之前说过\u201D）时，回忆完整对话片段\n" +
+                        "- create：用户明确要求记住某事，或表达了重要偏好/目标变更\n" +
+                        "- update：已有实体信息需要修正或补充\n" +
+                        "- delete：用户要求遗忘**已知 ID** 的某条记忆（精确删除）\n" +
+                        "- cancel：**用户表达取消/撤销/不再做某事时必选**。适用所有记忆类型（偏好/目标/经验/习惯/项目等）。\n" +
+                        "  两种形态：\n" +
+                        "    * 传 entityId：按 ID 将单条记忆转为 CANCELLED 状态（仅当前处于 ACTIVE 有效）；\n" +
+                        "    * 传 query：按语义描述批量归档相关记忆，默认圈定 GOAL/EXPERIENCE/HABIT，可通过 entityTypes 覆盖。\n" +
+                        "  典型触发词：\u201C取消 X\u201D、\u201C撤销 X\u201D、\u201C不要再 X\u201D、\u201C以后别提 X\u201D、\u201CX 不做了\u201D。\n" +
+                        "  重要：只 create PREFERENCE 是不够的，老的 GOAL/EXPERIENCE 仍会继续被召回，必须同时 cancel 归档相关旧记忆。\n" +
+                        "- complete：用户明确表达已完成某目标/项目（\u201C终于做完了\u201D）时调用，仅 GOAL/PROJECT 类型有效，将实体转为 COMPLETED。\n" +
+                        "- supersede：新实体替代旧实体时调用（如旧目标被新目标取代），同时设置 succeeded_by 外键并将旧实体转为 SUPERSEDED。需要同时传 entityId（被替代）和 new_entity_id（继承者）。\n" +
+                        "- search-experience：需要借鉴过往类似任务的执行经验\n" +
+                        "- query-at-time：需要查询某个时间点的历史状态\n\n" +
+                        "不需要调用的情况：当前上下文已有足够信息、纯闲聊、一般知识问答。\n" +
+                        "资料文档检索请用 knowledge.search。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
-                                        "enum", List.of("search", "recall", "create", "update", "delete", "cancel", "tag", "query-at-time", "search-experience"),
+                                        "enum", List.of("search", "recall", "create", "update", "delete",
+                                                "cancel", "complete", "supersede", "tag", "query-at-time", "search-experience"),
                                         "description", "记忆操作类型。search=搜索知识实体, recall=回忆历史对话, " +
-                                                "create/update/delete=实体 CRUD, cancel=按语义批量归档已取消的目标/经验/习惯, " +
+                                                "create/update/delete=实体 CRUD, cancel=撤销/取消（支持 entityId 单条或 query 语义批量）, " +
+                                                "complete=标记 GOAL/PROJECT 已完成, supersede=旧实体被新实体替代, " +
                                                 "tag=建立关系, query-at-time=时间点查询, search-experience=检索执行经验")),
-                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience/cancel 使用")),
+                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 必填；cancel 未传 entityId 时必填")),
                                 Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
                                 Map.entry("name", Map.of("type", "string", "description", "实体名称；create 必填，update 时可选改名")),
                                 Map.entry("entityType", Map.of("type", "string", "description", "实体类型；create 必填，query-at-time 时可选过滤", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM"))),
                                 Map.entry("entityTypes", Map.of(
                                         "type", "array",
                                         "items", Map.of("type", "string", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM")),
-                                        "description", "cancel 限定归档的实体类型集合，默认 [GOAL, EXPERIENCE, HABIT]")),
-                                Map.entry("maxArchive", Map.of("type", "integer", "description", "cancel 最多归档数量，默认 5")),
-                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 最小相关性阈值（0-1），默认 0.5")),
+                                        "description", "cancel 语义批量模式限定归档的实体类型集合，默认 [GOAL, EXPERIENCE, HABIT]")),
+                                Map.entry("maxArchive", Map.of("type", "integer", "description", "cancel 语义批量模式最多归档数量，默认 5")),
+                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 语义批量模式最小相关性阈值（0-1），默认 0.5")),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
-                                Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete 必填")),
+                                Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete/complete/supersede 必填，cancel 单条模式必填")),
+                                Map.entry("new_entity_id", Map.of("type", "string", "description", "supersede 专用：替代旧实体的新实体 ID，必填")),
                                 Map.entry("sourceEntityId", Map.of("type", "string", "description", "tag 源实体 ID")),
                                 Map.entry("targetEntityId", Map.of("type", "string", "description", "tag 目标实体 ID")),
                                 Map.entry("relationType", Map.of("type", "string", "description", "tag 关系类型")),
@@ -437,17 +461,34 @@ public class MemoryToolProvider {
     private static final float DEFAULT_CANCEL_MIN_SCORE = 0.5f;
 
     /**
-     * 按语义批量归档已取消的目标/经验/习惯。
+     * 按语义批量归档已取消的实体，或按 entityId 单条转 CANCELLED。
      *
-     * <p>与 delete 的区别：delete 精确按 entityId 删单条；cancel 按语义描述召回候选集，
-     * 批量归档最相关的若干条。适配"取消定时任务"这类需要级联清理多个旧记忆的场景。</p>
+     * <p>两种形态：</p>
+     * <ol>
+     *   <li>传 {@code entityId}：走单条状态机 — 仅 ACTIVE 实体可 CANCEL，复用
+     *       {@link SemanticMemory#updateLifecycleState(String, LifecycleState, String, ChangeSource)}
+     *       发事件，适配"把这条具体记忆标记为已取消"场景；</li>
+     *   <li>传 {@code query}：语义召回后批量归档最相关若干条 — 默认圈 GOAL/EXPERIENCE/HABIT，
+     *       走 {@link SemanticMemory#archive}，适配"取消定时任务"这类需要级联清理多个旧记忆的场景。</li>
+     * </ol>
+     *
+     * <p>与 delete 的区别：delete 是纯物理归档不转生命周期状态；cancel 明确标记为
+     * CANCELLED，下游听众（如 ProactiveTaskCancelListener）能据此做级联处理。</p>
      */
     ToolResult executeCancel(ToolInput input) {
         String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+
+        // 优先走单条路径：传了 entityId 即视为明确目标
+        var entityIdOpt = input.getOptionalParam("entityId", String.class)
+                .filter(s -> !s.isBlank());
+        if (entityIdOpt.isPresent()) {
+            return executeCancelSingle(entityIdOpt.get());
+        }
+
         try {
             String query = input.getParam("query", String.class);
             if (query == null || query.isBlank()) {
-                return ToolResult.error("cancel 需要传入 query 参数描述要取消的事物");
+                return ToolResult.error("cancel 需要传入 entityId（单条）或 query（语义批量）");
             }
 
             Set<EntityType> targetTypes = parseCancelTypes(input);
@@ -507,6 +548,138 @@ public class MemoryToolProvider {
         } catch (Exception e) {
             log.error("批量取消记忆失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
             return ToolResult.error("批量取消记忆失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 按 entityId 单条将实体状态转为 CANCELLED — 不限类型，所有 ACTIVE 实体都可 cancel。
+     *
+     * <p>事件发布交给 {@link SemanticMemory#updateLifecycleState} 代办（AFTER_COMMIT），
+     * 调用方不再重复 publishEvent；状态机约束由 {@link LifecycleState#canTransitionTo} 负责。</p>
+     */
+    private ToolResult executeCancelSingle(String entityId) {
+        var existing = semanticMemory.findById(entityId).orElse(null);
+        if (existing == null) {
+            return ToolResult.error("实体不存在: " + entityId);
+        }
+        if (existing.lifecycleState() != LifecycleState.ACTIVE) {
+            return ToolResult.error("实体非 ACTIVE 状态，无法取消（当前 "
+                    + existing.lifecycleState() + "）");
+        }
+        try {
+            SqliteBusyRetry.run(() -> semanticMemory.updateLifecycleState(
+                    entityId, LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT));
+            return ToolResult.success(Map.of(
+                    "id", entityId,
+                    "name", existing.name(),
+                    "type", existing.type().name(),
+                    "lifecycleState", LifecycleState.CANCELLED.name()));
+        } catch (Exception e) {
+            log.error("单条取消记忆失败: entityId={}, error={}", entityId, e.getMessage(), e);
+            return ToolResult.error("取消记忆失败: " + e.getMessage());
+        }
+    }
+
+    /** 允许 complete 的实体类型 — GOAL / PROJECT 具备"是否做完"的自然语义。 */
+    private static final Set<EntityType> COMPLETABLE_TYPES =
+            Set.of(EntityType.GOAL, EntityType.PROJECT);
+
+    /**
+     * 标记实体已完成（COMPLETED）— 仅适用于 GOAL / PROJECT 类型，且必须处于 ACTIVE。
+     *
+     * <p>其他类型（PREFERENCE / HABIT / PERSON 等）没有"完成"语义，拒绝调用。
+     * 由 {@link SemanticMemory#updateLifecycleState} 负责事件发布。</p>
+     */
+    ToolResult executeComplete(ToolInput input) {
+        String entityId;
+        try {
+            entityId = input.getParam("entityId", String.class);
+        } catch (Exception e) {
+            return ToolResult.error("complete 需要传入 entityId");
+        }
+        if (entityId == null || entityId.isBlank()) {
+            return ToolResult.error("complete 需要传入 entityId");
+        }
+        var existing = semanticMemory.findById(entityId).orElse(null);
+        if (existing == null) {
+            return ToolResult.error("实体不存在: " + entityId);
+        }
+        if (!COMPLETABLE_TYPES.contains(existing.type())) {
+            return ToolResult.error("实体类型 " + existing.type().name()
+                    + " 不支持 complete（仅 " + formatTypes(COMPLETABLE_TYPES) + "）");
+        }
+        if (existing.lifecycleState() != LifecycleState.ACTIVE) {
+            return ToolResult.error("实体非 ACTIVE 状态，无法完成（当前 "
+                    + existing.lifecycleState() + "）");
+        }
+        try {
+            SqliteBusyRetry.run(() -> semanticMemory.updateLifecycleState(
+                    entityId, LifecycleState.COMPLETED, "user-complete", ChangeSource.TOOL_EXPLICIT));
+            return ToolResult.success(Map.of(
+                    "id", entityId,
+                    "name", existing.name(),
+                    "type", existing.type().name(),
+                    "lifecycleState", LifecycleState.COMPLETED.name()));
+        } catch (Exception e) {
+            log.error("标记记忆完成失败: entityId={}, error={}", entityId, e.getMessage(), e);
+            return ToolResult.error("标记记忆完成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 旧实体被新实体取代 — 同时更新 {@code succeeded_by} 外键并转 SUPERSEDED 状态。
+     *
+     * <p>两步 UPDATE 走同一事务（Spring {@code @Transactional} 在 SemanticMemory
+     * 方法上已声明）：先 {@code updateSucceededBy} 写 FK，再 {@code updateLifecycleState}
+     * 转状态并发事件。事件 reason 带上 "user-supersede-by:{newId}" 便于下游溯源。</p>
+     */
+    ToolResult executeSupersede(ToolInput input) {
+        String entityId;
+        String newEntityId;
+        try {
+            entityId = input.getParam("entityId", String.class);
+            newEntityId = input.getParam("new_entity_id", String.class);
+        } catch (Exception e) {
+            return ToolResult.error("supersede 需要 entityId 和 new_entity_id 参数");
+        }
+        if (entityId == null || entityId.isBlank()
+                || newEntityId == null || newEntityId.isBlank()) {
+            return ToolResult.error("supersede 需要 entityId 和 new_entity_id 参数");
+        }
+        if (entityId.equals(newEntityId)) {
+            return ToolResult.error("supersede 的 new_entity_id 不能与 entityId 相同");
+        }
+
+        var existing = semanticMemory.findById(entityId).orElse(null);
+        if (existing == null) {
+            return ToolResult.error("被替代实体不存在: " + entityId);
+        }
+        var newExisting = semanticMemory.findById(newEntityId).orElse(null);
+        if (newExisting == null) {
+            return ToolResult.error("新实体不存在: " + newEntityId);
+        }
+        if (existing.lifecycleState() != LifecycleState.ACTIVE
+                && existing.lifecycleState() != LifecycleState.REGENERATION_NEEDED) {
+            return ToolResult.error("被替代实体非 ACTIVE/REGENERATION_NEEDED 状态，无法 supersede（当前 "
+                    + existing.lifecycleState() + "）");
+        }
+
+        try {
+            SqliteBusyRetry.run(() -> {
+                semanticMemory.updateSucceededBy(entityId, newEntityId);
+                semanticMemory.updateLifecycleState(entityId, LifecycleState.SUPERSEDED,
+                        "user-supersede-by:" + newEntityId, ChangeSource.TOOL_EXPLICIT);
+            });
+            return ToolResult.success(Map.of(
+                    "id", entityId,
+                    "name", existing.name(),
+                    "type", existing.type().name(),
+                    "lifecycleState", LifecycleState.SUPERSEDED.name(),
+                    "succeededBy", newEntityId));
+        } catch (Exception e) {
+            log.error("替代记忆失败: entityId={}, newEntityId={}, error={}",
+                    entityId, newEntityId, e.getMessage(), e);
+            return ToolResult.error("替代记忆失败: " + e.getMessage());
         }
     }
 
@@ -663,6 +836,11 @@ public class MemoryToolProvider {
         if (result.description() != null) map.put("description", result.description());
         map.put("score", result.fusedScore());
         map.put("sourcePath", result.sourcePath());
+        // Task 30：生命周期闭环标注 — 仅在 true 时输出以节省 token，
+        // LLM 据此区分"已完成/派生源失效/需复核"的语义。
+        if (result.isHistorical()) map.put("isHistorical", true);
+        if (result.isStale()) map.put("isStale", true);
+        if (result.needsRevalidation()) map.put("needsRevalidation", true);
         return Map.copyOf(map);
     }
 

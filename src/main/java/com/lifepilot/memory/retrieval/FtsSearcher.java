@@ -92,6 +92,7 @@ public class FtsSearcher {
                 JOIN temporal_entities te ON te.source_conversation_id = matched_sessions.session_id
                 WHERE te.is_current = 1
                   AND (te.valid_to IS NULL OR te.valid_to > datetime('now'))
+                  AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
                 ORDER BY matched_sessions.score DESC, te.importance_score DESC, te.updated_at DESC
                 LIMIT ?
                 """,
@@ -112,6 +113,7 @@ public class FtsSearcher {
                     FROM temporal_entities te
                     WHERE te.is_current = 1
                       AND (te.valid_to IS NULL OR te.valid_to > datetime('now'))
+                      AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
                       AND (te.name LIKE ? OR COALESCE(te.description, '') LIKE ?)
                     ORDER BY te.importance_score DESC, te.updated_at DESC
                     LIMIT ?

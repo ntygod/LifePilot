@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +31,8 @@ public class CronTaskRepository {
             rs.getString("status"),
             rs.getString("created_at"),
             rs.getString("updated_at"),
-            rs.getString("skill_ids")
+            rs.getString("skill_ids"),
+            rs.getString("project_id")
     );
 
     private static final RowMapper<CronTaskLog> LOG_MAPPER = (rs, _) -> new CronTaskLog(
@@ -41,7 +43,8 @@ public class CronTaskRepository {
             rs.getLong("duration_ms"),
             rs.getInt("tokens_used"),
             rs.getString("summary"),
-            rs.getString("created_at")
+            rs.getString("created_at"),
+            rs.getString("trigger_source")
     );
 
     public CronTaskRepository(JdbcTemplate jdbc) {
@@ -51,12 +54,13 @@ public class CronTaskRepository {
     /** 保存新任务。 */
     public void save(CronTaskEntry entry) {
         jdbc.update("""
-                INSERT INTO cron_tasks (id, name, schedule, instruction, status, created_at, updated_at, skill_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cron_tasks (id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 entry.id(), entry.name(), entry.schedule(), entry.instruction(),
-                entry.status(), entry.createdAt(), entry.updatedAt(), entry.skillIds());
-        log.debug("Cron 任务已保存: id={}, name={}", entry.id(), entry.name());
+                entry.status(), entry.createdAt(), entry.updatedAt(), entry.skillIds(), entry.projectId());
+        log.debug("Cron 任务已保存: id={}, name={}, projectId={}",
+                entry.id(), entry.name(), entry.projectId());
     }
 
     /** 更新任务。 */
@@ -80,7 +84,7 @@ public class CronTaskRepository {
     /** 按 ID 查询任务。 */
     public Optional<CronTaskEntry> findById(String id) {
         var results = jdbc.query("""
-                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
                 FROM cron_tasks WHERE id = ?""", TASK_MAPPER, id);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
@@ -89,7 +93,7 @@ public class CronTaskRepository {
     public List<CronTaskEntry> findByStatus(String status) {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
                 FROM cron_tasks WHERE status = ? ORDER BY created_at""",
                 TASK_MAPPER, status));
     }
@@ -98,23 +102,91 @@ public class CronTaskRepository {
     public List<CronTaskEntry> findAll() {
         return List.copyOf(jdbc.query(
                 """
-                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
                 FROM cron_tasks ORDER BY created_at""", TASK_MAPPER));
+    }
+
+    /**
+     * 按项目归属查询任务列表。
+     *
+     * <p>{@code projectId == null} 表示归属主账户，走 {@code project_id IS NULL} 匹配；
+     * 非 null 则按精确等值匹配。归属不可迁移，UPDATE 不会修改 project_id。</p>
+     *
+     * @param projectId 项目 ID；{@code null} 表示查询主账户任务
+     */
+    public List<CronTaskEntry> findByProjectId(@Nullable String projectId) {
+        if (projectId == null) {
+            return List.copyOf(jdbc.query(
+                    """
+                    SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
+                    FROM cron_tasks WHERE project_id IS NULL ORDER BY created_at DESC""",
+                    TASK_MAPPER));
+        }
+        return List.copyOf(jdbc.query(
+                """
+                SELECT id, name, schedule, instruction, status, created_at, updated_at, skill_ids, project_id
+                FROM cron_tasks WHERE project_id = ? ORDER BY created_at DESC""",
+                TASK_MAPPER, projectId));
     }
 
     /** 保存执行日志。 */
     public void saveLog(CronTaskLog logEntry) {
         jdbc.update("""
-                INSERT INTO cron_task_logs (id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cron_task_logs (id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at, trigger_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 logEntry.id(), logEntry.taskId(), logEntry.executedAt(), logEntry.status(),
-                logEntry.durationMs(), logEntry.tokensUsed(), logEntry.summary(), logEntry.createdAt());
+                logEntry.durationMs(), logEntry.tokensUsed(), logEntry.summary(), logEntry.createdAt(),
+                logEntry.triggerSource());
     }
 
     /** 删除指定任务的所有执行日志。 */
     public void deleteLogsByTaskId(String taskId) {
         int count = jdbc.update("DELETE FROM cron_task_logs WHERE task_id = ?", taskId);
         log.debug("Cron 任务日志已删除: taskId={}, count={}", taskId, count);
+    }
+
+    /**
+     * 查询指定任务的最近若干条执行日志，按 executed_at 倒序。
+     *
+     * <p>传入 {@code limit <= 0} 时固定返回空列表（上层应规范化）；limit 非负整数
+     * 时由 JDBC 直接绑定到 {@code LIMIT ?}。</p>
+     *
+     * @param taskId 任务 ID
+     * @param limit  返回条数上限
+     */
+    public List<CronTaskLog> findLogsByTaskId(String taskId, int limit) {
+        if (limit <= 0) return List.of();
+        return List.copyOf(jdbc.query(
+                """
+                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at, trigger_source
+                FROM cron_task_logs
+                WHERE task_id = ?
+                ORDER BY executed_at DESC
+                LIMIT ?""",
+                LOG_MAPPER, taskId, limit));
+    }
+
+    /**
+     * 查询指定日期的全部执行日志（跨所有任务），按 executed_at 倒序。
+     *
+     * <p>入参为 ISO 8601 日期字符串（如 {@code "2026-04-24"}），基于 SQLite 的
+     * {@code DATE()} 函数在 executed_at 上做日历匹配——executed_at 本身为
+     * ISO 8601 UTC 字符串，SQLite 可直接截断到日期部分。</p>
+     *
+     * <p>供前端定时任务总览页聚合当日统计（KPI、叙事、ribbon 点位）一次性拉取，
+     * 避免对每个任务单独调用 {@link #findLogsByTaskId} 造成 N+1 查询。</p>
+     *
+     * @param date ISO 8601 日期字符串（YYYY-MM-DD）
+     * @return 当日所有任务的执行日志
+     */
+    public List<CronTaskLog> findLogsByDate(String date) {
+        return List.copyOf(jdbc.query(
+                """
+                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at, trigger_source
+                FROM cron_task_logs
+                WHERE DATE(executed_at) = ?
+                ORDER BY executed_at DESC""",
+                LOG_MAPPER, date));
     }
 }

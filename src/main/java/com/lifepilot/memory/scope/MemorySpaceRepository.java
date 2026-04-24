@@ -102,6 +102,42 @@ public class MemorySpaceRepository {
         jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);
     }
 
+    /**
+     * 把知识库绑定到记忆空间（memory_space_knowledge_bases）。
+     *
+     * <p>复合主键 (memory_space_id, knowledge_base_id) 天然保证绑定不重复；
+     * 使用 {@code INSERT OR IGNORE} 实现幂等绑定，避免重复绑定时抛异常。</p>
+     *
+     * @param spaceId         记忆空间 id
+     * @param knowledgeBaseId 知识库 id
+     */
+    public void attachKnowledgeBase(String spaceId, String knowledgeBaseId) {
+        jdbcTemplate.update("""
+                INSERT OR IGNORE INTO memory_space_knowledge_bases (
+                    memory_space_id, knowledge_base_id, created_at
+                ) VALUES (?, ?, ?)
+                """,
+                spaceId,
+                knowledgeBaseId,
+                Instant.now().toString()
+        );
+    }
+
+    /**
+     * 查询记忆空间下绑定的所有知识库 id（按绑定时间升序）。
+     *
+     * @param spaceId 记忆空间 id
+     * @return 知识库 id 列表（可能为空）
+     */
+    public List<String> findKnowledgeBaseIdsForSpace(String spaceId) {
+        return jdbcTemplate.queryForList("""
+                SELECT knowledge_base_id
+                FROM memory_space_knowledge_bases
+                WHERE memory_space_id = ?
+                ORDER BY created_at ASC
+                """, String.class, spaceId);
+    }
+
     public MemorySpace ensureSpace(String spaceKey,
                                    MemorySpaceType spaceType,
                                    String displayName,

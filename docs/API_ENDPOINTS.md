@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-23
+> **最后更新**：2026-04-24
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -20,6 +20,7 @@
 - [MCP Servers（MCP 客户端管理）](#mcp-servers)
 - [Knowledge Bases（知识库）](#knowledge-bases知识库)
 - [Datastores（领域数据集）](#datastores领域数据集)
+- [Scheduled Tasks（定时任务管理）](#scheduled-tasks定时任务管理)
 - [Workflows（工作流）](#workflows工作流)
 - [Traces（轨迹）](#traces轨迹)
 - [Model Services（模型服务管理）](#model-services模型服务管理)
@@ -293,6 +294,8 @@
 
 来源：`DatastoreController`，Base Path: `/api/datastores`
 
+> **Plan 3（2026-04-23）用户侧下架**：LLM 工具集已移除 datastore（`StorageToolProvider.buildStorageTools()` 返回空列表），前端 `/datastores` 路由与侧栏入口亦下架；下列 REST 端点完整保留，供内置 Skill 的泛型 CRUD 适配器、知识库同步链路以及未来可能恢复的管理面继续使用。
+
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | GET | `/api/datastores` | `listDatastores` | datastore 列表（支持 `q` 关键字过滤） |
@@ -304,6 +307,27 @@
 | GET | `/api/datastores/{id}/knowledge-bases` | `listDatastoreKnowledgeBases` | 查询 Datastore 关联的知识库（含系统内部知识库） |
 | GET | `/api/datastores/{id}/documents` | `listDatastoreDomainDocuments` | 查询 Datastore 直管的领域文档（仅 FILE 类型且归属当前 Datastore） |
 | POST | `/api/datastores/{id}/documents` | `uploadDatastoreDocument` | 向 Datastore 上传领域文档（multipart，202；503 文档导入未启用） |
+
+---
+
+## Scheduled Tasks（定时任务管理）
+
+来源：`ScheduledTaskController`，Base Path: `/api/scheduled-tasks`
+
+> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。故意不提供 POST 创建端点——创建入口保持在 LLM 对话中由自然语言触发 cron 工具（`CronActionDispatchExecutor`），本 Controller 只管存量管理（列出、编辑、暂停、删除、立即运行、查日志）。暂停/恢复通过 PUT 更新 `status` 字段实现（active ↔ paused）。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/scheduled-tasks` | `list` | 列出定时任务；可选 `projectId` 查询参数。空/不传时返回全部任务（主账户 + 所有项目）；非空时按项目精确等值过滤 |
+| PUT | `/api/scheduled-tasks/{id}` | `update` | 更新 `name` / `schedule` / `instruction` / `status`（字段为 `null` 时保留原值）；`projectId` 归属不可迁移，`createdAt` 不可变，`updatedAt` 自动刷新；任务不存在返回 404 |
+| DELETE | `/api/scheduled-tasks/{id}` | `delete` | 删除定时任务（幂等，任务不存在不抛异常）；执行日志通过 FK ON DELETE CASCADE 级联清理 |
+| POST | `/api/scheduled-tasks/{id}/run` | `runNow` | 立即异步执行一次任务（跳过 cron 等待），API 立即返回；日志以 `trigger_source='manual'` 入库。不做并发互斥，连点会触发多次并行执行；任务不存在返回 404 |
+| GET | `/api/scheduled-tasks/{id}/logs` | `getLogs` | 查询指定任务的最近执行日志（按 executed_at 倒序）；可选 `limit` 参数（默认 5，上限 50，超限截断）；任务不存在返回空列表（不抛 404） |
+| GET | `/api/scheduled-tasks/logs` | `getLogsByDate` | 按日期聚合查询所有任务的执行日志（跨任务，按 executed_at 倒序）；必填 `date` 参数（ISO 8601 `YYYY-MM-DD`），格式非法返回 400；前端按 taskId 自行分桶，避免 N+1 |
+
+`ScheduledTaskResponse` 字段：`{id, name, schedule, instruction, status, skillIds, projectId, createdAt, updatedAt, nextExecutionAt}`。`schedule` 为 Spring 6 位 cron 表达式，`status` 取值 `active` / `paused` / `completed`，`projectId` 为 `null` 表示归属主账户，`nextExecutionAt` 仅 active 任务由后端按服务器本地时区动态计算，其余为 `null`。
+
+`ScheduledTaskLogResponse` 字段：`{id, taskId, executedAt, status, durationMs, tokensUsed, summary, triggerSource}`。`status` 取值 `success` / `failed` / `timeout`；`summary` 为 Agent 回复摘要前 500 字符，可空；`triggerSource` 取值 `cron`（定时器触发）/ `manual`（API 立即运行）。
 
 ---
 

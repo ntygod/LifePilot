@@ -8,7 +8,7 @@
 
 1. **SKILL.md 三级物理分层**：`frontmatter`（L1 元数据） / `body 骨架`（L2 流程） / `references / scripts / assets`（L3 按需加载）。
 2. **激活路径归一到 `skill.load` 工具**：废除 `file.read(skill=…)` 捷径和 `SkillDisclosureTool` 空壳；`detectSkillToolActivation()` 黑魔法被删掉，改由 `ToolExecutionCoordinator` 统一合并 `activated_tool_ids`。
-3. **`skills` 表作为多渠道安装状态的唯一事实源**：V21 迁移 drop + recreate，只存安装元数据；四种来源 `BUILTIN / USER_IMPORTED / MARKETPLACE / AUTO_GENERATED` 走同一 `SkillInstaller` 流水线。
+3. **`skills` 表作为多渠道安装状态的唯一事实源**：V28 迁移 drop + recreate，只存安装元数据；四种来源 `BUILTIN / USER_IMPORTED / MARKETPLACE / AUTO_GENERATED` 走同一 `SkillInstaller` 流水线。
 4. **自生成链路重写**：`SkillSynthesizer` 替代 `SkillGenerator`；校验器从三件套（Format / Security / Sandbox）合一到 `SkillValidator`；生成成功发 `SkillGeneratedEvent` → SSE 广播 → 前端 toast。
 
 伴随 27 个预置 Skill 全部迁移到 v2 规范（frontmatter + metadata.zhiwei 块 + body 骨架），新增自举样本 `skill-creator`。
@@ -36,8 +36,8 @@
 - **删除** `FormatValidator` / `SandboxValidator` / `SecurityValidator` / `SkillValidationPipeline` / `SkillValidationResult`
 
 **数据库迁移**
-- V21：drop + recreate `skills` 表，新结构只存安装元数据（`source_type` / `source_uri` / `file_path` / `version` / `enabled` / `marketplace_id` / `checksum` / `installed_at` / `updated_at` / `last_activated_at`），单个复合索引 `idx_skills_source_enabled`
-  > 本地提交时占的版本号是 V17，分支上已被 project-core PR 占用，合入 develop 时自动 rename 到 V21；迁移文件头部注释仍写"V17"需后续人工对齐。
+- V28：drop + recreate `skills` 表，新结构只存安装元数据（`source_type` / `source_uri` / `file_path` / `version` / `enabled` / `marketplace_id` / `checksum` / `installed_at` / `updated_at` / `last_activated_at`），单个复合索引 `idx_skills_source_enabled`
+  > 本地提交时占的版本号是 V17，历经 V21 中转，最终在合入 develop（V22-V27 刚 merge 进）后 rename 到 V28；文件头部注释已同步更新。
 
 ### 运行时与激活层
 
@@ -134,7 +134,7 @@
 - **POST `/api/skills` 签名变更**：改为按 `SkillInstallation` 新记录接收
 - **PUT `/api/skills/{name}` 返回 501**：编辑流程改走"新建版本 + 启用/禁用"组合，避免变更原地写入
 - **前端字段 `id → name`**：Skill 一级标识从自增 id 改为自然 name；API 响应 `{ items, total, page, pageSize }` 不变但每项结构变
-- **`skills` 表 schema 重建**：V21 drop + recreate（旧表无写入方，历史数据可直接丢弃）
+- **`skills` 表 schema 重建**：V28 drop + recreate（旧表无写入方，历史数据可直接丢弃）
 - **新 REST 端点**：
   - `PUT /api/skills/{name}/enable`（启用/禁用开关）
   - `POST /api/skills/import`（本地 `.skill` 包）
@@ -156,7 +156,7 @@ cd zhiwei-web && npm run dev
 ### 启动日志关键信号
 - `Skill: 安装 27 个 BUILTIN skill ...`
 - `BuiltinTool 注册：skill.load ... pinned=true`
-- `Flyway: Migrating schema ... to V21 - skill system refactor`
+- `Flyway: Migrating schema ... to V28 - skill system refactor`
 
 ### 典型操作
 1. 新建会话让 LLM 处理复杂需求 →
@@ -186,7 +186,7 @@ cd zhiwei-web && npm run dev
 - **市场签名校验**：`SkillMarketplaceInstaller` 下载走 checksum 校验,未做签名验证
 - **风险扫描前置**：安装前跑外部静态扫描(如 bins 危险调用检测)尚未接
 - **`skill_audit_logs.skill_id` 语义对齐**:`skills` 表主键由 `id` 改为 `name` 后,审计日志的 `skill_id` 字段是否应同步 rename 尚未决定(旧数据兼容风险,本 PR 不动)
-- **V21 迁移文件头部注释同步**：文件名从 V17 被 rename 到 V21 后,文件顶部注释仍写"V17",需人工改写
+- ~~**V21 迁移文件头部注释同步**~~：V17 → V21 → V28 的 rename 链已处理；文件头部注释同步更新为 V28
 
 ---
 

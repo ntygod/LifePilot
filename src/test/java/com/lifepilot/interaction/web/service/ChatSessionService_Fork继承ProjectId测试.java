@@ -65,6 +65,7 @@ class ChatSessionService_Fork继承ProjectId测试 {
                 null,
                 null,
                 null,
+                null,
                 null
         );
     }

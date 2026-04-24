@@ -1,12 +1,12 @@
 /**
- * ProjectSettingsPanel 组件测试 —— Plan 1 Task 22。
+ * ProjectSettingsPanel 组件测试 —— Plan 1 Task 22（polish 2026-04-24 修订）。
  *
  * 沿用 {@code CreateProjectDialog.spec.ts} 的测试风格：Reka UI Sheet / AlertDialog 经由
  * Portal 渲染到 {@code document.body}，挂载后直接从 body 查 DOM 断言。
  *
  * 覆盖点：
- * - 打开时展示当前项目的 name / instructions / isolation
- * - 修改字段后保存调用 {@link useProjectStore.updateProject}
+ * - 打开时展示当前项目的 name / instructions；isolation 仅做只读展示
+ * - 修改 name / instructions 后保存调用 {@link useProjectStore.updateProject}（不传 isolation）
  * - 保存成功后 {@code update:open=false}
  * - 点击「删除项目」弹出 ConfirmDialog，在弹窗取消时不调用 deleteProject
  * - 点击「删除项目」弹出 ConfirmDialog，确认后调用 deleteProject 并跳 home
@@ -80,21 +80,33 @@ describe('ProjectSettingsPanel', () => {
     document.body.innerHTML = ''
   })
 
-  it('打开时展示当前项目的 name / instructions / isolation', async () => {
+  it('打开时展示当前项目的 name / instructions，并只读展示 isolation', async () => {
     await mountPanel(true)
 
     const nameInput = document.body.querySelector<HTMLInputElement>('[data-testid="project-settings-name"]')!
     const instructionsArea = document.body.querySelector<HTMLTextAreaElement>('[data-testid="project-settings-instructions"]')!
-    const isolated = document.body.querySelector<HTMLInputElement>('[data-testid="project-settings-isolation-isolated"]')!
-    const shared = document.body.querySelector<HTMLInputElement>('[data-testid="project-settings-isolation-shared"]')!
+    const isolationReadonly = document.body.querySelector<HTMLDivElement>('[data-testid="project-settings-isolation-readonly"]')!
 
     expect(nameInput.value).toBe('测试项目')
     expect(instructionsArea.value).toBe('请始终使用中文回答')
-    expect(isolated.checked).toBe(true)
-    expect(shared.checked).toBe(false)
+    expect(isolationReadonly).not.toBeNull()
+    expect(isolationReadonly.textContent).toContain('隔离模式：隔离')
+    expect(isolationReadonly.textContent).toContain('创建后不可修改')
+
+    // 确认不再提供修改隔离的 radio
+    expect(document.body.querySelector('[data-testid="project-settings-isolation-isolated"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="project-settings-isolation-shared"]')).toBeNull()
   })
 
-  it('修改字段后点击保存调用 store.updateProject', async () => {
+  it('SHARED 项目的只读展示显示「共享」', async () => {
+    const shared: ProjectDto = { ...BASE_PROJECT, isolation: 'SHARED' }
+    await mountPanel(true, shared)
+
+    const isolationReadonly = document.body.querySelector<HTMLDivElement>('[data-testid="project-settings-isolation-readonly"]')!
+    expect(isolationReadonly.textContent).toContain('隔离模式：共享')
+  })
+
+  it('修改字段后点击保存调用 store.updateProject（不传 isolation）', async () => {
     const updated: ProjectDto = { ...BASE_PROJECT, name: '改名后项目', instructions: '新指令' }
     projectApiMock.updateProject.mockResolvedValueOnce(updated)
 
@@ -108,19 +120,15 @@ describe('ProjectSettingsPanel', () => {
     instructionsArea.value = '新指令'
     instructionsArea.dispatchEvent(new Event('input', { bubbles: true }))
 
-    const shared = document.body.querySelector<HTMLInputElement>('[data-testid="project-settings-isolation-shared"]')!
-    shared.checked = true
-    shared.dispatchEvent(new Event('change', { bubbles: true }))
-
     await flushPromises()
 
     document.body.querySelector<HTMLButtonElement>('[data-testid="project-settings-save"]')!.click()
     await flushPromises()
 
+    // isolation 不再作为可编辑字段，保存时不应携带该字段；后端缺省时会保留原值
     expect(projectApiMock.updateProject).toHaveBeenCalledWith('p-1', {
       name: '改名后项目',
       instructions: '新指令',
-      isolation: 'SHARED',
     })
 
     const events = wrapper.emitted('update:open')

@@ -5,6 +5,8 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemoryOriginType;
@@ -19,7 +21,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +51,11 @@ public class RealtimeExtractor {
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
     private static final java.util.concurrent.ExecutorService VIRTUAL_EXECUTOR = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
+    /** EPHEMERAL 类记忆的默认 TTL — 7 天后 expires_at 触发 Cron 回收。 */
+    private static final Duration EPHEMERAL_TTL = Duration.ofDays(7);
+    /** SHORT_TERM 类记忆的默认 TTL — 30 天后 expires_at 触发 Cron 回收。 */
+    private static final Duration SHORT_TERM_TTL = Duration.ofDays(30);
+
     @Nullable
     private final GenerationRouter generationRouter;
     private final SemanticMemory semanticMemory;
@@ -57,6 +66,8 @@ public class RealtimeExtractor {
     private final PromptRegistry promptRegistry;
     @Nullable
     private final ChatTurnMemorySnapshotRepository snapshotRepository;
+    /** Task 23：时钟注入 — 用于非持久性实体自动推导 {@code expires_at}，便于单测注入固定时钟。 */
+    private final Clock clock;
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
@@ -65,6 +76,22 @@ public class RealtimeExtractor {
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
                              @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
+        this(generationRouter, semanticMemory, properties, extractionValidator,
+                jdbcTemplate, promptRegistry, snapshotRepository, Clock.systemUTC());
+    }
+
+    /**
+     * 带 {@link Clock} 的扩展构造器 — 测试可注入 {@code Clock.fixed(...)} 以确定
+     * 自动推导的 {@code expires_at}。生产路径走 7 参构造器默认 {@code systemUTC}。
+     */
+    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
+                             SemanticMemory semanticMemory,
+                             MemoryProperties properties,
+                             ExtractionValidator extractionValidator,
+                             JdbcTemplate jdbcTemplate,
+                             PromptRegistry promptRegistry,
+                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                             Clock clock) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
@@ -73,6 +100,7 @@ public class RealtimeExtractor {
         this.jdbcTemplate = jdbcTemplate;
         this.promptRegistry = promptRegistry;
         this.snapshotRepository = snapshotRepository;
+        this.clock = clock;
     }
 
     /**
@@ -286,6 +314,9 @@ public class RealtimeExtractor {
         var now = Instant.now();
         float confidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float importance = safeFloat(decision.importanceScore(), 0.5f);
+        // Task 23：从 LLM 响应解析 temporality / expires_at，非持久类自动推导过期时间
+        Temporality temporality = resolveTemporality(decision);
+        Instant expiresAt = resolveExpiresAt(decision, temporality);
         var entity = new TemporalEntity(
                 UUID.randomUUID().toString(),
                 decision.entityType(),
@@ -295,9 +326,12 @@ public class RealtimeExtractor {
                 1, true, now, null, sessionId,
                 confidence,
                 importance,
-                0, null, now, now);
+                0, null, now, now,
+                LifecycleState.ACTIVE, null, expiresAt,
+                temporality, null, false, List.of());
         SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext));
-        log.debug("AUDN ADD: name={}, type={}", decision.entityName(), decision.entityType());
+        log.debug("AUDN ADD: name={}, type={}, temporality={}, expiresAt={}",
+                decision.entityName(), decision.entityType(), temporality, expiresAt);
     }
 
     /** 执行 UPDATE 操作：查找已有实体并更新。 */
@@ -321,6 +355,12 @@ public class RealtimeExtractor {
         float newConfidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float newImportance = safeFloat(decision.importanceScore(), 0.5f);
 
+        // Task 23：UPDATE 也要携带 temporality / expires_at，LLM 未给则保留 old 的持久度
+        Temporality temporality = decision.temporalityRaw() != null && !decision.temporalityRaw().isBlank()
+                ? resolveTemporality(decision)
+                : old.temporality();
+        Instant expiresAt = resolveExpiresAtForUpdate(decision, temporality, old);
+
         var updated = new TemporalEntity(
                 null, decision.entityType(), decision.entityName(),
                 decision.description() != null ? decision.description() : old.description(),
@@ -329,9 +369,12 @@ public class RealtimeExtractor {
                 newConfidence,
                 Math.max(old.importanceScore(), newImportance),
                 old.accessCount(), old.lastAccessedAt(),
-                old.createdAt(), Instant.now());
+                old.createdAt(), Instant.now(),
+                old.lifecycleState(), old.lifecycleReason(), expiresAt,
+                temporality, old.succeededBy(), old.isDerived(), old.derivationSources());
         SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
-        log.debug("AUDN UPDATE: name={}, type={}", decision.entityName(), decision.entityType());
+        log.debug("AUDN UPDATE: name={}, type={}, temporality={}, expiresAt={}",
+                decision.entityName(), decision.entityType(), temporality, expiresAt);
     }
 
     /** 执行 DELETE 操作：将匹配实体标记为非当前。 */
@@ -371,6 +414,92 @@ public class RealtimeExtractor {
     /** @Nullable Float 安全拆箱，null 时返回默认值。 */
     private static float safeFloat(@Nullable Float value, float defaultValue) {
         return value != null ? value : defaultValue;
+    }
+
+    /**
+     * 将 LLM 输出的 {@code temporality} 字符串解析为枚举。
+     *
+     * <p>规则：</p>
+     * <ul>
+     *   <li>null / 空串 / 非法值 → {@link Temporality#PERSISTENT}（兜底）；</li>
+     *   <li>大小写不敏感，允许 {@code "ephemeral"} / {@code "Short_Term"} 等变体。</li>
+     * </ul>
+     */
+    private Temporality resolveTemporality(AudnDecision decision) {
+        String raw = decision.temporalityRaw();
+        if (raw == null || raw.isBlank()) {
+            return Temporality.PERSISTENT;
+        }
+        try {
+            return Temporality.valueOf(raw.toUpperCase().trim());
+        } catch (IllegalArgumentException ex) {
+            log.warn("AUDN: 非法 temporality 值={} entity={}，降级为 PERSISTENT",
+                    raw, decision.entityName());
+            return Temporality.PERSISTENT;
+        }
+    }
+
+    /**
+     * 解析或推导 ADD 操作实体的 {@code expires_at}：
+     *
+     * <ol>
+     *   <li>若 LLM 给了合法 ISO 8601 字符串，直接采用；</li>
+     *   <li>LLM 未给 / 解析失败，且 {@code temporality} 非持久 → 按 TTL 自动推导；</li>
+     *   <li>PERSISTENT 类永不自动过期，保持 null。</li>
+     * </ol>
+     */
+    @Nullable
+    private Instant resolveExpiresAt(AudnDecision decision, Temporality temporality) {
+        Instant parsed = parseIsoInstantOrNull(decision.expiresAtRaw(), decision.entityName());
+        if (parsed != null) {
+            return parsed;
+        }
+        return autoExpiresAt(temporality);
+    }
+
+    /**
+     * 解析或推导 UPDATE 操作实体的 {@code expires_at}：优先走 LLM 新值，其次
+     * 按当前 temporality 推导（与 ADD 规则一致）；若 LLM 未给且 temporality 未变，
+     * 保留 old 的 expiresAt 避免把手工设置的过期时间抹掉。
+     */
+    @Nullable
+    private Instant resolveExpiresAtForUpdate(AudnDecision decision,
+                                              Temporality temporality,
+                                              TemporalEntity old) {
+        Instant parsed = parseIsoInstantOrNull(decision.expiresAtRaw(), decision.entityName());
+        if (parsed != null) {
+            return parsed;
+        }
+        // temporality 未变化时，尊重 old 的 expires_at（可能已被用户手工延长/缩短）
+        if (old.temporality() == temporality) {
+            return old.expiresAt() != null ? old.expiresAt() : autoExpiresAt(temporality);
+        }
+        return autoExpiresAt(temporality);
+    }
+
+    /** 按 temporality 推导 expires_at：PERSISTENT 返回 null，其他类 clock.instant() + TTL。 */
+    @Nullable
+    private Instant autoExpiresAt(Temporality temporality) {
+        return switch (temporality) {
+            case EPHEMERAL -> clock.instant().plus(EPHEMERAL_TTL);
+            case SHORT_TERM -> clock.instant().plus(SHORT_TERM_TTL);
+            case PERSISTENT -> null;
+        };
+    }
+
+    /** 解析 ISO 8601 时间戳；null / 空串 / 非法格式都返回 null，不抛异常。 */
+    @Nullable
+    private Instant parseIsoInstantOrNull(@Nullable String raw, String entityName) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(raw);
+        } catch (DateTimeParseException ex) {
+            log.warn("AUDN: 非法 expires_at={} entity={}，将按 temporality 自动计算",
+                    raw, entityName);
+            return null;
+        }
     }
 
     @Nullable

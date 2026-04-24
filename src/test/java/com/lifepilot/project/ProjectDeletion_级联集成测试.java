@@ -3,6 +3,8 @@ package com.lifepilot.project;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.project.exception.ProjectNotFoundException;
@@ -17,10 +19,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * ProjectService.deleteProject 完整级联清理集成测试。
@@ -61,8 +71,9 @@ class ProjectDeletion_级联集成测试 {
         memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, new ObjectMapper());
         projectRepository = new ProjectRepository(jdbcTemplate);
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, new ObjectMapper(), null);
+        // KnowledgeBaseManager = null：本测试集中于删除级联，不覆盖 KB 自动创建路径
         service = new ProjectService(projectRepository, memorySpaceRepository,
-                sessionStoreRepository, jdbcTemplate);
+                sessionStoreRepository, jdbcTemplate, null);
     }
 
     @AfterEach
@@ -462,5 +473,86 @@ class ProjectDeletion_级联集成测试 {
         assertThat(数行("SELECT COUNT(*) FROM projects WHERE id = ?", project.id())).isZero();
         assertThat(数行("SELECT COUNT(*) FROM memory_spaces WHERE id = ?", project.memorySpaceId()))
                 .isZero();
+    }
+
+    @Test
+    void 删除项目_只删tag含project的默认KB_保留用户手动挂的其他KB() {
+        // 2026-04-24 新增：验证 Step 0 KB 级联删除的甄别逻辑
+        //   场景：项目空间绑了 2 个 KB —— 一个是项目自动建的默认 KB（tag=["project"]），
+        //         另一个是用户手动挂的通用资料库（tag=["shared"]）。
+        //   期望：删项目只连带删项目默认 KB 本体，用户手动挂的保留。
+        // 真实 KnowledgeBaseManager 依赖 6 个 repo + 向量索引，集成测试用 Mockito
+        // mock 即可 —— 我们只关心"deleteKnowledgeBase 被以什么参数调了几次"。
+        KnowledgeBaseManager kbManager = mock(KnowledgeBaseManager.class);
+        ProjectService serviceWithKb = new ProjectService(
+                projectRepository, memorySpaceRepository, sessionStoreRepository,
+                jdbcTemplate, kbManager);
+
+        Project project = 创建一个项目("挂两个KB的项目");
+        String spaceId = project.memorySpaceId();
+        Instant now = Instant.now();
+
+        // 真实写入 memory_space_knowledge_bases（KB 本体表测试 schema 里没有，但 Service
+        // 只通过 memorySpaceRepository 反查 id 列表 + kbManager 判 tag，不依赖 KB 表）
+        jdbcTemplate.update("""
+                INSERT INTO memory_space_knowledge_bases (memory_space_id, knowledge_base_id, created_at)
+                VALUES (?, ?, ?)
+                """, spaceId, "kb-project", now.toString());
+        jdbcTemplate.update("""
+                INSERT INTO memory_space_knowledge_bases (memory_space_id, knowledge_base_id, created_at)
+                VALUES (?, ?, ?)
+                """, spaceId, "kb-shared", now.toString());
+
+        KnowledgeBase projectKb = new KnowledgeBase(
+                "kb-project", "挂两个KB的项目 · 项目知识库", "自动建的默认 KB",
+                null, null, "smart", Map.of(), 0, 0,
+                List.of("project"), now, now, false, null, List.of());
+        KnowledgeBase sharedKb = new KnowledgeBase(
+                "kb-shared", "通用资料库", "用户手动挂的",
+                null, null, "smart", Map.of(), 0, 0,
+                List.of("shared", "handbook"), now, now, false, null, List.of());
+
+        when(kbManager.getKnowledgeBase("kb-project")).thenReturn(Optional.of(projectKb));
+        when(kbManager.getKnowledgeBase("kb-shared")).thenReturn(Optional.of(sharedKb));
+
+        serviceWithKb.deleteProject(project.id());
+
+        // tag 含 "project" → 被级联删
+        verify(kbManager).deleteKnowledgeBase("kb-project");
+        // tag=["shared","handbook"] 不含 "project" → 保留
+        verify(kbManager, never()).deleteKnowledgeBase("kb-shared");
+
+        // FK CASCADE 自动清 memory_space_knowledge_bases 两条关联（memory_space 删了）
+        assertThat(数行(
+                "SELECT COUNT(*) FROM memory_space_knowledge_bases WHERE memory_space_id = ?", spaceId))
+                .isZero();
+        assertThat(数行("SELECT COUNT(*) FROM projects WHERE id = ?", project.id())).isZero();
+        assertThat(数行("SELECT COUNT(*) FROM memory_spaces WHERE id = ?", spaceId)).isZero();
+    }
+
+    @Test
+    void 删除项目_KB本体缺失时_Step0跳过_主流程继续() {
+        // 边界场景：memory_space_knowledge_bases 里有绑定但 getKnowledgeBase 返回 empty
+        // （KB 本体已被别的路径先删了），Step 0 不抛 NPE，主流程继续到底。
+        KnowledgeBaseManager kbManager = mock(KnowledgeBaseManager.class);
+        ProjectService serviceWithKb = new ProjectService(
+                projectRepository, memorySpaceRepository, sessionStoreRepository,
+                jdbcTemplate, kbManager);
+
+        Project project = 创建一个项目("KB已被先删的项目");
+        String spaceId = project.memorySpaceId();
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                INSERT INTO memory_space_knowledge_bases (memory_space_id, knowledge_base_id, created_at)
+                VALUES (?, ?, ?)
+                """, spaceId, "kb-gone", now.toString());
+
+        when(kbManager.getKnowledgeBase("kb-gone")).thenReturn(Optional.empty());
+
+        serviceWithKb.deleteProject(project.id());
+
+        verify(kbManager, never()).deleteKnowledgeBase(anyString());
+        assertThat(数行("SELECT COUNT(*) FROM projects WHERE id = ?", project.id())).isZero();
+        assertThat(数行("SELECT COUNT(*) FROM memory_spaces WHERE id = ?", spaceId)).isZero();
     }
 }

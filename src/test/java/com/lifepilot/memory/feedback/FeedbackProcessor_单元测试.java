@@ -2,6 +2,7 @@ package com.lifepilot.memory.feedback;
 
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -127,7 +128,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then — 0.5 + 0.1 = 0.6
-            verify(semanticMemory).updateImportanceScore(entityId, 0.6f);
+            verify(semanticMemory).updateImportanceScore(entityId, 0.6f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -147,9 +148,9 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then
-            verify(semanticMemory).updateImportanceScore("e-1", 0.4f);
-            verify(semanticMemory).updateImportanceScore("e-2", 0.6f);
-            verify(semanticMemory).updateImportanceScore("e-3", 0.8f);
+            verify(semanticMemory).updateImportanceScore("e-1", 0.4f, WeightSource.USER_FEEDBACK);
+            verify(semanticMemory).updateImportanceScore("e-2", 0.6f, WeightSource.USER_FEEDBACK);
+            verify(semanticMemory).updateImportanceScore("e-3", 0.8f, WeightSource.USER_FEEDBACK);
         }
     }
 
@@ -173,7 +174,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "dislike");
 
             // then — 0.5 - 0.05 = 0.45
-            verify(semanticMemory).updateImportanceScore(entityId, 0.45f);
+            verify(semanticMemory).updateImportanceScore(entityId, 0.45f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -192,8 +193,8 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "dislike");
 
             // then
-            verify(semanticMemory).updateImportanceScore("d-1", 0.75f);
-            verify(semanticMemory).updateImportanceScore("d-2", 0.15f);
+            verify(semanticMemory).updateImportanceScore("d-1", 0.75f, WeightSource.USER_FEEDBACK);
+            verify(semanticMemory).updateImportanceScore("d-2", 0.15f, WeightSource.USER_FEEDBACK);
         }
     }
 
@@ -217,7 +218,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then — 0.95 + 0.1 = 1.05 → 裁剪为 1.0
-            verify(semanticMemory).updateImportanceScore(entityId, 1.0f);
+            verify(semanticMemory).updateImportanceScore(entityId, 1.0f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -235,7 +236,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then — min(1.0, 1.0+0.1) = 1.0
-            verify(semanticMemory).updateImportanceScore(entityId, 1.0f);
+            verify(semanticMemory).updateImportanceScore(entityId, 1.0f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -253,7 +254,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "dislike");
 
             // then — 0.02 - 0.05 = -0.03 → 裁剪为 0.0
-            verify(semanticMemory).updateImportanceScore(entityId, 0.0f);
+            verify(semanticMemory).updateImportanceScore(entityId, 0.0f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -271,7 +272,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "dislike");
 
             // then — max(0.0, 0.0-0.05) = 0.0
-            verify(semanticMemory).updateImportanceScore(entityId, 0.0f);
+            verify(semanticMemory).updateImportanceScore(entityId, 0.0f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -290,8 +291,8 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then
-            verify(semanticMemory).updateImportanceScore("normal", 0.6f);
-            verify(semanticMemory).updateImportanceScore("overflow", 1.0f);
+            verify(semanticMemory).updateImportanceScore("normal", 0.6f, WeightSource.USER_FEEDBACK);
+            verify(semanticMemory).updateImportanceScore("overflow", 1.0f, WeightSource.USER_FEEDBACK);
         }
     }
 
@@ -316,8 +317,8 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then — 仅更新存在的实体
-            verify(semanticMemory).updateImportanceScore("exists", 0.6f);
-            verify(semanticMemory, never()).updateImportanceScore(eq("missing"), anyFloat());
+            verify(semanticMemory).updateImportanceScore("exists", 0.6f, WeightSource.USER_FEEDBACK);
+            verify(semanticMemory, never()).updateImportanceScore(eq("missing"), anyFloat(), any(WeightSource.class));
         }
 
         @Test
@@ -334,7 +335,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then
-            verify(semanticMemory, never()).updateImportanceScore(anyString(), anyFloat());
+            verify(semanticMemory, never()).updateImportanceScore(anyString(), anyFloat(), any(WeightSource.class));
         }
     }
 
@@ -418,7 +419,7 @@ class FeedbackProcessor_单元测试 {
             // 第一次（回滚）: 0.6 - 0.1 = 0.5
             // 第二次（应用）: 0.6 - 0.05 = 0.55
             ArgumentCaptor<Float> scoreCaptor = ArgumentCaptor.forClass(Float.class);
-            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-flip"), scoreCaptor.capture());
+            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-flip"), scoreCaptor.capture(), any(WeightSource.class));
             List<Float> scores = scoreCaptor.getAllValues();
             assertEquals(0.5f, scores.get(0), 1e-6f, "回滚 like delta 后分数");
             assertEquals(0.55f, scores.get(1), 1e-6f, "应用 dislike delta 后分数");
@@ -448,7 +449,7 @@ class FeedbackProcessor_单元测试 {
             // 回滚 dislike: computeDelta("dislike")=-0.05, rollbackDelta=0.05 → 0.4+0.05=0.45
             // 应用 like: computeDelta("like")=0.1 → 0.4+0.1=0.5
             ArgumentCaptor<Float> scoreCaptor = ArgumentCaptor.forClass(Float.class);
-            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-flip2"), scoreCaptor.capture());
+            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-flip2"), scoreCaptor.capture(), any(WeightSource.class));
             List<Float> scores = scoreCaptor.getAllValues();
             assertEquals(0.45f, scores.get(0), 1e-6f, "回滚 dislike delta 后分数");
             assertEquals(0.5f, scores.get(1), 1e-6f, "应用 like delta 后分数");
@@ -476,17 +477,17 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "dislike");
 
             // then — 每个实体被更新两次（回滚 + 应用）
-            verify(semanticMemory, times(4)).updateImportanceScore(anyString(), anyFloat());
+            verify(semanticMemory, times(4)).updateImportanceScore(anyString(), anyFloat(), any(WeightSource.class));
 
             // fm-1: 回滚 like → 0.5-0.1=0.4, 应用 dislike → 0.5-0.05=0.45
             ArgumentCaptor<Float> fm1Captor = ArgumentCaptor.forClass(Float.class);
-            verify(semanticMemory, times(2)).updateImportanceScore(eq("fm-1"), fm1Captor.capture());
+            verify(semanticMemory, times(2)).updateImportanceScore(eq("fm-1"), fm1Captor.capture(), any(WeightSource.class));
             assertEquals(0.4f, fm1Captor.getAllValues().get(0), 1e-6f);
             assertEquals(0.45f, fm1Captor.getAllValues().get(1), 1e-6f);
 
             // fm-2: 回滚 like → 0.8-0.1=0.7, 应用 dislike → 0.8-0.05=0.75
             ArgumentCaptor<Float> fm2Captor = ArgumentCaptor.forClass(Float.class);
-            verify(semanticMemory, times(2)).updateImportanceScore(eq("fm-2"), fm2Captor.capture());
+            verify(semanticMemory, times(2)).updateImportanceScore(eq("fm-2"), fm2Captor.capture(), any(WeightSource.class));
             assertEquals(0.7f, fm2Captor.getAllValues().get(0), 1e-6f);
             assertEquals(0.75f, fm2Captor.getAllValues().get(1), 1e-6f);
         }
@@ -517,7 +518,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then — 仅一次更新，无回滚
-            verify(semanticMemory, times(1)).updateImportanceScore("e-single", 0.6f);
+            verify(semanticMemory, times(1)).updateImportanceScore("e-single", 0.6f, WeightSource.USER_FEEDBACK);
         }
     }
 
@@ -542,7 +543,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "like");
 
             // then — 0.5 + 0.3 = 0.8
-            verify(semanticMemory).updateImportanceScore(entityId, 0.8f);
+            verify(semanticMemory).updateImportanceScore(entityId, 0.8f, WeightSource.USER_FEEDBACK);
         }
 
         @Test
@@ -561,7 +562,7 @@ class FeedbackProcessor_单元测试 {
             processor.processFeedbackForEntry(entryId, "dislike");
 
             // then — 0.5 - 0.2 = 0.3
-            verify(semanticMemory).updateImportanceScore(entityId, 0.3f);
+            verify(semanticMemory).updateImportanceScore(entityId, 0.3f, WeightSource.USER_FEEDBACK);
         }
     }
 
@@ -594,7 +595,7 @@ class FeedbackProcessor_单元测试 {
             // 回滚 dislike: 0.98 + 0.05 = 1.03 → 1.0
             // 应用 like: 0.98 + 0.1 = 1.08 → 1.0
             ArgumentCaptor<Float> captor = ArgumentCaptor.forClass(Float.class);
-            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-cap"), captor.capture());
+            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-cap"), captor.capture(), any(WeightSource.class));
             assertEquals(1.0f, captor.getAllValues().get(0), 1e-6f, "回滚 dislike 后裁剪为 1.0");
             assertEquals(1.0f, captor.getAllValues().get(1), 1e-6f, "应用 like 后裁剪为 1.0");
         }
@@ -623,7 +624,7 @@ class FeedbackProcessor_单元测试 {
             // 回滚 like: 0.03 - 0.1 = -0.07 → 0.0
             // 应用 dislike: 0.03 - 0.05 = -0.02 → 0.0
             ArgumentCaptor<Float> captor = ArgumentCaptor.forClass(Float.class);
-            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-cap-low"), captor.capture());
+            verify(semanticMemory, times(2)).updateImportanceScore(eq("e-cap-low"), captor.capture(), any(WeightSource.class));
             assertEquals(0.0f, captor.getAllValues().get(0), 1e-6f, "回滚 like 后裁剪为 0.0");
             assertEquals(0.0f, captor.getAllValues().get(1), 1e-6f, "应用 dislike 后裁剪为 0.0");
         }

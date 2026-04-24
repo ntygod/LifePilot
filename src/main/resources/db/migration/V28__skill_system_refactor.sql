@@ -1,4 +1,4 @@
--- V17：Skill 系统重构 —— skills 表重建为"安装元数据事实源"
+-- V28：Skill 系统重构 —— skills 表重建为"安装元数据事实源"
 -- 老 skills 表无代码写入，数据可抛。新表只存安装状态，内容实时从 SKILL.md 读。
 
 DROP TABLE IF EXISTS skills;

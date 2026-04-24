@@ -54,6 +54,7 @@ class ChatSessionService_创建会话ProjectId测试 {
                 null,
                 null,
                 null,
+                null,
                 null
         );
     }

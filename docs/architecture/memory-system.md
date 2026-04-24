@@ -144,11 +144,13 @@ graph TB
 - `HybridRetriever` 支持可选的 `RerankRouter` 步骤，对记忆候选进行精排重排序
 - `HybridRetriever` 实现 `knownEmpty` 短路优化：当检索空间已知为空时，跳过实际检索直接返回空结果
 - `HybridRetriever` 向量路径支持 pre-filter：当 `MemoryReadFilter` 限制了 space_id / memory_scope 时，先通过 `SemanticMemory.findEligibleEntityIds()` 查询合规实体 ID 集合，传入 `VectorSearcher` 做内存过滤；候选集超过 1000 时自动回退为后过滤，避免内存压力
-- `MemoryToolProvider` 注册的 `memory` 工具通过单个 `action` 参数暴露 10 种操作，另加独立的 `knowledge.search` 工具：
+- `MemoryToolProvider` 注册的 `memory` 工具通过单个 `action` 参数暴露 11 种操作，另加独立的 `knowledge.search` 工具：
   - `memory(action=search)`：搜索知识实体
   - `memory(action=recall)`：回忆别的会话里的对话片段
   - `memory(action=create)` / `update` / `delete`：实体 CRUD，其中 `delete` 按已知 `entityId` 归档单条
-  - `memory(action=cancel)`：按语义描述批量归档已取消的 `GOAL / EXPERIENCE / HABIT`（默认类型集合可通过 `entityTypes` 覆盖）；必填 `query`，可选 `maxArchive`（默认 5）/ `minScore`（默认 0.5）；与 `delete` 互补——`delete` 精确按 ID 删单条，`cancel` 按语义召回后批量归档，覆盖"取消定时任务"这类需要清理多个旧目标/经验的场景
+  - `memory(action=cancel)`：按语义描述批量归档已取消的实体（默认 `GOAL / EXPERIENCE / HABIT`，可通过 `entityTypes` 覆盖到任意类型）；支持 `entityId` 精确单条 或 `query` 语义批量；可选 `maxArchive`（默认 5）/ `minScore`（默认 0.5）；覆盖"取消定时任务 / 撤销目标 / 不再做 X"这类需要清理多个旧目标/经验的场景
+  - `memory(action=complete)`：标记 `GOAL / PROJECT` 已完成，驱动 lifecycle 状态机进入终态
+  - `memory(action=supersede)`：旧实体被新实体替代，lifecycle 上建立 superseded_by 关系
   - `memory(action=tag)`：建立实体关系
   - `memory(action=query-at-time)`：时间点查询
   - `memory(action=search-experience)`：检索执行经验

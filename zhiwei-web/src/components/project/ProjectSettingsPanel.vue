@@ -3,18 +3,19 @@
  * 项目设置抽屉 —— Plan 1 Task 22。
  *
  * 职责：
- * - 从右侧滑入，展示并可编辑项目的基本信息：名称 / 指示词 / 记忆隔离
+ * - 从右侧滑入，展示并可编辑项目的基本信息：名称 / 指示词
+ * - 隔离模式仅作只读展示（创建后不可修改）—— 项目归属不可迁移
  * - 底部「删除项目」按钮触发二次确认，调用 {@link useProjectStore.deleteProject}
  *   并在成功后跳回首页（项目已不存在，不能继续停留）
  *
  * 设计说明：
  * - 复用 {@link FormSheetShell}，视觉与 Task 21 {@code ProjectResourcePanel} 对齐
- * - 字段和 {@link CreateProjectDialog} 保持一致：name / instructions / isolation
+ * - 可编辑字段：name / instructions；isolation 仅展示原值
  * - 打开抽屉时从 {@link props.project} 拷贝到本地 ref，关闭/重新打开会重置回最新值
  * - 删除用 {@link ConfirmDialog} 二次确认（destructive variant），而非 window.confirm
  *
  * @author zsg
- * @since 2026-04-23
+ * @since 2026-04-24
  */
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -26,7 +27,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useProjectStore } from '@/stores/project'
-import type { ProjectDto, ProjectIsolation } from '@/api/project'
+import type { ProjectDto } from '@/api/project'
 
 const props = defineProps<{
   open: boolean
@@ -47,17 +48,11 @@ const INSTRUCTIONS_MAX = 1000
 
 const name = ref(props.project.name)
 const instructions = ref(props.project.instructions)
-const isolation = ref<ProjectIsolation>(props.project.isolation)
 
 const submitting = ref(false)
 const deleting = ref(false)
 const submitError = ref<string | null>(null)
 const showDeleteConfirm = ref(false)
-
-const isolationOptions: Array<{ value: ProjectIsolation; label: string; hint: string }> = [
-  { value: 'ISOLATED', label: '隔离', hint: '项目内记忆独立，不与其他会话共享' },
-  { value: 'SHARED', label: '共享', hint: '与默认空间共享记忆，跨项目可见' },
-]
 
 const instructionsCount = computed(() => instructions.value.length)
 const trimmedName = computed(() => name.value.trim())
@@ -69,11 +64,15 @@ const canSave = computed(
   () => nameValid.value && instructionsValid.value && !submitting.value,
 )
 
+/** 当前隔离模式的中文标签 —— 仅用于只读展示 */
+const isolationLabel = computed(() =>
+  props.project.isolation === 'ISOLATED' ? '隔离' : '共享',
+)
+
 /** 用当前 project prop 重置本地表单 —— 进抽屉 / 外部切换项目时调用 */
 function resetFormFromProject() {
   name.value = props.project.name
   instructions.value = props.project.instructions
-  isolation.value = props.project.isolation
   submitError.value = null
 }
 
@@ -98,10 +97,10 @@ async function handleSave() {
   submitting.value = true
   submitError.value = null
   try {
+    // 注：isolation 不传；UpdateProjectRequest 将其视为可选，缺省时后端保留原值。
     await store.updateProject(props.project.id, {
       name: trimmedName.value,
       instructions: instructions.value,
-      isolation: isolation.value,
     })
     emit('update:open', false)
   } catch (err: any) {
@@ -142,7 +141,7 @@ async function confirmDelete() {
   <FormSheetShell
     :open="props.open"
     title="项目设置"
-    description="修改项目名称、指示词或记忆模式，或删除此项目。"
+    description="修改项目名称或指示词，或删除此项目；记忆模式在创建时确定，无法修改。"
     body-class="flex flex-col gap-lg"
     @update:open="handleOpenChange"
   >
@@ -182,28 +181,19 @@ async function confirmDelete() {
       />
     </div>
 
-    <!-- 记忆隔离 -->
+    <!-- 记忆隔离（只读：创建后不可修改） -->
     <div class="flex flex-col gap-xs">
       <Label>记忆</Label>
-      <div class="flex flex-col gap-xs">
-        <label
-          v-for="option in isolationOptions"
-          :key="option.value"
-          class="flex items-start gap-sm cursor-pointer rounded-md px-xs py-xs hover:bg-accent/40"
-        >
-          <input
-            v-model="isolation"
-            type="radio"
-            name="project-settings-isolation"
-            :value="option.value"
-            class="mt-1 size-md accent-primary cursor-pointer"
-            :data-testid="`project-settings-isolation-${option.value.toLowerCase()}`"
-          />
-          <div class="flex flex-col">
-            <span class="text-sm">{{ option.label }}</span>
-            <span class="text-xs text-muted-foreground">{{ option.hint }}</span>
-          </div>
-        </label>
+      <div
+        class="flex flex-col gap-xs rounded-md border border-border/60 bg-muted/30 px-sm py-xs"
+        data-testid="project-settings-isolation-readonly"
+      >
+        <span class="text-sm text-foreground">
+          隔离模式：{{ isolationLabel }}
+        </span>
+        <span class="text-xs text-muted-foreground">
+          创建后不可修改——项目的记忆归属在创建时确定。
+        </span>
       </div>
     </div>
 

@@ -19,6 +19,10 @@ export type ProjectIsolation = 'ISOLATED' | 'SHARED'
  * 项目 DTO —— 对应后端 {@code ProjectResponse}。
  *
  * {@code createdAt} / {@code updatedAt} 为 ISO 8601 字符串（Java Instant 序列化结果）。
+ * {@code knowledgeBaseIds} 列出本项目绑定的知识库 id（按绑定时间升序）；列表接口
+ * （{@link listProjects}）返回的 DTO 中该字段为空数组，单项接口（create / get / update）
+ * 会反查 memory_space_knowledge_bases 填充，用于前端把初始文件上传到项目知识库。
+ * 声明为可选以兼容测试 fixtures；消费方以可选链 {@code ?.[0]} 或 {@code ?? []} 兜底。
  */
 export interface ProjectDto {
   id: string
@@ -26,6 +30,7 @@ export interface ProjectDto {
   instructions: string
   isolation: ProjectIsolation
   memorySpaceId: string
+  knowledgeBaseIds?: string[]
   createdAt: string
   updatedAt: string
 }
