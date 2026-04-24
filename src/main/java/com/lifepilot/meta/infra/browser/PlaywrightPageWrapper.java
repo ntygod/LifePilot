@@ -312,13 +312,45 @@ public class PlaywrightPageWrapper {
     }
 
     /**
+     * 执行 JavaScript 表达式，带超时保护。
+     *
+     * <p>当 {@code timeoutSeconds > 0} 时，通过 {@link TimeoutExecutor}
+     * 在 virtual thread 上运行，超时抛异常而非无限阻塞。
+     * {@code timeoutSeconds <= 0} 时退化为无超时的 {@link #evaluate(String)}。</p>
+     *
+     * @param expression     JavaScript 表达式
+     * @param timeoutSeconds 超时秒数
+     * @return JSON 序列化后的结果字符串
+     * @throws RuntimeException 超时或执行失败
+     */
+    public String evaluate(String expression, long timeoutSeconds) {
+        if (timeoutSeconds <= 0) {
+            return evaluate(expression);
+        }
+        try {
+            return TimeoutExecutor.callWithTimeout(
+                    () -> evaluate(expression),
+                    timeoutSeconds,
+                    java.util.concurrent.TimeUnit.SECONDS
+            );
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new RuntimeException("JS 执行超过 " + timeoutSeconds + " 秒超时", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
      * 获取无障碍树快照（ARIA snapshot）。
      *
-     * <p>使用 Playwright 1.49+ 的 {@code locator.ariaSnapshot()} API，
-     * 返回 YAML 格式的无障碍树表示。</p>
+     * <p>使用 Playwright 1.49+ 的 {@code locator.ariaSnapshot()} API 拿到 YAML，
+     * 再通过 {@link AccessibilityYamlTrimmer} 按 {@code maxDepth} 裁剪，
+     * 防止复杂页面产出超大上下文污染 LLM。</p>
      *
      * @param rootSelector 子树根节点 CSS 选择器，为 null 时返回整页快照
-     * @param maxDepth     最大深度（保留参数，供未来扩展）
+     * @param maxDepth     最大深度（从 1 起算），{@code <= 0} 表示不裁剪
      * @return YAML 格式的无障碍树快照字符串
      */
     public String accessibilitySnapshot(@Nullable String rootSelector, int maxDepth) {
@@ -328,7 +360,8 @@ public class PlaywrightPageWrapper {
             var locator = rootSelector != null
                     ? page.locator(rootSelector)
                     : page.locator("body");
-            return locator.ariaSnapshot();
+            String full = locator.ariaSnapshot();
+            return AccessibilityYamlTrimmer.trim(full, maxDepth);
         } catch (Exception e) {
             return "";
         }
