@@ -123,10 +123,22 @@ const projectNameById = computed(() => {
   return map
 })
 
-/** 主账户任务显示"主"，项目任务显示项目名；项目被删则降级为 ID */
+/**
+ * 任务所属范围的可读标签：
+ * - 主账户：「主账户」
+ * - 项目存在：项目名
+ * - 项目已删除（projectId 不在已加载列表里）：「项目已删除」
+ *
+ * 禁止暴露 UUID —— 用户看不懂也没意义。
+ */
 function projectLabel(projectId: string | null): string {
-  if (!projectId) return '主'
-  return projectNameById.value.get(projectId) ?? projectId
+  if (!projectId) return '主账户'
+  return projectNameById.value.get(projectId) ?? '项目已删除'
+}
+
+/** 项目已删除（projectId 存在但本地列表中没有对应项目）—— 用于 UI 降级样式。 */
+function isOrphanProject(projectId: string | null): boolean {
+  return Boolean(projectId) && !projectNameById.value.has(projectId as string)
 }
 
 function openProject(projectId: string) {
@@ -148,8 +160,8 @@ const AGENT_PALETTE = [
 ] as const
 
 function agentColorFor(projectId: string | null): string {
-  // 主账户固定灰
-  if (!projectId) return '#8a857d'
+  // 主账户 / 项目已删除均固定灰色 —— 没有稳定归属就不参与调色板
+  if (!projectId || isOrphanProject(projectId)) return '#8a857d'
   let hash = 0
   for (let i = 0; i < projectId.length; i += 1) {
     hash = (hash * 31 + projectId.charCodeAt(i)) >>> 0
@@ -797,8 +809,8 @@ function timelineMarkStatus(task: ScheduledTaskDto): 'success' | 'failed' | 'upc
                       color: agentColorFor(task.projectId),
                     }"
                     :data-testid="`project-tag-${task.id}`"
-                    :disabled="!task.projectId"
-                    @click.stop="task.projectId && openProject(task.projectId)"
+                    :disabled="!task.projectId || isOrphanProject(task.projectId)"
+                    @click.stop="task.projectId && !isOrphanProject(task.projectId) && openProject(task.projectId)"
                   >
                     {{ projectLabel(task.projectId) }}
                   </button>
