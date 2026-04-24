@@ -286,4 +286,97 @@ describe('ScheduledTasksView', () => {
     // 日志 API 不应被调用
     expect(taskApiMock.listScheduledTaskLogs).not.toHaveBeenCalled()
   })
+
+  // ────────── 2026-04-24 视觉重做：新增 UI 元素测试 ──────────
+
+  it('Hero KPI 行按真实任务数派生「总任务」', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({ id: 't1', status: 'active' }),
+      buildTask({ id: 't2', status: 'active' }),
+      buildTask({ id: 't3', status: 'paused' }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    const kpiRow = wrapper.find('[data-testid="kpi-row"]')
+    expect(kpiRow.exists()).toBe(true)
+    expect(kpiRow.text()).toContain('总任务')
+    // 总任务值 3；caption 显示 2 运行 · 1 暂停 · 0 草稿
+    expect(kpiRow.text()).toContain('3')
+    expect(kpiRow.text()).toContain('2 运行')
+    expect(kpiRow.text()).toContain('1 暂停')
+  })
+
+  it('过滤 pill 点击_按 status 过滤卡片', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({ id: 't1', name: '活动任务', status: 'active' }),
+      buildTask({ id: 't2', name: '暂停任务', status: 'paused' }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    // 默认「全部」显示两个卡片
+    expect(wrapper.find('[data-testid="task-card-t1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="task-card-t2"]').exists()).toBe(true)
+    // 点「已暂停」
+    await wrapper.find('[data-testid="filter-paused"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="task-card-t1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="task-card-t2"]').exists()).toBe(true)
+  })
+
+  it('搜索框_按关键字过滤任务名', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([
+      buildTask({ id: 't1', name: '每日天气播报' }),
+      buildTask({ id: 't2', name: '周报提醒' }),
+    ])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    const input = wrapper.find('[data-testid="search-input"]')
+    await input.setValue('周报')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="task-card-t1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="task-card-t2"]').exists()).toBe(true)
+  })
+
+  it('视图切换_时间表/执行历史显示占位', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([buildTask({ id: 't1' })])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    // 切到时间表
+    await wrapper.find('[data-testid="view-tab-timetable"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="placeholder-timetable"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('即将推出')
+    // 切到执行历史
+    await wrapper.find('[data-testid="view-tab-history"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="placeholder-history"]').exists()).toBe(true)
+  })
+
+  it('顶部「新建任务」按钮_显示 placeholder toast', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([])
+    projectApiMock.listProjects.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-testid="create-task"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('试试在对话中对微微')
+  })
+
+  it('详情面板_展开后点击关闭恢复折叠', async () => {
+    taskApiMock.listScheduledTasks.mockResolvedValue([buildTask({ id: 't1' })])
+    projectApiMock.listProjects.mockResolvedValue([])
+    taskApiMock.listScheduledTaskLogs.mockResolvedValue([])
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-testid="task-card-toggle-t1"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="task-expanded-t1"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="detail-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="task-expanded-t1"]').exists()).toBe(false)
+  })
 })
