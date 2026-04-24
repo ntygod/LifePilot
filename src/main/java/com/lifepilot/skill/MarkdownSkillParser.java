@@ -4,6 +4,7 @@ import com.lifepilot.skill.spec.SkillFrontmatter;
 import com.lifepilot.skill.spec.SkillPriority;
 import com.lifepilot.skill.spec.SkillRequires;
 import com.lifepilot.skill.spec.SkillZhiweiMeta;
+import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.Yaml;
 
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.regex.Pattern;
  * @author zsg
  * @since 2026-04-24
  */
+@Component
 public class MarkdownSkillParser {
 
     /** frontmatter 分隔符匹配：首行 {@code ---} + 内容 + 结束 {@code ---} + body。 */

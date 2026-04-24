@@ -35,7 +35,9 @@ import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
+import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.install.SkillInstaller;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
@@ -166,17 +168,22 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册 find-skills Skill 提取器 — 启动时将内置 SKILL.md 提取到用户 Skill 目录。
+     * 注册 BUILTIN Skill 安装器 — 启动时扫描 classpath 下 {@code skills/*&#47;SKILL.md}
+     * 走 {@link SkillInstaller} 流水线安装（validate → writeFile → upsertDb），
+     * 并注册到 {@link SkillRegistry} 使激活器可见。
      *
      * <p>通过 {@code lifepilot.meta.skill-discovery.enabled} 配置控制启用，默认 true。
-     * 提取后由 MarkdownSkillLoader 在 ApplicationReadyEvent 时作为 UserDefined Skill 加载。</p>
+     * 解析/校验失败（多为 v1 老格式）只记 WARN 跳过，不阻断启动，待 Phase D 迁移。</p>
      */
     @Bean
     @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
                            havingValue = "true", matchIfMissing = true)
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
-                                                    SkillConfigProperties skillConfig) {
-        return new SkillDiscoveryRegistrar(properties, skillConfig);
+                                                    SkillConfigProperties skillConfig,
+                                                    SkillInstaller installer,
+                                                    MarkdownSkillParser parser,
+                                                    SkillRegistry skillRegistry) {
+        return new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, skillRegistry);
     }
 
     /**

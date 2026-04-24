@@ -2,6 +2,7 @@ package com.lifepilot.skill.config;
 
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
@@ -16,6 +17,8 @@ import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
 import com.lifepilot.skill.tool.SkillLoadTool;
 import com.lifepilot.skill.tool.SkillLoadToolExecutor;
+import com.lifepilot.skill.validation.SkillBodyValidator;
+import com.lifepilot.skill.validation.SkillDescriptionValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -40,11 +43,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * 注册 Skill 框架核心组件、Markdown 解析与热加载、审计追溯。
  * 每个 Bean 使用 {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
  *
- * <p>TODO Phase C.1 后续：旧 MarkdownSkillParser（{@code com.lifepilot.skill.markdown}）
- * 已在 v2 重写中迁至 {@code com.lifepilot.skill.MarkdownSkillParser}，产出 ParsedSkill 而非 SkillDefinition。
- * MarkdownSkillLoader / REST Controller / SkillFileWatcher 等下游待 Phase B 重接新解析器 + SkillInstaller。
- * 本配置暂时不再注册旧 Parser 与三件套校验器（FormatValidator / SecurityValidator / SandboxValidator /
- * SkillValidationPipeline）以及 SkillGenerator / SkillGapDetector / SkillGenerationTool 等。</p>
+ * <p>Phase B.3 后：{@link MarkdownSkillParser}（{@code com.lifepilot.skill}）已接入，
+ * {@link MarkdownSkillLoader} / {@link SkillFileWatcher} 改用新 parser + 两道 validator
+ * （{@link SkillDescriptionValidator} / {@link SkillBodyValidator}），
+ * BUILTIN 来源由 {@code SkillDiscoveryRegistrar}（meta 模块）经 {@code SkillInstaller} 安装。
+ * REST Controller 的 Skill 创建/更新端点待 Phase B.6 接回。
+ * SkillGenerator / SkillGapDetector / SkillGenerationTool 等 AUTO_GENERATED 相关 Bean 待 Phase B.5 恢复。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -149,8 +153,8 @@ public class SkillAutoConfiguration {
 
     // ==================== Markdown 解析与热加载 ====================
 
-    // TODO Phase B.3: 新 MarkdownSkillParser（com.lifepilot.skill）产出 ParsedSkill，
-    // 待接入 SkillInstaller 后在此注册为 Bean。
+    // MarkdownSkillParser 通过 @Component 自动注册（无条件），避免在 skills.enabled=false
+    // 的测试/生产配置下让 SkillInstaller @Service 拿不到依赖。
 
     @Bean
     @ConditionalOnMissingBean
@@ -162,9 +166,12 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public MarkdownSkillLoader markdownSkillLoader(SkillRegistry registry,
-                                                   SkillConfigProperties config) {
+                                                   SkillConfigProperties config,
+                                                   MarkdownSkillParser parser,
+                                                   SkillDescriptionValidator descriptionValidator,
+                                                   SkillBodyValidator bodyValidator) {
         log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", config.getDirectory());
-        return new MarkdownSkillLoader(registry, config);
+        return new MarkdownSkillLoader(registry, config, parser, descriptionValidator, bodyValidator);
     }
 
     @Bean
