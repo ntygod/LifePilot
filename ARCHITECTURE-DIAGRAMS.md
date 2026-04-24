@@ -299,7 +299,7 @@ graph TB
 
     subgraph "挂起/恢复"
         SuspendStore[SuspendStore]
-        SuspendReason[SuspendReason<br/>5 种挂起场景]
+        SuspendReason[SuspendReason<br/>6 种挂起场景]
         ResumeListener[AgentResumeListener]
     end
 
@@ -713,6 +713,7 @@ stateDiagram-v2
         [*] --> RemoteDelegation: 等待 A2A 远程 Agent
         [*] --> ScheduledWakeup: 定时恢复
         [*] --> ExternalDataWait: 等待外部数据就绪
+        [*] --> BrowserTakeover: 等待用户在浏览器中完成人工操作
     }
 
     Suspended --> Running: AgentResumeListener<br/>接收 ResumePayload

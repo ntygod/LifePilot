@@ -17,6 +17,7 @@ ReactAgentLoop 最初是「一次性执行到底」的模型 — 从 `run()` / `
 | A2A 远程执行 | A2A 请求路由到远程 Agent | 远程 Agent 返回结果 | A2aTaskCompletedEvent |
 | 定时恢复 | Agent 主动设置 "30 分钟后继续" | 到达指定时间 | ScheduledWakeupEvent |
 | 外部数据就绪 | 等待爬虫/ETL 完成 | 数据写入完成 | ExternalDataReadyEvent |
+| 浏览器人工接管 | `browser.requestHumanTakeover` | 用户在浏览器中完成登录/验证码/扫码 | BrowserTakeoverCompletedEvent |
 
 所有场景共享同一套挂起-恢复机制，区别仅在于 `SuspendReason` 的类型和恢复信号的来源。
 
@@ -51,7 +52,8 @@ public sealed interface SuspendReason permits
         SuspendReason.UserConfirmation,
         SuspendReason.RemoteDelegation,
         SuspendReason.ScheduledWakeup,
-        SuspendReason.ExternalDataWait {
+        SuspendReason.ExternalDataWait,
+        SuspendReason.BrowserTakeover {
 
     /** 等待异步工作流完成。 */
     record WorkflowWait(
@@ -86,6 +88,13 @@ public sealed interface SuspendReason permits
             String dataSourceId,
             String description
     ) implements SuspendReason {}
+
+    /** 等待用户在浏览器中完成人工接管（验证码/登录/扫码/人机验证/账号保护）。 */
+    record BrowserTakeover(
+            String sessionId,
+            String reason,
+            Instant requestedAt
+    ) implements SuspendReason {}
 }
 ```
 
@@ -102,7 +111,8 @@ public sealed interface ResumePayload permits
         ResumePayload.UserDecision,
         ResumePayload.RemoteResult,
         ResumePayload.WakeupSignal,
-        ResumePayload.DataReady {
+        ResumePayload.DataReady,
+        ResumePayload.BrowserTakeoverCompleted {
 
     /** 工作流执行结果。 */
     record WorkflowResult(
@@ -134,10 +144,18 @@ public sealed interface ResumePayload permits
             String dataSourceId,
             String dataLocationOrContent
     ) implements ResumePayload {}
+
+    /** 浏览器人工接管完成信号（用户在浏览器完成操作后，或主动取消）。 */
+    record BrowserTakeoverCompleted(
+            String sessionId,
+            @Nullable String note
+    ) implements ResumePayload {}
 }
 ```
 
-`SuspendReason` 与 `ResumePayload` 一一对应，恢复时通过类型匹配校验配对正确性。
+`SuspendReason` 与 `ResumePayload` 一一对应（WorkflowWait↔WorkflowResult，UserConfirmation↔UserDecision，
+RemoteDelegation↔RemoteResult，ScheduledWakeup↔WakeupSignal，ExternalDataWait↔DataReady，
+BrowserTakeover↔BrowserTakeoverCompleted），恢复时通过类型匹配校验配对正确性。
 
 ### 3.3 ReactStep 扩展 — Suspend / Resume
 
@@ -264,6 +282,7 @@ if (cancellationToken.isCancelled()) break;
    - RemoteDelegation — A2A 远程 Agent 委托
    - ScheduledWakeup — Agent 主动设置延迟恢复
    - ExternalDataWait — 等待外部数据就绪
+   - BrowserTakeover — `browser.requestHumanTakeover` 工具返回 `_suspend=true` + `_suspendReason.type="BrowserTakeover"`，由 `ToolExecutionCoordinator.parseSuspendReasonFromOutput` 转换
 2. **`<await_user_input>` 标签路径**：LLM 输出纯文本（无 tool call）时，`ExecutionCompletionPolicy` 检测到 `<await_user_input>` 标签，返回 `SUSPEND_FOR_USER_INPUT` 判定，coreLoop 据此触发挂起
 
 注意：不是所有挂起都由工具触发。UserConfirmation 场景由 Guardrail 拦截器在工具执行前触发。
@@ -408,13 +427,14 @@ public interface SuspendStore {
 每种挂起场景的恢复信号来源不同，但最终都汇聚到同一个恢复路径：
 
 ```
-恢复信号源                    Spring Event                  统一恢复入口
-─────────────────────────────────────────────────────────────────────
-WorkflowEngine          → WorkflowCompletedEvent     ─┐
-Guardrail (用户确认)     → UserConfirmationEvent      ─┤
-A2A TaskManager         → A2aTaskCompletedEvent      ─┼→ AgentResumeListener
-ScheduledTaskExecutor   → ScheduledWakeupEvent       ─┤     ↓
-ExternalDataWatcher     → ExternalDataReadyEvent     ─┘  resumeFromSuspend()
+恢复信号源                                 Spring Event                          统一恢复入口
+─────────────────────────────────────────────────────────────────────────────────────────────
+WorkflowEngine                     → WorkflowCompletedEvent              ─┐
+Guardrail (用户确认)                → UserConfirmationEvent               ─┤
+A2A TaskManager                    → A2aTaskCompletedEvent               ─┤
+ScheduledTaskExecutor              → ScheduledWakeupEvent                ─┼→ AgentResumeListener
+ExternalDataWatcher                → ExternalDataReadyEvent              ─┤        ↓
+BrowserTakeoverController (REST)   → BrowserTakeoverCompletedEvent       ─┘  resumeFromSuspend()
 ```
 
 ### 5.2 AgentResumeListener
@@ -456,10 +476,44 @@ public class AgentResumeListener {
     /** 外部数据就绪 → 恢复等待数据的 Agent。 */
     @EventListener
     public void onExternalDataReady(ExternalDataReadyEvent event) { ... }
+
+    /** 浏览器人工接管完成 → 按 sessionId 匹配并恢复对应 Agent。 */
+    @EventListener
+    public void onBrowserTakeoverCompleted(BrowserTakeoverCompletedEvent event) {
+        List<SuspendedAgent> candidates = suspendStore.findByReasonType("BrowserTakeover");
+        var matched = candidates.stream()
+                .filter(sa -> sa.suspendReason() instanceof SuspendReason.BrowserTakeover bt
+                        && bt.sessionId().equals(event.sessionId()))
+                .findFirst();
+        if (matched.isPresent()) {
+            var payload = new ResumePayload.BrowserTakeoverCompleted(event.sessionId(), event.note());
+            agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
+        }
+    }
 }
 ```
 
-### 5.3 ScheduledWakeup 的特殊处理
+`BrowserTakeoverCompletedEvent` 由 `BrowserTakeoverController` 在收到 REST 恢复请求时发布，
+端点见 §5.3。
+
+### 5.3 BrowserTakeover 的 REST 恢复入口
+
+`BrowserTakeoverController` 位于 `com.lifepilot.interaction.web.controller`，前端在用户完成浏览器内
+人工操作后调用：
+
+```
+POST /api/agent/browser-takeover/{turnId}/resume
+     ?sessionId=<browser session id>
+     &cancelled=<true|false>         # 默认 false
+     &note=<可选备注>
+```
+
+- `turnId` 仅用于前端构造 URL 和后端日志追踪
+- `sessionId` 对应 `SuspendReason.BrowserTakeover.sessionId`，是恢复时匹配挂起 Agent 的真正键
+- `cancelled=true` 时由用户取消接管，`note` 可传取消原因
+- 控制器发布 `BrowserTakeoverCompletedEvent(sessionId, cancelled, note)`，其余由 `AgentResumeListener` 处理
+
+### 5.4 ScheduledWakeup 的特殊处理
 
 定时恢复场景需要在挂起处理完成后注册延迟任务，由 `ReactAgentLoop.scheduleWakeupIfNeeded()` 负责：
 
@@ -507,8 +561,14 @@ public final class SseEventType {
 {
     "traceId": "xxx",
     "sessionId": "yyy",
-    "reasonType": "WorkflowWait",
-    "reasonDetail": { "executionId": "...", "workflowName": "调研助手" },
+    "turnId": "...",
+    "turnStatus": "SUSPENDED",
+    "completionMode": "SUSPENDED",
+    "reasonType": "WorkflowWait",              // SuspendReason 子类型名
+    "reasonSourceId": "...",                    // 可空，详见下表
+    "reasonDetail": "...",                      // 人类可读描述
+    "terminationReason": "...",
+    "content": "...",
     "suspendedAt": "2026-03-17T10:30:00Z"
 }
 
@@ -521,7 +581,21 @@ public final class SseEventType {
 }
 ```
 
-前端收到 `AGENT_SUSPENDED` 后可展示挂起状态 UI（如进度指示器、等待原因说明），收到 `AGENT_RESUMED` 后恢复正常对话流。
+`reasonSourceId` 由 `AgentOrchestrator.resolveSuspendReasonSourceId` 从 `SuspendReason` 中提取出用于前端匹配的稳定标识：
+
+| `reasonType` | `reasonSourceId` 值来源 |
+|---|---|
+| `WorkflowWait` | `executionId` |
+| `UserConfirmation` | `confirmationId` |
+| `RemoteDelegation` | `remoteTaskId` |
+| `ScheduledWakeup` | null（不参与前端匹配） |
+| `ExternalDataWait` | `dataSourceId` |
+| `BrowserTakeover` | `sessionId`（即恢复 REST 所需的匹配键） |
+
+前端收到 `AGENT_SUSPENDED` 后可展示挂起状态 UI（如进度指示器、等待原因说明）；
+`reasonType="BrowserTakeover"` 时唤起 `HumanTakeoverModal`，完成后调
+`POST /api/agent/browser-takeover/{turnId}/resume?sessionId={reasonSourceId}` 触发恢复。
+收到 `AGENT_RESUMED` 后恢复正常对话流。
 
 
 ## 7. 时序图
@@ -596,9 +670,10 @@ public final class SseEventType {
 | Phase 3 | SuspendStore（接口 + SqliteSuspendStore + Flyway） | agent.suspend | 已完成 |
 | Phase 4 | run() / runStreaming() 挂起处理 + resumeFromSuspend() | agent.orchestration | 已完成 |
 | Phase 5 | SseEventType 扩展 | interaction | 已完成 |
-| Phase 6 | AgentResumeListener + 5 种事件定义 + SuspendAutoConfiguration | agent.suspend | 已完成 |
+| Phase 6 | AgentResumeListener + 6 种事件定义 + SuspendAutoConfiguration | agent.suspend | 已完成 |
 | Phase 7 | WorkflowWait / A2A RemoteDelegation 场景集成 | agent + workflow + a2a | 已完成 |
 | Phase 8 | UserConfirmation / ScheduledWakeup / ExternalDataWait 场景 | agent | 已完成 |
+| Phase 9 | BrowserTakeover 场景 + REST 恢复入口 + 前端 HumanTakeoverModal | agent + meta.infra.browser + interaction | 已完成 |
 
 ## 9. 风险与缓解
 
