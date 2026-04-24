@@ -61,11 +61,14 @@ public class EpisodicMemory {
         Instant lastMessageAt = record.messages().isEmpty()
                 ? record.updatedAt()
                 : record.messages().getLast().createdAt();
+        // 记忆导入通道默认 project_id = NULL（归属主账户），
+        // TODO(Task 14+)：接入 ProjectContext 后按当前项目归属写入
         jdbcTemplate.update("""
                         INSERT INTO session_store (
                             session_id, channel, chat_type, title, summary, message_count,
-                            is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at, active_branch_id
-                        ) VALUES (?, 'memory-import', 'chat', ?, ?, ?, 0, 0, ?, ?, ?, ?, 'main')
+                            is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at,
+                            active_branch_id, project_id
+                        ) VALUES (?, 'memory-import', 'chat', ?, ?, ?, 0, 0, ?, ?, ?, ?, 'main', NULL)
                         ON CONFLICT(session_id) DO UPDATE SET
                             title = excluded.title,
                             summary = excluded.summary,

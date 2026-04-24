@@ -67,6 +67,8 @@ public class ToolTipResolver {
 
     private String resolveFromMemory(String toolId) {
         try {
+            // TODO(plan-1-后续): 接入 ProjectContext，按当前项目构造 filter；
+            // Plan 1 先按主账户维度读取工具经验 tip（缓存维度也需同步调整为按 projectId 分桶）。
             var experiences = semanticMemory.findCurrentByType(
                     EntityType.EXPERIENCE, MemoryReadFilter.agentExperience());
             var tips = experiences.stream()

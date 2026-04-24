@@ -20,6 +20,7 @@ import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
@@ -44,6 +45,7 @@ import com.lifepilot.memory.workspace.WorkspaceProperties;
 import com.lifepilot.observability.context.ContextReportRepository;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -200,11 +202,14 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) HybridRetriever hybridRetriever,
             @Autowired(required = false) WeatherService weatherService,
             @Autowired(required = false) SkillInstallationRepository skillInstallationRepository,
-            @Autowired(required = false) SkillRequirementGate skillRequirementGate) {
-        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
+            @Autowired(required = false) SkillRequirementGate skillRequirementGate,
+            @Autowired(required = false) ProjectContextResolver projectContextResolver,
+            @Autowired(required = false) ChatSessionRepository chatSessionRepository) {
+        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，projectContext={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
-                proceduralMemory != null ? "enabled" : "disabled");
+                proceduralMemory != null ? "enabled" : "disabled",
+                (projectContextResolver != null && chatSessionRepository != null) ? "enabled" : "disabled");
         var assembler = new ContextAssembler(
                 config,
                 promptRegistry,
@@ -226,6 +231,8 @@ public class AgentAutoConfiguration {
         assembler.setWeatherService(weatherService);
         assembler.setSkillInstallationRepository(skillInstallationRepository);
         assembler.setSkillRequirementGate(skillRequirementGate);
+        assembler.setProjectContextResolver(projectContextResolver);
+        assembler.setChatSessionRepository(chatSessionRepository);
         return assembler;
     }
 

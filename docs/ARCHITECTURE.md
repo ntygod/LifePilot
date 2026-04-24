@@ -1,7 +1,7 @@
 # 知微（ZhiWei）— 系统架构总览
 
 > **文档性质**：架构总览文档
-> **最后更新**：2026-04-15
+> **最后更新**：2026-04-23
 
 ## 1. 项目概述
 
@@ -140,6 +140,7 @@ graph TB
 | `skill` | SKILL.md 三级分层（L1/L2/L3）、四来源安装（BUILTIN/USER_IMPORTED/MARKETPLACE/AUTO_GENERATED）、`skill.load` 统一激活、`SkillSynthesizer` 自生成 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
+| `project` | 项目（领域级任务容器）CRUD、项目级 MemorySpace 联动、ProjectContext 解析、级联删除 | [架构](architecture/project.md) |
 | `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
 | `document` | 文档工作空间（docx / xlsx / pptx 新建、docx / xlsx 锚点编辑、工作副本 + 版本链 + diff + commit/rollback/discard） | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
@@ -191,7 +192,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V15）"
+    subgraph "Flyway 迁移（V1~V21）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -206,7 +207,13 @@ graph LR
         V12["V12: session_documents 会话文档表（Phase 2A）"]
         V13["V13: document_versions 文档版本链 + session_documents 扩 sourcePath/latestVersion（Phase 3A）"]
         V14["V14: session_documents.source_path UNIQUE 索引"]
-        V15["V15: 工具暴露重构 — tool_search_index(FTS5) + tool_usage_stats + tier1_advisory"]
+        V15["V15: projects 项目表 + isolation CHECK + FK 到 memory_spaces（RESTRICT）"]
+        V16["V16: conversations 加 project_id（死表，V17 已迁移）"]
+        V17["V17: project_id 从 conversations 迁移到 session_store 并建部分索引"]
+        V18["V18: chat_turn_memory_snapshots 加 project_space_id（项目隔离 turn 级写入路由）"]
+        V19["V19: 工具暴露重构 — tool_search_index(FTS5) + tool_usage_stats + tier1_advisory"]
+        V20["V20: daily_active_sessions 日活会话统计表"]
+        V21["V21: 技能系统重构相关表与索引"]
     end
 
     V1 --> SQL

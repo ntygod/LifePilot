@@ -1,13 +1,14 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-15
+> **最后更新**：2026-04-23
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
 
 - [Chat（对话 + SSE）](#chat对话--sse)
 - [Sessions（会话管理）](#sessions会话管理)
+- [Projects（项目工作空间）](#projects项目工作空间)
 - [Memories（记忆管理）](#memories记忆管理)
 - [Signals / Notifications（A2UI 信号 + 通知）](#signals--notifications)
 - [Notifications（通知管理）](#notifications通知管理)
@@ -58,15 +59,33 @@
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
-| POST | `/api/chat/sessions` | `createSession` | 创建会话（201） |
-| GET | `/api/chat/sessions` | `listSessions` | 会话列表（支持 q 搜索） |
+| POST | `/api/chat/sessions` | `createSession` | 创建会话（201）；请求体含可选 `projectId`（NULL = 归属主账户，非 NULL = 归属具体项目） |
+| GET | `/api/chat/sessions` | `listSessions` | 会话列表；支持 `q/pinned/archived/timeRange/sortBy/order` 以及可选 `projectId` 过滤。**Plan 1 语义**：不传 `projectId` 时仅返回主账户对话（project_id IS NULL）；传 `projectId=xxx` 时仅返回归属该项目的对话 |
 | GET | `/api/chat/sessions/{id}` | `getSession` | 会话详情（含关联知识库） |
 | GET | `/api/chat/sessions/{id}/messages` | `getSessionMessages` | 会话历史消息 |
 | PATCH | `/api/chat/sessions/{id}` | `updateSession` | 更新会话（标题/置顶等） |
 | PATCH | `/api/chat/sessions/{id}/config` | `updateSessionConfig` | 更新会话配置（knowledgeBaseIds / datastoreIds 绑定） |
 | DELETE | `/api/chat/sessions/{id}` | `deleteSession` | 删除会话（204） |
 | POST | `/api/chat/sessions/batch` | `batchUpdateSessions` | 批量操作（pin/archive/delete） |
-| POST | `/api/chat/sessions/{id}/fork` | `forkSession` | 分叉会话（从指定消息复制上下文） |
+| POST | `/api/chat/sessions/{id}/fork` | `forkSession` | 分叉会话（从指定消息复制上下文，新会话继承源会话的 `projectId`） |
+
+---
+
+## Projects（项目工作空间）
+
+来源：`ProjectController`，Base Path: `/api/projects`
+
+> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。项目是用户显式创建的领域级任务容器，每个项目对应一个 `type=PROJECT` 的 MemorySpace。隔离语义：`ISOLATED` 项目写入只落项目 space，读取合并主账户 space；`SHARED` 项目等同主账户（合流）。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| POST | `/api/projects` | `create` | 创建项目；请求体：`{name, instructions?, isolation?}`。`name` 必填（1..64 字符，同账户唯一），`instructions` 可选（0..1000 字符，注入对话 system prompt），`isolation` 可选（`ISOLATED`/`SHARED`，默认 `ISOLATED`）。重名或非法 isolation 返回 400；成功返回 200 `ProjectResponse` |
+| GET | `/api/projects` | `list` | 项目列表（按 `created_at` 倒序） |
+| GET | `/api/projects/{id}` | `get` | 项目详情；不存在返回 404 |
+| PUT | `/api/projects/{id}` | `update` | 更新 `name` / `instructions` / `isolation`；`instructions` / `isolation` 传 null 时保留原值；重名 400，不存在 404 |
+| DELETE | `/api/projects/{id}` | `delete` | 删除项目并级联清理所有关联资源（归属会话 + 项目记忆空间实体/关系 + project + memory_space）；不存在返回 404 |
+
+`ProjectResponse` 字段：`{id, name, instructions, isolation, memorySpaceId, createdAt, updatedAt}`，其中 `isolation` 以字符串形式暴露（`ISOLATED` / `SHARED`）。
 
 ---
 
