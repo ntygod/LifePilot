@@ -106,6 +106,25 @@ export const useSkillStore = defineStore('skill', () => {
     }
   }
 
+  /**
+   * 直接更新已有 Skill 的 SKILL.md 原文 —— 走 B.6 新增的 PUT /skills/{name}/markdown 端点。
+   * 成功后刷新详情缓存与列表。
+   */
+  async function updateSkillMarkdown(name: string, content: string) {
+    error.value = null
+    try {
+      await skillApi.updateSkillMarkdown(name, content)
+      // Markdown 改动会影响 description/tools 等衍生字段，刷新详情 + 列表保持一致
+      if (currentSkill.value?.name === name) {
+        await fetchSkillDetail(name)
+      }
+      await fetchSkills()
+    } catch (e: any) {
+      error.value = e.message ?? '更新 Skill Markdown 失败'
+      throw e
+    }
+  }
+
   async function updateSkill(name: string, data: Partial<SkillDetail>) {
     error.value = null
     try {
@@ -208,7 +227,7 @@ export const useSkillStore = defineStore('skill', () => {
     skills, currentSkill, mcpServers, serverTools, npxAvailable, loading, error,
     fetchSkills, fetchSkillDetail, unregisterSkill,
     fetchMcpServers, fetchMcpStatus, connectServer, disconnectServer, fetchServerTools,
-    createSkill, updateSkill, createMcpServer, updateMcpServer,
+    createSkill, updateSkill, updateSkillMarkdown, createMcpServer, updateMcpServer,
     enableSkill, disableSkill, setSkillEnabled, importPackage, installFromMarketplace, testSkill
   }
 })

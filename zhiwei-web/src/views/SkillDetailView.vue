@@ -28,7 +28,7 @@ import { useSkillStore } from '@/stores/skill'
 import { useToolStore } from '@/stores/tool'
 import { useUiStore } from '@/stores/ui'
 
-const MarkdownEditor = defineAsyncComponent(() => import('@/components/editor/MarkdownEditor.vue'))
+const SkillEditor = defineAsyncComponent(() => import('@/components/skill/SkillEditor.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -211,6 +211,12 @@ async function toggleSkill() {
 
 function openTool(toolId: string) {
   router.push(`/tools/${toolId}`)
+}
+
+/** SKILL.md 保存 —— 走 store 路径以顺带刷新列表和当前详情。 */
+async function saveMarkdown(content: string) {
+  await skillStore.updateSkillMarkdown(skillId.value, content)
+  uiStore.showToast('success', 'SKILL.md 已保存。')
 }
 
 function runTest() {
@@ -452,12 +458,12 @@ function runTest() {
             description="自定义技能可直接编辑，其他来源保持只读。"
           >
             <Skeleton v-if="markdownLoading" class="h-72 w-full rounded-[calc(var(--radius)+6px)]" />
-            <MarkdownEditor
+            <SkillEditor
               v-else
               v-model="markdownContent"
               :readonly="!editableMarkdown"
               title="SKILL.md"
-              :on-save="(content: string) => skillApi.updateSkillMarkdown(skillId, content)"
+              :on-save="saveMarkdown"
             />
           </PageSection>
 

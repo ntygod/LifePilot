@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { CloudDownload, Puzzle, SlidersHorizontal, Store } from 'lucide-vue-next'
+import { CloudDownload, Plus, Puzzle, SlidersHorizontal, Store } from 'lucide-vue-next'
 import { useSkillStore } from '@/stores/skill'
 import { useUiStore } from '@/stores/ui'
 import type { SkillSourceType, SkillSummary } from '@/types'
@@ -14,6 +14,7 @@ import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import SkillSourceBadge from '@/components/skill/SkillSourceBadge.vue'
 import SkillInstallDialog from '@/components/skill/SkillInstallDialog.vue'
+import SkillCreateDialog from '@/components/skill/SkillCreateDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 
@@ -24,6 +25,7 @@ const store = useSkillStore()
 const uiStore = useUiStore()
 
 const showInstallDialog = ref(false)
+const showCreateDialog = ref(false)
 const showFilters = ref(false)
 const deleteTarget = ref<SkillSummary | null>(null)
 const skillSearchQuery = ref('')
@@ -107,6 +109,11 @@ function onInstalled() {
   uiStore.showToast('success', '技能目录已刷新。')
 }
 
+function onCreated() {
+  // createSkill 已在 store 内部调用 fetchSkills，这里只作最终刷新提示
+  uiStore.showToast('success', '技能目录已刷新。')
+}
+
 onMounted(() => {
   void store.fetchSkills()
 })
@@ -122,6 +129,10 @@ onMounted(() => {
           :description="`${enabledSkillCount} 个启用中，共 ${store.skills.length} 个`"
         >
           <template #actions>
+            <Button variant="outline" @click="showCreateDialog = true">
+              <Plus class="size-4" />
+              新建技能
+            </Button>
             <Button @click="showInstallDialog = true">
               <CloudDownload class="size-4" />
               导入技能
@@ -188,12 +199,15 @@ onMounted(() => {
           <StatePanel
             v-else-if="store.skills.length === 0"
             title="暂无已注册技能"
-            description="可以从本地压缩包或技能市场导入第一个技能。"
+            description="可以直接新建一个，也可以从本地压缩包或技能市场导入。"
           >
             <template #icon>
               <Puzzle class="size-5" />
             </template>
             <template #actions>
+              <Button variant="outline" @click="showCreateDialog = true">
+                新建技能
+              </Button>
               <Button @click="showInstallDialog = true">
                 导入技能
               </Button>
@@ -279,6 +293,12 @@ onMounted(() => {
       :open="showInstallDialog"
       @update:open="value => (showInstallDialog = value)"
       @installed="onInstalled"
+    />
+
+    <SkillCreateDialog
+      :open="showCreateDialog"
+      @update:open="value => (showCreateDialog = value)"
+      @created="onCreated"
     />
 
     <ConfirmDialog
