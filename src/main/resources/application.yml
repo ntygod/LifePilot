@@ -864,7 +864,8 @@ lifepilot:
         transient-retries: 1
       browser:
         enabled: true
-        headless: true
+        # 默认 false：本地/桌面可见 Agent 浏览过程；容器部署用 BROWSER_HEADLESS=true 覆写
+        headless: ${BROWSER_HEADLESS:false}
         idle-timeout-seconds: 300
         tool-timeout-seconds: 30
         install-timeout-seconds: 600

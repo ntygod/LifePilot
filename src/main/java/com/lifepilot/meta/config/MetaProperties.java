@@ -222,8 +222,8 @@ public class MetaProperties {
             /** 浏览器功能开关，默认 true。 */
             private boolean enabled = true;
 
-            /** 无头模式，默认 true。 */
-            private boolean headless = true;
+            /** 无头模式，默认 false（本地/桌面可见 Agent 浏览过程，容器用 BROWSER_HEADLESS=true 覆写）。 */
+            private boolean headless = false;
 
             /** 空闲超时（秒），默认 300（5 分钟）。 */
             private int idleTimeoutSeconds = 300;
