@@ -212,11 +212,18 @@
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | GET | `/api/skills` | `listSkills` | Skill 列表（name/sourceType/toolName 过滤） |
-| GET | `/api/skills/{id}` | `getSkill` | Skill 详情 |
-| DELETE | `/api/skills/{id}` | `unregisterSkill` | 注销 Skill（Builtin 不可注销） |
-| POST | `/api/skills/{id}/enable` | `enableSkill` | 启用（204） |
-| POST | `/api/skills/{id}/disable` | `disableSkill` | 禁用（204） |
-| POST | `/api/skills/{id}/test` | `testSkill` | Skill 测试 |
+| GET | `/api/skills/{name}` | `getSkill` | Skill 详情 |
+| POST | `/api/skills` | `createSkill` | 新建 Skill（JSON body 含 SKILL.md 原文） |
+| PUT | `/api/skills/{name}` | `updateSkill` | 更新 Skill |
+| DELETE | `/api/skills/{name}` | `unregisterSkill` | 注销 Skill（BUILTIN 不可注销） |
+| PUT | `/api/skills/{name}/enabled` | `setSkillEnabled` | 启用/停用（前端开关入口） |
+| POST | `/api/skills/{name}/enable` | `enableSkill` | 启用（204） |
+| POST | `/api/skills/{name}/disable` | `disableSkill` | 停用（204） |
+| POST | `/api/skills/import` | `importSkillPackage` | 上传 `.skill` 压缩包导入 |
+| POST | `/api/skills/install-from-marketplace` | `installFromMarketplace` | 从扩展市场下载并安装 |
+| GET | `/api/skills/{name}/markdown` | `getSkillMarkdown` | 拉取 SKILL.md 原文 |
+| PUT | `/api/skills/{name}/markdown` | `updateSkillMarkdown` | 覆写 SKILL.md 内容 |
+| GET | `/api/skills/events` | `events` | SSE 订阅 `SkillGeneratedEvent` |
 
 ---
 

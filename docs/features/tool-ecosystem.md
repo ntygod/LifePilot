@@ -11,7 +11,7 @@
 工具对 LLM 的暴露采用 Tier 1（常驻完整 schema）+ Tier 2（FTS5 BM25 可搜索）+ 3 个 Meta 工具（`tools.search` / `tools.describe` / `tools.list`）的三层模型，简单任务保持 2 轮响应低延迟，长尾能力通过按需搜索无限扩展。
 
 > **重要变更**：
-> - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。`load_skill` 独立工具已删除，Skill 加载迁移至 `file.read(skill=...)` 参数，ReactAgentLoop 自动检测并激活工具。`generate_skill` 工具保留用于 LLM 驱动的 Skill 自扩展。
+> - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool，废弃了 `file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳以及 `generate_skill` 独立工具；Skill 自生成由 `SkillSynthesizer` 后台服务在判定能力缺口时触发，不再通过 Agent 侧工具暴露。
 > - 旧的 `lifepilot.agent.core-tool-ids` 配置已删除，由 `lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 动态晋升替代。
 
 ## 2. 核心架构
@@ -170,5 +170,5 @@ lifepilot:
 ## 5. 限制与未来方向
 
 - 工具执行结果的结构化程度依赖各工具实现质量
-- Skill 通过 `file.read(skill=...)` 和 `generate_skill` 实现渐进式发现与按需激活，`load_skill` 独立工具已删除
+- Skill 通过 `skill.load(names=[...])` 实现渐进式按需激活，`file.read(skill=...)` 和 `generate_skill` 已删除（详见 `docs/architecture/skill-system.md`）
 - 未来计划：工具执行结果的自动摘要、工具推荐排序优化

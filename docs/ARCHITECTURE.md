@@ -137,7 +137,7 @@ graph TB
 | `mcp` | Model Context Protocol 客户端、懒连接生命周期、工具缓存、自动发现、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
 | `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
-| `skill` | Skill 注册/激活/热加载、自扩展（Gap 检测 + Markdown SKILL.md 生成）、SkillHub 远程市场 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
+| `skill` | SKILL.md 三级分层（L1/L2/L3）、四来源安装（BUILTIN/USER_IMPORTED/MARKETPLACE/AUTO_GENERATED）、`skill.load` 统一激活、`SkillSynthesizer` 自生成 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
