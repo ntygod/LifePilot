@@ -1555,6 +1555,30 @@ export const agentApi = {
   }
 }
 
+/**
+ * 浏览器人工接管 API — Agent 因登录 / 验证码 / 人机验证等场景挂起时，
+ * 前端完成确认后调用本接口恢复 Agent。
+ */
+export const browserTakeoverApi = {
+  /**
+   * 通知后端用户已完成（或取消）浏览器人工接管，触发 Agent 恢复。
+   *
+   * @param turnId     所在对话 turn 的 ID
+   * @param sessionId  浏览器会话 ID（对应 SuspendReason.BrowserTakeover.sessionId）
+   * @param cancelled  是否取消任务
+   * @param note       用户备注（可空）
+   */
+  resume(turnId: string, sessionId: string, cancelled = false, note?: string): Promise<void> {
+    const search = new URLSearchParams()
+    search.set('sessionId', sessionId)
+    search.set('cancelled', String(cancelled))
+    if (note) search.set('note', note)
+    return request(`/agent/browser-takeover/${encodeURIComponent(turnId)}/resume?${search.toString()}`, {
+      method: 'POST',
+    })
+  },
+}
+
 /** Analytics API */
 export const analyticsApi = {
   getUsageStats(timeRange: { from: string; to: string }): Promise<UsageStats> {

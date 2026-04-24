@@ -26,6 +26,7 @@ import ChatInput from '@/components/chat/ChatInput.vue'
 import DebugDrawer from '@/components/chat/DebugDrawer.vue'
 import DocumentWorkspacePanel from '@/components/chat/DocumentWorkspacePanel.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
+import HumanTakeoverModal from '@/components/chat/HumanTakeoverModal.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
@@ -64,6 +65,9 @@ const {
   pendingPermissionApprovals,
   pendingPermissionApprovalResolutions,
   resolvePermissionApproval,
+  activeBrowserTakeover,
+  confirmBrowserTakeover,
+  cancelBrowserTakeover,
 } = useChat()
 
 type SidebarPanel = 'session' | 'config' | 'debug'
@@ -930,6 +934,16 @@ function closeTracePanel() {
       :open="showDocumentPanel"
       @close="showDocumentPanel = false"
       @open-document="(id: string) => console.info('切换到文档', id)"
+    />
+
+    <!-- P2-D 浏览器人工接管弹窗：Agent 因登录/验证码/人机验证挂起时出现 -->
+    <HumanTakeoverModal
+      v-if="activeBrowserTakeover"
+      :open="true"
+      :reason="activeBrowserTakeover.reason"
+      :timeout-seconds="activeBrowserTakeover.timeoutSeconds"
+      @continue="confirmBrowserTakeover"
+      @cancel="cancelBrowserTakeover"
     />
   </div>
 </template>

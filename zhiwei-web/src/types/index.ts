@@ -270,6 +270,8 @@ export interface ObservationStep extends ReactStepBase {
   workingDirectory?: string
   /** 工具执行的具体结果（详情面板展示） */
   outputDetail?: string
+  /** 结构化原始输出 —— 目前仅 browser 工具透传，供特化卡片直接渲染 url/截图/elements 等 */
+  output?: unknown
 }
 
 /** 回答步骤 */

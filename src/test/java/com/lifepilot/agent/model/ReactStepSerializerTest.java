@@ -313,4 +313,75 @@ class ReactStepSerializerTest {
     void extractOutputDetail_无有效内容_返回null() {
         assertNull(ReactStepSerializer.extractOutputDetail("notify", "{\"success\":true}", true));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serialize_browser工具_observation含output原始字段() {
+        String output = "{\"url\":\"https://example.com\",\"title\":\"示例\","
+                + "\"screenshot\":\"AAAA\","
+                + "\"elements\":[{\"index\":0,\"tag\":\"a\",\"text\":\"首页\"}],"
+                + "\"total\":1,\"truncated\":false}";
+        var steps = List.<ReactStep>of(
+                new ReactStep.Observation("browser", "浏览器", true, output, 42));
+        var result = ReactStepSerializer.serialize(steps);
+
+        // outputSummary / outputDetail 原路径保留
+        assertEquals("操作成功", result.getFirst().get("outputSummary"));
+
+        // browser 工具追加结构化 output
+        assertTrue(result.getFirst().containsKey("output"), "browser observation 应包含 output 字段");
+        var parsed = (java.util.Map<String, Object>) result.getFirst().get("output");
+        assertEquals("https://example.com", parsed.get("url"));
+        assertEquals("示例", parsed.get("title"));
+        assertEquals("AAAA", parsed.get("screenshot"));
+        assertEquals(false, parsed.get("truncated"));
+        var elements = (List<java.util.Map<String, Object>>) parsed.get("elements");
+        assertEquals(1, elements.size());
+        assertEquals("a", elements.getFirst().get("tag"));
+    }
+
+    @Test
+    void serialize_browser点分子工具_observation含output原始字段() {
+        // P2 后如果 browser 工具拆分为 browser.navigate / browser.click 等 ID，
+        // isBrowserTool 应继续覆盖 "browser." 前缀
+        String output = "{\"url\":\"https://a.com\",\"title\":\"A\"}";
+        var steps = List.<ReactStep>of(
+                new ReactStep.Observation("browser.navigate", "浏览器导航", true, output, 10));
+        var result = ReactStepSerializer.serialize(steps);
+
+        assertTrue(result.getFirst().containsKey("output"),
+                "browser.* 子工具 observation 应包含 output 字段");
+    }
+
+    @Test
+    void serialize_非browser工具_observation不含output字段() {
+        // 避免给其它工具引入额外载荷，保持序列化精简
+        String output = "{\"exitCode\":0,\"stdout\":\"hello\"}";
+        var steps = List.<ReactStep>of(
+                new ReactStep.Observation("shell.exec", "Shell 执行", true, output, 50));
+        var result = ReactStepSerializer.serialize(steps);
+
+        assertFalse(result.getFirst().containsKey("output"),
+                "非 browser 工具 observation 不应携带 output 字段");
+    }
+
+    @Test
+    void serialize_browser工具_非法JSON输出不崩溃() {
+        // 上游工具偶发返回纯文本时不应让 reactSteps 序列化抛异常
+        var steps = List.<ReactStep>of(
+                new ReactStep.Observation("browser", "浏览器", false, "plain text error", 5));
+        var result = ReactStepSerializer.serialize(steps);
+
+        assertFalse(result.getFirst().containsKey("output"),
+                "非 JSON 输出时应静默跳过 output 字段");
+    }
+
+    @Test
+    void serialize_browser工具_空输出不崩溃() {
+        var steps = List.<ReactStep>of(
+                new ReactStep.Observation("browser", "浏览器", true, "", 1));
+        var result = ReactStepSerializer.serialize(steps);
+
+        assertFalse(result.getFirst().containsKey("output"));
+    }
 }

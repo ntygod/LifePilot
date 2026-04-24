@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
-import { chatApi } from '@/api/client'
+import { chatApi, browserTakeoverApi } from '@/api/client'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import { logger } from '@/utils/logger'
 import { useDocumentMeta } from '@/composables/useDocumentMeta'
@@ -54,6 +54,13 @@ export function useChat() {
   const activeInteraction = ref<SseInteractionEvent | null>(null)
   const interactionSubmitting = ref(false)
   const interactionError = ref<string | null>(null)
+  /** 浏览器人工接管 modal 状态：非空表示需要展示 HumanTakeoverModal */
+  const activeBrowserTakeover = ref<{
+    turnId: string
+    sessionId: string
+    reason: string
+    timeoutSeconds: number
+  } | null>(null)
 
   let abortController: AbortController | null = null
   let currentTurnId: string | null = null
@@ -564,6 +571,22 @@ export function useChat() {
             content: suspendedContent,
             allowWithoutProgress: true,
           })
+
+          // BrowserTakeover 挂起需要额外唤起前端弹窗引导用户去浏览器完成操作，
+          // reasonSourceId 由后端 AgentOrchestrator.resolveSuspendReasonSourceId 返回
+          // BrowserTakeover.sessionId()，与恢复接口匹配键一致。
+          if (event.reasonType === 'BrowserTakeover' && event.reasonSourceId) {
+            const resolvedTurnId = event.turnId ?? currentTurnId
+            if (resolvedTurnId) {
+              activeBrowserTakeover.value = {
+                turnId: resolvedTurnId,
+                sessionId: event.reasonSourceId,
+                reason: suspendReasonDetail || '需要你在浏览器中完成操作',
+                timeoutSeconds: 300,
+              }
+            }
+          }
+
           activeInteraction.value = null
           interactionSubmitting.value = false
           interactionError.value = null
@@ -1166,6 +1189,32 @@ export function useChat() {
     pendingPermissionApprovalResolutions.value.set(requestId, resolution)
   }
 
+  /** 用户确认已在浏览器完成操作 → 通知后端恢复 Agent。 */
+  async function confirmBrowserTakeover() {
+    const takeover = activeBrowserTakeover.value
+    if (!takeover) return
+    try {
+      await browserTakeoverApi.resume(takeover.turnId, takeover.sessionId, false)
+    } catch (err) {
+      logger.error('浏览器接管恢复请求失败:', err)
+    } finally {
+      activeBrowserTakeover.value = null
+    }
+  }
+
+  /** 用户放弃本轮任务 → 通知后端以取消语义恢复 Agent。 */
+  async function cancelBrowserTakeover() {
+    const takeover = activeBrowserTakeover.value
+    if (!takeover) return
+    try {
+      await browserTakeoverApi.resume(takeover.turnId, takeover.sessionId, true)
+    } catch (err) {
+      logger.error('浏览器接管取消请求失败:', err)
+    } finally {
+      activeBrowserTakeover.value = null
+    }
+  }
+
   function mapToRecord<K, V>(map: Map<K, V>): Record<string, V> {
     const result: Record<string, V> = {}
     map.forEach((value, key) => {
@@ -1196,5 +1245,8 @@ export function useChat() {
     pendingPermissionApprovals: computed(() => mapToRecord(pendingPermissionApprovals.value)),
     pendingPermissionApprovalResolutions: computed(() => mapToRecord(pendingPermissionApprovalResolutions.value)),
     resolvePermissionApproval,
+    activeBrowserTakeover,
+    confirmBrowserTakeover,
+    cancelBrowserTakeover,
   }
 }
