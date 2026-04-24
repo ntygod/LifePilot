@@ -1,14 +1,25 @@
 ---
-id: data-analyst
-name: "数据分析"
-description: "数据加载、统计分析与可视化。用户说「分析这份数据」「做个图表」「统计一下」「数据可视化」「处理 CSV」「处理 Excel」「数据清洗」「画个图」「报表」时使用。不适用于数据库 SQL 查询（用 database-query）或日志文件分析（用 log-analyzer）。"
-version: "2.0.0"
-suggested-tools:
-  - code.execute
-  - file.read
-  - file.write
-  - file.list
-  - shell.exec
+name: data-analyst
+description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、清洗、统计分析、假设检验、图表可视化或数据质量检查时使用。关键词：分析这份数据、做个图表、统计一下、数据可视化、处理 CSV、处理 Excel、数据清洗、画图、pandas、matplotlib。数据库 SQL 查询用 database-query，日志文件分析用 log-analyzer，知微 Datastore 操作用 datastore。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: infrastructure
+    priority: normal
+    tags:
+      - data-analysis
+      - csv
+      - excel
+      - pandas
+      - matplotlib
+      - visualization
+      - statistics
+    suggested_tools:
+      - code.execute
+      - file.read
+      - file.write
+      - file.list
+      - shell.exec
 ---
 
 # 数据分析指南
@@ -32,7 +43,7 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 预览数据
+### 预览数据
 
 大文件先预览结构，确认列名和格式：
 
@@ -40,7 +51,7 @@ suggested-tools:
 file.read(path="data.csv", maxChars=2000)
 ```
 
-### 2. 加载与探索
+### 加载与探索
 
 使用持久内核保持变量跨调用共享：
 
@@ -57,7 +68,7 @@ print(df.isnull().sum())
 
 `kernelId` 相同的调用共享变量。不传则一次性沙箱。
 
-### 3. 数据清洗
+### 数据清洗
 
 ```python
 code.execute(language="python", kernelId="analysis", code="""
@@ -68,7 +79,7 @@ print(f'清洗后: {len(df)} 行')
 """)
 ```
 
-### 4. 分析与可视化
+### 分析与可视化
 
 ```python
 code.execute(language="python", kernelId="analysis", code="""
@@ -86,7 +97,7 @@ print('图表已保存')
 """)
 ```
 
-### 5. 保存结果
+### 保存结果
 
 ```python
 code.execute(language="python", kernelId="analysis", code="df.to_csv('output/cleaned.csv', index=False)")

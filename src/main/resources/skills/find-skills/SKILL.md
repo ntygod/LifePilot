@@ -1,12 +1,21 @@
 ---
-id: find-skills
-name: "能力发现与自扩展"
-description: "发现能力缺口并通过搜索或自动生成补足。当用户需求超出现有 Skill 覆盖范围时使用——用户说「有没有能…的功能」「帮我找个技能」「你能不能…」且现有 Skill 无法满足时，或者 Agent 自身意识到当前任务缺少对应 Skill 时，主动触发。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - web.search
-  - generate_skill
+name: find-skills
+description: 当用户需求超出现有 Skill 覆盖范围、需要外部搜索 SkillHub 或让知微自动生成新 Skill 来补足能力缺口时使用。关键词：有没有能…的功能、帮我找个技能、你能不能、SkillHub、安装技能、生成技能、能力扩展。已知 Skill 的使用直接加载对应 Skill，系统内置工具查询用 introspection，一次性简单任务直接用工具完成。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: infrastructure
+    priority: high
+    tags:
+      - meta
+      - skill-discovery
+      - skill-generation
+      - capability
+      - extension
+    suggested_tools:
+      - shell.exec
+      - web.search
+      - generate_skill
 ---
 
 # 能力发现与自扩展指南
@@ -51,16 +60,16 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 判断是否真的需要新 Skill
+### 判断是否真的需要新 Skill
 
 先检查：
-- 现有 25 个内置 Skill 是否已经覆盖？
+- 现有内置 Skill 是否已经覆盖？
 - 能否通过组合现有 Skill 解决？（如 daily-manager 协调多个 Skill）
 - 是否是一次性任务？（一次性任务直接用工具完成，不创建 Skill）
 
 只有当需求具有**可复用性**且现有 Skill 不覆盖时，才进入下一步。
 
-### 2. 外部搜索
+### 外部搜索
 
 **SkillHub CLI（优先）：**
 ```bash
@@ -84,7 +93,7 @@ web.search(query="zhiwei skill <关键词>")
 
 搜索到合适的 Skill 后，向用户确认并安装到 `~/.zhiwei/skills/`。
 
-### 3. 自动生成 Skill
+### 自动生成 Skill
 
 搜索无果时，用 `generate_skill` 从核心工具原语组合出新 Skill：
 
@@ -92,14 +101,9 @@ web.search(query="zhiwei skill <关键词>")
 generate_skill(description="用户需求描述", suggested_name="skill-id", suggested_tools=["tool1", "tool2"])
 ```
 
-生成器会：
-1. 获取所有已注册工具的能力清单
-2. 选择最匹配的模板
-3. 用 LLM 生成 SKILL.md（含工具组合编排）
-4. 三重验证 + 迭代修正
-5. 生成后保存到 `~/.zhiwei/skills/auto/`，用户确认后注册
+生成器会获取所有已注册工具的能力清单，选择最匹配的模板，用 LLM 生成 SKILL.md 并三重验证迭代修正，最终保存到 `~/.zhiwei/skills/auto/`。
 
-### 4. 告知用户结果
+### 告知用户结果
 
 安装或生成成功后，告知用户：
 - Skill 名称和能力描述
