@@ -10,6 +10,7 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillAutoConfiguration;
+import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -17,6 +18,7 @@ import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.concurrent.Executors;
 
@@ -82,6 +84,11 @@ public class SkillTestSupport {
     @Bean
     ObjectMapper objectMapper() {
         return new ObjectMapper();
+    }
+
+    @Bean
+    SkillInstallationRepository skillInstallationRepository(JdbcTemplate jdbcTemplate) {
+        return new SkillInstallationRepository(jdbcTemplate);
     }
 
     @Bean

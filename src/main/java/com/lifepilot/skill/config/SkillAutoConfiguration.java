@@ -7,6 +7,7 @@ import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.hub.SkillHubClient;
+import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.markdown.MarkdownSkillLoader;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.skill.markdown.SkillFileWatcher;
@@ -104,11 +105,11 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SkillActivator skillActivator(SkillRegistry skillRegistry,
+                                         SkillInstallationRepository installationRepository,
                                          SkillMetricsTracker skillMetricsTracker,
-                                         ApplicationEventPublisher eventPublisher,
-                                         SkillConfigProperties config) {
+                                         ApplicationEventPublisher eventPublisher) {
         log.info("Skill 系统: 注册 SkillActivator");
-        return new SkillActivator(skillRegistry, skillMetricsTracker, eventPublisher, config);
+        return new SkillActivator(skillRegistry, installationRepository, skillMetricsTracker, eventPublisher);
     }
 
     @Bean
