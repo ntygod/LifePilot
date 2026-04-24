@@ -78,6 +78,10 @@ class ProjectService_单元测试 {
     }
 
     private KnowledgeBase mockKb(String id, String name) {
+        return mockKb(id, name, List.of("project"));
+    }
+
+    private KnowledgeBase mockKb(String id, String name, List<String> tags) {
         Instant now = Instant.now();
         return new KnowledgeBase(
                 id,
@@ -89,7 +93,7 @@ class ProjectService_单元测试 {
                 Map.of(),
                 0,
                 0,
-                List.of("project"),
+                tags,
                 now,
                 now,
                 false,
@@ -212,6 +216,9 @@ class ProjectService_单元测试 {
         when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
         when(sessionStoreRepository.findIdsByProjectId("p-1"))
                 .thenReturn(List.of("s-1", "s-2"));
+        // 项目 space 下无 KB 绑定：跳过 Step 0 KB 级联删除
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
+                .thenReturn(List.of());
 
         service.deleteProject("p-1");
 
@@ -224,6 +231,93 @@ class ProjectService_单元测试 {
         // 3) V15 FK RESTRICT：必须先删 project 再删 space
         verify(projectRepository).deleteById("p-1");
         verify(memorySpaceRepository).deleteById("ms-1");
+        // 无 KB 绑定时 Step 0 不调 deleteKnowledgeBase
+        verify(knowledgeBaseManager, never()).deleteKnowledgeBase(anyString());
+    }
+
+    @Test
+    void deleteProject_级联删除项目默认KB本体() {
+        // Step 0：tag=["project"] 的 KB 是 createProject 自动建的默认 KB，必须随项目级联删本体
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
+                .thenReturn(List.of("kb-project"));
+        when(knowledgeBaseManager.getKnowledgeBase("kb-project"))
+                .thenReturn(Optional.of(mockKb("kb-project", "论文 · 项目知识库", List.of("project"))));
+
+        service.deleteProject("p-1");
+
+        // tag 含 "project" → 级联删 KB 本体（CASCADE 清 documents/chunks/向量索引）
+        verify(knowledgeBaseManager).deleteKnowledgeBase("kb-project");
+        // 然后继续正常的 1-5 步级联
+        verify(projectRepository).deleteById("p-1");
+        verify(memorySpaceRepository).deleteById("ms-1");
+    }
+
+    @Test
+    void deleteProject_不删用户手动挂的非项目KB() {
+        // 用户手动挂到项目空间的 KB 没有 "project" tag → 只解绑（FK CASCADE 自动做），不删本体
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
+                .thenReturn(List.of("kb-project", "kb-shared"));
+        when(knowledgeBaseManager.getKnowledgeBase("kb-project"))
+                .thenReturn(Optional.of(mockKb("kb-project", "论文 · 项目知识库", List.of("project"))));
+        when(knowledgeBaseManager.getKnowledgeBase("kb-shared"))
+                .thenReturn(Optional.of(mockKb("kb-shared", "通用资料库", List.of("shared", "handbook"))));
+
+        service.deleteProject("p-1");
+
+        // 只删项目默认 KB
+        verify(knowledgeBaseManager).deleteKnowledgeBase("kb-project");
+        // 绝不删用户手动挂的非项目 KB
+        verify(knowledgeBaseManager, never()).deleteKnowledgeBase("kb-shared");
+    }
+
+    @Test
+    void deleteProject_KB缺失时跳过_不影响删除流程() {
+        // 绑定表里还有 kb-missing，但 KB 本体已被别的路径先删了 → getKnowledgeBase 返回 empty
+        // 此时 Step 0 跳过该项（不抛空指针），主流程继续
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
+                .thenReturn(List.of("kb-missing"));
+        when(knowledgeBaseManager.getKnowledgeBase("kb-missing"))
+                .thenReturn(Optional.empty());
+
+        service.deleteProject("p-1");
+
+        // KB 缺失时不调 delete
+        verify(knowledgeBaseManager, never()).deleteKnowledgeBase(anyString());
+        // 但后续 Step 1-5 正常执行
+        verify(projectRepository).deleteById("p-1");
+        verify(memorySpaceRepository).deleteById("ms-1");
+    }
+
+    @Test
+    void deleteProject_KB管理器未注入时_跳过Step0_其余级联正常() {
+        // 构造 knowledgeBaseManager=null 的 service，模拟极简部署/集成测试场景
+        ProjectService noKbService = new ProjectService(
+                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate, null);
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
+
+        noKbService.deleteProject("p-1");
+
+        // KB 管理器为 null：不查 space 的 KB 绑定，不调 deleteKnowledgeBase
+        verify(memorySpaceRepository, never()).findKnowledgeBaseIdsForSpace(anyString());
+        verifyNoInteractions(knowledgeBaseManager);
+        // Step 1-5 仍正常执行
+        verify(projectRepository).deleteById("p-1");
+        verify(memorySpaceRepository).deleteById("ms-1");
     }
 
     @Test
@@ -232,6 +326,8 @@ class ProjectService_单元测试 {
                 Instant.now(), Instant.now());
         when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
         when(sessionStoreRepository.findIdsByProjectId("p-1"))
+                .thenReturn(List.of());
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
                 .thenReturn(List.of());
 
         service.deleteProject("p-1");

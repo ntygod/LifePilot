@@ -67,10 +67,9 @@ public class ProjectService {
      * 重名校验在创建 MemorySpace 之前执行，避免重名时产生孤立的空间记录。</p>
      *
      * <p>若 {@link KnowledgeBaseManager} 可用，会同步创建一个"项目默认知识库"
-     * 并绑定到项目的 MemorySpace（memory_space_knowledge_bases）。该绑定表的
-     * FK 在 memory_spaces / knowledge_bases 上都是 CASCADE，因此 {@link #deleteProject}
-     * 删 memory_space 时会自动带走绑定（但 KB 本体不会被 CASCADE，调用方需另行决定
-     * 是否级联删 KB —— 当前暂不自动删 KB，等老板确认项目-KB 所有权语义）。</p>
+     * 并绑定到项目的 MemorySpace（memory_space_knowledge_bases）。tags 固定为
+     * {@code ["project"]}，{@link #deleteProject} 据此识别"项目默认 KB"并级联
+     * 删除本体（用户手动挂到项目的非默认 KB 因 tags 不含 "project" 不会被误删）。</p>
      */
     @Transactional
     public Project createProject(String name, String instructions, ProjectIsolation isolation) {
@@ -186,7 +185,13 @@ public class ProjectService {
      * 删除项目并完整级联清理所有关联资源。
      *
      * <p>级联顺序（FK 约束决定，必须严格按此顺序执行）：</p>
-     * <ol>
+     * <ol start="0">
+     *   <li>级联删除"项目自动建的默认 KB"本体（tag 含 {@code "project"}）——
+     *       memory_space_knowledge_bases 仅绑定关系会随第 5 步 FK CASCADE 清空，
+     *       但 KB 本体（knowledge_bases 表）不会被任何 FK 带走，必须在此处显式
+     *       调 {@link KnowledgeBaseManager#deleteKnowledgeBase} 才能避免留下"孤儿项目 KB"。
+     *       识别方式：通过 memory_space_knowledge_bases 反查项目 space 下所有 KB，
+     *       只删 tag 含 {@code "project"} 的（避免误删用户手动挂到项目的非默认 KB）；</li>
      *   <li>清理归属此项目的所有 session_store 行 —— FK CASCADE 连带清
      *       chat_turns / session_transcript_entries 等全部子表；</li>
      *   <li>清理项目记忆空间下的 memory_relations —— memory_relations FK 到
@@ -212,6 +217,27 @@ public class ProjectService {
                 .orElseThrow(() -> new ProjectNotFoundException(id));
         String spaceId = existing.memorySpaceId();
 
+        // 0) 级联删项目自动建的默认 KB 本体（只删 tag=["project"] 的，保留用户手动挂的其他 KB）
+        //   KnowledgeBaseManager 未启用时（极简部署/集成测试 null 注入）整个步骤跳过，
+        //   此时 memory_space_knowledge_bases 关联仍会在 Step 5 被 FK CASCADE 清空，
+        //   但孤儿 KB 本体只能通过 Admin 工具后期清理。
+        int kbDeletedCount = 0;
+        if (knowledgeBaseManager != null) {
+            List<String> kbIds = memorySpaceRepository.findKnowledgeBaseIdsForSpace(spaceId);
+            for (String kbId : kbIds) {
+                Optional<KnowledgeBase> kbOpt = knowledgeBaseManager.getKnowledgeBase(kbId);
+                if (kbOpt.isEmpty()) {
+                    continue;
+                }
+                List<String> tags = kbOpt.get().tags();
+                // 只删"项目默认 KB"：createProject 建 KB 时 tags=["project"]（见 ensureDefaultKnowledgeBase）
+                if (tags != null && tags.contains("project")) {
+                    knowledgeBaseManager.deleteKnowledgeBase(kbId);
+                    kbDeletedCount++;
+                    log.info("级联删除项目默认 KB: projectId={}, kbId={}", id, kbId);
+                }
+            }
+        }
         // 1) 清归属项目的会话（FK CASCADE 带走 session_* 所有子表）
         List<String> sessionIds = sessionStoreRepository.findIdsByProjectId(id);
         if (!sessionIds.isEmpty()) {
@@ -228,7 +254,7 @@ public class ProjectService {
         // 5) 再删 memory_space（带走 memory_space_knowledge_bases / _datastores）
         memorySpaceRepository.deleteById(spaceId);
 
-        log.info("删除项目级联完成: id={}, spaceId={}, sessions={}, entities={}, relations={}",
-                id, spaceId, sessionIds.size(), entitiesDeleted, relationsDeleted);
+        log.info("删除项目级联完成: id={}, spaceId={}, sessions={}, entities={}, relations={}, kbs={}",
+                id, spaceId, sessionIds.size(), entitiesDeleted, relationsDeleted, kbDeletedCount);
     }
 }
