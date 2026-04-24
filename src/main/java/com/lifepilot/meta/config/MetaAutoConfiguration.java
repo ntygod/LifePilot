@@ -29,6 +29,7 @@ import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserSessionScheduler;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
+import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
@@ -84,6 +85,18 @@ public class MetaAutoConfiguration {
     }
 
     /**
+     * 注册 SSRF 防护守卫 — web.fetch 等工具在请求外部 URL 前强制调用以拦截内网/云 metadata 访问。
+     *
+     * <p>通过 {@code lifepilot.meta.infra.web-fetch.ssrf.enabled} 控制开关，
+     * {@code lifepilot.meta.infra.web-fetch.ssrf.allowlist} 补充放行列表。</p>
+     */
+    @Bean
+    SsrfGuard ssrfGuard(MetaProperties properties) {
+        var ssrf = properties.getInfra().getWebFetch().getSsrf();
+        return new SsrfGuard(ssrf.isEnabled(), ssrf.getAllowlist());
+    }
+
+    /**
      * 注册联网搜索配置提供者。
      */
     @Bean
@@ -123,9 +136,10 @@ public class MetaAutoConfiguration {
                                         @Nullable ChannelInstanceService channelInstanceService,
                                         @Nullable com.lifepilot.skill.config.SkillConfigProperties skillConfigProperties,
                                         com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
-                                        @Nullable AttachmentRepository attachmentRepository) {
+                                        @Nullable AttachmentRepository attachmentRepository,
+                                        SsrfGuard ssrfGuard) {
         String skillDir = skillConfigProperties != null ? skillConfigProperties.getDirectory() : null;
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver, attachmentRepository);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, skillDir, workspaceResolver, attachmentRepository, ssrfGuard);
     }
 
     /**

@@ -841,6 +841,9 @@ lifepilot:
         timeout-seconds: 10
         min-static-content-length: 100
         render-timeout-seconds: 15
+        ssrf:
+          enabled: true            # SSRF 防护开关，关闭需谨慎（仅可信环境）
+          allowlist: []            # 放行的 host / IP，企业内网可补充如 "internal.corp"
       user-profile:
         timezone: ""
         cache-ttl-seconds: 300

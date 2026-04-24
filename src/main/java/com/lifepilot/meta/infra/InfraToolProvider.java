@@ -23,6 +23,7 @@ import com.lifepilot.meta.infra.shell.ShellToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.interaction.NotifyToolProvider;
+import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebToolProvider;
 import com.lifepilot.notification.NotificationService;
@@ -77,6 +78,7 @@ public class InfraToolProvider {
     @Nullable private final String skillDirectory;
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
+    private final SsrfGuard ssrfGuard;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -97,7 +99,8 @@ public class InfraToolProvider {
                              @Nullable ChannelInstanceService channelInstanceService,
                              @Nullable String skillDirectory,
                              WorkspaceResolver workspaceResolver,
-                             @Nullable AttachmentRepository attachmentRepository) {
+                             @Nullable AttachmentRepository attachmentRepository,
+                             SsrfGuard ssrfGuard) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -118,6 +121,7 @@ public class InfraToolProvider {
         this.skillDirectory = skillDirectory;
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
+        this.ssrfGuard = ssrfGuard;
     }
 
     /**
@@ -129,7 +133,7 @@ public class InfraToolProvider {
         int totalTools = 0;
 
         // Web 工具（web.search + web.fetch）
-        var webToolProvider = new WebToolProvider(properties, webSearchConfigProvider, browserSessionManager);
+        var webToolProvider = new WebToolProvider(properties, webSearchConfigProvider, browserSessionManager, ssrfGuard);
         totalTools += registerBuiltinTools(toolRegistry, webToolProvider.buildWebTools());
 
         // 浏览器自动化工具

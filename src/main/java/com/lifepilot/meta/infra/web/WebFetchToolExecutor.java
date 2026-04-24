@@ -64,16 +64,34 @@ public class WebFetchToolExecutor {
     private final MetaProperties properties;
     @Nullable
     private final BrowserSessionManager browserSessionManager;
+    private final SsrfGuard ssrfGuard;
     private final HttpClient httpClient;
 
+    /**
+     * 测试便利构造器 — 默认禁用 SSRF 防护，用于本地 127.0.0.1 测试服务器场景。
+     * <p>生产请使用 {@link #WebFetchToolExecutor(MetaProperties, BrowserSessionManager, SsrfGuard)}。</p>
+     */
     public WebFetchToolExecutor(MetaProperties properties) {
-        this(properties, null);
+        this(properties, null, SsrfGuard.disabled());
     }
 
+    /**
+     * 测试便利构造器 — 默认禁用 SSRF 防护。
+     */
     public WebFetchToolExecutor(MetaProperties properties,
                                 @Nullable BrowserSessionManager browserSessionManager) {
+        this(properties, browserSessionManager, SsrfGuard.disabled());
+    }
+
+    /**
+     * 生产构造器 — 注入 {@link SsrfGuard} 对外部 URL 做 SSRF 拦截。
+     */
+    public WebFetchToolExecutor(MetaProperties properties,
+                                @Nullable BrowserSessionManager browserSessionManager,
+                                SsrfGuard ssrfGuard) {
         this.properties = properties;
         this.browserSessionManager = browserSessionManager;
+        this.ssrfGuard = ssrfGuard;
         this.httpClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(10))
@@ -98,6 +116,14 @@ public class WebFetchToolExecutor {
                     .orElse("GET");
             if (!ALLOWED_METHODS.contains(method)) {
                 return ToolResult.error("不支持的 HTTP 方法: " + method + "，支持: " + ALLOWED_METHODS);
+            }
+
+            // SSRF 防护 — 入口统一拦截，覆盖所有后续分支（HEAD 探测 / fetchDirect / fetchWithJsoup / fetchHttp / 浏览器路径）
+            try {
+                ssrfGuard.check(url);
+            } catch (SsrfBlockedException e) {
+                log.warn("SSRF 策略拦截 web.fetch 请求: url={}, reason={}", url, e.getReason());
+                return ToolResult.error("目标地址被 SSRF 策略拦截: " + e.getReason());
             }
 
             // 读取可选 headers / body / timeoutSeconds

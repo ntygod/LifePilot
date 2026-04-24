@@ -31,13 +31,16 @@ public class WebToolProvider {
     private final WebSearchConfigProvider webSearchConfigProvider;
     @Nullable
     private final BrowserSessionManager browserSessionManager;
+    private final SsrfGuard ssrfGuard;
 
     public WebToolProvider(MetaProperties properties,
                            WebSearchConfigProvider webSearchConfigProvider,
-                           @Nullable BrowserSessionManager browserSessionManager) {
+                           @Nullable BrowserSessionManager browserSessionManager,
+                           SsrfGuard ssrfGuard) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.browserSessionManager = browserSessionManager;
+        this.ssrfGuard = ssrfGuard;
     }
 
     /**
@@ -47,7 +50,7 @@ public class WebToolProvider {
      */
     public List<BuiltinTool> buildWebTools() {
         var webSearchExecutor = new WebSearchToolExecutor(webSearchConfigProvider);
-        var webFetchExecutor = new WebFetchToolExecutor(properties, browserSessionManager);
+        var webFetchExecutor = new WebFetchToolExecutor(properties, browserSessionManager, ssrfGuard);
         return List.of(
                 buildWebSearchTool(webSearchExecutor),
                 buildWebFetchTool(webFetchExecutor)

@@ -4,6 +4,7 @@ import com.lifepilot.meta.infra.browser.BrowserAcquisitionMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,6 +140,28 @@ public class MetaProperties {
 
             /** 浏览器渲染超时（秒），默认 15。 */
             private int renderTimeoutSeconds = 15;
+
+            /** SSRF 防护配置。 */
+            private Ssrf ssrf = new Ssrf();
+
+            /**
+             * SSRF 防护配置 — 拦截内网地址、云 metadata 和非 http(s) 协议。
+             *
+             * @author zsg
+             * @since 2026-04-24
+             */
+            @Data
+            public static class Ssrf {
+
+                /** 是否启用 SSRF 拦截，默认 true。 */
+                private boolean enabled = true;
+
+                /**
+                 * 放行的 host / IP 字面量列表，企业内网场景补充受信任目标。
+                 * <p>匹配发生在 DNS 解析前（host 文本）和 IP 校验后（IP 文本），命中任一即放行。</p>
+                 */
+                private List<String> allowlist = new ArrayList<>();
+            }
         }
 
         /**
