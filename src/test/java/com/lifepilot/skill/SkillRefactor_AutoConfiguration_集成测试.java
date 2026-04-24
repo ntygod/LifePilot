@@ -3,7 +3,6 @@ package com.lifepilot.skill;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
-import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.tool.SkillLoadTool;
 import com.lifepilot.skill.tool.SkillLoadToolExecutor;
@@ -70,12 +69,6 @@ class SkillRefactor_AutoConfiguration_集成测试 {
     void 新Bean_SkillMetricsTracker_存在且类型正确() {
         assertThat(ctx.containsBean("skillMetricsTracker")).isTrue();
         assertThat(ctx.getBean("skillMetricsTracker")).isInstanceOf(SkillMetricsTracker.class);
-    }
-
-    @Test
-    void 新Bean_SkillDisclosureTool_存在且类型正确() {
-        assertThat(ctx.containsBean("skillDisclosureTool")).isTrue();
-        assertThat(ctx.getBean("skillDisclosureTool")).isInstanceOf(SkillDisclosureTool.class);
     }
 
     @Test

@@ -5,7 +5,6 @@ import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
-import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.hub.SkillHubClient;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.markdown.MarkdownSkillLoader;
@@ -115,15 +114,6 @@ public class SkillAutoConfiguration {
         return new SkillActivator(skillRegistry, installationRepository, skillMetricsTracker, eventPublisher);
     }
 
-    @Bean
-    @ConditionalOnMissingBean
-    public SkillDisclosureTool skillDisclosureTool(DynamicToolRegistry toolRegistry,
-                                                   SkillActivator skillActivator,
-                                                   SkillRegistry skillRegistry) {
-        log.info("Skill 系统: 注册 SkillDisclosureTool（L1 搜索 + L2 加载）");
-        return new SkillDisclosureTool(toolRegistry, skillActivator, skillRegistry);
-    }
-
     // ==================== skill.load BuiltinTool（统一激活入口） ====================
 
     /**
@@ -210,10 +200,10 @@ public class SkillAutoConfiguration {
     // ==================== 启动后初始化 ====================
 
     /**
-     * 应用启动完成后触发 Markdown Skill 初始加载、文件监听启动和 L2 工具注册。
+     * 应用启动完成后触发 Markdown Skill 初始加载和文件监听启动。
      *
      * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
-     * 然后启动 WatchService 监听文件变更。之后注册 disclosure 工具。</p>
+     * 然后启动 WatchService 监听文件变更。</p>
      *
      * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE - 1)} 确保在各 AutoConfiguration
      * 的 registerTools()（HIGHEST_PRECEDENCE）之后执行，
@@ -236,12 +226,6 @@ public class SkillAutoConfiguration {
             } catch (Exception e) {
                 log.warn("ApplicationReady: SkillFileWatcher 启动失败，Skill 向量索引可能不可用: {}", e.getMessage());
             }
-        }
-
-        // 注册 L2 渐进式披露工具
-        if (ctx.containsBean("skillDisclosureTool")) {
-            ctx.getBean(SkillDisclosureTool.class).registerTools();
-            log.debug("ApplicationReady: SkillDisclosureTool.registerTools() 已调用");
         }
         // TODO Phase B.5: SkillGenerationTool 接入新 SkillSynthesizer 后在此重新启用
     }
