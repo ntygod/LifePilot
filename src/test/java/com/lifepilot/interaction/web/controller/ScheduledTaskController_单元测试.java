@@ -1,8 +1,10 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.agent.task.CronTaskEntry;
+import com.lifepilot.agent.task.CronTaskLog;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.interaction.web.model.ApiResponse;
+import com.lifepilot.interaction.web.model.scheduled.ScheduledTaskLogResponse;
 import com.lifepilot.interaction.web.model.scheduled.ScheduledTaskResponse;
 import com.lifepilot.interaction.web.model.scheduled.UpdateScheduledTaskRequest;
 import org.junit.jupiter.api.Test;
@@ -20,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,7 +33,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>用 Mockito 隔离 {@link CronTaskRepository}，仅验证 Controller 层参数规范化、
  * DTO 映射与异常转换逻辑。创建入口故意不提供（由 LLM 自然语言触发，Task A6 做），
- * 因此测试只覆盖 list / update / delete。</p>
+ * 因此测试只覆盖 list / update / delete / getLogs。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -54,6 +58,14 @@ class ScheduledTaskController_单元测试 {
         return new CronTaskEntry(
                 id, "任务", "0 0 9 * * *", "指令",
                 "active", now, now, null, projectId);
+    }
+
+    /** 构造指定状态的任务——专门给 nextExecutionAt 相关用例用。 */
+    private CronTaskEntry 构造任务(String id, String projectId, String status) {
+        String now = Instant.now().toString();
+        return new CronTaskEntry(
+                id, "任务", "0 0 9 * * *", "指令",
+                status, now, now, null, projectId);
     }
 
     @Test
@@ -86,6 +98,30 @@ class ScheduledTaskController_单元测试 {
         ApiResponse<List<ScheduledTaskResponse>> resp = controller.list("");
 
         assertEquals(1, resp.data().size());
+    }
+
+    @Test
+    void 列表_active任务_填充nextExecutionAt() {
+        when(repository.findAll()).thenReturn(List.of(构造任务("t1", null, "active")));
+
+        ApiResponse<List<ScheduledTaskResponse>> resp = controller.list(null);
+
+        assertNotNull(resp.data().get(0).nextExecutionAt(),
+                "active 任务应计算下次执行时间");
+        // 值应为未来时刻（ISO 8601 String），简单比较字符串的字典序是错的，
+        // 直接解析成 Instant 对比
+        assertTrue(Instant.parse(resp.data().get(0).nextExecutionAt()).isAfter(Instant.now().minusSeconds(1)),
+                "下次执行时间应为未来或当下");
+    }
+
+    @Test
+    void 列表_paused任务_nextExecutionAt为null() {
+        when(repository.findAll()).thenReturn(List.of(构造任务("t1", null, "paused")));
+
+        ApiResponse<List<ScheduledTaskResponse>> resp = controller.list(null);
+
+        assertNull(resp.data().get(0).nextExecutionAt(),
+                "paused 任务不应计算下次执行时间");
     }
 
     @Test
@@ -140,5 +176,48 @@ class ScheduledTaskController_单元测试 {
         verify(repository).deleteById("t1");
         assertEquals(200, resp.code());
         assertNull(resp.data());
+    }
+
+    @Test
+    void 查询日志_默认limit_5() {
+        when(repository.findLogsByTaskId(eq("t1"), eq(5))).thenReturn(List.of(
+                new CronTaskLog("log-1", "t1", Instant.now().toString(),
+                        "success", 1500, 120, "执行完成", Instant.now().toString())
+        ));
+
+        ApiResponse<List<ScheduledTaskLogResponse>> resp = controller.getLogs("t1", 5);
+
+        assertEquals(1, resp.data().size());
+        assertEquals("log-1", resp.data().get(0).id());
+        assertEquals("success", resp.data().get(0).status());
+        assertEquals(1500, resp.data().get(0).durationMs());
+    }
+
+    @Test
+    void 查询日志_limit超过上限_截断到50() {
+        when(repository.findLogsByTaskId(eq("t1"), eq(50))).thenReturn(List.of());
+
+        controller.getLogs("t1", 9999);
+
+        verify(repository).findLogsByTaskId("t1", 50);
+    }
+
+    @Test
+    void 查询日志_limit小于等于0_提升到1() {
+        when(repository.findLogsByTaskId(eq("t1"), eq(1))).thenReturn(List.of());
+
+        controller.getLogs("t1", 0);
+
+        verify(repository).findLogsByTaskId("t1", 1);
+    }
+
+    @Test
+    void 查询日志_任务不存在_返回空列表不抛异常() {
+        when(repository.findLogsByTaskId(eq("nope"), eq(5))).thenReturn(List.of());
+
+        ApiResponse<List<ScheduledTaskLogResponse>> resp = controller.getLogs("nope", 5);
+
+        assertEquals(200, resp.code());
+        assertTrue(resp.data().isEmpty());
     }
 }

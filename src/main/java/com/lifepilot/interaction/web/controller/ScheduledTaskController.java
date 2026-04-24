@@ -3,6 +3,7 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.agent.task.CronTaskEntry;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.interaction.web.model.ApiResponse;
+import com.lifepilot.interaction.web.model.scheduled.ScheduledTaskLogResponse;
 import com.lifepilot.interaction.web.model.scheduled.ScheduledTaskResponse;
 import com.lifepilot.interaction.web.model.scheduled.UpdateScheduledTaskRequest;
 import org.slf4j.Logger;
@@ -26,9 +27,9 @@ import java.util.List;
 /**
  * 定时任务（Scheduled Task）REST 端点。
  *
- * <p>提供：列表 / 更新 / 删除。故意不提供 POST 创建端点——创建入口保持在
- * LLM 对话中，由自然语言触发现有的 cron 工具（Task A6 会扩展工具能力）；
- * 本 Controller 只管存量管理（列出、编辑、暂停、删除）。</p>
+ * <p>提供：列表 / 更新 / 删除 / 执行日志。故意不提供 POST 创建端点——
+ * 创建入口保持在 LLM 对话中，由自然语言触发现有的 cron 工具（Task A6 会扩展
+ * 工具能力）；本 Controller 只管存量管理（列出、编辑、暂停、删除、查日志）。</p>
  *
  * <p>暂停/恢复通过 PUT 更新 {@code status} 字段实现（active ↔ paused），
  * 避免为每个状态变更单独建端点。</p>
@@ -47,6 +48,11 @@ public class ScheduledTaskController {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskController.class);
 
+    /** 执行日志默认返回条数 */
+    private static final int DEFAULT_LOG_LIMIT = 5;
+    /** 执行日志最大返回条数——防御性上限 */
+    private static final int MAX_LOG_LIMIT = 50;
+
     private final CronTaskRepository repository;
 
     public ScheduledTaskController(CronTaskRepository repository) {
@@ -60,6 +66,9 @@ public class ScheduledTaskController {
      * 所有项目）；非空时按项目过滤（精确等值）。归属主账户任务的查询由调用方
      * 传入显式的 {@code "null"} 字符串——本接口不支持此语义，主账户任务
      * 只在"不过滤"列表里返回。</p>
+     *
+     * <p>响应 DTO 的 {@code nextExecutionAt} 基于 cron 表达式在服务器本地时区
+     * 动态计算：仅 active 任务非空。</p>
      */
     @GetMapping
     public ApiResponse<List<ScheduledTaskResponse>> list(
@@ -68,7 +77,7 @@ public class ScheduledTaskController {
                 ? repository.findAll()
                 : repository.findByProjectId(projectId);
         List<ScheduledTaskResponse> items = entries.stream()
-                .map(ScheduledTaskResponse::from)
+                .map(ScheduledTaskResponse::fromWithNext)
                 .toList();
         return ApiResponse.ok(items);
     }
@@ -82,7 +91,7 @@ public class ScheduledTaskController {
      *
      * @param id  任务 id
      * @param req 更新请求
-     * @return 更新后的任务 DTO
+     * @return 更新后的任务 DTO（含 nextExecutionAt）
      */
     @PutMapping("/{id}")
     public ApiResponse<ScheduledTaskResponse> update(
@@ -104,7 +113,7 @@ public class ScheduledTaskController {
         );
         repository.update(updated);
         log.info("更新定时任务: id={}, status={}", id, updated.status());
-        return ApiResponse.ok(ScheduledTaskResponse.from(updated));
+        return ApiResponse.ok(ScheduledTaskResponse.fromWithNext(updated));
     }
 
     /**
@@ -121,5 +130,27 @@ public class ScheduledTaskController {
         repository.deleteById(id);
         log.info("删除定时任务: id={}", id);
         return ApiResponse.ok(null);
+    }
+
+    /**
+     * 查询指定任务的最近执行日志，按 executed_at 倒序。
+     *
+     * <p>{@code limit} 缺省 {@value #DEFAULT_LOG_LIMIT}，超过
+     * {@value #MAX_LOG_LIMIT} 时截断到上限——避免客户端误传导致大量读取。
+     * 任务不存在时不抛 404——返回空列表（等价于"该任务没有执行过"），
+     * 前端按空态处理更简单；若任务确实被删掉了，前端拉列表时也看不到。</p>
+     *
+     * @param id    任务 id
+     * @param limit 返回条数上限（默认 5，最大 50）
+     */
+    @GetMapping("/{id}/logs")
+    public ApiResponse<List<ScheduledTaskLogResponse>> getLogs(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "" + DEFAULT_LOG_LIMIT) int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), MAX_LOG_LIMIT);
+        List<ScheduledTaskLogResponse> items = repository.findLogsByTaskId(id, safeLimit).stream()
+                .map(ScheduledTaskLogResponse::from)
+                .toList();
+        return ApiResponse.ok(items);
     }
 }

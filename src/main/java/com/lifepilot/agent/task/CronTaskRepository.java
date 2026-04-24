@@ -143,4 +143,25 @@ public class CronTaskRepository {
         int count = jdbc.update("DELETE FROM cron_task_logs WHERE task_id = ?", taskId);
         log.debug("Cron 任务日志已删除: taskId={}, count={}", taskId, count);
     }
+
+    /**
+     * 查询指定任务的最近若干条执行日志，按 executed_at 倒序。
+     *
+     * <p>传入 {@code limit <= 0} 时固定返回空列表（上层应规范化）；limit 非负整数
+     * 时由 JDBC 直接绑定到 {@code LIMIT ?}。</p>
+     *
+     * @param taskId 任务 ID
+     * @param limit  返回条数上限
+     */
+    public List<CronTaskLog> findLogsByTaskId(String taskId, int limit) {
+        if (limit <= 0) return List.of();
+        return List.copyOf(jdbc.query(
+                """
+                SELECT id, task_id, executed_at, status, duration_ms, tokens_used, summary, created_at
+                FROM cron_task_logs
+                WHERE task_id = ?
+                ORDER BY executed_at DESC
+                LIMIT ?""",
+                LOG_MAPPER, taskId, limit));
+    }
 }
