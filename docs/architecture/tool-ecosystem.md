@@ -17,7 +17,7 @@
 此外 Skill 激活会把场景化工具集合注入到 `ReactAgentState.activatedToolIds`，临时加入可见集。
 
 > **历史说明**：
-> - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已在渐进式披露重构中移除；Skill 加载改为 `file.read(skill=...)`，由 ReactAgentLoop 自动检测并激活工具。`generate_skill` 工具保留用于 LLM 驱动的 Skill 自扩展。
+> - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已在渐进式披露重构中移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool；`file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳和 `generate_skill` 独立工具全部删除，自生成由 `SkillSynthesizer` 后台服务承担。
 > - 旧的 `lifepilot.agent.core-tool-ids` 白名单字段已删除，由 `lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 晋升机制替代。
 
 ## 2. 架构图
@@ -234,7 +234,7 @@ sequenceDiagram
 
 - **Agent 引擎**（`agent`）：通过 `ToolBridgeAgentToolProvider` 提供工具回调，`ReactAgentLoop` 在 state 中累积 `activatedToolIds`（Skill 激活）
 - **MCP 协议**（`mcp`）：`McpTool` 注册到 `DynamicToolRegistry`，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引；MCP 工具默认不进 Tier 1，通过 `tools.search` 被发现
-- **Skill 系统**（`skill`）：通过 `file.read(skill=...)` 和 `generate_skill` BuiltinTool 实现渐进式 Skill 发现与激活；Skill 生成的新工具由 `ToolSearchIndexMaintainer` 补入索引
+- **Skill 系统**（`skill`）：通过 `skill.load(names=[...])` BuiltinTool 实现按需激活（1-3 个/次），返回的 `activated_tool_ids` 合入 `ReactAgentState.activatedToolIds`；`suggested_tools` 引用的工具可由 `ToolSearchIndexMaintainer` 补入索引
 - **护栏系统**（`guardrail` / `observability`）：执行管道中集成风险等级检查
 - **可观测性**（`observability`）：工具执行轨迹记录；`ToolSearchService` / `ToolDescribeService` 执行接入 Micrometer 指标（命中率、查询耗时、cache hit/miss）
 

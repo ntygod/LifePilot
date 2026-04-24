@@ -524,7 +524,7 @@ sequenceDiagram
 | 依赖模块 | 交互方式 | 说明 |
 |----------|---------|------|
 | Tool System（`com.lifepilot.tool`） | BuiltinTool 注册 | `document.create` + `document.edit` 两个 BuiltinTool 由 `DocumentAutoConfiguration` 装配；Tier 1 可见性由 `lifepilot.tool.tier1.pinned` 控制，未 pin 时由 `tools.search` 按需发现 |
-| Skill System（`com.lifepilot.skill`） | Skill 定义 | `src/main/resources/skills/document-workspace/SKILL.md`，`file.read(skill="document-workspace")` 按需激活 |
+| Skill System（`com.lifepilot.skill`） | Skill 定义 | `src/main/resources/skills/document-workspace/SKILL.md`，`skill.load(names=["document-workspace"])` 按需激活 |
 | Web Gateway（`com.lifepilot.interaction.web`） | REST 暴露 | `DocumentController` 依赖 Web 通道开关；`MessageBubble.vue` 通过附件 MIME 分派 DiffCard |
 | Meta File（`com.lifepilot.meta.infra.file`） | 路径安全 | `PathSecurityChecker` 从 `MetaProperties.infra.file` 读取白/黑名单，不注册为独立 Bean |
 | Attachment（`com.lifepilot.interaction.web.repository`） | 附件元数据 | `AttachmentRepository.updateSizeByFilePath` 在每次 patch 后同步附件大小，让消息气泡上的文件大小跟随最新版本 |

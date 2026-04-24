@@ -89,7 +89,7 @@ graph TB
 - `ReactAgentState`：不可变状态快照（record），包含预算、步骤记录、响应等
   - `boolean done` — 循环是否结束
   - `boolean suspended` — 是否处于挂起状态
-  - `Set<String> activatedToolIds` — 已被 Skill 激活的工具 ID 集合，`file.read(skill=...)` 加载 Skill 时动态扩充
+  - `Set<String> activatedToolIds` — 已被 Skill 激活的工具 ID 集合，由 `skill.load` 工具返回的 `activated_tool_ids` 动态扩充
   - `CompletionMode` — 完成模式（NORMAL / DEGRADED / SUSPENDED）
   - `CompletionReason` — 11 种终止原因
 - `ReactStep`：7 种步骤类型（sealed interface）

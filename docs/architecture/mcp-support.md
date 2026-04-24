@@ -212,8 +212,8 @@ sequenceDiagram
 ## 6. 集成点
 
 - **工具系统**（`tool`）：McpTool 注册到 DynamicToolRegistry，通过 McpToolExecutor 执行
-- **Skill 系统**（`skill`）：SkillToMcpBridge 暴露 exportable 工具；MCP server 条目出现在 ContextAssembler 生成的 `<available_mcp_servers>` Skill 目录中，Agent 可通过 `file.read(skill="mcp:server-name")` 按需加载 MCP server 的所有工具
-- **Agent 引擎**（`agent`）：MCP 工具不会默认进入 Tier 1 常驻集合；LLM 通过 `tools.search` 发现 MCP 工具，或通过 `file.read(skill="mcp:xxx")` 激活整组 MCP 工具进 `activatedToolIds`（参见 [工具系统架构](tool-ecosystem.md)）
+- **Skill 系统**（`skill`）：SkillToMcpBridge 暴露 exportable 工具。Skill 系统 v2（2026-04-24）把激活路径归一到 `skill.load(names=[...])` BuiltinTool，MCP 工具不再通过 skill 形式批量激活——改为 LLM 通过 `tools.search` 检索到对应 MCP 工具后直接调用
+- **Agent 引擎**（`agent`）：MCP 工具不会默认进入 Tier 1 常驻集合；LLM 通过 `tools.search` 发现 MCP 工具后，调用 `tools.describe` 取完整 schema 再直接调用（参见 [工具系统架构](tool-ecosystem.md)）
 - **A2A 协议**（`a2a`）：A2A 可通过 MCP 工具桥接实现跨系统工具调用
 - **共享调度器**（`config.threadpool`）：维护 tick 和重连任务通过 SharedScheduler.heartbeat() 调度
 
