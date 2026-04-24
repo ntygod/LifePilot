@@ -2,7 +2,7 @@
 id: browser-automation
 name: "浏览器自动化"
 description: "控制浏览器完成网页交互、信息抓取和自动化操作。用户说「打开网页」「帮我爬取」「截个图」「填表单」「登录这个网站」「自动化操作网页」「抓取数据」时使用。静态页面优先用 web.fetch，不需要浏览器。"
-version: "2.0.0"
+version: "3.0.0"
 suggested-tools:
   - browser
   - web.fetch
@@ -39,55 +39,54 @@ suggested-tools:
 └── 需要登录或交互 → browser
 ```
 
-## 工作流
+## 推荐工作流
 
-### 1. 导航并获取内容
+### 1. 导航到页面
 
-```
-browser(action="navigate", url="https://example.com", sessionId="task-name")
-```
+同一任务用相同 `sessionId` 复用 cookie 和页面状态。导航返回 `partial: true` 时内容仍可用。
 
-同一任务用相同 `sessionId`，复用 cookie 和页面状态。导航返回 `partial: true` 时内容仍可用。
+### 2. snapshot 获取截图 + 元素编号（首选）
 
-### 2. 截图确认状态
+`browser(action="snapshot")` 一次性返回：
+- `screenshot`：当前截图（vision 输入自动生效）
+- `elements`：可交互元素数组，每项 `{index, tag, role, text, name, id, ariaLabel, bbox}`
+- `total` / `truncated` / `viewport` / `url` / `title`
 
-```
-browser(action="screenshot", sessionId="task-name")
-```
+后续 click/input/hover 优先用 `index`（定位更稳、抗 layout 抖动），只在 snapshot 不可用或元素未被识别时退回选择器。
 
-操作前截图确认页面状态，避免盲操作。
+### 3. 交互操作：首选 index，其次 selector
 
-### 3. 交互操作
+`click` / `input` / `hover` 的 `index` 与 `selector` **二选一**：
+- 已调用 snapshot → 用 `index`（如 `click(index=12)`）
+- 未调用或 index 无效 → 用 `selector`（id > data-testid > 语义 CSS）
 
-```
-browser(action="click", selector="#search-btn", sessionId="task-name")
-browser(action="input", selector="#search-input", value="搜索内容", sessionId="task-name")
-browser(action="scroll", direction="down", pixels=500, sessionId="task-name")
-browser(action="wait", selector=".result-list", state="visible", timeout=10, sessionId="task-name")
-browser(action="select", selector="#country", value="CN", sessionId="task-name")
-browser(action="keyboard", key="Enter", type="key", sessionId="task-name")
-browser(action="hover", selector=".menu-item", sessionId="task-name")
-```
+其它 action：`scroll` / `wait` / `select` / `keyboard` 仍按原参数使用。
 
-### 4. 提取结构化数据
+### 4. 页面变化后重新 snapshot
 
-```
-browser(action="evaluate", expression="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))", sessionId="task-name")
-```
+导航、弹窗、异步渲染会改变 elements 列表。操作后若要继续交互，先重新 `snapshot`。
 
-### 5. 保存结果
+### 5. 提取数据 → 保存 → 关闭
 
-```
-file.write(path="output/data.json", content="抓取的数据")
-```
+- 结构化提取：`evaluate(expression=...)`
+- 保存：`file.write(path=..., content=...)`
+- 关闭：`browser(action="close", sessionId="...")` 释放资源
 
-### 6. 关闭会话
+### 选择器失败 fallback 链
 
-```
-browser(action="close", sessionId="task-name")
-```
+- `click(index=N)` 返回 stale/not found → 重新 snapshot 对比 elements 列表是否变化
+- 连续 2 次 index 失败 → 回落到 selector
+- selector 也 2 次失败 → 换策略（browser → web.fetch → web.search）
 
-完成后必须关闭，释放浏览器资源。
+### 登录墙识别（触发条件）
+
+满足任一：
+- navigate 后 URL 含 `login` / `signin` / `auth` 关键词
+- snapshot elements 中存在 `type=password` input
+- 截图明显是登录页 / 验证码
+- 连续 2 次 snapshot 的 elements 完全相同且无进展
+
+**Phase 2 引入 `requestHumanTakeover` 后应直接调用该 action 让用户接管**。当前（Phase 1）遇此场景应提示用户切 CDP 模式预先登录。
 
 ## 会话模式
 
@@ -99,11 +98,13 @@ browser(action="close", sessionId="task-name")
 
 ## 元素定位策略
 
-优先级从高到低：
-1. `id` 选择器：`#unique-id`
-2. `data-testid`：`[data-testid="submit"]`
-3. 无障碍角色：通过 `browser(action="accessibility")` 获取元素树
-4. CSS 选择器：`.class-name > child`
+**Phase 1 新增首选项**：snapshot → index，最稳。下面是回退链：
+
+1. `index`（snapshot 返回）——首选
+2. `id` 选择器：`#unique-id`
+3. `data-testid`：`[data-testid="submit"]`
+4. 无障碍角色：通过 `browser(action="accessibility")` 获取元素树
+5. CSS 选择器：`.class-name > child`
 
 ## 规则
 
@@ -125,14 +126,15 @@ browser(action="close", sessionId="task-name")
 | action | 说明 | 关键参数 |
 |--------|------|---------|
 | `navigate` | 导航到 URL | `url` |
-| `click` | 点击元素 | `selector` |
-| `input` | 输入文本 | `selector`, `value` |
+| `snapshot` | 截图 + 可交互元素标号（**推荐首选**） | `injectLabels`, `maxElements`, `viewportOnly` |
+| `click` | 点击元素 | `index` **或** `selector` |
+| `input` | 输入文本 | `index` **或** `selector`, `value` |
+| `hover` | 鼠标悬停 | `index` **或** `selector` |
 | `scroll` | 滚动页面 | `direction`, `pixels` |
 | `wait` | 等待元素 | `selector`, `state`, `timeout` |
-| `hover` | 鼠标悬停 | `selector` |
 | `select` | 选择下拉项 | `selector`, `value` |
 | `keyboard` | 键盘操作 | `type`, `key` |
-| `screenshot` | 截图 | `fullPage` |
+| `screenshot` | 截图（仅图，无元素列表） | `fullPage` |
 | `evaluate` | 执行 JS | `expression` |
 | `accessibility` | 获取无障碍树 | `rootSelector`, `maxDepth` |
 | `tab` | 标签页管理 | `tabAction`, `tabId`, `url` |
