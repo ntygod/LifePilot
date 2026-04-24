@@ -1,5 +1,7 @@
 package com.lifepilot.agent.model;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 
 import java.time.Duration;
@@ -20,9 +22,26 @@ import java.time.Instant;
  *   <li>{@link Reflect} — 执行回顾步骤（系统在特定触发点注入，促使 LLM 评估执行进展并调整策略）</li>
  * </ul>
  *
+ * <p>Jackson 多态标注：{@code AgentCheckpoint} 会把 {@code ReactAgentState.steps}
+ * （{@code List<ReactStep>}）整体 JSON 序列化到 SQLite，恢复时必须能按子类型还原。
+ * 默认 Jackson 对 sealed interface 不会自动写入类型信息，必须显式声明
+ * {@code @JsonTypeInfo + @JsonSubTypes}，否则 {@code readValue} 会抛
+ * {@code Cannot construct instance of ReactStep (abstract types)}.</p>
+ *
  * @author zsg
  * @since 2026-03-14
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ReactStep.Progress.class, name = "PROGRESS"),
+        @JsonSubTypes.Type(value = ReactStep.Thought.class, name = "THOUGHT"),
+        @JsonSubTypes.Type(value = ReactStep.ToolCall.class, name = "TOOL_CALL"),
+        @JsonSubTypes.Type(value = ReactStep.Observation.class, name = "OBSERVATION"),
+        @JsonSubTypes.Type(value = ReactStep.Answer.class, name = "ANSWER"),
+        @JsonSubTypes.Type(value = ReactStep.Suspend.class, name = "SUSPEND"),
+        @JsonSubTypes.Type(value = ReactStep.Resume.class, name = "RESUME"),
+        @JsonSubTypes.Type(value = ReactStep.Reflect.class, name = "REFLECT")
+})
 public sealed interface ReactStep permits
         ReactStep.Progress,
         ReactStep.Thought,
