@@ -5,11 +5,13 @@ import {
   Archive,
   ChevronRight,
   Clock,
+  Monitor,
+  Moon,
   Pencil,
   Pin,
   Plus,
   Search,
-  Settings,
+  Sun,
   Trash2,
 } from 'lucide-vue-next'
 import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
@@ -19,6 +21,7 @@ import ProjectSection from '@/components/sidebar/ProjectSection.vue'
 import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
+import { useTheme } from '@/composables/useTheme'
 import type { ChatSession } from '@/types'
 import { manageNavGroups, manageRoutePrefixes, isNavItemActive } from './appNavigation'
 
@@ -29,6 +32,7 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+const theme = useTheme()
 
 const searchQuery = ref('')
 const searchVisible = ref(false)
@@ -254,11 +258,17 @@ function openSettings() {
     <!-- Whisper 下载进度 -->
     <WhisperDownloadCard />
 
-    <!-- 顶部：品牌 -->
+    <!-- 顶部：品牌（logo + 产品名 + 拉丁副品牌） -->
     <div class="sidebar-header">
       <RouterLink to="/conversations/new" class="flex items-center gap-sm" @click="emit('close')">
         <ZhiweiMark class="size-[1.3rem] text-primary" />
-        <span class="text-sm font-semibold tracking-tight text-foreground">知微</span>
+        <span class="flex items-baseline gap-xs">
+          <span class="text-sm font-semibold tracking-tight text-foreground">知微</span>
+          <span
+            class="text-[10px] font-medium tracking-[0.12em] text-muted-foreground"
+            aria-hidden="true"
+          >ZHI·WEI</span>
+        </span>
       </RouterLink>
       <NotificationBell />
     </div>
@@ -463,16 +473,32 @@ function openSettings() {
       </div>
     </template>
 
-    <!-- 底部工具栏 -->
-    <div class="flex items-center justify-between border-t border-sidebar-border/40 px-md py-sm">
-      <div />
+    <!-- 底部：用户身份卡 + 主题切换 -->
+    <div class="sidebar-footer">
       <button
         type="button"
-        class="flex items-center gap-xs rounded-xl px-sm py-xs text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+        class="identity-card"
+        data-testid="sidebar-identity-card"
         @click="openSettings"
       >
-        <Settings class="size-4" />
-        设置
+        <div class="identity-avatar">
+          <ZhiweiMark class="size-[1rem] text-primary" />
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col text-left">
+          <span class="identity-title">Ziwei Pro</span>
+          <span class="identity-subtitle">本地优先</span>
+        </div>
+      </button>
+      <button
+        type="button"
+        class="theme-toggle"
+        :title="`主题：${theme.mode.value === 'light' ? '浅色' : theme.mode.value === 'dark' ? '深色' : '跟随系统'}`"
+        data-testid="sidebar-theme-toggle"
+        @click="theme.cycleTheme()"
+      >
+        <Sun v-if="theme.mode.value === 'light'" class="size-4" />
+        <Moon v-else-if="theme.mode.value === 'dark'" class="size-4" />
+        <Monitor v-else class="size-4" />
       </button>
     </div>
   </div>
@@ -635,6 +661,81 @@ function openSettings() {
 }
 
 .qw-link:hover {
+  color: var(--foreground);
+}
+
+/* ═══ 底部身份卡 ═══ */
+
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem 0.75rem;
+  border-top: 1px solid hsl(from var(--sidebar-border) h s l / 0.4);
+}
+
+.identity-card {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 0.625rem;
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.identity-card:hover {
+  background: hsl(from var(--muted) h s l / 0.4);
+  border-color: hsl(from var(--border) h s l / 0.5);
+}
+
+.identity-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  background: hsl(from var(--primary) h s l / 0.12);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.identity-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+.identity-subtitle {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.theme-toggle:hover {
+  background: hsl(from var(--muted) h s l / 0.5);
+  border-color: hsl(from var(--border) h s l / 0.5);
   color: var(--foreground);
 }
 </style>
