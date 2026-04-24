@@ -16,7 +16,7 @@
 6. **分发层**：`ContextAssembler.buildSkillCatalog()` 查 `skills` 表 `WHERE enabled=1`，按 category 分组 + priority 排序生成结构化 XML；`skill-catalog.st` 模板重写
 7. **生成层**：`SkillSynthesizer` 替代 `SkillGenerator`；`SkillLifecycleEvent.Generated` 事件触发前端 SSE toast；前端 `SkillManageView` 按 source_type 显徽章
 
-**Tech Stack：** Spring Boot 3 + Java 22（record / sealed / pattern matching）、SQLite + Flyway V16、Caffeine、JdbcTemplate、Spring AI ToolCallback、JUnit 5 + jqwik + Mockito + ApplicationContextRunner + AssertJ、Vue 3 + Reka UI 2.x + Tailwind 命名尺度、Pinia、lucide-vue-next
+**Tech Stack：** Spring Boot 3 + Java 22（record / sealed / pattern matching）、SQLite + Flyway V17、Caffeine、JdbcTemplate、Spring AI ToolCallback、JUnit 5 + jqwik + Mockito + ApplicationContextRunner + AssertJ、Vue 3 + Reka UI 2.x + Tailwind 命名尺度、Pinia、lucide-vue-next
 
 ---
 
@@ -26,7 +26,7 @@
 
 | 路径 | 责任 |
 |---|---|
-| `src/main/resources/db/migration/V16__skill_system_refactor.sql` | drop + recreate `skills` 表 + 索引 |
+| `src/main/resources/db/migration/V17__skill_system_refactor.sql` | drop + recreate `skills` 表 + 索引 |
 | `docs/skill-spec.md` | SKILL.md 规范文档（frontmatter 字段表 + body 结构 + 三级分层） |
 | `src/main/resources/skills/skill-creator/SKILL.md` | 自举元 skill（按新规范示范） |
 | `src/main/resources/skills/skill-creator/references/frontmatter-reference.md` | frontmatter 字段详表 |
@@ -149,7 +149,7 @@
 
 | Phase | 范围 | 天 |
 |---|---|---|
-| Phase 0 | 规范 + 解析 + 校验 + V16 迁移 + 安装仓库 | 2.5 |
+| Phase 0 | 规范 + 解析 + 校验 + V17 迁移 + 安装仓库 | 2.5 |
 | Phase A | 激活路径重构（skill.load 工具 + Activator + Catalog + 清理） | 2 |
 | Phase B | requires 门控 + 多渠道安装 + 前端改造 | 2 |
 | Phase C | 自生成重写 + 事件 + 前端通知 | 2 |
@@ -266,15 +266,15 @@ git commit -m "docs(skill): 新增 SKILL.md 规范文档 v2"
 
 ---
 
-### Task 0.2：V16 迁移 — drop + recreate `skills` 表
+### Task 0.2：V17 迁移 — drop + recreate `skills` 表
 
 **Files:**
-- Create: `src/main/resources/db/migration/V16__skill_system_refactor.sql`
+- Create: `src/main/resources/db/migration/V17__skill_system_refactor.sql`
 
 - [ ] **Step 1：写迁移脚本**
 
 ```sql
--- V16：Skill 系统重构 —— skills 表重建为"安装元数据事实源"
+-- V17：Skill 系统重构 —— skills 表重建为"安装元数据事实源"
 -- 老 skills 表无代码写入，数据可抛。新表只存安装状态，内容实时从 SKILL.md 读。
 
 DROP TABLE IF EXISTS skills;
@@ -309,8 +309,8 @@ mvn -q test -Dtest=FlywayMigrationVerificationTest
 - [ ] **Step 3：Commit**
 
 ```bash
-git add src/main/resources/db/migration/V16__skill_system_refactor.sql
-git commit -m "feat(db): V16 迁移 — skills 表重建为安装元数据事实源"
+git add src/main/resources/db/migration/V17__skill_system_refactor.sql
+git commit -m "feat(db): V17 迁移 — skills 表重建为安装元数据事实源"
 ```
 
 ---
@@ -1229,7 +1229,7 @@ git commit -m "feat(skill): SkillBodyValidator 小节结构 + 字数硬限"
 
 ---
 
-**Phase 0 退出条件：** 新规范文档 + V16 迁移 + 安装仓库 + 新 parser + 2 个单字段校验器齐备；`mvn test` 全绿；commits 有清晰分段。
+**Phase 0 退出条件：** 新规范文档 + V17 迁移 + 安装仓库 + 新 parser + 2 个单字段校验器齐备；`mvn test` 全绿；commits 有清晰分段。
 
 ---
 
@@ -3578,7 +3578,7 @@ git push -u origin feature/tool-exposure-refactor
 - ✅ frontmatter 新字段（Phase 0 Task 0.5 records + 0.6 parser）
 - ✅ description 硬约束（Phase 0 Task 0.7 Validator）
 - ✅ body 硬约束（Phase 0 Task 0.8 Validator）
-- ✅ V16 drop + recreate（Phase 0 Task 0.2）
+- ✅ V17 drop + recreate（Phase 0 Task 0.2）
 - ✅ 安装元数据 DB（Phase 0 Task 0.3/0.4）
 - ✅ 激活路径归一 `skill.load`（Phase A Task A.1-A.3）
 - ✅ file.read 删 skill 捷径 + 路径白名单（Phase A Task A.6）
