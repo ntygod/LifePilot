@@ -1,6 +1,6 @@
 ---
 name: healthcheck
-description: 当用户要执行系统资源监控、服务状态检查、端口占用诊断、磁盘/内存使用排查或生成诊断报告时使用。关键词：系统检查、健康检查、系统慢了、诊断一下、内存不够、磁盘满了、端口占用、性能。应用层 bug 调试用 code-assistant，日志分析用 log-analyzer，知微运行时信息（Skill/工具数量）用 introspection。
+description: 当用户要执行系统资源监控、服务状态检查、端口占用诊断、磁盘/内存使用排查或生成诊断报告时使用。关键词：系统检查、健康检查、系统慢了、诊断一下、内存不够、磁盘满了、端口占用、性能、查看系统状态。应用层 bug 调试用 code-assistant，日志分析用 log-analyzer，知微自身运行时信息（Skill/工具数量）直接调 system.status 工具。
 version: 2.0.0
 metadata:
   zhiwei:
@@ -33,7 +33,7 @@ metadata:
 
 - 应用层 bug 调试 → 用 code-assistant
 - 日志分析 → 用 log-analyzer
-- 知微运行时信息（Skill/工具/工作流数量）→ 用 introspection
+- 知微自身能力 / Skill / 工具数量等运行时信息 → 直接调 `system.status` 工具
 
 ## 工作流
 

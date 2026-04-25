@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: 当用户要手动创作或改写一个新的知微 Skill、需要 v2 规范示例模板、排查 description/body 校验失败原因或打磨 metadata.zhiwei 元数据时使用。关键词：创建 skill、写 SKILL.md、skill 规范、v2 模板、description 校验、body 拆分 references、metadata.zhiwei、suggested_tools。能力发现 / 安装外部 Skill 用 find-skills，仅查看已有 Skill 能力用 introspection。
+description: 当用户要手动创作或改写一个新的知微 Skill、需要 v2 规范示例模板、排查 description/body 校验失败原因或打磨 metadata.zhiwei 元数据时使用。关键词：创建 skill、写 SKILL.md、skill 规范、v2 模板、description 校验、body 拆分 references、metadata.zhiwei、suggested_tools。从开源社区找现成 Skill 走前端"扩展市场"页面，仅查看已有 Skill 列表直接调 system.status 工具。
 version: 1.0.0
 metadata:
   zhiwei:
@@ -32,8 +32,8 @@ metadata:
 
 ## 不适用场景
 
-- 通过外部市场搜索/安装 Skill → 用 find-skills
-- 只是查看已有 Skill 列表或能力 → 用 introspection
+- 从开源社区找现成 Skill → 走前端"扩展市场"页面
+- 只是查看已有 Skill 列表或能力 → 直接调 `system.status` 工具
 - 调用已有 Skill 执行业务 → 直接加载对应 Skill
 
 ## 工作流

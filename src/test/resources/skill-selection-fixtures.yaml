@@ -28,8 +28,6 @@ fixtures:
     expected_top_3: ["research-assistant"]
   - query: "总结这篇文章"
     expected_top_3: ["summarizer"]
-  - query: "写小说"
-    expected_top_3: ["web-novel-writer"]
   - query: "教我学英语"
     expected_top_3: ["teaching-assistant"]
   - query: "整理文件"
@@ -40,14 +38,10 @@ fixtures:
     expected_top_3: ["cron-scheduler"]
   - query: "提交 GitHub PR"
     expected_top_3: ["github-workflow"]
-  - query: "推到 Gitee"
-    expected_top_3: ["gitee"]
   - query: "发飞书消息"
     expected_top_3: ["feishu"]
-  - query: "有没有什么技能"
-    expected_top_3: ["find-skills"]
   - query: "查看系统状态"
-    expected_top_3: ["healthcheck", "introspection"]
+    expected_top_3: ["healthcheck"]
   - query: "渲染交互卡片"
     expected_top_3: ["a2ui"]
   - query: "浏览器自动化"

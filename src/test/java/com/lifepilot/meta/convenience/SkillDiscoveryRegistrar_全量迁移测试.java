@@ -57,21 +57,21 @@ class SkillDiscoveryRegistrar_全量迁移测试 {
         registrar.afterPropertiesSet();
 
         ArgumentCaptor<SkillInstallation> captor = ArgumentCaptor.forClass(SkillInstallation.class);
-        verify(repository, org.mockito.Mockito.atLeast(25)).upsert(captor.capture());
+        verify(repository, org.mockito.Mockito.atLeast(20)).upsert(captor.capture());
         List<SkillInstallation> installed = captor.getAllValues();
 
-        // Skill v2 fixup 下架 datastore + workflow-creator 后：剩余 25 个 BUILTIN Skill
-        assertThat(installed).hasSize(25);
+        // 减法整理后：剩余 20 个 BUILTIN Skill（删除了 datastore/workflow-creator/find-skills/introspection/gitee/document-workspace/web-novel-writer）
+        assertThat(installed).hasSize(20);
 
         // 检查所有预期 Skill 都在
         List<String> expected = List.of(
                 "a2ui", "api-debugger", "browser-automation", "code-assistant",
                 "content-creator", "cron-scheduler", "daily-manager", "data-analyst",
                 "database-query", "desktop-automation", "doc-processor",
-                "document-workspace", "feishu", "file-organizer", "find-skills",
-                "gitee", "github-workflow", "healthcheck", "introspection",
+                "feishu", "file-organizer",
+                "github-workflow", "healthcheck",
                 "log-analyzer", "research-assistant", "skill-creator", "summarizer",
-                "teaching-assistant", "web-novel-writer"
+                "teaching-assistant"
         );
         assertThat(installed.stream().map(SkillInstallation::name).toList())
                 .containsExactlyInAnyOrderElementsOf(expected);

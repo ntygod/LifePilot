@@ -16,6 +16,7 @@ metadata:
     suggested_tools:
       - shell.exec
       - shell.process
+      - code.execute
       - file.read
       - file.write
       - file.list

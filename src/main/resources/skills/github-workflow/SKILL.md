@@ -1,6 +1,6 @@
 ---
 name: github-workflow
-description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 PR、查看工作流运行、读取或更新远程仓库文件时使用。关键词：GitHub、PR、pull request、issue、CI、gh cli、代码审查、合并、工作流。Gitee 操作用 gitee，纯本地 Git 操作直接用 git.query / git.mutate，不进本 Skill。
+description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 PR、查看工作流运行、读取或更新远程仓库文件时使用。关键词：GitHub、PR、pull request、issue、CI、gh cli、代码审查、合并、工作流。纯本地 Git 操作直接用 git.query / git.mutate，不进本 Skill；其他平台（Gitee/GitLab）走 shell.exec 调用对应 CLI。
 version: 2.0.0
 metadata:
   zhiwei:
@@ -40,9 +40,9 @@ metadata:
 
 ## 不适用场景
 
-- Gitee 操作 → 用 gitee
-- 纯本地 Git 操作 → 直接用 `git.query` / `git.mutate`
+- 纯本地 Git 操作（commit/branch/log）→ 直接用 `git.query` / `git.mutate`
 - 代码编写 → 用 code-assistant
+- 其他平台（Gitee/GitLab/Bitbucket）→ `shell.exec` 调用对应 CLI 或 API
 
 ## 工作流
 

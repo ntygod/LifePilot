@@ -20,13 +20,13 @@ Windows 上 claude 还需要 bash，知微会自动注入 `CLAUDE_CODE_GIT_BASH_
 
 ```
 shell.exec(
-  command="claude -p '任务描述' --output-format stream-json --permission-mode acceptEdits",
-  workingDirectory="/path/to/worktree",
+  command="claude -p '<任务描述>' --output-format stream-json --permission-mode acceptEdits",
+  workingDirectory="<worktree 绝对路径>",
   background=true
-) → { sessionId: "a3f8c1b2" }
+) → { sessionId: "<sessionId>" }
 ```
 
-启动后**立即**调 `shell.process(action=output, sessionId=xxx)` 验证：
+启动后**立即**调 `shell.process(action=output, sessionId="<sessionId>")` 验证：
 
 - 看到 `{"type":"system","subtype":"init"}` 或 Codex 的 `{"type":"session_configured"}` → 启动成功，进入轮询
 - state=FAILED 或 exitCode≠0 → 启动失败，读 stderr 报告用户，**不要进入轮询循环**
