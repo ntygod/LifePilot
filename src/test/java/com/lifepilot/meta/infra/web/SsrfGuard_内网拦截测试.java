@@ -89,6 +89,30 @@ class SsrfGuard_内网拦截测试 {
     }
 
     @Test
+    void 拦截_国产云_metadata_域名() {
+        var guard = SsrfGuard.enabled();
+        // 阿里云
+        assertThatThrownBy(() -> guard.check("http://metadata.aliyuncs.com/latest/meta-data/"))
+                .isInstanceOf(SsrfBlockedException.class);
+        assertThatThrownBy(() -> guard.check("http://100.100.100.200/latest/meta-data/"))
+                .isInstanceOf(SsrfBlockedException.class);
+        // 腾讯云
+        assertThatThrownBy(() -> guard.check("http://metadata.tencentyun.com/meta-data/"))
+                .isInstanceOf(SsrfBlockedException.class);
+        // 华为云
+        assertThatThrownBy(() -> guard.check("http://metadata.huaweicloud.com/openstack/latest/"))
+                .isInstanceOf(SsrfBlockedException.class);
+    }
+
+    @Test
+    void 拦截_meta_data_前缀变体() {
+        var guard = SsrfGuard.enabled();
+        // 形如 meta-data.xxx 的变体仍应被前缀匹配拦截
+        assertThatThrownBy(() -> guard.check("http://meta-data.internal.corp/"))
+                .isInstanceOf(SsrfBlockedException.class);
+    }
+
+    @Test
     void 拦截_0_0_0_0_任意地址() {
         var guard = SsrfGuard.enabled();
         assertThatThrownBy(() -> guard.check("http://0.0.0.0/"))

@@ -9,6 +9,7 @@ import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
+import com.lifepilot.agent.suspend.model.SuspendSignal;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.llm.multimodal.MediaContent;
@@ -778,17 +779,17 @@ public class ToolExecutionCoordinator {
             if (!root.isObject()) {
                 return null;
             }
-            JsonNode suspendNode = root.get("_suspend");
+            JsonNode suspendNode = root.get(SuspendSignal.FIELD_SUSPEND);
             if (suspendNode == null || !suspendNode.asBoolean(false)) {
                 return null;
             }
-            JsonNode reasonNode = root.get("_suspendReason");
+            JsonNode reasonNode = root.get(SuspendSignal.FIELD_REASON);
             if (reasonNode == null || !reasonNode.isObject()) {
-                log.warn("工具返回 _suspend=true 但缺少 _suspendReason 对象");
+                log.warn("工具返回 {}=true 但缺少 {} 对象", SuspendSignal.FIELD_SUSPEND, SuspendSignal.FIELD_REASON);
                 return null;
             }
 
-            String type = reasonNode.has("type") ? reasonNode.get("type").asText() : "";
+            String type = reasonNode.has(SuspendSignal.FIELD_TYPE) ? reasonNode.get(SuspendSignal.FIELD_TYPE).asText() : "";
             return switch (type) {
                 case "WorkflowWait" -> new SuspendReason.WorkflowWait(
                         reasonNode.path("executionId").asText(""),

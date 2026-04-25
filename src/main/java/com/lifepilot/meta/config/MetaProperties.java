@@ -228,6 +228,14 @@ public class MetaProperties {
             /** 空闲超时（秒），默认 300（5 分钟）。 */
             private int idleTimeoutSeconds = 300;
 
+            /**
+             * 空闲会话清理调度间隔（秒），默认 60。
+             *
+             * <p>建议设置为 {@link #idleTimeoutSeconds} 的 1/5 左右，兼顾及时性和 CPU 开销。
+             * 实际生效位置：{@code BrowserSessionScheduler.cleanup()} 的 fixedDelayString。</p>
+             */
+            private int cleanupIntervalSeconds = 60;
+
             /** 工具执行超时（秒），默认 30。 */
             private int toolTimeoutSeconds = 30;
 

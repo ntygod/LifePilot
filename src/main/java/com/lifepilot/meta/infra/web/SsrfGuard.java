@@ -46,20 +46,36 @@ public class SsrfGuard {
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
 
     /**
-     * 已知云 metadata 域名集合（小写）— 无需 DNS 解析即拦截。
+     * 已知云 metadata 域名 / IP 集合（小写）— 无需 DNS 解析即拦截。
      *
-     * <p>防止 {@code metadata.google.internal} 等域名被配置的公网 DNS 解析到代理地址后绕过 IP 检查。</p>
+     * <p>防止 {@code metadata.google.internal} 等域名被配置的公网 DNS 解析到代理地址后绕过 IP 检查。
+     * 覆盖 GCP / AWS / Azure / 阿里云 / 腾讯云 / 华为云 等主流云厂商 metadata 端点。</p>
      */
     private static final Set<String> CLOUD_METADATA_HOSTS = Set.of(
+            // GCP
             "metadata.google.internal",
+            // AWS
             "metadata.aws.internal",
+            // Azure
             "metadata.azure.com",
+            // 阿里云（海内外 metadata 域名 + IP 均保留）
+            "metadata.aliyuncs.com",
+            "100.100.100.200",
+            // 腾讯云
+            "metadata.tencentyun.com",
+            // 华为云
+            "metadata.huaweicloud.com",
+            // 通用云 metadata IP（AWS/GCP/Azure 共用 link-local）
             "169.254.169.254"
     );
 
-    /** 云 metadata 域名前缀匹配（如 {@code instance-data.ec2.internal}）。 */
+    /**
+     * 云 metadata 域名前缀匹配 — 覆盖形如 {@code instance-data.ec2.internal}、
+     * {@code meta-data.xxx.com} 这类非主域名但依然指向 metadata 服务的变体。
+     */
     private static final List<String> CLOUD_METADATA_PREFIXES = List.of(
-            "instance-data"
+            "instance-data",
+            "meta-data"
     );
 
     /** localhost 别名集合。 */

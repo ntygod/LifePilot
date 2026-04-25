@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.Cookie;
+import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
@@ -104,6 +106,7 @@ public class PlaywrightPageWrapper {
      */
     public String navigate(String url, int timeoutMs) {
         touch();
+        ensureOpen();
         humanDelay();
         page.navigate(url, new Page.NavigateOptions()
                 .setTimeout(timeoutMs)
@@ -125,13 +128,14 @@ public class PlaywrightPageWrapper {
      */
     public NavigateResult navigateWithResult(String url, int timeoutMs) {
         touch();
+        ensureOpen();
         humanDelay();
         boolean partial = false;
         try {
             page.navigate(url, new Page.NavigateOptions()
                     .setTimeout(timeoutMs)
                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
-        } catch (com.microsoft.playwright.TimeoutError e) {
+        } catch (TimeoutError e) {
             partial = true;
         }
         return new NavigateResult(page.title(), page.url(), partial);
@@ -144,6 +148,7 @@ public class PlaywrightPageWrapper {
      */
     public String textContent() {
         touch();
+        ensureOpen();
         return page.textContent("body");
     }
 
@@ -154,6 +159,7 @@ public class PlaywrightPageWrapper {
      */
     public String title() {
         touch();
+        ensureOpen();
         return page.title();
     }
 
@@ -164,6 +170,7 @@ public class PlaywrightPageWrapper {
      */
     public void click(String selector) {
         touch();
+        ensureOpen();
         humanDelay();
         page.click(selector);
     }
@@ -176,6 +183,7 @@ public class PlaywrightPageWrapper {
      */
     public void fill(String selector, String value) {
         touch();
+        ensureOpen();
         humanDelay();
         page.fill(selector, value);
     }
@@ -265,6 +273,7 @@ public class PlaywrightPageWrapper {
      */
     public String screenshot(boolean fullPage) {
         touch();
+        ensureOpen();
         byte[] bytes = page.screenshot(new Page.ScreenshotOptions().setFullPage(fullPage));
         return Base64.getEncoder().encodeToString(bytes);
     }
@@ -275,6 +284,7 @@ public class PlaywrightPageWrapper {
      * @return 当前 URL
      */
     public String url() {
+        ensureOpen();
         return page.url();
     }
 
@@ -445,6 +455,27 @@ public class PlaywrightPageWrapper {
             return AccessibilityYamlTrimmer.trim(full, maxDepth);
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    /**
+     * 等待页面达到 NETWORKIDLE 状态（500ms 内无网络活动）。
+     *
+     * <p>使用 Playwright 原生 {@code page.waitForLoadState} 替代手写的
+     * {@code document.readyState} 轮询。超时视为"网络空闲等待超时"，
+     * 不抛异常 — 已加载的内容仍可用于后续文本/选择器提取。</p>
+     *
+     * @param timeoutMs 超时时间（毫秒）
+     */
+    public void waitForNetworkIdle(int timeoutMs) {
+        touch();
+        ensureOpen();
+        try {
+            page.waitForLoadState(LoadState.NETWORKIDLE,
+                    new Page.WaitForLoadStateOptions().setTimeout(timeoutMs));
+        } catch (TimeoutError e) {
+            // 网络空闲超时不致命，已加载内容仍可用
+            log.debug("waitForNetworkIdle 超时，已加载内容仍可继续使用: timeoutMs={}", timeoutMs);
         }
     }
 

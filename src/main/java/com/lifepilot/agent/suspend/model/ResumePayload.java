@@ -1,5 +1,6 @@
 package com.lifepilot.agent.suspend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
@@ -49,9 +50,33 @@ public sealed interface ResumePayload permits
     /**
      * 浏览器人工接管完成信号。
      *
+     * <p>当用户在前端点"放弃任务"时，上层监听器应把 note 以
+     * {@link #USER_CANCELLED_PREFIX} 开头拼接原始备注，让 AgentOrchestrator
+     * 在恢复入口直接硬终止，而不是把取消意图塞给 LLM 自行解读。</p>
+     *
      * @param sessionId 浏览器会话 ID
      * @param note      用户可选备注（失败原因、放弃说明等，可空）
      */
     record BrowserTakeoverCompleted(String sessionId, @Nullable String note)
-            implements ResumePayload {}
+            implements ResumePayload {
+
+        /**
+         * 用户取消任务时 note 的前缀约定。
+         *
+         * <p>保持为字符串前缀而非布尔字段是降级选择 — 协议上对前端 / orchestrator /
+         * LLM 都向后兼容，orchestrator 层检测到前缀直接走终止分支，避免 LLM 再绕一步。</p>
+         */
+        public static final String USER_CANCELLED_PREFIX = "[USER_CANCELLED]";
+
+        /**
+         * 判断 note 是否表示用户显式取消。
+         *
+         * <p>{@link JsonIgnore} 避免 Jackson 把该计算属性序列化成 {@code userCancelled} 字段，
+         * 污染 SuspendStore 中 JSON 结构（反序列化时 record 只认 {@code sessionId}/{@code note}）。</p>
+         */
+        @JsonIgnore
+        public boolean isUserCancelled() {
+            return note != null && note.startsWith(USER_CANCELLED_PREFIX);
+        }
+    }
 }

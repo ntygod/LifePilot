@@ -19,7 +19,8 @@ import java.util.Set;
  * HTTP 请求工具 — 支持 GET/POST/PUT/DELETE/PATCH 方法。
  *
  * <p>允许 Agent 直接调用外部 API，获取或提交数据。
- * 安全限制：禁止访问内网地址（127.0.0.1、localhost、10.x、172.16-31.x、192.168.x）。</p>
+ * 安全限制：通过 {@link SsrfGuard} 统一拦截内网 / 云 metadata / 非法协议 URL，
+ * 和 {@link WebFetchToolExecutor} 共享同一套策略（含 DNS rebinding 防御、allowlist 等）。</p>
  *
  * @author zsg
  * @since 2026-03-22
@@ -33,8 +34,21 @@ public class HttpRequestToolExecutor {
     private static final int MAX_RESPONSE_LENGTH = 50000;
 
     private final HttpClient httpClient;
+    private final SsrfGuard ssrfGuard;
 
+    /**
+     * 测试便利构造器 — 默认禁用 SSRF 防护，放行本地 127.0.0.1 测试服务器。
+     * <p>生产请使用 {@link #HttpRequestToolExecutor(SsrfGuard)}。</p>
+     */
     public HttpRequestToolExecutor() {
+        this(SsrfGuard.disabled());
+    }
+
+    /**
+     * 生产构造器 — 注入 {@link SsrfGuard} 对所有外部 URL 做 SSRF 拦截。
+     */
+    public HttpRequestToolExecutor(SsrfGuard ssrfGuard) {
+        this.ssrfGuard = ssrfGuard;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -62,9 +76,12 @@ public class HttpRequestToolExecutor {
             return ToolResult.error("不支持的 HTTP 方法: " + method + "，支持: " + ALLOWED_METHODS);
         }
 
-        // 安全检查：禁止访问内网地址
-        if (isInternalAddress(url)) {
-            return ToolResult.error("安全策略禁止访问内网地址: " + url);
+        // SSRF 防护 — 与 WebFetchToolExecutor 共用同一套策略
+        try {
+            ssrfGuard.check(url);
+        } catch (SsrfBlockedException e) {
+            log.warn("SSRF 策略拦截 http.request: url={}, reason={}", url, e.getReason());
+            return ToolResult.error("目标地址被 SSRF 策略拦截: " + e.getReason());
         }
 
         String body = input.getOptionalParam("body", String.class).orElse(null);
@@ -153,23 +170,4 @@ public class HttpRequestToolExecutor {
         return ToolResult.success(Map.copyOf(data));
     }
 
-    /**
-     * 检查 URL 是否指向内网地址。
-     */
-    private boolean isInternalAddress(String url) {
-        try {
-            String host = URI.create(url).getHost();
-            if (host == null) return true;
-            host = host.toLowerCase();
-            return host.equals("localhost")
-                    || host.equals("127.0.0.1")
-                    || host.equals("::1")
-                    || host.equals("0.0.0.0")
-                    || host.startsWith("10.")
-                    || host.startsWith("192.168.")
-                    || host.matches("172\\.(1[6-9]|2\\d|3[01])\\..*");
-        } catch (Exception e) {
-            return true; // 解析失败视为不安全
-        }
-    }
 }

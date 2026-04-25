@@ -125,10 +125,18 @@ public class AgentResumeListener {
                         && bt.sessionId().equals(event.sessionId()))
                 .findFirst();
         if (matched.isPresent()) {
-            // note 优先带上用户是否取消的标识，让 Agent 在恢复时能从 observation 文本判断走向
-            String note = event.cancelled()
-                    ? "用户取消了本次任务" + (event.note() != null && !event.note().isBlank() ? "：" + event.note() : "")
-                    : event.note();
+            // 取消时打 [USER_CANCELLED] 前缀，AgentOrchestrator 检测到此前缀直接硬终止，
+            // 不再交给 LLM 从 observation 文本猜测意图（避免 LLM 误判继续推理）。
+            String note;
+            if (event.cancelled()) {
+                String detail = event.note() != null && !event.note().isBlank()
+                        ? "：" + event.note()
+                        : "";
+                note = ResumePayload.BrowserTakeoverCompleted.USER_CANCELLED_PREFIX
+                        + " 用户取消了本次任务" + detail;
+            } else {
+                note = event.note();
+            }
             var payload = new ResumePayload.BrowserTakeoverCompleted(event.sessionId(), note);
             agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
         } else {

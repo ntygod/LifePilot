@@ -563,26 +563,14 @@ public class WebFetchToolExecutor {
 
     /**
      * 等待页面 JS 渲染就绪。
+     *
+     * <p>使用 Playwright 原生 {@code waitForLoadState(NETWORKIDLE)} 而非轮询
+     * {@code document.readyState}：网络空闲是"页面基本加载完成"的更强信号，
+     * 且无需跨 JVM/JS 边界频繁往返。超时由 {@link PlaywrightPageWrapper#waitForNetworkIdle}
+     * 内部吞掉，视为"已加载内容可用"继续走下游提取。</p>
      */
     private void waitForPageReady(PlaywrightPageWrapper page, int timeoutMs) {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                String readyState = page.evaluate("document.readyState");
-                if ("\"complete\"".equals(readyState)) {
-                    Thread.sleep(500);
-                    return;
-                }
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            } catch (Exception e) {
-                log.debug("等待页面就绪时发生异常: {}", e.getMessage());
-                return;
-            }
-        }
-        log.debug("等待页面就绪超时（{}ms）", timeoutMs);
+        page.waitForNetworkIdle(timeoutMs);
     }
 
     private boolean isBrowserAvailable() {

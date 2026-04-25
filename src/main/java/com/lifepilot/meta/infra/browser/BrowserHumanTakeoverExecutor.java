@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.lifepilot.agent.suspend.model.SuspendSignal;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -59,15 +60,15 @@ public class BrowserHumanTakeoverExecutor {
         int timeoutSeconds = properties.getInfra().getBrowser().getTakeover().getTimeoutSeconds();
 
         var suspendReasonPayload = new LinkedHashMap<String, Object>();
-        suspendReasonPayload.put("type", "BrowserTakeover");
+        suspendReasonPayload.put(SuspendSignal.FIELD_TYPE, "BrowserTakeover");
         suspendReasonPayload.put("sessionId", sessionId);
         suspendReasonPayload.put("reason", reason);
         suspendReasonPayload.put("requestedAt", requestedAt.toString());
         suspendReasonPayload.put("timeoutSeconds", timeoutSeconds);
 
         var data = new LinkedHashMap<String, Object>();
-        data.put("_suspend", true);
-        data.put("_suspendReason", Map.copyOf(suspendReasonPayload));
+        data.put(SuspendSignal.FIELD_SUSPEND, true);
+        data.put(SuspendSignal.FIELD_REASON, Map.copyOf(suspendReasonPayload));
         data.put("message", "等待用户在浏览器中完成人工接管：" + reason);
         data.put("sessionId", sessionId);
 

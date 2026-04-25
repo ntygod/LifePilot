@@ -672,6 +672,15 @@ public class BrowserSessionManager {
     /**
      * 从 CDP 返回的 context 列表中选择最可能是用户活跃窗口的那个。
      *
+     * <p>采用基于 page 数量的启发式信号 — 并非真正判断窗口焦点，
+     * 而是假设"打开的 page 越多，用户当前在用这个 context 的概率越高"。
+     * 这是退而求其次的策略：Playwright 的 CDP 协议没有直接暴露 activeTarget 信息，
+     * 而挨个 {@code page.evaluate("document.hasFocus()")} 开销过大且需要页面已加载。</p>
+     *
+     * <p>如需更精确的 focus 检测，调用方可在单独线程里为每个 page 执行
+     * {@code page.evaluate("document.hasFocus()")} 然后自己选，本方法不做这件事。
+     * 该方法保持纯计算：仅按 {@code pageCounter} 返回值排序。</p>
+     *
      * <p>选择策略：
      * <ol>
      *   <li>优先选有 page 的 context（空 context 基本没用）</li>
@@ -684,7 +693,7 @@ public class BrowserSessionManager {
      * 真实调用点使用 {@link BrowserRuntime#getPageCount(Object)} 作为 page 计数器。</p>
      *
      * @param contexts    CDP 返回的 context 列表，不可为空
-     * @param pageCounter 读取单个 context page 数量的函数
+     * @param pageCounter 读取单个 context page 数量的函数（page 数作启发式活跃度信号）
      * @param <T>         context 实际类型
      * @return 选中的 context
      * @throws IllegalArgumentException 当 contexts 为空列表时

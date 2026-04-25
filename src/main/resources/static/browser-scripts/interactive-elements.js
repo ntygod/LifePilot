@@ -1,8 +1,13 @@
 // 知微浏览器工具 - 可交互元素标号脚本
-// 返回 { elements, total, viewport, truncated }
+// 返回 { elements, total, viewport, truncated, injectionId }
 // 参数 opts: { injectLabels: bool, maxElements: int }
 // 注意：本文件为 Playwright page.evaluate 的箭头函数表达式，
 //       Playwright 会把第二参数作为 opts 直接传入函数，不要改成 IIFE。
+//
+// 清理策略（防误伤）：
+//   每次注入生成一次性 nonce（injectionId），写入 data-zhiwei-injection-id；
+//   开始注入前只清理"之前同脚本"注入的节点（按前一次 nonce + 旧属性名），
+//   不会擦掉页面原生 data-zhiwei-idx / 其它样式类似的节点。
 
 (opts) => {
     const options = opts || {};
@@ -39,8 +44,16 @@
         return false;
     }
 
-    document.querySelectorAll('.__zhiwei-dom-label').forEach(n => n.remove());
-    document.querySelectorAll('[data-zhiwei-idx]').forEach(n => n.removeAttribute('data-zhiwei-idx'));
+    // 生成一次性 nonce，区分本次注入和页面上可能已有的同名属性节点
+    const injectionId = 'zw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+
+    // 清理阶段：只删除带 data-zhiwei-injection-id 的旧注入痕迹，绝不触碰页面原生节点
+    document.querySelectorAll('.__zhiwei-dom-label[data-zhiwei-injection-id]').forEach(n => n.remove());
+    document.querySelectorAll('[data-zhiwei-injection-id]').forEach(n => {
+        // 清理 data-zhiwei-idx / data-zhiwei-injection-id，保留节点本身
+        n.removeAttribute('data-zhiwei-idx');
+        n.removeAttribute('data-zhiwei-injection-id');
+    });
 
     const elements = [];
     let total = 0;
@@ -55,6 +68,7 @@
         const rect = node.getBoundingClientRect();
         const index = elements.length;
         node.setAttribute('data-zhiwei-idx', String(index));
+        node.setAttribute('data-zhiwei-injection-id', injectionId);
 
         const text = (node.innerText || node.value || node.placeholder || '').trim().slice(0, 80);
 
@@ -74,6 +88,7 @@
             const label = document.createElement('div');
             label.textContent = String(index);
             label.className = '__zhiwei-dom-label';
+            label.setAttribute('data-zhiwei-injection-id', injectionId);
             label.style.cssText = 'position:fixed;z-index:2147483647;' +
                 'background:#ff0050;color:white;padding:1px 4px;' +
                 'font-size:10px;font-family:monospace;border-radius:2px;' +
@@ -87,6 +102,7 @@
         elements: elements,
         total: total,
         viewport: [innerWidth, innerHeight],
-        truncated: total > elements.length
+        truncated: total > elements.length,
+        injectionId: injectionId
     };
 }

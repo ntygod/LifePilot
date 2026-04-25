@@ -68,6 +68,8 @@
 | 多模态处理 | 图片预处理、音频处理、文档格式检测（Apache Tika） | [特性](features/multimodal.md) |
 | 文档工作空间 | docx / xlsx / pptx 新建 + docx / xlsx 锚点编辑 + 版本链 + diff 卡片 + commit/rollback/discard | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | 工作流引擎 | YAML 声明式工作流、四种触发器（Cron/Event/Condition/Signal）、崩溃恢复 | [特性](features/workflow.md) |
+| 浏览器自动化 | Playwright 3 种接入模式（LAUNCH/CDP/PERSISTENT）、snapshot 标号扫描、human takeover 人机接管挂起、SSRF 防护、多云 metadata 拦截 | — |
+| Web 抓取 | web.fetch 支持 GET/POST/PUT/DELETE/PATCH、自定义 headers/body、HTML Jsoup 解析 + 浏览器渲染回退 | — |
 | 代码沙箱 | Process/Docker/Remote 三种沙箱模式、会话复用、危险操作预检 | [特性](features/sandbox.md) |
 | 外部数据同步 | CalDAV / Todoist / 滴答清单 / Obsidian 连接器、冲突解决策略（规划中） | [规划](planned/external-data-sync-feat.md) |
 | Agentic Evals | YAML 场景定义、五维规则评估、LLM-as-a-Judge、JUnit 5 集成 | [特性](features/agentic-evals.md) |

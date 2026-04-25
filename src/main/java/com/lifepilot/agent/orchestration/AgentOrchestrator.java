@@ -420,6 +420,23 @@ public class AgentOrchestrator {
         var loopContext = new AgentLoopContext();
 
         try {
+            // 用户显式取消浏览器接管时，绕过 ReAct 循环直接硬终止，
+            // 避免把"用户取消"作为 observation 文本交给 LLM 自行解读后继续推理
+            ResumePayload.BrowserTakeoverCompleted cancelPayload = detectUserCancelledPayload(state);
+            if (cancelPayload != null) {
+                log.info("检测到用户取消恢复信号，Agent 直接终止：traceId={}, note={}",
+                        state.traceId(), cancelPayload.note());
+                state = DegradedResponseBuilder.terminateWithReason(state, cancelPayload.note());
+                boolean testSession = isTestSession(state.sessionId());
+                if (!testSession) {
+                    String reactStepsJson = serializeReactStepsJson(state.steps());
+                    String assistantEntryId = executionPersistence.persistAssistantSync(state, reactStepsJson, loopContext);
+                    // terminateWithReason 已设置 terminationReason，resolveTurnStatus 会判为 DEGRADED
+                    executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
+                }
+                return;
+            }
+
             var request = new AgentRequest(
                     state.goal(),
                     state.sessionId(),
@@ -896,6 +913,30 @@ public class AgentOrchestrator {
                 state.resumedFromTraceId(),
                 resolveTurnStatus(state)
         );
+    }
+
+    /**
+     * 从已追加 Resume 步骤的 state 里检测"用户取消"信号。
+     *
+     * <p>扫描 steps 尾部最近一个 Resume step，若其 payload 是
+     * {@link ResumePayload.BrowserTakeoverCompleted} 且 note 带 USER_CANCELLED 前缀，
+     * 则返回该 payload；否则返回 null。</p>
+     *
+     * @return 取消 payload，未命中时 null
+     */
+    @Nullable
+    private ResumePayload.BrowserTakeoverCompleted detectUserCancelledPayload(ReactAgentState state) {
+        var steps = state.steps();
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            if (steps.get(i) instanceof ReactStep.Resume resume) {
+                if (resume.payload() instanceof ResumePayload.BrowserTakeoverCompleted c && c.isUserCancelled()) {
+                    return c;
+                }
+                // 找到最近一个 Resume 就停止，避免往前找到无关的旧 Resume
+                return null;
+            }
+        }
+        return null;
     }
 
     /** 根据 execution 状态决定 turn 的最终状态：success/degraded/suspended */
