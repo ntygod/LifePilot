@@ -55,6 +55,7 @@ public class FileDeleteToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: path");
         }
+        pathStr = PathExpander.expand(pathStr);
 
         boolean recursive = input.getOptionalParam("recursive", Boolean.class)
                 .orElse(false);

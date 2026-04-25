@@ -90,6 +90,7 @@ public class FilePatchToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: " + e.getMessage());
         }
+        pathStr = PathExpander.expand(pathStr);
 
         if (operations == null || operations.isEmpty()) {
             return ToolResult.error("operations 不能为空");
