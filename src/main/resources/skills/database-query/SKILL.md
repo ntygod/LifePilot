@@ -37,61 +37,14 @@ metadata:
 
 ## 工作流
 
-### 确认连接信息
+1. **确认连接信息**：类型（SQLite / MySQL / PostgreSQL）、地址、库名；密码走环境变量，不明文
+2. **探索结构**：先 list 表，再查目标表 schema（方言命令见参考）
+3. **预览查询**：先加 `LIMIT 10` 看样本，确认正确后再跑全量
+4. **写操作保护**：默认只允许 SELECT；INSERT / UPDATE / DELETE / DROP 必须用户确认后再执行
+5. **导出**：结构化数据输出到 CSV / JSON，大表先限定时间范围或字段
 
-向用户询问：
-- 数据库类型（SQLite / MySQL / PostgreSQL）
-- 连接地址、用户名、数据库名
-- 密码通过环境变量传递，不明文输入
+## 详细参考
 
-### 探索数据库结构
-
-**SQLite：**
-```bash
-shell.exec(command="sqlite3 db.db \".tables\"")
-shell.exec(command="sqlite3 db.db \".schema table_name\"")
-```
-
-**MySQL：**
-```bash
-shell.exec(command="mysql -e \"SHOW TABLES;\" database")
-shell.exec(command="mysql -e \"DESCRIBE table_name;\" database")
-```
-
-**PostgreSQL：**
-```bash
-shell.exec(command="psql -c \"\\dt\" database")
-shell.exec(command="psql -c \"\\d table_name\" database")
-```
-
-### 编写和执行查询
-
-先用 LIMIT 限制结果集预览：
-
-```bash
-shell.exec(command="sqlite3 -header db.db \"SELECT col1, col2 FROM table_name LIMIT 10;\"")
-```
-
-用户确认后执行完整查询。
-
-### 导出结果
-
-```bash
-shell.exec(command="sqlite3 -header -csv db.db \"SELECT col1, col2 FROM table_name;\" > output.csv")
-file.read(path="output.csv", maxChars=3000)
-```
-
-## 规则
-
-- 默认只执行 SELECT 查询（只读）
-- INSERT / UPDATE / DELETE / DROP 等写操作必须向用户确认后再执行
-- 不在命令行中明文传递密码，使用环境变量或配置文件
-- 大表查询默认添加 LIMIT，避免内存溢出
-- 每次查询先预览少量结果，确认正确后再执行全量
-
-## 常见错误处理
-
-- **连接失败** → 确认地址、端口、用户名，检查数据库服务是否运行
-- **权限不足** → 提示用户检查数据库用户权限
-- **查询超时** → 优化 SQL（添加索引提示、减少 JOIN、缩小范围）
-- **编码问题** → 指定字符集 `--default-character-set=utf8mb4`
+- SQLite / MySQL / PostgreSQL 方言命令 + 导出命令 + 常见错误：`{skill_dir}/references/dialect-reference.md`
+</content>
+</invoke>
