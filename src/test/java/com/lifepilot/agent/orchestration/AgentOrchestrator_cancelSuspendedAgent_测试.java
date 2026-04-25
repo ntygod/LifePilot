@@ -53,7 +53,9 @@ class AgentOrchestrator_cancelSuspendedAgent_测试 {
     @Mock private SuspendStore suspendStore;
     @Mock private ChatTurnService chatTurnService;
 
-    // 与 Spring Boot 默认 ObjectMapper 行为一致：忽略未知字段（如 InteractionSource.isAutonomous() getter）
+    // 与 Spring Boot 默认 ObjectMapper 行为一致：宽松解析 stateJson；
+    // 派生 getter 已通过 @JsonIgnore 切断，sealed interface 已加 @JsonTypeInfo，
+    // FAIL_ON_UNKNOWN_PROPERTIES=false 仅作为对历史快照的容忍。
     private final ObjectMapper objectMapper = new ObjectMapper()
             .findAndRegisterModules()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
@@ -121,12 +123,9 @@ class AgentOrchestrator_cancelSuspendedAgent_测试 {
     /**
      * 构造一个浏览器接管挂起记录。
      *
-     * <p>{@code stateJson} 直接写最小字段集，绕开 {@link SuspendedAgent#from} 全字段序列化路径
-     * （{@link com.lifepilot.interaction.model.InteractionSource} 含 {@code isAutonomous()}
-     * 派生字段、{@link SuspendReason} 是 sealed interface，二者都需要专门的 ObjectMapper
-     * 配置才能 round-trip）。生产路径下 {@link com.lifepilot.agent.suspend.store.SqliteSuspendStore}
-     * 把 reason 单独存到 reason_json 列，所以本测试在 stateJson 里不放 suspendReason，
-     * 仅依赖 {@link SuspendedAgent#suspendReason()} 字段。</p>
+     * <p>{@code stateJson} 直接写最小字段集，仅覆盖 cancel 路径需要的字段（traceId / sessionId 等），
+     * 不走完整 {@link SuspendedAgent#from} 序列化以保持本单元测试只关注 cancel 分支逻辑。
+     * 完整 round-trip 行为由 {@code SuspendedAgent_序列化往返测试} 覆盖。</p>
      */
     private SuspendedAgent buildBrowserTakeoverSuspended(String traceId, String browserSessionId) {
         String sessionId = "test:cancel-session";

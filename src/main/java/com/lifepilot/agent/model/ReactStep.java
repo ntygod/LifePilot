@@ -1,5 +1,7 @@
 package com.lifepilot.agent.model;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 
 import java.time.Duration;
@@ -20,9 +22,25 @@ import java.time.Instant;
  *   <li>{@link Reflect} — 执行回顾步骤（系统在特定触发点注入，促使 LLM 评估执行进展并调整策略）</li>
  * </ul>
  *
+ * <p>持久化路径：{@code ReactAgentState.steps} 会被 {@code SuspendedAgent.from} 整体写入
+ * stateJson 列；恢复时 {@code toAgentState} 直接 readValue 回 ReactAgentState，因此 sealed
+ * 子类型必须带显式类型标签。{@link ReactStepSerializer} 是单向 UI 摘要序列化路径，与此处
+ * Jackson 多态注解互不影响。</p>
+ *
  * @author zsg
  * @since 2026-03-14
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ReactStep.Progress.class, name = "Progress"),
+        @JsonSubTypes.Type(value = ReactStep.Thought.class, name = "Thought"),
+        @JsonSubTypes.Type(value = ReactStep.ToolCall.class, name = "ToolCall"),
+        @JsonSubTypes.Type(value = ReactStep.Observation.class, name = "Observation"),
+        @JsonSubTypes.Type(value = ReactStep.Answer.class, name = "Answer"),
+        @JsonSubTypes.Type(value = ReactStep.Suspend.class, name = "Suspend"),
+        @JsonSubTypes.Type(value = ReactStep.Resume.class, name = "Resume"),
+        @JsonSubTypes.Type(value = ReactStep.Reflect.class, name = "Reflect")
+})
 public sealed interface ReactStep permits
         ReactStep.Progress,
         ReactStep.Thought,

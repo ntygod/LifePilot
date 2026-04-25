@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.lang.Nullable;
 
 /**
@@ -78,10 +79,24 @@ public record InteractionSource(
         };
     }
 
+    /**
+     * 是否为外部渠道来源。
+     *
+     * <p>{@link JsonIgnore} 阻止 Jackson 把该派生 getter 序列化成 {@code channel} 字段
+     * — record 反序列化时按构造器形参匹配，多余字段虽被忽略仍会污染 JSON。</p>
+     */
+    @JsonIgnore
     public boolean isChannel() {
         return sourceKind == SourceKind.CHANNEL;
     }
 
+    /**
+     * 是否为自动化触发来源（CRON / HEARTBEAT / WORKFLOW）。
+     *
+     * <p>{@link JsonIgnore} 同 {@link #isChannel()}：避免 SuspendStore 把派生属性
+     * 写入 stateJson，导致反序列化时 record 拿到一个 {@code autonomous} 未知字段。</p>
+     */
+    @JsonIgnore
     public boolean isAutonomous() {
         return sourceKind == SourceKind.CRON
                 || sourceKind == SourceKind.HEARTBEAT

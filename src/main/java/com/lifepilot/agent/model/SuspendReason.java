@@ -1,5 +1,8 @@
 package com.lifepilot.agent.model;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 import java.time.Instant;
 
 /**
@@ -8,9 +11,23 @@ import java.time.Instant;
  * <p>sealed interface 保证 switch 穷尽，新场景加入后编译器会强制补齐处理逻辑。
  * 每个子类型只携带恢复时必需的最小上下文。</p>
  *
+ * <p>类型名（{@code @JsonSubTypes.Type#name}）必须与
+ * {@code SqliteSuspendStore#REASON_TYPE_MAP} 的 key 保持完全一致 —
+ * 后者按 {@code Class#getSimpleName()} 写入 reason_type 列，
+ * 而这里的 name 决定了反序列化时如何路由到具体子类型。</p>
+ *
  * @author zsg
  * @since 2026-03-17
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = SuspendReason.WorkflowWait.class, name = "WorkflowWait"),
+        @JsonSubTypes.Type(value = SuspendReason.UserConfirmation.class, name = "UserConfirmation"),
+        @JsonSubTypes.Type(value = SuspendReason.RemoteDelegation.class, name = "RemoteDelegation"),
+        @JsonSubTypes.Type(value = SuspendReason.ScheduledWakeup.class, name = "ScheduledWakeup"),
+        @JsonSubTypes.Type(value = SuspendReason.ExternalDataWait.class, name = "ExternalDataWait"),
+        @JsonSubTypes.Type(value = SuspendReason.BrowserTakeover.class, name = "BrowserTakeover")
+})
 public sealed interface SuspendReason permits
         SuspendReason.WorkflowWait,
         SuspendReason.UserConfirmation,

@@ -1,6 +1,8 @@
 package com.lifepilot.agent.suspend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
@@ -16,9 +18,22 @@ import java.time.Instant;
  * ExternalDataWait -> DataReady，
  * BrowserTakeover -> BrowserTakeoverCompleted。</p>
  *
+ * <p>持久化路径：{@code ReactStep.Resume} 携带 ResumePayload 进入 stateJson，
+ * 从 SuspendStore 加载时若没有类型标签则只能拿到 sealed interface 抽象，
+ * 因此必须显式声明 {@link JsonTypeInfo} 让反序列化能恢复到具体子类型。</p>
+ *
  * @author zsg
  * @since 2026-03-17
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ResumePayload.WorkflowResult.class, name = "WorkflowResult"),
+        @JsonSubTypes.Type(value = ResumePayload.UserDecision.class, name = "UserDecision"),
+        @JsonSubTypes.Type(value = ResumePayload.RemoteResult.class, name = "RemoteResult"),
+        @JsonSubTypes.Type(value = ResumePayload.WakeupSignal.class, name = "WakeupSignal"),
+        @JsonSubTypes.Type(value = ResumePayload.DataReady.class, name = "DataReady"),
+        @JsonSubTypes.Type(value = ResumePayload.BrowserTakeoverCompleted.class, name = "BrowserTakeoverCompleted")
+})
 public sealed interface ResumePayload permits
         ResumePayload.WorkflowResult,
         ResumePayload.UserDecision,
