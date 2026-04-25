@@ -4,7 +4,6 @@ description: 当用户要在 Windows 桌面上做 UI 自动化——窗口管理
 version: 2.0.0
 metadata:
   zhiwei:
-    category: external-integration
     priority: normal
     tags:
       - desktop

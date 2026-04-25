@@ -4,7 +4,6 @@ description: 当用户要控制浏览器完成需要 JavaScript 渲染、登录�
 version: 3.1.0
 metadata:
   zhiwei:
-    category: external-integration
     priority: normal
     tags:
       - browser

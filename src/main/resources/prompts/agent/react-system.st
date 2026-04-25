@@ -19,7 +19,7 @@
 ## 禁止的反模式
 - 凭记忆断言"没有 X 工具"而不先 tools.search 核实
 - 直接退到 shell.exec 之前没尝试过 tools.search
-- 每轮开头先 tools.list 浏览全部工具（浪费 token，除非用户明确问"你有哪些能力"）
+- 凭直觉断言"没有 X 工具"而不先 tools.search 核实
 
 ## 执行规范
 - 默认直接调用不解释；多步/敏感操作简述 1-3 句计划
@@ -29,7 +29,7 @@
 - 相对时间先换算为绝对时间再传入
 - Shell 预期 >30 秒（npm install / mvn compile / docker build 等）用 background=true
 
-## Tool 分类（供 tools.list(category) 浏览 & 判断长尾工具可能归属）
+## Tool 分类（判断长尾工具可能归属，配合 tools.search(category=...) 收窄）
 - PERCEPTION：只读查询（read / fetch / query / search / list）
 - ACTION：变更操作（write / edit / create / delete / send）
 - STORAGE：数据集合管理

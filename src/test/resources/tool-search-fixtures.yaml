@@ -28,11 +28,11 @@ fixtures:
   - query: "修改文件内容"
     expected_top_3: ["file.edit", "document.edit"]
   - query: "撤销编辑"
-    expected_top_3: ["file.undo"]
+    expected_top_3: ["file.history"]
   - query: "重做编辑"
-    expected_top_3: ["file.redo"]
+    expected_top_3: ["file.history"]
   - query: "对比文件差异"
-    expected_top_3: ["file.diff"]
+    expected_top_3: ["file.history"]
   - query: "后台进程"
     expected_top_3: ["shell.process"]
   - query: "tmux 会话"
@@ -50,11 +50,11 @@ fixtures:
   - query: "运行沙箱代码"
     expected_top_3: ["code.execute"]
   - query: "重置内核"
-    expected_top_3: ["code.kernel.reset"]
+    expected_top_3: ["code.kernel"]
   - query: "查看内核变量"
-    expected_top_3: ["code.kernel.inspect"]
+    expected_top_3: ["code.kernel"]
   - query: "列出代码内核"
-    expected_top_3: ["code.kernel.list"]
+    expected_top_3: ["code.kernel"]
   - query: "定时任务"
     expected_top_3: ["cron"]
   - query: "周期任务调度"

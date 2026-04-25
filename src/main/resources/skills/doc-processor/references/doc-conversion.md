@@ -4,11 +4,12 @@
 
 ```
 需要什么操作？
-├── 格式转换（Markdown/HTML/DOCX/PDF）→ pandoc
-├── PDF 文本提取 → pdftotext
-├── HTML 转 PDF → wkhtmltopdf
-├── Excel 读写 → Python openpyxl
-├── Word 程序化生成 → Python python-docx
+├── 生成 Word 文档 → code.execute + python-docx
+├── 生成 Excel 表格 → code.execute + openpyxl
+├── 生成 PowerPoint → code.execute + python-pptx
+├── 格式转换（Markdown/HTML/DOCX/PDF）→ shell.exec + pandoc
+├── PDF 文本提取 → shell.exec + pdftotext，或 code.execute + pypdf
+├── HTML 转 PDF → shell.exec + wkhtmltopdf
 └── 批量处理 → shell 脚本循环
 ```
 
@@ -23,7 +24,7 @@ shell.exec(command="pandoc --version")
 - pandoc：`choco install pandoc` / `brew install pandoc`
 - pdftotext：安装 poppler-utils
 - wkhtmltopdf：`choco install wkhtmltopdf`
-- Python 库：`pip install openpyxl python-docx`
+- Python 库：`pip install python-docx openpyxl python-pptx pypdf`
 
 ## 格式转换命令
 
@@ -62,7 +63,43 @@ from docx import Document
 doc = Document()
 doc.add_heading('标题', 0)
 doc.add_paragraph('正文内容')
+doc.add_heading('二级标题', 1)
+for item in ['要点 A', '要点 B', '要点 C']:
+    doc.add_paragraph(item, style='List Bullet')
 doc.save('output.docx')
+")
+```
+
+## PowerPoint 程序化生成
+
+```python
+code.execute(language="python", code="
+from pptx import Presentation
+from pptx.util import Inches
+prs = Presentation()
+# 标题页
+slide = prs.slides.add_slide(prs.slide_layouts[0])
+slide.shapes.title.text = '主标题'
+slide.placeholders[1].text = '副标题'
+# 内容页
+slide = prs.slides.add_slide(prs.slide_layouts[1])
+slide.shapes.title.text = '要点列表'
+tf = slide.placeholders[1].text_frame
+for point in ['要点 A', '要点 B', '要点 C']:
+    p = tf.add_paragraph()
+    p.text = point
+prs.save('output.pptx')
+")
+```
+
+## PDF 文本提取（Python 路径）
+
+```python
+code.execute(language="python", code="
+from pypdf import PdfReader
+reader = PdfReader('input.pdf')
+for page in reader.pages:
+    print(page.extract_text())
 ")
 ```
 

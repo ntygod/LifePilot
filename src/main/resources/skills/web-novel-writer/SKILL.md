@@ -4,7 +4,6 @@ description: 当用户要进行网文长篇连载创作——开书立项、设�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: content-creation
     priority: normal
     tags:
       - web-novel

@@ -4,7 +4,6 @@ description: 当用户要分析应用日志、排查错误、追踪异常、统�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: infrastructure
     priority: normal
     tags:
       - log

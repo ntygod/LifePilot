@@ -1,10 +1,9 @@
 ---
 name: doc-processor
-description: 当用户要做文档格式转换（Markdown ↔ HTML ↔ DOCX ↔ PDF）、PDF 文本提取、Excel 读写、Word 程序化生成、多文档合并或批量转换时使用。关键词：转 PDF、提取 PDF 文本、Word 转 Markdown、合并文档、批量转换、处理 Excel、生成 Word、pandoc。纯文本/Markdown 编辑直接用 file.write，内容创作用 content-creator，数据分析用 data-analyst。
+description: 当用户要生成 Word/Excel/PowerPoint、做文档格式转换（Markdown ↔ HTML ↔ DOCX ↔ PDF）、PDF 文本提取、读写 Excel、合并文档或批量转换时使用。关键词：生成 Word、生成 docx、生成 Excel、生成 xlsx、生成 PPT、生成 pptx、做个报告、做周报、转 PDF、提取 PDF 文本、Word 转 Markdown、合并文档、批量转换、pandoc、python-docx、openpyxl。纯文本/Markdown 编辑直接用 file.write，内容创作用 content-creator，数据分析用 data-analyst。
 version: 2.0.0
 metadata:
   zhiwei:
-    category: content-creation
     priority: normal
     tags:
       - document
@@ -22,14 +21,14 @@ metadata:
 
 # 文档处理指南
 
-通过 CLI 工具和 Python 库完成文档格式转换、内容提取和批量处理。
+通过 `code.execute` + Python 库（python-docx / openpyxl / python-pptx / pypdf）以及 `shell.exec` + CLI 工具（pandoc / pdftotext）完成文档生成、转换和提取。
 
 ## 适用场景
 
+- **生成文档**：Word（docx）/ Excel（xlsx）/ PowerPoint（pptx）从 markdown 或结构化数据生成
 - 格式转换（Markdown ↔ HTML ↔ DOCX ↔ PDF）
 - PDF 文本提取和解析
 - Excel 读写和数据导出
-- Word 文档程序化生成
 - 多文档合并
 - 批量格式转换
 
@@ -42,11 +41,16 @@ metadata:
 
 ## 工作流
 
-1. **选工具**：格式转换 `pandoc`；PDF 提取 `pdftotext`；Excel `openpyxl`；Word `python-docx`
-2. **检查可用性**：`pandoc --version` 失败则提示用户安装，不跳过
-3. **输入校验**：转换前确认输入文件存在且格式正确
-4. **执行转换**：单命令或 shell 循环批量
-5. **验证结果**：必须读取输出文件确认内容正确，不盲目报告"转换完成"
+1. **选路径**：
+   - 生成 Word：`code.execute` + `python-docx`（标题/段落/列表/表格）
+   - 生成 Excel：`code.execute` + `openpyxl`（表头/数据行/多 sheet）
+   - 生成 PPT：`code.execute` + `python-pptx`（标题页/正文/要点/备注）
+   - 格式转换：`shell.exec` + `pandoc`
+   - PDF 提取：`shell.exec` + `pdftotext`，或 `code.execute` + `pypdf`
+2. **检查可用性**：`shell.exec(command="pandoc --version")` 或 `code.execute(code="import docx")` 失败则提示用户安装（`pip install python-docx openpyxl python-pptx pypdf` / `choco install pandoc`）
+3. **输入校验**：操作前确认输入文件存在且格式正确
+4. **执行**：单命令或脚本循环批量
+5. **验证结果**：必须读取输出文件确认内容正确，不盲目报告"已生成"
 6. **加密 PDF**：提示用户提供密码或用 `qpdf --decrypt` 预处理
 7. **批量前先试单个**，成功后再批量
 

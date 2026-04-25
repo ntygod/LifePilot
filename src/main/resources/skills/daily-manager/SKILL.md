@@ -4,7 +4,6 @@ description: 当用户要做多步任务规划、优先级排序、跨 Skill 协
 version: 2.0.0
 metadata:
   zhiwei:
-    category: automation
     priority: normal
     tags:
       - planning

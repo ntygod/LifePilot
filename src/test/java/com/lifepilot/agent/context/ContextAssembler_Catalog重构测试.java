@@ -268,7 +268,7 @@ class ContextAssembler_Catalog重构测试 {
     }
 
     private static SkillDefinition buildSkill(String name, String description, SkillPriority priority) {
-        var meta = new SkillZhiweiMeta(List.of(), List.of(), null, priority, SkillRequires.empty());
+        var meta = new SkillZhiweiMeta(List.of(), List.of(), priority, SkillRequires.empty());
         return SkillDefinition.builder()
                 .id(name)
                 .name(name)
@@ -284,7 +284,7 @@ class ContextAssembler_Catalog重构测试 {
 
     private static SkillDefinition buildSkillWithRequires(String name, String description,
                                                             SkillRequires requires) {
-        var meta = new SkillZhiweiMeta(List.of(), List.of(), null, SkillPriority.NORMAL, requires);
+        var meta = new SkillZhiweiMeta(List.of(), List.of(), SkillPriority.NORMAL, requires);
         return SkillDefinition.builder()
                 .id(name)
                 .name(name)

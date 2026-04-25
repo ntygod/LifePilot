@@ -4,7 +4,6 @@ description: 当用户要手动创作或改写一个新的知微 Skill、需要 
 version: 1.0.0
 metadata:
   zhiwei:
-    category: infrastructure
     priority: high
     tags:
       - skill-spec

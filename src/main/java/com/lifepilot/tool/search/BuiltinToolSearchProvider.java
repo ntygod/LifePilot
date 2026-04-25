@@ -17,9 +17,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 注册 tools.search / tools.describe / tools.list 三个 Meta BuiltinTool。
+ * 注册 tools.search / tools.describe 两个 Meta BuiltinTool。
  *
- * <p>这三个工具必须常驻 prompt（在 Tier 1 pinned 列表）。
+ * <p>这两个工具常驻 prompt（在 Tier 1 pinned 列表）。LLM 通过 search 发现工具、
+ * describe 拿完整 schema；不需要 list 浏览全部（react-system.st 已禁该反模式）。
  * Executor 从 ToolInput 的 context 拿当前 ReactAgentState，传给服务层。</p>
  *
  * @author zsg
@@ -31,15 +32,12 @@ public class BuiltinToolSearchProvider {
 
     private final ToolSearchService searchService;
     private final ToolDescribeService describeService;
-    private final ToolListService listService;
 
     public BuiltinToolSearchProvider(
             ToolSearchService searchService,
-            ToolDescribeService describeService,
-            ToolListService listService) {
+            ToolDescribeService describeService) {
         this.searchService = searchService;
         this.describeService = describeService;
-        this.listService = listService;
     }
 
     /** 构建 tools.search 内置工具定义。 */
@@ -94,29 +92,6 @@ public class BuiltinToolSearchProvider {
                 .build();
     }
 
-    /** 构建 tools.list 内置工具定义。 */
-    public BuiltinTool listTool() {
-        return BuiltinTool.builder()
-                .id("tools.list")
-                .name("列举工具")
-                .description("按 category 列出工具 ID（仅 ID，完整 schema 请调 tools.describe）。")
-                .tags(List.of("列举", "工具", "浏览", "list", "tools"))
-                .category(ToolCategory.INTROSPECTION)
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "category", Map.of(
-                                        "type", "string",
-                                        "description", "可选 category 过滤；不传则列全部")
-                        )
-                )))
-                .executor(this::executeList)
-                .build();
-    }
-
     private ToolResult executeSearch(ToolInput input) {
         String query = input.getOptionalParam("query", String.class).orElse("");
         String category = input.getOptionalParam("category", String.class).orElse(null);
@@ -148,18 +123,9 @@ public class BuiltinToolSearchProvider {
         ));
     }
 
-    private ToolResult executeList(ToolInput input) {
-        String category = input.getOptionalParam("category", String.class).orElse(null);
-        ToolListResult result = listService.list(category);
-        return ToolResult.success(Map.of(
-                "categories", result.categories(),
-                "total", result.total()
-        ));
-    }
-
     /**
      * 从 ToolInput 的 context 拿 ReactAgentState；若未注入，返回 null。
-     * ToolBridgeAgentToolProvider 在 Task A.11 改写里把 state 放进 context。
+     * ToolBridgeAgentToolProvider 把 state 放进 context。
      */
     private ReactAgentState extractState(ToolInput input) {
         if (input.context() == null) {

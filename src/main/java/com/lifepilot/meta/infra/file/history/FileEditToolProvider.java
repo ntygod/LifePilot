@@ -3,6 +3,7 @@ package com.lifepilot.meta.infra.file.history;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.dispatch.ActionMetadata;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -20,7 +21,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 文件编辑历史工具提供者 — 构建 file.undo / file.redo / file.diff 三个工具。
+ * 文件编辑历史工具提供者 — 单工具多 action（undo/redo/diff）。
+ *
+ * <p>统一为 {@code file.history} 工具，{@code action} 参数路由：
+ * <ul>
+ *   <li>{@code undo} — 撤销文件最近一次编辑，回滚到上一个快照</li>
+ *   <li>{@code redo} — 重做上一次被撤销的编辑</li>
+ *   <li>{@code diff} — 输出 unified diff（文件两个版本对比）</li>
+ * </ul>
  *
  * @author zsg
  * @since 2026-03-31
@@ -36,105 +44,77 @@ public class FileEditToolProvider {
     }
 
     /**
-     * 构建文件编辑历史工具列表。
-     *
-     * @return 包含 file.undo、file.redo、file.diff 的工具列表
+     * 构建文件编辑历史工具列表（仅 1 个：{@code file.history}）。
      */
     public List<BuiltinTool> buildEditHistoryTools() {
-        return List.of(
-                buildUndoTool(),
-                buildRedoTool(),
-                buildDiffTool()
-        );
+        return List.of(buildHistoryTool());
     }
 
-    /** 构建 file.undo 工具。 */
-    private BuiltinTool buildUndoTool() {
+    private BuiltinTool buildHistoryTool() {
+        var properties = new LinkedHashMap<String, Object>();
+        properties.put("action", Map.of(
+                "type", "string",
+                "enum", List.of("undo", "redo", "diff"),
+                "description", "操作类型：undo=撤销最近一次编辑回滚快照；redo=重做被撤销的编辑；diff=输出 unified diff（path 可选，留空对比所有变更）。"));
+        properties.put("path", Map.of(
+                "type", "string",
+                "description", "目标文件路径；undo / redo 必填，diff 可选（不传时对比所有变更）。"));
+
+        var writeSemantics = ToolExecutionSemantics.of(
+                PermissionActionType.WRITE_FILE,
+                ToolSchedulingMode.RESOURCE_SERIALIZED,
+                ToolScopeResolvers.pathTrees("path"));
+        var readSemantics = ToolExecutionSemantics.of(
+                PermissionActionType.READ_FILE,
+                ToolSchedulingMode.PARALLEL_SAFE,
+                ToolScopeResolvers.pathTrees("path"));
+
+        var actionMetadata = new LinkedHashMap<String, ActionMetadata>();
+        actionMetadata.put("undo", new ActionMetadata(RiskLevel.MEDIUM, writeSemantics));
+        actionMetadata.put("redo", new ActionMetadata(RiskLevel.MEDIUM, writeSemantics));
+        actionMetadata.put("diff", new ActionMetadata(RiskLevel.LOW, readSemantics));
+
         return BuiltinTool.builder()
-                .id("file.undo")
+                .id("file.history")
                 .category(ToolCategory.ACTION)
-                .name("撤销文件编辑")
-                .description("撤销编辑：撤销文件最近一次编辑，回滚到上一个快照。")
+                .name("文件编辑历史")
+                .description("文件编辑历史：undo 撤销最近一次编辑回滚快照；redo 重做被撤销的编辑；diff 输出 unified diff 对比文件版本。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "要撤销修改的文件路径")
-                        )
+                        "required", List.of("action"),
+                        "properties", properties
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("撤销", "回滚", "文件", "编辑", "undo", "revert", "file"))
-                .executor(this::executeUndo)
+                .executionSemantics(writeSemantics)
+                .tags(List.of("撤销", "重做", "回滚", "差异", "对比", "文件", "编辑", "历史",
+                        "undo", "redo", "diff", "history", "file"))
+                .actionMetadata(actionMetadata)
+                .executor(this::dispatch)
                 .build();
     }
 
-    /** 构建 file.redo 工具。 */
-    private BuiltinTool buildRedoTool() {
-        return BuiltinTool.builder()
-                .id("file.redo")
-                .category(ToolCategory.ACTION)
-                .name("重做文件编辑")
-                .description("重做编辑：重做上一次被撤销的文件编辑。")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "要重做修改的文件路径")
-                        )
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("重做", "文件", "编辑", "redo", "reapply", "file"))
-                .executor(this::executeRedo)
-                .build();
+    private ToolResult dispatch(ToolInput input) {
+        String action;
+        try {
+            action = input.getParam("action", String.class);
+        } catch (IllegalArgumentException e) {
+            return ToolResult.error("缺少必需参数 action：" + e.getMessage());
+        }
+        return switch (action) {
+            case "undo" -> executeUndo(input);
+            case "redo" -> executeRedo(input);
+            case "diff" -> executeDiff(input);
+            default -> ToolResult.error("不支持的 action: " + action + "（允许：undo / redo / diff）");
+        };
     }
 
-    /** 构建 file.diff 工具。 */
-    private BuiltinTool buildDiffTool() {
-        return BuiltinTool.builder()
-                .id("file.diff")
-                .category(ToolCategory.PERCEPTION)
-                .name("文件差异对比")
-                .description("对比文件差异：输出 unified diff（文件两个版本对比）。")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "要查看差异的文件路径（可选，不指定时显示所有文件差异）")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.PARALLEL_SAFE,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("差异", "对比", "文件", "diff", "compare", "file"))
-                .executor(this::executeDiff)
-                .build();
-    }
-
-    /** 执行 file.undo。 */
     private ToolResult executeUndo(ToolInput input) {
         String pathStr;
         try {
             pathStr = input.getParam("path", String.class);
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("缺少必需参数 path: " + e.getMessage());
+            return ToolResult.error("undo 缺少必需参数 path: " + e.getMessage());
         }
 
         Path filePath = Path.of(pathStr);
@@ -143,14 +123,12 @@ public class FileEditToolProvider {
             if (snapshotOpt.isEmpty()) {
                 return ToolResult.error("没有可撤销的编辑记录: " + pathStr);
             }
-
             var snapshot = snapshotOpt.get();
             var data = new LinkedHashMap<String, Object>();
             data.put("path", snapshot.path().toString());
             data.put("restoredBytes", snapshot.content().length);
             data.put("undoDepth", editHistory.undoDepth(filePath));
             data.put("redoDepth", editHistory.redoDepth(filePath));
-
             return ToolResult.success(Map.copyOf(data));
         } catch (IOException e) {
             log.error("文件撤销失败: path={}, error={}", pathStr, e.getMessage(), e);
@@ -158,13 +136,12 @@ public class FileEditToolProvider {
         }
     }
 
-    /** 执行 file.redo。 */
     private ToolResult executeRedo(ToolInput input) {
         String pathStr;
         try {
             pathStr = input.getParam("path", String.class);
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("缺少必需参数 path: " + e.getMessage());
+            return ToolResult.error("redo 缺少必需参数 path: " + e.getMessage());
         }
 
         Path filePath = Path.of(pathStr);
@@ -173,14 +150,12 @@ public class FileEditToolProvider {
             if (snapshotOpt.isEmpty()) {
                 return ToolResult.error("没有可重做的编辑记录: " + pathStr);
             }
-
             var snapshot = snapshotOpt.get();
             var data = new LinkedHashMap<String, Object>();
             data.put("path", snapshot.path().toString());
             data.put("restoredBytes", snapshot.content().length);
             data.put("undoDepth", editHistory.undoDepth(filePath));
             data.put("redoDepth", editHistory.redoDepth(filePath));
-
             return ToolResult.success(Map.copyOf(data));
         } catch (IOException e) {
             log.error("文件重做失败: path={}, error={}", pathStr, e.getMessage(), e);
@@ -188,10 +163,8 @@ public class FileEditToolProvider {
         }
     }
 
-    /** 执行 file.diff。 */
     private ToolResult executeDiff(ToolInput input) {
         var pathOpt = input.getOptionalParam("path", String.class);
-
         try {
             String diffOutput;
             if (pathOpt.isPresent()) {
@@ -199,14 +172,12 @@ public class FileEditToolProvider {
             } else {
                 diffOutput = editHistory.diffAll();
             }
-
             if (diffOutput.isEmpty()) {
                 return ToolResult.success(Map.of(
                         "diff", "",
                         "message", "没有检测到文件变更"
                 ));
             }
-
             return ToolResult.success(Map.of("diff", diffOutput));
         } catch (IOException e) {
             log.error("计算文件差异失败: error={}", e.getMessage(), e);

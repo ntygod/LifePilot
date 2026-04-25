@@ -212,20 +212,13 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.tool.search.ToolListService toolListService(DynamicToolRegistry registry) {
-        return new com.lifepilot.tool.search.ToolListService(registry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public com.lifepilot.tool.search.BuiltinToolSearchProvider builtinToolSearchProvider(
             com.lifepilot.tool.search.ToolSearchService search,
-            com.lifepilot.tool.search.ToolDescribeService describe,
-            com.lifepilot.tool.search.ToolListService list) {
-        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe, list);
+            com.lifepilot.tool.search.ToolDescribeService describe) {
+        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe);
     }
 
-    // 三个 Meta BuiltinTool 暴露成 Bean，会被 BuiltinToolRegistrar 自动扫描注册
+    // 两个 Meta BuiltinTool 暴露成 Bean，会被 BuiltinToolRegistrar 自动扫描注册
     @Bean
     public com.lifepilot.tool.BuiltinTool toolsSearchBuiltin(
             com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
@@ -236,12 +229,6 @@ public class ToolAutoConfiguration {
     public com.lifepilot.tool.BuiltinTool toolsDescribeBuiltin(
             com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
         return provider.describeTool();
-    }
-
-    @Bean
-    public com.lifepilot.tool.BuiltinTool toolsListBuiltin(
-            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
-        return provider.listTool();
     }
 
     /**

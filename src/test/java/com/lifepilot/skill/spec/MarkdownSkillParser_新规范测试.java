@@ -46,7 +46,6 @@ class MarkdownSkillParser_新规范测试 {
                   zhiwei:
                     suggested_tools: [a, b]
                     tags: [foo]
-                    category: automation
                     priority: high
                     requires:
                       bins: [git]
@@ -62,7 +61,6 @@ class MarkdownSkillParser_新规范测试 {
 
         assertThat(meta.suggestedTools()).containsExactly("a", "b");
         assertThat(meta.tags()).containsExactly("foo");
-        assertThat(meta.category()).isEqualTo("automation");
         assertThat(meta.priority()).isEqualTo(SkillPriority.HIGH);
         assertThat(meta.requires().bins()).containsExactly("git");
         assertThat(meta.requires().env()).containsExactly("GITHUB_TOKEN");
@@ -108,26 +106,6 @@ class MarkdownSkillParser_新规范测试 {
 
         assertThatThrownBy(() -> parser.parse(md))
                 .hasMessageContaining("缺少必需字段");
-    }
-
-    @Test
-    void category超过64字符应拒绝() {
-        String longCategory = "a".repeat(65);
-        var md = """
-                ---
-                name: x
-                description: 当用时
-                version: 1.0.0
-                metadata:
-                  zhiwei:
-                    category: %s
-                ---
-                body
-                """.formatted(longCategory);
-
-        assertThatThrownBy(() -> parser.parse(md))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("category 长度超过");
     }
 
     @Test

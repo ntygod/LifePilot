@@ -4,7 +4,6 @@ description: 当用户要学习技术概念、让你解释原理、生成练习�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: content-creation
     priority: normal
     tags:
       - teaching

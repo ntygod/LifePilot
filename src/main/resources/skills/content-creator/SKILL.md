@@ -4,7 +4,6 @@ description: 当用户要撰写文章、报告、邮件、博客、提案或对�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: content-creation
     priority: normal
     tags:
       - writing

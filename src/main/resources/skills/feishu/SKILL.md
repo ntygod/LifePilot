@@ -4,7 +4,6 @@ description: 当用户要在飞书上发消息、创建任务、操作文档、�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: external-integration
     priority: normal
     tags:
       - feishu

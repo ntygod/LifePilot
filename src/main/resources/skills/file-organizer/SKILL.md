@@ -4,7 +4,6 @@ description: 当用户要整理文件、批量重命名、按类型/日期/项�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: automation
     priority: normal
     tags:
       - file

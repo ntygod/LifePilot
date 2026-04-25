@@ -123,9 +123,9 @@ class ToolValidator_启动校验测试 {
     @Test
     void 多段namespace_应通过() {
         BuiltinTool tool = baseBuilder()
-                .id("code.kernel.list")
-                .name("列出代码内核")
-                .description("List the active code kernels managed by the sandbox runtime")
+                .id("code.kernel")
+                .name("代码内核管理")
+                .description("管理代码内核会话：list / reset / inspect")
                 .tags(List.of("kernel", "code", "list", "session"))
                 .build();
         assertThatCode(() -> validator.validate(tool)).doesNotThrowAnyException();

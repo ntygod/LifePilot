@@ -109,7 +109,6 @@ public class MarkdownSkillParser {
 
         var suggestedTools = asStringList(zhiwei.get("suggested_tools"));
         var tags = asStringList(zhiwei.get("tags"));
-        var category = zhiwei.get("category") == null ? null : zhiwei.get("category").toString();
         var priority = parsePriority(zhiwei.get("priority"));
 
         Object reqObj = zhiwei.get("requires");
@@ -122,7 +121,7 @@ public class MarkdownSkillParser {
                 asStringList(req.get("os")),
                 asStringList(req.get("tools")));
 
-        return new SkillZhiweiMeta(suggestedTools, tags, category, priority, requires);
+        return new SkillZhiweiMeta(suggestedTools, tags, priority, requires);
     }
 
     /**

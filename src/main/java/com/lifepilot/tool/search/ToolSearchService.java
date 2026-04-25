@@ -41,7 +41,7 @@ public class ToolSearchService {
 
     /** 工具搜索 meta 工具 ID 集合 — 避免自指（tools.search 搜到自己）。 */
     private static final Set<String> META_TOOL_IDS = Set.of(
-            "tools.search", "tools.describe", "tools.list");
+            "tools.search", "tools.describe");
 
     private final JdbcTemplate jdbcTemplate;
     private final DynamicToolRegistry registry;
@@ -175,11 +175,11 @@ public class ToolSearchService {
         if (hits.isEmpty()) {
             confidence = ToolSearchConfidence.NONE;
             emptyResultsCounter.increment();
-            hint = "No tools matched. Try broader keywords or call tools.list(category) to browse by category.";
+            hint = "无匹配工具。请尝试更宽泛的关键词或换不同的描述。";
         } else if (hits.get(0).score() < config.getBm25ConfidenceThreshold()) {
             confidence = ToolSearchConfidence.LOW;
             lowConfidenceCounter.increment();
-            hint = "Low confidence match. Consider refining keywords or checking tools.list(category).";
+            hint = "匹配置信度较低。建议精化关键词重新搜索。";
         } else {
             confidence = ToolSearchConfidence.HIGH;
         }

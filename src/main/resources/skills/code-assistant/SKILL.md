@@ -4,7 +4,6 @@ description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini�
 version: 2.8.0
 metadata:
   zhiwei:
-    category: automation
     priority: normal
     tags:
       - code

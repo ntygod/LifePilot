@@ -4,7 +4,6 @@ description: 当用户要执行系统资源监控、服务状态检查、端口�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: infrastructure
     priority: normal
     tags:
       - health

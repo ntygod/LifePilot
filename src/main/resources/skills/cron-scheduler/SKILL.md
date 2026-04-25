@@ -4,7 +4,6 @@ description: 当用户要创建精确时间调度的定时任务（每天/每周
 version: 2.0.0
 metadata:
   zhiwei:
-    category: automation
     priority: normal
     tags:
       - cron

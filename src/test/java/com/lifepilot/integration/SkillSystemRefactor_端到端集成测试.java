@@ -273,10 +273,6 @@ class SkillSystemRefactor_端到端集成测试 {
         var fm = parsed.frontmatter();
         var zhiwei = fm.zhiweiMeta();
 
-        Map<String, String> flatMetadata = zhiwei.category() != null
-                ? Map.of("category", zhiwei.category())
-                : Map.of();
-
         SkillDefinition definition = SkillDefinition.builder()
                 .id(fm.name())
                 .name(fm.name())
@@ -285,7 +281,7 @@ class SkillSystemRefactor_端到端集成测试 {
                 .source(new SkillSource.UserDefined(skillFolder.toString(), Instant.now()))
                 .instructions(parsed.body())
                 .suggestedTools(zhiwei.suggestedTools())
-                .metadata(flatMetadata)
+                .metadata(Map.of())
                 .zhiweiMeta(zhiwei)
                 .build();
 

@@ -90,7 +90,7 @@ class ToolSearchQuality_召回率回归测试 {
         // Tier 1 pinned 列表（镜像 application.yml 默认值）
         tier1Service = mock(Tier1Service.class);
         when(tier1Service.getCurrentTier1Ids()).thenReturn(Set.of(
-                "tools.search", "tools.describe", "tools.list",
+                "tools.search", "tools.describe",
                 "file.read", "file.write", "file.list",
                 "web.search", "web.fetch", "shell.exec",
                 "memory", "knowledge.search",
@@ -168,8 +168,6 @@ class ToolSearchQuality_召回率回归测试 {
                 List.of("搜索", "工具", "发现", "查找", "tools", "search"), ToolCategory.INTROSPECTION);
         reg("tools.describe", "批量返回指定工具 ID 的完整 JSON schema 与元数据。",
                 List.of("详情", "工具", "schema", "describe", "tools"), ToolCategory.INTROSPECTION);
-        reg("tools.list", "按 category 列出工具 ID（仅 ID，完整 schema 请调 tools.describe）。",
-                List.of("列举", "工具", "浏览", "list", "tools"), ToolCategory.INTROSPECTION);
         reg("file.read", "读取本地文件或对话附件。docx/xlsx/pptx/pdf/md/csv 自动解析；仅可访问 skills 与 workspace 目录。",
                 List.of("读取", "文件", "查看", "内容", "文档", "read", "file"), ToolCategory.PERCEPTION);
         reg("file.write", "创建或覆盖/追加写文件。mode=write 原子覆盖（默认），mode=append 追加；父目录自动创建。",
@@ -194,12 +192,8 @@ class ToolSearchQuality_召回率回归测试 {
                 List.of("编辑", "修改", "文件", "替换", "更新", "edit", "patch", "file"), ToolCategory.ACTION);
         reg("file.manage", "文件目录管理：移动文件、复制目录、删除文件、新建目录、重命名，支持批量操作。",
                 List.of("管理", "移动", "复制", "删除", "重命名", "目录", "文件", "manage", "move", "copy", "delete"), ToolCategory.ACTION);
-        reg("file.undo", "撤销编辑：撤销文件最近一次编辑，回滚到上一个快照。",
-                List.of("撤销", "回滚", "文件", "编辑", "undo", "revert", "file"), ToolCategory.ACTION);
-        reg("file.redo", "重做编辑：重做上一次被撤销的文件编辑。",
-                List.of("重做", "文件", "编辑", "redo", "reapply", "file"), ToolCategory.ACTION);
-        reg("file.diff", "对比文件差异：输出 unified diff（文件两个版本对比）。",
-                List.of("差异", "对比", "文件", "diff", "compare", "file"), ToolCategory.PERCEPTION);
+        reg("file.history", "文件编辑历史：undo 撤销最近一次编辑回滚快照；redo 重做被撤销的编辑；diff 输出 unified diff 对比文件版本。",
+                List.of("撤销", "重做", "回滚", "差异", "对比", "文件", "编辑", "历史", "undo", "redo", "diff", "history", "file"), ToolCategory.ACTION);
 
         // Tier 2 shell.*
         reg("shell.process", "管理后台进程与 tmux 会话：list 列进程、output 读输出、write 写输入、kill 终止；session-* 操作 tmux 会话。",
@@ -218,12 +212,8 @@ class ToolSearchQuality_召回率回归测试 {
         // Tier 2 code.*
         reg("code.execute", "在沙箱中执行代码，支持 Python / JavaScript 等脚本语言。",
                 List.of("代码", "执行", "脚本", "沙箱", "code", "execute", "python", "javascript"), ToolCategory.ACTION);
-        reg("code.kernel.list", "列出代码内核：枚举沙箱中活跃的代码内核会话及元数据。",
-                List.of("内核", "代码", "列表", "会话", "kernel", "list", "code"), ToolCategory.INTROSPECTION);
-        reg("code.kernel.reset", "重置代码内核：清空内核会话变量和已导入模块。",
-                List.of("内核", "代码", "重置", "清空", "kernel", "reset", "code"), ToolCategory.ACTION);
-        reg("code.kernel.inspect", "查看代码内核：查看内核会话的变量、执行状态、调试信息。",
-                List.of("内核", "代码", "变量", "状态", "调试", "kernel", "inspect", "code"), ToolCategory.PERCEPTION);
+        reg("code.kernel", "管理代码内核会话：list 列出活跃内核、reset 重置内核变量与已导入模块、inspect 查看内核变量与执行状态。",
+                List.of("内核", "代码", "管理", "列表", "重置", "变量", "状态", "调试", "kernel", "code"), ToolCategory.ACTION);
 
         // Tier 2 cron / notify
         reg("cron", "定时任务调度：创建周期任务、列出任务、更新、删除 cron 任务。",

@@ -188,7 +188,6 @@ lifepilot:
       pinned:
         - tools.search
         - tools.describe
-        - tools.list
         - file.read
         - file.write
         - file.list

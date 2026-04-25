@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra.code.kernel;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.dispatch.ActionMetadata;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -12,17 +13,18 @@ import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 代码内核工具提供者 — 构建 3 个 code.kernel.* 工具。
+ * 代码内核工具提供者 — 单工具多 action（list/reset/inspect）。
  *
- * <p>工具列表：
+ * <p>统一为 {@code code.kernel} 工具，{@code action} 参数路由：
  * <ul>
- *   <li>{@code code.kernel.list} — 列出所有活跃内核（LOW，幂等）</li>
- *   <li>{@code code.kernel.reset} — 重置内核状态（LOW）</li>
- *   <li>{@code code.kernel.inspect} — 检查内核变量（LOW，幂等）</li>
+ *   <li>{@code list} — 列出所有活跃内核（无需 kernelId，幂等）</li>
+ *   <li>{@code reset} — 清空指定内核的变量与导入</li>
+ *   <li>{@code inspect} — 查看指定内核的变量、状态</li>
  * </ul>
  *
  * @author zsg
@@ -39,102 +41,80 @@ public class CodeKernelToolProvider {
     }
 
     /**
-     * 构建所有代码内核管理工具。
-     *
-     * @return 3 个内核工具列表
+     * 构建代码内核管理工具列表（仅 1 个：{@code code.kernel}）。
      */
     public List<BuiltinTool> buildKernelTools() {
-        return List.of(
-                buildListTool(),
-                buildResetTool(),
-                buildInspectTool()
-        );
+        return List.of(buildKernelTool());
     }
 
-    /** 构建列出内核工具。 */
-    private BuiltinTool buildListTool() {
-        return BuiltinTool.builder()
-                .id("code.kernel.list")
-                .category(ToolCategory.PERCEPTION)
-                .name("列出代码内核")
-                .description("列出代码内核：枚举沙箱中活跃的代码内核会话及元数据。")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "properties", Map.of()
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.PARALLEL_SAFE,
-                        ToolScopeResolvers.none()
-                ))
-                .tags(List.of("内核", "代码", "列表", "会话", "kernel", "list", "code"))
-                .executor(this::executeList)
-                .build();
-    }
+    private BuiltinTool buildKernelTool() {
+        var properties = new LinkedHashMap<String, Object>();
+        properties.put("action", Map.of(
+                "type", "string",
+                "enum", List.of("list", "reset", "inspect"),
+                "description", "操作类型：list=列出活跃内核（无需 kernelId）；reset=清空内核变量与导入；inspect=查看内核变量与状态。"));
+        properties.put("kernelId", Map.of(
+                "type", "string",
+                "description", "持久内核 ID；reset / inspect 必填，list 忽略。"));
 
-    /** 构建重置内核工具。 */
-    private BuiltinTool buildResetTool() {
+        var listSemantics = ToolExecutionSemantics.of(
+                com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                ToolSchedulingMode.PARALLEL_SAFE,
+                ToolScopeResolvers.none());
+        var mutateSemantics = ToolExecutionSemantics.of(
+                com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                ToolSchedulingMode.SEQUENTIAL,
+                ToolScopeResolvers.exactValues("kernelIds", "kernelId"));
+        var inspectSemantics = ToolExecutionSemantics.of(
+                com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                ToolSchedulingMode.PARALLEL_SAFE,
+                ToolScopeResolvers.exactValues("kernelIds", "kernelId"));
+
+        var actionMetadata = new LinkedHashMap<String, ActionMetadata>();
+        actionMetadata.put("list", new ActionMetadata(RiskLevel.LOW, listSemantics));
+        actionMetadata.put("reset", new ActionMetadata(RiskLevel.LOW, mutateSemantics));
+        actionMetadata.put("inspect", new ActionMetadata(RiskLevel.LOW, inspectSemantics));
+
         return BuiltinTool.builder()
-                .id("code.kernel.reset")
+                .id("code.kernel")
                 .category(ToolCategory.ACTION)
-                .name("重置代码内核")
-                .description("重置代码内核：清空内核会话变量和已导入模块。")
+                .name("代码内核管理")
+                .description("管理代码内核会话：list 列出活跃内核、reset 重置内核变量与已导入模块、inspect 查看内核变量与执行状态。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("kernelId"),
-                        "properties", Map.of(
-                                "kernelId", Map.of("type", "string",
-                                        "description", "持久内核的 kernelId")
-                        )
+                        "required", List.of("action"),
+                        "properties", properties
                 )))
                 .riskLevel(RiskLevel.LOW)
-                .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.of(
                         com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("kernelIds", "kernelId")
                 ))
-                .tags(List.of("内核", "代码", "重置", "清空", "kernel", "reset", "code"))
-                .executor(this::executeReset)
+                .tags(List.of("内核", "代码", "管理", "列表", "重置", "变量", "状态", "调试", "kernel", "code"))
+                .actionMetadata(actionMetadata)
+                .executor(this::dispatch)
                 .build();
     }
 
-    /** 构建检查内核工具。 */
-    private BuiltinTool buildInspectTool() {
-        return BuiltinTool.builder()
-                .id("code.kernel.inspect")
-                .category(ToolCategory.PERCEPTION)
-                .name("检查代码内核")
-                .description("查看代码内核：查看内核会话的变量、执行状态、调试信息。")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("kernelId"),
-                        "properties", Map.of(
-                                "kernelId", Map.of("type", "string",
-                                        "description", "持久内核的 kernelId")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
-                        ToolSchedulingMode.PARALLEL_SAFE,
-                        ToolScopeResolvers.exactValues("kernelIds", "kernelId")
-                ))
-                .tags(List.of("内核", "代码", "变量", "状态", "调试", "kernel", "inspect", "code"))
-                .executor(this::executeInspect)
-                .build();
+    private ToolResult dispatch(ToolInput input) {
+        String action;
+        try {
+            action = input.getParam("action", String.class);
+        } catch (IllegalArgumentException e) {
+            return ToolResult.error("缺少必需参数 action：" + e.getMessage());
+        }
+        return switch (action) {
+            case "list" -> executeList(input);
+            case "reset" -> executeReset(input);
+            case "inspect" -> executeInspect(input);
+            default -> ToolResult.error("不支持的 action: " + action + "（允许：list / reset / inspect）");
+        };
     }
-
-    // ─────────────────────────────────────────────
-    //  工具执行方法
-    // ─────────────────────────────────────────────
 
     private ToolResult executeList(ToolInput input) {
         try {
             var kernelList = kernelManager.listKernels();
-            // 将 KernelInfo record 转为 Map 给 ToolResult
             var kernelMaps = kernelList.stream()
                     .map(info -> Map.<String, Object>of(
                             "kernelId", info.kernelId(),

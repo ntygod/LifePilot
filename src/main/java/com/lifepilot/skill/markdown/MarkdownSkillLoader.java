@@ -203,21 +203,13 @@ public class MarkdownSkillLoader {
      * <ul>
      *   <li>{@code id} 取自 frontmatter.name（v2 规范 name 已取代老 id）</li>
      *   <li>{@code instructions} 取自 body 原文（含标题和工作流段落）</li>
-     *   <li>{@code source} 用 {@link SkillSource.UserDefined} 承载（后续 B.x 可按 SkillSourceType 细分）</li>
+     *   <li>{@code source} 用 {@link SkillSource.UserDefined} 承载</li>
      *   <li>{@code suggestedTools} / {@code zhiweiMeta} 直接转自 frontmatter 的 metadata.zhiwei 块</li>
-     *   <li>{@code metadata} 平坦视图保留 category 一项，方便老 caller 直接 map 取值</li>
      * </ul>
      */
     private SkillDefinition toDefinition(ParsedSkill parsed, Path skillFolder) {
         var fm = parsed.frontmatter();
         var zhiwei = fm.zhiweiMeta();
-
-        Map<String, String> flatMetadata;
-        if (zhiwei.category() != null) {
-            flatMetadata = Map.of("category", zhiwei.category());
-        } else {
-            flatMetadata = Map.of();
-        }
 
         return SkillDefinition.builder()
                 .id(fm.name())
@@ -228,7 +220,7 @@ public class MarkdownSkillLoader {
                         safeLastModified(skillFolder.resolve(config.getSkillFilename()))))
                 .instructions(parsed.body())
                 .suggestedTools(zhiwei.suggestedTools())
-                .metadata(flatMetadata)
+                .metadata(Map.of())
                 .zhiweiMeta(zhiwei)
                 .build();
     }

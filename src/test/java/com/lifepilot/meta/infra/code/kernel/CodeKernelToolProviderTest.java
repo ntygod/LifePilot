@@ -3,13 +3,14 @@ package com.lifepilot.meta.infra.code.kernel;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link CodeKernelToolProvider} 单元测试。
  *
- * <p>验证工具构建的正确性：工具数量、ID 和 Schema。</p>
+ * <p>验证 {@code code.kernel} 单工具多 action 的元数据正确性。</p>
  *
  * @author zsg
  * @since 2026-03-31
@@ -29,60 +30,35 @@ class CodeKernelToolProviderTest {
     }
 
     @Test
-    void buildKernelTools_应返回3个工具() {
+    void buildKernelTools_仅返回1个code_kernel工具() {
         var tools = provider.buildKernelTools();
-        assertThat(tools).hasSize(3);
+        assertThat(tools).hasSize(1);
+        assertThat(tools.get(0).id()).isEqualTo("code.kernel");
     }
 
     @Test
-    void 每个工具的id和schema应正确() {
-        var tools = provider.buildKernelTools();
-        var expectedIds = List.of("code.kernel.list", "code.kernel.reset", "code.kernel.inspect");
+    void schema应包含action枚举与kernelId() {
+        var tool = provider.buildKernelTools().get(0);
+        var schemaMap = tool.inputSchema().toMap();
 
-        var actualIds = tools.stream().map(t -> t.id()).toList();
-        assertThat(actualIds).containsExactlyInAnyOrderElementsOf(expectedIds);
+        @SuppressWarnings("unchecked")
+        var required = (List<String>) schemaMap.get("required");
+        assertThat(required).containsExactly("action");
 
-        // 验证 reset 和 inspect 工具都有 kernelId 必需参数
-        for (var tool : tools) {
-            if ("code.kernel.list".equals(tool.id())) {
-                continue; // list 工具无必需参数
-            }
-            var schema = tool.inputSchema();
-            assertThat(schema).isNotNull();
-            var schemaMap = schema.toMap();
-            assertThat(schemaMap).isNotNull();
+        @SuppressWarnings("unchecked")
+        var properties = (Map<String, Object>) schemaMap.get("properties");
+        assertThat(properties).containsKeys("action", "kernelId");
 
-            @SuppressWarnings("unchecked")
-            var required = (java.util.List<String>) schemaMap.get("required");
-            assertThat(required).contains("kernelId");
-        }
+        @SuppressWarnings("unchecked")
+        var actionProp = (Map<String, Object>) properties.get("action");
+        @SuppressWarnings("unchecked")
+        var enumValues = (List<String>) actionProp.get("enum");
+        assertThat(enumValues).containsExactlyInAnyOrder("list", "reset", "inspect");
     }
 
     @Test
-    void reset工具应为非幂等() {
-        var tools = provider.buildKernelTools();
-        var resetTool = tools.stream()
-                .filter(t -> "code.kernel.reset".equals(t.id()))
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(resetTool.idempotent()).isFalse();
-    }
-
-    @Test
-    void inspect工具应为幂等() {
-        var tools = provider.buildKernelTools();
-        var inspectTool = tools.stream()
-                .filter(t -> "code.kernel.inspect".equals(t.id()))
-                .findFirst()
-                .orElseThrow();
-
-        // inspect 默认 idempotent=true（BuiltinTool.Builder 默认值）
-        assertThat(inspectTool.idempotent()).isTrue();
-    }
-
-    @org.junit.jupiter.api.AfterAll
-    static void cleanup() {
-        // 静态清理不需要，各 manager 会在 GC 时清理
+    void actionMetadata应覆盖三个action() {
+        var tool = provider.buildKernelTools().get(0);
+        assertThat(tool.actionMetadata()).containsKeys("list", "reset", "inspect");
     }
 }

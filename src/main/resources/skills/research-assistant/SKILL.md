@@ -4,7 +4,6 @@ description: 当用户要做多源搜索、交叉验证、调研行业动态、�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: content-creation
     priority: normal
     tags:
       - research

@@ -4,7 +4,6 @@ description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 P
 version: 2.0.0
 metadata:
   zhiwei:
-    category: external-integration
     priority: normal
     tags:
       - github

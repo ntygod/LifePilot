@@ -4,7 +4,6 @@ description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、�
 version: 2.0.0
 metadata:
   zhiwei:
-    category: infrastructure
     priority: normal
     tags:
       - data-analysis
