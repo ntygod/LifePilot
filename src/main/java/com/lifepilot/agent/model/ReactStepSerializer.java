@@ -1,6 +1,7 @@
 package com.lifepilot.agent.model;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -102,6 +103,12 @@ public final class ReactStepSerializer {
                 if (filePath != null) map.put("generatedFilePath", filePath);
                 String workDir = extractWorkingDirectory(observation);
                 if (workDir != null) map.put("workingDirectory", workDir);
+                // 浏览器工具 observation 透传结构化 output（url/title/screenshot/elements/viewport 等），
+                // 让前端 BrowserToolCallCard 能直接渲染截图和可交互元素清单。
+                if (isBrowserTool(observation.toolId())) {
+                    Map<String, Object> parsedOutput = tryParseOutputJson(observation.output());
+                    if (parsedOutput != null) map.put("output", parsedOutput);
+                }
                 yield Map.copyOf(map);
             }
             case ReactStep.Answer(var content) -> Map.of(
@@ -540,6 +547,29 @@ public final class ReactStepSerializer {
         if (text == null) return "";
         if (text.length() <= maxLength) return text;
         return text.substring(0, maxLength) + "…";
+    }
+
+    /** 是否为 browser 工具家族（单工具 "browser" 或以 "browser." 开头的细分 ID）。 */
+    private static boolean isBrowserTool(@org.springframework.lang.Nullable String toolId) {
+        return "browser".equals(toolId) || (toolId != null && toolId.startsWith("browser."));
+    }
+
+    /**
+     * 安全解析工具 output JSON 为 Map，失败返回 null。
+     *
+     * <p>仅用于结构化透传给前端的场景（如 browser 工具）。解析失败（非 JSON、字段类型不符）
+     * 都静默返回 null，调用方据此决定是否附加 output 字段。</p>
+     */
+    @org.springframework.lang.Nullable
+    private static Map<String, Object> tryParseOutputJson(@org.springframework.lang.Nullable String output) {
+        if (output == null || output.isBlank()) return null;
+        String trimmed = output.trim();
+        if (!trimmed.startsWith("{")) return null;
+        try {
+            return MAPPER.readValue(trimmed, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

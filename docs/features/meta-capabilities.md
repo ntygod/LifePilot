@@ -20,12 +20,12 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 环境感知 | `env.user-profile` | 获取用户画像信息 |
 | 环境感知 | `env.system-info` | 获取系统环境信息 |
 | Web 信息 | `web.search` | Web 搜索（统一使用 Tavily） |
-| Web 信息 | `web.fetch` | 抓取网页内容 |
+| Web 信息 | `web.fetch` | 抓取网页内容或调用 REST API（支持 GET/POST/PUT/DELETE/PATCH、自定义 headers/body，默认开启 SSRF 防护拦截内网地址） |
 | 推理辅助 | `reason.think` | 结构化思考（scratchpad） |
 | 推理辅助 | `reason.calculate` | 数学计算 |
 | Shell 执行 | `shell.exec` | 执行 Shell 命令（含命令黑名单安全检查），支持后台执行、PTY、环境变量注入（`env`，有安全黑名单过滤）和 Unix Shell 解释器指定（`shell`） |
 | Shell 执行 | `shell.process` | 后台进程管理和持久终端会话（tmux），支持 list/output/write/kill 以及 session-* 操作 |
-| 浏览器自动化 | `browser` | 统一浏览器操作（通过 `action` 参数选择：navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/close），支持通过 `acquisitionMode`/`cdpUrl`/`userDataDir` 动态指定浏览器获取模式 |
+| 浏览器自动化 | `browser` | 统一浏览器操作（通过 `action` 参数选择：navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/storage/snapshot/requestHumanTakeover/close），支持通过 `acquisitionMode`/`cdpUrl`/`userDataDir` 动态指定浏览器获取模式；`snapshot` 返回截图 + 可交互元素编号表，`click/input/hover` 可按 `index` 定位；遇到验证码/登录墙调 `requestHumanTakeover` 挂起等用户接管 |
 | 代码执行 | `code.execute` | 在沙箱中执行代码（支持持久内核） |
 | 代码执行 | `code.kernel.list` | 列出所有活跃的持久代码内核 |
 | 代码执行 | `code.kernel.reset` | 重置内核状态（清空变量） |
@@ -76,13 +76,19 @@ Agent 在执行任务时，自动使用基础工具完成各类操作：搜索 W
 | `lifepilot.meta.infra.web-fetch.timeout-seconds` | `10` | Web 抓取超时 |
 | `lifepilot.meta.infra.shell.timeout-seconds` | `120` | Shell 命令超时 |
 | `lifepilot.meta.infra.shell.max-output-length` | `50000` | Shell 输出最大字符数 |
+| `lifepilot.meta.infra.web-fetch.ssrf.enabled` | `true` | SSRF 防护开关（内网 IP / 云 metadata 拦截） |
+| `lifepilot.meta.infra.web-fetch.ssrf.allowlist` | `[]` | SSRF 白名单（host/IP 字面量） |
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
-| `lifepilot.meta.infra.browser.headless` | `true` | 无头模式 |
+| `lifepilot.meta.infra.browser.headless` | `${BROWSER_HEADLESS:false}` | 无头模式，本地/桌面默认 false，容器部署用环境变量 `BROWSER_HEADLESS=true` 覆写 |
 | `lifepilot.meta.infra.browser.storage-state-dir` | `${zhiwei.data-dir}/cache/browser/storage-state` | storageState 持久化目录 |
 | `lifepilot.meta.infra.browser.persist-storage-state` | `false` | 是否在会话关闭时自动保存 storageState |
 | `lifepilot.meta.infra.browser.acquisition-mode` | `LAUNCH` | 浏览器获取模式（LAUNCH / CDP / PERSISTENT） |
 | `lifepilot.meta.infra.browser.cdp-url` | `""` | CDP 模式的远程调试端口 URL |
 | `lifepilot.meta.infra.browser.user-data-dir` | `${zhiwei.data-dir}/cache/browser/profile` | PERSISTENT 模式的用户数据目录 |
+| `lifepilot.meta.infra.browser.snapshot.max-elements` | `200` | `browser.snapshot` 最多返回元素数 |
+| `lifepilot.meta.infra.browser.snapshot.viewport-only` | `true` | snapshot 是否只截 viewport |
+| `lifepilot.meta.infra.browser.snapshot.inject-labels` | `false` | 是否叠加视觉编号标签 |
+| `lifepilot.meta.infra.browser.takeover.timeout-seconds` | `300` | `browser.requestHumanTakeover` 挂起等待超时（秒） |
 | `lifepilot.meta.infra.code-execute.enabled` | `true` | 代码执行开关 |
 | `lifepilot.meta.infra.file.max-read-size` | `1048576` | 文件最大读取字节数 |
 | `lifepilot.meta.infra.interaction.response-timeout-seconds` | `120` | 用户交互超时 |

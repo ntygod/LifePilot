@@ -74,7 +74,7 @@ class MetaPropertiesTest {
             var props = context.getBean(MetaProperties.class);
             var browser = props.getInfra().getBrowser();
             assertThat(browser.isEnabled()).isTrue();
-            assertThat(browser.isHeadless()).isTrue();
+            assertThat(browser.isHeadless()).isFalse();  // 本地/桌面默认可见
             assertThat(browser.getIdleTimeoutSeconds()).isEqualTo(300);
         });
     }

@@ -4,11 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.Cookie;
+import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -25,6 +29,8 @@ import java.util.Map;
  * @since 2026-03-08
  */
 public class PlaywrightPageWrapper {
+
+    private static final Logger log = LoggerFactory.getLogger(PlaywrightPageWrapper.class);
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
             .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
@@ -100,6 +106,7 @@ public class PlaywrightPageWrapper {
      */
     public String navigate(String url, int timeoutMs) {
         touch();
+        ensureOpen();
         humanDelay();
         page.navigate(url, new Page.NavigateOptions()
                 .setTimeout(timeoutMs)
@@ -121,13 +128,14 @@ public class PlaywrightPageWrapper {
      */
     public NavigateResult navigateWithResult(String url, int timeoutMs) {
         touch();
+        ensureOpen();
         humanDelay();
         boolean partial = false;
         try {
             page.navigate(url, new Page.NavigateOptions()
                     .setTimeout(timeoutMs)
                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
-        } catch (com.microsoft.playwright.TimeoutError e) {
+        } catch (TimeoutError e) {
             partial = true;
         }
         return new NavigateResult(page.title(), page.url(), partial);
@@ -140,6 +148,7 @@ public class PlaywrightPageWrapper {
      */
     public String textContent() {
         touch();
+        ensureOpen();
         return page.textContent("body");
     }
 
@@ -150,6 +159,7 @@ public class PlaywrightPageWrapper {
      */
     public String title() {
         touch();
+        ensureOpen();
         return page.title();
     }
 
@@ -160,6 +170,7 @@ public class PlaywrightPageWrapper {
      */
     public void click(String selector) {
         touch();
+        ensureOpen();
         humanDelay();
         page.click(selector);
     }
@@ -172,8 +183,86 @@ public class PlaywrightPageWrapper {
      */
     public void fill(String selector, String value) {
         touch();
+        ensureOpen();
         humanDelay();
         page.fill(selector, value);
+    }
+
+    /**
+     * 通过 CSS 选择器读取第一个匹配元素的文本内容。
+     *
+     * <p>使用 Playwright 原生 {@code locator().first().textContent()} 避免
+     * 手写 {@code querySelector} 的 JS 字符串拼接和选择器转义漏洞。</p>
+     *
+     * @param selector CSS 选择器
+     * @return 元素的 textContent，未匹配或读取失败返回空串
+     */
+    public String locatorTextContent(String selector) {
+        touch();
+        ensureOpen();
+        try {
+            String content = page.locator(selector).first().textContent();
+            return content != null ? content : "";
+        } catch (Exception e) {
+            log.debug("locatorTextContent 读取失败: selector={}, error={}", selector, e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 扫描页面可交互元素并注入 {@code data-zhiwei-idx} 属性。
+     *
+     * <p>为后续 {@link #clickByIndex(int)}、{@link #inputByIndex(int, String)}、
+     * {@link #hoverByIndex(int)} 提供稳定选择器基础。</p>
+     *
+     * @param indexer      标号扫描器
+     * @param injectLabels 是否叠加红色视觉编号标签
+     * @param maxElements  最大返回数，超出部分仍计入 total
+     * @return 标号快照
+     */
+    public IndexedSnapshot indexInteractiveElements(
+            InteractiveElementIndexer indexer, boolean injectLabels, int maxElements) {
+        touch();
+        humanDelay();
+        return indexer.index(page, injectLabels, maxElements);
+    }
+
+    /**
+     * 通过 {@link #indexInteractiveElements} 注入的编号点击元素。
+     *
+     * @param index 可交互元素编号（0 起算）
+     */
+    public void clickByIndex(int index) {
+        touch();
+        ensureOpen();
+        humanDelay();
+        log.debug("点击 index 元素: index={}", index);
+        page.click("[data-zhiwei-idx='" + index + "']");
+    }
+
+    /**
+     * 通过 {@link #indexInteractiveElements} 注入的编号填充表单字段。
+     *
+     * @param index 可交互元素编号（0 起算）
+     * @param value 填充值
+     */
+    public void inputByIndex(int index, String value) {
+        touch();
+        ensureOpen();
+        humanDelay();
+        page.fill("[data-zhiwei-idx='" + index + "']", value);
+    }
+
+    /**
+     * 通过 {@link #indexInteractiveElements} 注入的编号悬停到元素。
+     *
+     * @param index 可交互元素编号（0 起算）
+     */
+    public void hoverByIndex(int index) {
+        touch();
+        ensureOpen();
+        humanDelay();
+        page.hover("[data-zhiwei-idx='" + index + "']");
     }
 
     /**
@@ -184,6 +273,7 @@ public class PlaywrightPageWrapper {
      */
     public String screenshot(boolean fullPage) {
         touch();
+        ensureOpen();
         byte[] bytes = page.screenshot(new Page.ScreenshotOptions().setFullPage(fullPage));
         return Base64.getEncoder().encodeToString(bytes);
     }
@@ -194,6 +284,7 @@ public class PlaywrightPageWrapper {
      * @return 当前 URL
      */
     public String url() {
+        ensureOpen();
         return page.url();
     }
 
@@ -312,13 +403,45 @@ public class PlaywrightPageWrapper {
     }
 
     /**
+     * 执行 JavaScript 表达式，带超时保护。
+     *
+     * <p>当 {@code timeoutSeconds > 0} 时，通过 {@link TimeoutExecutor}
+     * 在 virtual thread 上运行，超时抛异常而非无限阻塞。
+     * {@code timeoutSeconds <= 0} 时退化为无超时的 {@link #evaluate(String)}。</p>
+     *
+     * @param expression     JavaScript 表达式
+     * @param timeoutSeconds 超时秒数
+     * @return JSON 序列化后的结果字符串
+     * @throws RuntimeException 超时或执行失败
+     */
+    public String evaluate(String expression, long timeoutSeconds) {
+        if (timeoutSeconds <= 0) {
+            return evaluate(expression);
+        }
+        try {
+            return TimeoutExecutor.callWithTimeout(
+                    () -> evaluate(expression),
+                    timeoutSeconds,
+                    java.util.concurrent.TimeUnit.SECONDS
+            );
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new RuntimeException("JS 执行超过 " + timeoutSeconds + " 秒超时", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
      * 获取无障碍树快照（ARIA snapshot）。
      *
-     * <p>使用 Playwright 1.49+ 的 {@code locator.ariaSnapshot()} API，
-     * 返回 YAML 格式的无障碍树表示。</p>
+     * <p>使用 Playwright 1.49+ 的 {@code locator.ariaSnapshot()} API 拿到 YAML，
+     * 再通过 {@link AccessibilityYamlTrimmer} 按 {@code maxDepth} 裁剪，
+     * 防止复杂页面产出超大上下文污染 LLM。</p>
      *
      * @param rootSelector 子树根节点 CSS 选择器，为 null 时返回整页快照
-     * @param maxDepth     最大深度（保留参数，供未来扩展）
+     * @param maxDepth     最大深度（从 1 起算），{@code <= 0} 表示不裁剪
      * @return YAML 格式的无障碍树快照字符串
      */
     public String accessibilitySnapshot(@Nullable String rootSelector, int maxDepth) {
@@ -328,9 +451,31 @@ public class PlaywrightPageWrapper {
             var locator = rootSelector != null
                     ? page.locator(rootSelector)
                     : page.locator("body");
-            return locator.ariaSnapshot();
+            String full = locator.ariaSnapshot();
+            return AccessibilityYamlTrimmer.trim(full, maxDepth);
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    /**
+     * 等待页面达到 NETWORKIDLE 状态（500ms 内无网络活动）。
+     *
+     * <p>使用 Playwright 原生 {@code page.waitForLoadState} 替代手写的
+     * {@code document.readyState} 轮询。超时视为"网络空闲等待超时"，
+     * 不抛异常 — 已加载的内容仍可用于后续文本/选择器提取。</p>
+     *
+     * @param timeoutMs 超时时间（毫秒）
+     */
+    public void waitForNetworkIdle(int timeoutMs) {
+        touch();
+        ensureOpen();
+        try {
+            page.waitForLoadState(LoadState.NETWORKIDLE,
+                    new Page.WaitForLoadStateOptions().setTimeout(timeoutMs));
+        } catch (TimeoutError e) {
+            // 网络空闲超时不致命，已加载内容仍可用
+            log.debug("waitForNetworkIdle 超时，已加载内容仍可继续使用: timeoutMs={}", timeoutMs);
         }
     }
 

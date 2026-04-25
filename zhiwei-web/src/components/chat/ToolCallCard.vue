@@ -9,10 +9,16 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion'
+import BrowserToolCallCard from './BrowserToolCallCard.vue'
 
 const props = defineProps<{
   tool: ToolCallSummary
 }>()
+
+/** 浏览器工具走特化卡片，展示 URL / 截图 / 可交互元素列表 */
+const isBrowserTool = computed(() =>
+  props.tool.toolId === 'browser' || props.tool.toolId.startsWith('browser.')
+)
 
 const hasDetails = computed(() => !!(props.tool.inputSummary || props.tool.outputSummary))
 const stateLabel = computed(() => (props.tool.success === false ? '失败' : '已完成'))
@@ -22,7 +28,9 @@ const latencyLabel = computed(() => (
 </script>
 
 <template>
+  <BrowserToolCallCard v-if="isBrowserTool" :tool="tool" />
   <Card
+    v-else
     :class="[
       'tool-call-card gap-0 py-0 text-xs shadow-none',
       tool.success === false

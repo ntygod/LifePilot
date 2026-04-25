@@ -45,7 +45,8 @@ public class SqliteSuspendStore implements SuspendStore {
             "UserConfirmation", SuspendReason.UserConfirmation.class,
             "RemoteDelegation", SuspendReason.RemoteDelegation.class,
             "ScheduledWakeup", SuspendReason.ScheduledWakeup.class,
-            "ExternalDataWait", SuspendReason.ExternalDataWait.class
+            "ExternalDataWait", SuspendReason.ExternalDataWait.class,
+            "BrowserTakeover", SuspendReason.BrowserTakeover.class
     );
 
     public SqliteSuspendStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {

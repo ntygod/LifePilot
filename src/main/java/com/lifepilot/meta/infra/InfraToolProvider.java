@@ -9,6 +9,7 @@ import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserToolProvider;
+import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.meta.infra.channel.ChannelToolProvider;
 import com.lifepilot.meta.infra.code.CodeToolProvider;
@@ -24,6 +25,7 @@ import com.lifepilot.meta.infra.shell.ShellToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.interaction.NotifyToolProvider;
+import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebToolProvider;
 import com.lifepilot.notification.NotificationService;
@@ -75,6 +77,8 @@ public class InfraToolProvider {
     @Nullable private final AttachmentRepository attachmentRepository;
     @Nullable private final ChatSessionRepository chatSessionRepository;
     @Nullable private final SkillPathWhitelist skillPathWhitelist;
+    private final SsrfGuard ssrfGuard;
+    private final InteractiveElementIndexer interactiveElementIndexer;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -94,7 +98,9 @@ public class InfraToolProvider {
                              WorkspaceResolver workspaceResolver,
                              @Nullable AttachmentRepository attachmentRepository,
                              @Nullable ChatSessionRepository chatSessionRepository,
-                             @Nullable SkillPathWhitelist skillPathWhitelist) {
+                             @Nullable SkillPathWhitelist skillPathWhitelist,
+                             SsrfGuard ssrfGuard,
+                             InteractiveElementIndexer interactiveElementIndexer) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -114,6 +120,8 @@ public class InfraToolProvider {
         this.attachmentRepository = attachmentRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.skillPathWhitelist = skillPathWhitelist;
+        this.ssrfGuard = ssrfGuard;
+        this.interactiveElementIndexer = interactiveElementIndexer;
     }
 
     /**
@@ -125,11 +133,11 @@ public class InfraToolProvider {
         int totalTools = 0;
 
         // Web 工具（web.search + web.fetch）
-        var webToolProvider = new WebToolProvider(properties, webSearchConfigProvider, browserSessionManager);
+        var webToolProvider = new WebToolProvider(properties, webSearchConfigProvider, browserSessionManager, ssrfGuard);
         totalTools += registerBuiltinTools(toolRegistry, webToolProvider.buildWebTools());
 
         // 浏览器自动化工具
-        var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties);
+        var browserToolProvider = new BrowserToolProvider(browserSessionManager, properties, interactiveElementIndexer);
         totalTools += registerBuiltinTools(toolRegistry, browserToolProvider.buildBrowserTools());
 
         // 文件系统工具

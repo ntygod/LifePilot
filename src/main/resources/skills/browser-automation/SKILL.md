@@ -1,7 +1,7 @@
 ---
 name: browser-automation
 description: 当用户要控制浏览器完成需要 JavaScript 渲染、登录态或交互操作的网页任务时使用。关键词：打开网页、爬取、截图、填表单、登录网站、自动化网页、抓取动态数据、SPA。静态页面优先用 web.fetch，搜索多源信息用 web.search，桌面应用操作用 desktop-automation。
-version: 2.0.0
+version: 3.1.0
 metadata:
   zhiwei:
     category: external-integration
@@ -42,13 +42,12 @@ metadata:
 
 1. **选工具**：静态页 → `web.fetch`；多源搜索 → `web.search`；需 JS / 登录 / 交互 → `browser`
 2. **开会话**：`navigate` 建立会话，同任务用相同 `sessionId` 复用 cookie
-3. **操作前截图**：`screenshot` 确认页面状态，避免盲操作
-4. **交互**：`click` / `input` / `scroll` / `wait` / `evaluate`，详细 action 清单见参考
-5. **同一工具连续失败 2 次**必须切换策略（browser → web.fetch → web.search）
-6. **结束**：`file.write` 保存产出 → `close` 释放资源
+3. **快照定位**：优先 `snapshot` 一次拿到截图 + 可交互元素编号；后续 `click` / `input` / `hover` 用 `index` 比 `selector` 更稳
+4. **页面变化后重新 snapshot**：导航、弹窗、异步渲染会让旧 index 失效
+5. **同一工具连续失败 2 次**必须切换策略（index → selector → web.fetch → web.search）
+6. **登录墙 / 验证码**：观察到 password input、login URL 或人机验证截图时调 `requestHumanTakeover` 让用户接管
+7. **结束**：`file.write` 保存产出 → `close` 释放资源
 
 ## 详细参考
 
-- 完整 action 清单、会话模式（LAUNCH/CDP/PERSISTENT）、元素定位策略、常见错误：`{skill_dir}/references/browser-actions.md`
-</content>
-</invoke>
+- 完整 action 清单（含 snapshot / requestHumanTakeover）、index/selector fallback 链、登录墙触发条件、会话模式（LAUNCH/CDP/PERSISTENT）、元素定位策略、常见错误：`{skill_dir}/references/browser-actions.md`

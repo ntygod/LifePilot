@@ -404,6 +404,8 @@ public class ProviderMessageBuilder {
                     "等待定时唤醒: " + scheduledWakeup.reason();
             case SuspendReason.ExternalDataWait externalDataWait ->
                     "等待外部数据: " + externalDataWait.description();
+            case SuspendReason.BrowserTakeover browserTakeover ->
+                    "等待浏览器人工接管: " + browserTakeover.reason();
         };
     }
 

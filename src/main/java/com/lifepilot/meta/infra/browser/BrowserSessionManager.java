@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra.browser;
 
 import com.lifepilot.meta.config.MetaProperties;
 import jakarta.annotation.Nullable;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,6 +12,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.ToIntFunction;
 
 /**
  * 浏览器会话管理器 — 单例管理 Playwright Browser 实例。
@@ -62,6 +65,17 @@ public class BrowserSessionManager {
 
     /** 共享上下文的 stealth 脚本注入守卫，保证只注入一次。 */
     private final AtomicBoolean stealthInjected = new AtomicBoolean(false);
+
+    /**
+     * 首次构造的最终 User-Agent 字符串，后续 createContext 复用。
+     *
+     * <p>null 表示"未初始化"或"auto 模式但无法拿到 Chromium 版本号"，
+     * 后者语义为跳过 {@code setUserAgent()}，让 Chromium 自身 UA 生效。</p>
+     */
+    private final AtomicReference<String> resolvedUserAgent = new AtomicReference<>();
+
+    /** 标记 resolvedUserAgent 是否已完成首次解析（区分 null 语义：未解析 vs. 解析结果为 null）。 */
+    private final AtomicBoolean userAgentResolved = new AtomicBoolean(false);
 
     /** 会话级多标签页管理：sessionId → SessionPages。 */
     private final ConcurrentHashMap<String, SessionPages> sessions = new ConcurrentHashMap<>();
@@ -302,7 +316,11 @@ public class BrowserSessionManager {
 
     /**
      * 清理所有资源 — 关闭所有 Page、Browser 和 Playwright 实例。
+     *
+     * <p>通过 {@link PreDestroy} 注解在 Spring 容器关闭时自动触发，
+     * 保证 JVM 正常退出时 Chromium 进程和持久 profile 得到优雅释放。</p>
      */
+    @PreDestroy
     public synchronized void close() {
         // 关闭所有 Page
         sessions.forEach(this::closeSessionPages);
@@ -461,10 +479,17 @@ public class BrowserSessionManager {
         }
         var contexts = browserRuntime.getContexts(browserInstance);
         if (!contexts.isEmpty()) {
-            sharedBrowserContext = contexts.getFirst();
+            // 按活跃度挑选 context：优先选有 page 的，其次选 page 数最多的
+            sharedBrowserContext = selectActiveContext(contexts, browserRuntime::getPageCount);
+            int selectedIndex = contexts.indexOf(sharedBrowserContext);
+            int withPages = (int) contexts.stream()
+                    .filter(c -> browserRuntime.getPageCount(c) > 0)
+                    .count();
+            log.info("CDP 选中 context[{}]（共 {} 个 context，其中 {} 个有 page）",
+                    selectedIndex, contexts.size(), withPages);
         } else {
             sharedBrowserContext = browserRuntime.createContext(browserInstance,
-                    browserConfig.getUserAgent(), browserConfig.getViewportWidth(),
+                    resolveUserAgent(browserInstance), browserConfig.getViewportWidth(),
                     browserConfig.getViewportHeight(), browserConfig.getLocale(),
                     browserConfig.getTimezoneId(), null);
         }
@@ -487,9 +512,12 @@ public class BrowserSessionManager {
         }
         playwrightInstance = browserRuntime.createPlaywright();
         try {
+            // PERSISTENT 模式无独立 Browser 对象，无法读取 Chromium 版本号；
+            // auto 配置下 resolveUserAgent(null) 返回 null → 跳过 setUserAgent，
+            // 让 Chromium 自身真实 UA 生效（反指纹效果最优）。
             sharedBrowserContext = browserRuntime.launchPersistentContext(
                     playwrightInstance, Path.of(dir), browserConfig.isHeadless(),
-                    browserConfig.getExtraLaunchArgs(), browserConfig.getUserAgent(),
+                    browserConfig.getExtraLaunchArgs(), resolveUserAgent(null),
                     browserConfig.getViewportWidth(), browserConfig.getViewportHeight(),
                     browserConfig.getLocale(), browserConfig.getTimezoneId());
         } catch (Exception e) {
@@ -512,7 +540,7 @@ public class BrowserSessionManager {
         Path storageStatePath = resolveStorageStatePath(sessionId);
         var browserContext = browserRuntime.createContext(
                 browser,
-                browserConfig.getUserAgent(),
+                resolveUserAgent(browser),
                 browserConfig.getViewportWidth(),
                 browserConfig.getViewportHeight(),
                 browserConfig.getLocale(),
@@ -595,12 +623,97 @@ public class BrowserSessionManager {
     }
 
     /**
+     * 解析最终 User-Agent — 配置为 "auto" 时从 Chromium 运行时版本拼 UA。
+     *
+     * <p>首次调用时用 {@link UserAgentBuilder} 计算结果并缓存，后续直接复用。
+     * PERSISTENT 模式传入 null browser（Playwright 不暴露独立 Browser 对象），
+     * auto 模式下返回 null 表示跳过 {@code setUserAgent}，保留 Chromium 真实 UA。</p>
+     *
+     * @param browserObj Browser 实例，PERSISTENT 模式下为 null
+     * @return 最终 UA 字符串；返回 null 表示不设置 UA
+     */
+    @Nullable
+    private String resolveUserAgent(@Nullable Object browserObj) {
+        if (userAgentResolved.get()) {
+            return resolvedUserAgent.get();
+        }
+        String configured = browserConfig.getUserAgent();
+        String chromiumVersion = null;
+        if (browserObj != null) {
+            try {
+                chromiumVersion = browserRuntime.getBrowserVersion(browserObj);
+            } catch (Exception e) {
+                log.warn("读取 Chromium 版本号失败，将回退为空版本处理: {}", e.getMessage());
+            }
+        }
+        String finalUa = UserAgentBuilder.build(configured, chromiumVersion);
+        // 借 CAS 确保日志只打一次，后续线程直接用缓存结果
+        if (userAgentResolved.compareAndSet(false, true)) {
+            resolvedUserAgent.set(finalUa);
+            if (finalUa != null) {
+                log.info("浏览器 UA: {}", finalUa);
+            } else {
+                log.info("浏览器 UA: <未设置，使用 Chromium 默认 UA>（configured={}, chromiumVersion={}）",
+                        configured, chromiumVersion);
+            }
+        }
+        return resolvedUserAgent.get();
+    }
+
+    /**
      * 获取当前活跃会话数。
      *
      * @return 活跃会话数
      */
     public int getActiveSessionCount() {
         return sessions.size();
+    }
+
+    /**
+     * 从 CDP 返回的 context 列表中选择最可能是用户活跃窗口的那个。
+     *
+     * <p>采用基于 page 数量的启发式信号 — 并非真正判断窗口焦点，
+     * 而是假设"打开的 page 越多，用户当前在用这个 context 的概率越高"。
+     * 这是退而求其次的策略：Playwright 的 CDP 协议没有直接暴露 activeTarget 信息，
+     * 而挨个 {@code page.evaluate("document.hasFocus()")} 开销过大且需要页面已加载。</p>
+     *
+     * <p>如需更精确的 focus 检测，调用方可在单独线程里为每个 page 执行
+     * {@code page.evaluate("document.hasFocus()")} 然后自己选，本方法不做这件事。
+     * 该方法保持纯计算：仅按 {@code pageCounter} 返回值排序。</p>
+     *
+     * <p>选择策略：
+     * <ol>
+     *   <li>优先选有 page 的 context（空 context 基本没用）</li>
+     *   <li>相同"有 page"条件下选 page 数最多的（活跃度信号）</li>
+     *   <li>相同 page 数时选列表中靠前的（保证确定性）</li>
+     *   <li>全部 context 都无 page 时退回第 0 个（保留原行为避免异常）</li>
+     * </ol>
+     *
+     * <p>该方法泛型化以便单测可传入 Playwright {@code BrowserContext} mock；
+     * 真实调用点使用 {@link BrowserRuntime#getPageCount(Object)} 作为 page 计数器。</p>
+     *
+     * @param contexts    CDP 返回的 context 列表，不可为空
+     * @param pageCounter 读取单个 context page 数量的函数（page 数作启发式活跃度信号）
+     * @param <T>         context 实际类型
+     * @return 选中的 context
+     * @throws IllegalArgumentException 当 contexts 为空列表时
+     */
+    public static <T> T selectActiveContext(List<T> contexts, ToIntFunction<? super T> pageCounter) {
+        if (contexts.isEmpty()) {
+            throw new IllegalArgumentException("CDP 返回的 context 列表为空");
+        }
+        T best = contexts.getFirst();
+        int bestPageCount = pageCounter.applyAsInt(best);
+        for (int i = 1; i < contexts.size(); i++) {
+            T ctx = contexts.get(i);
+            int n = pageCounter.applyAsInt(ctx);
+            // 严格大于才替换，保证相同 page 数时选列表靠前的
+            if (n > bestPageCount) {
+                best = ctx;
+                bestPageCount = n;
+            }
+        }
+        return best;
     }
 
     interface BrowserRuntime {
@@ -619,6 +732,12 @@ public class BrowserSessionManager {
 
         /** 获取 Browser 的所有 BrowserContext 列表。 */
         List<Object> getContexts(Object browserObj);
+
+        /** 获取 BrowserContext 当前打开的 page 数量，用于 CDP 选活跃 context。 */
+        int getPageCount(Object browserContextObj);
+
+        /** 读取 Browser 的 Chromium 版本号（如 "135.0.7000.0"），用于动态拼接 User-Agent。 */
+        String getBrowserVersion(Object browserObj);
 
         Object createContext(Object browserObj, String userAgent, int viewportWidth, int viewportHeight,
                              String locale, String timezoneId, @Nullable Path storageStatePath);
@@ -667,6 +786,16 @@ public class BrowserSessionManager {
         @Override
         public List<Object> getContexts(Object browserObj) {
             return PlaywrightBridge.getContexts(browserObj);
+        }
+
+        @Override
+        public int getPageCount(Object browserContextObj) {
+            return PlaywrightBridge.getPageCount(browserContextObj);
+        }
+
+        @Override
+        public String getBrowserVersion(Object browserObj) {
+            return PlaywrightBridge.getBrowserVersion(browserObj);
         }
 
         @Override

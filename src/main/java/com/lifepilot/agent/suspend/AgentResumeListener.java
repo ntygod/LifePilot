@@ -115,4 +115,30 @@ public class AgentResumeListener {
             log.warn("外部数据就绪事件未匹配到挂起的 Agent: dataSourceId={}", event.dataSourceId());
         }
     }
+
+    /** 浏览器人工接管完成 → 恢复等待人工操作的 Agent。 */
+    @EventListener
+    public void onBrowserTakeoverCompleted(BrowserTakeoverCompletedEvent event) {
+        List<SuspendedAgent> candidates = suspendStore.findByReasonType("BrowserTakeover");
+        var matched = candidates.stream()
+                .filter(sa -> sa.suspendReason() instanceof com.lifepilot.agent.model.SuspendReason.BrowserTakeover bt
+                        && bt.sessionId().equals(event.sessionId()))
+                .findFirst();
+        if (matched.isEmpty()) {
+            log.warn("浏览器接管完成事件未匹配到挂起的 Agent: sessionId={}", event.sessionId());
+            return;
+        }
+        String traceId = matched.get().traceId();
+        if (event.cancelled()) {
+            // 用户显式取消 → 走硬终止主路径，绕过 ReAct 循环避免 LLM 把"取消"再解读一遍
+            String detail = event.note() != null && !event.note().isBlank()
+                    ? "：" + event.note()
+                    : "";
+            agentOrchestrator.cancelSuspendedAgent(traceId, "用户取消了本次任务" + detail);
+        } else {
+            // 正常完成 → 走 resume，把人工接管结果交给 LLM 接续推理
+            var payload = new ResumePayload.BrowserTakeoverCompleted(event.sessionId(), event.note());
+            agentOrchestrator.resumeFromSuspend(traceId, payload);
+        }
+    }
 }

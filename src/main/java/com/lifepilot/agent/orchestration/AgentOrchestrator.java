@@ -410,6 +410,88 @@ public class AgentOrchestrator {
         Thread.startVirtualThread(() -> runResume(traceId, resumedState, suspended));
     }
 
+    /**
+     * 硬终止挂起的 Agent — 不进入 ReAct 循环，直接落库 DEGRADED + 释放资源。
+     *
+     * <p>设计意图：用户在前端点"放弃任务"等显式取消场景下，跳过 LLM 重新解读"取消"
+     * 这一无意义的来回。{@link #resumeFromSuspend} 是"继续推理"语义，而本方法是
+     * "结束本轮"语义，二者不应混用同一入口。</p>
+     *
+     * <p>处理顺序：
+     * <ol>
+     *   <li>原子 loadAndDelete 取出挂起记录（防止与 resume 并发）</li>
+     *   <li>恢复 state 并追加一条 Resume 步骤记录取消原因，便于审计</li>
+     *   <li>用 {@link DegradedResponseBuilder#terminateWithReason} 构造降级输出</li>
+     *   <li>BrowserTakeover 场景顺手关闭浏览器会话；非该原因或释放失败仅记日志</li>
+     *   <li>持久化 assistant 消息并把 turn 标为 FAILED（无 CANCELLED 枚举时的最近近似）</li>
+     * </ol>
+     * 挂起记录不存在视为幂等无操作（前端可能重复点击放弃），仅 warn 不抛。</p>
+     *
+     * @param traceId 挂起记录的 traceId（与 SuspendStore 主键一致）
+     * @param reason  取消原因，会写入 terminationReason 供 transcript 展示
+     */
+    public void cancelSuspendedAgent(String traceId, String reason) {
+        if (suspendStore == null) {
+            throw new IllegalStateException("SuspendStore 未配置，无法取消挂起的 Agent");
+        }
+        var optionalSuspended = suspendStore.loadAndDelete(traceId);
+        if (optionalSuspended.isEmpty()) {
+            log.warn("取消挂起 Agent 时未找到对应记录（可能已被 resume 或重复取消）：traceId={}", traceId);
+            return;
+        }
+        SuspendedAgent suspended = optionalSuspended.get();
+
+        ReactAgentState state = suspended.toAgentState(objectMapper).resume();
+        Instant now = Instant.now();
+        // 把取消原因记成 Resume + Observation 一对，保持步骤结构和正常 resume 一致
+        var cancelPayload = new ResumePayload.BrowserTakeoverCompleted(
+                suspended.suspendReason() instanceof SuspendReason.BrowserTakeover bt ? bt.sessionId() : null,
+                ResumePayload.BrowserTakeoverCompleted.USER_CANCELLED_PREFIX + " " + reason);
+        state = state.appendStep(new ReactStep.Resume(cancelPayload, now,
+                Duration.between(suspended.suspendedAt(), now)));
+        String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
+        state = state.appendStep(new ReactStep.Observation(
+                resumeToolId, null, true, "用户取消任务: " + reason, 0, null));
+
+        // 释放浏览器资源（如适用）— 失败不影响主流程，由 idle scheduler 兜底
+        releaseBrowserSessionIfApplicable(suspended);
+
+        // 走降级模板生成最终输出，CompletionMode = DEGRADED
+        state = DegradedResponseBuilder.terminateWithReason(state, reason);
+
+        boolean testSession = isTestSession(state.sessionId());
+        String assistantEntryId = null;
+        try {
+            if (!testSession) {
+                String reactStepsJson = serializeReactStepsJson(state.steps());
+                assistantEntryId = executionPersistence.persistAssistantSync(
+                        state, reactStepsJson, new AgentLoopContext());
+            }
+            // 没有 CANCELLED 枚举，FAILED 是最贴近的状态；terminationReason 里说明取消原因
+            executionPersistence.markTurnCompleted(state, assistantEntryId, ChatTurnStatus.FAILED);
+            log.info("挂起 Agent 已硬终止：traceId={}, reasonType={}, reason={}",
+                    traceId, suspended.suspendReason().getClass().getSimpleName(), reason);
+        } catch (Exception e) {
+            log.error("硬终止挂起 Agent 时持久化失败：traceId={}, error={}", traceId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 浏览器接管挂起场景下尝试关闭对应 Page，避免会话残留。
+     *
+     * <p>BrowserSessionManager 当前没有注入到 orchestrator（避免循环依赖 + 保持模块解耦），
+     * 故依赖反射 / 不直接调用；这里仅在 reason 是 BrowserTakeover 时记录上下文，
+     * 实际清理交给 {@code BrowserSessionScheduler} 的 idle 兜底机制。
+     * 后续若发现 idle 兜底不够及时，再补 BrowserSessionManager 注入。</p>
+     */
+    private void releaseBrowserSessionIfApplicable(SuspendedAgent suspended) {
+        if (!(suspended.suspendReason() instanceof SuspendReason.BrowserTakeover bt)) {
+            return;
+        }
+        // 仅打日志，实际 closePage 等 idle scheduler 兜底，避免在 orchestrator 注入 meta 层依赖
+        log.info("挂起 Agent 取消，浏览器会话将由 idle scheduler 回收：sessionId={}", bt.sessionId());
+    }
+
     /** 在虚拟线程中异步执行恢复后的 Agent 逻辑
         避免阻塞调用方（通常是 Web 请求线程），让恢复操作在后台运行
      */
@@ -420,6 +502,24 @@ public class AgentOrchestrator {
         var loopContext = new AgentLoopContext();
 
         try {
+            // 兜底分支 — 主路径已切到 cancelSuspendedAgent。这里保留前缀检测仅在
+            // 历史调用方仍走 resumeFromSuspend + USER_CANCELLED 前缀时生效，
+            // 防止意外路径把"取消"信号送进 LLM 推理循环。
+            ResumePayload.BrowserTakeoverCompleted cancelPayload = detectUserCancelledPayload(state);
+            if (cancelPayload != null) {
+                log.info("Resume 入口检测到取消前缀（兜底分支），Agent 直接终止：traceId={}, note={}",
+                        state.traceId(), cancelPayload.note());
+                state = DegradedResponseBuilder.terminateWithReason(state, cancelPayload.note());
+                boolean testSession = isTestSession(state.sessionId());
+                if (!testSession) {
+                    String reactStepsJson = serializeReactStepsJson(state.steps());
+                    String assistantEntryId = executionPersistence.persistAssistantSync(state, reactStepsJson, loopContext);
+                    // terminateWithReason 已设置 terminationReason，resolveTurnStatus 会判为 DEGRADED
+                    executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
+                }
+                return;
+            }
+
             var request = new AgentRequest(
                     state.goal(),
                     state.sessionId(),
@@ -781,6 +881,11 @@ public class AgentOrchestrator {
         if (reasonSourceId != null && !reasonSourceId.isBlank()) {
             suspendedEvent.put("reasonSourceId", reasonSourceId);
         }
+        // BrowserTakeover 场景下把后端配置的挂起超时秒数带到事件里，让前端弹窗读取统一值而非本地硬编码。
+        if (suspendedState.suspendReason() instanceof SuspendReason.BrowserTakeover browserTakeover
+                && browserTakeover.timeoutSeconds() != null) {
+            suspendedEvent.put("timeoutSeconds", browserTakeover.timeoutSeconds());
+        }
         suspendedEvent.put("reasonDetail", agentLoop.formatSuspendReason(suspendedState.suspendReason()));
         suspendedEvent.put("terminationReason", resolveSuspendTerminationReason(suspendedState));
         suspendedEvent.put("content", suspendMessage);
@@ -800,6 +905,7 @@ public class AgentOrchestrator {
             case SuspendReason.RemoteDelegation remoteDelegation -> remoteDelegation.remoteTaskId();
             case SuspendReason.ScheduledWakeup _ -> null;
             case SuspendReason.ExternalDataWait externalDataWait -> externalDataWait.dataSourceId();
+            case SuspendReason.BrowserTakeover browserTakeover -> browserTakeover.sessionId();
         };
     }
 
@@ -890,6 +996,31 @@ public class AgentOrchestrator {
                 state.resumedFromTraceId(),
                 resolveTurnStatus(state)
         );
+    }
+
+    /**
+     * 从已追加 Resume 步骤的 state 里检测"用户取消"信号 — 兜底分支，
+     * 用户显式取消的主路径走 {@link #cancelSuspendedAgent(String, String)}。
+     *
+     * <p>扫描 steps 尾部最近一个 Resume step，若其 payload 是
+     * {@link ResumePayload.BrowserTakeoverCompleted} 且 note 带 USER_CANCELLED 前缀，
+     * 则返回该 payload；否则返回 null。仅作历史调用方意外仍走前缀语义时的保护网。</p>
+     *
+     * @return 取消 payload，未命中时 null
+     */
+    @Nullable
+    private ResumePayload.BrowserTakeoverCompleted detectUserCancelledPayload(ReactAgentState state) {
+        var steps = state.steps();
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            if (steps.get(i) instanceof ReactStep.Resume resume) {
+                if (resume.payload() instanceof ResumePayload.BrowserTakeoverCompleted c && c.isUserCancelled()) {
+                    return c;
+                }
+                // 找到最近一个 Resume 就停止，避免往前找到无关的旧 Resume
+                return null;
+            }
+        }
+        return null;
     }
 
     /** 根据 execution 状态决定 turn 的最终状态：success/degraded/suspended */

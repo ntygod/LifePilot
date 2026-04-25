@@ -80,7 +80,7 @@ class WebFetchBrowserFallbackTest {
         when(pageWrapper.navigateWithResult(anyString(), anyInt()))
                 .thenReturn(new PlaywrightPageWrapper.NavigateResult("JS 渲染页面", "https://spa-example.com", false));
         when(pageWrapper.textContent()).thenReturn("这是通过浏览器渲染获取的动态内容，包含 JavaScript 加载的数据。");
-        when(pageWrapper.evaluate(anyString())).thenReturn("\"complete\"");
+        // waitForNetworkIdle 返回 void，默认 no-op stub 即可，内部超时已被 wrapper 吞掉
 
         var executor = new WebFetchToolExecutor(properties, browserSessionManager);
 
@@ -143,7 +143,7 @@ class WebFetchBrowserFallbackTest {
         when(pageWrapper.navigateWithResult(anyString(), anyInt()))
                 .thenReturn(new PlaywrightPageWrapper.NavigateResult("动态页面", "https://spa.example.com", false));
         when(pageWrapper.textContent()).thenReturn("浏览器渲染后获取的完整内容，原静态抓取为空。");
-        when(pageWrapper.evaluate(anyString())).thenReturn("\"complete\"");
+        // waitForNetworkIdle 返回 void，默认 no-op stub 即可
 
         var executor = new TestableWebFetchWithBrowser(properties, browserSessionManager,
                 """

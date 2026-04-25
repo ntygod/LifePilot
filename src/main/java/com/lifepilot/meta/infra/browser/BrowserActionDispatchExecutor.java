@@ -37,7 +37,8 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
 
     public BrowserActionDispatchExecutor(@Nullable BrowserSessionManager browserSessionManager,
                                          MetaProperties properties,
-                                         TextSnapshotCleaner textSnapshotCleaner) {
+                                         TextSnapshotCleaner textSnapshotCleaner,
+                                         InteractiveElementIndexer indexer) {
         this.browserSessionManager = browserSessionManager;
 
         var browserConfig = properties.getInfra().getBrowser();
@@ -58,6 +59,8 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
         var accessibilityExecutor = new BrowserAccessibilityToolExecutor(browserSessionManager, properties);
         var tabExecutor = new BrowserTabToolExecutor(browserSessionManager);
         var storageExecutor = new BrowserStorageToolExecutor(browserSessionManager);
+        var snapshotExecutor = new BrowserSnapshotToolExecutor(browserSessionManager, indexer, properties);
+        var takeoverExecutor = new BrowserHumanTakeoverExecutor(properties);
 
         // 注册 action
         ToolExecutionSemantics browserSessionSemantics = ToolExecutionSemantics.of(
@@ -90,6 +93,8 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
         register("accessibility", RiskLevel.LOW, browserSessionSemantics, accessibilityExecutor::execute);
         register("tab", RiskLevel.MEDIUM, browserSessionSemantics, tabExecutor::execute);
         register("storage", RiskLevel.MEDIUM, browserSessionSemantics, storageExecutor::execute);
+        register("snapshot", RiskLevel.LOW, browserSessionSemantics, snapshotExecutor::execute);
+        register("requestHumanTakeover", RiskLevel.LOW, browserSessionSemantics, takeoverExecutor::execute);
         register("close",
                 RiskLevel.LOW,
                 browserSessionSemantics,
@@ -114,7 +119,13 @@ public class BrowserActionDispatchExecutor extends ActionDispatchExecutor {
             String msg = browserSessionManager != null
                     ? browserSessionManager.getUnavailableMessage()
                     : "浏览器功能未配置";
-            return ToolResult.error(msg + "，改用 web.fetch 抓取静态内容");
+            // snapshot 和 requestHumanTakeover 的语义无法用 web.fetch 替代，
+            // 不应误导 Agent 走静态抓取路径；仅通用抓取类 action 才追加回退提示。
+            String action = input.getOptionalParam("action", String.class).orElse("");
+            String hint = ("requestHumanTakeover".equals(action) || "snapshot".equals(action))
+                    ? msg
+                    : msg + "，改用 web.fetch 抓取静态内容";
+            return ToolResult.error(hint);
         }
 
         try {

@@ -28,7 +28,10 @@ import com.lifepilot.meta.infra.memory.MemoryToolProvider;
 import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
+import com.lifepilot.meta.infra.browser.BrowserSessionScheduler;
+import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
+import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
@@ -86,6 +89,18 @@ public class MetaAutoConfiguration {
     }
 
     /**
+     * 注册 SSRF 防护守卫 — web.fetch 等工具在请求外部 URL 前强制调用以拦截内网/云 metadata 访问。
+     *
+     * <p>通过 {@code lifepilot.meta.infra.web-fetch.ssrf.enabled} 控制开关，
+     * {@code lifepilot.meta.infra.web-fetch.ssrf.allowlist} 补充放行列表。</p>
+     */
+    @Bean
+    SsrfGuard ssrfGuard(MetaProperties properties) {
+        var ssrf = properties.getInfra().getWebFetch().getSsrf();
+        return new SsrfGuard(ssrf.isEnabled(), ssrf.getAllowlist());
+    }
+
+    /**
      * 注册联网搜索配置提供者。
      */
     @Bean
@@ -124,17 +139,50 @@ public class MetaAutoConfiguration {
                                         com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
                                         @Nullable AttachmentRepository attachmentRepository,
                                         @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
-                                        @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist);
+                                        @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist,
+                                        SsrfGuard ssrfGuard,
+                                        InteractiveElementIndexer interactiveElementIndexer) {
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist, ssrfGuard, interactiveElementIndexer);
     }
 
     /**
-     * 注册浏览器会话管理器 — 仅在 Playwright 类可用时注册。
+     * 注册 DOM 可交互元素标号扫描器。
+     *
+     * <p>启动时即加载 classpath 上的 {@code interactive-elements.js}，
+     * 供 browser.snapshot 和后续 clickByIndex 等使用。不依赖 Playwright 运行时，
+     * 即便 BrowserSessionManager 缺失也可注册（仅在真正调用时才触发 Playwright 加载）。</p>
+     */
+    @Bean
+    InteractiveElementIndexer interactiveElementIndexer(ObjectMapper objectMapper) {
+        return new InteractiveElementIndexer(objectMapper);
+    }
+
+    /**
+     * 注册浏览器会话管理器 — 仅在 Playwright 类可用且浏览器能力开关开启时注册。
+     *
+     * <p>通过 {@code lifepilot.meta.infra.browser.enabled} 控制（默认 true），
+     * 关闭后不再占用 Playwright 初始化开销。</p>
      */
     @Bean
     @ConditionalOnClass(name = "com.microsoft.playwright.Playwright")
+    @ConditionalOnProperty(name = "lifepilot.meta.infra.browser.enabled",
+                           havingValue = "true", matchIfMissing = true)
     BrowserSessionManager browserSessionManager(MetaProperties properties) {
         return new BrowserSessionManager(properties);
+    }
+
+    /**
+     * 注册浏览器会话空闲清理调度器 — 仅在 BrowserSessionManager 可用且浏览器开关开启时注册。
+     *
+     * <p>依托 WorkflowAutoConfiguration/MemoryAutoConfiguration 已启用的
+     * {@code @EnableScheduling}，每 60 秒触发一次清理。</p>
+     */
+    @Bean
+    @ConditionalOnBean(BrowserSessionManager.class)
+    @ConditionalOnProperty(name = "lifepilot.meta.infra.browser.enabled",
+                           havingValue = "true", matchIfMissing = true)
+    BrowserSessionScheduler browserSessionScheduler(BrowserSessionManager browserSessionManager) {
+        return new BrowserSessionScheduler(browserSessionManager);
     }
 
     /**

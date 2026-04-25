@@ -872,6 +872,9 @@ lifepilot:
         timeout-seconds: 10
         min-static-content-length: 100
         render-timeout-seconds: 15
+        ssrf:
+          enabled: true            # SSRF 防护开关，关闭需谨慎（仅可信环境）
+          allowlist: []            # 放行的 host / IP，企业内网可补充如 "internal.corp"
       user-profile:
         timezone: ""
         cache-ttl-seconds: 300
@@ -892,7 +895,8 @@ lifepilot:
         transient-retries: 1
       browser:
         enabled: true
-        headless: true
+        # 默认 false：本地/桌面可见 Agent 浏览过程；容器部署用 BROWSER_HEADLESS=true 覆写
+        headless: ${BROWSER_HEADLESS:false}
         idle-timeout-seconds: 300
         tool-timeout-seconds: 30
         install-timeout-seconds: 600
@@ -906,6 +910,12 @@ lifepilot:
         acquisition-mode: LAUNCH        # LAUNCH / CDP / PERSISTENT
         cdp-url: ""                      # CDP 模式的远程调试端口 URL
         user-data-dir: "${zhiwei.data-dir}/cache/browser/profile"  # PERSISTENT 模式的用户数据目录
+        snapshot:
+          max-elements: 200
+          viewport-only: true
+          inject-labels: false
+        takeover:
+          timeout-seconds: 300        # 人工接管挂起等待超时（秒），5 分钟
       git:
         enabled: true
         timeout-seconds: 30

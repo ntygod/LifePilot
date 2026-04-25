@@ -550,6 +550,12 @@ public class AgentPersistenceHandler {
                 payload.put("dataSourceId", externalDataWait.dataSourceId());
                 payload.put("description", externalDataWait.description());
             }
+            case SuspendReason.BrowserTakeover browserTakeover -> {
+                payload.put("type", "BROWSER_TAKEOVER");
+                payload.put("sessionId", browserTakeover.sessionId());
+                payload.put("reason", browserTakeover.reason());
+                payload.put("requestedAt", browserTakeover.requestedAt().toString());
+            }
         }
         return Map.copyOf(payload);
     }
@@ -566,6 +572,8 @@ public class AgentPersistenceHandler {
                     "定时唤醒等待：" + scheduledWakeup.reason();
             case SuspendReason.ExternalDataWait externalDataWait ->
                     "外部数据等待：" + externalDataWait.description();
+            case SuspendReason.BrowserTakeover browserTakeover ->
+                    "浏览器人工接管等待：" + browserTakeover.reason();
         };
     }
 }

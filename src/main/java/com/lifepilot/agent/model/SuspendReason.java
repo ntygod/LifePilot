@@ -11,29 +11,30 @@ import java.time.Instant;
  * <p>sealed interface 保证 switch 穷尽，新场景加入后编译器会强制补齐处理逻辑。
  * 每个子类型只携带恢复时必需的最小上下文。</p>
  *
- * <p>Jackson 多态标注：{@code SqliteSuspendStore} 当前通过额外的 {@code reason_type}
- * 列 + 手动类型映射表规避了 Jackson 多态问题，但该 sealed interface 同样可能被
- * {@code ReactStep.Suspend.reason} 字段随 checkpoint 整体 roundtrip，且未来若有人
- * 直接 {@code readValue(SuspendReason.class)} 会立即崩溃。此处主动声明类型信息，
- * 作为防御性护栏（不改动 SqliteSuspendStore 既有规避路径）。</p>
+ * <p>类型名（{@code @JsonSubTypes.Type#name}）必须与
+ * {@code SqliteSuspendStore#REASON_TYPE_MAP} 的 key 保持完全一致 —
+ * 后者按 {@code Class#getSimpleName()} 写入 reason_type 列，
+ * 而这里的 name 决定了反序列化时如何路由到具体子类型。</p>
  *
  * @author zsg
  * @since 2026-03-17
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
-        @JsonSubTypes.Type(value = SuspendReason.WorkflowWait.class, name = "WORKFLOW_WAIT"),
-        @JsonSubTypes.Type(value = SuspendReason.UserConfirmation.class, name = "USER_CONFIRMATION"),
-        @JsonSubTypes.Type(value = SuspendReason.RemoteDelegation.class, name = "REMOTE_DELEGATION"),
-        @JsonSubTypes.Type(value = SuspendReason.ScheduledWakeup.class, name = "SCHEDULED_WAKEUP"),
-        @JsonSubTypes.Type(value = SuspendReason.ExternalDataWait.class, name = "EXTERNAL_DATA_WAIT")
+        @JsonSubTypes.Type(value = SuspendReason.WorkflowWait.class, name = "WorkflowWait"),
+        @JsonSubTypes.Type(value = SuspendReason.UserConfirmation.class, name = "UserConfirmation"),
+        @JsonSubTypes.Type(value = SuspendReason.RemoteDelegation.class, name = "RemoteDelegation"),
+        @JsonSubTypes.Type(value = SuspendReason.ScheduledWakeup.class, name = "ScheduledWakeup"),
+        @JsonSubTypes.Type(value = SuspendReason.ExternalDataWait.class, name = "ExternalDataWait"),
+        @JsonSubTypes.Type(value = SuspendReason.BrowserTakeover.class, name = "BrowserTakeover")
 })
 public sealed interface SuspendReason permits
         SuspendReason.WorkflowWait,
         SuspendReason.UserConfirmation,
         SuspendReason.RemoteDelegation,
         SuspendReason.ScheduledWakeup,
-        SuspendReason.ExternalDataWait {
+        SuspendReason.ExternalDataWait,
+        SuspendReason.BrowserTakeover {
 
     /** 等待异步工作流完成。 */
     record WorkflowWait(String executionId, String workflowId, String workflowName)
@@ -53,5 +54,16 @@ public sealed interface SuspendReason permits
 
     /** 等待外部数据就绪，如爬虫、ETL 或文件上传。 */
     record ExternalDataWait(String dataSourceId, String description)
+            implements SuspendReason {}
+
+    /**
+     * 等待用户在浏览器中完成人工接管（验证码、登录、扫码、人机验证、账号保护）。
+     *
+     * @param sessionId      浏览器会话 ID
+     * @param reason         展示给用户的接管原因说明
+     * @param requestedAt    请求时刻
+     * @param timeoutSeconds 前端提示的挂起等待超时秒数，可空则由前端采用默认值
+     */
+    record BrowserTakeover(String sessionId, String reason, Instant requestedAt, Integer timeoutSeconds)
             implements SuspendReason {}
 }

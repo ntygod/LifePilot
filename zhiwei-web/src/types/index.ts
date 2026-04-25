@@ -276,6 +276,8 @@ export interface ObservationStep extends ReactStepBase {
   workingDirectory?: string
   /** 工具执行的具体结果（详情面板展示） */
   outputDetail?: string
+  /** 结构化原始输出 —— 目前仅 browser 工具透传，供特化卡片直接渲染 url/截图/elements 等 */
+  output?: unknown
 }
 
 /** 回答步骤 */
@@ -369,6 +371,8 @@ export interface SseAgentSuspendedEvent {
   terminationReason?: string
   content?: string
   suspendedAt?: string
+  /** 挂起超时秒数（BrowserTakeover 等场景由后端下发，前端为空时采用本地默认值） */
+  timeoutSeconds?: number
 }
 
 /** 权限审批请求 SSE 事件 payload */
@@ -485,6 +489,8 @@ export interface ToolCallSummary {
   inputSummary?: string
   /** 输出摘要 */
   outputSummary?: string
+  /** 工具原始输出（可能是 JSON 字符串或已反序列化对象），用于特化卡片渲染 */
+  output?: unknown
 }
 
 /** 错误响应 */

@@ -1,7 +1,9 @@
 package com.lifepilot.meta.infra;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.meta.infra.web.WebSearchConfig;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.tool.BuiltinTool;
@@ -43,15 +45,18 @@ class InfraToolProviderTest {
                 true
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
-        // 构造签名：19 参数（Skill v2 fixup 移除了 workflowRegistry / workflowCommandService
-        // 两个构造参数）—— workspaceResolver 位于第 16 位，之后是 attachmentRepository /
-        // chatSessionRepository / skillPathWhitelist。
+        var indexer = new InteractiveElementIndexer(new ObjectMapper());
+        // 构造签名：21 参数 — workspaceResolver 位于第 16 位，之后依次是 attachmentRepository /
+        // chatSessionRepository / skillPathWhitelist / ssrfGuard / interactiveElementIndexer。
+        // 浏览器能力补全（PR #99）在 develop 19 参数基础上追加 ssrfGuard 与 interactiveElementIndexer。
         provider = new InfraToolProvider(
                 properties,
                 webSearchConfigProvider,
                 null, null, null, null, null, null, null, null, null, null, null, null, null,
                 workspaceResolver,
-                null, null, null);
+                null, null, null,
+                com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
+                indexer);
     }
 
     @Test

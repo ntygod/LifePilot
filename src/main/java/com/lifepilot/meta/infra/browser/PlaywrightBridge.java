@@ -238,6 +238,18 @@ final class PlaywrightBridge {
     }
 
     /**
+     * 获取 BrowserContext 当前打开的 page 数量。
+     *
+     * <p>用于 CDP 模式下选择最活跃的 context：page 数多的更可能是用户正在使用的窗口。</p>
+     *
+     * @param browserContextObj BrowserContext 实例
+     * @return 当前 page 数量
+     */
+    static int getPageCount(Object browserContextObj) {
+        return ((BrowserContext) browserContextObj).pages().size();
+    }
+
+    /**
      * 保存 BrowserContext 的 storageState 到指定路径。
      *
      * @param browserContextObj BrowserContext 实例
@@ -257,6 +269,19 @@ final class PlaywrightBridge {
     static Object createPage(Object browserContextObj) {
         BrowserContext browserContext = (BrowserContext) browserContextObj;
         return browserContext.newPage();
+    }
+
+    /**
+     * 读取 Browser 的 Chromium 版本号（如 {@code 135.0.7000.0}）。
+     *
+     * <p>用于动态拼接 User-Agent，避免硬编码版本号漂移导致的指纹识别。
+     * PERSISTENT 模式下 Playwright 不暴露独立 Browser 对象，调用方需处理此场景。</p>
+     *
+     * @param browserObj Browser 实例
+     * @return Chromium 版本号字符串
+     */
+    static String getBrowserVersion(Object browserObj) {
+        return ((Browser) browserObj).version();
     }
 
     /**

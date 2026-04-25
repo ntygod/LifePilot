@@ -25,7 +25,7 @@ graph TB
                 ENV["环境感知<br/>datetime / user-profile / system-info"]
                 WTP["WebToolProvider<br/>web.search / web.fetch"]
                 SHELL["Shell 执行<br/>shell.exec + shell.process"]
-                BROWSER["浏览器自动化<br/>browser（14 actions）"]
+                BROWSER["浏览器自动化<br/>browser（16 actions）"]
                 CTP["CodeToolProvider<br/>code.execute"]
                 FILE["文件系统<br/>read / write / list / edit / manage"]
                 NTP["NotifyToolProvider<br/>notify"]
@@ -81,7 +81,7 @@ graph TB
 - Skill ID：`builtin.infrastructure`
 - 子 Provider 列表（按注册顺序）：
   - `WebToolProvider` — web.search / web.fetch
-  - `BrowserToolProvider` — browser（14 个 action）
+  - `BrowserToolProvider` — browser（16 个 action，含 snapshot 和 requestHumanTakeover）
   - `FileToolProvider` — file.read / file.write / file.list / file.edit / file.manage
   - `NotifyToolProvider` — notify（需 NotificationService）
   - `WorkflowToolProvider` — 工作流管理（需 WorkflowRegistry + WorkflowCommandService）
@@ -107,8 +107,9 @@ graph TB
 
 - 职责：集中管理 `web.search` 和 `web.fetch` 两个信息获取工具
 - `web.search`：搜索互联网信息，返回标题、URL 和摘要。参数 `query`（必需）、`maxResults`、`offset`、`limit`
-- `web.fetch`：抓取 URL 内容或调用外部 REST API。参数 `url`（必需）、`method`、`headers`、`body`、`selector`、`renderJs`、`timeoutSeconds`
-- 依赖：`MetaProperties`、`WebSearchConfigProvider`、`BrowserSessionManager`（可选，用于 `renderJs` 渲染）
+- `web.fetch`：抓取 URL 内容或调用外部 REST API。参数 `url`（必需）、`method`（GET/POST/PUT/DELETE/PATCH，默认 GET）、`headers`（Map<String,String>）、`body`（非 GET 请求体）、`selector`（GET + HTML 时 CSS 提取）、`renderJs`（仅 GET 生效）、`timeoutSeconds`。非 GET 直接走 `HttpClient` 返回响应体原文，不经 Jsoup/浏览器回退。
+- SSRF 防护：所有 `web.fetch` 请求进入前由 `SsrfGuard` 拦截内网 IP（IPv4 loopback/RFC1918/link-local、IPv6 loopback/ULA/link-local）、`0.0.0.0`、云 metadata 域名（`metadata.google.internal` / `metadata.aws.internal` / `169.254.169.254` / `instance-data.*`）和非 http(s) 协议；对 DNS 解析出的每一个 IP 校验防 DNS rebinding；可通过 `zhiwei.meta.infra.web-fetch.ssrf.allowlist` 白名单放行企业内网域名/IP，`ssrf.enabled=false` 可整体关闭（仅可信环境）
+- 依赖：`MetaProperties`、`WebSearchConfigProvider`、`BrowserSessionManager`（可选，用于 `renderJs` 渲染）、`SsrfGuard`
 
 ### 3.4 CodeToolProvider — 代码执行工具提供者
 
@@ -127,9 +128,13 @@ graph TB
   - **PERSISTENT** — 使用 `userDataDir` 启动带完整用户配置文件的 Chromium（无独立 Browser 对象），所有会话共享持久上下文
 - 获取模式可在两个层级指定：`application.yml` 全局配置（静态默认值）和 `browser` 工具输入参数 `acquisitionMode`/`cdpUrl`/`userDataDir`（动态覆盖，仅首次创建会话时生效）
 - `ensureBrowser()` 已简化：LAUNCH 模式下懒初始化；CDP/PERSISTENT 由各自 ForSession 变体提前初始化，ensureBrowser 仅作守卫确认
-- `close()` 已改为 `synchronized`，按序关闭所有 Page → 持久 BrowserContext → Browser → Playwright
+- `close()` 标注 `@PreDestroy` 并为 `synchronized`，按序关闭所有 Page → 持久 BrowserContext → Browser → Playwright，保证 JVM 退出时 Chromium 子进程释放
+- `BrowserSessionScheduler`（`@Scheduled(fixedDelay=60_000)`）定时调 `cleanupIdleSessions()` 清理超过 `idle-timeout-seconds` 的空闲会话
 - storageState 持久化：LAUNCH 模式下可配置 `storage-state-dir` + `persist-storage-state`，在会话关闭时保存/恢复 Cookie 和 localStorage
-- 支持无头模式、空闲超时自动关闭
+- DOM 元素标号能力：通过 `InteractiveElementIndexer` 向页面注入 JS 脚本扫描可交互元素，返回带 `index/bbox/text` 的结构化列表，供 `browser.snapshot` 使用；后续 `click/input/hover` 可用 `index` 参数按注入的 `data-zhiwei-idx` 属性定位，抗 layout 抖动
+- 人机接管挂起：`browser.requestHumanTakeover` 返回 `_suspend=true` + `_suspendReason.type="BrowserTakeover"`，由 `ToolExecutionCoordinator` 转换为 `SuspendReason.BrowserTakeover`，走标准挂起-恢复流程（详见 `agent-suspend-resume.md` §5.3）
+- 支持无头模式（容器用 `BROWSER_HEADLESS=true` 环境变量，默认 false 让桌面可见）、空闲超时自动关闭
+- User-Agent 动态拼接：`user-agent=auto` 时通过 `UserAgentBuilder` 读 `browser.version()` 拼 Chromium UA，避免硬编码漂移暴露指纹
 
 ### 3.6 CapabilityAggregator — 能力聚合器
 
@@ -299,14 +304,21 @@ sequenceDiagram
 | `lifepilot.meta.infra.shell-session.max-concurrent-sessions` | `5` | 最大并发持久会话数 |
 | `lifepilot.meta.infra.shell-session.ttl-minutes` | `30` | 持久会话空闲超时（分钟） |
 | `lifepilot.meta.infra.shell-session.exec-timeout-seconds` | `120` | 持久会话命令执行超时 |
+| `lifepilot.meta.infra.web-fetch.ssrf.enabled` | `true` | SSRF 防护总开关；关闭需谨慎（仅可信环境） |
+| `lifepilot.meta.infra.web-fetch.ssrf.allowlist` | `[]` | 放行 host/IP 字面量（如 `internal.corp`） |
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
-| `lifepilot.meta.infra.browser.headless` | `true` | 无头模式 |
-| `lifepilot.meta.infra.browser.idle-timeout-seconds` | `300` | 浏览器空闲超时 |
+| `lifepilot.meta.infra.browser.headless` | `${BROWSER_HEADLESS:false}` | 无头模式；桌面/本地默认 false，容器用 `BROWSER_HEADLESS=true` 覆写 |
+| `lifepilot.meta.infra.browser.idle-timeout-seconds` | `300` | 浏览器空闲超时，由 `BrowserSessionScheduler` 每 60 秒触发清理 |
+| `lifepilot.meta.infra.browser.user-agent` | `auto` | `auto` 时从 Chromium 版本动态拼 UA |
 | `lifepilot.meta.infra.browser.storage-state-dir` | `${zhiwei.data-dir}/cache/browser/storage-state` | storageState 持久化目录 |
 | `lifepilot.meta.infra.browser.persist-storage-state` | `false` | 是否在会话关闭时自动保存 storageState |
 | `lifepilot.meta.infra.browser.acquisition-mode` | `LAUNCH` | 浏览器获取模式（LAUNCH / CDP / PERSISTENT） |
 | `lifepilot.meta.infra.browser.cdp-url` | `""` | CDP 模式的远程调试端口 URL |
 | `lifepilot.meta.infra.browser.user-data-dir` | `${zhiwei.data-dir}/cache/browser/profile` | PERSISTENT 模式的用户数据目录 |
+| `lifepilot.meta.infra.browser.snapshot.max-elements` | `200` | `browser.snapshot` 最多返回元素数 |
+| `lifepilot.meta.infra.browser.snapshot.viewport-only` | `true` | snapshot 是否只截 viewport（false 截全页） |
+| `lifepilot.meta.infra.browser.snapshot.inject-labels` | `false` | 是否叠加视觉编号标签（桌面 `headless=false` 建议 true） |
+| `lifepilot.meta.infra.browser.takeover.timeout-seconds` | `300` | `browser.requestHumanTakeover` 挂起等待超时（秒） |
 | `lifepilot.meta.infra.code-execute.enabled` | `true` | 代码执行开关 |
 | `lifepilot.meta.infra.code-execute.default-language` | `python` | 默认执行语言 |
 | `lifepilot.meta.infra.file.max-read-size` | `1048576` | 文件最大读取字节数（1MB） |

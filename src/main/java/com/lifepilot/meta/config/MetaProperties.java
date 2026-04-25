@@ -4,6 +4,7 @@ import com.lifepilot.meta.infra.browser.BrowserAcquisitionMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,6 +140,28 @@ public class MetaProperties {
 
             /** 浏览器渲染超时（秒），默认 15。 */
             private int renderTimeoutSeconds = 15;
+
+            /** SSRF 防护配置。 */
+            private Ssrf ssrf = new Ssrf();
+
+            /**
+             * SSRF 防护配置 — 拦截内网地址、云 metadata 和非 http(s) 协议。
+             *
+             * @author zsg
+             * @since 2026-04-24
+             */
+            @Data
+            public static class Ssrf {
+
+                /** 是否启用 SSRF 拦截，默认 true。 */
+                private boolean enabled = true;
+
+                /**
+                 * 放行的 host / IP 字面量列表，企业内网场景补充受信任目标。
+                 * <p>匹配发生在 DNS 解析前（host 文本）和 IP 校验后（IP 文本），命中任一即放行。</p>
+                 */
+                private List<String> allowlist = new ArrayList<>();
+            }
         }
 
         /**
@@ -199,11 +222,19 @@ public class MetaProperties {
             /** 浏览器功能开关，默认 true。 */
             private boolean enabled = true;
 
-            /** 无头模式，默认 true。 */
-            private boolean headless = true;
+            /** 无头模式，默认 false（本地/桌面可见 Agent 浏览过程，容器用 BROWSER_HEADLESS=true 覆写）。 */
+            private boolean headless = false;
 
             /** 空闲超时（秒），默认 300（5 分钟）。 */
             private int idleTimeoutSeconds = 300;
+
+            /**
+             * 空闲会话清理调度间隔（秒），默认 60。
+             *
+             * <p>建议设置为 {@link #idleTimeoutSeconds} 的 1/5 左右，兼顾及时性和 CPU 开销。
+             * 实际生效位置：{@code BrowserSessionScheduler.cleanup()} 的 fixedDelayString。</p>
+             */
+            private int cleanupIntervalSeconds = 60;
 
             /** 工具执行超时（秒），默认 30。 */
             private int toolTimeoutSeconds = 30;
@@ -226,8 +257,14 @@ public class MetaProperties {
             /** JavaScript 执行超时（秒），默认 10。 */
             private int jsExecutionTimeoutSeconds = 10;
 
-            /** 自定义 User-Agent。版本号需跟随 Chromium 更新，当前基于 Chrome 131。 */
-            private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+            /**
+             * 自定义 User-Agent。
+             *
+             * <p>默认 {@code "auto"}：运行时读取 Chromium 版本号动态拼 UA，
+             * 避免硬编码漂移导致的反爬指纹识别。配置任意其它字符串 → 原样使用。
+             * 拼接细节见 {@link com.lifepilot.meta.infra.browser.UserAgentBuilder}。</p>
+             */
+            private String userAgent = "auto";
 
             /** 视口宽度（像素），默认 1920。 */
             private int viewportWidth = 1920;
@@ -267,6 +304,44 @@ public class MetaProperties {
 
             /** Chrome 用户数据目录，仅 PERSISTENT 模式使用。 */
             private String userDataDir = "";
+
+            /** 页面标号快照配置。 */
+            private Snapshot snapshot = new Snapshot();
+
+            /** 人工接管挂起配置。 */
+            private Takeover takeover = new Takeover();
+
+            /**
+             * 页面标号快照配置 — 控制 browser.snapshot 返回的元素数量、范围和视觉标签。
+             *
+             * @author zsg
+             * @since 2026-04-24
+             */
+            @Data
+            public static class Snapshot {
+
+                /** 单次 snapshot 最大返回元素数，默认 200。 */
+                private int maxElements = 200;
+
+                /** true 则默认只截 viewport，false 截全页，默认 true。 */
+                private boolean viewportOnly = true;
+
+                /** 是否叠加视觉编号标签（桌面 headless=false 场景建议 true），默认 false。 */
+                private boolean injectLabels = false;
+            }
+
+            /**
+             * 人工接管挂起配置 — 控制 browser.requestHumanTakeover 相关行为。
+             *
+             * @author zsg
+             * @since 2026-04-24
+             */
+            @Data
+            public static class Takeover {
+
+                /** 挂起等待超时（秒），默认 300（5 分钟）。超时后可由上层强制恢复或失败。 */
+                private int timeoutSeconds = 300;
+            }
         }
 
         /**

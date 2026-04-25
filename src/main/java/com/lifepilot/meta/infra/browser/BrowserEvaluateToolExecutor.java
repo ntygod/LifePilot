@@ -48,23 +48,27 @@ public class BrowserEvaluateToolExecutor {
 
         String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");
 
+        long timeoutSeconds = browserConfig.getJsExecutionTimeoutSeconds();
+
         try {
             var page = sessionManager.getOrCreatePage(sessionId);
-            String result = page.evaluate(expression);
+            String result = page.evaluate(expression, timeoutSeconds);
 
             var data = new LinkedHashMap<String, Object>();
             data.put("result", result);
             data.put("url", page.url());
 
-            log.debug("浏览器 JS 执行完成: sessionId={}, timeout={}s", sessionId,
-                    browserConfig.getJsExecutionTimeoutSeconds());
+            log.debug("浏览器 JS 执行完成: sessionId={}, timeout={}s", sessionId, timeoutSeconds);
             return ToolResult.success(Map.copyOf(data));
         } catch (Exception e) {
-            log.error("浏览器 JS 执行失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
-            var errorData = new LinkedHashMap<String, Object>();
-            errorData.put("error", e.getMessage());
-            errorData.put("stackTrace", e.toString());
-            return ToolResult.error("浏览器 JS 执行失败: " + e.getMessage());
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            // 超时走独立日志等级与返回文案，便于上游区分
+            if (msg.contains("超时") || e.getCause() instanceof java.util.concurrent.TimeoutException) {
+                log.warn("浏览器 JS 执行超时: sessionId={}, timeout={}s", sessionId, timeoutSeconds);
+                return ToolResult.error("JS 执行超过 " + timeoutSeconds + " 秒超时");
+            }
+            log.error("浏览器 JS 执行失败: sessionId={}, error={}", sessionId, msg, e);
+            return ToolResult.error("浏览器 JS 执行失败: " + msg);
         }
     }
 }

@@ -22,6 +22,8 @@ services:
       # 可选：搜索和 Reranker
       - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - RERANKER_API_KEY=${RERANKER_API_KEY:-}
+      # 浏览器工具：容器内强制 headless（无 X server）
+      - BROWSER_HEADLESS=${BROWSER_HEADLESS:-true}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
       interval: 30s

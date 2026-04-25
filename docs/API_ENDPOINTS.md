@@ -14,6 +14,7 @@
 - [Notifications（通知管理）](#notifications通知管理)
 - [Permissions（工具授权）](#permissions工具授权)
 - [Agents（多 Agent 管理）](#agents多-agent-管理)
+- [Agent Suspend / Resume（挂起恢复）](#agent-suspend--resume挂起恢复)
 - [Tools（工具管理）](#tools工具管理)
 - [Processes（后台进程 SSE）](#processes后台进程-sse)
 - [Skills（技能管理）](#skills技能管理)
@@ -194,6 +195,18 @@
 | POST | `/api/agents/{id}/disable` | `disableAgent` | 禁用 Agent（204） |
 | POST | `/api/agents/{id}/test-chat` | `testChat` | 测试对话 |
 | POST | `/api/agents/{id}/context-preview` | `contextPreview` | 上下文预览 |
+
+---
+
+## Agent Suspend / Resume（挂起恢复）
+
+来源：`BrowserTakeoverController`，Base Path: `/api/agent`
+
+> 浏览器人工接管场景下，前端在用户于浏览器里完成登录/验证码/扫码等操作后触发此端点恢复被 `browser.requestHumanTakeover` 挂起的 Agent。`sessionId` 对应 `SuspendReason.BrowserTakeover.sessionId`，与 SSE `AGENT_SUSPENDED` 事件中的 `reasonSourceId` 一致。其它挂起场景（WorkflowWait / UserConfirmation / RemoteDelegation / ScheduledWakeup / ExternalDataWait）由后端通过 Spring ApplicationEvent 在内部触发恢复，不暴露为 REST。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| POST | `/api/agent/browser-takeover/{turnId}/resume` | `resume` | 恢复因浏览器接管挂起的 Agent；查询参数 `sessionId`（必需）、`cancelled`（默认 false）、`note`（可选）；返回 202 Accepted |
 
 ---
 
