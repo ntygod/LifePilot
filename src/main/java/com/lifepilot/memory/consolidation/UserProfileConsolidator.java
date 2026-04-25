@@ -12,6 +12,8 @@ import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryRealityType;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.scope.MemoryWriteContext;
+import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -114,6 +116,9 @@ public class UserProfileConsolidator {
     }
 
     private void doConsolidate() {
+        // Plan 1 设计：后台巩固任务语义为"主账户画像"—— 项目空间不参与巩固，
+        // 项目实体维持在各自 space 内，避免跨项目画像串味。后续若需要项目级巩固
+        // 应新开一个 per-project consolidator，而非在此处接 ProjectContext。
         var filter = MemoryReadFilter.userProfile();
 
         // 1. 从 L3 读取碎片实体
@@ -202,6 +207,13 @@ public class UserProfileConsolidator {
                 null, null, null, null, null, null, null, null
         );
 
+        // 派生来源 — 本次聚合画像使用的所有 L3 源实体 id，供
+        // DerivedEntityListener 通过 derivation_sources LIKE '%<sourceId>%'
+        // 反查到画像并触发 20% 阈值或级联 REGENERATION_NEEDED。
+        List<String> derivationSources = allFragments.stream()
+                .map(TemporalEntity::id)
+                .toList();
+
         var now = Instant.now();
         if (existingProfile.isPresent()) {
             // UPDATE: 用 upsertWithConflictDetection 更新已有画像
@@ -222,11 +234,20 @@ public class UserProfileConsolidator {
                     existing.accessCount(),
                     existing.lastAccessedAt(),
                     existing.createdAt(),
-                    now
+                    now,
+                    // 画像为派生实体 — 继承旧生命周期字段，但强制 isDerived=true
+                    // 并刷新 derivationSources 为本轮聚合使用的 L3 源实体 id 集。
+                    existing.lifecycleState() == null ? LifecycleState.ACTIVE : existing.lifecycleState(),
+                    existing.lifecycleReason(),
+                    existing.expiresAt(),
+                    existing.temporality() == null ? Temporality.PERSISTENT : existing.temporality(),
+                    existing.succeededBy(),
+                    true,
+                    derivationSources
             );
             semanticMemory.upsertWithConflictDetection(updated, "user-profile-consolidation", writeContext);
-            log.info("用户画像巩固: 已更新画像, entityId={}, chars={}",
-                    existing.id(), portraitText.length());
+            log.info("用户画像巩固: 已更新画像, entityId={}, chars={}, sources={}",
+                    existing.id(), portraitText.length(), derivationSources.size());
         } else {
             // ADD: 创建新实体
             var newEntity = new TemporalEntity(
@@ -245,11 +266,15 @@ public class UserProfileConsolidator {
                     0,
                     null,
                     now,
-                    now
+                    now,
+                    // 画像为派生实体 — isDerived=true + derivationSources 指向 L3 源实体集。
+                    LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null,
+                    true,
+                    derivationSources
             );
             semanticMemory.upsertWithConflictDetection(newEntity, "user-profile-consolidation", writeContext);
-            log.info("用户画像巩固: 已创建画像, entityId={}, chars={}",
-                    newEntity.id(), portraitText.length());
+            log.info("用户画像巩固: 已创建画像, entityId={}, chars={}, sources={}",
+                    newEntity.id(), portraitText.length(), derivationSources.size());
         }
     }
 

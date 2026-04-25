@@ -20,6 +20,7 @@ import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
@@ -44,8 +45,11 @@ import com.lifepilot.memory.workspace.WorkspaceProperties;
 import com.lifepilot.observability.context.ContextReportRepository;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -196,11 +200,16 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
             @Autowired(required = false) HybridRetriever hybridRetriever,
-            @Autowired(required = false) WeatherService weatherService) {
-        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
+            @Autowired(required = false) WeatherService weatherService,
+            @Autowired(required = false) SkillInstallationRepository skillInstallationRepository,
+            @Autowired(required = false) SkillRequirementGate skillRequirementGate,
+            @Autowired(required = false) ProjectContextResolver projectContextResolver,
+            @Autowired(required = false) ChatSessionRepository chatSessionRepository) {
+        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，projectContext={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
-                proceduralMemory != null ? "enabled" : "disabled");
+                proceduralMemory != null ? "enabled" : "disabled",
+                (projectContextResolver != null && chatSessionRepository != null) ? "enabled" : "disabled");
         var assembler = new ContextAssembler(
                 config,
                 promptRegistry,
@@ -220,6 +229,10 @@ public class AgentAutoConfiguration {
                 mcpConfig,
                 hybridRetriever);
         assembler.setWeatherService(weatherService);
+        assembler.setSkillInstallationRepository(skillInstallationRepository);
+        assembler.setSkillRequirementGate(skillRequirementGate);
+        assembler.setProjectContextResolver(projectContextResolver);
+        assembler.setChatSessionRepository(chatSessionRepository);
         return assembler;
     }
 
@@ -296,6 +309,7 @@ public class AgentAutoConfiguration {
             AgentToolProvider agentToolProvider,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
+            GenerationRouter generationRouter,
             @Autowired(required = false) TraceRecorder traceRecorder,
             @Autowired(required = false) TranscriptStore transcriptStore,
             @Autowired(required = false) MultimodalRouter multimodalRouter,
@@ -306,10 +320,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) SkillRegistry skillRegistry,
-            @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
-        return new ReactAgentLoop(
+        var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
                 agentToolProvider,
@@ -325,9 +337,10 @@ public class AgentAutoConfiguration {
                 compactionEngine,
                 sharedScheduler,
                 workspaceService,
-                skillRegistry,
-                toolRegistry,
                 experienceSummarizer);
+        // 注入 run(sessionId, UserMessage) 便捷入口所需的路由器
+        loop.setGenerationRouter(generationRouter);
+        return loop;
     }
 
     @Bean

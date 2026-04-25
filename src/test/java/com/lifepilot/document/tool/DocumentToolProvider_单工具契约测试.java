@@ -135,8 +135,8 @@ class DocumentToolProvider_单工具契约测试 {
     void description_含附件挂接语义_与三类产物提示() {
         BuiltinTool tool = provider.buildDocumentTools().get(0);
 
-        // 附件挂接语义让 LLM 明确无需二次落盘
-        assertThat(tool.description()).contains("挂到当前 assistant 消息附件");
+        // 附件挂接语义让 LLM 明确无需二次落盘（英文化后描述相同语义）
+        assertThat(tool.description()).contains("auto-attached to the current assistant message");
         // description 必须展开 3 类 action 提示，LLM 才能按需选参
         assertThat(tool.description()).contains("action=docx");
         assertThat(tool.description()).contains("action=xlsx");

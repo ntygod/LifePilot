@@ -74,6 +74,7 @@ public class GraphTraverser {
                     FROM graph g
                     JOIN temporal_entities te ON te.id = g.entity_id
                     WHERE te.is_current = 1 AND te.id != ?
+                      AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
                     GROUP BY te.id
                     ORDER BY min_depth ASC
                     LIMIT ?
@@ -105,7 +106,9 @@ public class GraphTraverser {
     /** 从查询文本中识别起始实体（名称精确匹配 temporal_entities）。 */
     private List<String> findStartEntities(String query) {
         return jdbcTemplate.query(
-                "SELECT id FROM temporal_entities WHERE is_current = 1 AND ? LIKE '%' || name || '%' ORDER BY LENGTH(name) DESC",
+                "SELECT id FROM temporal_entities WHERE is_current = 1"
+                        + " AND lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')"
+                        + " AND ? LIKE '%' || name || '%' ORDER BY LENGTH(name) DESC",
                 (rs, rowNum) -> rs.getString("id"),
                 query);
     }

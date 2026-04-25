@@ -42,6 +42,7 @@ public class FileMkdirToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: path");
         }
+        pathStr = PathExpander.expand(pathStr);
 
         Path dirPath = Path.of(pathStr).toAbsolutePath().normalize();
 

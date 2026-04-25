@@ -69,6 +69,75 @@ public class MemorySpaceRepository {
         );
     }
 
+    /**
+     * 确保给定项目的项目级记忆空间存在（Plan 1 引入）。
+     *
+     * @param projectId 项目 id
+     * @return 已存在或新建的项目记忆空间
+     */
+    public MemorySpace ensureProjectSpace(String projectId) {
+        return ensureSpace(
+                MemorySpaceKeys.project(projectId),
+                MemorySpaceType.PROJECT,
+                "项目记忆",
+                "PROJECT",
+                projectId,
+                Map.of("projectId", projectId)
+        );
+    }
+
+    /**
+     * 按 id 物理删除记忆空间。
+     *
+     * <p><b>调用约束</b>：memory_entities / memory_relations 对 memory_spaces
+     * 的 FK 是 <b>RESTRICT</b>（V1:337/404），因此调用此方法前必须先清空归属
+     * 此 space 的 memory_entities / memory_relations，否则 FK 会阻断删除。
+     * 级联语义由调用方负责组织（参见 {@code ProjectService#deleteProject}
+     * 的级联顺序说明）。</p>
+     *
+     * <p>memory_space_knowledge_bases / memory_space_datastores 通过 FK
+     * CASCADE 自动清理。</p>
+     */
+    public void deleteById(String spaceId) {
+        jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);
+    }
+
+    /**
+     * 把知识库绑定到记忆空间（memory_space_knowledge_bases）。
+     *
+     * <p>复合主键 (memory_space_id, knowledge_base_id) 天然保证绑定不重复；
+     * 使用 {@code INSERT OR IGNORE} 实现幂等绑定，避免重复绑定时抛异常。</p>
+     *
+     * @param spaceId         记忆空间 id
+     * @param knowledgeBaseId 知识库 id
+     */
+    public void attachKnowledgeBase(String spaceId, String knowledgeBaseId) {
+        jdbcTemplate.update("""
+                INSERT OR IGNORE INTO memory_space_knowledge_bases (
+                    memory_space_id, knowledge_base_id, created_at
+                ) VALUES (?, ?, ?)
+                """,
+                spaceId,
+                knowledgeBaseId,
+                Instant.now().toString()
+        );
+    }
+
+    /**
+     * 查询记忆空间下绑定的所有知识库 id（按绑定时间升序）。
+     *
+     * @param spaceId 记忆空间 id
+     * @return 知识库 id 列表（可能为空）
+     */
+    public List<String> findKnowledgeBaseIdsForSpace(String spaceId) {
+        return jdbcTemplate.queryForList("""
+                SELECT knowledge_base_id
+                FROM memory_space_knowledge_bases
+                WHERE memory_space_id = ?
+                ORDER BY created_at ASC
+                """, String.class, spaceId);
+    }
+
     public MemorySpace ensureSpace(String spaceKey,
                                    MemorySpaceType spaceType,
                                    String displayName,

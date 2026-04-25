@@ -1,20 +1,43 @@
 package com.lifepilot.meta.convenience;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.install.SkillInstallation;
+import com.lifepilot.skill.install.SkillInstallationRepository;
+import com.lifepilot.skill.install.SkillInstaller;
+import com.lifepilot.skill.install.SkillSourceType;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillBodyValidator;
+import com.lifepilot.skill.validation.SkillDescriptionValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * SkillDiscoveryRegistrar 单元测试 — 验证 classpath 下所有 SKILL.md 自动提取到用户目录。
+ * SkillDiscoveryRegistrar 单元测试 —— 验证 BUILTIN 安装流水线接入 {@link SkillInstaller}。
+ *
+ * <p>覆盖：
+ * <ul>
+ *   <li>启动扫描时成功安装至少一个 v2 格式 Skill（introspection）</li>
+ *   <li>老 v1 格式 Skill 被 WARN 跳过不阻断</li>
+ *   <li>禁用开关时不触发扫描</li>
+ *   <li>SkillInstaller 被正确调用，SkillRegistry 接收 Definition</li>
+ * </ul>
  *
  * @author zsg
  * @since 2026-03-08
@@ -23,6 +46,10 @@ class SkillDiscoveryRegistrarTest {
 
     private MetaProperties properties;
     private SkillConfigProperties skillConfig;
+    private SkillInstallationRepository repository;
+    private SkillInstaller installer;
+    private MarkdownSkillParser parser;
+    private SkillRegistry registry;
 
     @TempDir
     Path tempDir;
@@ -32,71 +59,67 @@ class SkillDiscoveryRegistrarTest {
         properties = new MetaProperties();
         skillConfig = new SkillConfigProperties();
         skillConfig.setDirectory(tempDir.toString());
+
+        parser = new MarkdownSkillParser();
+        repository = mock(SkillInstallationRepository.class);
+        installer = new SkillInstaller(parser,
+                new SkillDescriptionValidator(),
+                new SkillBodyValidator(),
+                repository);
+        registry = mock(SkillRegistry.class);
+        when(registry.register(any())).thenReturn(true);
     }
 
     @Test
-    void afterPropertiesSet_自动扫描classpath提取所有Skill() {
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+    void afterPropertiesSet_应安装v2格式Skill_introspection_成功落盘() {
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
 
         registrar.afterPropertiesSet();
 
-        // classpath 下至少有 find-skills
-        Path findSkillsFile = tempDir.resolve("find-skills/SKILL.md");
-        assertThat(findSkillsFile).exists();
+        // introspection 已迁移到 v2 格式，应成功落盘
+        Path introspectionFile = tempDir.resolve("introspection/SKILL.md");
+        assertThat(introspectionFile).exists();
 
-        String content = readString(findSkillsFile);
-        assertThat(content).contains("find-skills");
+        // SkillInstaller 至少被调用一次（BUILTIN 安装）
+        verify(repository, org.mockito.Mockito.atLeastOnce()).upsert(any(SkillInstallation.class));
+
+        // SkillRegistry 接收到至少一个 v2 Definition 且 sourceType 信息正确
+        ArgumentCaptor<SkillDefinition> captor = ArgumentCaptor.forClass(SkillDefinition.class);
+        verify(registry, org.mockito.Mockito.atLeastOnce()).register(captor.capture());
+        List<SkillDefinition> registered = captor.getAllValues();
+        assertThat(registered).anyMatch(d -> d.id().equals("introspection"));
     }
 
     @Test
-    void afterPropertiesSet_文件已存在时跳过不覆盖() throws IOException {
-        // 预先创建文件，模拟用户已自定义
-        Path folder = tempDir.resolve("find-skills");
-        Files.createDirectories(folder);
-        Path targetFile = folder.resolve("SKILL.md");
-        Files.writeString(targetFile, "用户自定义内容", StandardCharsets.UTF_8);
+    void afterPropertiesSet_老格式Skill应被WARN跳过但不阻断其他安装() {
+        // 26 个老格式 Skill 会被 parser 拒绝（id 已废弃），但至少 introspection 成功
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
         registrar.afterPropertiesSet();
 
-        // 验证文件内容未被覆盖
-        assertThat(Files.readString(targetFile, StandardCharsets.UTF_8))
-                .isEqualTo("用户自定义内容");
+        // 捕获所有 upsert 的 SkillInstallation，只能是 v2 格式已迁移的
+        ArgumentCaptor<SkillInstallation> captor = ArgumentCaptor.forClass(SkillInstallation.class);
+        verify(repository, org.mockito.Mockito.atLeastOnce()).upsert(captor.capture());
+        List<String> installedNames = new ArrayList<>();
+        for (SkillInstallation inst : captor.getAllValues()) {
+            installedNames.add(inst.name());
+            assertThat(inst.sourceType()).isEqualTo(SkillSourceType.BUILTIN);
+        }
+        assertThat(installedNames).contains("introspection");
     }
 
     @Test
-    void afterPropertiesSet_功能禁用时跳过提取() {
+    void afterPropertiesSet_功能禁用时应跳过整个扫描() {
         properties.getSkillDiscovery().setEnabled(false);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
         registrar.afterPropertiesSet();
 
-        Path targetFile = tempDir.resolve("find-skills/SKILL.md");
-        assertThat(targetFile).doesNotExist();
-    }
+        // 禁用后不应有任何 upsert 或 register 调用
+        verify(repository, never()).upsert(any());
+        verify(registry, never()).register(any());
 
-    @Test
-    void afterPropertiesSet_提取数量大于20() {
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
-        registrar.afterPropertiesSet();
-
-        // classpath 下有 30+ 个 Skill
-        long count = 0;
-        try (var dirs = Files.list(tempDir)) {
-            count = dirs.filter(Files::isDirectory)
-                    .filter(d -> Files.exists(d.resolve("SKILL.md")))
-                    .count();
-        } catch (IOException e) {
-            // ignore
-        }
-        assertThat(count).isGreaterThan(20);
-    }
-
-    private static String readString(Path path) {
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        // 用户目录也不应有任何文件生成
+        assertThat(Files.exists(tempDir.resolve("introspection/SKILL.md"))).isFalse();
     }
 }

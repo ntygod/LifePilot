@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-04-16
+> **最后更新**：2026-04-23
 
 ## 1. 模块概述
 
@@ -144,11 +144,13 @@ graph TB
 - `HybridRetriever` 支持可选的 `RerankRouter` 步骤，对记忆候选进行精排重排序
 - `HybridRetriever` 实现 `knownEmpty` 短路优化：当检索空间已知为空时，跳过实际检索直接返回空结果
 - `HybridRetriever` 向量路径支持 pre-filter：当 `MemoryReadFilter` 限制了 space_id / memory_scope 时，先通过 `SemanticMemory.findEligibleEntityIds()` 查询合规实体 ID 集合，传入 `VectorSearcher` 做内存过滤；候选集超过 1000 时自动回退为后过滤，避免内存压力
-- `MemoryToolProvider` 注册的 `memory` 工具通过单个 `action` 参数暴露 10 种操作，另加独立的 `knowledge.search` 工具：
+- `MemoryToolProvider` 注册的 `memory` 工具通过单个 `action` 参数暴露 11 种操作，另加独立的 `knowledge.search` 工具：
   - `memory(action=search)`：搜索知识实体
   - `memory(action=recall)`：回忆别的会话里的对话片段
   - `memory(action=create)` / `update` / `delete`：实体 CRUD，其中 `delete` 按已知 `entityId` 归档单条
-  - `memory(action=cancel)`：按语义描述批量归档已取消的 `GOAL / EXPERIENCE / HABIT`（默认类型集合可通过 `entityTypes` 覆盖）；必填 `query`，可选 `maxArchive`（默认 5）/ `minScore`（默认 0.5）；与 `delete` 互补——`delete` 精确按 ID 删单条，`cancel` 按语义召回后批量归档，覆盖"取消定时任务"这类需要清理多个旧目标/经验的场景
+  - `memory(action=cancel)`：按语义描述批量归档已取消的实体（默认 `GOAL / EXPERIENCE / HABIT`，可通过 `entityTypes` 覆盖到任意类型）；支持 `entityId` 精确单条 或 `query` 语义批量；可选 `maxArchive`（默认 5）/ `minScore`（默认 0.5）；覆盖"取消定时任务 / 撤销目标 / 不再做 X"这类需要清理多个旧目标/经验的场景
+  - `memory(action=complete)`：标记 `GOAL / PROJECT` 已完成，驱动 lifecycle 状态机进入终态
+  - `memory(action=supersede)`：旧实体被新实体替代，lifecycle 上建立 superseded_by 关系
   - `memory(action=tag)`：建立实体关系
   - `memory(action=query-at-time)`：时间点查询
   - `memory(action=search-experience)`：检索执行经验
@@ -273,8 +275,9 @@ sequenceDiagram
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；`ProviderMessageBuilder` 借助 `ToolTipResolver` 在构造 LLM 消息时按 toolId 动态前置工具级经验提示（`Observation.output` 保持纯 JSON）；`ToolExecutionCoordinator` 在关键工具执行成功后写入 L1 工作区；`ReactAgentLoop` 反思触发时异步写入即时经验并将反思结论写入 L1 工作区 |
-| 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
+| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；按 `ProjectContext` 构造 `MemoryReadFilter`（`buildForProject` / `fromProjectContextOrFallback`），ISOLATED 项目允许读取 `[项目 space + 主账户 personal + 主账户 experience]`；`metadataCache` 按 filter 分键避免跨项目污染；`ProviderMessageBuilder` 借助 `ToolTipResolver` 在构造 LLM 消息时按 toolId 动态前置工具级经验提示（`Observation.output` 保持纯 JSON）；`ToolExecutionCoordinator` 在关键工具执行成功后写入 L1 工作区；`ReactAgentLoop` 反思触发时异步写入即时经验并将反思结论写入 L1 工作区 |
+| 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型；`ChatTurnService.persistTurnMemorySnapshot` 按 `ChatSession.projectId` 反查 `ProjectContext`，ISOLATED 时把 `projectSpaceId` 固化到 `chat_turn_memory_snapshots.project_space_id`（V18） |
+| 项目工作空间（`com.lifepilot.project`） | Project → Memory | `ProjectService.createProject` 通过 `MemorySpaceRepository.ensureProjectSpace` 创建 `type=PROJECT` 空间；`ProjectContext` / `ProjectContextResolver` 是记忆读写路径的决策载体；隔离语义与 PROJECT 类型说明详见 [项目工作空间架构](./project.md) 与 [记忆领域隔离设计](./memory-domain-isolation.md) |
 | 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
 | 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `knowledge.search` 工具通过知识库检索补充外部文档片段 |
 | 主动引擎（`com.lifepilot.agent.task.proactive`） | Proactive → Memory | `ImplicitSignalCollector` 隐式信号同时回写 L4 偏好（`observePreference`）和 L3 语义记忆（`syncInsightToL3`），使洞察可被 `HybridRetriever` 检索 |

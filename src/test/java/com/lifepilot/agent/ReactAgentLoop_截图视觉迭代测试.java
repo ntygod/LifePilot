@@ -260,8 +260,6 @@ class ReactAgentLoop_截图视觉迭代测试 {
                 null,                 // compactionEngine
                 sharedScheduler,
                 null,                 // workspaceService
-                null,                 // skillRegistry
-                null,                 // toolRegistry
                 null                  // experienceSummarizer
         );
     }

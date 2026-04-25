@@ -1,12 +1,21 @@
 ---
-id: log-analyzer
-name: "日志分析"
-description: "应用日志分析、错误追踪与模式识别。用户说「分析日志」「查看日志」「报错了」「查错误日志」「日志统计」「排查问题」时使用。不适用于系统级健康检查（用 healthcheck）或代码调试（用 code-assistant）。"
-version: "2.0.0"
-suggested-tools:
-  - shell.exec
-  - file.read
-  - file.list
+name: log-analyzer
+description: 当用户要分析应用日志、排查错误、追踪异常、统计错误频率分布或从大量日志中提取关键信息时使用。关键词：分析日志、查看日志、报错了、查错误日志、日志统计、排查问题、堆栈追踪、ERROR、Exception。系统级健康检查用 healthcheck，代码级 bug 调试用 code-assistant，实时监控告警用 cron-scheduler + shell.exec。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: infrastructure
+    priority: normal
+    tags:
+      - log
+      - error-tracking
+      - debugging
+      - pattern
+      - stack-trace
+    suggested_tools:
+      - shell.exec
+      - file.read
+      - file.list
 ---
 
 # 日志分析指南
@@ -26,82 +35,18 @@ suggested-tools:
 - 实时监控告警 → 用 cron-scheduler 配合 shell.exec
 - 代码级 bug 调试 → 用 code-assistant
 
-## 常用日志路径
-
-- 知微应用日志：`~/.zhiwei/logs/lifepilot.log`
-- Java 应用：`./logs/` 或 `./target/logs/`
-- Nginx：`/var/log/nginx/error.log`
-- Linux 系统日志：`/var/log/syslog`
-- Windows 事件日志：通过 `powershell -c "Get-EventLog -LogName Application -Newest 50"` 查看
-
 ## 工作流
 
-### 1. 定位日志文件
+1. **定位日志**：`file.list` 列出 log 文件；内置路径见参考
+2. **快速扫描**：Windows `Select-String`、Linux `grep -E`，抓 ERROR/Exception
+3. **统计分布**：按错误类型排序，前 20 条看高频问题
+4. **大文件分段读**：`file.read` 带 `startLine`/`endLine`，不一次性全量加载
+5. **引用真实日志**：报告中的日志内容必须实际读到的，不编造
+6. **敏感信息脱敏**：IP、用户名、Token 不原样输出
+7. **分级报告**：需立即处理 / 需关注 / 可忽略
 
-```
-file.list(action="list", path="~/.zhiwei/logs", pattern="*.log")
-```
+## 详细参考
 
-### 2. 快速扫描错误
-
-**Windows：**
-```bash
-shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 500 | Select-String 'ERROR|Exception'\"")
-```
-
-**Linux：**
-```bash
-shell.exec(command="grep -rn -E 'ERROR|FATAL|Exception' /path/to/logs/ -C 3")
-```
-
-### 3. 统计错误分布
-
-**Windows：**
-```bash
-shell.exec(command="powershell -c \"Get-Content app.log | Select-String 'ERROR' | Group-Object { ($_ -split '\\s+')[-1] } | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
-```
-
-**Linux：**
-```bash
-shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20")
-```
-
-### 4. 生成分析报告
-
-按以下结构输出：
-
-```
-## 概览
-- 日志时间范围：
-- 总行数：
-- 错误数：
-
-## 关键错误（需立即处理）
-1. 错误描述（出现 N 次）
-   - 首次出现：时间
-   - 堆栈摘要：...
-
-## 错误趋势
-- 频率变化描述
-
-## 重复模式
-- 反复出现的错误模式
-
-## 修复建议
-1. 建议 1
-2. 建议 2
-```
-
-## 规则
-
-- 分析结果中引用的日志内容必须是实际读取到的，不编造日志行
-- 大日志文件用 `file.read` 的 `startLine`/`endLine` 读取指定范围，不一次性全量加载
-- 输出中的 IP、用户名等敏感信息脱敏处理
-- 二进制日志文件跳过，只处理文本日志
-- 错误严重程度分级：需立即处理 / 需关注 / 可忽略
-
-## 常见错误处理
-
-- **日志文件过大** → 先读取尾部最近的 500-1000 行，再按需扩展
-- **编码错误** → 尝试不同编码读取
-- **日志格式不规范** → 先采样几行确认分隔符和时间格式
+- 日志路径清单 + Windows/Linux 命令模板 + 报告结构 + 错误处理：`{skill_dir}/references/log-commands.md`
+</content>
+</invoke>

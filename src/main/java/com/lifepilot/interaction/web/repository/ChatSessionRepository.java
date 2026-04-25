@@ -50,7 +50,22 @@ public class ChatSessionRepository {
                                               String timeRange,
                                               String sortBy,
                                               String order) {
-        return sessionStoreRepository.findWebSessionsByConditions(q, pinned, archived, timeRange, sortBy, order)
+        return findByConditions(q, pinned, archived, timeRange, sortBy, order,
+                SessionStoreRepository.ProjectScope.mainAccount());
+    }
+
+    /**
+     * 支持项目作用域的会话列表查询。
+     */
+    public List<ChatSession> findByConditions(String q,
+                                              Boolean pinned,
+                                              Boolean archived,
+                                              String timeRange,
+                                              String sortBy,
+                                              String order,
+                                              SessionStoreRepository.ProjectScope projectScope) {
+        return sessionStoreRepository
+                .findWebSessionsByConditions(q, pinned, archived, timeRange, sortBy, order, projectScope)
                 .stream()
                 .map(this::mapRow)
                 .toList();
@@ -114,7 +129,8 @@ public class ChatSessionRepository {
                 row.archived(),
                 row.lastMessageAt(),
                 row.createdAt(),
-                row.updatedAt()
+                row.updatedAt(),
+                row.projectId()
         );
     }
 }

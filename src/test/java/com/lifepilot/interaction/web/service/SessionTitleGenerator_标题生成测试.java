@@ -61,7 +61,8 @@ class SessionTitleGenerator_标题生成测试 {
                 sessionRepository,
                 generationRouter,
                 promptRegistry,
-                sseSessionManager
+                sseSessionManager,
+                30
         );
     }
 
@@ -78,7 +79,7 @@ class SessionTitleGenerator_标题生成测试 {
             String userMessage = "你好世界";
 
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
@@ -160,7 +161,7 @@ class SessionTitleGenerator_标题生成测试 {
         void null返回空字符串_不更新标题() {
             String sessionId = "test-session-id";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
@@ -201,14 +202,14 @@ class SessionTitleGenerator_标题生成测试 {
 
         @Test
         void 路由器为null时直接返回() {
-            var gen = new SessionTitleGenerator(sessionRepository, null, promptRegistry, sseSessionManager);
+            var gen = new SessionTitleGenerator(sessionRepository, null, promptRegistry, sseSessionManager, 30);
             gen.generateIfNeeded("session-1", "你好");
             verify(sessionRepository, never()).findById(anyString());
         }
 
         @Test
         void 提示注册器为null时直接返回() {
-            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, null, sseSessionManager);
+            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, null, sseSessionManager, 30);
             gen.generateIfNeeded("session-1", "你好");
             verify(sessionRepository, never()).findById(anyString());
         }
@@ -223,7 +224,7 @@ class SessionTitleGenerator_标题生成测试 {
         void channel会话不调LLM_走固定标题组装() {
             String sessionId = "oc_bb66280a31f2a8cd8e42aba47966181e";  // 飞书真实格式
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
             generator.generateIfNeeded(sessionId, "帮我筛选一下炊事员", "feishu");
@@ -238,7 +239,7 @@ class SessionTitleGenerator_标题生成测试 {
         void channel会话userMessage为空时退化为平台名对话() {
             String sessionId = "oc_channel_session";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
             generator.generateIfNeeded(sessionId, "", "feishu");
@@ -251,7 +252,7 @@ class SessionTitleGenerator_标题生成测试 {
         void channel会话userMessage是connector技术串时过滤() {
             String sessionId = "oc_file_session";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
             // 飞书纯文件消息，content 是 connector 塞的 file_key + fileName
@@ -266,7 +267,7 @@ class SessionTitleGenerator_标题生成测试 {
         void channel会话userMessage超长时截断() {
             String sessionId = "oc_long_session";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
             generator.generateIfNeeded(sessionId,
@@ -290,7 +291,7 @@ class SessionTitleGenerator_标题生成测试 {
             expected.forEach((platform, expectedTitle) -> {
                 String sessionId = "ch_" + platform;
                 var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                        Instant.now(), Instant.now(), Instant.now());
+                        Instant.now(), Instant.now(), Instant.now(), null);
                 when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
                 generator.generateIfNeeded(sessionId, "", platform);
                 verify(sessionRepository).updateTitle(eq(sessionId), eq(expectedTitle));
@@ -316,7 +317,7 @@ class SessionTitleGenerator_标题生成测试 {
         void 当前标题不是默认值时跳过() {
             String sessionId = "session-with-title";
             var session = new ChatSession(sessionId, "已有标题", null, 5, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
             generator.generateIfNeeded(sessionId, "你好");
@@ -328,7 +329,7 @@ class SessionTitleGenerator_标题生成测试 {
         void 标题为NewChat英文默认值时触发生成() {
             String sessionId = "session-en";
             var session = new ChatSession(sessionId, "New Chat", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
@@ -352,7 +353,7 @@ class SessionTitleGenerator_标题生成测试 {
             String sessionId = "session-123";
             String userMessage = "帮我查一下明天的天气预报";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("rendered prompt");
@@ -376,7 +377,7 @@ class SessionTitleGenerator_标题生成测试 {
             String sessionId = "session-long-msg";
             String longMessage = "重".repeat(600);
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenAnswer(invocation -> {
@@ -400,10 +401,10 @@ class SessionTitleGenerator_标题生成测试 {
 
         @Test
         void SseSessionManager为null时不推送但仍更新数据库() {
-            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, promptRegistry, null);
+            var gen = new SessionTitleGenerator(sessionRepository, generationRouter, promptRegistry, null, 30);
             String sessionId = "session-no-sse";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
@@ -427,7 +428,7 @@ class SessionTitleGenerator_标题生成测试 {
         void LLM调用抛异常时不更新标题_不抛出() {
             String sessionId = "session-err";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
@@ -446,7 +447,7 @@ class SessionTitleGenerator_标题生成测试 {
         void 模板渲染异常时不更新标题_不抛出() {
             String sessionId = "session-tpl-err";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any()))
@@ -461,7 +462,7 @@ class SessionTitleGenerator_标题生成测试 {
         void SSE广播异常时标题仍然更新成功() {
             String sessionId = "session-sse-err";
             var session = new ChatSession(sessionId, "新对话", null, 1, false, false,
-                    Instant.now(), Instant.now(), Instant.now());
+                    Instant.now(), Instant.now(), Instant.now(), null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");

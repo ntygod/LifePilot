@@ -68,7 +68,14 @@ class SemanticMemory_实体版本集成测试 {
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    lifecycle_state TEXT NOT NULL DEFAULT 'ACTIVE',
+                    lifecycle_reason TEXT,
+                    expires_at TEXT,
+                    temporality TEXT NOT NULL DEFAULT 'PERSISTENT',
+                    succeeded_by TEXT,
+                    is_derived INTEGER NOT NULL DEFAULT 0,
+                    derivation_sources TEXT
                 )
                 """);
         jdbcTemplate.execute("""
@@ -126,7 +133,14 @@ class SemanticMemory_实体版本集成测试 {
                     me.access_count AS access_count,
                     me.last_accessed_at AS last_accessed_at,
                     me.created_at AS created_at,
-                    mev.updated_at AS updated_at
+                    mev.updated_at AS updated_at,
+                    me.lifecycle_state AS lifecycle_state,
+                    me.lifecycle_reason AS lifecycle_reason,
+                    me.expires_at AS expires_at,
+                    me.temporality AS temporality,
+                    me.succeeded_by AS succeeded_by,
+                    me.is_derived AS is_derived,
+                    me.derivation_sources AS derivation_sources
                 FROM memory_entities me
                 JOIN memory_entity_versions mev ON mev.entity_id = me.id
                 LEFT JOIN memory_entity_provenances p ON p.version_id = mev.id

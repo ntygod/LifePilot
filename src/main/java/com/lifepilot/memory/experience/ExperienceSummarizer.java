@@ -4,15 +4,22 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.scope.MemoryOriginType;
+import com.lifepilot.memory.scope.MemoryRealityType;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +49,10 @@ public class ExperienceSummarizer {
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience config;
     private final TrajectoryQualityAssessor qualityAssessor;
+    @Nullable
+    private final ChatSessionRepository chatSessionRepository;
+    @Nullable
+    private final ProjectContextResolver projectContextResolver;
 
     public ExperienceSummarizer(SemanticMemory semanticMemory,
                                 VectorSearcher vectorSearcher,
@@ -49,12 +60,26 @@ public class ExperienceSummarizer {
                                 PromptRegistry promptRegistry,
                                 MemoryProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor) {
+        this(semanticMemory, vectorSearcher, generationRouter, promptRegistry,
+                properties, qualityAssessor, null, null);
+    }
+
+    public ExperienceSummarizer(SemanticMemory semanticMemory,
+                                VectorSearcher vectorSearcher,
+                                GenerationRouter generationRouter,
+                                PromptRegistry promptRegistry,
+                                MemoryProperties properties,
+                                TrajectoryQualityAssessor qualityAssessor,
+                                @Nullable ChatSessionRepository chatSessionRepository,
+                                @Nullable ProjectContextResolver projectContextResolver) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = properties.getExperience();
         this.qualityAssessor = qualityAssessor;
+        this.chatSessionRepository = chatSessionRepository;
+        this.projectContextResolver = projectContextResolver;
     }
 
     /**
@@ -248,7 +273,8 @@ public class ExperienceSummarizer {
                 String existingId = similar.getFirst().entityId();
                 semanticMemory.findById(existingId).ifPresent(existing -> {
                     float boosted = Math.min(existing.importanceScore() + 0.1f, 1.0f);
-                    SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(existingId, boosted));
+                    SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(
+                            existingId, boosted, WeightSource.EFFECTIVENESS));
                     log.debug("经验提炼: 去重命中，提升已有经验分数, entityId={}, newScore={}",
                             existingId, boosted);
                 });
@@ -302,7 +328,8 @@ public class ExperienceSummarizer {
                     now
             );
 
-            SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId));
+            MemoryWriteContext writeContext = resolveExperienceWriteContext(sourceId);
+            SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId, writeContext));
 
             // 更新向量索引
             vectorSearcher.upsertEntityVector(entity.id(), experienceText);
@@ -312,6 +339,58 @@ public class ExperienceSummarizer {
         } catch (Exception e) {
             log.warn("经验提炼: 存储写入失败, scenario={}, error={}",
                     record.scenario(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 按 state.sessionId() 反查项目归属，构造经验写入上下文。
+     *
+     * <p>ISOLATED 项目 → spaceId=项目 space（经验落项目域）；
+     * 主账户 / SHARED / 解析异常 / resolver 缺失 → spaceId=null，
+     * 让 SemanticMemory 按 entity type 推断默认主账户 space。</p>
+     *
+     * <p>memoryScope 保持 null（同 RealtimeExtractor 的策略，交由下游按 entity type 推断）。</p>
+     */
+    private MemoryWriteContext resolveExperienceWriteContext(@Nullable String sessionId) {
+        String spaceId = resolveProjectSpaceId(sessionId);
+        return new MemoryWriteContext(
+                spaceId,
+                null,
+                MemoryOriginType.CONSOLIDATION,
+                MemoryRealityType.UNKNOWN,
+                sessionId,
+                sessionId,
+                sessionId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    @Nullable
+    private String resolveProjectSpaceId(@Nullable String sessionId) {
+        if (chatSessionRepository == null || projectContextResolver == null
+                || sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.Optional<ChatSession> session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            String projectId = session.get().projectId();
+            if (projectId == null) {
+                return null;
+            }
+            var ctx = projectContextResolver.resolve(projectId);
+            return ctx.isolated() ? ctx.projectSpaceId() : null;
+        } catch (Exception e) {
+            log.debug("经验写入: 项目上下文解析失败，回退主账户 space, sessionId={}, error={}",
+                    sessionId, e.getMessage());
             return null;
         }
     }
@@ -348,8 +427,9 @@ public class ExperienceSummarizer {
                             "success", false, "source", "quick_learn"),
                     1, true, Instant.now(), null, state.sessionId(),
                     0.7f, 0.7f, 0, null, Instant.now(), Instant.now());
+            MemoryWriteContext writeContext = resolveExperienceWriteContext(state.sessionId());
             var written = SqliteBusyRetry.execute(
-                    () -> semanticMemory.upsertWithConflictDetection(entity, state.sessionId()));
+                    () -> semanticMemory.upsertWithConflictDetection(entity, state.sessionId(), writeContext));
             log.info("即时经验: 写入完成, sessionId={}, scenario={}", state.sessionId(), scenario);
             return written;
         } catch (Exception e) {

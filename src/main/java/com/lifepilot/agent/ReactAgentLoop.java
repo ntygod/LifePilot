@@ -3,6 +3,7 @@ package com.lifepilot.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
+import com.lifepilot.agent.callback.NonStreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
@@ -14,6 +15,8 @@ import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.web.sse.SseEventBuffer;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -23,7 +26,6 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.memory.workspace.TaskStateItem;
 import com.lifepilot.memory.workspace.WorkingSetItem;
 import com.lifepilot.observability.trace.LlmCallStep;
@@ -97,14 +99,13 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
 
-    // ===== 可选依赖（Skill 工具激活） =====
-    @Nullable private final com.lifepilot.skill.registry.SkillRegistry skillRegistry;
-
-    // ===== 可选依赖（MCP 工具激活） =====
-    @Nullable private final DynamicToolRegistry toolRegistry;
-
     // ===== 可选依赖（即时经验补丁） =====
     @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
+
+    // ===== 可选依赖（run(Session, UserMessage) 便捷入口依赖） =====
+    // 通过 setter 注入，避免破坏既有 18 参构造器签名；生产环境由 AgentAutoConfiguration 注入，
+    // 测试环境若不调用 run() 则无需提供。
+    @Nullable private GenerationRouter generationRouter;
 
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
@@ -122,8 +123,6 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Nullable SessionWorkspaceService workspaceService,
-            @Nullable com.lifepilot.skill.registry.SkillRegistry skillRegistry,
-            @Nullable DynamicToolRegistry toolRegistry,
             @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
@@ -150,8 +149,6 @@ public class ReactAgentLoop implements CallbackHelper {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.workspaceService = workspaceService;
-        this.skillRegistry = skillRegistry;
-        this.toolRegistry = toolRegistry;
         this.experienceSummarizer = experienceSummarizer;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
@@ -162,8 +159,138 @@ public class ReactAgentLoop implements CallbackHelper {
         return multimodalRouter;
     }
 
+    /**
+     * 注入文本生成路由器 — 仅在使用 {@link #run(String, UserMessage)} 便捷入口时必需。
+     *
+     * <p>采用 setter 注入而非构造器注入，避免破坏既有 18 参构造器签名和全量测试用例；
+     * 生产环境由 {@code AgentAutoConfiguration} 装配，单元测试若不走 run() 路径可直接忽略。</p>
+     *
+     * @param generationRouter 文本生成路由器
+     */
+    public void setGenerationRouter(@Nullable GenerationRouter generationRouter) {
+        this.generationRouter = generationRouter;
+    }
+
     ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
         return providerMessageBuilder.build(ctx, state);
+    }
+
+    // ===== 便捷入口：run(Session, UserMessage) =====
+
+    /**
+     * 以最小入参运行一次 ReAct 循环，返回结构化的 {@link TurnResult}。
+     *
+     * <p>本方法是为 SDK 调用方与场景 E2E 测试准备的纯函数式入口，内部复用
+     * {@link #coreLoop} — 与 HTTP/SSE 入口（{@code AgentOrchestrator.run}）共享
+     * 同一核心循环，不绕过 suspend/resume、retry、预算降级等语义。</p>
+     *
+     * <p>与 HTTP 入口的差异：
+     * <ul>
+     *   <li>不做 checkpoint 保存/恢复（每次都是一轮全新的循环）</li>
+     *   <li>不持久化 transcript、turn、workspace 进度快照</li>
+     *   <li>不发送 SSE 事件（{@link AgentLoopContext} 为纯 no-op 模式）</li>
+     *   <li>不做多模态预处理，用户需传入已校验好的消息</li>
+     * </ul>
+     *
+     * <p>调用前需通过 {@link #setGenerationRouter(GenerationRouter)} 注入文本生成路由器，
+     * 否则抛出 {@link IllegalStateException}。</p>
+     *
+     * @param sessionId   会话标识（不可为空）
+     * @param userMessage 用户消息（Spring AI {@link UserMessage}，文本通过 {@code getText()} 读取）
+     * @return 本轮执行结果快照
+     * @throws IllegalArgumentException 入参为 null 或 sessionId 空白
+     * @throws IllegalStateException    未通过 setter 注入 GenerationRouter
+     */
+    public TurnResult run(String sessionId, UserMessage userMessage) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId 不能为空");
+        }
+        if (userMessage == null) {
+            throw new IllegalArgumentException("userMessage 不能为空");
+        }
+        if (generationRouter == null) {
+            throw new IllegalStateException(
+                    "ReactAgentLoop.run(...) 依赖 GenerationRouter，请先调用 setGenerationRouter 注入");
+        }
+
+        // 1. 构造最小 AgentRequest：仅携带会话标识与用户消息，其他参数走默认值
+        var request = new AgentRequest(
+                userMessage.getText() != null ? userMessage.getText() : "",
+                sessionId,
+                InteractionSource.system("react-agent-loop-run"));
+
+        // 2. 初始化 ReactAgentState — 与 AgentOrchestrator.run 一致的初始化路径
+        var state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
+
+        // 3. 构造无 SSE 的 loopContext（纯内存模式，不推送事件）
+        var loopContext = new AgentLoopContext();
+        var cancellationToken = new CancellationToken();
+
+        // 4. 构造 NonStreamingCallback — 走与 HTTP 同步入口完全相同的 LLM 调用路径
+        var callback = new NonStreamingCallback(
+                config, generationRouter, multimodalRouter, request, this);
+
+        // 5. 调用核心循环（与 AgentOrchestrator.run 共享同一方法）
+        var loopStart = Instant.now();
+        ReactAgentState finalState = coreLoop(
+                state, request, null, loopStart, callback, cancellationToken, loopContext);
+
+        // 6. 从 steps 中收集工具调用序列（ToolCall 与 Observation 按 callId / 顺序配对）
+        List<TurnResult.ToolInvocation> invocations = collectToolInvocations(finalState);
+
+        // 7. 判断本轮是否"正常结束"：非挂起、非降级终止、且 done=true
+        boolean completed = finalState.isDone()
+                && !finalState.suspended()
+                && finalState.completionMode() != CompletionMode.DEGRADED
+                && finalState.terminationReason() == null;
+
+        return new TurnResult(
+                finalState.sessionId(),
+                finalState.turnId(),
+                invocations,
+                finalState.finalOutput(),
+                completed);
+    }
+
+    /**
+     * 从 ReAct 步骤序列中提取 ToolCall + Observation 配对，按原始调用顺序汇总。
+     *
+     * <p>优先通过 {@code callId} 精确匹配；callId 缺失时退回到按顺序的 toolId 首匹配，
+     * 与 transcript 回放逻辑保持一致。</p>
+     */
+    private List<TurnResult.ToolInvocation> collectToolInvocations(ReactAgentState state) {
+        var result = new ArrayList<TurnResult.ToolInvocation>();
+        var steps = state.steps();
+        // Observation 按 callId 建立索引，没有 callId 的放到 fallback 队列
+        var observationByCallId = new LinkedHashMap<String, ReactStep.Observation>();
+        var fallbackObservations = new ArrayList<ReactStep.Observation>();
+        for (var step : steps) {
+            if (step instanceof ReactStep.Observation obs) {
+                if (obs.callId() != null) {
+                    observationByCallId.put(obs.callId(), obs);
+                } else {
+                    fallbackObservations.add(obs);
+                }
+            }
+        }
+
+        int fallbackCursor = 0;
+        for (var step : steps) {
+            if (!(step instanceof ReactStep.ToolCall toolCall)) continue;
+            ReactStep.Observation matched = null;
+            if (toolCall.callId() != null) {
+                matched = observationByCallId.remove(toolCall.callId());
+            }
+            if (matched == null && fallbackCursor < fallbackObservations.size()) {
+                matched = fallbackObservations.get(fallbackCursor++);
+            }
+            String resultJson = matched != null ? matched.output() : "";
+            result.add(new TurnResult.ToolInvocation(
+                    toolCall.toolId(),
+                    toolCall.inputJson() != null ? toolCall.inputJson() : "",
+                    resultJson));
+        }
+        return result;
     }
 
     // ===== 核心 ReAct 循环 =====
@@ -367,7 +494,10 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
-                int preExecStepCount = state.stepCount();
+                // Skill 激活前快照 — 用于事后检测 ToolExecutionCoordinator 是否合并了 activated_tool_ids / skillContent
+                int preExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                String preExecSkillContent = state.loadedSkillContent();
+
                 state = toolExecutionCoordinator.executeBatch(
                         state,
                         toolCalls,
@@ -377,17 +507,13 @@ public class ReactAgentLoop implements CallbackHelper {
                         loopContext,
                         this::appendAndPublishStep);
 
-                // ★ Skill 工具激活 — 检测 file.read 返回的 _skillIds 并激活对应工具，同时提取指南内容
-                var activation = detectSkillToolActivation(state, preExecStepCount);
-                if (activation.hasActivation()) {
-                    state = state.withActivatedToolIds(activation.toolIds());
-                    cachedToolCallbacks = null;
-                    log.info("Skill 工具已激活: traceId={}, skills={}, totalActivated={}",
-                            state.traceId(), activation.toolIds(),
-                            state.activatedToolIds() != null ? state.activatedToolIds().size() : 0);
+                // ★ Skill 激活缓存失效 — 工具执行结果中的 activated_tool_ids / skill content
+                // 已由 ToolExecutionCoordinator 统一合并进 state；这里仅根据状态变化决定是否重建缓存。
+                int postExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                if (postExecActivatedCount > preExecActivatedCount) {
+                    cachedToolCallbacks = null;  // 工具可见集合扩充，需重建回调
                 }
-                if (activation.skillContent() != null) {
-                    state = state.appendSkillContent(activation.skillContent());
+                if (!Objects.equals(preExecSkillContent, state.loadedSkillContent())) {
                     cachedContext = null;  // Skill 指南已注入 state，需重建系统提示词
                 }
 
@@ -1309,86 +1435,4 @@ public class ReactAgentLoop implements CallbackHelper {
                 scene, toolNames, messages.size(), sb);
     }
 
-    /**
-     * Skill 激活检测结果 — 包含需要激活的工具 ID 和 Skill 指南内容。
-     */
-    private record SkillActivationResult(Set<String> toolIds, @Nullable String skillContent) {
-        boolean hasActivation() {
-            return !toolIds.isEmpty();
-        }
-    }
-
-    /**
-     * 检测 file.read 工具结果中的 _skillIds 字段，合并所有相关 Skill 的 suggestedTools，
-     * 同时提取 Skill 指南内容用于注入系统提示词。
-     *
-     * @param state 当前状态（包含新增的 Observation 步骤）
-     * @param fromStepIndex 扫描起始步骤索引
-     * @return 激活结果，包含工具 ID 集合和 Skill 指南内容
-     */
-    private SkillActivationResult detectSkillToolActivation(ReactAgentState state, int fromStepIndex) {
-        if (config.getCoreToolIds().isEmpty()) {
-            return new SkillActivationResult(Set.of(), null);
-        }
-        if (skillRegistry == null && toolRegistry == null) {
-            return new SkillActivationResult(Set.of(), null);
-        }
-        Set<String> toolIds = new LinkedHashSet<>();
-        String skillContent = null;
-        for (int i = fromStepIndex; i < state.steps().size(); i++) {
-            if (!(state.steps().get(i) instanceof ReactStep.Observation obs)) continue;
-            if (!obs.success() || obs.output() == null) continue;
-
-            // 尝试解析 _skillIds 和 content 字段
-            var parsed = extractSkillData(obs.output());
-            if (parsed == null) continue;
-
-            // 提取 Skill 指南内容
-            if (parsed.content() != null && !parsed.content().isBlank()) {
-                skillContent = parsed.content();
-            }
-
-            for (String skillId : parsed.skillIds()) {
-                if (skillId.startsWith("mcp:")) {
-                    // MCP server — 从 registry 获取该 server 的所有工具 ID
-                    String serverName = skillId.substring(4);
-                    if (toolRegistry != null) {
-                        toolRegistry.getToolsByServer(serverName)
-                                .forEach(tool -> toolIds.add(tool.id()));
-                    }
-                } else {
-                    // 内置 Skill — 从 SkillRegistry 获取 suggestedTools
-                    if (skillRegistry != null) {
-                        skillRegistry.find(skillId).ifPresent(def -> toolIds.addAll(def.suggestedTools()));
-                    }
-                }
-            }
-        }
-        return new SkillActivationResult(toolIds, skillContent);
-    }
-
-    /** Skill 数据解析结果。 */
-    private record SkillData(List<String> skillIds, @Nullable String content) {}
-
-    /** 从工具输出 JSON 中提取 _skillIds 列表和 content 字段。 */
-    @SuppressWarnings("unchecked")
-    @Nullable
-    private SkillData extractSkillData(String output) {
-        try {
-            var data = objectMapper.readValue(output, Map.class);
-            Object raw = data.get("_skillIds");
-            if (!(raw instanceof List<?> list)) {
-                return null;
-            }
-            var skillIds = list.stream()
-                    .filter(String.class::isInstance)
-                    .map(String.class::cast)
-                    .toList();
-            String content = data.get("content") instanceof String s ? s : null;
-            return new SkillData(skillIds, content);
-        } catch (Exception ignored) {
-            // 非 JSON 或不含 _skillIds — 正常，忽略
-            return null;
-        }
-    }
 }

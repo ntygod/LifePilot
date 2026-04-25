@@ -153,12 +153,12 @@ graph TB
   - `system.status` — 系统状态概览（各注册中心计数 + 工具层次分布 + JVM 内存）
   - `system.suggest` — 关键词匹配 + 语义搜索推荐能力
 
-### 3.8 SkillDiscoveryRegistrar — find-skills 提取器
+### 3.8 SkillDiscoveryRegistrar — BUILTIN Skill 安装器
 
-- 职责：启动时将内置 `find-skills` SKILL.md 从 classpath 提取到用户 Skill 目录
-- 提取路径：`~/.zhiwei/skills/builtin.find-skills/SKILL.md`
-- 不覆盖策略：目标文件已存在时跳过，保留用户自定义内容
-- 后续由 `MarkdownSkillLoader` 在 `ApplicationReadyEvent` 时作为 UserDefined Skill 加载
+- 职责：启动时把 `classpath:skills/*/SKILL.md` 下的 27 个预置 Skill（含 `find-skills`）通过统一 `SkillInstaller` 流水线安装到用户 Skill 目录
+- 安装路径：`<lifepilot.skills.directory>/<name>/SKILL.md`（默认 `~/.zhiwei/skills/<name>/`）
+- 数据落盘：`source_type = BUILTIN` 写入 `skills` 表（V17 迁移）；解析/校验失败只 WARN 跳过
+- 详细架构参见 `docs/architecture/preset-skills.md`
 
 ### 3.9 ShellToolProvider — Shell 工具构建
 
@@ -264,7 +264,7 @@ sequenceDiagram
 | yieldMs 等待 | awaitCompletion（Process.waitFor） | 替代 Thread.sleep，进程提前退出时立即返回，不浪费等待时间 |
 | 后台进程输出推送 | ApplicationEvent + SSE 广播 | BackgroundProcessManager 发布 ProcessOutputEvent，ProcessSseController 监听并广播 |
 | tmux 孤儿回收 | 启动时扫描 zhiwei-* 前缀会话 | 防止后端重启后遗留无主 tmux 会话 |
-| find-skills 提取 | classpath → 用户目录 | 提取后作为 UserDefined Skill 加载，用户可查看和编辑 |
+| BUILTIN Skill 安装 | classpath → SkillInstaller → skills 表 + 用户目录 | 27 个预置 Skill（含 find-skills）走统一安装流水线，`source_type = BUILTIN` |
 | 内置 MCP 服务器 | JSON 配置 + 启动时 seed | 内置 MCP 定义在 classpath JSON 中，启动时合并到用户目录，由 McpServerDiscovery 统一发现 |
 
 ## 6. 集成点

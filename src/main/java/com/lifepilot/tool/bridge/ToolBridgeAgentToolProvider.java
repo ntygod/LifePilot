@@ -12,6 +12,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.semantics.ToolScopeResolution;
+import com.lifepilot.tool.tier1.Tier1Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
@@ -39,12 +40,16 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private static final Set<String> IDEMPOTENCY_KEY_WHITELIST =
             Set.of("web.search", "web.fetch");
 
+    /** Meta 工具 ID 集合 — 始终可见于 prompt，供 LLM 发现更多能力。 */
+    private static final Set<String> META_TOOL_IDS =
+            Set.of("tools.search", "tools.describe", "tools.list");
+
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
     private final int maxToolOutputChars;
-    /** 核心工具 ID 集合 — 非空时启用分层工具注入。 */
-    private final Set<String> coreToolIds;
+    /** Tier 1 工具服务 — 聚合 pinned + Advisory APPROVED，提供当前 Tier 1 工具 ID 集合。 */
+    private final Tier1Service tier1Service;
     private volatile Map<String, String> toolIdToModelName = Map.of();
     private volatile Map<String, String> modelNameToToolId = Map.of();
 
@@ -53,13 +58,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
             int maxToolOutputChars,
-            @Nullable List<String> coreToolIds) {
+            Tier1Service tier1Service) {
         this.toolRegistry = toolRegistry;
         this.pipeline = pipeline;
         this.objectMapper = objectMapper;
         this.maxToolOutputChars = maxToolOutputChars;
-        this.coreToolIds = coreToolIds != null && !coreToolIds.isEmpty()
-                ? Set.copyOf(coreToolIds) : Set.of();
+        this.tier1Service = tier1Service;
     }
 
     @Override
@@ -113,31 +117,30 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
-        List<ToolContract> tools = toolRegistry.getToolSnapshot();
-        var allowedToolIds = state.allowedToolIds();
+        List<ToolContract> all = toolRegistry.getToolSnapshot();
+        var allowed = state.allowedToolIds();
 
-        if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
+        List<ToolContract> tools;
+        if (allowed != null && !allowed.isEmpty()) {
             // 多 Agent / 受限代理场景 — 白名单过滤，基础设施工具默认透传
-            int totalCount = tools.size();
-            tools = tools.stream()
-                    .filter(t -> allowedToolIds.contains(t.id())
-                                 || t.tags().contains("infrastructure"))
+            int totalCount = all.size();
+            tools = all.stream()
+                    .filter(t -> allowed.contains(t.id()) || t.tags().contains("infrastructure"))
                     .toList();
             log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", totalCount, tools.size());
-        } else if (!coreToolIds.isEmpty()) {
-            // 分层工具注入 — 核心工具 + 已激活的 Skill/MCP 工具
-            Set<String> activatedIds = state.activatedToolIds() != null
-                    ? state.activatedToolIds() : Set.of();
-            int totalCount = tools.size();
-            tools = tools.stream()
-                    .filter(t -> coreToolIds.contains(t.id())
-                              || activatedIds.contains(t.id()))
-                    .toList();
-            log.debug("ToolCallback 过滤 (分层): total={}, core={}, activated={}, final={}",
-                    totalCount, coreToolIds.size(), activatedIds.size(), tools.size());
         } else {
-            // 全量模式
-            log.debug("ToolCallback 全量: count={}", tools.size());
+            // 统一分层 — Tier 1 ∪ activatedToolIds ∪ Meta 工具
+            Set<String> tier1 = tier1Service.getCurrentTier1Ids();
+            Set<String> activated = state.activatedToolIds() != null
+                    ? state.activatedToolIds() : Set.of();
+            Set<String> visible = new HashSet<>();
+            visible.addAll(tier1);
+            visible.addAll(activated);
+            visible.addAll(META_TOOL_IDS);
+            int totalCount = all.size();
+            tools = all.stream().filter(t -> visible.contains(t.id())).toList();
+            log.debug("ToolCallback 过滤 (统一分层): total={}, tier1={}, activated={}, meta={}, final={}",
+                    totalCount, tier1.size(), activated.size(), META_TOOL_IDS.size(), tools.size());
         }
 
         refreshToolNameMappings(tools);
@@ -184,6 +187,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
         context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
+        // 把 state 直接放进 context，供 meta 工具（tools.search/describe/list）的 executor 读取
+        context.put(ToolContextKeys.CALLER_STATE, state);
 
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(resolveModelToolName(tool.id()))

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useNotificationStream } from '@/composables/useNotificationStream'
 import { useProcessStream } from '@/composables/useProcessStream'
+import { useSkillLifecycleEvents } from '@/composables/useSkillLifecycleEvents'
 import Sidebar from './Sidebar.vue'
 
 const sidebarOpen = ref(false)
@@ -19,6 +20,9 @@ useNotificationStream()
 
 // 建立后台进程 SSE 连接（全局订阅，胶囊组件在各场景页自行渲染）
 useProcessStream()
+
+// 建立 Skill 生成事件 SSE 连接，收到事件弹 toast 提示并刷新列表
+useSkillLifecycleEvents()
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 768

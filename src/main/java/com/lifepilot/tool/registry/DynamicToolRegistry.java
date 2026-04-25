@@ -41,13 +41,23 @@ public class DynamicToolRegistry {
     private final ConcurrentHashMap<ToolCategory, Set<String>> categoryIndex = new ConcurrentHashMap<>();
 
     private final ApplicationEventPublisher eventPublisher;
+    /** 启动期命名校验器；为 null 时跳过校验（测试场景或显式关闭）。 */
+    @org.springframework.lang.Nullable
+    private final com.lifepilot.tool.validation.ToolValidator validator;
 
     /** 快照缓存锁。 */
     private final ReadWriteLock snapshotLock = new ReentrantReadWriteLock();
     private volatile List<ToolContract> cachedSnapshot = List.of();
 
     public DynamicToolRegistry(ApplicationEventPublisher eventPublisher) {
+        this(eventPublisher, null);
+    }
+
+    public DynamicToolRegistry(ApplicationEventPublisher eventPublisher,
+                               @org.springframework.lang.Nullable
+                               com.lifepilot.tool.validation.ToolValidator validator) {
         this.eventPublisher = eventPublisher;
+        this.validator = validator;
     }
 
     // ─────────────────────────────────────────────
@@ -60,6 +70,14 @@ public class DynamicToolRegistry {
      * @param tool Java 原生工具
      */
     public void registerBuiltinTool(ToolContract tool) {
+        if (validator != null) {
+            try {
+                validator.validate(tool);
+            } catch (IllegalStateException e) {
+                log.error("拒绝注册不符合命名规范的工具: toolId={}, reason={}", tool.id(), e.getMessage());
+                throw e;
+            }
+        }
         if (registerWithPriority(tool, ToolLayer.JAVA_NATIVE, "builtin")) {
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(

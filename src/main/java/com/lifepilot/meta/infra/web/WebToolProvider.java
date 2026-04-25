@@ -25,8 +25,6 @@ import java.util.Map;
  */
 public class WebToolProvider {
 
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
-
     private final MetaProperties properties;
     private final WebSearchConfigProvider webSearchConfigProvider;
     @Nullable
@@ -63,8 +61,7 @@ public class WebToolProvider {
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
-                .description("搜索互联网信息。知识不足或用户要求联网搜索时使用。" +
-                        "返回标题、URL 和摘要。需要获取完整页面内容时用 web.fetch。")
+                .description("Search the internet by keywords. Use when knowledge is insufficient or the user requests live search. Returns title, URL, and snippet. Call web.fetch to retrieve full page content.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -85,7 +82,7 @@ public class WebToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.none()
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "search", "web", "internet", "query", "find", "lookup"))
                 .executor(executor::execute)
                 .build();
     }
@@ -96,10 +93,7 @@ public class WebToolProvider {
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
-                .description("抓取 URL 内容或调用外部 REST API。" +
-                        "默认 GET：HEAD 探测 Content-Type，HTML 走 Jsoup 正文提取（支持 CSS 选择器），" +
-                        "非 HTML 直连获取原文；renderJs=true 时走浏览器渲染。" +
-                        "非 GET（POST/PUT/DELETE/PATCH）直接走 HttpClient 并返回原始响应体。")
+                .description("Fetch a URL content or call an external REST API. GET probes Content-Type via HEAD: HTML is parsed by Jsoup with optional CSS selector for targeted extraction; non-HTML returns raw bytes. Set renderJs=true to render dynamic pages via headless browser. Non-GET (POST/PUT/DELETE/PATCH) uses HttpClient directly and returns the raw response body. Internal network addresses are blocked by SSRF guard.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -127,7 +121,7 @@ public class WebToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.origins("url")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "fetch", "web", "http", "url", "scrape", "content", "api", "rest"))
                 .executor(executor::execute)
                 .build();
     }

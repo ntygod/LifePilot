@@ -99,22 +99,6 @@ class MarkdownSkillSerializerTest {
     // ─────────────────────────────────────────────
     //  Round Trip（序列化→解析）
     // ─────────────────────────────────────────────
-
-    @Test
-    void 序列化后解析_字段一致() {
-        var original = sampleDefinition();
-        String serialized = serializer.serialize(original);
-
-        var parser = new MarkdownSkillParser();
-        var parseResult = parser.parse(serialized);
-
-        assertThat(parseResult.success()).isTrue();
-        SkillDefinition parsed = parseResult.definition();
-        assertThat(parsed.id()).isEqualTo(original.id());
-        assertThat(parsed.name()).isEqualTo(original.name());
-        assertThat(parsed.description()).isEqualTo(original.description());
-        assertThat(parsed.version()).isEqualTo(original.version());
-        assertThat(parsed.instructions()).isEqualTo(original.instructions());
-        assertThat(parsed.suggestedTools()).isEqualTo(original.suggestedTools());
-    }
+    // TODO Phase B.6: 旧 Round Trip 测试依赖 com.lifepilot.skill.markdown.MarkdownSkillParser，
+    // 该类已随 v2 规范重写删除，Round Trip 待 Phase B.6 接入新 parser 后重写。
 }

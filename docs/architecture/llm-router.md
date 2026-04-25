@@ -361,13 +361,26 @@ public record ModelServiceEntity(
 
 ### 8.4 场景常量（LlmScene）
 
-| 常量 | 值 | 主要路由器 |
-|------|----|-----------|
-| `CHAT` | `chat` | GenerationRouter | 通用对话（含主动提醒） |
-| `AGENT_REACT` | `agent_react` | GenerationRouter | Agent ReAct 推理 |
-| `KNOWLEDGE_EXTRACTION` | `knowledge_extraction` | GenerationRouter | 知识提取（含查询增强） |
-| `MEMORY_COMPRESSION` | `memory_compression` | GenerationRouter | 记忆压缩（含查询改写） |
-| `BACKGROUND_ANALYSIS` | `background_analysis` | GenerationRouter | 后台分析（经验/反思/对比学习） |
-| `SKILL_GENERATION` | `skill_generation` | GenerationRouter | Skill 自动生成 |
-| — | `embedding` | EmbeddingRouter | 向量化（独立路由） |
-| — | `rerank` | RerankRouter | 精排（独立路由） |
+`com.lifepilot.llm.LlmScene` 定义 6 个常量，对应 `GenerationRouter` 的核心场景：
+
+| 常量 | 值 | 说明 |
+|------|----|------|
+| `CHAT` | `chat` | 通用对话（含主动提醒） |
+| `AGENT_REACT` | `agent_react` | Agent ReAct 推理 |
+| `KNOWLEDGE_EXTRACTION` | `knowledge_extraction` | 知识实体提取（含查询增强） |
+| `MEMORY_COMPRESSION` | `memory_compression` | 记忆压缩（含查询改写） |
+| `SKILL_GENERATION` | `skill_generation` | Skill 自动生成 |
+| `BACKGROUND_ANALYSIS` | `background_analysis` | 后台分析（经验/反思/对比学习/子任务反思） |
+
+`EmbeddingRouter` 和 `RerankRouter` 不使用 `LlmScene`，分别按 `EmbeddingUseCase` 枚举（DEFAULT/KNOWLEDGE_BASE/MEMORY）与 `RerankExecutionMode` 路由。
+
+**前端扩展 scene**：`zhiwei-web/src/components/settings/modelServiceCatalog.ts::GENERATION_SCENE_OPTIONS` 在 6 个常量之外额外提供以下字符串值供模型服务场景绑定使用（后端散落在各模块的场景字符串，未进 `LlmScene` 常量集中管理）：
+
+| scene 值 | UI 标签 | 场景 |
+|----------|--------|------|
+| `session-title` | 会话标题 | 生成 ≤ 20 字会话标题（延迟敏感，建议小模型） |
+| `conversation-summary` | 对话摘要 | 对话完成后生成数百字摘要（后台派生） |
+| `knowledge_rerank` | LLM 重排打分 | 用 LLM 对检索结果做 pointwise / listwise 打分，不是专用 reranker 模型 |
+| `retrieval_quality_eval` | LLM 检索评估 | 用 LLM 评估检索结果相关度的轻量打分场景 |
+
+> 专用 reranker（HuggingFace TEI 等）的配置走 `RerankSettings`，不在此列。

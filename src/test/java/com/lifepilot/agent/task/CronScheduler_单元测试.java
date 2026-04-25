@@ -45,13 +45,15 @@ class CronScheduler_单元测试 {
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule TEXT NOT NULL,
                     instruction TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    skill_ids TEXT
+                    skill_ids TEXT,
+                    project_id TEXT
                 )""");
         jdbc.execute("""
                 CREATE TABLE cron_task_logs (
                     id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
                     executed_at TEXT NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL,
-                    tokens_used INTEGER NOT NULL DEFAULT 0, summary TEXT, created_at TEXT NOT NULL
+                    tokens_used INTEGER NOT NULL DEFAULT 0, summary TEXT, created_at TEXT NOT NULL,
+                    trigger_source TEXT NOT NULL DEFAULT 'cron'
                 )""");
         repository = new CronTaskRepository(jdbc);
         agentOrchestrator = mock(AgentOrchestrator.class);
@@ -123,7 +125,7 @@ class CronScheduler_单元测试 {
                 .thenReturn(new AgentResponse("trace1", "cron:t-exec", "日报内容", 100, 3, null));
         when(notificationService.send(any())).thenReturn(List.of("n1"));
 
-        cronScheduler.executeTask(task);
+        cronScheduler.executeTask(task, CronTaskLog.TRIGGER_CRON);
 
         // 验证通知被发送
         verify(notificationService, times(1)).send(any());
@@ -138,7 +140,7 @@ class CronScheduler_单元测试 {
         when(agentOrchestrator.run(any(AgentRequest.class)))
                 .thenReturn(new AgentResponse("trace2", "cron:t-silent", "TASK_SILENT", 50, 1, null));
 
-        cronScheduler.executeTask(task);
+        cronScheduler.executeTask(task, CronTaskLog.TRIGGER_CRON);
 
         // 静默回复不应发送通知
         verify(notificationService, never()).send(any());
@@ -153,7 +155,7 @@ class CronScheduler_单元测试 {
         when(agentOrchestrator.run(any(AgentRequest.class)))
                 .thenThrow(new RuntimeException("LLM 不可用"));
 
-        cronScheduler.executeTask(task);
+        cronScheduler.executeTask(task, CronTaskLog.TRIGGER_CRON);
 
         // 不应抛异常，日志应已写入
         verify(notificationService, never()).send(any());

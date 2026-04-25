@@ -4,7 +4,6 @@ import {
   BookOpen,
   Bot,
   Brain,
-  Database,
   GitBranch,
   Key,
   MessageSquare,
@@ -15,7 +14,6 @@ import {
   ShoppingBag,
   Sparkles,
   Wrench,
-  Workflow,
 } from 'lucide-vue-next'
 
 export interface NavItem {
@@ -31,14 +29,17 @@ export interface NavGroup {
   items: NavItem[]
 }
 
-/** 侧边栏导航分组 */
+/** 工作台 + 资料库 分组（草稿中的下半段） */
 export const sidebarNavGroups: NavGroup[] = [
   {
     id: 'workspace',
     label: '工作台',
     items: [
       { label: '智能体', path: '/agents', icon: Bot, matchPrefixes: ['/agents'] },
-      { label: '工作流', path: '/workflows', icon: Workflow, matchPrefixes: ['/workflows'] },
+      // 工作流入口已于 Skill v2 fixup（2026-04-24）下架：workflow 引擎本体与 REST 保留，
+      // 侧栏入口与路由同步移除，未来如恢复管理面再加回。
+      // 定时任务入口不再挂在管理 Tab 的工作台组——作为高频入口常驻对话 Tab 顶部的操作行，
+      // 见 {@link UnifiedSidebar} 对话 Tab 顶部的 `🕐 定时任务` 按钮。
       { label: '技能', path: '/skills', icon: Puzzle, matchPrefixes: ['/skills'] },
       { label: '扩展市场', path: '/marketplace', icon: ShoppingBag, matchPrefixes: ['/marketplace'] },
       { label: '工具', path: '/tools', icon: Wrench, matchPrefixes: ['/tools'] },
@@ -50,7 +51,7 @@ export const sidebarNavGroups: NavGroup[] = [
     label: '资料库',
     items: [
       { label: '知识库', path: '/knowledge-bases', icon: BookOpen, matchPrefixes: ['/knowledge-bases'] },
-      { label: '资料仓库', path: '/datastores', icon: Database, matchPrefixes: ['/datastores'] },
+      // 资料仓库（/datastores）已于 Plan 3 Task B2 下架，侧栏不再暴露入口。
       { label: '记忆', path: '/memories', icon: Brain, matchPrefixes: ['/memories'] },
     ],
   },
@@ -64,7 +65,7 @@ export const conversationNav: NavItem = {
   matchPrefixes: ['/conversations'],
 }
 
-/** 偏好设置 + 回顾分析导航（从 SettingsView 迁移） */
+/** 偏好设置 + 回顾分析导航（管理 Tab 草稿中的上半段） */
 export const settingsNavGroups: NavGroup[] = [
   {
     id: 'settings',
@@ -90,7 +91,11 @@ export const settingsNavGroups: NavGroup[] = [
   },
 ]
 
-/** 管理 Tab 全部分组 = 偏好设置 + 回顾分析 + 工作台 + 资料库 */
+/**
+ * 管理 Tab 草稿自上而下的 4 大分组：偏好设置 → 回顾与分析 → 工作台 → 资料库。
+ *
+ * <p>这个数组顺序直接决定了侧栏管理 Tab 的视觉顺序，{@link UnifiedSidebar} 按下标渲染。</p>
+ */
 export const manageNavGroups: NavGroup[] = [...settingsNavGroups, ...sidebarNavGroups]
 
 /** 管理 Tab 关联的路由前缀，用于自动切换 Tab */

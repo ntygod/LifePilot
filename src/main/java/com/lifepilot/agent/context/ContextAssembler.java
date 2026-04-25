@@ -21,13 +21,23 @@ import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.install.SkillInstallation;
+import com.lifepilot.skill.install.SkillInstallationRepository;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.spec.SkillPriority;
+import com.lifepilot.skill.spec.SkillZhiweiMeta;
+import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -61,9 +71,35 @@ public class ContextAssembler {
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
 
-    /** 记忆统计缓存（不可变 record，单字段原子读写）。 */
+    /** 记忆统计缓存（不可变 record）。 */
     private record MetadataCache(MemoryCounts counts, Instant cachedAt) {}
-    private volatile MetadataCache metadataCache;
+
+    /**
+     * 记忆统计缓存上限 — 按 filter 为 key 分桶；LRU 淘汰。
+     *
+     * <p>32 足以覆盖"主账户 + N 个项目 × 若干 scope 组合"常见工作集；
+     * 超过后按访问顺序淘汰最旧项，控制内存占用。</p>
+     */
+    private static final int METADATA_CACHE_MAX_SIZE = 32;
+
+    /**
+     * 按 filter 分桶的记忆统计缓存。
+     *
+     * <p>为什么按 filter 分桶：{@code buildMemoryCounts(MemoryReadFilter)} 每个项目
+     * 传入的 filter 不同（spaceIds 不同），若仅按时间 TTL 单桶会导致主账户缓存被
+     * 当作隔离项目的返回值（跨项目污染）。 {@link MemoryReadFilter} 是 record，
+     * 天然支持 equals / hashCode，可直接作为 key。</p>
+     *
+     * <p>使用 {@link LinkedHashMap} accessOrder 模式 + 外部同步实现 LRU；每次访问更新顺序。
+     * 不用 {@link java.util.concurrent.ConcurrentHashMap} 是因为它无法原生支持 LRU 淘汰。</p>
+     */
+    private final Map<MemoryReadFilter, MetadataCache> metadataCache =
+            Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<MemoryReadFilter, MetadataCache> eldest) {
+                    return size() > METADATA_CACHE_MAX_SIZE;
+                }
+            });
 
     /**
      * 记忆分类计数, 供各 context section 首行展示 —
@@ -93,6 +129,12 @@ public class ContextAssembler {
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private final HybridRetriever hybridRetriever;
     @Nullable private volatile WeatherService weatherService;
+    /** Skill 安装事实源 — Phase A.7 新增，driven by {@code skills} 表判断 enabled。 */
+    @Nullable private volatile SkillInstallationRepository skillInstallationRepository;
+    /** Skill 运行期依赖门控 — Phase A.7 新增，过滤 bins/env/os/tools 不满足的 skill。 */
+    @Nullable private volatile SkillRequirementGate skillRequirementGate;
+    @Nullable private volatile ProjectContextResolver projectContextResolver;
+    @Nullable private volatile ChatSessionRepository chatSessionRepository;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -207,6 +249,36 @@ public class ContextAssembler {
         this.weatherService = weatherService;
     }
 
+    /** 注入 Skill 安装仓库（可选，由 AutoConfiguration 调用，Phase A.7）。 */
+    public void setSkillInstallationRepository(@Nullable SkillInstallationRepository repository) {
+        this.skillInstallationRepository = repository;
+    }
+
+    /** 注入 Skill 依赖门控（可选，由 AutoConfiguration 调用，Phase A.7）。 */
+    public void setSkillRequirementGate(@Nullable SkillRequirementGate gate) {
+        this.skillRequirementGate = gate;
+    }
+
+    /**
+     * 注入项目上下文解析器（可选）。
+     *
+     * <p>用于在 {@link #assemble(ReactAgentState)} 入口一次性 resolve ProjectContext，
+     * 供四路并行检索按项目上下文构造记忆 filter。缺失时回退 userMemory/agentExperience/userProfile 原行为。</p>
+     */
+    public void setProjectContextResolver(@Nullable ProjectContextResolver projectContextResolver) {
+        this.projectContextResolver = projectContextResolver;
+    }
+
+    /**
+     * 注入 Web 会话仓库（可选）。
+     *
+     * <p>用于根据 {@code state.sessionId()} 反查 projectId，再配合
+     * {@link ProjectContextResolver} 得到 ProjectContext。</p>
+     */
+    public void setChatSessionRepository(@Nullable ChatSessionRepository chatSessionRepository) {
+        this.chatSessionRepository = chatSessionRepository;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -215,19 +287,27 @@ public class ContextAssembler {
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
+            // 入口一次性 resolve ProjectContext，四路并行检索复用同一上下文
+            ProjectContext projectContext = resolveProjectContext(state);
+            MemoryReadFilter experienceFilter = toProjectFilter(projectContext, Set.of(MemoryScope.AGENT_EXPERIENCE));
+            MemoryReadFilter userMemoryFilter = toProjectFilter(projectContext,
+                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+            MemoryReadFilter userProfileFilter = toProjectFilter(projectContext, Set.of(MemoryScope.USER_PROFILE));
             // 四路独立检索并行化：contextSnapshot、userProfile、experiences、relevantMemories 互不依赖
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
             var profileFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture("")
-                    : CompletableFuture.supplyAsync(() -> safeGetUserProfile(state.goal()), VIRTUAL_EXECUTOR);
+                    : CompletableFuture.supplyAsync(
+                        () -> safeGetUserProfile(state.goal(), userProfileFilter), VIRTUAL_EXECUTOR);
             var experiencesFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
-                    : CompletableFuture.supplyAsync(() -> safeRetrieveExperiences(state.goal()), VIRTUAL_EXECUTOR);
+                    : CompletableFuture.supplyAsync(
+                        () -> safeRetrieveExperiences(state.goal(), experienceFilter), VIRTUAL_EXECUTOR);
             var memoryFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
                     : CompletableFuture.supplyAsync(
-                        () -> safeRetrieveRelevantMemories(state.goal()), VIRTUAL_EXECUTOR);
+                        () -> safeRetrieveRelevantMemories(state.goal(), userMemoryFilter), VIRTUAL_EXECUTOR);
             CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture, memoryFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
@@ -243,7 +323,7 @@ public class ContextAssembler {
             String memorySection = safeRedact(formatMemorySection(relevantMemories));
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
-            MemoryCounts memoryCounts = buildMemoryCounts();
+            MemoryCounts memoryCounts = buildMemoryCounts(userMemoryFilter);
             List<Message> contextMessages = buildContextMessages(
                     profileSection,
                     workspaceSection,
@@ -288,6 +368,54 @@ public class ContextAssembler {
         }
     }
 
+    /**
+     * 从 {@code state.sessionId()} 反查 ChatSession 的 projectId，经 resolver 得到 ProjectContext。
+     *
+     * <p>依赖任一缺失（resolver / chatSessionRepo 为 null）或查询/解析抛错时返回 null，
+     * 调用方需在 {@link #toProjectFilter(ProjectContext, Set)} 中按 null 走 fallback 分支。</p>
+     */
+    @Nullable
+    ProjectContext resolveProjectContext(ReactAgentState state) {
+        if (projectContextResolver == null || chatSessionRepository == null) {
+            return null;
+        }
+        String sessionId = state.sessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            var session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            return projectContextResolver.resolve(session.get().projectId());
+        } catch (Exception e) {
+            log.debug("解析 ProjectContext 失败, 回退到默认 filter: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 按 ProjectContext + scopes 构造记忆读取 filter。
+     *
+     * <p>ctx 为 null 时按 scopes 回退到 {@link MemoryReadFilter#userProfile()} /
+     * {@link MemoryReadFilter#userMemory()} / {@link MemoryReadFilter#agentExperience()} 原行为，
+     * 保证新旧路径向后兼容。</p>
+     *
+     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
+     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
+     */
+    MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
+        return MemoryReadFilter.fromProjectContextOrFallback(
+                ctx != null,
+                ctx != null ? ctx.projectSpaceId() : null,
+                ctx != null ? ctx.personalSpaceId() : null,
+                ctx != null ? ctx.experienceSpaceId() : null,
+                ctx != null && ctx.isolated(),
+                scopes);
+    }
+
     private AssembledContext buildFallbackContext(ReactAgentState state) {
         String systemPrompt = buildAugmentedSystemPrompt(state);
         String userPrompt = buildUserPrompt(state);
@@ -322,6 +450,10 @@ public class ContextAssembler {
     }
 
     List<TemporalEntity> safeRetrieveExperiences(@Nullable String query) {
+        return safeRetrieveExperiences(query, MemoryReadFilter.agentExperience());
+    }
+
+    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query, MemoryReadFilter filter) {
         if (semanticMemory == null || memoryProperties == null) {
             return List.of();
         }
@@ -333,7 +465,7 @@ public class ContextAssembler {
 
             List<TemporalEntity> experiences = semanticMemory.findCurrentByType(
                     EntityType.EXPERIENCE,
-                    MemoryReadFilter.agentExperience());
+                    filter);
             if (experiences.isEmpty()) {
                 return List.of();
             }
@@ -397,6 +529,10 @@ public class ContextAssembler {
      * 排除已由 userProfile 和 experience 路径覆盖的类型。
      */
     List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query) {
+        return safeRetrieveRelevantMemories(query, MemoryReadFilter.userMemory());
+    }
+
+    List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query, MemoryReadFilter filter) {
         if (hybridRetriever == null || semanticMemory == null || memoryProperties == null) {
             return List.of();
         }
@@ -410,7 +546,7 @@ public class ContextAssembler {
             // 用 HybridRetriever 检索全类型实体（userMemory scope）
             List<RetrievalResult> results = hybridRetriever.retrieve(
                     query != null ? query : "", maxEntities * 2,
-                    RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+                    RetrievalWeights.DEFAULT, filter);
             // 过滤已由 userProfile 和 experience 路径覆盖的类型（entityType 是 String）
             Set<String> excludedTypeNames = Set.of(
                     EntityType.PREFERENCE.name(), EntityType.HABIT.name(),
@@ -425,7 +561,7 @@ public class ContextAssembler {
             }
             // 批量加载完整实体
             Set<String> ids = results.stream().map(RetrievalResult::entityId).collect(Collectors.toSet());
-            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, MemoryReadFilter.userMemory());
+            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, filter);
             return results.stream()
                     .map(r -> entityMap.get(r.entityId()))
                     .filter(Objects::nonNull)
@@ -514,18 +650,22 @@ public class ContextAssembler {
      * 使用 SQL GROUP BY 聚合避免全量加载实体, 结果缓存 5 分钟。
      */
     MemoryCounts buildMemoryCounts() {
+        return buildMemoryCounts(MemoryReadFilter.userMemory());
+    }
+
+    MemoryCounts buildMemoryCounts(MemoryReadFilter filter) {
         if (semanticMemory == null) {
             return MemoryCounts.EMPTY;
         }
-        MetadataCache cached = metadataCache;
         Instant now = Instant.now();
+        MetadataCache cached = metadataCache.get(filter);
         if (cached != null && Duration.between(cached.cachedAt(), now).compareTo(METADATA_CACHE_TTL) < 0) {
             return cached.counts();
         }
         try {
-            Map<EntityType, Integer> counts = semanticMemory.countByEntityType(MemoryReadFilter.userMemory());
+            Map<EntityType, Integer> counts = semanticMemory.countByEntityType(filter);
             if (counts.isEmpty()) {
-                metadataCache = new MetadataCache(MemoryCounts.EMPTY, now);
+                metadataCache.put(filter, new MetadataCache(MemoryCounts.EMPTY, now));
                 return MemoryCounts.EMPTY;
             }
             // 分类统计
@@ -560,7 +700,7 @@ public class ContextAssembler {
                     ? "共 " + factCount + " 条（" + factDetails + "）"
                     : "";
             MemoryCounts result = new MemoryCounts(profileLine, experienceLine, factLine);
-            metadataCache = new MetadataCache(result, now);
+            metadataCache.put(filter, new MetadataCache(result, now));
             return result;
         } catch (Exception e) {
             log.debug("记忆统计构建失败: {}", e.getMessage());
@@ -569,14 +709,11 @@ public class ContextAssembler {
     }
 
     String buildAugmentedSystemPrompt(ReactAgentState state) {
-        String baseSystemPrompt = safeReactSystemPrompt(state);
-        String toolGuide = safeRenderToolGuide();
-        String executionGuard = buildExecutionGuardPrompt(state);
-        // 记忆计数不再独立成块, 已迁移到各 context section 首行 (见 buildContextMessages)
+        // 工具使用规则集中在 react-system.st 的 <tool_protocol>；
+        // 记忆工具的使用建议由 context-guide.st 提供；不再在运行时额外拼接 toolGuide / categoryHint。
         return joinNonBlankSections(
-                baseSystemPrompt,
-                toolGuide,
-                executionGuard
+                safeReactSystemPrompt(state),
+                buildExecutionGuardPrompt(state)
         );
     }
 
@@ -870,13 +1007,17 @@ public class ContextAssembler {
     private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
 
     private String safeGetUserProfile(@Nullable String refinedQuery) {
+        return safeGetUserProfile(refinedQuery, MemoryReadFilter.userProfile());
+    }
+
+    private String safeGetUserProfile(@Nullable String refinedQuery, MemoryReadFilter profileFilter) {
         if (semanticMemory == null) {
             return "";
         }
         try {
             // 优先读巩固后的连贯画像（由 UserProfileConsolidator 定时生成）
             var consolidated = semanticMemory.findCurrentByNameAndType(
-                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, MemoryReadFilter.userProfile());
+                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, profileFilter);
             if (consolidated.isPresent()) {
                 var desc = consolidated.get().description();
                 if (desc != null && !desc.isBlank()) {
@@ -887,7 +1028,6 @@ public class ContextAssembler {
 
             // 降级：碎片实体拼接
             List<TemporalEntity> candidates = new ArrayList<>();
-            MemoryReadFilter profileFilter = MemoryReadFilter.userProfile();
             for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
                 candidates.addAll(semanticMemory.findCurrentByType(type, profileFilter));
             }
@@ -1123,21 +1263,48 @@ public class ContextAssembler {
         return w.getRelevance() * relevance + w.getImportance() * importance + w.getRecency() * recency;
     }
 
+    /**
+     * 构建 Skill Catalog 段 — 查 skills 表（enabled=true） → 读 registry 拿 SkillDefinition →
+     * SkillRequirementGate 过滤 bins/env/os/tools 不满足的 skill → 按 category 分组 + 组内按 priority 排序 →
+     * 输出 XML 结构（{@code <category name="X"><skill>...</skill></category>}）。
+     *
+     * <p>输出为渲染进 {@code agent/skill-catalog.st} 模板的 {@code skillEntries} 片段；
+     * 模板外框 {@code <skill_catalog>} 标签保留以沿用 LLM 侧文案与使用规则。</p>
+     */
     private String buildSkillCatalog() {
-        if (skillRegistry == null) {
-            return "";
-        }
-        var skills = skillRegistry.listAll();
-        if (skills.isEmpty()) {
+        if (skillRegistry == null || skillInstallationRepository == null) {
             return "";
         }
 
-        // 两阶段披露 — system prompt 展示 XML 摘要（id + name + description），
-        // LLM 根据 description 匹配意图后通过 file.read(skill=...) 加载完整指南
-        String skillEntries = skills.stream()
-                .map(s -> s.toDiscoverySummary())
-                .collect(Collectors.joining("\n"));
+        List<SkillInstallation> enabled;
+        try {
+            enabled = skillInstallationRepository.findAllByEnabled(true);
+        } catch (Exception e) {
+            log.warn("加载已启用 skill 失败: error={}", e.getMessage());
+            return "";
+        }
+        if (enabled.isEmpty()) {
+            return "";
+        }
 
+        // 查表 + 过滤：注册表存在 + requires 满足
+        List<SkillCatalogEntry> entries = enabled.stream()
+                .map(install -> skillRegistry.find(install.name()).orElse(null))
+                .filter(Objects::nonNull)
+                .filter(def -> skillRequirementGate == null
+                        || skillRequirementGate.satisfies(def.zhiweiMeta().requires()))
+                .map(ContextAssembler::toCatalogEntry)
+                .sorted(Comparator
+                        .comparing(SkillCatalogEntry::category, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparingInt(entry -> priorityOrder(entry.priority()))
+                        .thenComparing(SkillCatalogEntry::name))
+                .toList();
+
+        if (entries.isEmpty()) {
+            return "";
+        }
+
+        String skillEntries = renderCategoryGroupedXml(entries);
         try {
             return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
         } catch (Exception e) {
@@ -1146,42 +1313,80 @@ public class ContextAssembler {
         }
     }
 
+    /** Skill catalog 一行映射：name + description + category + priority。 */
+    private record SkillCatalogEntry(String name, String description, String category, SkillPriority priority) {}
+
+    /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
+    private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
+        SkillZhiweiMeta meta = def.zhiweiMeta();
+        String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
+        String category = meta.category() == null ? "other" : meta.category();
+        return new SkillCatalogEntry(displayName, def.description(), category, meta.priority());
+    }
+
+    /**
+     * 按 category 分组拼装 XML：同 category 的 skill 放在同一个 {@code <category>} 标签内；
+     * 组内按 priority 排序（HIGH → NORMAL → LOW）由调用方预排好。
+     */
+    private static String renderCategoryGroupedXml(List<SkillCatalogEntry> entries) {
+        var sb = new StringBuilder();
+        String currentCategory = null;
+        for (SkillCatalogEntry e : entries) {
+            if (!Objects.equals(currentCategory, e.category())) {
+                if (currentCategory != null) {
+                    sb.append("</category>\n");
+                }
+                sb.append("<category name=\"").append(escapeXml(e.category())).append("\">\n");
+                currentCategory = e.category();
+            }
+            sb.append("  <skill name=\"").append(escapeXml(e.name())).append("\">\n");
+            sb.append("    <description>").append(escapeXml(e.description())).append("</description>\n");
+            sb.append("  </skill>\n");
+        }
+        if (currentCategory != null) {
+            sb.append("</category>");
+        }
+        return sb.toString();
+    }
+
+    /** HIGH=0, NORMAL=1, LOW=2 — 排序权重。 */
+    private static int priorityOrder(SkillPriority p) {
+        if (p == null) {
+            return 1;
+        }
+        return switch (p) {
+            case HIGH -> 0;
+            case NORMAL -> 1;
+            case LOW -> 2;
+        };
+    }
+
+    /** XML 文本转义 — 仅覆盖标签属性/文本中可能出现的 5 个特殊字符。 */
+    private static String escapeXml(@Nullable String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
+    }
+
     /**
      * 构建已加载 Skill 指南段 — 注入到 userPrompt 头部（runtime_context 上方），
      * 利用近因效应确保 LLM 优先注意到 Skill 指南中的约束。
      *
-     * <p>仅注入 Markdown body 部分，剥离 YAML frontmatter（id/name/description/version
-     * 等元数据对 LLM 执行无意义，节省 token）。</p>
+     * <p>{@code state.loadedSkillContent()} 由 {@link com.lifepilot.agent.execution.ToolExecutionCoordinator}
+     * 从 {@code skill.load} 工具输出中提取，形如 {@code <skill name="X">body</skill>}，
+     * 已经是 {@link com.lifepilot.skill.MarkdownSkillParser} 解析后的 body 部分，
+     * 不再含 YAML frontmatter，直接拼接即可。</p>
      */
     private String buildLoadedSkillsSection(@Nullable ReactAgentState state) {
         if (state == null || state.loadedSkillContent() == null || state.loadedSkillContent().isBlank()) {
             return "";
         }
-        String content = stripYamlFrontmatter(state.loadedSkillContent());
-        if (content.isBlank()) {
-            return "";
-        }
-        return "<loaded_skills>\n" + content + "\n</loaded_skills>";
-    }
-
-    /**
-     * 剥离 SKILL.md 中的 YAML frontmatter（--- ... --- 之间的部分），只保留 Markdown body。
-     */
-    static String stripYamlFrontmatter(String content) {
-        String normalized = content.replace("\r\n", "\n").replace("\r", "\n");
-        if (!normalized.startsWith("---")) {
-            return content;
-        }
-        int secondDelimiter = normalized.indexOf("\n---", 3);
-        if (secondDelimiter < 0) {
-            return content;
-        }
-        // 跳过第二个 --- 及其后的换行
-        int bodyStart = secondDelimiter + 4;
-        if (bodyStart >= normalized.length()) {
-            return "";
-        }
-        return normalized.substring(bodyStart).strip();
+        return "<loaded_skills>\n" + state.loadedSkillContent().strip() + "\n</loaded_skills>";
     }
 
     /**
@@ -1225,16 +1430,6 @@ public class ContextAssembler {
                 .map(ToolContract::description)
                 .filter(d -> d != null && !d.isBlank())
                 .collect(Collectors.joining("；"));
-    }
-
-    private String safeRenderToolGuide() {
-        try {
-            String guide = promptRegistry.render("memory/agentic-tool-guide");
-            return guide != null ? guide : "";
-        } catch (Exception e) {
-            log.warn("渲染记忆工具使用指引失败: error={}", e.getMessage());
-            return "";
-        }
     }
 
     private String safeReactSystemPrompt() {

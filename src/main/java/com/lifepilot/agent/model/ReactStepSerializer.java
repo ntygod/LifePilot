@@ -270,11 +270,6 @@ public final class ReactStepSerializer {
                     "update", "更新记忆", "delete", "删除记忆", "tag", "标记记忆",
                     "query-at-time", "查询历史记忆", "search-experience", "搜索经验"
             ), "query", "name");
-            case "datastore" -> summarizeActionTool(root, Map.of(
-                    "create-collection", "创建集合", "list-collections", "列出集合",
-                    "delete-collection", "删除集合", "insert", "插入数据到",
-                    "query", "查询", "update", "更新", "delete", "删除数据", "aggregate", "聚合"
-            ), "collectionName", "name");
             case "cron" -> summarizeActionTool(root, Map.of(
                     "create", "创建定时任务", "list", "列出定时任务",
                     "update", "更新任务", "remove", "删除任务"
@@ -320,7 +315,7 @@ public final class ReactStepSerializer {
                     default -> action != null ? "浏览器 " + action : "浏览器操作";
                 };
             }
-            case "notify" -> {
+            case "notify.send_message" -> {
                 String title = textField(root, "title");
                 yield title != null ? "通知「" + truncate(title, 30) + "」" : "推送通知";
             }
@@ -383,13 +378,6 @@ public final class ReactStepSerializer {
                 int count = arrayLength(root, "results");
                 yield count >= 0 ? "找到 " + count + " 条记忆" : "操作成功";
             }
-            case "datastore" -> {
-                int count = arrayLength(root, "results");
-                if (count >= 0) yield "查询到 " + count + " 条记录";
-                String docId = textField(root, "documentId");
-                if (docId != null) yield "操作成功";
-                yield intFieldLabel(root, "count", "共 %d 条", "操作成功");
-            }
             case "cron" -> {
                 String name = textField(root, "name");
                 yield name != null ? "任务「" + truncate(name, 30) + "」" : "操作成功";
@@ -397,7 +385,7 @@ public final class ReactStepSerializer {
             case "git.query" -> "查询完成";
             case "git.mutate" -> "操作成功";
             case "browser" -> "操作成功";
-            case "notify" -> "通知已发送";
+            case "notify.send_message" -> "通知已发送";
             default -> "操作成功";
         };
     }

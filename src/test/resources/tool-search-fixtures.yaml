@@ -1,0 +1,74 @@
+# 工具搜索召回率回归 fixture
+#
+# 每条 query 期望 top-3 中至少有 1 个出现在 expected_top_3 中；
+# 整体召回率 ≥ 85% 视为通过。
+#
+# 注意：
+#   - Tier 1 pinned 工具（file.read / file.write / file.list / web.search /
+#     web.fetch / shell.exec / memory / knowledge.search / tools.*）不在搜索池里，
+#     被 ToolSearchService 默认过滤排除 —— 因此 expected 必须是 Tier 2 工具。
+#   - FTS5 默认多 phrase 为 AND 连接，本 fixture 以 2-token 短 query 为主，
+#     避免 token 过多时整体 AND 为空。
+#   - 失败样本会打印到控制台便于补 tags。
+#
+fixtures:
+  - query: "delete file"
+    expected_top_3: ["file.manage"]
+  - query: "copy directory"
+    expected_top_3: ["file.manage"]
+  - query: "create document"
+    expected_top_3: ["document.create"]
+  - query: "generate excel"
+    expected_top_3: ["document.create"]
+  - query: "create powerpoint"
+    expected_top_3: ["document.create"]
+  - query: "edit docx"
+    expected_top_3: ["document.edit"]
+  - query: "rollback document"
+    expected_top_3: ["document.edit"]
+  - query: "patch file"
+    expected_top_3: ["file.edit", "document.edit"]
+  - query: "undo edit"
+    expected_top_3: ["file.undo"]
+  - query: "redo edit"
+    expected_top_3: ["file.redo"]
+  - query: "diff file"
+    expected_top_3: ["file.diff"]
+  - query: "background process"
+    expected_top_3: ["shell.process"]
+  - query: "tmux session"
+    expected_top_3: ["shell.process"]
+  - query: "git commit"
+    expected_top_3: ["git.mutate"]
+  - query: "git log"
+    expected_top_3: ["git.query"]
+  - query: "browser automation"
+    expected_top_3: ["browser"]
+  - query: "click screenshot"
+    expected_top_3: ["browser"]
+  - query: "execute python"
+    expected_top_3: ["code.execute"]
+  - query: "run sandbox"
+    expected_top_3: ["code.execute"]
+  - query: "reset kernel"
+    expected_top_3: ["code.kernel.reset"]
+  - query: "inspect kernel"
+    expected_top_3: ["code.kernel.inspect"]
+  - query: "list kernel"
+    expected_top_3: ["code.kernel.list"]
+  - query: "schedule cron"
+    expected_top_3: ["cron"]
+  - query: "timer job"
+    expected_top_3: ["cron"]
+  - query: "send notification"
+    expected_top_3: ["notify"]
+  - query: "push alert"
+    expected_top_3: ["notify"]
+  - query: "spawn worker"
+    expected_top_3: ["spawn_workers"]
+  - query: "generate skill"
+    expected_top_3: ["generate_skill"]
+  - query: "render widget"
+    expected_top_3: ["ui.render"]
+  - query: "system health"
+    expected_top_3: ["system.status"]

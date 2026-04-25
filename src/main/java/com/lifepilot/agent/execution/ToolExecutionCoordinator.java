@@ -73,7 +73,7 @@ public class ToolExecutionCoordinator {
     /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
     private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
             "memory.create", "memory.update", "memory.tag",
-            "workflow.execute", "code.execute", "datastore.query");
+            "code.execute");
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
                                     ObjectMapper objectMapper,
@@ -573,6 +573,14 @@ public class ToolExecutionCoordinator {
         persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
                 outcome.success(), outcome.rawOutput(), null, outcome.startedAt());
 
+        // Skill 激活合并 — 通用入口：任何工具只要在成功输出中返回
+        // activated_tool_ids（List）/ content（以 <skill 开头的 XML），
+        // 就会被合并到 state 的激活工具集和已加载 Skill 指南上。
+        // 当前由 skill.load 工具驱动，替代老 ReactAgentLoop.detectSkillToolActivation() 黑魔法。
+        if (outcome.success()) {
+            state = mergeSkillActivationFromOutput(state, planned.toolId(), outcome.rawOutput());
+        }
+
         // L4 程序记忆：异步记录意图匹配，不阻塞主链路
         if (outcome.success() && proceduralMemory != null && intentMatcher != null) {
             String intentQuery = buildIntentMatchQuery(planned.toolId(), planned.inputJson());
@@ -674,6 +682,66 @@ public class ToolExecutionCoordinator {
             } catch (IllegalArgumentException e) {
                 log.warn("Base64 解码失败，跳过媒体数据: toolId={}, field={}",
                         toolId, mediaItem.fieldName());
+            }
+        }
+        return state;
+    }
+
+    /**
+     * 从工具成功输出中提取 Skill 激活信号并合并到状态上。
+     *
+     * <p>通用合并规则：
+     * <ul>
+     *   <li>{@code activated_tool_ids}（List） → 追加到 {@code state.activatedToolIds}</li>
+     *   <li>{@code content}（以 {@code <skill} 开头的 XML） → 追加到 {@code state.loadedSkillContent}</li>
+     * </ul>
+     *
+     * <p>当前由 {@code skill.load} 工具驱动；任何其它工具如果也按此契约返回同名字段，
+     * 合并行为同样生效（形成可扩展的通用激活入口）。</p>
+     */
+    private ReactAgentState mergeSkillActivationFromOutput(ReactAgentState state,
+                                                           String toolId,
+                                                           @Nullable String rawOutput) {
+        if (rawOutput == null || rawOutput.isBlank()) {
+            return state;
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(rawOutput);
+        } catch (Exception e) {
+            return state;
+        }
+        if (!root.isObject()) {
+            return state;
+        }
+
+        JsonNode toolIdsNode = root.get("activated_tool_ids");
+        if (toolIdsNode != null && toolIdsNode.isArray()) {
+            var mergedIds = new LinkedHashSet<String>();
+            for (JsonNode item : toolIdsNode) {
+                if (item.isTextual()) {
+                    String id = item.asText();
+                    if (id != null && !id.isBlank()) {
+                        mergedIds.add(id);
+                    }
+                }
+            }
+            if (!mergedIds.isEmpty()) {
+                int before = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                state = state.withActivatedToolIds(mergedIds);
+                int after = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                if (after > before) {
+                    log.info("Skill 工具激活合并: toolId={}, newlyActivated={}, total={}",
+                            toolId, mergedIds, after);
+                }
+            }
+        }
+
+        JsonNode contentNode = root.get("content");
+        if (contentNode != null && contentNode.isTextual()) {
+            String content = contentNode.asText();
+            if (content != null && content.startsWith("<skill")) {
+                state = state.appendSkillContent(content);
             }
         }
         return state;

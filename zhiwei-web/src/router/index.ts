@@ -64,6 +64,30 @@ const router = createRouter({
     },
 
     /**
+     * 项目工作空间 —— Plan 1 Task 20
+     *
+     * 承载"清爽款"项目详情页：顶部为项目名 + 资料/设置入口，
+     * 主区为"开始新对话"按钮与该项目下的对话列表（列表将在后续 task 接入）。
+     */
+    {
+      path: '/projects/:id',
+      name: 'projectDetail',
+      component: () => import('@/views/ProjectDetailView.vue')
+    },
+
+    /**
+     * 定时任务全局管理 —— Plan 2+3 Task A5
+     *
+     * 侧栏 {@code scheduled-tasks-entry} 一级入口对应的页面，
+     * 展示主账户 + 所有项目下的定时任务，带暂停/恢复/删除操作。
+     */
+    {
+      path: '/scheduled-tasks',
+      name: 'scheduledTasks',
+      component: () => import('@/views/ScheduledTasksView.vue')
+    },
+
+    /**
      * 知识库模块
      */
     {
@@ -81,16 +105,12 @@ const router = createRouter({
       name: 'knowledgeBaseDocumentDetail',
       component: () => import('@/views/KnowledgeBaseDocumentView.vue')
     },
-    {
-      path: '/datastores',
-      name: 'datastores',
-      component: () => import('@/views/DatastoreView.vue')
-    },
-    {
-      path: '/datastores/:id',
-      name: 'datastoreDetail',
-      component: () => import('@/views/DatastoreDetailView.vue')
-    },
+
+    /**
+     * Datastore 路由已于 Plan 3 Task B2 下架（spec §5.1/§5.3）。
+     * DatastoreView.vue / DatastoreDetailView.vue 组件文件保留以便后续需要时复用，
+     * 但不再注册为用户可达路由；相关后端 API 也保留，仅移除前端入口。
+     */
 
     /**
      * 记忆管理
@@ -114,16 +134,11 @@ const router = createRouter({
       name: 'agentDetail',
       component: () => import('@/views/AgentDetailView.vue')
     },
-    {
-      path: '/workflows',
-      name: 'workflows',
-      component: () => import('@/views/WorkflowManageView.vue')
-    },
-    {
-      path: '/workflows/:id',
-      name: 'workflowDetail',
-      component: () => import('@/views/WorkflowDetailView.vue')
-    },
+    /**
+     * Workflow 路由已于 Skill v2 fixup（2026-04-24）下架：workflow 引擎本体与 REST 端点保留，
+     * LLM 工具 + 用户前端入口同步移除。WorkflowManageView.vue / WorkflowDetailView.vue
+     * 组件文件与 stores/workflow.ts 保留以备未来恢复管理面，但不再注册路由。
+     */
     {
       path: '/skills',
       name: 'skills',

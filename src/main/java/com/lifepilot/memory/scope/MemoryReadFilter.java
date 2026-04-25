@@ -58,6 +58,114 @@ public record MemoryReadFilter(
         );
     }
 
+    /**
+     * 构造项目上下文的读取过滤器。
+     *
+     * <p>语义（Plan 1 基础版本）：
+     * <ul>
+     *   <li>隔离项目：允许读取 [项目 space + 主账户 personal + 主账户 experience]</li>
+     *   <li>不隔离项目：等同主账户读取（项目 space 不加入）</li>
+     *   <li>主账户对话（projectSpaceId = null）：只读主账户 space</li>
+     * </ul>
+     *
+     * <p><b>注</b>：Plan 1 先做 space-level 合并，不做 key-level override；
+     * L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续 plan。</p>
+     *
+     * @param projectSpaceId    项目 MemorySpace id（主账户对话时为 null）
+     * @param personalSpaceId   主账户 personal MemorySpace id
+     * @param experienceSpaceId 主账户 experience MemorySpace id
+     * @param isolated          当前项目是否 ISOLATED
+     */
+    public static MemoryReadFilter buildForProject(
+            @Nullable String projectSpaceId,
+            String personalSpaceId,
+            String experienceSpaceId,
+            boolean isolated) {
+        Set<String> spaces = new LinkedHashSet<>();
+        if (projectSpaceId != null && isolated) {
+            spaces.add(projectSpaceId);
+        }
+        spaces.add(personalSpaceId);
+        spaces.add(experienceSpaceId);
+        return new MemoryReadFilter(spaces, Set.of());
+    }
+
+    /**
+     * 构造项目上下文 + scope 过滤器的组合。
+     *
+     * <p>等价于在 {@link #buildForProject(String, String, String, boolean)} 基础上再限定 scopes。
+     * 当 userProfile / userMemory / agentExperience 路径依赖 scope 约束时使用。</p>
+     *
+     * @param projectSpaceId    项目 MemorySpace id（主账户对话时为 null）
+     * @param personalSpaceId   主账户 personal MemorySpace id
+     * @param experienceSpaceId 主账户 experience MemorySpace id
+     * @param isolated          当前项目是否 ISOLATED
+     * @param scopes            需要限定的 scope 集合；为 null 时等同 {@code Set.of()}（不限定 scope）
+     */
+    public static MemoryReadFilter buildForProject(
+            @Nullable String projectSpaceId,
+            String personalSpaceId,
+            String experienceSpaceId,
+            boolean isolated,
+            @Nullable Set<MemoryScope> scopes) {
+        MemoryReadFilter base = buildForProject(projectSpaceId, personalSpaceId, experienceSpaceId, isolated);
+        return new MemoryReadFilter(base.spaceIds(), scopes != null ? scopes : Set.of());
+    }
+
+    /**
+     * 按"项目上下文拆包参数 + scopes"构造读取过滤器；上下文缺失时按 scopes 回退到传统语义。
+     *
+     * <p>典型调用方：ContextAssembler / MemoryToolProvider 这类需要根据
+     * {@code ProjectContext} 动态构造 filter、但又要兼容 "resolver/chatSession 查不到" 回退的场景。
+     * 集中回退分支，避免各调用方各自维护 {@link #userMemory()} / {@link #agentExperience()} /
+     * {@link #userProfile()} / {@link #all()} 判定逻辑。</p>
+     *
+     * <p><b>未使用 {@code ProjectContext} 直接签名</b>：memory.scope 包不能反向依赖 project.context
+     * 包（project 已依赖 memory.scope，反向 import 会循环依赖）。调用方自行拆包 ctx 即可。</p>
+     *
+     * <p>当 ctx 相关参数全为 null/""（即 personalSpaceId 也空）时：
+     * <ul>
+     *   <li>scopes 为 null/空 → {@link #all()}</li>
+     *   <li>scopes == {AGENT_EXPERIENCE} → {@link #agentExperience()}</li>
+     *   <li>scopes == {USER_PROFILE} → {@link #userProfile()}</li>
+     *   <li>scopes == {USER_PROFILE, USER_FACT} → {@link #userMemory()}</li>
+     *   <li>其他组合 → 只限定 scopes（spaceIds 为空）</li>
+     * </ul>
+     *
+     * <p>否则走 {@link #buildForProject(String, String, String, boolean, Set)}。</p>
+     *
+     * @param ctxPresent        ProjectContext 是否可用（{@code false} 时走 fallback）
+     * @param projectSpaceId    {@code ctxPresent=true} 时有效；主账户对话传 null
+     * @param personalSpaceId   {@code ctxPresent=true} 时必传
+     * @param experienceSpaceId {@code ctxPresent=true} 时必传
+     * @param isolated          {@code ctxPresent=true} 时有效
+     * @param scopes            scope 过滤集合
+     */
+    public static MemoryReadFilter fromProjectContextOrFallback(
+            boolean ctxPresent,
+            @Nullable String projectSpaceId,
+            @Nullable String personalSpaceId,
+            @Nullable String experienceSpaceId,
+            boolean isolated,
+            @Nullable Set<MemoryScope> scopes) {
+        if (ctxPresent) {
+            return buildForProject(projectSpaceId, personalSpaceId, experienceSpaceId, isolated, scopes);
+        }
+        if (scopes == null || scopes.isEmpty()) {
+            return all();
+        }
+        if (scopes.equals(Set.of(MemoryScope.AGENT_EXPERIENCE))) {
+            return agentExperience();
+        }
+        if (scopes.equals(Set.of(MemoryScope.USER_PROFILE))) {
+            return userProfile();
+        }
+        if (scopes.equals(Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT))) {
+            return userMemory();
+        }
+        return new MemoryReadFilter(Set.of(), scopes);
+    }
+
     private static Set<String> normalizeSpaceIds(@Nullable Collection<String> spaceIds) {
         if (spaceIds == null || spaceIds.isEmpty()) {
             return Set.of();

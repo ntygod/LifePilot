@@ -102,12 +102,12 @@ public class SpawnWorkersToolFactory {
         return BuiltinTool.builder()
                 .id(TOOL_ID)
                 .name("并行 Worker 派发")
-                .description("将任务拆解为多个独立子任务，并行派发给 Worker 执行。适用于可并行的调研、对比、批量处理等场景。")
+                .description("Spawn multiple parallel workers to process independent subtasks. Best for research, comparison, and batch processing where subtasks do not share state.")
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
-                .tags(List.of("multi-agent", "parallel", "worker"))
+                .tags(List.of("multiagent", "parallel", "worker", "spawn", "concurrent", "batch"))
                 .executor(this::executeSpawnWorkers)
                 .build();
     }

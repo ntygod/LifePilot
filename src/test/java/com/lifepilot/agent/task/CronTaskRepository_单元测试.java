@@ -38,18 +38,20 @@ class CronTaskRepository_单元测试 {
                     status      TEXT NOT NULL DEFAULT 'active',
                     created_at  TEXT NOT NULL,
                     updated_at  TEXT NOT NULL,
-                    skill_ids   TEXT
+                    skill_ids   TEXT,
+                    project_id  TEXT
                 )""");
         jdbc.execute("""
                 CREATE TABLE cron_task_logs (
-                    id          TEXT PRIMARY KEY,
-                    task_id     TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
-                    executed_at TEXT NOT NULL,
-                    status      TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    tokens_used INTEGER NOT NULL DEFAULT 0,
-                    summary     TEXT,
-                    created_at  TEXT NOT NULL
+                    id             TEXT PRIMARY KEY,
+                    task_id        TEXT NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
+                    executed_at    TEXT NOT NULL,
+                    status         TEXT NOT NULL,
+                    duration_ms    INTEGER NOT NULL,
+                    tokens_used    INTEGER NOT NULL DEFAULT 0,
+                    summary        TEXT,
+                    created_at     TEXT NOT NULL,
+                    trigger_source TEXT NOT NULL DEFAULT 'cron'
                 )""");
         repository = new CronTaskRepository(jdbc);
     }
@@ -65,7 +67,7 @@ class CronTaskRepository_单元测试 {
     private CronTaskLog 创建日志(String taskId) {
         return new CronTaskLog(UUID.randomUUID().toString(), taskId,
                 Instant.now().toString(), "success", 1500, 100,
-                "执行完成", Instant.now().toString());
+                "执行完成", Instant.now().toString(), CronTaskLog.TRIGGER_CRON);
     }
 
     // ---- save + findById ----
@@ -158,5 +160,53 @@ class CronTaskRepository_单元测试 {
 
         // 任务本身仍在
         assertThat(repository.findById("task-log")).isPresent();
+    }
+
+    // ---- findLogsByTaskId ----
+
+    @Test
+    void findLogsByTaskId_按executed_at倒序_且受limit限制() throws InterruptedException {
+        var task = 创建任务("task-logs", "active");
+        repository.save(task);
+        // 手动构造 executed_at 递增的三条日志——保证倒序可验证
+        repository.saveLog(new CronTaskLog(
+                "log-1", "task-logs",
+                Instant.parse("2026-04-24T08:00:00Z").toString(),
+                "success", 100, 10, "第一次",
+                Instant.now().toString(), CronTaskLog.TRIGGER_CRON));
+        repository.saveLog(new CronTaskLog(
+                "log-2", "task-logs",
+                Instant.parse("2026-04-24T09:00:00Z").toString(),
+                "failed", 200, 20, "第二次",
+                Instant.now().toString(), CronTaskLog.TRIGGER_CRON));
+        repository.saveLog(new CronTaskLog(
+                "log-3", "task-logs",
+                Instant.parse("2026-04-24T10:00:00Z").toString(),
+                "success", 300, 30, "第三次",
+                Instant.now().toString(), CronTaskLog.TRIGGER_MANUAL));
+
+        var recent = repository.findLogsByTaskId("task-logs", 2);
+
+        assertThat(recent).hasSize(2);
+        assertThat(recent.get(0).id()).isEqualTo("log-3");  // 最新
+        assertThat(recent.get(1).id()).isEqualTo("log-2");
+    }
+
+    @Test
+    void findLogsByTaskId_任务无日志_返回空列表() {
+        var task = 创建任务("task-empty", "active");
+        repository.save(task);
+
+        assertThat(repository.findLogsByTaskId("task-empty", 5)).isEmpty();
+    }
+
+    @Test
+    void findLogsByTaskId_limit小于等于0_返回空列表() {
+        var task = 创建任务("task-l", "active");
+        repository.save(task);
+        repository.saveLog(创建日志("task-l"));
+
+        assertThat(repository.findLogsByTaskId("task-l", 0)).isEmpty();
+        assertThat(repository.findLogsByTaskId("task-l", -1)).isEmpty();
     }
 }

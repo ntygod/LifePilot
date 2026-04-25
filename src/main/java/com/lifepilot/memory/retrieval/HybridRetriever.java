@@ -1,7 +1,9 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -53,11 +55,23 @@ public class HybridRetriever {
     private final ExecutorService virtualThreadExecutor;
     @Nullable
     private final RerankRouter rerankRouter;
+    /**
+     * V16 Task 30：批量查询 STALE provenance —— null 时回退为 needsRevalidation 全部 false，
+     * 保留向后兼容以免破坏大量手工装配 HybridRetriever 的单测。
+     */
+    @Nullable
+    private final MemoryProvenanceRepository provenanceRepository;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
     /** 空数据短路标记 — 三路检索全部返回空时设为 true，记忆写入后重置。volatile 保证可见性。 */
     private volatile boolean knownEmpty = false;
 
+    /**
+     * 兼容构造器 — 旧 8 参签名，新生命周期闭环依赖（provenanceRepository）默认为 null。
+     *
+     * <p>保留给现有 MemoryAutoConfiguration / 精排测试 / 作用域测试等已手工装配的调用点。
+     * 新调用点应走下面 9 参 canonical 构造器，以获得 needsRevalidation 标注能力。</p>
+     */
     public HybridRetriever(VectorSearcher vectorSearcher,
                            FtsSearcher ftsSearcher,
                            GraphTraverser graphTraverser,
@@ -66,6 +80,23 @@ public class HybridRetriever {
                            MemoryProperties memoryProperties,
                            JdbcTemplate jdbcTemplate,
                            @Nullable RerankRouter rerankRouter) {
+        this(vectorSearcher, ftsSearcher, graphTraverser, semanticMemory,
+                intentMatcher, memoryProperties, jdbcTemplate, rerankRouter, null);
+    }
+
+    /**
+     * V16 Task 30 canonical constructor — 额外接入 {@link MemoryProvenanceRepository}
+     * 用于批量判定实体是否存在 STALE provenance。
+     */
+    public HybridRetriever(VectorSearcher vectorSearcher,
+                           FtsSearcher ftsSearcher,
+                           GraphTraverser graphTraverser,
+                           SemanticMemory semanticMemory,
+                           @Nullable IntentMatcher intentMatcher,
+                           MemoryProperties memoryProperties,
+                           JdbcTemplate jdbcTemplate,
+                           @Nullable RerankRouter rerankRouter,
+                           @Nullable MemoryProvenanceRepository provenanceRepository) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
@@ -74,6 +105,7 @@ public class HybridRetriever {
         this.memoryProperties = memoryProperties;
         this.jdbcTemplate = jdbcTemplate;
         this.rerankRouter = rerankRouter;
+        this.provenanceRepository = provenanceRepository;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -176,8 +208,16 @@ public class HybridRetriever {
             return List.of();
         }
 
-        // 2. 向量结果转换为 RankedItem
-        List<RankedItem> vectorItems = convertVectorResults(vectorResults, filter);
+        // 2. 向量结果转换为 RankedItem + 收集实体 → lifecycleState 映射
+        //    lifecycleStateMap 用作：① 融合阶段给 FusionAccumulator 补 state；
+        //                           ② 最终结果阶段打 isHistorical / isStale 标注。
+        Map<String, LifecycleState> lifecycleStateMap = new HashMap<>();
+        List<RankedItem> vectorItems = convertVectorResults(vectorResults, filter, lifecycleStateMap);
+
+        // 对 FTS / Graph 路径同样按 lifecycle 过滤：SQL 已拦截不可召回态，但防御性再走一次
+        //  —— 若其 id 不在 lifecycleStateMap 里，需要补查（因向量路径可能未召回）。
+        ftsResults = filterAndTrackLifecycle(ftsResults, filter, lifecycleStateMap);
+        graphResults = filterAndTrackLifecycle(graphResults, filter, lifecycleStateMap);
 
         // 3. 自适应权重调整
         float topVectorScore = vectorItems.isEmpty() ? 0.0f : vectorItems.getFirst().score();
@@ -308,6 +348,11 @@ public class HybridRetriever {
             }
         }
 
+        // Task 30：为最终结果批量打生命周期标注
+        //   isHistorical = COMPLETED，isStale = REGENERATION_NEEDED，
+        //   needsRevalidation = 实体存在任一 STALE provenance。
+        finalResults = annotateLifecycle(finalResults, lifecycleStateMap);
+
         // 记录检索事件日志
         long durationMs = System.currentTimeMillis() - startTime;
         float topFused = finalResults.isEmpty() ? 0.0f : finalResults.getFirst().fusedScore();
@@ -348,9 +393,17 @@ public class HybridRetriever {
         }
     }
 
-    /** 向量检索结果转换为 RankedItem（批量查询实体详情补全元数据）。 */
+    /**
+     * 向量检索结果转换为 RankedItem（批量查询实体详情补全元数据）。
+     *
+     * <p>Task 30：新增按 {@link LifecycleState#isRetrievable()} 过滤 —— EXPIRED/SUPERSEDED/
+     * ARCHIVED/CANCELLED 实体即使向量库残留 embedding 也不会回放到上下文；同时把本路径已知的
+     * {@code entityId → lifecycleState} 写入 {@code lifecycleStateMap} 供融合阶段复用，
+     * 避免后续再次查库。</p>
+     */
     private List<RankedItem> convertVectorResults(List<VectorSearchResult> vectorResults,
-                                                  @Nullable MemoryReadFilter filter) {
+                                                  @Nullable MemoryReadFilter filter,
+                                                  Map<String, LifecycleState> lifecycleStateMap) {
         if (vectorResults.isEmpty()) {
             return List.of();
         }
@@ -369,20 +422,28 @@ public class HybridRetriever {
 
             for (var vr : vectorResults) {
                 TemporalEntity entity = entityMap.get(vr.entityId());
-                if (entity != null) {
-                    items.add(new RankedItem(
-                            entity.id(),
-                            entity.type().name(),
-                            entity.name(),
-                            entity.description(),
-                            vr.similarity(),
-                            entity.lastAccessedAt(),
-                            entity.importanceScore(),
-                            entity.validTo(),
-                            entity.updatedAt()));
+                if (entity == null) {
+                    // 未命中 findByIds 的向量结果不再以 UNKNOWN 回退：
+                    // findByIds 已按 is_current=1 过滤，归档实体本就不应注入上下文。
+                    continue;
                 }
-                // 未命中 findByIds 的向量结果不再以 UNKNOWN 回退：
-                // findByIds 已按 is_current=1 过滤，归档实体本就不应注入上下文。
+                LifecycleState state = entity.lifecycleState();
+                if (!state.isRetrievable()) {
+                    // 默认过滤 EXPIRED/SUPERSEDED/ARCHIVED/CANCELLED — 防止向量层残留
+                    log.debug("混合检索: 向量路径过滤不可召回实体, id={}, state={}", entity.id(), state);
+                    continue;
+                }
+                lifecycleStateMap.put(entity.id(), state);
+                items.add(new RankedItem(
+                        entity.id(),
+                        entity.type().name(),
+                        entity.name(),
+                        entity.description(),
+                        vr.similarity(),
+                        entity.lastAccessedAt(),
+                        entity.importanceScore(),
+                        entity.validTo(),
+                        entity.updatedAt()));
             }
         } catch (Exception e) {
             log.warn("混合检索: 向量结果批量转换失败, error={}", e.getMessage());
@@ -404,6 +465,46 @@ public class HybridRetriever {
         Set<String> readableIds = semanticMemory.findByIds(ids, filter).keySet();
         return items.stream()
                 .filter(item -> readableIds.contains(item.entityId()))
+                .toList();
+    }
+
+    /**
+     * 对 FTS / 图遍历路径的结果应用生命周期过滤并把 {@code entityId → lifecycleState}
+     * 写入共享映射。RankedItem 自身不携带 lifecycleState，所以需要（对未命中向量路径的 id）
+     * 回查 {@code semanticMemory.findByIds} 补齐 —— SQL 层已经过滤了不可召回态，但为了
+     * 统一拿到 state 打 isHistorical/isStale 标注，这里强制做一次。
+     */
+    private List<RankedItem> filterAndTrackLifecycle(List<RankedItem> items,
+                                                     @Nullable MemoryReadFilter filter,
+                                                     Map<String, LifecycleState> lifecycleStateMap) {
+        if (items.isEmpty()) {
+            return items;
+        }
+        // 收集尚未记入映射的 id — 避免重复查库
+        Set<String> missingIds = items.stream()
+                .map(RankedItem::entityId)
+                .filter(Objects::nonNull)
+                .filter(id -> !lifecycleStateMap.containsKey(id))
+                .collect(Collectors.toSet());
+        if (!missingIds.isEmpty()) {
+            try {
+                Map<String, TemporalEntity> entityMap = filter != null
+                        ? semanticMemory.findByIds(missingIds, filter)
+                        : semanticMemory.findByIds(missingIds);
+                for (var entry : entityMap.entrySet()) {
+                    lifecycleStateMap.put(entry.getKey(), entry.getValue().lifecycleState());
+                }
+            } catch (Exception e) {
+                log.warn("混合检索: 生命周期补齐查询失败, error={}", e.getMessage());
+            }
+        }
+        // 按 isRetrievable 过滤：SQL 侧已拦截不可召回态，此处是防御性补位
+        return items.stream()
+                .filter(item -> {
+                    LifecycleState s = lifecycleStateMap.get(item.entityId());
+                    // 不在映射 → findByIds 未命中（is_current=0 或被 read filter 剔除），直接丢弃
+                    return s != null && s.isRetrievable();
+                })
                 .toList();
     }
 
@@ -472,6 +573,51 @@ public class HybridRetriever {
         } catch (Exception e) {
             log.warn("检索事件日志写入失败: error={}", e.getMessage());
         }
+    }
+
+    /**
+     * Task 30：按 {@link #provenanceRepository} 查询最终结果的 STALE provenance，
+     * 并用 {@link RetrievalResult#withLifecycleAnnotations} 回写 isHistorical / isStale /
+     * needsRevalidation 三个标注。
+     *
+     * <p>行为：
+     * <ul>
+     *   <li>{@code provenanceRepository == null} 时 needsRevalidation 全部 false（向后兼容）。</li>
+     *   <li>批量 IN 查询避免 N+1。</li>
+     *   <li>查询失败降级：打 WARN 日志 + needsRevalidation 置 false，不影响整体检索。</li>
+     * </ul>
+     */
+    private List<RetrievalResult> annotateLifecycle(List<RetrievalResult> results,
+                                                    Map<String, LifecycleState> lifecycleStateMap) {
+        if (results.isEmpty()) {
+            return results;
+        }
+        Set<String> staleIds = Set.of();
+        if (provenanceRepository != null) {
+            try {
+                Set<String> ids = results.stream()
+                        .map(RetrievalResult::entityId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+                staleIds = provenanceRepository.findStaleEntityIds(ids);
+            } catch (Exception e) {
+                log.warn("混合检索: 批量 STALE provenance 查询失败，降级为无标注, error={}", e.getMessage());
+                staleIds = Set.of();
+            }
+        }
+        final Set<String> finalStaleIds = staleIds;
+        return results.stream()
+                .map(r -> {
+                    LifecycleState state = lifecycleStateMap.get(r.entityId());
+                    boolean isHistorical = state == LifecycleState.COMPLETED;
+                    boolean isStale = state == LifecycleState.REGENERATION_NEEDED;
+                    boolean needsRevalidation = finalStaleIds.contains(r.entityId());
+                    if (!isHistorical && !isStale && !needsRevalidation) {
+                        return r; // 保持默认（兼容构造器 false / false / false）
+                    }
+                    return r.withLifecycleAnnotations(isHistorical, isStale, needsRevalidation);
+                })
+                .toList();
     }
 
     /** 融合累加器 — 收集各路 RRF 贡献和元数据。 */

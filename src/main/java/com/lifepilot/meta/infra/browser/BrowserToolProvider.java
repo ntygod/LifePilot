@@ -24,8 +24,6 @@ import java.util.Map;
  */
 public class BrowserToolProvider {
 
-    private static final List<String> INFRA_TAGS = List.of("infrastructure");
-
     @Nullable
     private final BrowserSessionManager browserSessionManager;
     private final MetaProperties properties;
@@ -52,7 +50,7 @@ public class BrowserToolProvider {
                 .id("browser")
                 .category(ToolCategory.ACTION)
                 .name("浏览器自动化")
-                .description("浏览器自动化操作")
+                .description("Drive browser automation via Playwright. Actions: navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/storage/close.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -145,7 +143,7 @@ public class BrowserToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("sessionIds", "sessionId")
                 ))
-                .tags(INFRA_TAGS)
+                .tags(List.of("infrastructure", "browser", "automation", "playwright", "navigate", "click", "screenshot", "web"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

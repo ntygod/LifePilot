@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.TemplateStep;
@@ -196,6 +197,8 @@ public class ConsolidationPipeline {
                 if (existing.isPresent()) continue;
 
                 var now = Instant.now();
+                // 经验提升为 L4 模板 — sourceEntityId 指向源 L3 EXPERIENCE 实体 id，
+                // 让 L3 该经验失活（CANCELLED/EXPIRED 等）时 L4SyncListener 能级联失活。
                 var template = new ProcedureTemplate(
                         exp.id(),
                         exp.name(),
@@ -209,11 +212,14 @@ public class ConsolidationPipeline {
                         null,
                         List.of(exp.sourceConversationId()),
                         now,
-                        now
+                        now,
+                        exp.id(),
+                        null
                 );
+                // 经验提升为 L4 模板后归档原 L3 实体 — 定时巩固触发，归档来源为 CRON_EXPIRE
                 SqliteBusyRetry.run(() -> {
                     proceduralMemory.save(template);
-                    semanticMemory.archive(exp);
+                    semanticMemory.archive(exp, ChangeSource.CRON_EXPIRE);
                 });
                 promoted++;
                 log.debug("巩固管线: 经验提升为模板, entityId={}, name={}", exp.id(), exp.name());

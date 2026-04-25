@@ -1,5 +1,7 @@
 package com.lifepilot.interaction.web.model;
 
+import org.springframework.lang.Nullable;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -17,6 +19,7 @@ import java.util.UUID;
  * @param lastMessageAt 最近一次消息时间（可选）
  * @param createdAt     创建时间
  * @param updatedAt     更新时间
+ * @param projectId     归属项目 ID（可选，NULL = 归属主账户；非 NULL = 归属具体项目）
  * @author zsg
  * @since 2026-02-27
  */
@@ -29,15 +32,27 @@ public record ChatSession(
         boolean archived,
         Instant lastMessageAt,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        @Nullable String projectId
 ) {
     /**
-     * 创建新会话的工厂方法。
+     * 创建新会话的工厂方法（归属主账户）。
      *
      * @param title 会话标题（可选，默认"新对话"）
      * @return 新创建的会话实例
      */
     public static ChatSession create(String title) {
+        return create(title, null);
+    }
+
+    /**
+     * 创建新会话并指定归属项目。
+     *
+     * @param title     会话标题（可选，默认"新对话"）
+     * @param projectId 归属项目 ID（可选，NULL = 归属主账户）
+     * @return 新创建的会话实例
+     */
+    public static ChatSession create(String title, @Nullable String projectId) {
         Instant now = Instant.now();
         return new ChatSession(
                 UUID.randomUUID().toString(),
@@ -48,7 +63,8 @@ public record ChatSession(
                 false,
                 null,
                 now,
-                now
+                now,
+                projectId
         );
     }
 
@@ -58,7 +74,7 @@ public record ChatSession(
      * @return 新创建的会话实例
      */
     public static ChatSession create() {
-        return create(null);
+        return create(null, null);
     }
 
     /**
@@ -79,7 +95,8 @@ public record ChatSession(
                 false,
                 null,
                 now,
-                now
+                now,
+                null
         );
     }
 }

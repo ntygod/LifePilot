@@ -1,0 +1,77 @@
+package com.lifepilot.memory.lifecycle.feedback;
+
+import com.lifepilot.memory.lifecycle.SourceType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * 陈旧引用再验证队列数据访问仓库 —— 封装 {@code memory_revalidation_queue} 表。
+ *
+ * <p>队列条目由 {@code ReValidationListener} 在源失效时写入，状态迁移：
+ * {@code PENDING → PROMPTED → RESOLVED} —— {@code PROMPTED} 表示已被检索层捎带给 LLM
+ * 提示复核，{@code RESOLVED} 由 LLM 反馈或人工处理关闭。本仓库只负责入队与基础计数，
+ * 后续状态迁移由更上层的检索 / 复核流程驱动。</p>
+ *
+ * @author zsg
+ * @since 2026-04-23
+ */
+@Repository
+public class RevalidationQueueRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(RevalidationQueueRepository.class);
+
+    private final JdbcTemplate jdbc;
+
+    public RevalidationQueueRepository(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * 为指定实体入一条 PENDING 再验证记录。
+     *
+     * <p>不做去重 —— 同一 (entityId, sourceType, sourceId) 如被多次失效（比如文档先归档
+     * 后内容变化）允许多条 PENDING 并存，检索层可按 created_at 取最新一条。</p>
+     *
+     * @param entityId 实体 ID
+     * @param type     失效源类型
+     * @param sourceId 源对象 ID
+     * @param when     入队时间
+     */
+    public void enqueue(String entityId, SourceType type, String sourceId, Instant when) {
+        jdbc.update(
+                """
+                INSERT INTO memory_revalidation_queue
+                    (id, entity_id, source_type, source_id, created_at, status)
+                VALUES (?, ?, ?, ?, ?, 'PENDING')
+                """,
+                UUID.randomUUID().toString(),
+                entityId,
+                type.name(),
+                sourceId,
+                when.toString());
+        log.debug("再验证队列入队: entity={}, source={}:{}, when={}",
+                entityId, type, sourceId, when);
+    }
+
+    /**
+     * 测试 / 监控辅助：统计指定 source 下仍处于 PENDING 状态的条目数。
+     *
+     * @param type     源类型
+     * @param sourceId 源 ID
+     * @return PENDING 行数
+     */
+    public int countPendingBySource(SourceType type, String sourceId) {
+        Integer n = jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM memory_revalidation_queue
+                 WHERE source_type = ? AND source_id = ? AND status = 'PENDING'
+                """,
+                Integer.class, type.name(), sourceId);
+        return n == null ? 0 : n;
+    }
+}

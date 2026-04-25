@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.conversation`
-> **最后更新**：2026-03-20
+> **最后更新**：2026-04-23
 
 ## 1. 模块概述
 
@@ -78,6 +78,7 @@ flowchart TD
 - `ChatSessionService` 为 Web 层组装会话列表、详情和完整时间线
 - `SessionStoreRepository` 提供会话级元信息，如 `lastActiveAt`、`totalTokensUsed`
 - Web 页面的完整聊天记录直接来自 transcript 读模型
+- `session_store.project_id`（V17）标识会话的项目归属：NULL = 主账户对话，非 NULL = 归属具体项目；`SessionStoreRepository` 使用 `ProjectScope` sealed interface 表达两种互斥查询语义（`MainAccount` / `OfProject(projectId)`），并提供 `findIdsByProjectId` 供级联删除使用
 
 ## 4. 核心流程
 
@@ -124,6 +125,7 @@ sequenceDiagram
 | Agent 引擎（`com.lifepilot.agent`） | Agent → Conversation | `ContextAssembler` 读取最近完整轮次 |
 | Web 层（`com.lifepilot.interaction.web`） | Web → Conversation | 对话页展示完整时间线 |
 | 记忆系统（`com.lifepilot.memory`） | Memory → Conversation | L2 recall 的底层消息来源仍然是会话层 |
+| 项目工作空间（`com.lifepilot.project`） | Project → Conversation | `session_store.project_id` 承载会话的项目归属；`ProjectService.deleteProject` 通过 `SessionStoreRepository.findIdsByProjectId` 找到归属会话并级联删除；fork 会话继承源会话的 `projectId` |
 
 ## 7. 当前限制
 

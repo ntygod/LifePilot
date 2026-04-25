@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
 import { chatApi, browserTakeoverApi } from '@/api/client'
@@ -39,6 +40,8 @@ export function useChat() {
   const chatStore = useChatStore()
   const { invalidateAllDocumentMeta } = useDocumentMeta()
   const a2uiStore = useA2uiStore()
+  // 懒创建会话时读 URL query.projectId，实现「项目详情页 → 新建对话」的项目上下文继承
+  const route = useRoute()
 
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
@@ -196,8 +199,12 @@ export function useChat() {
 
     if (!chatStore.activeSessionId) {
       // 懒创建：用户发第一条消息时才在后端建会话，避免空会话堆积
+      // 若 URL 携带 projectId（来自项目详情页「开始新对话」），把会话归入该项目
+      const projectIdFromQuery = typeof route.query.projectId === 'string'
+        ? route.query.projectId
+        : null
       try {
-        await chatStore.startNewSession()
+        await chatStore.startNewSession(undefined, projectIdFromQuery)
       } catch (e) {
         error.value = '创建会话失败，请重试'
         return

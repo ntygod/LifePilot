@@ -120,7 +120,7 @@ class WebController_Preservation_保持测试 {
     @Test
     @DisplayName("GET_api_chat_sessions_返回200")
     void get_api_chat_sessions_返回200() throws Exception {
-        when(chatSessionService.listSessions(any(), any(), any(), any(), any(), any()))
+        when(chatSessionService.listSessions(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
 
         mockMvc.perform(get("/api/chat/sessions"))

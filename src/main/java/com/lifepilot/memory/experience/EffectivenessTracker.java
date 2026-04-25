@@ -3,6 +3,7 @@ package com.lifepilot.memory.experience;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.support.SqliteBusyRetry;
@@ -122,7 +123,8 @@ public class EffectivenessTracker {
                 SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
                 log.info("效果评估: 经验淘汰, entityId={}, score={}", entityId, newScore);
             } else {
-                SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(entityId, newScore));
+                SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(
+                        entityId, newScore, WeightSource.EFFECTIVENESS));
                 log.debug("效果评估: 分数调整, entityId={}, oldScore={}, newScore={}, effective={}",
                         entityId, currentScore, newScore, effective);
             }

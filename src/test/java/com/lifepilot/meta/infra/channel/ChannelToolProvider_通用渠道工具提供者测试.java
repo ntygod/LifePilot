@@ -76,7 +76,8 @@ class ChannelToolProvider_通用渠道工具提供者测试 {
         BuiltinTool tool = tools.getFirst();
         assertThat(tool.id()).isEqualTo("channel.feishu");
         assertThat(tool.name()).contains("飞书");
-        assertThat(tool.tags()).containsExactly("channel", "feishu");
+        // tags 英文化后包含 channel + platform + 通用同义词
+        assertThat(tool.tags()).contains("channel", "feishu");
     }
 
     @Test

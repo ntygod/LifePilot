@@ -64,6 +64,7 @@ public class FileListToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: path");
         }
+        pathStr = PathExpander.expand(pathStr);
 
         int maxDepth = input.getOptionalParam("maxDepth", Number.class)
                 .map(Number::intValue)

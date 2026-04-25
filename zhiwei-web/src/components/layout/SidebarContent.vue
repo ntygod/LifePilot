@@ -17,7 +17,6 @@ import {
   Settings,
   ShoppingBag,
   Trash2,
-  Workflow,
   Wrench,
 } from 'lucide-vue-next'
 import ZhiweiMark from '@/components/brand/ZhiweiMark.vue'
@@ -86,9 +85,9 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
         id: 'workspace',
         label: '智能体与流程',
         icon: Bot,
+        // 工作流入口已于 Skill v2 fixup（2026-04-24）下架，见 router/index.ts 对应注释。
         children: [
           { label: '智能体', path: '/agents', icon: Bot },
-          { label: '工作流', path: '/workflows', icon: Workflow },
           { label: '技能', path: '/skills', icon: Puzzle },
           { label: '市场', path: '/marketplace', icon: ShoppingBag },
           { label: '工具', path: '/tools', icon: Wrench },
@@ -140,7 +139,6 @@ watch(() => route.path, syncExpandedGroups)
 function syncExpandedGroups() {
   if (
     route.path.startsWith('/agents')
-    || route.path.startsWith('/workflows')
     || route.path.startsWith('/skills')
     || route.path.startsWith('/tools')
     || route.path.startsWith('/mcp-servers')

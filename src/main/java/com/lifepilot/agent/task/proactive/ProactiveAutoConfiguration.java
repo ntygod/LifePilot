@@ -5,6 +5,7 @@ import com.lifepilot.agent.task.config.ReminderAutoConfiguration;
 import com.lifepilot.agent.task.proactive.behavior.*;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
@@ -20,6 +21,7 @@ import com.lifepilot.prompt.PromptRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -49,8 +51,13 @@ public class ProactiveAutoConfiguration {
             @Autowired(required = false) SemanticMemory semanticMemory,
             @Autowired(required = false) EpisodicMemory episodicMemory,
             @Autowired(required = false) ProceduralMemory proceduralMemory,
-            GoalTrackingRepository goalTrackingRepository) {
-        return new ProactiveMemoryBridge(semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository);
+            GoalTrackingRepository goalTrackingRepository,
+            JdbcTemplate jdbcTemplate,
+            ApplicationEventPublisher eventPublisher) {
+        var bridge = new ProactiveMemoryBridge(
+                semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, jdbcTemplate);
+        bridge.setEventPublisher(eventPublisher);
+        return bridge;
     }
 
     @Bean
@@ -68,8 +75,14 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository,
-                                                     @Autowired(required = false) AgentConfigProperties config) {
-        return new TrustUpgradeService(autonomyRepository, config);
+                                                     @Autowired(required = false) AgentConfigProperties config,
+                                                     @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
+                                                     @Autowired(required = false) SemanticMemory semanticMemory) {
+        // Task 25（解 S14）：注入 ReminderFeedbackRepository + SemanticMemory 后
+        // recordNegativeFeedback(userId, behaviorName, notificationId) 可溯源到
+        // L3 proactive_insight_* 实体做 importanceScore 惩罚
+        return new TrustUpgradeService(autonomyRepository, config,
+                reminderFeedbackRepository, semanticMemory);
     }
 
     @Bean

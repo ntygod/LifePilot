@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
 import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
@@ -29,9 +30,6 @@ import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebToolProvider;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
-import com.lifepilot.workflow.engine.WorkflowCommandService;
-import com.lifepilot.workflow.registry.WorkflowRegistry;
-import com.lifepilot.workflow.tool.WorkflowToolProvider;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
@@ -40,6 +38,7 @@ import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.tool.validation.SkillPathWhitelist;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,8 +65,6 @@ public class InfraToolProvider {
     @Nullable private final SandboxRepository sandboxRepository;
     @Nullable private final BrowserSessionManager browserSessionManager;
     @Nullable private final NotificationService notificationService;
-    @Nullable private final WorkflowRegistry workflowRegistry;
-    @Nullable private final WorkflowCommandService workflowCommandService;
     @Nullable private final CronTaskRepository cronTaskRepository;
     @Nullable private final CronScheduler cronScheduler;
     @Nullable private final NotificationProperties notificationProperties;
@@ -76,9 +73,10 @@ public class InfraToolProvider {
     @Nullable private final ChannelOperationDispatcher channelOperationDispatcher;
     @Nullable private final ChannelDeliveryDispatcher channelDeliveryDispatcher;
     @Nullable private final ChannelInstanceService channelInstanceService;
-    @Nullable private final String skillDirectory;
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
+    @Nullable private final SkillPathWhitelist skillPathWhitelist;
     private final SsrfGuard ssrfGuard;
     private final InteractiveElementIndexer interactiveElementIndexer;
 
@@ -89,8 +87,6 @@ public class InfraToolProvider {
                              @Nullable SandboxRepository sandboxRepository,
                              @Nullable BrowserSessionManager browserSessionManager,
                              @Nullable NotificationService notificationService,
-                             @Nullable WorkflowRegistry workflowRegistry,
-                             @Nullable WorkflowCommandService workflowCommandService,
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
                              @Nullable NotificationProperties notificationProperties,
@@ -99,9 +95,10 @@ public class InfraToolProvider {
                              @Nullable ChannelOperationDispatcher channelOperationDispatcher,
                              @Nullable ChannelDeliveryDispatcher channelDeliveryDispatcher,
                              @Nullable ChannelInstanceService channelInstanceService,
-                             @Nullable String skillDirectory,
                              WorkspaceResolver workspaceResolver,
                              @Nullable AttachmentRepository attachmentRepository,
+                             @Nullable ChatSessionRepository chatSessionRepository,
+                             @Nullable SkillPathWhitelist skillPathWhitelist,
                              SsrfGuard ssrfGuard,
                              InteractiveElementIndexer interactiveElementIndexer) {
         this.properties = properties;
@@ -111,8 +108,6 @@ public class InfraToolProvider {
         this.sandboxRepository = sandboxRepository;
         this.browserSessionManager = browserSessionManager;
         this.notificationService = notificationService;
-        this.workflowRegistry = workflowRegistry;
-        this.workflowCommandService = workflowCommandService;
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
         this.notificationProperties = notificationProperties;
@@ -121,9 +116,10 @@ public class InfraToolProvider {
         this.channelOperationDispatcher = channelOperationDispatcher;
         this.channelDeliveryDispatcher = channelDeliveryDispatcher;
         this.channelInstanceService = channelInstanceService;
-        this.skillDirectory = skillDirectory;
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
+        this.chatSessionRepository = chatSessionRepository;
+        this.skillPathWhitelist = skillPathWhitelist;
         this.ssrfGuard = ssrfGuard;
         this.interactiveElementIndexer = interactiveElementIndexer;
     }
@@ -150,7 +146,7 @@ public class InfraToolProvider {
                 fileEditConfig.getUndoMaxDepth(),
                 fileEditConfig.getMaxSnapshotSizeBytes());
         var lintHook = new LintHookExecutor();
-        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, skillDirectory, toolRegistry, attachmentRepository);
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, skillPathWhitelist);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 通知工具
@@ -161,17 +157,10 @@ public class InfraToolProvider {
             log.warn("NotificationService 不可用，跳过通知工具注册");
         }
 
-        // 工作流管理工具
-        if (workflowRegistry != null && workflowCommandService != null) {
-            var workflowToolProvider = new WorkflowToolProvider(workflowRegistry, workflowCommandService);
-            totalTools += registerBuiltinTools(toolRegistry, workflowToolProvider.buildWorkflowTools());
-        } else {
-            log.warn("WorkflowRegistry 或 WorkflowCommandService 不可用，跳过工作流管理工具注册");
-        }
-
-        // 自主任务工具
+        // 自主任务工具（创建路径会通过 ChatSessionRepository 反查当前会话的 projectId，
+        // 填入新建任务的归属 —— Plan 2 Task A6）
         if (cronTaskRepository != null && cronScheduler != null) {
-            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler);
+            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, chatSessionRepository);
             totalTools += registerBuiltinTools(toolRegistry, taskToolProvider.buildCronTools());
         } else {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");

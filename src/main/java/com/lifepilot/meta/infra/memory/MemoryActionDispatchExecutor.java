@@ -68,6 +68,7 @@ public class MemoryActionDispatchExecutor extends ActionDispatchExecutor {
                 provider::executeDelete);
         // cancel 的"作用对象"由 hybridRetriever 按语义召回，调用时无法静态给出 entityId，
         // 因此 scope 走 none()：权限系统按整个 WRITE_MEMORY 维度授权，不做细粒度资源锁。
+        // （cancel 单条模式虽然静态知道 entityId，但与批量模式共用同一注册项，先按 none 处理）
         register("cancel",
                 RiskLevel.MEDIUM,
                 ToolExecutionSemantics.of(
@@ -76,6 +77,22 @@ public class MemoryActionDispatchExecutor extends ActionDispatchExecutor {
                         ToolScopeResolvers.none()
                 ),
                 provider::executeCancel);
+        register("complete",
+                RiskLevel.LOW,
+                ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_MEMORY,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("entityIds", "entityId")
+                ),
+                provider::executeComplete);
+        register("supersede",
+                RiskLevel.MEDIUM,
+                ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_MEMORY,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("entityIds", "entityId", "new_entity_id")
+                ),
+                provider::executeSupersede);
         register("tag",
                 RiskLevel.LOW,
                 ToolExecutionSemantics.of(

@@ -12,6 +12,11 @@ import java.util.Map;
  * <p>从重复的成功执行轨迹中提炼而来，包含可复用的多步操作序列、
  * 变量占位符、成功率追踪和来源轨迹引用。</p>
  *
+ * <p>V15 起加入 {@code sourceEntityId}（指向 L3 源 EXPERIENCE 实体）与
+ * {@code deactivatedReason}（失活原因，非 null 表示已失活）。
+ * {@code L4SyncListener} 通过 {@code source_entity_id} 反查模板并置
+ * {@code deactivated_reason}，实现 L3 失活 → L4 级联失活。</p>
+ *
  * @author zsg
  * @since 2026-03-01
  */
@@ -27,13 +32,40 @@ public record ProcedureTemplate(
         @Nullable Instant lastUsedAt,
         List<String> sourceTraceIds,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        @Nullable String sourceEntityId,
+        @Nullable String deactivatedReason
 ) {
     /** compact constructor：确保集合字段不可变。 */
     public ProcedureTemplate {
         steps = steps != null ? List.copyOf(steps) : List.of();
         variables = variables != null ? Map.copyOf(variables) : Map.of();
         sourceTraceIds = sourceTraceIds != null ? List.copyOf(sourceTraceIds) : List.of();
+    }
+
+    /**
+     * 兼容老调用点的 12 参构造器 — {@code sourceEntityId} 与 {@code deactivatedReason} 取默认
+     * {@code null}（未关联源/活跃）。
+     *
+     * <p>新代码建议直接使用 14 参 canonical constructor，填入源实体 ID 以便 L3→L4 级联。</p>
+     */
+    public ProcedureTemplate(
+            String templateId,
+            String name,
+            String description,
+            String triggerIntent,
+            List<TemplateStep> steps,
+            Map<String, String> variables,
+            float successRate,
+            int useCount,
+            @Nullable Instant lastUsedAt,
+            List<String> sourceTraceIds,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(templateId, name, description, triggerIntent, steps, variables,
+                successRate, useCount, lastUsedAt, sourceTraceIds, createdAt, updatedAt,
+                null, null);
     }
 
     /**

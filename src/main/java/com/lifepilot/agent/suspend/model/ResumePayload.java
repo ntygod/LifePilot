@@ -22,6 +22,10 @@ import java.time.Instant;
  * 从 SuspendStore 加载时若没有类型标签则只能拿到 sealed interface 抽象，
  * 因此必须显式声明 {@link JsonTypeInfo} 让反序列化能恢复到具体子类型。</p>
  *
+ * <p>Jackson 多态标注：作为 {@code ReactStep.Resume.payload} 的字段类型，
+ * 会随 checkpoint 整体 roundtrip；sealed interface 默认不写类型信息，
+ * 必须显式声明否则反序列化崩溃（与 {@code ReactStep} 同理）。</p>
+ *
  * @author zsg
  * @since 2026-03-17
  */

@@ -1,14 +1,23 @@
 ---
-id: research-assistant
-name: "信息调研"
-description: "多源搜索、交叉验证与结构化整理。用户说「帮我调研」「搜一下」「查查资料」「了解一下」「对比分析」「有什么最新动态」「行业趋势」「技术选型」「竞品分析」「事实核查」时使用。不适用于代码搜索或已有知识库的精确查询。"
-version: "2.0.0"
-suggested-tools:
-  - web.search
-  - web.fetch
-  - knowledge.search
-  - memory
-  - file.write
+name: research-assistant
+description: 当用户要做多源搜索、交叉验证、调研行业动态、对比分析、技术选型、竞品分析或事实核查时使用。关键词：调研、查资料、了解一下、对比分析、最新动态、行业趋势、技术选型、竞品分析、事实核查、搜一下。代码库内搜索用 code-assistant，数据集统计用 data-analyst，已绑定知识库的精确查询直接用 knowledge.search。
+version: 2.0.0
+metadata:
+  zhiwei:
+    category: content-creation
+    priority: normal
+    tags:
+      - research
+      - investigation
+      - fact-check
+      - trend-analysis
+      - competitive-analysis
+    suggested_tools:
+      - web.search
+      - web.fetch
+      - knowledge.search
+      - memory
+      - file.write
 ---
 
 # 信息调研指南
@@ -32,85 +41,16 @@ suggested-tools:
 
 ## 工作流
 
-### 1. 明确调研目标
+1. **明确调研目标**：问题模糊先澄清范围再搜
+2. **广度搜索**：`web.search` 拿全局概览，识别子话题
+3. **深度搜索**：对子话题 `web.search` 或 `knowledge.search`
+4. **深度抓取**：高价值来源用 `web.fetch` 抓正文
+5. **交叉验证**：关键数据至少 2 个独立来源，矛盾信息要明示
+6. **结构化输出**：按调研类型选格式（对比表 / SWOT / 证据链 / 时间线）；每条事实标注来源
+7. **保存**：`file.write` 写报告，`memory.create` 保留关键结论
 
-确认用户的核心问题和关注维度。如果问题模糊，先问一轮澄清范围再开始搜索。
+## 详细参考
 
-### 2. 广度搜索
-
-```
-web.search(query="核心关键词")
-```
-
-先拿到全局概览，识别主要信息源和子话题。
-
-### 3. 深度搜索
-
-针对第一轮发现的关键子话题，分别展开：
-
-```
-web.search(query="具体子问题", maxResults=10)
-knowledge.search(query="相关主题")
-```
-
-### 4. 深度抓取
-
-对搜索结果中的高价值来源抓取正文：
-
-```
-web.fetch(url="目标URL", selector="article")
-```
-
-优先抓取：官方文档、权威报告、一手数据源。
-
-### 5. 交叉验证
-
-- 关键数据至少从 2 个独立来源验证
-- 对矛盾信息明确指出分歧点
-- 搜索结果中没有明确来源的数据，不得写入报告
-
-### 6. 结构化输出
-
-按调研类型选择输出格式：
-
-| 调研类型 | 推荐格式 |
-|---------|---------|
-| 技术选型 | 对比表格 + 推荐理由 |
-| 竞品分析 | SWOT 矩阵 |
-| 事实核查 | 结论 + 证据链 |
-| 趋势分析 | 时间线 + 关键节点 |
-
-**输出必须包含来源**：每条关键事实后标注来源链接或来源名称。报告末尾附完整来源列表。格式示例：
-
-```
-- GPT-6 预训练已完成（来源：[The Information, 2026-04-10](URL)）
-...
-
-## 来源
-1. [来源标题](URL) — 发布日期
-2. ...
-```
-
-如果某条信息只在搜索摘要中出现、无法获取原文链接，标注"来源：搜索摘要，未经原文验证"。
-
-### 7. 保存结果
-
-```
-file.write(path="output/调研报告.md", content="调研内容")
-memory(action="create", name="XX调研结论", entityType="KNOWLEDGE", description="关键发现...")
-```
-
-## 规则
-
-- 搜索前必须明确调研目标，不盲目搜索
-- 报告中的每条事实必须能追溯到搜索结果中的具体来源，无来源的信息不得写入
-- 不得将搜索结果中的"传闻""未确认"信息升级为确定性表述
-- 对矛盾信息如实呈现分歧，不强行统一
-- 搜索无结果时换同义词或英文关键词重试，同一查询不重复超过 2 次
-
-## 常见错误处理
-
-- **搜索无结果** → 换用同义词、英文关键词、或扩大搜索范围
-- **网页抓取失败** → 尝试不同的 CSS 选择器，或直接使用搜索摘要
-- **信息过时** → 在搜索中加入时间限定词（如年份、"最新"）
-- **来源可信度存疑** → 标注来源类型（官方/第三方/个人博客），交由用户判断
+- 搜索命令模板、输出格式表、来源标注规范、错误处理：`{skill_dir}/references/research-workflow.md`
+</content>
+</invoke>

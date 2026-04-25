@@ -1,5 +1,6 @@
 package com.lifepilot.skill.model;
 
+import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import lombok.Builder;
 
 import java.util.List;
@@ -9,7 +10,11 @@ import java.util.Map;
  * Skill 定义 — 程序性知识包的完整蓝图。
  *
  * <p>每个 Skill 通过此 record 描述其 ID、名称、描述、版本、来源、
- * 指令（instructions）、建议工具列表（suggestedTools）和元数据。</p>
+ * 指令（instructions）、建议工具列表（suggestedTools）、扁平 metadata 以及
+ * 结构化 {@link SkillZhiweiMeta}（frontmatter 下 {@code metadata.zhiwei} 块的视图）。</p>
+ *
+ * <p>{@code zhiweiMeta} 为 v2 规范新增字段，老 caller 可不传（默认 {@link SkillZhiweiMeta#empty()}），
+ * Phase B.3 SkillDiscoveryRegistrar 改造后将由 parser 统一填充。</p>
  *
  * @author zsg
  * @since 2026-07-28
@@ -23,7 +28,8 @@ public record SkillDefinition(
         SkillSource source,
         String instructions,
         List<String> suggestedTools,
-        Map<String, String> metadata
+        Map<String, String> metadata,
+        SkillZhiweiMeta zhiweiMeta
 ) {
 
     /** 紧凑构造器 — 校验 + 防御性拷贝。 */
@@ -33,6 +39,7 @@ public record SkillDefinition(
         if (instructions == null || instructions.isBlank()) throw new IllegalArgumentException("Skill 指令不能为空");
         suggestedTools = List.copyOf(suggestedTools);
         metadata = Map.copyOf(metadata);
+        zhiweiMeta = zhiweiMeta == null ? SkillZhiweiMeta.empty() : zhiweiMeta;
     }
 
     /**

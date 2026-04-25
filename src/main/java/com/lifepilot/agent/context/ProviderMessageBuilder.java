@@ -305,23 +305,34 @@ public class ProviderMessageBuilder {
     /**
      * 判断 Observation 是否为已提升到系统提示词的 Skill 加载结果。
      *
-     * <p>仅 {@code FileReadToolExecutor.executeSkillRead} 会在输出中写入 {@code _skillIds} 字段。</p>
+     * <p>{@code skill.load} 工具的成功输出会被 {@link com.lifepilot.agent.execution.ToolExecutionCoordinator}
+     * 合并到 {@code state.loadedSkillContent}，在下一轮 {@code ContextAssembler} 组装时重新注入系统提示词；
+     * 对话历史里只需保留一行摘要即可，避免 SKILL.md 原文在 Observation 里重复占用上下文。</p>
      */
     private boolean isPromotedSkillResult(ReactStep.Observation observation) {
         return observation.success()
+                && "skill.load".equals(observation.toolId())
                 && observation.output() != null
-                && observation.output().contains("\"_skillIds\"");
+                && !observation.output().isBlank();
     }
 
-    /** 从 Skill 加载结果中提取 skillId 列表，生成简要摘要。 */
+    /** 从 skill.load 结果中提取 activated_tool_ids 和 content XML，生成简要摘要。 */
     private String buildSkillLoadSummary(String output) {
         try {
             var data = OBJECT_MAPPER.readTree(output);
-            var ids = data.path("_skillIds");
-            if (ids.isArray() && !ids.isEmpty()) {
-                var names = new java.util.ArrayList<String>();
-                ids.forEach(node -> names.add(node.asText()));
-                return "已加载 Skill 指南: " + String.join(", ", names);
+            var ids = data.path("activated_tool_ids");
+            var content = data.path("content").asText("");
+            // content 形如 <skill name="x">...</skill>\n\n<skill name="y">...</skill>
+            var names = new java.util.ArrayList<String>();
+            var matcher = java.util.regex.Pattern.compile("<skill\\s+name=\"([^\"]+)\"")
+                    .matcher(content);
+            while (matcher.find()) {
+                names.add(matcher.group(1));
+            }
+            if (!names.isEmpty()) {
+                int toolCount = ids.isArray() ? ids.size() : 0;
+                return "已加载 Skill 指南: " + String.join(", ", names)
+                        + "（激活 " + toolCount + " 个工具）";
             }
         } catch (Exception ignored) {}
         return "Skill 指南已加载";

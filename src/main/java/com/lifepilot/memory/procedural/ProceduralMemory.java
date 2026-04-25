@@ -59,20 +59,24 @@ public class ProceduralMemory {
             String variablesJson = objectMapper.writeValueAsString(template.variables());
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
+            // V15 起 INSERT 需带 source_entity_id / deactivated_reason 以供 L4SyncListener
+            // 通过 source_entity_id 反查并级联失活；旧调用点默认 null（兼容 ctor 已填默认）。
             jdbcTemplate.update(
                     """
                     INSERT INTO procedure_templates(
                         template_id, name, description, trigger_intent,
                         steps_json, variables_json, success_rate, use_count,
-                        last_used_at, source_trace_ids_json, created_at, updated_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                        last_used_at, source_trace_ids_json, created_at, updated_at,
+                        source_entity_id, deactivated_reason
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     template.templateId(), template.name(), template.description(),
                     template.triggerIntent(), stepsJson, variablesJson,
                     template.successRate(), template.useCount(),
                     template.lastUsedAt() != null ? template.lastUsedAt().toString() : null,
                     sourceTraceIdsJson,
-                    template.createdAt().toString(), template.updatedAt().toString());
+                    template.createdAt().toString(), template.updatedAt().toString(),
+                    template.sourceEntityId(), template.deactivatedReason());
 
             // 创建 triggerIntent 向量索引
             upsertIntentVector(template.templateId(), template.triggerIntent());
@@ -91,7 +95,7 @@ public class ProceduralMemory {
      */
     public Optional<ProcedureTemplate> findById(String templateId) {
         var results = jdbcTemplate.query(
-                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at FROM procedure_templates WHERE template_id = ?",
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE template_id = ?",
                 (rs, rowNum) -> mapRowToTemplate(rs),
                 templateId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -108,13 +112,15 @@ public class ProceduralMemory {
             String variablesJson = objectMapper.writeValueAsString(template.variables());
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
+            // V15 新增列 source_entity_id / deactivated_reason 亦支持更新，
+            // 典型场景：模板巩固去重时合并多个源 entity id，或手工置失活原因。
             jdbcTemplate.update(
                     """
                     UPDATE procedure_templates SET
                         name = ?, description = ?, trigger_intent = ?,
                         steps_json = ?, variables_json = ?, success_rate = ?,
                         use_count = ?, last_used_at = ?, source_trace_ids_json = ?,
-                        updated_at = ?
+                        updated_at = ?, source_entity_id = ?, deactivated_reason = ?
                     WHERE template_id = ?
                     """,
                     template.name(), template.description(), template.triggerIntent(),
@@ -123,6 +129,7 @@ public class ProceduralMemory {
                     template.lastUsedAt() != null ? template.lastUsedAt().toString() : null,
                     sourceTraceIdsJson,
                     template.updatedAt().toString(),
+                    template.sourceEntityId(), template.deactivatedReason(),
                     template.templateId());
 
             // 刷新 triggerIntent 向量索引
@@ -191,19 +198,24 @@ public class ProceduralMemory {
      * @param rule 偏好规则
      */
     public void savePreference(PreferenceRule rule) {
+        // V15 起 INSERT OR REPLACE 需带 source_entity_id / deactivated_reason —
+        // L4SyncListener 通过 source_entity_id 反查并置 deactivated_reason 实现失活，
+        // 若不写该列则 L3→L4 级联永不命中。
         jdbcTemplate.update(
                 """
                 INSERT OR REPLACE INTO preference_rules(
                     rule_id, category, key, value, confidence,
-                    learned_from_json, observation_count, created_at, updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?)
+                    learned_from_json, observation_count, created_at, updated_at,
+                    source_entity_id, deactivated_reason
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 rule.ruleId(), rule.category(), rule.key(), rule.value(),
                 rule.confidence(), rule.learnedFrom(), rule.observationCount(),
-                rule.createdAt().toString(), rule.updatedAt().toString());
+                rule.createdAt().toString(), rule.updatedAt().toString(),
+                rule.sourceEntityId(), rule.deactivatedReason());
 
-        log.info("程序记忆: 保存偏好规则, ruleId={}, category={}, key={}",
-                rule.ruleId(), rule.category(), rule.key());
+        log.info("程序记忆: 保存偏好规则, ruleId={}, category={}, key={}, sourceEntityId={}",
+                rule.ruleId(), rule.category(), rule.key(), rule.sourceEntityId());
     }
 
     /**
@@ -215,7 +227,7 @@ public class ProceduralMemory {
      */
     public Optional<PreferenceRule> findPreference(String category, String key) {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at FROM preference_rules WHERE category = ? AND key = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND key = ?",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category, key);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -229,7 +241,7 @@ public class ProceduralMemory {
      */
     public List<PreferenceRule> getPreferences(String category) {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at FROM preference_rules WHERE category = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ?",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category);
         return List.copyOf(results);
@@ -268,7 +280,7 @@ public class ProceduralMemory {
      */
     public List<ProcedureTemplate> listAllTemplates() {
         var results = jdbcTemplate.query(
-                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at FROM procedure_templates ORDER BY created_at DESC",
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates ORDER BY created_at DESC",
                 (rs, rowNum) -> mapRowToTemplate(rs));
         return List.copyOf(results);
     }
@@ -280,7 +292,7 @@ public class ProceduralMemory {
      */
     public List<PreferenceRule> listAllPreferences() {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at FROM preference_rules ORDER BY category, key",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules ORDER BY category, key",
                 (rs, rowNum) -> mapRowToPreference(rs));
         return List.copyOf(results);
     }
@@ -351,7 +363,9 @@ public class ProceduralMemory {
                 rs.getString("learned_from_json"),
                 rs.getInt("observation_count"),
                 Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at"))
+                Instant.parse(rs.getString("updated_at")),
+                rs.getString("source_entity_id"),
+                rs.getString("deactivated_reason")
         );
     }
 
@@ -380,7 +394,9 @@ public class ProceduralMemory {
                 lastUsedAtStr != null ? Instant.parse(lastUsedAtStr) : null,
                 sourceTraceIds,
                 Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at"))
+                Instant.parse(rs.getString("updated_at")),
+                rs.getString("source_entity_id"),
+                rs.getString("deactivated_reason")
         );
     }
 

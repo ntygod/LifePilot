@@ -8,16 +8,25 @@ import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.lifecycle.ChangeSource;
+import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
+import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryRealityType;
+import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
@@ -57,6 +66,8 @@ public class MemoryToolProvider {
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
     @Nullable private final SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver;
     @Nullable private final MemoryProperties memoryProperties;
+    @Nullable private final ProjectContextResolver projectContextResolver;
+    @Nullable private final ChatSessionRepository chatSessionRepository;
 
     public MemoryToolProvider(HybridRetriever hybridRetriever,
                               SemanticMemory semanticMemory,
@@ -65,6 +76,19 @@ public class MemoryToolProvider {
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
                               @Nullable MemoryProperties memoryProperties) {
+        this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
+                sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties, null, null);
+    }
+
+    public MemoryToolProvider(HybridRetriever hybridRetriever,
+                              SemanticMemory semanticMemory,
+                              @Nullable EpisodicMemory episodicMemory,
+                              @Nullable DocumentRetriever documentRetriever,
+                              @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
+                              @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
+                              @Nullable MemoryProperties memoryProperties,
+                              @Nullable ProjectContextResolver projectContextResolver,
+                              @Nullable ChatSessionRepository chatSessionRepository) {
         this.hybridRetriever = hybridRetriever;
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
@@ -72,6 +96,8 @@ public class MemoryToolProvider {
         this.sessionKbRepo = sessionKbRepo;
         this.sessionKnowledgeScopeResolver = sessionKnowledgeScopeResolver;
         this.memoryProperties = memoryProperties;
+        this.projectContextResolver = projectContextResolver;
+        this.chatSessionRepository = chatSessionRepository;
     }
 
     public void registerTools(DynamicToolRegistry toolRegistry) {
@@ -102,46 +128,52 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("搜索和管理用户的长期记忆。\n\n" +
-                        "自动行为：对话中的事实由系统自动提取存储，用户画像和相关经验已自动注入上下文。\n\n" +
-                        "手动使用场景：\n" +
-                        "- search：用户提到具体人/事/项目时，搜索相关知识实体\n" +
-                        "- recall：用户引用历史对话（\u201C上次聊的\u201D\u201C之前说过\u201D）时，回忆完整对话片段\n" +
-                        "- create：用户明确要求记住某事，或表达了重要偏好/目标变更\n" +
-                        "- update：已有实体信息需要修正或补充\n" +
-                        "- delete：用户要求遗忘**已知 ID** 的某条记忆（精确删除）\n" +
-                        "- cancel：**用户表达取消/撤销/不再做某事时必选**。根据语义描述批量归档相关 GOAL/EXPERIENCE/HABIT，" +
-                        "避免后续仍基于旧记忆提醒用户。\n" +
-                        "  典型触发词：\u201C取消 X\u201D、\u201C撤销 X\u201D、\u201C不要再 X\u201D、\u201C以后别提 X\u201D、\u201CX 不做了\u201D。\n" +
-                        "  重要：这类语义下**只 create PREFERENCE 是不够的**，老的 GOAL/EXPERIENCE 仍会继续被召回，" +
-                        "必须同时用 cancel 归档相关旧记忆。\n" +
-                        "- search-experience：需要借鉴过往类似任务的执行经验\n" +
-                        "- query-at-time：需要查询某个时间点的历史状态\n\n" +
-                        "不需要调用的情况：当前上下文已有足够信息、纯闲聊、一般知识问答。\n" +
-                        "资料文档检索请用 knowledge.search。")
+                .description("Search and manage long-term memory for the current user.\n\n" +
+                        "Automatic: facts mentioned in conversation are auto-extracted and stored; user profile and relevant past experiences are auto-injected into context.\n\n" +
+                        "Manual scenarios:\n" +
+                        "- search: when the user mentions a specific person/event/project, search related knowledge entities\n" +
+                        "- recall: when the user references prior conversations (\"last time\", \"we talked about\"), recall full conversation snippets\n" +
+                        "- create: when the user explicitly asks to remember something, or expresses an important preference/goal change\n" +
+                        "- update: when an existing entity needs correction or augmentation\n" +
+                        "- delete: when the user asks to forget a memory by **known ID** (precise removal)\n" +
+                        "- cancel: **REQUIRED when the user expresses cancel/revoke/no-longer for some intent.** Applies to all memory types (preference/goal/experience/habit/project).\n" +
+                        "  Two forms:\n" +
+                        "    * pass entityId: archive a single memory by ID into CANCELLED state (only effective when currently ACTIVE);\n" +
+                        "    * pass query: semantically batch-archive relevant memories; default scope GOAL/EXPERIENCE/HABIT, override via entityTypes.\n" +
+                        "  Typical triggers: \"cancel X\", \"revoke X\", \"stop X\", \"drop X\", \"no longer X\".\n" +
+                        "  Important: creating a PREFERENCE alone is not enough; older GOAL/EXPERIENCE will still be recalled, so cancel-archive related old memories together.\n" +
+                        "- complete: when the user explicitly states a goal/project is done (\"finally finished\"), only valid for GOAL/PROJECT, transitions the entity to COMPLETED.\n" +
+                        "- supersede: when a new entity replaces an old one (e.g. old goal replaced by new), sets succeeded_by foreign key and transitions old to SUPERSEDED. Requires both entityId (the replaced) and new_entity_id (the successor).\n" +
+                        "- search-experience: when reference to past similar task execution experience is needed\n" +
+                        "- query-at-time: when historical state at a specific timestamp is needed\n\n" +
+                        "When NOT to call: current context has enough info, pure chitchat, general knowledge Q&A.\n" +
+                        "For document/material retrieval use knowledge.search.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
-                                        "enum", List.of("search", "recall", "create", "update", "delete", "cancel", "tag", "query-at-time", "search-experience"),
+                                        "enum", List.of("search", "recall", "create", "update", "delete",
+                                                "cancel", "complete", "supersede", "tag", "query-at-time", "search-experience"),
                                         "description", "记忆操作类型。search=搜索知识实体, recall=回忆历史对话, " +
-                                                "create/update/delete=实体 CRUD, cancel=按语义批量归档已取消的目标/经验/习惯, " +
+                                                "create/update/delete=实体 CRUD, cancel=撤销/取消（支持 entityId 单条或 query 语义批量）, " +
+                                                "complete=标记 GOAL/PROJECT 已完成, supersede=旧实体被新实体替代, " +
                                                 "tag=建立关系, query-at-time=时间点查询, search-experience=检索执行经验")),
-                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience/cancel 使用")),
+                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 必填；cancel 未传 entityId 时必填")),
                                 Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
                                 Map.entry("name", Map.of("type", "string", "description", "实体名称；create 必填，update 时可选改名")),
                                 Map.entry("entityType", Map.of("type", "string", "description", "实体类型；create 必填，query-at-time 时可选过滤", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM"))),
                                 Map.entry("entityTypes", Map.of(
                                         "type", "array",
                                         "items", Map.of("type", "string", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM")),
-                                        "description", "cancel 限定归档的实体类型集合，默认 [GOAL, EXPERIENCE, HABIT]")),
-                                Map.entry("maxArchive", Map.of("type", "integer", "description", "cancel 最多归档数量，默认 5")),
-                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 最小相关性阈值（0-1），默认 0.5")),
+                                        "description", "cancel 语义批量模式限定归档的实体类型集合，默认 [GOAL, EXPERIENCE, HABIT]")),
+                                Map.entry("maxArchive", Map.of("type", "integer", "description", "cancel 语义批量模式最多归档数量，默认 5")),
+                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 语义批量模式最小相关性阈值（0-1），默认 0.5")),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
-                                Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete 必填")),
+                                Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete/complete/supersede 必填，cancel 单条模式必填")),
+                                Map.entry("new_entity_id", Map.of("type", "string", "description", "supersede 专用：替代旧实体的新实体 ID，必填")),
                                 Map.entry("sourceEntityId", Map.of("type", "string", "description", "tag 源实体 ID")),
                                 Map.entry("targetEntityId", Map.of("type", "string", "description", "tag 目标实体 ID")),
                                 Map.entry("relationType", Map.of("type", "string", "description", "tag 关系类型")),
@@ -156,6 +188,8 @@ public class MemoryToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("entityNames", false, "name", "entityId", "sourceEntityId", "targetEntityId")
                 ))
+                .tags(List.of("memory", "recall", "remember", "store", "save", "knowledge", "history", "search",
+                        "forget", "cancel", "tag", "update", "delete", "create", "archive"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -167,7 +201,7 @@ public class MemoryToolProvider {
         return BuiltinTool.builder()
                 .id("knowledge.search")
                 .name("检索资料")
-                .description("搜索当前会话绑定的资料内容。搜索知识实体用 memory(action=search)，历史对话用 memory(action=recall)")
+                .description("Search documents bound to the current session by semantic similarity. Use memory(action=search) for entities and memory(action=recall) for conversations.")
                 .category(ToolCategory.PERCEPTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -180,6 +214,7 @@ public class MemoryToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
+                .tags(List.of("knowledge", "search", "rag", "retrieve", "query", "document", "session"))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);
@@ -215,12 +250,85 @@ public class MemoryToolProvider {
                 .build();
     }
 
+    /**
+     * 从工具输入 context 中的 sessionId 反查 ProjectContext。
+     *
+     * <p>resolver / chatSessionRepo 缺失、sessionId 为空或查询异常时返回 null，
+     * 调用方按 null 走 fallback（{@link MemoryReadFilter#userMemory()} 等）。</p>
+     */
+    @Nullable
+    private ProjectContext resolveProjectContext(ToolInput input) {
+        if (projectContextResolver == null || chatSessionRepository == null) {
+            return null;
+        }
+        String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            var session = chatSessionRepository.findById(sessionId);
+            if (session.isEmpty()) {
+                return null;
+            }
+            return projectContextResolver.resolve(session.get().projectId());
+        } catch (Exception e) {
+            log.debug("记忆工具解析 ProjectContext 失败, 回退默认 filter: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * ctx 为 null 时按 scopes 走 fallback；非 null 时按项目/主账户 space + scope 组合。
+     *
+     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
+     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
+     */
+    private MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
+        return MemoryReadFilter.fromProjectContextOrFallback(
+                ctx != null,
+                ctx != null ? ctx.projectSpaceId() : null,
+                ctx != null ? ctx.personalSpaceId() : null,
+                ctx != null ? ctx.experienceSpaceId() : null,
+                ctx != null && ctx.isolated(),
+                scopes);
+    }
+
+    /**
+     * 按 ProjectContext 构造工具级写入上下文。
+     *
+     * <p>ISOLATED 项目 → spaceId=ctx.projectSpaceId() 将实体落到项目域；
+     * 主账户或 SHARED → spaceId=null 让 SemanticMemory 按 entity type 推断默认 space。
+     * memoryScope 一律保留 null，避免错误限定 scope（同 RealtimeExtractor 的策略）。</p>
+     */
+    private MemoryWriteContext toProjectWriteContext(@Nullable ProjectContext ctx,
+                                                     @Nullable String sessionId) {
+        String spaceId = (ctx != null && ctx.isolated()) ? ctx.projectSpaceId() : null;
+        return new MemoryWriteContext(
+                spaceId,
+                null,
+                MemoryOriginType.TOOL,
+                MemoryRealityType.UNKNOWN,
+                sessionId,
+                sessionId,
+                sessionId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
     ToolResult executeSearch(ToolInput input) {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
             String query = input.getParam("query", String.class);
             int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
-            List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+            MemoryReadFilter filter = toProjectFilter(resolveProjectContext(input),
+                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+            List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT, filter);
             if (!results.isEmpty()) {
                 hybridRetriever.updateAccessCounts(results);
             }
@@ -264,7 +372,9 @@ public class MemoryToolProvider {
             var now = Instant.now();
             var incoming = new TemporalEntity(null, entityType, name, description, Map.of(), 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
-            var created = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(incoming, conversationId));
+            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), conversationId);
+            var created = SqliteBusyRetry.execute(() ->
+                    semanticMemory.upsertWithConflictDetection(incoming, conversationId, writeContext));
             return ToolResult.success(Map.of(
                     "id", created.id(), "name", created.name(), "type", created.type().name(), "version", created.version()));
         } catch (IllegalArgumentException e) {
@@ -287,6 +397,7 @@ public class MemoryToolProvider {
             String newDesc = input.getOptionalParam("description", String.class).orElse(entity.description());
             EntityType newType = input.getOptionalParam("entityType", String.class).map(s -> EntityType.valueOf(s.toUpperCase())).orElse(entity.type());
             String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), sessionId);
             var now = Instant.now();
 
             // 改名时 (name, type) 是冲突检测的 identity key，直接 upsert 会被当作新实体
@@ -298,7 +409,8 @@ public class MemoryToolProvider {
                         now, null, entity.sourceConversationId(),
                         entity.extractionConfidence(), entity.importanceScore(),
                         entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-                var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(renamed, sessionId));
+                var result = SqliteBusyRetry.execute(() ->
+                        semanticMemory.upsertWithConflictDetection(renamed, sessionId, writeContext));
                 return ToolResult.success(Map.of(
                         "id", result.id(), "name", result.name(), "type", result.type().name(),
                         "version", result.version(), "description", result.description() != null ? result.description() : ""));
@@ -309,7 +421,8 @@ public class MemoryToolProvider {
                     entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
                     entity.extractionConfidence(), entity.importanceScore(),
                     entity.accessCount(), entity.lastAccessedAt(), entity.createdAt(), now);
-            var result = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId));
+            var result = SqliteBusyRetry.execute(() ->
+                    semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
             return ToolResult.success(Map.of(
                     "id", result.id(), "name", result.name(), "type", result.type().name(),
                     "version", result.version(), "description", result.description() != null ? result.description() : ""));
@@ -348,17 +461,34 @@ public class MemoryToolProvider {
     private static final float DEFAULT_CANCEL_MIN_SCORE = 0.5f;
 
     /**
-     * 按语义批量归档已取消的目标/经验/习惯。
+     * 按语义批量归档已取消的实体，或按 entityId 单条转 CANCELLED。
      *
-     * <p>与 delete 的区别：delete 精确按 entityId 删单条；cancel 按语义描述召回候选集，
-     * 批量归档最相关的若干条。适配"取消定时任务"这类需要级联清理多个旧记忆的场景。</p>
+     * <p>两种形态：</p>
+     * <ol>
+     *   <li>传 {@code entityId}：走单条状态机 — 仅 ACTIVE 实体可 CANCEL，复用
+     *       {@link SemanticMemory#updateLifecycleState(String, LifecycleState, String, ChangeSource)}
+     *       发事件，适配"把这条具体记忆标记为已取消"场景；</li>
+     *   <li>传 {@code query}：语义召回后批量归档最相关若干条 — 默认圈 GOAL/EXPERIENCE/HABIT，
+     *       走 {@link SemanticMemory#archive}，适配"取消定时任务"这类需要级联清理多个旧记忆的场景。</li>
+     * </ol>
+     *
+     * <p>与 delete 的区别：delete 是纯物理归档不转生命周期状态；cancel 明确标记为
+     * CANCELLED，下游听众（如 ProactiveTaskCancelListener）能据此做级联处理。</p>
      */
     ToolResult executeCancel(ToolInput input) {
         String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
+
+        // 优先走单条路径：传了 entityId 即视为明确目标
+        var entityIdOpt = input.getOptionalParam("entityId", String.class)
+                .filter(s -> !s.isBlank());
+        if (entityIdOpt.isPresent()) {
+            return executeCancelSingle(entityIdOpt.get());
+        }
+
         try {
             String query = input.getParam("query", String.class);
             if (query == null || query.isBlank()) {
-                return ToolResult.error("cancel 需要传入 query 参数描述要取消的事物");
+                return ToolResult.error("cancel 需要传入 entityId（单条）或 query（语义批量）");
             }
 
             Set<EntityType> targetTypes = parseCancelTypes(input);
@@ -369,9 +499,16 @@ public class MemoryToolProvider {
 
             // 召回候选：跨 USER_PROFILE/USER_FACT 与 AGENT_EXPERIENCE 两个域
             // （EXPERIENCE 类实体落在 AGENT_EXPERIENCE，不能用 userMemory() 过滤掉）
+            // 有 ProjectContext 时按 project + 主账户 space 限定；无则回退全量
+            //
+            // 跨 scope 说明：隔离项目的 cancel 允许跨主账户归档 — 符合 ProjectContext 读主账户
+            // 的设计（参见 MemoryReadFilter.buildForProject 的 space 合并策略）。用户在项目内
+            // 说"取消 X"时，希望清掉的是包括主账户同名目标/习惯/经验在内的全量匹配，
+            // 而非只在项目 space 内生效。此处不做额外限制，保持与 search/searchExperience 一致。
             int retrieveTopK = Math.max(maxArchive * 3, 10);
+            MemoryReadFilter cancelFilter = toProjectFilter(resolveProjectContext(input), Set.of());
             List<RetrievalResult> candidates = hybridRetriever.retrieve(
-                    query, retrieveTopK, RetrievalWeights.DEFAULT, MemoryReadFilter.all());
+                    query, retrieveTopK, RetrievalWeights.DEFAULT, cancelFilter);
 
             var toArchive = candidates.stream()
                     .filter(r -> r.fusedScore() >= minScore)
@@ -414,6 +551,138 @@ public class MemoryToolProvider {
         }
     }
 
+    /**
+     * 按 entityId 单条将实体状态转为 CANCELLED — 不限类型，所有 ACTIVE 实体都可 cancel。
+     *
+     * <p>事件发布交给 {@link SemanticMemory#updateLifecycleState} 代办（AFTER_COMMIT），
+     * 调用方不再重复 publishEvent；状态机约束由 {@link LifecycleState#canTransitionTo} 负责。</p>
+     */
+    private ToolResult executeCancelSingle(String entityId) {
+        var existing = semanticMemory.findById(entityId).orElse(null);
+        if (existing == null) {
+            return ToolResult.error("实体不存在: " + entityId);
+        }
+        if (existing.lifecycleState() != LifecycleState.ACTIVE) {
+            return ToolResult.error("实体非 ACTIVE 状态，无法取消（当前 "
+                    + existing.lifecycleState() + "）");
+        }
+        try {
+            SqliteBusyRetry.run(() -> semanticMemory.updateLifecycleState(
+                    entityId, LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT));
+            return ToolResult.success(Map.of(
+                    "id", entityId,
+                    "name", existing.name(),
+                    "type", existing.type().name(),
+                    "lifecycleState", LifecycleState.CANCELLED.name()));
+        } catch (Exception e) {
+            log.error("单条取消记忆失败: entityId={}, error={}", entityId, e.getMessage(), e);
+            return ToolResult.error("取消记忆失败: " + e.getMessage());
+        }
+    }
+
+    /** 允许 complete 的实体类型 — GOAL / PROJECT 具备"是否做完"的自然语义。 */
+    private static final Set<EntityType> COMPLETABLE_TYPES =
+            Set.of(EntityType.GOAL, EntityType.PROJECT);
+
+    /**
+     * 标记实体已完成（COMPLETED）— 仅适用于 GOAL / PROJECT 类型，且必须处于 ACTIVE。
+     *
+     * <p>其他类型（PREFERENCE / HABIT / PERSON 等）没有"完成"语义，拒绝调用。
+     * 由 {@link SemanticMemory#updateLifecycleState} 负责事件发布。</p>
+     */
+    ToolResult executeComplete(ToolInput input) {
+        String entityId;
+        try {
+            entityId = input.getParam("entityId", String.class);
+        } catch (Exception e) {
+            return ToolResult.error("complete 需要传入 entityId");
+        }
+        if (entityId == null || entityId.isBlank()) {
+            return ToolResult.error("complete 需要传入 entityId");
+        }
+        var existing = semanticMemory.findById(entityId).orElse(null);
+        if (existing == null) {
+            return ToolResult.error("实体不存在: " + entityId);
+        }
+        if (!COMPLETABLE_TYPES.contains(existing.type())) {
+            return ToolResult.error("实体类型 " + existing.type().name()
+                    + " 不支持 complete（仅 " + formatTypes(COMPLETABLE_TYPES) + "）");
+        }
+        if (existing.lifecycleState() != LifecycleState.ACTIVE) {
+            return ToolResult.error("实体非 ACTIVE 状态，无法完成（当前 "
+                    + existing.lifecycleState() + "）");
+        }
+        try {
+            SqliteBusyRetry.run(() -> semanticMemory.updateLifecycleState(
+                    entityId, LifecycleState.COMPLETED, "user-complete", ChangeSource.TOOL_EXPLICIT));
+            return ToolResult.success(Map.of(
+                    "id", entityId,
+                    "name", existing.name(),
+                    "type", existing.type().name(),
+                    "lifecycleState", LifecycleState.COMPLETED.name()));
+        } catch (Exception e) {
+            log.error("标记记忆完成失败: entityId={}, error={}", entityId, e.getMessage(), e);
+            return ToolResult.error("标记记忆完成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 旧实体被新实体取代 — 同时更新 {@code succeeded_by} 外键并转 SUPERSEDED 状态。
+     *
+     * <p>两步 UPDATE 走同一事务（Spring {@code @Transactional} 在 SemanticMemory
+     * 方法上已声明）：先 {@code updateSucceededBy} 写 FK，再 {@code updateLifecycleState}
+     * 转状态并发事件。事件 reason 带上 "user-supersede-by:{newId}" 便于下游溯源。</p>
+     */
+    ToolResult executeSupersede(ToolInput input) {
+        String entityId;
+        String newEntityId;
+        try {
+            entityId = input.getParam("entityId", String.class);
+            newEntityId = input.getParam("new_entity_id", String.class);
+        } catch (Exception e) {
+            return ToolResult.error("supersede 需要 entityId 和 new_entity_id 参数");
+        }
+        if (entityId == null || entityId.isBlank()
+                || newEntityId == null || newEntityId.isBlank()) {
+            return ToolResult.error("supersede 需要 entityId 和 new_entity_id 参数");
+        }
+        if (entityId.equals(newEntityId)) {
+            return ToolResult.error("supersede 的 new_entity_id 不能与 entityId 相同");
+        }
+
+        var existing = semanticMemory.findById(entityId).orElse(null);
+        if (existing == null) {
+            return ToolResult.error("被替代实体不存在: " + entityId);
+        }
+        var newExisting = semanticMemory.findById(newEntityId).orElse(null);
+        if (newExisting == null) {
+            return ToolResult.error("新实体不存在: " + newEntityId);
+        }
+        if (existing.lifecycleState() != LifecycleState.ACTIVE
+                && existing.lifecycleState() != LifecycleState.REGENERATION_NEEDED) {
+            return ToolResult.error("被替代实体非 ACTIVE/REGENERATION_NEEDED 状态，无法 supersede（当前 "
+                    + existing.lifecycleState() + "）");
+        }
+
+        try {
+            SqliteBusyRetry.run(() -> {
+                semanticMemory.updateSucceededBy(entityId, newEntityId);
+                semanticMemory.updateLifecycleState(entityId, LifecycleState.SUPERSEDED,
+                        "user-supersede-by:" + newEntityId, ChangeSource.TOOL_EXPLICIT);
+            });
+            return ToolResult.success(Map.of(
+                    "id", entityId,
+                    "name", existing.name(),
+                    "type", existing.type().name(),
+                    "lifecycleState", LifecycleState.SUPERSEDED.name(),
+                    "succeededBy", newEntityId));
+        } catch (Exception e) {
+            log.error("替代记忆失败: entityId={}, newEntityId={}, error={}",
+                    entityId, newEntityId, e.getMessage(), e);
+            return ToolResult.error("替代记忆失败: " + e.getMessage());
+        }
+    }
+
     /** 解析 cancel 的 entityTypes 参数，非法类型跳过，全非法则用默认集合。 */
     private Set<EntityType> parseCancelTypes(ToolInput input) {
         var raw = input.getOptionalParam("entityTypes", List.class);
@@ -453,10 +722,12 @@ public class MemoryToolProvider {
             String relationType = input.getParam("relationType", String.class);
             float strength = input.getOptionalParam("strength", Number.class).map(Number::floatValue).orElse(0.5f);
             String conversationId = input.getOptionalParam("conversationId", String.class).orElse(null);
+            String sessionId = input.getContextValue("sessionId", String.class).orElse(conversationId);
+            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), sessionId);
             var now = Instant.now();
             var relation = new TemporalRelation(UUID.randomUUID().toString(), sourceId, targetId, relationType, strength,
                     null, now, null, conversationId, now);
-            SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation));
+            SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
             return ToolResult.success(Map.of(
                     "id", relation.id(), "relationType", relationType,
                     "sourceEntityId", sourceId, "targetEntityId", targetId));
@@ -511,8 +782,8 @@ public class MemoryToolProvider {
                 return ToolResult.error("query 参数不能为空");
             }
 
-            // 三路混合检索，限定 AGENT_EXPERIENCE scope
-            var filter = MemoryReadFilter.agentExperience();
+            // 三路混合检索，限定 AGENT_EXPERIENCE scope；有 ProjectContext 时同时限定 space
+            var filter = toProjectFilter(resolveProjectContext(input), Set.of(MemoryScope.AGENT_EXPERIENCE));
             List<RetrievalResult> ranked = hybridRetriever.retrieve(query, topK * 3, RetrievalWeights.DEFAULT, filter);
 
             // 批量查询完整实体（含 properties: lessons, toolsUsed 等）
@@ -565,6 +836,11 @@ public class MemoryToolProvider {
         if (result.description() != null) map.put("description", result.description());
         map.put("score", result.fusedScore());
         map.put("sourcePath", result.sourcePath());
+        // Task 30：生命周期闭环标注 — 仅在 true 时输出以节省 token，
+        // LLM 据此区分"已完成/派生源失效/需复核"的语义。
+        if (result.isHistorical()) map.put("isHistorical", true);
+        if (result.isStale()) map.put("isStale", true);
+        if (result.needsRevalidation()) map.put("needsRevalidation", true);
         return Map.copyOf(map);
     }
 
