@@ -50,7 +50,7 @@ function onContentChange(value: string) {
       v-if="hasIssues"
       class="flex items-start gap-sm rounded-lg border border-amber-200/70 bg-amber-50/80 px-md py-sm text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
     >
-      <AlertTriangle class="size-4 shrink-0" />
+      <AlertTriangle class="h-sm w-sm shrink-0" />
       <div class="flex-1 space-y-xs">
         <p class="font-medium">软校验发现 {{ issues.length }} 条提示（不会阻止保存，但建议在提交前修正）</p>
         <ul class="space-y-xs">
@@ -66,7 +66,7 @@ function onContentChange(value: string) {
       v-else
       class="flex items-center gap-sm rounded-lg border border-emerald-200/70 bg-emerald-50/70 px-md py-sm text-xs text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
     >
-      <CheckCircle2 class="size-4 shrink-0" />
+      <CheckCircle2 class="h-sm w-sm shrink-0" />
       <span>SKILL.md 结构看上去没问题。</span>
     </div>
 

@@ -28,10 +28,6 @@ import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebToolProvider;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
-import com.lifepilot.workflow.engine.WorkflowCommandService;
-import com.lifepilot.workflow.registry.WorkflowRegistry;
-// WorkflowToolProvider 暂时下线（2026-04-23）；源码保留，等未来决定是否重启用再取消此注释
-// import com.lifepilot.workflow.tool.WorkflowToolProvider;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
@@ -67,8 +63,6 @@ public class InfraToolProvider {
     @Nullable private final SandboxRepository sandboxRepository;
     @Nullable private final BrowserSessionManager browserSessionManager;
     @Nullable private final NotificationService notificationService;
-    @Nullable private final WorkflowRegistry workflowRegistry;
-    @Nullable private final WorkflowCommandService workflowCommandService;
     @Nullable private final CronTaskRepository cronTaskRepository;
     @Nullable private final CronScheduler cronScheduler;
     @Nullable private final NotificationProperties notificationProperties;
@@ -89,8 +83,6 @@ public class InfraToolProvider {
                              @Nullable SandboxRepository sandboxRepository,
                              @Nullable BrowserSessionManager browserSessionManager,
                              @Nullable NotificationService notificationService,
-                             @Nullable WorkflowRegistry workflowRegistry,
-                             @Nullable WorkflowCommandService workflowCommandService,
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
                              @Nullable NotificationProperties notificationProperties,
@@ -110,8 +102,6 @@ public class InfraToolProvider {
         this.sandboxRepository = sandboxRepository;
         this.browserSessionManager = browserSessionManager;
         this.notificationService = notificationService;
-        this.workflowRegistry = workflowRegistry;
-        this.workflowCommandService = workflowCommandService;
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
         this.notificationProperties = notificationProperties;
@@ -158,9 +148,6 @@ public class InfraToolProvider {
         } else {
             log.warn("NotificationService 不可用，跳过通知工具注册");
         }
-
-        // workflow 工具已下线：使用频率低、与 LLM 直接编排相比优势有限，
-        // 保留 WorkflowToolProvider 源码待需要时重启用。
 
         // 自主任务工具（创建路径会通过 ChatSessionRepository 反查当前会话的 projectId，
         // 填入新建任务的归属 —— Plan 2 Task A6）

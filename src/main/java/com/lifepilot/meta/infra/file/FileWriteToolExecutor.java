@@ -75,6 +75,7 @@ public class FileWriteToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: " + e.getMessage());
         }
+        pathStr = PathExpander.expand(pathStr);
 
         boolean createDirectories = input.getOptionalParam("createDirectories", Boolean.class)
                 .orElse(true);

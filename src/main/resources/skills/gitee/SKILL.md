@@ -24,7 +24,7 @@ metadata:
 
 # Gitee 代码托管指南
 
-通过 Gitee OpenAPI 管理代码仓库、PR 和 Issue。
+通过 Gitee OpenAPI 管理代码仓库、PR 和 Issue。所有远程操作走 `web.fetch`，本地 Git 走 `git.*`。
 
 ## 适用场景
 
@@ -41,66 +41,13 @@ metadata:
 
 ## 工作流
 
-### 前置条件
+1. **准备 Token**：读取 `GITEE_TOKEN` 环境变量，不明文输出
+2. **调用 OpenAPI**：`web.fetch` 拼 URL `/api/v5/...`，POST 需 `Content-Type: application/json`，详见参考
+3. **本地提交与推送**：`git.query` / `git.mutate` 操作本地仓库，`git push` 用 `shell.exec`
+4. **敏感操作**（删库 / 强制推送 / 撤回）需用户二次确认
 
-需要配置 Gitee 私人令牌 `GITEE_TOKEN`（在 gitee.com/profile/personal_access_tokens 创建）。
+## 详细参考
 
-### 查看仓库
-
-```
-web.fetch(url="https://gitee.com/api/v5/user/repos?access_token=${GITEE_TOKEN}&type=all&page=1&per_page=20", method="GET")
-```
-
-### 创建 Issue
-
-```
-web.fetch(
-  url="https://gitee.com/api/v5/repos/${owner}/${repo}/issues",
-  method="POST",
-  headers={"Content-Type": "application/json"},
-  body="{\"access_token\": \"${GITEE_TOKEN}\", \"title\": \"标题\", \"body\": \"描述\"}"
-)
-```
-
-### 创建 Pull Request
-
-```
-web.fetch(
-  url="https://gitee.com/api/v5/repos/${owner}/${repo}/pulls",
-  method="POST",
-  headers={"Content-Type": "application/json"},
-  body="{\"access_token\": \"${GITEE_TOKEN}\", \"title\": \"PR标题\", \"head\": \"源分支\", \"base\": \"目标分支\", \"body\": \"描述\"}"
-)
-```
-
-### 本地 Git 操作
-
-只读查询用 `git.query`：
-```
-git.query(action="status")
-git.query(action="log", count=10)
-```
-
-写操作用 `git.mutate`：
-```
-git.mutate(action="commit", message="提交信息", files=["file1.java"])
-git.mutate(action="branch", branchAction="create", name="feature-xxx")
-```
-
-推送用 `shell.exec`：
-```bash
-shell.exec(command="git push origin feature-branch")
-```
-
-## 规则
-
-- API 频率限制 5000 次/小时
-- 创建 PR/Issue 前确认标题和内容
-- 删除仓库、强制推送等敏感操作需用户二次确认
-- Token 不在日志或输出中暴露
-
-## 常见错误处理
-
-- **Token 无效** → 提示用户检查或重新生成令牌
-- **仓库不存在** → 确认 owner/repo 拼写
-- **权限不足** → 确认 Token 的权限范围
+- OpenAPI 命令模板（仓库 / Issue / PR / 本地 Git 协作）：`{skill_dir}/references/openapi-reference.md`
+</content>
+</invoke>

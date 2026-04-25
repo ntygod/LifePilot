@@ -233,9 +233,9 @@ Spring `ApplicationEvent`，payload 三字段最小化：`skillName` / `sourceTy
 
 `SkillFileWatcher`（`src/main/java/com/lifepilot/skill/markdown/SkillFileWatcher.java`）基于 `WatchService` 在 Virtual Thread 上监听 Skill 根目录及一级子目录的 CREATE/DELETE/MODIFY 事件，`ScheduledExecutorService` 防抖（`lifepilot.skills.hot-reload-debounce-ms`，默认 500ms），`AtomicBoolean` 防并发重载。加载失败保留上一个有效版本。
 
-### 3.8 skills 表（V17 迁移）
+### 3.8 skills 表（V28 迁移）
 
-迁移：`src/main/resources/db/migration/V17__skill_system_refactor.sql`
+迁移：`src/main/resources/db/migration/V28__skill_system_refactor.sql`
 
 ```sql
 CREATE TABLE skills (

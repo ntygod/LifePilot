@@ -121,7 +121,7 @@ onMounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <PageContainer size="wide" class="py-4 sm:py-5">
+    <PageContainer size="wide" class="py-md sm:py-lg">
       <div class="page-stack">
         <PageHeader
           eyebrow="技能"
@@ -130,31 +130,31 @@ onMounted(() => {
         >
           <template #actions>
             <Button variant="outline" @click="showCreateDialog = true">
-              <Plus class="size-4" />
+              <Plus class="h-sm w-sm" />
               新建技能
             </Button>
             <Button @click="showInstallDialog = true">
-              <CloudDownload class="size-4" />
+              <CloudDownload class="h-sm w-sm" />
               导入技能
             </Button>
           </template>
         </PageHeader>
 
         <section class="toolbar-strip">
-          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div class="flex flex-1 items-center gap-3">
+          <div class="flex flex-col gap-md xl:flex-row xl:items-center xl:justify-between">
+            <div class="flex flex-1 items-center gap-md">
               <SearchBar
                 v-model="skillSearchQuery"
                 placeholder="按技能名称或说明搜索..."
                 class="flex-1"
               />
               <Button variant="outline" size="sm" @click="showFilters = !showFilters">
-                <SlidersHorizontal class="size-4" />
+                <SlidersHorizontal class="h-sm w-sm" />
                 筛选
               </Button>
             </div>
 
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-md">
               <span class="text-sm text-muted-foreground">结果 {{ filteredSkills.length }}</span>
               <Button v-if="hasFilters" variant="ghost" @click="clearFilters">
                 清空筛选
@@ -163,7 +163,7 @@ onMounted(() => {
           </div>
 
           <div v-if="showFilters" class="mt-sm rounded-xl border border-border/40 bg-card/60 p-md">
-            <div class="flex flex-wrap items-center gap-3">
+            <div class="flex flex-wrap items-center gap-md">
               <span class="surface-label text-[0.68rem]">来源</span>
               <FilterChips v-model="skillSourceFilter" :options="skillSourceOptions" />
             </div>
@@ -181,6 +181,7 @@ onMounted(() => {
               :key="index"
               class="rounded-xl border border-border/60 bg-background/72 p-md"
             >
+              <!-- w-48 保留：Tailwind 默认固定宽度尺度，项目未定义 w-* 命名别名 -->
               <div class="h-md w-48 animate-pulse rounded bg-muted" />
             </div>
           </div>
@@ -192,7 +193,7 @@ onMounted(() => {
             tone="danger"
           >
             <template #icon>
-              <Puzzle class="size-5" />
+              <Puzzle class="h-md w-md" />
             </template>
           </StatePanel>
 
@@ -202,7 +203,7 @@ onMounted(() => {
             description="可以直接新建一个，也可以从本地压缩包或技能市场导入。"
           >
             <template #icon>
-              <Puzzle class="size-5" />
+              <Puzzle class="h-md w-md" />
             </template>
             <template #actions>
               <Button variant="outline" @click="showCreateDialog = true">
@@ -220,7 +221,7 @@ onMounted(() => {
             description="可以放宽来源筛选，或清空搜索关键词后重试。"
           >
             <template #icon>
-              <Store class="size-5" />
+              <Store class="h-md w-md" />
             </template>
             <template #actions>
               <Button variant="outline" @click="clearFilters">
@@ -229,16 +230,16 @@ onMounted(() => {
             </template>
           </StatePanel>
 
-          <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div v-else class="grid grid-cols-1 gap-md md:grid-cols-2 xl:grid-cols-3">
             <article
               v-for="skill in filteredSkills"
               :key="skill.name"
-              class="list-card group cursor-pointer p-4"
+              class="list-card group cursor-pointer p-md"
               @click="viewSkillDetail(skill)"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0 space-y-2">
-                  <div class="flex flex-wrap items-center gap-2">
+              <div class="flex items-start justify-between gap-md">
+                <div class="min-w-0 space-y-sm">
+                  <div class="flex flex-wrap items-center gap-sm">
                     <h3 class="truncate text-base font-semibold tracking-tight text-foreground">
                       {{ skill.name }}
                     </h3>
@@ -253,7 +254,7 @@ onMounted(() => {
                 </span>
               </div>
 
-              <div class="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+              <div class="mt-md flex items-center justify-between gap-md border-t border-border/60 pt-md">
                 <div class="flex items-center gap-sm" @click.stop>
                   <Switch
                     :model-value="skill.enabled !== false"
@@ -265,7 +266,7 @@ onMounted(() => {
                   </span>
                 </div>
 
-                <div class="flex items-center gap-2" @click.stop>
+                <div class="flex items-center gap-sm" @click.stop>
                   <Button
                     variant="ghost"
                     size="sm"

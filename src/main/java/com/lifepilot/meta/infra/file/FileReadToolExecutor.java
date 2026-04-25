@@ -157,6 +157,7 @@ public class FileReadToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("需要提供 path 或 attachmentId 之一");
         }
+        pathStr = PathExpander.expand(pathStr);
 
         // ★ 2.1 硬约束白名单 —— 防 path traversal，仅允许 skills / 工作区 / 进程目录
         if (skillPathWhitelist != null) {

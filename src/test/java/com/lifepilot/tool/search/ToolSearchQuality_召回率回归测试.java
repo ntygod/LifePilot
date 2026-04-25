@@ -245,10 +245,8 @@ class ToolSearchQuality_召回率回归测试 {
                 List.of("infrastructure", "kernel", "inspect", "variables", "state", "code", "debug"),
                 ToolCategory.PERCEPTION);
 
-        // Tier 2 datastore / cron / notify —— 镜像 StorageToolProvider / TaskToolProvider / NotifyToolProvider
-        reg("datastore", "Query datastore collections: find / aggregate / count / insert / update / delete documents.",
-                List.of("datastore", "storage", "database", "collection", "query", "crud", "aggregate", "document"),
-                ToolCategory.STORAGE);
+        // Tier 2 cron / notify —— 镜像 TaskToolProvider / NotifyToolProvider
+        // 注：datastore 工具已于 Plan 3 下架，workflow 工具已于 Skill v2 fixup 下架，均不再参与搜索召回
         reg("cron", "Schedule cron tasks: create / update / delete recurring jobs.",
                 List.of("cron", "schedule", "task", "automation", "timer", "job", "recurring"),
                 ToolCategory.ACTION);
@@ -262,11 +260,6 @@ class ToolSearchQuality_召回率回归测试 {
                 ToolCategory.ACTION);
         reg("document.edit", "Patch / rollback / commit versions of a docx / xlsx / pptx document.",
                 List.of("infrastructure", "document", "edit", "docx", "xlsx", "patch", "diff", "commit", "rollback", "version"),
-                ToolCategory.ACTION);
-
-        // Tier 2 workflow —— 镜像 WorkflowToolProvider
-        reg("workflow", "Manage workflow orchestrations: start / stop / inspect / cancel running flows.",
-                List.of("workflow", "process", "orchestration", "manage", "flow", "automation"),
                 ToolCategory.ACTION);
 
         // Tier 2 ui.emit —— 镜像 UiEmitToolProvider

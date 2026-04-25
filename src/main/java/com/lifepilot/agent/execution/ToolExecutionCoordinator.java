@@ -72,7 +72,7 @@ public class ToolExecutionCoordinator {
     /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
     private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
             "memory.create", "memory.update", "memory.tag",
-            "workflow.execute", "code.execute", "datastore.query");
+            "code.execute");
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
                                     ObjectMapper objectMapper,

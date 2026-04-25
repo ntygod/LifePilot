@@ -40,53 +40,16 @@ metadata:
 
 ## 工作流
 
-### 了解当前状态
+1. **了解现状**：`file.list` 看目录结构和文件信息
+2. **制定方案**：选分类依据（类型 / 日期 / 项目 / 大小）
+3. **预览变更**：执行前必须输出预览，用户确认后再操作
+4. **执行**：优先 `file.manage`（跨平台），避免 `shell.exec` 的 mv/rm
+5. **移动优先于删除**：先归档到临时目录，确认无误再清理
+6. **批量分批**：大批量操作分批执行，每批确认后再继续
+7. **重命名记映射**：用 `file.write` 记录旧名 → 新名，便于回溯
 
-```
-file.list(action="list", path="目标目录", maxDepth=3)
-file.list(action="info", path="目标文件")
-```
+## 详细参考
 
-### 制定整理方案
-
-| 分类依据 | 适用场景 | 示例 |
-|---------|---------|------|
-| 文件类型 | 混杂文件整理 | `.pdf` → docs/、`.jpg` → images/ |
-| 日期 | 照片/日志整理 | 按年月创建子目录 |
-| 项目名 | 工作文件整理 | 按项目归档 |
-| 文件大小 | 磁盘清理 | 大文件单独归类 |
-
-### 预览变更
-
-**在执行任何文件操作前，先输出变更预览供用户确认。**
-
-### 执行操作
-
-优先使用 `file.manage`（跨平台）：
-
-```
-file.manage(action="move", source="old/path/file.pdf", destination="new/path/file.pdf")
-file.manage(action="copy", source="src/file.txt", destination="backup/file.txt")
-file.manage(action="mkdir", path="docs/2026")
-file.manage(action="delete", path="temp/useless.tmp")
-```
-
-### 验证结果
-
-```
-file.list(action="list", path="目标目录", maxDepth=3)
-```
-
-## 规则
-
-- 执行前必须输出变更预览，用户确认后再操作
-- 移动优先于删除——先归档到临时目录，确认无误再清理
-- 重命名时用 `file.write` 记录映射关系（旧名 → 新名），便于回溯
-- 大批量操作分批执行，每批确认后再继续
-- 优先用 `file.manage` 而非 `shell.exec`，确保跨平台兼容
-
-## 常见错误处理
-
-- **文件名冲突** → 自动添加序号后缀
-- **权限不足** → 提示用户手动授权或使用管理员权限
-- **路径过长** → 缩短目录层级或文件名
+- 分类依据矩阵、命令模板、错误处理：`{skill_dir}/references/organize-patterns.md`
+</content>
+</invoke>

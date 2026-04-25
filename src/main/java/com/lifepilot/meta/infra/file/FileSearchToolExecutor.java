@@ -70,6 +70,7 @@ public class FileSearchToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: " + e.getMessage());
         }
+        pathStr = PathExpander.expand(pathStr);
 
         String filePattern = input.getOptionalParam("filePattern", String.class)
                 .orElse(null);

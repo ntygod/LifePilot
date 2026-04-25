@@ -16,7 +16,7 @@ metadata:
 
 # 系统自省指南
 
-查看知微运行时信息和各模块状态。
+查看知微运行时信息和各模块状态。直接调用 `system.status()` 即可获取结构化数据，不猜测。
 
 ## 适用场景
 
@@ -33,31 +33,9 @@ metadata:
 
 ## 工作流
 
-### 查看系统状态
-
-```
-system.status()
-```
-
-返回信息包含：
-- 各注册中心能力计数
-- 工具层次分布
-- JVM 内存使用
-- 活跃工作流实例（RUNNING / PAUSED / WAITING / CREATED）
-- MCP Server 连接状态（连接时间、健康检查、重连次数）
-
-### 排查问题
-
-1. 用 `system.status()` 查看整体状态
-2. 关注 MCP Server 连接异常（state 不是 AVAILABLE）
-3. 关注阻塞的工作流实例（blockedStepId 非空）
-
-## 规则
-
-- 直接调用 `system.status()` 获取数据，不猜测系统状态
-- 部分模块可能未注入（WorkflowRepository、McpServerRegistry），对应信息会显示 `available: false`，如实告知用户
-
-## 常见错误处理
-
-- **模块不可用** → 告知用户该模块未启用，不报错
-- **数据为空** → 可能是刚启动还未注册，建议稍后重试
+1. **调用 `system.status()`** 获取整体快照
+2. **关注异常信号**：MCP Server state 非 AVAILABLE、工作流实例 blockedStepId 非空
+3. **模块未注入时**（`available: false`）如实告知用户该模块未启用，不报错
+4. **数据为空**可能是刚启动还未注册，建议稍后重试
+</content>
+</invoke>

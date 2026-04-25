@@ -227,6 +227,7 @@ class SkillMarketplaceInstaller_市场安装测试 {
                                                     ClawHubZipExtractor clawHubZipExtractor) {
         return new SkillMarketplaceInstaller(
                 installer,
+                repository,
                 indexManager,
                 config,
                 RestClient.builder(),

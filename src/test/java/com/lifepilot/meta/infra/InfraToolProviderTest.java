@@ -43,8 +43,9 @@ class InfraToolProviderTest {
                 true
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
-        // 构造签名：21 参数 —— workspaceResolver 位于第 18 位，
-        // 之后是 attachmentRepository / chatSessionRepository / skillPathWhitelist。
+        // 构造签名：19 参数（Skill v2 fixup 移除了 workflowRegistry / workflowCommandService
+        // 两个构造参数）—— workspaceResolver 位于第 16 位，之后是 attachmentRepository /
+        // chatSessionRepository / skillPathWhitelist。
         provider = new InfraToolProvider(
                 properties,
                 webSearchConfigProvider,

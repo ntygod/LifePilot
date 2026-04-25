@@ -26,7 +26,7 @@
 
 | 路径 | 责任 |
 |---|---|
-| `src/main/resources/db/migration/V17__skill_system_refactor.sql` | drop + recreate `skills` 表 + 索引 |
+| `src/main/resources/db/migration/V28__skill_system_refactor.sql` | drop + recreate `skills` 表 + 索引 |
 | `docs/skill-spec.md` | SKILL.md 规范文档（frontmatter 字段表 + body 结构 + 三级分层） |
 | `src/main/resources/skills/skill-creator/SKILL.md` | 自举元 skill（按新规范示范） |
 | `src/main/resources/skills/skill-creator/references/frontmatter-reference.md` | frontmatter 字段详表 |
@@ -266,15 +266,15 @@ git commit -m "docs(skill): 新增 SKILL.md 规范文档 v2"
 
 ---
 
-### Task 0.2：V17 迁移 — drop + recreate `skills` 表
+### Task 0.2：V28 迁移 — drop + recreate `skills` 表
 
 **Files:**
-- Create: `src/main/resources/db/migration/V17__skill_system_refactor.sql`
+- Create: `src/main/resources/db/migration/V28__skill_system_refactor.sql`
 
 - [ ] **Step 1：写迁移脚本**
 
 ```sql
--- V17：Skill 系统重构 —— skills 表重建为"安装元数据事实源"
+-- V28：Skill 系统重构 —— skills 表重建为"安装元数据事实源"
 -- 老 skills 表无代码写入，数据可抛。新表只存安装状态，内容实时从 SKILL.md 读。
 
 DROP TABLE IF EXISTS skills;
@@ -309,8 +309,8 @@ mvn -q test -Dtest=FlywayMigrationVerificationTest
 - [ ] **Step 3：Commit**
 
 ```bash
-git add src/main/resources/db/migration/V17__skill_system_refactor.sql
-git commit -m "feat(db): V17 迁移 — skills 表重建为安装元数据事实源"
+git add src/main/resources/db/migration/V28__skill_system_refactor.sql
+git commit -m "feat(db): V28 迁移 — skills 表重建为安装元数据事实源"
 ```
 
 ---

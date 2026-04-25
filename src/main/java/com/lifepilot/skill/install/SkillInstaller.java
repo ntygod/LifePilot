@@ -113,10 +113,18 @@ public class SkillInstaller {
             String skillMdContent,
             Path targetDir
     ) {
+        /** SKILL.md 原文长度上限（100K 字符），防御 SnakeYAML 解析巨量输入耗尽内存 / CPU。 */
+        public static final int MAX_SKILL_MD_LENGTH = 100_000;
+
         public InstallRequest {
             if (sourceType == null) throw new IllegalArgumentException("sourceType 不能为空");
             if (skillMdContent == null || skillMdContent.isBlank())
                 throw new IllegalArgumentException("skillMdContent 不能为空");
+            if (skillMdContent.length() > MAX_SKILL_MD_LENGTH) {
+                throw new IllegalArgumentException(
+                        "skillMdContent 超过 " + MAX_SKILL_MD_LENGTH
+                                + " 字符限制（当前 " + skillMdContent.length() + "）");
+            }
             if (targetDir == null) throw new IllegalArgumentException("targetDir 不能为空");
         }
     }

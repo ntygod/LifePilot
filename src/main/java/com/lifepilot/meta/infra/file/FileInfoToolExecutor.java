@@ -50,6 +50,7 @@ public class FileInfoToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: path");
         }
+        pathStr = PathExpander.expand(pathStr);
 
         Path filePath = Path.of(pathStr).toAbsolutePath().normalize();
 

@@ -196,15 +196,8 @@ class ReactStepSerializerTest {
                 ReactStepSerializer.summarizeInput("code.execute", "{\"code\":\"print(1)\",\"language\":\"python\"}"));
     }
 
-    @Test
-    void summarizeInput_datastore_按action分派() {
-        assertEquals("创建集合「文案库」",
-                ReactStepSerializer.summarizeInput("datastore",
-                        "{\"action\":\"create-collection\",\"name\":\"文案库\",\"type\":\"DOCUMENT\"}"));
-        assertEquals("查询「文案库」",
-                ReactStepSerializer.summarizeInput("datastore",
-                        "{\"action\":\"query\",\"collectionName\":\"文案库\"}"));
-    }
+    // summarizeInput_datastore_按action分派 测试已随 datastore 工具下架（Skill v2 fixup 2026-04-24）一并删除 —
+    // LLM 不再使用 datastore 工具，summarizeInput 中的 case "datastore" 分支随之移除。
 
     @Test
     void summarizeInput_memory_按action分派() {

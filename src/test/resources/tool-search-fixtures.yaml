@@ -56,10 +56,6 @@ fixtures:
     expected_top_3: ["code.kernel.inspect"]
   - query: "list kernel"
     expected_top_3: ["code.kernel.list"]
-  - query: "datastore collection"
-    expected_top_3: ["datastore"]
-  - query: "query crud"
-    expected_top_3: ["datastore"]
   - query: "schedule cron"
     expected_top_3: ["cron"]
   - query: "timer job"
@@ -68,8 +64,6 @@ fixtures:
     expected_top_3: ["notify"]
   - query: "push alert"
     expected_top_3: ["notify"]
-  - query: "workflow orchestration"
-    expected_top_3: ["workflow"]
   - query: "spawn worker"
     expected_top_3: ["spawn_workers"]
   - query: "generate skill"

@@ -128,26 +128,26 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("搜索和管理用户的长期记忆。\n\n" +
-                        "自动行为：对话中的事实由系统自动提取存储，用户画像和相关经验已自动注入上下文。\n\n" +
-                        "手动使用场景：\n" +
-                        "- search：用户提到具体人/事/项目时，搜索相关知识实体\n" +
-                        "- recall：用户引用历史对话（\u201C上次聊的\u201D\u201C之前说过\u201D）时，回忆完整对话片段\n" +
-                        "- create：用户明确要求记住某事，或表达了重要偏好/目标变更\n" +
-                        "- update：已有实体信息需要修正或补充\n" +
-                        "- delete：用户要求遗忘**已知 ID** 的某条记忆（精确删除）\n" +
-                        "- cancel：**用户表达取消/撤销/不再做某事时必选**。适用所有记忆类型（偏好/目标/经验/习惯/项目等）。\n" +
-                        "  两种形态：\n" +
-                        "    * 传 entityId：按 ID 将单条记忆转为 CANCELLED 状态（仅当前处于 ACTIVE 有效）；\n" +
-                        "    * 传 query：按语义描述批量归档相关记忆，默认圈定 GOAL/EXPERIENCE/HABIT，可通过 entityTypes 覆盖。\n" +
-                        "  典型触发词：\u201C取消 X\u201D、\u201C撤销 X\u201D、\u201C不要再 X\u201D、\u201C以后别提 X\u201D、\u201CX 不做了\u201D。\n" +
-                        "  重要：只 create PREFERENCE 是不够的，老的 GOAL/EXPERIENCE 仍会继续被召回，必须同时 cancel 归档相关旧记忆。\n" +
-                        "- complete：用户明确表达已完成某目标/项目（\u201C终于做完了\u201D）时调用，仅 GOAL/PROJECT 类型有效，将实体转为 COMPLETED。\n" +
-                        "- supersede：新实体替代旧实体时调用（如旧目标被新目标取代），同时设置 succeeded_by 外键并将旧实体转为 SUPERSEDED。需要同时传 entityId（被替代）和 new_entity_id（继承者）。\n" +
-                        "- search-experience：需要借鉴过往类似任务的执行经验\n" +
-                        "- query-at-time：需要查询某个时间点的历史状态\n\n" +
-                        "不需要调用的情况：当前上下文已有足够信息、纯闲聊、一般知识问答。\n" +
-                        "资料文档检索请用 knowledge.search。")
+                .description("Search and manage long-term memory for the current user.\n\n" +
+                        "Automatic: facts mentioned in conversation are auto-extracted and stored; user profile and relevant past experiences are auto-injected into context.\n\n" +
+                        "Manual scenarios:\n" +
+                        "- search: when the user mentions a specific person/event/project, search related knowledge entities\n" +
+                        "- recall: when the user references prior conversations (\"last time\", \"we talked about\"), recall full conversation snippets\n" +
+                        "- create: when the user explicitly asks to remember something, or expresses an important preference/goal change\n" +
+                        "- update: when an existing entity needs correction or augmentation\n" +
+                        "- delete: when the user asks to forget a memory by **known ID** (precise removal)\n" +
+                        "- cancel: **REQUIRED when the user expresses cancel/revoke/no-longer for some intent.** Applies to all memory types (preference/goal/experience/habit/project).\n" +
+                        "  Two forms:\n" +
+                        "    * pass entityId: archive a single memory by ID into CANCELLED state (only effective when currently ACTIVE);\n" +
+                        "    * pass query: semantically batch-archive relevant memories; default scope GOAL/EXPERIENCE/HABIT, override via entityTypes.\n" +
+                        "  Typical triggers: \"cancel X\", \"revoke X\", \"stop X\", \"drop X\", \"no longer X\".\n" +
+                        "  Important: creating a PREFERENCE alone is not enough; older GOAL/EXPERIENCE will still be recalled, so cancel-archive related old memories together.\n" +
+                        "- complete: when the user explicitly states a goal/project is done (\"finally finished\"), only valid for GOAL/PROJECT, transitions the entity to COMPLETED.\n" +
+                        "- supersede: when a new entity replaces an old one (e.g. old goal replaced by new), sets succeeded_by foreign key and transitions old to SUPERSEDED. Requires both entityId (the replaced) and new_entity_id (the successor).\n" +
+                        "- search-experience: when reference to past similar task execution experience is needed\n" +
+                        "- query-at-time: when historical state at a specific timestamp is needed\n\n" +
+                        "When NOT to call: current context has enough info, pure chitchat, general knowledge Q&A.\n" +
+                        "For document/material retrieval use knowledge.search.")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),

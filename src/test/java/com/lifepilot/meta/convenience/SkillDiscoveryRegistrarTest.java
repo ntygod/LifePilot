@@ -72,7 +72,7 @@ class SkillDiscoveryRegistrarTest {
 
     @Test
     void afterPropertiesSet_应安装v2格式Skill_introspection_成功落盘() {
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
 
         registrar.afterPropertiesSet();
 
@@ -93,7 +93,7 @@ class SkillDiscoveryRegistrarTest {
     @Test
     void afterPropertiesSet_老格式Skill应被WARN跳过但不阻断其他安装() {
         // 26 个老格式 Skill 会被 parser 拒绝（id 已废弃），但至少 introspection 成功
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
 
         registrar.afterPropertiesSet();
 
@@ -112,7 +112,7 @@ class SkillDiscoveryRegistrarTest {
     void afterPropertiesSet_功能禁用时应跳过整个扫描() {
         properties.getSkillDiscovery().setEnabled(false);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
         registrar.afterPropertiesSet();
 
         // 禁用后不应有任何 upsert 或 register 调用
