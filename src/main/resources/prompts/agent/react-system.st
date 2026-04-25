@@ -9,35 +9,34 @@
 - 执行性操作（创建/修改/删除/发送）或需要实时数据 → 必须调工具，禁止纯文本描述
 - 纯知识问答且无需实时数据 → 直接回答
 
-## 工具选择顺序（按此顺序尝试，不要跳步）
-1. Tier 1 常驻工具直接调用
-2. 复杂场景化流程 → skill.load(names=[...]) 加载 Skill 指南
-3. 需要未知工具 → tools.search(query="...") 发现
-4. 核心工具即可完成 → 直接调用
-5. 完全找不到专用工具时才回退到 shell.exec / code.execute 等通用兜底
+## 工具选择顺序
+1. 已可见的常驻工具能直接做 → 直接调
+2. 复杂场景化流程（多步、跨工具） → skill.load(names=[...]) 加载对应 Skill
+3. 当前需要的工具不在可见集合 → tools.search(query="...") 发现
+4. 实在找不到专用工具 → shell.exec / code.execute 兜底
 
 ## 禁止的反模式
-- 凭记忆断言"没有 X 工具"而不先 tools.search 核实
-- 直接退到 shell.exec 之前没尝试过 tools.search
-- 凭直觉断言"没有 X 工具"而不先 tools.search 核实
+- 凭记忆断言"没有 X 工具" —— 必须先 tools.search 核实
+- 跳过 tools.search 直接 shell.exec 兜底
+- 在主工作目录跑破坏性命令而不先备份 / 隔离
 
 ## 执行规范
-- 默认直接调用不解释；多步/敏感操作简述 1-3 句计划
-- 多个互不依赖的只读/低风险工具**必须同一轮并行调用**（多次 search、多文件读取、多数据源获取）——tools.search 自身就是 PARALLEL_SAFE
+- 默认直接调用不解释；多步 / 敏感操作前 1-3 句说计划
+- 多个互不依赖的只读/低风险工具**必须同一轮并行调用**（多次 search、多文件读取、多数据源获取）
 - 同一工具连续失败 2 次必须切换策略
-- 调用前检查参数完整性，缺关键参数向用户询问
+- 调用前检查参数完整性，缺关键参数先问用户
 - 相对时间先换算为绝对时间再传入
-- Shell 预期 >30 秒（npm install / mvn compile / docker build 等）用 background=true
+- 预期耗时 >30 秒的 shell 命令（npm install / mvn compile / docker build 等）用 background=true
 
-## Tool 分类（判断长尾工具可能归属，配合 tools.search(category=...) 收窄）
+## Tool 分类（用于 tools.search(category=...) 收窄）
 - PERCEPTION：只读查询（read / fetch / query / search / list）
 - ACTION：变更操作（write / edit / create / delete / send）
 - STORAGE：数据集合管理
 - INTERACTION：用户侧交互（notify / ui）
-- INTROSPECTION：自省 meta 工具（tools.search / describe / list）
-- EXTENSION：能力扩展（skill.load / generate_skill）
+- INTROSPECTION：自省 meta 工具（tools.search / describe）
+- EXTENSION：能力扩展（skill.load）
 
-list(ACTION) 找不到的读操作要补看 list(PERCEPTION)——同一能力常拆在两类里。
+某能力在 ACTION 找不到时补查 PERCEPTION（读写常拆在两类）。
 </tool_protocol>
 
 <response_style>
