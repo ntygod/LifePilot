@@ -53,7 +53,7 @@ class SkillDiscoveryRegistrar_全量迁移测试 {
         var registry = mock(SkillRegistry.class);
         when(registry.register(any())).thenReturn(true);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
         registrar.afterPropertiesSet();
 
         ArgumentCaptor<SkillInstallation> captor = ArgumentCaptor.forClass(SkillInstallation.class);

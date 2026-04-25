@@ -181,9 +181,11 @@ public class MetaAutoConfiguration {
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
                                                     SkillConfigProperties skillConfig,
                                                     SkillInstaller installer,
+                                                    com.lifepilot.skill.install.SkillInstallationRepository installationRepository,
                                                     MarkdownSkillParser parser,
                                                     SkillRegistry skillRegistry) {
-        return new SkillDiscoveryRegistrar(properties, skillConfig, installer, parser, skillRegistry);
+        return new SkillDiscoveryRegistrar(properties, skillConfig, installer,
+                installationRepository, parser, skillRegistry);
     }
 
     /**
