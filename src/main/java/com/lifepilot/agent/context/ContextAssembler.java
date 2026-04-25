@@ -624,7 +624,7 @@ public class ContextAssembler {
             ));
         }
 
-        String skillCatalog = buildSkillCatalog();
+        String skillCatalog = buildSkillCatalog(state);
         if (!skillCatalog.isBlank()) {
             systemPrompt = systemPrompt + "\n" + skillCatalog;
         }
@@ -1264,14 +1264,26 @@ public class ContextAssembler {
     }
 
     /**
-     * 构建 Skill Catalog 段 — 查 skills 表（enabled=true） → 读 registry 拿 SkillDefinition →
-     * SkillRequirementGate 过滤 bins/env/os/tools 不满足的 skill → 按 category 分组 + 组内按 priority 排序 →
-     * 输出 XML 结构（{@code <category name="X"><skill>...</skill></category>}）。
+     * Skill catalog 一次最多列出多少条 — 超过的依赖 LLM 调 {@code find-skills} 显式发现。
      *
-     * <p>输出为渲染进 {@code agent/skill-catalog.st} 模板的 {@code skillEntries} 片段；
-     * 模板外框 {@code <skill_catalog>} 标签保留以沿用 LLM 侧文案与使用规则。</p>
+     * <p>排序键：先按 query 关键词命中分降序，再按 priority 升序（HIGH→LOW），最后 name 升序。
+     * 命中无差异时 priority 起决定作用；当存在命中分非零的低 priority skill 时，
+     * 它可能挤占 score=0 的 HIGH priority skill —— 这是有意行为：query 已经表达明确意图。</p>
      */
-    private String buildSkillCatalog() {
+    private static final int SKILL_CATALOG_MAX_ENTRIES = 8;
+
+    /**
+     * 构建 Skill Catalog 段 —— 按 query 关键词与 skill name/description/tags 的命中度
+     * 选 top-K，避免把全部 25+ 个 skill 描述无差别注入 system prompt。
+     *
+     * <p>过滤链：skills 表（enabled=true） → SkillRegistry 内存定义 →
+     * {@link SkillRequirementGate} requires 满足 → priority + 关键词打分排序
+     * → 截取 top-{@value #SKILL_CATALOG_MAX_ENTRIES}。</p>
+     *
+     * <p>输出渲染进 {@code agent/skill-catalog.st} 模板的 {@code skillEntries} 片段，
+     * 扁平 markdown list 形式（每行一个 skill）；剩余数量 ≥ 1 时附一行提示。</p>
+     */
+    private String buildSkillCatalog(@Nullable ReactAgentState state) {
         if (skillRegistry == null || skillInstallationRepository == null) {
             return "";
         }
@@ -1288,23 +1300,25 @@ public class ContextAssembler {
         }
 
         // 查表 + 过滤：注册表存在 + requires 满足
-        List<SkillCatalogEntry> entries = enabled.stream()
+        List<SkillCatalogEntry> allEntries = enabled.stream()
                 .map(install -> skillRegistry.find(install.name()).orElse(null))
                 .filter(Objects::nonNull)
                 .filter(def -> skillRequirementGate == null
                         || skillRequirementGate.satisfies(def.zhiweiMeta().requires()))
                 .map(ContextAssembler::toCatalogEntry)
-                .sorted(Comparator
-                        .comparing(SkillCatalogEntry::category, Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparingInt(entry -> priorityOrder(entry.priority()))
-                        .thenComparing(SkillCatalogEntry::name))
                 .toList();
 
-        if (entries.isEmpty()) {
+        if (allEntries.isEmpty()) {
             return "";
         }
 
-        String skillEntries = renderCategoryGroupedXml(entries);
+        // 关键词预筛 + 优先级排序，截取 top-K（排序键见 SKILL_CATALOG_MAX_ENTRIES Javadoc）
+        String goal = state == null ? null : state.goal();
+        List<String> keywords = extractKeywords(goal);
+        List<SkillCatalogEntry> selected = selectTopEntries(allEntries, keywords);
+
+        int omitted = allEntries.size() - selected.size();
+        String skillEntries = renderSkillList(selected, omitted);
         try {
             return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
         } catch (Exception e) {
@@ -1313,40 +1327,93 @@ public class ContextAssembler {
         }
     }
 
-    /** Skill catalog 一行映射：name + description + category + priority。 */
-    private record SkillCatalogEntry(String name, String description, String category, SkillPriority priority) {}
+    /** Skill catalog 一行映射：name + description + tags + priority。 */
+    record SkillCatalogEntry(String name, String description, List<String> tags, SkillPriority priority) {}
 
     /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
     private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
         SkillZhiweiMeta meta = def.zhiweiMeta();
         String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
-        String category = meta.category() == null ? "other" : meta.category();
-        return new SkillCatalogEntry(displayName, def.description(), category, meta.priority());
+        return new SkillCatalogEntry(displayName, def.description(), meta.tags(), meta.priority());
     }
 
     /**
-     * 按 category 分组拼装 XML：同 category 的 skill 放在同一个 {@code <category>} 标签内；
-     * 组内按 priority 排序（HIGH → NORMAL → LOW）由调用方预排好。
+     * 从 query 中提取关键词 — 中文按字切，英文按 word 切，去重 + 长度 ≥ 2 过滤。
+     * 用于轻量打分，不做分词器级别的精细处理。
      */
-    private static String renderCategoryGroupedXml(List<SkillCatalogEntry> entries) {
-        var sb = new StringBuilder();
-        String currentCategory = null;
-        for (SkillCatalogEntry e : entries) {
-            if (!Objects.equals(currentCategory, e.category())) {
-                if (currentCategory != null) {
-                    sb.append("</category>\n");
-                }
-                sb.append("<category name=\"").append(escapeXml(e.category())).append("\">\n");
-                currentCategory = e.category();
+    static List<String> extractKeywords(@Nullable String query) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        // 中文按 2-gram 滑窗 + 英文 word 切；去重且长度 ≥ 2
+        String trimmed = query.trim();
+        var result = new java.util.LinkedHashSet<String>();
+        // 英文 / 数字 token
+        for (String token : trimmed.split("[\\s\\p{Punct}]+")) {
+            if (token.length() >= 2 && token.chars().anyMatch(c -> c < 128)) {
+                result.add(token.toLowerCase(Locale.ROOT));
             }
-            sb.append("  <skill name=\"").append(escapeXml(e.name())).append("\">\n");
-            sb.append("    <description>").append(escapeXml(e.description())).append("</description>\n");
-            sb.append("  </skill>\n");
         }
-        if (currentCategory != null) {
-            sb.append("</category>");
+        // 中文 2-gram
+        for (int i = 0; i < trimmed.length() - 1; i++) {
+            char a = trimmed.charAt(i);
+            char b = trimmed.charAt(i + 1);
+            if (Character.UnicodeScript.of(a) == Character.UnicodeScript.HAN
+                    && Character.UnicodeScript.of(b) == Character.UnicodeScript.HAN) {
+                result.add(("" + a + b).toLowerCase(Locale.ROOT));
+            }
         }
-        return sb.toString();
+        return List.copyOf(result);
+    }
+
+    /**
+     * 给 entry 按关键词命中度打分 — name 命中权重最高，description 次之，tags 最低。
+     */
+    static int scoreEntry(SkillCatalogEntry e, List<String> keywords) {
+        if (keywords.isEmpty()) return 0;
+        String name = e.name() == null ? "" : e.name().toLowerCase(Locale.ROOT);
+        String desc = e.description() == null ? "" : e.description().toLowerCase(Locale.ROOT);
+        int score = 0;
+        for (String kw : keywords) {
+            if (name.contains(kw)) score += 5;
+            if (desc.contains(kw)) score += 2;
+            for (String tag : e.tags()) {
+                if (tag.toLowerCase(Locale.ROOT).contains(kw)) score += 1;
+            }
+        }
+        return score;
+    }
+
+    /**
+     * 从全集中选 top-K：按 (score 降, priority 升, name 升) 单链 sort 后取前 K 条。
+     */
+    private static List<SkillCatalogEntry> selectTopEntries(List<SkillCatalogEntry> all,
+                                                            List<String> keywords) {
+        // 全部按 (score 降, priority 升, name 升) 排序，截前 K 条
+        return all.stream()
+                .sorted(Comparator
+                        .comparingInt((SkillCatalogEntry e) -> -scoreEntry(e, keywords))
+                        .thenComparingInt(e -> priorityOrder(e.priority()))
+                        .thenComparing(SkillCatalogEntry::name))
+                .limit(SKILL_CATALOG_MAX_ENTRIES)
+                .toList();
+    }
+
+    /**
+     * 渲染扁平 markdown list — 每行 {@code - name: description}；
+     * 剩余 ≥ 1 时附 hint 行引导调用 {@code find-skills}。
+     */
+    private static String renderSkillList(List<SkillCatalogEntry> entries, int omittedCount) {
+        var sb = new StringBuilder();
+        for (SkillCatalogEntry e : entries) {
+            sb.append("- ").append(e.name()).append(": ")
+                    .append(e.description() == null ? "" : e.description()).append('\n');
+        }
+        if (omittedCount > 0) {
+            sb.append("\n（另有 ").append(omittedCount)
+                    .append(" 个技能未列出 —— 当前需求不在上述列表时调用 find-skills 发现）");
+        }
+        return sb.toString().stripTrailing();
     }
 
     /** HIGH=0, NORMAL=1, LOW=2 — 排序权重。 */
@@ -1361,17 +1428,10 @@ public class ContextAssembler {
         };
     }
 
-    /** XML 文本转义 — 仅覆盖标签属性/文本中可能出现的 5 个特殊字符。 */
-    private static String escapeXml(@Nullable String s) {
-        if (s == null) {
-            return "";
-        }
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
-    }
+    /**
+     * 已加载 Skill 段 token 上限 —— 超出时按行边界截断；防止用户连续 load 多个长 skill 撑爆 user prompt。
+     */
+    private static final int LOADED_SKILLS_MAX_TOKENS = 4000;
 
     /**
      * 构建已加载 Skill 指南段 — 注入到 userPrompt 头部（runtime_context 上方），
@@ -1381,12 +1441,39 @@ public class ContextAssembler {
      * 从 {@code skill.load} 工具输出中提取，形如 {@code <skill name="X">body</skill>}，
      * 已经是 {@link com.lifepilot.skill.MarkdownSkillParser} 解析后的 body 部分，
      * 不再含 YAML frontmatter，直接拼接即可。</p>
+     *
+     * <p>超过 {@value #LOADED_SKILLS_MAX_TOKENS} tokens 时按行边界截断并附提示，
+     * 引导 LLM 按需读取 {@code references/} 详细文档。</p>
      */
     private String buildLoadedSkillsSection(@Nullable ReactAgentState state) {
         if (state == null || state.loadedSkillContent() == null || state.loadedSkillContent().isBlank()) {
             return "";
         }
-        return "<loaded_skills>\n" + state.loadedSkillContent().strip() + "\n</loaded_skills>";
+        String content = state.loadedSkillContent().strip();
+        int tokens = estimateTokens(content);
+        if (tokens > LOADED_SKILLS_MAX_TOKENS) {
+            log.warn("loaded_skills 内容超出预算被截断: originalTokens={}, budget={}",
+                    tokens, LOADED_SKILLS_MAX_TOKENS);
+            content = truncateByTokenBudget(content, LOADED_SKILLS_MAX_TOKENS)
+                    + "\n... (已截断，详细内容请按需调用 file.read 加载 {skill_dir}/references/ 下的文档)";
+        }
+        return "<loaded_skills>\n" + content + "\n</loaded_skills>";
+    }
+
+    /** 按 token 预算截断字符串，按行边界切（避免破坏 markdown 结构）。 */
+    private String truncateByTokenBudget(String text, int tokenBudget) {
+        if (estimateTokens(text) <= tokenBudget) {
+            return text;
+        }
+        var sb = new StringBuilder();
+        int used = 0;
+        for (String line : text.split("\n", -1)) {
+            int lineTokens = estimateTokens(line) + 1; // 算上换行
+            if (used + lineTokens > tokenBudget) break;
+            sb.append(line).append('\n');
+            used += lineTokens;
+        }
+        return sb.toString().stripTrailing();
     }
 
     /**

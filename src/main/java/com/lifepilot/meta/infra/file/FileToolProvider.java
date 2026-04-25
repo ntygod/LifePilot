@@ -142,7 +142,7 @@ public class FileToolProvider {
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
-                .description("Read a local file or a conversation attachment. Accepts path (local file; docx/xlsx/pptx/pdf/md/csv auto-parsed; restricted to skills + workspace) or attachmentId (conversation attachment; office formats auto-extracted). For activating a Skill by name use skill.load; file.read no longer supports a skill parameter.")
+                .description("读取本地文件或对话附件。docx/xlsx/pptx/pdf/md/csv 自动解析；仅可访问 skills 与 workspace 目录。激活 Skill 改用 skill.load。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", props
@@ -153,7 +153,7 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "read", "file", "fetch", "content", "document"))
+                .tags(List.of("读取", "文件", "查看", "内容", "文档", "read", "file"))
                 .executor(executor::execute)
                 .build();
     }
@@ -164,7 +164,7 @@ public class FileToolProvider {
                 .id("file.write")
                 .category(ToolCategory.ACTION)
                 .name("写入文件")
-                .description("Create a new file or overwrite/append content to an existing file. mode=write atomically overwrites (default); mode=append adds to the end. Parent directories are created automatically.")
+                .description("创建或覆盖/追加写文件。mode=write 原子覆盖（默认），mode=append 追加；父目录自动创建。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "content"),
@@ -186,7 +186,7 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "write", "file", "save", "create", "append", "overwrite"))
+                .tags(List.of("写入", "文件", "保存", "创建", "追加", "覆盖", "write", "file"))
                 .executor(executor::execute)
                 .build();
     }
@@ -197,7 +197,7 @@ public class FileToolProvider {
                 .id("file.list")
                 .category(ToolCategory.PERCEPTION)
                 .name("文件查询")
-                .description("Query filesystem information. action=list enumerates directory entries; action=search recursively greps for content; action=info returns file or directory metadata.")
+                .description("查询文件系统：list 列目录、search 递归搜内容、info 看元数据。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action", "path"),
@@ -238,8 +238,7 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "list", "file", "browse", "search", "directory", "enumerate", "info",
-                        "find", "stat", "metadata"))
+                .tags(List.of("列表", "文件", "目录", "搜索", "查找", "元数据", "list", "search", "directory"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -271,7 +270,7 @@ public class FileToolProvider {
                 .id("file.edit")
                 .category(ToolCategory.ACTION)
                 .name("编辑文件")
-                .description("Precisely modify file content via line-level operations (insert/replace/delete) or text match replace.")
+                .description("精确编辑修改文件内容：行级 insert/replace/delete，或 search_replace 文本匹配替换。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "operations"),
@@ -290,7 +289,7 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "edit", "file", "modify", "patch", "replace", "update"))
+                .tags(List.of("编辑", "修改", "文件", "替换", "更新", "edit", "patch", "file"))
                 .executor(executor::execute)
                 .build();
     }
@@ -301,7 +300,7 @@ public class FileToolProvider {
                 .id("file.manage")
                 .category(ToolCategory.ACTION)
                 .name("文件管理")
-                .description("Move, copy, delete, or create files and directories. Supports batch operations.")
+                .description("文件目录管理：移动文件、复制目录、删除文件、新建目录、重命名，支持批量操作。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -334,8 +333,7 @@ public class FileToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("source", "destination", "path")
                 ))
-                .tags(List.of("infrastructure", "manage", "move", "copy", "delete", "create", "mkdir", "file", "directory",
-                        "rename", "trash"))
+                .tags(List.of("管理", "移动", "复制", "删除", "重命名", "目录", "文件", "manage", "move", "copy", "delete"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

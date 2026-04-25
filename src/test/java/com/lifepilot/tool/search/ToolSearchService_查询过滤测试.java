@@ -60,7 +60,7 @@ class ToolSearchService_查询过滤测试 {
                     tags,
                     actions,
                     category,
-                    tokenize = 'unicode61 remove_diacritics 2'
+                    tokenize = 'trigram'
                 )
                 """);
 

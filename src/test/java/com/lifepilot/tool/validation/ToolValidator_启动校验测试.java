@@ -51,14 +51,26 @@ class ToolValidator_启动校验测试 {
     }
 
     @Test
-    void description含中文_应抛异常() {
+    void description允许中英混排() {
+        // description 改为接受中文，方便 trigram 召回中文 query
         BuiltinTool tool = baseBuilder()
                 .id("file.read")
                 .name("读取文件")
-                .description("Read a file from path and 返回 content to caller")
+                .description("读取文件 content：从 path 读取并返回给 caller")
+                .tags(List.of("读取", "文件", "read", "file"))
                 .build();
-        assertThatThrownBy(() -> validator.validate(tool))
-                .hasMessageContaining("description 必须英文");
+        assertThatCode(() -> validator.validate(tool)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void tags允许中英混排() {
+        BuiltinTool tool = baseBuilder()
+                .id("file.read")
+                .name("读取文件")
+                .description("读取文件 content：从 path 读取并返回给 caller")
+                .tags(List.of("读取", "文件", "read"))
+                .build();
+        assertThatCode(() -> validator.validate(tool)).doesNotThrowAnyException();
     }
 
     @Test

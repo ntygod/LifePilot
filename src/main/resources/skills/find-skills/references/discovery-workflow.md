@@ -57,19 +57,14 @@ web.search(query="zhiwei skill <关键词>")
 
 搜索到合适的 Skill 后，向用户确认并安装到 `~/.zhiwei/skills/`。
 
-## 自动生成 Skill
+## 手动创作兜底
 
-搜索无果时，用 `generate_skill` 从核心工具原语组合出新 Skill：
-
-```
-generate_skill(description="用户需求描述", suggested_name="skill-id", suggested_tools=["tool1", "tool2"])
-```
-
-生成器会获取所有已注册工具的能力清单，选择最匹配的模板，用 LLM 生成 SKILL.md 并三重验证迭代修正，最终保存到 `~/.zhiwei/skills/auto/`。
+搜索无果时引导用户用 skill-creator 自己写一份 SKILL.md（v2 规范），保存到 `~/.zhiwei/skills/<name>/SKILL.md`，
+SkillFileWatcher 会自动加载。自动生成器（基于 LLM）尚未上线，本流程暂不涉及。
 
 ## 告知用户结果
 
-安装或生成成功后，告知用户：
+安装成功后，告知用户：
 
 - Skill 名称和能力描述
 - 如何触发（关键词或场景）
@@ -79,5 +74,4 @@ generate_skill(description="用户需求描述", suggested_name="skill-id", sugg
 
 - **CLI 未安装** → 给出安装命令
 - **网络问题** → 换用其他搜索源
-- **generate_skill 验证失败** → 系统会自动迭代修正，多次失败后告知用户原因
-- **生成的 Skill 质量不佳** → 建议用户手动编辑 `~/.zhiwei/skills/auto/{id}/SKILL.md` 微调
+- **手动创作的 SKILL.md 校验失败** → 让 skill-creator 复核 description / body 字符上限

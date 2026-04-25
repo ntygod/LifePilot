@@ -148,40 +148,8 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.Tier1AdvisoryRepository tier1AdvisoryRepository(
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.tool.tier1.Tier1AdvisoryRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.Tier1Service tier1Service(
-            ToolConfigProperties p,
-            com.lifepilot.tool.tier1.Tier1AdvisoryRepository repo) {
-        return new com.lifepilot.tool.tier1.Tier1Service(p, repo);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.ToolUsageStatsRepository toolUsageStatsRepository(
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.tool.tier1.ToolUsageStatsRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.ToolUsageStatsRecorder toolUsageStatsRecorder(
-            com.lifepilot.tool.tier1.ToolUsageStatsRepository repo) {
-        return new com.lifepilot.tool.tier1.ToolUsageStatsRecorder(repo);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.Tier1AdvisoryJob tier1AdvisoryJob(
-            ToolConfigProperties p,
-            com.lifepilot.tool.tier1.ToolUsageStatsRepository statsRepo,
-            com.lifepilot.tool.tier1.Tier1AdvisoryRepository advisoryRepo) {
-        return new com.lifepilot.tool.tier1.Tier1AdvisoryJob(p, statsRepo, advisoryRepo);
+    public com.lifepilot.tool.tier1.Tier1Service tier1Service(ToolConfigProperties p) {
+        return new com.lifepilot.tool.tier1.Tier1Service(p);
     }
 
     @Bean

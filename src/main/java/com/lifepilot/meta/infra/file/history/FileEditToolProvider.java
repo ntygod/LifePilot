@@ -54,7 +54,7 @@ public class FileEditToolProvider {
                 .id("file.undo")
                 .category(ToolCategory.ACTION)
                 .name("撤销文件编辑")
-                .description("Undo the most recent edit applied to a file, restoring the previous content.")
+                .description("撤销编辑：撤销文件最近一次编辑，回滚到上一个快照。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -70,7 +70,7 @@ public class FileEditToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "undo", "revert", "rollback", "file", "edit"))
+                .tags(List.of("撤销", "回滚", "文件", "编辑", "undo", "revert", "file"))
                 .executor(this::executeUndo)
                 .build();
     }
@@ -81,7 +81,7 @@ public class FileEditToolProvider {
                 .id("file.redo")
                 .category(ToolCategory.ACTION)
                 .name("重做文件编辑")
-                .description("Redo the last undone edit on a file, reapplying the reverted changes.")
+                .description("重做编辑：重做上一次被撤销的文件编辑。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -97,7 +97,7 @@ public class FileEditToolProvider {
                         ToolSchedulingMode.RESOURCE_SERIALIZED,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "redo", "reapply", "file", "edit"))
+                .tags(List.of("重做", "文件", "编辑", "redo", "reapply", "file"))
                 .executor(this::executeRedo)
                 .build();
     }
@@ -108,7 +108,7 @@ public class FileEditToolProvider {
                 .id("file.diff")
                 .category(ToolCategory.PERCEPTION)
                 .name("文件差异对比")
-                .description("Compute and display differences between file versions after edits.")
+                .description("对比文件差异：输出 unified diff（文件两个版本对比）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(
@@ -123,7 +123,7 @@ public class FileEditToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "diff", "compare", "file", "difference", "changes", "inspect"))
+                .tags(List.of("差异", "对比", "文件", "diff", "compare", "file"))
                 .executor(this::executeDiff)
                 .build();
     }

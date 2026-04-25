@@ -22,7 +22,7 @@
 
 BUILTIN skill 不会全部注入 Agent 上下文，而是通过统一激活入口：
 
-1. system prompt 包含所有启用且依赖满足的 skill 目录摘要（`<skill_catalog>` XML，由 `ContextAssembler.buildSkillCatalog` 生成）
+1. system prompt 包含所有启用且依赖满足的 skill 目录摘要（`<skill_catalog>` 内嵌扁平 markdown list，由 `ContextAssembler.buildSkillCatalog` 按当前任务关键词打分取 top-8 生成）
 2. Agent 根据用户请求调用 `skill.load(names=["skill-a"])`（一次 1-3 个）
 3. `SkillActivator` 读取 SKILL.md body，替换 `{skill_dir}` 等占位符，与 `suggested_tools` 一并返回
 4. 返回结果由 Agent 引擎注入到下一轮 userPrompt 头部并更新 `activatedToolIds`

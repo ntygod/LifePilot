@@ -26,7 +26,8 @@ import java.util.Map;
  */
 public class DocumentToolProvider {
 
-    private static final List<String> DOCUMENT_TAGS = List.of("infrastructure", "document", "create", "docx", "xlsx", "pptx", "word", "excel", "powerpoint", "generate");
+    private static final List<String> DOCUMENT_TAGS = List.of("文档", "生成", "Word", "Excel", "PPT", "幻灯片",
+            "document", "docx", "xlsx", "pptx");
 
     private final DocumentCreateActionDispatchExecutor dispatcher;
 
@@ -49,7 +50,7 @@ public class DocumentToolProvider {
                 .id("document.create")
                 .category(ToolCategory.ACTION)
                 .name("生成文档产物")
-                .description("Create Word/Excel/PowerPoint artifacts and save to local documents directory. action=docx generates .docx from markdown (headings, lists, paragraphs only); action=xlsx generates .xlsx from structured sheets (no styles or formulas); action=pptx generates .pptx from slide outline (title, bullets, optional notes). Output is auto-attached to the current assistant message.")
+                .description("创建文档（生成 Word/Excel/PowerPoint）：生成 docx 文档、生成 Excel 表格、生成 PPT 幻灯片，保存到本地。")
                 .inputSchema(JsonSchema.of(buildCreateSchema()))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)

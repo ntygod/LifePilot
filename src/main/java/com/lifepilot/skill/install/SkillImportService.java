@@ -17,17 +17,14 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * 用户端 Skill 导入：.skill 压缩包 / Git URL。
+ * 用户端 .skill 压缩包导入入口。
  *
- * <p>Phase B.4 —— 手动导入入口。职责：</p>
  * <ul>
  *   <li>解压 .skill 包到临时目录（带 zip slip + zip bomb 防护）</li>
  *   <li>根目录必须含 SKILL.md —— 委托 {@link SkillInstaller} 完成 parse / validate / writeFile / upsert</li>
  *   <li>复制辅助目录（references/scripts/assets）到最终安装目录</li>
  *   <li>无论成功失败都清理临时目录</li>
  * </ul>
- *
- * <p>Git URL 导入当前仅留 stub，抛 {@link UnsupportedOperationException}（后续迭代补齐）。</p>
  *
  * @author zsg
  * @since 2026-04-24
@@ -115,17 +112,6 @@ public class SkillImportService {
         } catch (Exception fsErr) {
             log.warn("回滚 skill 目录失败（忽略）: path={}, error={}", install.filePath(), fsErr.getMessage());
         }
-    }
-
-    /**
-     * 从 Git 仓库 URL 克隆导入 Skill（当前为 stub，后续实现）。
-     *
-     * @param gitUrl Git 仓库 URL
-     * @throws UnsupportedOperationException 尚未实现
-     */
-    public SkillInstallation importFromGitUrl(String gitUrl) throws IOException {
-        throw new UnsupportedOperationException(
-                "Git URL 导入待后续实现（TODO Phase B.4 follow-up）");
     }
 
     /**

@@ -10,7 +10,9 @@ import java.util.List;
  *
  * @param name           Skill 名称（v2 规范：name 取代旧的 id）
  * @param instructions   Skill 指令（注入 Agent 上下文，已完成占位符替换）
- * @param suggestedTools 建议工具列表
+ * @param suggestedTools 来自 {@link SkillDefinition#suggestedTools()}，
+ *                       由 ToolExecutionCoordinator 并入 ReactAgentState.activatedToolIds，
+ *                       使本 Skill 推荐的工具在后续轮次对 LLM 直接可见
  * @author zsg
  * @since 2026-04-24
  */

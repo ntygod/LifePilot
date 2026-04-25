@@ -15,7 +15,7 @@ metadata:
     suggested_tools:
       - shell.exec
       - web.search
-      - generate_skill
+      - skill.load
 ---
 
 # 能力发现与自扩展指南
@@ -38,11 +38,10 @@ metadata:
 ## 工作流
 
 1. **判断是否真的需要新 Skill**：现有 Skill 是否覆盖？能否组合解决？是一次性吗？
-2. **外部搜索顺序**：SkillHub CLI → npx skills → web.search → generate_skill
+2. **外部搜索顺序**：SkillHub CLI → npx skills → web.search
 3. **安装前用户确认**：外部 Skill 装到 `~/.zhiwei/skills/` 前向用户确认
-4. **自动生成**：搜索无果时 `generate_skill` 从核心工具原语组合，保存到 `~/.zhiwei/skills/auto/`
-5. **生成的 Skill 需用户确认后才激活**
-6. **告知结果**：名称 / 能力 / 触发关键词，无需重启
+4. **手动创作兜底**：搜索无果时引导用户用 skill-creator 自己写 SKILL.md（自动生成器待规划）
+5. **告知结果**：名称 / 能力 / 触发关键词，无需重启
 
 ## 详细参考
 

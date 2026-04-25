@@ -1,6 +1,6 @@
 ---
 name: code-assistant
-description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini）完成多文件开发、跨模块重构、PR 审查、并行任务分发等需要后台 Agent 执行的复杂编码任务时使用。关键词：写代码、开发功能、重构、代码审查、PR 审查、后台跑、编码 Agent、并行审查、并行开发、Claude Code、Codex。单文件小改直接用 file.write/file.edit，仅读代码用 file.read，跑脚本用 shell.exec 或 code.execute。
+description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini）完成多文件开发、修 bug、跨模块重构、PR 审查、并行任务分发等需要后台 Agent 执行的复杂编码任务时使用。关键词：写代码、开发功能、修 bug、修复 bug、重构、代码审查、PR 审查、后台跑、编码 Agent、并行审查、并行开发、Claude Code、Codex。单文件小改直接用 file.write/file.edit，仅读代码用 file.read，跑脚本用 shell.exec 或 code.execute。
 version: 2.8.0
 metadata:
   zhiwei:

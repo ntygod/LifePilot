@@ -14,7 +14,7 @@ metadata:
       - coordination
     suggested_tools:
       - memory
-      - notify
+      - notify.send_message
       - web.search
       - file.read
       - file.write

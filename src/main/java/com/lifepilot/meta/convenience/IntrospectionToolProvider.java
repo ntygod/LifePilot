@@ -72,11 +72,11 @@ public class IntrospectionToolProvider {
         return BuiltinTool.builder()
                 .id("system.status")
                 .name("查看系统状态")
-                .description("Query the current system status and runtime introspection overview including version, uptime, and health indicators.")
+                .description("查看系统状态：查询当前运行状态、版本、运行时长、健康指标。")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(List.of("infrastructure", "system", "status", "health", "runtime", "introspection", "query"))
+                .tags(List.of("系统", "状态", "健康", "运行", "查询", "system", "status", "health"))
                 .executor(this::executeStatus)
                 .build();
     }

@@ -124,13 +124,12 @@ skill 若声明了 `metadata.zhiwei.requires`，加载期会检查 `bins`（可�
 
 - 一次 `skill.load` 最多 3 个 skill，避免一次性注入过多上下文。
 - body 硬限 5000 字符，超长必须拆到 `references/`；校验器不会自动拆分。
-- Git URL 导入当前为 stub（抛 `UnsupportedOperationException`），仅支持 `.skill` 压缩包上传。
+- 用户导入仅支持 `.skill` 压缩包上传，不支持 Git URL 直接拉取（如需从远端获取，可使用 SkillHub 市场或手动下载后导入）。
 - `SkillRequirementGate` 中 `bins` 探测通过 `bin --version` 在 2 秒内成功退出判定，部分不支持 `--version` 的工具可能误判。
 - AUTO_GENERATED skill 默认 `enabled = true` 立即生效，不做额外用户确认；安全完全依赖 `validateGenerated` 的严格规则。
 
 **未来方向**：
 
-- Git URL 导入落地（见 `SkillImportService.importFromGitUrl` TODO）。
 - `bins` 探测升级为真正的 PATH 搜索，避免 `--version` 误判。
 - Skill 执行效果评估（激活后任务完成率），反哺 catalog 排序。
 - Skill 组合与依赖：一个 skill 声明它依赖另一个 skill，激活时一并加载。

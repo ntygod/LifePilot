@@ -18,7 +18,7 @@
 | **CodeBlock** | `{code, language?}` | 无 |
 | **Progress** | `{value, label?}` — value 0-100 | 无 |
 
-## ui.emit 调用样例
+## ui.render 调用样例
 
 ```json
 {
@@ -41,7 +41,7 @@
 }
 ```
 
-先用文字说明上下文，再调用 `ui.emit` 渲染交互组件。
+先用文字说明上下文，再调用 `ui.render` 渲染交互组件。
 
 ## Markdown vs A2UI 选择矩阵
 

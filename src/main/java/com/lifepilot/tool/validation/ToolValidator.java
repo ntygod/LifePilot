@@ -42,9 +42,8 @@ public class ToolValidator {
     );
 
     private static final Pattern CHINESE_PATTERN = Pattern.compile("[\\u4e00-\\u9fff]");
-    private static final Pattern ENGLISH_ONLY = Pattern.compile("^[\\x00-\\x7F]+$");
 
-    private static final int MIN_DESCRIPTION_LENGTH = 40;
+    private static final int MIN_DESCRIPTION_LENGTH = 20;
     private static final int MIN_TAG_COUNT = 3;
 
     private static final Set<String> EXEMPTED_IDS = Set.of(
@@ -113,11 +112,9 @@ public class ToolValidator {
             throw new IllegalStateException(
                     "description 长度不足（要求 ≥ %d）: %s".formatted(MIN_DESCRIPTION_LENGTH, tool.id()));
         }
-        if (CHINESE_PATTERN.matcher(desc).find()) {
-            throw new IllegalStateException("description 必须英文: " + tool.id());
-        }
-        if (!containsVerbRoot(desc.toLowerCase())) {
-            log.warn("description 未检测到明确动词，建议补充: toolId={}", tool.id());
+        // description 允许中英混排（中文化后由 trigram 索引召回；保留对动词词根的软提示）
+        if (!CHINESE_PATTERN.matcher(desc).find() && !containsVerbRoot(desc.toLowerCase())) {
+            log.warn("description 未检测到中文或英文动词，建议补充: toolId={}", tool.id());
         }
     }
 
@@ -127,10 +124,10 @@ public class ToolValidator {
             throw new IllegalStateException(
                     "tags 数量不足（要求 ≥ %d）: %s".formatted(MIN_TAG_COUNT, tool.id()));
         }
+        // tags 允许中英混排，仅校验非空 + 不重复
         for (String tag : tags) {
-            if (!ENGLISH_ONLY.matcher(tag).matches()) {
-                throw new IllegalStateException(
-                        "tags 必须是英文（tag=%s）: %s".formatted(tag, tool.id()));
+            if (tag == null || tag.isBlank()) {
+                throw new IllegalStateException("tags 含空白项: " + tool.id());
             }
         }
         Set<String> unique = new HashSet<>(tags);

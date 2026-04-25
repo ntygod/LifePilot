@@ -4,6 +4,13 @@
 >
 > **配套 spec**：`docs/superpowers/specs/2026-04-23-tool-exposure-redesign-design.md`
 > **前置依赖**：无（纯重构，建立在现有 Tool / Skill / ReactAgent 基础之上）
+>
+> **实施后变更（2026-04-25）**：本文档保留作为历史档案。本计划主体已落地，但下列 Task 在后续打磨中被回退或调整，最新事实源以 `docs/architecture/tool-ecosystem.md` 为准：
+>
+> - **A.11 / A.12 / A.13 / A.14（Tier 1 晋升链路）整组下架**：`Tier1Advisory` / `Tier1AdvisoryStatus` / `Tier1AdvisoryRepository` / `Tier1AdvisoryJob` / `ToolUsageStats` / `ToolUsageStatsRepository` / `ToolUsageStatsRecorder` 共 7 个 Java 类删除，对应 3 个测试一并删除（V29 迁移删表）。原因：单机本地部署没有"管理员审批"角色，PENDING advisory 永远没人 APPROVE，整套机制是死代码。`Tier1Service` 简化为只读 `pinned` 配置。
+> - **FTS5 tokenizer 从 `unicode61` 切到 `trigram`**（V30 迁移）：原 unicode61 word-level 分词不利于中文 query；trigram 用 3 字符滑窗双向 substring 匹配，对中文短语命中更友好。`ToolSearchQuerySanitizer` 同步重写（3-gram phrase 滑窗用 OR 连接）。
+> - **`ToolValidator` description / tags 校验放开**：原方案要求 description 必须英文 + 长度 ≥ 40 字符、tags 必须英文，现允许中英混排（description ≥ 20 字符，无中文且无英文动词时 warn 软提示）。
+> - **所有工具 description / tags 中文化 + 删除 `"infrastructure"` 噪声 tag**：description 改写包含高频用户短语（如"删除文件""复制目录"）让 trigram substring 直接命中。
 
 **Goal：** 把"13 核心 schema 常驻 / 其余 Skill 激活暴露"的二分架构，换成"Tier 1 高频常驻 + Tier 2 BM25 可搜索"三层架构。新增 `tools.search` / `tools.describe` / `tools.list` 三个 meta 工具，所有工具 metadata 英文化，ToolValidator 启动时强校验命名规范。
 

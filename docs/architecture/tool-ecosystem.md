@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-04-23
+> **最后更新**：2026-04-25
 
 ## 1. 模块概述
 
@@ -10,7 +10,7 @@
 
 工具对 LLM 的暴露采用**三层架构**（2026-04 重构后）：
 
-- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` + Tier1 Advisory 审批通过的工具，完整 schema 始终随系统 prompt 注入
+- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` 配置中列出的工具，完整 schema 始终随系统 prompt 注入
 - **Meta 层**：`tools.search` / `tools.describe` / `tools.list` 三个内省工具始终常驻，LLM 用它们发现 Tier 2 工具
 - **Tier 2（延迟加载）**：其余所有 BuiltinTool + MCP 工具，进 FTS5 BM25 搜索索引；LLM 通过 `tools.search` 找到后用 `tools.describe` 取完整 schema，再直接调用
 
@@ -18,7 +18,9 @@
 
 > **历史说明**：
 > - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已在渐进式披露重构中移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool；`file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳和 `generate_skill` 独立工具全部删除，自生成由 `SkillSynthesizer` 后台服务承担。
-> - 旧的 `lifepilot.agent.core-tool-ids` 白名单字段已删除，由 `lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 晋升机制替代。
+> - 旧的 `lifepilot.agent.core-tool-ids` 白名单字段已删除，由 `lifepilot.tool.tier1.pinned` 静态配置替代。
+> - **2026-04-25 后**：原 `Tier1AdvisoryJob` / `ToolUsageStatsRecorder` 自动晋升 / 降级机制已下架（V29 删表）。单机本地部署没有"管理员审批"角色，PENDING advisory 永远不会被 APPROVE，整套机制是死代码。Tier 1 现在完全由 `application.yml` 的 `pinned` 列表手工维护。
+> - **2026-04-25 后**：FTS5 索引 tokenizer 从 `unicode61` 切到 `trigram`（V30 迁移），并放开了 `ToolValidator` 对 description / tags 的英文限制。原方案依赖 metadata 英文化让 unicode61 word-level 分词，实际不利于中文 query；trigram 用 3-gram 滑窗双向 substring 匹配，对中文短语命中更友好，因此 description / tags 现在允许中英混排，并主动写入高频用户短语（如"删除文件""复制目录"）让 trigram 直接命中。
 
 ## 2. 架构图
 
@@ -41,9 +43,7 @@ graph TB
     end
 
     subgraph "Tier 1 管理"
-        TIER1_SVC["Tier1Service<br/>pinned ∪ APPROVED"]
-        ADVISORY["Tier1AdvisoryJob<br/>使用数据 → 晋升建议"]
-        USAGE["ToolUsageStatsRecorder<br/>每日会话覆盖率统计"]
+        TIER1_SVC["Tier1Service<br/>只读 pinned 配置"]
     end
 
     subgraph "Tier 2 搜索链路"
@@ -68,9 +68,6 @@ graph TB
     REG --> MCP_TOOL
     BRIDGE --> PIPE
     PIPE --> IDEM
-    PIPE --> USAGE
-    USAGE --> ADVISORY
-    ADVISORY --> TIER1_SVC
     INDEX_BUILD --> FTS
     INDEX_MAINT --> FTS
     SEARCH_SVC --> FTS
@@ -99,21 +96,22 @@ graph TB
 
 - 职责：实现 `AgentToolProvider`，把 `ToolContract` 转成 Spring AI `ToolCallback` 注入到 LLM 调用链
 - 可见集合计算（`getToolCallbacks`）：
-  - 多 Agent / 受限代理：按 `state.allowedToolIds()` 白名单过滤，基础设施工具（`tags` 含 `infrastructure`）自动透传
+  - 多 Agent / 受限代理：按 `state.allowedToolIds()` 白名单过滤
   - 常规：`tier1Service.getCurrentTier1Ids()` ∪ `state.activatedToolIds()` ∪ Meta 工具集合（`tools.search/describe/list`）
 - 每次调用把 `ReactAgentState` 放进 context（`ToolContextKeys.CALLER_STATE`），供 meta 工具的 executor 读取
 
-### 3.4 Tier1Service / Tier1AdvisoryJob（Tier 1 动态晋升）
+### 3.4 Tier1Service（Tier 1 只读 pinned 配置）
 
-- `Tier1Service.getCurrentTier1Ids()` = `lifepilot.tool.tier1.pinned` ∪ `tier1_advisory.status='APPROVED'` 的 toolId
-- `Tier1AdvisoryJob`（`@Scheduled` 每日）分析近 30 天 `tool_usage_stats` 的会话覆盖率，对超过 `session-threshold` 的候选写入 `tier1_advisory`（`PENDING` 状态），由管理员 UI 审批后才生效，**不自动改配置**
-- `ToolUsageStatsRecorder` 实现 `ToolInvocationListener`，工具执行成功后日粒度写入 `tool_usage_stats`；日切时对超出保留窗口的历史数据做清理
+- `Tier1Service.getCurrentTier1Ids()` 直接返回 `lifepilot.tool.tier1.pinned` 配置列表的副本
+- `isPinned(toolId)` 用于降级保护判断
+- 历史方案（2026-04-23）曾设计 `Tier1AdvisoryJob` + `ToolUsageStatsRecorder` 自动晋升链路（基于近 30 天会话覆盖率写 advisory，由管理员审批），**已于 2026-04-25 下架**：知微是单机本地部署，没有"管理员审批"角色，PENDING advisory 永远没有人 APPROVE，整套机制是死代码（V29 迁移删除 `tier1_advisory` / `tool_usage_stats` / `daily_active_sessions` 表与对应 7 个 Java 类）。Tier 1 名单调整改为直接编辑 `application.yml` 中的 `pinned` 列表。
 
 ### 3.5 ToolSearchService + 索引维护
 
-- **FTS5 表 `tool_search_index`**（V15 迁移）：字段 `tool_id (UNINDEXED) / description / tags / actions / category`，`tokenize = 'unicode61 remove_diacritics 2'`，英文 word-level 分词
+- **FTS5 表 `tool_search_index`**（V19 创建，V30 切 tokenizer）：字段 `tool_id (UNINDEXED) / description / tags / actions / category`，`tokenize = 'trigram'`，3 字符滑窗双向 substring 匹配（中文 / 英文短语都能命中）
 - `ToolSearchIndexBuilder` 在启动时全量重建索引；`ToolSearchIndexMaintainer` 在 MCP 工具注册 / Skill 生成新工具时增量维护
 - 查询流程：`ToolSearchQuerySanitizer` 规范化输入 → 三层缓存（`SchemaCache` schema 常驻 / `SearchResultCache` layer A LRU / layer B TTL / `SessionSearchMemo` session 内问答） → 未命中走 FTS5 `MATCH` + BM25 排序 → 排除 Tier 1 / `activatedToolIds` / Meta 工具 / 权限外工具 → top-k 返回
+- `ToolSearchQuerySanitizer` 适配 trigram：每个 token 切成 3-gram phrase 用 `OR` 连接（短 query 也能命中）；2 字符 token 用空格前缀凑 3 字符；保留字符 `"()*` 替换为空格；`AND/OR/NOT/NEAR` 关键字转小写避免被识别为操作符
 - `bm25-confidence-threshold` 决定返回结果附带的 `confidence` 标签；低于阈值时 hint 提示 LLM 重写查询
 
 ### 3.6 Meta 工具（`BuiltinToolSearchProvider`）
@@ -122,7 +120,7 @@ graph TB
 
 | 工具 ID | 作用 | 关键参数 |
 |---------|------|----------|
-| `tools.search` | 按英文关键字 BM25 搜工具 | `query`（必填），`category`（可选过滤），`limit`（默认 5，上限 20） |
+| `tools.search` | BM25 搜工具（trigram 索引，支持中英文关键字 substring 命中） | `query`（必填），`category`（可选过滤），`limit`（默认 5，上限 20） |
 | `tools.describe` | 批量取 schema | `tool_ids`（必填数组，批量上限 10） |
 | `tools.list` | 按 category 列 ID | `category`（可选；省略列全部） |
 
@@ -134,9 +132,9 @@ Category 维度为 `PERCEPTION / ACTION / COGNITION / STORAGE / INTERACTION / IN
 
 - `id`：`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`；namespace 必须在自描述白名单（`memory/knowledge/notify/shell/web/file/document/datastore/cron/channel/process/tools/ui/system/git/code/workflow`）或包含动词词根（`read/write/list/...`）
 - `name`：必须含中文字符
-- `description`：必须英文 + 长度 ≥ 40 字符；未含明确动词词根时 warn（软规则）
-- `tags`：必须英文 + 数量 ≥ 3 + 不重复
-- 豁免：`tools.search / tools.describe / tools.list` 三个 meta 工具
+- `description`：长度 ≥ 20 字符；允许中英混排（trigram 索引召回，无需强制英文）；未检测到中文且未含英文动词词根时 warn（软规则）
+- `tags`：数量 ≥ 3 + 非空白 + 不重复；允许中英混排
+- 豁免：`tools.search / tools.describe / tools.list` 三个 meta 工具；以 `a2a_remote_` 开头的外部生态工具（A2A 远端 agent 等）
 
 ### 3.8 ToolExecutionPipeline
 
@@ -157,7 +155,7 @@ sequenceDiagram
     participant T as ToolContract
 
     BR->>T1: getCurrentTier1Ids()
-    T1-->>BR: pinned ∪ APPROVED
+    T1-->>BR: pinned 配置列表
     BR->>BR: visible = Tier1 ∪ activated ∪ meta
     BR-->>LLM: 注入 visible 工具 schema
     LLM->>BR: 直接调用 file.read / shell.exec 等
@@ -179,7 +177,7 @@ sequenceDiagram
     participant P as ToolExecutionPipeline
 
     Note over LLM: 需要某种能力但 Tier 1 里没有
-    LLM->>BR: tools.search({"query":"delete files by pattern"})
+    LLM->>BR: tools.search({"query":"按规则删除文件"})
     BR->>SS: search(state, query, category, limit)
     SS->>SS: sanitize + 三层缓存查询
     SS->>FTS: MATCH query
@@ -194,28 +192,6 @@ sequenceDiagram
     P-->>LLM: ToolResult
 ```
 
-### 4.3 使用统计 → 晋升建议（后台异步）
-
-```mermaid
-sequenceDiagram
-    participant PIPE as ToolExecutionPipeline
-    participant REC as ToolUsageStatsRecorder
-    participant JOB as Tier1AdvisoryJob
-    participant ADV as tier1_advisory
-    participant UI as 管理员 UI
-    participant T1 as Tier1Service
-
-    PIPE->>REC: onInvocationSuccess(toolId, sessionId)
-    REC->>REC: upsert tool_usage_stats(daily)
-    Note over JOB: 每日凌晨触发
-    JOB->>JOB: 计算近 30 天会话覆盖率
-    JOB->>JOB: 排除 pinned / 已 APPROVED / 已 PENDING
-    JOB->>ADV: insert PENDING advisory
-    UI->>ADV: UPDATE status='APPROVED' / 'REJECTED'
-    T1->>ADV: findApprovedToolIds()
-    Note over T1: 下次 getCurrentTier1Ids() 即生效
-```
-
 ## 5. 设计决策
 
 | 决策 | 选择 | 理由 |
@@ -224,9 +200,10 @@ sequenceDiagram
 | 层次优先级 | BuiltinTool > McpTool | 内置工具最可靠，MCP 外部工具优先级较低 |
 | 分层暴露 | Tier 1 常驻 + Tier 2 BM25 延迟加载 | 对齐 Claude Code v2.1.69+ defer_loading 模式；Tier 1 任务保持 2 轮响应低延迟，Tier 2 覆盖无限扩展 |
 | 搜索算法 | FTS5 BM25 裸跑，向量 fallback 默认关闭 | BM25 对工具元数据这种短文本召回足够，观察数据后再决定是否启 `lifepilot.tool.search.fallback.vector-enabled` |
-| Tier 1 晋升 | Advisory 表 + 人工审批 | 不自动改配置，避免使用数据抖动导致 Tier 1 波动 |
+| Tier 1 维护 | 静态 `pinned` 配置 | 单机本地无审批角色，自动晋升机制成死代码（已下架），改为直接编辑 `application.yml` 维护名单 |
 | 命名规范 | 启动期强校验 + 豁免 meta 工具 | 硬规则违反直接阻塞启动，防止运行时才暴露格式错误；`tools.*` meta 工具因 name 等风格差异豁免 |
-| 语言策略 | description 英文 + tags 英文 + name 中文 | description 和 tags 进 FTS5 索引需统一语言；name 仅 UI 展示用 |
+| 语言策略 | description / tags 中英混排 + name 中文 | trigram tokenizer 双向 substring 匹配中文短语；description 主动写入"删除文件""复制目录"等高频用户短语让召回直接命中 |
+| FTS5 tokenizer | trigram | 原 unicode61 把连续 CJK 视作单 token，必须整体匹配；trigram 3 字符滑窗 substring 命中，对中文 query 友好 |
 | 执行管道 | Pipeline 模式 | 护栏、幂等、超时、重试等横切关注点解耦，可独立配置 |
 | 输入验证 | JsonSchema + ToolInput.validate() | 工具执行前自动校验参数，防止无效调用 |
 
@@ -257,14 +234,9 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.tool.tier1.pinned` | 见 application.yml | 人工固定的 Tier 1 工具 ID 列表，永不自动降级（当前含 `tools.search/describe/list` + `file.read/write/list` + `web.search/fetch` + `shell.exec` + `memory` + `knowledge.search`） |
-| `lifepilot.tool.tier1.promotion.enabled` | `true` | 是否生成 Tier 1 晋升建议 |
-| `lifepilot.tool.tier1.promotion.window-days` | `30` | 会话覆盖率统计窗口 |
-| `lifepilot.tool.tier1.promotion.session-threshold` | `0.3` | 晋升候选的最小会话覆盖率 |
-| `lifepilot.tool.tier1.promotion.max-promoted` | `3` | 单次 Job 最多生成的建议数 |
-| `lifepilot.tool.tier1.demotion.enabled` | `true` | 是否对长期不用的 Tier 1 生成降级建议 |
-| `lifepilot.tool.tier1.demotion.idle-days` | `60` | 视为"长期未使用"的天数 |
-| `lifepilot.tool.tier1.demotion.respect-pinned` | `true` | 降级是否绕过 pinned 列表中的工具 |
+| `lifepilot.tool.tier1.pinned` | 见 application.yml | 人工固定的 Tier 1 工具 ID 列表（当前含 `tools.search/describe/list` + `file.read/write/list` + `web.search/fetch` + `shell.exec` + `memory` + `knowledge.search`） |
+
+> 历史 `tier1.promotion.*` / `tier1.demotion.*` 子键已于 2026-04-25 删除（自动晋升 / 降级机制下架）。如需扩缩 Tier 1 名单，直接编辑 `pinned` 列表后重启即可生效。
 
 ### 7.3 搜索服务
 
@@ -288,38 +260,17 @@ sequenceDiagram
 
 `tools.search` / `tools.describe` 的查询耗时、缓存命中率通过 Micrometer 暴露到 `/actuator/metrics`（`management.endpoints.web.exposure.include` 已含 `metrics`）。
 
-## 8. 数据库表（V15 迁移）
+## 8. 数据库表（V19 创建 / V29 删表 / V30 切 tokenizer）
 
 ```sql
 -- FTS5 搜索索引（虚拟表，不参与 Flyway checksum 校验）
+-- V30 切到 trigram tokenizer：3 字符滑窗双向 substring 匹配，对中文短语友好
 CREATE VIRTUAL TABLE tool_search_index USING fts5(
     tool_id UNINDEXED,
     description, tags, actions, category,
-    tokenize = 'unicode61 remove_diacritics 2'
+    tokenize = 'trigram'
 );
-
--- 工具使用统计（per tool + per day）
-CREATE TABLE tool_usage_stats (
-    tool_id          TEXT    NOT NULL,
-    stat_date        TEXT    NOT NULL,
-    session_count    INTEGER NOT NULL DEFAULT 0,
-    invocation_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (tool_id, stat_date)
-);
-CREATE INDEX idx_tool_usage_stats_date ON tool_usage_stats(stat_date);
-
--- Tier 1 晋升建议（Job 生成 PENDING，管理员审批写 APPROVED/REJECTED）
-CREATE TABLE tier1_advisory (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    tool_id        TEXT    NOT NULL,
-    advised_at     TEXT    NOT NULL,
-    window_days    INTEGER NOT NULL,
-    coverage_ratio REAL    NOT NULL,
-    status         TEXT    NOT NULL DEFAULT 'PENDING',
-    reviewed_by    TEXT,
-    reviewed_at    TEXT,
-    CONSTRAINT chk_advisory_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))
-);
-CREATE INDEX idx_tier1_advisory_status ON tier1_advisory(status);
-CREATE INDEX idx_tier1_advisory_tool ON tier1_advisory(tool_id);
 ```
+
+> V19 原本还包含 `tool_usage_stats` / `tier1_advisory` 两张表用于 Tier 1 自动晋升链路。
+> V29（2026-04-25）已 `DROP TABLE` 全部清理，原因见 §3.4 历史说明。

@@ -125,21 +125,20 @@ class DocumentToolProvider_单工具契约测试 {
     }
 
     @Test
-    void tags_含_infrastructure_和_document() {
+    void tags_含_文档_关键词() {
         BuiltinTool tool = provider.buildDocumentTools().get(0);
 
-        assertThat(tool.tags()).contains("infrastructure", "document");
+        assertThat(tool.tags()).contains("文档", "document");
     }
 
     @Test
     void description_含附件挂接语义_与三类产物提示() {
         BuiltinTool tool = provider.buildDocumentTools().get(0);
 
-        // 附件挂接语义让 LLM 明确无需二次落盘（英文化后描述相同语义）
-        assertThat(tool.description()).contains("auto-attached to the current assistant message");
-        // description 必须展开 3 类 action 提示，LLM 才能按需选参
-        assertThat(tool.description()).contains("action=docx");
-        assertThat(tool.description()).contains("action=xlsx");
-        assertThat(tool.description()).contains("action=pptx");
+        assertThat(tool.description()).contains("保存到本地");
+        // description 必须展开 3 类产物的关键词，LLM 才能按需选参
+        assertThat(tool.description()).contains("docx");
+        assertThat(tool.description()).contains("Excel");
+        assertThat(tool.description()).contains("PPT");
     }
 }

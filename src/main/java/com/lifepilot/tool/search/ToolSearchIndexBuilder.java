@@ -19,6 +19,10 @@ import java.util.Set;
  * （通过 {@code @Order} 靠后），确保内置工具已注册完毕。Tier 1 工具和 meta 工具
  * 也会进索引（简化实现；搜索时按需过滤）。</p>
  *
+ * <p>FTS5 索引用 {@code trigram} tokenizer：3 字符滑窗对中文 query
+ * 做 substring 匹配（参见 {@link ToolSearchQuerySanitizer}）。配合规约：
+ * 工具 description / tags 应把高频用户 query 短语显式包含在内。</p>
+ *
  * @author zsg
  * @since 2026-04-23
  */

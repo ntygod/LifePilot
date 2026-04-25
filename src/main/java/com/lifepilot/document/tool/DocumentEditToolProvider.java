@@ -29,7 +29,8 @@ import java.util.Map;
  */
 public class DocumentEditToolProvider {
 
-    private static final List<String> EDIT_TAGS = List.of("infrastructure", "document", "edit", "docx", "xlsx", "patch", "diff", "commit", "rollback", "version");
+    private static final List<String> EDIT_TAGS = List.of("文档", "编辑", "修改", "提交", "回滚", "版本",
+            "document", "edit", "docx", "xlsx", "patch", "rollback");
 
     private final DocumentEditActionDispatchExecutor dispatcher;
 
@@ -58,9 +59,9 @@ public class DocumentEditToolProvider {
                 .build();
     }
 
-    /** 工具 description —— 英文短描述。 */
+    /** 工具 description —— 中文短描述。 */
     private String buildDescription() {
-        return "Edit an existing docx or xlsx working copy via anchor-based patches with version management. action=patch applies incremental edits; action=diff inspects pending changes; action=commit finalizes the working copy to disk; action=rollback reverts to a previous version; action=list_versions enumerates version history.";
+        return "编辑文档（docx/xlsx）：修改文档内容、提交工作副本、回滚文档版本、列版本历史；带锚点 patch 与版本管理。";
     }
 
     /** 构建 document.edit 输入 schema —— 扁平结构，按 action 分别说明字段用法。 */

@@ -51,7 +51,7 @@ public class NotifyToolProvider {
                 .id("notify.send_message")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
-                .description("Push a non-blocking notification to the user via the active channel. For inline chat replies, respond directly instead.")
+                .description("推送通知：发送提醒、消息、告警到当前渠道用户。对话内回复直接说就行，不用本工具。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("message"),
@@ -68,7 +68,7 @@ public class NotifyToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.none()
                 ))
-                .tags(List.of("infrastructure", "notify", "message", "send", "alert", "notification", "push"))
+                .tags(List.of("通知", "消息", "推送", "提醒", "notify", "message", "push"))
                 .executor(executor::execute)
                 .build();
     }

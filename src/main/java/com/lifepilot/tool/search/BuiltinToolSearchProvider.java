@@ -47,8 +47,8 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tools.search")
                 .name("搜索工具")
-                .description("Search the tool registry by English keywords and return top-k matches with BM25 ranking")
-                .tags(List.of("search", "tools", "discover", "find", "registry"))
+                .description("用关键词在工具注册表中按 BM25 排序找匹配。需要未常驻的工具时优先调用本工具发现。")
+                .tags(List.of("搜索", "工具", "发现", "查找", "tools", "search"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -57,11 +57,11 @@ public class BuiltinToolSearchProvider {
                         "type", "object",
                         "properties", Map.of(
                                 "query", Map.of("type", "string",
-                                        "description", "English keywords describing the desired capability"),
+                                        "description", "描述所需能力的关键词（中文或英文均可）"),
                                 "category", Map.of("type", "string",
-                                        "description", "Optional category filter: PERCEPTION/ACTION/COGNITION/STORAGE/INTERACTION/INTROSPECTION/EXTENSION"),
+                                        "description", "可选 category 过滤：PERCEPTION/ACTION/COGNITION/STORAGE/INTERACTION/INTROSPECTION/EXTENSION"),
                                 "limit", Map.of("type", "integer",
-                                        "description", "Max results, default 5, max 20")
+                                        "description", "最大返回数量，默认 5，上限 20")
                         ),
                         "required", List.of("query")
                 )))
@@ -74,8 +74,8 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tools.describe")
                 .name("查询工具详情")
-                .description("Fetch full JSON schema and metadata for the specified tool IDs, batch supported")
-                .tags(List.of("describe", "tools", "schema", "inspect", "registry"))
+                .description("批量返回指定工具 ID 的完整 JSON schema 与元数据。")
+                .tags(List.of("详情", "工具", "schema", "describe", "tools"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -86,7 +86,7 @@ public class BuiltinToolSearchProvider {
                                 "tool_ids", Map.of(
                                         "type", "array",
                                         "items", Map.of("type", "string"),
-                                        "description", "Array of tool IDs to describe")
+                                        "description", "要查询的工具 ID 数组")
                         ),
                         "required", List.of("tool_ids")
                 )))
@@ -99,8 +99,8 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tools.list")
                 .name("列举工具")
-                .description("List tool IDs grouped by category, returns IDs only, call describe for full schema details")
-                .tags(List.of("list", "tools", "browse", "enumerate", "registry"))
+                .description("按 category 列出工具 ID（仅 ID，完整 schema 请调 tools.describe）。")
+                .tags(List.of("列举", "工具", "浏览", "list", "tools"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -110,7 +110,7 @@ public class BuiltinToolSearchProvider {
                         "properties", Map.of(
                                 "category", Map.of(
                                         "type", "string",
-                                        "description", "Optional category filter; omit to list all")
+                                        "description", "可选 category 过滤；不传则列全部")
                         )
                 )))
                 .executor(this::executeList)

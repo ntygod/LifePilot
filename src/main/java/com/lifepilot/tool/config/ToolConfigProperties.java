@@ -67,36 +67,12 @@ public class ToolConfigProperties {
 
     }
 
-    /** Tier 1 分层注入配置。 */
+    /** Tier 1 分层注入配置 —— 只保留人工 pinned 列表，无自动晋升 / 降级。 */
     @Setter
     @Getter
     public static class Tier1 {
-        /** 人工固定的 Tier 1 工具 ID 列表（pinned），永不自动降级。 */
+        /** 人工固定的 Tier 1 工具 ID 列表，由 application.yml 维护。 */
         private List<String> pinned = List.of();
-
-        private Promotion promotion = new Promotion();
-        private Demotion demotion = new Demotion();
-
-        /** Tier 1 晋升策略 — 基于使用数据生成 advisory 建议，不自动改配置。 */
-        @Setter
-        @Getter
-        public static class Promotion {
-            private boolean enabled = true;
-            private int windowDays = 30;
-            private double sessionThreshold = 0.3;
-            private int maxPromoted = 3;
-            /** AdvisoryJob cron 表达式（Spring @Scheduled 语义）；默认每日凌晨 3 点。 */
-            private String cron = "0 0 3 * * *";
-        }
-
-        /** Tier 1 降级策略 — 长期未使用的候选可被降回 Tier 2。 */
-        @Setter
-        @Getter
-        public static class Demotion {
-            private boolean enabled = true;
-            private int idleDays = 60;
-            private boolean respectPinned = true;
-        }
     }
 
     /** 搜索服务配置。 */

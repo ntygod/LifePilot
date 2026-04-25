@@ -24,13 +24,12 @@ import java.util.stream.Stream;
 /**
  * Markdown Skill 加载器 — 扫描 Skill 目录并注册到 {@link SkillRegistry}。
  *
- * <p>Phase B.3 重接：改用 v2 {@link MarkdownSkillParser} 解析 SKILL.md，
- * 经 {@link SkillDescriptionValidator} + {@link SkillBodyValidator} 校验，
- * 然后将 {@link ParsedSkill} 映射为 {@link SkillDefinition} 交给 {@link SkillRegistry} 注册。</p>
+ * <p>用 {@link MarkdownSkillParser} 解析 SKILL.md，经 {@link SkillDescriptionValidator}
+ * + {@link SkillBodyValidator} 校验后映射为 {@link SkillDefinition} 注册到 {@link SkillRegistry}。</p>
  *
- * <p>本加载器只负责"文件系统 → 内存注册表"的扫描路径。持久化（skills 表 upsert）由
+ * <p>本加载器只走"文件系统 → 内存注册表"的扫描路径。持久化（skills 表 upsert）由
  * {@link com.lifepilot.skill.install.SkillInstaller} 在首次安装时完成，热重载阶段不回写 DB
- * 避免与 {@link SkillFileWatcher} 产生循环事件（TODO Phase B.4 再补 checksum-diff 回写）。</p>
+ * 避免与 {@link SkillFileWatcher} 产生循环事件。</p>
  *
  * @author zsg
  * @since 2026-03-07

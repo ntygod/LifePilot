@@ -61,7 +61,7 @@ public class WebToolProvider {
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
-                .description("Search the internet by keywords. Use when knowledge is insufficient or the user requests live search. Returns title, URL, and snippet. Call web.fetch to retrieve full page content.")
+                .description("用关键词搜互联网，返回标题/URL/摘要。需要完整页面内容用 web.fetch。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),
@@ -82,7 +82,7 @@ public class WebToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.none()
                 ))
-                .tags(List.of("infrastructure", "search", "web", "internet", "query", "find", "lookup"))
+                .tags(List.of("搜索", "互联网", "网络", "查询", "search", "web", "internet"))
                 .executor(executor::execute)
                 .build();
     }
@@ -93,7 +93,7 @@ public class WebToolProvider {
                 .id("web.fetch")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
-                .description("Fetch a URL content or call an external REST API. GET probes Content-Type via HEAD: HTML is parsed by Jsoup with optional CSS selector for targeted extraction; non-HTML returns raw bytes. Set renderJs=true to render dynamic pages via headless browser. Non-GET (POST/PUT/DELETE/PATCH) uses HttpClient directly and returns the raw response body. Internal network addresses are blocked by SSRF guard.")
+                .description("抓取 URL 内容或调外部 REST API。GET 自动判 HTML 解析（可 CSS 选择器），renderJs=true 走 headless 渲染；POST/PUT/DELETE 直接发请求。内网地址有 SSRF 守卫。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("url"),
@@ -121,7 +121,7 @@ public class WebToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.origins("url")
                 ))
-                .tags(List.of("infrastructure", "fetch", "web", "http", "url", "scrape", "content", "api", "rest"))
+                .tags(List.of("抓取", "网页", "下载", "请求", "接口", "fetch", "web", "http", "api"))
                 .executor(executor::execute)
                 .build();
     }

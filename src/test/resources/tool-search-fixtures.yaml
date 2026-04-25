@@ -1,74 +1,71 @@
-# 工具搜索召回率回归 fixture
+# 工具搜索召回率回归 fixture（V30 后切到 trigram，全中文 query）。
 #
 # 每条 query 期望 top-3 中至少有 1 个出现在 expected_top_3 中；
 # 整体召回率 ≥ 85% 视为通过。
 #
 # 注意：
 #   - Tier 1 pinned 工具（file.read / file.write / file.list / web.search /
-#     web.fetch / shell.exec / memory / knowledge.search / tools.*）不在搜索池里，
-#     被 ToolSearchService 默认过滤排除 —— 因此 expected 必须是 Tier 2 工具。
-#   - FTS5 默认多 phrase 为 AND 连接，本 fixture 以 2-token 短 query 为主，
-#     避免 token 过多时整体 AND 为空。
+#     web.fetch / shell.exec / memory / knowledge.search / tools.* / skill.load）
+#     不在搜索池里，被 ToolSearchService 默认过滤排除 —— 因此 expected 必须是 Tier 2 工具。
+#   - trigram tokenizer 对 2 字以上中文短语命中度高，故大多数 query 用 4 字短语。
 #   - 失败样本会打印到控制台便于补 tags。
 #
 fixtures:
-  - query: "delete file"
+  - query: "删除文件"
     expected_top_3: ["file.manage"]
-  - query: "copy directory"
+  - query: "复制目录"
     expected_top_3: ["file.manage"]
-  - query: "create document"
+  - query: "创建文档"
     expected_top_3: ["document.create"]
-  - query: "generate excel"
+  - query: "生成 Excel"
     expected_top_3: ["document.create"]
-  - query: "create powerpoint"
+  - query: "生成 PPT"
     expected_top_3: ["document.create"]
-  - query: "edit docx"
+  - query: "编辑 docx"
     expected_top_3: ["document.edit"]
-  - query: "rollback document"
+  - query: "回滚文档版本"
     expected_top_3: ["document.edit"]
-  - query: "patch file"
+  - query: "修改文件内容"
     expected_top_3: ["file.edit", "document.edit"]
-  - query: "undo edit"
+  - query: "撤销编辑"
     expected_top_3: ["file.undo"]
-  - query: "redo edit"
+  - query: "重做编辑"
     expected_top_3: ["file.redo"]
-  - query: "diff file"
+  - query: "对比文件差异"
     expected_top_3: ["file.diff"]
-  - query: "background process"
+  - query: "后台进程"
     expected_top_3: ["shell.process"]
-  - query: "tmux session"
+  - query: "tmux 会话"
     expected_top_3: ["shell.process"]
-  - query: "git commit"
+  - query: "提交代码"
     expected_top_3: ["git.mutate"]
-  - query: "git log"
+  - query: "查看 git log"
     expected_top_3: ["git.query"]
-  - query: "browser automation"
+  - query: "浏览器自动化"
     expected_top_3: ["browser"]
-  - query: "click screenshot"
+  - query: "网页截图"
     expected_top_3: ["browser"]
-  - query: "execute python"
+  - query: "执行 Python"
     expected_top_3: ["code.execute"]
-  - query: "run sandbox"
+  - query: "运行沙箱代码"
     expected_top_3: ["code.execute"]
-  - query: "reset kernel"
+  - query: "重置内核"
     expected_top_3: ["code.kernel.reset"]
-  - query: "inspect kernel"
+  - query: "查看内核变量"
     expected_top_3: ["code.kernel.inspect"]
-  - query: "list kernel"
+  - query: "列出代码内核"
     expected_top_3: ["code.kernel.list"]
-  - query: "schedule cron"
+  - query: "定时任务"
     expected_top_3: ["cron"]
-  - query: "timer job"
+  - query: "周期任务调度"
     expected_top_3: ["cron"]
-  - query: "send notification"
-    expected_top_3: ["notify"]
-  - query: "push alert"
-    expected_top_3: ["notify"]
-  - query: "spawn worker"
+  - query: "推送通知"
+    expected_top_3: ["notify.send_message"]
+  - query: "发送提醒"
+    expected_top_3: ["notify.send_message"]
+  - query: "派遣并行 Worker"
     expected_top_3: ["spawn_workers"]
-  - query: "generate skill"
-    expected_top_3: ["generate_skill"]
-  - query: "render widget"
+  - query: "渲染界面组件"
     expected_top_3: ["ui.render"]
-  - query: "system health"
+  - query: "查看系统状态"
     expected_top_3: ["system.status"]

@@ -192,7 +192,7 @@ graph LR
         GRAPH["知识图谱<br/>实体-关系 SQL 表"]
     end
 
-    subgraph "Flyway 迁移（V1~V28）"
+    subgraph "Flyway 迁移（V1~V30）"
         V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
@@ -211,8 +211,8 @@ graph LR
         V16["V16: conversations 加 project_id（死表，V17 已迁移）"]
         V17["V17: project_id 从 conversations 迁移到 session_store 并建部分索引"]
         V18["V18: chat_turn_memory_snapshots 加 project_space_id（项目隔离 turn 级写入路由）"]
-        V19["V19: 工具暴露重构 — tool_search_index(FTS5) + tool_usage_stats + tier1_advisory"]
-        V20["V20: daily_active_sessions 日活会话统计表"]
+        V19["V19: 工具暴露重构 — tool_search_index(FTS5)（V29 后仅留索引表，advisory/usage 已删除）"]
+        V20["V20: daily_active_sessions 日活会话统计表（V29 已删除）"]
         V22["V22: cron_tasks 加 project_id + 部分索引（Plan 2 定时任务按项目归属）"]
         V23["V23: cron_task_logs 加 trigger_source（cron / manual，区分定时与立即运行）"]
         V24["V24: 记忆 lifecycle 闭环（status/completed_at/superseded_by/cancelled_reason 等字段 + 4 队列表）"]
@@ -220,6 +220,8 @@ graph LR
         V26["V26: proactive_task ↔ insight 关联表"]
         V27["V27: proactive_reminder ↔ insight 关联"]
         V28["V28: 技能系统重构相关表与索引"]
+        V29["V29: 删除 Tier 1 晋升机制 — tier1_advisory / tool_usage_stats / daily_active_sessions"]
+        V30["V30: tool_search_index 切到 trigram tokenizer（中文短语 substring 命中）"]
     end
 
     V1 --> SQL

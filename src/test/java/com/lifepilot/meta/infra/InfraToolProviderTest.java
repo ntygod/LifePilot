@@ -105,7 +105,7 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_所有工具tags含infrastructure() {
+    void registerTools_所有工具均带非空tags() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
@@ -114,7 +114,7 @@ class InfraToolProviderTest {
         verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
 
         for (BuiltinTool tool : captor.getAllValues()) {
-            assertThat(tool.tags()).contains("infrastructure");
+            assertThat(tool.tags()).as("tool %s", tool.id()).isNotEmpty();
         }
     }
 

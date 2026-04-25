@@ -98,8 +98,8 @@ class SkillRefactor_AutoConfiguration_集成测试 {
         assertThat(tool.category()).isEqualTo(ToolCategory.EXTENSION);
         assertThat(tool.riskLevel()).isEqualTo(RiskLevel.LOW);
         assertThat(tool.idempotent()).isTrue();
-        // tags 供 BM25 召回用，必须包含至少 skill/activate/load 三个核心关键词
-        assertThat(tool.tags()).contains("skill", "activate", "load");
+        // tags 供 BM25 召回用，必须包含至少"技能/激活/加载"三个中文核心关键词
+        assertThat(tool.tags()).contains("技能", "激活", "加载");
         // executor 非空才能被 BuiltinToolRegistrar 正常挂到 pipeline
         assertThat(tool.executor()).isNotNull();
     }

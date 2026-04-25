@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-04-23
+> **最后更新**：2026-04-25
 
 ## 1. 功能概述
 
@@ -12,7 +12,9 @@
 
 > **重要变更**：
 > - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool，废弃了 `file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳以及 `generate_skill` 独立工具；Skill 自生成由 `SkillSynthesizer` 后台服务在判定能力缺口时触发，不再通过 Agent 侧工具暴露。
-> - 旧的 `lifepilot.agent.core-tool-ids` 配置已删除，由 `lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 动态晋升替代。
+> - 旧的 `lifepilot.agent.core-tool-ids` 配置已删除，由 `lifepilot.tool.tier1.pinned` 静态配置替代。
+> - **2026-04-25 后**：原 `Tier1AdvisoryJob` / `ToolUsageStatsRecorder` 自动晋升 / 降级机制已下架（V29 删表）。单机本地部署没有"管理员审批"角色，PENDING advisory 永远没有人 APPROVE，整套机制是死代码。Tier 1 现在完全由 `application.yml` 的 `pinned` 列表手工维护。
+> - **2026-04-25 后**：FTS5 索引 tokenizer 从 `unicode61` 切到 `trigram`（V30 迁移），`ToolValidator` 放开了 description / tags 的英文限制，工具描述改写中文（含高频用户短语）让 trigram substring 召回更准确。
 
 ## 2. 核心架构
 
@@ -76,23 +78,26 @@ LLM 通过工具描述和 Schema 理解工具用途。
 
 ### 2.7 三层工具暴露
 
-- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` + `Tier1AdvisoryJob` 审批通过的工具，完整 schema 常驻 prompt，LLM 可直接调用
+- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` 配置列表中的工具，完整 schema 常驻 prompt，LLM 可直接调用
 - **Meta 层（始终可见）**：`tools.search` / `tools.describe` / `tools.list`，LLM 用它们发现 Tier 2 工具
 - **Tier 2（延迟加载）**：其余 Java 内置工具 + MCP 工具 + Skill 动态生成的工具，进 FTS5 BM25 搜索索引
 
 Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`，合并进当前可见集。
 
-### 2.8 工具搜索与 Tier 1 晋升
+### 2.8 工具搜索（FTS5 trigram + BM25）
 
 - `ToolSearchService` 走"sanitize → 三层缓存 → FTS5 MATCH + BM25 排序 → 排除 Tier1/activated/meta/权限外"链路；`bm25-confidence-threshold` 决定返回的 confidence 标签
-- `ToolUsageStatsRecorder` 每次工具执行成功后日粒度写入 `tool_usage_stats`
-- `Tier1AdvisoryJob` 每日凌晨分析 `window-days` 窗口的会话覆盖率，对超过 `session-threshold` 的候选写 `tier1_advisory`（`PENDING`），由管理员 UI 审批，**不自动改配置**
+- FTS5 表用 `tokenize = 'trigram'`（V30 迁移），3 字符滑窗双向 substring 匹配，对中文短语命中友好；query 走 `ToolSearchQuerySanitizer` 切 3-gram phrase 用 `OR` 连接
+- 工具 description / tags 中英混排，并主动写入"删除文件""复制目录"等高频用户短语，让 trigram 直接命中
+- Tier 1 名单完全由 `pinned` 配置静态维护，无后台晋升 / 降级 Job
 
 ### 2.9 启动期命名强校验（ToolValidator）
 
 - `id`：`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`，namespace 必须自描述或含动词词根
-- `name`：中文；`description`：英文且 ≥ 40 字符；`tags`：英文 ≥ 3 个且不重复
-- 硬规则违反抛 `IllegalStateException` 阻止启动；`tools.search / describe / list` 豁免
+- `name`：必须含中文字符
+- `description`：长度 ≥ 20 字符；允许中英混排；未检测到中文且无英文动词词根时 warn
+- `tags`：数量 ≥ 3，非空白且不重复；允许中英混排
+- 硬规则违反抛 `IllegalStateException` 阻止启动；`tools.search / describe / list` 与 `a2a_remote_*` 工具豁免
 
 ## 3. 核心类说明
 
@@ -105,7 +110,7 @@ Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`
 | `ToolExecutionPipeline` | 执行管道 |
 | `DynamicToolRegistry` | 动态注册表 |
 | `ToolBridgeAgentToolProvider` | Tier 1 ∪ activated ∪ meta 统一过滤，生成 Spring AI ToolCallback |
-| `Tier1Service` / `Tier1AdvisoryJob` / `ToolUsageStatsRecorder` | Tier 1 动态管理链路 |
+| `Tier1Service` | 只读 `pinned` 配置，提供 Tier 1 工具 ID 集合 |
 | `ToolSearchService` / `ToolDescribeService` / `ToolListService` | 搜索链路 3 服务 |
 | `BuiltinToolSearchProvider` | 注册 `tools.search/describe/list` 3 个 meta BuiltinTool |
 | `ToolSearchIndexBuilder` / `ToolSearchIndexMaintainer` | FTS5 索引全量 / 增量维护 |
@@ -137,11 +142,6 @@ lifepilot:
         - shell.exec
         - memory
         - knowledge.search
-      promotion:
-        enabled: true
-        window-days: 30
-        session-threshold: 0.3
-        max-promoted: 3
     search:
       default-limit: 5
       max-limit: 20
@@ -158,8 +158,6 @@ lifepilot:
 | `lifepilot.tool.pipeline.default-timeout-seconds` | `30` | 默认执行超时 |
 | `lifepilot.tool.pipeline.default-max-retries` | `2` | 默认最大重试次数 |
 | `lifepilot.tool.tier1.pinned` | 11 项（见上） | 人工固定的 Tier 1 工具 ID |
-| `lifepilot.tool.tier1.promotion.window-days` | `30` | 会话覆盖率统计窗口 |
-| `lifepilot.tool.tier1.promotion.session-threshold` | `0.3` | 晋升建议的最小会话覆盖率 |
 | `lifepilot.tool.search.default-limit` | `5` | `tools.search` 默认 limit |
 | `lifepilot.tool.search.max-limit` | `20` | `tools.search` 单次上限 |
 | `lifepilot.tool.search.bm25-confidence-threshold` | `1.0` | BM25 高置信度阈值 |

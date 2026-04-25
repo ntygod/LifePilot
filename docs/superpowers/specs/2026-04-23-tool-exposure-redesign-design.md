@@ -1,12 +1,19 @@
 ---
 title: 工具暴露机制重构 — Defer 默认 + BM25 搜索
-status: draft
+status: implemented (with revisions)
 owner: zsg
 date: 2026-04-23
 scope: 重构 Tool 暴露给 LLM 的分层机制，从"核心/非核心二分"改为"Tier 1 高频常驻 + Tier 2 BM25 可搜索"，解决核心界定模糊、Agent 自我感知不全、Skill 扩展视野缺失三个问题
 ---
 
 # 工具暴露机制重构 — Defer 默认 + BM25 搜索
+
+> **实施后变更（2026-04-25）**：本文档保留作为历史档案，主体方案（Tier 1 常驻 + Tier 2 BM25 搜索 + 3 个 Meta 工具）已落地，但以下细节做了调整，最新事实源以 `docs/architecture/tool-ecosystem.md` 为准：
+>
+> 1. **Tier 1 自动晋升 / 降级机制全部下架**（V29 删表）：原方案设计的 `Tier1AdvisoryJob` + `ToolUsageStatsRecorder` + `tier1_advisory` / `tool_usage_stats` 表用于"使用数据 → 晋升建议 → 管理员审批"的链路，但知微是单机本地部署，没有"管理员审批"角色，PENDING advisory 永远没人 APPROVE，整套机制成死代码。Tier 1 名单改为完全由 `lifepilot.tool.tier1.pinned` 静态配置维护，删除 7 个 Java 类（`Tier1Advisory*` / `ToolUsageStats*`）和对应 3 个测试。`Tier1Service` 简化为只读 pinned 配置。
+> 2. **FTS5 tokenizer 从 `unicode61` 切到 `trigram`**（V30 迁移）：原方案"工具 metadata 英文化 + unicode61 word-level 分词"对中文 query 不友好（unicode61 把连续 CJK 视作单 token，必须整体匹配）。trigram 用 3 字符滑窗双向 substring 匹配，对中文短语命中更准确。`ToolSearchQuerySanitizer` 同步适配（3-gram phrase 滑窗用 OR 连接）。
+> 3. **`ToolValidator` 反转**：description / tags 不再强制英文，允许中英混排。所有 `ToolProvider` 的 description / tags 改写中文，并主动写入"删除文件""复制目录"等高频用户短语，让 trigram 直接 substring 命中。
+> 4. **删除 `infrastructure` 噪声 tag**：原所有基础设施工具的 tags 头部都带 `"infrastructure"`，被 `ToolBridge` 用作"受限场景透传白名单"。新方案下该 tag 从工具定义中全部移除，过滤逻辑保留兼容（无该 tag 时无影响）。
 
 ## 0. 一句话说明
 
