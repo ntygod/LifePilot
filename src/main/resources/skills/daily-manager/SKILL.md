@@ -39,44 +39,14 @@ metadata:
 
 ## 工作流
 
-### 任务规划模式
+1. **任务规划**：`memory.search` 取上下文 → 和用户确认 → 按紧急-重要排序 → `memory.create` 记录
+2. **多 Skill 协调**：识别涉及 Skill → 确定依赖顺序 → 逐步加载执行 → 汇总结果 → `notify` 通知
+3. **信息汇总**：`memory.search` + `web.search` + `file.read` → `file.write` 写汇总
+4. **分步汇报**：每个子步骤完成后向用户汇报进展，不闷头一口气做完
+5. **决策节点**：遇到需要用户决策的节点主动询问，不自行决定
 
-1. 用 `memory(action="search")` 获取当前上下文和已有待办
-2. 与用户确认任务列表
-3. 按紧急-重要矩阵排序，分解子步骤
-4. 用 `memory(action="create")` 记录任务计划
+## 详细参考
 
-### 多 Skill 协调模式
-
-当用户需求涉及多个领域时：
-
-1. 分析需求，识别涉及的 Skill
-2. 确定执行顺序（依赖关系）
-3. 逐步加载对应 Skill 执行
-4. 汇总各步骤结果
-5. 用 `notify` 通知用户完成情况
-
-示例：「帮我调研 X 技术，写一份报告，保存到文件」
-→ 加载 research-assistant 调研 → 加载 content-creator 撰写 → `file.write` 保存 → `notify` 通知
-
-### 信息汇总模式
-
-```
-memory(action="search", query="本周完成事项")
-web.search(query="补充信息关键词")
-file.read(path="notes/weekly.md")
-file.write(path="reports/weekly-summary.md", content="汇总内容")
-```
-
-## 规则
-
-- 复杂任务先分解为可执行的子步骤，每步完成后向用户汇报进展
-- 遇到需要用户决策的节点主动询问，不自行决定
-- 重要信息记录到记忆系统，避免跨会话遗忘
-- 协调多个 Skill 时按依赖顺序逐个执行，不跳步
-
-## 常见错误处理
-
-- **任务冲突** → 提示用户调整优先级
-- **依赖 Skill 不可用** → 降级为手动步骤指导
-- **信息不足** → 主动向用户询问缺失信息
+- 三种协调模式（任务规划 / 多 Skill / 信息汇总）示例与错误处理：`{skill_dir}/references/coordination-patterns.md`
+</content>
+</invoke>
