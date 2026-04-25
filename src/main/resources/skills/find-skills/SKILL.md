@@ -48,11 +48,9 @@ metadata:
 | 命令执行 | shell.exec, shell.process | 任意命令行 + 后台进程 |
 | 代码执行 | code.execute | Python 持久内核 |
 | 浏览器 | browser | JS 渲染页面交互 |
-| 数据存储 | datastore | 结构化数据 CRUD + 聚合 |
 | 记忆 | memory | 跨会话持久化 |
 | Git | git.query, git.mutate | 版本控制 |
 | 调度 | cron | 定时触发 |
-| 工作流 | workflow | 多步骤编排 |
 | 通知 | notify | 消息推送 |
 | 渠道 | channel.feishu | 飞书集成 |
 

@@ -143,11 +143,11 @@ class SkillSystemRefactor_端到端集成测试 {
     @Test
     void BUILTIN_skill应在启动时全部安装到skills表() {
         List<SkillInstallation> builtin = repository.findAllBySourceType(SkillSourceType.BUILTIN);
-        // classpath 下 27 个 BUILTIN Skill 全部应入库
-        assertThat(builtin).hasSizeGreaterThanOrEqualTo(27);
+        // classpath 下 25 个 BUILTIN Skill 全部应入库（Skill v2 fixup 下架 datastore / workflow-creator 后）
+        assertThat(builtin).hasSizeGreaterThanOrEqualTo(25);
         // 抽查几个典型 skill 存在
         assertThat(builtin).extracting(SkillInstallation::name)
-                .contains("introspection", "github-workflow", "datastore", "skill-creator");
+                .contains("introspection", "github-workflow", "skill-creator");
         // 全部默认启用
         assertThat(builtin).allMatch(SkillInstallation::enabled);
     }

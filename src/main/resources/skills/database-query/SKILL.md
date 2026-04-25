@@ -1,6 +1,6 @@
 ---
 name: database-query
-description: 当用户要连接外部数据库（SQLite / MySQL / PostgreSQL）编写 SQL、查询数据、导出结果或分析库表结构时使用。关键词：查数据库、SQL、数据库结构、导出数据、MySQL、PostgreSQL、SQLite、查表、select。知微内置 Datastore 用 datastore，内存 CSV/Excel 分析用 data-analyst，日志分析用 log-analyzer。
+description: 当用户要连接外部数据库（SQLite / MySQL / PostgreSQL）编写 SQL、查询数据、导出结果或分析库表结构时使用。关键词：查数据库、SQL、数据库结构、导出数据、MySQL、PostgreSQL、SQLite、查表、select。内存 CSV/Excel 分析用 data-analyst，日志分析用 log-analyzer。
 version: 2.0.0
 metadata:
   zhiwei:
@@ -32,7 +32,6 @@ metadata:
 
 ## 不适用场景
 
-- 知微内置 DataStore 操作 → 用 datastore
 - 内存中的数据分析（CSV/Excel） → 用 data-analyst
 - 日志文件分析 → 用 log-analyzer
 

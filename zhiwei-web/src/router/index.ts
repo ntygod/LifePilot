@@ -134,16 +134,11 @@ const router = createRouter({
       name: 'agentDetail',
       component: () => import('@/views/AgentDetailView.vue')
     },
-    {
-      path: '/workflows',
-      name: 'workflows',
-      component: () => import('@/views/WorkflowManageView.vue')
-    },
-    {
-      path: '/workflows/:id',
-      name: 'workflowDetail',
-      component: () => import('@/views/WorkflowDetailView.vue')
-    },
+    /**
+     * Workflow 路由已于 Skill v2 fixup（2026-04-24）下架：workflow 引擎本体与 REST 端点保留，
+     * LLM 工具 + 用户前端入口同步移除。WorkflowManageView.vue / WorkflowDetailView.vue
+     * 组件文件与 stores/workflow.ts 保留以备未来恢复管理面，但不再注册路由。
+     */
     {
       path: '/skills',
       name: 'skills',

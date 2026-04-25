@@ -14,7 +14,6 @@ metadata:
       - storytelling
     suggested_tools:
       - knowledge.search
-      - datastore
       - file.read
       - file.write
       - web.search
@@ -32,7 +31,6 @@ metadata:
 - 世界观、角色、势力、金手指、升级体系
 - 主线大纲、卷纲、章纲、场景拆解
 - 单章正文、续写、改稿、卡文解法
-- 创建网文 Datastore 数据空间
 - 检索前文设定、伏笔、人物状态，做一致性校对
 
 ## 不适用场景
@@ -48,7 +46,7 @@ metadata:
 
 ### 检索已有资料
 
-当前会话如果已绑定 Datastore 或 Knowledge Base，且用户问题可能涉及角色设定、世界规则、前文事件、伏笔、卷纲/章纲、术语地名：
+当前会话如果已绑定知识库，且用户问题可能涉及角色设定、世界规则、前文事件、伏笔、卷纲/章纲、术语地名：
 
 ```
 knowledge.search(query="相关设定主题")
@@ -80,15 +78,7 @@ file.write(path="novels/<书名>/正文.md", content="章节内容", mode="appen
 
 ### 资料沉淀（按需）
 
-用户要求维护设定时，使用 Datastore 单集合工作台。content 包含完整设定描述（供语义检索），metadata 只放需要过滤的字段：
-
-```
-datastore(action="add", collectionName="书名",
-    content="林夜是本书主角，出身寒门，性格坚韧沉稳...",
-    metadata={"docType":"character","name":"林夜","status":"active"})
-```
-
-`docType` 值：`setting` / `character` / `faction` / `outline` / `foreshadowing` / `chapter`。仅当用户明确要求时才建库，不主动建。
+用户要求维护设定时，优先追加到本地设定文件（每类一个 md，按角色/势力/伏笔分档），或写入当前绑定的知识库。不主动创建新仓库；仅当用户明确要求时才动手。
 
 ## 规则
 

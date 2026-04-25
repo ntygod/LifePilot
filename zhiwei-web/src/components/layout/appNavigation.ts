@@ -14,7 +14,6 @@ import {
   ShoppingBag,
   Sparkles,
   Wrench,
-  Workflow,
 } from 'lucide-vue-next'
 
 export interface NavItem {
@@ -37,7 +36,8 @@ export const sidebarNavGroups: NavGroup[] = [
     label: '工作台',
     items: [
       { label: '智能体', path: '/agents', icon: Bot, matchPrefixes: ['/agents'] },
-      { label: '工作流', path: '/workflows', icon: Workflow, matchPrefixes: ['/workflows'] },
+      // 工作流入口已于 Skill v2 fixup（2026-04-24）下架：workflow 引擎本体与 REST 保留，
+      // 侧栏入口与路由同步移除，未来如恢复管理面再加回。
       // 定时任务入口不再挂在管理 Tab 的工作台组——作为高频入口常驻对话 Tab 顶部的操作行，
       // 见 {@link UnifiedSidebar} 对话 Tab 顶部的 `🕐 定时任务` 按钮。
       { label: '技能', path: '/skills', icon: Puzzle, matchPrefixes: ['/skills'] },

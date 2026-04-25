@@ -42,7 +42,6 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.install.SkillInstaller;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
-import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
@@ -114,8 +113,6 @@ public class MetaAutoConfiguration {
                                         @Nullable SandboxRepository sandboxRepository,
                                         @Nullable BrowserSessionManager browserSessionManager,
                                         @Nullable NotificationService notificationService,
-                                        @Nullable WorkflowRegistry workflowRegistry,
-                                        @Nullable WorkflowCommandService workflowCommandService,
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
                                         @Nullable NotificationProperties notificationProperties,
@@ -128,7 +125,7 @@ public class MetaAutoConfiguration {
                                         @Nullable AttachmentRepository attachmentRepository,
                                         @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
                                         @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist);
     }
 
     /**

@@ -1,6 +1,6 @@
 ---
 name: data-analyst
-description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、清洗、统计分析、假设检验、图表可视化或数据质量检查时使用。关键词：分析这份数据、做个图表、统计一下、数据可视化、处理 CSV、处理 Excel、数据清洗、画图、pandas、matplotlib。数据库 SQL 查询用 database-query，日志文件分析用 log-analyzer，知微 Datastore 操作用 datastore。
+description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、清洗、统计分析、假设检验、图表可视化或数据质量检查时使用。关键词：分析这份数据、做个图表、统计一下、数据可视化、处理 CSV、处理 Excel、数据清洗、画图、pandas、matplotlib。数据库 SQL 查询用 database-query，日志文件分析用 log-analyzer。
 version: 2.0.0
 metadata:
   zhiwei:
@@ -39,7 +39,6 @@ metadata:
 - 数据库 SQL 查询 → 用 database-query
 - 日志文件分析 → 用 log-analyzer
 - 简单数学计算 → 直接回答
-- 知微 Datastore 操作 → 用 datastore
 
 ## 工作流
 
