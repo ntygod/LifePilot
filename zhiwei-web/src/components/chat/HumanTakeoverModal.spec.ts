@@ -101,4 +101,63 @@ describe('HumanTakeoverModal 浏览器人工接管弹窗', () => {
 
     expect(wrapper.text()).toContain('请完成滑块验证')
   })
+
+  it('传入 error 时渲染错误提示并提示用户重试', () => {
+    const wrapper = mount(HumanTakeoverModal, {
+      props: {
+        open: true,
+        reason: '需要你扫码登录',
+        timeoutSeconds: 300,
+        error: 'Network timeout',
+      },
+      global: { stubs: dialogStubs },
+    })
+
+    expect(wrapper.text()).toContain('恢复请求失败：Network timeout')
+    expect(wrapper.text()).toContain('请重试或取消任务')
+  })
+
+  it('未传 error 时不渲染错误提示块', () => {
+    const wrapper = mount(HumanTakeoverModal, {
+      props: {
+        open: true,
+        reason: '需要你扫码登录',
+        timeoutSeconds: 300,
+        error: null,
+      },
+      global: { stubs: dialogStubs },
+    })
+
+    expect(wrapper.text()).not.toContain('恢复请求失败')
+  })
+
+  it('修改 timeoutSeconds prop 后倒计时重新开始', async () => {
+    const wrapper = mount(HumanTakeoverModal, {
+      props: {
+        open: true,
+        reason: '需要你扫码登录',
+        timeoutSeconds: 100,
+        error: null,
+      },
+      global: { stubs: dialogStubs },
+    })
+
+    // 推进 50 秒，剩余 50 秒，未到 0 不应 cancel
+    vi.advanceTimersByTime(50_000)
+    await nextTick()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
+
+    // 重置为 200 秒，倒计时应重新开始
+    await wrapper.setProps({ timeoutSeconds: 200 })
+
+    // 重置后再推进 150 秒（小于 200），不应触发 cancel
+    vi.advanceTimersByTime(150_000)
+    await nextTick()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
+
+    // 再推进 50 秒（累计 200 秒），应触发 cancel
+    vi.advanceTimersByTime(50_000)
+    await nextTick()
+    expect(wrapper.emitted('cancel')).toBeTruthy()
+  })
 })

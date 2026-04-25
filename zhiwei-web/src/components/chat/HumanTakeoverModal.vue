@@ -5,12 +5,13 @@
  * 或点"取消任务"放弃本轮。
  *
  * 组件不直接发请求，通过 emit 把动作交给 useChat 的 confirmBrowserTakeover /
- * cancelBrowserTakeover 处理，统一维护状态。
+ * cancelBrowserTakeover 处理，统一维护状态。恢复/取消请求失败时父级会回传 error
+ * 字段，用户可在弹窗中查看错误并重试。
  *
  * @author zsg
  * @since 2026-04-24
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { AlertCircle } from 'lucide-vue-next'
@@ -19,6 +20,7 @@ const props = defineProps<{
   open: boolean
   reason: string
   timeoutSeconds: number
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -29,9 +31,9 @@ const emit = defineEmits<{
 const remaining = ref(props.timeoutSeconds)
 let timer: ReturnType<typeof setInterval> | null = null
 
-function startTimer() {
+function startTimer(seconds: number) {
   stopTimer()
-  remaining.value = props.timeoutSeconds
+  remaining.value = seconds
   timer = setInterval(() => {
     remaining.value = Math.max(0, remaining.value - 1)
     if (remaining.value === 0) {
@@ -48,30 +50,20 @@ function stopTimer() {
   }
 }
 
-onMounted(() => {
-  if (props.open) startTimer()
-})
+// 单一 watch 同时监听 open / timeoutSeconds：开启时（重新）启动倒计时，关闭时停止；
+// immediate: true 替代 onMounted 处理首次挂载场景。
+watch(
+  () => [props.open, props.timeoutSeconds] as const,
+  ([open, seconds]) => {
+    if (open) startTimer(seconds)
+    else stopTimer()
+  },
+  { immediate: true },
+)
 
 onUnmounted(() => {
   stopTimer()
 })
-
-// 复用弹窗时 open 从 false 切回 true 需要重启倒计时
-watch(
-  () => props.open,
-  (open) => {
-    if (open) startTimer()
-    else stopTimer()
-  },
-)
-
-// timeoutSeconds 动态变化时也应刷新
-watch(
-  () => props.timeoutSeconds,
-  () => {
-    if (props.open) startTimer()
-  },
-)
 
 const remainingLabel = computed(() => {
   const m = Math.floor(remaining.value / 60)
@@ -95,6 +87,12 @@ function handleDialogUpdate(value: boolean) {
       <p class="mt-md text-xs text-muted-foreground">
         请在浏览器窗口完成操作，完成后点"继续"让 Agent 恢复任务。
       </p>
+      <div
+        v-if="error"
+        class="mt-sm rounded-md bg-destructive/10 p-sm text-xs text-destructive"
+      >
+        恢复请求失败：{{ error }}。请重试或取消任务。
+      </div>
       <div class="mt-md flex items-center justify-between">
         <span class="font-mono text-xs text-muted-foreground">剩余 {{ remainingLabel }}</span>
         <div class="flex gap-sm">

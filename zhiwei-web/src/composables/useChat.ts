@@ -61,6 +61,8 @@ export function useChat() {
     reason: string
     timeoutSeconds: number
   } | null>(null)
+  /** 浏览器接管恢复/取消请求失败时的错误信息，用于在 Modal 内提示并允许重试 */
+  const browserTakeoverError = ref<string | null>(null)
 
   let abortController: AbortController | null = null
   let currentTurnId: string | null = null
@@ -1190,29 +1192,33 @@ export function useChat() {
     pendingPermissionApprovalResolutions.value.set(requestId, resolution)
   }
 
-  /** 用户确认已在浏览器完成操作 → 通知后端恢复 Agent。 */
+  /** 用户确认已在浏览器完成操作 → 通知后端恢复 Agent。失败时保留 modal 让用户重试。 */
   async function confirmBrowserTakeover() {
     const takeover = activeBrowserTakeover.value
     if (!takeover) return
     try {
       await browserTakeoverApi.resume(takeover.turnId, takeover.sessionId, false)
+      activeBrowserTakeover.value = null
+      browserTakeoverError.value = null
     } catch (err) {
       logger.error('浏览器接管恢复请求失败:', err)
-    } finally {
-      activeBrowserTakeover.value = null
+      browserTakeoverError.value = err instanceof Error ? err.message : String(err)
+      // 不清空 activeBrowserTakeover，让用户能在 modal 中重试
     }
   }
 
-  /** 用户放弃本轮任务 → 通知后端以取消语义恢复 Agent。 */
+  /** 用户放弃本轮任务 → 通知后端以取消语义恢复 Agent。失败时保留 modal 让用户重试。 */
   async function cancelBrowserTakeover() {
     const takeover = activeBrowserTakeover.value
     if (!takeover) return
     try {
       await browserTakeoverApi.resume(takeover.turnId, takeover.sessionId, true)
+      activeBrowserTakeover.value = null
+      browserTakeoverError.value = null
     } catch (err) {
       logger.error('浏览器接管取消请求失败:', err)
-    } finally {
-      activeBrowserTakeover.value = null
+      browserTakeoverError.value = err instanceof Error ? err.message : String(err)
+      // 不清空 activeBrowserTakeover，让用户能在 modal 中重试
     }
   }
 
@@ -1247,6 +1253,7 @@ export function useChat() {
     pendingPermissionApprovalResolutions: computed(() => mapToRecord(pendingPermissionApprovalResolutions.value)),
     resolvePermissionApproval,
     activeBrowserTakeover,
+    browserTakeoverError,
     confirmBrowserTakeover,
     cancelBrowserTakeover,
   }

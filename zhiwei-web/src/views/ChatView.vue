@@ -66,6 +66,7 @@ const {
   pendingPermissionApprovalResolutions,
   resolvePermissionApproval,
   activeBrowserTakeover,
+  browserTakeoverError,
   confirmBrowserTakeover,
   cancelBrowserTakeover,
 } = useChat()
@@ -942,6 +943,7 @@ function closeTracePanel() {
       :open="true"
       :reason="activeBrowserTakeover.reason"
       :timeout-seconds="activeBrowserTakeover.timeoutSeconds"
+      :error="browserTakeoverError"
       @continue="confirmBrowserTakeover"
       @cancel="cancelBrowserTakeover"
     />
