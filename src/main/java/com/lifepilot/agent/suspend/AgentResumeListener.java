@@ -124,23 +124,21 @@ public class AgentResumeListener {
                 .filter(sa -> sa.suspendReason() instanceof com.lifepilot.agent.model.SuspendReason.BrowserTakeover bt
                         && bt.sessionId().equals(event.sessionId()))
                 .findFirst();
-        if (matched.isPresent()) {
-            // 取消时打 [USER_CANCELLED] 前缀，AgentOrchestrator 检测到此前缀直接硬终止，
-            // 不再交给 LLM 从 observation 文本猜测意图（避免 LLM 误判继续推理）。
-            String note;
-            if (event.cancelled()) {
-                String detail = event.note() != null && !event.note().isBlank()
-                        ? "：" + event.note()
-                        : "";
-                note = ResumePayload.BrowserTakeoverCompleted.USER_CANCELLED_PREFIX
-                        + " 用户取消了本次任务" + detail;
-            } else {
-                note = event.note();
-            }
-            var payload = new ResumePayload.BrowserTakeoverCompleted(event.sessionId(), note);
-            agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
-        } else {
+        if (matched.isEmpty()) {
             log.warn("浏览器接管完成事件未匹配到挂起的 Agent: sessionId={}", event.sessionId());
+            return;
+        }
+        String traceId = matched.get().traceId();
+        if (event.cancelled()) {
+            // 用户显式取消 → 走硬终止主路径，绕过 ReAct 循环避免 LLM 把"取消"再解读一遍
+            String detail = event.note() != null && !event.note().isBlank()
+                    ? "：" + event.note()
+                    : "";
+            agentOrchestrator.cancelSuspendedAgent(traceId, "用户取消了本次任务" + detail);
+        } else {
+            // 正常完成 → 走 resume，把人工接管结果交给 LLM 接续推理
+            var payload = new ResumePayload.BrowserTakeoverCompleted(event.sessionId(), event.note());
+            agentOrchestrator.resumeFromSuspend(traceId, payload);
         }
     }
 }
