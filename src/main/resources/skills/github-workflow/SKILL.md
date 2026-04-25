@@ -1,7 +1,7 @@
 ---
 name: github-workflow
-description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 PR、查看工作流运行、读取或更新远程仓库文件时使用。关键词：GitHub、PR、pull request、issue、CI、gh cli、代码审查、合并、工作流。纯本地 Git 操作直接用 git.query / git.mutate，不进本 Skill；其他平台（Gitee/GitLab）走 shell.exec 调用对应 CLI。
-version: 2.0.0
+description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 PR、查看工作流运行、读取或更新远程仓库文件时使用。关键词：GitHub、PR、pull request、issue、CI、gh cli、代码审查、合并、工作流、Actions、远程仓库。纯本地 Git 操作直接用 git.query / git.mutate，不进本 Skill；其他平台（Gitee/GitLab）走 shell.exec 调用对应 CLI。
+version: 2.1.0
 metadata:
   zhiwei:
     priority: normal
@@ -12,6 +12,7 @@ metadata:
       - ci
       - code-review
       - gh-cli
+      - actions
     suggested_tools:
       - shell.exec
       - web.fetch
@@ -28,33 +29,43 @@ metadata:
 
 # GitHub 协作指南
 
-通过 `gh` CLI、REST API 和 GraphQL 管理 GitHub PR、Issue、代码审查和 CI/CD 流程。
+`gh` CLI + REST/GraphQL API 管理 GitHub PR / Issue / CI / 代码审查。
 
 ## 适用场景
 
-- PR 创建、审查、合并
-- Issue 创建和管理
-- CI/CD 状态检查和故障排查
-- 代码审查
-- 远程仓库文件查看和编辑（Contents API）
+- PR 创建 / 审查 / 合并
+- Issue 创建 / 管理 / 关闭
+- CI / Actions 状态查 + 失败排查
+- 代码审查（看 diff、留 review comment）
+- 远程仓库文件查看与编辑（Contents API）
 
 ## 不适用场景
 
-- 纯本地 Git 操作（commit/branch/log）→ 直接用 `git.query` / `git.mutate`
-- 代码编写 → 用 code-assistant
-- 其他平台（Gitee/GitLab/Bitbucket）→ `shell.exec` 调用对应 CLI 或 API
+- 纯本地 Git 操作（commit / branch / log）→ `git.query` / `git.mutate`
+- 代码编写本身 → code-assistant
+- 其他平台（Gitee / GitLab / Bitbucket）→ `shell.exec` 调对应 CLI 或 API
 
-## 工作流
+## 工作流（按操作分流）
 
-1. **选工具**：本地仓库用 `git.*`；GitHub 侧用 `shell.exec + gh`；API 直调用 `web.fetch`
-2. **执行操作**：PR / Issue / CI / 代码审查，命令模板见参考
-3. **远程文件更新**：Contents API 返回的 Base64 含换行符，必须去空白后整体解码；逐行解码会造成多字节 UTF-8 乱码
-4. **时间范围查询**：REST API 用 `since` / `until`，结果过多时缩小时间窗口，不翻页拉全量
-5. **合并前**：确认 CI 全部通过
+| 操作 | 路径 |
+|---|---|
+| 本地 commit + push + 创 PR | `git.mutate(action="commit")` → `shell.exec("git push ...")` → `gh pr create` |
+| 仅 GitHub 侧（看 / 评论 / 合并 PR） | `shell.exec` + `gh pr ...` |
+| Issue 创建 / 查询 / 评论 | `shell.exec` + `gh issue ...` |
+| CI 状态 + 失败排查 | `shell.exec` + `gh run list / view --log-failed` |
+| 代码审查（拉 diff + 留意见） | `gh pr diff` + `gh pr review` |
+| 远程文件直改（不 clone） | `shell.exec` + `gh api`（Contents API） |
+| 复杂查询（跨仓 / 批量） | `gh api graphql` 或 `web.fetch` GraphQL |
+
+各路径要点：
+
+- **CI 通过才合并**：合 PR 前 `gh pr checks <pr>` 看全绿
+- **git push 走 shell.exec**：`git.mutate` 只覆盖 commit / stash / branch，push / pull 用 `shell.exec` 调 git
+- **Contents API 整体解码**：返回的 Base64 含换行，必须先去空白再整体 base64 解码；逐行解会破坏多字节 UTF-8
+- **时间窗口收窄**：`since` / `until` 限定范围；结果太多缩窗口而不是 `--paginate`
+- **token 走 env**：`GITHUB_TOKEN` 由系统注入，命令里不写明文
 
 ## 详细参考
 
 - gh CLI 命令速查（PR / Issue / CI / 审查）：`{skill_dir}/references/gh-cli-reference.md`
 - Contents API 文件更新（Bash / PowerShell）+ 时间范围查询：`{skill_dir}/references/content-api.md`
-</content>
-</invoke>
