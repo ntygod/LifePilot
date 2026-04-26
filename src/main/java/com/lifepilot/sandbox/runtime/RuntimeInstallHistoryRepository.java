@@ -46,8 +46,9 @@ public class RuntimeInstallHistoryRepository {
             """, UUID.randomUUID().toString(), runtimeKind, version, action, status, errorMsg, durationMs,
                     Instant.now().toString());
         } catch (Exception e) {
-            // 历史记录写入失败不应影响主流程
-            log.warn("写入 runtime_install_history 失败（忽略）: {}", e.getMessage());
+            // 历史记录写入失败不应影响主流程，但属于需要人工介入的故障，按 ERROR 级别记录完整上下文
+            log.error("写入 runtime_install_history 失败（忽略），runtimeKind={}, action={}, version={}",
+                    runtimeKind, action, version, e);
         }
     }
 }
