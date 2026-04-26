@@ -3,13 +3,18 @@ package com.lifepilot.meta.infra.code;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
+import com.lifepilot.sandbox.config.SandboxConfigProperties;
+import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.model.ExecutionRequest;
 import com.lifepilot.sandbox.model.ExecutionResult;
 import com.lifepilot.sandbox.model.ExecutionState;
 import com.lifepilot.sandbox.model.Language;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolResultStatus;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -256,6 +261,57 @@ class CodeExecuteToolExecutorTest {
         assertThat((int) result.data().get("exitCode")).isEqualTo(1);
         assertThat((String) result.data().get("stderr")).contains("SyntaxError");
         assertThat((String) result.data().get("state")).isEqualTo("FAILED");
+    }
+
+    // ─────────────────────────────────────────────
+    //  Runtime 状态检查
+    // ─────────────────────────────────────────────
+
+    @Test
+    void 运行时未就绪时返回错误引导设置页() {
+        var runtimeManager = mock(PythonRuntimeManager.class);
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.NotInstalled());
+
+        var guardedExecutor = new CodeExecuteToolExecutor(
+                properties, sessionManager, null, null, null, runtimeManager, null);
+
+        ToolInput input = buildInput(Map.of("code", "print('hi')"));
+        ToolResult result = guardedExecutor.execute(input, "session-1");
+
+        assertThat(result.status()).isEqualTo(ToolResultStatus.ERROR);
+        assertThat(result.error()).contains("代码执行环境未启用");
+        // 运行时未就绪应在创建会话之前短路，不应触达 sessionManager
+        verify(sessionManager, never()).getOrCreate(anyString());
+    }
+
+    // ─────────────────────────────────────────────
+    //  CommandGuard 阻断
+    // ─────────────────────────────────────────────
+
+    @Test
+    void HARDLINE命令被CommandGuard永久阻断() {
+        var runtimeManager = mock(PythonRuntimeManager.class);
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 1024));
+
+        // process 后端 — 让 CommandGuard 不会走 docker bypass
+        when(sandboxBooter.type()).thenReturn(SandboxBooter.TYPE_PROCESS);
+        // 使用真实 CommandGuard，自带 HARDLINE / DANGEROUS 规则
+        var sandboxConfig = new SandboxConfigProperties();
+        var commandGuard = new CommandGuard(sandboxConfig);
+
+        var guardedExecutor = new CodeExecuteToolExecutor(
+                properties, sessionManager, null, null, null, runtimeManager, commandGuard);
+
+        ToolInput input = buildInput(Map.of(
+                "code", "rm -rf /",
+                "language", "shell"
+        ));
+        ToolResult result = guardedExecutor.execute(input, "session-1");
+
+        assertThat(result.status()).isEqualTo(ToolResultStatus.ERROR);
+        assertThat(result.error()).contains("永久阻断");
+        // HARDLINE 阻断后不应实际启动子进程
+        verify(sandboxBooter, never()).execute(any(ExecutionRequest.class));
     }
 
     // ─────────────────────────────────────────────
