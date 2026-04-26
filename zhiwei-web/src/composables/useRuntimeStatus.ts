@@ -110,10 +110,21 @@ export function useRuntimeStatus() {
     }
   }
 
-  /** 触发安装并立即订阅进度流。 */
+  /**
+   * 触发安装并立即订阅进度流。
+   *
+   * <p>POST 失败（409 并发安装中 / 5xx 后端故障 / 网络断开）会写入 {@link error}，
+   * 避免 uncaught promise rejection 让用户面对"按钮没反应"。</p>
+   * <p>每次调用先清空旧 error，避免重试时残留上一次的错误消息。</p>
+   */
   async function install(): Promise<void> {
-    await runtimeApi.install()
-    subscribeProgress()
+    error.value = null
+    try {
+      await runtimeApi.install()
+      subscribeProgress()
+    } catch (e) {
+      error.value = extractErrorMessage(e)
+    }
   }
 
   onUnmounted(() => {
@@ -121,11 +132,11 @@ export function useRuntimeStatus() {
     eventSource = null
   })
 
-  return { status, error, refresh, install, subscribeProgress }
+  return { status, error, refresh, install, subscribeProgress, extractErrorMessage }
 }
 
 /** 从未知错误对象提取 message：优先用 ApiResponse error.message，回落到字符串化。 */
-function extractErrorMessage(e: unknown): string {
+export function extractErrorMessage(e: unknown): string {
   if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') {
     return (e as { message: string }).message
   }

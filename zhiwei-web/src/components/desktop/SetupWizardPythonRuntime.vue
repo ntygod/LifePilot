@@ -112,13 +112,23 @@ function onContinue() {
       </p>
     </div>
 
-    <!-- ==================== 错误（传输层 + 业务原因合并展示） ==================== -->
+    <!-- ==================== 传输层错误（SSE 断线 / refresh 失败 / install POST 失败） ==================== -->
+    <!-- 任何非 READY 态都显示，含 INSTALLING 中 SSE 断线场景，避免冻结进度条无信号 -->
     <div
-      v-if="(error || (isFailed && failureReason)) && !isInstalling"
+      v-if="error && !isReady"
       class="mt-md flex items-start gap-xs rounded-lg border border-destructive/40 bg-destructive/5 p-md text-sm text-destructive"
     >
       <X class="mt-xs h-4 w-4 flex-shrink-0" />
-      <span>{{ error || failureReason }}</span>
+      <span>{{ error }}</span>
+    </div>
+    <!-- ==================== 业务层失败原因（仅 INSTALL_FAILED 且无传输错误） ==================== -->
+    <!-- 限定 !error 避免与传输层错误同时双红条 -->
+    <div
+      v-if="isFailed && failureReason && !error"
+      class="mt-md flex items-start gap-xs rounded-lg border border-destructive/40 bg-destructive/5 p-md text-sm text-destructive"
+    >
+      <X class="mt-xs h-4 w-4 flex-shrink-0" />
+      <span>安装失败：{{ failureReason }}</span>
     </div>
 
     <!-- ==================== 操作按钮 ==================== -->
