@@ -229,6 +229,20 @@
             <scope>compile</scope>
         </dependency>
 
+        <!-- zstd-jni — Zstandard 解压（Python 运行时 tar.zst 离线包） -->
+        <dependency>
+            <groupId>com.github.luben</groupId>
+            <artifactId>zstd-jni</artifactId>
+            <version>1.5.6-3</version>
+        </dependency>
+
+        <!-- Apache Commons Compress — Tar 归档解析（Python 运行时离线包） -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.26.1</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

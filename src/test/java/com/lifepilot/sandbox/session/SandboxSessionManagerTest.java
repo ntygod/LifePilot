@@ -13,6 +13,7 @@ import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,8 +46,8 @@ class SandboxSessionManagerTest {
         cleanupExecutor = Executors.newSingleThreadScheduledExecutor();
         when(sharedScheduler.cleanup()).thenReturn(cleanupExecutor);
 
-        // 使用 ProcessBooter 作为模板
-        SandboxBooter template = new ProcessBooter(config);
+        // 使用 ProcessBooter 作为模板（Task 13 起需要 PythonRuntimeManager 入参）
+        SandboxBooter template = new ProcessBooter(config, new PythonRuntimeManager(config));
         var workspaceResolver = new WorkspaceResolver(null, "");
         manager = new SandboxSessionManager(config, template, sharedScheduler, workspaceResolver);
     }
