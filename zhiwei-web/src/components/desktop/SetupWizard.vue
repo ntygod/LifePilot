@@ -22,18 +22,24 @@ import {
   defaultModelForKind,
   modelOptionsForKind,
 } from '@/components/settings/modelServiceCatalog'
+import SetupWizardPythonRuntime from './SetupWizardPythonRuntime.vue'
 
 const router = useRouter()
 
 // === 页面控制 ===
-type Page = 'welcome' | 'provider' | 'configure' | 'ready'
+type Page = 'welcome' | 'provider' | 'configure' | 'python-runtime' | 'ready'
 const page = ref<Page>('welcome')
 const skippedSetup = ref(false)
 
-// 进度点：welcome=0, provider/configure=1, ready=2
-const dotIndex = computed(() =>
-  page.value === 'welcome' ? 0 : page.value === 'ready' ? 2 : 1,
-)
+// 进度点：welcome=0, provider/configure=1, python-runtime=2, ready=3
+const dotIndex = computed(() => {
+  switch (page.value) {
+    case 'welcome': return 0
+    case 'ready': return 3
+    case 'python-runtime': return 2
+    default: return 1
+  }
+})
 
 // === 模型配置 ===
 const errorMsg = ref('')
@@ -100,7 +106,7 @@ async function createService() {
   try {
     await modelServiceApi.createService(req)
     testResult.value = 'success'
-    page.value = 'ready'
+    page.value = 'python-runtime'
   } catch (e: unknown) {
     testResult.value = 'fail'
     errorMsg.value = `创建失败: ${e instanceof Error ? e.message : e}`
@@ -124,7 +130,7 @@ function finish(path: string) {
     <!-- 进度指示条 -->
     <div class="absolute top-xl flex gap-sm">
       <div
-        v-for="i in 3"
+        v-for="i in 4"
         :key="i"
         class="h-1.5 w-8 rounded-full transition-colors duration-300"
         :class="i - 1 <= dotIndex ? 'bg-primary' : 'bg-muted-foreground/15'"
@@ -284,6 +290,13 @@ function finish(path: string) {
           {{ testResult === 'testing' ? '创建中...' : '创建并继续' }}
         </button>
       </div>
+
+      <!-- ==================== Python Runtime ==================== -->
+      <SetupWizardPythonRuntime
+        v-else-if="page === 'python-runtime'"
+        key="python-runtime"
+        @next="page = 'ready'"
+      />
 
       <!-- ==================== Ready ==================== -->
       <div v-else key="ready" class="w-full max-w-[672px] px-xl text-center">
