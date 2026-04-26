@@ -13,7 +13,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>下载流程：
  * <ol>
- *   <li>流式下载到 {@code <target>.partial}，期间通过 {@link Consumer} 回调上报已写入字节数</li>
+ *   <li>流式下载到 {@code <target>.partial}，期间通过 {@link BiConsumer} 回调上报已写入字节数与总字节数</li>
  *   <li>下载完成后单独获取 SHA-256 摘要文件，与 partial 的实际摘要做大小写无关比较</li>
  *   <li>校验通过则原子重命名 partial 为目标文件；失败则删除 partial 与目标文件并抛出 {@link IOException}</li>
  * </ol>
@@ -49,12 +49,14 @@ public class PythonRuntimeDownloader {
      * @param fileUrl          目标文件 URL
      * @param sha256Url        SHA-256 摘要文件 URL（内容首段为十六进制字符串）
      * @param targetFile       本地目标路径
-     * @param progressConsumer 进度回调，参数为已写入字节数（每个 buffer 触发一次）
+     * @param progressConsumer 进度回调，参数依次为：已写入字节数 downloaded、总字节数 total。
+     *                         total 取自 HTTP Content-Length header；服务器未提供时为 -1。
+     *                         每个 buffer 触发一次回调（约 64KB），调用方如需限频自行 throttle。
      * @throws IOException          网络异常、写入异常或校验失败
      * @throws InterruptedException HTTP 请求被中断
      */
     public void download(String fileUrl, String sha256Url, Path targetFile,
-                         Consumer<Long> progressConsumer) throws IOException, InterruptedException {
+                         BiConsumer<Long, Long> progressConsumer) throws IOException, InterruptedException {
         Files.createDirectories(targetFile.getParent());
         Path partial = targetFile.resolveSibling(targetFile.getFileName() + ".partial");
 
@@ -65,6 +67,8 @@ public class PythonRuntimeDownloader {
             if (resp.statusCode() != 200) {
                 throw new IOException("HTTP " + resp.statusCode() + " for " + fileUrl);
             }
+            // 从 HTTP header 读取总长度，缺失则置 -1，由调用方按需处理
+            long contentLength = resp.headers().firstValueAsLong("Content-Length").orElse(-1L);
 
             try (var in = resp.body();
                  var out = Files.newOutputStream(partial)) {
@@ -74,7 +78,7 @@ public class PythonRuntimeDownloader {
                 while ((n = in.read(buf)) > 0) {
                     out.write(buf, 0, n);
                     total += n;
-                    progressConsumer.accept(total);
+                    progressConsumer.accept(total, contentLength);
                 }
             }
 
@@ -95,6 +99,8 @@ public class PythonRuntimeDownloader {
             // 4. 原子重命名为最终文件
             Files.move(partial, targetFile, StandardCopyOption.REPLACE_EXISTING);
             log.info("下载完成: {} ({} bytes, sha256={})", targetFile, Files.size(targetFile), actual);
+            // 兼顾 URI.create 等可能抛出的 IllegalArgumentException 等运行时异常；
+            // IOException / InterruptedException 路径在下方原样重抛，不丢失原始类型。
         } catch (Exception e) {
             // 失败统一清理：partial 与 targetFile 都尝试删除
             try { Files.deleteIfExists(partial); } catch (IOException ignored) { /* 清理失败不掩盖原异常 */ }

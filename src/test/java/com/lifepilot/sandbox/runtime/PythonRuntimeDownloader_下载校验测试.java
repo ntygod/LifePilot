@@ -12,7 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,7 +62,7 @@ class PythonRuntimeDownloader_下载校验测试 {
 
         var downloader = new PythonRuntimeDownloader();
         Path target = tempDir.resolve("downloaded.tar.zst");
-        Consumer<Long> progress = bytes -> {};
+        BiConsumer<Long, Long> progress = (downloaded, total) -> {};
 
         downloader.download("http://localhost:" + port + "/file.tar.zst",
                 "http://localhost:" + port + "/file.tar.zst.sha256",
@@ -93,10 +93,11 @@ class PythonRuntimeDownloader_下载校验测试 {
         assertThatThrownBy(() -> downloader.download(
                 "http://localhost:" + port + "/file.tar.zst",
                 "http://localhost:" + port + "/file.tar.zst.sha256",
-                target, b -> {}))
+                target, (b, t) -> {}))
             .hasMessageContaining("SHA-256");
 
         assertThat(target).doesNotExist();
+        assertThat(tempDir.resolve("bad.tar.zst.partial")).doesNotExist();
     }
 
     private static String sha256Hex(byte[] input) throws Exception {
