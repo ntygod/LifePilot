@@ -32,7 +32,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { logger } from '@/utils/logger'
 
-const { status, error, refresh, install } = useRuntimeStatus()
+const { status, error, refresh, install, extractErrorMessage } = useRuntimeStatus()
 
 onMounted(() => {
   void refresh()
@@ -98,14 +98,19 @@ const PRELOADED_LIBS = [
 /**
  * 卸载运行时：删除磁盘文件，状态回到 NOT_INSTALLED。
  * 二次确认通过浏览器 confirm 即可（与 SettingsGeneral 数据目录重置同款交互）。
+ *
+ * <p>错误处理：catch 写 error.value 让 banner 可见；finally refresh 兜底，
+ * 即便接口失败也以后端真实状态为准，避免 UI 显示 stale READY。</p>
  */
 async function onUninstall() {
   if (!window.confirm('确认卸载代码执行环境？文件将被删除。')) return
   try {
     await runtimeApi.uninstall()
-    await refresh()
   } catch (e) {
     logger.error('卸载运行时失败:', e)
+    error.value = extractErrorMessage(e)
+  } finally {
+    await refresh()
   }
 }
 
@@ -113,9 +118,11 @@ async function onUninstall() {
 async function onDisable() {
   try {
     await runtimeApi.disable()
-    await refresh()
   } catch (e) {
     logger.error('禁用运行时失败:', e)
+    error.value = extractErrorMessage(e)
+  } finally {
+    await refresh()
   }
 }
 
@@ -123,19 +130,35 @@ async function onDisable() {
  * 启用 / 下载：后端 enable 端点在 NOT_INSTALLED 状态下会自动触发 install
  * 并返回 200 + {installTriggered:true}。这里改为直接走 install() 以便订阅 SSE 进度，
  * 避免错过早期事件。
+ *
+ * <p>两条路径分别处理：
+ * <ul>
+ *   <li>DISABLED：调 enable，finally 走 refresh</li>
+ *   <li>NOT_INSTALLED：调 install（已订阅 SSE，进度事件会自动更新 status），
+ *       仅在异常时才走 finally refresh 兜底</li>
+ * </ul>
+ * 用 fromStatus 锁定路径，避免 await 期间 status.value 变化导致 finally 误判。</p>
  */
 async function onEnable() {
+  const fromStatus = status.value?.status
   try {
-    if (status.value?.status === 'DISABLED') {
-      // DISABLED → READY 切换：调 enable，无需安装
+    if (fromStatus === 'DISABLED') {
       await runtimeApi.enable()
-      await refresh()
     } else {
       // NOT_INSTALLED：直接 install（自动订阅 SSE 进度）
       await install()
     }
   } catch (e) {
     logger.error('启用运行时失败:', e)
+    error.value = extractErrorMessage(e)
+    // 异常路径：refresh 兜底拉一次后端真实状态
+    await refresh()
+    return
+  }
+  // 成功路径：DISABLED 路径需要 refresh 看到新状态；
+  // NOT_INSTALLED 路径已订阅 SSE，进度事件会自动 refresh，无需重复
+  if (fromStatus === 'DISABLED') {
+    await refresh()
   }
 }
 
@@ -147,6 +170,9 @@ async function onReinstall() {
     await install()
   } catch (e) {
     logger.error('重装运行时失败:', e)
+    error.value = extractErrorMessage(e)
+  } finally {
+    await refresh()
   }
 }
 </script>
@@ -215,7 +241,7 @@ async function onReinstall() {
             v-if="status?.status === 'NOT_INSTALLED' || status?.status === 'DISABLED'"
             @click="onEnable"
           >
-            启用并下载
+            {{ status?.status === 'DISABLED' ? '启用' : '启用并下载' }}
           </Button>
           <Button
             v-if="status?.status === 'READY'"
@@ -226,7 +252,7 @@ async function onReinstall() {
           </Button>
           <Button
             v-if="status?.status === 'READY'"
-            variant="outline"
+            variant="destructive"
             @click="onUninstall"
           >
             卸载
