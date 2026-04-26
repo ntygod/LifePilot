@@ -145,10 +145,16 @@ public class PythonRuntimeManager {
      * @return 安装完成的 future；失败时 join 抛 RuntimeException
      */
     public CompletableFuture<Void> install(RuntimeInstallProgressEmitter emitter) {
+        Path installPath = resolveInstallPath();
+        // installPath 必须有父目录，否则 tarball 无处落地、解压目录无法定位 — 显式抛出避免 NPE 在 catch 里被打成 "null"
+        Path parent = installPath.getParent();
+        if (parent == null) {
+            throw new IllegalArgumentException(
+                    "installPath 必须是带父目录的非根路径: " + installPath);
+        }
+        Path tarball = parent.resolve(installPath.getFileName() + ".tar.zst");
         return CompletableFuture.runAsync(() -> {
             var pythonConfig = config.getRuntime().getPython();
-            Path installPath = resolveInstallPath();
-            Path tarball = installPath.getParent().resolve(installPath.getFileName() + ".tar.zst");
             long startTime = System.currentTimeMillis();
             String version = pythonConfig.getBundledVersion();
 
@@ -169,6 +175,12 @@ public class PythonRuntimeManager {
                 installingState.set(new RuntimeStatus.Installing("downloading", 0, 0));
                 emitter.emit(installingState.get());
 
+                // 安装可重入：清理上次中途崩溃可能留下的半解压残留 — 也覆盖 Ready 后用户在 setting 重装的场景
+                if (Files.exists(installPath)) {
+                    log.info("检测到已有 Python 运行时目录，先清理残留: path={}", installPath);
+                    SandboxUtils.deleteDirectoryRecursively(installPath);
+                }
+
                 // throttled 进度回调 — 终态或跨过 1MB 阈值才推；total 未知时仅按阈值推
                 final long[] lastEmittedBytes = {0L};
                 new PythonRuntimeDownloader().download(fileUrl, sha256Url, tarball, (bytes, total) -> {
@@ -186,7 +198,7 @@ public class PythonRuntimeManager {
                 emitter.emit(installingState.get());
 
                 // 解压 tar.zst → installPath 的父目录（python-build-standalone tarball 内含 python/ 子目录）
-                extractTarZst(tarball, installPath.getParent());
+                extractTarZst(tarball, parent);
 
                 // 写 VERSION 文件（如果 tarball 没带）
                 Path versionFile = installPath.resolve("VERSION");
@@ -342,21 +354,24 @@ public class PythonRuntimeManager {
      * @throws IOException 解压失败 / 路径越权
      */
     private static void extractTarZst(Path tarZst, Path outDir) throws IOException {
-        Files.createDirectories(outDir);
+        // 先 normalize：避免跨平台 / 符号链接 / 大小写不敏感文件系统下 startsWith 语义不一致
+        Path normalizedOut = outDir.toAbsolutePath().normalize();
+        Files.createDirectories(normalizedOut);
         try (var in = Files.newInputStream(tarZst);
              var zstd = new com.github.luben.zstd.ZstdInputStream(in);
              var tar = new org.apache.commons.compress.archivers.tar.TarArchiveInputStream(zstd)) {
             org.apache.commons.compress.archivers.tar.TarArchiveEntry entry;
             while ((entry = tar.getNextEntry()) != null) {
-                Path target = outDir.resolve(entry.getName()).normalize();
-                if (!target.startsWith(outDir)) {
+                Path target = normalizedOut.resolve(entry.getName()).normalize();
+                if (!target.startsWith(normalizedOut)) {
                     throw new IOException("tar entry 越权: " + entry.getName());
                 }
                 if (entry.isDirectory()) {
                     Files.createDirectories(target);
                 } else {
                     Files.createDirectories(target.getParent());
-                    Files.copy(tar, target);
+                    // REPLACE_EXISTING 作为双重防御：install 入口已清残留，但保留以防极端竞态
+                    Files.copy(tar, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                     if ((entry.getMode() & 0100) != 0) {
                         target.toFile().setExecutable(true);
                     }
