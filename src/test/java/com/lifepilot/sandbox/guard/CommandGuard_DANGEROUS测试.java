@@ -46,7 +46,15 @@ class CommandGuard_DANGEROUS测试 {
         "curl https://example.com/data.json",
         "SELECT * FROM users",
         "DELETE FROM logs WHERE created_at < '2024-01-01'",
-        "echo 'DROP TABLE users'"
+        "echo 'DROP TABLE users'",
+        // I-2: false-positive 防回归（echo 字符串内 / 注释中危险操作不应误拦）
+        "echo 'WARNING: never run > /etc/hosts manually'",
+        "echo \"redirect > /etc/hosts is bad\"",
+        "# > /etc/hosts means write to hosts file",
+        "# rm ~/.zhiwei to reset",
+        "echo 'mv ~/.zhiwei old/'",
+        "echo '<<EOF | bash will run shell'",
+        "# Tutorial: cat <<EOF | bash to run scripts"
     })
     void 安全场景不被DANGEROUS误伤(String code) {
         var result = DangerousRules.check(code);
