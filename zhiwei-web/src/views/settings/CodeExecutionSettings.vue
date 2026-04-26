@@ -23,9 +23,9 @@
  * @author zsg
  * @since 2026-04-26
  */
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { AlertCircle, Check, Cpu, Loader2 } from 'lucide-vue-next'
-import { useRuntimeStatus } from '@/composables/useRuntimeStatus'
+import { useRuntimeStatus, humanizeInstallError } from '@/composables/useRuntimeStatus'
 import { runtimeApi } from '@/api/runtime'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Badge } from '@/components/ui/badge'
@@ -33,6 +33,20 @@ import { Button } from '@/components/ui/button'
 import { logger } from '@/utils/logger'
 
 const { status, error, refresh, install, extractErrorMessage } = useRuntimeStatus()
+
+/**
+ * 失败展示视图：把业务失败 reason 或传输层 error 归类为友好的标题 + 建议 + 技术详情。
+ *
+ * <p>合并优先级：业务失败（INSTALL_FAILED 状态的 status.reason）优先于传输层 error，
+ * 避免双红条同时出现把用户搞晕。</p>
+ */
+const failureView = computed(() => {
+  const reason = status.value?.status === 'INSTALL_FAILED' ? status.value.reason : error.value
+  return humanizeInstallError(reason)
+})
+
+/** 控制技术详情折叠展开（默认隐藏，让主标题/建议先映入眼帘）。 */
+const showTechnical = ref(false)
 
 onMounted(() => {
   void refresh()
@@ -217,22 +231,38 @@ async function onReinstall() {
           </div>
         </div>
 
-        <!-- 传输层错误（refresh / install 调用失败、SSE 断开） -->
+        <!--
+          失败友好卡片（合并业务 INSTALL_FAILED 与传输层 error 为单一显示）：
+          - 主标题：humanizeInstallError 归类后的人话（如"运行时安装包暂未发布"）
+          - 建议：用户可立即采取的下一步
+          - 技术详情：默认折叠，点击展开看原始错误（含完整 URL / HTTP 状态）
+        -->
         <div
-          v-if="error"
-          class="flex items-start gap-sm rounded-md border border-destructive/30 bg-destructive/8 px-md py-sm text-sm text-destructive"
+          v-if="(status?.status === 'INSTALL_FAILED' && status?.reason) || error"
+          class="rounded-md border border-destructive/40 bg-destructive/8 p-md"
         >
-          <AlertCircle class="mt-0.5 size-4 shrink-0" />
-          <span>{{ error }}</span>
-        </div>
-
-        <!-- 业务失败原因（仅 INSTALL_FAILED 状态显示 reason） -->
-        <div
-          v-if="status?.status === 'INSTALL_FAILED' && status?.reason"
-          class="flex items-start gap-sm rounded-md border border-destructive/30 bg-destructive/8 px-md py-sm text-sm text-destructive"
-        >
-          <AlertCircle class="mt-0.5 size-4 shrink-0" />
-          <span>安装失败：{{ status.reason }}</span>
+          <div class="flex items-start gap-sm">
+            <AlertCircle class="mt-xs size-4 shrink-0 text-destructive" />
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium text-destructive">{{ failureView.title }}</div>
+              <div class="mt-xs text-xs leading-relaxed text-muted-foreground">
+                {{ failureView.hint }}
+              </div>
+              <button
+                type="button"
+                class="mt-sm text-xs text-muted-foreground/70 underline-offset-2 hover:text-muted-foreground hover:underline"
+                @click="showTechnical = !showTechnical"
+              >
+                {{ showTechnical ? '收起技术详情' : '查看技术详情' }}
+              </button>
+              <div
+                v-if="showTechnical"
+                class="mt-xs break-all rounded bg-muted/40 p-sm font-mono text-xs text-muted-foreground/80"
+              >
+                {{ failureView.technical }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- 操作按钮区，按状态条件渲染 -->

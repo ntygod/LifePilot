@@ -116,14 +116,26 @@ export function useRuntimeStatus() {
    * <p>POST 失败（409 并发安装中 / 5xx 后端故障 / 网络断开）会写入 {@link error}，
    * 避免 uncaught promise rejection 让用户面对"按钮没反应"。</p>
    * <p>每次调用先清空旧 error，避免重试时残留上一次的错误消息。</p>
+   *
+   * <h3>订阅时序</h3>
+   * <p><b>先 subscribe 再 POST</b>：避免快速失败场景下后端 emitFailed 在前端订阅前就执行
+   * （emitters.clear 后 list 永远为空，前端永远收不到失败事件，UI 卡在原状态）。</p>
+   * <p><b>finally refresh</b>：兜底拉一次最新 status，保证即使 SSE race 错过事件，
+   * UI 也能反映 INSTALL_FAILED + reason 终态。</p>
    */
   async function install(): Promise<void> {
     error.value = null
+    subscribeProgress()
     try {
       await runtimeApi.install()
-      subscribeProgress()
     } catch (e) {
       error.value = extractErrorMessage(e)
+      eventSource?.close()
+      eventSource = null
+    } finally {
+      // 兜底：不管 SSE 收没收到事件，拉一次后端真实 status 确保 UI 反映终态
+      // （404 / 极速失败时后端可能已写入 INSTALL_FAILED 但 SSE emit 在前端订阅前完成）
+      await refresh()
     }
   }
 
@@ -132,7 +144,7 @@ export function useRuntimeStatus() {
     eventSource = null
   })
 
-  return { status, error, refresh, install, subscribeProgress, extractErrorMessage }
+  return { status, error, refresh, install, subscribeProgress, extractErrorMessage, humanizeInstallError }
 }
 
 /** 从未知错误对象提取 message：优先用 ApiResponse error.message，回落到字符串化。 */
@@ -141,4 +153,75 @@ export function extractErrorMessage(e: unknown): string {
     return (e as { message: string }).message
   }
   return String(e)
+}
+
+/**
+ * 把后端 install 失败的原始错误消息归类为对用户友好的解释。
+ *
+ * <p>分四类：</p>
+ * <ul>
+ *   <li>HTTP 4xx —— 资源问题（release 未发布、URL 配置错）</li>
+ *   <li>HTTP 5xx 或网络层错误 —— 服务器/网络故障</li>
+ *   <li>SHA-256 校验失败 —— 文件损坏</li>
+ *   <li>磁盘/解压问题 —— 本地环境</li>
+ * </ul>
+ * 找不到匹配则返回通用兜底文案。
+ *
+ * @param reason 后端返回的原始错误（如 "HTTP 404 for https://..."）
+ * @returns title（友好标题）/ hint（可操作建议）/ technical（保留原始消息供折叠展示）
+ */
+export interface InstallErrorView {
+  title: string
+  hint: string
+  technical: string
+}
+
+export function humanizeInstallError(reason: string | null | undefined): InstallErrorView {
+  const raw = reason ?? ''
+  // HTTP 404 / 410 → 资源不存在（release 未发布或 URL 配置错）
+  if (/HTTP\s+(404|410)/i.test(raw)) {
+    return {
+      title: '运行时安装包暂未发布',
+      hint: '当前版本的代码执行环境还未在服务器上发布。请稍后再试，或联系管理员确认发布进度。',
+      technical: raw,
+    }
+  }
+  // HTTP 5xx → 服务器暂时性故障
+  if (/HTTP\s+5\d{2}/i.test(raw)) {
+    return {
+      title: '下载服务器暂时无响应',
+      hint: 'GitHub 或下载服务器可能正在维护，请稍后重试。',
+      technical: raw,
+    }
+  }
+  // SHA-256 校验失败 → 下载文件被破坏
+  if (/SHA-?256/i.test(raw)) {
+    return {
+      title: '下载文件校验未通过',
+      hint: '下载过程中文件可能损坏，请重试。如多次失败请检查网络稳定性。',
+      technical: raw,
+    }
+  }
+  // 网络层错误：连接超时 / 拒绝 / DNS 失败
+  if (/(timeout|timed out|connection refused|unknownhost|unreachable|网络|连接|无法解析)/i.test(raw)) {
+    return {
+      title: '无法连接到下载服务器',
+      hint: '请检查本机网络或代理设置，确认能访问 GitHub。',
+      technical: raw,
+    }
+  }
+  // 磁盘空间 / 解压失败
+  if (/(disk|space|磁盘|空间|extract|解压|tar\s+entry|越权)/i.test(raw)) {
+    return {
+      title: '本地存储或解压失败',
+      hint: '请确认磁盘空间充足（至少 1GB 可用）且对安装目录有写入权限。',
+      technical: raw,
+    }
+  }
+  // 兜底
+  return {
+    title: '安装失败',
+    hint: '请稍后重试。如多次失败请查看下方技术详情或联系管理员。',
+    technical: raw,
+  }
 }

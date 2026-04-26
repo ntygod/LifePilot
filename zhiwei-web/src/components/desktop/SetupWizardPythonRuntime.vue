@@ -13,9 +13,9 @@
  * @author zsg
  * @since 2026-04-26
  */
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Check, Loader2, X } from 'lucide-vue-next'
-import { useRuntimeStatus } from '@/composables/useRuntimeStatus'
+import { useRuntimeStatus, humanizeInstallError } from '@/composables/useRuntimeStatus'
 import { runtimeApi } from '@/api/runtime'
 
 const emit = defineEmits<{ (e: 'next'): void }>()
@@ -28,8 +28,23 @@ const isInstalling = computed(() => status.value?.status === 'INSTALLING')
 const isReady = computed(() => status.value?.status === 'READY')
 const isFailed = computed(() => status.value?.status === 'INSTALL_FAILED')
 const percent = computed(() => status.value?.percent ?? 0)
-// 业务失败原因（INSTALL_FAILED 时由后端写入 status.reason），与 error.value（传输层）合并展示
-const failureReason = computed(() => status.value?.reason ?? null)
+
+/**
+ * 失败展示视图：把业务失败 reason 或传输层 error 归类为友好的标题 + 建议 + 技术详情。
+ *
+ * <p>合并优先级：业务失败（status.reason）优先于传输层 error，
+ * 避免双红条同时出现让用户晕菜。</p>
+ */
+const failureView = computed(() => {
+  const reason = status.value?.status === 'INSTALL_FAILED' ? status.value.reason : error.value
+  return humanizeInstallError(reason)
+})
+/** 是否有任何失败需要展示（非 READY 时才考虑显示）。 */
+const hasFailure = computed(
+  () => !isReady.value && ((isFailed.value && !!status.value?.reason) || !!error.value),
+)
+/** 控制技术详情折叠展开（默认隐藏）。 */
+const showTechnical = ref(false)
 
 async function onSkip() {
   // 即使 disable 调用失败也允许跳过，引导流程不能因此卡死；后续 sandbox 调用再统一提示
@@ -112,23 +127,39 @@ function onContinue() {
       </p>
     </div>
 
-    <!-- ==================== 传输层错误（SSE 断线 / refresh 失败 / install POST 失败） ==================== -->
-    <!-- 任何非 READY 态都显示，含 INSTALLING 中 SSE 断线场景，避免冻结进度条无信号 -->
+    <!--
+      ==================== 失败友好卡片（业务+传输层合并） ====================
+      - 主标题：humanizeInstallError 归类后的人话（如"运行时安装包暂未发布"）
+      - 建议：用户能立即采取的下一步操作
+      - 技术详情：默认折叠，展开看原始错误（含完整 URL / HTTP 状态）
+      非 READY 态都显示（含 INSTALLING 中 SSE 断线场景），避免进度冻结无信号。
+    -->
     <div
-      v-if="error && !isReady"
-      class="mt-md flex items-start gap-xs rounded-lg border border-destructive/40 bg-destructive/5 p-md text-sm text-destructive"
+      v-if="hasFailure"
+      class="mt-md rounded-lg border border-destructive/40 bg-destructive/5 p-md"
     >
-      <X class="mt-xs h-4 w-4 flex-shrink-0" />
-      <span>{{ error }}</span>
-    </div>
-    <!-- ==================== 业务层失败原因（仅 INSTALL_FAILED 且无传输错误） ==================== -->
-    <!-- 限定 !error 避免与传输层错误同时双红条 -->
-    <div
-      v-if="isFailed && failureReason && !error"
-      class="mt-md flex items-start gap-xs rounded-lg border border-destructive/40 bg-destructive/5 p-md text-sm text-destructive"
-    >
-      <X class="mt-xs h-4 w-4 flex-shrink-0" />
-      <span>安装失败：{{ failureReason }}</span>
+      <div class="flex items-start gap-xs">
+        <X class="mt-xs h-4 w-4 flex-shrink-0 text-destructive" />
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-medium text-destructive">{{ failureView.title }}</div>
+          <div class="mt-xs text-xs leading-relaxed text-muted-foreground">
+            {{ failureView.hint }}
+          </div>
+          <button
+            type="button"
+            class="mt-sm text-xs text-muted-foreground/70 underline-offset-2 hover:text-muted-foreground hover:underline"
+            @click="showTechnical = !showTechnical"
+          >
+            {{ showTechnical ? '收起技术详情' : '查看技术详情' }}
+          </button>
+          <div
+            v-if="showTechnical"
+            class="mt-xs break-all rounded bg-muted/40 p-sm font-mono text-xs text-muted-foreground/80"
+          >
+            {{ failureView.technical }}
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ==================== 操作按钮 ==================== -->
