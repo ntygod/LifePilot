@@ -30,7 +30,7 @@ class PythonRuntimeManager_状态机测试 {
     void 配置disabled为true时返回Disabled(@TempDir Path tempDir) throws Exception {
         var pythonDir = tempDir.resolve("python");
         Files.createDirectories(pythonDir);
-        Files.writeString(pythonDir.resolve("VERSION"), "3.12.4");
+        Files.writeString(pythonDir.resolve("VERSION"), "3.12.13");
         var config = buildConfig(pythonDir);
         config.getRuntime().getPython().setDisabled(true);
 
@@ -43,7 +43,7 @@ class PythonRuntimeManager_状态机测试 {
     void VERSION文件存在且版本匹配时返回Ready(@TempDir Path tempDir) throws Exception {
         var pythonDir = tempDir.resolve("python");
         Files.createDirectories(pythonDir.resolve("bin"));
-        Files.writeString(pythonDir.resolve("VERSION"), "3.12.4");
+        Files.writeString(pythonDir.resolve("VERSION"), "3.12.13");
         Files.writeString(pythonDir.resolve("bin/python"), "#!/bin/sh\necho fake");
         var config = buildConfig(pythonDir);
 
@@ -51,7 +51,7 @@ class PythonRuntimeManager_状态机测试 {
         var status = manager.checkStatus();
 
         assertThat(status).isInstanceOf(RuntimeStatus.Ready.class);
-        assertThat(((RuntimeStatus.Ready) status).version()).isEqualTo("3.12.4");
+        assertThat(((RuntimeStatus.Ready) status).version()).isEqualTo("3.12.13");
     }
 
     @Test
@@ -68,7 +68,7 @@ class PythonRuntimeManager_状态机测试 {
 
     private SandboxConfigProperties buildConfig(Path installPath) {
         var config = new SandboxConfigProperties();
-        config.getRuntime().getPython().setBundledVersion("3.12.4");
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
         config.getRuntime().getPython().setInstallPath(installPath.toString());
         return config;
     }

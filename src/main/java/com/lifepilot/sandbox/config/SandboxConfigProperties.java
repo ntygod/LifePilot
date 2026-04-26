@@ -190,8 +190,8 @@ public class SandboxConfigProperties {
          */
         public static class Python {
 
-            /** 捆绑 Python 运行时版本，默认 3.12.4。 */
-            private String bundledVersion = "3.12.4";
+            /** 捆绑 Python 运行时版本，默认 3.12.13。 */
+            private String bundledVersion = "3.12.13";
 
             /** 下载地址模板（含 {version}/{platform}/{arch} 占位符）。 */
             private String downloadUrlTemplate = "";

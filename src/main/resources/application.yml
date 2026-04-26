@@ -812,7 +812,7 @@ lifepilot:
       # 捆绑 Python 运行时
       python:
         # 版本号（与离线包文件名 {version} 占位符对齐）
-        bundled-version: "3.12.4"
+        bundled-version: "3.12.13"
         # 离线包下载地址模板
         download-url-template: "https://github.com/zsg-cs/zhiwei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst"
         # SHA256 校验文件地址模板
