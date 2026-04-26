@@ -12,6 +12,11 @@ on:
         description: 'Python version (e.g. 3.12.13)'
         required: true
 
+permissions:
+  # softprops/action-gh-release 创建 / 上传 GitHub Release 需要 contents: write
+  # 默认 GITHUB_TOKEN 仅 read 权限，会导致 "Resource not accessible by integration"
+  contents: write
+
 jobs:
   build:
     strategy:
