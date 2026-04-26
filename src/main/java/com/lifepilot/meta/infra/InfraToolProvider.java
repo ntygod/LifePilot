@@ -215,20 +215,30 @@ public class InfraToolProvider {
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 
         // 代码执行工具 — kernel 与 sandbox 共享同一捆绑 Python 路径
-        PersistentKernelManager kernelManager = null;
-        var kernelConfig = properties.getInfra().getKernel();
-        if (kernelConfig.isEnabled()) {
-            kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager, pythonRuntimeManager);
-        }
-        var codeToolProvider = new CodeToolProvider(
-                properties, sandboxSessionManager, codeValidator, sandboxRepository,
-                kernelManager, pythonRuntimeManager, commandGuard);
-        totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
+        // 仅在 PythonRuntimeManager 可用（lifepilot.sandbox.enabled=true）时注册 code.execute 与 code.kernel：
+        // sandbox 禁用时 SandboxAutoConfiguration 不注册 PythonRuntimeManager bean，
+        // 此时强行构建 PersistentKernelManager 会触发 Objects.requireNonNull NPE，
+        // 让整个 Spring Context 启动失败 —— 对面向大众用户的产品不可接受。
+        // 合理产品降级：sandbox 禁用本就意味着用户不要代码执行能力，跳过这两类工具即可。
+        if (pythonRuntimeManager != null) {
+            PersistentKernelManager kernelManager = null;
+            var kernelConfig = properties.getInfra().getKernel();
+            if (kernelConfig.isEnabled()) {
+                kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager, pythonRuntimeManager);
+            }
+            var codeToolProvider = new CodeToolProvider(
+                    properties, sandboxSessionManager, codeValidator, sandboxRepository,
+                    kernelManager, pythonRuntimeManager, commandGuard);
+            totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
 
-        // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册
-        if (kernelManager != null) {
-            var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
-            totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+            // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册
+            if (kernelManager != null) {
+                var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
+                totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+            }
+        } else {
+            log.info("Sandbox 已禁用（lifepilot.sandbox.enabled=false 或 PythonRuntimeManager bean 不可用），"
+                    + "跳过代码执行（code.execute）与内核管理（code.kernel）工具注册");
         }
 
         log.info("基础工具注册完成: count={}", totalTools);
