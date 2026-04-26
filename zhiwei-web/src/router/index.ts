@@ -233,6 +233,11 @@ const router = createRouter({
       name: 'settingsProactive',
       component: () => import('@/views/SettingsView.vue')
     },
+    {
+      path: '/settings/code-execution',
+      name: 'settingsCodeExecution',
+      component: () => import('@/views/SettingsView.vue')
+    },
 
     /**
      * Trace / 轨迹
