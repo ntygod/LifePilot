@@ -29,11 +29,11 @@ import java.util.Map;
  * runtimeManager 让 execute() 入口校验运行时就绪状态；commandGuard 在 process / kernel
  * 路径执行前阻断 HARDLINE / DANGEROUS 命令。</p>
  *
- * <p>工具向 LLM 暴露的关键边界：
+ * <p>工具能力边界（暴露给 LLM）：
  * <ul>
- *   <li>需用户在设置页启用代码执行环境（首次约 250MB 下载）</li>
- *   <li>预装 pandas / numpy / matplotlib / openpyxl / python-docx 等数据科学库</li>
- *   <li>HARDLINE 命令（rm -rf / 等）永久阻断，DANGEROUS 命令（git reset --hard 等）默认拒绝</li>
+ *   <li>支持 Python / JavaScript / Shell；Python 预装数据科学栈</li>
+ *   <li>HARDLINE 命令（rm -rf / 等）永久阻断；DANGEROUS 命令（git reset --hard 等）默认拒绝</li>
+ *   <li>运行时未启用时返回 "代码执行环境未启用" 错误，由调用方决定是否提示用户</li>
  * </ul>
  *
  * @author zsg
@@ -90,12 +90,14 @@ public class CodeToolProvider {
                 .category(ToolCategory.ACTION)
                 .name("执行代码")
                 .description("""
-                        在知微捆绑 Python 运行时执行代码（首次使用需在设置页启用，约 250MB 一次性下载）。
-                        预装 pandas / numpy / matplotlib / openpyxl / python-docx 等数据科学常用库，可直接 import 无需 pip install。
-                        语言：python（默认）/ javascript（需用户自装 Node.js）/ shell（Linux+macOS 用 bash，Windows 用 cmd 不能跑 .sh）。
-                        安全约束：rm -rf 系统目录 / mkfs / shutdown 等不可恢复操作永久阻断；
-                        git reset --hard / curl|sh / chmod -R 777 等高风险操作默认拒绝（管理员配置 yolo 模式可放行）。
-                        若错误是"代码执行环境未启用，请在设置页启用"，这是用户级配置问题，请告知用户去设置页启用，不要重试。
+                        执行 Python / JavaScript / Shell 代码。
+                        Python 运行时已预装 pandas / numpy / scipy / scikit-learn / matplotlib / seaborn / \
+                        openpyxl / python-docx / python-pptx / pypdf / pillow / requests / httpx / beautifulsoup4 \
+                        等数据科学常用库，import 即用，不需要 pip install。
+                        JavaScript 依赖系统 Node.js；Shell 在 Linux/macOS 走 bash，Windows 走 cmd（不能执行 .sh 脚本）。
+                        永久阻断（不可绕过）：rm -rf 系统目录 / mkfs / dd 写块设备 / shutdown / reboot / fork bomb 等不可恢复操作。
+                        默认拒绝（可配置放行）：rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / heredoc 跑 shell / SQL DROP / sudo 等高风险操作。
+                        错误"代码执行环境未启用"表示当前不可用，不要重试。
                         """)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -105,7 +107,7 @@ public class CodeToolProvider {
                                         "description", "要执行的代码"),
                                 "language", Map.of("type", "string",
                                         "enum", List.of("python", "javascript", "shell"),
-                                        "description", "编程语言。python（默认，捆绑运行时）；javascript（需用户系统已装 Node.js）；shell（Linux+macOS bash，Windows cmd 仅支持基础命令）"),
+                                        "description", "编程语言。python 默认，预装数据科学栈；javascript 依赖系统 Node.js；shell 在 Linux/macOS 走 bash，Windows 走 cmd"),
                                 "timeoutSeconds", Map.of("type", "integer",
                                         "description", "执行超时秒数，默认 30"),
                                 "kernelId", Map.of("type", "string",
