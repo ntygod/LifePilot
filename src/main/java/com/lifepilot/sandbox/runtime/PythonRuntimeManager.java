@@ -112,7 +112,7 @@ public class PythonRuntimeManager {
             return new RuntimeStatus.NotInstalled();
         }
 
-        // 4. VERSION 匹配检查
+        // 5. VERSION 匹配检查
         try {
             String installed = Files.readString(versionFile).trim();
             String expected = pythonConfig.getBundledVersion();
@@ -121,7 +121,7 @@ public class PythonRuntimeManager {
                         "版本不匹配: 已安装 %s, 期望 %s".formatted(installed, expected));
             }
 
-            // 5. python 可执行文件存在性检查 — 兼容两种 python-build-standalone 布局
+            // 6. python 可执行文件存在性检查 — 兼容两种 python-build-standalone 布局
             //    Windows: <installPath>/python.exe；Unix: <installPath>/bin/python
             //    任一存在即视为安装完整，避免跨平台测试夹具与运行时 OS 不一致时误判。
             Path winExe = installPath.resolve("python.exe");
@@ -315,6 +315,8 @@ public class PythonRuntimeManager {
      */
     public void enable() {
         config.getRuntime().getPython().setDisabled(false);
+        // 与 disable/uninstall 对称：清理上次失败原因，让 checkStatus 走正常判定路径
+        lastInstallError.set(null);
         if (historyRepo != null) {
             historyRepo.insert("python", config.getRuntime().getPython().getBundledVersion(),
                     "enable", "success", null, 0L);
