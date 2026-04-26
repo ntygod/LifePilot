@@ -75,6 +75,10 @@ public class RuntimeController {
      * 触发异步安装；并发请求返回 409。
      *
      * <p>本端点立即返回，真正的安装进度通过 {@link #installProgress()} SSE 端点推送。</p>
+     *
+     * <p><b>容错</b>：{@link PythonRuntimeManager#install} 调用本身可能同步抛错
+     * （如 OOM 时 executor 创建失败），异常不会进入返回的 future，需 try/finally
+     * 兜底重置 {@code installInProgress} 标志，避免后续请求被永久 409。</p>
      */
     @PostMapping("/python/install")
     public ResponseEntity<ApiResponse<Map<String, Object>>> install() {
@@ -83,13 +87,32 @@ public class RuntimeController {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.error(HttpStatus.CONFLICT.value(), "已有安装任务进行中"));
         }
-        manager.install(emitter).whenComplete((v, e) -> {
-            installInProgress.set(false);
-            if (e != null) {
-                log.error("install 任务异常结束: {}", e.getMessage(), e);
-            }
-        });
+        dispatchInstallTask();
         return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true)));
+    }
+
+    /**
+     * 派发实际的 install 异步任务；调用前必须已成功 cAS 占住 {@link #installInProgress}。
+     *
+     * <p>如果 {@link PythonRuntimeManager#install} 同步抛异常，try/finally 会重置标志位
+     * 并将异常向上抛出（最终由 {@link WebExceptionHandler} 转成 500）。</p>
+     */
+    private void dispatchInstallTask() {
+        boolean dispatched = false;
+        try {
+            manager.install(emitter).whenComplete((v, e) -> {
+                installInProgress.set(false);
+                if (e != null) {
+                    log.error("install 任务异常结束: {}", e.getMessage(), e);
+                }
+            });
+            dispatched = true;
+        } finally {
+            if (!dispatched) {
+                installInProgress.set(false);
+                log.warn("install dispatch 失败，已释放并发标志");
+            }
+        }
     }
 
     /**
@@ -114,15 +137,25 @@ public class RuntimeController {
 
     /**
      * 启用捆绑 Python；如果检测到未安装（文件缺失），自动触发 install。
+     *
+     * <p><b>并发语义</b>：自动 install 时若撞 {@link #installInProgress}（已有安装在跑），
+     * 不应让前端误报 enable 失败——{@link PythonRuntimeManager#enable} 本身（disabled=false
+     * 写入）已成功，install 被 dedupe 是合理行为。此时返回 200 + {@code installSkipped: true}，
+     * 让前端通过下一次 status 查询拿到真实进度。</p>
      */
     @PostMapping("/python/enable")
     public ResponseEntity<ApiResponse<Map<String, Object>>> enable() {
         manager.enable();
-        if (manager.checkStatus() instanceof RuntimeStatus.NotInstalled) {
-            log.info("启用后检测到未安装，自动触发 install");
-            return install();
+        if (!(manager.checkStatus() instanceof RuntimeStatus.NotInstalled)) {
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true)));
         }
-        return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true)));
+        log.info("启用后检测到未安装，自动触发 install");
+        if (!installInProgress.compareAndSet(false, true)) {
+            log.info("enable 自动 install 撞并发（已有安装在跑），仅切换标志位");
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true, "installSkipped", true)));
+        }
+        dispatchInstallTask();
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true, "installTriggered", true)));
     }
 
     /**

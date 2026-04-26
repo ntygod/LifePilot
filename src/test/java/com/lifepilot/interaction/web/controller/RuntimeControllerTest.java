@@ -3,6 +3,8 @@ package com.lifepilot.interaction.web.controller;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -198,9 +200,47 @@ class RuntimeControllerTest {
 
         mockMvc.perform(post("/api/runtime/python/enable"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.ok", is(true)));
+                .andExpect(jsonPath("$.data.ok", is(true)))
+                .andExpect(jsonPath("$.data.installTriggered", is(true)));
 
         verify(manager).enable();
         verify(manager).install(any());
+    }
+
+    @Test
+    void 启用_检测未安装但install已在跑时返回ok不报错() throws Exception {
+        // 第一次 install 占住 flag（never-completing future）
+        when(manager.install(any())).thenReturn(new CompletableFuture<>());
+        mockMvc.perform(post("/api/runtime/python/install"))
+                .andExpect(status().isOk());
+
+        // 用户点 enable，此时 status 仍是 NotInstalled
+        when(manager.checkStatus()).thenReturn(new RuntimeStatus.NotInstalled());
+
+        mockMvc.perform(post("/api/runtime/python/enable"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ok", is(true)))
+                .andExpect(jsonPath("$.data.installSkipped", is(true)));
+
+        // enable 实际被调，但 install 不会被第二次派发（dedupe）
+        verify(manager).enable();
+        verify(manager, times(1)).install(any());
+    }
+
+    @Test
+    void 安装_manager同步抛异常时释放标志位且抛回() throws Exception {
+        // 模拟 manager.install() 同步抛错（如 executor 创建失败）
+        // 用 doThrow/doReturn 而非 when(...).thenXxx，避免后续重新 stub 时
+        // when() 内部再次触发 install() 调用导致的"重新抛出旧 stub"问题。
+        doThrow(new RuntimeException("dispatch fail")).when(manager).install(any());
+
+        // 第一次 install 应抛 500（同步异常由 WebExceptionHandler 转）
+        mockMvc.perform(post("/api/runtime/python/install"))
+                .andExpect(status().is5xxServerError());
+
+        // 关键：第二次 install 不应被 409 永久 ban，因为 try/finally 已释放标志
+        doReturn(new CompletableFuture<>()).when(manager).install(any());
+        mockMvc.perform(post("/api/runtime/python/install"))
+                .andExpect(status().isOk());
     }
 }
