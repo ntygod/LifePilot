@@ -21,6 +21,7 @@ import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.runtime.RuntimeInstallHistoryRepository;
+import com.lifepilot.sandbox.runtime.RuntimeInstallProgressEmitter;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 
@@ -29,7 +30,8 @@ import com.lifepilot.sandbox.validator.CodeValidator;
  *
  * <p>通过 {@code lifepilot.sandbox.enabled=true}（默认）激活，
  * 注册沙箱模块全部 Bean：SandboxBooter、CodeValidator、SandboxSessionManager、
- * SandboxRepository、PythonRuntimeManager、CommandGuard、RuntimeInstallHistoryRepository。</p>
+ * SandboxRepository、PythonRuntimeManager、CommandGuard、RuntimeInstallHistoryRepository、
+ * RuntimeInstallProgressEmitter。</p>
  *
  * <p>根据 {@code lifepilot.sandbox.booter} 配置选择 ProcessBooter 或 DockerBooter。
  * Docker 模式下检查可用性，不可用则启动失败。</p>
@@ -84,6 +86,22 @@ public class SandboxAutoConfiguration {
                 config.getRuntime().getCommandGuard().isEnabled(),
                 config.getRuntime().getCommandGuard().isYoloMode());
         return new CommandGuard(config);
+    }
+
+    /**
+     * 注册运行时安装进度 SSE 推送器。
+     *
+     * <p>{@link RuntimeInstallProgressEmitter} 由 SandboxAutoConfiguration 集中注册，
+     * 与 {@link RuntimeInstallHistoryRepository} 保持一致风格：sandbox/runtime 子包不依赖
+     * ComponentScan，受 {@code lifepilot.sandbox.enabled} 开关统一控制。</p>
+     *
+     * @return RuntimeInstallProgressEmitter 实例
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    RuntimeInstallProgressEmitter runtimeInstallProgressEmitter() {
+        log.info("RuntimeInstallProgressEmitter 注册完成");
+        return new RuntimeInstallProgressEmitter();
     }
 
     /**

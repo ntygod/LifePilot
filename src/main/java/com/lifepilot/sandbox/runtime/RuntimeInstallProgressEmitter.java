@@ -5,7 +5,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.annotation.PreDestroy;
@@ -15,6 +14,10 @@ import jakarta.annotation.PreDestroy;
  *
  * <p>多前端订阅同一进度流，全局单例。同时只允许一个 install 进程，
  * 进度由 {@link PythonRuntimeManager#install} 通过 {@link #emit} 推送。</p>
+ *
+ * <p><b>注：</b>本类不带 {@code @Component} 注解，由 {@link com.lifepilot.sandbox.config.SandboxAutoConfiguration}
+ * 通过 {@code @Bean} 集中注册，与 {@link RuntimeInstallHistoryRepository} 保持一致风格：
+ * sandbox/runtime 子包不依赖 ComponentScan，受 {@code lifepilot.sandbox.enabled} 开关统一控制。</p>
  *
  * <p><b>线程契约</b>：同一时刻只允许单一 install 协程调用 {@link #emit} / {@link #emitFailed}，
  * 其他线程仅可调用 {@link #subscribe}。{@link SseEmitter#send} 非线程安全，
@@ -26,7 +29,6 @@ import jakarta.annotation.PreDestroy;
  * @author zsg
  * @since 2026-04-26
  */
-@Component
 public class RuntimeInstallProgressEmitter {
 
     private static final Logger log = LoggerFactory.getLogger(RuntimeInstallProgressEmitter.class);
