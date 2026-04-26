@@ -291,7 +291,7 @@ Tauri 主进程启动
 
 ### 4.2 Onboarding 页面（Vue 组件）
 
-`zhiwei-web/src/views/OnboardingPythonRuntime.vue`
+集成到现有 `zhiwei-web/src/components/desktop/SetupWizard.vue` 流程，新增一步「代码执行环境」介于"模型配置"和"完成"之间。**不新建独立路由**，复用现有 `/setup` 引导链路与 `localStorage zhiwei_onboarding_completed` flag。
 
 UI 文案/布局占位（实际措辞由实施时决定，spec 不约束话术）：
 - 全屏遮罩 + 居中卡片（Reka UI Card）
@@ -443,7 +443,7 @@ UI 文案/布局占位（实际措辞由实施时决定，spec 不约束话术�
 
 ### 10.1 数据库迁移
 
-- **V28（next）**：新增 `runtime_install_history` 表，记录 install / uninstall / 失败原因
+- **V31（next，当前最新 V30）**：新增 `runtime_install_history` 表，记录 install / uninstall / 失败原因
   ```sql
   CREATE TABLE runtime_install_history (
     id           TEXT PRIMARY KEY,
