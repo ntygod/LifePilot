@@ -31,7 +31,9 @@ class CommandGuard_DANGEROUS测试 {
         "rm -rf ~/.zhiwei",
         "tar xf x.tar -C /",
         "sudo rm -rf /home",
-        "sudo apt install foo"
+        "sudo apt install foo",
+        // 边界：rm -f 单文件 — 规则 [rRf] 任一即拦。-f 强制不提示删除，配合 typo / 变量展开误删风险高。
+        "rm -f /home/user/important.conf"
     })
     void DANGEROUS规则命中(String code) {
         var result = DangerousRules.check(code);

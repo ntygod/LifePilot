@@ -27,6 +27,7 @@ import { computed, onMounted, ref } from 'vue'
 import { AlertCircle, Check, Cpu, Loader2 } from 'lucide-vue-next'
 import { useRuntimeStatus, humanizeInstallError } from '@/composables/useRuntimeStatus'
 import { runtimeApi } from '@/api/runtime'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -110,22 +111,30 @@ const PRELOADED_LIBS = [
 ] as const
 
 /**
+ * 二次确认弹窗状态 — 卸载 / 重装共用单一 ConfirmDialog 实例，按 pendingAction 派发。
+ *
+ * <p>项目其它设置页（如 SettingsGeneralView / DatastoreView）都用 ConfirmDialog（基于 Reka UI AlertDialog），
+ * 与项目主题一致且 Tauri 桌面端体验更佳，避免 window.confirm 的原生弹窗外观割裂。</p>
+ */
+const pendingAction = ref<'uninstall' | 'reinstall' | null>(null)
+const showConfirm = ref(false)
+const confirmConfig = computed(() => {
+  if (pendingAction.value === 'uninstall') {
+    return { title: '卸载代码执行环境', message: '确认卸载？磁盘上的运行时文件将被删除。', label: '卸载' }
+  }
+  return { title: '重新安装运行时', message: '重装会先卸载现有运行时再重新下载，确认继续？', label: '重新安装' }
+})
+
+/**
  * 卸载运行时：删除磁盘文件，状态回到 NOT_INSTALLED。
- * 二次确认通过浏览器 confirm 即可（与 SettingsGeneral 数据目录重置同款交互）。
+ * 真正删除在 ConfirmDialog 二次确认后由 {@link onConfirmAction} 执行。
  *
  * <p>错误处理：catch 写 error.value 让 banner 可见；finally refresh 兜底，
  * 即便接口失败也以后端真实状态为准，避免 UI 显示 stale READY。</p>
  */
-async function onUninstall() {
-  if (!window.confirm('确认卸载代码执行环境？文件将被删除。')) return
-  try {
-    await runtimeApi.uninstall()
-  } catch (e) {
-    logger.error('卸载运行时失败:', e)
-    error.value = extractErrorMessage(e)
-  } finally {
-    await refresh()
-  }
+function onUninstall() {
+  pendingAction.value = 'uninstall'
+  showConfirm.value = true
 }
 
 /** 禁用运行时：保留文件，状态切到 DISABLED。 */
@@ -176,18 +185,41 @@ async function onEnable() {
   }
 }
 
-/** 重新安装：先卸载再装。 */
-async function onReinstall() {
-  if (!window.confirm('重新安装会先卸载现有运行时再重新下载，确认继续？')) return
-  try {
-    await runtimeApi.uninstall()
-    await install()
-  } catch (e) {
-    logger.error('重装运行时失败:', e)
-    error.value = extractErrorMessage(e)
-  } finally {
-    await refresh()
+/** 重新安装：先卸载再装；与 onUninstall 共用 ConfirmDialog。 */
+function onReinstall() {
+  pendingAction.value = 'reinstall'
+  showConfirm.value = true
+}
+
+/** ConfirmDialog 二次确认成功回调 — 按 pendingAction 派发卸载或重装实际逻辑。 */
+async function onConfirmAction() {
+  const action = pendingAction.value
+  pendingAction.value = null
+  if (action === 'uninstall') {
+    try {
+      await runtimeApi.uninstall()
+    } catch (e) {
+      logger.error('卸载运行时失败:', e)
+      error.value = extractErrorMessage(e)
+    } finally {
+      await refresh()
+    }
+  } else if (action === 'reinstall') {
+    try {
+      await runtimeApi.uninstall()
+      await install()
+    } catch (e) {
+      logger.error('重装运行时失败:', e)
+      error.value = extractErrorMessage(e)
+    } finally {
+      await refresh()
+    }
   }
+}
+
+/** ConfirmDialog 取消回调 — 仅清理 pendingAction。 */
+function onCancelAction() {
+  pendingAction.value = null
 }
 </script>
 
@@ -321,5 +353,16 @@ async function onReinstall() {
         </li>
       </ul>
     </StatePanel>
+
+    <!-- 卸载 / 重装二次确认弹窗（共用单一实例，按 pendingAction 派发） -->
+    <ConfirmDialog
+      v-model:show="showConfirm"
+      :title="confirmConfig.title"
+      :message="confirmConfig.message"
+      :confirm-label="confirmConfig.label"
+      confirm-variant="destructive"
+      @confirm="onConfirmAction"
+      @cancel="onCancelAction"
+    />
   </div>
 </template>
