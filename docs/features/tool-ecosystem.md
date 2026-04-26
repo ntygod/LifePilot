@@ -8,7 +8,7 @@
 
 工具系统为 Agent 提供与外部世界交互的能力，支持两种工具来源：Java 内置工具（BuiltinTool）和 MCP 外部工具（McpTool）。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
 
-工具对 LLM 的暴露采用 Tier 1（常驻完整 schema）+ Tier 2（FTS5 BM25 可搜索）+ 3 个 Meta 工具（`tools.search` / `tools.describe` / `tools.list`）的三层模型，简单任务保持 2 轮响应低延迟，长尾能力通过按需搜索无限扩展。
+工具对 LLM 的暴露采用 Tier 1（常驻完整 schema）+ Tier 2（FTS5 BM25 可搜索）+ 2 个 Meta 工具（`tools.search` / `tools.describe`）的三层模型，简单任务保持 2 轮响应低延迟，长尾能力通过按需搜索无限扩展。
 
 > **重要变更**：
 > - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool，废弃了 `file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳以及 `generate_skill` 独立工具；Skill 自生成由 `SkillSynthesizer` 后台服务在判定能力缺口时触发，不再通过 Agent 侧工具暴露。
@@ -79,7 +79,7 @@ LLM 通过工具描述和 Schema 理解工具用途。
 ### 2.7 三层工具暴露
 
 - **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` 配置列表中的工具，完整 schema 常驻 prompt，LLM 可直接调用
-- **Meta 层（始终可见）**：`tools.search` / `tools.describe` / `tools.list`，LLM 用它们发现 Tier 2 工具
+- **Meta 层（始终可见）**：`tools.search` / `tools.describe`，LLM 用它们发现 Tier 2 工具
 - **Tier 2（延迟加载）**：其余 Java 内置工具 + MCP 工具 + Skill 动态生成的工具，进 FTS5 BM25 搜索索引
 
 Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`，合并进当前可见集。
@@ -133,7 +133,6 @@ lifepilot:
       pinned:
         - tools.search
         - tools.describe
-        - tools.list
         - file.read
         - file.write
         - file.list

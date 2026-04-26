@@ -11,7 +11,7 @@
 工具对 LLM 的暴露采用**三层架构**（2026-04 重构后）：
 
 - **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` 配置中列出的工具，完整 schema 始终随系统 prompt 注入
-- **Meta 层**：`tools.search` / `tools.describe` / `tools.list` 三个内省工具始终常驻，LLM 用它们发现 Tier 2 工具
+- **Meta 层**：`tools.search` / `tools.describe` 两个内省工具始终常驻，LLM 用它们发现 Tier 2 工具
 - **Tier 2（延迟加载）**：其余所有 BuiltinTool + MCP 工具，进 FTS5 BM25 搜索索引；LLM 通过 `tools.search` 找到后用 `tools.describe` 取完整 schema，再直接调用
 
 此外 Skill 激活会把场景化工具集合注入到 `ReactAgentState.activatedToolIds`，临时加入可见集。
@@ -34,7 +34,7 @@ graph TB
     subgraph "工具注册"
         REG["DynamicToolRegistry<br/>动态工具注册表"]
         BUILTIN_REG["BuiltinToolRegistrar<br/>+ ToolValidator 启动校验"]
-        META_REG["BuiltinToolSearchProvider<br/>注册 3 个 Meta 工具"]
+        META_REG["BuiltinToolSearchProvider<br/>注册 2 个 Meta 工具"]
     end
 
     subgraph "工具契约（sealed interface）"
@@ -122,7 +122,6 @@ graph TB
 |---------|------|----------|
 | `tools.search` | BM25 搜工具（trigram 索引，支持中英文关键字 substring 命中） | `query`（必填），`category`（可选过滤），`limit`（默认 5，上限 20） |
 | `tools.describe` | 批量取 schema | `tool_ids`（必填数组，批量上限 10） |
-| `tools.list` | 按 category 列 ID | `category`（可选；省略列全部） |
 
 Category 维度为 `PERCEPTION / ACTION / COGNITION / STORAGE / INTERACTION / INTROSPECTION / EXTENSION`（`ToolCategory` 枚举）。
 
@@ -134,7 +133,7 @@ Category 维度为 `PERCEPTION / ACTION / COGNITION / STORAGE / INTERACTION / IN
 - `name`：必须含中文字符
 - `description`：长度 ≥ 20 字符；允许中英混排（trigram 索引召回，无需强制英文）；未检测到中文且未含英文动词词根时 warn（软规则）
 - `tags`：数量 ≥ 3 + 非空白 + 不重复；允许中英混排
-- 豁免：`tools.search / tools.describe / tools.list` 三个 meta 工具；以 `a2a_remote_` 开头的外部生态工具（A2A 远端 agent 等）
+- 豁免：`tools.search / tools.describe` 两个 meta 工具；以 `a2a_remote_` 开头的外部生态工具（A2A 远端 agent 等）
 
 ### 3.8 ToolExecutionPipeline
 

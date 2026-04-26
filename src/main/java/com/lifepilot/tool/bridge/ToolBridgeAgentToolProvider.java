@@ -42,7 +42,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     /** Meta 工具 ID 集合 — 始终可见于 prompt，供 LLM 发现更多能力。 */
     private static final Set<String> META_TOOL_IDS =
-            Set.of("tools.search", "tools.describe", "tools.list");
+            Set.of("tools.search", "tools.describe");
 
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;

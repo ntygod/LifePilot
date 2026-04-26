@@ -1322,14 +1322,6 @@ public class ContextAssembler {
     }
 
     /**
-     * Skill catalog 一次最多列出多少条 — 超过的依赖 LLM 调 {@code find-skills} 显式发现。
-     *
-     * <p>排序键：先按 query 关键词命中分降序，再按 priority 升序（HIGH→LOW），最后 name 升序。
-     * 命中无差异时 priority 起决定作用；当存在命中分非零的低 priority skill 时，
-     * 它会被排序到前面 —— 这是有意行为：query 已经表达明确意图。</p>
-     */
-
-    /**
      * 构建 Skill Catalog 段 —— 全量列出所有已启用 skill。
      *
      * <p>过滤链：skills 表（enabled=true） → SkillRegistry 内存定义 →
