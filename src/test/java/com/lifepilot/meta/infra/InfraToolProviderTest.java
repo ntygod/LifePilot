@@ -46,9 +46,11 @@ class InfraToolProviderTest {
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
         var indexer = new InteractiveElementIndexer(new ObjectMapper());
-        // 构造签名：21 参数 — workspaceResolver 位于第 16 位，之后依次是 attachmentRepository /
-        // chatSessionRepository / skillPathWhitelist / ssrfGuard / interactiveElementIndexer。
-        // 浏览器能力补全（PR #99）在 develop 19 参数基础上追加 ssrfGuard 与 interactiveElementIndexer。
+        // 构造签名：23 参数 — workspaceResolver 位于第 16 位，之后依次是 attachmentRepository /
+        // chatSessionRepository / skillPathWhitelist / ssrfGuard / interactiveElementIndexer /
+        // pythonRuntimeManager / commandGuard。
+        // 浏览器能力补全（PR #99）在 develop 19 参数基础上追加 ssrfGuard 与 interactiveElementIndexer；
+        // Code Execution Runtime（Task 13）追加 pythonRuntimeManager 与 commandGuard。
         provider = new InfraToolProvider(
                 properties,
                 webSearchConfigProvider,
@@ -56,7 +58,8 @@ class InfraToolProviderTest {
                 workspaceResolver,
                 null, null, null,
                 com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
-                indexer);
+                indexer,
+                null, null);
     }
 
     @Test

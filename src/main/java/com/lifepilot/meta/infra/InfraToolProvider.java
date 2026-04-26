@@ -34,7 +34,9 @@ import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
+import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
@@ -80,6 +82,8 @@ public class InfraToolProvider {
     @Nullable private final SkillPathWhitelist skillPathWhitelist;
     private final SsrfGuard ssrfGuard;
     private final InteractiveElementIndexer interactiveElementIndexer;
+    @Nullable private final PythonRuntimeManager pythonRuntimeManager;
+    @Nullable private final CommandGuard commandGuard;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -101,7 +105,9 @@ public class InfraToolProvider {
                              @Nullable ChatSessionRepository chatSessionRepository,
                              @Nullable SkillPathWhitelist skillPathWhitelist,
                              SsrfGuard ssrfGuard,
-                             InteractiveElementIndexer interactiveElementIndexer) {
+                             InteractiveElementIndexer interactiveElementIndexer,
+                             @Nullable PythonRuntimeManager pythonRuntimeManager,
+                             @Nullable CommandGuard commandGuard) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -123,6 +129,8 @@ public class InfraToolProvider {
         this.skillPathWhitelist = skillPathWhitelist;
         this.ssrfGuard = ssrfGuard;
         this.interactiveElementIndexer = interactiveElementIndexer;
+        this.pythonRuntimeManager = pythonRuntimeManager;
+        this.commandGuard = commandGuard;
     }
 
     /**
@@ -213,7 +221,8 @@ public class InfraToolProvider {
             kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager);
         }
         var codeToolProvider = new CodeToolProvider(
-                properties, sandboxSessionManager, codeValidator, sandboxRepository, kernelManager);
+                properties, sandboxSessionManager, codeValidator, sandboxRepository,
+                kernelManager, pythonRuntimeManager, commandGuard);
         totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
 
         // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册

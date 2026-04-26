@@ -4,7 +4,9 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
+import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
@@ -23,6 +25,10 @@ import java.util.Map;
  *
  * <p>管理 {@code code.execute} 工具，支持一次性沙箱和持久内核两种模式。</p>
  *
+ * <p>注入捆绑 Python 运行时管理器与命令护栏，传递给 {@link CodeExecuteToolExecutor}：
+ * runtimeManager 让 execute() 入口校验运行时就绪状态；commandGuard 在 process / kernel
+ * 路径执行前阻断 HARDLINE / DANGEROUS 命令。</p>
+ *
  * @author zsg
  * @since 2026-04-07
  */
@@ -37,17 +43,25 @@ public class CodeToolProvider {
     private final SandboxRepository sandboxRepository;
     @Nullable
     private final PersistentKernelManager kernelManager;
+    @Nullable
+    private final PythonRuntimeManager runtimeManager;
+    @Nullable
+    private final CommandGuard commandGuard;
 
     public CodeToolProvider(MetaProperties properties,
                             @Nullable SandboxSessionManager sandboxSessionManager,
                             @Nullable CodeValidator codeValidator,
                             @Nullable SandboxRepository sandboxRepository,
-                            @Nullable PersistentKernelManager kernelManager) {
+                            @Nullable PersistentKernelManager kernelManager,
+                            @Nullable PythonRuntimeManager runtimeManager,
+                            @Nullable CommandGuard commandGuard) {
         this.properties = properties;
         this.sandboxSessionManager = sandboxSessionManager;
         this.codeValidator = codeValidator;
         this.sandboxRepository = sandboxRepository;
         this.kernelManager = kernelManager;
+        this.runtimeManager = runtimeManager;
+        this.commandGuard = commandGuard;
     }
 
     /**
@@ -57,7 +71,8 @@ public class CodeToolProvider {
      */
     public List<BuiltinTool> buildCodeTools() {
         var executor = new CodeExecuteToolExecutor(
-                properties, sandboxSessionManager, codeValidator, sandboxRepository, kernelManager);
+                properties, sandboxSessionManager, codeValidator, sandboxRepository,
+                kernelManager, runtimeManager, commandGuard);
         return List.of(buildCodeExecuteTool(executor));
     }
 

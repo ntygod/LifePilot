@@ -186,17 +186,6 @@ public final class ProcessBooter implements SandboxBooter {
     }
 
     /**
-     * 返回当前 ProcessBooter 关联的 {@link PythonRuntimeManager}。
-     *
-     * <p>仅供 {@link com.lifepilot.sandbox.session.SandboxSessionManager} 在以模板方式
-     * 派生新会话 booter 时复用同一个 runtimeManager 实例，避免重复 new 导致 installingState 等
-     * 共享状态分裂。</p>
-     */
-    public PythonRuntimeManager runtimeManager() {
-        return runtimeManager;
-    }
-
-    /**
      * 按语言构建执行命令。
      *
      * <p>Python 强制走 {@link PythonRuntimeManager#getPythonExecutable()} 提供的捆绑路径；

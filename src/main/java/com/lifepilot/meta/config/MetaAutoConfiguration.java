@@ -37,7 +37,9 @@ import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.project.context.ProjectContextResolver;
+import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.skill.MarkdownSkillParser;
@@ -141,8 +143,15 @@ public class MetaAutoConfiguration {
                                         @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
                                         @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist,
                                         SsrfGuard ssrfGuard,
-                                        InteractiveElementIndexer interactiveElementIndexer) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler, notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher, channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository, chatSessionRepository, skillPathWhitelist, ssrfGuard, interactiveElementIndexer);
+                                        InteractiveElementIndexer interactiveElementIndexer,
+                                        @Nullable PythonRuntimeManager pythonRuntimeManager,
+                                        @Nullable CommandGuard commandGuard) {
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator,
+                sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler,
+                notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher,
+                channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository,
+                chatSessionRepository, skillPathWhitelist, ssrfGuard, interactiveElementIndexer,
+                pythonRuntimeManager, commandGuard);
     }
 
     /**

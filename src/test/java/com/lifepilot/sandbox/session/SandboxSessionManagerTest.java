@@ -48,12 +48,13 @@ class SandboxSessionManagerTest {
         when(sharedScheduler.cleanup()).thenReturn(cleanupExecutor);
 
         // 使用 ProcessBooter 作为模板（Task 11 起 ProcessBooter 强依赖 PythonRuntimeManager，
-        // 桩出 Ready 状态避免依赖真实捆绑运行时；SandboxSessionManager 派生会话时会复用同一 mock 实例）
+        // 桩出 Ready 状态避免依赖真实捆绑运行时；SandboxSessionManager 直接注入同一 mock 实例，
+        // 派生会话时复用，保证 installingState 共享状态唯一）
         var runtimeManager = mock(PythonRuntimeManager.class);
         when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
         SandboxBooter template = new ProcessBooter(config, runtimeManager);
         var workspaceResolver = new WorkspaceResolver(null, "");
-        manager = new SandboxSessionManager(config, template, sharedScheduler, workspaceResolver);
+        manager = new SandboxSessionManager(config, template, sharedScheduler, workspaceResolver, runtimeManager);
     }
 
     @AfterEach
