@@ -49,6 +49,14 @@ export interface RuntimeStatus {
 }
 
 /**
+ * 通用 ok 响应 DTO —— 后端 install/uninstall/disable/enable 统一返回
+ * {@code ApiResponse.success(Map.of("ok", true))}，data 为 {ok: true}。
+ */
+export interface OkResponse {
+  ok: boolean
+}
+
+/**
  * 统一 fetch 封装：强制要求后端走 ApiResponse<T> 包装（{code, message, data}），
  * 自动解包 .data；204 / 空 body / 非 JSON 三种边界单独处理。
  */
@@ -111,16 +119,16 @@ export const runtimeApi = {
    * {@link installProgressUrl}）推送，前端调用方应在 install 之后立即
    * 订阅进度流以避免错过事件。
    */
-  install: () => request<void>('/runtime/python/install', { method: 'POST' }),
+  install: () => request<OkResponse>('/runtime/python/install', { method: 'POST' }),
 
   /** 卸载运行时（删除文件，状态回到 NOT_INSTALLED）。 */
-  uninstall: () => request<void>('/runtime/python/uninstall', { method: 'POST' }),
+  uninstall: () => request<OkResponse>('/runtime/python/uninstall', { method: 'POST' }),
 
   /** 禁用运行时（保留文件，状态切到 DISABLED；不影响磁盘占用）。 */
-  disable: () => request<void>('/runtime/python/disable', { method: 'POST' }),
+  disable: () => request<OkResponse>('/runtime/python/disable', { method: 'POST' }),
 
   /** 启用运行时（从 DISABLED 切回 READY）。 */
-  enable: () => request<void>('/runtime/python/enable', { method: 'POST' }),
+  enable: () => request<OkResponse>('/runtime/python/enable', { method: 'POST' }),
 
   /**
    * 安装进度 SSE 流的完整 URL（含 origin 前缀），供 {@code EventSource} 直接消费。

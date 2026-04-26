@@ -16,6 +16,30 @@ import { ref, onUnmounted } from 'vue'
 import { runtimeApi, type RuntimeStatus } from '@/api/runtime'
 import { logger } from '@/utils/logger'
 
+/**
+ * 运行时状态 composable —— 查询 Python 运行时状态、触发安装、订阅 SSE 进度。
+ *
+ * <h3>error.value 语义</h3>
+ * <p>仅指**传输层错误**（网络断开 / refresh 调用失败 / 进度数据解析失败）。
+ * 业务失败原因（如下载超时、SHA-256 校验失败）请读 {@link status.value.reason}
+ * （当 status.value.status === 'INSTALL_FAILED' 时该字段含错误描述）。</p>
+ *
+ * <h3>调用方约定</h3>
+ * <p>本 composable 不在 onMounted 自动建连，调用方需在合适时机：
+ * <ul>
+ *   <li>调 {@link refresh} 拉取一次状态（通常在 onMounted）</li>
+ *   <li>调 {@link install} 启动安装（会自动 subscribeProgress）</li>
+ *   <li>调 {@link subscribeProgress} 单独订阅 SSE 进度（罕见，install 已包含）</li>
+ * </ul>
+ * 与 {@link useMcpStatusStream}（onMounted 自动 connect）的风格不同，因为 runtime
+ * 状态只在 INSTALLING 阶段才需要 SSE，平时拉一次足够。</p>
+ *
+ * <h3>install() 订阅竞态</h3>
+ * <p>install() 先 await POST 再 subscribeProgress，理论上若安装极快（本地缓存命中），
+ * 后端可能在 HTTP 200 返回前已 emit 完所有 progress 事件，前端订阅时已错过。
+ * 生产环境 250MB 下载不会秒完成，可忽略；如未来需要兜底可在 install Promise resolve
+ * 后启动一次性 setTimeout(refresh, 1000)。</p>
+ */
 export function useRuntimeStatus() {
   const status = ref<RuntimeStatus | null>(null)
   const error = ref<string | null>(null)
@@ -55,6 +79,7 @@ export function useRuntimeStatus() {
         }
       } catch (err) {
         logger.error('运行时安装进度解析失败:', err)
+        error.value = '进度数据解析失败，请刷新查看最终状态'
       }
     })
 
@@ -75,7 +100,11 @@ export function useRuntimeStatus() {
     })
 
     eventSource.onerror = () => {
-      // 连接断开（网络抖动 / 后端重启）— 关闭流，让上层决定是否重连
+      // EventSource 关闭时（包括服务端 complete）也会触发 onerror，readyState=CLOSED；
+      // 仅在连接还在 CONNECTING（重连中，意味着原连接被异常打断）时才视作真实网络问题
+      if (eventSource?.readyState === EventSource.CONNECTING) {
+        error.value = '安装进度连接已断开，请刷新查看最终状态'
+      }
       eventSource?.close()
       eventSource = null
     }
