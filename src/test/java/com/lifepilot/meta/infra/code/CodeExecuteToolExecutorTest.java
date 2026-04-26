@@ -288,6 +288,13 @@ class CodeExecuteToolExecutorTest {
     //  CommandGuard 阻断
     // ─────────────────────────────────────────────
 
+    /**
+     * HARDLINE 命令应被 CommandGuard 永久阻断。
+     *
+     * <p><b>测试设计</b>：使用真实 {@link CommandGuard} 实例（非 mock），传入真实
+     * {@link SandboxConfigProperties}，从而联动验证 CodeExecuteToolExecutor →
+     * CommandGuard.check → HardlineRules 这条规则匹配链——任何环节断裂都会暴露。</p>
+     */
     @Test
     void HARDLINE命令被CommandGuard永久阻断() {
         var runtimeManager = mock(PythonRuntimeManager.class);

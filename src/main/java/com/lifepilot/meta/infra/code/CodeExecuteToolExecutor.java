@@ -178,6 +178,12 @@ public class CodeExecuteToolExecutor {
                     String errorMsg = buildGuardErrorMessage(guardResult);
                     log.warn("持久内核命令被护栏阻断: kernelId={}, decision={}, rule={}",
                             kernelIdOpt.get(), guardResult.decision(), guardResult.matchedRule());
+                    // 与沙箱路径对称：guard 阻断写 REJECTED 审计，便于运维事后排查"谁通过 kernelId 试图执行什么"
+                    String guardCodeHash = sha256(code);
+                    Language.fromString(languageStr).ifPresent(lang ->
+                            persistRecord(kernelIdOpt.get(), lang, guardCodeHash, code.length(),
+                                    "kernel", false, 1,
+                                    null, null, null, null, "REJECTED", errorMsg));
                     return ToolResult.error(errorMsg);
                 }
             }
@@ -394,12 +400,17 @@ public class CodeExecuteToolExecutor {
      * 根据 GuardResult 决策类型生成友好错误信息。
      *
      * <p>HARDLINE 强调"不可恢复"，DANGEROUS 强调"危险操作"，让上层 LLM 与用户能区分严重程度。</p>
+     *
+     * <p>调用契约：本方法仅在 {@link GuardResult#isBlocked()} 为 true 时被调用，
+     * 因此 {@code APPROVED} 分支永不可达；若触达说明 {@code isBlocked()} 行为反常，
+     * 抛出 {@link IllegalStateException} 让故障早暴露而非吞掉返回兜底字符串。</p>
      */
     private static String buildGuardErrorMessage(GuardResult guardResult) {
         return switch (guardResult.decision()) {
             case BLOCKED_HARDLINE -> "此命令被永久阻断（不可恢复操作）：" + guardResult.description();
             case BLOCKED_DANGEROUS -> "此命令被拒绝执行（危险操作）：" + guardResult.description();
-            case APPROVED -> "命令审查失败";
+            case APPROVED -> throw new IllegalStateException(
+                    "buildGuardErrorMessage 不应处理 APPROVED 结果（仅在 isBlocked() 后调用）: " + guardResult);
         };
     }
 
