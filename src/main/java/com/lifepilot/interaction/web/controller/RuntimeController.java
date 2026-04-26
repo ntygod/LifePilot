@@ -1,0 +1,172 @@
+package com.lifepilot.interaction.web.controller;
+
+import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import com.lifepilot.interaction.web.model.ApiResponse;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeInstallProgressEmitter;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
+
+/**
+ * 捆绑 Python 运行时管理 REST 端点。
+ *
+ * <p>提供 6 个端点：状态查询、安装、卸载、禁用、启用、SSE 进度订阅。</p>
+ *
+ * <p><b>并发策略</b>：{@link #install()} 通过 {@link AtomicBoolean#compareAndSet} 保证
+ * 同一时刻只允许一个安装任务进行中；并发请求返回 409。任务完成（无论成功失败）
+ * 都会通过 {@code whenComplete} 释放标志位。</p>
+ *
+ * <p><b>启用语义</b>：{@link #enable()} 后若状态为 {@link RuntimeStatus.NotInstalled}
+ * （文件缺失），自动转入 install 流程；其他状态仅切换内存标志即可。</p>
+ *
+ * @author zsg
+ * @since 2026-04-26
+ */
+@RestController
+@RequestMapping("/api/runtime")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
+public class RuntimeController {
+
+    private static final Logger log = LoggerFactory.getLogger(RuntimeController.class);
+
+    private final PythonRuntimeManager manager;
+    private final RuntimeInstallProgressEmitter emitter;
+
+    /** 同时只允许一个 install 任务进行中。 */
+    private final AtomicBoolean installInProgress = new AtomicBoolean(false);
+
+    public RuntimeController(PythonRuntimeManager manager, RuntimeInstallProgressEmitter emitter) {
+        this.manager = manager;
+        this.emitter = emitter;
+    }
+
+    /**
+     * 查询当前 Python 运行时状态。
+     *
+     * <p>响应字段随状态不同而变化：
+     * <ul>
+     *   <li>{@code READY} → 含 version, diskBytes</li>
+     *   <li>{@code INSTALLING} → 含 phase, bytesDownloaded, totalBytes, percent</li>
+     *   <li>{@code INSTALL_FAILED} → 含 reason</li>
+     *   <li>{@code NOT_INSTALLED} / {@code DISABLED} → 仅 status</li>
+     * </ul></p>
+     */
+    @GetMapping("/python/status")
+    public ApiResponse<Map<String, Object>> status() {
+        return ApiResponse.ok(toMap(manager.checkStatus()));
+    }
+
+    /**
+     * 触发异步安装；并发请求返回 409。
+     *
+     * <p>本端点立即返回，真正的安装进度通过 {@link #installProgress()} SSE 端点推送。</p>
+     */
+    @PostMapping("/python/install")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> install() {
+        if (!installInProgress.compareAndSet(false, true)) {
+            log.warn("拒绝并发安装请求：当前已有任务进行中");
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.error(HttpStatus.CONFLICT.value(), "已有安装任务进行中"));
+        }
+        manager.install(emitter).whenComplete((v, e) -> {
+            installInProgress.set(false);
+            if (e != null) {
+                log.error("install 任务异常结束: {}", e.getMessage(), e);
+            }
+        });
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true)));
+    }
+
+    /**
+     * 卸载 Python 运行时（递归删除安装目录）。
+     *
+     * @throws IOException 删除目录失败时由全局异常处理器转 500
+     */
+    @PostMapping("/python/uninstall")
+    public ApiResponse<Map<String, Object>> uninstall() throws IOException {
+        manager.uninstall();
+        return ApiResponse.ok(Map.of("ok", true));
+    }
+
+    /**
+     * 禁用捆绑 Python — 文件保留，{@link RuntimeStatus} 切到 DISABLED。
+     */
+    @PostMapping("/python/disable")
+    public ApiResponse<Map<String, Object>> disable() {
+        manager.disable();
+        return ApiResponse.ok(Map.of("ok", true));
+    }
+
+    /**
+     * 启用捆绑 Python；如果检测到未安装（文件缺失），自动触发 install。
+     */
+    @PostMapping("/python/enable")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> enable() {
+        manager.enable();
+        if (manager.checkStatus() instanceof RuntimeStatus.NotInstalled) {
+            log.info("启用后检测到未安装，自动触发 install");
+            return install();
+        }
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("ok", true)));
+    }
+
+    /**
+     * 订阅安装进度 SSE 流。事件名：{@code progress}（Installing 状态快照）/ {@code failed}（失败原因）。
+     */
+    @GetMapping(path = "/install/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter installProgress() {
+        return emitter.subscribe();
+    }
+
+    /**
+     * 把 sealed {@link RuntimeStatus} 序列化为前端契约的扁平 DTO。
+     *
+     * <p>各状态字段集合：
+     * <ul>
+     *   <li>NotInstalled / Disabled → {@code status} 一个字段</li>
+     *   <li>Installing → status, phase, bytesDownloaded, totalBytes, percent</li>
+     *   <li>Ready → status, version, diskBytes</li>
+     *   <li>InstallFailed → status, reason</li>
+     * </ul>
+     * </p>
+     */
+    private Map<String, Object> toMap(RuntimeStatus status) {
+        var map = new LinkedHashMap<String, Object>();
+        switch (status) {
+            case RuntimeStatus.NotInstalled n -> map.put("status", "NOT_INSTALLED");
+            case RuntimeStatus.Disabled d -> map.put("status", "DISABLED");
+            case RuntimeStatus.Installing i -> {
+                map.put("status", "INSTALLING");
+                map.put("phase", i.phase());
+                map.put("bytesDownloaded", i.bytesDownloaded());
+                map.put("totalBytes", i.totalBytes());
+                map.put("percent", i.percent());
+            }
+            case RuntimeStatus.Ready r -> {
+                map.put("status", "READY");
+                map.put("version", r.version());
+                map.put("diskBytes", r.diskBytes());
+            }
+            case RuntimeStatus.InstallFailed f -> {
+                map.put("status", "INSTALL_FAILED");
+                map.put("reason", f.reason());
+            }
+        }
+        return map;
+    }
+}
