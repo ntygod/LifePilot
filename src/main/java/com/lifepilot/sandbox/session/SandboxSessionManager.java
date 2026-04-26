@@ -19,6 +19,7 @@ import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.util.SandboxUtils;
 
 /**
@@ -47,7 +48,8 @@ public class SandboxSessionManager {
      * 创建会话管理器并启动定时清理任务。
      *
      * @param config            沙箱配置
-     * @param booterTemplate    沙箱启动器模板，用于确定新会话的 booter 类型
+     * @param booterTemplate    沙箱启动器模板，用于确定新会话的 booter 类型；
+     *                          {@link ProcessBooter} 模板还会被复用其内部 {@link PythonRuntimeManager} 实例
      * @param sharedScheduler   共享调度器
      * @param workspaceResolver 工作目录解析器
      */
@@ -194,7 +196,8 @@ public class SandboxSessionManager {
      */
     private SandboxBooter createBooter() {
         return switch (booterTemplate) {
-            case ProcessBooter _ -> new ProcessBooter(config);
+            // 复用模板的 runtimeManager，避免每个会话独立 new 一份导致状态不一致
+            case ProcessBooter template -> new ProcessBooter(config, template.runtimeManager());
             case DockerBooter _ -> new DockerBooter(config);
         };
     }

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -12,24 +13,37 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
 import com.lifepilot.sandbox.model.ExecutionRequest;
 import com.lifepilot.sandbox.model.ExecutionResult;
 import com.lifepilot.sandbox.model.ExecutionState;
 import com.lifepilot.sandbox.model.Language;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link ProcessBooter} 单元测试。
  *
- * <p>需要本地 Node.js 和 Python 环境，CI 无对应运行时时自动跳过。</p>
+ * <p>需要本地 Node.js 和 Python 环境，CI 无对应运行时时自动跳过。
+ * {@link PythonRuntimeManager} 通过 Mockito 桩出 Ready 状态并返回系统 {@code python} 路径，
+ * 避免依赖真实捆绑运行时。</p>
  *
  * @author zsg
  * @since 2026-03-01
  */
 @EnabledIf("runtimesAvailable")
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ProcessBooterTest {
 
     /** 检查 node 和 python 命令是否可用，不可用时整个测试类跳过。 */
@@ -46,6 +60,9 @@ class ProcessBooterTest {
     @TempDir
     Path tempDir;
 
+    @Mock
+    private PythonRuntimeManager runtimeManager;
+
     private SandboxConfigProperties config;
     private ProcessBooter booter;
 
@@ -59,7 +76,12 @@ class ProcessBooterTest {
                 "shell", "bash"
         ));
         config.setRuntimePaths(runtimePaths);
-        booter = new ProcessBooter(config);
+
+        // 测试不依赖真实捆绑 Python，桩出 Ready 状态 + 系统 python 路径
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
+        when(runtimeManager.getPythonExecutable()).thenReturn(Paths.get("python"));
+
+        booter = new ProcessBooter(config, runtimeManager);
         booter.boot(tempDir).join();
     }
 
@@ -79,12 +101,59 @@ class ProcessBooterTest {
     }
 
     @Test
-    void 构建命令应直接调用运行时避免Shell包装() {
+    void 构建Python命令使用捆绑运行时路径() {
+        var scriptFile = tempDir.resolve("direct-run.py");
+
+        var command = booter.buildCommand(Language.PYTHON, scriptFile);
+
+        assertThat(command).containsExactly("python", scriptFile.toString());
+    }
+
+    @Test
+    void 构建JavaScript命令读取runtimePaths配置() {
         var scriptFile = tempDir.resolve("direct-run.js");
 
-        var command = booter.buildCommand("node", scriptFile);
+        var command = booter.buildCommand(Language.JAVASCRIPT, scriptFile);
 
         assertThat(command).containsExactly("node", scriptFile.toString());
+    }
+
+    @Test
+    void 构建Shell命令按OS选解释器() {
+        var scriptFile = tempDir.resolve("direct-run.sh");
+
+        var command = booter.buildCommand(Language.SHELL, scriptFile);
+
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        String expectedShell = isWindows ? "cmd" : "bash";
+        assertThat(command).containsExactly(expectedShell, scriptFile.toString());
+    }
+
+    @Test
+    void Python运行时未就绪时boot失败() {
+        // 单独构造一个 booter 走未就绪分支，避免污染 setUp 中已 boot 的 booter
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.NotInstalled());
+        var freshBooter = new ProcessBooter(config, runtimeManager);
+
+        var future = freshBooter.boot(tempDir);
+
+        assertThat(future).isCompletedExceptionally();
+        assertThatThrownBy(future::join)
+                .hasCauseInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Python 运行时未就绪");
+    }
+
+    @Test
+    void Python运行时已禁用时boot失败() {
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Disabled());
+        var freshBooter = new ProcessBooter(config, runtimeManager);
+
+        var future = freshBooter.boot(tempDir);
+
+        assertThat(future).isCompletedExceptionally();
+        assertThatThrownBy(future::join)
+                .hasCauseInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Python 运行时未就绪");
     }
 
     @Test

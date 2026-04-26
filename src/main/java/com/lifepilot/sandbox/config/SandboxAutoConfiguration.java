@@ -16,6 +16,7 @@ import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 
@@ -54,7 +55,8 @@ public class SandboxAutoConfiguration {
     SandboxBooter sandboxBooter(SandboxConfigProperties config) {
         String booterType = config.getBooter();
         SandboxBooter booter = switch (booterType) {
-            case "process" -> new ProcessBooter(config);
+            // Task 13 会把 PythonRuntimeManager 抽成独立 @Bean 并通过参数注入；本任务先就地构造避免破坏编译
+            case "process" -> new ProcessBooter(config, new PythonRuntimeManager(config));
             case "docker" -> {
                 var dockerBooter = new DockerBooter(config);
                 if (!dockerBooter.available()) {
