@@ -2,6 +2,8 @@ package com.lifepilot.meta.infra.code.kernel;
 
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,18 +34,38 @@ public class PersistentKernelManager {
     private final MetaProperties.Infra.Kernel config;
     @Nullable
     private final TmuxSessionManager tmuxSessionManager;
+    /** 捆绑 Python 运行时管理器；非空时 Python 内核改用 ~/.zhiwei/python/ 路径并享用预装数据科学栈。 */
+    @Nullable
+    private final PythonRuntimeManager runtimeManager;
     private final ScheduledExecutorService cleanupScheduler;
 
     /**
-     * 创建持久内核管理器。
+     * 创建持久内核管理器（兼容构造器）— 等价于 runtimeManager=null。
+     *
+     * <p>主要用于单元测试或纯属性绑定场景。生产路径请使用三参构造器，
+     * 让 Python 内核与 sandbox 一致使用捆绑 Python。</p>
      *
      * @param config             内核配置
      * @param tmuxSessionManager tmux 会话管理器（Shell 内核使用，可能为 null）
      */
     public PersistentKernelManager(MetaProperties.Infra.Kernel config,
                                    @Nullable TmuxSessionManager tmuxSessionManager) {
+        this(config, tmuxSessionManager, null);
+    }
+
+    /**
+     * 创建持久内核管理器。
+     *
+     * @param config             内核配置
+     * @param tmuxSessionManager tmux 会话管理器（Shell 内核使用，可能为 null）
+     * @param runtimeManager     捆绑 Python 运行时管理器（可能为 null，缺失时 Python 内核回退到 config.pythonRuntime）
+     */
+    public PersistentKernelManager(MetaProperties.Infra.Kernel config,
+                                   @Nullable TmuxSessionManager tmuxSessionManager,
+                                   @Nullable PythonRuntimeManager runtimeManager) {
         this.config = config;
         this.tmuxSessionManager = tmuxSessionManager;
+        this.runtimeManager = runtimeManager;
         // ScheduledExecutorService 的调度线程必须使用平台线程，不能用虚拟线程
         this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "kernel-cleanup");
@@ -55,7 +77,8 @@ public class PersistentKernelManager {
         cleanupScheduler.scheduleAtFixedRate(this::cleanupIdleKernels,
                 config.getCleanupIntervalSeconds(), config.getCleanupIntervalSeconds(), TimeUnit.SECONDS);
 
-        log.info("持久内核管理器已启动: maxConcurrent={}, ttlMinutes={}", config.getMaxConcurrentKernels(), config.getTtlMinutes());
+        log.info("持久内核管理器已启动: maxConcurrent={}, ttlMinutes={}, bundledPython={}",
+                config.getMaxConcurrentKernels(), config.getTtlMinutes(), runtimeManager != null);
     }
 
     /**
@@ -203,14 +226,38 @@ public class PersistentKernelManager {
 
     /**
      * 根据语言创建对应的内核实例。
+     *
+     * <p>Python 内核优先使用捆绑 Python 运行时（{@code ~/.zhiwei/python/}），
+     * 与 sandbox 路径语义保持一致并复用预装数据科学栈（pandas / numpy / matplotlib 等）。
+     * 当 {@link #runtimeManager} 为 null 时（单元测试或纯属性绑定场景）回退到 {@code config.pythonRuntime}。</p>
      */
     private PersistentKernel createKernel(String kernelId, String language) {
         return switch (language.toLowerCase()) {
-            case "python" -> new PythonKernel(kernelId, config.getPythonRuntime(), config.getMaxOutputChars());
+            case "python" -> new PythonKernel(kernelId, resolvePythonRuntime(), config.getMaxOutputChars());
             case "javascript", "js" -> new JavaScriptKernel(kernelId, config.getNodeRuntime(), config.getMaxOutputChars());
             case "shell", "bash", "sh" -> new ShellKernel(kernelId, tmuxSessionManager, config.getMaxOutputChars());
             default -> throw new IllegalStateException("不支持的内核语言: " + language);
         };
+    }
+
+    /**
+     * 解析 Python 内核使用的可执行文件路径。
+     *
+     * <p>注入了 {@link PythonRuntimeManager} 时强制使用捆绑 Python，并在创建前再做一次
+     * 状态校验（防御性双层检查 — 即使 CodeExecuteToolExecutor 入口已校验，
+     * 直接通过 {@code code.kernel} 工具或测试调用也能尽早 fail）。</p>
+     *
+     * <p>未注入 runtimeManager 时回退到配置项，保留既有行为以兼容单元测试。</p>
+     */
+    private String resolvePythonRuntime() {
+        if (runtimeManager != null) {
+            var status = runtimeManager.checkStatus();
+            if (!(status instanceof RuntimeStatus.Ready)) {
+                throw new IllegalStateException("Python 运行时未就绪: " + status);
+            }
+            return runtimeManager.getPythonExecutable().toString();
+        }
+        return config.getPythonRuntime();
     }
 
     /**

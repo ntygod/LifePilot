@@ -214,11 +214,11 @@ public class InfraToolProvider {
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 
-        // 代码执行工具
+        // 代码执行工具 — kernel 与 sandbox 共享同一捆绑 Python 路径
         PersistentKernelManager kernelManager = null;
         var kernelConfig = properties.getInfra().getKernel();
         if (kernelConfig.isEnabled()) {
-            kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager);
+            kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager, pythonRuntimeManager);
         }
         var codeToolProvider = new CodeToolProvider(
                 properties, sandboxSessionManager, codeValidator, sandboxRepository,
