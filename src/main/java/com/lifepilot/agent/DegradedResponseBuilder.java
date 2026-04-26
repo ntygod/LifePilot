@@ -89,7 +89,8 @@ public final class DegradedResponseBuilder {
         return "";
     }
 
-    private static final ObjectMapper PRODUCT_MAPPER = new ObjectMapper();
+    /** 与 {@code ContextAssembler.SHARED_MAPPER} 命名风格一致；类内复用避免跨包依赖。 */
+    private static final ObjectMapper SHARED_MAPPER = new ObjectMapper();
 
     private static String summarizeSuccessfulTools(List<ReactStep> steps) {
         Set<String> entries = new LinkedHashSet<>();
@@ -123,7 +124,7 @@ public final class DegradedResponseBuilder {
             return "";
         }
         try {
-            Object parsed = PRODUCT_MAPPER.readValue(output, Object.class);
+            Object parsed = SHARED_MAPPER.readValue(output, Object.class);
             if (!(parsed instanceof Map<?, ?> map)) {
                 return "";
             }

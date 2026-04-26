@@ -1458,13 +1458,21 @@ public class ContextAssembler {
     private static String renderSkillList(List<SkillCatalogEntry> entries) {
         var sb = new StringBuilder();
         for (SkillCatalogEntry e : entries) {
+            // name 受 SkillDefinitionValidator 规范约束（仅 a-z0-9.-），无需 escape；
+            // description 是自由文本，加防御性 escape 避免误解析为标签或属性。
             sb.append("<skill name=\"").append(e.name()).append("\">")
                     .append("<description>")
-                    .append(stripKeywordList(e.description()))
+                    .append(escapeXml(stripKeywordList(e.description())))
                     .append("</description>")
                     .append("</skill>\n");
         }
         return sb.toString().stripTrailing();
+    }
+
+    /** XML 文本节点最小转义：& < > 转义；引号在文本节点中无需转义。 */
+    static String escapeXml(@Nullable String text) {
+        if (text == null || text.isEmpty()) return "";
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /**
