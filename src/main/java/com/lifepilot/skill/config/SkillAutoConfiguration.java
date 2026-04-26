@@ -233,4 +233,33 @@ public class SkillAutoConfiguration {
             }
         }
     }
+
+    /**
+     * 终态扫描 —— 必须晚于 {@code BuiltinToolRegistrar.registerAll}（HIGHEST_PRECEDENCE+100），
+     * 否则 skill.load / code.kernel / channel.feishu 等 BuiltinTool 尚未注册会误报"未注册"。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    public void onSkillFinalValidation(ApplicationReadyEvent event) {
+        var ctx = event.getApplicationContext();
+        if (!ctx.containsBean("skillDefinitionValidator") || !ctx.containsBean("skillRegistry")) {
+            return;
+        }
+        try {
+            var validator = ctx.getBean(com.lifepilot.skill.registry.SkillDefinitionValidator.class);
+            var registry = ctx.getBean(com.lifepilot.skill.registry.SkillRegistry.class);
+            validator.markStartupComplete();
+            int definitionErrors = 0;
+            for (var def : registry.listAll()) {
+                var result = validator.validate(def);
+                if (!result.valid()) {
+                    definitionErrors++;
+                }
+            }
+            log.info("ApplicationReady: Skill 终态校验完成（definition 错误 skill={}；未注册工具见上方 WARN）",
+                    definitionErrors);
+        } catch (Exception e) {
+            log.warn("ApplicationReady: Skill 终态校验跳过: {}", e.getMessage());
+        }
+    }
 }

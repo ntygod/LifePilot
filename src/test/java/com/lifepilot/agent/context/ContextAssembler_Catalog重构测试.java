@@ -29,15 +29,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * ContextAssembler.buildSkillCatalog 测试 —— 扁平 markdown list + 按 query 关键词预筛 top-K。
+ * ContextAssembler.buildSkillCatalog 测试 —— XML 标签格式 + 全量列出，按 query 关键词排序。
  *
  * <p>覆盖点：
  * <ul>
  *   <li>只包含 enabled=true 的 skill（查 skills 表）</li>
- *   <li>按关键词命中度优先 + priority 兜底排序</li>
+ *   <li>按关键词命中度优先 + priority 兜底排序（命中 query 的排在前面，便于 LLM 优先注意）</li>
  *   <li>{@link SkillRequirementGate#satisfies(SkillRequires)} 为 false 时被过滤</li>
  *   <li>空目录 / 注册表未命中时返回空字符串，不调用模板渲染</li>
- *   <li>超过 8 条时显示"剩余 X 个"提示</li>
+ *   <li>全量列出（不截断），无"剩余 X 个"提示</li>
  * </ul>
  *
  * @author zsg
@@ -195,7 +195,7 @@ class ContextAssembler_Catalog重构测试 {
     }
 
     @Test
-    void 超过上限时应只列top8并提示剩余数() {
+    void 全量列出所有skill不截断() {
         var skillRegistry = mock(SkillRegistry.class);
         var installationRepository = mock(SkillInstallationRepository.class);
 
@@ -210,10 +210,64 @@ class ContextAssembler_Catalog重构测试 {
 
         String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
 
-        // 应当只出现 8 个 skill
-        long lineCount = entries.lines().filter(l -> l.startsWith("- skill")).count();
-        assertThat(lineCount).isEqualTo(8);
-        assertThat(entries).contains("另有 4 个技能未列出");
+        // 12 个 skill 全部列出（XML 格式）
+        long lineCount = entries.lines().filter(l -> l.startsWith("<skill name=\"skill")).count();
+        assertThat(lineCount).isEqualTo(12);
+        // 不再有"剩余 X 个"提示（删除了 find-skills 兜底入口）
+        assertThat(entries).doesNotContain("另有").doesNotContain("未列出");
+    }
+
+    @Test
+    void description中的关键词段应在渲染时被剥离() {
+        var skillRegistry = mock(SkillRegistry.class);
+        var installationRepository = mock(SkillInstallationRepository.class);
+
+        when(installationRepository.findAllByEnabled(true))
+                .thenReturn(List.of(buildInstallation("research")));
+        when(skillRegistry.find("research")).thenReturn(Optional.of(buildSkill(
+                "research",
+                "当用户要做多源搜索时使用。关键词：调研、查资料、对比分析。代码搜索用 code-assistant。",
+                SkillPriority.NORMAL)));
+
+        String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
+
+        assertThat(entries)
+                .contains("当用户要做多源搜索时使用。")
+                .contains("代码搜索用 code-assistant")
+                .doesNotContain("关键词")
+                .doesNotContain("调研、查资料");
+    }
+
+    @Test
+    void description无关键词段时应保持原文不变() {
+        var skillRegistry = mock(SkillRegistry.class);
+        var installationRepository = mock(SkillInstallationRepository.class);
+
+        when(installationRepository.findAllByEnabled(true))
+                .thenReturn(List.of(buildInstallation("a")));
+        when(skillRegistry.find("a")).thenReturn(Optional.of(buildSkill(
+                "a", "纯描述，没有关键词段。", SkillPriority.NORMAL)));
+
+        String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
+
+        assertThat(entries).contains("纯描述，没有关键词段。");
+    }
+
+    @Test
+    void XML标签格式包含name与description() {
+        var skillRegistry = mock(SkillRegistry.class);
+        var installationRepository = mock(SkillInstallationRepository.class);
+
+        when(installationRepository.findAllByEnabled(true))
+                .thenReturn(List.of(buildInstallation("alpha")));
+        when(skillRegistry.find("alpha")).thenReturn(Optional.of(
+                buildSkill("alpha", "alpha 描述文本", SkillPriority.NORMAL)));
+
+        String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
+
+        assertThat(entries).contains("<skill name=\"alpha\">")
+                .contains("<description>alpha 描述文本</description>")
+                .contains("</skill>");
     }
 
     // ───────────────────────────── 辅助 ─────────────────────────────

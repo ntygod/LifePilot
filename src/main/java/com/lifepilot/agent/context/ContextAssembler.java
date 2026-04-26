@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.datastore.model.FieldHint;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -300,10 +301,15 @@ public class ContextAssembler {
                     ? CompletableFuture.completedFuture("")
                     : CompletableFuture.supplyAsync(
                         () -> safeGetUserProfile(state.goal(), userProfileFilter), VIRTUAL_EXECUTOR);
-            var experiencesFuture = mediaPlaceholder
+            // 简单任务跳过：state.steps() 中无任何 ToolCall 时，说明还在第一轮探索阶段，
+            // 经验注入提供不了价值（query 还没具体到工具维度），直接跳过节省 token。
+            Set<String> recentToolIds = collectRecentToolIds(state);
+            boolean skipExperiences = mediaPlaceholder || recentToolIds.isEmpty();
+            var experiencesFuture = skipExperiences
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
                     : CompletableFuture.supplyAsync(
-                        () -> safeRetrieveExperiences(state.goal(), experienceFilter), VIRTUAL_EXECUTOR);
+                        () -> safeRetrieveExperiences(state.goal(), experienceFilter, recentToolIds),
+                        VIRTUAL_EXECUTOR);
             var memoryFuture = mediaPlaceholder
                     ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
                     : CompletableFuture.supplyAsync(
@@ -441,6 +447,20 @@ public class ContextAssembler {
         );
     }
 
+    /** 提取 state.steps() 中已经使用过的工具 ID 集合，用于经验检索的工具维度加权与门槛判断。 */
+    static Set<String> collectRecentToolIds(@Nullable ReactAgentState state) {
+        if (state == null || state.steps() == null) {
+            return Set.of();
+        }
+        Set<String> ids = new java.util.LinkedHashSet<>();
+        for (var step : state.steps()) {
+            if (step instanceof ReactStep.ToolCall call && call.toolId() != null && !call.toolId().isBlank()) {
+                ids.add(call.toolId());
+            }
+        }
+        return Set.copyOf(ids);
+    }
+
     boolean isMediaPlaceholderQuery(@Nullable String goal) {
         if (goal == null || goal.isBlank()) {
             return true;
@@ -449,12 +469,20 @@ public class ContextAssembler {
         return trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() <= 20;
     }
 
-    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query) {
-        return safeRetrieveExperiences(query, MemoryReadFilter.agentExperience());
-    }
-
-    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query, MemoryReadFilter filter) {
-        if (semanticMemory == null || memoryProperties == null) {
+    /**
+     * 经验检索 —— 用 {@link HybridRetriever} 按 query 做语义检索（embedding + BM25 + 关键词三路）。
+     *
+     * <p>额外按 {@code recentToolIds} 做"工具维度加权"：
+     * 当前任务 transcript 中已使用过的工具与经验 metadata.toolsUsed 有交集时，
+     * fusedScore 加 0.2 boost，让"用同一工具的经验"优先注入。</p>
+     */
+    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query,
+                                                  MemoryReadFilter filter,
+                                                  Set<String> recentToolIds) {
+        if (semanticMemory == null || memoryProperties == null || hybridRetriever == null) {
+            return List.of();
+        }
+        if (query == null || query.isBlank()) {
             return List.of();
         }
         try {
@@ -463,42 +491,72 @@ public class ContextAssembler {
                 return List.of();
             }
 
-            List<TemporalEntity> experiences = semanticMemory.findCurrentByType(
-                    EntityType.EXPERIENCE,
-                    filter);
-            if (experiences.isEmpty()) {
+            int maxInjection = experience.getMaxInjectionCount();
+            // candidateCount 取较大值（10x）：hybridRetriever 不按 entityType 过滤，
+            // 候选里混合 FACT/PREFERENCE 等其他类型；候选数太小时 EXPERIENCE 可能整体被挤出。
+            int candidateCount = Math.max(maxInjection * 10, 20);
+            List<RetrievalResult> ranked = hybridRetriever.retrieve(
+                    query, candidateCount, RetrievalWeights.DEFAULT, filter);
+            // 仅保留 EXPERIENCE 类型（hybridRetriever 不限定 entityType，需后过滤）
+            ranked = ranked.stream()
+                    .filter(r -> EntityType.EXPERIENCE.name().equals(r.entityType()))
+                    .toList();
+            if (ranked.isEmpty()) {
                 return List.of();
             }
 
-            if (!experience.getIsolation().isCrossContextRetrieval()) {
-                experiences = experiences.stream()
-                        .filter(entity -> {
-                            Object executionContext = entity.properties().get("executionContext");
-                            return executionContext == null || "MAIN_AGENT".equals(executionContext.toString());
-                        })
-                        .toList();
-            }
-
-            // 排除工具级经验（由 ToolExecutionCoordinator 在工具执行前精准注入）
-            experiences = experiences.stream()
-                    .filter(entity -> {
-                        Object granularity = entity.properties().get("granularity");
-                        return granularity == null || !SubtaskReflector.TOOL_LEVEL.equals(granularity.toString());
+            Set<String> ids = ranked.stream().map(RetrievalResult::entityId).collect(Collectors.toSet());
+            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, filter);
+            // 保留 ranked 顺序 + 应用 isolation / granularity 过滤 + 工具维度加权
+            return ranked.stream()
+                    .map(r -> {
+                        TemporalEntity entity = entityMap.get(r.entityId());
+                        if (entity == null) return null;
+                        float boostedScore = r.fusedScore() + toolWeightBoost(entity, recentToolIds);
+                        return Map.entry(entity, boostedScore);
                     })
-                    .toList();
-
-            return experiences.stream()
-                    .sorted((left, right) -> {
-                        float leftScore = computeInjectionScore(left, false);
-                        float rightScore = computeInjectionScore(right, false);
-                        return Float.compare(rightScore, leftScore);
-                    })
-                    .limit(experience.getMaxInjectionCount())
+                    .filter(Objects::nonNull)
+                    .filter(e -> passesIsolation(e.getKey(), experience))
+                    .filter(e -> notToolLevelGranularity(e.getKey()))
+                    .sorted(Map.Entry.<TemporalEntity, Float>comparingByValue().reversed())
+                    .limit(maxInjection)
+                    .map(Map.Entry::getKey)
                     .toList();
         } catch (Exception e) {
             log.debug("经验检索已跳过: error={}", e.getMessage());
             return List.of();
         }
+    }
+
+    /** 经验的 toolsUsed 与当前任务工具集有交集时加 0.2 score；无交集时不加分。 */
+    @SuppressWarnings("unchecked")
+    private float toolWeightBoost(TemporalEntity entity, Set<String> recentToolIds) {
+        if (recentToolIds == null || recentToolIds.isEmpty()) {
+            return 0.0f;
+        }
+        Object toolsUsed = entity.properties().get("toolsUsed");
+        if (!(toolsUsed instanceof List<?> list) || list.isEmpty()) {
+            return 0.0f;
+        }
+        for (Object t : list) {
+            if (t != null && recentToolIds.contains(t.toString())) {
+                return 0.2f;
+            }
+        }
+        return 0.0f;
+    }
+
+    private boolean passesIsolation(TemporalEntity entity, MemoryProperties.Experience experience) {
+        if (experience.getIsolation().isCrossContextRetrieval()) {
+            return true;
+        }
+        Object executionContext = entity.properties().get("executionContext");
+        return executionContext == null || "MAIN_AGENT".equals(executionContext.toString());
+    }
+
+    private boolean notToolLevelGranularity(TemporalEntity entity) {
+        Object granularity = entity.properties().get("granularity");
+        return granularity == null || !SubtaskReflector.TOOL_LEVEL.equals(granularity.toString());
     }
 
     String formatExperienceSection(List<TemporalEntity> experiences) {
@@ -957,7 +1015,7 @@ public class ContextAssembler {
                 <completion_contract>
                 - 自行判断当前请求是普通问答还是多步任务
                 - 普通问答/解释/分析/总结：直接回答并结束
-                - 多步任务：有必要步骤未完成时继续调用工具，不要用阶段性总结结束本轮
+                - 多步任务：首次调工具前用 1-3 句话简述执行计划（目标拆解 + 步骤顺序）；有必要步骤未完成时继续调用工具，不要用阶段性总结结束本轮
                 - 可恢复阻塞（缺用户补充信息/等待确认/外部回传）不要包装成失败或完成
                 - 需要用户补充信息时，把追问包在 <await_user_input>...</await_user_input> 中，说清：缺什么、为什么缺、补充后会继续做什么
                 - 这轮没调用工具但已能给出终态时，正文后追加隐藏标签：
@@ -1268,20 +1326,20 @@ public class ContextAssembler {
      *
      * <p>排序键：先按 query 关键词命中分降序，再按 priority 升序（HIGH→LOW），最后 name 升序。
      * 命中无差异时 priority 起决定作用；当存在命中分非零的低 priority skill 时，
-     * 它可能挤占 score=0 的 HIGH priority skill —— 这是有意行为：query 已经表达明确意图。</p>
+     * 它会被排序到前面 —— 这是有意行为：query 已经表达明确意图。</p>
      */
-    private static final int SKILL_CATALOG_MAX_ENTRIES = 8;
 
     /**
-     * 构建 Skill Catalog 段 —— 按 query 关键词与 skill name/description/tags 的命中度
-     * 选 top-K，避免把全部 25+ 个 skill 描述无差别注入 system prompt。
+     * 构建 Skill Catalog 段 —— 全量列出所有已启用 skill。
      *
      * <p>过滤链：skills 表（enabled=true） → SkillRegistry 内存定义 →
-     * {@link SkillRequirementGate} requires 满足 → priority + 关键词打分排序
-     * → 截取 top-{@value #SKILL_CATALOG_MAX_ENTRIES}。</p>
+     * {@link SkillRequirementGate} requires 满足 → 按 query 关键词打分 + priority
+     * 排序（命中关键词的排在前面，便于 LLM 优先注意），不做截断。</p>
      *
-     * <p>输出渲染进 {@code agent/skill-catalog.st} 模板的 {@code skillEntries} 片段，
-     * 扁平 markdown list 形式（每行一个 skill）；剩余数量 ≥ 1 时附一行提示。</p>
+     * <p>输出渲染进 {@code agent/skill-catalog.st} 模板，
+     * XML 标签格式（{@code <skill name="..."><description>...</description></skill>}）；
+     * 实测此格式比 markdown list 选取率显著更高，因为 LLM 训练里见过大量类似的
+     * tool/function schema 定义，识别为"必须从中选择"的强信号。</p>
      */
     private String buildSkillCatalog(@Nullable ReactAgentState state) {
         if (skillRegistry == null || skillInstallationRepository == null) {
@@ -1312,13 +1370,12 @@ public class ContextAssembler {
             return "";
         }
 
-        // 关键词预筛 + 优先级排序，截取 top-K（排序键见 SKILL_CATALOG_MAX_ENTRIES Javadoc）
+        // 关键词打分排序，全量输出（不截断）—— LLM 选取率优先于上下文节省
         String goal = state == null ? null : state.goal();
         List<String> keywords = extractKeywords(goal);
-        List<SkillCatalogEntry> selected = selectTopEntries(allEntries, keywords);
+        List<SkillCatalogEntry> selected = sortAllEntries(allEntries, keywords);
 
-        int omitted = allEntries.size() - selected.size();
-        String skillEntries = renderSkillList(selected, omitted);
+        String skillEntries = renderSkillList(selected);
         try {
             return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
         } catch (Exception e) {
@@ -1385,35 +1442,51 @@ public class ContextAssembler {
     }
 
     /**
-     * 从全集中选 top-K：按 (score 降, priority 升, name 升) 单链 sort 后取前 K 条。
+     * 按 (score 降, priority 升, name 升) 排序，全量返回（不截断）。
+     * 命中 query 关键词的排在前面，让 LLM 优先注意。
      */
-    private static List<SkillCatalogEntry> selectTopEntries(List<SkillCatalogEntry> all,
-                                                            List<String> keywords) {
-        // 全部按 (score 降, priority 升, name 升) 排序，截前 K 条
+    private static List<SkillCatalogEntry> sortAllEntries(List<SkillCatalogEntry> all,
+                                                          List<String> keywords) {
         return all.stream()
                 .sorted(Comparator
                         .comparingInt((SkillCatalogEntry e) -> -scoreEntry(e, keywords))
                         .thenComparingInt(e -> priorityOrder(e.priority()))
                         .thenComparing(SkillCatalogEntry::name))
-                .limit(SKILL_CATALOG_MAX_ENTRIES)
                 .toList();
     }
 
     /**
-     * 渲染扁平 markdown list — 每行 {@code - name: description}；
-     * 剩余 ≥ 1 时附 hint 行引导调用 {@code find-skills}。
+     * 渲染 XML 标签格式 — 每个 skill 一段 {@code <skill name="..."><description>...</description></skill>}；
+     * 此格式比 markdown list 选取率显著更高（实测）：LLM 训练里见过大量 tool/function schema 定义，
+     * 识别为"必须从中选择"的强信号。
+     *
+     * <p>description 渲染时剥离"关键词：xxx。"段——关键词列表是给 trigram 检索索引看的（提高
+     * 召回率），LLM 看到长串关键词只会浪费上下文，主句 + 反引导（"X 用 Y 不用 Z"）已足够选择。</p>
      */
-    private static String renderSkillList(List<SkillCatalogEntry> entries, int omittedCount) {
+    private static String renderSkillList(List<SkillCatalogEntry> entries) {
         var sb = new StringBuilder();
         for (SkillCatalogEntry e : entries) {
-            sb.append("- ").append(e.name()).append(": ")
-                    .append(e.description() == null ? "" : e.description()).append('\n');
-        }
-        if (omittedCount > 0) {
-            sb.append("\n（另有 ").append(omittedCount)
-                    .append(" 个技能未列出 —— 当前需求不在上述列表时调用 find-skills 发现）");
+            sb.append("<skill name=\"").append(e.name()).append("\">")
+                    .append("<description>")
+                    .append(stripKeywordList(e.description()))
+                    .append("</description>")
+                    .append("</skill>\n");
         }
         return sb.toString().stripTrailing();
+    }
+
+    /**
+     * 剥离 description 中的"关键词：A、B、C、...。"片段。
+     * 兼容关键词段缺失或位置不同的场景：未命中时返回原文。
+     */
+    private static final java.util.regex.Pattern KEYWORD_LIST_PATTERN =
+            java.util.regex.Pattern.compile("关键词[:：][^。]*。\\s*");
+
+    static String stripKeywordList(@Nullable String description) {
+        if (description == null || description.isBlank()) {
+            return "";
+        }
+        return KEYWORD_LIST_PATTERN.matcher(description).replaceAll("").trim();
     }
 
     /** HIGH=0, NORMAL=1, LOW=2 — 排序权重。 */

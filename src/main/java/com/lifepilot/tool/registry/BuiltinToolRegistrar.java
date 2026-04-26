@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 import java.util.List;
 
@@ -42,6 +44,7 @@ public class BuiltinToolRegistrar {
      * @throws IllegalStateException 任一工具未通过 ToolValidator 校验
      */
     @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.HIGHEST_PRECEDENCE + 100)
     public void registerAll() {
         log.info("开始校验并注册内置工具: count={}", builtinTools.size());
         for (BuiltinTool tool : builtinTools) {

@@ -35,7 +35,8 @@ public class BrowserWaitToolExecutor {
         try {
             selector = input.getParam("selector", String.class);
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("缺少必需参数: selector");
+            return ToolResult.error("wait 必须传 selector（等元素出现）；"
+                    + "纯等时间用 evaluate(\"await new Promise(r=>setTimeout(r,3000))\")");
         }
 
         String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");

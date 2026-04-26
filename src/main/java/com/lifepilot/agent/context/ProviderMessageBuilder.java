@@ -31,7 +31,6 @@ import java.util.Objects;
 public class ProviderMessageBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderMessageBuilder.class);
-    private static final int CURRENT_TURN_DIGEST_MIN_CHARS = 320;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final TranscriptHygieneEngine hygieneEngine;
@@ -340,15 +339,15 @@ public class ProviderMessageBuilder {
 
     private String formatObservationForPrompt(ReactStep.Observation observation) {
         String body;
-        if (!shouldUseObservationPreview(observation)) {
-            body = observation.output();
-        } else {
+        if (shouldUseObservationPreview(observation)) {
             String preview = pruningEngine.formatCurrentObservationPreview(
                     observation.toolId(),
                     observation.success(),
                     observation.output()
             );
             body = preview.isBlank() ? observation.output() : preview;
+        } else {
+            body = observation.output();
         }
         // 防御：Observation.output 合约上非 null，但上游异常场景（工具抛异常且被吞、
         // 序列化反序列化边界）仍可能为 null。显式兜底为空串，避免字符串拼接产出 "null" 字面量。
@@ -365,14 +364,16 @@ public class ProviderMessageBuilder {
         return body;
     }
 
+    /**
+     * 当回合 Observation 是否走结构化摘要（240 字 preview）。
+     *
+     * <p>白名单仅保留 {@code web.search} —— 它的输出本身就是结构化短摘要
+     * （query/answer/title/url），preview 进一步提取要点，LLM 能据此决定下一步抓取哪个 URL。
+     * 历史上 {@code web.fetch} 也走 preview，但会让 LLM 误以为正文没拿全反复重复调用，
+     * 因此 {@code web.fetch} 当回合改走完整 output（一次取到正文做总结，不再回拉）。</p>
+     */
     private boolean shouldUseObservationPreview(ReactStep.Observation observation) {
-        if (observation.output() == null || observation.output().length() < CURRENT_TURN_DIGEST_MIN_CHARS) {
-            return false;
-        }
-        return switch (observation.toolId()) {
-            case "web.search", "web.fetch" -> true;
-            default -> false;
-        };
+        return "web.search".equals(observation.toolId());
     }
 
     private AssistantMessage buildAssistantToolCallMessage(List<AssistantMessage.ToolCall> toolCalls) {

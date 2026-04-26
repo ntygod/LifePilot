@@ -15,6 +15,7 @@ import com.lifepilot.document.repository.DocumentVersionRepository;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.document.version.DocumentVersionService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.meta.config.MetaAutoConfiguration;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.PathSecurityChecker;
 import org.slf4j.Logger;
@@ -36,7 +37,7 @@ import org.springframework.context.annotation.Bean;
  * @author zsg
  * @since 2026-04-20
  */
-@AutoConfiguration
+@AutoConfiguration(after = MetaAutoConfiguration.class)
 @ConditionalOnProperty(name = "lifepilot.document.enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(DocumentProperties.class)
 public class DocumentAutoConfiguration {
@@ -91,15 +92,11 @@ public class DocumentAutoConfiguration {
     // ===== 版本服务（DocumentController 与孤儿扫描器用）=====
 
     @Bean
+    @ConditionalOnProperty(name = "lifepilot.meta.enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnBean({
             SessionDocumentRepository.class,
             DocumentVersionRepository.class,
-            AttachmentRepository.class,
-            DocxPatchEngine.class,
-            DocxDiffBuilder.class,
-            XlsxPatchEngine.class,
-            XlsxDiffBuilder.class,
-            MetaProperties.class
+            AttachmentRepository.class
     })
     DocumentVersionService documentVersionService(
             SessionDocumentRepository documentRepository,
