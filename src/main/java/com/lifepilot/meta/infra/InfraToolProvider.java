@@ -52,7 +52,14 @@ import java.util.List;
  * 基础工具提供者 — 编排各子 ToolProvider，统一注册到 DynamicToolRegistry。
  *
  * <p>本类不直接构建任何工具，仅负责：创建子 Provider → 委托构建 → 注册。
- * 所有基础工具 tags 含 {@code "infrastructure"}，始终对所有调用者可用。</p>
+ * 各子 Provider 自行决定工具暴露条件：{@link CodeToolProvider} / {@link CodeKernelToolProvider}
+ * 受 {@code lifepilot.sandbox.enabled} 开关与 {@link PythonRuntimeManager} 注入控制，
+ * 其余按 {@link Nullable} 依赖是否注入按需注册（如 channel / cron / browser session 不存在时静默跳过）。</p>
+ *
+ * <p><b>历史注意</b>：旧实现给所有基础工具加 {@code "infrastructure"} tag 让
+ * {@link com.lifepilot.multiagent.execution.AgentExecutor} 与
+ * {@link com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider} 按 tag 过滤"始终可见"。
+ * 该 tag 在工具暴露重构后已从所有 BuiltinTool 移除，相关 filter 当前不再命中任何工具。</p>
  *
  * @author zsg
  * @since 2026-03-08

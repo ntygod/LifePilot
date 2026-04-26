@@ -12,16 +12,17 @@ import jakarta.annotation.PreDestroy;
 /**
  * Python 运行时安装进度 SSE 推送器。
  *
+ * <p><b>Not thread-safe</b> — 调用方必须保证 {@link #emit} / {@link #emitFailed} 串行调用。
+ * 当前由 {@link com.lifepilot.interaction.web.controller.RuntimeController#installInProgress}
+ * AtomicBoolean 保证同时只有一个 install 协程在 emit。{@link #subscribe} 与
+ * {@link #shutdown} 可由任意线程调用（{@link CopyOnWriteArrayList} 与 SseEmitter 回调天然安全）。</p>
+ *
  * <p>多前端订阅同一进度流，全局单例。同时只允许一个 install 进程，
  * 进度由 {@link PythonRuntimeManager#install} 通过 {@link #emit} 推送。</p>
  *
  * <p><b>注：</b>本类不带 {@code @Component} 注解，由 {@link com.lifepilot.sandbox.config.SandboxAutoConfiguration}
  * 通过 {@code @Bean} 集中注册，与 {@link RuntimeInstallHistoryRepository} 保持一致风格：
  * sandbox/runtime 子包不依赖 ComponentScan，受 {@code lifepilot.sandbox.enabled} 开关统一控制。</p>
- *
- * <p><b>线程契约</b>：同一时刻只允许单一 install 协程调用 {@link #emit} / {@link #emitFailed}，
- * 其他线程仅可调用 {@link #subscribe}。{@link SseEmitter#send} 非线程安全，
- * 违反此约束需调用方自行加锁。</p>
  *
  * <p>预期订阅者规模：单用户 1-5 个（多 tab + 桌面端），最大不超过 20 个。
  * 超出此规模需评估是否换用 ConcurrentHashMap 或重构为 SseSessionManager 子类。</p>
@@ -57,6 +58,7 @@ public class RuntimeInstallProgressEmitter {
      * 推送一次进度更新。任何 send 失败的 emitter 会被剔除并显式 complete，
      * 避免底层 AsyncContext 半关闭。
      *
+     * @implNote <b>Not thread-safe</b>：调用方必须保证串行（见类级 Javadoc 线程契约）。
      * @param status 运行时状态快照
      */
     public void emit(RuntimeStatus status) {
@@ -79,6 +81,7 @@ public class RuntimeInstallProgressEmitter {
      *
      * <p>调用后所有现有订阅者断开；下次 install 重试需要前端重新调用 {@link #subscribe}。</p>
      *
+     * @implNote <b>Not thread-safe</b>：调用方必须保证串行（见类级 Javadoc 线程契约）。
      * @param reason 失败原因
      */
     public void emitFailed(String reason) {
