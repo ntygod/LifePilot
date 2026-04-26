@@ -68,7 +68,7 @@ public class ShellToolProvider {
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
-                .description("Execute a shell command. Choose mode by expected duration: default synchronous for second-scale commands (git/ls/build/test), blocks until completion or timeoutSeconds expires; background=true for long-running services (npm run dev) or concurrent tasks, returns sessionId immediately; yieldMs=N for uncertain duration, returns synchronous result if fast, otherwise yields to background with sessionId. Service processes must use background=true to avoid timeout kill. Use shell.process (action=output/kill) to read or terminate afterwards.")
+                .description("执行 shell 命令。短命令默认同步；长服务用 background=true；不确定耗时用 yieldMs。后台进程用 shell.process 读取/终止。")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -77,7 +77,7 @@ public class ShellToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.workspacePaths("workingDirectory", "cwd")
                 ))
-                .tags(List.of("infrastructure", "shell", "exec", "command", "bash", "terminal", "run", "execute", "script"))
+                .tags(List.of("命令", "执行", "脚本", "终端", "shell", "exec", "command", "bash"))
                 .executor(shellExecExecutor::execute)
                 .build();
     }
@@ -128,15 +128,14 @@ public class ShellToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("sessionIds", "sessionId")
                 ))
-                .tags(List.of("infrastructure", "process", "background", "session", "tmux", "shell", "manage", "kill", "signal",
-                        "output", "list", "write", "resize"))
+                .tags(List.of("进程", "后台", "会话", "管理", "终止", "tmux", "process", "session", "shell", "kill"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
     }
 
     private String buildProcessDescription() {
-        return "Manage background processes and persistent tmux sessions started via shell.exec. Actions include list/output/write/kill for background processes and session-create/session-exec/session-write/session-read/session-signal/session-list/session-close/session-resize for tmux sessions.";
+        return "管理后台进程与 tmux 会话：list 列进程、output 读输出、write 写输入、kill 终止；session-* 操作 tmux 会话。";
     }
 
     private String buildActionDescription() {

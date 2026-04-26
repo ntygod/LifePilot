@@ -28,7 +28,7 @@ public record ToolSearchResult(
                 List.of(),
                 0,
                 ToolSearchConfidence.NONE,
-                "No tools matched. Try broader keywords or call tools.list(category) to browse by category."
+                "未匹配到工具。放宽关键词重新调 tools.search，或在 skill_catalog 评估对应 skill / 用 shell.exec 兜底。"
         );
     }
 }

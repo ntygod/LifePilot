@@ -1,5 +1,6 @@
 package com.lifepilot.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.model.ReactAgentState;
@@ -8,6 +9,7 @@ import org.springframework.lang.Nullable;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -58,7 +60,8 @@ public final class DegradedResponseBuilder {
             return """
                     本轮处理已中断。
 
-                    已完成的步骤：%s
+                    已完成的步骤：
+                    - %s
 
                     %s
                     """.formatted(toolSummary, note).trim();
@@ -86,25 +89,75 @@ public final class DegradedResponseBuilder {
         return "";
     }
 
+    /** 与 {@code ContextAssembler.SHARED_MAPPER} 命名风格一致；类内复用避免跨包依赖。 */
+    private static final ObjectMapper SHARED_MAPPER = new ObjectMapper();
+
     private static String summarizeSuccessfulTools(List<ReactStep> steps) {
-        Set<String> toolNames = new LinkedHashSet<>();
+        Set<String> entries = new LinkedHashSet<>();
         for (ReactStep step : steps) {
             if (step instanceof ReactStep.Observation observation && observation.success()) {
                 String displayName = observation.toolName() != null && !observation.toolName().isBlank()
                         ? observation.toolName()
                         : observation.toolId();
-                if (displayName != null && !displayName.isBlank()) {
-                    toolNames.add(displayName);
+                if (displayName == null || displayName.isBlank()) {
+                    continue;
                 }
+                String product = extractProduct(observation.toolId(), observation.output());
+                entries.add(product.isBlank() ? displayName : displayName + " → " + product);
             }
-            if (toolNames.size() >= 4) {
+            if (entries.size() >= 4) {
                 break;
             }
         }
-        if (toolNames.isEmpty()) {
+        if (entries.isEmpty()) {
             return "";
         }
-        return String.join("、", toolNames);
+        return String.join("\n- ", entries);
+    }
+
+    /**
+     * 从工具输出中提取关键产物（路径 / 任务名 / URL），让降级响应能告诉用户产物去哪。
+     * 失败/无法解析时返回空串，调用方退化为只显示工具名。
+     */
+    private static String extractProduct(@Nullable String toolId, @Nullable String output) {
+        if (toolId == null || output == null || output.isBlank()) {
+            return "";
+        }
+        try {
+            Object parsed = SHARED_MAPPER.readValue(output, Object.class);
+            if (!(parsed instanceof Map<?, ?> map)) {
+                return "";
+            }
+            Object data = map.get("data") instanceof Map<?, ?> ? map.get("data") : map;
+            Map<?, ?> body = (Map<?, ?>) data;
+            return switch (toolId) {
+                case "file.write", "file_write" -> stringValue(body.get("path"));
+                case "cron", "cron.create", "cron_create" -> joinValues(
+                        stringValue(body.get("name")), stringValue(body.get("schedule")));
+                case "web.fetch", "web_fetch" -> stringValue(body.get("url"));
+                case "a2ui", "a2ui.render" -> stringValue(body.get("componentId"));
+                case "memory", "memory.create" -> stringValue(body.get("documentId"));
+                default -> "";
+            };
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private static String stringValue(@Nullable Object value) {
+        if (value == null) return "";
+        String text = value.toString().strip();
+        return text.isEmpty() ? "" : text;
+    }
+
+    private static String joinValues(String... parts) {
+        StringBuilder buf = new StringBuilder();
+        for (String p : parts) {
+            if (p == null || p.isBlank()) continue;
+            if (!buf.isEmpty()) buf.append(" · ");
+            buf.append(p);
+        }
+        return buf.toString();
     }
 
     private static String buildTerminalNote(String reason) {

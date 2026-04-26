@@ -128,26 +128,7 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("Search and manage long-term memory for the current user.\n\n" +
-                        "Automatic: facts mentioned in conversation are auto-extracted and stored; user profile and relevant past experiences are auto-injected into context.\n\n" +
-                        "Manual scenarios:\n" +
-                        "- search: when the user mentions a specific person/event/project, search related knowledge entities\n" +
-                        "- recall: when the user references prior conversations (\"last time\", \"we talked about\"), recall full conversation snippets\n" +
-                        "- create: when the user explicitly asks to remember something, or expresses an important preference/goal change\n" +
-                        "- update: when an existing entity needs correction or augmentation\n" +
-                        "- delete: when the user asks to forget a memory by **known ID** (precise removal)\n" +
-                        "- cancel: **REQUIRED when the user expresses cancel/revoke/no-longer for some intent.** Applies to all memory types (preference/goal/experience/habit/project).\n" +
-                        "  Two forms:\n" +
-                        "    * pass entityId: archive a single memory by ID into CANCELLED state (only effective when currently ACTIVE);\n" +
-                        "    * pass query: semantically batch-archive relevant memories; default scope GOAL/EXPERIENCE/HABIT, override via entityTypes.\n" +
-                        "  Typical triggers: \"cancel X\", \"revoke X\", \"stop X\", \"drop X\", \"no longer X\".\n" +
-                        "  Important: creating a PREFERENCE alone is not enough; older GOAL/EXPERIENCE will still be recalled, so cancel-archive related old memories together.\n" +
-                        "- complete: when the user explicitly states a goal/project is done (\"finally finished\"), only valid for GOAL/PROJECT, transitions the entity to COMPLETED.\n" +
-                        "- supersede: when a new entity replaces an old one (e.g. old goal replaced by new), sets succeeded_by foreign key and transitions old to SUPERSEDED. Requires both entityId (the replaced) and new_entity_id (the successor).\n" +
-                        "- search-experience: when reference to past similar task execution experience is needed\n" +
-                        "- query-at-time: when historical state at a specific timestamp is needed\n\n" +
-                        "When NOT to call: current context has enough info, pure chitchat, general knowledge Q&A.\n" +
-                        "For document/material retrieval use knowledge.search.")
+                .description("搜索并管理用户长期记忆。action 控制具体语义：search/recall/create/update/delete/cancel/complete/supersede/tag/query-at-time/search-experience。资料文档检索请用 knowledge.search。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -188,8 +169,8 @@ public class MemoryToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("entityNames", false, "name", "entityId", "sourceEntityId", "targetEntityId")
                 ))
-                .tags(List.of("memory", "recall", "remember", "store", "save", "knowledge", "history", "search",
-                        "forget", "cancel", "tag", "update", "delete", "create", "archive"))
+                .tags(List.of("记忆", "回忆", "记住", "保存", "知识", "历史", "搜索", "撤销", "归档",
+                        "memory", "recall", "remember", "search", "cancel", "create", "update", "delete"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -201,7 +182,7 @@ public class MemoryToolProvider {
         return BuiltinTool.builder()
                 .id("knowledge.search")
                 .name("检索资料")
-                .description("Search documents bound to the current session by semantic similarity. Use memory(action=search) for entities and memory(action=recall) for conversations.")
+                .description("按语义检索当前会话绑定的资料文档。实体用 memory(action=search)，对话历史用 memory(action=recall)。")
                 .category(ToolCategory.PERCEPTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -214,7 +195,7 @@ public class MemoryToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(List.of("knowledge", "search", "rag", "retrieve", "query", "document", "session"))
+                .tags(List.of("资料", "文档", "知识库", "检索", "搜索", "rag", "knowledge", "search"))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);

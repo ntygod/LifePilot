@@ -54,7 +54,7 @@ public class BrowserInputToolExecutor {
         try {
             value = input.getParam("value", String.class);
         } catch (IllegalArgumentException e) {
-            return ToolResult.error("缺少必需参数: value");
+            return ToolResult.error("缺少必需参数: value（要输入的文字；注意 text 是 keyboard 用的，不是 input）");
         }
 
         String sessionId = input.getOptionalParam("sessionId", String.class).orElse("default");

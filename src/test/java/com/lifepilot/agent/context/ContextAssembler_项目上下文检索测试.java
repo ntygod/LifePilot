@@ -3,10 +3,12 @@ package com.lifepilot.agent.context;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
@@ -61,9 +63,9 @@ class ContextAssembler_项目上下文检索测试 {
         assembler.assemble(state("session-1"));
 
         ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-        verify(deps.semanticMemory, atLeastOnce())
-                .findCurrentByType(eq(EntityType.EXPERIENCE), captor.capture());
-        MemoryReadFilter filter = captor.getValue();
+        verify(deps.hybridRetriever, atLeastOnce())
+                .retrieve(any(), anyInt(), any(RetrievalWeights.class), captor.capture());
+        MemoryReadFilter filter = pickExperienceFilter(captor);
         assertThat(filter.spaceIds()).containsExactlyInAnyOrder("space-personal", "space-experience");
         assertThat(filter.scopes()).containsExactly(MemoryScope.AGENT_EXPERIENCE);
     }
@@ -81,9 +83,9 @@ class ContextAssembler_项目上下文检索测试 {
         assembler.assemble(state("session-2"));
 
         ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-        verify(deps.semanticMemory, atLeastOnce())
-                .findCurrentByType(eq(EntityType.EXPERIENCE), captor.capture());
-        MemoryReadFilter filter = captor.getValue();
+        verify(deps.hybridRetriever, atLeastOnce())
+                .retrieve(any(), anyInt(), any(RetrievalWeights.class), captor.capture());
+        MemoryReadFilter filter = pickExperienceFilter(captor);
         assertThat(filter.spaceIds())
                 .containsExactlyInAnyOrder("space-proj", "space-personal", "space-experience");
         assertThat(filter.scopes()).containsExactly(MemoryScope.AGENT_EXPERIENCE);
@@ -102,9 +104,9 @@ class ContextAssembler_项目上下文检索测试 {
         assembler.assemble(state("session-3"));
 
         ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-        verify(deps.semanticMemory, atLeastOnce())
-                .findCurrentByType(eq(EntityType.EXPERIENCE), captor.capture());
-        MemoryReadFilter filter = captor.getValue();
+        verify(deps.hybridRetriever, atLeastOnce())
+                .retrieve(any(), anyInt(), any(RetrievalWeights.class), captor.capture());
+        MemoryReadFilter filter = pickExperienceFilter(captor);
         assertThat(filter.spaceIds())
                 .containsExactlyInAnyOrder("space-personal", "space-experience");
         assertThat(filter.spaceIds()).doesNotContain("space-proj-2");
@@ -121,9 +123,9 @@ class ContextAssembler_项目上下文检索测试 {
 
         // fallback 应落在 agentExperience() — 等同 scope-only，不限定 space
         ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-        verify(deps.semanticMemory, atLeastOnce())
-                .findCurrentByType(eq(EntityType.EXPERIENCE), captor.capture());
-        MemoryReadFilter filter = captor.getValue();
+        verify(deps.hybridRetriever, atLeastOnce())
+                .retrieve(any(), anyInt(), any(RetrievalWeights.class), captor.capture());
+        MemoryReadFilter filter = pickExperienceFilter(captor);
         assertThat(filter.restrictsSpaces()).isFalse();
         assertThat(filter.scopes()).containsExactly(MemoryScope.AGENT_EXPERIENCE);
     }
@@ -136,9 +138,9 @@ class ContextAssembler_项目上下文检索测试 {
         assembler.assemble(state("session-1"));
 
         ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-        verify(deps.semanticMemory, atLeastOnce())
-                .findCurrentByType(eq(EntityType.EXPERIENCE), captor.capture());
-        MemoryReadFilter filter = captor.getValue();
+        verify(deps.hybridRetriever, atLeastOnce())
+                .retrieve(any(), anyInt(), any(RetrievalWeights.class), captor.capture());
+        MemoryReadFilter filter = pickExperienceFilter(captor);
         assertThat(filter.restrictsSpaces()).isFalse();
         assertThat(filter.scopes()).containsExactly(MemoryScope.AGENT_EXPERIENCE);
     }
@@ -225,19 +227,31 @@ class ContextAssembler_项目上下文检索测试 {
                 deps.hybridRetriever);
     }
 
+    /** 从 hybridRetriever.retrieve 的所有捕获 filter 中挑出 AGENT_EXPERIENCE scope 那次。 */
+    private MemoryReadFilter pickExperienceFilter(ArgumentCaptor<MemoryReadFilter> captor) {
+        return captor.getAllValues().stream()
+                .filter(f -> f.scopes().contains(MemoryScope.AGENT_EXPERIENCE))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "未找到 AGENT_EXPERIENCE filter 的 retrieve 调用，所有捕获: "
+                        + captor.getAllValues()));
+    }
+
     private ChatSession session(String id, String projectId) {
         Instant now = Instant.now();
         return new ChatSession(id, "title", null, 0, false, false, null, now, now, projectId);
     }
 
     private ReactAgentState state(String sessionId) {
+        // 加一个 ToolCall step：让 ContextAssembler 的"简单任务跳过"门通过，触发经验检索路径
+        var dummyToolCall = new ReactStep.ToolCall("memory", "记忆", "{}", 0, "call-test");
         return ReactAgentState.builder()
                 .traceId("trace-test")
                 .sessionId(sessionId)
                 .goal("请帮我做一件事")
                 .channel("web")
-                .steps(List.of())
-                .stepCount(0)
+                .steps(List.<ReactStep>of(dummyToolCall))
+                .stepCount(1)
                 .shortTermMemory(List.of())
                 .mentionedEntities(List.of())
                 .budget(Budget.builder()

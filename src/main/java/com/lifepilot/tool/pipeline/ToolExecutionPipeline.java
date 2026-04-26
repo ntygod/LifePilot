@@ -13,6 +13,7 @@ import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.*;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import jakarta.annotation.Nullable;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -93,6 +94,12 @@ public class ToolExecutionPipeline implements Closeable {
         this.eventPublisher = eventPublisher;
     }
 
+    /**
+     * Spring Bean 销毁时关闭虚拟线程池。
+     *
+     * <p>{@link #close()} 也保留实现 {@link Closeable} 契约（测试 try-with-resources）。</p>
+     */
+    @PreDestroy
     @Override
     public void close() {
         virtualThreadExecutor.close();
@@ -230,7 +237,7 @@ public class ToolExecutionPipeline implements Closeable {
                 .timestamp(start)
                 .build();
 
-        // 9. 发布调用事件 — 供 ToolUsageStatsRecorder 等监听者采集
+        // 9. 发布调用事件 — 供观测性 / 审计监听者采集
         publishInvocationEvent(toolId, context, result.ok(), duration.toMillis(), start);
 
         log.debug("管线完成: toolId={}, ok={}, duration={}ms",

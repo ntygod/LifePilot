@@ -33,11 +33,18 @@ public class SkillDefinitionValidator {
 
     private final DynamicToolRegistry toolRegistry;
     private final SkillConfigProperties.Validation validationConfig;
+    /** 启动期标志：BuiltinTool 在 ApplicationReadyEvent 注册，早于此的校验把"工具未注册"当 DEBUG，避免启动日志刷屏假警告。 */
+    private volatile boolean startupComplete = false;
 
     public SkillDefinitionValidator(DynamicToolRegistry toolRegistry,
                                     SkillConfigProperties skillConfig) {
         this.toolRegistry = toolRegistry;
         this.validationConfig = skillConfig.getValidation();
+    }
+
+    /** 由 SkillAutoConfiguration 在 ApplicationReadyEvent 后调用，切换"工具未注册"提示为 WARN。 */
+    public void markStartupComplete() {
+        this.startupComplete = true;
     }
 
     /**
@@ -64,13 +71,12 @@ public class SkillDefinitionValidator {
             errors.add("Instructions 长度超过限制: " + definition.instructions().length() + " > " + validationConfig.getMaxInstructionsLength());
         }
 
-        // suggestedTools 中的工具 ID 可能在后续启动阶段才注册（如 BuiltinTool 在 ApplicationReadyEvent 注册），
-        // 因此仅做 WARN 提示，不阻断 Skill 注册
-        if (definition.suggestedTools() != null) {
+        // suggestedTools 中的工具 ID 可能在后续启动阶段才注册（如 BuiltinTool 在 ApplicationReadyEvent 注册）。
+        // 启动期完全 silent 避免假警告噪音；启动完成后才 WARN（此时工具已全部注册，缺失说明是真错）。
+        if (startupComplete && definition.suggestedTools() != null) {
             for (String toolId : definition.suggestedTools()) {
                 if (toolRegistry.resolve(toolId).isEmpty()) {
-                    log.warn("Skill '{}' 的建议工具 '{}' 当前未注册（可能在后续启动阶段注册）",
-                            definition.id(), toolId);
+                    log.warn("Skill '{}' 的建议工具 '{}' 未注册", definition.id(), toolId);
                 }
             }
         }

@@ -13,6 +13,7 @@ import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.meta.infra.channel.ChannelToolProvider;
 import com.lifepilot.meta.infra.code.CodeToolProvider;
+import com.lifepilot.meta.infra.code.kernel.CodeKernelToolProvider;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
@@ -214,6 +215,12 @@ public class InfraToolProvider {
         var codeToolProvider = new CodeToolProvider(
                 properties, sandboxSessionManager, codeValidator, sandboxRepository, kernelManager);
         totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
+
+        // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册
+        if (kernelManager != null) {
+            var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
+            totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+        }
 
         log.info("基础工具注册完成: count={}", totalTools);
     }

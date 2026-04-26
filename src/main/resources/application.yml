@@ -188,7 +188,6 @@ lifepilot:
       pinned:
         - tools.search
         - tools.describe
-        - tools.list
         - file.read
         - file.write
         - file.list
@@ -198,16 +197,6 @@ lifepilot:
         - memory
         - knowledge.search
         - skill.load
-      promotion:
-        enabled: true
-        window-days: 30
-        session-threshold: 0.3
-        max-promoted: 3
-        cron: "0 0 3 * * *"
-      demotion:
-        enabled: true
-        idle-days: 60
-        respect-pinned: true
     # ===== 搜索服务 =====
     search:
       default-limit: 5

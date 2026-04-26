@@ -143,11 +143,11 @@ class SkillSystemRefactor_端到端集成测试 {
     @Test
     void BUILTIN_skill应在启动时全部安装到skills表() {
         List<SkillInstallation> builtin = repository.findAllBySourceType(SkillSourceType.BUILTIN);
-        // classpath 下 25 个 BUILTIN Skill 全部应入库（Skill v2 fixup 下架 datastore / workflow-creator 后）
-        assertThat(builtin).hasSizeGreaterThanOrEqualTo(25);
+        // 减法整理后剩 20 个 BUILTIN Skill（删除了 datastore/workflow-creator/find-skills/introspection/gitee/document-workspace/web-novel-writer）
+        assertThat(builtin).hasSizeGreaterThanOrEqualTo(20);
         // 抽查几个典型 skill 存在
         assertThat(builtin).extracting(SkillInstallation::name)
-                .contains("introspection", "github-workflow", "skill-creator");
+                .contains("daily-manager", "github-workflow", "skill-creator");
         // 全部默认启用
         assertThat(builtin).allMatch(SkillInstallation::enabled);
     }
@@ -174,7 +174,7 @@ class SkillSystemRefactor_端到端集成测试 {
 
     @Test
     void 禁用skill后不应能激活_应抛异常() {
-        String name = "introspection";
+        String name = "daily-manager";
         repository.setEnabled(name, false);
         try {
             assertThatThrownBy(() -> skillLoadExecutor.execute(
@@ -273,10 +273,6 @@ class SkillSystemRefactor_端到端集成测试 {
         var fm = parsed.frontmatter();
         var zhiwei = fm.zhiweiMeta();
 
-        Map<String, String> flatMetadata = zhiwei.category() != null
-                ? Map.of("category", zhiwei.category())
-                : Map.of();
-
         SkillDefinition definition = SkillDefinition.builder()
                 .id(fm.name())
                 .name(fm.name())
@@ -285,7 +281,7 @@ class SkillSystemRefactor_端到端集成测试 {
                 .source(new SkillSource.UserDefined(skillFolder.toString(), Instant.now()))
                 .instructions(parsed.body())
                 .suggestedTools(zhiwei.suggestedTools())
-                .metadata(flatMetadata)
+                .metadata(Map.of())
                 .zhiweiMeta(zhiwei)
                 .build();
 

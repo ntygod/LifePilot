@@ -5,6 +5,10 @@ import java.time.Instant;
 /**
  * Skill 安装元数据 —— 对应 skills 表一行。
  *
+ * @param filePath Skill 根目录的<strong>绝对规范化路径</strong>（{@link java.nio.file.Path#toAbsolutePath()}
+ *                 + {@link java.nio.file.Path#normalize()} 后的 String 形式）。
+ *                 {@link com.lifepilot.skill.activation.SkillActivator} 会直接拼接子目录占位符
+ *                 （{@code filePath + "/references"} 等），因此必须保证不带相对前缀。
  * @author zsg
  * @since 2026-04-24
  */

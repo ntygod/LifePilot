@@ -67,7 +67,7 @@ public class CodeToolProvider {
                 .id("code.execute")
                 .category(ToolCategory.ACTION)
                 .name("执行代码")
-                .description("Execute code in a sandboxed runtime supporting common scripting languages (python, javascript).")
+                .description("在沙箱中执行代码，支持 Python / JavaScript 等脚本语言。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("code"),
@@ -92,7 +92,7 @@ public class CodeToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.none()
                 ))
-                .tags(List.of("infrastructure", "code", "execute", "run", "sandbox", "script", "python", "eval"))
+                .tags(List.of("代码", "执行", "脚本", "沙箱", "code", "execute", "python", "javascript"))
                 .executor(executor::execute)
                 .build();
     }

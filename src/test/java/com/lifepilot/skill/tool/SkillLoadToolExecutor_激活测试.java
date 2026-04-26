@@ -95,6 +95,55 @@ class SkillLoadToolExecutor_激活测试 {
     }
 
     @Test
+    void instructions中的references绝对路径应在末尾以file_read强引导列出() {
+        when(repository.findByName("x")).thenReturn(Optional.of(enabled("x")));
+        String instructions = """
+                # 指南
+
+                详细参考：`C:\\Users\\u\\.zhiwei\\skills\\x/references/x-recipes.md`
+                """;
+        when(activator.activate("x")).thenReturn(
+                new SkillActivation("x", instructions, List.of("t1")));
+
+        var content = (String) executor.execute(Map.of("names", List.of("x"))).get("content");
+
+        assertThat(content)
+                .contains("执行具体动作")
+                .contains("file.read(\"C:\\Users\\u\\.zhiwei\\skills\\x/references/x-recipes.md\")");
+    }
+
+    @Test
+    void 无references的skill不应追加强引导段() {
+        when(repository.findByName("x")).thenReturn(Optional.of(enabled("x")));
+        when(activator.activate("x")).thenReturn(
+                new SkillActivation("x", "## 简单指南\n无 references", List.of("t1")));
+
+        var content = (String) executor.execute(Map.of("names", List.of("x"))).get("content");
+
+        assertThat(content).doesNotContain("执行具体动作").doesNotContain("file.read");
+    }
+
+    @Test
+    void 多skill的references应去重并合并列出() {
+        when(repository.findByName("a")).thenReturn(Optional.of(enabled("a")));
+        when(repository.findByName("b")).thenReturn(Optional.of(enabled("b")));
+        when(activator.activate("a")).thenReturn(new SkillActivation("a",
+                "ref: /home/u/.zhiwei/skills/a/references/x.md", List.of("t1")));
+        when(activator.activate("b")).thenReturn(new SkillActivation("b",
+                "see /home/u/.zhiwei/skills/b/references/y.md and /home/u/.zhiwei/skills/a/references/x.md",
+                List.of("t2")));
+
+        var content = (String) executor.execute(Map.of("names", List.of("a", "b"))).get("content");
+
+        // 末尾 file.read 引导段里 x.md 应只列 1 次（即使 instructions 里出现 2 次）
+        long fileReadCount = content.lines()
+                .filter(l -> l.contains("file.read(\"/home/u/.zhiwei/skills/a/references/x.md\")"))
+                .count();
+        assertThat(fileReadCount).isEqualTo(1);
+        assertThat(content).contains("file.read(\"/home/u/.zhiwei/skills/b/references/y.md\")");
+    }
+
+    @Test
     void 多skill重复suggested_tools应去重() {
         when(repository.findByName("a")).thenReturn(Optional.of(enabled("a")));
         when(repository.findByName("b")).thenReturn(Optional.of(enabled("b")));

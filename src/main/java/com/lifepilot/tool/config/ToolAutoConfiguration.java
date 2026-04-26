@@ -148,40 +148,8 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.Tier1AdvisoryRepository tier1AdvisoryRepository(
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.tool.tier1.Tier1AdvisoryRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.Tier1Service tier1Service(
-            ToolConfigProperties p,
-            com.lifepilot.tool.tier1.Tier1AdvisoryRepository repo) {
-        return new com.lifepilot.tool.tier1.Tier1Service(p, repo);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.ToolUsageStatsRepository toolUsageStatsRepository(
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
-        return new com.lifepilot.tool.tier1.ToolUsageStatsRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.ToolUsageStatsRecorder toolUsageStatsRecorder(
-            com.lifepilot.tool.tier1.ToolUsageStatsRepository repo) {
-        return new com.lifepilot.tool.tier1.ToolUsageStatsRecorder(repo);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.tier1.Tier1AdvisoryJob tier1AdvisoryJob(
-            ToolConfigProperties p,
-            com.lifepilot.tool.tier1.ToolUsageStatsRepository statsRepo,
-            com.lifepilot.tool.tier1.Tier1AdvisoryRepository advisoryRepo) {
-        return new com.lifepilot.tool.tier1.Tier1AdvisoryJob(p, statsRepo, advisoryRepo);
+    public com.lifepilot.tool.tier1.Tier1Service tier1Service(ToolConfigProperties p) {
+        return new com.lifepilot.tool.tier1.Tier1Service(p);
     }
 
     @Bean
@@ -244,20 +212,13 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.tool.search.ToolListService toolListService(DynamicToolRegistry registry) {
-        return new com.lifepilot.tool.search.ToolListService(registry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public com.lifepilot.tool.search.BuiltinToolSearchProvider builtinToolSearchProvider(
             com.lifepilot.tool.search.ToolSearchService search,
-            com.lifepilot.tool.search.ToolDescribeService describe,
-            com.lifepilot.tool.search.ToolListService list) {
-        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe, list);
+            com.lifepilot.tool.search.ToolDescribeService describe) {
+        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe);
     }
 
-    // 三个 Meta BuiltinTool 暴露成 Bean，会被 BuiltinToolRegistrar 自动扫描注册
+    // 两个 Meta BuiltinTool 暴露成 Bean，会被 BuiltinToolRegistrar 自动扫描注册
     @Bean
     public com.lifepilot.tool.BuiltinTool toolsSearchBuiltin(
             com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
@@ -268,12 +229,6 @@ public class ToolAutoConfiguration {
     public com.lifepilot.tool.BuiltinTool toolsDescribeBuiltin(
             com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
         return provider.describeTool();
-    }
-
-    @Bean
-    public com.lifepilot.tool.BuiltinTool toolsListBuiltin(
-            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
-        return provider.listTool();
     }
 
     /**

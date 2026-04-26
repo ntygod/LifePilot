@@ -1,73 +1,132 @@
-# 桌面自动化脚本速查（pyautogui / pywinauto）
+# pyautogui / pywinauto 脚本参考
 
-## 依赖安装
+**关键约束**：
 
-```bash
-shell.exec(command="pip install pyautogui pywinauto pillow")
+- 仅 Windows，且必须本机进程（沙箱无图形会话，跑不了 pyautogui）。
+- 用 `shell.exec(command="python <脚本>")` 走宿主 Python，**不用** `code.execute`（在沙箱里）。
+- 操作步骤写到 `~/.zhiwei/workspace/desktop-<task>.py`，再 `shell.exec` 执行；不用 `python -c` 拼复杂多行。
+
+## 本机依赖检查
+
+```
+shell.exec(command="python -c \"import pyautogui, pywinauto, PIL\"")
+```
+
+任一报 `ModuleNotFoundError` → 提示用户安装：
+
+```
+pip install pyautogui pywinauto pillow
 ```
 
 | 库 | 用途 |
-|----|------|
+|---|---|
 | `pyautogui` | 键鼠模拟、截图、图像定位 |
-| `pywinauto` | Windows UI 元素控制、窗口管理 |
-| `pillow` | 图像处理 |
+| `pywinauto` | Windows UI 控件树、窗口管理（**优先用，比坐标稳**） |
+| `pillow` | 图像处理（`pyautogui.screenshot()` 依赖） |
 
-## 截图分析当前状态
+## 工作流模板
+
+### 1. 写脚本
+
+`file.write(path="~/.zhiwei/workspace/desktop-<task>.py", content=...)` 写入完整脚本。
+
+### 2. 执行
+
+```
+shell.exec(command="python <脚本路径>")
+```
+
+### 3. 取截图
+
+脚本里 `pyautogui.screenshot().save("<workspace>/screen-<step>.png")`，再用 `file.read` 给用户看路径或直接放截图。
+
+## 脚本片段
+
+### 截图分析当前状态
 
 ```python
-code.execute(language="python", code="
 import pyautogui
-screenshot = pyautogui.screenshot()
-screenshot.save('current_screen.png')
-print(f'屏幕分辨率: {pyautogui.size()}')
-")
+pyautogui.FAILSAFE = True
+shot = pyautogui.screenshot()
+shot.save(r"<workspace>\\screen.png")
+print(f"屏幕分辨率: {pyautogui.size()}")
 ```
 
-## 定位目标窗口
+### 列出当前所有窗口（pywinauto）
 
 ```python
-code.execute(language="python", code="
 from pywinauto import Desktop
-desktop = Desktop(backend='uia')
-for w in desktop.windows():
-    print(f'{w.window_text()} - {w.class_name()}')
-")
+for w in Desktop(backend='uia').windows():
+    print(f"{w.window_text()} | class={w.class_name()}")
 ```
 
-## 操作应用（pywinauto 控件）
+### 连接窗口并操作控件
 
 ```python
-code.execute(language="python", code="
 from pywinauto.application import Application
-app = Application(backend='uia').connect(title='记事本')
-dlg = app.window(title_re='.*记事本')
-dlg.Edit.type_keys('Hello World', with_spaces=True)
-")
+import pyautogui, time
+
+pyautogui.FAILSAFE = True
+app = Application(backend='uia').connect(title_re='.*<窗口标题正则>.*')
+dlg = app.window(title_re='.*<窗口标题正则>.*')
+
+# 用控件树看元素，便于第一次写脚本
+# dlg.print_control_identifiers()
+
+dlg.set_focus()
+dlg.child_window(title="<按钮文本>", control_type="Button").click()
+time.sleep(0.5)
+dlg.Edit.type_keys("<要输入的文本>", with_spaces=True)
 ```
 
-## 键鼠模拟（pyautogui）
+### 键鼠模拟（pyautogui）
 
 ```python
-code.execute(language="python", code="
 import pyautogui, time
-pyautogui.moveTo(100, 200, duration=0.5)
+pyautogui.FAILSAFE = True
+pyautogui.PAUSE = 0.3   # 每次操作之间默认等 300ms
+
+pyautogui.moveTo(<x>, <y>, duration=0.5)
 pyautogui.click()
-pyautogui.typewrite('hello', interval=0.05)
-pyautogui.hotkey('ctrl', 's')
-")
+pyautogui.doubleClick()
+pyautogui.rightClick()
+
+pyautogui.typewrite("hello", interval=0.05)
+pyautogui.hotkey("ctrl", "s")
+pyautogui.hotkey("alt", "tab")
+pyautogui.press("enter")
 ```
 
-## 保存脚本复用
+### 图像定位（兜底，不如控件稳）
 
+```python
+import pyautogui
+loc = pyautogui.locateOnScreen(r"<workspace>\\template.png", confidence=0.8)
+if loc:
+    pyautogui.click(pyautogui.center(loc))
+else:
+    print("未找到模板图")
 ```
-file.write(path="scripts/auto_task.py", content="脚本内容")
+
+> 图像定位依赖分辨率和 DPI 缩放，优先用 pywinauto 控件树定位。
+
+### FAILSAFE 紧急退出
+
+脚本顶部必加：
+
+```python
+import pyautogui
+pyautogui.FAILSAFE = True   # 鼠标移到屏幕左上角立即抛 FailSafeException 终止
 ```
 
-## 常见错误处理
+## 错误处理
 
-- **窗口未找到** → 检查窗口标题、确认应用已启动
-- **元素定位失败** → 使用 `print_control_identifiers()` 查看控件树
-- **权限不足** → 某些系统对话框需管理员权限
-- **分辨率差异** → 图像定位依赖分辨率，优先用控件定位
-</content>
-</invoke>
+| 现象 | 处理 |
+|---|---|
+| `ModuleNotFoundError` | 提示用户 `pip install pyautogui pywinauto pillow`，确认后再跑 |
+| `Could not connect to an instance of an application` | 用 `Desktop().windows()` 看真实窗口列表；标题用正则容错（`.*xxx.*`）；可能应用未启动 |
+| 控件定位失败 | 在脚本里加 `dlg.print_control_identifiers()` 输出控件树，照着改 child_window 参数 |
+| 操作没生效但无报错 | 多半是窗口未聚焦，先 `dlg.set_focus()` 或 `pyautogui.click()` 激活窗口 |
+| 权限不足（系统对话框） | 提示用户用管理员模式启动 ZhiWei 后端进程，普通权限点不到 UAC / 系统提权弹窗 |
+| 分辨率 / DPI 缩放导致坐标偏 | 改用 pywinauto 控件定位；图像匹配加 `confidence` 容差 |
+| 用户中途要停 | 鼠标拖到屏幕左上角触发 FAILSAFE，或 Ctrl+C 终止 `shell.exec` |

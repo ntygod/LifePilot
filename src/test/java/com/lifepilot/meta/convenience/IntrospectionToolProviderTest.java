@@ -83,7 +83,7 @@ class IntrospectionToolProviderTest {
     }
 
     @Test
-    void registerTools_所有工具tags含infrastructure且风险等级LOW() {
+    void registerTools_所有工具均带非空tags且风险等级LOW() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
@@ -92,7 +92,7 @@ class IntrospectionToolProviderTest {
         verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
 
         for (BuiltinTool tool : captor.getAllValues()) {
-            assertThat(tool.tags()).contains("infrastructure");
+            assertThat(tool.tags()).as("tool %s", tool.id()).isNotEmpty();
             assertThat(tool.riskLevel()).isEqualTo(RiskLevel.LOW);
         }
     }

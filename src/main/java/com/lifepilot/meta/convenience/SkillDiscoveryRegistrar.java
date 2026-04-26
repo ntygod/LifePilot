@@ -276,10 +276,6 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         var fm = parsed.frontmatter();
         var zhiwei = fm.zhiweiMeta();
 
-        Map<String, String> flatMetadata = zhiwei.category() != null
-                ? Map.of("category", zhiwei.category())
-                : Map.of();
-
         SkillDefinition definition = SkillDefinition.builder()
                 .id(fm.name())
                 .name(fm.name())
@@ -288,7 +284,7 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
                 .source(new SkillSource.UserDefined(skillFolder.toString(), Instant.now()))
                 .instructions(parsed.body())
                 .suggestedTools(zhiwei.suggestedTools())
-                .metadata(flatMetadata)
+                .metadata(Map.of())
                 .zhiweiMeta(zhiwei)
                 .build();
 

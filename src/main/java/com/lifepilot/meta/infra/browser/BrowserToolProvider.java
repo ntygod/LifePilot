@@ -50,7 +50,7 @@ public class BrowserToolProvider {
                 .id("browser")
                 .category(ToolCategory.ACTION)
                 .name("浏览器自动化")
-                .description("Drive browser automation via Playwright. Actions: navigate/click/input/scroll/wait/hover/select/keyboard/screenshot/evaluate/accessibility/tab/storage/close.")
+                .description("浏览器自动化：导航网页、点击、输入、网页截图、滚动、键盘、标签页（基于 Playwright）。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -143,7 +143,7 @@ public class BrowserToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.exactValues("sessionIds", "sessionId")
                 ))
-                .tags(List.of("infrastructure", "browser", "automation", "playwright", "navigate", "click", "screenshot", "web"))
+                .tags(List.of("浏览器", "自动化", "导航", "点击", "截图", "browser", "playwright", "automation"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

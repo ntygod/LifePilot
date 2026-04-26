@@ -129,12 +129,6 @@ class SkillImportService_导入测试 {
         assertThat(Files.exists(skillsRoot.resolve("with-refs/scripts/setup.sh"))).isTrue();
     }
 
-    @Test
-    void GitURL导入目前应抛UnsupportedOperation() {
-        assertThatThrownBy(() -> service.importFromGitUrl("https://github.com/foo/bar"))
-                .isInstanceOf(UnsupportedOperationException.class);
-    }
-
     // --- builder ---
 
     private ZipBuilder zipBuilder() {

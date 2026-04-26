@@ -41,11 +41,8 @@ public class SkillLoadTool {
         return BuiltinTool.builder()
                 .id("skill.load")
                 .name("激活技能")
-                .description("Activate one to three ZhiWei skills by name. Returns the SKILL.md body "
-                        + "(with {skill_dir}/{references_dir}/{scripts_dir} placeholders resolved) and "
-                        + "merges each skill's suggested_tools into the activated tool visibility set "
-                        + "for subsequent turns.")
-                .tags(List.of("skill", "activate", "load", "guide", "extension", "capability"))
+                .description("按名字激活 1-3 个技能，返回完整指南并把 suggested_tools 并入后续可见工具集。")
+                .tags(List.of("技能", "激活", "加载", "指南", "skill", "load", "extension"))
                 .category(ToolCategory.EXTENSION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -56,7 +53,7 @@ public class SkillLoadTool {
                                 "names", Map.of(
                                         "type", "array",
                                         "items", Map.of("type", "string"),
-                                        "description", "Skill names to activate (1-3 allowed)"
+                                        "description", "要激活的 Skill 名称列表（一次 1-3 个）"
                                 )
                         ),
                         "required", List.of("names")

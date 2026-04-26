@@ -14,7 +14,7 @@
 |---------|---------|
 | 提到"上次""之前""我记得""那次" | memory(action="recall") 回忆历史对话 |
 | 提到某人、某项目、某事件的细节 | memory(action="search") 搜索知识实体 |
-| 明确表达偏好/习惯/目标变更 | memory(action="create/update") 写入 |
+| 明确表达偏好/习惯/目标变更 | memory(action="create") 新增；已存在用 memory(action="update") |
 | 要求"记住""别忘了""以后都这样" | memory(action="create") 显式写入 |
 | 需要对比不同时间点的信息 | memory(action="query-at-time") 时间旅行 |
 | 问"我之前做过类似的吗" | memory(action="search-experience") 检索经验 |

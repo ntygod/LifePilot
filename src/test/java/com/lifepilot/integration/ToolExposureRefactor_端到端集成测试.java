@@ -11,8 +11,6 @@ import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.search.ToolDescribeResult;
 import com.lifepilot.tool.search.ToolDescribeService;
-import com.lifepilot.tool.search.ToolListResult;
-import com.lifepilot.tool.search.ToolListService;
 import com.lifepilot.tool.search.ToolSearchConfidence;
 import com.lifepilot.tool.search.ToolSearchHit;
 import com.lifepilot.tool.search.ToolSearchResult;
@@ -97,7 +95,6 @@ class ToolExposureRefactor_端到端集成测试 {
 
     @Autowired ToolSearchService searchService;
     @Autowired ToolDescribeService describeService;
-    @Autowired ToolListService listService;
     @Autowired ToolBridgeAgentToolProvider bridgeProvider;
 
     @Test
@@ -109,7 +106,7 @@ class ToolExposureRefactor_端到端集成测试 {
 
         // top 结果应当是 Tier 2 工具（非 Tier 1、非 meta）
         ToolSearchHit top = sr.results().get(0);
-        assertThat(top.id()).isNotIn("tools.search", "tools.describe", "tools.list");
+        assertThat(top.id()).isNotIn("tools.search", "tools.describe");
 
         // describe 取得完整 schema
         ToolDescribeResult dr = describeService.describe(List.of(top.id()));
@@ -138,14 +135,7 @@ class ToolExposureRefactor_端到端集成测试 {
         ReactAgentState state = sampleState(Set.of(), List.of());
         ToolSearchResult r = searchService.search(state, "zzzzzyxyzqqqnotatool", null, 5);
         assertThat(r.confidence()).isEqualTo(ToolSearchConfidence.NONE);
-        assertThat(r.hint()).contains("Try broader keywords");
-    }
-
-    @Test
-    void tools_list_按category过滤返回ID分组() {
-        ToolListResult r = listService.list("ACTION");
-        assertThat(r.categories()).containsOnlyKeys("ACTION");
-        assertThat(r.total()).isGreaterThan(0);
+        assertThat(r.hint()).contains("无匹配");
     }
 
     @Test

@@ -61,7 +61,7 @@ public class GitToolProvider {
                 .id("git.query")
                 .category(ToolCategory.PERCEPTION)
                 .name("Git 查询")
-                .description("Run read-only queries against a Git repository. Supported actions: status, diff, log, blame.")
+                .description("查询 Git 仓库：查看 status 状态、diff 差异、log 提交日志、blame 行级追溯。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action", "path"),
@@ -97,8 +97,7 @@ public class GitToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "git", "query", "status", "diff", "log", "blame", "repository",
-                        "commits", "history", "recent", "show"))
+                .tags(List.of("git", "仓库", "提交", "历史", "差异", "查询", "status", "diff", "log", "blame"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
@@ -110,7 +109,7 @@ public class GitToolProvider {
                 .id("git.mutate")
                 .category(ToolCategory.ACTION)
                 .name("Git 变更")
-                .description("Perform write operations on a Git repository. Supported actions: commit, stash, branch.")
+                .description("Git 写操作：提交代码 commit、暂存 stash、分支 branch 管理。")
                 .inputSchema(JsonSchema.of(buildMutateSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -119,8 +118,7 @@ public class GitToolProvider {
                         ToolSchedulingMode.SEQUENTIAL,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("infrastructure", "git", "commit", "stash", "branch", "write", "repository",
-                        "changes", "record", "push"))
+                .tags(List.of("git", "提交", "分支", "暂存", "推送", "commit", "stash", "branch", "push"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();

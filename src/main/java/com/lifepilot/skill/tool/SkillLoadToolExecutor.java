@@ -10,6 +10,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * {@code skill.load} 工具执行器 —— 统一的 Skill 激活入口。
@@ -32,6 +34,10 @@ public class SkillLoadToolExecutor {
 
     /** 单次激活最多允许的 Skill 数量 —— 避免一次性注入过多上下文。 */
     public static final int MAX_SKILLS = 3;
+
+    /** 从已替换占位符的 instructions 中扫出 references 文件绝对路径。 */
+    private static final Pattern REFERENCES_PATH_PATTERN = Pattern.compile(
+            "(?:[A-Za-z]:\\\\[^\\s)`'\"]+|/[^\\s)`'\"]+)[/\\\\]references[/\\\\][\\w.-]+\\.md");
 
     private final SkillActivator activator;
     private final SkillInstallationRepository repository;
@@ -67,15 +73,18 @@ public class SkillLoadToolExecutor {
         StringBuilder content = new StringBuilder();
         // 用 LinkedHashSet 保留首次出现顺序并自动去重
         LinkedHashSet<String> distinctToolIds = new LinkedHashSet<>();
+        LinkedHashSet<String> distinctReferences = new LinkedHashSet<>();
         for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
             SkillActivation activation = activator.activate(name);
             if (i > 0) {
                 content.append("\n\n");
             }
+            String instructions = activation.instructions();
             content.append("<skill name=\"").append(name).append("\">\n")
-                    .append(activation.instructions())
+                    .append(instructions)
                     .append("\n</skill>");
+            collectReferences(instructions, distinctReferences);
             if (activation.suggestedTools() != null) {
                 for (String toolId : activation.suggestedTools()) {
                     if (toolId != null && !toolId.isBlank()) {
@@ -85,10 +94,29 @@ public class SkillLoadToolExecutor {
             }
         }
 
+        // references 强引导：让 LLM 在收到当回合就看到具体路径，避免凭印象做事。
+        if (!distinctReferences.isEmpty()) {
+            content.append("\n\n执行具体动作（写命令 / 生成产物 / 套用格式 / 查陌生参数）前必读：");
+            for (String ref : distinctReferences) {
+                content.append("\n- file.read(\"").append(ref).append("\")");
+            }
+        }
+
         return Map.of(
                 "content", content.toString(),
                 "activated_tool_ids", List.copyOf(distinctToolIds)
         );
+    }
+
+    /** 从 instructions 中扫出 references 绝对路径加入集合。 */
+    private static void collectReferences(String instructions, LinkedHashSet<String> sink) {
+        if (instructions == null || instructions.isEmpty()) {
+            return;
+        }
+        Matcher m = REFERENCES_PATH_PATTERN.matcher(instructions);
+        while (m.find()) {
+            sink.add(m.group());
+        }
     }
 
     /**

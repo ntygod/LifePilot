@@ -17,9 +17,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 注册 tools.search / tools.describe / tools.list 三个 Meta BuiltinTool。
+ * 注册 tools.search / tools.describe 两个 Meta BuiltinTool。
  *
- * <p>这三个工具必须常驻 prompt（在 Tier 1 pinned 列表）。
+ * <p>这两个工具常驻 prompt（在 Tier 1 pinned 列表）。LLM 通过 search 发现工具、
+ * describe 拿完整 schema；不需要 list 浏览全部（react-system.st 已禁该反模式）。
  * Executor 从 ToolInput 的 context 拿当前 ReactAgentState，传给服务层。</p>
  *
  * @author zsg
@@ -31,15 +32,12 @@ public class BuiltinToolSearchProvider {
 
     private final ToolSearchService searchService;
     private final ToolDescribeService describeService;
-    private final ToolListService listService;
 
     public BuiltinToolSearchProvider(
             ToolSearchService searchService,
-            ToolDescribeService describeService,
-            ToolListService listService) {
+            ToolDescribeService describeService) {
         this.searchService = searchService;
         this.describeService = describeService;
-        this.listService = listService;
     }
 
     /** 构建 tools.search 内置工具定义。 */
@@ -47,8 +45,8 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tools.search")
                 .name("搜索工具")
-                .description("Search the tool registry by English keywords and return top-k matches with BM25 ranking")
-                .tags(List.of("search", "tools", "discover", "find", "registry"))
+                .description("用关键词在工具注册表中按 BM25 排序找匹配。需要未常驻的工具时优先调用本工具发现。")
+                .tags(List.of("搜索", "工具", "发现", "查找", "tools", "search"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -57,11 +55,11 @@ public class BuiltinToolSearchProvider {
                         "type", "object",
                         "properties", Map.of(
                                 "query", Map.of("type", "string",
-                                        "description", "English keywords describing the desired capability"),
+                                        "description", "描述所需能力的关键词（中文或英文均可）"),
                                 "category", Map.of("type", "string",
-                                        "description", "Optional category filter: PERCEPTION/ACTION/COGNITION/STORAGE/INTERACTION/INTROSPECTION/EXTENSION"),
+                                        "description", "可选 category 过滤：PERCEPTION/ACTION/COGNITION/STORAGE/INTERACTION/INTROSPECTION/EXTENSION"),
                                 "limit", Map.of("type", "integer",
-                                        "description", "Max results, default 5, max 20")
+                                        "description", "最大返回数量，默认 5，上限 20")
                         ),
                         "required", List.of("query")
                 )))
@@ -74,8 +72,8 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tools.describe")
                 .name("查询工具详情")
-                .description("Fetch full JSON schema and metadata for the specified tool IDs, batch supported")
-                .tags(List.of("describe", "tools", "schema", "inspect", "registry"))
+                .description("批量返回指定工具 ID 的完整 JSON schema 与元数据。")
+                .tags(List.of("详情", "工具", "schema", "describe", "tools"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
@@ -86,34 +84,11 @@ public class BuiltinToolSearchProvider {
                                 "tool_ids", Map.of(
                                         "type", "array",
                                         "items", Map.of("type", "string"),
-                                        "description", "Array of tool IDs to describe")
+                                        "description", "要查询的工具 ID 数组")
                         ),
                         "required", List.of("tool_ids")
                 )))
                 .executor(this::executeDescribe)
-                .build();
-    }
-
-    /** 构建 tools.list 内置工具定义。 */
-    public BuiltinTool listTool() {
-        return BuiltinTool.builder()
-                .id("tools.list")
-                .name("列举工具")
-                .description("List tool IDs grouped by category, returns IDs only, call describe for full schema details")
-                .tags(List.of("list", "tools", "browse", "enumerate", "registry"))
-                .category(ToolCategory.INTROSPECTION)
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "category", Map.of(
-                                        "type", "string",
-                                        "description", "Optional category filter; omit to list all")
-                        )
-                )))
-                .executor(this::executeList)
                 .build();
     }
 
@@ -148,18 +123,9 @@ public class BuiltinToolSearchProvider {
         ));
     }
 
-    private ToolResult executeList(ToolInput input) {
-        String category = input.getOptionalParam("category", String.class).orElse(null);
-        ToolListResult result = listService.list(category);
-        return ToolResult.success(Map.of(
-                "categories", result.categories(),
-                "total", result.total()
-        ));
-    }
-
     /**
      * 从 ToolInput 的 context 拿 ReactAgentState；若未注入，返回 null。
-     * ToolBridgeAgentToolProvider 在 Task A.11 改写里把 state 放进 context。
+     * ToolBridgeAgentToolProvider 把 state 放进 context。
      */
     private ReactAgentState extractState(ToolInput input) {
         if (input.context() == null) {

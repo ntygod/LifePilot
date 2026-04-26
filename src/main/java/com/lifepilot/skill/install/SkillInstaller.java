@@ -72,13 +72,14 @@ public class SkillInstaller {
         descriptionValidator.validate(parsed.frontmatter().description());
         bodyValidator.validate(parsed.body());
 
-        // 3. 写文件：targetDir/<name>/SKILL.md
-        Path dir = request.targetDir().resolve(parsed.frontmatter().name());
+        // 3. 写文件：targetDir/<name>/SKILL.md（绝对规范化路径）
+        Path dir = request.targetDir().resolve(parsed.frontmatter().name())
+                .toAbsolutePath().normalize();
         Files.createDirectories(dir);
         Path skillMd = dir.resolve("SKILL.md");
         Files.writeString(skillMd, request.skillMdContent(), StandardCharsets.UTF_8);
 
-        // 4. Upsert 元数据到 skills 表
+        // 4. Upsert 元数据到 skills 表（filePath 必须是绝对路径，SkillActivator 会直接拼子目录）
         String checksum = sha256(request.skillMdContent());
         Instant now = Instant.now();
         var install = new SkillInstallation(

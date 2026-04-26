@@ -1,138 +1,122 @@
-# 浏览器 action 完整参考
+# 浏览器 action 参考
+
+`browser(action=...)` 路由，所有调用带 `sessionId="<task-name>"` 复用会话。
 
 ## action 清单
 
 | action | 说明 | 关键参数 |
-|--------|------|---------|
+|---|---|---|
 | `navigate` | 导航到 URL | `url` |
-| `snapshot` | 截图 + 可交互元素标号（**首选定位**） | `injectLabels`, `maxElements`, `viewportOnly` |
-| `click` | 点击元素 | `index` **或** `selector` |
-| `input` | 输入文本 | `index` **或** `selector`, `value` |
-| `hover` | 鼠标悬停 | `index` **或** `selector` |
-| `scroll` | 滚动页面 | `direction`, `pixels` |
+| `snapshot` | 截图 + 可交互元素编号表（**首选定位**） | `injectLabels`, `maxElements`, `viewportOnly` |
+| `click` / `input` / `hover` | 点击 / 输入 / 悬停 | `index` 或 `selector`（二选一） |
+| `scroll` | 滚动 | `direction`, `pixels` |
 | `wait` | 等待元素 | `selector`, `state`, `timeout` |
-| `select` | 选择下拉项 | `selector`, `value` |
-| `keyboard` | 键盘操作 | `type`, `key` |
-| `screenshot` | 截图（仅图，无元素列表） | `fullPage` |
+| `select` | 下拉选择 | `selector`, `value` 或 `label` |
+| `keyboard` | 键盘操作 | `type`, `key`（或 `text` 逐字符） |
+| `screenshot` | 仅截图无元素表 | `fullPage` |
 | `evaluate` | 执行 JS | `expression` |
-| `accessibility` | 获取无障碍树 | `rootSelector`, `maxDepth` |
-| `tab` | 标签页管理 | `tabAction`, `tabId`, `url` |
-| `storage` | Cookie/localStorage | `target`, `storageAction` |
-| `requestHumanTakeover` | 暂停让用户接管（验证码/登录/扫码） | `reason` |
+| `accessibility` | 无障碍树 | `rootSelector`, `maxDepth` |
+| `tab` | 标签页 | `tabAction`, `tabId`, `url` |
+| `storage` | Cookie / localStorage | `target`, `storageAction`, `name` |
+| `requestHumanTakeover` | 挂起让用户接管 | `reason` |
 | `close` | 关闭会话 | `sessionId` |
 
-## 典型示例
+## 典型流程
 
-### 导航并获取内容
-
-```
-browser(action="navigate", url="https://example.com", sessionId="task-name")
-```
-
-同一任务用相同 `sessionId`，复用 cookie 和页面状态。导航返回 `partial: true` 时内容仍可用。
-
-### snapshot：截图 + 元素编号（推荐首选）
+### 抓取动态页
 
 ```
-browser(action="snapshot", sessionId="task-name")
-```
-
-一次返回：
-
-- `screenshot`：当前截图（vision 输入自动生效）
-- `elements`：可交互元素数组，每项 `{index, tag, role, text, name, id, ariaLabel, bbox}`
-- `total` / `truncated` / `viewport` / `url` / `title`
-
-后续 click/input/hover 优先用 `index`（定位更稳、抗 layout 抖动），只在 snapshot 不可用或元素未被识别时退回选择器。
-
-### 交互操作：首选 index，其次 selector
-
-`click` / `input` / `hover` 的 `index` 与 `selector` **二选一**：
-
-```
-browser(action="click", index=12, sessionId="task-name")
-browser(action="input", index=8, value="搜索内容", sessionId="task-name")
-browser(action="click", selector="#search-btn", sessionId="task-name")  # 退回方式
-browser(action="scroll", direction="down", pixels=500, sessionId="task-name")
-browser(action="wait", selector=".result-list", state="visible", timeout=10, sessionId="task-name")
-browser(action="evaluate", expression="JSON.stringify(...)", sessionId="task-name")
-```
-
-页面变化（导航 / 弹窗 / 异步渲染）后旧的 elements 列表失效，操作前重新 `snapshot`。
-
-### 提取结构化数据
-
-```
+browser(action="navigate", url="<url>", sessionId="<name>")
+browser(action="snapshot", sessionId="<name>")
+# 找到目标元素 index
+browser(action="click", index=<n>, sessionId="<name>")
+browser(action="wait", selector="<结果区>", state="visible", timeout=10, sessionId="<name>")
 browser(action="evaluate",
-  expression="JSON.stringify(Array.from(document.querySelectorAll('.item')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))",
-  sessionId="task-name")
+        expression="JSON.stringify(Array.from(document.querySelectorAll('<sel>')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))",
+        sessionId="<name>")
+file.write(path="<输出路径>", content="<抓取数据>")
+browser(action="close", sessionId="<name>")
 ```
 
-### 其他交互
+### 表单填写
 
 ```
-browser(action="select", selector="#country", value="CN", sessionId="task-name")
-browser(action="keyboard", key="Enter", type="key", sessionId="task-name")
-browser(action="hover", index=5, sessionId="task-name")
+browser(action="navigate", url="<url>", sessionId="<name>")
+browser(action="snapshot", sessionId="<name>")
+browser(action="input", index=<n>, value="<值>", sessionId="<name>")
+browser(action="select", selector="#country", value="CN", sessionId="<name>")
+browser(action="click", index=<提交按钮 index>, sessionId="<name>")
+browser(action="wait", selector="<成功提示>", state="visible", sessionId="<name>")
 ```
 
-### 保存结果与关闭
+### 网页截图
 
 ```
-file.write(path="output/data.json", content="抓取的数据")
-browser(action="close", sessionId="task-name")
+browser(action="navigate", url="<url>", sessionId="<name>")
+browser(action="screenshot", fullPage=true, sessionId="<name>")
+browser(action="close", sessionId="<name>")
 ```
 
-完成后必须关闭，释放浏览器资源。
-
-## 元素定位策略与 fallback 链
-
-优先级从高到低：
-
-1. `index`（snapshot 返回）—— 首选，最稳
-2. `id` 选择器：`#unique-id`
-3. `data-testid`：`[data-testid="submit"]`
-4. 无障碍角色：通过 `browser(action="accessibility")` 获取元素树
-5. CSS 选择器：`.class-name > child`
-
-失败 fallback：
-
-- `click(index=N)` 返回 stale / not found → 重新 `snapshot` 对比 elements 列表是否变化
-- 连续 2 次 index 失败 → 回落到 selector
-- selector 也 2 次失败 → 换策略（browser → web.fetch → web.search）
-
-## 登录墙识别与人机接管
-
-**客观触发条件**（任一满足即调 `requestHumanTakeover`）：
-
-- navigate 后 URL 含 `login` / `signin` / `auth` 关键词
-- snapshot elements 中存在 `type=password` 的 input
-- 截图明显是登录页 / 验证码 / 人机验证
-- 连续 2 次 snapshot 的 elements 完全相同且 Agent 无法推进（说明操作没生效）
-
-**调用方式**：
+### 多步导航 + 标签页
 
 ```
-browser(action="requestHumanTakeover", sessionId="task-name", reason="需要扫码登录")
+browser(action="tab", tabAction="open", url="<url2>", sessionId="<name>")
+browser(action="tab", tabAction="list", sessionId="<name>")
+browser(action="tab", tabAction="switch", tabId="<id>", sessionId="<name>")
+browser(action="tab", tabAction="close", tabId="<id>", sessionId="<name>")
 ```
 
-- `reason` 简短、用户语言（如 "需要扫码登录"、"请输入短信验证码"、"触发了人机验证"），具体措辞 Agent 根据观察自行组织
-- 当前回合自动挂起，前端弹窗提示用户在浏览器内完成操作
-- 用户点 "继续" 后 Agent 自动恢复，从下一步继续
+## 元素定位 fallback 链
 
-**不要用于**：页面加载慢、元素暂时未出现 — 这些用 `wait`。
+按优先级从高到低，连续 2 次失败切下一级：
 
-## 会话模式
+1. `index`（snapshot 返回）—— 抗 layout 抖动，最稳
+2. `id` 选择器：`#<unique-id>`
+3. `data-testid`：`[data-testid="<id>"]`
+4. 无障碍角色：`browser(action="accessibility", rootSelector=...)` 拿语义结构
+5. CSS 选择器：`.<class> > <child>`
+6. 仍失败 → 退 `web.fetch` → 退 `web.search` → 调 `requestHumanTakeover`
 
-| 模式 | 登录态 | 适用场景 |
-|------|--------|---------|
-| LAUNCH（默认） | 会话内保持，关闭后丢失 | 一般抓取和交互 |
-| CDP | 复用用户已登录的 Chrome | 需要登录或遇到验证码的站点 |
-| PERSISTENT | 首次登录后永久保留 | 长期反复访问需登录的站点 |
+页面变化（导航 / 弹窗 / 异步渲染）后旧 elements 列表失效，**操作前重新 snapshot**。
 
-## 常见错误处理
+## 人机接管（requestHumanTakeover）
 
-- **导航失败** → 检查 `partial` 字段，有部分内容则直接使用；否则换 `web.fetch`
-- **页面内容为空** → 可能 JS 未渲染完，用 `evaluate` 等待特定元素；或被反爬拦截，换 `web.search`
-- **元素未找到** → 先 `snapshot` 或 `screenshot` 确认状态，可能需要 `scroll` 或检查 iframe
-- **登录墙/验证码** → 调 `requestHumanTakeover` 让用户接管；长期访问可换 CDP 或 PERSISTENT 模式保留登录态
+**触发条件**（任一满足即调用，不要让 LLM 假装填密码 / 输验证码）：
+
+- navigate 后 URL 含 `login` / `signin` / `auth` / `sso`
+- snapshot elements 含 `type=password` 的 input
+- 截图明显是登录页 / 验证码 / 人机验证 / 滑块
+- 连续 2 次 snapshot elements 完全相同且无法推进（操作没生效）
+
+**调用**：
+
+```
+browser(action="requestHumanTakeover",
+        sessionId="<name>",
+        reason="<简短用户语言>")
+```
+
+`reason` 由 Agent 根据观察自行组织（如"需要扫码登录"、"请输入短信验证码"、"触发了人机验证"），当前回合自动挂起，前端弹窗，用户点继续后从下一步恢复。
+
+**不要用于**：页面加载慢、元素暂时未出现 → 这些用 `wait`。
+
+## 会话模式（acquisitionMode）
+
+仅首次创建会话生效。
+
+| 模式 | 登录态 | 适用 | 必需参数 |
+|---|---|---|---|
+| `LAUNCH`（默认） | 会话内保持，关闭丢失 | 一般抓取与交互 | — |
+| `CDP` | 复用用户已运行的 Chrome | 用户已登录的站点、需绕过验证码 | `cdpUrl` |
+| `PERSISTENT` | 永久 profile，跨会话保留 | 长期反复访问需登录的站点 | `userDataDir` |
+
+## 错误处理
+
+| 现象 | 处理 |
+|---|---|
+| 导航返回 `partial: true` | 部分内容已渲染，可直接用；完整需要时配合 `wait` 或 `evaluate` 等关键元素 |
+| 页面内容为空 | JS 未渲染完 → 加 `wait`；被反爬 → 换 `web.fetch` 或 `web.search` |
+| `index` 返回 stale / not found | 重新 `snapshot` 对比 elements；2 次失败回落 `selector` |
+| selector 也找不到 | 检查是否在 iframe 内；用 `accessibility` 看真实结构 |
+| 登录墙 / 验证码 | `requestHumanTakeover`，长期反复访问换 `CDP` 或 `PERSISTENT` |
+| `Browser closed` | 会话已关闭，重 `navigate` 起新 session |

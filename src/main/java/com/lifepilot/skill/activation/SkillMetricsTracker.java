@@ -22,6 +22,7 @@ public class SkillMetricsTracker {
     private static final Logger log = LoggerFactory.getLogger(SkillMetricsTracker.class);
 
     private final ConcurrentHashMap<String, SkillMetrics> metricsMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> activationUpdateFailures = new ConcurrentHashMap<>();
 
     /**
      * 记录一次 Skill 激活。
@@ -34,6 +35,25 @@ public class SkillMetricsTracker {
             return new SkillMetrics(count, Instant.now());
         });
         log.debug("记录 Skill 激活: skillId={}", skillId);
+    }
+
+    /**
+     * 记录一次 last_activated_at 异步更新失败 — 用于诊断激活计数与 DB 失同步的程度。
+     *
+     * @param skillId Skill ID
+     */
+    public void recordActivationUpdateFailure(String skillId) {
+        activationUpdateFailures.merge(skillId, 1L, Long::sum);
+    }
+
+    /**
+     * 获取指定 Skill 的更新失败次数。
+     *
+     * @param skillId Skill ID
+     * @return 失败次数，无记录时返回 0
+     */
+    public long getActivationUpdateFailures(String skillId) {
+        return activationUpdateFailures.getOrDefault(skillId, 0L);
     }
 
     /**

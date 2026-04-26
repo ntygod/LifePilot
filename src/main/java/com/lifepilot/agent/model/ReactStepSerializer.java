@@ -254,9 +254,15 @@ public final class ReactStepSerializer {
                 String target = src != null ? truncate(src, 40) : (dest != null ? truncate(dest, 40) : "");
                 yield (action != null ? action : "操作") + (target.isEmpty() ? "" : " " + target);
             }
-            case "file.undo" -> "撤销编辑";
-            case "file.redo" -> "重做编辑";
-            case "file.diff" -> "对比文件";
+            case "file.history" -> {
+                String action = textField(root, "action");
+                yield switch (action == null ? "" : action) {
+                    case "undo" -> "撤销编辑";
+                    case "redo" -> "重做编辑";
+                    case "diff" -> "对比文件";
+                    default -> "文件编辑历史";
+                };
+            }
             case "shell.exec" -> {
                 String cmd = textField(root, "command");
                 yield cmd != null ? "执行 `" + truncate(cmd, 50) + "`" : "执行命令";
@@ -371,7 +377,7 @@ public final class ReactStepSerializer {
             }
             case "file.edit" -> intFieldLabel(root, "operationsApplied", "已修改 %d 处", "编辑完成");
             case "file.list" -> intFieldLabel(root, "count", "%d 个条目", "列出完成");
-            case "file.manage", "file.undo", "file.redo", "file.diff" -> "操作成功";
+            case "file.manage", "file.history" -> "操作成功";
             case "shell.exec" -> intFieldLabel(root, "exitCode", "退出码 %d", "执行完成");
             case "code.execute" -> intFieldLabel(root, "exitCode", "执行完成（退出码 %d）", "执行完成");
             case "memory" -> {

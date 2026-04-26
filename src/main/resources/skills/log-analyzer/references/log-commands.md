@@ -1,73 +1,142 @@
 # 日志分析命令速查
 
+占位符 `<log>` 替换具体日志路径，`<pattern>` 替换关键词，`<N>` 替换行数。
+
 ## 常用日志路径
 
-- 知微应用日志：`~/.zhiwei/logs/lifepilot.log`
-- Java 应用：`./logs/` 或 `./target/logs/`
-- Nginx：`/var/log/nginx/error.log`
-- Linux 系统日志：`/var/log/syslog`
-- Windows 事件日志：通过 `powershell -c "Get-EventLog -LogName Application -Newest 50"` 查看
+- 知微：`~/.zhiwei/logs/lifepilot.log`、`~/.zhiwei/logs/agent.log`、`~/.zhiwei/logs/error.log`
+- Java 应用：`./logs/`、`./target/logs/`
+- Spring Boot：`./logs/spring.log`、`./logs/application.log`
+- Nginx：`/var/log/nginx/error.log`、`/var/log/nginx/access.log`
+- Linux 系统：`/var/log/syslog`、`/var/log/messages`、`/var/log/dmesg`
+- Windows 事件：`Get-EventLog -LogName Application -Newest <N>`
 
 ## 定位日志文件
 
 ```
-file.list(action="list", path="~/.zhiwei/logs", pattern="*.log")
+file.list(action="list", path="<log-dir>", pattern="*.log", maxDepth=2)
 ```
 
-## 快速扫描错误
+## 快速扫错
 
-### Windows
+### Windows PowerShell
 
 ```bash
-shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 500 | Select-String 'ERROR|Exception'\"")
+# 尾部最近异常
+shell.exec(command="powershell -c \"Get-Content <log> -Tail 500 | Select-String 'ERROR|FATAL|Exception'\"")
+# 全文扫描（小文件 < 100MB）
+shell.exec(command="powershell -c \"Select-String -Path <log> -Pattern '<pattern>' -Context 0,5\"")
 ```
+
+### Linux bash
+
+```bash
+# 全文扫描带前后 5 行上下文
+shell.exec(command="grep -nE 'ERROR|FATAL|Exception' <log> -A 5 -B 1 | head -200")
+# 多文件一次扫
+shell.exec(command="grep -rnE 'ERROR|FATAL' <log-dir>/ -C 3")
+```
+
+## 大文件按段读
+
+```
+file.read(path="<log>", startLine=10000, endLine=10500)
+file.read(path="<log>", maxChars=30000)
+```
+
+不要一次性读整个大日志文件，先 `wc -l <log>` 看行数再分段。
+
+## 时间窗口过滤
+
+日志含 ISO 8601 时间前缀（如 `2026-04-25 14:`），先按时间缩小再扫错：
 
 ### Linux
 
 ```bash
-shell.exec(command="grep -rn -E 'ERROR|FATAL|Exception' /path/to/logs/ -C 3")
+# 只看 4-25 14 点
+shell.exec(command="grep '^2026-04-25 14:' <log> | grep -E 'ERROR|Exception'")
+# 一段时间窗口
+shell.exec(command="awk '/^2026-04-25 14:00/,/^2026-04-25 16:00/' <log>")
 ```
-
-## 统计错误分布
 
 ### Windows
 
 ```bash
-shell.exec(command="powershell -c \"Get-Content app.log | Select-String 'ERROR' | Group-Object { ($_ -split '\s+')[-1] } | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
+shell.exec(command="powershell -c \"Get-Content <log> | Select-String '^2026-04-25 14:' | Select-String 'ERROR'\"")
 ```
+
+## 错误频率统计（Top N）
 
 ### Linux
 
 ```bash
-shell.exec(command="grep 'ERROR' app.log | awk '{print $NF}' | sort | uniq -c | sort -rn | head -20")
+# 提取错误关键字段排序
+shell.exec(command="grep 'ERROR' <log> | awk -F'ERROR' '{print $2}' | awk '{print $1,$2,$3}' | sort | uniq -c | sort -rn | head -20")
+# 异常类名 Top
+shell.exec(command="grep -oE '[A-Z][a-zA-Z]+Exception' <log> | sort | uniq -c | sort -rn | head -20")
 ```
+
+### Windows
+
+```bash
+shell.exec(command="powershell -c \"Get-Content <log> | Select-String 'ERROR' | ForEach-Object { ($_.Line -split 'ERROR')[1].Substring(0,[Math]::Min(80,$_.Line.Length-($_.Line.IndexOf('ERROR')+5))) } | Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
+```
+
+## 完整堆栈追踪
+
+抓异常行后续 N 行（通常 20-40 行够用）：
+
+```bash
+# Linux
+shell.exec(command="grep -A 30 'Caused by' <log> | head -100")
+# Windows
+shell.exec(command="powershell -c \"Select-String -Path <log> -Pattern 'Caused by' -Context 0,30\"")
+```
+
+## 脱敏正则（输出前必须处理）
+
+| 类型 | 正则 | 替换 |
+|------|------|------|
+| IPv4 | `(\d{1,3}\.){3}\d{1,3}` | `xxx.xxx.xxx.***` |
+| 邮箱 | `[\w.+-]+@[\w-]+\.[\w.-]+` | `***@<domain>` |
+| 手机号 | `1[3-9]\d{9}` | `1xx****<后 4 位>` |
+| Token | `(token|key|secret)["':=\s]+[A-Za-z0-9+/=]{16,}` | `<key>=***` |
+| 用户 ID | `(user_id|uid)["':=\s]+\d+` | `user_***` |
+
+报告中引用日志原文时，**先 sed/正则替换敏感字段再输出**。
 
 ## 分析报告结构
 
 ```
 ## 概览
-- 日志时间范围：
-- 总行数：
-- 错误数：
+- 日志范围：<起止时间>
+- 总行数：<count>
+- ERROR 行数：<count>
 
 ## 关键错误（需立即处理）
-1. 错误描述（出现 N 次）
-   - 首次出现：时间
-   - 堆栈摘要：...
+1. <错误类型>（<次数>）
+   - 首次：<时间>
+   - 堆栈摘要：<3-5 行核心>
+   - 影响：<推断>
 
 ## 错误趋势
-- 频率变化描述
+- <时间分布或频率变化>
 
 ## 重复模式
-- 反复出现的错误模式
+- <反复出现的模式>
 
 ## 修复建议
-1. 建议 1
-2. 建议 2
+1. <可执行动作>
 ```
 
-## 常见错误处理
+分级阈值：崩溃 / OOM / 业务关键链路报错 → 立即；高频 ERROR / 慢查询 → 关注；常规 WARN / 偶发重试成功 → 可忽略。
 
-- **日志文件过大** → 先读取尾部最近的 500-1000 行，再按需扩展
-- **编码错误** → 尝试不同编码读取
-- **日志格式不规范** → 先采样几行确认分隔符和时间格式
+## 错误处理
+
+| 现象 | 应对 |
+|------|------|
+| 文件 > 1GB | `tail -10000` 取尾部，再按时间窗口缩 |
+| 编码错误（GBK / GB2312） | `file.read(encoding="GBK")` 或 `iconv -f gbk -t utf-8` |
+| 时间格式不规范 | 先 `head -20` 采样确认前缀 |
+| 跨多文件分析（rotation） | `file.list` 先列文件，再按修改时间倒序选 |
+| 实时滚动需求 | 不在本 Skill 范围，用 cron-scheduler + shell.exec 起定时任务 |

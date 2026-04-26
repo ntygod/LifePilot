@@ -396,46 +396,19 @@ public class ExperienceSummarizer {
     }
 
     /**
-     * 即时经验补丁 — 在反思触发时同步写入轻量经验，不等异步后处理。
+     * 即时经验补丁 —— 历史方案在工具失败反思时同步把 reflectContent 截断 500 字符 dump 入库，
+     * 但 reflectContent 是 raw 错误（CLIXML、HTTP 错误体、URL 串），未经 LLM 提炼，注入下次
+     * 任务的 experience_context 时纯属噪音。已废弃，保留方法骨架以便后续替换为真正的提炼路径。
      *
-     * <p>仅在工具失败反思时调用，跳过质量评估和 LLM 提炼，直接从反思内容提取关键教训。</p>
+     * <p>当前回合的工具失败已经在 reflect prompt 中作用（"⚠ 工具执行失败...请分析错误原因..."），
+     * 不需要持久化到经验库再注入下次任务。可迁移的教训应走 ExperienceSummarizer 的 LLM 异步提炼。</p>
      *
-     * @param state          当前 Agent 状态
-     * @param reflectContent 反思内容文本
-     * @param trigger        反思触发原因
-     * @return 写入的经验实体，写入失败或条件不满足时返回 null
+     * @return 始终返回 null
      */
     @Nullable
     public TemporalEntity quickLearn(ReactAgentState state, String reflectContent,
                                       ReactStep.ReflectTrigger trigger) {
-        if (!config.isEnabled() || semanticMemory == null) {
-            return null;
-        }
-        // 仅对工具失败触发的反思进行即时学习
-        if (trigger != ReactStep.ReflectTrigger.TOOL_FAILURE) {
-            return null;
-        }
-        try {
-            String scenario = "工具失败反思_" + state.sessionId();
-            String description = reflectContent.length() > 500
-                    ? reflectContent.substring(0, 500)
-                    : reflectContent;
-
-            var entity = new TemporalEntity(
-                    UUID.randomUUID().toString(), EntityType.EXPERIENCE, scenario, description,
-                    Map.of("trigger", trigger.name(), "sessionId", state.sessionId(),
-                            "success", false, "source", "quick_learn"),
-                    1, true, Instant.now(), null, state.sessionId(),
-                    0.7f, 0.7f, 0, null, Instant.now(), Instant.now());
-            MemoryWriteContext writeContext = resolveExperienceWriteContext(state.sessionId());
-            var written = SqliteBusyRetry.execute(
-                    () -> semanticMemory.upsertWithConflictDetection(entity, state.sessionId(), writeContext));
-            log.info("即时经验: 写入完成, sessionId={}, scenario={}", state.sessionId(), scenario);
-            return written;
-        } catch (Exception e) {
-            log.warn("即时经验: 写入失败, sessionId={}, error={}", state.sessionId(), e.getMessage());
-            return null;
-        }
+        return null;
     }
 
 }

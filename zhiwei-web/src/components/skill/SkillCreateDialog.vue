@@ -32,7 +32,6 @@ description: 当...时使用。关键词 ...
 version: 1.0.0
 metadata:
   zhiwei:
-    category: automation
     priority: normal
     tags: []
     suggested_tools: []

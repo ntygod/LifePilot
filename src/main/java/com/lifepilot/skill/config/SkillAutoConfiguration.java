@@ -43,12 +43,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * 注册 Skill 框架核心组件、Markdown 解析与热加载、审计追溯。
  * 每个 Bean 使用 {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
  *
- * <p>Phase B.3 后：{@link MarkdownSkillParser}（{@code com.lifepilot.skill}）已接入，
- * {@link MarkdownSkillLoader} / {@link SkillFileWatcher} 改用新 parser + 两道 validator
- * （{@link SkillDescriptionValidator} / {@link SkillBodyValidator}），
- * BUILTIN 来源由 {@code SkillDiscoveryRegistrar}（meta 模块）经 {@code SkillInstaller} 安装。
- * REST Controller 的 Skill 创建/更新端点待 Phase B.6 接回。
- * SkillGenerator / SkillGapDetector / SkillGenerationTool 等 AUTO_GENERATED 相关 Bean 待 Phase B.5 恢复。</p>
+ * <p>{@link MarkdownSkillParser}（{@code com.lifepilot.skill}）解析 SKILL.md，
+ * {@link MarkdownSkillLoader} / {@link SkillFileWatcher} 配合两道 validator
+ * （{@link SkillDescriptionValidator} / {@link SkillBodyValidator}）落地到 {@link SkillRegistry}；
+ * BUILTIN 来源由 {@code SkillDiscoveryRegistrar}（meta 模块）经 {@code SkillInstaller} 安装。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -234,6 +232,34 @@ public class SkillAutoConfiguration {
                 log.warn("ApplicationReady: SkillFileWatcher 启动失败，Skill 向量索引可能不可用: {}", e.getMessage());
             }
         }
-        // TODO Phase B.5: SkillGenerationTool 接入新 SkillSynthesizer 后在此重新启用
+    }
+
+    /**
+     * 终态扫描 —— 必须晚于 {@code BuiltinToolRegistrar.registerAll}（HIGHEST_PRECEDENCE+100），
+     * 否则 skill.load / code.kernel / channel.feishu 等 BuiltinTool 尚未注册会误报"未注册"。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    public void onSkillFinalValidation(ApplicationReadyEvent event) {
+        var ctx = event.getApplicationContext();
+        if (!ctx.containsBean("skillDefinitionValidator") || !ctx.containsBean("skillRegistry")) {
+            return;
+        }
+        try {
+            var validator = ctx.getBean(com.lifepilot.skill.registry.SkillDefinitionValidator.class);
+            var registry = ctx.getBean(com.lifepilot.skill.registry.SkillRegistry.class);
+            validator.markStartupComplete();
+            int definitionErrors = 0;
+            for (var def : registry.listAll()) {
+                var result = validator.validate(def);
+                if (!result.valid()) {
+                    definitionErrors++;
+                }
+            }
+            log.info("ApplicationReady: Skill 终态校验完成（definition 错误 skill={}；未注册工具见上方 WARN）",
+                    definitionErrors);
+        } catch (Exception e) {
+            log.warn("ApplicationReady: Skill 终态校验跳过: {}", e.getMessage());
+        }
     }
 }

@@ -9,12 +9,9 @@ import java.util.Map;
 /**
  * Skill 定义 — 程序性知识包的完整蓝图。
  *
- * <p>每个 Skill 通过此 record 描述其 ID、名称、描述、版本、来源、
- * 指令（instructions）、建议工具列表（suggestedTools）、扁平 metadata 以及
- * 结构化 {@link SkillZhiweiMeta}（frontmatter 下 {@code metadata.zhiwei} 块的视图）。</p>
- *
- * <p>{@code zhiweiMeta} 为 v2 规范新增字段，老 caller 可不传（默认 {@link SkillZhiweiMeta#empty()}），
- * Phase B.3 SkillDiscoveryRegistrar 改造后将由 parser 统一填充。</p>
+ * <p>每个 Skill 通过此 record 描述其 ID、名称、描述、版本、来源、指令（instructions）、
+ * 建议工具列表（suggestedTools）、扁平 metadata 以及结构化 {@link SkillZhiweiMeta}
+ * （frontmatter 下 {@code metadata.zhiwei} 块的视图）。</p>
  *
  * @author zsg
  * @since 2026-07-28
@@ -27,6 +24,9 @@ public record SkillDefinition(
         String version,
         SkillSource source,
         String instructions,
+        /** Skill 静态声明的配套工具 ID — 激活时会被并入会话级
+         * {@link com.lifepilot.agent.model.ReactAgentState#activatedToolIds()}，
+         * 让 LLM 在加载本 Skill 后能直接看到这些工具的完整 schema。 */
         List<String> suggestedTools,
         Map<String, String> metadata,
         SkillZhiweiMeta zhiweiMeta

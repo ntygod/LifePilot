@@ -93,7 +93,9 @@ public class SkillActivator {
             try {
                 installationRepository.updateLastActivatedAt(name, Instant.now());
             } catch (Exception e) {
-                log.warn("更新 last_activated_at 失败: name={}, error={}", name, e.getMessage());
+                // 失败影响激活时间统计（用于 LRU 清理 / UI 排序），需提到 ERROR 让告警捕获
+                log.error("更新 last_activated_at 失败: name={}", name, e);
+                metricsTracker.recordActivationUpdateFailure(name);
             }
         });
 

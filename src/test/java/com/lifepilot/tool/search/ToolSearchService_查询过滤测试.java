@@ -60,7 +60,7 @@ class ToolSearchService_查询过滤测试 {
                     tags,
                     actions,
                     category,
-                    tokenize = 'unicode61 remove_diacritics 2'
+                    tokenize = 'trigram'
                 )
                 """);
 
@@ -134,7 +134,7 @@ class ToolSearchService_查询过滤测试 {
         ToolSearchResult result = searchService.search(state, "xyzzyxwv", null, 5);
 
         assertThat(result.confidence()).isEqualTo(ToolSearchConfidence.NONE);
-        assertThat(result.hint()).contains("Try broader keywords");
+        assertThat(result.hint()).contains("无匹配");
     }
 
     @Test

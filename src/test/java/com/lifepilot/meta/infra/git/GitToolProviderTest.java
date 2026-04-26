@@ -56,11 +56,11 @@ class GitToolProviderTest {
     }
 
     @Test
-    void 所有工具应包含infrastructure标签() {
+    void 所有工具均带非空tags() {
         List<BuiltinTool> tools = provider.buildGitTools();
 
         for (BuiltinTool tool : tools) {
-            assertThat(tool.tags()).contains("infrastructure");
+            assertThat(tool.tags()).as("tool %s", tool.id()).isNotEmpty();
         }
     }
 
