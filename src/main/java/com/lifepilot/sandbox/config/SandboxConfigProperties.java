@@ -48,6 +48,9 @@ public class SandboxConfigProperties {
     /** Docker 配置。 */
     private Docker docker = new Docker();
 
+    /** 运行时配置（Python 自带运行时 + Shell 命令护栏）。 */
+    private Runtime runtime = new Runtime();
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -74,6 +77,9 @@ public class SandboxConfigProperties {
 
     public Docker getDocker() { return docker; }
     public void setDocker(Docker docker) { this.docker = docker; }
+
+    public Runtime getRuntime() { return runtime; }
+    public void setRuntime(Runtime runtime) { this.runtime = runtime; }
 
     /**
      * 会话配置 — 控制沙箱会话的 TTL、最大数量和清理间隔。
@@ -154,5 +160,95 @@ public class SandboxConfigProperties {
 
         public String getImagePrefix() { return imagePrefix; }
         public void setImagePrefix(String imagePrefix) { this.imagePrefix = imagePrefix; }
+    }
+
+    /**
+     * 运行时配置 — 控制自带 Python 运行时下载安装 + Shell 命令护栏行为。
+     *
+     * @author zsg
+     * @since 2026-04-26
+     */
+    public static class Runtime {
+
+        /** Python 自带运行时配置。 */
+        private Python python = new Python();
+
+        /** Shell 命令护栏配置。 */
+        private CommandGuardConfig commandGuard = new CommandGuardConfig();
+
+        public Python getPython() { return python; }
+        public void setPython(Python python) { this.python = python; }
+
+        public CommandGuardConfig getCommandGuard() { return commandGuard; }
+        public void setCommandGuard(CommandGuardConfig commandGuard) { this.commandGuard = commandGuard; }
+
+        /**
+         * Python 自带运行时配置 — 离线包版本、下载地址、安装路径与预期库清单。
+         *
+         * @author zsg
+         * @since 2026-04-26
+         */
+        public static class Python {
+
+            /** 自带 Python 运行时版本，默认 3.12.4。 */
+            private String bundledVersion = "3.12.4";
+
+            /** 下载地址模板（含 {version}/{platform}/{arch} 占位符）。 */
+            private String downloadUrlTemplate = "";
+
+            /** SHA256 校验文件地址模板（含 {version}/{platform}/{arch} 占位符）。 */
+            private String sha256UrlTemplate = "";
+
+            /** 安装路径，默认 ${user.home}/.zhiwei/python。 */
+            private String installPath = "${user.home}/.zhiwei/python";
+
+            /** 预期内置数据科学/办公库清单，用于安装后自检。 */
+            private List<String> expectedLibraries = List.of(
+                "pandas", "numpy", "scipy", "scikit-learn", "matplotlib", "seaborn",
+                "openpyxl", "pillow", "python-pptx", "python-docx", "pypdf", "pdfplumber",
+                "sympy", "requests", "httpx", "beautifulsoup4");
+
+            /** 是否禁用自带 Python 运行时（true 时回退到系统 PATH 中的 python）。 */
+            private boolean disabled = false;
+
+            public String getBundledVersion() { return bundledVersion; }
+            public void setBundledVersion(String bundledVersion) { this.bundledVersion = bundledVersion; }
+
+            public String getDownloadUrlTemplate() { return downloadUrlTemplate; }
+            public void setDownloadUrlTemplate(String downloadUrlTemplate) { this.downloadUrlTemplate = downloadUrlTemplate; }
+
+            public String getSha256UrlTemplate() { return sha256UrlTemplate; }
+            public void setSha256UrlTemplate(String sha256UrlTemplate) { this.sha256UrlTemplate = sha256UrlTemplate; }
+
+            public String getInstallPath() { return installPath; }
+            public void setInstallPath(String installPath) { this.installPath = installPath; }
+
+            public List<String> getExpectedLibraries() { return expectedLibraries; }
+            public void setExpectedLibraries(List<String> expectedLibraries) { this.expectedLibraries = expectedLibraries; }
+
+            public boolean isDisabled() { return disabled; }
+            public void setDisabled(boolean disabled) { this.disabled = disabled; }
+        }
+
+        /**
+         * Shell 命令护栏配置 — 控制 CommandGuard 的启用状态与 yolo 兜底开关。
+         *
+         * @author zsg
+         * @since 2026-04-26
+         */
+        public static class CommandGuardConfig {
+
+            /** 是否启用命令护栏，默认 true。 */
+            private boolean enabled = true;
+
+            /** 是否启用 yolo 模式（绕过命令护栏，仅用于本地调试），默认 false。 */
+            private boolean yoloMode = false;
+
+            public boolean isEnabled() { return enabled; }
+            public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+            public boolean isYoloMode() { return yoloMode; }
+            public void setYoloMode(boolean yoloMode) { this.yoloMode = yoloMode; }
+        }
     }
 }
