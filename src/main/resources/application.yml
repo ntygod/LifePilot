@@ -814,9 +814,9 @@ lifepilot:
         # 版本号（与离线包文件名 {version} 占位符对齐）
         bundled-version: "3.12.13"
         # 离线包下载地址模板
-        download-url-template: "https://github.com/zsg-cs/zhiwei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst"
+        download-url-template: "https://github.com/ntygod/ZhiWei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst"
         # SHA256 校验文件地址模板
-        sha256-url-template: "https://github.com/zsg-cs/zhiwei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst.sha256"
+        sha256-url-template: "https://github.com/ntygod/ZhiWei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst.sha256"
         # 安装路径
         install-path: "${user.home}/.zhiwei/python"
         # 是否禁用捆绑运行时（true 时回退到系统 PATH 的 python）

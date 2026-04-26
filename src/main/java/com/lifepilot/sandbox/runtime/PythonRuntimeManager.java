@@ -51,6 +51,18 @@ public class PythonRuntimeManager {
     /** 安装中状态共享引用 — 供 SSE 推送和 checkStatus 共用。 */
     private final AtomicReference<RuntimeStatus> installingState = new AtomicReference<>();
 
+    /**
+     * 最近一次 install 失败的原因（内存级，进程重启丢失）。
+     *
+     * <p>必须有这个字段，因为 install 失败时 VERSION 文件未写入，仅靠
+     * {@link #checkStatus()} 检测文件状态会返回 NotInstalled，UI 会"恢复到点击前"，
+     * 用户以为啥都没发生 — 实际是装失败了。该字段让 checkStatus 在文件缺失时仍能
+     * 返回 InstallFailed(reason)，保证用户能看到失败原因 + 重试按钮。</p>
+     *
+     * <p>清空时机：每次 install 重新开始 / uninstall / disable 触发时。</p>
+     */
+    private final AtomicReference<String> lastInstallError = new AtomicReference<>();
+
     public PythonRuntimeManager(SandboxConfigProperties config) {
         this(config, null);
     }
@@ -87,7 +99,14 @@ public class PythonRuntimeManager {
             return new RuntimeStatus.Disabled();
         }
 
-        // 3. 文件不存在 → NotInstalled
+        // 3. 最近 install 失败 → InstallFailed（带 reason 让 UI 显示真实原因 + 重试按钮）
+        //    必须放在 VERSION 文件检查之前 — install 失败时 VERSION 未写入，否则会被误判为 NotInstalled
+        String lastError = lastInstallError.get();
+        if (lastError != null) {
+            return new RuntimeStatus.InstallFailed(lastError);
+        }
+
+        // 4. 文件不存在 → NotInstalled
         Path versionFile = installPath.resolve("VERSION");
         if (!Files.exists(versionFile)) {
             return new RuntimeStatus.NotInstalled();
@@ -153,6 +172,9 @@ public class PythonRuntimeManager {
                     "installPath 必须是带父目录的非根路径: " + installPath);
         }
         Path tarball = parent.resolve(installPath.getFileName() + ".tar.zst");
+        // 进入新一轮 install,清掉上次失败原因 — 让 checkStatus 在 install 中走 Installing 路径而非 InstallFailed
+        lastInstallError.set(null);
+
         return CompletableFuture.runAsync(() -> {
             var pythonConfig = config.getRuntime().getPython();
             long startTime = System.currentTimeMillis();
@@ -225,6 +247,8 @@ public class PythonRuntimeManager {
                             e.getMessage(), duration);
                 }
                 installingState.set(null);
+                // 持久化失败原因到内存,让后续 checkStatus 返回 InstallFailed(reason) 而非 NotInstalled
+                lastInstallError.set(e.getMessage());
                 emitter.emitFailed(e.getMessage());
                 throw new RuntimeException("安装失败", e);
             } finally {
@@ -250,6 +274,8 @@ public class PythonRuntimeManager {
         long startTime = System.currentTimeMillis();
         String version = config.getRuntime().getPython().getBundledVersion();
         Path installPath = resolveInstallPath();
+        // 用户主动 reset，清掉失败原因，避免卸载后仍显示 InstallFailed
+        lastInstallError.set(null);
         try {
             if (Files.exists(installPath)) {
                 SandboxUtils.deleteDirectoryRecursively(installPath);
@@ -275,6 +301,8 @@ public class PythonRuntimeManager {
      */
     public void disable() {
         config.getRuntime().getPython().setDisabled(true);
+        // 用户主动 disable,失败原因已不相关
+        lastInstallError.set(null);
         if (historyRepo != null) {
             historyRepo.insert("python", config.getRuntime().getPython().getBundledVersion(),
                     "disable", "success", null, 0L);
