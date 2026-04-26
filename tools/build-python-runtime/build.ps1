@@ -17,7 +17,6 @@ $PbsTag = if ($env:PBS_TAG) { $env:PBS_TAG } else { "20260414" }
 # Windows 当前命名约定: x86_64-pc-windows-msvc（旧版本曾有 -shared 后缀，新版本已统一）
 $PbsTriple = switch ("$Platform-$Arch") {
     "windows-x86_64" { "x86_64-pc-windows-msvc" }
-    "windows-arm64"  { "aarch64-pc-windows-msvc" }
     default { throw "不支持的平台组合: $Platform-$Arch" }
 }
 
