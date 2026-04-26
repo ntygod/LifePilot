@@ -2,6 +2,7 @@ package com.lifepilot.sandbox.guard;
 
 import java.util.Set;
 
+import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
 
 /**
@@ -23,7 +24,7 @@ import com.lifepilot.sandbox.config.SandboxConfigProperties;
 public class CommandGuard {
 
     /** 容器后端清单 — 容器作为隔离边界可 bypass 全部规则；未来可扩展 podman / singularity 等。 */
-    private static final Set<String> CONTAINER_BACKENDS = Set.of("docker");
+    private static final Set<String> CONTAINER_BACKENDS = Set.of(SandboxBooter.TYPE_DOCKER);
 
     private final SandboxConfigProperties config;
 
@@ -45,7 +46,8 @@ public class CommandGuard {
             return GuardResult.approved();
         }
 
-        if (CONTAINER_BACKENDS.contains(booterType)) {
+        // 容器后端 bypass：booterType 为 null 时按非容器处理（fail-safe，让规则检查接管）
+        if (booterType != null && CONTAINER_BACKENDS.contains(booterType)) {
             return GuardResult.approved();
         }
 

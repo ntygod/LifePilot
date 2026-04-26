@@ -177,7 +177,7 @@ public final class ProcessBooter implements SandboxBooter {
 
     @Override
     public String type() {
-        return "process";
+        return TYPE_PROCESS;
     }
 
     @Override

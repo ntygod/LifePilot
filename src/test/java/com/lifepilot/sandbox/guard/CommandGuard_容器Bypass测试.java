@@ -56,4 +56,40 @@ class CommandGuard_容器Bypass测试 {
         var result = guard.check("rm -rf /", "process");
         assertThat(result.decision()).isEqualTo(GuardResult.Decision.APPROVED);
     }
+
+    @Test
+    void Docker后端_yolo开启时仍走bypass分支() {
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getCommandGuard().setYoloMode(true);
+        var guard = new CommandGuard(config);
+        var result = guard.check("rm -rf /", "docker");
+        // 验证 docker bypass 早于 yolo 检查
+        assertThat(result.decision()).isEqualTo(GuardResult.Decision.APPROVED);
+    }
+
+    @Test
+    void Process后端_无危险代码直接放行() {
+        var config = new SandboxConfigProperties();
+        var guard = new CommandGuard(config);
+        var result = guard.check("print('hello world')", "process");
+        assertThat(result.decision()).isEqualTo(GuardResult.Decision.APPROVED);
+    }
+
+    @Test
+    void 未知booterType按非容器处理() {
+        var config = new SandboxConfigProperties();
+        var guard = new CommandGuard(config);
+        var result = guard.check("rm -rf /", "firecracker");
+        // 未在 CONTAINER_BACKENDS 白名单 → 走规则检查 → HARDLINE 拦截
+        assertThat(result.decision()).isEqualTo(GuardResult.Decision.BLOCKED_HARDLINE);
+    }
+
+    @Test
+    void booterType为null时按非容器处理() {
+        var config = new SandboxConfigProperties();
+        var guard = new CommandGuard(config);
+        var result = guard.check("rm -rf /", null);
+        // null 视为非容器（fail-safe），走规则检查 → HARDLINE 拦截
+        assertThat(result.decision()).isEqualTo(GuardResult.Decision.BLOCKED_HARDLINE);
+    }
 }
