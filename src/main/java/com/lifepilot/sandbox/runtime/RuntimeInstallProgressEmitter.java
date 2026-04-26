@@ -60,9 +60,12 @@ public class RuntimeInstallProgressEmitter {
      * @param status 运行时状态快照
      */
     public void emit(RuntimeStatus status) {
+        // 必须走 RuntimeStatusJson.toMap：默认 Jackson 不会为 sealed record 加 "status" 判别字段，
+        // 也不会序列化 Installing.percent()（非 component 方法），前端 INSTALLING 判定会失败
+        var data = RuntimeStatusJson.toMap(status);
         for (var emitter : emitters) {
             try {
-                emitter.send(SseEmitter.event().name("progress").data(status));
+                emitter.send(SseEmitter.event().name("progress").data(data));
             } catch (IOException e) {
                 emitters.remove(emitter);
                 try { emitter.complete(); } catch (Exception ignored) {}

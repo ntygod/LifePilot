@@ -1,7 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -21,6 +20,7 @@ import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.runtime.RuntimeInstallProgressEmitter;
 import com.lifepilot.sandbox.runtime.RuntimeStatus;
+import com.lifepilot.sandbox.runtime.RuntimeStatusJson;
 
 /**
  * 捆绑 Python 运行时管理 REST 端点。
@@ -68,7 +68,7 @@ public class RuntimeController {
      */
     @GetMapping("/python/status")
     public ApiResponse<Map<String, Object>> status() {
-        return ApiResponse.ok(toMap(manager.checkStatus()));
+        return ApiResponse.ok(RuntimeStatusJson.toMap(manager.checkStatus()));
     }
 
     /**
@@ -166,40 +166,4 @@ public class RuntimeController {
         return emitter.subscribe();
     }
 
-    /**
-     * 把 sealed {@link RuntimeStatus} 序列化为前端契约的扁平 DTO。
-     *
-     * <p>各状态字段集合：
-     * <ul>
-     *   <li>NotInstalled / Disabled → {@code status} 一个字段</li>
-     *   <li>Installing → status, phase, bytesDownloaded, totalBytes, percent</li>
-     *   <li>Ready → status, version, diskBytes</li>
-     *   <li>InstallFailed → status, reason</li>
-     * </ul>
-     * </p>
-     */
-    private Map<String, Object> toMap(RuntimeStatus status) {
-        var map = new LinkedHashMap<String, Object>();
-        switch (status) {
-            case RuntimeStatus.NotInstalled n -> map.put("status", "NOT_INSTALLED");
-            case RuntimeStatus.Disabled d -> map.put("status", "DISABLED");
-            case RuntimeStatus.Installing i -> {
-                map.put("status", "INSTALLING");
-                map.put("phase", i.phase());
-                map.put("bytesDownloaded", i.bytesDownloaded());
-                map.put("totalBytes", i.totalBytes());
-                map.put("percent", i.percent());
-            }
-            case RuntimeStatus.Ready r -> {
-                map.put("status", "READY");
-                map.put("version", r.version());
-                map.put("diskBytes", r.diskBytes());
-            }
-            case RuntimeStatus.InstallFailed f -> {
-                map.put("status", "INSTALL_FAILED");
-                map.put("reason", f.reason());
-            }
-        }
-        return map;
-    }
 }
