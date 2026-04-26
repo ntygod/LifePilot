@@ -6,6 +6,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.meta.infra.web.WebSearchConfig;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.file.Paths;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +49,10 @@ class InfraToolProviderTest {
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
         var indexer = new InteractiveElementIndexer(new ObjectMapper());
+        // PersistentKernelManager 现在强依赖 PythonRuntimeManager，桩出 Ready 状态供 kernel 注册路径使用
+        PythonRuntimeManager runtimeManager = mock(PythonRuntimeManager.class);
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
+        when(runtimeManager.getPythonExecutable()).thenReturn(Paths.get("python3"));
         // 构造签名：23 参数 — workspaceResolver 位于第 16 位，之后依次是 attachmentRepository /
         // chatSessionRepository / skillPathWhitelist / ssrfGuard / interactiveElementIndexer /
         // pythonRuntimeManager / commandGuard。
@@ -59,7 +66,7 @@ class InfraToolProviderTest {
                 null, null, null,
                 com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
                 indexer,
-                null, null);
+                runtimeManager, null);
     }
 
     @Test

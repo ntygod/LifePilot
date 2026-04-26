@@ -531,9 +531,6 @@ public class MetaProperties {
             /** 默认执行超时（秒），默认 60。 */
             private int executionTimeoutSeconds = 60;
 
-            /** Python 运行时路径，默认 python3。 */
-            private String pythonRuntime = "python3";
-
             /** Node.js 运行时路径，默认 node。 */
             private String nodeRuntime = "node";
 

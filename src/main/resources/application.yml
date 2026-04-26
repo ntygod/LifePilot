@@ -974,7 +974,6 @@ lifepilot:
         ttl-minutes: 30
         cleanup-interval-seconds: 60
         execution-timeout-seconds: 60
-        python-runtime: "python3"
         node-runtime: "node"
         max-output-chars: 50000
     introspection:
