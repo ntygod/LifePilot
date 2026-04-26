@@ -84,8 +84,9 @@ class InfraToolProviderTest {
                 "shell.exec",
                 // 浏览器自动化（1）
                 "browser",
-                // 代码执行（1）
+                // 代码执行（2，kernel.enabled 默认开 → code.kernel 始终注册）
                 "code.execute",
+                "code.kernel",
                 // 文件系统（5）
                 "file.read",
                 "file.write",
