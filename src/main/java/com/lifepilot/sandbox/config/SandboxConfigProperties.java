@@ -48,7 +48,7 @@ public class SandboxConfigProperties {
     /** Docker 配置。 */
     private Docker docker = new Docker();
 
-    /** 运行时配置（Python 自带运行时 + Shell 命令护栏）。 */
+    /** 运行时配置（捆绑 Python 运行时 + Shell 命令护栏）。 */
     private Runtime runtime = new Runtime();
 
     public boolean isEnabled() { return enabled; }
@@ -163,14 +163,14 @@ public class SandboxConfigProperties {
     }
 
     /**
-     * 运行时配置 — 控制自带 Python 运行时下载安装 + Shell 命令护栏行为。
+     * 运行时配置 — 控制捆绑 Python 运行时的下载安装与命令护栏行为。
      *
      * @author zsg
      * @since 2026-04-26
      */
     public static class Runtime {
 
-        /** Python 自带运行时配置。 */
+        /** Python 捆绑运行时配置。 */
         private Python python = new Python();
 
         /** Shell 命令护栏配置。 */
@@ -183,14 +183,14 @@ public class SandboxConfigProperties {
         public void setCommandGuard(CommandGuardConfig commandGuard) { this.commandGuard = commandGuard; }
 
         /**
-         * Python 自带运行时配置 — 离线包版本、下载地址、安装路径与预期库清单。
+         * Python 捆绑运行时配置 — 离线包版本、下载地址、安装路径与预期库清单。
          *
          * @author zsg
          * @since 2026-04-26
          */
         public static class Python {
 
-            /** 自带 Python 运行时版本，默认 3.12.4。 */
+            /** 捆绑 Python 运行时版本，默认 3.12.4。 */
             private String bundledVersion = "3.12.4";
 
             /** 下载地址模板（含 {version}/{platform}/{arch} 占位符）。 */
@@ -208,7 +208,7 @@ public class SandboxConfigProperties {
                 "openpyxl", "pillow", "python-pptx", "python-docx", "pypdf", "pdfplumber",
                 "sympy", "requests", "httpx", "beautifulsoup4");
 
-            /** 是否禁用自带 Python 运行时（true 时回退到系统 PATH 中的 python）。 */
+            /** 是否禁用捆绑 Python 运行时（true 时回退到系统 PATH 中的 python）。 */
             private boolean disabled = false;
 
             public String getBundledVersion() { return bundledVersion; }
@@ -231,7 +231,10 @@ public class SandboxConfigProperties {
         }
 
         /**
-         * Shell 命令护栏配置 — 控制 CommandGuard 的启用状态与 yolo 兜底开关。
+         * 命令护栏配置 — 控制 HARDLINE / DANGEROUS 两层阻断的开关。
+         *
+         * <p><b>命名说明</b>：故意保留 {@code Config} 后缀，区别于独立的命令审查主类
+         * {@code com.lifepilot.sandbox.guard.CommandGuard}（后续 Task 实现），避免短名歧义。</p>
          *
          * @author zsg
          * @since 2026-04-26
@@ -241,7 +244,7 @@ public class SandboxConfigProperties {
             /** 是否启用命令护栏，默认 true。 */
             private boolean enabled = true;
 
-            /** 是否启用 yolo 模式（绕过命令护栏，仅用于本地调试），默认 false。 */
+            /** 是否启用 yolo 模式（DANGEROUS 自动放行，HARDLINE 仍拦截；仅用于本地调试），默认 false。 */
             private boolean yoloMode = false;
 
             public boolean isEnabled() { return enabled; }

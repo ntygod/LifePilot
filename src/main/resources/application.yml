@@ -807,9 +807,9 @@ lifepilot:
       dida:
         enabled: false
         base-url: "https://api.dida365.com"
-    # 运行时配置（自带 Python 运行时 + Shell 命令护栏）
+    # 运行时配置（捆绑 Python 运行时 + Shell 命令护栏）
     runtime:
-      # 自带 Python 运行时
+      # 捆绑 Python 运行时
       python:
         # 版本号（与离线包文件名 {version} 占位符对齐）
         bundled-version: "3.12.4"
@@ -819,13 +819,13 @@ lifepilot:
         sha256-url-template: "https://github.com/zsg-cs/zhiwei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst.sha256"
         # 安装路径
         install-path: "${user.home}/.zhiwei/python"
-        # 是否禁用自带运行时（true 时回退到系统 PATH 的 python）
+        # 是否禁用捆绑运行时（true 时回退到系统 PATH 的 python）
         disabled: false
       # Shell 命令护栏
       command-guard:
         # 是否启用命令护栏
         enabled: true
-        # 是否启用 yolo 模式（绕过护栏，仅本地调试）
+        # 是否启用 yolo 模式（DANGEROUS 自动放行，HARDLINE 仍拦截，仅本地调试）
         yolo-mode: false
   observability:
     trace:
