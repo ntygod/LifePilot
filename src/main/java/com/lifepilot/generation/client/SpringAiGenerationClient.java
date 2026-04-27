@@ -1,7 +1,7 @@
 package com.lifepilot.generation.client;
 
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.adapter.SpringAiProviderAdapter;
+import com.lifepilot.llm.adapter.AbstractProviderAdapter;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,9 +29,9 @@ public class SpringAiGenerationClient implements GenerationServiceClient {
     private static final Logger log = LoggerFactory.getLogger(SpringAiGenerationClient.class);
 
     private final ModelServiceEntity service;
-    private final SpringAiProviderAdapter adapter;
+    private final AbstractProviderAdapter adapter;
 
-    public SpringAiGenerationClient(ModelServiceEntity service, SpringAiProviderAdapter adapter) {
+    public SpringAiGenerationClient(ModelServiceEntity service, AbstractProviderAdapter adapter) {
         this.service = service;
         this.adapter = adapter;
     }

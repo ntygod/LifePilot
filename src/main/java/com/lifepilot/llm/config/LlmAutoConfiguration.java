@@ -3,8 +3,15 @@ package com.lifepilot.llm.config;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.llm.thinking.AnthropicThinkingProtocol;
+import com.lifepilot.llm.thinking.DeepSeekThinkingProtocol;
+import com.lifepilot.llm.thinking.NoopThinkingProtocol;
+import com.lifepilot.llm.thinking.OpenAiReasoningEffortProtocol;
+import com.lifepilot.llm.thinking.QwenThinkingProtocol;
+import com.lifepilot.llm.thinking.ThinkingProtocol;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
@@ -44,9 +51,42 @@ public class LlmAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public NoopThinkingProtocol noopThinkingProtocol() {
+        return new NoopThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DeepSeekThinkingProtocol deepSeekThinkingProtocol() {
+        return new DeepSeekThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public QwenThinkingProtocol qwenThinkingProtocol() {
+        return new QwenThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public OpenAiReasoningEffortProtocol openAiReasoningEffortProtocol() {
+        return new OpenAiReasoningEffortProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AnthropicThinkingProtocol anthropicThinkingProtocol() {
+        return new AnthropicThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ProviderAdapterFactory providerAdapterFactory(@Nullable List<CallAdvisor> advisors,
-                                                         LlmConfigProperties properties) {
-        return new ProviderAdapterFactory(advisors, properties.getConnectionPool());
+                                                         LlmConfigProperties properties,
+                                                         ProviderProfileRegistry profileRegistry,
+                                                         List<ThinkingProtocol> thinkingProtocols) {
+        return new ProviderAdapterFactory(advisors, properties.getConnectionPool(),
+                profileRegistry, thinkingProtocols);
     }
 
     @Bean

@@ -26,10 +26,11 @@ public class ProviderHealthChecker {
     /**
      * 并行检查所有 Provider 的健康状态。
      *
-     * @param adapters Provider ID 到适配器的映射
+     * @param adapters Provider ID 到适配器的映射；类型用 {@code ? extends ProviderAdapter}
+     *                 以兼容子类（如 {@code AbstractProviderAdapter}）的不可变 Map 传入
      * @return 不可变的健康状态映射，键为 Provider ID，值为是否健康
      */
-    public Map<String, Boolean> checkAll(Map<String, ProviderAdapter> adapters) {
+    public Map<String, Boolean> checkAll(Map<String, ? extends ProviderAdapter> adapters) {
         var results = new ConcurrentHashMap<String, Boolean>();
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {

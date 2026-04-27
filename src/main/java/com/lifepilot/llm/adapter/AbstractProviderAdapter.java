@@ -33,32 +33,35 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 基于 Spring AI 的统一 Provider 适配器。
+ * Provider 适配器抽象基类 — 基于 Spring AI 的统一实现骨架。
  *
  * <p>封装 {@link ChatModel}、{@link EmbeddingModel}（可选）和 {@link ChatClient}（延迟构建），
- * 提供统一的调用接口，支持超时控制。
+ * 提供统一的调用接口，支持超时控制。子类按 provider 特性扩展（OpenAI 兼容 / Anthropic / Ollama 等）。
+ *
+ * <p>本类承载 Phase 3 之前 {@code SpringAiProviderAdapter} 单类的全部行为，子类目前仅复用基类逻辑；
+ * Phase 4 起将由 OpenAiBaseProviderAdapter 重写流式分派路径以发出 LlmStreamEvent。
  *
  * @author zsg
- * @since 2026-02-24
+ * @since 2026-04-27
  */
-public final class SpringAiProviderAdapter implements ProviderAdapter {
+public abstract non-sealed class AbstractProviderAdapter implements ProviderAdapter {
 
-    private static final Logger log = LoggerFactory.getLogger(SpringAiProviderAdapter.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractProviderAdapter.class);
     private static final java.net.http.HttpClient SHARED_HTTP_CLIENT = java.net.http.HttpClient.newHttpClient();
 
-    private final ProviderConfig config;
-    private final ChatModel chatModel;
+    protected final ProviderConfig config;
+    protected final ChatModel chatModel;
     @Nullable
-    private final EmbeddingModel embeddingModel;
-    private final List<CallAdvisor> defaultAdvisors;
+    protected final EmbeddingModel embeddingModel;
+    protected final List<CallAdvisor> defaultAdvisors;
 
     @Nullable
     private volatile ChatClient chatClient;
 
-    public SpringAiProviderAdapter(ProviderConfig config,
-                                   ChatModel chatModel,
-                                   @Nullable EmbeddingModel embeddingModel,
-                                   @Nullable List<CallAdvisor> defaultAdvisors) {
+    protected AbstractProviderAdapter(ProviderConfig config,
+                                      ChatModel chatModel,
+                                      @Nullable EmbeddingModel embeddingModel,
+                                      @Nullable List<CallAdvisor> defaultAdvisors) {
         this.config = config;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
@@ -115,7 +118,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
      *
      * <p>处理：字符串值内未转义的双引号、Markdown 代码块包裹、尾部逗号等。
      */
-    static String repairJson(String raw) {
+    public static String repairJson(String raw) {
         return JsonOutputParser.repairJson(raw);
     }
 
@@ -145,7 +148,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     /**
      * 获取或创建缓存的 ChatClient（已挂载 Advisor 链：Guardrail → Trace → ...）。
      */
-    private ChatClient ensureChatClient() {
+    protected ChatClient ensureChatClient() {
         if (chatClient == null) {
             synchronized (this) {
                 if (chatClient == null) {
@@ -163,7 +166,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     /**
      * 通过 ChatClient 发起同步调用，确保 Advisor 链生效。
      */
-    private ChatResponse callViaClient(Prompt prompt) {
+    protected ChatResponse callViaClient(Prompt prompt) {
         return ensureChatClient()
                 .prompt(prompt)
                 .call()
@@ -173,7 +176,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     /**
      * 通过 ChatClient 发起流式调用，统一调用路径。
      */
-    private Flux<String> streamViaClient(Prompt prompt) {
+    protected Flux<String> streamViaClient(Prompt prompt) {
         return ensureChatClient()
                 .prompt(prompt)
                 .stream()
@@ -362,7 +365,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         return embeddingModel;
     }
 
-    private Prompt buildPrompt(String prompt, @Nullable String outputSchema, boolean streamUsage) {
+    protected Prompt buildPrompt(String prompt, @Nullable String outputSchema, boolean streamUsage) {
         return new Prompt(
                 maybeAppendStructuredOutputInstruction(prompt, outputSchema),
                 ProviderChatOptionsFactory.create(
@@ -378,7 +381,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         );
     }
 
-    private Prompt buildPrompt(Message message, @Nullable String outputSchema, boolean streamUsage) {
+    protected Prompt buildPrompt(Message message, @Nullable String outputSchema, boolean streamUsage) {
         return new Prompt(
                 maybeAppendStructuredOutputInstruction(message, outputSchema),
                 ProviderChatOptionsFactory.create(
@@ -475,7 +478,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         );
     }
 
-    private <T> T executeWithTimeout(Callable<T> action, Duration timeout) {
+    protected <T> T executeWithTimeout(Callable<T> action, Duration timeout) {
         // 使用虚拟线程执行器进行超时控制。注意：try-with-resources 的 close() 会等待任务完成，
         // 但由于已调用 future.cancel(true) 且虚拟线程响应中断，不会无限阻塞。
         var executor = Executors.newVirtualThreadPerTaskExecutor();

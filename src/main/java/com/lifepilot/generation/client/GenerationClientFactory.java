@@ -1,7 +1,7 @@
 package com.lifepilot.generation.client;
 
+import com.lifepilot.llm.adapter.AbstractProviderAdapter;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
-import com.lifepilot.llm.adapter.SpringAiProviderAdapter;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.support.ModelServiceProviderConfigMapper;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,7 +29,7 @@ public class GenerationClientFactory {
      */
     public GenerationServiceClient getOrCreate(ModelServiceEntity service) {
         return cache.computeIfAbsent(service.id(), ignored -> {
-            SpringAiProviderAdapter adapter = providerAdapterFactory.create(
+            AbstractProviderAdapter adapter = providerAdapterFactory.create(
                     ModelServiceProviderConfigMapper.toGenerationProviderConfig(service));
             return new SpringAiGenerationClient(service, adapter);
         });

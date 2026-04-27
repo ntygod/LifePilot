@@ -10,14 +10,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
+import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
@@ -37,14 +40,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * AbstractProviderAdapter 单元测试。
+ *
+ * <p>原 SpringAiProviderAdapter 单类被 Phase 3 重构为抽象基类 + 多态子类，本测试通过
+ * 私有 {@link TestAdapter} 实例化抽象基类的全部行为，覆盖与原测试一致的语义。
+ *
+ * @author zsg
+ */
 @ExtendWith(MockitoExtension.class)
-class SpringAiProviderAdapterTest {
+class AbstractProviderAdapterTest {
 
     @Test
     void callWithMedia_requiresVisionCapability() {
         ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "gpt");
         ChatModel chatModel = mock(ChatModel.class);
-        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
 
         assertThrows(UnsupportedOperationException.class, () ->
                 adapter.callWithMedia("hi", List.of(), null, Duration.ofSeconds(1)));
@@ -61,7 +72,7 @@ class SpringAiProviderAdapterTest {
         when(response.getResult().getOutput().getText()).thenReturn("ok");
         when(chatModel.call(any(Prompt.class))).thenReturn(response);
 
-        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
         MediaContent image = new MediaContent(
                 "id",
                 "image/png",
@@ -89,7 +100,7 @@ class SpringAiProviderAdapterTest {
             return mock(ChatResponse.class, RETURNS_DEEP_STUBS);
         });
 
-        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
 
         RuntimeException exception = assertThrows(RuntimeException.class, () ->
                 adapter.call("slow", null, Duration.ofMillis(50)));
@@ -113,7 +124,7 @@ class SpringAiProviderAdapterTest {
         when(response.getResult().getOutput().getText()).thenReturn("{\"answer\":\"ok\"}");
         when(chatModel.call(any(Prompt.class))).thenReturn(response);
 
-        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
 
         adapter.call("请按 schema 输出", outputSchema, Duration.ofSeconds(1));
 
@@ -137,7 +148,7 @@ class SpringAiProviderAdapterTest {
         var response = new ChatResponse(List.of(generation));
         doReturn(Flux.just(response)).when(chatModel).stream(any(Prompt.class));
 
-        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
 
         assertEquals(List.of("ok"), adapter.stream("hello").collectList().block());
 
@@ -163,7 +174,7 @@ class SpringAiProviderAdapterTest {
         when(response.getResult().getOutput().getText()).thenReturn("{\"summary\":\"ok\"}");
         when(chatModel.call(any(Prompt.class))).thenReturn(response);
 
-        SpringAiProviderAdapter adapter = new SpringAiProviderAdapter(config, chatModel, null, null);
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
 
         adapter.call("请按 schema 输出", outputSchema, Duration.ofSeconds(1));
 
@@ -192,7 +203,7 @@ class SpringAiProviderAdapterTest {
                 }
                 """;
 
-        String repaired = SpringAiProviderAdapter.repairJson(raw);
+        String repaired = AbstractProviderAdapter.repairJson(raw);
         var root = new ObjectMapper().readTree(repaired);
 
         assertEquals("用户希望被称呼为\"老板\"，用户称呼 AI 为\"微微\"",
@@ -209,7 +220,7 @@ class SpringAiProviderAdapterTest {
                 ```
                 """;
 
-        String repaired = SpringAiProviderAdapter.repairJson(raw);
+        String repaired = AbstractProviderAdapter.repairJson(raw);
         var root = new ObjectMapper().readTree(repaired);
 
         assertTrue(root.path("decisions").isArray());
@@ -223,6 +234,7 @@ class SpringAiProviderAdapterTest {
         return new ProviderConfig(
                 "p1",
                 ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 apiUrl,
                 null,
                 modelName,
@@ -237,5 +249,17 @@ class SpringAiProviderAdapterTest {
                 null,
                 true
         );
+    }
+
+    /**
+     * 测试用具体子类 — 仅暴露 AbstractProviderAdapter 行为，不引入额外语义。
+     */
+    private static final class TestAdapter extends AbstractProviderAdapter {
+        TestAdapter(ProviderConfig config,
+                    ChatModel chatModel,
+                    @Nullable EmbeddingModel embeddingModel,
+                    @Nullable List<CallAdvisor> defaultAdvisors) {
+            super(config, chatModel, embeddingModel, defaultAdvisors);
+        }
     }
 }

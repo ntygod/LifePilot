@@ -17,6 +17,7 @@ import java.util.Set;
 public record ProviderConfig(
         String id,
         ProviderType type,
+        String profileId,
         String apiUrl,
         @Nullable String apiKey,
         String modelName,
@@ -34,10 +35,14 @@ public record ProviderConfig(
 
     /**
      * 紧凑构造器 — 参数校验 + 防御性拷贝。
+     *
+     * <p>{@code profileId} 在 Phase 3 阶段由所有构造点临时硬编码默认值（按 {@link ProviderType}
+     * 推断），Phase 6 起由 ModelService 注入用户实选的 profile id。新旧字段在重构窗口期共存。
      */
     public ProviderConfig {
         Objects.requireNonNull(id, "Provider ID 不能为空");
         Objects.requireNonNull(type, "Provider 类型不能为空");
+        Objects.requireNonNull(profileId, "Profile ID 不能为空");
         Objects.requireNonNull(apiUrl, "API URL 不能为空");
         Objects.requireNonNull(modelName, "模型名称不能为空");
         if (timeoutSeconds <= 0) timeoutSeconds = 30;
@@ -45,6 +50,23 @@ public record ProviderConfig(
         scenes = List.copyOf(scenes != null ? scenes : List.of());
         capabilities = capabilities != null
                 ? Set.copyOf(capabilities) : Set.of(ProviderCapability.CHAT);
+    }
+
+    /**
+     * 按 {@link ProviderType} 推断默认 profileId（Phase 3 临时映射）。
+     *
+     * <p>Phase 6 起由 ModelService 在持久化层提供真实 profileId，本方法届时仅作为兜底。
+     *
+     * @param type Provider 类型
+     * @return 默认 profileId
+     */
+    public static String defaultProfileIdFor(ProviderType type) {
+        return switch (type) {
+            case OPENAI_COMPATIBLE -> "openai-official";
+            case ANTHROPIC -> "anthropic-official";
+            case OLLAMA -> "ollama-local";
+            case TEI -> "tei-local";
+        };
     }
 
     /**

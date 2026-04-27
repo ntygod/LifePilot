@@ -62,9 +62,11 @@ public class LlmConfigProperties {
      * @return ProviderConfig record
      */
     public static ProviderConfig toProviderConfig(String id, ProviderConfigEntry entry) {
+        // Phase 3 临时方案：按 ProviderType 推断默认 profileId；Phase 6 由 ModelService 注入真实值
         return new ProviderConfig(
                 id,
                 entry.getType(),
+                ProviderConfig.defaultProfileIdFor(entry.getType()),
                 entry.getApiUrl(),
                 entry.getApiKey(),
                 entry.getModelName(),

@@ -148,6 +148,7 @@ class MultimodalRouterTest {
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
                 com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "url",
                 null,
                 "gpt-4-vision",
@@ -169,10 +170,9 @@ class MultimodalRouterTest {
         // mediaProcessor.processAll 直接返回入参列表
         when(mediaProcessor.processAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        // 使用真实的 SpringAiProviderAdapter 替身无法轻量构造，这里使用 Mockito.CALLS_REAL_METHODS
-        // 但由于 ProviderAdapter 是 sealed interface，不能直接 mock，这里只验证路由前置流程，
-        // 不再断言 adapter 的具体调用细节。
-        var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
+        // 使用真实的 AbstractProviderAdapter 子类替身无法轻量构造，这里 mock 抽象基类
+        // ProviderAdapter 是 sealed interface 无法直接 mock，AbstractProviderAdapter 是 non-sealed 可 mock。
+        var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
 
         LlmResponse response = new LlmResponse("answer", 10, 20, "vision-1", "gpt", 100, false);
@@ -207,6 +207,7 @@ class MultimodalRouterTest {
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
                 com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "url",
                 null,
                 "gpt-4-vision",
@@ -226,7 +227,7 @@ class MultimodalRouterTest {
         when(circuitBreakerManager.isCallPermitted("vision-1", "VISION")).thenReturn(true);
         when(mediaProcessor.processAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
+        var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
                 .thenThrow(new RuntimeException("下游异常"));
@@ -280,6 +281,7 @@ class MultimodalRouterTest {
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
                 com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "url",
                 null,
                 "gpt-4-vision",
@@ -299,7 +301,7 @@ class MultimodalRouterTest {
         when(circuitBreakerManager.isCallPermitted("vision-1", "VISION")).thenReturn(true);
         when(mediaProcessor.processAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
+        var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
                 .thenReturn(new LlmResponse("ok", 0, 0, "vision-1", "m", 1, false));

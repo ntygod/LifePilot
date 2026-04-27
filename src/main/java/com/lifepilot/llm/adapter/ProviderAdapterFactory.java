@@ -5,7 +5,11 @@ import com.lifepilot.llm.cache.PromptCacheStrategy;
 import com.lifepilot.llm.config.LlmConfigProperties.ConnectionPoolConfigEntry;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.ProviderProfile;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
+import com.lifepilot.llm.profile.ThinkingProtocolId;
+import com.lifepilot.llm.thinking.NoopThinkingProtocol;
+import com.lifepilot.llm.thinking.ThinkingProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.AnthropicChatModel;
@@ -31,12 +35,22 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Provider 适配器工厂。
  *
- * <p>根据 {@link ProviderType} 创建对应的 {@link SpringAiProviderAdapter}，
- * 手动构建 ChatModel/EmbeddingModel 实例。
+ * <p>按 {@link ProviderProfile#baseAdapter()} + {@link ProviderProfile#thinkingProtocol()}
+ * 路由到具体 {@link AbstractProviderAdapter} 子类，注入对应 {@link ThinkingProtocol}。
+ *
+ * <p>Phase 3 阶段：
+ * <ul>
+ *   <li>OPENAI_BASE → 按 profile.id 选 DeepSeek/Qwen/OpenAi 子类，未命中回退 OpenAiBaseProviderAdapter；</li>
+ *   <li>ANTHROPIC_BASE → AnthropicProviderAdapter；</li>
+ *   <li>OLLAMA → OllamaProviderAdapter；</li>
+ *   <li>TEI → 复用 OpenAiBaseProviderAdapter（embedding-only 路径）。</li>
+ * </ul>
  *
  * @author zsg
  * @since 2026-02-24
@@ -49,11 +63,18 @@ public class ProviderAdapterFactory {
     private final List<CallAdvisor> defaultAdvisors;
     @Nullable
     private final ConnectionPoolConfigEntry connectionPoolConfig;
+    private final ProviderProfileRegistry profileRegistry;
+    private final Map<ThinkingProtocolId, ThinkingProtocol> thinkingProtocols;
 
     public ProviderAdapterFactory(@Nullable List<CallAdvisor> defaultAdvisors,
-                                  @Nullable ConnectionPoolConfigEntry connectionPoolConfig) {
+                                  @Nullable ConnectionPoolConfigEntry connectionPoolConfig,
+                                  ProviderProfileRegistry profileRegistry,
+                                  List<ThinkingProtocol> thinkingProtocolImpls) {
         this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
         this.connectionPoolConfig = connectionPoolConfig;
+        this.profileRegistry = profileRegistry;
+        this.thinkingProtocols = thinkingProtocolImpls.stream()
+                .collect(Collectors.toUnmodifiableMap(ThinkingProtocol::id, p -> p));
         if (!this.defaultAdvisors.isEmpty()) {
             log.info("ProviderAdapterFactory 初始化: 默认 Advisors={}",
                     this.defaultAdvisors.stream()
@@ -62,52 +83,86 @@ public class ProviderAdapterFactory {
         }
     }
 
-    public ProviderAdapterFactory() {
-        this.defaultAdvisors = List.of();
-        this.connectionPoolConfig = null;
+    /**
+     * 创建适配器。
+     *
+     * <p>查 {@link ProviderProfileRegistry} 拿 profile，按 baseAdapter + thinkingProtocol
+     * 决定实例化哪个 Adapter 类。
+     *
+     * @param config Provider 配置（必须携带 profileId）
+     * @return 已构造的 Adapter 实例
+     */
+    public AbstractProviderAdapter create(ProviderConfig config) {
+        var profile = profileRegistry.get(config.profileId());
+        var thinkingProtocol = thinkingProtocols.getOrDefault(
+                profile.thinkingProtocol(),
+                thinkingProtocols.getOrDefault(ThinkingProtocolId.NONE, new NoopThinkingProtocol()));
+
+        return switch (profile.baseAdapter()) {
+            case OPENAI_BASE -> createOpenAiBaseAdapter(config, profile, thinkingProtocol);
+            case ANTHROPIC_BASE -> createAnthropicAdapter(config, profile, thinkingProtocol);
+            case OLLAMA -> createOllamaAdapter(config, profile);
+            case TEI -> createOpenAiBaseAdapter(config, profile, thinkingProtocol);
+        };
     }
 
-    public SpringAiProviderAdapter create(ProviderConfig config) {
-        ProviderType providerType = config.type();
-        if (providerType == ProviderType.OLLAMA) {
-            return createOllamaAdapter(config);
-        }
-        if (providerType == ProviderType.ANTHROPIC) {
-            return createAnthropicAdapter(config);
-        }
-        return createOpenAiCompatibleAdapter(config);
-    }
+    private OpenAiBaseProviderAdapter createOpenAiBaseAdapter(ProviderConfig config,
+                                                              ProviderProfile profile,
+                                                              ThinkingProtocol thinkingProtocol) {
+        String baseUrl = normalizeOpenAiCompatibleBaseUrl(config.apiUrl(), config.id());
+        var openAiApiBuilder = OpenAiApi.builder()
+                .baseUrl(baseUrl);
 
-    private SpringAiProviderAdapter createOllamaAdapter(ProviderConfig config) {
-        var ollamaApi = OllamaApi.builder()
-                .baseUrl(config.apiUrl())
-                .build();
+        String apiKey = config.apiKey();
+        if (apiKey != null && !apiKey.isBlank()) {
+            openAiApiBuilder.apiKey(apiKey);
+        }
 
-        var chatOptions = org.springframework.ai.ollama.api.OllamaChatOptions.builder()
+        // Prompt 缓存策略 — DashScope 需要显式 cache_control 注入；OpenAI 官方 / DeepSeek 等
+        // provider 侧自动缓存，走 noop pass-through；策略自行决定两端拦截点是否生效。
+        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(config);
+        applyCacheStrategyToOpenAi(openAiApiBuilder, cacheStrategy, config);
+
+        var openAiApi = openAiApiBuilder.build();
+
+        var chatOptions = OpenAiChatOptions.builder()
                 .model(config.modelName())
                 .build();
 
-        ChatModel chatModel = OllamaChatModel.builder()
-                .ollamaApi(ollamaApi)
+        ChatModel chatModel = OpenAiChatModel.builder()
+                .openAiApi(openAiApi)
                 .defaultOptions(chatOptions)
                 .build();
 
         EmbeddingModel embeddingModel = null;
         if (config.hasCapability(ProviderCapability.EMBEDDING)) {
-            var embeddingOptions = org.springframework.ai.ollama.api.OllamaEmbeddingOptions.builder()
-                    .model(config.modelName())
-                    .build();
-            embeddingModel = OllamaEmbeddingModel.builder()
-                    .ollamaApi(ollamaApi)
-                    .defaultOptions(embeddingOptions)
-                    .build();
+            embeddingModel = new OpenAiEmbeddingModel(openAiApi);
         }
 
-        log.info("创建 Ollama 适配器: id={}, model={}", config.id(), config.modelName());
-        return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
+        log.info("创建 OpenAI 兼容适配器: id={}, profile={}, model={}, hasEmbedding={}, cacheStrategy={}",
+                config.id(), profile.id(), config.modelName(), embeddingModel != null,
+                cacheStrategy.name());
+
+        // 按 profile.id 选具体子类（行为差异在 Phase 4 起体现）；未命中回退 OpenAiBaseProviderAdapter
+        return switch (profile.id()) {
+            case "deepseek-official", "volcengine-ark" ->
+                    new DeepSeekProviderAdapter(config, chatModel, embeddingModel,
+                            defaultAdvisors, profile, thinkingProtocol);
+            case "qwen-dashscope" ->
+                    new QwenProviderAdapter(config, chatModel, embeddingModel,
+                            defaultAdvisors, profile, thinkingProtocol);
+            case "openai-official" ->
+                    new OpenAiOfficialProviderAdapter(config, chatModel, embeddingModel,
+                            defaultAdvisors, profile, thinkingProtocol);
+            default ->
+                    new OpenAiBaseProviderAdapter(config, chatModel, embeddingModel,
+                            defaultAdvisors, profile, thinkingProtocol);
+        };
     }
 
-    private SpringAiProviderAdapter createAnthropicAdapter(ProviderConfig config) {
+    private AnthropicProviderAdapter createAnthropicAdapter(ProviderConfig config,
+                                                            ProviderProfile profile,
+                                                            ThinkingProtocol thinkingProtocol) {
         String apiKey = config.apiKey();
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalArgumentException(
@@ -141,47 +196,40 @@ public class ProviderAdapterFactory {
                 .defaultOptions(chatOptions)
                 .build();
 
-        // Anthropic 不提供 Embedding API，embeddingModel 始终为 null
-        log.info("创建 Anthropic 原生适配器: id={}, model={}, cacheStrategy={}",
-                config.id(), config.modelName(), cacheStrategy.name());
-        return new SpringAiProviderAdapter(config, chatModel, null, defaultAdvisors);
+        log.info("创建 Anthropic 原生适配器: id={}, profile={}, model={}, cacheStrategy={}",
+                config.id(), profile.id(), config.modelName(), cacheStrategy.name());
+        return new AnthropicProviderAdapter(config, chatModel, defaultAdvisors,
+                profile, thinkingProtocol);
     }
 
-    private SpringAiProviderAdapter createOpenAiCompatibleAdapter(ProviderConfig config) {
-        String baseUrl = normalizeOpenAiCompatibleBaseUrl(config.apiUrl(), config.id());
-        var openAiApiBuilder = OpenAiApi.builder()
-                .baseUrl(baseUrl);
+    private OllamaProviderAdapter createOllamaAdapter(ProviderConfig config,
+                                                      ProviderProfile profile) {
+        var ollamaApi = OllamaApi.builder()
+                .baseUrl(config.apiUrl())
+                .build();
 
-        String apiKey = config.apiKey();
-        if (apiKey != null && !apiKey.isBlank()) {
-            openAiApiBuilder.apiKey(apiKey);
-        }
-
-        // Prompt 缓存策略 — DashScope 需要显式 cache_control 注入; OpenAI 官方 / DeepSeek 等
-        // provider 侧自动缓存, 走 noop pass-through; 策略自行决定两端拦截点是否生效。
-        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(config);
-        applyCacheStrategyToOpenAi(openAiApiBuilder, cacheStrategy, config);
-
-        var openAiApi = openAiApiBuilder.build();
-
-        var chatOptions = OpenAiChatOptions.builder()
+        var chatOptions = org.springframework.ai.ollama.api.OllamaChatOptions.builder()
                 .model(config.modelName())
                 .build();
 
-        ChatModel chatModel = OpenAiChatModel.builder()
-                .openAiApi(openAiApi)
+        ChatModel chatModel = OllamaChatModel.builder()
+                .ollamaApi(ollamaApi)
                 .defaultOptions(chatOptions)
                 .build();
 
         EmbeddingModel embeddingModel = null;
         if (config.hasCapability(ProviderCapability.EMBEDDING)) {
-            embeddingModel = new OpenAiEmbeddingModel(openAiApi);
+            var embeddingOptions = org.springframework.ai.ollama.api.OllamaEmbeddingOptions.builder()
+                    .model(config.modelName())
+                    .build();
+            embeddingModel = OllamaEmbeddingModel.builder()
+                    .ollamaApi(ollamaApi)
+                    .defaultOptions(embeddingOptions)
+                    .build();
         }
 
-        log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}, hasEmbedding={}, cacheStrategy={}",
-                config.id(), config.type(), config.modelName(), embeddingModel != null,
-                cacheStrategy.name());
-        return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
+        log.info("创建 Ollama 适配器: id={}, profile={}, model={}", config.id(), profile.id(), config.modelName());
+        return new OllamaProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors, profile);
     }
 
     /**
