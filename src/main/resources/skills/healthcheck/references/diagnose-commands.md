@@ -109,10 +109,10 @@ shell.exec(command="pgrep -fl <process>")
 ## 日志快速扫错（细节走 log-analyzer）
 
 ```bash
-# Windows
-shell.exec(command="powershell -c \"Get-Content ~/.zhiwei/logs/lifepilot.log -Tail 100 | Select-String 'ERROR|Exception'\"")
+# Windows（<log> 替换为目标日志文件绝对路径）
+shell.exec(command="powershell -c \"Get-Content <log> -Tail 100 | Select-String 'ERROR|Exception'\"")
 # Linux
-shell.exec(command="tail -200 ~/.zhiwei/logs/lifepilot.log | grep -E 'ERROR|FATAL|Exception'")
+shell.exec(command="tail -200 <log> | grep -E 'ERROR|FATAL|Exception'")
 ```
 
 ## 诊断报告结构

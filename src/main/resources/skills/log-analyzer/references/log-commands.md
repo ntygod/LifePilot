@@ -4,7 +4,7 @@
 
 ## 常用日志路径
 
-- 知微：`~/.zhiwei/logs/lifepilot.log`、`~/.zhiwei/logs/agent.log`、`~/.zhiwei/logs/error.log`
+- 知微：`<dataDir>/logs/` 下（lifepilot.log / agent.log / error.log），dataDir 默认在用户主目录的 .zhiwei 子目录，可在设置页查看实际路径
 - Java 应用：`./logs/`、`./target/logs/`
 - Spring Boot：`./logs/spring.log`、`./logs/application.log`
 - Nginx：`/var/log/nginx/error.log`、`/var/log/nginx/access.log`

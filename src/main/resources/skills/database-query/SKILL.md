@@ -34,7 +34,7 @@ metadata:
 
 - 内存 CSV / Excel 分析 → data-analyst
 - 日志文件分析 → log-analyzer
-- 知微自身数据库（~/.zhiwei/zhiwei.db）→ 用户没指明就不要碰
+- 知微自身数据库（dataDir 下的 zhiwei.db）→ 用户没指明就不要碰
 
 ## 工作流（按场景分流）
 

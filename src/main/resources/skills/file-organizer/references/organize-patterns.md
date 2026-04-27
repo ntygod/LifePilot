@@ -25,7 +25,7 @@ file.list(action="search", path="<目标目录>", filePattern="*.log",
 |---|---|---|
 | D:\Downloads\IMG_*.jpg (32 个) | D:\Downloads\images\2026\ | move |
 | D:\Downloads\report-*.pdf (8 个) | D:\Downloads\docs\reports\ | move |
-| D:\Downloads\duplicate.zip | ~/.zhiwei/.trash/2026-04-25/ | move（去重）|
+| D:\Downloads\duplicate.zip | <操作目录>/.trash/<yyyy-MM-dd>/ | move（去重）|
 
 确认执行？
 ```
@@ -119,7 +119,7 @@ shell.exec(command="du -sh <path>/*", shell="bash")
 1. file.list(action="info", path=...) 收集 lastModified
 2. 筛 lastModified < 当前 - 30 天 的文件 → 列预览
 3. 用户确认 → file.manage(action="move") 到
-   ~/.zhiwei/.trash/<yyyy-MM-dd>/ （保留 7-30 天再清）
+   <操作目录>/.trash/<yyyy-MM-dd>/ （保留 7-30 天再清）
 ```
 
 ## 错误处理

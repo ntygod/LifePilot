@@ -25,7 +25,7 @@ metadata:
 
 # 数据分析指南
 
-`code.execute` 跑 pandas / matplotlib 做加载、分析、可视化;多步分析用持久 `kernelId` 跨调用共享 dataframe。
+用户给数据要分析 / 看图 / 出结论时进入。多步分析用同一 `kernelId` 跨调用共享 dataframe，避免每步重新加载。
 
 ## 适用场景
 
@@ -51,7 +51,7 @@ metadata:
 | "清洗一下 / 去重 / 填空 / 改类型" | 持久 kernel 加载 → 逐步转换,每步打印行数变化 |
 | "统计 / 相关性 / 显著吗" | 加载后跑 `describe` / `corr` / `scipy.stats` |
 | "画图 / 可视化 / 柱状图 / 趋势" | matplotlib Agg 后端 + 中文字体 + `savefig` 落盘 |
-| "导出 / 存一份" | `to_csv` / `to_excel` / `to_json` 写到 `~/.zhiwei/workspace/` |
+| "导出 / 存一份" | `to_csv` / `to_excel` / `to_json` 写到 cwd（绝对路径来自工具返回的 workingDirectory） |
 | "对比这两份" | 同 kernel 加载两个 df,做 join / merge / diff |
 
 ## 各路径决策点(本 Skill 独有)
@@ -61,7 +61,7 @@ metadata:
 - **中文字体**:可视化必须 `plt.rcParams['font.sans-serif'] = ['SimHei']` 或 `WenQuanYi`,否则中文乱码
 - **结论给数值**:输出具体数值(均值 / 占比 / p 值 / 置信区间),禁止"差不多""挺多的"等模糊描述
 - **清洗透明**:每一步打印 `原 N 行 → 清洗后 M 行`,让用户知道丢了多少
-- **依赖未装**:`shell.exec(command="pip install <pkg>")` 装,**不要静默失败**
+- **依赖未装**:预装栈未覆盖的库（如 plotly / dash / xgboost）才用 `shell.exec(command="pip install <pkg>")` 装,且需用户接受额外耗时,**不要静默失败**
 
 ## 详细参考
 
