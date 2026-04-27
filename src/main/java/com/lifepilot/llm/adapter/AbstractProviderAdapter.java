@@ -190,10 +190,11 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
      * <ul>
      *   <li>chunk 含文本 → 发 {@link ContentChunk}</li>
      *   <li>chunk 含 tool_calls → 按 index 发 {@link ToolCallDelta}</li>
-     *   <li>chunk 含 usage → 发 {@link UsageEvent}（不带 reasoningTokens / cachedInputTokens 维度）</li>
+     *   <li>chunk 含 usage → 发 {@link UsageEvent}（含 cachedInputTokens 维度，
+     *       由 {@link #extractCachedTokens(Object)} 反射解析；reasoningTokens 维度待 Phase 10 补）</li>
      * </ul>
      *
-     * <p>ReasoningChunk / DoneEvent / ErrorEvent / 富 UsageEvent（cached / reasoning tokens）
+     * <p>ReasoningChunk / DoneEvent / ErrorEvent / reasoningTokens 维度
      * 由 Phase 10 子类按 ThinkingProtocol 解析原始 SSE chunk 时补完。
      *
      * <p>本方法被 streamEvents 默认实现调用；OpenAiBase / Anthropic / Ollama 三个子类均通过继承共用。
@@ -224,8 +225,9 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
         if (usage != null) {
             int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
             int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
-            if (inputTokens > 0 || outputTokens > 0) {
-                events.add(new UsageEvent(inputTokens, outputTokens, null, 0));
+            int cachedInputTokens = (int) extractCachedTokens(usage.getNativeUsage());
+            if (inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0) {
+                events.add(new UsageEvent(inputTokens, outputTokens, null, cachedInputTokens));
             }
         }
         return Flux.fromIterable(events);
@@ -592,18 +594,82 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
         Usage usage = response.getMetadata() != null ? response.getMetadata().getUsage() : null;
         int inputTokens = usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
         int outputTokens = usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        int cachedInputTokens = usage != null ? (int) extractCachedTokens(usage.getNativeUsage()) : 0;
         String content = Optional.ofNullable(response.getResult())
                 .map(result -> result.getOutput())
                 .map(output -> output.getText())
                 .orElse("");
-        return LlmResponse.simple(
+        return new LlmResponse(
                 content,
+                null,           // reasoningContent — Phase 10 同步路径未来补
+                null,           // reasoningSignature
+                List.of(),
+                java.util.Map.of(),
                 inputTokens,
                 outputTokens,
+                null,           // reasoningTokens
+                cachedInputTokens,
                 config.id(),
                 config.modelName(),
-                latencyMs
+                latencyMs,
+                false
         );
+    }
+
+    /**
+     * 从 Spring AI {@link Usage#getNativeUsage()} 反射提取 cached_tokens。
+     *
+     * <p>Spring AI Usage 抽象不暴露 cached_tokens 字段；OpenAI 兼容 / DashScope
+     * 把命中数放在 {@code promptTokensDetails.cachedTokens}，Anthropic 放在
+     * {@code cacheReadInputTokens}。反射读取避免对具体 SDK 版本强耦合，
+     * 任意一种 provider 协议变更都不会影响主调用路径。
+     *
+     * @param nativeUsage {@link Usage#getNativeUsage()}（通常是 SDK 自定义的 usage 对象）
+     * @return 命中 token 数；未找到或反射失败返回 0
+     */
+    protected long extractCachedTokens(@Nullable Object nativeUsage) {
+        if (nativeUsage == null) {
+            return 0;
+        }
+        try {
+            // OpenAI / DashScope: prompt_tokens_details.cached_tokens
+            Object details = invokeAccessor(nativeUsage, "getPromptTokensDetails", "promptTokensDetails");
+            if (details != null) {
+                Object cached = invokeAccessor(details, "getCachedTokens", "cachedTokens");
+                if (cached instanceof Number n) {
+                    return n.longValue();
+                }
+            }
+            // Anthropic: cacheReadInputTokens
+            Object anthropicCached = invokeAccessor(nativeUsage, "getCacheReadInputTokens", "cacheReadInputTokens");
+            if (anthropicCached instanceof Number n) {
+                return n.longValue();
+            }
+        } catch (Exception ignored) {
+            // 反射失败静默返 0，不影响主调用路径
+        }
+        return 0;
+    }
+
+    /**
+     * 反射调用访问器：先尝试 JavaBean getter（{@code getXxx()}），再尝试 record accessor（{@code xxx()}）。
+     * 两者均不存在时返回 null。
+     */
+    private Object invokeAccessor(Object target, String getter, String recordAccessor) {
+        try {
+            var m = target.getClass().getMethod(getter);
+            return m.invoke(target);
+        } catch (NoSuchMethodException ignored) {
+            // 继续尝试 record accessor
+        } catch (Exception e) {
+            return null;
+        }
+        try {
+            var m = target.getClass().getMethod(recordAccessor);
+            return m.invoke(target);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     protected <T> T executeWithTimeout(Callable<T> action, Duration timeout) {

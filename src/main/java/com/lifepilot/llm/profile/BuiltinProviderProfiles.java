@@ -29,7 +29,7 @@ public final class BuiltinProviderProfiles {
             PromptCacheStrategyId.NOOP,
             ModelDiscoveryEndpoint.openAiCompatible(),
             Set.of(ProviderCapability.CHAT),
-            MultiTurnHistoryRules.contentOnlyReasoning()
+            MultiTurnHistoryRules.deepseekContentOnlyReasoning()
     );
 
     public static final ProviderProfile QWEN_DASHSCOPE = new ProviderProfile(
@@ -108,7 +108,7 @@ public final class BuiltinProviderProfiles {
             PromptCacheStrategyId.NOOP,
             ModelDiscoveryEndpoint.openAiCompatible(),
             Set.of(ProviderCapability.CHAT),
-            MultiTurnHistoryRules.contentOnlyReasoning()
+            MultiTurnHistoryRules.deepseekContentOnlyReasoning()
     );
 
     public static final ProviderProfile ZHIPU_BIGMODEL = new ProviderProfile(

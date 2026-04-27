@@ -53,6 +53,10 @@ public class ChatHistoryAssembler {
     /**
      * 构造 assistant 消息：按规则注入 reasoning。
      *
+     * <p>当 {@link MultiTurnHistoryRules#injectReasoningOnlyWithToolCalls()} 为 {@code true}
+     * 时，仅在 assistant payload 含非空 tool_calls 列表时才注入 reasoning_content
+     * （DeepSeek 官方契约：无 tool_call 场景 API 忽略该字段，回传纯属浪费 prompt token）。
+     *
      * <p>tool_calls 注入留给 Phase 7 扩展；当前先把 content + reasoning 链路打通。
      */
     private ProviderMessage buildAssistant(Map<String, Object> payload,
@@ -61,7 +65,14 @@ public class ChatHistoryAssembler {
         var builder = new AssistantMessageBuilder()
                 .content(String.valueOf(payload.getOrDefault("content", "")));
         if (rules.injectReasoning()) {
-            protocol.injectHistoryReasoning(builder, payload);
+            boolean shouldInject = true;
+            if (rules.injectReasoningOnlyWithToolCalls()) {
+                Object toolCalls = payload.get("tool_calls");
+                shouldInject = (toolCalls instanceof List<?> list && !list.isEmpty());
+            }
+            if (shouldInject) {
+                protocol.injectHistoryReasoning(builder, payload);
+            }
         }
         // tool_calls 注入由 Phase 7 实施时按 MultiTurnHistoryRules.injectToolCalls 扩展
         return builder.build();

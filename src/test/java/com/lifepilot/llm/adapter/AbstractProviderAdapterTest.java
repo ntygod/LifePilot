@@ -280,6 +280,104 @@ class AbstractProviderAdapterTest {
     }
 
     @Test
+    void chunkToEvents_含_cached_tokens_时_UsageEvent_含_cachedInputTokens() {
+        // 模拟 OpenAI 兼容 / DashScope 风格 nativeUsage：promptTokensDetails.cachedTokens
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "gpt");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var nativeUsage = new FakeOpenAiNativeUsage(new FakePromptTokensDetails(42));
+        org.springframework.ai.chat.metadata.Usage usage = mock(org.springframework.ai.chat.metadata.Usage.class);
+        when(usage.getPromptTokens()).thenReturn(100);
+        when(usage.getCompletionTokens()).thenReturn(50);
+        when(usage.getNativeUsage()).thenReturn(nativeUsage);
+
+        var meta = ChatResponseMetadata.builder().usage(usage).build();
+        var assistantMsg = new AssistantMessage("");
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)), meta);
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        var usageEvent = events.stream()
+                .filter(ev -> ev instanceof UsageEvent)
+                .map(ev -> (UsageEvent) ev)
+                .findFirst().orElseThrow();
+        assertThat(usageEvent.inputTokens()).isEqualTo(100);
+        assertThat(usageEvent.outputTokens()).isEqualTo(50);
+        assertThat(usageEvent.cachedInputTokens()).isEqualTo(42);
+    }
+
+    @Test
+    void chunkToEvents_含_anthropic_cache_read_input_tokens_时_UsageEvent_含_cachedInputTokens() {
+        // 模拟 Anthropic 风格 nativeUsage：cacheReadInputTokens 平级
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "claude");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var nativeUsage = new FakeAnthropicNativeUsage(77);
+        org.springframework.ai.chat.metadata.Usage usage = mock(org.springframework.ai.chat.metadata.Usage.class);
+        when(usage.getPromptTokens()).thenReturn(20);
+        when(usage.getCompletionTokens()).thenReturn(10);
+        when(usage.getNativeUsage()).thenReturn(nativeUsage);
+
+        var meta = ChatResponseMetadata.builder().usage(usage).build();
+        var assistantMsg = new AssistantMessage("");
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)), meta);
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        var usageEvent = events.stream()
+                .filter(ev -> ev instanceof UsageEvent)
+                .map(ev -> (UsageEvent) ev)
+                .findFirst().orElseThrow();
+        assertThat(usageEvent.cachedInputTokens()).isEqualTo(77);
+    }
+
+    @Test
+    void 同步响应_含_prompt_cache_hit_tokens_时_LlmResponse_cachedInputTokens_提取() {
+        // DeepSeek prompt cache 命中：usage.prompt_tokens_details.cached_tokens → LlmResponse.cachedInputTokens
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "deepseek-v4");
+        ChatModel chatModel = mock(ChatModel.class);
+
+        var nativeUsage = new FakeOpenAiNativeUsage(new FakePromptTokensDetails(128));
+        org.springframework.ai.chat.metadata.Usage usage = mock(org.springframework.ai.chat.metadata.Usage.class);
+        when(usage.getPromptTokens()).thenReturn(200);
+        when(usage.getCompletionTokens()).thenReturn(30);
+        when(usage.getNativeUsage()).thenReturn(nativeUsage);
+
+        ChatResponse response = mock(ChatResponse.class, RETURNS_DEEP_STUBS);
+        when(response.getMetadata().getUsage()).thenReturn(usage);
+        when(response.getResult().getOutput().getText()).thenReturn("ok");
+        when(chatModel.call(any(Prompt.class))).thenReturn(response);
+
+        AbstractProviderAdapter adapter = new TestAdapter(config, chatModel, null, null);
+        LlmResponse llmResponse = adapter.call("ping", null, Duration.ofSeconds(1));
+
+        assertEquals("ok", llmResponse.content());
+        assertEquals(200, llmResponse.inputTokens());
+        assertEquals(30, llmResponse.outputTokens());
+        assertEquals(128, llmResponse.cachedInputTokens());
+    }
+
+    /** 模拟 OpenAI / DashScope 风格 nativeUsage：getPromptTokensDetails() → 含 getCachedTokens() */
+    private record FakeOpenAiNativeUsage(FakePromptTokensDetails promptTokensDetails) {
+        public FakePromptTokensDetails getPromptTokensDetails() {
+            return promptTokensDetails;
+        }
+    }
+
+    private record FakePromptTokensDetails(int cachedTokens) {
+        public int getCachedTokens() {
+            return cachedTokens;
+        }
+    }
+
+    /** 模拟 Anthropic 风格 nativeUsage：getCacheReadInputTokens() 平级。 */
+    private record FakeAnthropicNativeUsage(int cacheReadInputTokens) {
+        public int getCacheReadInputTokens() {
+            return cacheReadInputTokens;
+        }
+    }
+
+    @Test
     void repairJson_shouldStripMarkdownFence() throws Exception {
         String raw = """
                 ```json

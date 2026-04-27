@@ -225,6 +225,67 @@ class DeepSeekProviderContractTest {
     }
 
     @Test
+    void 同步响应_含_prompt_cache_hit_tokens_时_LlmResponse_cachedInputTokens_提取() throws Exception {
+        // 模拟 DeepSeek 真实响应：usage.prompt_tokens_details.cached_tokens（KV cache 命中）
+        server.createContext("/v1/chat/completions", exchange -> {
+            try {
+                捕获请求快照(exchange);
+                String body = """
+                        {
+                          "id": "chatcmpl-cache-hit",
+                          "object": "chat.completion",
+                          "model": "deepseek-v4-pro",
+                          "choices": [{
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "ok"},
+                            "finish_reason": "stop"
+                          }],
+                          "usage": {
+                            "prompt_tokens": 256,
+                            "completion_tokens": 12,
+                            "total_tokens": 268,
+                            "prompt_tokens_details": {"cached_tokens": 192}
+                          }
+                        }
+                        """;
+                写响应(exchange, 200, body);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        ProviderConfig config = new ProviderConfig(
+                "deepseek-cache-test",
+                "deepseek-official",
+                baseUrl,
+                "sk-test",
+                "deepseek-v4-pro",
+                30,
+                0,
+                List.of("default"),
+                Set.of(ProviderCapability.CHAT),
+                true,
+                0,
+                0,
+                0,
+                null,
+                true,
+                true,
+                ThinkingMode.ENABLED
+        );
+
+        var adapter = factory.create(config);
+        var response = adapter.call("ping", null, Duration.ofSeconds(10));
+
+        // 关键断言：KV cache 命中字段从 prompt_tokens_details.cached_tokens 抽到 LlmResponse.cachedInputTokens
+        assertThat(response.content()).isEqualTo("ok");
+        assertThat(response.inputTokens()).isEqualTo(256);
+        assertThat(response.outputTokens()).isEqualTo(12);
+        assertThat(response.cachedInputTokens()).isEqualTo(192);
+    }
+
+    @Test
     void DeepSeekProviderAdapter_工厂路由可发起HTTP调用_baseUrl与apiKey注入到OpenAI兼容请求() throws Exception {
         // 起 mock /v1/chat/completions 接收 POST，吞下请求 body 给后续断言
         server.createContext("/v1/chat/completions", exchange -> {
