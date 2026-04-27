@@ -166,9 +166,14 @@ function normalizeFormForKind() {
     return
   }
 
+  // 切到向量 / 重排服务时清掉所有生成专属字段，避免 EMBEDDING / RERANK payload
+  // 携带 GENERATION 残留的成本统计 / 上下文窗口 / 能力 / 场景 / 流式开关。
   formData.value.scenes = []
   formData.value.capabilities = []
   formData.value.supportsStreaming = false
+  formData.value.costPerInputToken = 0
+  formData.value.costPerOutputToken = 0
+  formData.value.maxContextWindow = 0
 
   if (formData.value.kind !== 'EMBEDDING') {
     formData.value.embeddingDimension = undefined
@@ -749,7 +754,13 @@ onMounted(() => {
               </div>
             </section>
 
-            <details class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-muted/20 px-xl py-md">
+            <!-- 高级参数 fold 区目前只承载生成服务专属字段（成本、上下文窗口、能力 /
+                 场景 / 流式以及服务 ID / 优先级）。向量 / 重排服务暂未引入对应高级
+                 字段，整张 fold 直接隐藏，避免出现一个空壳收纳区。 -->
+            <details
+              v-if="isGenerationKind"
+              class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-muted/20 px-xl py-md"
+            >
               <summary class="cursor-pointer select-none text-sm font-semibold text-foreground">高级参数</summary>
               <p class="mt-xs text-sm text-muted-foreground">服务 ID、优先级、上下文窗口、成本统计、能力标签等参数。通常已根据 Provider 协议自动填充，无需手动修改。</p>
 
@@ -802,7 +813,7 @@ onMounted(() => {
                   </div>
                 </section>
 
-                <section v-if="isGenerationKind" class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl">
+                <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl">
                   <div class="grid gap-md xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
                     <div class="space-y-sm">
                       <Label>生成能力</Label>
