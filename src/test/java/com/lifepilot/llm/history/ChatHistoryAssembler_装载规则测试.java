@@ -15,12 +15,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>覆盖核心场景：
  * <ol>
- *   <li>无差别注入规则（contentOnlyReasoning，Qwen 等保守策略）下 assistant 消息回传 reasoning_content；</li>
+ *   <li>无差别注入规则（contentOnlyReasoning，DeepSeek/Qwen 等保守策略）下 assistant 消息回传 reasoning_content；</li>
  *   <li>OpenAI（标准）规则下 assistant 消息不附加 reasoning；</li>
- *   <li>无差别注入规则下历史 payload 缺 reasoning_content 时补 dummy 占位；</li>
- *   <li>DeepSeek 规则（仅 tool_call 场景注入）下，无 tool_calls 时不回传 reasoning；</li>
- *   <li>DeepSeek 规则下，含非空 tool_calls 时回传 reasoning。</li>
+ *   <li>无差别注入规则下历史 payload 缺 reasoning_content 时补空字符串占位；</li>
+ *   <li>DeepSeek 规则（仅 tool_call 场景注入，<b>当前 profile 暂未启用</b>）下，无 tool_calls 时不回传 reasoning；</li>
+ *   <li>DeepSeek 规则（同上）下，含非空 tool_calls 时回传 reasoning。</li>
  * </ol>
+ *
+ * <p>注：场景 4/5 守护 {@code deepseekContentOnlyReasoning()} 工厂的行为契约。
+ * 当前 BuiltinProviderProfiles 的 DeepSeek/Ark profile 临时回退到 contentOnlyReasoning
+ * 兜底（详见 {@code memory/project_reasoning_content_wiring_gap.md}）；待
+ * reasoning_content 与 tool_calls 真实持久化 wiring 完成后切回 deepseekContentOnlyReasoning，
+ * 届时这两个测试就是回归保护。
  *
  * @author zsg
  * @since 2026-04-27

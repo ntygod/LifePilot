@@ -29,7 +29,13 @@ public final class BuiltinProviderProfiles {
             PromptCacheStrategyId.NOOP,
             ModelDiscoveryEndpoint.openAiCompatible(),
             Set.of(ProviderCapability.CHAT),
-            MultiTurnHistoryRules.deepseekContentOnlyReasoning()
+            // 保守策略：始终注入 reasoning_content，缺则空字符串占位 — 满足 DeepSeek 多轮契约。
+            // 理论上「仅 tool_call 场景注入」(deepseekContentOnlyReasoning) 更精确符合官方文档，
+            // 但当前 LlmResponse.toolCalls 尚未 wiring 进 transcript payload_json（详见
+            // memory/project_reasoning_content_wiring_gap.md），ChatHistoryAssembler
+            // 永远拿不到 tool_calls，会错走「无 tool_call 不注入」分支导致第 3 轮 400。
+            // 待真实持久化 wiring 完成后再切回 deepseekContentOnlyReasoning()。
+            MultiTurnHistoryRules.contentOnlyReasoning()
     );
 
     public static final ProviderProfile QWEN_DASHSCOPE = new ProviderProfile(
@@ -108,7 +114,8 @@ public final class BuiltinProviderProfiles {
             PromptCacheStrategyId.NOOP,
             ModelDiscoveryEndpoint.openAiCompatible(),
             Set.of(ProviderCapability.CHAT),
-            MultiTurnHistoryRules.deepseekContentOnlyReasoning()
+            // 同 DEEPSEEK_OFFICIAL 注释：tool_calls wiring 完成前先用保守策略，避免 400。
+            MultiTurnHistoryRules.contentOnlyReasoning()
     );
 
     public static final ProviderProfile ZHIPU_BIGMODEL = new ProviderProfile(
