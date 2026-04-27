@@ -6,7 +6,8 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.cache.CacheEntry;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.GenerationSettingsEntity;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
@@ -85,7 +86,7 @@ class GenerationRouterTest {
         var expected = LlmResponse.simple("ok", 10, 20, "chat-explicit", "qwen-explicit", 120);
         when(client.call("你好", null, Duration.ofSeconds(8))).thenReturn(expected);
 
-        var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager);
+        var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager, profileRegistry());
         var actual = router.call(
                 "agent_chat",
                 "你好",
@@ -143,7 +144,7 @@ class GenerationRouterTest {
                 .thenThrow(new IllegalStateException("first failed"));
         when(secondClient.callEntity(eq("prompt"), eq(String.class), any())).thenReturn("done");
 
-        var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager);
+        var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager, profileRegistry());
         var actual = router.callEntity("memory_extract", "prompt", String.class, null, null, null);
 
         assertEquals("done", actual);
@@ -159,7 +160,7 @@ class GenerationRouterTest {
         var circuitBreakerManager = mock(CircuitBreakerManager.class);
         var semanticCache = mock(SemanticCache.class);
 
-        var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager);
+        var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager, profileRegistry());
         router.setSemanticCache(semanticCache);
 
         when(semanticCache.lookup("agent_chat", null, "text", "你好"))
@@ -183,6 +184,12 @@ class GenerationRouterTest {
         verifyNoInteractions(clientFactory);
     }
 
+    private static ProviderProfileRegistry profileRegistry() {
+        var registry = new ProviderProfileRegistry();
+        registry.init();
+        return registry;
+    }
+
     private ModelServiceEntity generationService(String id,
                                                  String modelName,
                                                  List<String> supportedScenes,
@@ -190,13 +197,15 @@ class GenerationRouterTest {
         return new ModelServiceEntity(
                 id,
                 ModelServiceKind.GENERATION,
-                ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "http://localhost:8080",
                 null,
                 modelName,
                 30,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 supportedScenes,
                 capabilities,
                 Map.of(),

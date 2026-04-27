@@ -2,11 +2,14 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.CreateModelServiceRequest;
-import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.ModelServiceResponse;
 import com.lifepilot.interaction.web.model.ModelServiceTemplateModelResponse;
 import com.lifepilot.interaction.web.model.ModelServiceTemplateResponse;
+import com.lifepilot.interaction.web.model.ProviderProfileDto;
 import com.lifepilot.interaction.web.model.UpdateModelServiceRequest;
+import com.lifepilot.llm.profile.ProviderProfile;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.GenerationSettingsEntity;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
@@ -18,7 +21,6 @@ import com.lifepilot.modelservice.repository.ModelServiceRepository;
 import com.lifepilot.modelservice.repository.ModelServiceTemplateRepository;
 import com.lifepilot.modelservice.repository.RerankSettingsRepository;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
-import com.lifepilot.llm.config.ProviderType;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,8 +30,6 @@ import org.springframework.lang.Nullable;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,19 +57,22 @@ public class ModelServiceController {
     private final RerankSettingsRepository rerankSettingsRepository;
     private final ModelServiceTemplateRepository modelServiceTemplateRepository;
     private final ModelServiceRegistrationService registrationService;
+    private final ProviderProfileRegistry profileRegistry;
 
     public ModelServiceController(ModelServiceRepository modelServiceRepository,
                                   GenerationSettingsRepository generationSettingsRepository,
                                   EmbeddingSettingsRepository embeddingSettingsRepository,
                                   RerankSettingsRepository rerankSettingsRepository,
                                   ModelServiceTemplateRepository modelServiceTemplateRepository,
-                                  ModelServiceRegistrationService registrationService) {
+                                  ModelServiceRegistrationService registrationService,
+                                  ProviderProfileRegistry profileRegistry) {
         this.modelServiceRepository = modelServiceRepository;
         this.generationSettingsRepository = generationSettingsRepository;
         this.embeddingSettingsRepository = embeddingSettingsRepository;
         this.rerankSettingsRepository = rerankSettingsRepository;
         this.modelServiceTemplateRepository = modelServiceTemplateRepository;
         this.registrationService = registrationService;
+        this.profileRegistry = profileRegistry;
     }
 
     @GetMapping
@@ -90,7 +93,7 @@ public class ModelServiceController {
                 .map(template -> new ModelServiceTemplateResponse(
                         template.vendorKey(),
                         template.displayName(),
-                        template.providerType().name(),
+                        template.providerType(),
                         template.description(),
                         template.defaultApiUrl(),
                         template.supportedKinds().stream().map(Enum::name).toList(),
@@ -112,6 +115,15 @@ public class ModelServiceController {
                                         option.embeddingDimension()))
                                 .toList()))
                 .toList());
+    }
+
+    /** 列出所有内置 ProviderProfile，前端模型服务编辑页用于让用户选择 profile。 */
+    @GetMapping("/profiles")
+    public ApiResponse<List<ProviderProfileDto>> listProfiles() {
+        List<ProviderProfileDto> profiles = profileRegistry.all().stream()
+                .map(this::toProfileDto)
+                .toList();
+        return ApiResponse.ok(profiles);
     }
 
     @GetMapping("/{id}")
@@ -147,9 +159,10 @@ public class ModelServiceController {
         var existing = modelServiceRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型服务不存在: id=" + id));
         var toggled = new ModelServiceEntity(
-                existing.id(), existing.kind(), existing.providerType(),
+                existing.id(), existing.kind(), existing.profileId(),
                 existing.apiUrl(), existing.apiKey(), existing.modelName(),
                 existing.timeoutSeconds(), existing.priority(), !existing.enabled(),
+                existing.isReasoning(), existing.thinkingMode(),
                 existing.supportedScenes(), existing.generationCapabilities(),
                 existing.metadata(), existing.displayName(), existing.description()
         );
@@ -209,7 +222,7 @@ public class ModelServiceController {
             throw new IllegalArgumentException("模型名称不能为空");
         }
         parseKind(request.kind());
-        parseProviderType(request.type());
+        validateProfileId(request.profileId());
         validateVendorKey(request.vendorKey());
     }
 
@@ -218,13 +231,15 @@ public class ModelServiceController {
         return new ModelServiceEntity(
                 request.id(),
                 kind,
-                parseProviderType(request.type()),
+                request.profileId(),
                 request.apiUrl(),
                 emptyToNull(request.apiKey()),
                 request.modelName(),
                 request.timeoutSeconds() != null ? request.timeoutSeconds() : 30,
                 request.priority() != null ? request.priority() : 0,
                 request.enabled() == null || request.enabled(),
+                Boolean.TRUE.equals(request.isReasoning()),
+                parseThinkingMode(request.thinkingMode()),
                 request.scenes() != null ? request.scenes() : List.of(),
                 resolveGenerationCapabilities(kind, request.capabilities(), request.supportsStreaming()),
                 buildMetadata(
@@ -243,18 +258,26 @@ public class ModelServiceController {
 
     private ModelServiceEntity merge(ModelServiceEntity existing, UpdateModelServiceRequest request) {
         ModelServiceKind kind = request.kind() != null ? parseKind(request.kind()) : existing.kind();
-        ProviderType providerType = request.type() != null ? parseProviderType(request.type()) : existing.providerType();
+        String profileId;
+        if (request.profileId() != null && !request.profileId().isBlank()) {
+            validateProfileId(request.profileId());
+            profileId = request.profileId();
+        } else {
+            profileId = existing.profileId();
+        }
         validateVendorKey(request.vendorKey());
         return new ModelServiceEntity(
                 existing.id(),
                 kind,
-                providerType,
+                profileId,
                 request.apiUrl() != null ? request.apiUrl() : existing.apiUrl(),
                 request.apiKey() != null && !request.apiKey().isBlank() ? request.apiKey() : existing.apiKey(),
                 request.modelName() != null ? request.modelName() : existing.modelName(),
                 request.timeoutSeconds() != null ? request.timeoutSeconds() : existing.timeoutSeconds(),
                 request.priority() != null ? request.priority() : existing.priority(),
                 request.enabled() != null ? request.enabled() : existing.enabled(),
+                request.isReasoning() != null ? request.isReasoning() : existing.isReasoning(),
+                request.thinkingMode() != null ? parseThinkingMode(request.thinkingMode()) : existing.thinkingMode(),
                 request.scenes() != null ? request.scenes() : existing.supportedScenes(),
                 request.capabilities() != null || request.supportsStreaming() != null
                         ? resolveGenerationCapabilities(kind, request.capabilities(), request.supportsStreaming())
@@ -327,13 +350,15 @@ public class ModelServiceController {
         return new ModelServiceResponse(
                 entity.id(),
                 entity.kind().name(),
-                entity.providerType().name(),
+                entity.profileId(),
                 getStringMetadata(entity, "vendorKey"),
                 entity.apiUrl(),
                 entity.modelName(),
                 entity.timeoutSeconds(),
                 entity.priority(),
                 entity.enabled(),
+                entity.isReasoning(),
+                entity.thinkingMode().name(),
                 entity.supportedScenes(),
                 toCapabilities(entity),
                 getIntegerMetadata(entity, "costPerInputToken"),
@@ -431,11 +456,22 @@ public class ModelServiceController {
         }
     }
 
-    private ProviderType parseProviderType(String type) {
+    private ThinkingMode parseThinkingMode(@Nullable String thinkingMode) {
         try {
-            return ProviderType.valueOf(type);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("不支持的 Provider 类型: " + type);
+            return ThinkingMode.fromString(thinkingMode);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(e.getMessage());
+        }
+    }
+
+    private void validateProfileId(@Nullable String profileId) {
+        if (profileId == null || profileId.isBlank()) {
+            throw new IllegalArgumentException("Provider Profile ID 不能为空");
+        }
+        try {
+            profileRegistry.get(profileId);
+        } catch (IllegalStateException e) {
+            throw new IllegalArgumentException("不支持的 Provider Profile: " + profileId);
         }
     }
 
@@ -452,4 +488,20 @@ public class ModelServiceController {
     private @Nullable String emptyToNull(@Nullable String value) {
         return value == null || value.isBlank() ? null : value;
     }
+
+    private ProviderProfileDto toProfileDto(ProviderProfile profile) {
+        List<String> caps = profile.capabilities().stream()
+                .map(Enum::name)
+                .sorted()
+                .toList();
+        return new ProviderProfileDto(
+                profile.id(),
+                profile.displayName(),
+                profile.baseAdapter().name(),
+                profile.defaultBaseUrl(),
+                profile.thinkingProtocol().name(),
+                caps
+        );
+    }
+
 }

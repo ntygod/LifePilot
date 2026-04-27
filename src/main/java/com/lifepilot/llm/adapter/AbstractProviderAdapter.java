@@ -4,6 +4,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.llm.stream.ContentChunk;
 import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.stream.ToolCallDelta;
@@ -56,6 +57,7 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     private static final java.net.http.HttpClient SHARED_HTTP_CLIENT = java.net.http.HttpClient.newHttpClient();
 
     protected final ProviderConfig config;
+    protected final BaseAdapterType baseAdapter;
     protected final ChatModel chatModel;
     @Nullable
     protected final EmbeddingModel embeddingModel;
@@ -65,10 +67,12 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     private volatile ChatClient chatClient;
 
     protected AbstractProviderAdapter(ProviderConfig config,
+                                      BaseAdapterType baseAdapter,
                                       ChatModel chatModel,
                                       @Nullable EmbeddingModel embeddingModel,
                                       @Nullable List<CallAdvisor> defaultAdvisors) {
         this.config = config;
+        this.baseAdapter = baseAdapter;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
         this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
@@ -261,7 +265,7 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     public boolean healthCheck() {
         try {
             // TEI 服务（embedding / reranker）没有 OpenAI 兼容的 chat 接口，通过 /health 端点检查
-            if (config.type() == com.lifepilot.llm.config.ProviderType.TEI) {
+            if (baseAdapter == BaseAdapterType.TEI) {
                 return checkHealthEndpoint(config.apiUrl());
             }
             // EMBEDDING 类型通过 embeddingModel 验证
@@ -498,7 +502,7 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     }
 
     private ProviderChatOptionsFactory.ProviderDescriptor providerDescriptor() {
-        return new ProviderChatOptionsFactory.ProviderDescriptor(config.type(), config.apiUrl());
+        return new ProviderChatOptionsFactory.ProviderDescriptor(baseAdapter, config.apiUrl());
     }
 
     private String maybeAppendStructuredOutputInstruction(String prompt, @Nullable String outputSchema) {

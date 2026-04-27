@@ -8,7 +8,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.StreamingLlmResponse;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.llm.stream.ContentChunk;
 import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.stream.ToolCallDelta;
@@ -69,7 +69,7 @@ class StreamingCallback_单元测试 {
                         chatModel,
                         "provider-1",
                         "model-1",
-                        ProviderType.OPENAI_COMPATIBLE,
+                        BaseAdapterType.OPENAI_BASE,
                         "https://example.test/v1",
                         true
                 ));

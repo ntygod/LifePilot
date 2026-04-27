@@ -3,7 +3,8 @@ package com.lifepilot.llm.adapter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.stream.ContentChunk;
 import com.lifepilot.llm.stream.LlmStreamEvent;
@@ -301,7 +302,6 @@ class AbstractProviderAdapterTest {
     private ProviderConfig providerConfig(Set<ProviderCapability> capabilities, String modelName, String apiUrl) {
         return new ProviderConfig(
                 "p1",
-                ProviderType.OPENAI_COMPATIBLE,
                 "openai-official",
                 apiUrl,
                 null,
@@ -315,7 +315,9 @@ class AbstractProviderAdapterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
     }
 
@@ -330,7 +332,7 @@ class AbstractProviderAdapterTest {
                     ChatModel chatModel,
                     @Nullable EmbeddingModel embeddingModel,
                     @Nullable List<CallAdvisor> defaultAdvisors) {
-            super(config, chatModel, embeddingModel, defaultAdvisors);
+            super(config, BaseAdapterType.OPENAI_BASE, chatModel, embeddingModel, defaultAdvisors);
         }
 
         /** 测试入口：把 protected 的 {@link #chunkToEvents(ChatResponse)} 提升为 public。 */

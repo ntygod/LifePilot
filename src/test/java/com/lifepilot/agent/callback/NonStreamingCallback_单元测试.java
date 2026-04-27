@@ -5,7 +5,7 @@ import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
@@ -111,7 +111,7 @@ class NonStreamingCallback_单元测试 {
                 chatModel,
                 "provider-a",
                 "model-a",
-                ProviderType.OPENAI_COMPATIBLE,
+                BaseAdapterType.OPENAI_BASE,
                 "https://api.example.com/v1",
                 false
         );

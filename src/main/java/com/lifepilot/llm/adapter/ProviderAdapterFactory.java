@@ -121,7 +121,7 @@ public class ProviderAdapterFactory {
 
         // Prompt 缓存策略 — DashScope 需要显式 cache_control 注入；OpenAI 官方 / DeepSeek 等
         // provider 侧自动缓存，走 noop pass-through；策略自行决定两端拦截点是否生效。
-        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(config);
+        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(profile.cacheStrategy());
         applyCacheStrategyToOpenAi(openAiApiBuilder, cacheStrategy, config);
 
         var openAiApi = openAiApiBuilder.build();
@@ -182,7 +182,7 @@ public class ProviderAdapterFactory {
                 .baseUrl(baseUrl);
 
         // Prompt 缓存策略 — Anthropic 走显式 cache_control ephemeral 注入
-        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(config);
+        PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(profile.cacheStrategy());
         applyCacheStrategyToAnthropic(anthropicApiBuilder, cacheStrategy, config);
 
         var anthropicApi = anthropicApiBuilder.build();

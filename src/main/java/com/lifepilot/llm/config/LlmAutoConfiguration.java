@@ -3,6 +3,7 @@ package com.lifepilot.llm.config;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
@@ -168,11 +169,18 @@ public class LlmAutoConfiguration {
             log.debug("当前无已注册模型服务，跳过连接预热");
             return;
         }
+        // 通过 profile.baseAdapter() 区分本地 / 云端：本地模型（OLLAMA）不参与预热，
+        // 避免在用户未启动本地 Ollama 时产生噪音日志。
+        var profileRegistry = context.getBean(ProviderProfileRegistry.class);
 
         int warmupCount = 0;
         for (String providerId : providerRegistry.registeredIds()) {
             var config = providerRegistry.getConfig(providerId);
-            if (config.isEmpty() || config.get().isLocal()) {
+            if (config.isEmpty()) {
+                continue;
+            }
+            BaseAdapterType baseAdapter = profileRegistry.get(config.get().profileId()).baseAdapter();
+            if (baseAdapter == BaseAdapterType.OLLAMA) {
                 continue;
             }
             try {

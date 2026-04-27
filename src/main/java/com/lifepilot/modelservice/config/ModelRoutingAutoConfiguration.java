@@ -6,6 +6,7 @@ import com.lifepilot.generation.client.GenerationClientFactory;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.modelservice.registry.ModelServiceRegistry;
 import com.lifepilot.modelservice.repository.EmbeddingSettingsRepository;
 import com.lifepilot.modelservice.repository.GenerationSettingsRepository;
@@ -49,8 +50,10 @@ public class ModelRoutingAutoConfiguration {
     public GenerationRouter generationRouter(ModelServiceRegistry registry,
                                              GenerationSettingsRepository settingsRepository,
                                              GenerationClientFactory clientFactory,
-                                             CircuitBreakerManager circuitBreakerManager) {
-        return new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager);
+                                             CircuitBreakerManager circuitBreakerManager,
+                                             ProviderProfileRegistry profileRegistry) {
+        return new GenerationRouter(registry, settingsRepository, clientFactory,
+                circuitBreakerManager, profileRegistry);
     }
 
     @Bean
@@ -64,8 +67,9 @@ public class ModelRoutingAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public RerankClientFactory rerankClientFactory(com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
-        return new RerankClientFactory(objectMapper);
+    public RerankClientFactory rerankClientFactory(com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+                                                   ProviderProfileRegistry profileRegistry) {
+        return new RerankClientFactory(objectMapper, profileRegistry);
     }
 
     @Bean

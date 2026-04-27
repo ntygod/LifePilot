@@ -53,8 +53,8 @@ public class ProviderRegistry {
         var adapter = adapterFactory.create(config);
         configs.put(config.id(), config);
         adapters.put(config.id(), adapter);
-        log.info("Provider 注册成功: id={}, type={}, model={}",
-                config.id(), config.type(), config.modelName());
+        log.info("Provider 注册成功: id={}, profileId={}, model={}",
+                config.id(), config.profileId(), config.modelName());
     }
 
     /**

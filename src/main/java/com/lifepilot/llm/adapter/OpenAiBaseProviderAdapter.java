@@ -39,7 +39,7 @@ public class OpenAiBaseProviderAdapter extends AbstractProviderAdapter {
                                      @Nullable List<CallAdvisor> defaultAdvisors,
                                      ProviderProfile profile,
                                      ThinkingProtocol thinkingProtocol) {
-        super(config, chatModel, embeddingModel, defaultAdvisors);
+        super(config, profile.baseAdapter(), chatModel, embeddingModel, defaultAdvisors);
         this.profile = profile;
         this.thinkingProtocol = thinkingProtocol;
     }

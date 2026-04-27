@@ -1,5 +1,6 @@
 package com.lifepilot.llm.config;
 
+import com.lifepilot.llm.thinking.ThinkingMode;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -62,11 +63,9 @@ public class LlmConfigProperties {
      * @return ProviderConfig record
      */
     public static ProviderConfig toProviderConfig(String id, ProviderConfigEntry entry) {
-        // Phase 3 临时方案：按 ProviderType 推断默认 profileId；Phase 6 由 ModelService 注入真实值
         return new ProviderConfig(
                 id,
-                entry.getType(),
-                ProviderConfig.defaultProfileIdFor(entry.getType()),
+                entry.getProfileId(),
                 entry.getApiUrl(),
                 entry.getApiKey(),
                 entry.getModelName(),
@@ -79,7 +78,9 @@ public class LlmConfigProperties {
                 entry.getCostPerOutputToken(),
                 entry.getMaxContextWindow(),
                 entry.getEmbeddingDimension(),
-                entry.isSupportsStreaming()
+                entry.isSupportsStreaming(),
+                entry.isReasoning(),
+                entry.getThinkingMode()
         );
     }
 
@@ -89,7 +90,7 @@ public class LlmConfigProperties {
     @Setter
     @Getter
     public static class ProviderConfigEntry {
-        private ProviderType type;
+        private String profileId;
         private String apiUrl;
         private String apiKey;
         private String modelName;
@@ -103,6 +104,8 @@ public class LlmConfigProperties {
         private int maxContextWindow = 4096;
         private Integer embeddingDimension;
         private boolean supportsStreaming = false;
+        private boolean reasoning = false;
+        private ThinkingMode thinkingMode = ThinkingMode.AUTO;
 
     }
 

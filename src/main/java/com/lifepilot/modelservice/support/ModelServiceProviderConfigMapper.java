@@ -34,11 +34,9 @@ public final class ModelServiceProviderConfigMapper {
         for (GenerationCapability capability : service.generationCapabilities()) {
             capabilities.add(mapGenerationCapability(capability));
         }
-        // Phase 3 临时方案：按 ProviderType 推断默认 profileId；Phase 6 由 ModelService 表持久化用户实选值
         return new ProviderConfig(
                 service.id(),
-                service.providerType(),
-                ProviderConfig.defaultProfileIdFor(service.providerType()),
+                service.profileId(),
                 service.apiUrl(),
                 service.apiKey(),
                 service.modelName(),
@@ -51,7 +49,9 @@ public final class ModelServiceProviderConfigMapper {
                 0,
                 0,
                 intMetadata(service, "embeddingDimension"),
-                capabilities.contains(ProviderCapability.STREAMING));
+                capabilities.contains(ProviderCapability.STREAMING),
+                service.isReasoning(),
+                service.thinkingMode());
     }
 
     /**
@@ -61,11 +61,9 @@ public final class ModelServiceProviderConfigMapper {
      * @return ProviderConfig
      */
     public static ProviderConfig toEmbeddingProviderConfig(ModelServiceEntity service) {
-        // Phase 3 临时方案：按 ProviderType 推断默认 profileId；Phase 6 由 ModelService 表持久化用户实选值
         return new ProviderConfig(
                 service.id(),
-                service.providerType(),
-                ProviderConfig.defaultProfileIdFor(service.providerType()),
+                service.profileId(),
                 service.apiUrl(),
                 service.apiKey(),
                 service.modelName(),
@@ -78,7 +76,9 @@ public final class ModelServiceProviderConfigMapper {
                 0,
                 0,
                 intMetadata(service, "embeddingDimension"),
-                false);
+                false,
+                service.isReasoning(),
+                service.thinkingMode());
     }
 
     private static ProviderCapability mapGenerationCapability(GenerationCapability capability) {

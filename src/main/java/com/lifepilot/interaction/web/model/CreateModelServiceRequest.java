@@ -13,7 +13,7 @@ import java.util.List;
 public record CreateModelServiceRequest(
         String id,
         String kind,
-        String type,
+        String profileId,
         @Nullable String vendorKey,
         String apiUrl,
         @Nullable String apiKey,
@@ -23,6 +23,8 @@ public record CreateModelServiceRequest(
         @Nullable List<String> scenes,
         @Nullable List<String> capabilities,
         @Nullable Boolean enabled,
+        @Nullable Boolean isReasoning,
+        @Nullable String thinkingMode,
         @Nullable Integer costPerInputToken,
         @Nullable Integer costPerOutputToken,
         @Nullable Integer maxContextWindow,

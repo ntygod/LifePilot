@@ -29,7 +29,7 @@ public class AnthropicProviderAdapter extends AbstractProviderAdapter {
                                     @Nullable List<CallAdvisor> defaultAdvisors,
                                     ProviderProfile profile,
                                     ThinkingProtocol thinkingProtocol) {
-        super(config, chatModel, null, defaultAdvisors);
+        super(config, profile.baseAdapter(), chatModel, null, defaultAdvisors);
         this.profile = profile;
         this.thinkingProtocol = thinkingProtocol;
     }

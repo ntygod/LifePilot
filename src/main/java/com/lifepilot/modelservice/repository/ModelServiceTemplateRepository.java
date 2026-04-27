@@ -3,7 +3,6 @@ package com.lifepilot.modelservice.repository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.modelservice.model.ModelServiceKind;
 import com.lifepilot.modelservice.model.ModelServiceTemplate;
 import com.lifepilot.modelservice.model.ModelServiceTemplateModel;
@@ -107,10 +106,13 @@ public class ModelServiceTemplateRepository {
     }
 
     private ModelServiceTemplateRow mapTemplateRow(ResultSet rs) throws SQLException {
+        String providerTypeRaw = rs.getString("provider_type");
+        String providerType = providerTypeRaw != null && !providerTypeRaw.isBlank()
+                ? providerTypeRaw.trim() : "OPENAI_COMPATIBLE";
         return new ModelServiceTemplateRow(
                 rs.getString("vendor_key"),
                 rs.getString("display_name"),
-                safeValueOf(ProviderType.class, rs.getString("provider_type"), ProviderType.OPENAI_COMPATIBLE),
+                providerType,
                 rs.getString("description"),
                 rs.getString("default_api_url"),
                 readKinds(rs.getString("supported_kinds_json")),
@@ -177,7 +179,7 @@ public class ModelServiceTemplateRepository {
     private record ModelServiceTemplateRow(
             String vendorKey,
             String displayName,
-            ProviderType providerType,
+            String providerType,
             String description,
             String defaultApiUrl,
             List<ModelServiceKind> supportedKinds,

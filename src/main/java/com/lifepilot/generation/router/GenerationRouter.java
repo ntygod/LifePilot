@@ -7,7 +7,8 @@ import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.GenerationSettingsEntity;
@@ -50,17 +51,20 @@ public class GenerationRouter {
     private final GenerationSettingsRepository settingsRepository;
     private final GenerationClientFactory clientFactory;
     private final CircuitBreakerManager circuitBreakerManager;
+    private final ProviderProfileRegistry profileRegistry;
     @Nullable
     private volatile SemanticCache semanticCache;
 
     public GenerationRouter(ModelServiceRegistry registry,
                             GenerationSettingsRepository settingsRepository,
                             GenerationClientFactory clientFactory,
-                            CircuitBreakerManager circuitBreakerManager) {
+                            CircuitBreakerManager circuitBreakerManager,
+                            ProviderProfileRegistry profileRegistry) {
         this.registry = registry;
         this.settingsRepository = settingsRepository;
         this.clientFactory = clientFactory;
         this.circuitBreakerManager = circuitBreakerManager;
+        this.profileRegistry = profileRegistry;
     }
 
     public void setSemanticCache(@Nullable SemanticCache semanticCache) {
@@ -225,11 +229,12 @@ public class GenerationRouter {
                                               @Nullable String modelName) {
         List<ModelServiceEntity> candidates = selectCandidates(scene, serviceId, modelName, GenerationCapability.CHAT);
         for (ModelServiceEntity candidate : candidates) {
+            BaseAdapterType baseAdapter = profileRegistry.get(candidate.profileId()).baseAdapter();
             return new ChatModelInfo(
                     clientFactory.getOrCreate(candidate).chatModel(),
                     candidate.id(),
                     candidate.modelName(),
-                    candidate.providerType(),
+                    baseAdapter,
                     candidate.apiUrl(),
                     candidate.generationCapabilities().contains(GenerationCapability.STREAMING));
         }
@@ -390,7 +395,7 @@ public class GenerationRouter {
      * ChatModel 及其元信息。
      */
     public record ChatModelInfo(ChatModel chatModel, String serviceId, String modelName,
-                                ProviderType providerType, String apiUrl,
+                                BaseAdapterType baseAdapter, String apiUrl,
                                 boolean supportsStreaming) {
     }
 

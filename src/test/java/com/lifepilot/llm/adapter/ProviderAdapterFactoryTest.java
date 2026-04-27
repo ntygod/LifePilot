@@ -2,9 +2,9 @@ package com.lifepilot.llm.adapter;
 
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
-import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.profile.ThinkingProtocolId;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.llm.thinking.AnthropicThinkingProtocol;
 import com.lifepilot.llm.thinking.DeepSeekThinkingProtocol;
 import com.lifepilot.llm.thinking.NoopThinkingProtocol;
@@ -48,8 +48,7 @@ class ProviderAdapterFactoryTest {
 
     @Test
     void DeepSeek_profile_路由到_DeepSeekProviderAdapter() {
-        var config = providerConfig("deepseek-official", ProviderType.OPENAI_COMPATIBLE,
-                "https://api.deepseek.com");
+        var config = providerConfig("deepseek-official", "https://api.deepseek.com");
         var adapter = factory.create(config);
         assertThat(adapter).isInstanceOf(DeepSeekProviderAdapter.class);
         assertThat(((OpenAiBaseProviderAdapter) adapter).thinkingProtocol().id())
@@ -58,8 +57,7 @@ class ProviderAdapterFactoryTest {
 
     @Test
     void Qwen_profile_路由到_QwenProviderAdapter() {
-        var config = providerConfig("qwen-dashscope", ProviderType.OPENAI_COMPATIBLE,
-                "https://dashscope.aliyuncs.com/compatible-mode");
+        var config = providerConfig("qwen-dashscope", "https://dashscope.aliyuncs.com/compatible-mode");
         var adapter = factory.create(config);
         assertThat(adapter).isInstanceOf(QwenProviderAdapter.class);
         assertThat(((OpenAiBaseProviderAdapter) adapter).thinkingProtocol().id())
@@ -68,8 +66,7 @@ class ProviderAdapterFactoryTest {
 
     @Test
     void OpenAI_official_profile_路由到_OpenAiOfficialProviderAdapter() {
-        var config = providerConfig("openai-official", ProviderType.OPENAI_COMPATIBLE,
-                "https://api.openai.com");
+        var config = providerConfig("openai-official", "https://api.openai.com");
         var adapter = factory.create(config);
         assertThat(adapter).isInstanceOf(OpenAiOfficialProviderAdapter.class);
         assertThat(((OpenAiBaseProviderAdapter) adapter).thinkingProtocol().id())
@@ -78,42 +75,37 @@ class ProviderAdapterFactoryTest {
 
     @Test
     void Anthropic_profile_路由到_AnthropicProviderAdapter() {
-        var config = providerConfig("anthropic-official", ProviderType.ANTHROPIC,
-                "https://api.anthropic.com");
+        var config = providerConfig("anthropic-official", "https://api.anthropic.com");
         var adapter = factory.create(config);
         assertThat(adapter).isInstanceOf(AnthropicProviderAdapter.class);
     }
 
     @Test
     void Ollama_profile_路由到_OllamaProviderAdapter() {
-        var config = providerConfig("ollama-local", ProviderType.OLLAMA,
-                "http://localhost:11434");
+        var config = providerConfig("ollama-local", "http://localhost:11434");
         var adapter = factory.create(config);
         assertThat(adapter).isInstanceOf(OllamaProviderAdapter.class);
     }
 
     @Test
     void 火山方舟_DEEPSEEK_协议复用_DeepSeekProviderAdapter() {
-        var config = providerConfig("volcengine-ark", ProviderType.OPENAI_COMPATIBLE,
-                "https://ark.cn-beijing.volces.com/api");
+        var config = providerConfig("volcengine-ark", "https://ark.cn-beijing.volces.com/api");
         var adapter = factory.create(config);
         assertThat(adapter).isInstanceOf(DeepSeekProviderAdapter.class);
     }
 
     @Test
     void NONE_协议_provider_默认走_OpenAiBaseProviderAdapter() {
-        var config = providerConfig("zhipu-bigmodel", ProviderType.OPENAI_COMPATIBLE,
-                "https://open.bigmodel.cn/api/paas");
+        var config = providerConfig("zhipu-bigmodel", "https://open.bigmodel.cn/api/paas");
         var adapter = factory.create(config);
         assertThat(adapter).isExactlyInstanceOf(OpenAiBaseProviderAdapter.class);
         assertThat(((OpenAiBaseProviderAdapter) adapter).thinkingProtocol().id())
                 .isEqualTo(ThinkingProtocolId.NONE);
     }
 
-    private ProviderConfig providerConfig(String profileId, ProviderType type, String apiUrl) {
+    private ProviderConfig providerConfig(String profileId, String apiUrl) {
         return new ProviderConfig(
                 "test-id",
-                type,
                 profileId,
                 apiUrl,
                 "sk-test",
@@ -127,7 +119,9 @@ class ProviderAdapterFactoryTest {
                 0,
                 0,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
     }
 }

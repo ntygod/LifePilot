@@ -1,25 +1,18 @@
 package com.lifepilot.llm.cache;
 
-import com.lifepilot.llm.config.ProviderConfig;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.PromptCacheStrategyId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.net.URI;
-import java.util.Locale;
 
 /**
  * Prompt 缓存策略工厂。
  *
- * <p>按 {@link ProviderConfig} 解析出对应的 {@link PromptCacheStrategy}:</p>
+ * <p>按 {@link PromptCacheStrategyId} 解析对应的 {@link PromptCacheStrategy}：</p>
  * <ul>
- *   <li>{@link ProviderType#ANTHROPIC} → {@link AnthropicPromptCacheStrategy};</li>
- *   <li>{@link ProviderType#OPENAI_COMPATIBLE} + baseUrl 包含 {@code dashscope} →
- *       {@link DashScopePromptCacheStrategy};</li>
- *   <li>{@link ProviderType#OPENAI_COMPATIBLE} 其它 (OpenAI 官方 / DeepSeek 官方 / Azure /
- *       未知 host) → {@link NoopPromptCacheStrategy} (auto caching 或 pass-through);</li>
- *   <li>{@link ProviderType#OLLAMA} / {@link ProviderType#TEI} → {@link NoopPromptCacheStrategy}
- *       (本地模型不涉及远端缓存)。</li>
+ *   <li>{@code ANTHROPIC_EPHEMERAL} → {@link AnthropicPromptCacheStrategy}（cache_control 注入）；</li>
+ *   <li>{@code DASHSCOPE_EXPLICIT} → {@link DashScopePromptCacheStrategy}（DashScope cache_control）；</li>
+ *   <li>{@code OPENAI_AUTO} → {@link NoopPromptCacheStrategy}（OpenAI 官方自动缓存，无需注入）；</li>
+ *   <li>{@code NOOP} → {@link NoopPromptCacheStrategy}（无远端缓存或本地模型）。</li>
  * </ul>
  *
  * @author zsg
@@ -33,37 +26,23 @@ public final class PromptCacheStrategies {
     }
 
     /**
-     * 按 ProviderConfig 选择策略。
+     * 按策略 ID 选择实现。
      *
-     * @param config provider 配置
-     * @return 对应的策略实例 (永不返回 {@code null}, 无匹配返回 noop)
+     * @param strategyId 缓存策略标识（来自 ProviderProfile.cacheStrategy）
+     * @return 对应的策略实例（永不返回 {@code null}）
      */
-    public static PromptCacheStrategy resolve(ProviderConfig config) {
-        ProviderType type = config.type();
-        if (type == ProviderType.ANTHROPIC) {
-            return AnthropicPromptCacheStrategy.INSTANCE;
+    public static PromptCacheStrategy resolve(PromptCacheStrategyId strategyId) {
+        if (strategyId == null) {
+            return NoopPromptCacheStrategy.INSTANCE;
         }
-        if (type == ProviderType.OPENAI_COMPATIBLE && isDashScope(config.apiUrl())) {
-            return DashScopePromptCacheStrategy.INSTANCE;
-        }
-        // OpenAI 官方 / DeepSeek 官方 / Azure 等走 provider 自身的 auto caching;
-        // Ollama / TEI 为本地模型无需缓存 — 统一 noop
-        log.debug("Prompt 缓存策略: provider id={}, type={}, 使用 noop", config.id(), type);
-        return NoopPromptCacheStrategy.INSTANCE;
-    }
-
-    /** 判断 apiUrl 是否指向 DashScope (百炼) — 支持国内站与国际站。 */
-    private static boolean isDashScope(String apiUrl) {
-        if (apiUrl == null || apiUrl.isBlank()) {
-            return false;
-        }
-        String host;
-        try {
-            host = URI.create(apiUrl).getHost();
-        } catch (IllegalArgumentException e) {
-            // URI 解析失败 (极少见), 退化到字符串包含判断
-            return apiUrl.toLowerCase(Locale.ROOT).contains("dashscope");
-        }
-        return host != null && host.toLowerCase(Locale.ROOT).contains("dashscope");
+        return switch (strategyId) {
+            case ANTHROPIC_EPHEMERAL -> AnthropicPromptCacheStrategy.INSTANCE;
+            case DASHSCOPE_EXPLICIT -> DashScopePromptCacheStrategy.INSTANCE;
+            // OpenAI 官方走 provider 自身的 auto caching，noop pass-through
+            case OPENAI_AUTO, NOOP -> {
+                log.debug("Prompt 缓存策略: id={}, 使用 noop", strategyId);
+                yield NoopPromptCacheStrategy.INSTANCE;
+            }
+        };
     }
 }

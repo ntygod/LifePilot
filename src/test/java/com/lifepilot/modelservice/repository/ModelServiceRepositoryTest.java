@@ -1,7 +1,7 @@
 package com.lifepilot.modelservice.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.model.ModelServiceKind;
@@ -79,13 +79,15 @@ class ModelServiceRepositoryTest {
         repository.save(new ModelServiceEntity(
                 "generation-main",
                 ModelServiceKind.GENERATION,
-                ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "https://api.openai.com/v1",
                 null,
                 "gpt-5.4",
                 60,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 java.util.List.of("chat"),
                 Set.of(GenerationCapability.CHAT, GenerationCapability.STREAMING),
                 Map.of("vendorKey", "openai"),
@@ -94,13 +96,15 @@ class ModelServiceRepositoryTest {
         repository.save(new ModelServiceEntity(
                 "embedding-main",
                 ModelServiceKind.EMBEDDING,
-                ProviderType.TEI,
+                "tei-local",
                 "http://localhost:8080/v1",
                 null,
                 "text-embedding-v4",
                 30,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 java.util.List.of(),
                 Set.of(),
                 Map.of("embeddingDimension", 1024),
@@ -122,13 +126,15 @@ class ModelServiceRepositoryTest {
         var entity = new ModelServiceEntity(
                 id,
                 ModelServiceKind.RERANK,
-                ProviderType.TEI,
+                "tei-local",
                 "http://localhost:8082",
                 null,
                 "bge-reranker-v2-m3",
                 20,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 java.util.List.of(),
                 Set.of(),
                 Map.of("path", "/rerank"),
@@ -140,7 +146,7 @@ class ModelServiceRepositoryTest {
         var found = repository.findById(id);
         assertThat(found).isPresent();
         assertThat(found.get().kind()).isEqualTo(ModelServiceKind.RERANK);
-        assertThat(found.get().providerType()).isEqualTo(ProviderType.TEI);
+        assertThat(found.get().profileId()).isEqualTo("tei-local");
         assertThat(found.get().metadata()).containsEntry("path", "/rerank");
         assertThat(repository.findEnabledByKind(ModelServiceKind.RERANK))
                 .extracting(ModelServiceEntity::id)

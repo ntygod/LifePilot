@@ -102,7 +102,7 @@ public class NonStreamingCallback implements IterationCallback {
 
         var chatOptions = ProviderChatOptionsFactory.create(
                 new ProviderChatOptionsFactory.ProviderDescriptor(
-                        chatModelInfo.providerType(),
+                        chatModelInfo.baseAdapter(),
                         chatModelInfo.apiUrl()
                 ),
                 chatModelInfo.chatModel(),

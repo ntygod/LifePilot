@@ -2,7 +2,8 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.CreateModelServiceRequest;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.model.ModelServiceKind;
@@ -60,17 +61,21 @@ class ModelServiceControllerTest {
 
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
+    private ProviderProfileRegistry profileRegistry;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
+        profileRegistry = new ProviderProfileRegistry();
+        profileRegistry.init();
         var controller = new ModelServiceController(
                 modelServiceRepository,
                 generationSettingsRepository,
                 embeddingSettingsRepository,
                 rerankSettingsRepository,
                 modelServiceTemplateRepository,
-                registrationService
+                registrationService,
+                profileRegistry
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -80,7 +85,7 @@ class ModelServiceControllerTest {
         when(modelServiceTemplateRepository.findAll()).thenReturn(List.of(new ModelServiceTemplate(
                 "openai",
                 "OpenAI",
-                ProviderType.OPENAI_COMPATIBLE,
+                "OPENAI_COMPATIBLE",
                 "官方模板",
                 "https://api.openai.com/v1",
                 List.of(ModelServiceKind.GENERATION, ModelServiceKind.EMBEDDING),
@@ -112,13 +117,22 @@ class ModelServiceControllerTest {
     }
 
     @Test
+    void 查询_provider_profile_列表_返回内置_profile() throws Exception {
+        mockMvc.perform(get("/api/model-services/profiles"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == 'openai-official')].displayName").value("OpenAI 官方"))
+                .andExpect(jsonPath("$.data[?(@.id == 'deepseek-official')].baseAdapter").value("OPENAI_BASE"))
+                .andExpect(jsonPath("$.data[?(@.id == 'anthropic-official')].thinkingProtocol").value("ANTHROPIC"));
+    }
+
+    @Test
     void 创建模型服务_保存vendorKey并返回响应() throws Exception {
         when(modelServiceTemplateRepository.existsByVendorKey("openai")).thenReturn(true);
 
         var request = new CreateModelServiceRequest(
                 "openai-generation-gpt-5-4",
                 "GENERATION",
-                "OPENAI_COMPATIBLE",
+                "openai-official",
                 "openai",
                 "https://api.openai.com/v1",
                 "test-key",
@@ -128,6 +142,8 @@ class ModelServiceControllerTest {
                 List.of("chat", "agent_react"),
                 List.of("CHAT", "STRUCTURED_OUTPUT", "FUNCTION_CALLING", "STREAMING"),
                 true,
+                false,
+                "AUTO",
                 200,
                 800,
                 400000,
@@ -143,7 +159,7 @@ class ModelServiceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value("openai-generation-gpt-5-4"))
                 .andExpect(jsonPath("$.data.vendorKey").value("openai"))
-                .andExpect(jsonPath("$.data.type").value("OPENAI_COMPATIBLE"));
+                .andExpect(jsonPath("$.data.profileId").value("openai-official"));
 
         var captor = ArgumentCaptor.forClass(ModelServiceEntity.class);
         verify(modelServiceRepository).save(captor.capture());
@@ -151,7 +167,8 @@ class ModelServiceControllerTest {
         assertThat(captor.getValue().metadata()).containsEntry("vendorKey", "openai");
         assertThat(captor.getValue().generationCapabilities())
                 .contains(GenerationCapability.CHAT, GenerationCapability.STREAMING);
-        assertThat(captor.getValue().providerType()).isEqualTo(ProviderType.OPENAI_COMPATIBLE);
+        assertThat(captor.getValue().profileId()).isEqualTo("openai-official");
+        assertThat(captor.getValue().thinkingMode()).isEqualTo(ThinkingMode.AUTO);
     }
 
     @Test
@@ -159,13 +176,15 @@ class ModelServiceControllerTest {
         when(modelServiceRepository.findAll()).thenReturn(List.of(new ModelServiceEntity(
                 "openai-main",
                 ModelServiceKind.GENERATION,
-                ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "https://api.openai.com/v1",
                 null,
                 "gpt-5.4",
                 60,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 List.of("chat"),
                 Set.of(GenerationCapability.CHAT, GenerationCapability.STREAMING),
                 Map.of("vendorKey", "openai", "supportsStreaming", true),
@@ -176,6 +195,7 @@ class ModelServiceControllerTest {
         mockMvc.perform(get("/api/model-services"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].vendorKey").value("openai"))
+                .andExpect(jsonPath("$.data[0].profileId").value("openai-official"))
                 .andExpect(jsonPath("$.data[0].modelName").value("gpt-5.4"));
     }
 }

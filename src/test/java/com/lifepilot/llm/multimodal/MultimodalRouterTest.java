@@ -7,6 +7,7 @@ import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.config.MediaProperties;
@@ -147,7 +148,6 @@ class MultimodalRouterTest {
 
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
-                com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
                 "openai-official",
                 "url",
                 null,
@@ -161,7 +161,9 @@ class MultimodalRouterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
 
         when(providerRegistry.findByScene("vision-scene")).thenReturn(List.of(visionProvider));
@@ -206,7 +208,6 @@ class MultimodalRouterTest {
 
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
-                com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
                 "openai-official",
                 "url",
                 null,
@@ -220,7 +221,9 @@ class MultimodalRouterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
 
         when(providerRegistry.findByScene("vision-scene")).thenReturn(List.of(visionProvider));
@@ -280,7 +283,6 @@ class MultimodalRouterTest {
 
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
-                com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
                 "openai-official",
                 "url",
                 null,
@@ -294,7 +296,9 @@ class MultimodalRouterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
 
         when(providerRegistry.findByScene("vision-scene")).thenReturn(List.of(visionProvider));
