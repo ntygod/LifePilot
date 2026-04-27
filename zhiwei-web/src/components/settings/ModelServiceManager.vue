@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { AcceptableValue } from 'reka-ui'
-import { ArrowLeft, Info, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Info, Loader2, RefreshCw, Trash2 } from 'lucide-vue-next'
 import {
   modelServiceApi,
   type CreateModelServiceRequest,
   type ModelService,
   type ModelServiceTemplate,
+  type ThinkingMode,
 } from '@/api/client'
+import { listProviderProfiles, type ProviderProfileDto } from '@/api/providerProfile'
+import { probeModels, type ModelInfo } from '@/api/probeModels'
 import { logger } from '@/utils/logger'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useUiStore } from '@/stores/ui'
@@ -69,6 +72,7 @@ const uiStore = useUiStore()
 
 const services = ref<ModelService[]>([])
 const templates = ref<ModelServiceTemplate[]>([])
+const profiles = ref<ProviderProfileDto[]>([])
 const loading = ref(true)
 const detailMode = ref<DetailMode>(null)
 const deletingServiceId = ref<string | null>(null)
@@ -79,12 +83,31 @@ const customModelName = ref('')
 const serviceIdCustomized = ref(false)
 const displayNameCustomized = ref(false)
 
+// 模型探测相关 —— Phase 8 新增。点"拉取可用模型"后填充 probedModels；
+// 用户选择后通过 selectModelFromProbe() 写回 formData.modelName。
+const probing = ref(false)
+const probedModels = ref<ModelInfo[]>([])
+const probeError = ref<string | null>(null)
+
 const formData = ref<CreateModelServiceRequest>(buildEmptyModelServiceRequest())
 const errors = ref<Record<string, string>>({})
 
 const kindOptions = KIND_OPTIONS
 const generationCapabilityOptions = GENERATION_CAPABILITY_OPTIONS
 const generationSceneOptions = GENERATION_SCENE_OPTIONS
+
+const thinkingModeOptions: Array<{ value: ThinkingMode; label: string }> = [
+  { value: 'auto', label: 'auto — 用 provider 默认' },
+  { value: 'enabled', label: 'enabled — 强制开启思考' },
+  { value: 'disabled', label: 'disabled — 强制关闭思考' },
+]
+
+const selectedProfile = computed(() => (
+  profiles.value.find(p => p.id === formData.value.profileId) ?? null
+))
+const profileSupportsReasoning = computed(() => (
+  selectedProfile.value != null && selectedProfile.value.thinkingProtocol !== 'NONE'
+))
 
 const activeService = computed(() => (
   detailMode.value === 'edit'
@@ -249,6 +272,8 @@ function resetForm() {
   displayNameCustomized.value = false
   selectedModelValue.value = CUSTOM_MODEL_VALUE
   customModelName.value = ''
+  probedModels.value = []
+  probeError.value = null
   vendorKey.value = defaultVendorKeyForKind('GENERATION') ?? 'custom-openai'
   if (findVendorTemplate(templates.value, vendorKey.value)) {
     applyVendorTemplate(vendorKey.value)
@@ -271,6 +296,7 @@ function enterEditView(service: ModelService) {
     id: service.id,
     kind: service.kind,
     type: service.type,
+    profileId: service.profileId,
     vendorKey: vendorKey.value,
     apiUrl: service.apiUrl ?? '',
     apiKey: '',
@@ -280,6 +306,8 @@ function enterEditView(service: ModelService) {
     scenes: [...(service.scenes ?? [])],
     capabilities: [...(service.capabilities ?? [])],
     enabled: service.enabled ?? true,
+    isReasoning: service.isReasoning ?? false,
+    thinkingMode: service.thinkingMode ?? 'auto',
     costPerInputToken: service.costPerInputToken ?? 0,
     costPerOutputToken: service.costPerOutputToken ?? 0,
     maxContextWindow: service.maxContextWindow ?? 131072,
@@ -294,6 +322,8 @@ function enterEditView(service: ModelService) {
   customModelName.value = matchedPreset ? '' : service.modelName
   serviceIdCustomized.value = true
   displayNameCustomized.value = true
+  probedModels.value = []
+  probeError.value = null
   errors.value = {}
 }
 
@@ -309,12 +339,19 @@ async function loadServices() {
 
 async function loadInitialData() {
   try {
-    const [loadedServices, loadedTemplates] = await Promise.all([
+    const [loadedServices, loadedTemplates, loadedProfiles] = await Promise.all([
       modelServiceApi.listServices(),
       modelServiceApi.listTemplates(),
+      // ProviderProfile 列表用于"选 profile → 拉模型"流程；接口失败时降级为空数组，
+      // 不阻塞模板/服务的加载（用户仍可走旧的厂商模板路径）。
+      listProviderProfiles().catch(error => {
+        logger.warn('加载 Provider Profile 列表失败:', error)
+        return [] as ProviderProfileDto[]
+      }),
     ])
     services.value = loadedServices
     templates.value = loadedTemplates
+    profiles.value = loadedProfiles
     if (props.initialMode === 'create') {
       enterCreateView()
       return
@@ -339,6 +376,99 @@ async function loadInitialData() {
   }
 }
 
+/**
+ * 用户挑 profile 后，把 profile 默认 baseUrl 同步到 formData，
+ * 并清空之前的探测结果（避免不同 provider 的模型混用）。
+ * 编辑场景下若 baseUrl 已有值则尊重现有值，仅刷新 profileId。
+ */
+function applyProfileSelection(profileId: string) {
+  formData.value.profileId = profileId
+  const profile = profiles.value.find(p => p.id === profileId)
+  if (!profile) return
+  if (!isEditing.value || !formData.value.apiUrl?.trim()) {
+    formData.value.apiUrl = profile.defaultBaseUrl
+  }
+  // 切换 profile 时清空之前的探测列表 / 错误，避免误读跨 provider 的模型
+  probedModels.value = []
+  probeError.value = null
+  // profile 不支持思考链时，强制把推理相关字段重置为安全默认
+  if (profile.thinkingProtocol === 'NONE') {
+    formData.value.isReasoning = false
+    formData.value.thinkingMode = 'auto'
+  }
+}
+
+function updateProfile(value: UiSelectValue) {
+  const profileId = normalizeSelectValue(value)
+  if (!profileId) return
+  applyProfileSelection(profileId)
+}
+
+function updateThinkingMode(value: UiSelectValue) {
+  const mode = normalizeSelectValue(value)
+  if (mode === 'auto' || mode === 'enabled' || mode === 'disabled') {
+    formData.value.thinkingMode = mode
+  }
+}
+
+function updateIsReasoning(value: boolean | 'indeterminate') {
+  const isReasoning = value === true
+  formData.value.isReasoning = isReasoning
+  if (!isReasoning) {
+    formData.value.thinkingMode = 'auto'
+  }
+}
+
+/**
+ * 调后端 /probe-models 拉取当前 profile 实际可用模型清单。
+ *
+ * <p>用户必须先选 profile + 填 baseUrl 才能探测；apiKey 可空（Ollama 等
+ * 本地服务无鉴权）。后端按 ProviderProfile.modelDiscovery 配置发起 GET
+ * 请求，毫秒级返回，不再吃 chat ping 的超时。</p>
+ */
+async function handleProbeModels() {
+  if (!formData.value.profileId) {
+    uiStore.showToast('error', '请先选择 Provider Profile')
+    return
+  }
+  if (!formData.value.apiUrl?.trim()) {
+    uiStore.showToast('error', '请先填写 API 地址')
+    return
+  }
+  probing.value = true
+  probeError.value = null
+  try {
+    const models = await probeModels({
+      profileId: formData.value.profileId,
+      baseUrl: formData.value.apiUrl.trim(),
+      apiKey: formData.value.apiKey?.trim() || undefined,
+    })
+    probedModels.value = models
+    if (models.length === 0) {
+      uiStore.showToast('info', '该 Provider 未返回任何模型')
+    } else {
+      uiStore.showToast('success', `已获取 ${models.length} 个模型`)
+    }
+  } catch (error: any) {
+    logger.error('探测模型清单失败:', error)
+    probedModels.value = []
+    probeError.value = error?.message || '探测失败'
+    uiStore.showToast('error', `探测失败：${probeError.value}`)
+  } finally {
+    probing.value = false
+  }
+}
+
+/** 用户从探测结果下拉里挑模型 → 写回 formData，同步建议字段。 */
+function selectProbedModel(value: UiSelectValue) {
+  const modelId = normalizeSelectValue(value)
+  if (!modelId) return
+  customModelName.value = modelId
+  formData.value.modelName = modelId
+  selectedModelValue.value = CUSTOM_MODEL_VALUE
+  syncSuggestedFields()
+}
+
 function validate() {
   errors.value = {}
 
@@ -347,6 +477,11 @@ function validate() {
 
   if (!formData.value.id?.trim()) {
     errors.value.id = '服务 ID 不能为空。'
+  }
+  // 后端 profileId 为必填；profiles 为空表示后端 profile 接口暂不可用，跳过该校验
+  // 走旧厂商模板路径（保存时后端会用 IllegalArgumentException 兜底拦截非法值）。
+  if (profiles.value.length > 0 && !formData.value.profileId?.trim()) {
+    errors.value.profileId = '请选择 Provider Profile。'
   }
   if (!formData.value.apiUrl?.trim()) {
     errors.value.apiUrl = 'API 地址不能为空。'
@@ -530,6 +665,80 @@ onMounted(() => {
               {{ errors._general }}
             </div>
 
+            <!-- Provider Profile 协议挑选 — Phase 8 新增。
+                 用户先选 Profile（决定 thinking 协议、模型探测端点），
+                 再填 baseUrl + apiKey，点"拉取可用模型"探测实际可用模型清单。
+                 接口加载失败时（profiles 为空）该区块隐藏，走旧厂商模板路径。 -->
+            <section
+              v-if="profiles.length > 0"
+              class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6"
+            >
+              <div class="flex items-center justify-between gap-4 border-b border-border/60 pb-4">
+                <div>
+                  <h3 class="text-base font-semibold text-foreground">Provider 协议</h3>
+                  <p class="mt-xs text-sm text-muted-foreground">
+                    选定协议后填写地址与密钥，点"拉取可用模型"获取该 Provider 实际可用的模型清单。
+                  </p>
+                </div>
+                <Badge v-if="selectedProfile" variant="outline">
+                  {{ profileSupportsReasoning ? '支持推理' : '非推理' }}
+                </Badge>
+              </div>
+
+              <div class="mt-4 grid gap-4 md:grid-cols-2">
+                <div class="space-y-2 md:col-span-2">
+                  <Label>Provider Profile</Label>
+                  <Select :model-value="formData.profileId" @update:model-value="updateProfile">
+                    <SelectTrigger :class="{ 'border-destructive': errors.profileId }">
+                      <SelectValue placeholder="挑一个内置协议..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="profile in profiles" :key="profile.id" :value="profile.id">
+                        {{ profile.displayName }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p v-if="errors.profileId" class="text-sm text-destructive">{{ errors.profileId }}</p>
+                  <p v-else-if="selectedProfile" class="text-sm text-muted-foreground">
+                    思考协议：{{ selectedProfile.thinkingProtocol }} · 默认地址：{{ selectedProfile.defaultBaseUrl }}
+                  </p>
+                </div>
+
+                <div class="space-y-2 md:col-span-2">
+                  <Label>拉取可用模型</Label>
+                  <div class="flex flex-wrap items-start gap-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      class="gap-2"
+                      :disabled="probing || !formData.profileId || !formData.apiUrl?.trim()"
+                      @click="handleProbeModels"
+                    >
+                      <Loader2 v-if="probing" class="size-4 animate-spin" />
+                      <RefreshCw v-else class="size-4" />
+                      {{ probing ? '探测中...' : '拉取可用模型' }}
+                    </Button>
+                    <div v-if="probedModels.length > 0" class="min-w-64 flex-1 space-y-2">
+                      <Select :model-value="formData.modelName" @update:model-value="selectProbedModel">
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择模型" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="model in probedModels" :key="model.id" :value="model.id">
+                            {{ model.name }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p class="text-sm text-muted-foreground">
+                        共获取到 {{ probedModels.length }} 个模型，亦可在下方"自定义模型名"手动覆盖。
+                      </p>
+                    </div>
+                  </div>
+                  <p v-if="probeError" class="text-sm text-destructive">探测失败：{{ probeError }}</p>
+                </div>
+              </div>
+            </section>
+
             <div class="grid gap-4 2xl:grid-cols-[minmax(0,1.65fr)_minmax(360px,1fr)]">
               <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6">
                 <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-4">
@@ -658,6 +867,54 @@ onMounted(() => {
                 </section>
               </div>
             </div>
+
+            <!-- 推理与思考链配置 — Phase 8 新增。仅在生成服务下可见；
+                 当所选 profile 不支持思考协议（thinkingProtocol === 'NONE'）时禁用。 -->
+            <section
+              v-if="isGenerationKind"
+              class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-6"
+            >
+              <div class="border-b border-border/60 pb-4">
+                <h3 class="text-base font-semibold text-foreground">推理模型设置</h3>
+                <p class="mt-xs text-sm text-muted-foreground">
+                  若所选模型支持思考链（如 DeepSeek Reasoner / Qwen QwQ / o-系列），勾选下方选项以启用 thinking 协议。
+                </p>
+              </div>
+
+              <div class="mt-4 space-y-4">
+                <label class="flex min-h-11 items-center gap-4 rounded-md border border-border/60 px-4 py-2">
+                  <Checkbox
+                    :model-value="formData.isReasoning ?? false"
+                    :disabled="profiles.length > 0 && !profileSupportsReasoning"
+                    @update:model-value="updateIsReasoning"
+                  />
+                  <span class="flex-1 text-sm text-foreground">这是推理模型（支持思考链）</span>
+                  <span
+                    v-if="profiles.length > 0 && !profileSupportsReasoning"
+                    class="text-sm text-muted-foreground"
+                  >
+                    所选 Provider 协议不支持思考链
+                  </span>
+                </label>
+
+                <div v-if="formData.isReasoning" class="space-y-2">
+                  <Label>思考模式</Label>
+                  <Select :model-value="formData.thinkingMode ?? 'auto'" @update:model-value="updateThinkingMode">
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择思考模式" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="option in thinkingModeOptions" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p class="text-sm text-muted-foreground">
+                    auto 让 Provider 自决；enabled / disabled 用于显式覆盖（按 Provider 协议下发对应字段）。
+                  </p>
+                </div>
+              </div>
+            </section>
 
             <details class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-muted/20 px-6 py-4">
               <summary class="cursor-pointer select-none text-sm font-semibold text-foreground">高级参数</summary>
