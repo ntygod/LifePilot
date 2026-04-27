@@ -204,6 +204,48 @@ class ProbeModelsService_探测端点测试 {
                 });
     }
 
+    @Test
+    void TEI风格单值jsonpath应被包成单元素清单() throws IOException {
+        // TEI /info 真实返回 model_id 是字符串而非 list，jsonpath $.model_id 命中 String —
+        // 之前直接 (List<String>) 强转会 ClassCastException 被包成 422，现已按类型分支处理
+        server.createContext("/info", exchange -> {
+            捕获请求快照(exchange);
+            String body = """
+                    {"model_id":"BAAI/bge-m3","model_sha":null,"model_dtype":"float16",\
+                    "model_type":{"embedding":{"pooling":"cls"}}}""";
+            写响应(exchange, 200, body);
+        });
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        // tei-local profile：$.model_id 是 definite path（单值），无鉴权占位 X-Unused
+        var resp = service.probe(new ProbeModelsRequest(
+                "tei-local", baseUrl, null));
+
+        assertThat(resp.models()).hasSize(1);
+        assertThat(resp.models().get(0).id()).isEqualTo("BAAI/bge-m3");
+        assertThat(resp.models().get(0).name()).isEqualTo("BAAI/bge-m3");
+        assertThat(lastPath.get()).isEqualTo("/info");
+    }
+
+    @Test
+    void jsonpath命中空数组时抛_422_并提示空列表() throws IOException {
+        // OpenAI 兼容协议但 data 为空（provider 实际无可用模型）→ 不应误返回 0 模型成功，
+        // 而是 422 让前端提示老板换 baseUrl 或检查 provider 配置
+        server.createContext("/v1/models", exchange -> {
+            写响应(exchange, 200, "{\"data\":[]}");
+        });
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        assertThatThrownBy(() -> service.probe(new ProbeModelsRequest(
+                "deepseek-official", baseUrl, "sk-test")))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> {
+                    ResponseStatusException rse = (ResponseStatusException) e;
+                    assertThat(rse.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(rse.getReason()).contains("空列表");
+                });
+    }
+
     private void 捕获请求快照(HttpExchange exchange) {
         lastPath.set(exchange.getRequestURI().getPath());
         lastHeaders.clear();

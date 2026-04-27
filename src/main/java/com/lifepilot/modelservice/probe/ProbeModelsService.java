@@ -40,6 +40,12 @@ import java.util.List;
  * <p>响应解析：用 {@link JsonPath} 按 {@link ModelDiscoveryEndpoint#responseModelsJsonPath()}
  * 提取 id 列表；当前 {@link ProbeModelsResponse.ModelInfo#name()} 与 id 一致，预留
  * displayName 扩展点（后续若 provider 返回 description 等，可加 responseModelNameJsonPath）。
+ * 兼容两类 jsonpath 命中类型：
+ * <ul>
+ *   <li>indefinite path（如 OpenAI 的 {@code $.data[*].id}）→ 返回 List，多模型场景</li>
+ *   <li>definite path（如 TEI {@code /info} 的 {@code $.model_id}）→ 返回 String/Number 单值，
+ *       包成单元素 list；TEI 单模型部署的真实情况</li>
+ * </ul>
  *
  * <p>失败时一律抛 {@link ResponseStatusException}，全局 {@code WebExceptionHandler}
  * 会保留状态码与 reason 透传给前端 toast：
@@ -48,6 +54,7 @@ import java.util.List;
  *   <li>{@link HttpTimeoutException} → 504，提示连接超时</li>
  *   <li>provider 返回非 2xx → 透传原状态码（401/404/500 等），body 截断 500 字</li>
  *   <li>JsonPath 解析失败 → 422，表示响应结构不符</li>
+ *   <li>JsonPath 命中但解析为空 / 空列表 → 422，表示响应虽合法但模型清单为空</li>
  *   <li>其他网络 IO 异常 → 503，附带 cause message</li>
  * </ul>
  *
@@ -139,13 +146,9 @@ public class ProbeModelsService {
         }
 
         String body = response.body();
+        Object result;
         try {
-            List<String> ids = JsonPath.read(body, endpoint.responseModelsJsonPath());
-            List<ProbeModelsResponse.ModelInfo> models = ids.stream()
-                    .map(id -> new ProbeModelsResponse.ModelInfo(id, id))
-                    .toList();
-            log.info("模型探测成功: profileId={}, count={}", req.profileId(), models.size());
-            return new ProbeModelsResponse(models);
+            result = JsonPath.read(body, endpoint.responseModelsJsonPath());
         } catch (Exception e) {
             // jsonpath 提取失败：响应结构不符（HTML 错误页 / provider 协议变更）→ 422
             String snippet = truncate(body, PARSE_BODY_SNIPPET_MAX);
@@ -153,6 +156,41 @@ public class ProbeModelsService {
                     "解析探测响应失败（jsonpath=" + endpoint.responseModelsJsonPath()
                             + "）: " + snippet);
         }
+
+        // jsonpath 返回值按类型分支处理：
+        // - List：indefinite path（如 $.data[*].id）的多模型场景
+        // - String / Number：definite path（如 TEI 的 $.model_id）的单模型场景
+        // - 其他非空：兜底转 String 包成单元素 list
+        // - null / 空 list：抛 422 提示 jsonpath 命中但无内容
+        List<String> ids;
+        if (result instanceof List<?> list) {
+            ids = list.stream()
+                    .map(item -> item == null ? null : String.valueOf(item))
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+        } else if (result instanceof String s) {
+            ids = List.of(s);
+        } else if (result instanceof Number n) {
+            ids = List.of(n.toString());
+        } else if (result != null) {
+            ids = List.of(String.valueOf(result));
+        } else {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "探测响应 jsonpath（" + endpoint.responseModelsJsonPath()
+                            + "）解析为空");
+        }
+
+        if (ids.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "探测响应 jsonpath（" + endpoint.responseModelsJsonPath()
+                            + "）解析得到空列表");
+        }
+
+        List<ProbeModelsResponse.ModelInfo> models = ids.stream()
+                .map(id -> new ProbeModelsResponse.ModelInfo(id, id))
+                .toList();
+        log.info("模型探测成功: profileId={}, count={}", req.profileId(), models.size());
+        return new ProbeModelsResponse(models);
     }
 
     /** 按上限截断响应体便于日志/异常输出，避免长 body 污染 toast 与日志。 */
