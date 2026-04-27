@@ -29,16 +29,26 @@ import java.util.regex.Pattern;
 /**
  * Shell 命令执行工具 — 通过 {@link ShellProcessFactory} 启动子进程执行命令。
  *
- * <p>安全机制：
- * <ul>
+ * <p>安全机制（按拦截顺序）：
+ * <ol>
  *   <li>RiskLevel HIGH — GuardrailEngine 触发用户确认</li>
- *   <li>命令黑名单 — 正则模式匹配，匹配时直接拒绝</li>
+ *   <li>命令黑名单（{@link #checkBlacklist}）— application.yml 配置的正则模式，
+ *       拦截"必死"命令（rm -rf / / format C: / mkfs / shutdown / fork bomb 等），
+ *       命中直接拒绝且不可配置放行</li>
+ *   <li>{@link CommandGuard}（HARDLINE/DANGEROUS）— 与 code.execute 共用同一套规则集，
+ *       拦截"高风险但可配置"命令（rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / sudo 等），
+ *       受 yolo 模式控制（DANGEROUS 可配置放行，HARDLINE 永久阻断）</li>
  *   <li>超时强制 — {@code Process.waitFor(timeout)} + {@code destroyForcibly()}</li>
  *   <li>输出截断 — stdout/stderr 超过 maxOutputLength 时截断</li>
- * </ul>
+ * </ol>
+ * 黑名单与 CommandGuard 的分工：黑名单是不可绕过的硬底线（即便 CommandGuard 整体禁用也生效），
+ * CommandGuard 是策略化层；新增"高风险但偶尔合法"规则放 CommandGuard，"任何场景都不该执行"放黑名单。
  *
  * <p>支持 {@code background=true} 参数，委托 {@link BackgroundProcessManager}
  * 启动后台进程并立即返回 sessionId。</p>
+ *
+ * <p>{@link CommandGuard} 标 {@link Nullable} 是为了支持 sandbox 禁用场景下不注入 guard
+ * （此时仅靠黑名单兜底）；正常运行路径由 InfraToolProvider 统一注入。</p>
  *
  * @author zsg
  * @since 2026-03-08

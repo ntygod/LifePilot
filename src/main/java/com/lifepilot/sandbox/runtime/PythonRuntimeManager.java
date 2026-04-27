@@ -229,6 +229,7 @@ public class PythonRuntimeManager {
                 // 前端 progress handler 收到 phase=='done' 会立刻 refresh GET /status，
                 // 若此时 installingState 仍有值，checkStatus 会返回 Installing(done) 让 UI 卡 100%。
                 // 所以必须在 finally(deleteIfExists 可能耗时 100~500ms 删 100MB+ tarball) 之前清掉。
+                // 时序约束：emitter.emit 必须同步完成（当前实现 OK），未来若改异步队列需重审此处时序。
                 installingState.set(new RuntimeStatus.Installing("done", 1, 1));
                 emitter.emit(installingState.get());
                 installingState.set(null);

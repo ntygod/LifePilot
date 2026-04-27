@@ -337,6 +337,11 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         }
     }
 
+    /** ToolResult 是否带可序列化的 data（非 null 且非空 map）— 复用避免散落判断。 */
+    private static boolean hasNonEmptyData(ToolResult result) {
+        return result.data() != null && !result.data().isEmpty();
+    }
+
     /**
      * 格式化输出结果为 JSON 字符串，超过全局上限时截断。
      *
@@ -351,7 +356,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                     + "\",\"status\":\"PARTIAL_SUCCESS\"}";
         } else if (result.ok()) {
             output = toJsonValue(result.data());
-        } else if (result.data() != null && !result.data().isEmpty()) {
+        } else if (hasNonEmptyData(result)) {
             // 失败但 data 非空（如 code.execute / shell.exec 在 exitCode!=0 时带 stdout/stderr），
             // 必须把 data 也透给 LLM，否则 AI 只看到"代码执行失败 exitCode=1"无法 debug
             output = "{\"data\":" + toJsonValue(result.data())

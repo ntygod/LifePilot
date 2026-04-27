@@ -135,6 +135,22 @@ type BusyAction = 'uninstall' | 'reinstall' | 'disable' | 'enable' | null
 const busyAction = ref<BusyAction>(null)
 
 /**
+ * 按钮文案映射 —— 集中管理 4 个动作的 busy / 普通态文本，避免每个 Button 模板里
+ * 重复 `busyAction === 'X' ? '处理中…' : '...'` 三段式。
+ *
+ * <p>启用按钮文案受 status 影响（DISABLED 时是"启用"/"启用中…"，否则是"启用并下载"/"启动安装中…"），
+ * 单独 computed 处理；其他动作单字面量映射。</p>
+ */
+const enableLabel = computed(() => {
+  const isDisabled = status.value?.status === 'DISABLED'
+  if (busyAction.value === 'enable') return isDisabled ? '启用中…' : '启动安装中…'
+  return isDisabled ? '启用' : '启用并下载'
+})
+const disableLabel = computed(() => (busyAction.value === 'disable' ? '禁用中…' : '禁用'))
+const uninstallLabel = computed(() => (busyAction.value === 'uninstall' ? '卸载中…' : '卸载'))
+const reinstallLabel = computed(() => (busyAction.value === 'reinstall' ? '准备重装…' : '重新安装'))
+
+/**
  * 卸载运行时：删除磁盘文件，状态回到 NOT_INSTALLED。
  * 真正删除在 ConfirmDialog 二次确认后由 {@link onConfirmAction} 执行。
  *
@@ -326,12 +342,7 @@ function onCancelAction() {
             @click="onEnable"
           >
             <Loader2 v-if="busyAction === 'enable'" class="mr-xs size-4 animate-spin" />
-            <template v-if="busyAction === 'enable'">
-              {{ status?.status === 'DISABLED' ? '启用中…' : '启动安装中…' }}
-            </template>
-            <template v-else>
-              {{ status?.status === 'DISABLED' ? '启用' : '启用并下载' }}
-            </template>
+            {{ enableLabel }}
           </Button>
           <Button
             v-if="status?.status === 'READY'"
@@ -340,7 +351,7 @@ function onCancelAction() {
             @click="onDisable"
           >
             <Loader2 v-if="busyAction === 'disable'" class="mr-xs size-4 animate-spin" />
-            {{ busyAction === 'disable' ? '禁用中…' : '禁用' }}
+            {{ disableLabel }}
           </Button>
           <Button
             v-if="status?.status === 'READY'"
@@ -349,7 +360,7 @@ function onCancelAction() {
             @click="onUninstall"
           >
             <Loader2 v-if="busyAction === 'uninstall'" class="mr-xs size-4 animate-spin" />
-            {{ busyAction === 'uninstall' ? '卸载中…' : '卸载' }}
+            {{ uninstallLabel }}
           </Button>
           <Button
             v-if="status?.status === 'READY'"
@@ -358,7 +369,7 @@ function onCancelAction() {
             @click="onReinstall"
           >
             <Loader2 v-if="busyAction === 'reinstall'" class="mr-xs size-4 animate-spin" />
-            {{ busyAction === 'reinstall' ? '准备重装…' : '重新安装' }}
+            {{ reinstallLabel }}
           </Button>
           <Button
             v-if="status?.status === 'INSTALL_FAILED'"
