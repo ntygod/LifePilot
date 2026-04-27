@@ -195,6 +195,8 @@ public sealed class ProcessKernelBase implements PersistentKernel
             var pb = new ProcessBuilder(command);
             // 合并 stderr 到 stdout，避免 stderr 管道缓冲区满导致进程死锁
             pb.redirectErrorStream(true);
+            // 子类按 runtime 决定环境变量（PYTHONUTF8 仅 Python 内核需要，JS 内核不应灌入）
+            configureProcessEnvironment(pb.environment());
             process = pb.start();
 
             processStdin = new BufferedWriter(
@@ -238,6 +240,17 @@ public sealed class ProcessKernelBase implements PersistentKernel
         } catch (ExecutionException e) {
             throw new IOException(langName + " 内核通信异常: " + e.getCause().getMessage(), e.getCause());
         }
+    }
+
+    /**
+     * 子类钩子：按 runtime 配置进程环境变量。默认无操作；
+     * Python 子类需注入 {@code PYTHONIOENCODING} / {@code PYTHONUTF8} 防 Windows
+     * GBK 默认 stdio 编码导致 lone surrogate（参见 {@link PythonKernel}）。
+     *
+     * @param env ProcessBuilder 的环境变量映射（可读写）
+     */
+    protected void configureProcessEnvironment(java.util.Map<String, String> env) {
+        // 默认空实现 — 子类按需 override
     }
 
     /** 检查进程是否存活。 */
