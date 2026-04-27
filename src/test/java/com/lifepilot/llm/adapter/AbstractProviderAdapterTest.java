@@ -8,6 +8,7 @@ import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.stream.ContentChunk;
 import com.lifepilot.llm.stream.LlmStreamEvent;
+import com.lifepilot.llm.stream.ReasoningChunk;
 import com.lifepilot.llm.stream.ToolCallDelta;
 import com.lifepilot.llm.stream.UsageEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -256,6 +257,62 @@ class AbstractProviderAdapterTest {
         assertThat(delta.id()).isEqualTo("id-1");
         assertThat(delta.name()).isEqualTo("test_fn");
         assertThat(delta.argumentsDelta()).isEqualTo("{\"arg\":1}");
+    }
+
+    @Test
+    void chunkToEvents_metadata含_reasoningContent_发出_ReasoningChunk() {
+        // Spring AI 1.1.3 的 OpenAiChatModel.buildGeneration 会把 OpenAI 协议
+        // delta.reasoning_content 字段以 metadata key="reasoningContent" 塞入 AssistantMessage；
+        // 本测试验证 chunkToEvents 从 metadata 正确解析并发出 ReasoningChunk
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "deepseek-v4-pro");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var assistantMsg = AssistantMessage.builder()
+                .content("")
+                .properties(Map.of("reasoningContent", "我需要分析问题"))
+                .build();
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)));
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        assertThat(events).anyMatch(ev -> ev instanceof ReasoningChunk);
+        var rc = events.stream()
+                .filter(ev -> ev instanceof ReasoningChunk)
+                .map(ev -> (ReasoningChunk) ev)
+                .findFirst().orElseThrow();
+        assertThat(rc.delta()).isEqualTo("我需要分析问题");
+        assertThat(rc.signature()).isNull();
+    }
+
+    @Test
+    void chunkToEvents_metadata无_reasoningContent_不发_ReasoningChunk() {
+        // 普通 chunk（无推理）和非 OpenAI 协议（Anthropic / Ollama）不写该 key — 分支应 noop
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "gpt");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var assistantMsg = new AssistantMessage("hello");
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)));
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        assertThat(events).noneMatch(ev -> ev instanceof ReasoningChunk);
+    }
+
+    @Test
+    void chunkToEvents_metadata含_reasoningContent_空串_不发_ReasoningChunk() {
+        // 空字符串 reasoning（DeepSeek API 在 thinking_mode 关闭时可能返空串）跳过事件，避免噪音
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "deepseek-v4-pro");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var assistantMsg = AssistantMessage.builder()
+                .content("")
+                .properties(Map.of("reasoningContent", ""))
+                .build();
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)));
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        assertThat(events).noneMatch(ev -> ev instanceof ReasoningChunk);
     }
 
     @Test

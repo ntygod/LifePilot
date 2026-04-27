@@ -65,6 +65,14 @@ public class StreamingCallback implements IterationCallback {
     private String modelId = IterationCallback.DEFAULT_MODEL_ID;
     @Nullable private Exception streamingError;
     @Nullable private String finalContent;
+    /**
+     * 累加本次调用产生的推理过程文本 — 由 ReasoningChunk 流式增量拼接而成。
+     *
+     * <p>DeepSeek V4 / Qwen3 等推理模型多轮契约要求带 tool_calls 的 assistant 消息
+     * 必须回传上一轮的 reasoning_content；该字段持有完整原文供 ReactAgentLoop 写入
+     * {@link com.lifepilot.agent.model.ReactStep.ToolCall#reasoningContent()}。
+     */
+    private final StringBuilder reasoningContentBuilder = new StringBuilder();
     private final StringBuilder pendingTokenBatch = new StringBuilder();
     @Nullable private Instant tokenBatchOpenedAt;
     private int nextTokenIndex;
@@ -100,6 +108,11 @@ public class StreamingCallback implements IterationCallback {
                                 List<ToolCallback> toolCallbacks,
                                 @Nullable TraceContext traceContext) {
         String scene = config.getLoop().getLlmScene();
+
+        // StreamingCallback 在整个 turn 复用单实例（AgentOrchestrator 持有），ReAct 多轮共享
+        // 同一个 reasoningContentBuilder；每次 callLlm 入口必须重置避免跨轮累加导致
+        // ReactStep.ToolCall.reasoningContent 含前 N 轮残留 reasoning 文本。
+        reasoningContentBuilder.setLength(0);
 
         // 动态路由：仅当 UserMessage 含真正的多模态媒体（image / audio / video）时走多模态路径。
         // 文档类附件（pdf / docx / md / txt / csv 等）通过 file.read(attachmentId=...) 按需解析，
@@ -328,7 +341,12 @@ public class StreamingCallback implements IterationCallback {
                                         pushTokenToSse(text);
                                     }
                                 }
-                                case com.lifepilot.llm.stream.ReasoningChunk r -> pushReasoningToSse(r.delta());
+                                case com.lifepilot.llm.stream.ReasoningChunk r -> {
+                                    if (r.delta() != null) {
+                                        reasoningContentBuilder.append(r.delta());
+                                    }
+                                    pushReasoningToSse(r.delta());
+                                }
                                 case com.lifepilot.llm.stream.ToolCallDelta tcd -> {
                                     emitToolCallPreviewForDelta(tcd, toolCallPreviewSent);
                                     toolCallAggregator.merge(tcd);
@@ -495,6 +513,15 @@ public class StreamingCallback implements IterationCallback {
             return chatResponse;
         }
         var assistantMsg = result.getOutput();
+        // 同步降级路径补齐 reasoning_content：Spring AI 把 OpenAI 协议的 reasoning_content
+        // 也以 metadata key="reasoningContent" 塞入 AssistantMessage；保持与流式路径行为对称。
+        var nonStreamingMetadata = assistantMsg.getMetadata();
+        if (nonStreamingMetadata != null) {
+            Object rc = nonStreamingMetadata.get("reasoningContent");
+            if (rc instanceof String reasoning && !reasoning.isEmpty()) {
+                reasoningContentBuilder.append(reasoning);
+            }
+        }
 
         if (assistantMsg.hasToolCalls()) {
             // tool call 事件已由 pushReactStepEvent 自动推送
@@ -685,6 +712,16 @@ public class StreamingCallback implements IterationCallback {
     public boolean hasStreamingError() { return streamingError != null; }
     @Nullable public Exception getStreamingError() { return streamingError; }
     @Nullable public String getFinalContent() { return finalContent; }
+
+    /**
+     * 获取本次调用累加的完整推理过程文本（DeepSeek V4 / Qwen3 等推理模型）。
+     *
+     * @return 完整 reasoning_content；非推理模型或本次调用无 reasoning chunk 返回空串
+     */
+    @Override
+    public String getFinalReasoningContent() {
+        return reasoningContentBuilder.toString();
+    }
 
     @Override public boolean recordsLlmStep() { return true; }
     @Override public String getProviderId() { return providerId; }

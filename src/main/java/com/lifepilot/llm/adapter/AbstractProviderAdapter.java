@@ -7,6 +7,7 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.llm.stream.ContentChunk;
 import com.lifepilot.llm.stream.LlmStreamEvent;
+import com.lifepilot.llm.stream.ReasoningChunk;
 import com.lifepilot.llm.stream.ToolCallDelta;
 import com.lifepilot.llm.stream.UsageEvent;
 import com.lifepilot.generation.support.JsonOutputParser;
@@ -186,16 +187,18 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     /**
      * 把 Spring AI 流式 ChatResponse chunk 转换成 LlmStreamEvent 序列（基础实现）。
      *
-     * <p>简化版：
+     * <p>事件类型映射：
      * <ul>
      *   <li>chunk 含文本 → 发 {@link ContentChunk}</li>
      *   <li>chunk 含 tool_calls → 按 index 发 {@link ToolCallDelta}</li>
+     *   <li>chunk 的 AssistantMessage.metadata 含 {@code reasoningContent} key 且非空 →
+     *       发 {@link ReasoningChunk}（DeepSeek V4 / Qwen3 等推理模型的逐 chunk 推理增量）。
+     *       Spring AI 1.1.3 起 {@code OpenAiChatModel.buildGeneration} 已把 OpenAI 协议
+     *       {@code delta.reasoning_content} 字段以 metadata key {@code "reasoningContent"}
+     *       原样塞入；非 OpenAI 兼容的 Anthropic / Ollama 子类不会写该 key，分支自然 noop。</li>
      *   <li>chunk 含 usage → 发 {@link UsageEvent}（含 cachedInputTokens 维度，
-     *       由 {@link #extractCachedTokens(Object)} 反射解析；reasoningTokens 维度待 Phase 10 补）</li>
+     *       由 {@link #extractCachedTokens(Object)} 反射解析；reasoningTokens 维度暂未读）</li>
      * </ul>
-     *
-     * <p>ReasoningChunk / DoneEvent / ErrorEvent / reasoningTokens 维度
-     * 由 Phase 10 子类按 ThinkingProtocol 解析原始 SSE chunk 时补完。
      *
      * <p>本方法被 streamEvents 默认实现调用；OpenAiBase / Anthropic / Ollama 三个子类均通过继承共用。
      *
@@ -210,6 +213,16 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
             String text = output.getText();
             if (text != null && !text.isEmpty()) {
                 events.add(new ContentChunk(text));
+            }
+            // 推理模型 reasoning 增量：Spring AI 把 OpenAI delta.reasoning_content 塞到
+            // AssistantMessage.metadata["reasoningContent"]；非推理模型 / 非 OpenAI 协议下该 key 缺失
+            var metadata = output.getMetadata();
+            if (metadata != null) {
+                Object rc = metadata.get("reasoningContent");
+                if (rc instanceof String reasoning && !reasoning.isEmpty()) {
+                    // OpenAI 协议无 signature 概念；signature 仅 Anthropic thinking block 使用
+                    events.add(new ReasoningChunk(reasoning, null));
+                }
             }
             if (output.hasToolCalls()) {
                 var toolCalls = output.getToolCalls();

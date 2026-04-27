@@ -18,6 +18,12 @@ import java.util.Map;
  * {@link MultiTurnHistoryRules#injectReasoning()} 为 {@code true} 时由 protocol
  * 注入历史 reasoning。
  *
+ * <p><b>当前未接入主链路</b>：ReactAgentLoop 走 {@code ProviderMessageBuilder} +
+ * Spring AI Message 路径装载多轮，本类暂为孤儿组件。DeepSeek 多轮
+ * reasoning_content 注入实际由请求体改写 filter
+ * （{@code com.lifepilot.llm.thinking.ReasoningContentInjectionRewriter}）
+ * 在 OpenAI 请求出去前完成。本类保留待未来跨 turn 历史装载 wiring 启用。
+ *
  * @author zsg
  * @since 2026-04-27
  */

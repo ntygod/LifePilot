@@ -29,12 +29,12 @@ public final class BuiltinProviderProfiles {
             PromptCacheStrategyId.NOOP,
             ModelDiscoveryEndpoint.openAiCompatible(),
             Set.of(ProviderCapability.CHAT),
-            // 保守策略：始终注入 reasoning_content，缺则空字符串占位 — 满足 DeepSeek 多轮契约。
-            // 理论上「仅 tool_call 场景注入」(deepseekContentOnlyReasoning) 更精确符合官方文档，
-            // 但当前 LlmResponse.toolCalls 尚未 wiring 进 transcript payload_json（详见
-            // memory/project_reasoning_content_wiring_gap.md），ChatHistoryAssembler
-            // 永远拿不到 tool_calls，会错走「无 tool_call 不注入」分支导致第 3 轮 400。
-            // 待真实持久化 wiring 完成后再切回 deepseekContentOnlyReasoning()。
+            // historyRules 当前不影响 DeepSeek 多轮 reasoning_content 行为：
+            // 真实注入路径走 {@link com.lifepilot.llm.thinking.ReasoningContentInjectionRewriter}
+            // — ReactStep.ToolCall 携带 reasoning_content → ProviderMessageBuilder 编码 marker
+            // → 请求体出去前 filter 抽 marker 注入 OpenAI 协议 reasoning_content 字段。
+            // 此处保留 contentOnlyReasoning() 仅作占位，等未来 ChatHistoryAssembler 真正
+            // 接入 ReactAgentLoop 主链路（跨 turn 历史装载）时切回 deepseekContentOnlyReasoning()。
             MultiTurnHistoryRules.contentOnlyReasoning()
     );
 
@@ -114,7 +114,8 @@ public final class BuiltinProviderProfiles {
             PromptCacheStrategyId.NOOP,
             ModelDiscoveryEndpoint.openAiCompatible(),
             Set.of(ProviderCapability.CHAT),
-            // 同 DEEPSEEK_OFFICIAL 注释：tool_calls wiring 完成前先用保守策略，避免 400。
+            // 同 DEEPSEEK_OFFICIAL 注释：reasoning_content 注入由 ReasoningContentInjectionRewriter
+            // 在请求体出去前完成，historyRules 当前仅占位。
             MultiTurnHistoryRules.contentOnlyReasoning()
     );
 

@@ -76,7 +76,7 @@ public abstract class AbstractJsonBodyRewritingStrategy implements PromptCacheSt
                     Thread.currentThread().interrupt();
                     throw new IOException("请求被中断 (外层超时/取消)", e);
                 }
-                log.warn("{} cache_control 注入失败, 回退原始请求: error={}", name(), e.getMessage());
+                log.warn("{} 请求体改写失败, 回退原始请求: error={}", name(), e.getMessage());
                 return execution.execute(request, body);
             }
             return execution.execute(request, modifiedBody);
@@ -105,7 +105,7 @@ public abstract class AbstractJsonBodyRewritingStrategy implements PromptCacheSt
                                             bytesToWrite = modified;
                                         }
                                     } catch (Exception e) {
-                                        log.warn("{} cache_control 注入失败, 原样发送: {}",
+                                        log.warn("{} 请求体改写失败, 原样发送: {}",
                                                 name(), e.getMessage());
                                     }
                                     // 修正 Content-Length header 避免长度不一致

@@ -137,7 +137,7 @@ public class ToolExecutionCoordinator {
     /**
      * 执行单次 tool call，并将其副作用统一回写到 state、trace 和 transcript。
      *
-     * <p>兼容旧入口，内部统一走批次执行路径。</p>
+     * <p>兼容旧入口，内部统一走批次执行路径；推理模型上下文（reasoningContent）默认 null。</p>
      */
     public ReactAgentState execute(ReactAgentState state,
                                    AssistantMessage.ToolCall toolCall,
@@ -153,16 +153,19 @@ public class ToolExecutionCoordinator {
                 traceContext,
                 cancellationToken,
                 loopContext,
-                stepAppender
+                stepAppender,
+                null
         );
     }
 
     /**
-     * 执行一轮 tool call 批次。
+     * 兼容旧入口：不传 reasoningContent 的批次执行。
      *
-     * <p>先按调度提示切分为稳定波次，再逐波次执行。波次内可并发，波次间保持串行，
-     * 并且所有结果都按模型原始 tool call 顺序回放到 state。</p>
+     * @deprecated 推理模型多轮契约要求回传 reasoning_content；新调用点应使用
+     *             {@link #executeBatch(ReactAgentState, List, List, TraceContext, CancellationToken,
+     *             AgentLoopContext, StepAppender, String)}
      */
+    @Deprecated
     public ReactAgentState executeBatch(ReactAgentState state,
                                         List<AssistantMessage.ToolCall> toolCalls,
                                         List<ToolCallback> toolCallbacks,
@@ -170,6 +173,30 @@ public class ToolExecutionCoordinator {
                                         CancellationToken cancellationToken,
                                         AgentLoopContext loopContext,
                                         StepAppender stepAppender) {
+        return executeBatch(state, toolCalls, toolCallbacks, traceContext,
+                cancellationToken, loopContext, stepAppender, null);
+    }
+
+    /**
+     * 执行一轮 tool call 批次。
+     *
+     * <p>先按调度提示切分为稳定波次，再逐波次执行。波次内可并发，波次间保持串行，
+     * 并且所有结果都按模型原始 tool call 顺序回放到 state。</p>
+     *
+     * <p>同一组并行 tool_calls 共享一段 reasoning_content（来自单次 LLM 响应），
+     * 透传到本轮所有 {@link ReactStep.ToolCall}，供后续多轮请求按 DeepSeek
+     * 等推理模型契约回传。</p>
+     *
+     * @param reasoningContent 本轮 LLM 响应的推理过程原文；非推理模型 / 缺失时传 null
+     */
+    public ReactAgentState executeBatch(ReactAgentState state,
+                                        List<AssistantMessage.ToolCall> toolCalls,
+                                        List<ToolCallback> toolCallbacks,
+                                        @Nullable TraceContext traceContext,
+                                        CancellationToken cancellationToken,
+                                        AgentLoopContext loopContext,
+                                        StepAppender stepAppender,
+                                        @Nullable String reasoningContent) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return state;
         }
@@ -193,7 +220,7 @@ public class ToolExecutionCoordinator {
 
             log.debug("开始执行工具波次: index={}, size={}, tools={}",
                     waveIndex, wave.toolCalls().size(), summarizeWave(wave));
-            state = appendWaveToolCalls(state, wave, loopContext, stepAppender);
+            state = appendWaveToolCalls(state, wave, loopContext, stepAppender, reasoningContent);
             List<ToolExecutionOutcome> outcomes = executeWave(wave);
             state = replayWaveResults(state, outcomes, traceContext, loopContext, stepAppender);
 
@@ -393,7 +420,8 @@ public class ToolExecutionCoordinator {
     private ReactAgentState appendWaveToolCalls(ReactAgentState state,
                                                 ToolExecutionWave wave,
                                                 AgentLoopContext loopContext,
-                                                StepAppender stepAppender) {
+                                                StepAppender stepAppender,
+                                                @Nullable String reasoningContent) {
         for (PlannedToolCall planned : wave.toolCalls()) {
             Instant toolCallCreatedAt = Instant.now();
             state = stepAppender.append(state, new ReactStep.ToolCall(
@@ -401,7 +429,8 @@ public class ToolExecutionCoordinator {
                     planned.toolDisplayName(),
                     planned.inputJson(),
                     0,
-                    planned.toolCall().id()
+                    planned.toolCall().id(),
+                    reasoningContent
             ), loopContext);
             persistTranscriptToolCall(
                     state,

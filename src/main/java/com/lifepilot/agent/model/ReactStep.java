@@ -60,29 +60,48 @@ public sealed interface ReactStep permits
     /**
      * 工具调用记录（由 Spring AI function calling 触发）。
      *
-     * @param toolId    工具标识（技术 ID，如 todo.create）
-     * @param toolName  工具显示名称（用户可读，如 "创建待办"），为 null 时前端回退到 toolId
-     * @param inputJson 工具输入 JSON
-     * @param latencyMs 调用耗时（毫秒）
-     * @param callId    模型返回的工具调用 ID，用于和 tool result 做精确关联
+     * @param toolId           工具标识（技术 ID，如 todo.create）
+     * @param toolName         工具显示名称（用户可读，如 "创建待办"），为 null 时前端回退到 toolId
+     * @param inputJson        工具输入 JSON
+     * @param latencyMs        调用耗时（毫秒）
+     * @param callId           模型返回的工具调用 ID，用于和 tool result 做精确关联
+     * @param reasoningContent 本轮 LLM 调用产生的推理过程原文（DeepSeek V4 / Qwen3 等推理模型）。
+     *                         同一组并行 tool_calls 共享一段 reasoning_content（来自单次 LLM 响应）；
+     *                         多轮契约要求带 tool_calls 的 assistant 消息回传该字段，由 ProviderMessageBuilder
+     *                         在装载历史 messages 时编码进 AssistantMessage，最终由请求体改写
+     *                         filter 在请求出去前注入到 OpenAI 协议字段。非推理模型为 null。
      */
     record ToolCall(
             String toolId,
             @org.springframework.lang.Nullable String toolName,
             String inputJson,
             long latencyMs,
-            @org.springframework.lang.Nullable String callId
+            @org.springframework.lang.Nullable String callId,
+            @org.springframework.lang.Nullable String reasoningContent
     ) implements ReactStep {
+        /** 兼容旧调用：不带 callId / reasoningContent。 */
         public ToolCall(String toolId,
                         @org.springframework.lang.Nullable String toolName,
                         String inputJson,
                         long latencyMs) {
-            this(toolId, toolName, inputJson, latencyMs, null);
+            this(toolId, toolName, inputJson, latencyMs, null, null);
+        }
+
+        /** 兼容旧调用：带 callId 不带 reasoningContent。 */
+        public ToolCall(String toolId,
+                        @org.springframework.lang.Nullable String toolName,
+                        String inputJson,
+                        long latencyMs,
+                        @org.springframework.lang.Nullable String callId) {
+            this(toolId, toolName, inputJson, latencyMs, callId, null);
         }
 
         public ToolCall {
             if (callId != null && callId.isBlank()) {
                 callId = null;
+            }
+            if (reasoningContent != null && reasoningContent.isEmpty()) {
+                reasoningContent = null;
             }
         }
     }

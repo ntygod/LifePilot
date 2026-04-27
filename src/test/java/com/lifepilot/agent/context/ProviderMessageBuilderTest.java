@@ -129,7 +129,9 @@ class ProviderMessageBuilderTest {
                 .doesNotContain("以下消息为历史 transcript")
                 .doesNotContain("UserMessage:")
                 .doesNotContain("AssistantMessage:");
-        assertThat(result.hygieneReport().droppedEmptyAssistantMessages()).isEqualTo(1);
+        // Thought + ToolCall 现在合并为单条 AssistantMessage（content + tool_calls），
+        // 空 Thought 不再产生独立空 AssistantMessage 走 hygiene drop 路径
+        assertThat(result.hygieneReport().droppedEmptyAssistantMessages()).isEqualTo(0);
     }
 
     @Test

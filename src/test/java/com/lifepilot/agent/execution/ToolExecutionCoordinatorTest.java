@@ -739,4 +739,114 @@ class ToolExecutionCoordinatorTest {
             }
         };
     }
+
+    @Test
+    void executeBatch_reasoningContent_透传到单条_ToolCall_step() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(anyString(), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.parallelSafe());
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null, null, null, null, null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback cb = callback("tool.search", 10, activeCalls, maxConcurrent, "{\"ok\":1}");
+
+        ReactAgentState result = coordinator.executeBatch(
+                baseState(),
+                List.of(new AssistantMessage.ToolCall("call-x", "function", "tool.search", "{}")),
+                List.of(cb),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step),
+                "我先调一次搜索"
+        );
+
+        assertThat(result.steps()).hasSize(2);
+        var toolCallStep = (ReactStep.ToolCall) result.steps().get(0);
+        assertThat(toolCallStep.toolId()).isEqualTo("tool.search");
+        assertThat(toolCallStep.callId()).isEqualTo("call-x");
+        assertThat(toolCallStep.reasoningContent()).isEqualTo("我先调一次搜索");
+    }
+
+    @Test
+    void executeBatch_reasoningContent_并行_ToolCall_共享同一段_reasoning() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(anyString(), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.parallelSafe());
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null, null, null, null, null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback alpha = callback("tool.alpha", 10, activeCalls, maxConcurrent, "{\"ok\":1}");
+        ToolCallback beta = callback("tool.beta", 10, activeCalls, maxConcurrent, "{\"ok\":2}");
+
+        ReactAgentState result = coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-a", "function", "tool.alpha", "{}"),
+                        new AssistantMessage.ToolCall("call-b", "function", "tool.beta", "{}")
+                ),
+                List.of(alpha, beta),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step),
+                "并行调两个工具"
+        );
+
+        // 同一组并行 tool_calls 来自单次 LLM 响应，共享同一段 reasoning_content
+        var first = (ReactStep.ToolCall) result.steps().get(0);
+        var second = (ReactStep.ToolCall) result.steps().get(1);
+        assertThat(first.reasoningContent()).isEqualTo("并行调两个工具");
+        assertThat(second.reasoningContent()).isEqualTo("并行调两个工具");
+    }
+
+    @Test
+    void executeBatch_reasoningContent_为_null_时_ToolCall_step_reasoning_也为_null() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(anyString(), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.parallelSafe());
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null, null, null, null, null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback cb = callback("tool.x", 10, activeCalls, maxConcurrent, "{}");
+
+        ReactAgentState result = coordinator.executeBatch(
+                baseState(),
+                List.of(new AssistantMessage.ToolCall("c1", "function", "tool.x", "{}")),
+                List.of(cb),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step),
+                null
+        );
+
+        var toolCallStep = (ReactStep.ToolCall) result.steps().get(0);
+        // record canonical constructor 把空串规整为 null；显式传 null 也是 null
+        assertThat(toolCallStep.reasoningContent()).isNull();
+    }
 }

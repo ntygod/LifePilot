@@ -9,6 +9,7 @@ import com.lifepilot.llm.profile.ProviderProfile;
 import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.profile.ThinkingProtocolId;
 import com.lifepilot.llm.thinking.NoopThinkingProtocol;
+import com.lifepilot.llm.thinking.ReasoningContentInjectionRewriter;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
 import com.lifepilot.modelservice.probe.ProbeModelsService;
 import org.slf4j.Logger;
@@ -133,7 +134,7 @@ public class ProviderAdapterFactory {
         // Prompt 缓存策略 — DashScope 需要显式 cache_control 注入；OpenAI 官方 / DeepSeek 等
         // provider 侧自动缓存，走 noop pass-through；策略自行决定两端拦截点是否生效。
         PromptCacheStrategy cacheStrategy = PromptCacheStrategies.resolve(profile.cacheStrategy());
-        applyCacheStrategyToOpenAi(openAiApiBuilder, cacheStrategy, config);
+        applyCacheStrategyToOpenAi(openAiApiBuilder, cacheStrategy, profile, config);
 
         var openAiApi = openAiApiBuilder.build();
 
@@ -248,27 +249,50 @@ public class ProviderAdapterFactory {
     /**
      * 把 prompt 缓存策略的拦截器 / filter 挂到 {@link OpenAiApi.Builder} 上。
      *
-     * <p>装配顺序: 连接池 timeout 配置 → 缓存 RestClient 拦截器 → 挂 restClientBuilder →
-     * 缓存 WebClient filter (若策略提供) → 挂 webClientBuilder。与 Anthropic 分支对称。</p>
+     * <p>装配顺序: 连接池 timeout 配置 → 缓存 RestClient 拦截器 → reasoning_content
+     * 改写器（DeepSeek 用 FULL_INJECTION 完整模式；其他 OpenAI 兼容 provider 用
+     * CLEANUP_ONLY 清理模式防 marker 控制字符污染请求体） → 挂 restClientBuilder →
+     * 同步挂 WebClient filter 链。Anthropic 分支不挂 reasoning 改写器（走原生 thinking block）。</p>
      *
      * @param apiBuilder    OpenAI 兼容 API builder
      * @param strategy      已解析的缓存策略 (永不为 null; noop 策略两端均返回 null, 走 pass-through)
+     * @param profile       Provider profile（决定 reasoning 改写器模式）
      * @param config        Provider 配置 (读取 timeoutSeconds / id)
      */
     private void applyCacheStrategyToOpenAi(OpenAiApi.Builder apiBuilder,
                                             PromptCacheStrategy strategy,
+                                            ProviderProfile profile,
                                             ProviderConfig config) {
         ClientHttpRequestInterceptor restInterceptor = strategy.restClientInterceptor();
         ExchangeFilterFunction webFilter = strategy.webClientFilter();
+
+        // 所有 OpenAI 兼容 provider 都挂 reasoning 改写器 — DeepSeek 用完整模式（注入字段 + 兜底空串），
+        // 其他用清理模式（仅剥离 marker，防 Qwen3 / 智谱推理等场景 SOH 控制字符污染请求体）
+        ReasoningContentInjectionRewriter reasoningRewriter =
+                profile.thinkingProtocol() == ThinkingProtocolId.DEEPSEEK
+                        ? ReasoningContentInjectionRewriter.FULL_INJECTION
+                        : ReasoningContentInjectionRewriter.CLEANUP_ONLY;
+        ClientHttpRequestInterceptor reasoningRestInterceptor = reasoningRewriter.restClientInterceptor();
+        ExchangeFilterFunction reasoningWebFilter = reasoningRewriter.webClientFilter();
 
         RestClient.Builder restClientBuilder = buildRestClientBuilder(config, true);
         if (restInterceptor != null) {
             restClientBuilder.requestInterceptor(restInterceptor);
         }
+        if (reasoningRestInterceptor != null) {
+            // reasoning 改写器在 cache 策略之后挂载 — 缓存改写不依赖 marker，顺序无副作用
+            restClientBuilder.requestInterceptor(reasoningRestInterceptor);
+        }
         apiBuilder.restClientBuilder(restClientBuilder);
 
-        if (webFilter != null) {
-            WebClient.Builder webClientBuilder = WebClient.builder().filter(webFilter);
+        if (webFilter != null || reasoningWebFilter != null) {
+            WebClient.Builder webClientBuilder = WebClient.builder();
+            if (webFilter != null) {
+                webClientBuilder.filter(webFilter);
+            }
+            if (reasoningWebFilter != null) {
+                webClientBuilder.filter(reasoningWebFilter);
+            }
             apiBuilder.webClientBuilder(webClientBuilder);
         }
     }

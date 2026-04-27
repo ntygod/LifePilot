@@ -5,6 +5,7 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.thinking.ReasoningContentMarker;
 import com.lifepilot.memory.experience.ToolTipResolver;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -24,6 +25,15 @@ import java.util.Objects;
 
 /**
  * ProviderMessageBuilder 负责把 Agent 上下文与 ReAct 步骤组装成 provider 消息序列。
+ *
+ * <p>推理模型多轮契约（DeepSeek V4 / Qwen3 等）要求带 tool_calls 的 assistant 消息
+ * 必须回传上一轮的 reasoning_content；Spring AI 的 {@link AssistantMessage} 抽象
+ * 不直接暴露 reasoning_content 字段，因此本类把 reasoning_content 编码进
+ * AssistantMessage.text 的 sentinel marker 区段（{@link ReasoningContentMarker}），
+ * 由 {@link com.lifepilot.llm.thinking.ReasoningContentInjectionRewriter} 在请求体
+ * 出去前抽出 marker 内容、注入到 OpenAI 协议字段、并清理 content。
+ * marker 仅在 ProviderMessageBuilder → Spring AI ChatModel → 请求体改写 filter
+ * 这条单链路里短暂存在，不污染 ReactStep / transcript / SSE / UI 等外部数据流。
  *
  * @author zsg
  * @since 2026-03-23
@@ -76,16 +86,41 @@ public class ProviderMessageBuilder {
     }
 
     /**
-     * 将 ReactStep 列表转换为 LLM 消息列表，连续的 ToolCall 步骤合并为单条 AssistantMessage。
+     * 将 ReactStep 列表转换为 LLM 消息列表，把同一次 LLM 调用产生的 {@code Thought + ToolCall}
+     * 合并为单条 {@link AssistantMessage}（content + tool_calls 共存）。
      *
-     * <p>provider（如 DeepSeek）要求同一轮 tool_calls 必须在一条 AssistantMessage 中，
-     * 且紧跟对应数量的 ToolResponseMessage。逐个 ToolCall 生成独立 AssistantMessage
-     * 会导致消息序列校验失败。</p>
+     * <p>合并语义对齐 OpenAI 协议：一次 LLM 响应对应一条 assistant message，content 是
+     * 模型的可见文本输出（含 ReAct Thought），tool_calls 是工具调用请求。两者来自同一次
+     * 推理调用，理应同属一条 message。早期实现把它们拆成两条独立 AssistantMessage，
+     * 在 DeepSeek thinking 模式下触发 400 — DeepSeek 严格要求 user 消息后任何 assistant
+     * 都需 reasoning_content；拆出来的 content-only Thought 缺 reasoning_content 字段被拒。</p>
+     *
+     * <p>同一组并行 ToolCall step 共享一段 reasoning_content（来自单次 LLM 响应），
+     * 合并时把 reasoning_content + thoughtText 编码到 AssistantMessage 的 content
+     * marker 段，由请求体改写 filter 在请求出去前抽出 marker 注入 OpenAI 协议字段、
+     * 并清理 marker 还原 content 为 thoughtText。</p>
      */
     private void convertStepsToMessages(List<ReactStep> steps, List<Message> out) {
         var pendingToolCalls = new ArrayList<AssistantMessage.ToolCall>();
+        String pendingThoughtText = null;
+        String pendingReasoning = null;
 
         for (ReactStep step : steps) {
+            if (step instanceof ReactStep.Thought thought) {
+                // Thought 暂存，等待紧随的 ToolCall 一起合并；理论上 Thought 后必跟 ToolCall
+                // （ReactAgentLoop 仅在 hasToolCalls 时生成 Thought step）
+                if (pendingThoughtText != null || !pendingToolCalls.isEmpty()) {
+                    // 不变量被破坏：连续 Thought 或 Thought 在 ToolCall 后 — 先 flush 当前 pending
+                    log.warn("ReactStep 序列异常: 连续 Thought 或 ToolCall 后接 Thought; pendingThought={}, pendingToolCalls={}",
+                            pendingThoughtText != null, pendingToolCalls.size());
+                    flushPendingAssistant(pendingThoughtText, pendingToolCalls, pendingReasoning, out);
+                    pendingThoughtText = null;
+                    pendingToolCalls.clear();
+                    pendingReasoning = null;
+                }
+                pendingThoughtText = thought.content();
+                continue;
+            }
             if (step instanceof ReactStep.ToolCall tc) {
                 pendingToolCalls.add(new AssistantMessage.ToolCall(
                         tc.callId() != null ? tc.callId() : tc.toolId(),
@@ -93,11 +128,17 @@ public class ProviderMessageBuilder {
                         sanitizeToolName(tc.toolId()),
                         tc.inputJson()
                 ));
+                // 同一组并行 tool call 共享一段 reasoning_content；首个非空值生效
+                if (pendingReasoning == null && tc.reasoningContent() != null) {
+                    pendingReasoning = tc.reasoningContent();
+                }
                 continue;
             }
 
-            // 遇到非 ToolCall 步骤时，先刷出累积的 ToolCall 批次
-            flushPendingToolCalls(pendingToolCalls, out);
+            // 遇到非 Thought / 非 ToolCall 步骤时，先 flush 累积的 assistant message
+            flushPendingAssistant(pendingThoughtText, pendingToolCalls, pendingReasoning, out);
+            pendingThoughtText = null;
+            pendingReasoning = null;
 
             Message message = toMessage(step);
             if (message != null) {
@@ -105,24 +146,42 @@ public class ProviderMessageBuilder {
             }
         }
 
-        // 尾部可能还有未刷出的 ToolCall
-        flushPendingToolCalls(pendingToolCalls, out);
+        // 尾部可能还有未刷出的 assistant pending
+        flushPendingAssistant(pendingThoughtText, pendingToolCalls, pendingReasoning, out);
     }
 
-    /** 将累积的 ToolCall 合并为单条 AssistantMessage 并清空缓冲区。 */
-    private void flushPendingToolCalls(List<AssistantMessage.ToolCall> pending, List<Message> out) {
-        if (pending.isEmpty()) return;
-        // 检查 flush 后的消息序列：紧接的消息应为 ToolResponseMessage，否则 provider 可能拒绝
-        if (!out.isEmpty() && !(out.getLast() instanceof ToolResponseMessage)) {
-            // 合法路径：首次 flush（前面是 UserMessage/SystemMessage）或连续 flush
-            // 但如果上一条是带 tool_calls 的 AssistantMessage 且没有对应 ToolResponseMessage，记录警告
-            if (out.getLast() instanceof AssistantMessage am && am.hasToolCalls()) {
-                log.warn("检测到连续 ToolCall flush：前一条 AssistantMessage 有 {} 个 tool_calls 但缺少对应的 ToolResponseMessage，"
-                        + "provider 可能拒绝此消息序列", am.getToolCalls().size());
-            }
+    /**
+     * 将累积的 Thought 文本 + 并行 ToolCall + 共享 reasoning_content 合并为单条
+     * {@link AssistantMessage}（content + tool_calls）并清空缓冲区。
+     *
+     * @param thoughtText 本次 LLM 调用的可见文本输出（content）；可空
+     * @param pending     本次 LLM 调用的并行 tool_calls 列表
+     * @param reasoning   本次 LLM 调用的 reasoning_content；非空时编码到 content marker
+     */
+    private void flushPendingAssistant(@Nullable String thoughtText,
+                                       List<AssistantMessage.ToolCall> pending,
+                                       @Nullable String reasoning,
+                                       List<Message> out) {
+        boolean hasThought = thoughtText != null && !thoughtText.isEmpty();
+        boolean hasToolCalls = !pending.isEmpty();
+        if (!hasThought && !hasToolCalls) {
+            return;
         }
-        out.add(buildAssistantToolCallMessage(List.copyOf(pending)));
-        pending.clear();
+
+        if (hasToolCalls) {
+            // 检查 flush 后的消息序列：紧接的消息应为 ToolResponseMessage
+            if (!out.isEmpty() && !(out.getLast() instanceof ToolResponseMessage)) {
+                if (out.getLast() instanceof AssistantMessage am && am.hasToolCalls()) {
+                    log.warn("检测到连续 ToolCall flush：前一条 AssistantMessage 有 {} 个 tool_calls 但缺少对应的 ToolResponseMessage，"
+                            + "provider 可能拒绝此消息序列", am.getToolCalls().size());
+                }
+            }
+            out.add(buildAssistantToolCallMessage(List.copyOf(pending), thoughtText, reasoning));
+            pending.clear();
+        } else {
+            // 仅 Thought 没 ToolCall — 罕见路径（ReactAgentLoop 仅 hasToolCalls 时生成 Thought）
+            out.add(new AssistantMessage(thoughtText));
+        }
     }
 
     public String serializeForMultimodal(@Nullable List<Message> messages) {
@@ -162,8 +221,10 @@ public class ProviderMessageBuilder {
     }
 
     private void appendAssistantSection(StringBuilder buffer, AssistantMessage assistantMessage) {
+        // 多模态 / 调试序列化路径不需感知 reasoning_content marker；统一剥离避免污染下游消费方
+        String rawText = ReasoningContentMarker.stripMarker(assistantMessage.getText());
         ContextMessageFormatter.TaggedBlock taggedBlock =
-                ContextMessageFormatter.parseTaggedBlock(assistantMessage.getText());
+                ContextMessageFormatter.parseTaggedBlock(rawText);
         if (taggedBlock != null) {
             buffer.append(taggedBlock.rawText()).append("\n\n");
             return;
@@ -179,8 +240,8 @@ public class ProviderMessageBuilder {
             }
         }
 
-        if (assistantMessage.getText() != null && !assistantMessage.getText().isBlank()) {
-            appendSection(buffer, "assistant", assistantMessage.getText());
+        if (rawText != null && !rawText.isBlank()) {
+            appendSection(buffer, "assistant", rawText);
         }
     }
 
@@ -376,10 +437,20 @@ public class ProviderMessageBuilder {
         return "web.search".equals(observation.toolId());
     }
 
-    private AssistantMessage buildAssistantToolCallMessage(List<AssistantMessage.ToolCall> toolCalls) {
-        return AssistantMessage.builder()
-                .toolCalls(toolCalls)
-                .build();
+    private AssistantMessage buildAssistantToolCallMessage(List<AssistantMessage.ToolCall> toolCalls,
+                                                           @Nullable String thoughtText,
+                                                           @Nullable String reasoningContent) {
+        var builder = AssistantMessage.builder().toolCalls(toolCalls);
+        // content 编码：marker(reasoning) + thoughtText；filter 在请求出去前抽 marker 注入
+        // reasoning_content 字段、清理 marker 还原 content 为 thoughtText（或空）
+        boolean hasReasoning = reasoningContent != null && !reasoningContent.isEmpty();
+        boolean hasThought = thoughtText != null && !thoughtText.isEmpty();
+        if (hasReasoning) {
+            builder.content(ReasoningContentMarker.encode(hasThought ? thoughtText : null, reasoningContent));
+        } else if (hasThought) {
+            builder.content(thoughtText);
+        }
+        return builder.build();
     }
 
     private void appendSection(StringBuilder buffer, String title, @Nullable String content) {
