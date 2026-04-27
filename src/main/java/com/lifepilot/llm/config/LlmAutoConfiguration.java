@@ -15,6 +15,7 @@ import com.lifepilot.llm.thinking.QwenThinkingProtocol;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import com.lifepilot.skill.registry.SkillSearchIndex;
 import org.slf4j.Logger;
@@ -85,9 +86,10 @@ public class LlmAutoConfiguration {
     public ProviderAdapterFactory providerAdapterFactory(@Nullable List<CallAdvisor> advisors,
                                                          LlmConfigProperties properties,
                                                          ProviderProfileRegistry profileRegistry,
-                                                         List<ThinkingProtocol> thinkingProtocols) {
+                                                         List<ThinkingProtocol> thinkingProtocols,
+                                                         ProbeModelsService probeModelsService) {
         return new ProviderAdapterFactory(advisors, properties.getConnectionPool(),
-                profileRegistry, thinkingProtocols);
+                profileRegistry, thinkingProtocols, probeModelsService);
     }
 
     @Bean

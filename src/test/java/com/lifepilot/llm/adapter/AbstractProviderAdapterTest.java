@@ -332,7 +332,9 @@ class AbstractProviderAdapterTest {
                     ChatModel chatModel,
                     @Nullable EmbeddingModel embeddingModel,
                     @Nullable List<CallAdvisor> defaultAdvisors) {
-            super(config, BaseAdapterType.OPENAI_BASE, chatModel, embeddingModel, defaultAdvisors);
+            // 单测路径不注入 ProbeModelsService — healthCheck 不在本类 scope，传 null 即可
+            super(config, BaseAdapterType.OPENAI_BASE, chatModel, embeddingModel, defaultAdvisors,
+                    null);
         }
 
         /** 测试入口：把 protected 的 {@link #chunkToEvents(ChatResponse)} 提升为 public。 */

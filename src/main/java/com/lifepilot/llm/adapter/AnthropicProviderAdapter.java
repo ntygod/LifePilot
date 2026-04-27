@@ -3,6 +3,7 @@ package com.lifepilot.llm.adapter;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.profile.ProviderProfile;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.lang.Nullable;
@@ -28,8 +29,9 @@ public class AnthropicProviderAdapter extends AbstractProviderAdapter {
                                     ChatModel chatModel,
                                     @Nullable List<CallAdvisor> defaultAdvisors,
                                     ProviderProfile profile,
-                                    ThinkingProtocol thinkingProtocol) {
-        super(config, profile.baseAdapter(), chatModel, null, defaultAdvisors);
+                                    ThinkingProtocol thinkingProtocol,
+                                    @Nullable ProbeModelsService probeModelsService) {
+        super(config, profile.baseAdapter(), chatModel, null, defaultAdvisors, probeModelsService);
         this.profile = profile;
         this.thinkingProtocol = thinkingProtocol;
     }

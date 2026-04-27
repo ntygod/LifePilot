@@ -243,6 +243,13 @@
             <version>1.26.1</version>
         </dependency>
 
+        <!-- JsonPath — /v1/models 探测端点解析 model 清单（不同 provider 走不同 jsonPath） -->
+        <dependency>
+            <groupId>com.jayway.jsonpath</groupId>
+            <artifactId>json-path</artifactId>
+            <version>2.9.0</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

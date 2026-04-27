@@ -43,7 +43,8 @@ class ProviderAdapterFactoryTest {
                 new OpenAiReasoningEffortProtocol(),
                 new AnthropicThinkingProtocol()
         );
-        factory = new ProviderAdapterFactory(List.of(), null, registry, protocols);
+        // 单测路径不依赖 healthCheck 走 /v1/models，传 null ProbeModelsService 即可
+        factory = new ProviderAdapterFactory(List.of(), null, registry, protocols, null);
     }
 
     @Test

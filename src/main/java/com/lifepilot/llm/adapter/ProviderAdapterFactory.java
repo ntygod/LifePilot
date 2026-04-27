@@ -10,6 +10,7 @@ import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.profile.ThinkingProtocolId;
 import com.lifepilot.llm.thinking.NoopThinkingProtocol;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.AnthropicChatModel;
@@ -66,16 +67,26 @@ public class ProviderAdapterFactory {
     private final ConnectionPoolConfigEntry connectionPoolConfig;
     private final ProviderProfileRegistry profileRegistry;
     private final Map<ThinkingProtocolId, ThinkingProtocol> thinkingProtocols;
+    /**
+     * 模型探测服务 — 注入到 Adapter 后供 healthCheck 优先走 /v1/models。
+     *
+     * <p>{@code @Nullable} 而非必传 是为了让无 Spring 上下文的小型单测仍能直接 new Factory；
+     * 实际线上路径由 {@link com.lifepilot.llm.config.LlmAutoConfiguration} 注入非 null bean。
+     */
+    @Nullable
+    private final ProbeModelsService probeModelsService;
 
     public ProviderAdapterFactory(@Nullable List<CallAdvisor> defaultAdvisors,
                                   @Nullable ConnectionPoolConfigEntry connectionPoolConfig,
                                   ProviderProfileRegistry profileRegistry,
-                                  List<ThinkingProtocol> thinkingProtocolImpls) {
+                                  List<ThinkingProtocol> thinkingProtocolImpls,
+                                  @Nullable ProbeModelsService probeModelsService) {
         this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
         this.connectionPoolConfig = connectionPoolConfig;
         this.profileRegistry = profileRegistry;
         this.thinkingProtocols = thinkingProtocolImpls.stream()
                 .collect(Collectors.toUnmodifiableMap(ThinkingProtocol::id, p -> p));
+        this.probeModelsService = probeModelsService;
         if (!this.defaultAdvisors.isEmpty()) {
             log.info("ProviderAdapterFactory 初始化: 默认 Advisors={}",
                     this.defaultAdvisors.stream()
@@ -148,15 +159,15 @@ public class ProviderAdapterFactory {
         // 新增带 thinking 协议的 OPENAI_BASE provider 时只需声明枚举值 + 加 case，编译失败强制提醒。
         return switch (profile.thinkingProtocol()) {
             case DEEPSEEK -> new DeepSeekProviderAdapter(config, chatModel, embeddingModel,
-                    defaultAdvisors, profile, thinkingProtocol);
+                    defaultAdvisors, profile, thinkingProtocol, probeModelsService);
             case QWEN -> new QwenProviderAdapter(config, chatModel, embeddingModel,
-                    defaultAdvisors, profile, thinkingProtocol);
+                    defaultAdvisors, profile, thinkingProtocol, probeModelsService);
             case OPENAI_REASONING_EFFORT -> new OpenAiOfficialProviderAdapter(config, chatModel,
-                    embeddingModel, defaultAdvisors, profile, thinkingProtocol);
+                    embeddingModel, defaultAdvisors, profile, thinkingProtocol, probeModelsService);
             case ANTHROPIC -> throw new IllegalStateException(
                     "ANTHROPIC thinkingProtocol 不应在 OPENAI_BASE 分支命中: profileId=" + profile.id());
             case NONE -> new OpenAiBaseProviderAdapter(config, chatModel, embeddingModel,
-                    defaultAdvisors, profile, thinkingProtocol);
+                    defaultAdvisors, profile, thinkingProtocol, probeModelsService);
         };
     }
 
@@ -199,7 +210,7 @@ public class ProviderAdapterFactory {
         log.info("创建 Anthropic 原生适配器: id={}, profile={}, model={}, cacheStrategy={}",
                 config.id(), profile.id(), config.modelName(), cacheStrategy.name());
         return new AnthropicProviderAdapter(config, chatModel, defaultAdvisors,
-                profile, thinkingProtocol);
+                profile, thinkingProtocol, probeModelsService);
     }
 
     private OllamaProviderAdapter createOllamaAdapter(ProviderConfig config,
@@ -231,7 +242,7 @@ public class ProviderAdapterFactory {
 
         log.info("创建 Ollama 适配器: id={}, profile={}, model={}", config.id(), profile.id(), config.modelName());
         return new OllamaProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors,
-                profile, thinkingProtocol);
+                profile, thinkingProtocol, probeModelsService);
     }
 
     /**

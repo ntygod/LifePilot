@@ -19,6 +19,9 @@ import com.lifepilot.modelservice.repository.EmbeddingSettingsRepository;
 import com.lifepilot.modelservice.repository.GenerationSettingsRepository;
 import com.lifepilot.modelservice.repository.ModelServiceRepository;
 import com.lifepilot.modelservice.repository.ModelServiceTemplateRepository;
+import com.lifepilot.modelservice.probe.ProbeModelsRequest;
+import com.lifepilot.modelservice.probe.ProbeModelsResponse;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import com.lifepilot.modelservice.repository.RerankSettingsRepository;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -58,6 +61,7 @@ public class ModelServiceController {
     private final ModelServiceTemplateRepository modelServiceTemplateRepository;
     private final ModelServiceRegistrationService registrationService;
     private final ProviderProfileRegistry profileRegistry;
+    private final ProbeModelsService probeModelsService;
 
     public ModelServiceController(ModelServiceRepository modelServiceRepository,
                                   GenerationSettingsRepository generationSettingsRepository,
@@ -65,7 +69,8 @@ public class ModelServiceController {
                                   RerankSettingsRepository rerankSettingsRepository,
                                   ModelServiceTemplateRepository modelServiceTemplateRepository,
                                   ModelServiceRegistrationService registrationService,
-                                  ProviderProfileRegistry profileRegistry) {
+                                  ProviderProfileRegistry profileRegistry,
+                                  ProbeModelsService probeModelsService) {
         this.modelServiceRepository = modelServiceRepository;
         this.generationSettingsRepository = generationSettingsRepository;
         this.embeddingSettingsRepository = embeddingSettingsRepository;
@@ -73,6 +78,7 @@ public class ModelServiceController {
         this.modelServiceTemplateRepository = modelServiceTemplateRepository;
         this.registrationService = registrationService;
         this.profileRegistry = profileRegistry;
+        this.probeModelsService = probeModelsService;
     }
 
     @GetMapping
@@ -124,6 +130,26 @@ public class ModelServiceController {
                 .map(this::toProfileDto)
                 .toList();
         return ApiResponse.ok(profiles);
+    }
+
+    /**
+     * 探测 provider 可用模型清单。
+     *
+     * <p>前端"挑 profile → 填 baseUrl/key → 拉模型清单 → 选模型"流程的核心端点。
+     * 按 {@link com.lifepilot.llm.profile.ProviderProfile#modelDiscovery()} 配置发起 GET 请求，
+     * 解析 model 列表后返回。失败时抛 RuntimeException，由全局 ExceptionHandler 转 ApiResponse 错误码。
+     */
+    @PostMapping("/probe-models")
+    public ApiResponse<ProbeModelsResponse> probeModels(@RequestBody ProbeModelsRequest request) {
+        if (request.profileId() == null || request.profileId().isBlank()) {
+            throw new IllegalArgumentException("Provider Profile ID 不能为空");
+        }
+        if (request.baseUrl() == null || request.baseUrl().isBlank()) {
+            throw new IllegalArgumentException("Base URL 不能为空");
+        }
+        validateProfileId(request.profileId());
+        ProbeModelsResponse response = probeModelsService.probe(request);
+        return ApiResponse.ok(response);
     }
 
     @GetMapping("/{id}")

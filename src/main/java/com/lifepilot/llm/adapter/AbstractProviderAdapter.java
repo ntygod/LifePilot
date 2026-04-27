@@ -10,6 +10,9 @@ import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.stream.ToolCallDelta;
 import com.lifepilot.llm.stream.UsageEvent;
 import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.modelservice.probe.ProbeModelsRequest;
+import com.lifepilot.modelservice.probe.ProbeModelsResponse;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,9 +23,11 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.lang.Nullable;
@@ -62,6 +67,15 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     @Nullable
     protected final EmbeddingModel embeddingModel;
     protected final List<CallAdvisor> defaultAdvisors;
+    /**
+     * 模型探测服务 — 用于 healthCheck 优先走 /v1/models 而非 chat ping。
+     *
+     * <p>可空：单元测试通过 ChatModel mock 直接构造 adapter 时无需注入；线上路径
+     * 由 {@link ProviderAdapterFactory} 统一传入。{@code null} 时 healthCheck
+     * 直接走 chat ping fallback 路径，行为退回 Phase 6 之前。
+     */
+    @Nullable
+    protected final ProbeModelsService probeModelsService;
 
     @Nullable
     private volatile ChatClient chatClient;
@@ -70,12 +84,14 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
                                       BaseAdapterType baseAdapter,
                                       ChatModel chatModel,
                                       @Nullable EmbeddingModel embeddingModel,
-                                      @Nullable List<CallAdvisor> defaultAdvisors) {
+                                      @Nullable List<CallAdvisor> defaultAdvisors,
+                                      @Nullable ProbeModelsService probeModelsService) {
         this.config = config;
         this.baseAdapter = baseAdapter;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
         this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
+        this.probeModelsService = probeModelsService;
     }
 
     @Override
@@ -260,6 +276,8 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     }
 
     private static final Duration HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(15);
+    /** chat ping fallback 时的最小输出 token 限制，避免推理模型把 ping 当成长任务跑超时。 */
+    private static final int HEALTH_CHECK_MAX_TOKENS = 10;
 
     @Override
     public boolean healthCheck() {
@@ -268,14 +286,34 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
             if (baseAdapter == BaseAdapterType.TEI) {
                 return checkHealthEndpoint(config.apiUrl());
             }
-            // EMBEDDING 类型通过 embeddingModel 验证
-            if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
+            // 纯 EMBEDDING provider（无 CHAT 能力）通过 embeddingModel 验证 — 避免对纯
+            // embedding 服务发 chat ping 失败而误判 unhealthy
+            if (config.hasCapability(ProviderCapability.EMBEDDING)
+                    && !config.hasCapability(ProviderCapability.CHAT)
+                    && embeddingModel != null) {
                 float[] embedding = embeddingModel.embed("ping");
                 return embedding.length > 0;
             }
-            // CHAT 及其他类型通过 chatModel 验证连通性（带超时保护，避免无限等待）
+            // 优先走 /v1/models 探测端点（毫秒级，不耗 token，不受推理模型超时影响）
+            // probeModelsService 可空：测试路径直接构造 adapter 时跳过这一层走 chat ping
+            if (probeModelsService != null) {
+                try {
+                    ProbeModelsResponse probeResp = probeModelsService.probe(new ProbeModelsRequest(
+                            config.profileId(), config.apiUrl(), config.apiKey()));
+                    if (!probeResp.models().isEmpty()) {
+                        return true;
+                    }
+                    log.debug("/v1/models 探测返回空 model 清单，回退 chat ping: id={}", config.id());
+                } catch (Exception probeFail) {
+                    // 部分自部署服务不开 /v1/models（直接 404）— 记录后回退 chat ping，
+                    // 保留原行为兜底，避免让这类服务直接报 unhealthy
+                    log.debug("/v1/models 探测失败，回退 chat ping: id={}, error={}",
+                            config.id(), probeFail.getMessage());
+                }
+            }
+            // Fallback：chat ping with max_tokens=10（小响应快出，推理模型也能秒返）
             ChatResponse response = executeWithTimeout(
-                    () -> chatModel.call(new Prompt("ping")), HEALTH_CHECK_TIMEOUT);
+                    () -> chatModel.call(buildHealthCheckPrompt()), HEALTH_CHECK_TIMEOUT);
             if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
                 return false;
             }
@@ -285,6 +323,22 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
             log.debug("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * 构造 chat ping 用 Prompt — 仅 OpenAI 兼容路径下注入 max_tokens=10 限制；
+     * Anthropic / Ollama 仍走 ChatModel 默认 options 由 SDK 控制（这两条路径
+     * 触发概率低，且 SDK 不通用支持等价限流参数）。
+     */
+    private Prompt buildHealthCheckPrompt() {
+        if (baseAdapter == BaseAdapterType.OPENAI_BASE) {
+            ChatOptions options = OpenAiChatOptions.builder()
+                    .model(config.modelName())
+                    .maxTokens(HEALTH_CHECK_MAX_TOKENS)
+                    .build();
+            return new Prompt("ping", options);
+        }
+        return new Prompt("ping");
     }
 
     /**

@@ -13,6 +13,7 @@ import com.lifepilot.modelservice.repository.EmbeddingSettingsRepository;
 import com.lifepilot.modelservice.repository.GenerationSettingsRepository;
 import com.lifepilot.modelservice.repository.ModelServiceRepository;
 import com.lifepilot.modelservice.repository.ModelServiceTemplateRepository;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import com.lifepilot.modelservice.repository.RerankSettingsRepository;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,12 +63,14 @@ class ModelServiceControllerTest {
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private ProviderProfileRegistry profileRegistry;
+    private ProbeModelsService probeModelsService;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         profileRegistry = new ProviderProfileRegistry();
         profileRegistry.init();
+        probeModelsService = new ProbeModelsService(profileRegistry);
         var controller = new ModelServiceController(
                 modelServiceRepository,
                 generationSettingsRepository,
@@ -75,7 +78,8 @@ class ModelServiceControllerTest {
                 rerankSettingsRepository,
                 modelServiceTemplateRepository,
                 registrationService,
-                profileRegistry
+                profileRegistry,
+                probeModelsService
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
