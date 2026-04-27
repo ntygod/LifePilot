@@ -16,7 +16,7 @@ import java.util.Map;
  * @param content 文本内容
  * @param a2uiComponents A2UI 组件树
  * @param timestamp 消息时间戳
- * @param reasoningSummary 推理摘要
+ * @param reasoningSummary 推理摘要（ReAct 过程摘要）
  * @param traceId 关联 traceId
  * @param attachments 附件信息
  * @param reactSteps ReAct 步骤序列
@@ -24,6 +24,9 @@ import java.util.Map;
  * @param resumedFromTraceId 恢复来源 traceId
  * @param turnStatus 轮次状态
  * @param errorMessage 轮次错误信息
+ * @param reasoningContent 推理过程文本（DeepSeek/Qwen 等推理模型 reasoning_content；
+ *                        历史会话进入时供前端 ReasoningSection 渲染折叠区域）
+ * @param reasoningDurationMs 推理过程持续时间（毫秒），暂留扩展位
  * @author zsg
  * @since 2026-03-25
  */
@@ -41,7 +44,9 @@ public record MessageInfo(
         @Nullable CompletionMode completionMode,
         @Nullable String resumedFromTraceId,
         @Nullable ChatTurnStatus turnStatus,
-        @Nullable String errorMessage
+        @Nullable String errorMessage,
+        @Nullable String reasoningContent,
+        @Nullable Long reasoningDurationMs
 ) {
     public MessageInfo(
             String id,
@@ -57,6 +62,6 @@ public record MessageInfo(
             @Nullable String resumedFromTraceId
     ) {
         this(id, null, role, content, a2uiComponents, timestamp, reasoningSummary, traceId,
-                attachments, reactSteps, completionMode, resumedFromTraceId, null, null);
+                attachments, reactSteps, completionMode, resumedFromTraceId, null, null, null, null);
     }
 }
