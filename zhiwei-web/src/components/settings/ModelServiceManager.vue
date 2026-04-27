@@ -539,23 +539,23 @@ onMounted(() => {
               {{ errors._general }}
             </div>
 
-            <!-- Provider 协议 — Phase 8 新增；接入流程一气呵成。
-                 字段顺序刻意按"选 Profile → 填地址 → 填密钥 → 拉取 → 选模型"排列，
-                 让用户视线纵向连续，避免在多张卡片间反复跳跃。
-                 接口加载失败时（profiles 为空）该区块隐藏，走基本信息卡片的手填兜底。 -->
-            <section
-              v-if="profiles.length > 0"
-              class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl"
-            >
-              <div class="border-b border-border/60 pb-md">
-                <h3 class="text-base font-semibold text-foreground">Provider 协议</h3>
-                <p class="mt-xs text-sm text-muted-foreground">
-                  按顺序填写：选协议 → 填 API 地址 → 填 API 密钥 → 拉取可用模型 → 选模型。
-                </p>
+            <!-- 服务配置 — 单一表单容器。
+                 把原来的"Provider 协议"和"基本信息"两张卡片合并，避免割裂感。
+                 字段按操作顺序排列：profile → API 地址/密钥 → 拉取 → 模型名 →
+                 服务类型/显示名 → 超时/向量维度 → 描述。
+                 profile 接口降级时（profiles 为空）profile/拉取相关字段隐藏，
+                 用户仍可手填 API 地址/密钥/模型名走兜底路径。 -->
+            <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl">
+              <div class="flex flex-wrap items-center justify-end gap-md">
+                <label class="flex items-center gap-md rounded-full border border-border/70 bg-muted/20 px-md py-sm">
+                  <span class="text-sm text-foreground">启用服务</span>
+                  <Switch :model-value="formData.enabled" @update:model-value="updateEnabled" />
+                </label>
               </div>
 
               <div class="mt-md space-y-md">
-                <div class="space-y-sm">
+                <!-- Provider Profile：profiles 为空时显示降级提示，字段照常可手填。 -->
+                <div v-if="profiles.length > 0" class="space-y-sm">
                   <Label>Provider Profile</Label>
                   <Select :model-value="formData.profileId" @update:model-value="updateProfile">
                     <SelectTrigger :class="{ 'border-destructive': errors.profileId }">
@@ -572,8 +572,11 @@ onMounted(() => {
                     思考协议：{{ selectedProfile.thinkingProtocol }} · 默认地址：{{ selectedProfile.defaultBaseUrl }}
                   </p>
                 </div>
+                <div v-else class="rounded-md border border-dashed border-border/60 bg-muted/20 p-md text-sm text-muted-foreground">
+                  未启用 Provider Profile 模式，请直接手填下方字段。
+                </div>
 
-                <!-- API 地址 + API 密钥：中等屏幕两列同行，避免单列纵向拉得过长。 -->
+                <!-- API 地址 + API 密钥：两列同行，避免单列纵向拉得过长。 -->
                 <div class="grid grid-cols-1 gap-md md:grid-cols-2">
                   <div class="space-y-sm">
                     <Label>API 地址</Label>
@@ -595,7 +598,8 @@ onMounted(() => {
                   </div>
                 </div>
 
-                <div class="space-y-sm">
+                <!-- 拉取按钮：仅在启用 Provider Profile 模式时显示。 -->
+                <div v-if="profiles.length > 0" class="space-y-sm">
                   <Button
                     type="button"
                     variant="outline"
@@ -611,7 +615,7 @@ onMounted(() => {
                 </div>
 
                 <!-- 模型名称：拉取成功后 Select（探测列表）+ Input（手填覆盖）两列同行；
-                     未拉取走纯 Input 占满一行。两种形态都写回同一个 formData.modelName。 -->
+                     未探测走纯 Input 占满一行。两种形态都写回同一个 formData.modelName。 -->
                 <div class="space-y-sm">
                   <Label>模型名称</Label>
                   <template v-if="probedModels.length > 0">
@@ -640,101 +644,55 @@ onMounted(() => {
                   <template v-else>
                     <Input
                       :model-value="formData.modelName"
-                      placeholder="拉取后自动填入，或手动输入模型 ID"
+                      :placeholder="profiles.length > 0 ? '拉取后自动填入，或手动输入模型 ID' : '输入模型 ID'"
                       :class="{ 'border-destructive': errors.modelName }"
                       @update:model-value="handleModelNameInput"
                     />
                   </template>
                   <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
                 </div>
-              </div>
-            </section>
 
-            <!-- 基本信息 — 服务元数据。模型选定后填这里，与接入流程解耦。 -->
-            <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl">
-              <div class="flex flex-wrap items-center justify-between gap-md border-b border-border/60 pb-md">
-                <div>
-                  <h3 class="text-base font-semibold text-foreground">基本信息</h3>
-                  <p class="mt-xs text-sm text-muted-foreground">
-                    服务类型、显示名称等元数据；不影响接入流程，可在保存前任意调整。
-                  </p>
-                </div>
-                <label class="flex items-center gap-md rounded-full border border-border/70 bg-muted/20 px-md py-sm">
-                  <span class="text-sm text-foreground">启用服务</span>
-                  <Switch :model-value="formData.enabled" @update:model-value="updateEnabled" />
-                </label>
-              </div>
-
-              <div class="mt-md grid gap-md md:grid-cols-2">
-                <div class="space-y-sm">
-                  <Label>服务类型</Label>
-                  <Select :model-value="formData.kind" @update:model-value="updateKind">
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择服务类型" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in kindOptions" :key="option.value" :value="option.value">
-                        {{ option.label }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div class="space-y-sm">
-                  <Label>显示名称</Label>
-                  <Input
-                    :model-value="formData.displayName"
-                    placeholder="例如：DeepSeek / 主力"
-                    @update:model-value="handleDisplayNameInput"
-                  />
-                </div>
-
-                <!-- profiles 接口降级时（profiles 为空），Provider 协议卡片不渲染，
-                     接入字段在这里手填兜底，保证用户仍可保存配置。 -->
-                <template v-if="profiles.length === 0">
-                  <div class="space-y-sm md:col-span-2">
-                    <Label>模型名称</Label>
-                    <Input
-                      :model-value="formData.modelName"
-                      placeholder="输入模型 ID"
-                      :class="{ 'border-destructive': errors.modelName }"
-                      @update:model-value="handleModelNameInput"
-                    />
-                    <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
+                <!-- 服务类型 + 显示名称：两列同行。 -->
+                <div class="grid grid-cols-1 gap-md md:grid-cols-2">
+                  <div class="space-y-sm">
+                    <Label>服务类型</Label>
+                    <Select :model-value="formData.kind" @update:model-value="updateKind">
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择服务类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="option in kindOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div class="space-y-sm md:col-span-2">
-                    <Label>API 地址</Label>
+                  <div class="space-y-sm">
+                    <Label>显示名称</Label>
                     <Input
-                      v-model="formData.apiUrl"
-                      :placeholder="apiUrlPlaceholder"
-                      :class="{ 'border-destructive': errors.apiUrl }"
+                      :model-value="formData.displayName"
+                      placeholder="例如：DeepSeek / 主力"
+                      @update:model-value="handleDisplayNameInput"
                     />
-                    <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
+                  </div>
+                </div>
+
+                <!-- 超时时间 + 向量维度：两列同行；非 EMBEDDING 时超时独占两列。 -->
+                <div class="grid grid-cols-1 gap-md md:grid-cols-2">
+                  <div class="space-y-sm" :class="{ 'md:col-span-2': !isEmbeddingKind }">
+                    <Label>超时时间（秒）</Label>
+                    <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
+                    <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
                   </div>
 
-                  <div class="space-y-sm md:col-span-2">
-                    <Label>API 密钥</Label>
-                    <Input
-                      v-model="formData.apiKey"
-                      type="password"
-                      :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
-                    />
+                  <div v-if="isEmbeddingKind" class="space-y-sm">
+                    <Label>向量维度</Label>
+                    <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
                   </div>
-                </template>
+                </div>
 
                 <div class="space-y-sm">
-                  <Label>超时时间（秒）</Label>
-                  <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
-                  <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
-                </div>
-
-                <div v-if="isEmbeddingKind" class="space-y-sm">
-                  <Label>向量维度</Label>
-                  <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
-                </div>
-
-                <div class="space-y-sm md:col-span-2">
                   <Label>描述</Label>
                   <Textarea
                     v-model="formData.description"
