@@ -223,50 +223,6 @@ class ToolBridgeAgentToolProviderTest {
     }
 
     @Test
-    void 单Agent模式下即使allowedToolIds收窄仍保留infrastructure工具() {
-        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("infra.echo")
-                .name("基础回显")
-                .description("基础工具")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("infrastructure"))
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-        registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("custom.echo")
-                .name("普通回显")
-                .description("普通工具")
-                .inputSchema(JsonSchema.of(Map.of("type", "object")))
-                .outputSchema(JsonSchema.empty())
-                .riskLevel(RiskLevel.LOW)
-                .idempotent(true)
-                .executionSemantics(ToolExecutionSemantics.generic())
-                .tags(List.of("custom"))
-                .executor(input -> ToolResult.success(Map.of("ok", true)))
-                .build());
-
-        var provider = new ToolBridgeAgentToolProvider(
-                registry,
-                mock(ToolExecutionPipeline.class),
-                new ObjectMapper(),
-                30000,
-                tier1For()
-        );
-
-        var callbacks = provider.getToolCallbacks(baseState(List.of("custom.echo")), null);
-        var toolNames = callbacks.stream()
-                .map(callback -> callback.getToolDefinition().name())
-                .toList();
-
-        assertThat(toolNames).contains("custom_echo", "infra_echo");
-    }
-
-    @Test
     void 工具别名冲突时应基于稳定快照生成可复现名称() {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         registry.registerBuiltinTool(BuiltinTool.builder()

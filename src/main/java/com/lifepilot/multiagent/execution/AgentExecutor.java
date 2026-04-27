@@ -111,15 +111,10 @@ public class AgentExecutor {
     /**
      * 构建子 Agent 的工具白名单。
      *
-     * <p>排除规则（按优先级）：
-     * <ol>
-     *   <li>不存在于 DynamicToolRegistry 的工具 ID — 记录 WARN 日志并跳过</li>
-     * </ol>
+     * <p>过滤规则：不存在于 {@link DynamicToolRegistry} 的工具 ID 记录 WARN 日志并跳过。</p>
      *
      * <p>交集约束：当父 Agent 的 allowedToolIds 非空时，子 Agent 的有效工具集
-     * 取与父 Agent 作用域的交集，防止通过委托实现权限提升。
-     * 当前主产品仍按“单 Agent 负责所有事”设计，Infrastructure 工具（tags 含 "infrastructure"）
-     * 继续保留透传语义；后续若演进为真正的受限子 Agent，再单独收紧这里的策略。</p>
+     * 取与父 Agent 作用域的交集，防止通过委托实现权限提升。</p>
      *
      * @param definition       子 Agent 蓝图
      * @param parentAllowedIds 父 Agent 的工具白名单（可为 null）
@@ -129,7 +124,6 @@ public class AgentExecutor {
                                              List<String> parentAllowedIds) {
         var result = new ArrayList<String>();
         for (String toolId : definition.allowedTools()) {
-            // 跳过不存在的工具
             if (toolRegistry.resolve(toolId).isEmpty()) {
                 log.warn("Agent 工具白名单中的工具不存在: agentId={}, toolId={}",
                         definition.id(), toolId);
@@ -142,16 +136,6 @@ public class AgentExecutor {
         if (parentAllowedIds != null && !parentAllowedIds.isEmpty()) {
             result.retainAll(parentAllowedIds);
         }
-
-        // infrastructure 工具始终保留
-        toolRegistry.getToolSnapshot().stream()
-                .filter(t -> t.tags().contains("infrastructure"))
-                .map(ToolContract::id)
-                .forEach(id -> {
-                    if (!result.contains(id)) {
-                        result.add(id);
-                    }
-                });
 
         return List.copyOf(result);
     }
