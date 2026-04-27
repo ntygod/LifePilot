@@ -21,6 +21,11 @@ import java.util.List;
  * {@code streamEvents()} 抽象方法，由本类按 thinkingProtocol 把 ChatResponse 流分派为
  * LlmStreamEvent 流。
  *
+ * <p><b>永远是 concrete class，不要改成 abstract</b>：本类既是 DeepSeek / Qwen /
+ * OpenAiOfficial 三个子类的共享基类，<b>也是 NONE 协议（zhipu / moonshot / minimax /
+ * siliconflow）provider 的 fallback adapter</b>。如果改成 abstract 会让 NONE 协议
+ * provider 失去可用 adapter，导致 ProviderAdapterFactory 路由失败。
+ *
  * @author zsg
  * @since 2026-04-27
  */

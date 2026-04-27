@@ -53,13 +53,18 @@ public record ProviderConfig(
     }
 
     /**
-     * 按 {@link ProviderType} 推断默认 profileId（Phase 3 临时映射）。
+     * 根据旧 ProviderType 返回临时默认 profileId。
      *
-     * <p>Phase 6 起由 ModelService 在持久化层提供真实 profileId，本方法届时仅作为兜底。
+     * <p><b>Phase 3 临时方案</b>：所有 ProviderConfig 构造点在 Phase 6 完整迁移
+     * 到由 ModelService.profileId 提供真实值之前，借此方法做兜底映射。
      *
-     * @param type Provider 类型
+     * <p><b>本方法将在 Phase 6 删除</b>，不应在新代码中调用。
+     *
+     * @param type 旧 ProviderType
      * @return 默认 profileId
+     * @deprecated 仅 Phase 3-5 期间使用，Phase 6 删除（届时 ModelService 直接提供 profileId）
      */
+    @Deprecated(forRemoval = true, since = "Phase 3")
     public static String defaultProfileIdFor(ProviderType type) {
         return switch (type) {
             case OPENAI_COMPATIBLE -> "openai-official";

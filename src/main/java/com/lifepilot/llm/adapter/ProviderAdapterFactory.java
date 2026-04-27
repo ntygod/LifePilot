@@ -46,7 +46,8 @@ import java.util.stream.Collectors;
  *
  * <p>Phase 3 阶段：
  * <ul>
- *   <li>OPENAI_BASE → 按 profile.id 选 DeepSeek/Qwen/OpenAi 子类，未命中回退 OpenAiBaseProviderAdapter；</li>
+ *   <li>OPENAI_BASE → 按 profile.thinkingProtocol 选 DeepSeek/Qwen/OpenAi 子类，
+ *       NONE 协议回退 OpenAiBaseProviderAdapter；</li>
  *   <li>ANTHROPIC_BASE → AnthropicProviderAdapter；</li>
  *   <li>OLLAMA → OllamaProviderAdapter；</li>
  *   <li>TEI → 复用 OpenAiBaseProviderAdapter（embedding-only 路径）。</li>
@@ -101,7 +102,7 @@ public class ProviderAdapterFactory {
         return switch (profile.baseAdapter()) {
             case OPENAI_BASE -> createOpenAiBaseAdapter(config, profile, thinkingProtocol);
             case ANTHROPIC_BASE -> createAnthropicAdapter(config, profile, thinkingProtocol);
-            case OLLAMA -> createOllamaAdapter(config, profile);
+            case OLLAMA -> createOllamaAdapter(config, profile, thinkingProtocol);
             case TEI -> createOpenAiBaseAdapter(config, profile, thinkingProtocol);
         };
     }
@@ -143,20 +144,19 @@ public class ProviderAdapterFactory {
                 config.id(), profile.id(), config.modelName(), embeddingModel != null,
                 cacheStrategy.name());
 
-        // 按 profile.id 选具体子类（行为差异在 Phase 4 起体现）；未命中回退 OpenAiBaseProviderAdapter
-        return switch (profile.id()) {
-            case "deepseek-official", "volcengine-ark" ->
-                    new DeepSeekProviderAdapter(config, chatModel, embeddingModel,
-                            defaultAdvisors, profile, thinkingProtocol);
-            case "qwen-dashscope" ->
-                    new QwenProviderAdapter(config, chatModel, embeddingModel,
-                            defaultAdvisors, profile, thinkingProtocol);
-            case "openai-official" ->
-                    new OpenAiOfficialProviderAdapter(config, chatModel, embeddingModel,
-                            defaultAdvisors, profile, thinkingProtocol);
-            default ->
-                    new OpenAiBaseProviderAdapter(config, chatModel, embeddingModel,
-                            defaultAdvisors, profile, thinkingProtocol);
+        // 按 thinkingProtocol 选具体子类，让 ThinkingProtocolId enum 的穷尽性检查替工厂做编译期校验。
+        // 新增带 thinking 协议的 OPENAI_BASE provider 时只需声明枚举值 + 加 case，编译失败强制提醒。
+        return switch (profile.thinkingProtocol()) {
+            case DEEPSEEK -> new DeepSeekProviderAdapter(config, chatModel, embeddingModel,
+                    defaultAdvisors, profile, thinkingProtocol);
+            case QWEN -> new QwenProviderAdapter(config, chatModel, embeddingModel,
+                    defaultAdvisors, profile, thinkingProtocol);
+            case OPENAI_REASONING_EFFORT -> new OpenAiOfficialProviderAdapter(config, chatModel,
+                    embeddingModel, defaultAdvisors, profile, thinkingProtocol);
+            case ANTHROPIC -> throw new IllegalStateException(
+                    "ANTHROPIC thinkingProtocol 不应在 OPENAI_BASE 分支命中: profileId=" + profile.id());
+            case NONE -> new OpenAiBaseProviderAdapter(config, chatModel, embeddingModel,
+                    defaultAdvisors, profile, thinkingProtocol);
         };
     }
 
@@ -203,7 +203,8 @@ public class ProviderAdapterFactory {
     }
 
     private OllamaProviderAdapter createOllamaAdapter(ProviderConfig config,
-                                                      ProviderProfile profile) {
+                                                      ProviderProfile profile,
+                                                      ThinkingProtocol thinkingProtocol) {
         var ollamaApi = OllamaApi.builder()
                 .baseUrl(config.apiUrl())
                 .build();
@@ -229,7 +230,8 @@ public class ProviderAdapterFactory {
         }
 
         log.info("创建 Ollama 适配器: id={}, profile={}, model={}", config.id(), profile.id(), config.modelName());
-        return new OllamaProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors, profile);
+        return new OllamaProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors,
+                profile, thinkingProtocol);
     }
 
     /**
