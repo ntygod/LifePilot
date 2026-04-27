@@ -56,11 +56,6 @@ import java.util.List;
  * 受 {@code lifepilot.sandbox.enabled} 开关与 {@link PythonRuntimeManager} 注入控制，
  * 其余按 {@link Nullable} 依赖是否注入按需注册（如 channel / cron / browser session 不存在时静默跳过）。</p>
  *
- * <p><b>历史注意</b>：旧实现给所有基础工具加 {@code "infrastructure"} tag 让
- * {@link com.lifepilot.multiagent.execution.AgentExecutor} 与
- * {@link com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider} 按 tag 过滤"始终可见"。
- * 该 tag 在工具暴露重构后已从所有 BuiltinTool 移除，相关 filter 当前不再命中任何工具。</p>
- *
  * @author zsg
  * @since 2026-03-08
  */
@@ -216,8 +211,8 @@ public class InfraToolProvider {
             }
         }
 
-        // Shell 工具（shell.exec + shell.process）
-        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver);
+        // Shell 工具（shell.exec + shell.process）— 注入 commandGuard 让 shell.exec 也走 HARDLINE/DANGEROUS 护栏
+        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, commandGuard);
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 

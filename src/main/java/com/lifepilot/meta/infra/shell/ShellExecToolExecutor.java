@@ -3,6 +3,8 @@ package com.lifepilot.meta.infra.shell;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.config.workspace.WorkspaceResolver.NormalizedPath;
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.sandbox.guard.CommandGuard;
+import com.lifepilot.sandbox.guard.GuardResult;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolResultMeta;
@@ -51,13 +53,17 @@ public class ShellExecToolExecutor {
     @Nullable
     private final BackgroundProcessManager backgroundProcessManager;
     private final WorkspaceResolver workspaceResolver;
+    @Nullable
+    private final CommandGuard commandGuard;
 
     public ShellExecToolExecutor(MetaProperties properties,
                                   @Nullable BackgroundProcessManager backgroundProcessManager,
-                                  WorkspaceResolver workspaceResolver) {
+                                  WorkspaceResolver workspaceResolver,
+                                  @Nullable CommandGuard commandGuard) {
         this.shellConfig = properties.getInfra().getShell();
         this.backgroundProcessManager = backgroundProcessManager;
         this.workspaceResolver = workspaceResolver;
+        this.commandGuard = commandGuard;
         // 构造时编译正则模式，避免每次执行重复编译
         this.compiledBlacklist = shellConfig.getCommandBlacklist().stream()
                 .map(Pattern::compile)
@@ -100,10 +106,22 @@ public class ShellExecToolExecutor {
         // 自动补齐 CLAUDE_CODE_GIT_BASH_PATH（当命令是 claude/codex 且用户已在设置里配置时）
         Map<String, String> env = mergeExternalCliEnv(command, userEnv);
 
-        // 黑名单检查
+        // 黑名单检查（项目历史正则黑名单，保留作为第一道筛）
         var rejection = checkBlacklist(command);
         if (rejection != null) {
             return rejection;
+        }
+
+        // 命令护栏检查 — 与 code.execute 统一安全模型，HARDLINE 永久阻断 / DANGEROUS 默认拒绝。
+        // 否则 AI 走 shell.exec 就能绕过 code.execute 的护栏（如 Windows PowerShell 上 rm 会被
+        // 翻译成 Remove-Item 别名直接执行）。booterType 传 null 表示非 sandbox booter，走全规则集。
+        if (commandGuard != null) {
+            GuardResult guardResult = commandGuard.check(command, null);
+            if (guardResult.isBlocked()) {
+                log.warn("shell.exec 命令被护栏阻断: decision={}, command={}",
+                        guardResult.decision(), command);
+                return ToolResult.error(buildGuardErrorMessage(guardResult));
+            }
         }
 
         // 验证工作目录存在（normalizeWorkingDirectory 已保证非空且为绝对路径）
@@ -486,6 +504,20 @@ public class ShellExecToolExecutor {
             log.debug("输出读取异常: {}", e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * 把 GuardResult 转成给 LLM/用户看的错误描述 — 复用 code.execute 同款语义。
+     *
+     * <p>HARDLINE 强调"不可恢复"，DANGEROUS 强调"危险操作"，两者都不可被 retry 解开。</p>
+     */
+    private static String buildGuardErrorMessage(GuardResult guardResult) {
+        return switch (guardResult.decision()) {
+            case BLOCKED_HARDLINE -> "此命令被永久阻断（不可恢复操作）：" + guardResult.description();
+            case BLOCKED_DANGEROUS -> "此命令被拒绝执行（危险操作）：" + guardResult.description();
+            case APPROVED -> throw new IllegalStateException(
+                    "buildGuardErrorMessage 不应处理 APPROVED 结果（仅在 isBlocked() 后调用）: " + guardResult);
+        };
     }
 
 }
