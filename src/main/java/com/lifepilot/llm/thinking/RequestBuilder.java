@@ -17,6 +17,8 @@ import java.util.Map;
  *       在出站 HTTP 请求 JSON body 合并。</li>
  * </ul>
  *
+ * <p><b>Not thread-safe</b> — 每次请求实例化一个新的 RequestBuilder，不要跨线程共享。
+ *
  * @author zsg
  * @since 2026-04-27
  */
@@ -44,6 +46,15 @@ public class RequestBuilder {
         return Map.copyOf(extraBodyFields);
     }
 
+    /**
+     * 直接读取单个 chatOption 字段（主要用于测试断言）。
+     *
+     * <p>生产代码应优先用 {@link #chatOptionsExtras()} 拿不可变快照后迭代消费，
+     * 避免依赖 mutable 视图。
+     *
+     * @param key chatOption 键
+     * @return 对应值，未设置返回 null
+     */
     @Nullable
     public Object getChatOption(String key) {
         return chatOptionsExtras.get(key);

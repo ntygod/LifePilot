@@ -52,4 +52,24 @@ class QwenThinkingProtocol_协议契约测试 {
         protocol.injectHistoryReasoning(builder, Map.of("content", "final"));
         assertThat(builder.reasoningContent()).isEqualTo("");
     }
+
+    @Test
+    void injectHistoryReasoning_reasoning_为_null_补空字符串() {
+        var builder = new AssistantMessageBuilder().content("final");
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("content", "final");
+        payload.put("reasoning_content", null);
+        protocol.injectHistoryReasoning(builder, payload);
+        assertThat(builder.reasoningContent()).isEqualTo("");
+    }
+
+    @Test
+    void injectHistoryReasoning_reasoning_为非字符串类型_补空字符串() {
+        var builder = new AssistantMessageBuilder().content("final");
+        protocol.injectHistoryReasoning(builder, java.util.Map.of(
+                "content", "final",
+                "reasoning_content", 42  // 非字符串类型应当被忽略
+        ));
+        assertThat(builder.reasoningContent()).isEqualTo("");
+    }
 }

@@ -10,6 +10,8 @@ import java.util.Map;
  *
  * <p>骨架版本，Phase 5 ChatHistoryAssembler 实现时扩展。
  *
+ * <p><b>Not thread-safe</b> — 每次构造一条消息使用一个新实例，不要跨线程共享。
+ *
  * @author zsg
  * @since 2026-04-27
  */
