@@ -122,10 +122,10 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
         List<ToolContract> tools;
         if (allowed != null && !allowed.isEmpty()) {
-            // 多 Agent / 受限代理场景 — 白名单过滤，基础设施工具默认透传
+            // 多 Agent / 受限代理场景 — 严格按白名单过滤
             int totalCount = all.size();
             tools = all.stream()
-                    .filter(t -> allowed.contains(t.id()) || t.tags().contains("infrastructure"))
+                    .filter(t -> allowed.contains(t.id()))
                     .toList();
             log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", totalCount, tools.size());
         } else {
@@ -337,6 +337,11 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         }
     }
 
+    /** ToolResult 是否带可序列化的 data（非 null 且非空 map）— 复用避免散落判断。 */
+    private static boolean hasNonEmptyData(ToolResult result) {
+        return result.data() != null && !result.data().isEmpty();
+    }
+
     /**
      * 格式化输出结果为 JSON 字符串，超过全局上限时截断。
      *
@@ -351,6 +356,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                     + "\",\"status\":\"PARTIAL_SUCCESS\"}";
         } else if (result.ok()) {
             output = toJsonValue(result.data());
+        } else if (hasNonEmptyData(result)) {
+            // 失败但 data 非空（如 code.execute / shell.exec 在 exitCode!=0 时带 stdout/stderr），
+            // 必须把 data 也透给 LLM，否则 AI 只看到"代码执行失败 exitCode=1"无法 debug
+            output = "{\"data\":" + toJsonValue(result.data())
+                    + ",\"error\":\"" + escapeJson(result.error())
+                    + "\",\"status\":\"ERROR\"}";
         } else {
             output = "{\"error\":\"" + escapeJson(result.error()) + "\",\"status\":\"ERROR\"}";
         }

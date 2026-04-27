@@ -1,0 +1,87 @@
+name: Build Python Runtime
+
+# 三平台 (Linux / macOS / Windows) × x86_64 / arm64 矩阵构建知微 Python runtime tarball
+# 触发：push tag 形如 runtime-3.12.13，或手动 workflow_dispatch
+on:
+  push:
+    tags:
+      - 'runtime-*'
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: 'Python version (e.g. 3.12.13)'
+        required: true
+
+permissions:
+  # softprops/action-gh-release 创建 / 上传 GitHub Release 需要 contents: write
+  # 默认 GITHUB_TOKEN 仅 read 权限，会导致 "Resource not accessible by integration"
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+          - os: macos-14
+            platform: macos
+            arch: arm64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "ver=${{ inputs.python_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ver=${GITHUB_REF#refs/tags/runtime-}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install zstd (Linux)
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y zstd
+
+      - name: Install zstd (macOS)
+        if: matrix.platform == 'macos'
+        run: brew install zstd
+
+      - name: Install zstd (Windows)
+        if: matrix.platform == 'windows'
+        run: choco install zstandard -y
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: bash tools/build-python-runtime/build.sh "${{ steps.version.outputs.ver }}" "${{ matrix.platform }}" "${{ matrix.arch }}"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: tools\build-python-runtime\build.ps1 -Version "${{ steps.version.outputs.ver }}" -Platform "${{ matrix.platform }}" -Arch "${{ matrix.arch }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhiwei-python-runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/zhiwei-python-runtime-*.tar.zst
+            dist/zhiwei-python-runtime-*.tar.zst.sha256
+
+      - name: Upload to release (on tag push)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/zhiwei-python-runtime-*.tar.zst
+            dist/zhiwei-python-runtime-*.tar.zst.sha256

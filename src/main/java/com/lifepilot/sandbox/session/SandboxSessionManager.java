@@ -19,6 +19,7 @@ import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.util.SandboxUtils;
 
 /**
@@ -39,6 +40,7 @@ public class SandboxSessionManager {
     private final SandboxConfigProperties config;
     private final SandboxBooter booterTemplate;
     private final WorkspaceResolver workspaceResolver;
+    private final PythonRuntimeManager runtimeManager;
     private final ConcurrentHashMap<String, SandboxEntry> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger activeCount = new AtomicInteger(0);
     private final ScheduledExecutorService scheduler;
@@ -50,12 +52,16 @@ public class SandboxSessionManager {
      * @param booterTemplate    沙箱启动器模板，用于确定新会话的 booter 类型
      * @param sharedScheduler   共享调度器
      * @param workspaceResolver 工作目录解析器
+     * @param runtimeManager    捆绑 Python 运行时管理器，派生 {@link ProcessBooter} 时复用同一实例，
+     *                          保证 installingState 等共享状态唯一
      */
     public SandboxSessionManager(SandboxConfigProperties config, SandboxBooter booterTemplate,
-                                 SharedScheduler sharedScheduler, WorkspaceResolver workspaceResolver) {
+                                 SharedScheduler sharedScheduler, WorkspaceResolver workspaceResolver,
+                                 PythonRuntimeManager runtimeManager) {
         this.config = config;
         this.booterTemplate = booterTemplate;
         this.workspaceResolver = workspaceResolver;
+        this.runtimeManager = runtimeManager;
         this.scheduler = sharedScheduler.cleanup();
 
         int intervalSeconds = config.getSession().getCleanupIntervalSeconds();
@@ -191,10 +197,13 @@ public class SandboxSessionManager {
 
     /**
      * 根据 booterTemplate 类型创建新的 booter 实例。
+     *
+     * <p>派生 ProcessBooter 时直接注入容器中的 {@link PythonRuntimeManager} 实例，
+     * 与模板及全局其它持有方共享同一份 installingState，避免重复 new 造成状态分裂。</p>
      */
     private SandboxBooter createBooter() {
         return switch (booterTemplate) {
-            case ProcessBooter _ -> new ProcessBooter(config);
+            case ProcessBooter _ -> new ProcessBooter(config, runtimeManager);
             case DockerBooter _ -> new DockerBooter(config);
         };
     }

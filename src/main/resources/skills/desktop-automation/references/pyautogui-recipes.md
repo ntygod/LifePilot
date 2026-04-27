@@ -4,7 +4,7 @@
 
 - 仅 Windows，且必须本机进程（沙箱无图形会话，跑不了 pyautogui）。
 - 用 `shell.exec(command="python <脚本>")` 走宿主 Python，**不用** `code.execute`（在沙箱里）。
-- 操作步骤写到 `~/.zhiwei/workspace/desktop-<task>.py`，再 `shell.exec` 执行；不用 `python -c` 拼复杂多行。
+- 操作步骤写到 `<workspace>/desktop-<task>.py`，再 `shell.exec` 执行；不用 `python -c` 拼复杂多行。
 
 ## 本机依赖检查
 
@@ -28,7 +28,7 @@ pip install pyautogui pywinauto pillow
 
 ### 1. 写脚本
 
-`file.write(path="~/.zhiwei/workspace/desktop-<task>.py", content=...)` 写入完整脚本。
+`file.write(path="<workspace>/desktop-<task>.py", content=...)` 写入完整脚本。
 
 ### 2. 执行
 

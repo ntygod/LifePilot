@@ -2,6 +2,8 @@ package com.lifepilot.meta.infra.shell;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.sandbox.config.SandboxConfigProperties;
+import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -33,7 +35,7 @@ class ShellExecToolExecutorTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        executor = new ShellExecToolExecutor(properties, null, workspaceResolver);
+        executor = new ShellExecToolExecutor(properties, null, workspaceResolver, null);
         backgroundProcessManager = null;
     }
 
@@ -96,6 +98,37 @@ class ShellExecToolExecutorTest {
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("安全策略拒绝");
+    }
+
+    // ─────────────────────────────────────────────
+    //  CommandGuard 接入测试 — shell.exec 不能绕过 code.execute 的护栏
+    // ─────────────────────────────────────────────
+
+    @Test
+    void execute_HARDLINE命令被护栏永久阻断() {
+        // 注入真实 CommandGuard，验证 shell.exec 走 HARDLINE 阻断（与 code.execute 同款语义）
+        var guard = new CommandGuard(new SandboxConfigProperties());
+        var executorWithGuard = new ShellExecToolExecutor(properties, null, workspaceResolver, guard);
+        // 选 systemctl poweroff：HARDLINE 命中（关机），不在 ShellExec blacklist 内，能走到 guard 层
+        ToolInput input = buildInput(Map.of("command", "systemctl poweroff"));
+
+        ToolResult result = executorWithGuard.execute(input);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("永久阻断");
+    }
+
+    @Test
+    void execute_DANGEROUS命令被护栏拒绝() {
+        var guard = new CommandGuard(new SandboxConfigProperties());
+        var executorWithGuard = new ShellExecToolExecutor(properties, null, workspaceResolver, guard);
+        // git reset --hard 是 DANGEROUS（默认拒绝）
+        ToolInput input = buildInput(Map.of("command", "git reset --hard HEAD~5"));
+
+        ToolResult result = executorWithGuard.execute(input);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("危险操作");
     }
 
     // ─────────────────────────────────────────────
@@ -219,7 +252,7 @@ class ShellExecToolExecutorTest {
     void execute_输出超过maxOutputLength被截断_Unix() {
         // 设置极小的 maxOutputLength
         properties.getInfra().getShell().setMaxOutputLength(10);
-        executor = new ShellExecToolExecutor(properties, null, workspaceResolver);
+        executor = new ShellExecToolExecutor(properties, null, workspaceResolver, null);
 
         // 生成超过 10 字符的输出
         ToolInput input = buildInput(Map.of("command", "echo abcdefghijklmnopqrstuvwxyz"));
@@ -234,7 +267,7 @@ class ShellExecToolExecutorTest {
     @Test
     void execute_yieldMs快速失败时保留真实exitCode与双通道输出() {
         backgroundProcessManager = new BackgroundProcessManager(properties.getInfra().getProcess(), null);
-        executor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver);
+        executor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, null);
 
         ToolInput input = buildInput(Map.of(
                 "command", buildStdoutStderrFailCommand(7),

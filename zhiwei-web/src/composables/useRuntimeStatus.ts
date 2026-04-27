@@ -1,0 +1,227 @@
+/**
+ * 捆绑 Python 运行时状态 composable。
+ *
+ * <p>封装运行时状态轮询 + 安装进度 SSE 订阅：
+ * <ul>
+ *   <li>{@link refresh} — 主动拉取一次最新状态</li>
+ *   <li>{@link install} — 触发安装并自动订阅进度流</li>
+ *   <li>{@link subscribeProgress} — 仅订阅进度流（用于刷新页面时恢复 UI）</li>
+ * </ul>
+ * 组件卸载时自动关闭 EventSource，避免泄漏。</p>
+ *
+ * @author zsg
+ * @since 2026-04-26
+ */
+import { ref, onUnmounted } from 'vue'
+import { runtimeApi, type RuntimeStatus } from '@/api/runtime'
+import { logger } from '@/utils/logger'
+
+/**
+ * 运行时状态 composable —— 查询 Python 运行时状态、触发安装、订阅 SSE 进度。
+ *
+ * <h3>error.value 语义</h3>
+ * <p>仅指**传输层错误**（网络断开 / refresh 调用失败 / 进度数据解析失败）。
+ * 业务失败原因（如下载超时、SHA-256 校验失败）请读 {@link status.value.reason}
+ * （当 status.value.status === 'INSTALL_FAILED' 时该字段含错误描述）。</p>
+ *
+ * <h3>调用方约定</h3>
+ * <p>本 composable 不在 onMounted 自动建连，调用方需在合适时机：
+ * <ul>
+ *   <li>调 {@link refresh} 拉取一次状态（通常在 onMounted）</li>
+ *   <li>调 {@link install} 启动安装（会自动 subscribeProgress）</li>
+ *   <li>调 {@link subscribeProgress} 单独订阅 SSE 进度（罕见，install 已包含）</li>
+ * </ul>
+ * 与 {@link useMcpStatusStream}（onMounted 自动 connect）的风格不同，因为 runtime
+ * 状态只在 INSTALLING 阶段才需要 SSE，平时拉一次足够。</p>
+ *
+ * <h3>install() 订阅竞态</h3>
+ * <p>install() 先 await POST 再 subscribeProgress，理论上若安装极快（本地缓存命中），
+ * 后端可能在 HTTP 200 返回前已 emit 完所有 progress 事件，前端订阅时已错过。
+ * 生产环境 250MB 下载不会秒完成，可忽略；如未来需要兜底可在 install Promise resolve
+ * 后启动一次性 setTimeout(refresh, 1000)。</p>
+ */
+export function useRuntimeStatus() {
+  const status = ref<RuntimeStatus | null>(null)
+  const error = ref<string | null>(null)
+  let eventSource: EventSource | null = null
+
+  /** 主动拉取一次状态；失败时把错误对象的 message（或字符串化结果）写入 error。 */
+  async function refresh(): Promise<void> {
+    try {
+      status.value = await runtimeApi.status()
+      error.value = null
+    } catch (e) {
+      error.value = extractErrorMessage(e)
+    }
+  }
+
+  /**
+   * 订阅安装进度 SSE：
+   * <ul>
+   *   <li>{@code progress} 事件 → 更新 {@link status}；{@code phase === 'done'}
+   *       视为终态，refresh 后关闭流</li>
+   *   <li>{@code failed} 事件 → 写入 {@link error} 并 refresh 拉一次终态</li>
+   * </ul>
+   * 重复调用会先关闭旧连接，避免重复订阅。
+   */
+  function subscribeProgress(): void {
+    eventSource?.close()
+    eventSource = new EventSource(runtimeApi.installProgressUrl())
+
+    eventSource.addEventListener('progress', (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data) as RuntimeStatus
+        status.value = data
+        if (data.phase === 'done') {
+          void refresh()
+          eventSource?.close()
+          eventSource = null
+        }
+      } catch (err) {
+        logger.error('运行时安装进度解析失败:', err)
+        error.value = '进度数据解析失败，请刷新查看最终状态'
+      }
+    })
+
+    eventSource.addEventListener('failed', (e) => {
+      const raw = (e as MessageEvent).data as string
+      // 后端 emitFailed 推送的是裸字符串 reason；尝试 JSON.parse 兼容未来可能的对象封装
+      let reason: string
+      try {
+        const parsed = JSON.parse(raw)
+        reason = typeof parsed === 'string' ? parsed : String(parsed)
+      } catch {
+        reason = raw
+      }
+      error.value = reason
+      eventSource?.close()
+      eventSource = null
+      void refresh()
+    })
+
+    eventSource.onerror = () => {
+      // EventSource 关闭时（包括服务端 complete）也会触发 onerror，readyState=CLOSED；
+      // 仅在连接还在 CONNECTING（重连中，意味着原连接被异常打断）时才视作真实网络问题
+      if (eventSource?.readyState === EventSource.CONNECTING) {
+        error.value = '安装进度连接已断开，请刷新查看最终状态'
+      }
+      eventSource?.close()
+      eventSource = null
+    }
+  }
+
+  /**
+   * 触发安装并立即订阅进度流。
+   *
+   * <p>POST 失败（409 并发安装中 / 5xx 后端故障 / 网络断开）会写入 {@link error}，
+   * 避免 uncaught promise rejection 让用户面对"按钮没反应"。</p>
+   * <p>每次调用先清空旧 error，避免重试时残留上一次的错误消息。</p>
+   *
+   * <h3>订阅时序</h3>
+   * <p><b>先 subscribe 再 POST</b>：避免快速失败场景下后端 emitFailed 在前端订阅前就执行
+   * （emitters.clear 后 list 永远为空，前端永远收不到失败事件，UI 卡在原状态）。</p>
+   * <p><b>finally refresh</b>：兜底拉一次最新 status，保证即使 SSE race 错过事件，
+   * UI 也能反映 INSTALL_FAILED + reason 终态。</p>
+   */
+  async function install(): Promise<void> {
+    error.value = null
+    subscribeProgress()
+    try {
+      await runtimeApi.install()
+    } catch (e) {
+      error.value = extractErrorMessage(e)
+      eventSource?.close()
+      eventSource = null
+    } finally {
+      // 兜底：不管 SSE 收没收到事件，拉一次后端真实 status 确保 UI 反映终态
+      // （404 / 极速失败时后端可能已写入 INSTALL_FAILED 但 SSE emit 在前端订阅前完成）
+      await refresh()
+    }
+  }
+
+  onUnmounted(() => {
+    eventSource?.close()
+    eventSource = null
+  })
+
+  return { status, error, refresh, install, subscribeProgress, extractErrorMessage, humanizeInstallError }
+}
+
+/** 从未知错误对象提取 message：优先用 ApiResponse error.message，回落到字符串化。 */
+export function extractErrorMessage(e: unknown): string {
+  if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') {
+    return (e as { message: string }).message
+  }
+  return String(e)
+}
+
+/**
+ * 把后端 install 失败的原始错误消息归类为对用户友好的解释。
+ *
+ * <p>分四类：</p>
+ * <ul>
+ *   <li>HTTP 4xx —— 资源问题（release 未发布、URL 配置错）</li>
+ *   <li>HTTP 5xx 或网络层错误 —— 服务器/网络故障</li>
+ *   <li>SHA-256 校验失败 —— 文件损坏</li>
+ *   <li>磁盘/解压问题 —— 本地环境</li>
+ * </ul>
+ * 找不到匹配则返回通用兜底文案。
+ *
+ * @param reason 后端返回的原始错误（如 "HTTP 404 for https://..."）
+ * @returns title（友好标题）/ hint（可操作建议）/ technical（保留原始消息供折叠展示）
+ */
+export interface InstallErrorView {
+  title: string
+  hint: string
+  technical: string
+}
+
+export function humanizeInstallError(reason: string | null | undefined): InstallErrorView {
+  const raw = reason ?? ''
+  // HTTP 404 / 410 → 资源不存在（release 未发布或 URL 配置错）
+  if (/HTTP\s+(404|410)/i.test(raw)) {
+    return {
+      title: '运行时安装包暂未发布',
+      hint: '当前版本的代码执行环境还未在服务器上发布。请稍后再试，或联系管理员确认发布进度。',
+      technical: raw,
+    }
+  }
+  // HTTP 5xx → 服务器暂时性故障
+  if (/HTTP\s+5\d{2}/i.test(raw)) {
+    return {
+      title: '下载服务器暂时无响应',
+      hint: 'GitHub 或下载服务器可能正在维护，请稍后重试。',
+      technical: raw,
+    }
+  }
+  // SHA-256 校验失败 → 下载文件被破坏
+  if (/SHA-?256/i.test(raw)) {
+    return {
+      title: '下载文件校验未通过',
+      hint: '下载过程中文件可能损坏，请重试。如多次失败请检查网络稳定性。',
+      technical: raw,
+    }
+  }
+  // 网络层错误：连接超时 / 拒绝 / DNS 失败
+  if (/(timeout|timed out|connection refused|unknownhost|unreachable|网络|连接|无法解析)/i.test(raw)) {
+    return {
+      title: '无法连接到下载服务器',
+      hint: '请检查本机网络或代理设置，确认能访问 GitHub。',
+      technical: raw,
+    }
+  }
+  // 磁盘空间 / 解压失败
+  if (/(disk|space|磁盘|空间|extract|解压|tar\s+entry|越权)/i.test(raw)) {
+    return {
+      title: '本地存储或解压失败',
+      hint: '请确认磁盘空间充足（至少 1GB 可用）且对安装目录有写入权限。',
+      technical: raw,
+    }
+  }
+  // 兜底
+  return {
+    title: '安装失败',
+    hint: '请稍后重试。如多次失败请查看下方技术详情或联系管理员。',
+    technical: raw,
+  }
+}

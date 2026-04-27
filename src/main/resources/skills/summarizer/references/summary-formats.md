@@ -21,7 +21,7 @@ file.read(path="<绝对路径>", maxChars=10000)          超长文档分段
 按格式输出
 ```
 
-`file.read` 已自动按扩展名解析 docx / xlsx / pptx / pdf / md / csv，**不需要**额外步骤。仅可访问 `~/.zhiwei/skills` 与 `~/.zhiwei/workspace`。
+`file.read` 已自动按扩展名解析 docx / xlsx / pptx / pdf / md / csv，**不需要**额外步骤。可访问范围由工具自身约束（工作区与 skills 目录），不需要在 prompt 里硬约束路径。
 
 ## 3. 知识库摘要（"会话绑定的资料里 X 是怎么说的"）
 

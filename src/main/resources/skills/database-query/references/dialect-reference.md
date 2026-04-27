@@ -48,7 +48,7 @@ shell.exec(command="psql -h <host> -U <user> -d <database> -c 'SELECT <cols> FRO
 | MySQL CSV | `mysql -h <host> -u <user> -p"$DB_PASS" -B --batch -e '<select>' <db> \| sed 's/\\t/,/g' > <out.csv>` |
 | PostgreSQL CSV | `psql -h <host> -U <user> -d <db> -c "\\copy (<select>) TO '<out.csv>' WITH CSV HEADER"` |
 
-> 落盘路径：`file.write` 仅允许 `~/.zhiwei/workspace` / `~/.zhiwei/skills`；CLI 重定向也尽量写到工作区下。
+> 落盘路径：`file.write` 的允许范围由工具自身约束，调用时直接给文件名即可；CLI 重定向也尽量写到工作区下。
 
 ## 写操作的影响范围预演
 

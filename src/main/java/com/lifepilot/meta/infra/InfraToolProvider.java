@@ -34,7 +34,9 @@ import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
+import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
@@ -50,7 +52,9 @@ import java.util.List;
  * 基础工具提供者 — 编排各子 ToolProvider，统一注册到 DynamicToolRegistry。
  *
  * <p>本类不直接构建任何工具，仅负责：创建子 Provider → 委托构建 → 注册。
- * 所有基础工具 tags 含 {@code "infrastructure"}，始终对所有调用者可用。</p>
+ * 各子 Provider 自行决定工具暴露条件：{@link CodeToolProvider} / {@link CodeKernelToolProvider}
+ * 受 {@code lifepilot.sandbox.enabled} 开关与 {@link PythonRuntimeManager} 注入控制，
+ * 其余按 {@link Nullable} 依赖是否注入按需注册（如 channel / cron / browser session 不存在时静默跳过）。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -80,6 +84,8 @@ public class InfraToolProvider {
     @Nullable private final SkillPathWhitelist skillPathWhitelist;
     private final SsrfGuard ssrfGuard;
     private final InteractiveElementIndexer interactiveElementIndexer;
+    @Nullable private final PythonRuntimeManager pythonRuntimeManager;
+    @Nullable private final CommandGuard commandGuard;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -101,7 +107,9 @@ public class InfraToolProvider {
                              @Nullable ChatSessionRepository chatSessionRepository,
                              @Nullable SkillPathWhitelist skillPathWhitelist,
                              SsrfGuard ssrfGuard,
-                             InteractiveElementIndexer interactiveElementIndexer) {
+                             InteractiveElementIndexer interactiveElementIndexer,
+                             @Nullable PythonRuntimeManager pythonRuntimeManager,
+                             @Nullable CommandGuard commandGuard) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -123,6 +131,8 @@ public class InfraToolProvider {
         this.skillPathWhitelist = skillPathWhitelist;
         this.ssrfGuard = ssrfGuard;
         this.interactiveElementIndexer = interactiveElementIndexer;
+        this.pythonRuntimeManager = pythonRuntimeManager;
+        this.commandGuard = commandGuard;
     }
 
     /**
@@ -201,25 +211,36 @@ public class InfraToolProvider {
             }
         }
 
-        // Shell 工具（shell.exec + shell.process）
-        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver);
+        // Shell 工具（shell.exec + shell.process）— 注入 commandGuard 让 shell.exec 也走 HARDLINE/DANGEROUS 护栏
+        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, commandGuard);
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 
-        // 代码执行工具
-        PersistentKernelManager kernelManager = null;
-        var kernelConfig = properties.getInfra().getKernel();
-        if (kernelConfig.isEnabled()) {
-            kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager);
-        }
-        var codeToolProvider = new CodeToolProvider(
-                properties, sandboxSessionManager, codeValidator, sandboxRepository, kernelManager);
-        totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
+        // 代码执行工具 — kernel 与 sandbox 共享同一捆绑 Python 路径
+        // 仅在 PythonRuntimeManager 可用（lifepilot.sandbox.enabled=true）时注册 code.execute 与 code.kernel：
+        // sandbox 禁用时 SandboxAutoConfiguration 不注册 PythonRuntimeManager bean，
+        // 此时强行构建 PersistentKernelManager 会触发 Objects.requireNonNull NPE，
+        // 让整个 Spring Context 启动失败 —— 对面向大众用户的产品不可接受。
+        // 合理产品降级：sandbox 禁用本就意味着用户不要代码执行能力，跳过这两类工具即可。
+        if (pythonRuntimeManager != null) {
+            PersistentKernelManager kernelManager = null;
+            var kernelConfig = properties.getInfra().getKernel();
+            if (kernelConfig.isEnabled()) {
+                kernelManager = new PersistentKernelManager(kernelConfig, tmuxSessionManager, pythonRuntimeManager);
+            }
+            var codeToolProvider = new CodeToolProvider(
+                    properties, sandboxSessionManager, codeValidator, sandboxRepository,
+                    kernelManager, pythonRuntimeManager, commandGuard);
+            totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
 
-        // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册
-        if (kernelManager != null) {
-            var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
-            totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+            // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册
+            if (kernelManager != null) {
+                var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
+                totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
+            }
+        } else {
+            log.info("Sandbox 已禁用（lifepilot.sandbox.enabled=false 或 PythonRuntimeManager bean 不可用），"
+                    + "跳过代码执行（code.execute）与内核管理（code.kernel）工具注册");
         }
 
         log.info("基础工具注册完成: count={}", totalTools);

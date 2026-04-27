@@ -1,16 +1,23 @@
 package com.lifepilot.meta.infra.code.kernel;
 
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link CodeKernelToolProvider} 单元测试。
  *
- * <p>验证 {@code code.kernel} 单工具多 action 的元数据正确性。</p>
+ * <p>验证 {@code code.kernel} 单工具多 action 的元数据正确性。
+ * {@link PythonRuntimeManager} 通过 mock 桩出 Ready 状态，避免依赖真实捆绑运行时。</p>
  *
  * @author zsg
  * @since 2026-03-31
@@ -25,7 +32,11 @@ class CodeKernelToolProviderTest {
         config.setMaxConcurrentKernels(3);
         config.setTtlMinutes(30);
         config.setCleanupIntervalSeconds(3600);
-        this.manager = new PersistentKernelManager(config, null);
+        var runtimeManager = mock(PythonRuntimeManager.class);
+        // 仅元数据测试不会触发 kernel 创建，使用 lenient stub 避免 UnnecessaryStubbingException
+        lenient().when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
+        lenient().when(runtimeManager.getPythonExecutable()).thenReturn(Paths.get("python3"));
+        this.manager = new PersistentKernelManager(config, null, runtimeManager);
         this.provider = new CodeKernelToolProvider(manager);
     }
 

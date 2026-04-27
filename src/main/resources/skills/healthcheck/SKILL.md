@@ -50,7 +50,7 @@ metadata:
 
 各路径要点：
 
-- **分平台选命令**：Windows PowerShell（`Get-Process` / `Get-Counter`）/ Linux bash（`top` / `df` / `free` / `ss`），见参考
+- **按目标平台选命令**：跑前确认是 Windows 还是 Linux/macOS，命令选对应平台标准命令；具体速查见参考
 - **给具体修复命令**：不只说"内存不足"，给"杀进程 X / 清缓存 / 加 swap"等具体动作
 - **分级诊断报告**：
   - 严重（立即处理）：服务 down / 磁盘 > 95% / 内存 > 90%

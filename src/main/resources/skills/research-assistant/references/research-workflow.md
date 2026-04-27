@@ -68,7 +68,7 @@ web.fetch(url="<来源 2>", selector="article")  独立来源
 | `knowledge.search(query=..., top_k=...)` | 已绑会话知识库时优先用，命中精度比 web 高 |
 | `memory(action="search", query=...)` | 找用户已有调研结论，避免重复劳动 |
 | `memory(action="create", entityType="TOPIC", name=..., description=...)` | 长期价值结论入库（一句话核心结论 + 关键来源） |
-| `file.write(path=..., content=...)` | 长报告落盘到 ~/.zhiwei/workspace |
+| `file.write(path=..., content=...)` | 长报告落盘到工作区下（路径取自工具返回的工作区字段） |
 
 ## 输出格式选择
 

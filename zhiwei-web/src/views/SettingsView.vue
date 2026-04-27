@@ -8,6 +8,7 @@ import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
 import SettingsModelsView from '@/views/SettingsModelsView.vue'
 import SettingsPermissionsView from '@/views/SettingsPermissionsView.vue'
 import SettingsProactiveView from '@/views/SettingsProactiveView.vue'
+import CodeExecutionSettings from '@/views/settings/CodeExecutionSettings.vue'
 import AnalyticsUsageView from '@/views/AnalyticsUsageView.vue'
 import AnalyticsAgentsView from '@/views/AnalyticsAgentsView.vue'
 import AnalyticsToolsView from '@/views/AnalyticsToolsView.vue'
@@ -23,6 +24,7 @@ const viewMap: Record<string, Component> = {
   '/settings/channels': SettingsChannelsView,
   '/settings/permissions': SettingsPermissionsView,
   '/settings/proactive': SettingsProactiveView,
+  '/settings/code-execution': CodeExecutionSettings,
   '/analytics/usage': AnalyticsUsageView,
   '/analytics/agents': AnalyticsAgentsView,
   '/analytics/tools': AnalyticsToolsView,
@@ -37,6 +39,7 @@ const labelMap: Record<string, string> = {
   '/settings/channels': '集成渠道',
   '/settings/permissions': '授权与执行',
   '/settings/proactive': '主动助手',
+  '/settings/code-execution': '代码执行环境',
   '/analytics/usage': '用量统计',
   '/analytics/agents': '智能体分析',
   '/analytics/tools': '工具统计',

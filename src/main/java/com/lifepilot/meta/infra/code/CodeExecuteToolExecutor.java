@@ -3,9 +3,13 @@ package com.lifepilot.meta.infra.code;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.sandbox.booter.SandboxBooter;
+import com.lifepilot.sandbox.guard.CommandGuard;
+import com.lifepilot.sandbox.guard.GuardResult;
 import com.lifepilot.sandbox.model.*;
 import com.lifepilot.sandbox.model.ValidationResult;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.model.*;
@@ -49,16 +53,22 @@ public class CodeExecuteToolExecutor {
     private final SandboxRepository repository;
     @Nullable
     private final PersistentKernelManager kernelManager;
+    @Nullable
+    private final PythonRuntimeManager runtimeManager;
+    @Nullable
+    private final CommandGuard commandGuard;
 
     public CodeExecuteToolExecutor(MetaProperties properties,
                                    @Nullable SandboxSessionManager sessionManager,
                                    @Nullable CodeValidator validator,
                                    @Nullable SandboxRepository repository) {
-        this(properties, sessionManager, validator, repository, null);
+        this(properties, sessionManager, validator, repository, null, null, null);
     }
 
     /**
      * 创建代码执行工具（支持持久内核路由）。
+     *
+     * <p>4-arg / 5-arg 重载链向新构造器委托，向后兼容历史调用方。</p>
      *
      * @param properties       配置属性
      * @param sessionManager   沙箱会话管理器（可选）
@@ -71,11 +81,41 @@ public class CodeExecuteToolExecutor {
                                    @Nullable CodeValidator validator,
                                    @Nullable SandboxRepository repository,
                                    @Nullable PersistentKernelManager kernelManager) {
+        this(properties, sessionManager, validator, repository, kernelManager, null, null);
+    }
+
+    /**
+     * 创建代码执行工具（含 runtime 状态检查与命令护栏）。
+     *
+     * <p>execute() 入口会先调用 {@link PythonRuntimeManager#checkStatus()}：
+     * 非 {@link RuntimeStatus.Ready} 直接返回错误，引导用户去设置页启用运行时。</p>
+     *
+     * <p>process 后端路径会先经过 {@link CommandGuard#check(String, String)}：
+     * HARDLINE 命中无条件阻断；DANGEROUS 命中（非 yolo 模式）阻断。
+     * docker 后端在 CommandGuard 内部已被 bypass，无需在此区分。</p>
+     *
+     * @param properties       配置属性
+     * @param sessionManager   沙箱会话管理器（可选）
+     * @param validator        代码预检器（可选）
+     * @param repository       审计仓库（可选）
+     * @param kernelManager    持久内核管理器（可选），不为 null 时支持 kernelId 路由
+     * @param runtimeManager   捆绑 Python 运行时管理器（可选），不为 null 时执行入口校验状态
+     * @param commandGuard     命令护栏（可选），不为 null 时执行 process / kernel 路径加 guard 检查
+     */
+    public CodeExecuteToolExecutor(MetaProperties properties,
+                                   @Nullable SandboxSessionManager sessionManager,
+                                   @Nullable CodeValidator validator,
+                                   @Nullable SandboxRepository repository,
+                                   @Nullable PersistentKernelManager kernelManager,
+                                   @Nullable PythonRuntimeManager runtimeManager,
+                                   @Nullable CommandGuard commandGuard) {
         this.codeConfig = properties.getInfra().getCodeExecute();
         this.sessionManager = sessionManager;
         this.validator = validator;
         this.repository = repository;
         this.kernelManager = kernelManager;
+        this.runtimeManager = runtimeManager;
+        this.commandGuard = commandGuard;
     }
 
     /**
@@ -105,6 +145,16 @@ public class CodeExecuteToolExecutor {
                 .map(Number::intValue)
                 .orElse(DEFAULT_TIMEOUT_SECONDS);
 
+        // ── 运行时状态检查 ──
+        // runtimeManager 注入时校验捆绑 Python 运行时是否就绪，未就绪给出友好引导让用户去设置页启用
+        if (runtimeManager != null) {
+            var status = runtimeManager.checkStatus();
+            if (!(status instanceof RuntimeStatus.Ready)) {
+                log.warn("代码执行环境未就绪: status={}", status);
+                return ToolResult.error("代码执行环境未启用，请在设置页启用");
+            }
+        }
+
         // ── 持久内核路由 ──
         // 当 kernelId 参数存在且 PersistentKernelManager 可用时，路由到持久内核
         Optional<String> kernelIdOpt = input.getOptionalParam("kernelId", String.class);
@@ -119,6 +169,22 @@ public class CodeExecuteToolExecutor {
                         log.warn("持久内核代码预检未通过: kernelId={}, violations={}", kernelIdOpt.get(), violationMsg);
                         return ToolResult.error("代码预检未通过: " + violationMsg);
                     }
+                }
+            }
+            // 命令护栏：内核路径运行在本机进程中，按 process 后端走 guard
+            if (commandGuard != null) {
+                GuardResult guardResult = commandGuard.check(code, SandboxBooter.TYPE_PROCESS);
+                if (guardResult.isBlocked()) {
+                    String errorMsg = buildGuardErrorMessage(guardResult);
+                    log.warn("持久内核命令被护栏阻断: kernelId={}, decision={}, rule={}",
+                            kernelIdOpt.get(), guardResult.decision(), guardResult.matchedRule());
+                    // 与沙箱路径对称：guard 阻断写 REJECTED 审计，便于运维事后排查"谁通过 kernelId 试图执行什么"
+                    String guardCodeHash = sha256(code);
+                    Language.fromString(languageStr).ifPresent(lang ->
+                            persistRecord(kernelIdOpt.get(), lang, guardCodeHash, code.length(),
+                                    "kernel", false, 1,
+                                    null, null, null, null, "REJECTED", errorMsg));
+                    return ToolResult.error(errorMsg);
                 }
             }
             return executeViaKernel(kernelIdOpt.get(), languageStr, code, timeoutSeconds);
@@ -157,6 +223,21 @@ public class CodeExecuteToolExecutor {
         } catch (IllegalStateException e) {
             log.warn("获取沙箱实例失败: sessionId={}, error={}", sessionId, e.getMessage());
             return ToolResult.error("沙箱实例获取失败: " + e.getMessage());
+        }
+
+        // 命令护栏：仅 process 后端走 guard，docker 后端在 CommandGuard 内部已 bypass
+        if (commandGuard != null) {
+            GuardResult guardResult = commandGuard.check(code, booter.type());
+            if (guardResult.isBlocked()) {
+                String errorMsg = buildGuardErrorMessage(guardResult);
+                log.warn("命令被护栏阻断: sessionId={}, booterType={}, decision={}, rule={}",
+                        sessionId, booter.type(), guardResult.decision(), guardResult.matchedRule());
+                // 写入审计：作为一种 REJECTED 记录，便于事后审计违规命令
+                persistRecord(sessionId, language, codeHash, code.length(),
+                        booter.type(), false, 1,
+                        null, null, null, null, "REJECTED", errorMsg);
+                return ToolResult.error(errorMsg);
+            }
         }
 
         // 构建执行请求并执行
@@ -313,6 +394,24 @@ public class CodeExecuteToolExecutor {
         return violations.stream()
                 .map(v -> "[%s] 第%d行: %s".formatted(v.severity(), v.lineNumber(), v.description()))
                 .collect(Collectors.joining("; "));
+    }
+
+    /**
+     * 根据 GuardResult 决策类型生成友好错误信息。
+     *
+     * <p>HARDLINE 强调"不可恢复"，DANGEROUS 强调"危险操作"，让上层 LLM 与用户能区分严重程度。</p>
+     *
+     * <p>调用契约：本方法仅在 {@link GuardResult#isBlocked()} 为 true 时被调用，
+     * 因此 {@code APPROVED} 分支永不可达；若触达说明 {@code isBlocked()} 行为反常，
+     * 抛出 {@link IllegalStateException} 让故障早暴露而非吞掉返回兜底字符串。</p>
+     */
+    private static String buildGuardErrorMessage(GuardResult guardResult) {
+        return switch (guardResult.decision()) {
+            case BLOCKED_HARDLINE -> "此命令被永久阻断（不可恢复操作）：" + guardResult.description();
+            case BLOCKED_DANGEROUS -> "此命令被拒绝执行（危险操作）：" + guardResult.description();
+            case APPROVED -> throw new IllegalStateException(
+                    "buildGuardErrorMessage 不应处理 APPROVED 结果（仅在 isBlocked() 后调用）: " + guardResult);
+        };
     }
 
     /**

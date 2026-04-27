@@ -6,6 +6,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.meta.infra.web.WebSearchConfig;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.file.Paths;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,9 +49,15 @@ class InfraToolProviderTest {
         ));
         var workspaceResolver = new WorkspaceResolver(null, "");
         var indexer = new InteractiveElementIndexer(new ObjectMapper());
-        // 构造签名：21 参数 — workspaceResolver 位于第 16 位，之后依次是 attachmentRepository /
-        // chatSessionRepository / skillPathWhitelist / ssrfGuard / interactiveElementIndexer。
-        // 浏览器能力补全（PR #99）在 develop 19 参数基础上追加 ssrfGuard 与 interactiveElementIndexer。
+        // PersistentKernelManager 现在强依赖 PythonRuntimeManager，桩出 Ready 状态供 kernel 注册路径使用
+        PythonRuntimeManager runtimeManager = mock(PythonRuntimeManager.class);
+        when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
+        when(runtimeManager.getPythonExecutable()).thenReturn(Paths.get("python3"));
+        // 构造签名：23 参数 — workspaceResolver 位于第 16 位，之后依次是 attachmentRepository /
+        // chatSessionRepository / skillPathWhitelist / ssrfGuard / interactiveElementIndexer /
+        // pythonRuntimeManager / commandGuard。
+        // 浏览器能力补全（PR #99）在 develop 19 参数基础上追加 ssrfGuard 与 interactiveElementIndexer；
+        // Code Execution Runtime（Task 13）追加 pythonRuntimeManager 与 commandGuard。
         provider = new InfraToolProvider(
                 properties,
                 webSearchConfigProvider,
@@ -56,7 +65,8 @@ class InfraToolProviderTest {
                 workspaceResolver,
                 null, null, null,
                 com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
-                indexer);
+                indexer,
+                runtimeManager, null);
     }
 
     @Test
@@ -163,5 +173,51 @@ class InfraToolProviderTest {
         assertThat(toolMap.get("file.write").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
         assertThat(toolMap.get("file.edit").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
         assertThat(toolMap.get("file.manage").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+    }
+
+    @Test
+    void Sandbox禁用时不创建kernel与code工具() {
+        // 模拟 lifepilot.sandbox.enabled=false：SandboxAutoConfiguration 不注册任何 bean，
+        // pythonRuntimeManager 注入为 null —— 之前会让 PersistentKernelManager 构造器 NPE 崩溃，
+        // 现在应当优雅降级，仅跳过 code.execute / code.kernel 注册，其他工具仍正常构建。
+        WebSearchConfigProvider webSearchConfigProvider = mock(WebSearchConfigProvider.class);
+        when(webSearchConfigProvider.getConfig()).thenReturn(new WebSearchConfig(
+                "https://api.tavily.com/search",
+                "tavily",
+                "",
+                5,
+                10,
+                30,
+                "basic",
+                "general",
+                true
+        ));
+        var workspaceResolver = new WorkspaceResolver(null, "");
+        var indexer = new InteractiveElementIndexer(new ObjectMapper());
+        var sandboxDisabledProvider = new InfraToolProvider(
+                properties,
+                webSearchConfigProvider,
+                null, null, null, null, null, null, null, null, null, null, null, null, null,
+                workspaceResolver,
+                null, null, null,
+                com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
+                indexer,
+                null, // pythonRuntimeManager == null（sandbox 禁用）
+                null);
+
+        DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
+
+        // 关键断言：构造与 registerTools 都不抛 NPE，应用可正常启动
+        sandboxDisabledProvider.registerTools(registry);
+
+        ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
+        verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
+
+        var toolIds = captor.getAllValues().stream().map(BuiltinTool::id).toList();
+        // 代码执行 / 内核管理工具应被跳过
+        assertThat(toolIds).doesNotContain("code.execute", "code.kernel");
+        // 不依赖 sandbox 的工具仍正常注册
+        assertThat(toolIds).contains("web.search", "web.fetch", "shell.exec",
+                "browser", "file.read", "file.write", "file.list", "file.edit", "file.manage");
     }
 }

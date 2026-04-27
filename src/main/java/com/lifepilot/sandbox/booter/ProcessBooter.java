@@ -18,6 +18,8 @@ import com.lifepilot.sandbox.model.ExecutionRequest;
 import com.lifepilot.sandbox.model.ExecutionResult;
 import com.lifepilot.sandbox.model.ExecutionState;
 import com.lifepilot.sandbox.model.Language;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import com.lifepilot.sandbox.util.SandboxUtils;
 
 /**
@@ -25,6 +27,11 @@ import com.lifepilot.sandbox.util.SandboxUtils;
  *
  * <p>零外部依赖，默认方案。通过 ProcessBuilder 在隔离临时目录中执行代码，
  * 清洗环境变量，Virtual Thread 异步读取输出，超时强制终止。</p>
+ *
+ * <p>Python 路径强制使用 {@link PythonRuntimeManager#getPythonExecutable()}
+ * 提供的捆绑运行时；{@link #boot(Path)} 会先校验运行时状态为 {@link RuntimeStatus.Ready}，
+ * 否则启动失败。Node / Shell 仍走系统 PATH（前者读 {@code runtimePaths.javascript}，
+ * 后者按 OS 选 cmd / bash）。</p>
  *
  * <p>安全措施：</p>
  * <ul>
@@ -44,16 +51,24 @@ public final class ProcessBooter implements SandboxBooter {
     private static final Logger log = LoggerFactory.getLogger(ProcessBooter.class);
 
     private final SandboxConfigProperties config;
+    private final PythonRuntimeManager runtimeManager;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private volatile Path workingDirectory;
 
-    public ProcessBooter(SandboxConfigProperties config) {
+    public ProcessBooter(SandboxConfigProperties config, PythonRuntimeManager runtimeManager) {
         this.config = config;
+        this.runtimeManager = runtimeManager;
     }
 
     @Override
     public CompletableFuture<Void> boot(Path workingDirectory) {
         this.workingDirectory = workingDirectory;
+        // 启动前先校验捆绑 Python 运行时状态：未就绪直接失败，避免后续 execute 用错误路径
+        var status = runtimeManager.checkStatus();
+        if (!(status instanceof RuntimeStatus.Ready)) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Python 运行时未就绪: " + status));
+        }
         log.info("ProcessBooter 启动完成: workingDirectory={}", workingDirectory);
         return CompletableFuture.completedFuture(null);
     }
@@ -75,35 +90,39 @@ public final class ProcessBooter implements SandboxBooter {
             Files.writeString(scriptFile, request.code(), StandardCharsets.UTF_8);
             log.debug("临时脚本文件已创建: path={}", scriptFile);
 
-            // 2. 查找运行时命令
-            String runtimeCommand = config.getRuntimePaths()
-                    .getOrDefault(request.language().name().toLowerCase(), request.language().runtimeCommand());
+            // 2. 按语言构建执行命令（Python 走捆绑运行时，Node / Shell 走系统 PATH）
+            List<String> command = buildCommand(request.language(), scriptFile);
 
-            // 3. 构建执行命令
-            List<String> command = buildCommand(runtimeCommand, scriptFile);
-
-            // 4. 构建 ProcessBuilder
+            // 3. 构建 ProcessBuilder
             var pb = new ProcessBuilder(command);
             pb.directory(request.workingDirectory().toFile());
 
-            // 5. 清洗环境变量：仅保留 PATH
+            // 4. 清洗环境变量：仅保留 PATH
             String pathValue = pb.environment().get("PATH");
             pb.environment().clear();
             if (pathValue != null) {
                 pb.environment().put("PATH", pathValue);
             }
 
-            // 6. 启动进程
+            // 5. Python 强制 UTF-8 模式：避免 Windows 默认 GBK 编码导致中文路径 / 中文输出乱码
+            //    PYTHONUTF8=1 让 sys.getfilesystemencoding()/sys.stdout.encoding 都用 UTF-8
+            //    PYTHONIOENCODING=utf-8 兜底覆盖未识别 PYTHONUTF8 的旧版本
+            if (request.language() == Language.PYTHON) {
+                pb.environment().put("PYTHONUTF8", "1");
+                pb.environment().put("PYTHONIOENCODING", "utf-8");
+            }
+
+            // 5. 启动进程
             Process process = pb.start();
             log.debug("进程已启动: command={}, pid={}", command, process.pid());
 
-            // 7. Virtual Thread 异步读取 stdout / stderr
+            // 6. Virtual Thread 异步读取 stdout / stderr
             CompletableFuture<byte[]> stdoutFuture = CompletableFuture.supplyAsync(
                     () -> SandboxUtils.readStream(process.getInputStream()), virtualThreadExecutor);
             CompletableFuture<byte[]> stderrFuture = CompletableFuture.supplyAsync(
                     () -> SandboxUtils.readStream(process.getErrorStream()), virtualThreadExecutor);
 
-            // 8. 等待进程完成或超时
+            // 7. 等待进程完成或超时
             boolean finished = process.waitFor(request.timeoutSeconds(), TimeUnit.SECONDS);
 
             if (!finished) {
@@ -112,7 +131,7 @@ public final class ProcessBooter implements SandboxBooter {
                 log.warn("进程执行超时，已强制终止: pid={}, timeout={}s", process.pid(), request.timeoutSeconds());
             }
 
-            // 9. 获取输出（超时后也尝试获取已有输出）
+            // 8. 获取输出（超时后也尝试获取已有输出）
             byte[] stdoutBytes = stdoutFuture.getNow(new byte[0]);
             byte[] stderrBytes = stderrFuture.getNow(new byte[0]);
 
@@ -166,7 +185,7 @@ public final class ProcessBooter implements SandboxBooter {
 
     @Override
     public String type() {
-        return "process";
+        return TYPE_PROCESS;
     }
 
     @Override
@@ -175,16 +194,32 @@ public final class ProcessBooter implements SandboxBooter {
     }
 
     /**
-     * 构建执行命令。
+     * 按语言构建执行命令。
+     *
+     * <p>Python 强制走 {@link PythonRuntimeManager#getPythonExecutable()} 提供的捆绑路径；
+     * Shell 按 OS 选 {@code cmd}（Windows）或 {@code bash}（*nix）；
+     * JavaScript 读取 {@code runtimePaths.javascript}，缺省 {@code node}。</p>
      *
      * <p>直接调用运行时，避免 Linux 共享环境下的 ulimit 差异导致 Node / Python 在启动阶段异常退出。
      * 超时仍由外层 {@link Process#waitFor(long, TimeUnit)} 和强制销毁保证。</p>
      *
-     * @param runtimeCommand 运行时命令
-     * @param scriptFile     脚本文件路径
+     * @param language   编程语言
+     * @param scriptFile 脚本文件路径
      * @return 完整命令列表
      */
-    List<String> buildCommand(String runtimeCommand, Path scriptFile) {
-        return List.of(runtimeCommand, scriptFile.toString());
+    List<String> buildCommand(Language language, Path scriptFile) {
+        return switch (language) {
+            case PYTHON -> List.of(runtimeManager.getPythonExecutable().toString(), scriptFile.toString());
+            case SHELL -> List.of(detectShell(), scriptFile.toString());
+            case JAVASCRIPT -> {
+                String node = config.getRuntimePaths().getOrDefault("javascript", "node");
+                yield List.of(node, scriptFile.toString());
+            }
+        };
+    }
+
+    /** 按 OS 选 shell 解释器：Windows 走 {@code cmd}，其余走 {@code bash}。 */
+    private static String detectShell() {
+        return System.getProperty("os.name").toLowerCase().contains("win") ? "cmd" : "bash";
     }
 }

@@ -42,7 +42,7 @@ metadata:
 ## 工作流
 
 1. **依赖检查**：`shell.exec(command="python -c \"import pyautogui, pywinauto\"")`，缺则提示用户 `pip install pyautogui pywinauto pillow`
-2. **写脚本到文件**：操作步骤写到 `~/.zhiwei/workspace/desktop-<task>.py`，再 `shell.exec(command="python <脚本路径>")` 执行；不用 `python -c` 拼复杂多行
+2. **写脚本到文件**：操作步骤写到 cwd 下脚本文件（路径取自工具返回的 workingDirectory），再 `shell.exec(command="python <脚本路径>")` 执行；不用 `python -c` 拼复杂多行
 3. **截图先**：操作前必须截图看到当前状态，不盲操作
 4. **优先 pywinauto 控件定位**：通过控件树拿元素（标题 / class / 自动化 ID），比坐标点击稳得多（窗口移动 / 分辨率变都不会失效）
 5. **加等待**：每个键鼠操作之间 `time.sleep(0.3-1.0)` 等 UI 响应；点完按钮等加载完再下一步

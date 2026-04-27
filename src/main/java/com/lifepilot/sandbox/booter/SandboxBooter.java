@@ -18,6 +18,12 @@ import com.lifepilot.sandbox.model.ExecutionResult;
  */
 public sealed interface SandboxBooter permits ProcessBooter, DockerBooter {
 
+    /** Booter 类型字面量：process。 */
+    String TYPE_PROCESS = "process";
+
+    /** Booter 类型字面量：docker。 */
+    String TYPE_DOCKER = "docker";
+
     /**
      * 启动沙箱实例。
      *
@@ -49,7 +55,7 @@ public sealed interface SandboxBooter permits ProcessBooter, DockerBooter {
     /**
      * 获取沙箱类型标识。
      *
-     * @return "process" 或 "docker"
+     * @return {@link #TYPE_PROCESS} 或 {@link #TYPE_DOCKER}
      */
     String type();
 

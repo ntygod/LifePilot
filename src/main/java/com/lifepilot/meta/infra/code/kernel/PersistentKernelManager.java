@@ -2,6 +2,8 @@ package com.lifepilot.meta.infra.code.kernel;
 
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
+import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
+import com.lifepilot.sandbox.runtime.RuntimeStatus;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -32,6 +35,8 @@ public class PersistentKernelManager {
     private final MetaProperties.Infra.Kernel config;
     @Nullable
     private final TmuxSessionManager tmuxSessionManager;
+    /** 捆绑 Python 运行时管理器 — 强依赖，Python 内核走 ~/.zhiwei/python/ 路径，与 sandbox 语义一致。 */
+    private final PythonRuntimeManager runtimeManager;
     private final ScheduledExecutorService cleanupScheduler;
 
     /**
@@ -39,11 +44,14 @@ public class PersistentKernelManager {
      *
      * @param config             内核配置
      * @param tmuxSessionManager tmux 会话管理器（Shell 内核使用，可能为 null）
+     * @param runtimeManager     捆绑 Python 运行时管理器（强依赖，Python 内核启动前会校验状态）
      */
     public PersistentKernelManager(MetaProperties.Infra.Kernel config,
-                                   @Nullable TmuxSessionManager tmuxSessionManager) {
+                                   @Nullable TmuxSessionManager tmuxSessionManager,
+                                   PythonRuntimeManager runtimeManager) {
         this.config = config;
         this.tmuxSessionManager = tmuxSessionManager;
+        this.runtimeManager = Objects.requireNonNull(runtimeManager, "runtimeManager 不能为 null");
         // ScheduledExecutorService 的调度线程必须使用平台线程，不能用虚拟线程
         this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "kernel-cleanup");
@@ -55,7 +63,8 @@ public class PersistentKernelManager {
         cleanupScheduler.scheduleAtFixedRate(this::cleanupIdleKernels,
                 config.getCleanupIntervalSeconds(), config.getCleanupIntervalSeconds(), TimeUnit.SECONDS);
 
-        log.info("持久内核管理器已启动: maxConcurrent={}, ttlMinutes={}", config.getMaxConcurrentKernels(), config.getTtlMinutes());
+        log.info("持久内核管理器已启动: maxConcurrent={}, ttlMinutes={}",
+                config.getMaxConcurrentKernels(), config.getTtlMinutes());
     }
 
     /**
@@ -203,14 +212,31 @@ public class PersistentKernelManager {
 
     /**
      * 根据语言创建对应的内核实例。
+     *
+     * <p>Python 内核强依赖捆绑 Python 运行时（{@code ~/.zhiwei/python/}），
+     * 与 sandbox 路径语义保持一致并复用预装数据科学栈（pandas / numpy / matplotlib 等）。</p>
      */
     private PersistentKernel createKernel(String kernelId, String language) {
         return switch (language.toLowerCase()) {
-            case "python" -> new PythonKernel(kernelId, config.getPythonRuntime(), config.getMaxOutputChars());
+            case "python" -> new PythonKernel(kernelId, resolvePythonRuntime(), config.getMaxOutputChars());
             case "javascript", "js" -> new JavaScriptKernel(kernelId, config.getNodeRuntime(), config.getMaxOutputChars());
             case "shell", "bash", "sh" -> new ShellKernel(kernelId, tmuxSessionManager, config.getMaxOutputChars());
             default -> throw new IllegalStateException("不支持的内核语言: " + language);
         };
+    }
+
+    /**
+     * 解析 Python 内核使用的可执行文件路径。
+     *
+     * <p>强制走捆绑 Python，并在创建前再做一次状态校验（防御性双层检查 — 即使
+     * CodeExecuteToolExecutor 入口已校验，直接通过 {@code code.kernel} 工具或测试调用也能尽早 fail）。</p>
+     */
+    private String resolvePythonRuntime() {
+        var status = runtimeManager.checkStatus();
+        if (!(status instanceof RuntimeStatus.Ready)) {
+            throw new IllegalStateException("Python 运行时未就绪: " + status);
+        }
+        return runtimeManager.getPythonExecutable().toString();
     }
 
     /**

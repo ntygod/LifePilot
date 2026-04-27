@@ -56,7 +56,7 @@ metadata:
 - **查**：`memory(action="search")` 找事实实体，`memory(action="recall")` 取历史对话片段，组合使用更全
 - **写 / 改 / 撤**：`memory(action="create" / "update" / "delete")`；写入要带截止日、优先级、依赖
 - **跨 Skill 协调**：`skill.load(names=[...])` 一次 ≤ 3 个，按依赖串行；前序输出作为后序输入
-- **落盘**：长期产物（周报、汇总文档）`file.write` 到 `~/.zhiwei/workspace/` 或用户指定路径
+- **落盘**：长期产物（周报、汇总文档）`file.write` 到工作区或用户指定路径
 - **异步通知**：用户已离开会话、任务跨多轮才用 `notify.send_message`，会话内回复直接说
 
 ## 协作原则（仅本 Skill 强调）

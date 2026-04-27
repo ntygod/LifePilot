@@ -191,7 +191,7 @@ public final class DockerBooter implements SandboxBooter {
 
     @Override
     public String type() {
-        return "docker";
+        return TYPE_DOCKER;
     }
 
     @Override
