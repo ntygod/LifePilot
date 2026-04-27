@@ -73,14 +73,13 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
         String lastUserMessage = extractLastUserMessage(prompt);
         LlmFixture.FixtureResponse response = fixture.matchAndRender(lastUserMessage);
         String content = response.finalText().isBlank() ? response.toolCallsJson() : response.finalText();
-        return new LlmResponse(
+        return LlmResponse.simple(
                 content,
                 /* inputTokens = */ 0,
                 /* outputTokens = */ 0,
                 FIXTURE_PROVIDER,
                 FIXTURE_MODEL,
-                /* latencyMs = */ 0L,
-                /* cached = */ false);
+                /* latencyMs = */ 0L);
     }
 
     @Override

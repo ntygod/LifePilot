@@ -4,6 +4,10 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.stream.ContentChunk;
+import com.lifepilot.llm.stream.LlmStreamEvent;
+import com.lifepilot.llm.stream.ToolCallDelta;
+import com.lifepilot.llm.stream.UsageEvent;
 import com.lifepilot.generation.support.JsonOutputParser;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.slf4j.Logger;
@@ -18,6 +22,7 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
@@ -138,6 +143,71 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
                     "Provider 不支持 STREAMING 能力: id=" + config.id());
         }
         return streamViaClient(buildPrompt(prompt, null, true));
+    }
+
+    /**
+     * 流式调用并发出 {@link LlmStreamEvent} 事件序列。
+     *
+     * <p>替代 {@link #stream(String)}（仅产 {@code Flux<String>}），承载 reasoning_content /
+     * tool_calls / usage / done / error 等多维事件。Phase 4 简化版：仅发 ContentChunk + UsageEvent；
+     * ReasoningChunk 延迟到 Phase 10 由 Adapter 子类按 ThinkingProtocol.extractReasoning 解析填充。
+     *
+     * <p>子类（OpenAiBase / Anthropic / Ollama）按需重写以注入 thinking 字段（Phase 10）。
+     * 默认实现基于 {@code chatModel.stream(prompt)}，把每个 ChatResponse chunk 经
+     * {@link #chunkToEvents(ChatResponse)} 转换为 LlmStreamEvent 流。
+     *
+     * @param prompt        Spring AI Prompt
+     * @param toolCallbacks 工具回调列表（当前未使用，保留扩展位）
+     * @return LlmStreamEvent 流
+     */
+    public abstract Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks);
+
+    /**
+     * 把 Spring AI 流式 ChatResponse chunk 转换成 LlmStreamEvent 序列（基础实现）。
+     *
+     * <p>简化版：
+     * <ul>
+     *   <li>chunk 含文本 → 发 {@link ContentChunk}</li>
+     *   <li>chunk 含 tool_calls → 按 index 发 {@link ToolCallDelta}</li>
+     *   <li>chunk 含 usage → 发 {@link UsageEvent}（不带 reasoningTokens / cachedInputTokens 维度）</li>
+     * </ul>
+     *
+     * <p>ReasoningChunk / DoneEvent / ErrorEvent / 富 UsageEvent（cached / reasoning tokens）
+     * 由 Phase 10 子类按 ThinkingProtocol 解析原始 SSE chunk 时补完。
+     *
+     * <p>本方法被 OpenAiBase / Anthropic / Ollama 三类 streamEvents 默认实现共用。
+     *
+     * @param chunk 流式 ChatResponse chunk
+     * @return 对应的 LlmStreamEvent 序列（可能为空）
+     */
+    protected Flux<LlmStreamEvent> chunkToEvents(ChatResponse chunk) {
+        var events = new java.util.ArrayList<LlmStreamEvent>(4);
+        var result = chunk.getResult();
+        if (result != null && result.getOutput() != null) {
+            var output = result.getOutput();
+            String text = output.getText();
+            if (text != null && !text.isEmpty()) {
+                events.add(new ContentChunk(text));
+            }
+            if (output.hasToolCalls()) {
+                var toolCalls = output.getToolCalls();
+                for (int i = 0; i < toolCalls.size(); i++) {
+                    var tc = toolCalls.get(i);
+                    events.add(new ToolCallDelta(i, tc.id(), tc.name(),
+                            tc.arguments() != null ? tc.arguments() : ""));
+                }
+            }
+        }
+        var meta = chunk.getMetadata();
+        var usage = meta != null ? meta.getUsage() : null;
+        if (usage != null) {
+            int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+            int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+            if (inputTokens > 0 || outputTokens > 0) {
+                events.add(new UsageEvent(inputTokens, outputTokens, null, 0));
+            }
+        }
+        return Flux.fromIterable(events);
     }
 
     @Override
@@ -467,14 +537,13 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
                 .map(result -> result.getOutput())
                 .map(output -> output.getText())
                 .orElse("");
-        return new LlmResponse(
+        return LlmResponse.simple(
                 content,
                 inputTokens,
                 outputTokens,
                 config.id(),
                 config.modelName(),
-                latencyMs,
-                false
+                latencyMs
         );
     }
 

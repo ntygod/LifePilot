@@ -2,11 +2,15 @@ package com.lifepilot.llm.adapter;
 
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.profile.ProviderProfile;
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -51,5 +55,17 @@ public class OpenAiBaseProviderAdapter extends AbstractProviderAdapter {
 
     public ThinkingProtocol thinkingProtocol() {
         return thinkingProtocol;
+    }
+
+    /**
+     * OpenAI 兼容路径的流式事件实现 — 简化版仅发 ContentChunk + UsageEvent。
+     *
+     * <p>Phase 4 简化版未注入 thinking 字段，未解析 reasoning_content；
+     * Phase 10 集成测试阶段补完 — 通过 {@link ThinkingProtocol#extractReasoning} 解析
+     * 原始 SSE chunk（需要 RestClient 拦截器旁路捕获）。
+     */
+    @Override
+    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
+        return chatModel.stream(prompt).flatMap(this::chunkToEvents);
     }
 }

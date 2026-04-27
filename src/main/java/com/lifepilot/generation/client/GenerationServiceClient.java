@@ -1,12 +1,16 @@
 package com.lifepilot.generation.client;
 
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -59,4 +63,16 @@ public interface GenerationServiceClient {
      * @return 文本流
      */
     Flux<String> stream(String prompt);
+
+    /**
+     * 流式调用并发出 {@link LlmStreamEvent} 事件序列。
+     *
+     * <p>替代仅产 {@code Flux<String>} 的 {@link #stream(String)}，承载 reasoning_content /
+     * tool_calls / usage / done / error 等多维事件。
+     *
+     * @param prompt        Spring AI Prompt
+     * @param toolCallbacks 工具回调列表（当前未使用，保留扩展位）
+     * @return LlmStreamEvent 流
+     */
+    Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks);
 }

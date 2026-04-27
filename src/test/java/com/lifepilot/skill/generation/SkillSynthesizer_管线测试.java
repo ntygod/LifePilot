@@ -170,7 +170,7 @@ class SkillSynthesizer_管线测试 {
     }
 
     private LlmResponse llmResponse(String content) {
-        return new LlmResponse(content, 0, 0, "test", "test-model", 0L, false);
+        return LlmResponse.simple(content, 0, 0, "test", "test-model", 0L);
     }
 
     /** 生成一份最小合规 SKILL.md（不含 suggested_tools，避免触发工具校验）。 */

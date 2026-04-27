@@ -261,5 +261,11 @@ class AbstractProviderAdapterTest {
                     @Nullable List<CallAdvisor> defaultAdvisors) {
             super(config, chatModel, embeddingModel, defaultAdvisors);
         }
+
+        @Override
+        public Flux<com.lifepilot.llm.stream.LlmStreamEvent> streamEvents(
+                Prompt prompt, List<org.springframework.ai.tool.ToolCallback> toolCallbacks) {
+            return chatModel.stream(prompt).flatMap(this::chunkToEvents);
+        }
     }
 }

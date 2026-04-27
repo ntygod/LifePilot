@@ -55,7 +55,7 @@ class ExperienceSummarizerTest {
                 isNull(),
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(120))
-        )).thenReturn(new LlmResponse("""
+        )).thenReturn(LlmResponse.simple("""
                 {
                   "scenario": "测试场景",
                   "strategy": "测试策略",
@@ -69,7 +69,7 @@ class ExperienceSummarizerTest {
                   "positiveOutcomes": 0,
                   "negativeOutcomes": 0
                 }
-                """, 10, 5, "qwen-plus", "qwen3.5-plus", 100, false));
+                """, 10, 5, "qwen-plus", "qwen3.5-plus", 100));
 
         var summarizer = new ExperienceSummarizer(
                 semanticMemory,

@@ -44,9 +44,9 @@ class QueryRewriter测试 {
         properties.getRetrieval().setQueryRewriteMode("rewrite");
         properties.getRetrieval().setMaxRewrites(3);
 
-        var llmResponse = new LlmResponse(
+        var llmResponse = LlmResponse.simple(
                 "[\"改写查询1\", \"改写查询2\", \"改写查询3\"]",
-                10, 20, "provider-1", "model-1", 100, false);
+                10, 20, "provider-1", "model-1", 100);
         when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
                 eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
 
@@ -65,9 +65,9 @@ class QueryRewriter测试 {
     void hyde模式返回hydeEmbedding() {
         properties.getRetrieval().setQueryRewriteMode("hyde");
 
-        var llmResponse = new LlmResponse(
+        var llmResponse = LlmResponse.simple(
                 "这是一段假设性文档内容，描述了用户查询的理想回答。",
-                10, 30, "provider-1", "model-1", 150, false);
+                10, 30, "provider-1", "model-1", 150);
         when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
                 eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
 

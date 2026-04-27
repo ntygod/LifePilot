@@ -66,7 +66,7 @@ class MultimodalRouterGenerationRouterIT {
                 null
         );
 
-        LlmResponse expected = new LlmResponse("hi", 1, 1, "p1", "m", 10, false);
+        LlmResponse expected = LlmResponse.simple("hi", 1, 1, "p1", "m", 10);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(expected);
 

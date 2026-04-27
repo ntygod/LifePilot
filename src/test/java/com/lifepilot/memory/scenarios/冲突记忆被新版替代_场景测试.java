@@ -163,11 +163,11 @@ class 冲突记忆被新版替代_场景测试 {
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(),
                 any(GenerationCapability.class), any()))
-                .thenReturn(new LlmResponse(
+                .thenReturn(LlmResponse.simple(
                         """
                         {"verdict":"REPLACE","target_id":"%s","rationale":"新 Rust 偏好否定旧 Python 偏好"}
                         """.formatted(oldId),
-                        100, 50, "test-provider", "test-model", 200L, false));
+                        100, 50, "test-provider", "test-model", 200L));
 
         // 5. 驱动 resolveAsync（生产路径通过 upsert afterCommit 触发，此处直接调以控制时序）
         //    Awaitility 轮询 conflict_resolution_queue 直到出现 RESOLVED 状态，避免主测试线程竞态

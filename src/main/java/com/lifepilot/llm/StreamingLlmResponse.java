@@ -1,23 +1,24 @@
 package com.lifepilot.llm;
 
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import reactor.core.publisher.Flux;
 
 /**
- * 流式 LLM 响应包装 —— 附带路由选择的 Provider 与模型信息。
+ * 流式 LLM 响应包装 — 携带 {@link Flux} of {@link LlmStreamEvent} + provider/model 元信息。
  *
- * <p>用于在 SSE 流式通道中补齐可观测性数据（modelId/token usage），
- * 避免仅返回 {@code Flux<String>} 时丢失元信息。</p>
+ * <p>替代原 {@code Flux<String>} 设计，承载推理模型多轮契约所需的全部维度
+ * （reasoning / content / tool_calls / usage / done / error）。消费方按
+ * sealed pattern matching 分派事件。
  *
- * @param stream     token/片段流
+ * @param events     LlmStreamEvent 流
  * @param providerId Provider ID（配置 id）
  * @param modelId    模型 ID（配置 modelName）
  * @author zsg
- * @since 2026-03-05
+ * @since 2026-04-27
  */
 public record StreamingLlmResponse(
-        Flux<String> stream,
+        Flux<LlmStreamEvent> events,
         String providerId,
         String modelId
 ) {
 }
-

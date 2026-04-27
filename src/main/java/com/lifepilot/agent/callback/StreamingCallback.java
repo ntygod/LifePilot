@@ -164,17 +164,28 @@ public class StreamingCallback implements IterationCallback {
         final Instant[] firstTokenTime = {null};
 
         try {
-            streamingResponse.stream()
-                    .takeWhile(token -> !cancellationToken.isCancelled()
+            // 多模态路径无 reasoning，事件流仅含 ContentChunk（由 MultimodalRouter 包装）
+            streamingResponse.events()
+                    .takeWhile(ev -> !cancellationToken.isCancelled()
                             && sseManager.getEmitter(streamId) != null)
-                    .doOnNext(token -> {
-                        contentBuilder.append(token);
-                        Instant now = Instant.now();
-                        if (firstTokenTime[0] == null) {
-                            firstTokenTime[0] = now;
+                    .doOnNext(ev -> {
+                        switch (ev) {
+                            case com.lifepilot.llm.stream.ContentChunk c -> {
+                                contentBuilder.append(c.delta());
+                                Instant now = Instant.now();
+                                if (firstTokenTime[0] == null) {
+                                    firstTokenTime[0] = now;
+                                }
+                                markFirstModelToken(now);
+                                pushTokenToSse(c.delta());
+                            }
+                            case com.lifepilot.llm.stream.ReasoningChunk r -> pushReasoningToSse(r.delta());
+                            case com.lifepilot.llm.stream.ToolCallDelta ignored -> { /* 多模态路径不解析 tool call */ }
+                            case com.lifepilot.llm.stream.UsageEvent ignored -> { /* 多模态路径不记录 usage */ }
+                            case com.lifepilot.llm.stream.DoneEvent ignored -> { /* 流结束信号，无需特殊处理 */ }
+                            case com.lifepilot.llm.stream.ErrorEvent err ->
+                                    this.streamingError = new RuntimeException(err.code() + ": " + err.message());
                         }
-                        markFirstModelToken(now);
-                        pushTokenToSse(token);
                     })
                     .doOnError(e -> {
                         log.warn("流式多模态调用异常: scene={}, error={}", scene, describeProviderError(e));
@@ -217,7 +228,7 @@ public class StreamingCallback implements IterationCallback {
                 collectedContent.length());
 
         ChatResponse chatResponse = helper.adaptToChatResponse(
-                new LlmResponse(collectedContent, 0, 0, this.providerId, this.modelId, 0, false));
+                LlmResponse.simple(collectedContent, 0, 0, this.providerId, this.modelId, 0));
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId, scene, chatResponse, null);
         return chatResponse;
     }
@@ -284,7 +295,6 @@ public class StreamingCallback implements IterationCallback {
 
         var contentBuilder = new StringBuilder();
         var toolCallAggregator = new StreamingToolCallAggregator();
-        final ChatResponse[] lastChunk = {null};
         final Instant[] firstTokenTime = {null};
         final boolean[] toolCallPreviewSent = {false};
         // 累加流式 chunk 中的 Token 用量（部分 Provider 仅在最后一个 chunk 返回完整 usage）
@@ -293,60 +303,57 @@ public class StreamingCallback implements IterationCallback {
         // 记录 prompt cache 命中 token 数 — OpenAI / DashScope / Anthropic 自动缓存命中时返回该字段
         final long[] accumulatedCachedTokens = {0};
 
-        Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
+        // 升级到 LlmStreamEvent 流：通过 GenerationRouter.streamWithInfo 拿事件流，
+        // 按 sealed pattern matching 分派 ContentChunk / ReasoningChunk / ToolCallDelta / UsageEvent / Done / Error
+        StreamingLlmResponse streamingResponse = generationRouter.streamWithInfo(
+                scene2, preferredProviderId, prompt, toolCallbacks);
+        // providerId / modelId 已由前面 chatModelInfo 路径设置；streamWithInfo 路径返回的元信息保持一致
 
         try {
-            flux.takeWhile(chunk -> !cancellationToken.isCancelled()
+            streamingResponse.events()
+                    .takeWhile(ev -> !cancellationToken.isCancelled()
                             && sseManager.getEmitter(streamId) != null)
-            .doOnNext(chunk -> {
-                try {
-                    lastChunk[0] = chunk;
-
-                    // 累加每个 chunk 的 usage（取最大值，兼容增量和累计两种模式）
-                    var chunkMeta = chunk.getMetadata();
-                    var chunkUsage = chunkMeta != null ? chunkMeta.getUsage() : null;
-                    if (chunkUsage != null) {
-                        accumulatedPromptTokens[0] = Math.max(accumulatedPromptTokens[0],
-                                chunkUsage.getPromptTokens() != null ? chunkUsage.getPromptTokens() : 0);
-                        accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0],
-                                chunkUsage.getCompletionTokens() != null ? chunkUsage.getCompletionTokens() : 0);
-                        Object nu = chunkUsage.getNativeUsage();
-                        if (nu != null) {
-                            long cached = extractCachedTokens(nu);
-                            if (cached > 0) {
-                                accumulatedCachedTokens[0] = Math.max(accumulatedCachedTokens[0], cached);
+                    .doOnNext(ev -> {
+                        try {
+                            switch (ev) {
+                                case com.lifepilot.llm.stream.ContentChunk c -> {
+                                    String text = c.delta();
+                                    if (text != null && !text.isEmpty()) {
+                                        contentBuilder.append(text);
+                                        Instant now = Instant.now();
+                                        if (firstTokenTime[0] == null) {
+                                            firstTokenTime[0] = now;
+                                        }
+                                        markFirstModelToken(now);
+                                        pushTokenToSse(text);
+                                    }
+                                }
+                                case com.lifepilot.llm.stream.ReasoningChunk r -> pushReasoningToSse(r.delta());
+                                case com.lifepilot.llm.stream.ToolCallDelta tcd -> {
+                                    emitToolCallPreviewForDelta(tcd, toolCallPreviewSent);
+                                    toolCallAggregator.merge(tcd);
+                                }
+                                case com.lifepilot.llm.stream.UsageEvent u -> {
+                                    accumulatedPromptTokens[0] = Math.max(accumulatedPromptTokens[0], u.inputTokens());
+                                    accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0], u.outputTokens());
+                                    if (u.cachedInputTokens() > 0) {
+                                        accumulatedCachedTokens[0] = Math.max(accumulatedCachedTokens[0], u.cachedInputTokens());
+                                    }
+                                }
+                                case com.lifepilot.llm.stream.DoneEvent ignored -> { /* 流结束信号，无需特殊处理 */ }
+                                case com.lifepilot.llm.stream.ErrorEvent err ->
+                                        this.streamingError = new RuntimeException(err.code() + ": " + err.message());
                             }
+                        } catch (Exception e) {
+                            log.warn("流式事件处理异常，跳过: error={}", e.getMessage());
                         }
-                    }
-
-                    // 部分 Provider 最后一个 chunk 仅含 usage 不含 generation，跳过
-                    var result = chunk.getResult();
-                    if (result == null || result.getOutput() == null) return;
-                    var output = result.getOutput();
-
-                    String text = output.getText();
-                    if (text != null && !text.isEmpty()) {
-                        contentBuilder.append(text);
-                        Instant now = Instant.now();
-                        if (firstTokenTime[0] == null) {
-                            firstTokenTime[0] = now;
-                        }
-                        markFirstModelToken(now);
-                        pushTokenToSse(text);
-                    }
-
-                    if (output.hasToolCalls()) {
-                        emitToolCallPreview(output.getToolCalls(), toolCallPreviewSent);
-                        toolCallAggregator.merge(output.getToolCalls());
-                    }
-                } catch (Exception e) {
-                    log.warn("流式 chunk 处理异常，跳过: error={}", e.getMessage());
-                }
-            }).doOnError(e -> {
-                log.warn("流式调用异常: scene={}, provider={}, error={}",
-                        scene2, chatModelInfo.serviceId(), describeProviderError(e));
-                this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
-            }).blockLast();
+                    })
+                    .doOnError(e -> {
+                        log.warn("流式调用异常: scene={}, provider={}, error={}",
+                                scene2, chatModelInfo.serviceId(), describeProviderError(e));
+                        this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
+                    })
+                    .blockLast();
         } catch (Exception e) {
             // doOnError 已捕获异常到 streamingError，blockLast 会重新抛出同一异常；
             // 统一由下方 streamingError 检查处理，避免双重抛出
@@ -382,9 +389,8 @@ public class StreamingCallback implements IterationCallback {
                     scene2, chatModelInfo.serviceId(), chatModelInfo.modelName());
             var emptyMessage = new AssistantMessage("");
             var generation = new Generation(emptyMessage);
-            ChatResponse emptyResponse = lastChunk[0] != null
-                    ? new ChatResponse(List.of(generation), lastChunk[0].getMetadata())
-                    : new ChatResponse(List.of(generation));
+            // LlmStreamEvent 路径下不再持有原始 ChatResponse chunk，无 metadata 兜底
+            ChatResponse emptyResponse = new ChatResponse(List.of(generation));
             helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
                     scene2, emptyResponse, null);
             return emptyResponse;
@@ -393,7 +399,7 @@ public class StreamingCallback implements IterationCallback {
         // tool call 事件已由 pushReactStepEvent 自动推送
 
         ChatResponse chatResponse = buildChatResponseFromStream(
-                collectedContent, toolCalls, lastChunk[0],
+                collectedContent, toolCalls,
                 accumulatedPromptTokens[0], accumulatedCompletionTokens[0]);
 
         long ttftMs = firstTokenTime[0] != null
@@ -431,12 +437,12 @@ public class StreamingCallback implements IterationCallback {
     /**
      * 从流式收集的数据构造 ChatResponse。
      *
-     * <p>优先使用流式遍历中累加的 Token 用量（更准确），
-     * 当累加值为 0 时回退到 lastChunk 的 metadata。</p>
+     * <p>仅基于 LlmStreamEvent 流累加的 Token 用量构建 metadata；
+     * Phase 4 升级为消费 LlmStreamEvent 后不再持有原始 ChatResponse chunk，
+     * 故无需 lastChunk 兜底。
      *
      * @param collectedContent          流式收集的完整文本内容
      * @param toolCalls                 流式收集的 tool call 列表（可能为空）
-     * @param lastChunk                 最后一个流式 chunk（携带 metadata/usage，可空）
      * @param accumulatedPromptTokens   累加的 prompt token 数
      * @param accumulatedCompletionTokens 累加的 completion token 数
      * @return 构造好的 ChatResponse
@@ -444,7 +450,6 @@ public class StreamingCallback implements IterationCallback {
     private ChatResponse buildChatResponseFromStream(
             String collectedContent,
             List<AssistantMessage.ToolCall> toolCalls,
-            @Nullable ChatResponse lastChunk,
             long accumulatedPromptTokens,
             long accumulatedCompletionTokens) {
         AssistantMessage assistantMessage;
@@ -459,29 +464,6 @@ public class StreamingCallback implements IterationCallback {
         }
         var generation = new Generation(assistantMessage);
 
-        // 合并 lastChunk metadata 与累加 usage，取较大值
-        if (lastChunk != null) {
-            var baseMeta = lastChunk.getMetadata();
-            long finalPrompt = accumulatedPromptTokens;
-            long finalCompletion = accumulatedCompletionTokens;
-            if (baseMeta != null) {
-                var baseUsage = baseMeta.getUsage();
-                if (baseUsage != null) {
-                    finalPrompt = Math.max(finalPrompt,
-                            baseUsage.getPromptTokens() != null ? baseUsage.getPromptTokens() : 0);
-                    finalCompletion = Math.max(finalCompletion,
-                            baseUsage.getCompletionTokens() != null ? baseUsage.getCompletionTokens() : 0);
-                }
-            }
-            // 如果累加 usage 比 lastChunk 更完整，构建新的带 usage 的 metadata
-            if (finalPrompt > 0 || finalCompletion > 0) {
-                var usage = new DefaultUsage((int) finalPrompt, (int) finalCompletion);
-                return new ChatResponse(List.of(generation),
-                        ChatResponseMetadata.builder().usage(usage).build());
-            }
-            return new ChatResponse(List.of(generation), baseMeta);
-        }
-        // 无 lastChunk 但有累加 usage 时
         if (accumulatedPromptTokens > 0 || accumulatedCompletionTokens > 0) {
             var usage = new DefaultUsage(
                     (int) accumulatedPromptTokens, (int) accumulatedCompletionTokens);
@@ -613,14 +595,31 @@ public class StreamingCallback implements IterationCallback {
         if (toolCallPreviewSent[0] || toolCalls == null || toolCalls.isEmpty()) {
             return;
         }
-        toolCallPreviewSent[0] = true;
-        flushPendingTokenBatch();
         String toolName = toolCalls.stream()
                 .map(AssistantMessage.ToolCall::name)
                 .filter(Objects::nonNull)
                 .filter(name -> !name.isBlank())
                 .findFirst()
                 .orElse(null);
+        emitToolCallPreviewByName(toolName, toolCallPreviewSent);
+    }
+
+    /**
+     * 基于 LlmStreamEvent 流的 ToolCallDelta 发出工具调用准备事件。
+     *
+     * <p>仅在首次出现 ToolCallDelta 时触发一次，后续 delta 不再发出。
+     */
+    private void emitToolCallPreviewForDelta(com.lifepilot.llm.stream.ToolCallDelta delta,
+                                              boolean[] toolCallPreviewSent) {
+        if (toolCallPreviewSent[0]) {
+            return;
+        }
+        emitToolCallPreviewByName(delta.name(), toolCallPreviewSent);
+    }
+
+    private void emitToolCallPreviewByName(@Nullable String toolName, boolean[] toolCallPreviewSent) {
+        toolCallPreviewSent[0] = true;
+        flushPendingTokenBatch();
         String description = toolName != null && !toolName.isBlank()
                 ? "模型已进入工具调用阶段，正在整理参数：" + toolName
                 : "模型已进入工具调用阶段，正在整理参数。";
@@ -636,6 +635,29 @@ public class StreamingCallback implements IterationCallback {
                 Map.of("phase", "stream_tool_call_preview"),
                 eventBuffer
         );
+    }
+
+    /**
+     * 推送推理过程事件到 SSE 通道。
+     *
+     * <p>由 LlmStreamEvent 流的 ReasoningChunk 触发；空字符串或 null 跳过。
+     *
+     * @param reasoning 推理文本增量
+     */
+    private void pushReasoningToSse(String reasoning) {
+        if (reasoning == null || reasoning.isEmpty()) {
+            return;
+        }
+        var data = Map.<String, Object>of(
+                "sessionId", sessionId,
+                "turnId", turnId,
+                "delta", reasoning
+        );
+        if (eventBuffer != null) {
+            eventBuffer.offer(SseEventType.REASONING, data);
+        } else {
+            sseManager.sendEvent(streamId, SseEventType.REASONING, data);
+        }
     }
 
     private void markVisibleOutputEmitted() {

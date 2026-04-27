@@ -266,7 +266,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
 
             // LLM 生成
             String json = 构造模板提炼JSON("搜索摘要流程", "搜索并摘要信息", "帮我搜索并总结");
-            LlmResponse llmResponse = new LlmResponse(json, 100, 200, "provider-1", "model-1", 500, false);
+            LlmResponse llmResponse = LlmResponse.simple(json, 100, 200, "provider-1", "model-1", 500);
             when(generationRouter.call(
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
@@ -326,8 +326,8 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(jsonA, 100, 200, "p", "m", 500, false))
-                    .thenReturn(new LlmResponse(jsonB, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(jsonA, 100, 200, "p", "m", 500))
+                    .thenReturn(LlmResponse.simple(jsonB, 100, 200, "p", "m", 500));
 
             // 去重 — 无已有模板
             when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
@@ -455,7 +455,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
                     .thenThrow(new RuntimeException("JSON 解析失败"))
-                    .thenReturn(new LlmResponse(jsonB, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(jsonB, 100, 200, "p", "m", 500));
 
             // 去重 — 无已有模板
             when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
@@ -500,7 +500,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             // 已有一个模板
             when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
@@ -548,7 +548,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             // 已有一个不相关的模板
             when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
@@ -592,7 +592,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             // when
             ConsolidationStats stats = consolidator.consolidate();
@@ -634,7 +634,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             // 去重 — 无已有模板
             when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
@@ -685,7 +685,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             // when
             ConsolidationStats stats = consolidator.consolidate();
@@ -723,7 +723,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             // when
             ConsolidationStats stats = consolidator.consolidate();
@@ -775,7 +775,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
             // triggerIntent 为 null → isDuplicateTemplate 直接返回 false，不查询 procedure_templates
 
             // when
@@ -829,7 +829,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenReturn(new LlmResponse(json, 100, 200, "p", "m", 500, false));
+                    .thenReturn(LlmResponse.simple(json, 100, 200, "p", "m", 500));
 
             when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
                     .thenReturn(Collections.emptyList());

@@ -2,10 +2,14 @@ package com.lifepilot.llm.adapter;
 
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.profile.ProviderProfile;
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -40,5 +44,17 @@ public class AnthropicProviderAdapter extends AbstractProviderAdapter {
 
     public ThinkingProtocol thinkingProtocol() {
         return thinkingProtocol;
+    }
+
+    /**
+     * Anthropic 路径的流式事件实现 — 简化版仅发 ContentChunk + UsageEvent。
+     *
+     * <p>Phase 4 简化版未解析 thinking block 与 signature；Phase 10 由
+     * {@link ThinkingProtocol#extractReasoning} / {@link ThinkingProtocol#extractReasoningSignature}
+     * 解析 thinking 块发出 ReasoningChunk。
+     */
+    @Override
+    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
+        return chatModel.stream(prompt).flatMap(this::chunkToEvents);
     }
 }
