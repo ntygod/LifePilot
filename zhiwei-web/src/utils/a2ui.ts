@@ -19,6 +19,10 @@ type BackendMessageLike = {
   a2uiComponents?: unknown
   timestamp: string | number
   reasoningSummary?: string | null
+  /** 推理过程文本（DeepSeek/Qwen 等推理模型 reasoning_content）— 后端 payload_json 暴露后自动启用 */
+  reasoningContent?: string | null
+  /** 推理过程持续时间（毫秒） */
+  reasoningDurationMs?: number | null
   traceId?: string | null
   attachments?: BackendAttachment[] | null
   reactSteps?: ReactStepDto[] | null
@@ -135,6 +139,8 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     a2uiComponents: components ?? undefined,
     timestamp: parseMessageTimestamp(message.timestamp),
     reasoningSummary: message.reasoningSummary ?? undefined,
+    reasoningContent: message.reasoningContent ?? undefined,
+    reasoningDurationMs: message.reasoningDurationMs ?? undefined,
     traceId: message.traceId ?? undefined,
     attachments,
     reactSteps: message.reactSteps?.length ? message.reactSteps : undefined,

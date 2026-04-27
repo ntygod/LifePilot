@@ -86,6 +86,15 @@ export interface Message {
    * 从 SSE DONE 事件中获取的 reasoningSummary
    */
   reasoningSummary?: string
+  /**
+   * 推理过程完整文本（流式 reasoning token 累计结果）。
+   *
+   * <p>来源：流式期间由 useChat 收集的 reasoningBuffer，DONE 事件触发时落入消息。
+   * 历史消息可能因后端尚未在 message 接口暴露而为空，对应 UI 自动隐藏。
+   */
+  reasoningContent?: string
+  /** 推理过程持续时间（毫秒），用于显示「已思考 X 秒」 */
+  reasoningDurationMs?: number
   /** 推理过程事件列表（从 useChat 中收集） */
   reasoningEvents?: ReasoningEvent[]
   /** 消息状态：pending / success / error（对应 blocked） */
@@ -195,6 +204,19 @@ export interface UserSettings {
 export interface SseTokenEvent {
   content: string
   index: number
+}
+
+/**
+ * SSE reasoning token 增量事件（推理模型流式 reasoning_content）。
+ *
+ * <p>注意：与 ReactAgentLoop 推送的 ReAct 步骤 reasoning 事件共用同一 SSE event 名 "reasoning"，
+ * 通过 payload 字段区分：含 `delta` → 推理 token 增量；含 `event` → ReAct 步骤元数据。
+ */
+export interface SseReasoningTokenEvent {
+  sessionId: string
+  turnId?: string
+  /** 推理文本增量（pushReasoningToSse 推送，对应后端 ReasoningChunk.delta） */
+  delta: string
 }
 
 export interface SseInteractionEvent {

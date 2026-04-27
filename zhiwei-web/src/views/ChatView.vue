@@ -57,6 +57,9 @@ const {
   lastPrompt,
   reasoningStatusText,
   reasoningEvents,
+  reasoningBuffer,
+  isReasoningActive,
+  reasoningDurationMs,
   streamingReactSteps,
   streamingA2uiComponents,
   activeInteraction,
@@ -754,6 +757,9 @@ function closeTracePanel() {
               :is-streaming="isStreaming"
               :streaming-content="chatStore.streamingContent"
               :streaming-reasoning-events="reasoningEvents"
+              :streaming-reasoning-buffer="reasoningBuffer"
+              :streaming-is-reasoning-active="isReasoningActive"
+              :streaming-reasoning-duration-ms="reasoningDurationMs"
               :streaming-react-steps="streamingReactSteps"
               :streaming-a2ui-components="streamingA2uiComponents"
               :streaming-permission-approvals="pendingPermissionApprovals"

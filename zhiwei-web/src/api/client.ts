@@ -264,6 +264,9 @@ export const chatApi = {
       a2uiComponents?: unknown
       timestamp: string | number
       reasoningSummary?: string | null
+      /** 推理过程文本（payload_json 暴露后自动生效，缺失时 UI 自动隐藏） */
+      reasoningContent?: string | null
+      reasoningDurationMs?: number | null
       traceId?: string | null
       attachments?: Array<{ id: string; fileName: string; fileSize: number; mimeType: string; url?: string | null }> | null
       reactSteps?: ReactStepDto[] | null
