@@ -104,6 +104,14 @@ public final class ProcessBooter implements SandboxBooter {
                 pb.environment().put("PATH", pathValue);
             }
 
+            // 5. Python 强制 UTF-8 模式：避免 Windows 默认 GBK 编码导致中文路径 / 中文输出乱码
+            //    PYTHONUTF8=1 让 sys.getfilesystemencoding()/sys.stdout.encoding 都用 UTF-8
+            //    PYTHONIOENCODING=utf-8 兜底覆盖未识别 PYTHONUTF8 的旧版本
+            if (request.language() == Language.PYTHON) {
+                pb.environment().put("PYTHONUTF8", "1");
+                pb.environment().put("PYTHONIOENCODING", "utf-8");
+            }
+
             // 5. 启动进程
             Process process = pb.start();
             log.debug("进程已启动: command={}, pid={}", command, process.pid());

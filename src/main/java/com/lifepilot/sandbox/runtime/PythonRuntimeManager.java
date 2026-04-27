@@ -39,9 +39,6 @@ public class PythonRuntimeManager {
     /** 进度 SSE 推送阈值：每跨过 1MB 推一次，避免高频 emit 造成 SSE 风暴。 */
     private static final long EMIT_THRESHOLD_BYTES = 1024L * 1024L;
 
-    /** done 事件推送后延迟清除 installingState 的毫秒数，确保前端能收到终态事件。 */
-    private static final long DONE_HOLD_MS = 500L;
-
     private final SandboxConfigProperties config;
 
     /** 安装/卸载历史审计仓库，可空（无 Spring 容器场景）。 */
@@ -228,9 +225,13 @@ public class PythonRuntimeManager {
                     Files.writeString(versionFile, version);
                 }
 
-                // 状态：done
+                // 状态：done — emit 后立即清 installingState（关键时序）
+                // 前端 progress handler 收到 phase=='done' 会立刻 refresh GET /status，
+                // 若此时 installingState 仍有值，checkStatus 会返回 Installing(done) 让 UI 卡 100%。
+                // 所以必须在 finally(deleteIfExists 可能耗时 100~500ms 删 100MB+ tarball) 之前清掉。
                 installingState.set(new RuntimeStatus.Installing("done", 1, 1));
                 emitter.emit(installingState.get());
+                installingState.set(null);
 
                 long duration = System.currentTimeMillis() - startTime;
                 if (historyRepo != null) {
@@ -254,13 +255,6 @@ public class PythonRuntimeManager {
             } finally {
                 // 清理临时 tarball；忽略失败（最坏情况留个临时文件，不影响 Ready 判定）
                 try { Files.deleteIfExists(tarball); } catch (IOException ignored) {}
-                // 延迟清除 installing 状态，让 SSE done 事件被前端收到再切回 Ready
-                try {
-                    Thread.sleep(DONE_HOLD_MS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                installingState.set(null);
             }
         }, Executors.newVirtualThreadPerTaskExecutor());
     }

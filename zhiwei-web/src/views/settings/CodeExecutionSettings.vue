@@ -126,6 +126,15 @@ const confirmConfig = computed(() => {
 })
 
 /**
+ * 进行中动作标记 — 卸载 / 禁用 / 启用快速操作（< 数秒）显示 spinner + "处理中..." 标签
+ * 防止用户点击后无视觉反馈以为没响应。
+ *
+ * <p>install 不在此列：install 走 SSE 进度页（INSTALLING 状态下显示进度条），不需要按钮 spinner。</p>
+ */
+type BusyAction = 'uninstall' | 'reinstall' | 'disable' | 'enable' | null
+const busyAction = ref<BusyAction>(null)
+
+/**
  * 卸载运行时：删除磁盘文件，状态回到 NOT_INSTALLED。
  * 真正删除在 ConfirmDialog 二次确认后由 {@link onConfirmAction} 执行。
  *
@@ -139,6 +148,7 @@ function onUninstall() {
 
 /** 禁用运行时：保留文件，状态切到 DISABLED。 */
 async function onDisable() {
+  busyAction.value = 'disable'
   try {
     await runtimeApi.disable()
   } catch (e) {
@@ -146,6 +156,7 @@ async function onDisable() {
     error.value = extractErrorMessage(e)
   } finally {
     await refresh()
+    busyAction.value = null
   }
 }
 
@@ -164,6 +175,7 @@ async function onDisable() {
  */
 async function onEnable() {
   const fromStatus = status.value?.status
+  busyAction.value = 'enable'
   try {
     if (fromStatus === 'DISABLED') {
       await runtimeApi.enable()
@@ -176,6 +188,7 @@ async function onEnable() {
     error.value = extractErrorMessage(e)
     // 异常路径：refresh 兜底拉一次后端真实状态
     await refresh()
+    busyAction.value = null
     return
   }
   // 成功路径：DISABLED 路径需要 refresh 看到新状态；
@@ -183,6 +196,7 @@ async function onEnable() {
   if (fromStatus === 'DISABLED') {
     await refresh()
   }
+  busyAction.value = null
 }
 
 /** 重新安装：先卸载再装；与 onUninstall 共用 ConfirmDialog。 */
@@ -196,6 +210,7 @@ async function onConfirmAction() {
   const action = pendingAction.value
   pendingAction.value = null
   if (action === 'uninstall') {
+    busyAction.value = 'uninstall'
     try {
       await runtimeApi.uninstall()
     } catch (e) {
@@ -203,14 +218,20 @@ async function onConfirmAction() {
       error.value = extractErrorMessage(e)
     } finally {
       await refresh()
+      busyAction.value = null
     }
   } else if (action === 'reinstall') {
+    busyAction.value = 'reinstall'
     try {
       await runtimeApi.uninstall()
+      // install 内部会订阅 SSE，进度页接管 UI；此处提前置 null 让按钮恢复，
+      // 进度展示由 INSTALLING 状态的进度条负责
+      busyAction.value = null
       await install()
     } catch (e) {
       logger.error('重装运行时失败:', e)
       error.value = extractErrorMessage(e)
+      busyAction.value = null
     } finally {
       await refresh()
     }
@@ -297,34 +318,47 @@ function onCancelAction() {
           </div>
         </div>
 
-        <!-- 操作按钮区，按状态条件渲染 -->
+        <!-- 操作按钮区，按状态条件渲染；busyAction 期间所有按钮 disabled 防重复点击 -->
         <div class="flex flex-wrap items-center gap-sm">
           <Button
             v-if="status?.status === 'NOT_INSTALLED' || status?.status === 'DISABLED'"
+            :disabled="busyAction !== null"
             @click="onEnable"
           >
-            {{ status?.status === 'DISABLED' ? '启用' : '启用并下载' }}
+            <Loader2 v-if="busyAction === 'enable'" class="mr-xs size-4 animate-spin" />
+            <template v-if="busyAction === 'enable'">
+              {{ status?.status === 'DISABLED' ? '启用中…' : '启动安装中…' }}
+            </template>
+            <template v-else>
+              {{ status?.status === 'DISABLED' ? '启用' : '启用并下载' }}
+            </template>
           </Button>
           <Button
             v-if="status?.status === 'READY'"
             variant="outline"
+            :disabled="busyAction !== null"
             @click="onDisable"
           >
-            禁用
+            <Loader2 v-if="busyAction === 'disable'" class="mr-xs size-4 animate-spin" />
+            {{ busyAction === 'disable' ? '禁用中…' : '禁用' }}
           </Button>
           <Button
             v-if="status?.status === 'READY'"
             variant="destructive"
+            :disabled="busyAction !== null"
             @click="onUninstall"
           >
-            卸载
+            <Loader2 v-if="busyAction === 'uninstall'" class="mr-xs size-4 animate-spin" />
+            {{ busyAction === 'uninstall' ? '卸载中…' : '卸载' }}
           </Button>
           <Button
             v-if="status?.status === 'READY'"
             variant="ghost"
+            :disabled="busyAction !== null"
             @click="onReinstall"
           >
-            重新安装
+            <Loader2 v-if="busyAction === 'reinstall'" class="mr-xs size-4 animate-spin" />
+            {{ busyAction === 'reinstall' ? '准备重装…' : '重新安装' }}
           </Button>
           <Button
             v-if="status?.status === 'INSTALL_FAILED'"
