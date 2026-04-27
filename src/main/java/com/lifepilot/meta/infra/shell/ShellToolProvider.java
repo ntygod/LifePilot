@@ -68,7 +68,12 @@ public class ShellToolProvider {
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行命令")
-                .description("执行 shell 命令。短命令默认同步；长服务用 background=true；不确定耗时用 yieldMs。后台进程用 shell.process 读取/终止。")
+                .description("""
+                        执行 shell 命令。短命令默认同步；长服务用 background=true；不确定耗时用 yieldMs。后台进程用 shell.process 读取/终止。
+
+                        安全护栏：与 code.execute 同款规则，不可绕过 —— 永久阻断（rm -rf 系统目录 / mkfs / dd / shutdown / fork bomb 等）；\
+                        默认拒绝（rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / sudo 等）。\
+                        用户要求执行此类命令时直接告知会被阻断，不要改写为"等效平台命令"绕过；删除走 file.delete 由用户明确路径。""")
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)

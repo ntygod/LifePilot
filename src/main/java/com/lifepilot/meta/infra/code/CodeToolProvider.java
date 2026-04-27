@@ -93,10 +93,17 @@ public class CodeToolProvider {
                         执行 Python / JavaScript / Shell 代码。
                         Python 运行时已预装 pandas / numpy / scipy / scikit-learn / matplotlib / seaborn / \
                         openpyxl / python-docx / python-pptx / pypdf / pillow / requests / httpx / beautifulsoup4 \
-                        等数据科学常用库，import 即用，不需要 pip install。
-                        JavaScript 依赖系统 Node.js；Shell 在 Linux/macOS 走 bash，Windows 走 cmd（不能执行 .sh 脚本）。
-                        永久阻断（不可绕过）：rm -rf 系统目录 / mkfs / dd 写块设备 / shutdown / reboot / fork bomb 等不可恢复操作。
-                        默认拒绝（可配置放行）：rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / heredoc 跑 shell / SQL DROP / sudo 等高风险操作。
+                        等数据科学常用库，import 即用。Python 强制 UTF-8 模式，中文路径 / 输出可直接读写。
+                        JavaScript 依赖系统 Node.js。Shell 在 Linux/macOS 走 bash，Windows 走 cmd（不是 PowerShell/bash）。
+
+                        工作目录：默认 cwd 是每次调用独立的临时目录，文件不跨调用保留。\
+                        返回结果含 workingDirectory 字段（绝对路径），引用生成文件时用此字段，不要凭空拼用户主目录路径。
+
+                        安全护栏：以下操作会被代码沙箱直接阻断，请告知用户而非改写为"等效平台命令"绕过——\
+                        永久阻断（不可恢复）：rm -rf 系统目录、mkfs、dd 写块设备、shutdown/reboot、fork bomb 等；\
+                        默认拒绝（高风险）：rm -rf 子目录、chmod -R 777、git reset --hard、curl|sh、SQL DROP、sudo 等。\
+                        删除文件应走 file.delete 等结构化工具，由用户明确路径。
+
                         错误"代码执行环境未启用"表示当前不可用，不要重试。
                         """)
                 .inputSchema(JsonSchema.of(Map.of(
@@ -107,14 +114,11 @@ public class CodeToolProvider {
                                         "description", "要执行的代码"),
                                 "language", Map.of("type", "string",
                                         "enum", List.of("python", "javascript", "shell"),
-                                        "description", "编程语言。python 默认，预装数据科学栈；javascript 依赖系统 Node.js；shell 在 Linux/macOS 走 bash，Windows 走 cmd"),
+                                        "description", "编程语言，python 默认"),
                                 "timeoutSeconds", Map.of("type", "integer",
                                         "description", "执行超时秒数，默认 30"),
                                 "kernelId", Map.of("type", "string",
-                                        "description", "持久内核 ID（如 \"data-analysis\"）。" +
-                                                "传入后变量和导入跨调用保持，同一 kernelId 共享状态。" +
-                                                "不传则一次性沙箱。" +
-                                                "特殊 code 值：'kernel:reset' 清空状态，'kernel:inspect' 查看变量。")
+                                        "description", "持久内核 ID。传入则变量和导入跨调用保持（多步分析用同一 ID 共享 dataframe）；不传则每次一次性沙箱。重置 / 查看内核走 code.kernel 工具。")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

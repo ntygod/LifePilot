@@ -79,7 +79,12 @@ public class CodeKernelToolProvider {
                 .id("code.kernel")
                 .category(ToolCategory.ACTION)
                 .name("代码内核管理")
-                .description("管理代码内核会话：list 列出活跃内核、reset 重置内核变量与已导入模块、inspect 查看内核变量与执行状态。")
+                .description("""
+                        管理 code.execute 的持久内核会话（kernelId 对应同一会话内的变量和导入）。
+                        list — 列出当前活跃内核（无需 kernelId）。何时用：用户问"现在跑了什么内核 / 内核还在吗"。
+                        inspect — 查看指定内核内的变量和状态。何时用：调试时确认变量是否还存在 / 类型对不对。
+                        reset — 清空指定内核的变量与已导入模块（保留内核存活）。何时用：用户说"重新开始 / 清下状态"，或多步分析跑歪了想从干净状态再来。
+                        """)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
