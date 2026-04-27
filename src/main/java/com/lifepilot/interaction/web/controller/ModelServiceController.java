@@ -347,8 +347,8 @@ public class ModelServiceController {
         return Set.copyOf(resolved);
     }
 
-    private Map<String, Object> buildMetadata(@Nullable Integer costPerInputToken,
-                                              @Nullable Integer costPerOutputToken,
+    private Map<String, Object> buildMetadata(@Nullable Double costPerInputToken,
+                                              @Nullable Double costPerOutputToken,
                                               @Nullable Integer maxContextWindow,
                                               @Nullable Integer embeddingDimension,
                                               @Nullable Boolean supportsStreaming,
@@ -387,8 +387,8 @@ public class ModelServiceController {
                 entity.thinkingMode().name(),
                 entity.supportedScenes(),
                 toCapabilities(entity),
-                getIntegerMetadata(entity, "costPerInputToken"),
-                getIntegerMetadata(entity, "costPerOutputToken"),
+                getDoubleMetadata(entity, "costPerInputToken"),
+                getDoubleMetadata(entity, "costPerOutputToken"),
                 getIntegerMetadata(entity, "maxContextWindow"),
                 getIntegerMetadata(entity, "embeddingDimension"),
                 getBooleanMetadata(entity, "supportsStreaming")
@@ -411,6 +411,29 @@ public class ModelServiceController {
     private Integer getIntegerMetadata(ModelServiceEntity entity, String key) {
         Object value = entity.metadata().get(key);
         return value instanceof Number number ? number.intValue() : null;
+    }
+
+    /**
+     * 从 metadata_json 反序列化 double 值。
+     *
+     * <p>Jackson 反序列化 TEXT JSON 到 {@code Map<String, Object>} 时，数字可能被解析为
+     * Integer / Long / Double 等不同 Number 子类型；写盘历史数据也可能是字符串。本方法统一
+     * 兜底成 Double，便于 Controller 直接构造 {@code Double} 字段。</p>
+     */
+    @Nullable
+    private Double getDoubleMetadata(ModelServiceEntity entity, String key) {
+        Object value = entity.metadata().get(key);
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return Double.parseDouble(stringValue);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private @Nullable String getStringMetadata(ModelServiceEntity entity, String key) {

@@ -99,8 +99,8 @@ public class LlmConfigProperties {
         private List<String> scenes = List.of();
         private Set<ProviderCapability> capabilities = Set.of(ProviderCapability.CHAT);
         private boolean enabled = true;
-        private int costPerInputToken = 0;
-        private int costPerOutputToken = 0;
+        private double costPerInputToken = 0;
+        private double costPerOutputToken = 0;
         private int maxContextWindow = 4096;
         private Integer embeddingDimension;
         private boolean supportsStreaming = false;

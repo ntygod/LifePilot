@@ -780,12 +780,24 @@ onMounted(() => {
 
                     <div class="space-y-sm">
                       <Label>输入成本（每百万 token）</Label>
-                      <Input v-model.number="formData.costPerInputToken" type="number" :min="0" />
+                      <Input
+                        v-model.number="formData.costPerInputToken"
+                        type="number"
+                        :min="0"
+                        step="0.01"
+                        placeholder="如 0.14"
+                      />
                     </div>
 
                     <div class="space-y-sm">
                       <Label>输出成本（每百万 token）</Label>
-                      <Input v-model.number="formData.costPerOutputToken" type="number" :min="0" />
+                      <Input
+                        v-model.number="formData.costPerOutputToken"
+                        type="number"
+                        :min="0"
+                        step="0.01"
+                        placeholder="如 0.28"
+                      />
                     </div>
                   </div>
                 </section>

@@ -28,8 +28,8 @@ public record ProviderConfig(
         List<String> scenes,
         Set<ProviderCapability> capabilities,
         boolean enabled,
-        int costPerInputToken,
-        int costPerOutputToken,
+        double costPerInputToken,
+        double costPerOutputToken,
         int maxContextWindow,
         @Nullable Integer embeddingDimension,
         boolean supportsStreaming,
@@ -80,17 +80,17 @@ public record ProviderConfig(
     }
 
     /**
-     * 估算请求成本（分）。本地模型成本配置为 0 时直接返回 0。
+     * 估算请求成本（每百万 token 计价，结果为浮点数）。本地模型成本配置为 0 时直接返回 0。
      *
      * @param inputTokens  输入 Token 数
      * @param outputTokens 输出 Token 数
-     * @return 估算成本
+     * @return 估算成本（按 costPerInputToken / costPerOutputToken 单位换算）
      */
-    public int estimateCost(int inputTokens, int outputTokens) {
-        if (costPerInputToken == 0 && costPerOutputToken == 0) {
+    public double estimateCost(int inputTokens, int outputTokens) {
+        if (costPerInputToken == 0.0 && costPerOutputToken == 0.0) {
             return 0;
         }
-        return (int) ((long) inputTokens * costPerInputToken / 1_000_000
-                + (long) outputTokens * costPerOutputToken / 1_000_000);
+        return inputTokens * costPerInputToken / 1_000_000.0
+                + outputTokens * costPerOutputToken / 1_000_000.0;
     }
 }
