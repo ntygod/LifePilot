@@ -349,8 +349,12 @@ async function handleProbeModels() {
   } catch (error: any) {
     logger.error('探测模型清单失败:', error)
     probedModels.value = []
-    probeError.value = error?.message || '探测失败'
-    uiStore.showToast('error', `探测失败：${probeError.value}`)
+    // 透传后端 ResponseStatusException 的具体 reason —— probeModels 走 fetch 封装，
+    // 失败时抛 { code, message, timestamp }；同时兼容 axios 形态（e.response.data.message），
+    // 确保连接被拒绝 / 401 / 422 jsonpath 失败等不同错误显示为具体原因而非通用文案
+    const detail = error?.response?.data?.message || error?.message || '未知错误'
+    probeError.value = detail
+    uiStore.showToast('error', `探测失败：${detail}`)
   } finally {
     probing.value = false
   }
