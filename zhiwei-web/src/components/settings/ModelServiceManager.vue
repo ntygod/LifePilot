@@ -573,23 +573,26 @@ onMounted(() => {
                   </p>
                 </div>
 
-                <div class="space-y-sm">
-                  <Label>API 地址</Label>
-                  <Input
-                    v-model="formData.apiUrl"
-                    :placeholder="apiUrlPlaceholder"
-                    :class="{ 'border-destructive': errors.apiUrl }"
-                  />
-                  <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
-                </div>
+                <!-- API 地址 + API 密钥：中等屏幕两列同行，避免单列纵向拉得过长。 -->
+                <div class="grid grid-cols-1 gap-md md:grid-cols-2">
+                  <div class="space-y-sm">
+                    <Label>API 地址</Label>
+                    <Input
+                      v-model="formData.apiUrl"
+                      :placeholder="apiUrlPlaceholder"
+                      :class="{ 'border-destructive': errors.apiUrl }"
+                    />
+                    <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
+                  </div>
 
-                <div class="space-y-sm">
-                  <Label>API 密钥</Label>
-                  <Input
-                    v-model="formData.apiKey"
-                    type="password"
-                    :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
-                  />
+                  <div class="space-y-sm">
+                    <Label>API 密钥</Label>
+                    <Input
+                      v-model="formData.apiKey"
+                      type="password"
+                      :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
+                    />
+                  </div>
                 </div>
 
                 <div class="space-y-sm">
@@ -607,29 +610,31 @@ onMounted(() => {
                   <p v-if="probeError" class="text-sm text-destructive">探测失败：{{ probeError }}</p>
                 </div>
 
-                <!-- 模型名称：拉取成功后用 Select（探测列表）+ 手填兜底；
-                     拉取失败/未拉取走纯 Input。两种形态都写回同一个 formData.modelName。 -->
+                <!-- 模型名称：拉取成功后 Select（探测列表）+ Input（手填覆盖）两列同行；
+                     未拉取走纯 Input 占满一行。两种形态都写回同一个 formData.modelName。 -->
                 <div class="space-y-sm">
                   <Label>模型名称</Label>
                   <template v-if="probedModels.length > 0">
-                    <Select :model-value="formData.modelName" @update:model-value="selectProbedModel">
-                      <SelectTrigger :class="{ 'border-destructive': errors.modelName }">
-                        <SelectValue placeholder="选择模型" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="model in probedModels" :key="model.id" :value="model.id">
-                          {{ model.name }}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      :model-value="formData.modelName"
-                      placeholder="或手动输入模型 ID 覆盖"
-                      :class="{ 'border-destructive': errors.modelName }"
-                      @update:model-value="handleModelNameInput"
-                    />
+                    <div class="grid grid-cols-1 gap-md md:grid-cols-2">
+                      <Select :model-value="formData.modelName" @update:model-value="selectProbedModel">
+                        <SelectTrigger :class="{ 'border-destructive': errors.modelName }">
+                          <SelectValue placeholder="选择模型" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="model in probedModels" :key="model.id" :value="model.id">
+                            {{ model.name }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        :model-value="formData.modelName"
+                        placeholder="或手动输入模型 ID 覆盖"
+                        :class="{ 'border-destructive': errors.modelName }"
+                        @update:model-value="handleModelNameInput"
+                      />
+                    </div>
                     <p class="text-sm text-muted-foreground">
-                      共获取到 {{ probedModels.length }} 个模型；上方下拉选择，或下方手填覆盖。
+                      共获取到 {{ probedModels.length }} 个模型；左侧下拉选择，或右侧手填覆盖。
                     </p>
                   </template>
                   <template v-else>
