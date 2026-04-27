@@ -550,8 +550,9 @@ onMounted(() => {
 
             <!-- 服务配置 — 单一表单容器。
                  把原来的"Provider 协议"和"基本信息"两张卡片合并，避免割裂感。
-                 字段按操作顺序排列：profile → API 地址/密钥 → 拉取 → 模型名 →
-                 服务类型/显示名 → 超时/向量维度 → 描述。
+                 字段按操作顺序排列：服务类型 + 厂商协议 → 协议描述 →
+                 API 地址/密钥 → 拉取 → 模型名 → 显示名 + 超时 →
+                 向量维度（仅 EMBEDDING）→ 描述。
                  profile 接口降级时（profiles 为空）profile/拉取相关字段隐藏，
                  用户仍可手填 API 地址/密钥/模型名走兜底路径。 -->
             <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl">
@@ -563,25 +564,52 @@ onMounted(() => {
               </div>
 
               <div class="mt-md space-y-md">
-                <!-- Provider Profile：profiles 为空时显示降级提示，字段照常可手填。 -->
-                <div v-if="profiles.length > 0" class="space-y-sm">
-                  <Label>Provider Profile</Label>
-                  <Select :model-value="formData.profileId" @update:model-value="updateProfile">
-                    <SelectTrigger :class="{ 'border-destructive': errors.profileId }">
-                      <SelectValue placeholder="挑一个内置协议..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="profile in profiles" :key="profile.id" :value="profile.id">
-                        {{ profile.displayName }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p v-if="errors.profileId" class="text-sm text-destructive">{{ errors.profileId }}</p>
-                  <p v-else-if="selectedProfile" class="text-sm text-muted-foreground">
-                    思考协议：{{ selectedProfile.thinkingProtocol }} · 默认地址：{{ selectedProfile.defaultBaseUrl }}
-                  </p>
+                <!-- 服务类型 + 厂商协议：两列同行。
+                     用户操作流程：先选生成/向量/重排，再挑具体厂商协议；
+                     profiles 为空（profile 接口降级）时，厂商协议列改为降级提示，
+                     用户仍可走"手填模型名"路径。 -->
+                <div class="grid grid-cols-1 gap-md md:grid-cols-2">
+                  <div class="space-y-sm">
+                    <Label>服务类型</Label>
+                    <Select :model-value="formData.kind" @update:model-value="updateKind">
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择服务类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="option in kindOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div v-if="profiles.length > 0" class="space-y-sm">
+                    <Label>厂商协议</Label>
+                    <Select :model-value="formData.profileId" @update:model-value="updateProfile">
+                      <SelectTrigger :class="{ 'border-destructive': errors.profileId }">
+                        <SelectValue placeholder="挑一个内置协议..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="profile in profiles" :key="profile.id" :value="profile.id">
+                          {{ profile.displayName }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p v-if="errors.profileId" class="text-sm text-destructive">{{ errors.profileId }}</p>
+                  </div>
                 </div>
-                <div v-else class="rounded-md border border-dashed border-border/60 bg-muted/20 p-md text-sm text-muted-foreground">
+
+                <!-- 厂商协议描述行：思考协议 / 默认地址；profiles 为空时显示降级提示。 -->
+                <p
+                  v-if="profiles.length > 0 && selectedProfile && !errors.profileId"
+                  class="text-sm text-muted-foreground"
+                >
+                  思考协议：{{ selectedProfile.thinkingProtocol }} · 默认地址：{{ selectedProfile.defaultBaseUrl }}
+                </p>
+                <div
+                  v-else-if="profiles.length === 0"
+                  class="rounded-md border border-dashed border-border/60 bg-muted/20 p-md text-sm text-muted-foreground"
+                >
                   未启用 Provider Profile 模式，请直接手填下方字段。
                 </div>
 
@@ -661,22 +689,8 @@ onMounted(() => {
                   <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
                 </div>
 
-                <!-- 服务类型 + 显示名称：两列同行。 -->
+                <!-- 显示名称 + 超时时间：两列同行，把原本散落的两块字段并到一行。 -->
                 <div class="grid grid-cols-1 gap-md md:grid-cols-2">
-                  <div class="space-y-sm">
-                    <Label>服务类型</Label>
-                    <Select :model-value="formData.kind" @update:model-value="updateKind">
-                      <SelectTrigger>
-                        <SelectValue placeholder="选择服务类型" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="option in kindOptions" :key="option.value" :value="option.value">
-                          {{ option.label }}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
                   <div class="space-y-sm">
                     <Label>显示名称</Label>
                     <Input
@@ -685,20 +699,18 @@ onMounted(() => {
                       @update:model-value="handleDisplayNameInput"
                     />
                   </div>
-                </div>
 
-                <!-- 超时时间 + 向量维度：两列同行；非 EMBEDDING 时超时独占两列。 -->
-                <div class="grid grid-cols-1 gap-md md:grid-cols-2">
-                  <div class="space-y-sm" :class="{ 'md:col-span-2': !isEmbeddingKind }">
+                  <div class="space-y-sm">
                     <Label>超时时间（秒）</Label>
                     <Input v-model.number="formData.timeoutSeconds" type="number" :min="1" />
                     <p v-if="errors.timeoutSeconds" class="text-sm text-destructive">{{ errors.timeoutSeconds }}</p>
                   </div>
+                </div>
 
-                  <div v-if="isEmbeddingKind" class="space-y-sm">
-                    <Label>向量维度</Label>
-                    <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
-                  </div>
+                <!-- 向量维度：仅 EMBEDDING 服务才出现，独占一行。 -->
+                <div v-if="isEmbeddingKind" class="space-y-sm">
+                  <Label>向量维度</Label>
+                  <Input v-model.number="formData.embeddingDimension" type="number" :min="1" />
                 </div>
 
                 <div class="space-y-sm">
