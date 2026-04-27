@@ -2,15 +2,11 @@ package com.lifepilot.llm.adapter;
 
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.profile.ProviderProfile;
-import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
-import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -50,13 +46,6 @@ public class OllamaProviderAdapter extends AbstractProviderAdapter {
         return thinkingProtocol;
     }
 
-    /**
-     * Ollama 路径的流式事件实现 — 简化版仅发 ContentChunk + UsageEvent。
-     *
-     * <p>本地推理无 thinking 协议（profile.thinkingProtocol = NONE），不发 ReasoningChunk。
-     */
-    @Override
-    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
-        return chatModel.stream(prompt).flatMap(this::chunkToEvents);
-    }
+    // streamEvents 复用 AbstractProviderAdapter 默认实现。
+    // 本地推理无 thinking 协议（profile.thinkingProtocol = NONE），不发 ReasoningChunk。
 }

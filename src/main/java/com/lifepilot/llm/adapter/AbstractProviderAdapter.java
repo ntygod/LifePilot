@@ -43,8 +43,9 @@ import java.util.concurrent.TimeoutException;
  * <p>封装 {@link ChatModel}、{@link EmbeddingModel}（可选）和 {@link ChatClient}（延迟构建），
  * 提供统一的调用接口，支持超时控制。子类按 provider 特性扩展（OpenAI 兼容 / Anthropic / Ollama 等）。
  *
- * <p>本类承载 Phase 3 之前 {@code SpringAiProviderAdapter} 单类的全部行为，子类目前仅复用基类逻辑；
- * Phase 4 起将由 OpenAiBaseProviderAdapter 重写流式分派路径以发出 LlmStreamEvent。
+ * <p>本类承载 Phase 3 之前 {@code SpringAiProviderAdapter} 单类的全部行为，含 streamEvents 默认实现（基于
+ * {@link #chunkToEvents}）；子类（OpenAiBase / Anthropic / Ollama）目前完全复用基类逻辑，
+ * Phase 10 起按 ThinkingProtocol 解析原始 SSE chunk 时再按需重写 streamEvents 注入 ReasoningChunk。
  *
  * @author zsg
  * @since 2026-04-27
@@ -146,21 +147,21 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
     }
 
     /**
-     * 流式调用并发出 {@link LlmStreamEvent} 事件序列。
+     * 把流式 ChatResponse 转成 {@link LlmStreamEvent} 流。
      *
-     * <p>替代 {@link #stream(String)}（仅产 {@code Flux<String>}），承载 reasoning_content /
-     * tool_calls / usage / done / error 等多维事件。Phase 4 简化版：仅发 ContentChunk + UsageEvent；
-     * ReasoningChunk 延迟到 Phase 10 由 Adapter 子类按 ThinkingProtocol.extractReasoning 解析填充。
+     * <p>默认实现：通过 {@code chatModel.stream(prompt)} 拉响应，
+     * 用 {@link #chunkToEvents(ChatResponse)} 把每个 chunk 转成 ContentChunk + ToolCallDelta + UsageEvent。
+     * 子类需要差异化（如 OpenAI 协议特殊解析、Anthropic content block 流）时重写。
      *
-     * <p>子类（OpenAiBase / Anthropic / Ollama）按需重写以注入 thinking 字段（Phase 10）。
-     * 默认实现基于 {@code chatModel.stream(prompt)}，把每个 ChatResponse chunk 经
-     * {@link #chunkToEvents(ChatResponse)} 转换为 LlmStreamEvent 流。
+     * <p>简化版：暂不发 ReasoningChunk / DoneEvent（Phase 10 通过 SSE 旁路解析时补完）。
      *
      * @param prompt        Spring AI Prompt
-     * @param toolCallbacks 工具回调列表（当前未使用，保留扩展位）
+     * @param toolCallbacks tool callbacks（默认实现未使用，重写时按需消费）
      * @return LlmStreamEvent 流
      */
-    public abstract Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks);
+    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
+        return chatModel.stream(prompt).flatMap(this::chunkToEvents);
+    }
 
     /**
      * 把 Spring AI 流式 ChatResponse chunk 转换成 LlmStreamEvent 序列（基础实现）。
@@ -175,7 +176,7 @@ public abstract non-sealed class AbstractProviderAdapter implements ProviderAdap
      * <p>ReasoningChunk / DoneEvent / ErrorEvent / 富 UsageEvent（cached / reasoning tokens）
      * 由 Phase 10 子类按 ThinkingProtocol 解析原始 SSE chunk 时补完。
      *
-     * <p>本方法被 OpenAiBase / Anthropic / Ollama 三类 streamEvents 默认实现共用。
+     * <p>本方法被 streamEvents 默认实现调用；OpenAiBase / Anthropic / Ollama 三个子类均通过继承共用。
      *
      * @param chunk 流式 ChatResponse chunk
      * @return 对应的 LlmStreamEvent 序列（可能为空）

@@ -2,15 +2,11 @@ package com.lifepilot.llm.adapter;
 
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.profile.ProviderProfile;
-import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.thinking.ThinkingProtocol;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
-import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -21,9 +17,8 @@ import java.util.List;
  * provider 的共同行为（同一条 OpenAiChatModel 路径）。子类按需重写 ChatOptions 构造、
  * 特殊字段注入、协议私有错误码处理。
  *
- * <p>Phase 3 阶段子类仅保留构造器，行为复用基类实现；Phase 4 起将引入
- * {@code streamEvents()} 抽象方法，由本类按 thinkingProtocol 把 ChatResponse 流分派为
- * LlmStreamEvent 流。
+ * <p>Phase 3 / Phase 4 阶段子类仅保留构造器，行为完全复用基类实现（含 streamEvents 默认实现）；
+ * Phase 10 起按 thinkingProtocol 把原始 SSE chunk 解析为带 ReasoningChunk 的 LlmStreamEvent 流时再重写。
  *
  * <p><b>永远是 concrete class，不要改成 abstract</b>：本类既是 DeepSeek / Qwen /
  * OpenAiOfficial 三个子类的共享基类，<b>也是 NONE 协议（zhipu / moonshot / minimax /
@@ -57,15 +52,6 @@ public class OpenAiBaseProviderAdapter extends AbstractProviderAdapter {
         return thinkingProtocol;
     }
 
-    /**
-     * OpenAI 兼容路径的流式事件实现 — 简化版仅发 ContentChunk + UsageEvent。
-     *
-     * <p>Phase 4 简化版未注入 thinking 字段，未解析 reasoning_content；
-     * Phase 10 集成测试阶段补完 — 通过 {@link ThinkingProtocol#extractReasoning} 解析
-     * 原始 SSE chunk（需要 RestClient 拦截器旁路捕获）。
-     */
-    @Override
-    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
-        return chatModel.stream(prompt).flatMap(this::chunkToEvents);
-    }
+    // streamEvents 复用 AbstractProviderAdapter 默认实现（chatModel.stream + chunkToEvents）。
+    // Phase 10 起按 ThinkingProtocol.extractReasoning 解析原始 SSE chunk 时再重写本方法注入 ReasoningChunk。
 }

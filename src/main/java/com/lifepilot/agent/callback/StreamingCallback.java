@@ -334,6 +334,8 @@ public class StreamingCallback implements IterationCallback {
                                     toolCallAggregator.merge(tcd);
                                 }
                                 case com.lifepilot.llm.stream.UsageEvent u -> {
+                                    // UsageEvent 契约是累计值（见 UsageEvent Javadoc），多次发出代表累计更新（非增量叠加）。
+                                    // 用 Math.max 兜底防止后发的 chunk 累计值意外回退（理论不会发生但防御性处理）。
                                     accumulatedPromptTokens[0] = Math.max(accumulatedPromptTokens[0], u.inputTokens());
                                     accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0], u.outputTokens());
                                     if (u.cachedInputTokens() > 0) {
@@ -474,68 +476,6 @@ public class StreamingCallback implements IterationCallback {
     }
 
     /**
-     * 从 Provider 原生 usage 对象中反射抽取 cached_tokens (prompt cache 命中数)。
-     *
-     * <p>Spring AI 的 {@code Usage} 抽象不暴露 cached_tokens, 但 OpenAI-compat / DashScope /
-     * Anthropic 的原生 usage 对象都有该字段 (名字略有差异):
-     * OpenAI/DashScope: {@code prompt_tokens_details.cached_tokens}
-     * Anthropic: {@code cache_read_input_tokens}。反射读取避免对具体 SDK 版本强耦合。</p>
-     *
-     * @return 命中 token 数, 未找到或解析失败返回 0
-     */
-    private long extractCachedTokens(Object nativeUsage) {
-        if (nativeUsage == null) {
-            return 0;
-        }
-        try {
-            // OpenAI / DashScope 风格: prompt_tokens_details.cached_tokens
-            Object details = invokeGetter(nativeUsage, "getPromptTokensDetails", "promptTokensDetails");
-            if (details != null) {
-                Object cached = invokeGetter(details, "getCachedTokens", "cachedTokens");
-                if (cached instanceof Number n) {
-                    return n.longValue();
-                }
-            }
-            // Anthropic 风格: cacheReadInputTokens
-            Object anthropicCached = invokeGetter(nativeUsage, "getCacheReadInputTokens", "cacheReadInputTokens");
-            if (anthropicCached instanceof Number n) {
-                return n.longValue();
-            }
-        } catch (Exception ignored) {
-            // 反射失败不影响主流程, 静默返回 0
-        }
-        return 0;
-    }
-
-    private Object invokeGetter(Object target, String getterName, String fieldName) {
-        // 1) JavaBean: getXxx()
-        try {
-            var m = target.getClass().getMethod(getterName);
-            return m.invoke(target);
-        } catch (NoSuchMethodException ignored) {
-            // 继续尝试其它形式
-        } catch (Exception e) {
-            return null;
-        }
-        // 2) Record accessor: xxx() — Spring AI OpenAI Usage/PromptTokensDetails 都是 record
-        try {
-            var m = target.getClass().getMethod(fieldName);
-            return m.invoke(target);
-        } catch (NoSuchMethodException ignored) {
-            // 继续
-        } catch (Exception e) {
-            return null;
-        }
-        // 3) 公共字段直接读
-        try {
-            var f = target.getClass().getField(fieldName);
-            return f.get(target);
-        } catch (NoSuchFieldException | IllegalAccessException ignored) {
-            return null;
-        }
-    }
-
-    /**
      * 非流式 LLM 调用降级方法。
      *
      * <p>当 ChatModel 不支持流式调用时，作为降级路径使用。</p>
@@ -589,19 +529,6 @@ public class StreamingCallback implements IterationCallback {
      */
     private void pushTokenToSse(String token) {
         enqueueTokenChunk(token);
-    }
-
-    private void emitToolCallPreview(List<AssistantMessage.ToolCall> toolCalls, boolean[] toolCallPreviewSent) {
-        if (toolCallPreviewSent[0] || toolCalls == null || toolCalls.isEmpty()) {
-            return;
-        }
-        String toolName = toolCalls.stream()
-                .map(AssistantMessage.ToolCall::name)
-                .filter(Objects::nonNull)
-                .filter(name -> !name.isBlank())
-                .findFirst()
-                .orElse(null);
-        emitToolCallPreviewByName(toolName, toolCallPreviewSent);
     }
 
     /**

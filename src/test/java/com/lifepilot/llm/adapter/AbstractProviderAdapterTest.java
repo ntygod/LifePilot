@@ -5,6 +5,10 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.stream.ContentChunk;
+import com.lifepilot.llm.stream.LlmStreamEvent;
+import com.lifepilot.llm.stream.ToolCallDelta;
+import com.lifepilot.llm.stream.UsageEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -29,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -211,6 +218,67 @@ class AbstractProviderAdapterTest {
     }
 
     @Test
+    void chunkToEvents_仅含_content_发出_ContentChunk() {
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "gpt");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var assistantMsg = new AssistantMessage("hello");
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)));
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0)).isInstanceOf(ContentChunk.class);
+        assertThat(((ContentChunk) events.get(0)).delta()).isEqualTo("hello");
+    }
+
+    @Test
+    void chunkToEvents_含_tool_calls_按_index_发出_ToolCallDelta() {
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "gpt");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var toolCall = new AssistantMessage.ToolCall("id-1", "function", "test_fn", "{\"arg\":1}");
+        var assistantMsg = AssistantMessage.builder()
+                .content("")
+                .toolCalls(List.of(toolCall))
+                .build();
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)));
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        assertThat(events).anyMatch(ev -> ev instanceof ToolCallDelta);
+        var delta = events.stream()
+                .filter(ev -> ev instanceof ToolCallDelta)
+                .map(ev -> (ToolCallDelta) ev)
+                .findFirst().orElseThrow();
+        assertThat(delta.index()).isEqualTo(0);
+        assertThat(delta.id()).isEqualTo("id-1");
+        assertThat(delta.name()).isEqualTo("test_fn");
+        assertThat(delta.argumentsDelta()).isEqualTo("{\"arg\":1}");
+    }
+
+    @Test
+    void chunkToEvents_含_usage_发出_UsageEvent_当_token_数大于_0() {
+        ProviderConfig config = providerConfig(Set.of(ProviderCapability.CHAT), "gpt");
+        ChatModel chatModel = mock(ChatModel.class);
+        TestAdapter adapter = new TestAdapter(config, chatModel, null, null);
+
+        var usage = new DefaultUsage(10, 5);
+        var meta = ChatResponseMetadata.builder().usage(usage).build();
+        var assistantMsg = new AssistantMessage("");
+        var chunk = new ChatResponse(List.of(new Generation(assistantMsg)), meta);
+
+        List<LlmStreamEvent> events = adapter.callChunkToEvents(chunk).collectList().block();
+        assertThat(events).anyMatch(ev -> ev instanceof UsageEvent);
+        var usageEvent = events.stream()
+                .filter(ev -> ev instanceof UsageEvent)
+                .map(ev -> (UsageEvent) ev)
+                .findFirst().orElseThrow();
+        assertThat(usageEvent.inputTokens()).isEqualTo(10);
+        assertThat(usageEvent.outputTokens()).isEqualTo(5);
+    }
+
+    @Test
     void repairJson_shouldStripMarkdownFence() throws Exception {
         String raw = """
                 ```json
@@ -253,6 +321,9 @@ class AbstractProviderAdapterTest {
 
     /**
      * 测试用具体子类 — 仅暴露 AbstractProviderAdapter 行为，不引入额外语义。
+     *
+     * <p>额外暴露 {@code callChunkToEvents} 把基类 protected 的 {@code chunkToEvents}
+     * 提升为 public，方便单测直接断言 chunk 转换语义。
      */
     private static final class TestAdapter extends AbstractProviderAdapter {
         TestAdapter(ProviderConfig config,
@@ -262,10 +333,9 @@ class AbstractProviderAdapterTest {
             super(config, chatModel, embeddingModel, defaultAdvisors);
         }
 
-        @Override
-        public Flux<com.lifepilot.llm.stream.LlmStreamEvent> streamEvents(
-                Prompt prompt, List<org.springframework.ai.tool.ToolCallback> toolCallbacks) {
-            return chatModel.stream(prompt).flatMap(this::chunkToEvents);
+        /** 测试入口：把 protected 的 {@link #chunkToEvents(ChatResponse)} 提升为 public。 */
+        public Flux<LlmStreamEvent> callChunkToEvents(ChatResponse chunk) {
+            return chunkToEvents(chunk);
         }
     }
 }
