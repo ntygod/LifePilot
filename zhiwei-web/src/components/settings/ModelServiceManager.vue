@@ -539,10 +539,10 @@ onMounted(() => {
               {{ errors._general }}
             </div>
 
-            <!-- Provider 协议 — Phase 8 新增。
-                 用户先选 Profile（决定 thinking 协议、模型探测端点），
-                 再填 baseUrl + apiKey，点"拉取可用模型"探测实际可用模型清单。
-                 接口加载失败时（profiles 为空）该区块隐藏，走手填路径。 -->
+            <!-- Provider 协议 — Phase 8 新增；接入流程一气呵成。
+                 字段顺序刻意按"选 Profile → 填地址 → 填密钥 → 拉取 → 选模型"排列，
+                 让用户视线纵向连续，避免在多张卡片间反复跳跃。
+                 接口加载失败时（profiles 为空）该区块隐藏，走基本信息卡片的手填兜底。 -->
             <section
               v-if="profiles.length > 0"
               class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl"
@@ -550,12 +550,12 @@ onMounted(() => {
               <div class="border-b border-border/60 pb-md">
                 <h3 class="text-base font-semibold text-foreground">Provider 协议</h3>
                 <p class="mt-xs text-sm text-muted-foreground">
-                  选定协议后填写地址与密钥，点"拉取可用模型"获取该 Provider 实际可用的模型清单。
+                  按顺序填写：选协议 → 填 API 地址 → 填 API 密钥 → 拉取可用模型 → 选模型。
                 </p>
               </div>
 
-              <div class="mt-md grid gap-md md:grid-cols-2">
-                <div class="space-y-sm md:col-span-2">
+              <div class="mt-md space-y-md">
+                <div class="space-y-sm">
                   <Label>Provider Profile</Label>
                   <Select :model-value="formData.profileId" @update:model-value="updateProfile">
                     <SelectTrigger :class="{ 'border-destructive': errors.profileId }">
@@ -573,48 +573,85 @@ onMounted(() => {
                   </p>
                 </div>
 
-                <div class="space-y-sm md:col-span-2">
-                  <Label>拉取可用模型</Label>
-                  <div class="flex flex-wrap items-start gap-md">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      class="gap-sm"
-                      :disabled="probing || !formData.profileId || !formData.apiUrl?.trim()"
-                      @click="handleProbeModels"
-                    >
-                      <Loader2 v-if="probing" class="size-4 animate-spin" />
-                      <RefreshCw v-else class="size-4" />
-                      {{ probing ? '探测中...' : '拉取可用模型' }}
-                    </Button>
-                    <div v-if="probedModels.length > 0" class="min-w-64 flex-1 space-y-sm">
-                      <Select :model-value="formData.modelName" @update:model-value="selectProbedModel">
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择模型" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="model in probedModels" :key="model.id" :value="model.id">
-                            {{ model.name }}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p class="text-sm text-muted-foreground">
-                        共获取到 {{ probedModels.length }} 个模型，亦可在下方"模型名称"手动覆盖。
-                      </p>
-                    </div>
-                  </div>
+                <div class="space-y-sm">
+                  <Label>API 地址</Label>
+                  <Input
+                    v-model="formData.apiUrl"
+                    :placeholder="apiUrlPlaceholder"
+                    :class="{ 'border-destructive': errors.apiUrl }"
+                  />
+                  <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
+                </div>
+
+                <div class="space-y-sm">
+                  <Label>API 密钥</Label>
+                  <Input
+                    v-model="formData.apiKey"
+                    type="password"
+                    :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
+                  />
+                </div>
+
+                <div class="space-y-sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    class="gap-sm"
+                    :disabled="probing || !formData.profileId || !formData.apiUrl?.trim()"
+                    @click="handleProbeModels"
+                  >
+                    <Loader2 v-if="probing" class="size-4 animate-spin" />
+                    <RefreshCw v-else class="size-4" />
+                    {{ probing ? '探测中...' : '拉取可用模型' }}
+                  </Button>
                   <p v-if="probeError" class="text-sm text-destructive">探测失败：{{ probeError }}</p>
+                </div>
+
+                <!-- 模型名称：拉取成功后用 Select（探测列表）+ 手填兜底；
+                     拉取失败/未拉取走纯 Input。两种形态都写回同一个 formData.modelName。 -->
+                <div class="space-y-sm">
+                  <Label>模型名称</Label>
+                  <template v-if="probedModels.length > 0">
+                    <Select :model-value="formData.modelName" @update:model-value="selectProbedModel">
+                      <SelectTrigger :class="{ 'border-destructive': errors.modelName }">
+                        <SelectValue placeholder="选择模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="model in probedModels" :key="model.id" :value="model.id">
+                          {{ model.name }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      :model-value="formData.modelName"
+                      placeholder="或手动输入模型 ID 覆盖"
+                      :class="{ 'border-destructive': errors.modelName }"
+                      @update:model-value="handleModelNameInput"
+                    />
+                    <p class="text-sm text-muted-foreground">
+                      共获取到 {{ probedModels.length }} 个模型；上方下拉选择，或下方手填覆盖。
+                    </p>
+                  </template>
+                  <template v-else>
+                    <Input
+                      :model-value="formData.modelName"
+                      placeholder="拉取后自动填入，或手动输入模型 ID"
+                      :class="{ 'border-destructive': errors.modelName }"
+                      @update:model-value="handleModelNameInput"
+                    />
+                  </template>
+                  <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
                 </div>
               </div>
             </section>
 
-            <!-- 基本信息 — 服务类型、模型名、地址与密钥等连接必填项。 -->
+            <!-- 基本信息 — 服务元数据。模型选定后填这里，与接入流程解耦。 -->
             <section class="rounded-[calc(var(--radius)+10px)] border border-border/70 bg-background/72 p-xl">
               <div class="flex flex-wrap items-center justify-between gap-md border-b border-border/60 pb-md">
                 <div>
                   <h3 class="text-base font-semibold text-foreground">基本信息</h3>
                   <p class="mt-xs text-sm text-muted-foreground">
-                    填写连接所需的模型名、API 地址与密钥；模型名可由"拉取可用模型"自动填入，也可手动覆盖。
+                    服务类型、显示名称等元数据；不影响接入流程，可在保存前任意调整。
                   </p>
                 </div>
                 <label class="flex items-center gap-md rounded-full border border-border/70 bg-muted/20 px-md py-sm">
@@ -647,35 +684,39 @@ onMounted(() => {
                   />
                 </div>
 
-                <div class="space-y-sm md:col-span-2">
-                  <Label>模型名称</Label>
-                  <Input
-                    :model-value="formData.modelName"
-                    placeholder="可由上方探测自动填入，或手动输入模型 ID"
-                    :class="{ 'border-destructive': errors.modelName }"
-                    @update:model-value="handleModelNameInput"
-                  />
-                  <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
-                </div>
+                <!-- profiles 接口降级时（profiles 为空），Provider 协议卡片不渲染，
+                     接入字段在这里手填兜底，保证用户仍可保存配置。 -->
+                <template v-if="profiles.length === 0">
+                  <div class="space-y-sm md:col-span-2">
+                    <Label>模型名称</Label>
+                    <Input
+                      :model-value="formData.modelName"
+                      placeholder="输入模型 ID"
+                      :class="{ 'border-destructive': errors.modelName }"
+                      @update:model-value="handleModelNameInput"
+                    />
+                    <p v-if="errors.modelName" class="text-sm text-destructive">{{ errors.modelName }}</p>
+                  </div>
 
-                <div class="space-y-sm md:col-span-2">
-                  <Label>API 地址</Label>
-                  <Input
-                    v-model="formData.apiUrl"
-                    :placeholder="apiUrlPlaceholder"
-                    :class="{ 'border-destructive': errors.apiUrl }"
-                  />
-                  <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
-                </div>
+                  <div class="space-y-sm md:col-span-2">
+                    <Label>API 地址</Label>
+                    <Input
+                      v-model="formData.apiUrl"
+                      :placeholder="apiUrlPlaceholder"
+                      :class="{ 'border-destructive': errors.apiUrl }"
+                    />
+                    <p v-if="errors.apiUrl" class="text-sm text-destructive">{{ errors.apiUrl }}</p>
+                  </div>
 
-                <div class="space-y-sm md:col-span-2">
-                  <Label>API 密钥</Label>
-                  <Input
-                    v-model="formData.apiKey"
-                    type="password"
-                    :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
-                  />
-                </div>
+                  <div class="space-y-sm md:col-span-2">
+                    <Label>API 密钥</Label>
+                    <Input
+                      v-model="formData.apiKey"
+                      type="password"
+                      :placeholder="isEditing ? '留空则保留当前密钥' : '输入 API 密钥'"
+                    />
+                  </div>
+                </template>
 
                 <div class="space-y-sm">
                   <Label>超时时间（秒）</Label>
