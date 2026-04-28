@@ -504,6 +504,10 @@ public class ReactAgentLoop implements CallbackHelper {
                 // 推理模型多轮契约：从回调取本轮 reasoning_content 原文，透传到 ToolCall step；
                 // 后续 ProviderMessageBuilder 装载多轮 messages 时编码进 AssistantMessage，
                 // 由请求体 filter 在请求出去前注入到 OpenAI 协议字段（DeepSeek V4 等）。
+                // callback 默认实现返空串表示"非 thinking 模式 / 没产出 reasoning"；
+                // 真值 callback 可能返空串表示"thinking 但本次思考为空"——两者都原样透传，
+                // 由 ToolCall record 保留 "" 语义区分，下游 marker 链路按 reasoning != null
+                // 决定是否编码（空 reasoning 也编码空 marker，保证 DeepSeek 协议合规）。
                 String llmReasoningContent = callback.getFinalReasoningContent();
                 state = toolExecutionCoordinator.executeBatch(
                         state,
@@ -513,8 +517,7 @@ public class ReactAgentLoop implements CallbackHelper {
                         cancellationToken,
                         loopContext,
                         this::appendAndPublishStep,
-                        llmReasoningContent != null && !llmReasoningContent.isEmpty()
-                                ? llmReasoningContent : null);
+                        llmReasoningContent);
 
                 // ★ Skill 激活缓存失效 — 工具执行结果中的 activated_tool_ids / skill content
                 // 已由 ToolExecutionCoordinator 统一合并进 state；这里仅根据状态变化决定是否重建缓存。

@@ -470,7 +470,10 @@ public class ProviderMessageBuilder {
         var builder = AssistantMessage.builder().toolCalls(toolCalls);
         // content 编码：marker(reasoning) + thoughtText；filter 在请求出去前抽 marker 注入
         // reasoning_content 字段、清理 marker 还原 content 为 thoughtText（或空）
-        boolean hasReasoning = reasoningContent != null && !reasoningContent.isEmpty();
+        // reasoningContent != null（包括 ""）都编码 marker —— 空 reasoning 表示"thinking
+        // 模式但本次思考为空"，DeepSeek 多轮契约仍需回传字段。null 表示"非 thinking 模式"
+        // 不编码 marker（如 GPT-4o 普通响应）。
+        boolean hasReasoning = reasoningContent != null;
         boolean hasThought = thoughtText != null && !thoughtText.isEmpty();
         if (hasReasoning) {
             builder.content(ReasoningContentMarker.encode(hasThought ? thoughtText : null, reasoningContent));

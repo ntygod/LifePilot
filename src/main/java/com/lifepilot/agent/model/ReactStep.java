@@ -100,9 +100,10 @@ public sealed interface ReactStep permits
             if (callId != null && callId.isBlank()) {
                 callId = null;
             }
-            if (reasoningContent != null && reasoningContent.isEmpty()) {
-                reasoningContent = null;
-            }
+            // 不归一空串为 null —— 保留空串语义区分：
+            //   null  = 非 thinking 模式（如 GPT-4o 普通响应），不需要 reasoning_content
+            //   ""    = thinking 模式但本次响应思考为空（DeepSeek 短答案），仍需回传字段
+            //   非空  = 正常 thinking 内容
         }
     }
 

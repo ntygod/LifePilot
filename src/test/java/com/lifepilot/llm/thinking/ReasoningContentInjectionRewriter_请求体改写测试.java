@@ -92,9 +92,11 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
     }
 
     @Test
-    void 完整模式兜底_含_tool_calls_无_marker_注入空字符串占位() throws IOException {
-        // marker 链路上游 wiring 失败 / 短响应 reasoning 空被归一为 null 等边界 case，
-        // 仍要保证 DeepSeek 不会因为缺 reasoning_content 字段直接 400。最后防线。
+    void 含_tool_calls_无_marker_保持_pass_through() throws IOException {
+        // 无 marker = 上游 wiring 没编码（callback 未设置 reasoning，意味着非 thinking
+        // 模式，如 GPT-4o 普通响应）。不再做兜底注入 —— 真值链路是唯一通道，
+        // marker != null 在 ProviderMessageBuilder 编码（包括 ""），到这里没 marker
+        // 即视为非 thinking 调用，不应注入 reasoning_content 字段。
         String body = """
                 {"messages":[
                   {"role":"user","content":"q"},
@@ -104,25 +106,28 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
 
         byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(result).isNotNull();
-        JsonNode assistant = MAPPER.readTree(result).get("messages").get(1);
-        assertThat(assistant.has("reasoning_content")).isTrue();
-        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
-        assertThat(assistant.get("tool_calls").get(0).get("id").asText()).isEqualTo("c1");
+        assertThat(result).isNull();
     }
 
     @Test
-    void 完整模式兜底_已有_reasoning_content_字段不覆盖() throws IOException {
+    void 完整模式_空_marker_抽出空_reasoning_注入空字段() throws IOException {
+        // DeepSeek thinking 模式短响应：reasoning_content="" 是合法值（thinking 但
+        // 本次思考为空），仍需回传字段满足多轮契约。ProviderMessageBuilder 把 ""
+        // 也编码 marker → rewriter 抽 marker 拿到 "" → 注入到 reasoning_content。
+        String content = ReasoningContentMarker.encode(null, "");
         String body = """
                 {"messages":[
-                  {"role":"assistant","reasoning_content":"已有","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]}
+                  {"role":"assistant","content":%s,"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]}
                 ]}
-                """;
+                """.formatted(MAPPER.writeValueAsString(content));
 
         byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
 
-        // 已有字段 → pass-through（不覆盖也不二次注入）
-        assertThat(result).isNull();
+        assertThat(result).isNotNull();
+        JsonNode assistant = MAPPER.readTree(result).get("messages").get(0);
+        assertThat(assistant.has("reasoning_content")).isTrue();
+        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
+        assertThat(assistant.has("content")).isFalse();  // marker 全部清理
     }
 
     @Test
