@@ -21,7 +21,6 @@ import KbSourceTag from './KbSourceTag.vue'
 import MessageActions from './MessageActions.vue'
 import MessageError from './MessageError.vue'
 import MessageFeedback from './MessageFeedback.vue'
-import ReasoningSection from './ReasoningSection.vue'
 import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
@@ -35,12 +34,6 @@ const props = defineProps<{
   streaming?: boolean
   streamingContent?: string
   streamingReasoningEvents?: ReasoningEvent[]
-  /** 流式期间的推理 token 累计文本（reasoning_content 增量缓冲区） */
-  streamingReasoningBuffer?: string
-  /** 是否处于推理流活跃中（首个 reasoning delta 触发，DONE 后置 false） */
-  streamingIsReasoningActive?: boolean
-  /** 流式推理时长（毫秒），DONE 后定格 */
-  streamingReasoningDurationMs?: number
   streamingReactSteps?: ReactStepDto[]
   isLastAssistant?: boolean
   streamingA2uiComponents?: A2uiComponent[]
@@ -274,35 +267,6 @@ const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   return props.message.reasoningEvents ?? []
 })
 
-/** 推理流文本：流式期间从 streamingReasoningBuffer 取，历史消息从 message.reasoningContent 取 */
-const activeReasoningContent = computed<string>(() => {
-  if (props.streaming) {
-    return props.streamingReasoningBuffer ?? ''
-  }
-  return props.message.reasoningContent ?? ''
-})
-
-/** 推理流活跃状态：流式期间响应实时；历史消息恒为 false（不再思考） */
-const activeReasoningIsActive = computed<boolean>(() => {
-  if (props.streaming) {
-    return !!props.streamingIsReasoningActive
-  }
-  return false
-})
-
-/** 推理流时长：流式期间响应实时（DONE 后定格）；历史消息从 message.reasoningDurationMs 取 */
-const activeReasoningDurationMs = computed<number | undefined>(() => {
-  if (props.streaming) {
-    return props.streamingReasoningDurationMs
-  }
-  return props.message.reasoningDurationMs
-})
-
-/** 推理 section 显示条件：流式中或已落入历史 reasoningContent */
-const shouldShowReasoning = computed<boolean>(() =>
-  activeReasoningIsActive.value || activeReasoningContent.value.length > 0,
-)
-
 const activePermissionApprovals = computed<Record<string, PermissionApprovalRequest>>(() => ({
   ...(props.message.permissionApprovals ?? {}),
   ...(props.streamingPermissionApprovals ?? {}),
@@ -351,7 +315,6 @@ const hasNonApprovalAssistantBody = computed(() => (
   || kbSources.value.length > 0
   || activeReasoningEvents.value.length > 0
   || activeReactSteps.value.length > 0
-  || shouldShowReasoning.value
 ))
 
 const isApprovalOnlyAssistant = computed(() => (
@@ -479,13 +442,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
                 <span class="truncate">{{ buildPermissionApprovalLog(log) }}</span>
               </div>
             </div>
-
-            <ReasoningSection
-              v-if="shouldShowReasoning"
-              :reasoning="activeReasoningContent"
-              :active="activeReasoningIsActive"
-              :duration-ms="activeReasoningDurationMs"
-            />
 
             <ThinkingIndicator
               v-if="activeReasoningEvents.length > 0 || activeReactSteps.length > 0"

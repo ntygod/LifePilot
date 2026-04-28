@@ -12,12 +12,6 @@ const props = defineProps<{
   streamingContent?: string
   /** 流式推理中的实时推理事件。 */
   streamingReasoningEvents?: ReasoningEvent[]
-  /** 流式推理 token 累计文本（reasoning_content 增量缓冲区）。 */
-  streamingReasoningBuffer?: string
-  /** 是否处于推理流活跃中。 */
-  streamingIsReasoningActive?: boolean
-  /** 流式推理时长（毫秒）。 */
-  streamingReasoningDurationMs?: number
   /** 流式推理中的实时 ReAct 步骤。 */
   streamingReactSteps?: ReactStepDto[]
   /** 流式阶段中的 A2UI 组件树。 */
@@ -211,9 +205,6 @@ function highlight(text: string): string {
           :streaming="isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant'"
           :streaming-content="streamingContent"
           :streaming-reasoning-events="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningEvents : undefined"
-          :streaming-reasoning-buffer="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningBuffer : undefined"
-          :streaming-is-reasoning-active="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingIsReasoningActive : undefined"
-          :streaming-reasoning-duration-ms="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningDurationMs : undefined"
           :streaming-react-steps="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReactSteps : undefined"
           :streaming-a2ui-components="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingA2uiComponents : undefined"
           :streaming-permission-approvals="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovals : undefined"
@@ -245,9 +236,6 @@ function highlight(text: string): string {
         :streaming="true"
         :streaming-content="streamingContent"
         :streaming-reasoning-events="streamingReasoningEvents"
-        :streaming-reasoning-buffer="streamingReasoningBuffer"
-        :streaming-is-reasoning-active="streamingIsReasoningActive"
-        :streaming-reasoning-duration-ms="streamingReasoningDurationMs"
         :streaming-react-steps="streamingReactSteps"
         :streaming-a2ui-components="streamingA2uiComponents"
         :streaming-permission-approvals="streamingPermissionApprovals"
