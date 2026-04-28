@@ -92,10 +92,9 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
     }
 
     @Test
-    void 完整模式_含_tool_calls_无_marker_保持_pass_through() throws IOException {
-        // 响应解析链路（chunkToEvents 发 ReasoningChunk + StreamingCallback/NonStreamingCallback
-        // 同步读 metadata）已彻底覆盖；DeepSeek 调用必有 marker。无 marker 即视为非 DeepSeek 路径
-        // 或上游 wiring 失败，宁可让 DeepSeek 以 400 立即暴露问题，也不静默退化注入空串。
+    void 完整模式兜底_含_tool_calls_无_marker_注入空字符串占位() throws IOException {
+        // marker 链路上游 wiring 失败 / 短响应 reasoning 空被归一为 null 等边界 case，
+        // 仍要保证 DeepSeek 不会因为缺 reasoning_content 字段直接 400。最后防线。
         String body = """
                 {"messages":[
                   {"role":"user","content":"q"},
@@ -105,7 +104,24 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
 
         byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
 
-        // 无 marker → pass-through（不再做兜底空串注入）
+        assertThat(result).isNotNull();
+        JsonNode assistant = MAPPER.readTree(result).get("messages").get(1);
+        assertThat(assistant.has("reasoning_content")).isTrue();
+        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
+        assertThat(assistant.get("tool_calls").get(0).get("id").asText()).isEqualTo("c1");
+    }
+
+    @Test
+    void 完整模式兜底_已有_reasoning_content_字段不覆盖() throws IOException {
+        String body = """
+                {"messages":[
+                  {"role":"assistant","reasoning_content":"已有","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]}
+                ]}
+                """;
+
+        byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
+
+        // 已有字段 → pass-through（不覆盖也不二次注入）
         assertThat(result).isNull();
     }
 

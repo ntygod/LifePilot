@@ -46,13 +46,18 @@ import java.io.IOException;
  *   <li>遍历 {@code messages[]}，对 {@code role=assistant} 消息做检查；</li>
  *   <li>若 {@code content} 含 {@link ReasoningContentMarker} 标记：
  *       <ul>
- *         <li>抽出 marker 内 reasoning_content 文本；</li>
+ *         <li>抽出 marker 内 reasoning_content 文本（B 档真值路径）；</li>
  *         <li>完整模式下设置 {@code reasoning_content} 字段，清理模式跳过；</li>
  *         <li>从 content 移除 marker 段（marker 之外的 content 保留）；</li>
  *         <li>若移除后 content 为空，删除 content 字段（避免 OpenAI API 校验告警）。</li>
  *       </ul></li>
- *   <li>不含 marker 的 assistant 消息：保持原样不改动
- *       （DeepSeek 官方契约：无 tool_call 场景 reasoning_content 字段被 API 忽略，回传是浪费 token）。</li>
+ *   <li>完整模式下，若 assistant 消息含非空 {@code tool_calls} 但缺 {@code reasoning_content}
+ *       字段（marker 链路上游 wiring 失败 / 短响应 reasoning_content 为空被边界条件
+ *       归一为 null 等）：兜底注入空字符串占位。
+ *       <p>DeepSeek 多轮契约要求带 tool_calls 的 assistant 必须含 reasoning_content
+ *       字段（值可空但字段必须存在），缺字段直接 400。本兜底是最后防线，覆盖
+ *       marker 真值链路的所有边界 case，确保 DeepSeek 不会拒绝。</li>
+ *   <li>清理模式 / 不含 marker 且无 tool_calls 的 assistant：保持原样不改动。</li>
  * </ul>
  *
  * <p>两端拦截骨架（RestClient / WebClient）由 {@link AbstractJsonBodyRewritingStrategy}
@@ -127,20 +132,35 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
             String text = (content != null && content.isTextual()) ? content.asText() : null;
             boolean hasMarker = text != null && ReasoningContentMarker.hasMarker(text);
 
-            if (!hasMarker) continue;
-            // 抽 marker 内 reasoning，永远清理 marker（防控制字符污染请求体）
-            String reasoning = ReasoningContentMarker.extract(text);
-            String stripped = ReasoningContentMarker.stripMarker(text);
-            if (injectField && reasoning != null) {
-                // 完整模式：DeepSeek 协议 provider 注入 reasoning_content 字段
-                msgObj.put("reasoning_content", reasoning);
+            if (hasMarker) {
+                // 抽 marker 内 reasoning，永远清理 marker（防控制字符污染请求体）
+                String reasoning = ReasoningContentMarker.extract(text);
+                String stripped = ReasoningContentMarker.stripMarker(text);
+                if (injectField && reasoning != null) {
+                    // 完整模式：DeepSeek 协议 provider 注入 reasoning_content 字段
+                    msgObj.put("reasoning_content", reasoning);
+                }
+                if (stripped == null || stripped.isEmpty()) {
+                    msgObj.remove("content");
+                } else {
+                    msgObj.put("content", stripped);
+                }
+                mutated = true;
+                continue;
             }
-            if (stripped == null || stripped.isEmpty()) {
-                msgObj.remove("content");
-            } else {
-                msgObj.put("content", stripped);
+
+            // 兜底分支仅完整模式启用 —— 清理模式不需要 reasoning_content 字段
+            if (!injectField) continue;
+            // 带 tool_calls 但缺 reasoning_content 字段（marker 链路上游 wiring
+            // 失败 / 短响应 reasoning 空被归一为 null 等边界 case）→ 注入空字符串
+            // 占位避免 DeepSeek 400。最后防线：marker 路径正常时本分支不会走到。
+            JsonNode toolCalls = msg.get("tool_calls");
+            boolean hasToolCalls = toolCalls != null && toolCalls.isArray() && toolCalls.size() > 0;
+            boolean missingReasoning = !msg.has("reasoning_content");
+            if (hasToolCalls && missingReasoning) {
+                msgObj.put("reasoning_content", "");
+                mutated = true;
             }
-            mutated = true;
         }
         if (mutated && log.isDebugEnabled()) {
             log.debug("reasoning rewriter body 已改写: mode={}, bytesBefore={}",
