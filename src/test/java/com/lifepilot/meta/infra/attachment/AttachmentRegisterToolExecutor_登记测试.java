@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
  * @author zsg
  * @since 2026-04-28
  */
-@DisplayName("attachment.register 登记")
+@DisplayName("file.attach 登记")
 class AttachmentRegisterToolExecutor_登记测试 {
 
     private static final String SESSION_ID = "session-test";
@@ -101,7 +101,7 @@ class AttachmentRegisterToolExecutor_登记测试 {
         var resolver = new TestWorkspaceResolver(workspace);
         var executor = new AttachmentRegisterToolExecutor(repository, resolver);
         ToolResult result = executor.execute(new ToolInput(
-                "attachment.register", Map.of("path", "x"),
+                "file.attach", Map.of("path", "x"),
                 JsonSchema.of(Map.of()), null, null));
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.error()).contains("会话上下文");
@@ -135,7 +135,7 @@ class AttachmentRegisterToolExecutor_登记测试 {
     }
 
     private ToolInput input(Map<String, Object> params) {
-        return new ToolInput("attachment.register", params, JsonSchema.of(Map.of()),
+        return new ToolInput("file.attach", params, JsonSchema.of(Map.of()),
                 null, Map.of(ToolContextKeys.SESSION_ID, SESSION_ID));
     }
 

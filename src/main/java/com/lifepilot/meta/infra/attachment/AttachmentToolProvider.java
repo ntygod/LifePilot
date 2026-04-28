@@ -16,11 +16,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 附件工具提供者 —— 把 workspace 内的文件挂载为对话附件。
+ * 文件附件挂载工具提供者 —— 把 workspace 内的文件挂载为对话附件。
+ *
+ * <p>归到 {@code file.*} 命名空间（与 file.read/write/list/edit/manage 同组），
+ * 而非另起 {@code attachment} namespace —— 跟项目偏好一致：避免单一动作起独立
+ * namespace，复用语义同组的现有 namespace。</p>
  *
  * <p>替代 LLM 用 base64 字符串绕路返回图片的反模式：
  * 工具产物（matplotlib 画图、document.create_docx 等）落到 workspace 后，
- * LLM 调 {@code attachment.register(path=...)} 拿到 attachmentId，最终回答里
+ * LLM 调 {@code file.attach(path=...)} 拿到 attachmentId，最终回答里
  * reference 该 ID，前端拿到自动渲染图片/下载入口。</p>
  *
  * @author zsg
@@ -50,9 +54,9 @@ public final class AttachmentToolProvider {
                 "description", "附件显示名（可选，默认用文件名）"));
 
         return BuiltinTool.builder()
-                .id("attachment.register")
+                .id("file.attach")
                 .category(ToolCategory.ACTION)
-                .name("登记对话附件")
+                .name("挂载对话附件")
                 .description(
                         "把 workspace 内的文件挂载为对话附件，返回 attachmentId 在最终回答里 reference，"
                                 + "前端拿到 ID 自动渲染图片/文件下载入口。"
@@ -70,7 +74,7 @@ public final class AttachmentToolProvider {
                         ToolSchedulingMode.PARALLEL_SAFE,
                         ToolScopeResolvers.pathTrees("path")
                 ))
-                .tags(List.of("附件", "图片", "下载", "展示", "attachment", "register", "图表", "产物"))
+                .tags(List.of("附件", "挂载", "图片", "下载", "展示", "file", "attach", "图表", "产物"))
                 .executor(executor::execute)
                 .build();
     }

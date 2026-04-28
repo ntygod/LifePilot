@@ -28,7 +28,7 @@ import java.util.Optional;
  * <p>典型用法：
  * <pre>
  * 1. shell.exec / code.execute 生成 ~/.zhiwei/workspace/chart.png
- * 2. attachment.register(path=".../chart.png") → attachmentId=att_xxx
+ * 2. file.attach(path=".../chart.png") → attachmentId=att_xxx
  * 3. 最终回答里引用 att_xxx，UI 渲染图片
  * </pre>
  *
