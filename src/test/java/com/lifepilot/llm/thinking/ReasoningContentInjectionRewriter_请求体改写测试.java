@@ -78,7 +78,7 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
     }
 
     @Test
-    void 不含_marker_且无_tool_calls_的_assistant_消息不被改动() throws IOException {
+    void 完整模式_所有_assistant_都注入_reasoning_content_即使_tool_calls_数组空() throws IOException {
         String body = """
                 {"messages":[
                   {"role":"assistant","content":"普通回答","tool_calls":[]}
@@ -87,16 +87,16 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
 
         byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
 
-        // 无 tool_calls + 无 marker → DeepSeek 协议不要求 reasoning_content，pass-through
-        assertThat(result).isNull();
+        // 完整模式实测要求：所有 assistant 必须含 reasoning_content 字段
+        assertThat(result).isNotNull();
+        JsonNode assistant = MAPPER.readTree(result).get("messages").get(0);
+        assertThat(assistant.has("reasoning_content")).isTrue();
+        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
     }
 
     @Test
-    void 含_tool_calls_无_marker_保持_pass_through() throws IOException {
-        // 无 marker = 上游 wiring 没编码（callback 未设置 reasoning，意味着非 thinking
-        // 模式，如 GPT-4o 普通响应）。不再做兜底注入 —— 真值链路是唯一通道，
-        // marker != null 在 ProviderMessageBuilder 编码（包括 ""），到这里没 marker
-        // 即视为非 thinking 调用，不应注入 reasoning_content 字段。
+    void 完整模式_含_tool_calls_无_marker_注入空字符串占位() throws IOException {
+        // 实测：DeepSeek thinking 模式要求所有 assistant 都有 reasoning_content 字段
         String body = """
                 {"messages":[
                   {"role":"user","content":"q"},
@@ -106,7 +106,33 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
 
         byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(result).isNull();
+        assertThat(result).isNotNull();
+        JsonNode assistant = MAPPER.readTree(result).get("messages").get(1);
+        assertThat(assistant.has("reasoning_content")).isTrue();
+        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
+    }
+
+    @Test
+    void 完整模式_无_tool_calls_纯_content_assistant_也注入空字段() throws IOException {
+        // 实测关键 case：ReactStep.Answer 转 AssistantMessage(text) 没编码 marker 也没 tool_calls，
+        // DeepSeek 仍要求该 assistant 含 reasoning_content 字段（缺 → 400）。
+        // 这是之前最后一次 400 的真根因 —— 对应日志 "assistant[4]: toolCalls=0, contentLen=162,
+        // reasoning_content=<MISSING>"。
+        String body = """
+                {"messages":[
+                  {"role":"user","content":"q"},
+                  {"role":"assistant","content":"我直接回答，不调工具"}
+                ]}
+                """;
+
+        byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(result).isNotNull();
+        JsonNode assistant = MAPPER.readTree(result).get("messages").get(1);
+        assertThat(assistant.has("reasoning_content")).isTrue();
+        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
+        // content 保持原样不变
+        assertThat(assistant.get("content").asText()).isEqualTo("我直接回答，不调工具");
     }
 
     @Test
@@ -219,8 +245,10 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
     }
 
     @Test
-    void content_为数组而非字符串_pass_through() throws IOException {
-        // OpenAI 多模态消息 content 可能是数组（含 image_url 等），filter 不识别非字符串 content
+    void content_为数组多模态_仍注入_reasoning_content_占位() throws IOException {
+        // OpenAI 多模态消息 content 可能是数组（含 image_url 等），filter 不识别非字符串
+        // content（不抽 marker），但完整模式下 DeepSeek 实测要求所有 assistant 都有
+        // reasoning_content 字段，所以多模态 assistant 也注入空字段。
         String body = """
                 {"messages":[
                   {"role":"assistant","content":[{"type":"text","text":"a"}],"tool_calls":[]}
@@ -229,6 +257,11 @@ class ReasoningContentInjectionRewriter_请求体改写测试 {
 
         byte[] result = rewriter.rewriteBody(body.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(result).isNull();
+        assertThat(result).isNotNull();
+        JsonNode assistant = MAPPER.readTree(result).get("messages").get(0);
+        assertThat(assistant.has("reasoning_content")).isTrue();
+        assertThat(assistant.get("reasoning_content").asText()).isEmpty();
+        // content 数组保持不变
+        assertThat(assistant.get("content").isArray()).isTrue();
     }
 }
