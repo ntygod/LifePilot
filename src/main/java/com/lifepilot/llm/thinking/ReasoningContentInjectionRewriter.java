@@ -122,16 +122,30 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
         if (!messages.isArray() || messages.isEmpty()) {
             return null;
         }
+        // 诊断统计：记录 messages 数组里 assistant 消息的关键属性，便于排查"rewriter 命中
+        // 但 DeepSeek 仍 400"这类问题（marker 没编码 / 字段没注入 / 字段值不对等）
+        int assistantTotal = 0;
+        int assistantWithToolCalls = 0;
+        int assistantWithMarker = 0;
+        int assistantWithReasoningField = 0;
+
         boolean mutated = false;
         for (JsonNode msg : (ArrayNode) messages) {
             if (!msg.isObject()) continue;
             JsonNode role = msg.get("role");
             if (role == null || !"assistant".equals(role.asText())) continue;
+            assistantTotal++;
             ObjectNode msgObj = (ObjectNode) msg;
 
+            JsonNode toolCallsNode = msg.get("tool_calls");
+            if (toolCallsNode != null && toolCallsNode.isArray() && toolCallsNode.size() > 0) {
+                assistantWithToolCalls++;
+            }
             JsonNode content = msg.get("content");
             String text = (content != null && content.isTextual()) ? content.asText() : null;
             boolean hasMarker = text != null && ReasoningContentMarker.hasMarker(text);
+            if (hasMarker) assistantWithMarker++;
+            if (msg.has("reasoning_content")) assistantWithReasoningField++;
 
             if (!hasMarker) continue;
             // 抽 marker 内 reasoning，永远清理 marker（防控制字符污染请求体）
@@ -140,6 +154,9 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
             if (injectField && reasoning != null) {
                 // 完整模式：DeepSeek 协议 provider 注入 reasoning_content 字段（含空字符串）
                 msgObj.put("reasoning_content", reasoning);
+                assistantWithReasoningField++;  // 计数本次注入
+                log.info("rewriter 注入 reasoning_content: msgIndex={}, reasoningLength={}, isEmpty={}",
+                        assistantTotal - 1, reasoning.length(), reasoning.isEmpty());
             }
             if (stripped == null || stripped.isEmpty()) {
                 msgObj.remove("content");
@@ -148,9 +165,38 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
             }
             mutated = true;
         }
-        if (mutated && log.isDebugEnabled()) {
-            log.debug("reasoning rewriter body 已改写: mode={}, bytesBefore={}",
-                    injectField ? "FULL_INJECTION" : "CLEANUP_ONLY", body.length);
+        log.info("reasoning rewriter 命中: mode={}, totalMessages={}, assistantTotal={}, "
+                        + "assistantWithToolCalls={}, assistantWithMarker={}, "
+                        + "assistantWithReasoningField={}, mutated={}",
+                injectField ? "FULL_INJECTION" : "CLEANUP_ONLY",
+                messages.size(), assistantTotal,
+                assistantWithToolCalls, assistantWithMarker,
+                assistantWithReasoningField, mutated);
+
+        // 关键诊断：dump 改写后所有 assistant 消息的结构，定位"rewriter 命中但 DeepSeek
+        // 仍 400"问题（哪条 assistant 缺 reasoning_content / 字段值不对等）
+        if (injectField && log.isInfoEnabled()) {
+            int idx = 0;
+            for (JsonNode msg : (ArrayNode) messages) {
+                if (!msg.isObject()) { idx++; continue; }
+                String role = msg.path("role").asText("?");
+                if (!"assistant".equals(role)) { idx++; continue; }
+                JsonNode tc = msg.get("tool_calls");
+                int toolCallsCount = (tc != null && tc.isArray()) ? tc.size() : 0;
+                JsonNode contentNode = msg.get("content");
+                int contentLen = (contentNode != null && contentNode.isTextual())
+                        ? contentNode.asText().length() : -1;
+                JsonNode reasoningNode = msg.get("reasoning_content");
+                String reasoningPreview = reasoningNode == null
+                        ? "<MISSING>"
+                        : (reasoningNode.isTextual()
+                                ? "len=" + reasoningNode.asText().length()
+                                  + (reasoningNode.asText().isEmpty() ? " (EMPTY)" : "")
+                                : "<NOT_STRING:" + reasoningNode.getNodeType() + ">");
+                log.info("  assistant[{}]: toolCalls={}, contentLen={}, reasoning_content={}",
+                        idx, toolCallsCount, contentLen, reasoningPreview);
+                idx++;
+            }
         }
         return mutated ? MAPPER.writeValueAsBytes(root) : null;
     }
