@@ -145,13 +145,14 @@ public class MetaAutoConfiguration {
                                         SsrfGuard ssrfGuard,
                                         InteractiveElementIndexer interactiveElementIndexer,
                                         @Nullable PythonRuntimeManager pythonRuntimeManager,
-                                        @Nullable CommandGuard commandGuard) {
+                                        @Nullable CommandGuard commandGuard,
+                                        @Nullable com.lifepilot.conversation.transcript.SessionTranscriptRepository sessionTranscriptRepository) {
         return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator,
                 sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler,
                 notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher,
                 channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository,
                 chatSessionRepository, skillPathWhitelist, ssrfGuard, interactiveElementIndexer,
-                pythonRuntimeManager, commandGuard);
+                pythonRuntimeManager, commandGuard, sessionTranscriptRepository);
     }
 
     /**
