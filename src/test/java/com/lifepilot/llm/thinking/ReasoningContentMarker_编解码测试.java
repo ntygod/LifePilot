@@ -32,13 +32,21 @@ class ReasoningContentMarker_编解码测试 {
     }
 
     @Test
-    void reasoning_为空时不编码_marker() {
+    void reasoning_为_null_时不编码_marker() {
+        // null = 非 thinking 模式（如 GPT-4o 普通响应），不需要 reasoning_content 字段
         String result = ReasoningContentMarker.encode("正文", null);
         assertThat(result).isEqualTo("正文");
         assertThat(ReasoningContentMarker.hasMarker(result)).isFalse();
+    }
 
-        String result2 = ReasoningContentMarker.encode("正文", "");
-        assertThat(result2).isEqualTo("正文");
+    @Test
+    void reasoning_为空字符串_仍编码_marker_保留_thinking_语义() {
+        // "" = thinking 模式但本次思考为空（DeepSeek 短响应），仍需编码 marker，
+        // 下游 rewriter 抽出空 reasoning 注入 reasoning_content 字段满足多轮契约
+        String result = ReasoningContentMarker.encode("正文", "");
+        assertThat(ReasoningContentMarker.hasMarker(result)).isTrue();
+        assertThat(ReasoningContentMarker.extract(result)).isEmpty();
+        assertThat(ReasoningContentMarker.stripMarker(result)).isEqualTo("正文");
     }
 
     @Test

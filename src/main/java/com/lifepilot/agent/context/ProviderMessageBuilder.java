@@ -407,6 +407,12 @@ public class ProviderMessageBuilder {
                     observation.output()
             );
             body = preview.isBlank() ? observation.output() : preview;
+        } else if (!observation.success()) {
+            // 失败 ToolResult 截断 —— PowerShell CLIXML / Python traceback / 各种工具
+            // 错误输出的尾部经常是低信息量的状态字段或 XML 噪音，前 600 字一般足够
+            // LLM 理解错误根因。截断后单条工具失败 result 在多轮 history 里占用 token
+            // 从动辄 1-3KB 降到 ~600 字，避免 ReAct 多轮工具失败把 prompt 撑爆。
+            body = truncateFailureOutput(observation.output());
         } else {
             body = observation.output();
         }
@@ -423,6 +429,27 @@ public class ProviderMessageBuilder {
             }
         }
         return body;
+    }
+
+    /** 失败工具输出截断长度上限（前 N 字，超出追加 ...[已截断] 提示）。 */
+    private static final int FAILURE_OUTPUT_MAX_CHARS = 600;
+
+    /**
+     * 截断失败工具输出 —— 保留前 {@value #FAILURE_OUTPUT_MAX_CHARS} 字，超出截断尾部。
+     *
+     * <p>失败 ToolResult 的关键信息（错误类型、首行栈、关键字段）通常在前几百字内；
+     * 后面的 PowerShell CLIXML 进度对象 / Python traceback 中段 / 各种 metadata 噪音
+     * 对 LLM 理解错误意义不大，但累计在多轮 ReAct 里能占用大量 prompt token。</p>
+     */
+    static String truncateFailureOutput(String output) {
+        if (output == null || output.isEmpty()) {
+            return "";
+        }
+        if (output.length() <= FAILURE_OUTPUT_MAX_CHARS) {
+            return output;
+        }
+        return output.substring(0, FAILURE_OUTPUT_MAX_CHARS)
+                + "\n...[失败输出已截断, 总长度=" + output.length() + " 字]";
     }
 
     /**
@@ -443,7 +470,10 @@ public class ProviderMessageBuilder {
         var builder = AssistantMessage.builder().toolCalls(toolCalls);
         // content 编码：marker(reasoning) + thoughtText；filter 在请求出去前抽 marker 注入
         // reasoning_content 字段、清理 marker 还原 content 为 thoughtText（或空）
-        boolean hasReasoning = reasoningContent != null && !reasoningContent.isEmpty();
+        // reasoningContent != null（包括 ""）都编码 marker —— 空 reasoning 表示"thinking
+        // 模式但本次思考为空"，DeepSeek 多轮契约仍需回传字段。null 表示"非 thinking 模式"
+        // 不编码 marker（如 GPT-4o 普通响应）。
+        boolean hasReasoning = reasoningContent != null;
         boolean hasThought = thoughtText != null && !thoughtText.isEmpty();
         if (hasReasoning) {
             builder.content(ReasoningContentMarker.encode(hasThought ? thoughtText : null, reasoningContent));

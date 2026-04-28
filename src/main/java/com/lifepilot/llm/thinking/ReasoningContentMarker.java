@@ -46,12 +46,16 @@ public final class ReasoningContentMarker {
     /**
      * 把 reasoning_content 编码为 marker 段，附加到原 content 之前。
      *
+     * <p>reasoning != null（包括 ""）都编码 marker —— 空字符串语义是"thinking 模式
+     * 但本次思考为空"（DeepSeek 短响应），多轮契约仍需回传字段。null 表示"非 thinking
+     * 模式"不编码（如 GPT-4o 普通响应）。</p>
+     *
      * @param originalContent 原 AssistantMessage.text（可空）
-     * @param reasoning       reasoning_content 原文；空字符串或 null 返回原 content
+     * @param reasoning       reasoning_content 原文；null 时返回原 content 不编码
      * @return 编码后的 content；marker 段位于最前
      */
     public static String encode(@Nullable String originalContent, @Nullable String reasoning) {
-        if (reasoning == null || reasoning.isEmpty()) {
+        if (reasoning == null) {
             return originalContent != null ? originalContent : "";
         }
         String safe = originalContent != null ? originalContent : "";

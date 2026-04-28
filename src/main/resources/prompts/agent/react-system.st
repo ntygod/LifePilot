@@ -16,10 +16,17 @@
 4. 工具不在可见集合 → `tools.search(query="...")` 发现
 5. 实在找不到专用工具 → `shell.exec` / `code.execute` 兜底
 
+## 历史结果优先于重跑
+- 当前任务需要前面对话/工具的某次完整结果时，**先查 transcript 而不是重跑**：
+  - 摘要里方括号 `[callId=xxx]` 就是历史调用的索引
+  - `transcript.get(callId="...")` 取完整原文 / `transcript.search(toolId="...", keyword="...")` 检索
+  - 重跑只在历史确认丢失或需要刷新数据时才执行
+
 ## 禁止的反模式
 - 凭记忆断言"没有 X 工具" —— 必须先 tools.search 核实
 - 跳过 tools.search 直接 shell.exec 兜底
 - 在主工作目录跑破坏性命令而不先备份 / 隔离
+- 用户引用前面工具结果时盲目重跑同一工具（应先 transcript.search/get 复用）
 
 ## 执行规范
 - 多个互不依赖的只读/低风险工具**必须同一轮并行调用**（多次 search、多文件读取、多数据源获取）

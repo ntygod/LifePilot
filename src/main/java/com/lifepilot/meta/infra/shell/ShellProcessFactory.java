@@ -108,6 +108,14 @@ public final class ShellProcessFactory {
         pb.directory(workDir.toFile());
         pb.redirectErrorStream(false);
 
+        // 默认强制 Python / Node 子进程 stdio 用 UTF-8（Windows 默认 cp936/GBK 会让
+        // shell 内部跑的 python ww_chart.py / node script.js 等子进程读 UTF-8 文件失败 ——
+        // 典型如 LLM 写的 JSON 数据被 GBK 解码报 UnicodeDecodeError）。
+        // 用户传 env 可覆盖，但绝大多数场景默认值即正确。
+        pb.environment().putIfAbsent("PYTHONIOENCODING", "utf-8");
+        pb.environment().putIfAbsent("PYTHONUTF8", "1");
+        pb.environment().putIfAbsent("LANG", "en_US.UTF-8");
+
         // 注入额外环境变量（过滤危险 key）
         if (env != null && !env.isEmpty()) {
             env.forEach((key, value) -> {

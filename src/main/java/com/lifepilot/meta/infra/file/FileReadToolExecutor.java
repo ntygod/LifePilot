@@ -57,6 +57,25 @@ public class FileReadToolExecutor {
     private static final String FORMATTED_TRUNCATION_HINT = "\n...[内容已截断，maxChars=%d]";
 
     /**
+     * 二进制扩展名 —— 文本读取必失败，直接报错引导 LLM 走 file.attach。
+     *
+     * <p>避免用 BufferedReader UTF-8 强行读 PNG/JPG 等图片文件触发
+     * {@code MalformedInputException: Input length = 1}。LLM 看到错误后应通过
+     * {@code file.attach} 把文件挂载为对话附件（返回 attachmentId 在最终
+     * 回复里 reference），而不是绕路用 base64 编码到 .txt 再 file_read 读出
+     * base64 字符串作为文本返回（实测一次冒烟里 LLM 真这么干了，UI 拿到一长串
+     * 文本无法渲染图片）。</p>
+     */
+    private static final Set<String> BINARY_EXTENSIONS = Set.of(
+            "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg",
+            "mp3", "wav", "ogg", "flac", "m4a",
+            "mp4", "webm", "mov", "avi", "mkv",
+            "zip", "tar", "gz", "rar", "7z",
+            "exe", "dll", "so", "dylib",
+            "ttf", "otf", "woff", "woff2"
+    );
+
+    /**
      * 结构化文档扩展名白名单 —— 命中则走 {@link DocumentParserService}，
      * 获得 metadata / 结构抽取等能力；未命中则按纯文本 BufferedReader 读取（cat 心智，
      * {@code startLine} / {@code endLine} 保留原行为）。
@@ -192,11 +211,30 @@ public class FileReadToolExecutor {
             return ToolResult.error("路径不是普通文件: " + pathStr);
         }
 
+        // 二进制文件（图片 / 音视频 / 压缩包等）直接报错引导，不要用 BufferedReader 强读
+        if (isBinaryFile(filePath)) {
+            return ToolResult.error(
+                    "file.read 仅支持文本与结构化文档；该文件是二进制（图片 / 音视频 / 压缩包等）。"
+                            + "如需在最终回答中向用户展示该文件，请用 file.attach 工具把它挂载为对话附件，"
+                            + "返回的 attachmentId 在最终回复里引用即可（前端会自动渲染图片/下载入口）。"
+                            + "路径: " + pathStr);
+        }
+
         // 按扩展名分流：结构化文档走 DocumentParserService，其他走 BufferedReader
         if (isFormattedDocument(filePath)) {
             return executeFormattedRead(filePath, filePath.getFileName().toString(), maxChars);
         }
         return executePlainTextRead(filePath, pathStr, encoding, startLineOpt, endLineOpt, maxChars);
+    }
+
+    /** 按扩展名判断是否为二进制（不可文本读取的）文件类型。 */
+    private boolean isBinaryFile(Path filePath) {
+        String fileName = filePath.getFileName().toString().toLowerCase();
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0 || dot == fileName.length() - 1) {
+            return false;
+        }
+        return BINARY_EXTENSIONS.contains(fileName.substring(dot + 1));
     }
 
     /**

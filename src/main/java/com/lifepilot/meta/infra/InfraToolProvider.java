@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
+import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.meta.config.MetaProperties;
@@ -24,7 +25,9 @@ import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.shell.ShellToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
+import com.lifepilot.meta.infra.attachment.AttachmentToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
+import com.lifepilot.meta.infra.transcript.TranscriptToolProvider;
 import com.lifepilot.meta.infra.interaction.NotifyToolProvider;
 import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
@@ -86,6 +89,7 @@ public class InfraToolProvider {
     private final InteractiveElementIndexer interactiveElementIndexer;
     @Nullable private final PythonRuntimeManager pythonRuntimeManager;
     @Nullable private final CommandGuard commandGuard;
+    @Nullable private final SessionTranscriptRepository sessionTranscriptRepository;
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
@@ -109,7 +113,8 @@ public class InfraToolProvider {
                              SsrfGuard ssrfGuard,
                              InteractiveElementIndexer interactiveElementIndexer,
                              @Nullable PythonRuntimeManager pythonRuntimeManager,
-                             @Nullable CommandGuard commandGuard) {
+                             @Nullable CommandGuard commandGuard,
+                             @Nullable SessionTranscriptRepository sessionTranscriptRepository) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxSessionManager = sandboxSessionManager;
@@ -133,6 +138,7 @@ public class InfraToolProvider {
         this.interactiveElementIndexer = interactiveElementIndexer;
         this.pythonRuntimeManager = pythonRuntimeManager;
         this.commandGuard = commandGuard;
+        this.sessionTranscriptRepository = sessionTranscriptRepository;
     }
 
     /**
@@ -159,6 +165,22 @@ public class InfraToolProvider {
         var lintHook = new LintHookExecutor();
         var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, skillPathWhitelist);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
+
+        // Transcript 检索工具 —— 让 LLM 主动取压缩前的历史工具调用结果，避免重跑
+        if (sessionTranscriptRepository != null) {
+            var transcriptToolProvider = new TranscriptToolProvider(sessionTranscriptRepository);
+            totalTools += registerBuiltinTools(toolRegistry, transcriptToolProvider.buildTranscriptTools());
+        } else {
+            log.warn("SessionTranscriptRepository 不可用（如非 Web 上下文），跳过 transcript 工具注册");
+        }
+
+        // 附件登记工具 —— LLM 把工具产物（图片/docx/pdf）挂载为对话附件
+        if (attachmentRepository != null) {
+            var attachmentToolProvider = new AttachmentToolProvider(attachmentRepository, workspaceResolver);
+            totalTools += registerBuiltinTools(toolRegistry, attachmentToolProvider.buildAttachmentTools());
+        } else {
+            log.warn("AttachmentRepository 不可用，跳过附件登记工具注册");
+        }
 
         // 通知工具
         if (notificationService != null && notificationProperties != null) {

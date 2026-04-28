@@ -430,13 +430,9 @@ public class ReactAgentLoop implements CallbackHelper {
             } catch (Exception e) {
                 log.error("LLM 调用异常: traceId={}, iteration={}, error={}",
                         state.traceId(), iteration, e.getMessage());
-                // 流式连接异常（EOF/网络中断）通常 provider 端持续故障，重试仅浪费 token。
-                // 直接终止并走降级路径展示已落地的工具产物，给用户更快反馈。
-                if (isStreamConnectionError(e)) {
-                    state = DegradedResponseBuilder.terminateWithReason(
-                            state, "LLM 流式响应中断: " + e.getMessage());
-                    break;
-                }
+                // 流式连接异常（EOF/网络中断）走普通失败路径 —— 偶发 EOF（DeepSeek 思考久
+                // 服务端 idle timeout 切连接、网络抖动）下次调用大概率成功，让 consecutiveFailures
+                // 计数器主导：偶发 1-2 次 EOF 自动重试救回，真持续故障 3 次连续才终止。
                 consecutiveFailures++;
                 if (consecutiveFailures >= maxConsecutiveFailures) {
                     state = DegradedResponseBuilder.terminateWithReason(
@@ -508,6 +504,10 @@ public class ReactAgentLoop implements CallbackHelper {
                 // 推理模型多轮契约：从回调取本轮 reasoning_content 原文，透传到 ToolCall step；
                 // 后续 ProviderMessageBuilder 装载多轮 messages 时编码进 AssistantMessage，
                 // 由请求体 filter 在请求出去前注入到 OpenAI 协议字段（DeepSeek V4 等）。
+                // callback 默认实现返空串表示"非 thinking 模式 / 没产出 reasoning"；
+                // 真值 callback 可能返空串表示"thinking 但本次思考为空"——两者都原样透传，
+                // 由 ToolCall record 保留 "" 语义区分，下游 marker 链路按 reasoning != null
+                // 决定是否编码（空 reasoning 也编码空 marker，保证 DeepSeek 协议合规）。
                 String llmReasoningContent = callback.getFinalReasoningContent();
                 state = toolExecutionCoordinator.executeBatch(
                         state,
@@ -517,8 +517,7 @@ public class ReactAgentLoop implements CallbackHelper {
                         cancellationToken,
                         loopContext,
                         this::appendAndPublishStep,
-                        llmReasoningContent != null && !llmReasoningContent.isEmpty()
-                                ? llmReasoningContent : null);
+                        llmReasoningContent);
 
                 // ★ Skill 激活缓存失效 — 工具执行结果中的 activated_tool_ids / skill content
                 // 已由 ToolExecutionCoordinator 统一合并进 state；这里仅根据状态变化决定是否重建缓存。
@@ -1151,35 +1150,6 @@ public class ReactAgentLoop implements CallbackHelper {
                 .anyMatch(mc -> mc.mimeType() != null && mc.mimeType().startsWith("image/"));
     }
 
-    /**
-     * 识别流式响应连接级异常（如 EOF / Connection reset / SocketException）。
-     *
-     * <p>这类异常通常来自 provider 端流式 SSE 被强制关闭，不是业务可重试错误。
-     * 重试只会再次触发同一故障并消耗 token；直接终止并走降级路径，让用户拿到
-     * 已落地的工具产物。</p>
-     */
-    private boolean isStreamConnectionError(Throwable e) {
-        Throwable cur = e;
-        // 加深度限制防御循环 cause（Throwable.initCause(this) 是合法的）
-        for (int depth = 0; cur != null && depth < 16; depth++) {
-            String message = cur.getMessage();
-            if (cur instanceof java.io.EOFException) {
-                return true;
-            }
-            if (message != null) {
-                String lower = message.toLowerCase();
-                if (lower.contains("eof reached")
-                        || lower.contains("connection reset")
-                        || lower.contains("unexpected end of stream")
-                        || lower.contains("stream was reset")
-                        || lower.contains("socket closed")) {
-                    return true;
-                }
-            }
-            cur = cur.getCause();
-        }
-        return false;
-    }
 
     /**
      * 从消息列表中提取 MediaContent。

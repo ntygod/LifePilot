@@ -136,8 +136,15 @@ public class NonStreamingCallback implements IterationCallback {
             var metadata = result.getOutput().getMetadata();
             if (metadata != null) {
                 Object rc = metadata.get("reasoningContent");
-                if (rc instanceof String reasoning && !reasoning.isEmpty()) {
+                if (rc instanceof String reasoning) {
+                    // 不跳过空串 —— DeepSeek thinking 模式短响应会返回空 reasoning，
+                    // 多轮契约仍要求字段存在；空串走完整 marker 链路注入空字段满足契约。
                     this.finalReasoningContent = reasoning;
+                    log.info("NonStreamingCallback 同步路径捕获 reasoning: provider={}, reasoningLength={}, isEmpty={}",
+                            this.providerId, reasoning.length(), reasoning.isEmpty());
+                } else {
+                    log.info("NonStreamingCallback 同步路径无 reasoning key: provider={}, metadataKeys={}",
+                            this.providerId, metadata.keySet());
                 }
             }
         }

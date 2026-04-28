@@ -518,7 +518,8 @@ public class StreamingCallback implements IterationCallback {
         var nonStreamingMetadata = assistantMsg.getMetadata();
         if (nonStreamingMetadata != null) {
             Object rc = nonStreamingMetadata.get("reasoningContent");
-            if (rc instanceof String reasoning && !reasoning.isEmpty()) {
+            if (rc instanceof String reasoning) {
+                // 不跳过空串 —— thinking 模式短响应可能返空 reasoning，多轮契约仍需回传
                 reasoningContentBuilder.append(reasoning);
             }
         }

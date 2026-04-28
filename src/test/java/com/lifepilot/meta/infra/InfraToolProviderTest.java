@@ -66,7 +66,8 @@ class InfraToolProviderTest {
                 null, null, null,
                 com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
                 indexer,
-                runtimeManager, null);
+                runtimeManager, null,
+                null);  // sessionTranscriptRepository
     }
 
     @Test
@@ -203,7 +204,8 @@ class InfraToolProviderTest {
                 com.lifepilot.meta.infra.web.SsrfGuard.disabled(),
                 indexer,
                 null, // pythonRuntimeManager == null（sandbox 禁用）
-                null);
+                null,
+                null);  // sessionTranscriptRepository
 
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
