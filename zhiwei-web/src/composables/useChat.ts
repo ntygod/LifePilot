@@ -434,8 +434,22 @@ export function useChat() {
         }
         return
       }
-      clearStreamingTextBuffer()
-      markCurrentTurnFailed(e instanceof Error ? e.message : 'SSE 解析失败')
+      // 流意外断开（后端 timeout / 网络中断 / 解析异常）— 已渲染的 partial content
+      // 不清空，按 INTERRUPTED 落地保留已生成内容 + 错误标记，避免对话历史丢失体感。
+      flushStreamingText()
+      const partialContent = chatStore.streamingContent.trim()
+      const errorMsg = e instanceof Error ? e.message : 'SSE 解析失败'
+      if (partialContent) {
+        finalizeInterruptedTurn({
+          id: buildTerminalAssistantId(currentTurnId ?? undefined, undefined, 'error'),
+          turnId: currentTurnId ?? undefined,
+          turnStatus: 'FAILED',
+          terminationReason: errorMsg,
+          content: partialContent,
+        })
+      } else {
+        markCurrentTurnFailed(errorMsg)
+      }
       activeInteraction.value = null
       interactionSubmitting.value = false
       interactionError.value = null
