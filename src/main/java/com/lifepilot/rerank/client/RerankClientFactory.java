@@ -1,7 +1,8 @@
 package com.lifepilot.rerank.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,10 +15,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RerankClientFactory {
 
     private final ObjectMapper objectMapper;
+    private final ProviderProfileRegistry profileRegistry;
     private final ConcurrentHashMap<String, RerankServiceClient> cache = new ConcurrentHashMap<>();
 
-    public RerankClientFactory(ObjectMapper objectMapper) {
+    public RerankClientFactory(ObjectMapper objectMapper, ProviderProfileRegistry profileRegistry) {
         this.objectMapper = objectMapper;
+        this.profileRegistry = profileRegistry;
     }
 
     /**
@@ -40,9 +43,11 @@ public class RerankClientFactory {
     }
 
     private RerankServiceClient create(ModelServiceEntity service) {
-        if (service.providerType() == ProviderType.TEI) {
+        BaseAdapterType baseAdapter = profileRegistry.get(service.profileId()).baseAdapter();
+        if (baseAdapter == BaseAdapterType.TEI) {
             return new TeiRerankClient(service, objectMapper);
         }
-        throw new UnsupportedOperationException("暂不支持该原生精排服务类型: " + service.providerType());
+        throw new UnsupportedOperationException(
+                "暂不支持该原生精排服务类型: profileId=" + service.profileId() + ", baseAdapter=" + baseAdapter);
     }
 }

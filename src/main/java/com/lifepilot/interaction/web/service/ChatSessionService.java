@@ -364,7 +364,9 @@ public class ChatSessionService {
                 effectiveCompletionMode,
                 resolveMessageResumedFromTraceId(row, turn, currentAttemptMessage),
                 effectiveTurnStatus,
-                resolveMessageErrorMessage(turn, currentAttemptMessage)
+                resolveMessageErrorMessage(turn, currentAttemptMessage),
+                row.reasoningContent(),
+                row.reasoningDurationMs()
         );
     }
 
@@ -466,7 +468,9 @@ public class ChatSessionService {
                     msg.completionMode(),
                     msg.resumedFromTraceId(),
                     msg.turnStatus(),
-                    msg.errorMessage()
+                    msg.errorMessage(),
+                    msg.reasoningContent(),
+                    msg.reasoningDurationMs()
             );
         }).toList();
     }

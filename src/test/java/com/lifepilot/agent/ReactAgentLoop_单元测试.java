@@ -713,7 +713,7 @@ class ReactAgentLoop_单元测试 {
 
         @Test
         void adaptToChatResponse_应正确转换LlmResponse() {
-            var llmResponse = new com.lifepilot.llm.LlmResponse("这是回答内容", 100, 50, "test-provider", "test-model", 200L, false);
+            var llmResponse = com.lifepilot.llm.LlmResponse.simple("这是回答内容", 100, 50, "test-provider", "test-model", 200L);
             var chatResponse = reactAgentLoop.adaptToChatResponse(llmResponse);
 
             assertThat(chatResponse).isNotNull();

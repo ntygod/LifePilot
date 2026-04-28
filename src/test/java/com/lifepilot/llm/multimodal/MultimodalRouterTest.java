@@ -7,6 +7,7 @@ import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.config.MediaProperties;
@@ -84,7 +85,7 @@ class MultimodalRouterTest {
                 null
         );
 
-        LlmResponse expected = new LlmResponse("hi", 1, 1, "p1", "m", 10, false);
+        LlmResponse expected = LlmResponse.simple("hi", 1, 1, "p1", "m", 10);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(expected);
 
@@ -107,7 +108,7 @@ class MultimodalRouterTest {
                 outputSchema
         );
 
-        LlmResponse expected = new LlmResponse("{}", 1, 1, "p1", "m", 10, false);
+        LlmResponse expected = LlmResponse.simple("{}", 1, 1, "p1", "m", 10);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(expected);
 
@@ -147,7 +148,7 @@ class MultimodalRouterTest {
 
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
-                com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "url",
                 null,
                 "gpt-4-vision",
@@ -160,7 +161,9 @@ class MultimodalRouterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
 
         when(providerRegistry.findByScene("vision-scene")).thenReturn(List.of(visionProvider));
@@ -169,13 +172,12 @@ class MultimodalRouterTest {
         // mediaProcessor.processAll 直接返回入参列表
         when(mediaProcessor.processAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        // 使用真实的 SpringAiProviderAdapter 替身无法轻量构造，这里使用 Mockito.CALLS_REAL_METHODS
-        // 但由于 ProviderAdapter 是 sealed interface，不能直接 mock，这里只验证路由前置流程，
-        // 不再断言 adapter 的具体调用细节。
-        var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
+        // 使用真实的 AbstractProviderAdapter 子类替身无法轻量构造，这里 mock 抽象基类
+        // ProviderAdapter 是 sealed interface 无法直接 mock，AbstractProviderAdapter 是 non-sealed 可 mock。
+        var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
 
-        LlmResponse response = new LlmResponse("answer", 10, 20, "vision-1", "gpt", 100, false);
+        LlmResponse response = LlmResponse.simple("answer", 10, 20, "vision-1", "gpt", 100);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class))).thenReturn(response);
 
         LlmResponse actual = router.call(request);
@@ -206,7 +208,7 @@ class MultimodalRouterTest {
 
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
-                com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "url",
                 null,
                 "gpt-4-vision",
@@ -219,14 +221,16 @@ class MultimodalRouterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
 
         when(providerRegistry.findByScene("vision-scene")).thenReturn(List.of(visionProvider));
         when(circuitBreakerManager.isCallPermitted("vision-1", "VISION")).thenReturn(true);
         when(mediaProcessor.processAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
+        var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
                 .thenThrow(new RuntimeException("下游异常"));
@@ -244,13 +248,13 @@ class MultimodalRouterTest {
                 null
         );
 
-        when(generationRouter.streamWithInfo("chat", "hello", null, null))
+        when(generationRouter.streamWithInfo("chat", "hello", (String) null, (String) null))
                 .thenReturn(new GenerationRouter.StreamingGenerationResponse(Flux.just("a", "b"), "p1", "m1"));
 
         Flux<String> flux = router.stream(request);
 
         assertEquals(List.of("a", "b"), flux.collectList().block());
-        verify(generationRouter).streamWithInfo("chat", "hello", null, null);
+        verify(generationRouter).streamWithInfo("chat", "hello", (String) null, (String) null);
         verifyNoInteractions(providerRegistry);
     }
 
@@ -279,7 +283,7 @@ class MultimodalRouterTest {
 
         ProviderConfig visionProvider = new ProviderConfig(
                 "vision-1",
-                com.lifepilot.llm.config.ProviderType.OPENAI_COMPATIBLE,
+                "openai-official",
                 "url",
                 null,
                 "gpt-4-vision",
@@ -292,17 +296,19 @@ class MultimodalRouterTest {
                 0,
                 8192,
                 null,
-                true
+                true,
+                false,
+                ThinkingMode.AUTO
         );
 
         when(providerRegistry.findByScene("vision-scene")).thenReturn(List.of(visionProvider));
         when(circuitBreakerManager.isCallPermitted("vision-1", "VISION")).thenReturn(true);
         when(mediaProcessor.processAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var adapter = mock(com.lifepilot.llm.adapter.SpringAiProviderAdapter.class);
+        var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
-                .thenReturn(new LlmResponse("ok", 0, 0, "vision-1", "m", 1, false));
+                .thenReturn(LlmResponse.simple("ok", 0, 0, "vision-1", "m", 1));
 
         router.call(request);
 

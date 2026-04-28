@@ -71,7 +71,7 @@ class ModelServiceTemplateRepositoryTest {
         assertThat(templates)
                 .anySatisfy(template -> {
                     assertThat(template.vendorKey()).isEqualTo("openai");
-                    assertThat(template.providerType().name()).isEqualTo("OPENAI_COMPATIBLE");
+                    assertThat(template.providerType()).isEqualTo("OPENAI_COMPATIBLE");
                     assertThat(template.modelOptions())
                             .extracting(option -> option.value())
                             .contains("gpt-5.4", "text-embedding-3-large");

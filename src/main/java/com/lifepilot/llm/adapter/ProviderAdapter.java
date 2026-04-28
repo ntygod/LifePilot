@@ -13,12 +13,12 @@ import java.util.Optional;
 /**
  * LLM Provider 适配器密封接口。
  *
- * <p>统一封装不同 Provider 的调用方式，仅允许 {@link SpringAiProviderAdapter} 实现。
+ * <p>统一封装不同 Provider 的调用方式，仅允许 {@link AbstractProviderAdapter} 子树实现。
  *
  * @author zsg
  * @since 2026-02-24
  */
-public sealed interface ProviderAdapter permits SpringAiProviderAdapter {
+public sealed interface ProviderAdapter permits AbstractProviderAdapter {
 
     /**
      * 执行文本生成调用。

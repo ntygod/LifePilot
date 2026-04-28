@@ -4,7 +4,16 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.stream.ContentChunk;
+import com.lifepilot.llm.stream.LlmStreamEvent;
+import com.lifepilot.llm.stream.ReasoningChunk;
+import com.lifepilot.llm.stream.ToolCallDelta;
+import com.lifepilot.llm.stream.UsageEvent;
 import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.modelservice.probe.ProbeModelsRequest;
+import com.lifepilot.modelservice.probe.ProbeModelsResponse;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,9 +24,12 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
@@ -33,36 +45,54 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 基于 Spring AI 的统一 Provider 适配器。
+ * Provider 适配器抽象基类 — 基于 Spring AI 的统一实现骨架。
  *
  * <p>封装 {@link ChatModel}、{@link EmbeddingModel}（可选）和 {@link ChatClient}（延迟构建），
- * 提供统一的调用接口，支持超时控制。
+ * 提供统一的调用接口，支持超时控制。子类按 provider 特性扩展（OpenAI 兼容 / Anthropic / Ollama 等）。
+ *
+ * <p>本类承载 Phase 3 之前 {@code SpringAiProviderAdapter} 单类的全部行为，含 streamEvents 默认实现（基于
+ * {@link #chunkToEvents}）；子类（OpenAiBase / Anthropic / Ollama）目前完全复用基类逻辑，
+ * Phase 10 起按 ThinkingProtocol 解析原始 SSE chunk 时再按需重写 streamEvents 注入 ReasoningChunk。
  *
  * @author zsg
- * @since 2026-02-24
+ * @since 2026-04-27
  */
-public final class SpringAiProviderAdapter implements ProviderAdapter {
+public abstract non-sealed class AbstractProviderAdapter implements ProviderAdapter {
 
-    private static final Logger log = LoggerFactory.getLogger(SpringAiProviderAdapter.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractProviderAdapter.class);
     private static final java.net.http.HttpClient SHARED_HTTP_CLIENT = java.net.http.HttpClient.newHttpClient();
 
-    private final ProviderConfig config;
-    private final ChatModel chatModel;
+    protected final ProviderConfig config;
+    protected final BaseAdapterType baseAdapter;
+    protected final ChatModel chatModel;
     @Nullable
-    private final EmbeddingModel embeddingModel;
-    private final List<CallAdvisor> defaultAdvisors;
+    protected final EmbeddingModel embeddingModel;
+    protected final List<CallAdvisor> defaultAdvisors;
+    /**
+     * 模型探测服务 — 用于 healthCheck 优先走 /v1/models 而非 chat ping。
+     *
+     * <p>可空：单元测试通过 ChatModel mock 直接构造 adapter 时无需注入；线上路径
+     * 由 {@link ProviderAdapterFactory} 统一传入。{@code null} 时 healthCheck
+     * 直接走 chat ping fallback 路径，行为退回 Phase 6 之前。
+     */
+    @Nullable
+    protected final ProbeModelsService probeModelsService;
 
     @Nullable
     private volatile ChatClient chatClient;
 
-    public SpringAiProviderAdapter(ProviderConfig config,
-                                   ChatModel chatModel,
-                                   @Nullable EmbeddingModel embeddingModel,
-                                   @Nullable List<CallAdvisor> defaultAdvisors) {
+    protected AbstractProviderAdapter(ProviderConfig config,
+                                      BaseAdapterType baseAdapter,
+                                      ChatModel chatModel,
+                                      @Nullable EmbeddingModel embeddingModel,
+                                      @Nullable List<CallAdvisor> defaultAdvisors,
+                                      @Nullable ProbeModelsService probeModelsService) {
         this.config = config;
+        this.baseAdapter = baseAdapter;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
         this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
+        this.probeModelsService = probeModelsService;
     }
 
     @Override
@@ -115,7 +145,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
      *
      * <p>处理：字符串值内未转义的双引号、Markdown 代码块包裹、尾部逗号等。
      */
-    static String repairJson(String raw) {
+    public static String repairJson(String raw) {
         return JsonOutputParser.repairJson(raw);
     }
 
@@ -137,6 +167,85 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         return streamViaClient(buildPrompt(prompt, null, true));
     }
 
+    /**
+     * 把流式 ChatResponse 转成 {@link LlmStreamEvent} 流。
+     *
+     * <p>默认实现：通过 {@code chatModel.stream(prompt)} 拉响应，
+     * 用 {@link #chunkToEvents(ChatResponse)} 把每个 chunk 转成 ContentChunk + ToolCallDelta + UsageEvent。
+     * 子类需要差异化（如 OpenAI 协议特殊解析、Anthropic content block 流）时重写。
+     *
+     * <p>简化版：暂不发 ReasoningChunk / DoneEvent（Phase 10 通过 SSE 旁路解析时补完）。
+     *
+     * @param prompt        Spring AI Prompt
+     * @param toolCallbacks tool callbacks（默认实现未使用，重写时按需消费）
+     * @return LlmStreamEvent 流
+     */
+    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
+        return chatModel.stream(prompt).flatMap(this::chunkToEvents);
+    }
+
+    /**
+     * 把 Spring AI 流式 ChatResponse chunk 转换成 LlmStreamEvent 序列（基础实现）。
+     *
+     * <p>事件类型映射：
+     * <ul>
+     *   <li>chunk 含文本 → 发 {@link ContentChunk}</li>
+     *   <li>chunk 含 tool_calls → 按 index 发 {@link ToolCallDelta}</li>
+     *   <li>chunk 的 AssistantMessage.metadata 含 {@code reasoningContent} key 且非空 →
+     *       发 {@link ReasoningChunk}（DeepSeek V4 / Qwen3 等推理模型的逐 chunk 推理增量）。
+     *       Spring AI 1.1.3 起 {@code OpenAiChatModel.buildGeneration} 已把 OpenAI 协议
+     *       {@code delta.reasoning_content} 字段以 metadata key {@code "reasoningContent"}
+     *       原样塞入；非 OpenAI 兼容的 Anthropic / Ollama 子类不会写该 key，分支自然 noop。</li>
+     *   <li>chunk 含 usage → 发 {@link UsageEvent}（含 cachedInputTokens 维度，
+     *       由 {@link #extractCachedTokens(Object)} 反射解析；reasoningTokens 维度暂未读）</li>
+     * </ul>
+     *
+     * <p>本方法被 streamEvents 默认实现调用；OpenAiBase / Anthropic / Ollama 三个子类均通过继承共用。
+     *
+     * @param chunk 流式 ChatResponse chunk
+     * @return 对应的 LlmStreamEvent 序列（可能为空）
+     */
+    protected Flux<LlmStreamEvent> chunkToEvents(ChatResponse chunk) {
+        var events = new java.util.ArrayList<LlmStreamEvent>(4);
+        var result = chunk.getResult();
+        if (result != null && result.getOutput() != null) {
+            var output = result.getOutput();
+            String text = output.getText();
+            if (text != null && !text.isEmpty()) {
+                events.add(new ContentChunk(text));
+            }
+            // 推理模型 reasoning 增量：Spring AI 把 OpenAI delta.reasoning_content 塞到
+            // AssistantMessage.metadata["reasoningContent"]；非推理模型 / 非 OpenAI 协议下该 key 缺失
+            var metadata = output.getMetadata();
+            if (metadata != null) {
+                Object rc = metadata.get("reasoningContent");
+                if (rc instanceof String reasoning && !reasoning.isEmpty()) {
+                    // OpenAI 协议无 signature 概念；signature 仅 Anthropic thinking block 使用
+                    events.add(new ReasoningChunk(reasoning, null));
+                }
+            }
+            if (output.hasToolCalls()) {
+                var toolCalls = output.getToolCalls();
+                for (int i = 0; i < toolCalls.size(); i++) {
+                    var tc = toolCalls.get(i);
+                    events.add(new ToolCallDelta(i, tc.id(), tc.name(),
+                            tc.arguments() != null ? tc.arguments() : ""));
+                }
+            }
+        }
+        var meta = chunk.getMetadata();
+        var usage = meta != null ? meta.getUsage() : null;
+        if (usage != null) {
+            int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+            int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+            int cachedInputTokens = (int) extractCachedTokens(usage.getNativeUsage());
+            if (inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0) {
+                events.add(new UsageEvent(inputTokens, outputTokens, null, cachedInputTokens));
+            }
+        }
+        return Flux.fromIterable(events);
+    }
+
     @Override
     public Optional<ChatClient> chatClient() {
         return Optional.of(ensureChatClient());
@@ -145,7 +254,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     /**
      * 获取或创建缓存的 ChatClient（已挂载 Advisor 链：Guardrail → Trace → ...）。
      */
-    private ChatClient ensureChatClient() {
+    protected ChatClient ensureChatClient() {
         if (chatClient == null) {
             synchronized (this) {
                 if (chatClient == null) {
@@ -163,7 +272,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     /**
      * 通过 ChatClient 发起同步调用，确保 Advisor 链生效。
      */
-    private ChatResponse callViaClient(Prompt prompt) {
+    protected ChatResponse callViaClient(Prompt prompt) {
         return ensureChatClient()
                 .prompt(prompt)
                 .call()
@@ -173,7 +282,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     /**
      * 通过 ChatClient 发起流式调用，统一调用路径。
      */
-    private Flux<String> streamViaClient(Prompt prompt) {
+    protected Flux<String> streamViaClient(Prompt prompt) {
         return ensureChatClient()
                 .prompt(prompt)
                 .stream()
@@ -182,22 +291,44 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     }
 
     private static final Duration HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(15);
+    /** chat ping fallback 时的最小输出 token 限制，避免推理模型把 ping 当成长任务跑超时。 */
+    private static final int HEALTH_CHECK_MAX_TOKENS = 10;
 
     @Override
     public boolean healthCheck() {
         try {
             // TEI 服务（embedding / reranker）没有 OpenAI 兼容的 chat 接口，通过 /health 端点检查
-            if (config.type() == com.lifepilot.llm.config.ProviderType.TEI) {
+            if (baseAdapter == BaseAdapterType.TEI) {
                 return checkHealthEndpoint(config.apiUrl());
             }
-            // EMBEDDING 类型通过 embeddingModel 验证
-            if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
+            // 纯 EMBEDDING provider（无 CHAT 能力）通过 embeddingModel 验证 — 避免对纯
+            // embedding 服务发 chat ping 失败而误判 unhealthy
+            if (config.hasCapability(ProviderCapability.EMBEDDING)
+                    && !config.hasCapability(ProviderCapability.CHAT)
+                    && embeddingModel != null) {
                 float[] embedding = embeddingModel.embed("ping");
                 return embedding.length > 0;
             }
-            // CHAT 及其他类型通过 chatModel 验证连通性（带超时保护，避免无限等待）
+            // 优先走 /v1/models 探测端点（毫秒级，不耗 token，不受推理模型超时影响）
+            // probeModelsService 可空：测试路径直接构造 adapter 时跳过这一层走 chat ping
+            if (probeModelsService != null) {
+                try {
+                    ProbeModelsResponse probeResp = probeModelsService.probe(new ProbeModelsRequest(
+                            config.profileId(), config.apiUrl(), config.apiKey()));
+                    if (!probeResp.models().isEmpty()) {
+                        return true;
+                    }
+                    log.debug("/v1/models 探测返回空 model 清单，回退 chat ping: id={}", config.id());
+                } catch (Exception probeFail) {
+                    // 部分自部署服务不开 /v1/models（直接 404）— 记录后回退 chat ping，
+                    // 保留原行为兜底，避免让这类服务直接报 unhealthy
+                    log.debug("/v1/models 探测失败，回退 chat ping: id={}, error={}",
+                            config.id(), probeFail.getMessage());
+                }
+            }
+            // Fallback：chat ping with max_tokens=10（小响应快出，推理模型也能秒返）
             ChatResponse response = executeWithTimeout(
-                    () -> chatModel.call(new Prompt("ping")), HEALTH_CHECK_TIMEOUT);
+                    () -> chatModel.call(buildHealthCheckPrompt()), HEALTH_CHECK_TIMEOUT);
             if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
                 return false;
             }
@@ -207,6 +338,22 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             log.debug("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * 构造 chat ping 用 Prompt — 仅 OpenAI 兼容路径下注入 max_tokens=10 限制；
+     * Anthropic / Ollama 仍走 ChatModel 默认 options 由 SDK 控制（这两条路径
+     * 触发概率低，且 SDK 不通用支持等价限流参数）。
+     */
+    private Prompt buildHealthCheckPrompt() {
+        if (baseAdapter == BaseAdapterType.OPENAI_BASE) {
+            ChatOptions options = OpenAiChatOptions.builder()
+                    .model(config.modelName())
+                    .maxTokens(HEALTH_CHECK_MAX_TOKENS)
+                    .build();
+            return new Prompt("ping", options);
+        }
+        return new Prompt("ping");
     }
 
     /**
@@ -362,7 +509,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         return embeddingModel;
     }
 
-    private Prompt buildPrompt(String prompt, @Nullable String outputSchema, boolean streamUsage) {
+    protected Prompt buildPrompt(String prompt, @Nullable String outputSchema, boolean streamUsage) {
         return new Prompt(
                 maybeAppendStructuredOutputInstruction(prompt, outputSchema),
                 ProviderChatOptionsFactory.create(
@@ -378,7 +525,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         );
     }
 
-    private Prompt buildPrompt(Message message, @Nullable String outputSchema, boolean streamUsage) {
+    protected Prompt buildPrompt(Message message, @Nullable String outputSchema, boolean streamUsage) {
         return new Prompt(
                 maybeAppendStructuredOutputInstruction(message, outputSchema),
                 ProviderChatOptionsFactory.create(
@@ -424,7 +571,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     }
 
     private ProviderChatOptionsFactory.ProviderDescriptor providerDescriptor() {
-        return new ProviderChatOptionsFactory.ProviderDescriptor(config.type(), config.apiUrl());
+        return new ProviderChatOptionsFactory.ProviderDescriptor(baseAdapter, config.apiUrl());
     }
 
     private String maybeAppendStructuredOutputInstruction(String prompt, @Nullable String outputSchema) {
@@ -460,14 +607,21 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         Usage usage = response.getMetadata() != null ? response.getMetadata().getUsage() : null;
         int inputTokens = usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
         int outputTokens = usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        int cachedInputTokens = usage != null ? (int) extractCachedTokens(usage.getNativeUsage()) : 0;
         String content = Optional.ofNullable(response.getResult())
                 .map(result -> result.getOutput())
                 .map(output -> output.getText())
                 .orElse("");
         return new LlmResponse(
                 content,
+                null,           // reasoningContent — Phase 10 同步路径未来补
+                null,           // reasoningSignature
+                List.of(),
+                java.util.Map.of(),
                 inputTokens,
                 outputTokens,
+                null,           // reasoningTokens
+                cachedInputTokens,
                 config.id(),
                 config.modelName(),
                 latencyMs,
@@ -475,7 +629,63 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         );
     }
 
-    private <T> T executeWithTimeout(Callable<T> action, Duration timeout) {
+    /**
+     * 从 Spring AI {@link Usage#getNativeUsage()} 反射提取 cached_tokens。
+     *
+     * <p>Spring AI Usage 抽象不暴露 cached_tokens 字段；OpenAI 兼容 / DashScope
+     * 把命中数放在 {@code promptTokensDetails.cachedTokens}，Anthropic 放在
+     * {@code cacheReadInputTokens}。反射读取避免对具体 SDK 版本强耦合，
+     * 任意一种 provider 协议变更都不会影响主调用路径。
+     *
+     * @param nativeUsage {@link Usage#getNativeUsage()}（通常是 SDK 自定义的 usage 对象）
+     * @return 命中 token 数；未找到或反射失败返回 0
+     */
+    protected long extractCachedTokens(@Nullable Object nativeUsage) {
+        if (nativeUsage == null) {
+            return 0;
+        }
+        try {
+            // OpenAI / DashScope: prompt_tokens_details.cached_tokens
+            Object details = invokeAccessor(nativeUsage, "getPromptTokensDetails", "promptTokensDetails");
+            if (details != null) {
+                Object cached = invokeAccessor(details, "getCachedTokens", "cachedTokens");
+                if (cached instanceof Number n) {
+                    return n.longValue();
+                }
+            }
+            // Anthropic: cacheReadInputTokens
+            Object anthropicCached = invokeAccessor(nativeUsage, "getCacheReadInputTokens", "cacheReadInputTokens");
+            if (anthropicCached instanceof Number n) {
+                return n.longValue();
+            }
+        } catch (Exception ignored) {
+            // 反射失败静默返 0，不影响主调用路径
+        }
+        return 0;
+    }
+
+    /**
+     * 反射调用访问器：先尝试 JavaBean getter（{@code getXxx()}），再尝试 record accessor（{@code xxx()}）。
+     * 两者均不存在时返回 null。
+     */
+    private Object invokeAccessor(Object target, String getter, String recordAccessor) {
+        try {
+            var m = target.getClass().getMethod(getter);
+            return m.invoke(target);
+        } catch (NoSuchMethodException ignored) {
+            // 继续尝试 record accessor
+        } catch (Exception e) {
+            return null;
+        }
+        try {
+            var m = target.getClass().getMethod(recordAccessor);
+            return m.invoke(target);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    protected <T> T executeWithTimeout(Callable<T> action, Duration timeout) {
         // 使用虚拟线程执行器进行超时控制。注意：try-with-resources 的 close() 会等待任务完成，
         // 但由于已调用 future.cancel(true) 且虚拟线程响应中断，不会无限阻塞。
         var executor = Executors.newVirtualThreadPerTaskExecutor();

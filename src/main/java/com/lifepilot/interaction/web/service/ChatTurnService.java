@@ -11,6 +11,7 @@ import com.lifepilot.interaction.web.repository.ChatTurnRepository;
 import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemorySpace;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -419,6 +421,52 @@ public class ChatTurnService {
             return memorySpaceRepository.ensureKnowledgeBaseDomainSpace(knowledgeBaseIds.getFirst()).id();
         }
         return null;
+    }
+
+    /**
+     * 构造 assistant 消息持久化用的 payload Map（含推理模型多轮契约所需字段）。
+     *
+     * <p>对应 {@code session_transcript_entries.payload_json} 扩展 schema：
+     * <ul>
+     *   <li>{@code content} —— 主文本（必有）；</li>
+     *   <li>{@code reasoning_content} —— 推理过程文本（DeepSeek/Qwen3 等返回，多轮回传契约要求）；</li>
+     *   <li>{@code reasoning_signature} —— Anthropic thinking block 签名；</li>
+     *   <li>{@code tool_calls} —— Provider 返回的工具调用列表；</li>
+     *   <li>{@code provider_metadata} —— 厂商私有元数据；</li>
+     *   <li>{@code model_id} / {@code provider_id} / {@code tokens} —— 调用元数据（对账、排障）。</li>
+     * </ul>
+     *
+     * <p>仅在对应字段非空 / 非默认值时写入；旧 payload 反序列化时缺这些字段
+     * 走 {@code Map.get} 默认 null，向后兼容自然成立。
+     *
+     * @param response LLM 响应富字段
+     * @return 可序列化为 payload_json 的 Map（保留字段插入序）
+     */
+    public Map<String, Object> buildAssistantPayload(LlmResponse response) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("role", "assistant");
+        payload.put("content", response.content());
+        if (response.reasoningContent() != null) {
+            payload.put("reasoning_content", response.reasoningContent());
+        }
+        if (response.reasoningSignature() != null) {
+            payload.put("reasoning_signature", response.reasoningSignature());
+        }
+        if (!response.toolCalls().isEmpty()) {
+            payload.put("tool_calls", response.toolCalls());
+        }
+        if (!response.providerMetadata().isEmpty()) {
+            payload.put("provider_metadata", response.providerMetadata());
+        }
+        payload.put("model_id", response.modelName());
+        payload.put("provider_id", response.providerId());
+        payload.put("tokens", Map.of(
+                "input", response.inputTokens(),
+                "output", response.outputTokens(),
+                "reasoning", response.reasoningTokens() != null ? response.reasoningTokens() : 0,
+                "cached_input", response.cachedInputTokens()
+        ));
+        return payload;
     }
 
     private record TurnRequestSnapshot(

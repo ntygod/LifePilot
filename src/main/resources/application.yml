@@ -20,6 +20,13 @@ spring:
     # 当找不到处理器时抛出异常，而不是尝试静态资源处理器
     # 这样可以在 WebExceptionHandler 中统一处理，返回标准的 404 响应
     throw-exception-if-no-handler-found: true
+    async:
+      # SSE / 长任务异步请求超时 — 关闭 Spring MVC 默认 30 秒 async timeout，
+      # 让 SseEmitter 自身 timeout（lifepilot.web.sse.timeout）真正生效。
+      # ReAct 多轮工具调用 + 推理模型流式响应可能持续数分钟，30 秒 Tomcat
+      # async timeout 会强行打断 SSE 连接 → 前端 stream catch 触发 → 清空已渲染。
+      # 设为 -1 表示无限（由 SseEmitter 层独立计时控制），与 sse.timeout 解耦。
+      request-timeout: -1
   servlet:
     multipart:
       max-file-size: ${lifepilot.knowledge.max-file-size}B
@@ -615,7 +622,13 @@ lifepilot:
       retry-interval-seconds: 60
   web:
     sse:
-      timeout: 300000
+      # SSE 连接绝对超时（创建到当前的总时长），单位 ms。
+      # 注意：是绝对时间，不是空闲时间 — 心跳保活无法重置该计时。ReAct 长任务
+      # （多轮工具调用 + 推理模型流式响应 + 网页抓取重试）可能跑 10+ 分钟，
+      # 5 分钟会强行打断；30 分钟覆盖 95% 真实场景。
+      # 若仍不够，治本方案是改 SseSessionManager 为 idle timeout（每次 send 重置 timer），
+      # 当前 timeout 字段保持绝对时间语义不变。
+      timeout: 1800000
       heartbeat-interval: 30000
       mcp-status-timeout: 1800000
     cors:

@@ -103,14 +103,13 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 isNull(),
                 eq(GenerationCapability.CHAT),
                 any()))
-                .thenReturn(new LlmResponse(
+                .thenReturn(LlmResponse.simple(
                         "[\"之前讨论的旅行计划\",\"旅行安排和目的地\"]",
                         10,
                         20,
                         "generation-service",
                         "rewrite-model",
-                        100,
-                        false));
+                        100));
 
         var vectorResult = new VectorSearchResult("entity-travel-1", 0.85f);
         when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any()))

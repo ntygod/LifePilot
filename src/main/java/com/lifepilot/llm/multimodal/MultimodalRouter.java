@@ -6,6 +6,8 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
+import com.lifepilot.llm.stream.ContentChunk;
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.multimodal.gemini.GeminiFileApiClient;
@@ -205,7 +207,11 @@ public class MultimodalRouter {
     }
 
     public Flux<String> stream(MultimodalRequest request) {
-        return streamWithInfo(request).stream();
+        // 从 LlmStreamEvent 流中过滤 ContentChunk 并提取文本，保持老接口 Flux<String> 兼容
+        return streamWithInfo(request).events()
+                .filter(ContentChunk.class::isInstance)
+                .cast(ContentChunk.class)
+                .map(ContentChunk::delta);
     }
 
     public StreamingLlmResponse streamWithInfo(MultimodalRequest request) {
@@ -232,7 +238,9 @@ public class MultimodalRouter {
             }
             var response = generationRouter.streamWithInfo(
                     request.scene(), text, request.preferredProviderId(), request.modelName());
-            return new StreamingLlmResponse(response.stream(), response.serviceId(), response.modelName());
+            // 老 API 仅产 Flux<String>，包装成 Flux<LlmStreamEvent>（每个字符串 wrap 成 ContentChunk）
+            Flux<LlmStreamEvent> events = response.stream().map(s -> (LlmStreamEvent) new ContentChunk(s));
+            return new StreamingLlmResponse(events, response.serviceId(), response.modelName());
         }
 
         // 使用缓存获取预处理后的图片
@@ -250,8 +258,11 @@ public class MultimodalRouter {
         var config = candidates.getFirst();
         var adapter = providerRegistry.getAdapter(config.id());
         log.debug("多模态流式调用: scene={}, provider={}", request.scene(), config.id());
+        // 多模态适配器仅产 Flux<String>，包装成 Flux<LlmStreamEvent>
+        Flux<LlmStreamEvent> events = adapter.streamWithMedia(text, processedImages)
+                .map(s -> (LlmStreamEvent) new ContentChunk(s));
         return new StreamingLlmResponse(
-                adapter.streamWithMedia(text, processedImages),
+                events,
                 config.id(),
                 config.modelName()
         );
@@ -426,8 +437,11 @@ public class MultimodalRouter {
         var config = nativeProviders.getFirst();
         var adapter = providerRegistry.getAdapter(config.id());
         log.info("音频流式路由: 原生音频, audioCount={}, provider={}", audioContents.size(), config.id());
+        // 音频适配器仅产 Flux<String>，包装成 Flux<LlmStreamEvent>
+        Flux<LlmStreamEvent> events = adapter.streamWithAudio(request.text(), audioContents)
+                .map(s -> (LlmStreamEvent) new ContentChunk(s));
         return new StreamingLlmResponse(
-                adapter.streamWithAudio(request.text(), audioContents),
+                events,
                 config.id(),
                 config.modelName()
         );

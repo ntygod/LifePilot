@@ -4,7 +4,7 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.model.ModelServiceKind;
 import com.lifepilot.modelservice.model.RerankExecutionMode;
@@ -159,13 +159,15 @@ class RerankRouterTest {
         return new ModelServiceEntity(
                 id,
                 ModelServiceKind.RERANK,
-                ProviderType.TEI,
+                "tei-local",
                 "http://localhost:8082",
                 null,
                 modelName,
                 30,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 List.of(),
                 Set.of(),
                 Map.of(),

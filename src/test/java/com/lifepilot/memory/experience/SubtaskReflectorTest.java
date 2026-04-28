@@ -52,7 +52,7 @@ class SubtaskReflectorTest {
                 isNull(),
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(120))
-        )).thenReturn(new LlmResponse("""
+        )).thenReturn(LlmResponse.simple("""
                 {
                   "scenario": "测试子任务",
                   "strategy": "测试工具策略",
@@ -66,7 +66,7 @@ class SubtaskReflectorTest {
                   "positiveOutcomes": 0,
                   "negativeOutcomes": 0
                 }
-                """, 10, 5, "qwen-plus", "qwen3.5-plus", 100, false));
+                """, 10, 5, "qwen-plus", "qwen3.5-plus", 100));
 
         var reflector = new SubtaskReflector(
                 semanticMemory,

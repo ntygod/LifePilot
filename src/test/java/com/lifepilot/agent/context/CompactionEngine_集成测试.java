@@ -183,23 +183,21 @@ class CompactionEngine_集成测试 {
         var generationRouter = mock(GenerationRouter.class);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(
-                        new LlmResponse(
+                        LlmResponse.simple(
                                 "这是压缩摘要，保留关键决策、约束和工具结果。",
                                 120,
                                 30,
                                 "provider-x",
                                 "model-x",
-                                20,
-                                false
+                                20
                         ),
-                        new LlmResponse(
+                        LlmResponse.simple(
                                 "- 已完成需求整理\n- 决定保留关键决策\n- 后续需要继续验证测试",
                                 60,
                                 20,
                                 "provider-x",
                                 "model-x",
-                                20,
-                                false
+                                20
                         )
                 );
 

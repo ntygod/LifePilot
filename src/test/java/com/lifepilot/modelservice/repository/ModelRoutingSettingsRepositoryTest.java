@@ -71,19 +71,20 @@ class ModelRoutingSettingsRepositoryTest {
         embeddingSettingsRepository = new EmbeddingSettingsRepository(jdbcTemplate);
         rerankSettingsRepository = new RerankSettingsRepository(jdbcTemplate);
 
-        upsertService("gen-main", "GENERATION", "OPENAI_COMPATIBLE", "https://api.openai.com/v1", "gpt-5.4");
-        upsertService("gen-agent", "GENERATION", "OPENAI_COMPATIBLE", "https://api.deepseek.com/v1", "deepseek-chat");
-        upsertService("embed-main", "EMBEDDING", "TEI", "http://localhost:8080/v1", "text-embedding-v4");
-        upsertService("embed-memory", "EMBEDDING", "OLLAMA", "http://localhost:11434", "nomic-embed-text");
+        upsertService("gen-main", "GENERATION", "openai-official", "https://api.openai.com/v1", "gpt-5.4");
+        upsertService("gen-agent", "GENERATION", "deepseek-official", "https://api.deepseek.com/v1", "deepseek-chat");
+        upsertService("embed-main", "EMBEDDING", "tei-local", "http://localhost:8080/v1", "text-embedding-v4");
+        upsertService("embed-memory", "EMBEDDING", "ollama-local", "http://localhost:11434", "nomic-embed-text");
 
         jdbcTemplate.update("""
                 INSERT INTO model_services (
-                    id, kind, provider_type, api_url, api_key, model_name, timeout_seconds, priority, enabled,
+                    id, kind, profile_id, api_url, api_key, model_name, timeout_seconds, priority, enabled,
+                    is_reasoning, thinking_mode,
                     supported_scenes_json, generation_capabilities_json, metadata_json,
                     display_name, description, created_at, updated_at
-                ) VALUES (?, 'RERANK', 'TEI', ?, NULL, ?, 20, 0, 1, '[]', '[]', ?, ?, ?, datetime('now'), datetime('now'))
+                ) VALUES (?, 'RERANK', 'tei-local', ?, NULL, ?, 20, 0, 1, 0, 'AUTO', '[]', '[]', ?, ?, ?, datetime('now'), datetime('now'))
                 ON CONFLICT(id) DO UPDATE SET
-                    provider_type = excluded.provider_type,
+                    profile_id = excluded.profile_id,
                     api_url = excluded.api_url,
                     model_name = excluded.model_name,
                     enabled = excluded.enabled,
@@ -177,16 +178,17 @@ class ModelRoutingSettingsRepositoryTest {
         assertThat(found.get().memoryTopK()).isEqualTo(12);
     }
 
-    private void upsertService(String id, String kind, String providerType, String apiUrl, String modelName) {
+    private void upsertService(String id, String kind, String profileId, String apiUrl, String modelName) {
         jdbcTemplate.update("""
                 INSERT INTO model_services (
-                    id, kind, provider_type, api_url, api_key, model_name, timeout_seconds, priority, enabled,
+                    id, kind, profile_id, api_url, api_key, model_name, timeout_seconds, priority, enabled,
+                    is_reasoning, thinking_mode,
                     supported_scenes_json, generation_capabilities_json, metadata_json,
                     display_name, description, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, NULL, ?, 30, 0, 1, '[]', '[]', '{}', ?, ?, datetime('now'), datetime('now'))
+                ) VALUES (?, ?, ?, ?, NULL, ?, 30, 0, 1, 0, 'AUTO', '[]', '[]', '{}', ?, ?, datetime('now'), datetime('now'))
                 ON CONFLICT(id) DO UPDATE SET
                     kind = excluded.kind,
-                    provider_type = excluded.provider_type,
+                    profile_id = excluded.profile_id,
                     api_url = excluded.api_url,
                     model_name = excluded.model_name,
                     display_name = excluded.display_name,
@@ -195,7 +197,7 @@ class ModelRoutingSettingsRepositoryTest {
                 """,
                 id,
                 kind,
-                providerType,
+                profileId,
                 apiUrl,
                 modelName,
                 id,

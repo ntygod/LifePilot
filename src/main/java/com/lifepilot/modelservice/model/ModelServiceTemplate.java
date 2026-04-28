@@ -1,6 +1,5 @@
 package com.lifepilot.modelservice.model;
 
-import com.lifepilot.llm.config.ProviderType;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
@@ -9,13 +8,16 @@ import java.util.Objects;
 /**
  * 模型服务厂商模板。
  *
+ * <p>{@code providerType} 字段保留为字符串标签（来源 model_service_vendor_templates.provider_type）；
+ * 仅用于 UI 展示与基础分类，运行时协议特性由各模型服务记录自身的 {@code profileId} 决定。
+ *
  * @author zsg
  * @since 2026-03-30
  */
 public record ModelServiceTemplate(
         String vendorKey,
         String displayName,
-        ProviderType providerType,
+        String providerType,
         String description,
         String defaultApiUrl,
         List<ModelServiceKind> supportedKinds,

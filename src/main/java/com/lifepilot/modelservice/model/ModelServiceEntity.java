@@ -1,6 +1,6 @@
 package com.lifepilot.modelservice.model;
 
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
@@ -11,19 +11,24 @@ import java.util.Set;
 /**
  * 模型服务存储实体。
  *
+ * <p>profileId 替代旧 providerType，作为协议路由主键；
+ * is_reasoning + thinking_mode 控制推理模型行为。
+ *
  * @author zsg
- * @since 2026-03-24
+ * @since 2026-04-27
  */
 public record ModelServiceEntity(
         String id,
         ModelServiceKind kind,
-        ProviderType providerType,
+        String profileId,
         String apiUrl,
         @Nullable String apiKey,
         String modelName,
         int timeoutSeconds,
         int priority,
         boolean enabled,
+        boolean isReasoning,
+        ThinkingMode thinkingMode,
         List<String> supportedScenes,
         Set<GenerationCapability> generationCapabilities,
         Map<String, Object> metadata,
@@ -37,9 +42,10 @@ public record ModelServiceEntity(
     public ModelServiceEntity {
         Objects.requireNonNull(id, "服务 ID 不能为空");
         Objects.requireNonNull(kind, "服务类型不能为空");
-        Objects.requireNonNull(providerType, "Provider 类型不能为空");
+        Objects.requireNonNull(profileId, "Profile ID 不能为空");
         Objects.requireNonNull(apiUrl, "API 地址不能为空");
         Objects.requireNonNull(modelName, "模型名称不能为空");
+        Objects.requireNonNull(thinkingMode, "thinking_mode 不能为空");
         if (timeoutSeconds <= 0) {
             timeoutSeconds = 30;
         }

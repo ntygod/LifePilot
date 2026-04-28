@@ -679,4 +679,90 @@ describe('useChat A2UI integration', () => {
     expect(vi.mocked(chatApi.sendMessageStream)).not.toHaveBeenCalled()
     expect(chatStore.messages).toHaveLength(0)
   })
+
+  // Phase 9：reasoning 流式 SSE 事件按 payload 形态分流
+  it('累计 reasoning delta 到 buffer 并在 DONE 时落入 reasoningContent', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.REASONING,
+          payload: { sessionId: 'session-1', turnId: 'turn-1', delta: '让我想想，' },
+        },
+        {
+          type: SSE_EVENT_TYPES.REASONING,
+          payload: { sessionId: 'session-1', turnId: 'turn-1', delta: '这需要分两步处理。' },
+        },
+        { type: SSE_EVENT_TYPES.TOKEN, payload: { content: '答案是 42', index: 0 } },
+        {
+          type: SSE_EVENT_TYPES.DONE,
+          payload: {
+            entryId: 'assistant-r1',
+            sessionId: 'session-1',
+            content: '答案是 42',
+            traceId: 'trace-r1',
+            timestamp: 1_745_000_000_000,
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, reasoningBuffer, isReasoningActive } = useChat()
+    await sendMessage('帮我算个题')
+
+    const assistant = chatStore.messages.find(message => message.role === 'assistant')
+    expect(assistant?.reasoningContent).toBe('让我想想，这需要分两步处理。')
+    // durationMs 在所有事件同帧到达时可能为 0（被过滤为 undefined）— 不强制断言数值
+    // 流结束 → active 转回 false
+    expect(isReasoningActive.value).toBe(false)
+    // 单词 buffer 累计无丢失
+    expect(reasoningBuffer.value).toBe('让我想想，这需要分两步处理。')
+  })
+
+  it('忽略 reasoning event payload（ReAct 步骤）但不污染 reasoningBuffer', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.REASONING,
+          payload: {
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            event: {
+              id: 'evt-1',
+              type: 'PROGRESS',
+              title: '加载上下文',
+              description: '准备工具',
+              createdAt: '2026-04-27T00:00:00.000Z',
+            },
+          },
+        },
+        {
+          type: SSE_EVENT_TYPES.DONE,
+          payload: {
+            entryId: 'assistant-r2',
+            sessionId: 'session-1',
+            content: '完成',
+            traceId: 'trace-r2',
+            timestamp: 1_745_000_000_000,
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, reasoningEvents, reasoningBuffer } = useChat()
+    await sendMessage('开始')
+
+    // ReAct 事件落入 reasoningEvents，buffer 保持空（不被 event 污染）
+    expect(reasoningEvents.value.length).toBe(1)
+    expect(reasoningBuffer.value).toBe('')
+    const assistant = chatStore.messages.find(message => message.role === 'assistant')
+    expect(assistant?.reasoningContent).toBeUndefined()
+  })
 })

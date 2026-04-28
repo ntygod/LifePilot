@@ -1,8 +1,8 @@
 package com.lifepilot.llm.registry;
 
+import com.lifepilot.llm.adapter.AbstractProviderAdapter;
 import com.lifepilot.llm.adapter.ProviderAdapter;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
-import com.lifepilot.llm.adapter.SpringAiProviderAdapter;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import org.slf4j.Logger;
@@ -25,7 +25,7 @@ public class ProviderRegistry {
     private static final Logger log = LoggerFactory.getLogger(ProviderRegistry.class);
 
     private final ConcurrentHashMap<String, ProviderConfig> configs = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, SpringAiProviderAdapter> adapters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AbstractProviderAdapter> adapters = new ConcurrentHashMap<>();
     private final ProviderAdapterFactory adapterFactory;
     private final ProviderHealthChecker healthChecker;
 
@@ -53,8 +53,8 @@ public class ProviderRegistry {
         var adapter = adapterFactory.create(config);
         configs.put(config.id(), config);
         adapters.put(config.id(), adapter);
-        log.info("Provider 注册成功: id={}, type={}, model={}",
-                config.id(), config.type(), config.modelName());
+        log.info("Provider 注册成功: id={}, profileId={}, model={}",
+                config.id(), config.profileId(), config.modelName());
     }
 
     /**

@@ -1,16 +1,20 @@
 package com.lifepilot.generation.client;
 
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.adapter.SpringAiProviderAdapter;
+import com.lifepilot.llm.adapter.AbstractProviderAdapter;
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -29,9 +33,9 @@ public class SpringAiGenerationClient implements GenerationServiceClient {
     private static final Logger log = LoggerFactory.getLogger(SpringAiGenerationClient.class);
 
     private final ModelServiceEntity service;
-    private final SpringAiProviderAdapter adapter;
+    private final AbstractProviderAdapter adapter;
 
-    public SpringAiGenerationClient(ModelServiceEntity service, SpringAiProviderAdapter adapter) {
+    public SpringAiGenerationClient(ModelServiceEntity service, AbstractProviderAdapter adapter) {
         this.service = service;
         this.adapter = adapter;
     }
@@ -61,6 +65,11 @@ public class SpringAiGenerationClient implements GenerationServiceClient {
     @Override
     public Flux<String> stream(String prompt) {
         return adapter.stream(prompt);
+    }
+
+    @Override
+    public Flux<LlmStreamEvent> streamEvents(Prompt prompt, List<ToolCallback> toolCallbacks) {
+        return adapter.streamEvents(prompt, toolCallbacks);
     }
 
     private Duration effectiveTimeout(@Nullable Duration timeoutOverride) {

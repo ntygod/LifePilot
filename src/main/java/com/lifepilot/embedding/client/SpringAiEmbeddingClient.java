@@ -1,6 +1,6 @@
 package com.lifepilot.embedding.client;
 
-import com.lifepilot.llm.adapter.SpringAiProviderAdapter;
+import com.lifepilot.llm.adapter.AbstractProviderAdapter;
 
 import java.util.List;
 
@@ -12,9 +12,9 @@ import java.util.List;
  */
 public class SpringAiEmbeddingClient implements EmbeddingServiceClient {
 
-    private final SpringAiProviderAdapter adapter;
+    private final AbstractProviderAdapter adapter;
 
-    public SpringAiEmbeddingClient(SpringAiProviderAdapter adapter) {
+    public SpringAiEmbeddingClient(AbstractProviderAdapter adapter) {
         this.adapter = adapter;
     }
 

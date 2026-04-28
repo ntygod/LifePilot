@@ -3,7 +3,7 @@ package com.lifepilot.modelservice.repository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.model.ModelServiceKind;
@@ -46,9 +46,10 @@ public class ModelServiceRepository {
     public List<ModelServiceEntity> findAll() {
         return jdbcTemplate.query(
                 """
-                SELECT id, kind, provider_type, api_url, api_key, model_name,
-                       timeout_seconds, priority, enabled, supported_scenes_json,
-                       generation_capabilities_json, metadata_json, display_name, description
+                SELECT id, kind, profile_id, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, is_reasoning, thinking_mode,
+                       supported_scenes_json, generation_capabilities_json,
+                       metadata_json, display_name, description
                 FROM model_services ORDER BY kind ASC, priority ASC, id ASC
                 """,
                 this::mapRow);
@@ -63,9 +64,10 @@ public class ModelServiceRepository {
     public List<ModelServiceEntity> findByKind(ModelServiceKind kind) {
         return jdbcTemplate.query(
                 """
-                SELECT id, kind, provider_type, api_url, api_key, model_name,
-                       timeout_seconds, priority, enabled, supported_scenes_json,
-                       generation_capabilities_json, metadata_json, display_name, description
+                SELECT id, kind, profile_id, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, is_reasoning, thinking_mode,
+                       supported_scenes_json, generation_capabilities_json,
+                       metadata_json, display_name, description
                 FROM model_services WHERE kind = ? ORDER BY priority ASC, id ASC
                 """,
                 this::mapRow,
@@ -81,9 +83,10 @@ public class ModelServiceRepository {
     public List<ModelServiceEntity> findEnabledByKind(ModelServiceKind kind) {
         return jdbcTemplate.query(
                 """
-                SELECT id, kind, provider_type, api_url, api_key, model_name,
-                       timeout_seconds, priority, enabled, supported_scenes_json,
-                       generation_capabilities_json, metadata_json, display_name, description
+                SELECT id, kind, profile_id, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, is_reasoning, thinking_mode,
+                       supported_scenes_json, generation_capabilities_json,
+                       metadata_json, display_name, description
                 FROM model_services WHERE kind = ? AND enabled = 1 ORDER BY priority ASC, id ASC
                 """,
                 this::mapRow,
@@ -99,9 +102,10 @@ public class ModelServiceRepository {
     public Optional<ModelServiceEntity> findById(String id) {
         return jdbcTemplate.query(
                 """
-                SELECT id, kind, provider_type, api_url, api_key, model_name,
-                       timeout_seconds, priority, enabled, supported_scenes_json,
-                       generation_capabilities_json, metadata_json, display_name, description
+                SELECT id, kind, profile_id, api_url, api_key, model_name,
+                       timeout_seconds, priority, enabled, is_reasoning, thinking_mode,
+                       supported_scenes_json, generation_capabilities_json,
+                       metadata_json, display_name, description
                 FROM model_services WHERE id = ?
                 """,
                 this::mapRow,
@@ -117,20 +121,22 @@ public class ModelServiceRepository {
         String now = Instant.now().toString();
         jdbcTemplate.update("""
                 INSERT INTO model_services (
-                    id, kind, provider_type, api_url, api_key, model_name,
-                    timeout_seconds, priority, enabled, supported_scenes_json,
-                    generation_capabilities_json, metadata_json,
+                    id, kind, profile_id, api_url, api_key, model_name,
+                    timeout_seconds, priority, enabled, is_reasoning, thinking_mode,
+                    supported_scenes_json, generation_capabilities_json, metadata_json,
                     display_name, description, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     kind = excluded.kind,
-                    provider_type = excluded.provider_type,
+                    profile_id = excluded.profile_id,
                     api_url = excluded.api_url,
                     api_key = excluded.api_key,
                     model_name = excluded.model_name,
                     timeout_seconds = excluded.timeout_seconds,
                     priority = excluded.priority,
                     enabled = excluded.enabled,
+                    is_reasoning = excluded.is_reasoning,
+                    thinking_mode = excluded.thinking_mode,
                     supported_scenes_json = excluded.supported_scenes_json,
                     generation_capabilities_json = excluded.generation_capabilities_json,
                     metadata_json = excluded.metadata_json,
@@ -140,13 +146,15 @@ public class ModelServiceRepository {
                 """,
                 entity.id(),
                 entity.kind().name(),
-                entity.providerType().name(),
+                entity.profileId(),
                 entity.apiUrl(),
                 entity.apiKey(),
                 entity.modelName(),
                 entity.timeoutSeconds(),
                 entity.priority(),
                 entity.enabled() ? 1 : 0,
+                entity.isReasoning() ? 1 : 0,
+                entity.thinkingMode().name(),
                 writeJson(entity.supportedScenes()),
                 writeJson(entity.generationCapabilities().stream().map(Enum::name).toList()),
                 writeJson(entity.metadata()),
@@ -171,13 +179,15 @@ public class ModelServiceRepository {
         return new ModelServiceEntity(
                 rs.getString("id"),
                 ModelServiceKind.valueOf(rs.getString("kind")),
-                ProviderType.valueOf(rs.getString("provider_type")),
+                rs.getString("profile_id"),
                 rs.getString("api_url"),
                 rs.getString("api_key"),
                 rs.getString("model_name"),
                 rs.getInt("timeout_seconds"),
                 rs.getInt("priority"),
                 rs.getInt("enabled") == 1,
+                rs.getInt("is_reasoning") == 1,
+                ThinkingMode.fromString(rs.getString("thinking_mode")),
                 readStringList(rs.getString("supported_scenes_json")),
                 readCapabilitySet(rs.getString("generation_capabilities_json")),
                 readMetadata(rs.getString("metadata_json")),

@@ -7,21 +7,21 @@ import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.StreamingLlmResponse;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.stream.ContentChunk;
+import com.lifepilot.llm.stream.LlmStreamEvent;
+import com.lifepilot.llm.stream.ToolCallDelta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
@@ -69,7 +69,7 @@ class StreamingCallback_单元测试 {
                         chatModel,
                         "provider-1",
                         "model-1",
-                        ProviderType.OPENAI_COMPATIBLE,
+                        BaseAdapterType.OPENAI_BASE,
                         "https://example.test/v1",
                         true
                 ));
@@ -82,10 +82,11 @@ class StreamingCallback_单元测试 {
 
     @Test
     void 纯文本流式分片应合批为更少的Token事件() {
-        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
-                textChunk("你好"),
-                textChunk("世界")
-        ));
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(new StreamingLlmResponse(Flux.just(
+                        (LlmStreamEvent) new ContentChunk("你好"),
+                        (LlmStreamEvent) new ContentChunk("世界")
+                ), "provider-1", "model-1"));
 
         StreamingCallback callback = new StreamingCallback(
                 config,
@@ -115,9 +116,10 @@ class StreamingCallback_单元测试 {
 
     @Test
     void 流式检测到ToolCall时应先发出准备调用工具事件() {
-        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
-                toolCallChunk("tool.search", "{\"q\":\"知微\"}")
-        ));
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(new StreamingLlmResponse(Flux.just(
+                        (LlmStreamEvent) new ToolCallDelta(0, "call-1", "tool.search", "{\"q\":\"知微\"}")
+                ), "provider-1", "model-1"));
 
         StreamingCallback callback = new StreamingCallback(
                 config,
@@ -153,23 +155,6 @@ class StreamingCallback_单元测试 {
         return List.of(
                 new SystemMessage("你是一个严谨的助手。"),
                 new UserMessage("请继续回答")
-        );
-    }
-
-    private ChatResponse textChunk(String text) {
-        return new ChatResponse(
-                List.of(new Generation(new AssistantMessage(text))),
-                ChatResponseMetadata.builder().build()
-        );
-    }
-
-    private ChatResponse toolCallChunk(String toolName, String arguments) {
-        AssistantMessage assistantMessage = AssistantMessage.builder()
-                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", toolName, arguments)))
-                .build();
-        return new ChatResponse(
-                List.of(new Generation(assistantMessage)),
-                ChatResponseMetadata.builder().build()
         );
     }
 

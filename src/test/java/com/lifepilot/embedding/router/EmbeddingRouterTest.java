@@ -3,7 +3,7 @@ package com.lifepilot.embedding.router;
 import com.lifepilot.embedding.client.EmbeddingClientFactory;
 import com.lifepilot.embedding.client.EmbeddingServiceClient;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.thinking.ThinkingMode;
 import com.lifepilot.modelservice.model.EmbeddingSettingsEntity;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.model.ModelServiceKind;
@@ -111,13 +111,15 @@ class EmbeddingRouterTest {
         return new ModelServiceEntity(
                 id,
                 ModelServiceKind.EMBEDDING,
-                ProviderType.TEI,
+                "tei-local",
                 "http://localhost:8082",
                 null,
                 modelName,
                 30,
                 0,
                 true,
+                false,
+                ThinkingMode.AUTO,
                 List.of(),
                 Set.of(),
                 Map.of(),

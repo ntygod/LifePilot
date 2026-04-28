@@ -49,7 +49,7 @@ class ChunkContextEnricherTest {
                 eq(null),
                 eq(GenerationCapability.CHAT),
                 eq(null)
-        )).thenReturn(new LlmResponse("旅行攻略摘要", 0, 0, "mock", "mock-model", 0, false));
+        )).thenReturn(LlmResponse.simple("旅行攻略摘要", 0, 0, "mock", "mock-model", 0));
 
         var enricher = new ChunkContextEnricher(
                 generationRouter,

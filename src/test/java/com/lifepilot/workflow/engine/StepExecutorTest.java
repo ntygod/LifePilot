@@ -120,7 +120,7 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = new LlmResponse("{\"answer\":\"ok\"}", 12, 6, "provider-1", "model-x", 18, false);
+        LlmResponse response = LlmResponse.simple("{\"answer\":\"ok\"}", 12, 6, "provider-1", "model-x", 18);
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
                 .thenReturn(response);
@@ -152,7 +152,7 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = new LlmResponse("{\"label\":\"cat\"}", 9, 3, "provider-vision", "vision-model", 25, false);
+        LlmResponse response = LlmResponse.simple("{\"label\":\"cat\"}", 9, 3, "provider-vision", "vision-model", 25);
         multimodalResponse = response;
 
         Map<String, Object> result = executor.execute(step, context, expressionEngine);
@@ -186,14 +186,13 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = new LlmResponse(
+        LlmResponse response = LlmResponse.simple(
                 "```json\n{\"answer\":\"ok\"}\n```",
                 11,
                 4,
                 "provider-1",
                 "model-1",
-                12,
-                false
+                12
         );
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
@@ -224,14 +223,13 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = new LlmResponse(
+        LlmResponse response = LlmResponse.simple(
                 "1、不是 JSON",
                 11,
                 4,
                 "provider-1",
                 "model-1",
-                12,
-                false
+                12
         );
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))

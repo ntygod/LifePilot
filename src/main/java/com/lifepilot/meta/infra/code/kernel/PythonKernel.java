@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra.code.kernel;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Python 持久内核 — 通过长驻 python3 进程实现跨调用状态保持。
@@ -19,9 +20,20 @@ public final class PythonKernel extends ProcessKernelBase {
      *
      * <p>通信协议：每行一个 JSON 请求，返回每行一个 JSON 响应。
      * 支持 execute / inspect / reset 三种 action。</p>
+     *
+     * <p>脚本开头强制把 stdin/stdout/stderr 重配为 UTF-8（Windows 默认 cp936/GBK），
+     * 避免 Java 端 UTF-8 字节流被 GBK 解码产生 lone surrogate（如 \\udcad）导致
+     * compile/exec 报 {@code UnicodeEncodeError: surrogates not allowed}。</p>
      */
     private static final String PYTHON_KERNEL_SCRIPT = """
             import sys, json, io, traceback, contextlib
+            for _stream_name in ("stdin", "stdout", "stderr"):
+                _stream = getattr(sys, _stream_name, None)
+                if _stream is not None and hasattr(_stream, "reconfigure"):
+                    try:
+                        _stream.reconfigure(encoding="utf-8", errors="replace")
+                    except Exception:
+                        pass
             _g = {"__builtins__": __builtins__}
             for line in sys.stdin:
                 try:
@@ -74,5 +86,22 @@ public final class PythonKernel extends ProcessKernelBase {
      */
     public PythonKernel(String kernelId, String pythonRuntime, int maxOutputChars) {
         super(kernelId, maxOutputChars, pythonRuntime, List.of("-u"), ".py", "Python", PYTHON_KERNEL_SCRIPT);
+    }
+
+    /**
+     * 强制 Python 进程 stdio + 文件 IO 用 UTF-8（Windows 默认 cp936/GBK 会让
+     * Java UTF-8 写入的 stdin 被 GBK 解码产生 lone surrogate，触发后续
+     * compile/exec 抛 {@code UnicodeEncodeError: surrogates not allowed}）：
+     * <ul>
+     *   <li>PYTHONIOENCODING — 控制 Python 3 stdin/stdout/stderr 编码</li>
+     *   <li>PYTHONUTF8=1 — 启用 Python UTF-8 mode（PEP 540），文件系统也走 UTF-8</li>
+     *   <li>LANG — 兜底其他 runtime / 子进程</li>
+     * </ul>
+     */
+    @Override
+    protected void configureProcessEnvironment(Map<String, String> env) {
+        env.put("PYTHONIOENCODING", "utf-8");
+        env.put("PYTHONUTF8", "1");
+        env.putIfAbsent("LANG", "en_US.UTF-8");
     }
 }

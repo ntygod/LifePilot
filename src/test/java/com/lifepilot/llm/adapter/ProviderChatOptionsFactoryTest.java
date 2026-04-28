@@ -1,6 +1,6 @@
 package com.lifepilot.llm.adapter;
 
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
@@ -25,13 +25,13 @@ class ProviderChatOptionsFactoryTest {
 
     private static final ProviderChatOptionsFactory.ProviderDescriptor OPENAI_PROVIDER =
             new ProviderChatOptionsFactory.ProviderDescriptor(
-                    ProviderType.OPENAI_COMPATIBLE,
+                    BaseAdapterType.OPENAI_BASE,
                     "https://api.openai.com/v1"
             );
 
     private static final ProviderChatOptionsFactory.ProviderDescriptor ANTHROPIC_PROVIDER =
             new ProviderChatOptionsFactory.ProviderDescriptor(
-                    ProviderType.ANTHROPIC,
+                    BaseAdapterType.ANTHROPIC_BASE,
                     "https://api.anthropic.com"
             );
 
@@ -95,7 +95,7 @@ class ProviderChatOptionsFactoryTest {
                 {"type":"object","properties":{"summary":{"type":"string"}}}
                 """;
         var deepSeekProvider = new ProviderChatOptionsFactory.ProviderDescriptor(
-                ProviderType.OPENAI_COMPATIBLE,
+                BaseAdapterType.OPENAI_BASE,
                 "https://api.deepseek.com/v1"
         );
 

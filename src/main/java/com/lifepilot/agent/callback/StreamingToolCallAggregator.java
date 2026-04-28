@@ -1,5 +1,6 @@
 package com.lifepilot.agent.callback;
 
+import com.lifepilot.llm.stream.ToolCallDelta;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.lang.Nullable;
 
@@ -29,6 +30,42 @@ final class StreamingToolCallAggregator {
             }
             partialToolCalls.get(slot).merge(toolCall);
         }
+    }
+
+    /**
+     * 合并单个 {@link ToolCallDelta} 增量到聚合器。
+     *
+     * <p>相比 {@link #merge(List)}（处理 Spring AI 的 ChatResponse.AssistantMessage.ToolCall 列表），
+     * 本方法承载 LlmStreamEvent 流的 ToolCallDelta 单个事件 — 由 OpenAiBase / Anthropic / Ollama
+     * 等 Adapter 在 streamEvents 路径下发出。
+     *
+     * @param delta 工具调用增量事件
+     */
+    void merge(ToolCallDelta delta) {
+        int slot = resolveSlotForDelta(delta);
+        while (partialToolCalls.size() <= slot) {
+            partialToolCalls.add(new PartialToolCall());
+        }
+        partialToolCalls.get(slot).mergeDelta(delta);
+    }
+
+    private int resolveSlotForDelta(ToolCallDelta delta) {
+        // 优先按 id 匹配已有槽位
+        if (hasText(delta.id())) {
+            for (int i = 0; i < partialToolCalls.size(); i++) {
+                if (delta.id().equals(partialToolCalls.get(i).id)) {
+                    return i;
+                }
+            }
+        }
+        // 按 index 定位；若 index 槽位被不同 id 占用则追加新槽位
+        if (delta.index() < partialToolCalls.size()) {
+            PartialToolCall existing = partialToolCalls.get(delta.index());
+            if (hasText(existing.id) && hasText(delta.id()) && !existing.id.equals(delta.id())) {
+                return partialToolCalls.size();
+            }
+        }
+        return delta.index();
     }
 
     boolean isEmpty() {
@@ -104,6 +141,22 @@ final class StreamingToolCallAggregator {
                 this.name = toolCall.name();
             }
             this.arguments = mergeArguments(this.arguments, toolCall.arguments());
+        }
+
+        /**
+         * 合并 LlmStreamEvent 流的 ToolCallDelta 增量。
+         *
+         * <p>ToolCallDelta 没有 type 字段（OpenAI 协议固定为 "function"，无意义），
+         * 序列化时由 {@link #toToolCall()} 默认填 "function"。
+         */
+        private void mergeDelta(ToolCallDelta delta) {
+            if (hasText(delta.id())) {
+                this.id = delta.id();
+            }
+            if (hasText(delta.name())) {
+                this.name = delta.name();
+            }
+            this.arguments = mergeArguments(this.arguments, delta.argumentsDelta());
         }
 
         private AssistantMessage.ToolCall toToolCall() {

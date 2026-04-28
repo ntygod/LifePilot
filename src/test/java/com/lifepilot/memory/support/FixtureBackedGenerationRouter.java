@@ -4,7 +4,7 @@ import java.time.Duration;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import org.springframework.lang.Nullable;
 
@@ -45,7 +45,7 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
      * @param fixture 已 {@link LlmFixture#load(String) load} 过的 fixture 实例
      */
     public FixtureBackedGenerationRouter(LlmFixture fixture) {
-        super(null, null, null, null);
+        super(null, null, null, null, null);
         this.fixture = fixture;
         this.chatModel = new FixtureBackedChatModel(fixture);
     }
@@ -73,14 +73,13 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
         String lastUserMessage = extractLastUserMessage(prompt);
         LlmFixture.FixtureResponse response = fixture.matchAndRender(lastUserMessage);
         String content = response.finalText().isBlank() ? response.toolCallsJson() : response.finalText();
-        return new LlmResponse(
+        return LlmResponse.simple(
                 content,
                 /* inputTokens = */ 0,
                 /* outputTokens = */ 0,
                 FIXTURE_PROVIDER,
                 FIXTURE_MODEL,
-                /* latencyMs = */ 0L,
-                /* cached = */ false);
+                /* latencyMs = */ 0L);
     }
 
     @Override
@@ -110,7 +109,7 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
                 chatModel,
                 FIXTURE_PROVIDER,
                 FIXTURE_MODEL,
-                ProviderType.OPENAI_COMPATIBLE,
+                BaseAdapterType.OPENAI_BASE,
                 /* apiUrl = */ "http://fixture.local",
                 /* supportsStreaming = */ false);
     }

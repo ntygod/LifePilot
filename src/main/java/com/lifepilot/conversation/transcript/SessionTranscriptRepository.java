@@ -71,8 +71,37 @@ public class SessionTranscriptRepository {
             @Nullable String traceId,
             boolean visibleToModel,
             boolean visibleToUser,
-            Instant createdAt
+            Instant createdAt,
+            @Nullable String reasoningContent,
+            @Nullable Long reasoningDurationMs
     ) {
+        /**
+         * 兼容旧测试构造器 — 不携带 reasoning_content / reasoning_duration_ms 时走 null。
+         *
+         * <p>用于现有 ChatSessionService_*测试 和其他 fixture 直接 new 出 row 的场景，
+         * 避免一次给所有调用点改 15→17 字段。新构造点应直接用主构造器。
+         */
+        public TranscriptMessageViewRow(
+                String entryId,
+                String sessionId,
+                String entryType,
+                String role,
+                String content,
+                @Nullable String reasoningSummary,
+                @Nullable String a2uiComponentsJson,
+                @Nullable String reactStepsJson,
+                @Nullable String completionMode,
+                @Nullable String resumedFromTraceId,
+                @Nullable String turnId,
+                @Nullable String traceId,
+                boolean visibleToModel,
+                boolean visibleToUser,
+                Instant createdAt
+        ) {
+            this(entryId, sessionId, entryType, role, content, reasoningSummary,
+                    a2uiComponentsJson, reactStepsJson, completionMode, resumedFromTraceId,
+                    turnId, traceId, visibleToModel, visibleToUser, createdAt, null, null);
+        }
     }
 
     public SessionTranscriptRepository(JdbcTemplate jdbcTemplate,
@@ -457,8 +486,28 @@ public class SessionTranscriptRepository {
                 row.traceId(),
                 row.visibleToModel(),
                 row.visibleToUser(),
-                row.createdAt()
+                row.createdAt(),
+                // ChatTurnService.buildAssistantPayload 写 snake_case "reasoning_content"
+                // 与 LLM 协议字段名对齐，反序列化时按同一 key 读出
+                stringValue(payload.get("reasoning_content")),
+                longValue(payload.get("reasoning_duration_ms"))
         );
+    }
+
+    @Nullable
+    private Long longValue(@Nullable Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number num) {
+            return num.longValue();
+        }
+        try {
+            String text = value.toString();
+            return text.isBlank() ? null : Long.parseLong(text);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private Map<String, Object> deserializePayload(String payloadJson) {

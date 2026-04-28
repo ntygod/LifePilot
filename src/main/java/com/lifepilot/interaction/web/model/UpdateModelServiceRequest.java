@@ -12,7 +12,7 @@ import java.util.List;
  */
 public record UpdateModelServiceRequest(
         @Nullable String kind,
-        @Nullable String type,
+        @Nullable String profileId,
         @Nullable String vendorKey,
         @Nullable String apiUrl,
         @Nullable String apiKey,
@@ -22,8 +22,10 @@ public record UpdateModelServiceRequest(
         @Nullable List<String> scenes,
         @Nullable List<String> capabilities,
         @Nullable Boolean enabled,
-        @Nullable Integer costPerInputToken,
-        @Nullable Integer costPerOutputToken,
+        @Nullable Boolean isReasoning,
+        @Nullable String thinkingMode,
+        @Nullable Double costPerInputToken,
+        @Nullable Double costPerOutputToken,
         @Nullable Integer maxContextWindow,
         @Nullable Integer embeddingDimension,
         @Nullable Boolean supportsStreaming,

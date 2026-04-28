@@ -3,10 +3,19 @@ package com.lifepilot.llm.config;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.llm.thinking.AnthropicThinkingProtocol;
+import com.lifepilot.llm.thinking.DeepSeekThinkingProtocol;
+import com.lifepilot.llm.thinking.NoopThinkingProtocol;
+import com.lifepilot.llm.thinking.OpenAiReasoningEffortProtocol;
+import com.lifepilot.llm.thinking.QwenThinkingProtocol;
+import com.lifepilot.llm.thinking.ThinkingProtocol;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.modelservice.probe.ProbeModelsService;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import com.lifepilot.skill.registry.SkillSearchIndex;
 import org.slf4j.Logger;
@@ -44,9 +53,43 @@ public class LlmAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public NoopThinkingProtocol noopThinkingProtocol() {
+        return new NoopThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DeepSeekThinkingProtocol deepSeekThinkingProtocol() {
+        return new DeepSeekThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public QwenThinkingProtocol qwenThinkingProtocol() {
+        return new QwenThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public OpenAiReasoningEffortProtocol openAiReasoningEffortProtocol() {
+        return new OpenAiReasoningEffortProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AnthropicThinkingProtocol anthropicThinkingProtocol() {
+        return new AnthropicThinkingProtocol();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ProviderAdapterFactory providerAdapterFactory(@Nullable List<CallAdvisor> advisors,
-                                                         LlmConfigProperties properties) {
-        return new ProviderAdapterFactory(advisors, properties.getConnectionPool());
+                                                         LlmConfigProperties properties,
+                                                         ProviderProfileRegistry profileRegistry,
+                                                         List<ThinkingProtocol> thinkingProtocols,
+                                                         ProbeModelsService probeModelsService) {
+        return new ProviderAdapterFactory(advisors, properties.getConnectionPool(),
+                profileRegistry, thinkingProtocols, probeModelsService);
     }
 
     @Bean
@@ -128,11 +171,18 @@ public class LlmAutoConfiguration {
             log.debug("当前无已注册模型服务，跳过连接预热");
             return;
         }
+        // 通过 profile.baseAdapter() 区分本地 / 云端：本地模型（OLLAMA）不参与预热，
+        // 避免在用户未启动本地 Ollama 时产生噪音日志。
+        var profileRegistry = context.getBean(ProviderProfileRegistry.class);
 
         int warmupCount = 0;
         for (String providerId : providerRegistry.registeredIds()) {
             var config = providerRegistry.getConfig(providerId);
-            if (config.isEmpty() || config.get().isLocal()) {
+            if (config.isEmpty()) {
+                continue;
+            }
+            BaseAdapterType baseAdapter = profileRegistry.get(config.get().profileId()).baseAdapter();
+            if (baseAdapter == BaseAdapterType.OLLAMA) {
                 continue;
             }
             try {

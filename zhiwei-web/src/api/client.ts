@@ -264,6 +264,9 @@ export const chatApi = {
       a2uiComponents?: unknown
       timestamp: string | number
       reasoningSummary?: string | null
+      /** 推理过程文本（payload_json 暴露后自动生效，缺失时 UI 自动隐藏） */
+      reasoningContent?: string | null
+      reasoningDurationMs?: number | null
       traceId?: string | null
       attachments?: Array<{ id: string; fileName: string; fileSize: number; mimeType: string; url?: string | null }> | null
       reactSteps?: ReactStepDto[] | null
@@ -477,11 +480,16 @@ export const permissionApi = {
   }
 }
 
+/** 思考模式 — 与后端 {@code ThinkingMode} 枚举一一对应（小写形式，序列化时直接传字符串）。 */
+export type ThinkingMode = 'auto' | 'enabled' | 'disabled'
+
 /** 模型服务定义。 */
 export interface ModelService {
   id: string
   kind: string
   type: string
+  /** 内置 ProviderProfile ID（Phase 6 新增）—— 决定 thinking 协议、模型探测端点等。 */
+  profileId?: string
   vendorKey?: string
   modelName: string
   displayName?: string
@@ -493,6 +501,10 @@ export interface ModelService {
   maxContextWindow?: number
   supportsStreaming?: boolean
   enabled?: boolean
+  /** 是否为推理模型（Phase 6 新增）—— 决定是否走 thinking 协议下发。 */
+  isReasoning?: boolean
+  /** 思考模式（Phase 6 新增）—— auto/enabled/disabled 三态控制是否下发 thinking 字段。 */
+  thinkingMode?: ThinkingMode
   healthy?: boolean
   apiUrl?: string
   timeoutSeconds?: number
@@ -876,6 +888,8 @@ export interface CreateModelServiceRequest {
   id: string
   kind: string
   type: string
+  /** 内置 ProviderProfile ID（Phase 6 新增）—— 必填字段。 */
+  profileId?: string
   vendorKey?: string
   apiUrl: string
   apiKey?: string
@@ -885,6 +899,10 @@ export interface CreateModelServiceRequest {
   scenes?: string[]
   capabilities?: string[]
   enabled?: boolean
+  /** 是否为推理模型（Phase 6 新增）。 */
+  isReasoning?: boolean
+  /** 思考模式（Phase 6 新增）。 */
+  thinkingMode?: ThinkingMode
   costPerInputToken?: number
   costPerOutputToken?: number
   maxContextWindow?: number
@@ -898,6 +916,8 @@ export interface CreateModelServiceRequest {
 export interface UpdateModelServiceRequest {
   kind?: string
   type?: string
+  /** 内置 ProviderProfile ID（Phase 6 新增）。 */
+  profileId?: string
   vendorKey?: string
   apiUrl?: string
   apiKey?: string
@@ -907,6 +927,10 @@ export interface UpdateModelServiceRequest {
   scenes?: string[]
   capabilities?: string[]
   enabled?: boolean
+  /** 是否为推理模型（Phase 6 新增）。 */
+  isReasoning?: boolean
+  /** 思考模式（Phase 6 新增）。 */
+  thinkingMode?: ThinkingMode
   costPerInputToken?: number
   costPerOutputToken?: number
   maxContextWindow?: number

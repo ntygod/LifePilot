@@ -50,6 +50,20 @@ export function useChat() {
   const lastTokenUsage = ref<TokenUsage | null>(null)
   const reasoningEvents = ref<ReasoningEvent[]>([])
   const reasoningStatusText = ref<string | null>(null)
+  /**
+   * 推理 token 流缓冲区（DeepSeek/Qwen 等推理模型的 reasoning_content 增量累计）。
+   *
+   * <p>来源：后端 StreamingCallback#pushReasoningToSse 推送的 SSE reasoning 事件
+   * （payload 含 delta 字段），与 ReactAgentLoop 推送的 ReAct 步骤事件共享同名事件
+   * 但 payload 形态不同。
+   */
+  const reasoningBuffer = ref<string>('')
+  /** 是否处于推理流活跃中（首个 reasoning delta 触发，DONE 复位） */
+  const isReasoningActive = ref<boolean>(false)
+  /** 当前轮推理流持续时间（毫秒），DONE 时定格供历史消息渲染 */
+  const reasoningDurationMs = ref<number>(0)
+  // 首个 reasoning delta 到达时间戳；用于流结束时计算思考时长
+  let reasoningStartedAt: number | null = null
   const streamingReactSteps = ref<ReactStepDto[]>([])
   const streamingMedia = ref<SseMediaEvent[]>([])
   const pendingPermissionApprovals = ref<Map<string, PermissionApprovalRequest>>(new Map())
@@ -330,6 +344,10 @@ export function useChat() {
     lastTokenUsage.value = null
     reasoningEvents.value = []
     reasoningStatusText.value = null
+    reasoningBuffer.value = ''
+    isReasoningActive.value = false
+    reasoningDurationMs.value = 0
+    reasoningStartedAt = null
     streamingReactSteps.value = []
     streamingMedia.value = []
     pendingPermissionApprovals.value = new Map()
@@ -416,8 +434,22 @@ export function useChat() {
         }
         return
       }
-      clearStreamingTextBuffer()
-      markCurrentTurnFailed(e instanceof Error ? e.message : 'SSE 解析失败')
+      // 流意外断开（后端 timeout / 网络中断 / 解析异常）— 已渲染的 partial content
+      // 不清空，按 INTERRUPTED 落地保留已生成内容 + 错误标记，避免对话历史丢失体感。
+      flushStreamingText()
+      const partialContent = chatStore.streamingContent.trim()
+      const errorMsg = e instanceof Error ? e.message : 'SSE 解析失败'
+      if (partialContent) {
+        finalizeInterruptedTurn({
+          id: buildTerminalAssistantId(currentTurnId ?? undefined, undefined, 'error'),
+          turnId: currentTurnId ?? undefined,
+          turnStatus: 'FAILED',
+          terminationReason: errorMsg,
+          content: partialContent,
+        })
+      } else {
+        markCurrentTurnFailed(errorMsg)
+      }
       activeInteraction.value = null
       interactionSubmitting.value = false
       interactionError.value = null
@@ -450,13 +482,38 @@ export function useChat() {
           break
         }
         case SSE_EVENT_TYPES.REASONING: {
-          const payload: { event: ReasoningEvent } = JSON.parse(data)
-          const event = payload.event
-          reasoningEvents.value.push(event)
-          reasoningStatusText.value = mapReasoningStatus(event)
-          const reactStep = buildReactStepFromEvent(event, streamingReactSteps.value.length)
-          if (reactStep) {
-            streamingReactSteps.value.push(reactStep)
+          // 同 SSE 事件名 "reasoning" 承载两类 payload：
+          //   1. ReactAgentLoop 推送 ReAct 步骤元数据 → { event: ReasoningEvent }
+          //   2. StreamingCallback 推送推理 token 增量 → { sessionId, turnId, delta }
+          // 通过 delta / event 字段区分。
+          const payload: {
+            event?: ReasoningEvent
+            delta?: string
+            sessionId?: string
+            turnId?: string
+          } = JSON.parse(data)
+
+          if (typeof payload.delta === 'string') {
+            // 推理 token 增量：累计到 buffer 并维持 active 状态
+            if (payload.delta.length === 0) {
+              break
+            }
+            if (!isReasoningActive.value) {
+              isReasoningActive.value = true
+              reasoningStartedAt = Date.now()
+            }
+            reasoningBuffer.value += payload.delta
+            break
+          }
+
+          if (payload.event) {
+            const event = payload.event
+            reasoningEvents.value.push(event)
+            reasoningStatusText.value = mapReasoningStatus(event)
+            const reactStep = buildReactStepFromEvent(event, streamingReactSteps.value.length)
+            if (reactStep) {
+              streamingReactSteps.value.push(reactStep)
+            }
           }
           break
         }
@@ -484,14 +541,23 @@ export function useChat() {
           }
 
           flushStreamingText()
+          // DONE 触发：定格推理时长，关闭 active（折叠 ReasoningSection）
+          if (reasoningStartedAt !== null) {
+            reasoningDurationMs.value = Date.now() - reasoningStartedAt
+          }
+          isReasoningActive.value = false
           const finalContent = resolveDoneContent(event)
           const attachments = buildStreamingAttachments(event.contents)
+          const finalReasoningContent = reasoningBuffer.value
+          const finalReasoningDurationMs = reasoningDurationMs.value
           const assistantMessage = {
             id: event.entryId,
             turnId,
             role: 'assistant' as const,
             content: finalContent,
             reasoningSummary: event.reasoningSummary,
+            reasoningContent: finalReasoningContent.length > 0 ? finalReasoningContent : undefined,
+            reasoningDurationMs: finalReasoningDurationMs > 0 ? finalReasoningDurationMs : undefined,
             reasoningEvents: reasoningEvents.value.length > 0 ? [...reasoningEvents.value] : undefined,
             a2uiComponents: event.a2uiComponents?.length
               ? [...event.a2uiComponents]
@@ -880,6 +946,12 @@ export function useChat() {
       return false
     }
 
+    // 中断也保留已收集的推理流，保证用户能看到模型「思考过程」
+    if (reasoningStartedAt !== null && reasoningDurationMs.value === 0) {
+      reasoningDurationMs.value = Date.now() - reasoningStartedAt
+    }
+    isReasoningActive.value = false
+
     chatStore.upsertMessage({
       id: options.id,
       turnId: options.turnId,
@@ -890,6 +962,8 @@ export function useChat() {
       completionMode: options.completionMode,
       turnStatus: options.turnStatus,
       a2uiComponents: a2uiStore.components.length > 0 ? [...a2uiStore.components] : undefined,
+      reasoningContent: reasoningBuffer.value.length > 0 ? reasoningBuffer.value : undefined,
+      reasoningDurationMs: reasoningDurationMs.value > 0 ? reasoningDurationMs.value : undefined,
       reasoningEvents: reasoningEvents.value.length > 0 ? [...reasoningEvents.value] : undefined,
       reactSteps: streamingReactSteps.value.length > 0 ? [...streamingReactSteps.value] : undefined,
       attachments: (() => {
@@ -1248,6 +1322,9 @@ export function useChat() {
     lastTokenUsage,
     reasoningEvents,
     reasoningStatusText,
+    reasoningBuffer,
+    isReasoningActive,
+    reasoningDurationMs,
     streamingReactSteps,
     streamingMedia,
     streamingA2uiComponents: a2uiStore.components,

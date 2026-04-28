@@ -28,8 +28,8 @@ import java.io.IOException;
  * 统一提供, 本类只声明 JSON 改写细节。</p>
  *
  * <p>响应命中信息 ({@code usage.cache_read_input_tokens} /
- * {@code usage.cache_creation_input_tokens}) 由 {@code StreamingCallback.extractCachedTokens}
- * 反射读取, 无需本策略处理。</p>
+ * {@code usage.cache_creation_input_tokens}) 由 Adapter 在 chunkToEvents / 非流式响应映射阶段
+ * 解析后通过 {@link com.lifepilot.llm.stream.UsageEvent#cachedInputTokens()} 字段直传, 无需本策略处理。</p>
  *
  * @author zsg
  * @since 2026-04-20

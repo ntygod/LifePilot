@@ -36,7 +36,7 @@ public final class ModelServiceProviderConfigMapper {
         }
         return new ProviderConfig(
                 service.id(),
-                service.providerType(),
+                service.profileId(),
                 service.apiUrl(),
                 service.apiKey(),
                 service.modelName(),
@@ -49,7 +49,9 @@ public final class ModelServiceProviderConfigMapper {
                 0,
                 0,
                 intMetadata(service, "embeddingDimension"),
-                capabilities.contains(ProviderCapability.STREAMING));
+                capabilities.contains(ProviderCapability.STREAMING),
+                service.isReasoning(),
+                service.thinkingMode());
     }
 
     /**
@@ -61,7 +63,7 @@ public final class ModelServiceProviderConfigMapper {
     public static ProviderConfig toEmbeddingProviderConfig(ModelServiceEntity service) {
         return new ProviderConfig(
                 service.id(),
-                service.providerType(),
+                service.profileId(),
                 service.apiUrl(),
                 service.apiKey(),
                 service.modelName(),
@@ -74,7 +76,9 @@ public final class ModelServiceProviderConfigMapper {
                 0,
                 0,
                 intMetadata(service, "embeddingDimension"),
-                false);
+                false,
+                service.isReasoning(),
+                service.thinkingMode());
     }
 
     private static ProviderCapability mapGenerationCapability(GenerationCapability capability) {

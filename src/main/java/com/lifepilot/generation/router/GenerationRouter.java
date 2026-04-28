@@ -4,9 +4,12 @@ import com.lifepilot.generation.client.GenerationClientFactory;
 import com.lifepilot.generation.client.GenerationServiceClient;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
+import com.lifepilot.llm.profile.ProviderProfileRegistry;
+import com.lifepilot.llm.stream.LlmStreamEvent;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.modelservice.model.GenerationSettingsEntity;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
@@ -17,6 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
@@ -46,17 +51,20 @@ public class GenerationRouter {
     private final GenerationSettingsRepository settingsRepository;
     private final GenerationClientFactory clientFactory;
     private final CircuitBreakerManager circuitBreakerManager;
+    private final ProviderProfileRegistry profileRegistry;
     @Nullable
     private volatile SemanticCache semanticCache;
 
     public GenerationRouter(ModelServiceRegistry registry,
                             GenerationSettingsRepository settingsRepository,
                             GenerationClientFactory clientFactory,
-                            CircuitBreakerManager circuitBreakerManager) {
+                            CircuitBreakerManager circuitBreakerManager,
+                            ProviderProfileRegistry profileRegistry) {
         this.registry = registry;
         this.settingsRepository = settingsRepository;
         this.clientFactory = clientFactory;
         this.circuitBreakerManager = circuitBreakerManager;
+        this.profileRegistry = profileRegistry;
     }
 
     public void setSemanticCache(@Nullable SemanticCache semanticCache) {
@@ -221,11 +229,12 @@ public class GenerationRouter {
                                               @Nullable String modelName) {
         List<ModelServiceEntity> candidates = selectCandidates(scene, serviceId, modelName, GenerationCapability.CHAT);
         for (ModelServiceEntity candidate : candidates) {
+            BaseAdapterType baseAdapter = profileRegistry.get(candidate.profileId()).baseAdapter();
             return new ChatModelInfo(
                     clientFactory.getOrCreate(candidate).chatModel(),
                     candidate.id(),
                     candidate.modelName(),
-                    candidate.providerType(),
+                    baseAdapter,
                     candidate.apiUrl(),
                     candidate.generationCapabilities().contains(GenerationCapability.STREAMING));
         }
@@ -233,7 +242,7 @@ public class GenerationRouter {
     }
 
     /**
-     * 流式生成。
+     * 流式生成（仅产 {@code Flux<String>}，老路径）。
      */
     public StreamingGenerationResponse streamWithInfo(String scene,
                                                       String prompt,
@@ -245,6 +254,32 @@ public class GenerationRouter {
                     clientFactory.getOrCreate(candidate).stream(prompt),
                     candidate.id(),
                     candidate.modelName());
+        }
+        throw new LlmUnavailableException("无可用流式生成服务: scene=" + scene, scene, List.of());
+    }
+
+    /**
+     * 流式生成（产 {@link StreamingLlmResponse}，承载 LlmStreamEvent 多维事件）。
+     *
+     * <p>用于 StreamingCallback 等需要消费 reasoning / tool_calls / usage 事件的场景。
+     * 内部委托适配器 {@code streamEvents(Prompt, List<ToolCallback>)}。
+     *
+     * @param scene               场景名（用于路由）
+     * @param preferredProviderId 优先 Provider ID（可空）
+     * @param prompt              已构造好的 Spring AI Prompt
+     * @param toolCallbacks       工具回调列表
+     * @return 流式响应（含 events / providerId / modelId）
+     */
+    public StreamingLlmResponse streamWithInfo(String scene,
+                                               @Nullable String preferredProviderId,
+                                               Prompt prompt,
+                                               List<ToolCallback> toolCallbacks) {
+        List<ModelServiceEntity> candidates = selectCandidates(
+                scene, preferredProviderId, null, GenerationCapability.STREAMING);
+        for (ModelServiceEntity candidate : candidates) {
+            Flux<LlmStreamEvent> events = clientFactory.getOrCreate(candidate)
+                    .streamEvents(prompt, toolCallbacks);
+            return new StreamingLlmResponse(events, candidate.id(), candidate.modelName());
         }
         throw new LlmUnavailableException("无可用流式生成服务: scene=" + scene, scene, List.of());
     }
@@ -360,7 +395,7 @@ public class GenerationRouter {
      * ChatModel 及其元信息。
      */
     public record ChatModelInfo(ChatModel chatModel, String serviceId, String modelName,
-                                ProviderType providerType, String apiUrl,
+                                BaseAdapterType baseAdapter, String apiUrl,
                                 boolean supportsStreaming) {
     }
 

@@ -1,6 +1,6 @@
 package com.lifepilot.llm.adapter;
 
-import com.lifepilot.llm.config.ProviderType;
+import com.lifepilot.llm.profile.BaseAdapterType;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.model.ChatModel;
@@ -20,7 +20,7 @@ import java.util.Objects;
 /**
  * Provider ChatOptions 构造工厂。
  *
- * <p>根据底层 Provider 类型与 API Host 生成对应厂商专有参数，
+ * <p>根据底层 Provider 的 {@link BaseAdapterType} 与 API Host 生成对应厂商专有参数，
  * 确保结构化输出、流式 usage 和 tool calling 配置能够真正下发到协议层。</p>
  *
  * @author zsg
@@ -39,18 +39,18 @@ public final class ProviderChatOptionsFactory {
     }
 
     public record ProviderDescriptor(
-            ProviderType type,
+            BaseAdapterType baseAdapter,
             String apiUrl
     ) {
         public ProviderDescriptor {
-            Objects.requireNonNull(type, "Provider 类型不能为空");
+            Objects.requireNonNull(baseAdapter, "baseAdapter 不能为空");
             Objects.requireNonNull(apiUrl, "apiUrl 不能为空");
         }
     }
 
     public static boolean supportsProtocolStructuredOutput(ProviderDescriptor provider) {
         Objects.requireNonNull(provider, "provider 不能为空");
-        if (provider.type() == ProviderType.ANTHROPIC) {
+        if (provider.baseAdapter() == BaseAdapterType.ANTHROPIC_BASE) {
             return true;
         }
         return resolveOpenAiStructuredOutputMode(provider) == OpenAiStructuredOutputMode.JSON_SCHEMA;
@@ -174,7 +174,7 @@ public final class ProviderChatOptionsFactory {
     }
 
     private static OpenAiStructuredOutputMode resolveOpenAiStructuredOutputMode(ProviderDescriptor provider) {
-        if (provider.type() != ProviderType.OPENAI_COMPATIBLE) {
+        if (provider.baseAdapter() != BaseAdapterType.OPENAI_BASE) {
             return OpenAiStructuredOutputMode.NONE;
         }
         String host = resolveHost(provider.apiUrl());

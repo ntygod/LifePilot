@@ -505,6 +505,10 @@ public class ReactAgentLoop implements CallbackHelper {
                 int preExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
                 String preExecSkillContent = state.loadedSkillContent();
 
+                // 推理模型多轮契约：从回调取本轮 reasoning_content 原文，透传到 ToolCall step；
+                // 后续 ProviderMessageBuilder 装载多轮 messages 时编码进 AssistantMessage，
+                // 由请求体 filter 在请求出去前注入到 OpenAI 协议字段（DeepSeek V4 等）。
+                String llmReasoningContent = callback.getFinalReasoningContent();
                 state = toolExecutionCoordinator.executeBatch(
                         state,
                         toolCalls,
@@ -512,7 +516,9 @@ public class ReactAgentLoop implements CallbackHelper {
                         traceContext,
                         cancellationToken,
                         loopContext,
-                        this::appendAndPublishStep);
+                        this::appendAndPublishStep,
+                        llmReasoningContent != null && !llmReasoningContent.isEmpty()
+                                ? llmReasoningContent : null);
 
                 // ★ Skill 激活缓存失效 — 工具执行结果中的 activated_tool_ids / skill content
                 // 已由 ToolExecutionCoordinator 统一合并进 state；这里仅根据状态变化决定是否重建缓存。

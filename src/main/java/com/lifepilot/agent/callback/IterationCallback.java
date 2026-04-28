@@ -46,4 +46,19 @@ public interface IterationCallback {
 
     /** 获取本次调用的 Model ID（用于 Trace 记录）。 */
     default String getModelId() { return DEFAULT_MODEL_ID; }
+
+    /**
+     * 获取本次 LLM 调用产生的推理过程原文（DeepSeek V4 / Qwen3 等推理模型）。
+     *
+     * <p>用于多轮契约：DeepSeek 等推理模型要求带 tool_calls 的 assistant 消息
+     * 必须在下一轮请求里回传 reasoning_content；ReactAgentLoop 调用 {@link #callLlm}
+     * 后从此 getter 取值并写入对应 {@link com.lifepilot.agent.model.ReactStep.ToolCall}，
+     * 由 ProviderMessageBuilder 在装载多轮 messages 时编码进 AssistantMessage，
+     * 最终由请求体改写 filter 在请求出去前注入到 OpenAI 协议字段。
+     *
+     * <p>非推理模型或本次调用未产生 reasoning chunk 时返回空串。
+     *
+     * @return 推理过程原文；非推理路径返回空串
+     */
+    default String getFinalReasoningContent() { return ""; }
 }
