@@ -25,6 +25,7 @@ import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.shell.ShellToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
+import com.lifepilot.meta.infra.attachment.AttachmentToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.transcript.TranscriptToolProvider;
 import com.lifepilot.meta.infra.interaction.NotifyToolProvider;
@@ -171,6 +172,14 @@ public class InfraToolProvider {
             totalTools += registerBuiltinTools(toolRegistry, transcriptToolProvider.buildTranscriptTools());
         } else {
             log.warn("SessionTranscriptRepository 不可用（如非 Web 上下文），跳过 transcript 工具注册");
+        }
+
+        // 附件登记工具 —— LLM 把工具产物（图片/docx/pdf）挂载为对话附件
+        if (attachmentRepository != null) {
+            var attachmentToolProvider = new AttachmentToolProvider(attachmentRepository, workspaceResolver);
+            totalTools += registerBuiltinTools(toolRegistry, attachmentToolProvider.buildAttachmentTools());
+        } else {
+            log.warn("AttachmentRepository 不可用，跳过附件登记工具注册");
         }
 
         // 通知工具
