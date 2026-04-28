@@ -64,6 +64,10 @@ public class ShellToolProvider {
     // ─────────────────────────────────────────────
 
     private BuiltinTool buildExecTool() {
+        boolean windows = com.lifepilot.meta.infra.shell.ShellProcessFactory.isWindows();
+        String shellHint = windows
+                ? "**当前运行环境：Windows + PowerShell**（不是 bash）。命令必须用 PowerShell 语法：路径用反斜杠或正斜杠均可但禁用 `/home/xxx` 等 Linux 路径；变量用 `$env:NAME` 而非 `$NAME`；多行脚本不要用 bash heredoc（`cat <<EOF`）会解析失败；需要 bash 特性时显式 `bash -c \"...\"`。"
+                : "**当前运行环境：Unix + sh**（默认 sh，可通过 shell 参数指定 bash/zsh）。";
         return BuiltinTool.builder()
                 .id("shell.exec")
                 .category(ToolCategory.ACTION)
@@ -71,9 +75,11 @@ public class ShellToolProvider {
                 .description("""
                         执行 shell 命令。短命令默认同步；长服务用 background=true；不确定耗时用 yieldMs。后台进程用 shell.process 读取/终止。
 
+                        %s
+
                         安全护栏：与 code.execute 同款规则，不可绕过 —— 永久阻断（rm -rf 系统目录 / mkfs / dd / shutdown / fork bomb 等）；\
                         默认拒绝（rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / sudo 等）。\
-                        用户要求执行此类命令时直接告知会被阻断，不要改写为"等效平台命令"绕过；删除走 file.delete 由用户明确路径。""")
+                        用户要求执行此类命令时直接告知会被阻断，不要改写为"等效平台命令"绕过；删除走 file.delete 由用户明确路径。""".formatted(shellHint))
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
