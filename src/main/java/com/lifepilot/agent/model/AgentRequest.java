@@ -206,6 +206,18 @@ public record AgentRequest(
     }
 
     /**
+     * 创建一个替换 message 的新请求副本，其他字段保持不变。
+     *
+     * @param newMessage 新的目标消息
+     * @return 新的 AgentRequest 实例
+     */
+    public AgentRequest withMessage(String newMessage) {
+        return new AgentRequest(newMessage, sessionId, source, userId, turnId, action, taskMode,
+                systemPrompt, budget, parentTraceId, depth, preferredProvider, allowedToolIds,
+                mediaContents, temperature, resumePolicy);
+    }
+
+    /**
      * 创建一个替换 mediaContents 的新请求副本，其他字段保持不变。
      *
      * @param newMediaContents 新的媒体内容列表

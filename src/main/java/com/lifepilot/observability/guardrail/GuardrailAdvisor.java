@@ -98,7 +98,7 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
                 return;
             }
 
-            var result = guardrailEngine.checkInput(userContent);
+            var result = guardrailEngine.checkInput(null, userContent);
             handleResult(result);
 
         } catch (GuardrailBlockedException | GuardrailConfirmationRequiredException e) {
@@ -126,7 +126,7 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
                 return;
             }
 
-            var result = guardrailEngine.checkOutput(outputText);
+            var result = guardrailEngine.checkOutput(null, outputText);
             handleResult(result);
 
         } catch (GuardrailBlockedException | GuardrailConfirmationRequiredException e) {

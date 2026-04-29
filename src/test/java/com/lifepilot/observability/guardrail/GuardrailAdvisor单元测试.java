@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -53,7 +54,7 @@ class GuardrailAdvisor单元测试 {
         // GuardrailEngine 返回 BLOCK 决策
         GuardrailResult.Blocked blocked = new GuardrailResult.Blocked(
                 "policy-input-block", "输入违规", RiskLevel.HIGH);
-        when(guardrailEngine.checkInput("用户输入包含违规内容")).thenReturn(blocked);
+        when(guardrailEngine.checkInput(any(), eq("用户输入包含违规内容"))).thenReturn(blocked);
 
         guardrailAdvisor = new GuardrailAdvisor(guardrailEngine);
 
@@ -82,7 +83,7 @@ class GuardrailAdvisor单元测试 {
         // GuardrailEngine 检查输出返回 BLOCK 决策
         GuardrailResult.Blocked blocked = new GuardrailResult.Blocked(
                 "policy-output-block", "输出违规", RiskLevel.MEDIUM);
-        when(guardrailEngine.checkOutput("LLM 输出包含违规内容")).thenReturn(blocked);
+        when(guardrailEngine.checkOutput(any(), eq("LLM 输出包含违规内容"))).thenReturn(blocked);
 
         guardrailAdvisor = new GuardrailAdvisor(guardrailEngine);
 
@@ -108,7 +109,7 @@ class GuardrailAdvisor单元测试 {
         // GuardrailEngine 检查输出返回 NeedsConfirmation 决策
         GuardrailResult.NeedsConfirmation needsConfirmation = new GuardrailResult.NeedsConfirmation(
                 "policy-confirm", "请用户确认该内容", ApprovalMode.USER_CONFIRM);
-        when(guardrailEngine.checkOutput("LLM 输出需要人工确认")).thenReturn(needsConfirmation);
+        when(guardrailEngine.checkOutput(any(), eq("LLM 输出需要人工确认"))).thenReturn(needsConfirmation);
 
         guardrailAdvisor = new GuardrailAdvisor(guardrailEngine);
 

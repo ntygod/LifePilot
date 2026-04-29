@@ -485,79 +485,62 @@ public class ReactAgentLoop implements CallbackHelper {
                         effectiveRequest.temperature());
             }
 
-            // 7. 判断是否有 tool call 请求
+            // ── 7. 分支: Tool Call (Action) vs 纯文本 (Answer) ──
             if (assistantMessage.hasToolCalls()) {
-                // === ReAct: Action 阶段 — 处理 tool call ===
+                // === ReAct: Action — 执行工具调用 ===
                 var toolCalls = assistantMessage.getToolCalls();
 
-                // 如果 LLM 同时返回了文本（思考内容），记录为 Thought
+                // 7a. 记录 LLM 伴随文本为 Thought
                 String thoughtText = assistantMessage.getText();
                 if (thoughtText != null && !thoughtText.isBlank()) {
                     state = state.appendStep(new ReactStep.Thought(thoughtText));
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
-                // Skill 激活前快照 — 用于事后检测 ToolExecutionCoordinator 是否合并了 activated_tool_ids / skillContent
+                // 7b. Skill 激活前快照 — 事后检测 ToolExecutionCoordinator 是否合并了 activated_tool_ids / skillContent
                 int preExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
                 String preExecSkillContent = state.loadedSkillContent();
 
-                // 推理模型多轮契约：从回调取本轮 reasoning_content 原文，透传到 ToolCall step；
-                // 后续 ProviderMessageBuilder 装载多轮 messages 时编码进 AssistantMessage，
-                // 由请求体 filter 在请求出去前注入到 OpenAI 协议字段（DeepSeek V4 等）。
-                // callback 默认实现返空串表示"非 thinking 模式 / 没产出 reasoning"；
-                // 真值 callback 可能返空串表示"thinking 但本次思考为空"——两者都原样透传，
-                // 由 ToolCall record 保留 "" 语义区分，下游 marker 链路按 reasoning != null
-                // 决定是否编码（空 reasoning 也编码空 marker，保证 DeepSeek 协议合规）。
+                // 7c. 执行工具批量调用
+                // 透传 reasoning_content（DeepSeek V4 等多轮契约要求回传，非 thinking 模式为空串）
                 String llmReasoningContent = callback.getFinalReasoningContent();
                 state = toolExecutionCoordinator.executeBatch(
-                        state,
-                        toolCalls,
-                        toolCallbacks,
-                        traceContext,
-                        cancellationToken,
-                        loopContext,
-                        this::appendAndPublishStep,
-                        llmReasoningContent);
+                        state, toolCalls, toolCallbacks, traceContext, cancellationToken,
+                        loopContext, this::appendAndPublishStep, llmReasoningContent);
 
-                // ★ Skill 激活缓存失效 — 工具执行结果中的 activated_tool_ids / skill content
-                // 已由 ToolExecutionCoordinator 统一合并进 state；这里仅根据状态变化决定是否重建缓存。
+                // 7d. Skill 缓存失效 — 工具合并了新的 activated_tool_ids / skillContent 时重建缓存
                 int postExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
                 if (postExecActivatedCount > preExecActivatedCount) {
-                    cachedToolCallbacks = null;  // 工具可见集合扩充，需重建回调
+                    cachedToolCallbacks = null;
                 }
                 if (!Objects.equals(preExecSkillContent, state.loadedSkillContent())) {
-                    cachedContext = null;  // Skill 指南已注入 state，需重建系统提示词
+                    cachedContext = null;
                 }
 
-                // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
+                // 7e. 挂起检测 — 工具返回 _suspend 信号时跳出循环
                 if (state.suspended()) {
                     log.info("Agent 进入挂起态: traceId={}, reason={}", state.traceId(), state.suspendReason());
                     state = state.appendStep(new ReactStep.Suspend(
                             state.suspendReason(), Instant.now(), state.stepCount()));
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                    // 冻结 Budget elapsed 到当前时间点
                     state = state.toBuilder()
                             .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
                             .build();
+                    break;
                 }
-
-                // ★ 外层循环挂起检测 — 挂起后跳出主迭代循环
-                if (state.suspended()) break;
                 if (cancellationToken.isCancelled()) break;
 
-                // ★ 执行回顾注入点 — 工具执行完毕且未挂起时评估是否需要反思
+                // 7f. 执行回顾 — 工具执行完毕后评估是否需要反思调整策略
                 var maybeReflect = evaluateReflectionTrigger(state, iteration);
                 if (maybeReflect != null) {
                     state = appendAndPublishStep(state, maybeReflect, loopContext);
                     persistReflectToWorkspace(state, iteration);
-                    // 即时经验补丁：异步写入经验，避免在同步路径上做数据库写入
                     if (experienceSummarizer != null) {
                         final var snapshotState = state;
                         final var reflectContent = maybeReflect.content();
                         final var reflectTrigger = maybeReflect.trigger();
                         Thread.startVirtualThread(() -> experienceSummarizer.quickLearn(snapshotState, reflectContent, reflectTrigger));
                     }
-                    // 反思结论写入 L1 工作区，增强长对话的上下文保持
                     if (workspaceService != null && state.sessionId() != null) {
                         try {
                             String reflectSummary = maybeReflect.content().length() > 300
@@ -567,10 +550,7 @@ public class ReactAgentLoop implements CallbackHelper {
                                     "反思结论: " + maybeReflect.trigger().name(),
                                     reflectSummary,
                                     Map.of("trigger", maybeReflect.trigger().name(), "iteration", iteration),
-                                    70,
-                                    state.traceId(),
-                                    state.traceId(),
-                                    null));
+                                    70, state.traceId(), state.traceId(), null));
                         } catch (Exception e) {
                             log.debug("反思工作区持久化失败: {}", e.getMessage());
                         }
@@ -579,128 +559,28 @@ public class ReactAgentLoop implements CallbackHelper {
                     cachedToolCallbacks = null;
                 }
 
-                // 扣减 Token 预算
-                state = state.toBuilder()
-                        .budget(state.budget().deductTokens(responseTokens))
-                        .build();
+                // 7g. 扣减 Token 预算，重置失败计数
+                state = state.toBuilder().budget(state.budget().deductTokens(responseTokens)).build();
                 consecutiveFailures = 0;
 
             } else {
-                // === ReAct: Answer 阶段 — 纯文本响应 ===
-                String content = assistantMessage.getText();
-                if (content != null && !content.isBlank()) {
-                    // 截断的文本不能当完整答案 — 作为 Thought 记录，让 LLM 在下一轮继续
-                    if (truncated) {
-                        state = state.appendStep(new ReactStep.Thought(content));
-                        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                        state = state.toBuilder()
-                                .budget(state.budget().deductTokens(responseTokens))
-                                .build();
-                        consecutiveFailures = 0;
-                    } else {
-                    var completionEvaluation = completionPolicy.evaluate(request, state, content);
-                    if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.EXPLICIT_TERMINAL) {
-                        String visibleContent = completionEvaluation.userVisibleContent() != null
-                                ? completionEvaluation.userVisibleContent()
-                                : content;
-                        CompletionReason completionReason = completionEvaluation.completionReason();
-                        state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
-                        state = state.toBuilder()
-                                .done(true)
-                                .finalOutput(visibleContent)
-                                .terminationReason(completionEvaluation.terminationReason())
-                                .completionReason(completionReason)
-                                .budget(state.budget().deductTokens(responseTokens))
-                                .build();
-
-                        log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, taskMode={}, completionReason={}, preview={}",
-                                state.traceId(), iteration + 1, state.stepCount(),
-                                state.budget().tokensUsed(), state.taskMode(), completionReason,
-                                previewForLog(visibleContent));
-                    } else if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.SUSPEND_FOR_USER_INPUT) {
-                        String visibleContent = completionEvaluation.userVisibleContent() != null
-                                ? completionEvaluation.userVisibleContent()
-                                : content;
-                        String suspendPrompt = completionEvaluation.suspendPrompt() != null
-                                ? completionEvaluation.suspendPrompt()
-                                : visibleContent;
-                        state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
-                        state = state.toBuilder()
-                                .finalOutput(visibleContent)
-                                .terminationReason(completionEvaluation.terminationReason())
-                                .completionReason(CompletionReason.SUSPENDED)
-                                .completionMode(CompletionMode.SUSPENDED)
-                                .budget(state.budget().deductTokens(responseTokens))
-                                .build()
-                                .suspend(new SuspendReason.ExternalDataWait("__await_user_input__", suspendPrompt));
-                        state = appendAndPublishStep(state, new ReactStep.Suspend(
-                                state.suspendReason(), Instant.now(), state.stepCount()), loopContext);
-
-                        log.info("ReAct 循环挂起等待用户补充: traceId={}, iterations={}, stepCount={}, preview={}",
-                                state.traceId(), iteration + 1, state.stepCount(), previewForLog(visibleContent));
-                        break;
-                    } else if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.REJECT_IMPLICIT_TERMINATION) {
-                        int rejectCount = state.earlyStopRejectCount() + 1;
-                        log.warn("疑似提前结束已拒绝: traceId={}, iteration={}, rejectCount={}, preview={}",
-                                state.traceId(), iteration, rejectCount, previewForLog(content));
-                        if (rejectCount >= config.getLoop().getMaxEarlyStopRejects()) {
-                            state = DegradedResponseBuilder.terminateWithReason(
-                                    state.toBuilder()
-                                            .finalOutput(content)
-                                            .build(),
-                                    "多步执行任务未满足结束协议，系统已拒绝提前结束",
-                                    CompletionReason.EARLY_STOP_REJECTED);
-                            break;
-                        }
-                        state = state.appendStep(new ReactStep.Thought(
-                                "当前回复缺少终态控制信息。如果任务已经完成，请在自然语言正文后追加 `<completion_control>done</completion_control>`；如果明确阻塞，请追加 `<completion_control>blocked</completion_control>`；如果还要继续，就直接调用下一步工具。"));
-                        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                        state = state.toBuilder()
-                                .earlyStopRejectCount(rejectCount)
-                                .budget(state.budget().deductTokens(responseTokens))
-                                .build();
-                        consecutiveFailures = 0;
-                        cachedContext = null;
-                        cachedToolCallbacks = null;
-                    } else {
-                        String visibleContent = completionEvaluation.userVisibleContent() != null
-                                ? completionEvaluation.userVisibleContent()
-                                : content;
-                        state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
-                        state = state.toBuilder()
-                                .done(true)
-                                .finalOutput(visibleContent)
-                                .completionReason(CompletionReason.DIRECT_ANSWER)
-                                .budget(state.budget().deductTokens(responseTokens))
-                                .build();
-
-                        log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, taskMode={}, completionReason={}, preview={}",
-                                state.traceId(), iteration + 1, state.stepCount(),
-                                state.budget().tokensUsed(), state.taskMode(), CompletionReason.DIRECT_ANSWER,
-                                previewForLog(visibleContent));
-                    }
-                    } // end !truncated
-                } else {
-                    // LLM 返回空内容 — 记录 Observation 而非静默跳过
-                    log.warn("LLM 返回空内容: traceId={}, iteration={}, finishReason={}",
-                            state.traceId(), iteration, finishReason);
-                    state = state.appendStep(new ReactStep.Observation(
-                            "llm", null, false,
-                            finishReason != null
-                                    ? "LLM 返回空内容（finishReason=" + finishReason + "）"
-                                    : "LLM 返回空内容",
-                            0, null));
-                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                    consecutiveFailures++;
-                    if (consecutiveFailures >= maxConsecutiveFailures) {
-                        state = DegradedResponseBuilder.terminateWithReason(
-                                state, "连续空响应达到上限: " + maxConsecutiveFailures);
-                        break;
-                    }
+                // === ReAct: Answer — 评估文本响应（完成 / 挂起 / 拒绝提前结束 / 直接回答）===
+                var textResult = handleTextResponse(
+                        state, assistantMessage.getText(), truncated, finishReason,
+                        responseTokens, consecutiveFailures, maxConsecutiveFailures,
+                        iteration, request, loopContext);
+                state = textResult.state();
+                consecutiveFailures = textResult.consecutiveFailures();
+                if (textResult.shouldInvalidateCachedContext()) {
+                    cachedContext = null;
+                    cachedToolCallbacks = null;
+                }
+                if (textResult.shouldBreak()) {
+                    break;
                 }
             }
 
-            // 8. 迭代完成后更新步数，并在进入下一轮前再次执行预算检查
+            // ── 8. 迭代收尾: 步数+1、预算刷新、中途压缩、渐进式降级 ──
             state = refreshBudgetElapsed(advanceBudgetStep(state), loopStart);
             if (!state.isDone()) {
                 if (maybeCompactMidLoop(state, iteration, cachedContext != null)) {
@@ -727,6 +607,161 @@ public class ReactAgentLoop implements CallbackHelper {
         }
 
         return state;
+    }
+
+    /**
+     * 文本响应阶段处理结果。
+     *
+     * @param state                        更新后的 Agent 状态（可能设置了 done/suspended）
+     * @param consecutiveFailures          更新后的连续失败计数
+     * @param shouldBreak                  是否应跳出主循环（挂起/降级终止时）
+     * @param shouldInvalidateCachedContext 是否需要重建缓存上下文（拒绝提前结束时）
+     */
+    private record TextResponseResult(
+            ReactAgentState state,
+            int consecutiveFailures,
+            boolean shouldBreak,
+            boolean shouldInvalidateCachedContext
+    ) {}
+
+    /**
+     * 处理 LLM 纯文本响应（非工具调用）。
+     *
+     * <p>根据 {@link ExecutionCompletionPolicy} 的评估结果分流到四种处置：
+     * <ul>
+     *   <li>{@code EXPLICIT_TERMINAL} — 模型主动声明任务完成</li>
+     *   <li>{@code SUSPEND_FOR_USER_INPUT} — 模型请求用户补充信息</li>
+     *   <li>{@code REJECT_IMPLICIT_TERMINATION} — 疑似提前结束，注入反思提示</li>
+     *   <li>默认 — 纯文本直接回答</li>
+     * </ul>
+     *
+     * <p>截断的响应和空内容也在此统一处理，不暴露给上层。</p>
+     */
+    private TextResponseResult handleTextResponse(
+            ReactAgentState state,
+            String content,
+            boolean truncated,
+            @Nullable String finishReason,
+            int responseTokens,
+            int consecutiveFailures,
+            int maxConsecutiveFailures,
+            int iteration,
+            AgentRequest request,
+            AgentLoopContext loopContext) {
+
+        // 有内容但非截断 → 走完成策略评估
+        if (content != null && !content.isBlank()) {
+            if (truncated) {
+                // 截断文本不能当完整答案 — 作为 Thought 记录，让 LLM 在下一轮继续
+                state = state.appendStep(new ReactStep.Thought(content));
+                pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                state = state.toBuilder()
+                        .budget(state.budget().deductTokens(responseTokens))
+                        .build();
+                return new TextResponseResult(state, 0, false, false);
+            }
+
+            var completionEvaluation = completionPolicy.evaluate(request, state, content);
+            return switch (completionEvaluation.disposition()) {
+                case EXPLICIT_TERMINAL -> {
+                    String visibleContent = completionEvaluation.userVisibleContent() != null
+                            ? completionEvaluation.userVisibleContent() : content;
+                    CompletionReason completionReason = completionEvaluation.completionReason();
+                    state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
+                    state = state.toBuilder()
+                            .done(true)
+                            .finalOutput(visibleContent)
+                            .terminationReason(completionEvaluation.terminationReason())
+                            .completionReason(completionReason)
+                            .budget(state.budget().deductTokens(responseTokens))
+                            .build();
+                    log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, " +
+                                    "taskMode={}, completionReason={}, preview={}",
+                            state.traceId(), iteration + 1, state.stepCount(),
+                            state.budget().tokensUsed(), state.taskMode(), completionReason,
+                            previewForLog(visibleContent));
+                    yield new TextResponseResult(state, consecutiveFailures, false, false);
+                }
+                case SUSPEND_FOR_USER_INPUT -> {
+                    String visibleContent = completionEvaluation.userVisibleContent() != null
+                            ? completionEvaluation.userVisibleContent() : content;
+                    String suspendPrompt = completionEvaluation.suspendPrompt() != null
+                            ? completionEvaluation.suspendPrompt() : visibleContent;
+                    state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
+                    state = state.toBuilder()
+                            .finalOutput(visibleContent)
+                            .terminationReason(completionEvaluation.terminationReason())
+                            .completionReason(CompletionReason.SUSPENDED)
+                            .completionMode(CompletionMode.SUSPENDED)
+                            .budget(state.budget().deductTokens(responseTokens))
+                            .build()
+                            .suspend(new SuspendReason.ExternalDataWait("__await_user_input__", suspendPrompt));
+                    state = appendAndPublishStep(state, new ReactStep.Suspend(
+                            state.suspendReason(), Instant.now(), state.stepCount()), loopContext);
+                    log.info("ReAct 循环挂起等待用户补充: traceId={}, iterations={}, stepCount={}, preview={}",
+                            state.traceId(), iteration + 1, state.stepCount(), previewForLog(visibleContent));
+                    yield new TextResponseResult(state, consecutiveFailures, true, false);
+                }
+                case REJECT_IMPLICIT_TERMINATION -> {
+                    int rejectCount = state.earlyStopRejectCount() + 1;
+                    log.warn("疑似提前结束已拒绝: traceId={}, iteration={}, rejectCount={}, preview={}",
+                            state.traceId(), iteration, rejectCount, previewForLog(content));
+                    if (rejectCount >= config.getLoop().getMaxEarlyStopRejects()) {
+                        state = DegradedResponseBuilder.terminateWithReason(
+                                state.toBuilder().finalOutput(content).build(),
+                                "多步执行任务未满足结束协议，系统已拒绝提前结束",
+                                CompletionReason.EARLY_STOP_REJECTED);
+                        yield new TextResponseResult(state, consecutiveFailures, true, false);
+                    }
+                    state = state.appendStep(new ReactStep.Thought(
+                            "当前回复缺少终态控制信息。如果任务已经完成，请在自然语言正文后追加 " +
+                                    "`<completion_control>done</completion_control>`；如果明确阻塞，请追加 " +
+                                    "`<completion_control>blocked</completion_control>`；如果还要继续，就直接调用下一步工具。"));
+                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                    state = state.toBuilder()
+                            .earlyStopRejectCount(rejectCount)
+                            .budget(state.budget().deductTokens(responseTokens))
+                            .build();
+                    yield new TextResponseResult(state, 0, false, true);
+                }
+                default -> {
+                    // DIRECT_ANSWER — 无特殊协议的纯文本答案
+                    String visibleContent = completionEvaluation.userVisibleContent() != null
+                            ? completionEvaluation.userVisibleContent() : content;
+                    state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
+                    state = state.toBuilder()
+                            .done(true)
+                            .finalOutput(visibleContent)
+                            .completionReason(CompletionReason.DIRECT_ANSWER)
+                            .budget(state.budget().deductTokens(responseTokens))
+                            .build();
+                    log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, " +
+                                    "taskMode={}, completionReason={}, preview={}",
+                            state.traceId(), iteration + 1, state.stepCount(),
+                            state.budget().tokensUsed(), state.taskMode(), CompletionReason.DIRECT_ANSWER,
+                            previewForLog(visibleContent));
+                    yield new TextResponseResult(state, consecutiveFailures, false, false);
+                }
+            };
+        }
+
+        // 空内容 — 记录 Observation 而非静默跳过
+        log.warn("LLM 返回空内容: traceId={}, iteration={}, finishReason={}",
+                state.traceId(), iteration, finishReason);
+        state = state.appendStep(new ReactStep.Observation(
+                "llm", null, false,
+                finishReason != null
+                        ? "LLM 返回空内容（finishReason=" + finishReason + "）"
+                        : "LLM 返回空内容",
+                0, null));
+        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+        consecutiveFailures++;
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+            state = DegradedResponseBuilder.terminateWithReason(
+                    state, "连续空响应达到上限: " + maxConsecutiveFailures);
+            return new TextResponseResult(state, consecutiveFailures, true, false);
+        }
+        return new TextResponseResult(state, consecutiveFailures, false, false);
     }
 
     /**

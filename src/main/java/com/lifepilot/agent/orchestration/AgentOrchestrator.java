@@ -125,28 +125,41 @@ public class AgentOrchestrator {
         var loopContext = new AgentLoopContext();
 
         var token = new CancellationToken();
-        final AgentRequest effectiveRequest = preprocessMedia(request, state, null, null);
+        AgentRequest effectiveRequest = preprocessMedia(request, state, null, null);
         if (effectiveRequest == null) {
             // preprocessMedia 返回 null 表示媒体校验失败
             return AgentResponse.error(state, new MediaValidationException("媒体校验失败"));
         }
 
         try {
-            state = initStateWithResumePolicy(effectiveRequest);
+            // ── 阶段 1: 状态初始化 ─
+            state = resolveInitState(effectiveRequest);
+            var loopRequest = effectiveRequest;
+            if (effectiveRequest.action() == ChatTurnAction.RESUME && !state.goal().equals(effectiveRequest.message())) {
+                loopRequest = effectiveRequest.withMessage(state.goal());
+            }
+
+            // ── 阶段 2: Turn 绑定 ─
             executionPersistence.bindTurnTrace(state);
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             executionPersistence.persistUserTurn(state, effectiveRequest);
             traceContext = startTraceIfEnabled(state, effectiveRequest);
+
+            // ── 阶段 3: 执行 ReAct 循环 ─
             loopStart = Instant.now();
             var callback = new NonStreamingCallback(
-                    config, generationRouter, multimodalRouter, effectiveRequest, agentLoop);
-            state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
+                    config, generationRouter, multimodalRouter, loopRequest, agentLoop);
+            state = agentLoop.coreLoop(state, loopRequest, traceContext, loopStart,
                     callback, token, loopContext);
+
+            // ── 阶段 4: 挂起检测 ─
             cleanupWorkspaceProgress(state);
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
                 return handleSuspendSync(state, traceContext, loopContext);
             }
+
+            // ── 阶段 5: 成功路径 — 正常/降级分流、持久化、响应构建 ─
             if (state.terminationReason() == null) {
                 String summary = buildReasoningSummary(state, traceContext);
                 state = state.toBuilder().reasoningSummary(summary).build();
@@ -169,6 +182,7 @@ public class AgentOrchestrator {
             return buildAgentResponse(state, assistantEntryId, a2uiComponents, tokenUsage);
 
         } catch (Throwable e) {
+            // ── 阶段 6: 异常路径 — 可降级异常走 DEGRADED，不可恢复走 FAILED ─
             log.error("ReAct 循环执行失败：errorType={}, error={}",
                     e.getClass().getSimpleName(), e.getMessage(), e);
             if (e instanceof Exception ex && shouldDegradeUnexpectedException(state)) {
@@ -195,6 +209,19 @@ public class AgentOrchestrator {
      * 流式执行 Agent 并通过 SSE 推送事件。
      *
      * <p>适用于需要实时反馈的场景，会逐步发送思考过程、工具调用、最终答案等事件。</p>
+     *
+     * <h3>执行阶段</h3>
+     * <ol>
+     *   <li>初始化 — SSE emitter、loopContext、媒体预处理</li>
+     *   <li>状态解析 — SuspendStore / checkpoint / 全新 init</li>
+     *   <li>Turn 绑定 — trace、用户消息持久化、TRACE_START 事件</li>
+     *   <li>ReAct 循环 — 核心推理 → 工具调用 → 观察循环</li>
+     *   <li>挂起检测 — 工具返回的 _suspend 信号或 LLM await_user_input 协议</li>
+     *   <li>流式错误检测 — callback 中累积的流式连接异常</li>
+     *   <li>成功路径 — 提取最终内容、降级/正常分支、持久化 transcript</li>
+     *   <li>异常路径 — 可降级异常走 DEGRADED、不可恢复走 FAILED</li>
+     *   <li>终结事件 — 推送 DONE 或 ERROR SSE 事件、关闭 emitter</li>
+     * </ol>
      */
     public void runStreaming(AgentRequest request, String streamId,
                              SseSessionManager sseManager,
@@ -214,11 +241,20 @@ public class AgentOrchestrator {
         boolean testSession = false;
         var eventBuffer = sseManager.createEventBuffer(streamId);
         var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId, eventBuffer);
-        final AgentRequest effectiveRequest = preprocessMedia(request, state, sseManager, streamId);
+        AgentRequest effectiveRequest = preprocessMedia(request, state, sseManager, streamId);
         if (effectiveRequest == null) return;
 
         try {
-            state = initStateWithResumePolicy(effectiveRequest);
+            // ── 阶段 1: 状态初始化 ──────────────────────────────────
+            // RESUME 操作优先从 SuspendStore 恢复完整状态，fallback 到 checkpoint → init
+            state = resolveInitState(effectiveRequest);
+            var loopRequest = effectiveRequest;
+            if (effectiveRequest.action() == ChatTurnAction.RESUME && !state.goal().equals(effectiveRequest.message())) {
+                loopRequest = effectiveRequest.withMessage(state.goal());
+            }
+
+            // ── 阶段 2: Turn 绑定与启动事件 ─────────────────────────
+            // 将 turnId ↔ traceId 绑定，持久化用户消息，推送 TRACE_START + AGENT_START
             executionPersistence.bindTurnTrace(state);
             testSession = isTestSession(effectiveRequest.sessionId());
             userEntryId = executionPersistence.persistUserTurn(state, effectiveRequest);
@@ -243,13 +279,16 @@ public class AgentOrchestrator {
                     "Agent 开始执行任务，正在初始化推理循环和流式输出。",
                     null, Map.of(), eventBuffer);
 
-            traceContext = startTraceIfEnabled(state, effectiveRequest);
+            // ── 阶段 3: 执行 ReAct 循环 ────────────────────────────
+            traceContext = startTraceIfEnabled(state, loopRequest);
             loopStart = Instant.now();
             var callback = new StreamingCallback(config, generationRouter, multimodalRouter, agentLoop,
                     cancellationToken, loopContext, sseManager, streamId,
-                    request.sessionId(), tempTurnId, effectiveRequest);
-            state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
+                    request.sessionId(), tempTurnId, loopRequest);
+            state = agentLoop.coreLoop(state, loopRequest, traceContext, loopStart,
                     callback, cancellationToken, loopContext);
+
+            // ── 阶段 4: 挂起检测 ────────────────────────────────────
             cleanupWorkspaceProgress(state);
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
@@ -257,7 +296,8 @@ public class AgentOrchestrator {
                 return;
             }
 
-            // 检查流式回调中是否发生了错误
+            // ── 阶段 5: 流式错误检测 ────────────────────────────────
+            // StreamingCallback 中累积的连接异常（EOF/网络中断等），在 coreLoop 结束后统一处理
             if (callback.hasStreamingError()) {
                 Exception streamingFailure = callback.getStreamingError();
                 if (shouldDegradeUnexpectedException(state)) {
@@ -269,8 +309,8 @@ public class AgentOrchestrator {
                 }
             }
 
+            // ── 阶段 6: 成功路径 — 提取内容、降级/正常分流、持久化 ─
             if (error == null) {
-                // 提取最终内容
                 String callbackContent = callback.getFinalContent();
                 finalContent = state.finalOutput() != null
                         ? state.finalOutput()
@@ -310,6 +350,7 @@ public class AgentOrchestrator {
                 finalTokenUsage = aggregateTokenUsage(traceContext);
             }
         } catch (Throwable e) {
+            // ── 阶段 7: 异常路径 — 可降级异常走 DEGRADED，不可恢复走 FAILED ─
             log.error("流式执行 Agent 失败：errorType={}, error={}",
                     e.getClass().getSimpleName(), e.getMessage(), e);
             if (e instanceof Exception ex && shouldDegradeUnexpectedException(state)) {
@@ -336,6 +377,7 @@ public class AgentOrchestrator {
                 error = e;
             }
         } finally {
+            // ── 阶段 8: 终结事件 — 推送 DONE 或 ERROR，关闭 SSE emitter ─
             endTraceIfEnabled(traceContext, state, error);
 
             // 兜底清理，防止泄漏（组件树已在 success/catch 路径中 poll 过，这里仅做安全移除）
@@ -676,6 +718,81 @@ public class AgentOrchestrator {
             return ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
         }
         return initState(request);
+    }
+
+    /**
+     * 解析初始状态：RESUME 操作优先从 SuspendStore 恢复完整执行状态，
+     * 未命中时 fallback 到 checkpoint → init。
+     *
+     * <p>这是聊天"继续"路径与事件驱动恢复路径的统一入口。</p>
+     */
+    private ReactAgentState resolveInitState(AgentRequest request) {
+        if (request.action() == ChatTurnAction.RESUME) {
+            var restored = tryRestoreFromSuspend(request);
+            if (restored.isPresent()) {
+                return restored.get();
+            }
+        }
+        return initStateWithResumePolicy(request);
+    }
+
+    /**
+     * 从 SuspendStore 恢复 Agent 执行状态。
+     *
+     * <p>原子加载并删除挂起快照，重建完整状态（步骤历史、预算、已激活工具、
+     * 已加载技能等），并将用户的新消息追加为观察步骤。</p>
+     *
+     * @param request 当前请求（含用户的新"继续"消息）
+     * @return 恢复后的状态，未找到挂起记录时返回 empty
+     */
+    private Optional<ReactAgentState> tryRestoreFromSuspend(AgentRequest request) {
+        if (suspendStore == null) {
+            return Optional.empty();
+        }
+        var suspended = suspendStore.loadAndDeleteBySession(request.sessionId(), request.channel());
+        if (suspended.isEmpty()) {
+            return Optional.empty();
+        }
+        var saved = suspended.get();
+        var restoredState = saved.toAgentState(objectMapper);
+        String oldTraceId = restoredState.traceId();
+
+        var builder = restoredState.toBuilder()
+                .traceId(UUID.randomUUID().toString())
+                .sessionId(request.sessionId())
+                .turnId(request.turnId())
+                .source(request.source())
+                .parentTraceId(oldTraceId)
+                .resumedFromTraceId(oldTraceId)
+                .preferredProvider(
+                        request.preferredProvider() != null
+                                ? request.preferredProvider()
+                                : restoredState.preferredProvider())
+                .allowedToolIds(
+                        request.allowedToolIds() != null
+                                ? request.allowedToolIds()
+                                : restoredState.allowedToolIds())
+                .done(false)
+                .finalOutput(null)
+                .terminationReason(null)
+                .reasoningSummary(null)
+                .suspended(false)
+                .suspendReason(null)
+                .completionMode(CompletionMode.NORMAL);
+
+        // 将用户的新消息追加为观察步骤，让 LLM 感知到继续指令
+        if (request.message() != null && !request.message().isBlank()) {
+            var state = builder.build();
+            state = state.appendStep(new ReactStep.Observation(
+                    "user_continue", null, true,
+                    "用户继续: " + request.message(), 0, null));
+            builder = state.toBuilder();
+        }
+
+        var state = builder.build();
+        log.info("从 SuspendStore 恢复 Agent 状态: sessionId={}, oldTraceId={}, newTraceId={}, stepCount={}",
+                state.sessionId(), oldTraceId, state.traceId(), state.stepCount());
+        return Optional.of(state);
     }
 
     /** 启动 Trace 追踪（如果配置了 traceRecorder） */

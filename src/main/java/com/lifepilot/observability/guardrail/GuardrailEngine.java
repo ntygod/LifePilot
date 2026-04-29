@@ -2,12 +2,14 @@ package com.lifepilot.observability.guardrail;
 
 import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.trace.GuardrailStep;
+import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceContextPropagator;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -74,18 +76,19 @@ public class GuardrailEngine {
     /**
      * 检查工具调用是否允许。
      *
-     * @param tool  工具契约
-     * @param input 工具输入
+     * @param traceId Agent 轨迹 ID（可空，为空时从 ThreadLocal 取）
+     * @param tool    工具契约
+     * @param input   工具输入
      * @return 检查结果
      */
-    public GuardrailResult checkToolCall(ToolContract tool, ToolInput input) {
+    public GuardrailResult checkToolCall(@Nullable String traceId, ToolContract tool, ToolInput input) {
         var sortedPolicies = enabledPoliciesSorted();
         for (GuardrailPolicy policy : sortedPolicies) {
             try {
                 GuardrailResult result = evaluateToolPolicy(policy, input);
                 if (result instanceof GuardrailResult.Blocked || result instanceof GuardrailResult.NeedsConfirmation) {
                     recordGuardrailStep(policy.policyId(), "tool_call", result);
-                    writeAuditLog(null, tool.id(), policy.policyId(), result);
+                    writeAuditLog(traceId, tool.id(), policy.policyId(), result);
                     return result;
                 }
             } catch (Exception e) {
@@ -99,24 +102,26 @@ public class GuardrailEngine {
     /**
      * 检查 LLM 输入内容安全。
      *
+     * @param traceId Agent 轨迹 ID（可空，为空时从 ThreadLocal 取）
      * @param content 输入内容
      * @return 检查结果
      */
-    public GuardrailResult checkInput(String content) {
-        return checkContent(content, "input");
+    public GuardrailResult checkInput(@Nullable String traceId, String content) {
+        return checkContent(traceId, content, "input");
     }
 
     /**
      * 检查 LLM 输出内容合规。
      *
+     * @param traceId Agent 轨迹 ID（可空，为空时从 ThreadLocal 取）
      * @param content 输出内容
      * @return 检查结果
      */
-    public GuardrailResult checkOutput(String content) {
-        return checkContent(content, "output");
+    public GuardrailResult checkOutput(@Nullable String traceId, String content) {
+        return checkContent(traceId, content, "output");
     }
 
-    private GuardrailResult checkContent(String content, String checkType) {
+    private GuardrailResult checkContent(@Nullable String traceId, String content, String checkType) {
         var sortedPolicies = enabledPoliciesSorted();
         for (GuardrailPolicy policy : sortedPolicies) {
             if (policy instanceof ContentSafetyPolicy csp) {
@@ -124,7 +129,7 @@ public class GuardrailEngine {
                     GuardrailResult result = evaluateContentSafety(csp, content);
                     if (result instanceof GuardrailResult.Blocked || result instanceof GuardrailResult.NeedsConfirmation) {
                         recordGuardrailStep(policy.policyId(), checkType, result);
-                        writeAuditLog(null, null, policy.policyId(), result);
+                        writeAuditLog(traceId, null, policy.policyId(), result);
                         return result;
                     }
                 } catch (Exception e) {
@@ -217,7 +222,7 @@ public class GuardrailEngine {
         try {
             String actualTraceId = traceId;
             if (actualTraceId == null) {
-                actualTraceId = propagator.current().map(ctx -> ctx.traceId()).orElse(null);
+                actualTraceId = propagator.current().map(TraceContext::traceId).orElse(null);
             }
 
             String resultType = switch (result) {

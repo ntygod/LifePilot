@@ -141,7 +141,7 @@ class ToolRetryPolicyPropertyTest {
 
     private PipelineInfra buildPipelineInfra() {
         var guardrailEngine = mock(GuardrailEngine.class);
-        when(guardrailEngine.checkToolCall(any(), any()))
+        when(guardrailEngine.checkToolCall(any(), any(), any()))
                 .thenReturn(new GuardrailResult.Passed("test"));
 
         var permissionService = mock(PermissionService.class);

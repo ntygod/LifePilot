@@ -50,7 +50,7 @@ class ToolExecutionPipelineTest {
     @BeforeEach
     void setUp() {
         guardrailEngine = mock(GuardrailEngine.class);
-        when(guardrailEngine.checkToolCall(any(), any()))
+        when(guardrailEngine.checkToolCall(any(), any(), any()))
                 .thenReturn(new GuardrailResult.Passed("test"));
         permissionService = mock(PermissionService.class);
         permissionRequestFactory = mock(PermissionRequestFactory.class);
@@ -104,7 +104,7 @@ class ToolExecutionPipelineTest {
         assertFalse(result.ok());
         assertTrue(result.error().contains("权限阻断"));
         verifyNoInteractions(permissionApprovalService);
-        verify(guardrailEngine, never()).checkToolCall(any(), any());
+        verify(guardrailEngine, never()).checkToolCall(any(), any(), any());
     }
 
     @Test
@@ -118,13 +118,13 @@ class ToolExecutionPipelineTest {
         assertTrue(result.error().contains("未获得执行授权"));
         verify(permissionApprovalService).requestApproval(any(), any(), argThat(ctx ->
                 ctx != null && "stream-1".equals(ctx.get("streamId"))));
-        verify(guardrailEngine, never()).checkToolCall(any(), any());
+        verify(guardrailEngine, never()).checkToolCall(any(), any(), any());
     }
 
     @Test
     void 护栏拦截_返回错误() {
         registerTool("test.guardrail", JsonSchema.empty(), input -> ToolResult.success(Map.of()));
-        when(guardrailEngine.checkToolCall(any(), any()))
+        when(guardrailEngine.checkToolCall(any(), any(), any()))
                 .thenReturn(new GuardrailResult.Blocked("test-policy", "工具被阻止", RiskLevel.HIGH));
 
         ToolResult result = pipeline.execute("test.guardrail", Map.of(), "trace-1", null);

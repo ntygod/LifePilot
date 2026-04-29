@@ -207,7 +207,10 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             @NonNull
             public String call(@NonNull String toolInput) {
                 Map<String, Object> params = parseInput(toolInput);
-                String traceId = UUID.randomUUID().toString();
+                // 使用 Agent 的真实 traceId 而非随机 UUID，确保护栏审计日志、权限记录可追溯
+                String traceId = context.containsKey(ToolContextKeys.CALLER_TRACE_ID)
+                        ? context.get(ToolContextKeys.CALLER_TRACE_ID).toString()
+                        : UUID.randomUUID().toString();
                 String idempotencyKey = buildIdempotencyKey(tool, params, context);
                 ToolResult result = pipeline.execute(
                         tool.id(),

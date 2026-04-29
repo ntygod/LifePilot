@@ -195,7 +195,7 @@ public class ToolExecutionPipeline implements Closeable {
         }
 
         // 4. 护栏检查
-        GuardrailResult guardrail = guardrailEngine.checkToolCall(tool, input);
+        GuardrailResult guardrail = guardrailEngine.checkToolCall(traceId, tool, input);
         switch (guardrail) {
             case GuardrailResult.Blocked blocked -> {
                 log.warn("护栏拦截: toolId={}, reason={}", toolId, blocked.reason());

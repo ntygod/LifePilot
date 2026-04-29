@@ -5,9 +5,10 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.execution.ExecutionRetrySupport;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.config.threadpool.MdcPropagatingExecutorService;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.GatewayMiddleware;
 import com.lifepilot.interaction.middleware.MiddlewareChain;
@@ -22,17 +23,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
-import com.lifepilot.config.threadpool.MdcPropagatingExecutorService;
-
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 /**
  * 执行中间件。
@@ -87,7 +82,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         this.requestFactory = new ExecutionRequestFactory(agentConfigProperties, chatSessionRepository);
         var rawExecutor = agentExecutor != null
                 ? agentExecutor
-                : java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+                : Executors.newVirtualThreadPerTaskExecutor();
         this.agentExecutor = new MdcPropagatingExecutorService(rawExecutor);
         this.chatTurnService = chatTurnService;
         this.sseSessionManager = sseSessionManager;

@@ -44,7 +44,7 @@ class GuardrailEngineTest {
         engine.registerPolicy(new ContentSafetyPolicy(
                 "content-safety", true, 1, List.of("危险操作"), List.of()));
 
-        var result = engine.checkInput("请执行危险操作");
+        var result = engine.checkInput(null, "请执行危险操作");
 
         assertThat(result).isInstanceOf(GuardrailResult.Blocked.class);
         assertThat(((GuardrailResult.Blocked) result).policyId()).isEqualTo("content-safety");
@@ -55,7 +55,7 @@ class GuardrailEngineTest {
         engine.registerPolicy(new DataRedactionPolicy("redaction", true, 1));
 
         var tool = 创建工具("test.echo");
-        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
+        var result = engine.checkToolCall(null, tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
     }

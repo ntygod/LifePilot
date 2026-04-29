@@ -114,6 +114,26 @@ public class SqliteSuspendStore implements SuspendStore {
 
     @Override
     @Transactional
+    public Optional<SuspendedAgent> loadAndDeleteBySession(String sessionId, String channel) {
+        List<SuspendedAgent> results = jdbcTemplate.query(
+                """
+                SELECT trace_id, session_id, channel, reason_type, reason_json,
+                       state_json, budget_json, stream_id, suspended_at
+                FROM suspended_agents WHERE session_id = ? AND channel = ?
+                ORDER BY suspended_at DESC LIMIT 1""",
+                rowMapper, sessionId, channel);
+        if (results.isEmpty()) {
+            return Optional.empty();
+        }
+        SuspendedAgent agent = results.getFirst();
+        jdbcTemplate.update("DELETE FROM suspended_agents WHERE trace_id = ?", agent.traceId());
+        log.info("按会话原子加载并删除挂起状态: sessionId={}, channel={}, traceId={}",
+                sessionId, channel, agent.traceId());
+        return Optional.of(agent);
+    }
+
+    @Override
+    @Transactional
     public Optional<SuspendedAgent> loadAndDelete(String traceId) {
         List<SuspendedAgent> results = jdbcTemplate.query(
                 """

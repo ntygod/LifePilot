@@ -71,6 +71,18 @@ public interface SuspendStore {
     }
 
     /**
+     * 按 sessionId + channel 原子加载并删除最近的挂起状态。
+     *
+     * <p>用于聊天"继续"场景：用户发送新消息时，按会话查找并认领挂起记录，
+     * 确保同一会话不会并发恢复。</p>
+     *
+     * @param sessionId 会话 ID
+     * @param channel   渠道标识
+     * @return 最近的挂起状态快照，不存在时返回 empty
+     */
+    Optional<SuspendedAgent> loadAndDeleteBySession(String sessionId, String channel);
+
+    /**
      * 清理超过 maxAge 的过期挂起记录。
      *
      * @param maxAge 最大保留时长

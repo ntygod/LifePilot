@@ -57,7 +57,7 @@ class GuardrailEngine_审计日志_集成测试 {
         engine.registerPolicy(policy);
 
         // 检查包含阻断模式的内容
-        var result = engine.checkInput("请执行危险操作");
+        var result = engine.checkInput(null, "请执行危险操作");
 
         assertThat(result).isInstanceOf(GuardrailResult.Blocked.class);
 
@@ -78,7 +78,7 @@ class GuardrailEngine_审计日志_集成测试 {
         engine.registerPolicy(policy2);
 
         // 触发第一个策略
-        engine.checkInput("包含禁止词的内容");
+        engine.checkInput(null, "包含禁止词的内容");
 
         var logs = jdbcTemplate.queryForList("SELECT * FROM guardrail_logs");
         assertThat(logs).isNotEmpty();
