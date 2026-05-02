@@ -46,7 +46,6 @@ class MarkdownSkillParser_新规范测试 {
                   zhiwei:
                     suggested_tools: [a, b]
                     tags: [foo]
-                    priority: high
                     requires:
                       bins: [git]
                       env: [GITHUB_TOKEN]
@@ -107,24 +106,4 @@ class MarkdownSkillParser_新规范测试 {
                 .hasMessageContaining("缺少必需字段");
     }
 
-    @Test
-    void priority值非法应抛自定义异常_不泄露Java枚举错误() {
-        var md = """
-                ---
-                name: x
-                description: 当用时
-                version: 1.0.0
-                metadata:
-                  zhiwei:
-                    priority: urgent
-                ---
-                body
-                """;
-
-        assertThatThrownBy(() -> parser.parse(md))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("priority 字段值非法")
-                .hasMessageContaining("urgent")
-                .hasMessageContaining("high/normal/low");
-    }
 }

@@ -90,33 +90,6 @@ class ContextAssembler_Catalog重构测试 {
     }
 
     @Test
-    void 无关键词命中时按priority排序() {
-        var skillRegistry = mock(SkillRegistry.class);
-        var installationRepository = mock(SkillInstallationRepository.class);
-
-        when(installationRepository.findAllByEnabled(true)).thenReturn(List.of(
-                buildInstallation("low-skill"),
-                buildInstallation("high-skill"),
-                buildInstallation("normal-skill")));
-        when(skillRegistry.find("low-skill")).thenReturn(Optional.of(
-                buildSkill("low-skill", "low desc")));
-        when(skillRegistry.find("high-skill")).thenReturn(Optional.of(
-                buildSkill("high-skill", "high desc")));
-        when(skillRegistry.find("normal-skill")).thenReturn(Optional.of(
-                buildSkill("normal-skill", "normal desc")));
-
-        String entries = invokeBuildSkillCatalogEntries(
-                skillRegistry, installationRepository, null, null);
-
-        int highIdx = entries.indexOf("high-skill");
-        int normalIdx = entries.indexOf("normal-skill");
-        int lowIdx = entries.indexOf("low-skill");
-        assertThat(highIdx).isGreaterThan(-1);
-        assertThat(normalIdx).isGreaterThan(highIdx);
-        assertThat(lowIdx).isGreaterThan(normalIdx);
-    }
-
-    @Test
     void requires未满足的skill应被过滤() {
         var skillRegistry = mock(SkillRegistry.class);
         var installationRepository = mock(SkillInstallationRepository.class);
