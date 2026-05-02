@@ -47,7 +47,7 @@ public class ToolValidator {
     private static final int MIN_TAG_COUNT = 3;
 
     private static final Set<String> EXEMPTED_IDS = Set.of(
-            "tool.search", "tool.search"
+            "tool.search"
     );
 
     /**

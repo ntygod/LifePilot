@@ -257,38 +257,124 @@ public final class ReflectContentBuilder {
         String toolName = "未知工具";
         String toolId = "";
         String briefError = "";
+        String errorOutput = "";
 
         // 逆序扫描找到最近一个失败的 Observation
         for (int i = steps.size() - 1; i >= 0; i--) {
             if (steps.get(i) instanceof ReactStep.Observation obs && !obs.success()) {
                 toolName = obs.toolName() != null ? obs.toolName() : obs.toolId();
                 toolId = obs.toolId() != null ? obs.toolId() : "";
-                briefError = obs.output() != null && obs.output().length() > 200
-                        ? obs.output().substring(0, 200) + "..."
-                        : (obs.output() != null ? obs.output() : "");
+                errorOutput = obs.output() != null ? obs.output() : "";
+                briefError = errorOutput.length() > 200
+                        ? errorOutput.substring(0, 200) + "..."
+                        : errorOutput;
                 break;
             }
         }
 
-        // 统计连续失败次数（从最新步骤向前数，同一工具连续失败的次数）
+        // 统计连续失败次数
         int consecutiveFailures = countConsecutiveFailures(steps, toolId);
 
+        // 检测同一 URL 是否被重复请求
+        String repeatedUrl = detectRepeatedUrl(steps, toolId);
+
         var sb = new StringBuilder();
-        sb.append("⚠ 工具执行失败\n");
-        sb.append("工具: ").append(toolName).append('\n');
-        sb.append("错误: ").append(briefError).append('\n');
+        sb.append("工具执行失败，需要调整策略\n");
+        sb.append("失败工具: ").append(toolName).append('\n');
+
+        // 错误分类 + 具体建议
+        String errorCategory = categorizeError(errorOutput);
+        sb.append("错误类型: ").append(errorCategory).append('\n');
+        sb.append("错误详情: ").append(briefError).append('\n');
+
         if (consecutiveFailures > 1) {
-            sb.append("连续失败: ").append(consecutiveFailures).append(" 次\n");
+            sb.append("同工具连续失败: ").append(consecutiveFailures).append(" 次\n");
         }
-        sb.append("已执行轮次: ").append(iteration + 1).append("，剩余预算: ").append(remaining).append('\n');
+        if (repeatedUrl != null) {
+            sb.append("重复请求的 URL: ").append(repeatedUrl).append('\n');
+        }
+        sb.append("已执行: ").append(iteration + 1).append(" 轮，剩余步骤: ").append(remaining).append('\n');
         sb.append('\n');
+
+        // 根据错误类型给出具体行动
+        sb.append("必须执行的操作：\n");
         if (consecutiveFailures >= 2) {
-            sb.append("同一工具已连续失败 ").append(consecutiveFailures)
-                    .append(" 次，禁止再使用相同参数调用。必须切换工具或根本性调整参数。");
-        } else {
-            sb.append("请分析错误原因，调整参数重试或切换到其他工具。禁止使用完全相同的参数重复调用。");
+            sb.append("- 已连续失败 ").append(consecutiveFailures)
+                    .append(" 次，禁止再使用相同参数调用此工具。\n");
+        }
+        if (repeatedUrl != null) {
+            sb.append("- 该 URL 已多次失败，必须换到其他来源，禁止再次请求此 URL。\n");
+        }
+        switch (errorCategory) {
+            case "超时/连接失败":
+                sb.append("- 网络层面的问题，不应立即重试。换用其他数据源或改用 web_search 找替代来源。\n");
+                break;
+            case "HTTP 403/限流":
+                sb.append("- 该网站拒绝访问或限流，不需要重试。直接换其他公开来源。\n");
+                break;
+            case "参数错误":
+                sb.append("- 检查参数是否合法（路径、格式、必填项），修正后重试一次。\n");
+                break;
+            case "权限/配置不足":
+                sb.append("- 这不是参数问题，告知用户缺少什么权限或配置，不要重试。\n");
+                break;
+            default:
+                sb.append("- 分析错误原因，修正后重试或换其他工具。\n");
         }
         return sb.toString();
+    }
+
+    /** 从输出中分类错误类型。 */
+    private static String categorizeError(String output) {
+        if (output == null || output.isBlank()) return "未知错误";
+        String lower = output.toLowerCase();
+        if (lower.contains("timeout") || lower.contains("超时") || lower.contains("timed out")
+                || lower.contains("connect") && lower.contains("refused")) return "超时/连接失败";
+        if (lower.contains("403") || lower.contains("429") || lower.contains("rate limit")
+                || lower.contains("限流")) return "HTTP 403/限流";
+        if (lower.contains("参数") || lower.contains("invalid") || lower.contains("missing")
+                || lower.contains("required") || lower.contains("illegal")) return "参数错误";
+        if (lower.contains("权限") || lower.contains("permission") || lower.contains("denied")
+                || lower.contains("unauthorized") || lower.contains("401")) return "权限/配置不足";
+        return "其他错误";
+    }
+
+    /** 检测同一 URL 是否被 web_fetch 重复请求且均失败。 */
+    @org.springframework.lang.Nullable
+    private static String detectRepeatedUrl(List<ReactStep> steps, String toolId) {
+        if (!"web_fetch".equals(toolId) && !"web.fetch".equals(toolId)) return null;
+        var recentUrls = new java.util.LinkedHashMap<String, Integer>();
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            if (steps.get(i) instanceof ReactStep.Observation obs && !obs.success()
+                    && toolId.equals(obs.toolId())) {
+                // 从前面的 ToolCall 中提取 URL
+                for (int j = i - 1; j >= 0; j--) {
+                    if (steps.get(j) instanceof ReactStep.ToolCall tc && toolId.equals(tc.toolId())) {
+                        String url = extractUrlFromInput(tc.inputJson());
+                        if (url != null) recentUrls.merge(url, 1, Integer::sum);
+                        break;
+                    }
+                }
+            }
+            // 只回溯最近的 8 步
+            if (steps.size() - i > 16) break;
+        }
+        for (var entry : recentUrls.entrySet()) {
+            if (entry.getValue() >= 2) return entry.getKey();
+        }
+        return null;
+    }
+
+    /** 从工具输入 JSON 中提取 URL 字段。 */
+    @org.springframework.lang.Nullable
+    private static String extractUrlFromInput(String inputJson) {
+        try {
+            JsonNode root = MAPPER.readTree(inputJson);
+            String url = textField(root, "url");
+            return url != null && !url.isBlank() ? url : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

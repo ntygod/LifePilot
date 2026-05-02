@@ -9,7 +9,6 @@ import com.lifepilot.skill.install.SkillSourceType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.spec.SkillPriority;
 import com.lifepilot.skill.spec.SkillRequires;
 import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import com.lifepilot.skill.validation.SkillRequirementGate;
@@ -53,9 +52,9 @@ class ContextAssembler_Catalog重构测试 {
         when(installationRepository.findAllByEnabled(true))
                 .thenReturn(List.of(buildInstallation("alpha"), buildInstallation("beta")));
         when(skillRegistry.find("alpha"))
-                .thenReturn(Optional.of(buildSkill("alpha", "alpha desc", SkillPriority.NORMAL)));
+                .thenReturn(Optional.of(buildSkill("alpha", "alpha desc")));
         when(skillRegistry.find("beta"))
-                .thenReturn(Optional.of(buildSkill("beta", "beta desc", SkillPriority.NORMAL)));
+                .thenReturn(Optional.of(buildSkill("beta", "beta desc")));
 
         String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
 
@@ -72,11 +71,11 @@ class ContextAssembler_Catalog重构测试 {
         when(installationRepository.findAllByEnabled(true)).thenReturn(List.of(
                 buildInstallation("daily"), buildInstallation("code"), buildInstallation("data")));
         when(skillRegistry.find("daily")).thenReturn(Optional.of(
-                buildSkill("daily", "日常事务规划与日报", SkillPriority.NORMAL)));
+                buildSkill("daily", "日常事务规划与日报")));
         when(skillRegistry.find("code")).thenReturn(Optional.of(
-                buildSkill("code", "代码生成、修改、解释", SkillPriority.NORMAL)));
+                buildSkill("code", "代码生成、修改、解释")));
         when(skillRegistry.find("data")).thenReturn(Optional.of(
-                buildSkill("data", "数据分析与可视化", SkillPriority.NORMAL)));
+                buildSkill("data", "数据分析与可视化")));
 
         // 用户 query 涉及"代码"，code 应在最前
         String entries = invokeBuildSkillCatalogEntries(
@@ -100,11 +99,11 @@ class ContextAssembler_Catalog重构测试 {
                 buildInstallation("high-skill"),
                 buildInstallation("normal-skill")));
         when(skillRegistry.find("low-skill")).thenReturn(Optional.of(
-                buildSkill("low-skill", "low desc", SkillPriority.LOW)));
+                buildSkill("low-skill", "low desc")));
         when(skillRegistry.find("high-skill")).thenReturn(Optional.of(
-                buildSkill("high-skill", "high desc", SkillPriority.HIGH)));
+                buildSkill("high-skill", "high desc")));
         when(skillRegistry.find("normal-skill")).thenReturn(Optional.of(
-                buildSkill("normal-skill", "normal desc", SkillPriority.NORMAL)));
+                buildSkill("normal-skill", "normal desc")));
 
         String entries = invokeBuildSkillCatalogEntries(
                 skillRegistry, installationRepository, null, null);
@@ -123,7 +122,7 @@ class ContextAssembler_Catalog重构测试 {
         var installationRepository = mock(SkillInstallationRepository.class);
         var gate = mock(SkillRequirementGate.class);
 
-        var satisfied = buildSkill("satisfied", "ok", SkillPriority.NORMAL);
+        var satisfied = buildSkill("satisfied", "ok");
         var unsatisfied = buildSkillWithRequires("missing-bin", "needs git",
                 new SkillRequires(List.of("git"), List.of(), List.of(), List.of()));
 
@@ -170,7 +169,7 @@ class ContextAssembler_Catalog重构测试 {
         when(installationRepository.findAllByEnabled(true)).thenReturn(List.of(
                 buildInstallation("present"), buildInstallation("ghost")));
         when(skillRegistry.find("present")).thenReturn(Optional.of(
-                buildSkill("present", "ok", SkillPriority.NORMAL)));
+                buildSkill("present", "ok")));
         when(skillRegistry.find("ghost")).thenReturn(Optional.empty());
 
         String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
@@ -204,7 +203,7 @@ class ContextAssembler_Catalog重构测试 {
             String name = String.format("skill%02d", i);
             installs.add(buildInstallation(name));
             when(skillRegistry.find(name)).thenReturn(Optional.of(
-                    buildSkill(name, "desc " + i, SkillPriority.NORMAL)));
+                    buildSkill(name, "desc " + i)));
         }
         when(installationRepository.findAllByEnabled(true)).thenReturn(installs);
 
@@ -226,8 +225,7 @@ class ContextAssembler_Catalog重构测试 {
                 .thenReturn(List.of(buildInstallation("research")));
         when(skillRegistry.find("research")).thenReturn(Optional.of(buildSkill(
                 "research",
-                "当用户要做多源搜索时使用。关键词：调研、查资料、对比分析。代码搜索用 code-assistant。",
-                SkillPriority.NORMAL)));
+                "当用户要做多源搜索时使用。关键词：调研、查资料、对比分析。代码搜索用 code-assistant。")));
 
         String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
 
@@ -246,7 +244,7 @@ class ContextAssembler_Catalog重构测试 {
         when(installationRepository.findAllByEnabled(true))
                 .thenReturn(List.of(buildInstallation("a")));
         when(skillRegistry.find("a")).thenReturn(Optional.of(buildSkill(
-                "a", "纯描述，没有关键词段。", SkillPriority.NORMAL)));
+                "a", "纯描述，没有关键词段。")));
 
         String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
 
@@ -261,7 +259,7 @@ class ContextAssembler_Catalog重构测试 {
         when(installationRepository.findAllByEnabled(true))
                 .thenReturn(List.of(buildInstallation("alpha")));
         when(skillRegistry.find("alpha")).thenReturn(Optional.of(
-                buildSkill("alpha", "alpha 描述文本", SkillPriority.NORMAL)));
+                buildSkill("alpha", "alpha 描述文本")));
 
         String entries = invokeBuildSkillCatalogEntries(skillRegistry, installationRepository, null, null);
 
@@ -321,8 +319,8 @@ class ContextAssembler_Catalog重构测试 {
                 null);
     }
 
-    private static SkillDefinition buildSkill(String name, String description, SkillPriority priority) {
-        var meta = new SkillZhiweiMeta(List.of(), List.of(), priority, SkillRequires.empty());
+    private static SkillDefinition buildSkill(String name, String description) {
+        var meta = new SkillZhiweiMeta(List.of(), List.of(), SkillRequires.empty());
         return SkillDefinition.builder()
                 .id(name)
                 .name(name)
@@ -338,7 +336,7 @@ class ContextAssembler_Catalog重构测试 {
 
     private static SkillDefinition buildSkillWithRequires(String name, String description,
                                                             SkillRequires requires) {
-        var meta = new SkillZhiweiMeta(List.of(), List.of(), SkillPriority.NORMAL, requires);
+        var meta = new SkillZhiweiMeta(List.of(), List.of(), requires);
         return SkillDefinition.builder()
                 .id(name)
                 .name(name)

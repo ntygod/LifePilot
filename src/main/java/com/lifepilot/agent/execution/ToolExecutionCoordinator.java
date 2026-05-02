@@ -717,16 +717,7 @@ public class ToolExecutionCoordinator {
     }
 
     /**
-     * 从工具成功输出中提取 Skill 激活信号并合并到状态上。
-     *
-     * <p>通用合并规则：
-     * <ul>
-     *   <li>{@code activated_tool_ids}（List） → 追加到 {@code state.activatedToolIds}</li>
-     *   <li>{@code content}（以 {@code <skill} 开头的 XML） → 追加到 {@code state.loadedSkillContent}</li>
-     * </ul>
-     *
-     * <p>当前由 {@code skill.load} 工具驱动；任何其它工具如果也按此契约返回同名字段，
-     * 合并行为同样生效（形成可扩展的通用激活入口）。</p>
+     * 从 skill.load 输出中提取 Skill 激活内容并去重合并到状态。
      */
     private ReactAgentState mergeSkillActivationFromOutput(ReactAgentState state,
                                                            String toolId,
@@ -744,36 +735,33 @@ public class ToolExecutionCoordinator {
             return state;
         }
 
-        JsonNode toolIdsNode = root.get("activated_tool_ids");
-        if (toolIdsNode != null && toolIdsNode.isArray()) {
-            var mergedIds = new LinkedHashSet<String>();
-            for (JsonNode item : toolIdsNode) {
-                if (item.isTextual()) {
-                    String id = item.asText();
-                    if (id != null && !id.isBlank()) {
-                        mergedIds.add(id);
-                    }
-                }
-            }
-            if (!mergedIds.isEmpty()) {
-                int before = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
-                state = state.withActivatedToolIds(mergedIds);
-                int after = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
-                if (after > before) {
-                    log.info("Skill 工具激活合并: toolId={}, newlyActivated={}, total={}",
-                            toolId, mergedIds, after);
-                }
-            }
-        }
-
         JsonNode contentNode = root.get("content");
         if (contentNode != null && contentNode.isTextual()) {
             String content = contentNode.asText();
             if (content != null && content.startsWith("<skill")) {
+                // 去重：从 content 中提取 <skill name="X"> 的 name，检查是否已加载
+                String existingContent = state.loadedSkillContent();
+                if (existingContent != null && !existingContent.isBlank()) {
+                    String newName = extractSkillName(content);
+                    if (newName != null && existingContent.contains("skill name=\"" + newName + "\"")) {
+                        log.debug("Skill 已加载，跳过重复: name={}", newName);
+                        return state;
+                    }
+                }
                 state = state.appendSkillContent(content);
             }
         }
         return state;
+    }
+
+    /** 从 {@code <skill name="X">} 中提取 name 属性。 */
+    @Nullable
+    private static String extractSkillName(String content) {
+        int start = content.indexOf("skill name=\"");
+        if (start < 0) return null;
+        start += "skill name=\"".length();
+        int end = content.indexOf("\"", start);
+        return end > start ? content.substring(start, end) : null;
     }
 
     /**

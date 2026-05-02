@@ -101,7 +101,7 @@ class ToolSearchQuality_召回率回归测试 {
         ToolConfigProperties.Search config = new ToolConfigProperties.Search();
         searchService = new ToolSearchService(
                 jdbcTemplate, registry, new ToolSearchQuerySanitizer(),
-                tier1Service, searchCache, memo, config, new SimpleMeterRegistry());
+                tier1Service, searchCache, memo, config, new SimpleMeterRegistry(), null);
     }
 
     @AfterEach

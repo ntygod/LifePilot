@@ -80,7 +80,7 @@ class ToolSearchMetrics_接入测试 {
         searchService = new ToolSearchService(
                 jdbcTemplate, toolRegistry, new ToolSearchQuerySanitizer(),
                 tier1, new SearchResultCache(100, Duration.ofMinutes(5)),
-                new SessionSearchMemo(), config, registry);
+                new SessionSearchMemo(), config, registry, null);
     }
 
     @Test

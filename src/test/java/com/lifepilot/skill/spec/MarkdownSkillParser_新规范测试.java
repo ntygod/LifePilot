@@ -61,7 +61,6 @@ class MarkdownSkillParser_新规范测试 {
 
         assertThat(meta.suggestedTools()).containsExactly("a", "b");
         assertThat(meta.tags()).containsExactly("foo");
-        assertThat(meta.priority()).isEqualTo(SkillPriority.HIGH);
         assertThat(meta.requires().bins()).containsExactly("git");
         assertThat(meta.requires().env()).containsExactly("GITHUB_TOKEN");
         assertThat(meta.requires().os()).containsExactly("linux");

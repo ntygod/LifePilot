@@ -745,3 +745,77 @@ SUSPENDED（挂起）
 - few-shot trace 需要大量上下文空间（每条 200-400 tokens）
 - 需要机制让 SkillActivator 按需注入（不能全量堆到 skill_catalog）
 - 先做完上下文瘦身（Reference 瘦身），腾出空间再放 few-shot
+
+---
+
+## 十一、Reference 瘦身规划
+
+> 原则：工具用法上移 tool description，场景流程留 reference。
+> 单 skill 多 reference 的条件：内容跨越两个以上不同决策维度。
+
+### 11.1 分类矩阵
+
+| 类型 | 判据 | 数量 | 处理 |
+|------|------|------|------|
+| 🅰️ 工具速查 | action 清单 + 命令模板 + 错误表 | 9 | 大幅删减（已上移 tool） |
+| 🅱️ 场景流程 | 路径判据 + 编排决策 | 6 | 保留精简 |
+| 🅲 领域知识 | 平台差异 + 方言 + 规则 | 5 | 保留 |
+| 🅳 代码片段 | 语言/格式模板 | 2 | 保留精简 |
+
+### 11.2 逐 reference 规划
+
+**🅰️ 工具速查（9 个，~990 → ~260 行）**
+
+| reference | 改前 | 改后 | 删 | 留 |
+|-----------|------|------|-----|-----|
+| browser-actions.md | 122 | 30 | action 清单/命令模板/错误表 | 元素 fallback 链/接管触发/会话模式 |
+| cron-reference.md | 86 | 30 | action 命令模板/错误表 | cron 6位表达式速查（领域知识） |
+| log-commands.md | 142 | 35 | grep/awk/sed 模板 | 日志路径/脱敏正则 |
+| diagnose-commands.md | 145 | 30 | top/free/df 命令 | 平台切换/诊断优先级 |
+| doc-conversion.md | 143 | 25 | pandoc/python 命令 | 格式兼容矩阵 |
+| curl-recipes.md | 108 | 25 | curl 命令模板 | HTTP 调试决策 |
+| feishu/actions-ref.md | 80 | 30 | API 调用模板 | 权限/限制说明 |
+| pyautogui-recipes.md | 132 | 30 | pyautogui 命令 | Windows 特有 API |
+| organize-patterns.md | 134 | 60 | 命令模板 | 5步确认流程 |
+
+**🅱️ 场景流程（6 个，~580 → ~350 行）**
+
+| reference | 改前 | 改后 | 说明 |
+|-----------|------|------|------|
+| research-workflow.md | 105 | 65 | 去命令模板，留路径判据 |
+| summary-formats.md | 153 | 90 | 去命令模板，留 4×4 格式矩阵 |
+| teaching-patterns.md | 115 | 70 | 去命令模板，留教学路径 |
+| agent-lifecycle.md | 66 | 35 | 去 shell 命令，留状态机 |
+| orchestration.md | 58 | 35 | 去命令模板，留编排决策 |
+| writing-patterns.md | 106 | 55 | 去冗余模板，留核心格式 |
+| gh-cli-reference.md | 79 | 40 | 去冗余命令，留 gh 特有语法 |
+| content-api.md | 68 | 35 | 精简冗余说明 |
+
+**🅲🅳 领域知识 + 代码片段（5 个，保留）**
+
+| reference | 行数 | 说明 |
+|-----------|------|------|
+| dialect-reference.md | 101 | SQLite 方言限制 |
+| v2-spec-template.md | 128 | Skill 规范模板 |
+| component-catalog.md | 149 | UI 组件参考 |
+| pandas-recipes.md | 141 | pandas 片段（去 40 行冗余） |
+| coordination-patterns.md | 70 | 多 Skill 编排模式 |
+
+### 11.3 拆分计划
+
+| skill | 当前 | 拆分后 | 原因 |
+|-------|------|--------|------|
+| research-assistant | 1 个 workflow | workflow.md + source-eval.md | 调研流程 vs 来源评估，不同决策维度 |
+| file-organizer | 1 个 patterns | patterns.md + dedup-strategies.md | 整理流程 vs 去重策略 |
+| skill-creator | 1 个 template | spec-template.md + validation-guide.md | 规范模板 vs 校验规则 |
+| daily-manager | 1 个 patterns | 不拆 | 编排模式不复杂，1 个够 |
+| code-assistant | 2 个 ✅ | 不变 | 已合理拆分 |
+| github-workflow | 2 个 ✅ | 不变 | 已合理拆分 |
+
+### 11.4 总量预估
+
+| | 改前 | 改后 |
+|---|------|------|
+| 文件数 | 22 | 25（+3 拆分） |
+| 总行数 | ~2,400 | ~1,200 |
+| LLM 加载单 reference tokens | ~450 avg | ~250 avg |

@@ -2,7 +2,6 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.MarkdownSkillParser.ParsedSkill;
-import com.lifepilot.skill.spec.SkillPriority;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
@@ -90,12 +89,10 @@ class SkillCatalogQuality_召回率回归测试 {
                 try {
                     String content = Files.readString(skillMd, StandardCharsets.UTF_8);
                     ParsedSkill parsed = parser.parse(content);
-                    SkillPriority priority = parsed.frontmatter().zhiweiMeta().priority();
                     entries.add(new ContextAssembler.SkillCatalogEntry(
                             parsed.frontmatter().name(),
                             parsed.frontmatter().description(),
-                            parsed.frontmatter().zhiweiMeta().tags(),
-                            priority == null ? SkillPriority.NORMAL : priority));
+                            parsed.frontmatter().zhiweiMeta().tags()));
                 } catch (Exception e) {
                     System.err.println("skip: " + dir + ", error=" + e.getMessage());
                 }

@@ -16,7 +16,6 @@ import com.lifepilot.skill.install.SkillSourceType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.spec.SkillPriority;
 import com.lifepilot.skill.spec.SkillRequires;
 import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import com.lifepilot.skill.validation.SkillRequirementGate;
