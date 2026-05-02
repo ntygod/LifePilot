@@ -57,7 +57,7 @@ research-assistant 出材料 → content-creator 写 → file_write 落盘
 
 ```
 memory(action="search", query="本周完成事项")  取记忆里的成就 / 项目进度
-file_read  读用户笔记 / 项目文档（路径靠用户给或先 file_list 探）
+file_read  读用户笔记 / 项目文档（路径靠用户给或先 file_read 探）
 按需 web_search 补外部背景（团队动态 / 行业事件）
    ↓ 整合
 file_write(path="<reports/...>")  落盘并把路径告诉用户

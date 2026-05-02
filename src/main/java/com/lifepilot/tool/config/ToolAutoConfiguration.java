@@ -229,12 +229,7 @@ public class ToolAutoConfiguration {
         return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe);
     }
 
-    // 两个 Meta BuiltinTool 暴露成 Bean，会被 BuiltinToolRegistrar 自动扫描注册
-    @Bean
-    public com.lifepilot.tool.BuiltinTool toolsSearchBuiltin(
-            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
-        return provider.searchTool();
-    }
+    // tool.search 已退役 — Tier1 全量常驻后不再需要动态工具发现
 
     /**
      * 初始化 McpTool 的 McpToolExecutor 引用。

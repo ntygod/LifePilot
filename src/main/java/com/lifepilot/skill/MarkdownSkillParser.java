@@ -1,7 +1,6 @@
 package com.lifepilot.skill;
 
 import com.lifepilot.skill.spec.SkillFrontmatter;
-import com.lifepilot.skill.spec.SkillPriority;
 import com.lifepilot.skill.spec.SkillRequires;
 import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import org.springframework.stereotype.Component;
@@ -109,7 +108,6 @@ public class MarkdownSkillParser {
 
         var suggestedTools = asStringList(zhiwei.get("suggested_tools"));
         var tags = asStringList(zhiwei.get("tags"));
-        var priority = parsePriority(zhiwei.get("priority"));
 
         Object reqObj = zhiwei.get("requires");
         Map<String, Object> req = (reqObj instanceof Map<?, ?>)
@@ -121,7 +119,7 @@ public class MarkdownSkillParser {
                 asStringList(req.get("os")),
                 asStringList(req.get("tools")));
 
-        return new SkillZhiweiMeta(suggestedTools, tags, priority, requires);
+        return new SkillZhiweiMeta(suggestedTools, tags, requires);
     }
 
     /**
@@ -137,20 +135,4 @@ public class MarkdownSkillParser {
         return List.of(o.toString());
     }
 
-    /**
-     * 解析 {@code priority} 字段并包装非法值异常信息，避免 {@link Enum#valueOf} 默认异常
-     * 抛出 {@code "No enum constant ..."} 混淆用户。
-     */
-    private static SkillPriority parsePriority(Object raw) {
-        if (raw == null) {
-            return SkillPriority.NORMAL;
-        }
-        String value = raw.toString().trim().toUpperCase();
-        try {
-            return SkillPriority.valueOf(value);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "priority 字段值非法: " + raw + "（允许: high/normal/low）");
-        }
-    }
 }

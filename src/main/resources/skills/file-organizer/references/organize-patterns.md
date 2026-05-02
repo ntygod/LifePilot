@@ -7,10 +7,10 @@
 ### 1. 了解现状
 
 ```
-file_list(action="list", path="<目标目录>", maxDepth=3)            # 看目录树
-file_list(action="list", path="<目标目录>", pattern="*.pdf")        # glob 过滤
-file_list(action="info", path="<某文件>")                           # 看大小/修改时间
-file_list(action="search", path="<目标目录>", filePattern="*.log",
+file_read(action="list", path="<目标目录>", maxDepth=3)            # 看目录树
+file_read(action="list", path="<目标目录>", pattern="*.pdf")        # glob 过滤
+file_read(action="info", path="<某文件>")                           # 看大小/修改时间
+file_read(action="search", path="<目标目录>", filePattern="*.log",
           pattern="<内容正则>")                                      # 按内容找
 ```
 
@@ -59,7 +59,7 @@ shell_exec(command="<linux/mac 命令>", shell="bash")   # 例: rsync
 ### 4. 验证结果
 
 ```
-file_list(action="list", path="<目标目录>", maxDepth=2)
+file_read(action="list", path="<目标目录>", maxDepth=2)
 ```
 
 跟用户口述本次实际改了多少 / 跳过多少。
@@ -81,7 +81,7 @@ file_list(action="list", path="<目标目录>", maxDepth=2)
 
 ```
 # 步骤
-1. file_list 找匹配文件 → 列出旧名
+1. file_read 找匹配文件 → 列出旧名
 2. 按规则计算新名 → 输出旧→新映射给用户对
 3. 用户确认 → 循环 file_manage(action="move") 改名
 4. file_write 落 rename-map.json 到目录内备查
@@ -93,8 +93,8 @@ file_list(action="list", path="<目标目录>", maxDepth=2)
 
 ```
 # 步骤
-1. file_list(action="list", path="<目录>", maxDepth=N) → 列文件清单
-2. file_list(action="info", path=...) 拿 size，size 相同的进入下一步
+1. file_read(action="list", path="<目录>", maxDepth=N) → 列文件清单
+2. file_read(action="info", path=...) 拿 size，size 相同的进入下一步
 3. 用 shell_exec 算 md5/sha1：
    shell_exec(command="certutil -hashfile <path> MD5", shell="cmd")  # Windows
    shell_exec(command="md5sum <path>", shell="bash")                  # Linux/Mac
@@ -116,7 +116,7 @@ shell_exec(command="du -sh <path>/*", shell="bash")
 ### 旧文件清理（按 mtime）
 
 ```
-1. file_list(action="info", path=...) 收集 lastModified
+1. file_read(action="info", path=...) 收集 lastModified
 2. 筛 lastModified < 当前 - 30 天 的文件 → 列预览
 3. 用户确认 → file_manage(action="move") 到
    <操作目录>/.trash/<yyyy-MM-dd>/ （保留 7-30 天再清）

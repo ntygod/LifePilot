@@ -188,21 +188,24 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
-    # ===== Tier 1 分层注入 =====
-    # pinned：人工固定的常驻完整 schema 工具
-    # 其余工具进 BM25 搜索池，通过 tools.search 被 LLM 发现
+    # ===== Tier 1 全量常驻 =====
+    # 15 工具全部注入 LLM 上下文，无需 tool.search 发现
     tier1:
       pinned:
-        - tools.search
-        - tools.describe
+        - memory
+        - browser
+        - code
+        - shell.exec
+        - shell.process
         - file.read
         - file.write
-        - file.list
+        - file.manage
         - web.search
         - web.fetch
-        - shell.exec
-        - memory
-        - knowledge.search
+        - cron
+        - notify
+        - status
+        - ui.render
         - skill.load
     # ===== 搜索服务 =====
     search:

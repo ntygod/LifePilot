@@ -4,7 +4,6 @@ description: 当用户要测试或调试 REST / GraphQL 接口、验证响应格
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - api
       - rest

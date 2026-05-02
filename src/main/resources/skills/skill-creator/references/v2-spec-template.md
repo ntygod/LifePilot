@@ -22,7 +22,6 @@ description: 当...时使用。关键词：a、b、c。反例 → <其他 Skill>
 version: 1.0.0                       # 必需，semver
 metadata:
   zhiwei:                            # 可选块；不写则用默认值
-    priority: normal                 # high / normal / low，默认 normal
     tags:                            # 辅助 BM25 召回
       - a
       - b
@@ -90,15 +89,7 @@ body 超 5000 → 拆 references；不要裁信息。
 
 - 只能引用已注册工具 ID（不存在静默丢弃，启动日志 WARN）
 - 用 `status` 工具拿当前注册清单核对
-- 多 action 工具（`memory` / `file_list` / `shell_process` 等）按工具 ID 写一条即可，action 不拆
-
-## priority 取值
-
-| 值 | 用途 |
-|----|------|
-| high | 注册阶段优先级；常驻或场景中频繁触发 |
-| normal | 默认 |
-| low | 长尾、辅助型 |
+- 多 action 工具（`memory` / `file_read` / `shell_process` 等）按工具 ID 写一条即可，action 不拆
 
 ## 落盘与验证
 
@@ -120,7 +111,6 @@ file_write(path="src/main/resources/skills/<name>/references/<topic>.md", conten
 | `body 长度超过 ≤5000 字符限制` | 拆最长子章节到 `references/<topic>.md` |
 | `name 必须匹配正则 ^[a-z0-9][a-z0-9-]{0,62}$` | name 只能小写字母数字+中划线，长度 1-63 |
 | `字段 'id' 已废弃` | v1 的 `id:` 改成 `name:` |
-| `priority 字段值非法` | 必须 high/normal/low 三选一 |
 | `缺少必需字段: name/description/version` | frontmatter 三必需字段缺失 |
 
 ## 老 Skill 迁移步骤
@@ -130,7 +120,7 @@ file_write(path="src/main/resources/skills/<name>/references/<topic>.md", conten
 3. description 改写：去掉工作流词、补开头触发词、加关键词清单和反例
 4. body 重组三小节（适用 / 不适用 / 工作流），用"用户表达 → 路径"表格
 5. 详细命令、长样例下沉到 `references/<topic>.md`
-6. metadata 删 `category`，按需补 `tags` / `suggested_tools` / `priority`
+6. metadata 删 `category`，按需补 `tags` / `suggested_tools`
 7. `file_write` 落盘后重启服务验证日志
 
 ## 全局规则别重复

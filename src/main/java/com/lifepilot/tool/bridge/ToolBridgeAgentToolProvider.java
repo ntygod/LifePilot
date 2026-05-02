@@ -40,10 +40,6 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private static final Set<String> IDEMPOTENCY_KEY_WHITELIST =
             Set.of("web.search", "web.fetch");
 
-    /** Meta 工具 ID 集合 — 始终可见于 prompt，供 LLM 发现更多能力。 */
-    private static final Set<String> META_TOOL_IDS =
-            Set.of("tool.search", "tool.search");
-
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
@@ -123,24 +119,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         List<ToolContract> tools;
         if (allowed != null && !allowed.isEmpty()) {
             // 多 Agent / 受限代理场景 — 严格按白名单过滤
-            int totalCount = all.size();
-            tools = all.stream()
-                    .filter(t -> allowed.contains(t.id()))
-                    .toList();
-            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", totalCount, tools.size());
+            tools = all.stream().filter(t -> allowed.contains(t.id())).toList();
+            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", all.size(), tools.size());
         } else {
-            // 统一分层 — Tier 1 ∪ activatedToolIds ∪ Meta 工具
-            Set<String> tier1 = tier1Service.getCurrentTier1Ids();
-            Set<String> activated = state.activatedToolIds() != null
-                    ? state.activatedToolIds() : Set.of();
-            Set<String> visible = new HashSet<>();
-            visible.addAll(tier1);
-            visible.addAll(activated);
-            visible.addAll(META_TOOL_IDS);
-            int totalCount = all.size();
-            tools = all.stream().filter(t -> visible.contains(t.id())).toList();
-            log.debug("ToolCallback 过滤 (统一分层): total={}, tier1={}, activated={}, meta={}, final={}",
-                    totalCount, tier1.size(), activated.size(), META_TOOL_IDS.size(), tools.size());
+            // Tier1 全量常驻 — 所有工具可见
+            tools = all;
+            log.debug("ToolCallback 全量注入: count={}", tools.size());
         }
 
         refreshToolNameMappings(tools);

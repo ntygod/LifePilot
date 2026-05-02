@@ -3,7 +3,7 @@ package com.lifepilot.skill.spec;
 import java.util.List;
 
 /**
- * SKILL.md frontmatter 下 `metadata.zhiwei` 块的结构化视图。
+ * SKILL.md frontmatter 下 {@code metadata.zhiwei} 块的结构化视图。
  *
  * @author zsg
  * @since 2026-04-24
@@ -11,17 +11,15 @@ import java.util.List;
 public record SkillZhiweiMeta(
         List<String> suggestedTools,
         List<String> tags,
-        SkillPriority priority,
         SkillRequires requires
 ) {
     public static SkillZhiweiMeta empty() {
-        return new SkillZhiweiMeta(List.of(), List.of(), SkillPriority.NORMAL, SkillRequires.empty());
+        return new SkillZhiweiMeta(List.of(), List.of(), SkillRequires.empty());
     }
 
     public SkillZhiweiMeta {
         suggestedTools = suggestedTools == null ? List.of() : List.copyOf(suggestedTools);
         tags = tags == null ? List.of() : List.copyOf(tags);
-        priority = priority == null ? SkillPriority.NORMAL : priority;
         requires = requires == null ? SkillRequires.empty() : requires;
     }
 }

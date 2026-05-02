@@ -4,7 +4,6 @@ description: 当用户要撰写文章、报告、邮件、博客、提案、周�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - writing
       - article
@@ -18,7 +17,6 @@ metadata:
       - web_fetch
       - file_read
       - file_write
-      - memory
       - memory
 ---
 

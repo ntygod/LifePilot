@@ -36,7 +36,6 @@ import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.spec.SkillPriority;
 import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.ToolContract;
@@ -1377,14 +1376,14 @@ public class ContextAssembler {
         }
     }
 
-    /** Skill catalog 一行映射：name + description + tags + priority。 */
-    record SkillCatalogEntry(String name, String description, List<String> tags, SkillPriority priority) {}
+    /** Skill catalog 一行映射：name + description + tags。 */
+    record SkillCatalogEntry(String name, String description, List<String> tags) {}
 
     /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
     private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
         SkillZhiweiMeta meta = def.zhiweiMeta();
         String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
-        return new SkillCatalogEntry(displayName, def.description(), meta.tags(), meta.priority());
+        return new SkillCatalogEntry(displayName, def.description(), meta.tags());
     }
 
     /**
@@ -1443,7 +1442,6 @@ public class ContextAssembler {
         return all.stream()
                 .sorted(Comparator
                         .comparingInt((SkillCatalogEntry e) -> -scoreEntry(e, keywords))
-                        .thenComparingInt(e -> priorityOrder(e.priority()))
                         .thenComparing(SkillCatalogEntry::name))
                 .toList();
     }
@@ -1488,18 +1486,6 @@ public class ContextAssembler {
             return "";
         }
         return KEYWORD_LIST_PATTERN.matcher(description).replaceAll("").trim();
-    }
-
-    /** HIGH=0, NORMAL=1, LOW=2 — 排序权重。 */
-    private static int priorityOrder(SkillPriority p) {
-        if (p == null) {
-            return 1;
-        }
-        return switch (p) {
-            case HIGH -> 0;
-            case NORMAL -> 1;
-            case LOW -> 2;
-        };
     }
 
     /**

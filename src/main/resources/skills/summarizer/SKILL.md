@@ -4,7 +4,6 @@ description: 当用户要从 URL、文件或知识库提取关键信息、生成
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - summary
       - abstract

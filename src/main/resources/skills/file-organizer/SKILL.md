@@ -4,7 +4,6 @@ description: 当用户要整理文件、批量重命名、按类型/日期/项�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - file
       - organize
@@ -13,7 +12,6 @@ metadata:
       - disk-cleanup
       - dedup
     suggested_tools:
-      - file_list
       - file_read
       - file_write
       - file_manage

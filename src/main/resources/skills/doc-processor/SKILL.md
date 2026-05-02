@@ -4,7 +4,6 @@ description: 当用户要生成 Word/Excel/PowerPoint、做文档格式转换（
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - document
       - pandoc

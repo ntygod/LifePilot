@@ -14,7 +14,7 @@
 ## 定位日志文件
 
 ```
-file_list(action="list", path="<log-dir>", pattern="*.log", maxDepth=2)
+file_read(action="list", path="<log-dir>", pattern="*.log", maxDepth=2)
 ```
 
 ## 快速扫错
@@ -138,5 +138,5 @@ shell_exec(command="powershell -c \"Select-String -Path <log> -Pattern 'Caused b
 | 文件 > 1GB | `tail -10000` 取尾部，再按时间窗口缩 |
 | 编码错误（GBK / GB2312） | `file_read(encoding="GBK")` 或 `iconv -f gbk -t utf-8` |
 | 时间格式不规范 | 先 `head -20` 采样确认前缀 |
-| 跨多文件分析（rotation） | `file_list` 先列文件，再按修改时间倒序选 |
+| 跨多文件分析（rotation） | `file_read` 先列文件，再按修改时间倒序选 |
 | 实时滚动需求 | 不在本 Skill 范围，用 cron-scheduler + shell_exec 起定时任务 |

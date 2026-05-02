@@ -4,7 +4,6 @@ description: 当需要让前端渲染可交互组件（按钮、表单、待办�
 version: 3.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - ui
       - a2ui

@@ -4,7 +4,6 @@ description: 当用户要分析应用日志、排查错误、追踪异常、统�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - log
       - error-tracking
@@ -14,7 +13,6 @@ metadata:
     suggested_tools:
       - shell_exec
       - file_read
-      - file_list
 ---
 
 # 日志分析指南
@@ -38,7 +36,7 @@ metadata:
 
 ## 工作流
 
-1. **定位日志**：`file_list` 列 log 目录；常见路径见参考（`/var/log` / 知微 dataDir 下 logs 等）
+1. **定位日志**：`file_read` 列 log 目录；常见路径见参考（`/var/log` / 知微 dataDir 下 logs 等）
 2. **快速扫描**：按平台用对应工具的 ERROR/Exception 模式匹配抓异常行（具体命令模板见参考）
 3. **统计分布**：按错误类型排序，前 20 看高频
 4. **大文件分段读**：日志通常很大，`file_read` 带 `startLine` / `endLine` 按行号读，不一次性 `file_read` 整个文件

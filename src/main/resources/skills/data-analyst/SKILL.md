@@ -4,7 +4,6 @@ description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - data-analysis
       - csv
@@ -16,10 +15,8 @@ metadata:
       - statistics
     suggested_tools:
       - code
-      - code
       - file_read
       - file_write
-      - file_list
       - shell_exec
 ---
 

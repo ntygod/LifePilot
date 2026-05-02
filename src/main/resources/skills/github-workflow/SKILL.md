@@ -4,7 +4,6 @@ description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 P
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - github
       - pr
@@ -16,8 +15,6 @@ metadata:
     suggested_tools:
       - shell_exec
       - web_fetch
-      - shell_exec
-      - shell_exec
       - file_read
       - file_write
     requires:
@@ -49,7 +46,7 @@ metadata:
 
 | 操作 | 路径 |
 |---|---|
-| 本地 commit + push + 创 PR | `shell_exec(action="commit")` → `shell_exec("git push ...")` → `gh pr create` |
+| 本地 commit + push + 创 PR | `shell_exec(command="git add ... && git commit -m '...'")` → `shell_exec(command="git push")` → `gh pr create` |
 | 仅 GitHub 侧（看 / 评论 / 合并 PR） | `shell_exec` + `gh pr ...` |
 | Issue 创建 / 查询 / 评论 | `shell_exec` + `gh issue ...` |
 | CI 状态 + 失败排查 | `shell_exec` + `gh run list / view --log-failed` |
@@ -60,7 +57,7 @@ metadata:
 各路径要点：
 
 - **CI 通过才合并**：合 PR 前 `gh pr checks <pr>` 看全绿
-- **git push 走 shell_exec**：`shell_exec` 只覆盖 commit / stash / branch，push / pull 用 `shell_exec` 调 git
+- **git 操作走 shell_exec**：所有 git 命令（status/diff/log/commit/push 等）统一用 `shell_exec` 执行
 - **Contents API 整体解码**：返回的 Base64 含换行，必须先去空白再整体 base64 解码；逐行解会破坏多字节 UTF-8
 - **时间窗口收窄**：`since` / `until` 限定范围；结果太多缩窗口而不是 `--paginate`
 - **token 走 env**：`GITHUB_TOKEN` 由系统注入，命令里不写明文

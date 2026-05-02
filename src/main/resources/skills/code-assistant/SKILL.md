@@ -4,7 +4,6 @@ description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini�
 version: 2.9.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - code
       - cli
@@ -19,10 +18,7 @@ metadata:
       - code
       - file_read
       - file_write
-      - file_list
-      - file_edit
-      - shell_exec
-      - shell_exec
+      - file_manage
 ---
 
 # 编码代理指南
@@ -40,7 +36,7 @@ metadata:
 
 ## 不适用场景
 
-- 单文件小改 → `file_edit`
+- 单文件小改 → `file_write`
 - 仅读代码 → `file_read`
 - 跑脚本 → `shell_exec` / `code`
 

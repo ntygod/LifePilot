@@ -4,7 +4,6 @@ description: 当用户要学习概念、让你解释原理、生成练习题、�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - teaching
       - learning
@@ -16,7 +15,6 @@ metadata:
       - code
       - file_write
       - file_read
-      - memory
       - memory
 ---
 

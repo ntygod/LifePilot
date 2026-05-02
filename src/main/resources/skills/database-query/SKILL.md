@@ -4,7 +4,6 @@ description: 当用户要连接外部数据库（SQLite / MySQL / PostgreSQL）�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - database
       - sql

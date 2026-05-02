@@ -4,7 +4,6 @@ description: 当用户要做多源搜索、交叉验证、调研行业动态、�
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - research
       - investigation
@@ -14,7 +13,6 @@ metadata:
     suggested_tools:
       - web_search
       - web_fetch
-      - memory
       - memory
       - file_write
 ---

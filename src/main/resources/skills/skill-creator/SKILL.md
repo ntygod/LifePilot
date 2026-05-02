@@ -4,7 +4,6 @@ description: 当用户要手动创作或改写一个新的知微 Skill、需要 
 version: 1.1.0
 metadata:
   zhiwei:
-    priority: high
     tags:
       - skill-spec
       - meta
@@ -15,8 +14,6 @@ metadata:
     suggested_tools:
       - file_read
       - file_write
-      - file_edit
-      - file_list
 ---
 
 # Skill 创作指南
@@ -28,7 +25,7 @@ metadata:
 - 用户从零写一个新的 Skill（描述 / 工作流 / references 全套）
 - 改写老格式 Skill 让它符合 v2 规范
 - 修复因 description / body 校验失败被跳过的 Skill
-- 打磨 metadata.zhiwei（priority / tags / suggested_tools / requires）
+- 打磨 metadata.zhiwei（tags / suggested_tools / requires）
 
 ## 不适用场景
 
