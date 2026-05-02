@@ -7,17 +7,17 @@
 ```
 确认 4 要素（类型 / 受众 / 篇幅 / 风格）—— **缺一不动笔**
    ↓ 按需收集素材（同轮并行）
-web.search(query="<主题>")                          外部事实
-web.fetch(url="<参考文章>", selector="article")     抓正文核对
-knowledge.search(query="<主题>")                    会话知识库
+web_search(query="<主题>")                          外部事实
+web_fetch(url="<参考文章>", selector="article")     抓正文核对
+memory(query="<主题>")                    会话知识库
 memory(action="search", query="<用户写作偏好>")      用户口味 / 历史观点
-file.read(path="<用户给的参考文件>")                  用户已有素材
+file_read(path="<用户给的参考文件>")                  用户已有素材
    ↓ 长文 > 2000 字
 出大纲（标题 / 章节要点 / 预估篇幅）→ 用户确认 → 撰写
    ↓ 短文 / 用户说"直接写"
 跳过大纲撰写
    ↓ 引用数据必标 [<来源标题>](<URL>)
-file.write(path="<workspace/...>", content="<最终稿>")
+file_write(path="<workspace/...>", content="<最终稿>")
 ```
 
 错例：用户只说"帮我写一篇技术博客"就动笔——受众 / 篇幅 / 风格全缺，必须先问。
@@ -27,11 +27,11 @@ file.write(path="<workspace/...>", content="<最终稿>")
 判据：用户已有原文（贴对话里 / 给文件路径）。
 
 ```
-file.read(path="<原文路径>")                  用户给路径时
+file_read(path="<原文路径>")                  用户给路径时
    ↓
 按用户要求改（语气 / 节奏 / 措辞），**核心立场不动、不删原意、不加用户没写过的事实**
    ↓
-对比给用户看（before → after 关键段）→ 用户确认 → file.write 覆盖原文
+对比给用户看（before → after 关键段）→ 用户确认 → file_write 覆盖原文
 ```
 
 硬约束：润色 ≠ 改观点。如果用户原文有事实错误，先指出让用户决定改不改，不要自作主张。
@@ -72,12 +72,12 @@ file.read(path="<原文路径>")                  用户给路径时
 
 | 工具 | 用途 |
 |---|---|
-| `web.search(query=...)` | 外部事实 / 案例 / 数据 |
-| `web.fetch(url=..., selector="article")` | 抓参考文章正文 |
-| `knowledge.search(query=...)` | 会话知识库已有资料 |
+| `web_search(query=...)` | 外部事实 / 案例 / 数据 |
+| `web_fetch(url=..., selector="article")` | 抓参考文章正文 |
+| `memory(query=...)` | 会话知识库已有资料 |
 | `memory(action="search", query=...)` | 用户偏好 / 历史观点 / 之前写过的同主题文章 |
-| `file.read(path=...)` | 读用户给的参考文件 / 待改原文 |
-| `file.write(path="<workspace/<name>.md>", content=...)` | 落盘最终稿 |
+| `file_read(path=...)` | 读用户给的参考文件 / 待改原文 |
+| `file_write(path="<workspace/<name>.md>", content=...)` | 落盘最终稿 |
 
 ## 大纲模板
 
@@ -102,5 +102,5 @@ file.read(path="<原文路径>")                  用户给路径时
 - **风格不匹配** → 改对应段落而非整篇推翻；先给一段 sample 让用户确认风格再继续大段写
 - **大纲被驳回** → 按用户具体反驳点改，再确认；不要绕过大纲直接写完
 - **用户给的参考文件读不到** → 路径错 / 编码不对 → 让用户重发或贴正文
-- **超长文中途要分段** → 分章节多次 `file.write(mode="append")` 追加，不要一次性塞超大字符串
+- **超长文中途要分段** → 分章节多次 `file_write(mode="append")` 追加，不要一次性塞超大字符串
 - **润色发现事实错误** → 标出让用户决断，不要静默"修复"

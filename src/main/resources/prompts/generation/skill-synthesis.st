@@ -11,7 +11,7 @@
 - body 必须含三个小节标题: `## 适用场景` / `## 不适用场景` / `## 工作流`
 - 详细内容超长时应拆到 references/，body 里只写 "参见 {{skill_dir}}/references/xxx.md"
 - 如果声明了 `metadata.zhiwei.suggested_tools`，工具必须存在于"可用工具列表"中
-- 自生成 skill 不得引用 HIGH/CRITICAL 风险工具（如 shell.exec）
+- 自生成 skill 不得引用 HIGH/CRITICAL 风险工具（如 shell_exec）
 
 ## 输入
 

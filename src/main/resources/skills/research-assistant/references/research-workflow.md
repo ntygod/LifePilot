@@ -5,7 +5,7 @@
 判据：用户要一句话答案，没要求对比 / 分析 / 时效。
 
 ```
-web.search(query="<X 的核心关键词>")
+web_search(query="<X 的核心关键词>")
    ↓ 1-3 句直答 + 标 1 个来源
 ```
 
@@ -16,41 +16,41 @@ web.search(query="<X 的核心关键词>")
 判据：用户要在多个方案 / 工具 / 框架里挑一个，或要看全景。
 
 ```
-web.search(query="<广义关键词>")              广度，识别候选与子话题
+web_search(query="<广义关键词>")              广度，识别候选与子话题
    ↓ 同轮并行
-web.search(query="<X vs Y 关键差异>")          深度子话题
-knowledge.search(query="<相关主题>")          已绑数据空间时
+web_search(query="<X vs Y 关键差异>")          深度子话题
+memory(query="<相关主题>")          已绑数据空间时
    ↓
-web.fetch(url="<高价值来源>", selector="article")  抓正文核对，**不只看搜索摘要**
+web_fetch(url="<高价值来源>", selector="article")  抓正文核对，**不只看搜索摘要**
    ↓ 按场景选输出
 对比表 / SWOT / 推荐理由 + 适用场景
 ```
 
-错例：只搜一次 web.search 就动笔写对比——摘要片段往往片面，关键差异必须 fetch 正文。
+错例：只搜一次 web_search 就动笔写对比——摘要片段往往片面，关键差异必须 fetch 正文。
 
 ## 3. 趋势 / 动态（"X 最近怎么样 / 行业现在什么趋势 / 最新进展"）
 
 判据：用户关心时间维度（最新、最近、本季度、近一年）。
 
 ```
-web.search(query="<X> 2026")                  query 显式带时间限定
-web.search(query="<X> latest news")           英文渠道补充
+web_search(query="<X> 2026")                  query 显式带时间限定
+web_search(query="<X> latest news")           英文渠道补充
    ↓
 对每条结果**人工核对发布日期**，过期内容剔除
    ↓ 按"时间线 + 关键节点"输出，每条带日期
 ```
 
-注意：`web.search` **没有按时间过滤的参数**，时效全靠 query 关键词（年份 / "最新" / "近期"）+ 抓取后人眼判断发布日期。
+注意：`web_search` **没有按时间过滤的参数**，时效全靠 query 关键词（年份 / "最新" / "近期"）+ 抓取后人眼判断发布日期。
 
 ## 4. 事实核查（"这个数字对吗 / X 真的做了 Y 吗 / 是真的吗"）
 
 判据：用户给了具体断言，要求验证真伪。
 
 ```
-web.search(query="<原始断言>")                找正反两面来源
+web_search(query="<原始断言>")                找正反两面来源
    ↓
-web.fetch(url="<来源 1>", selector="article")  抓正文核对
-web.fetch(url="<来源 2>", selector="article")  独立来源
+web_fetch(url="<来源 1>", selector="article")  抓正文核对
+web_fetch(url="<来源 2>", selector="article")  独立来源
    ↓
 有共识 → 给确认 + 双源；分歧 → 明示分歧而非择一
 ```
@@ -61,14 +61,14 @@ web.fetch(url="<来源 2>", selector="article")  独立来源
 
 | 工具 | 用途 |
 |---|---|
-| `web.search(query=..., maxResults=...)` | 广度搜，拿标题 / URL / 摘要 |
-| `web.fetch(url=..., selector="article")` | 抓正文，仅 GET + HTML 有效 |
-| `web.fetch(url=..., renderJs=true)` | JS 动态站走浏览器渲染（开销大，先试默认再升级） |
-| `web.fetch(url=..., method="POST", body=...)` | 调外部 REST API |
-| `knowledge.search(query=..., top_k=...)` | 已绑会话知识库时优先用，命中精度比 web 高 |
+| `web_search(query=..., maxResults=...)` | 广度搜，拿标题 / URL / 摘要 |
+| `web_fetch(url=..., selector="article")` | 抓正文，仅 GET + HTML 有效 |
+| `web_fetch(url=..., renderJs=true)` | JS 动态站走浏览器渲染（开销大，先试默认再升级） |
+| `web_fetch(url=..., method="POST", body=...)` | 调外部 REST API |
+| `memory(query=..., top_k=...)` | 已绑会话知识库时优先用，命中精度比 web 高 |
 | `memory(action="search", query=...)` | 找用户已有调研结论，避免重复劳动 |
 | `memory(action="create", entityType="TOPIC", name=..., description=...)` | 长期价值结论入库（一句话核心结论 + 关键来源） |
-| `file.write(path=..., content=...)` | 长报告落盘到工作区下（路径取自工具返回的工作区字段） |
+| `file_write(path=..., content=...)` | 长报告落盘到工作区下（路径取自工具返回的工作区字段） |
 
 ## 输出格式选择
 
@@ -98,7 +98,7 @@ web.fetch(url="<来源 2>", selector="article")  独立来源
 ## 常见错误处理
 
 - **搜索 0 命中** → 同义词 / 拆短关键词 / 切换中英文，连试 2 次仍空就告诉用户没找到，不编造结果
-- **`web.fetch` 正文空** → 换 selector（`main` / `.content` / `article`）；仍空加 `renderJs=true`；仍空告诉用户抓不到，提供搜索摘要替代
+- **`web_fetch` 正文空** → 换 selector（`main` / `.content` / `article`）；仍空加 `renderJs=true`；仍空告诉用户抓不到，提供搜索摘要替代
 - **付费墙 / 登录墙** → 标"来源被遮挡"，换其他公开来源
 - **多源结论冲突** → 明示分歧 + 双方来源，**绝不**择一掩盖
 - **数据陈旧（年份不符）** → 当作"无近期来源"处理，主动告诉用户最新证据缺失

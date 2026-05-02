@@ -1,6 +1,6 @@
 ---
 name: data-analyst
-description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、清洗、统计分析、假设检验、图表可视化或数据质量检查时使用。关键词：分析这份数据、做个图表、统计一下、数据可视化、处理 CSV、处理 Excel、处理 JSON、数据清洗、画图、相关性、对比、时间序列、pandas、matplotlib。数据库 SQL 查询用 database-query，日志文件分析用 log-analyzer。
+description: 当用户要在内存中对 CSV / JSON / Excel 做数据加载、清洗、统计分析、假设检验、图表可视化或数据质量检查时使用。
 version: 2.1.0
 metadata:
   zhiwei:
@@ -15,12 +15,12 @@ metadata:
       - visualization
       - statistics
     suggested_tools:
-      - code.execute
-      - code.kernel
-      - file.read
-      - file.write
-      - file.list
-      - shell.exec
+      - code
+      - code
+      - file_read
+      - file_write
+      - file_list
+      - shell_exec
 ---
 
 # 数据分析指南
@@ -61,7 +61,7 @@ metadata:
 - **中文字体**:可视化必须 `plt.rcParams['font.sans-serif'] = ['SimHei']` 或 `WenQuanYi`,否则中文乱码
 - **结论给数值**:输出具体数值(均值 / 占比 / p 值 / 置信区间),禁止"差不多""挺多的"等模糊描述
 - **清洗透明**:每一步打印 `原 N 行 → 清洗后 M 行`,让用户知道丢了多少
-- **依赖未装**:预装栈未覆盖的库（如 plotly / dash / xgboost）才用 `shell.exec(command="pip install <pkg>")` 装,且需用户接受额外耗时,**不要静默失败**
+- **依赖未装**:预装栈未覆盖的库（如 plotly / dash / xgboost）才用 `shell_exec(command="pip install <pkg>")` 装,且需用户接受额外耗时,**不要静默失败**
 
 ## 详细参考
 

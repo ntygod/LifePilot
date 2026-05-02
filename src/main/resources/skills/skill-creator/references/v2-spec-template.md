@@ -5,7 +5,7 @@
 ```
 skills/<name>/
 ├── SKILL.md              # 必需，frontmatter + body
-├── references/           # 可选，详细参考（LLM 用 file.read 按需加载）
+├── references/           # 可选，详细参考（LLM 用 file_read 按需加载）
 │   └── *.md
 ├── scripts/              # 可选，可执行脚本
 └── assets/               # 可选，模板/schema/静态资源
@@ -27,8 +27,8 @@ metadata:
       - a
       - b
     suggested_tools:                 # 加载 Skill 时合并进 activatedToolIds
-      - file.read
-      - shell.exec
+      - file_read
+      - shell_exec
     requires:                        # 可选硬过滤；不满足则 SkillRequirementGate 剔除
       bins: [git]
       env: [API_KEY]
@@ -89,8 +89,8 @@ body 超 5000 → 拆 references；不要裁信息。
 ## suggested_tools
 
 - 只能引用已注册工具 ID（不存在静默丢弃，启动日志 WARN）
-- 用 `system.status` 工具拿当前注册清单核对
-- 多 action 工具（`memory` / `file.list` / `shell.process` 等）按工具 ID 写一条即可，action 不拆
+- 用 `status` 工具拿当前注册清单核对
+- 多 action 工具（`memory` / `file_list` / `shell_process` 等）按工具 ID 写一条即可，action 不拆
 
 ## priority 取值
 
@@ -103,8 +103,8 @@ body 超 5000 → 拆 references；不要裁信息。
 ## 落盘与验证
 
 ```
-file.write(path="src/main/resources/skills/<name>/SKILL.md", content="...")
-file.write(path="src/main/resources/skills/<name>/references/<topic>.md", content="...")
+file_write(path="src/main/resources/skills/<name>/SKILL.md", content="...")
+file_write(path="src/main/resources/skills/<name>/references/<topic>.md", content="...")
 ```
 
 启动时观察日志 `BUILTIN Skill 安装完成: installed=N, skipped=0`。`skipped > 0` 一般是 description 或 body 校验失败。
@@ -125,13 +125,13 @@ file.write(path="src/main/resources/skills/<name>/references/<topic>.md", conten
 
 ## 老 Skill 迁移步骤
 
-1. `file.read` 读老 SKILL.md
+1. `file_read` 读老 SKILL.md
 2. 把老 `id:` 改成 `name:`，必须 kebab-case
 3. description 改写：去掉工作流词、补开头触发词、加关键词清单和反例
 4. body 重组三小节（适用 / 不适用 / 工作流），用"用户表达 → 路径"表格
 5. 详细命令、长样例下沉到 `references/<topic>.md`
 6. metadata 删 `category`，按需补 `tags` / `suggested_tools` / `priority`
-7. `file.write` 落盘后重启服务验证日志
+7. `file_write` 落盘后重启服务验证日志
 
 ## 全局规则别重复
 

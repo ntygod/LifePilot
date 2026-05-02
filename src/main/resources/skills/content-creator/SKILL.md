@@ -1,6 +1,6 @@
 ---
 name: content-creator
-description: 当用户要撰写文章、报告、邮件、博客、提案、周报或对已有文本做润色改写时使用。关键词：写文章、写报告、起草邮件、写文案、写周报、写月报、润色、改写、改得专业一点、博客、提案、演讲稿、工作总结、给我写一份、帮我改一下、来一篇。从已有内容提炼摘要用 summarizer，技术文档/代码注释用 code-assistant，数据报表用 data-analyst。
+description: 当用户要撰写文章、报告、邮件、博客、提案、周报或对已有文本做润色改写时使用。
 version: 2.1.0
 metadata:
   zhiwei:
@@ -14,11 +14,11 @@ metadata:
       - blog
       - polish
     suggested_tools:
-      - web.search
-      - web.fetch
-      - file.read
-      - file.write
-      - knowledge.search
+      - web_search
+      - web_fetch
+      - file_read
+      - file_write
+      - memory
       - memory
 ---
 
@@ -51,11 +51,11 @@ metadata:
 各路径要点：
 
 - **需求要素（不可省）**：内容类型 / 受众 / 篇幅 / 风格。**缺一要件不动笔**，先问清楚
-- **素材收集（按需）**：需要事实 → `web.search` / `web.fetch` / `knowledge.search`；用户已有文档 → `file.read`；用户偏好 / 历史观点 → `memory(action="search")`
+- **素材收集（按需）**：需要事实 → `web_search` / `web_fetch` / `memory`；用户已有文档 → `file_read`；用户偏好 / 历史观点 → `memory(action="search")`
 - **大纲**：长文 > 2000 字先出大纲让用户对一下；用户明说"直接写"则跳过
 - **撰写**：按大纲逐节产出；引用数据必标 `[来源](URL)`，不编造统计与案例
 - **润色不改观点**：保持原文核心立场不变，只调整表达 / 节奏 / 措辞
-- **交付**：`file.write` 保存最终稿；用户明说不存就在对话里直接给
+- **交付**：`file_write` 保存最终稿；用户明说不存就在对话里直接给
 
 ## 详细参考
 

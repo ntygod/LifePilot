@@ -77,9 +77,9 @@ public class ShellToolProvider {
 
                         %s
 
-                        安全护栏：与 code.execute 同款规则，不可绕过 —— 永久阻断（rm -rf 系统目录 / mkfs / dd / shutdown / fork bomb 等）；\
+                        安全护栏：与 code 同款规则，不可绕过 —— 永久阻断（rm -rf 系统目录 / mkfs / dd / shutdown / fork bomb 等）；\
                         默认拒绝（rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / sudo 等）。\
-                        用户要求执行此类命令时直接告知会被阻断，不要改写为"等效平台命令"绕过；删除走 file.delete 由用户明确路径。""".formatted(shellHint))
+                        用户要求执行此类命令时直接告知会被阻断，不要改写为"等效平台命令"绕过；删除走 file.manage(action=delete) 由用户明确路径。""".formatted(shellHint))
                 .inputSchema(JsonSchema.of(buildExecSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
@@ -146,7 +146,10 @@ public class ShellToolProvider {
     }
 
     private String buildProcessDescription() {
-        return "管理后台进程与 tmux 会话：list 列进程、output 读输出、write 写输入、kill 终止；session-* 操作 tmux 会话。";
+        return """
+                        管理 shell_exec 启动的后台进程与 tmux 会话。
+                        action: list(列出所有后台进程及状态) output(读取指定进程的输出，sessionId必填) write(向进程 stdin 写入，sessionId必填) kill(终止进程/会话，sessionId必填) session-list(列出 tmux 会话) session-info(查看会话详情) session-kill(终止 tmux 会话)。
+                        output 返回内容可能很大，用 tailLines 限制行数。进程已退出时 status 会标为 exited。""";
     }
 
     private String buildActionDescription() {
@@ -212,10 +215,26 @@ public class ShellToolProvider {
             properties.put("rows", Map.of("type", "integer", "description", "session-resize 终端行数"));
         }
 
+        var deps = new LinkedHashMap<String, List<String>>();
+        if (processManager != null) {
+            deps.put("output", List.of("sessionId"));
+            deps.put("write", List.of("sessionId", "input"));
+            deps.put("kill", List.of("sessionId"));
+        }
+        if (sessionManager != null) {
+            deps.put("session-exec", List.of("sessionId", "command"));
+            deps.put("session-write", List.of("sessionId", "input"));
+            deps.put("session-read", List.of("sessionId"));
+            deps.put("session-signal", List.of("sessionId", "signal"));
+            deps.put("session-close", List.of("sessionId"));
+            deps.put("session-resize", List.of("sessionId"));
+        }
+
         return Map.of(
                 "type", "object",
                 "required", List.of("action"),
-                "properties", Map.copyOf(properties)
+                "properties", Map.copyOf(properties),
+                "dependentRequired", Map.copyOf(deps)
         );
     }
 }

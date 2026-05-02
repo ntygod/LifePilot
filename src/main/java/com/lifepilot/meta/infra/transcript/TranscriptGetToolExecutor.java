@@ -73,7 +73,7 @@ public final class TranscriptGetToolExecutor {
                 row = findByCallId(sessionId, callId);
             }
         } catch (Exception e) {
-            log.warn("transcript.get 读取失败: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("memory 读取失败: sessionId={}, error={}", sessionId, e.getMessage());
             return ToolResult.error("读取 transcript 失败: " + e.getMessage());
         }
 

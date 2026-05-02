@@ -52,7 +52,7 @@ public record ReactAgentState(
         @Nullable List<String> allowedToolIds,
         /** 当前会话动态激活的工具 ID 集合 — 来源于本会话已加载 Skill 的
          * {@code suggestedTools} 并集；用于 ContextAssembler 注入完整工具 schema，
-         * 以及让 {@code tools.search} 排除已暴露给 LLM 的工具避免重复推荐。 */
+         * 以及让 {@code tool.search} 排除已暴露给 LLM 的工具避免重复推荐。 */
         @Nullable Set<String> activatedToolIds,
         /** 已加载的 Skill 指南内容 — 注入系统提示词供 LLM 遵循。 */
         @Nullable String loadedSkillContent,

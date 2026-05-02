@@ -1,6 +1,6 @@
 ---
 name: file-organizer
-description: 当用户要整理文件、批量重命名、按类型/日期/项目分类归档、清理重复文件或分析磁盘空间占用时使用。关键词：整理文件、文件分类、批量重命名、清理文件、文件归档、磁盘空间、文件管理、按日期归档、按项目归档、找重复文件、磁盘满了、清理。单个文件读写直接用 file.read / file.write，代码文件重构用 code-assistant，文档格式转换用 doc-processor。
+description: 当用户要整理文件、批量重命名、按类型/日期/项目分类归档、清理重复文件或分析磁盘空间占用时使用。
 version: 2.1.0
 metadata:
   zhiwei:
@@ -13,11 +13,11 @@ metadata:
       - disk-cleanup
       - dedup
     suggested_tools:
-      - file.list
-      - file.read
-      - file.write
-      - file.manage
-      - shell.exec
+      - file_list
+      - file_read
+      - file_write
+      - file_manage
+      - shell_exec
 ---
 
 # 文件管理指南
@@ -34,7 +34,7 @@ metadata:
 
 ## 不适用场景
 
-- 单个文件读 / 写 → `file.read` / `file.write`
+- 单个文件读 / 写 → `file_read` / `file_write`
 - 代码文件重构 → code-assistant
 - 文档格式转换（docx ↔ pdf 等）→ doc-processor
 
@@ -51,7 +51,7 @@ metadata:
 各路径要点：
 
 - **预览不可省**：执行前列出"会改哪些 / 改成什么"给用户对，不直接动手
-- **优先 file.manage**：跨平台，避免 `shell.exec` 的 mv / rm 差异（Windows 没有 mv）
+- **优先 file_manage**：跨平台，避免 `shell_exec` 的 mv / rm 差异（Windows 没有 mv）
 - **移动优于删除**：删除 / 覆盖先归档到操作目录下 `.trash/<日期>/` 子目录，用户确认无误后再清
 - **大批量分批**：> 100 个文件分批跑，每批后让用户回看
 - **重命名记映射**：批量重命名后落 `rename-map.json`（旧名→新名）到操作目录，便于回溯

@@ -34,7 +34,7 @@ browser(action="wait", selector="<结果区>", state="visible", timeout=10, sess
 browser(action="evaluate",
         expression="JSON.stringify(Array.from(document.querySelectorAll('<sel>')).map(el => ({title: el.querySelector('h3').textContent, price: el.querySelector('.price').textContent})))",
         sessionId="<name>")
-file.write(path="<输出路径>", content="<抓取数据>")
+file_write(path="<输出路径>", content="<抓取数据>")
 browser(action="close", sessionId="<name>")
 ```
 
@@ -75,7 +75,7 @@ browser(action="tab", tabAction="close", tabId="<id>", sessionId="<name>")
 3. `data-testid`：`[data-testid="<id>"]`
 4. 无障碍角色：`browser(action="accessibility", rootSelector=...)` 拿语义结构
 5. CSS 选择器：`.<class> > <child>`
-6. 仍失败 → 退 `web.fetch` → 退 `web.search` → 调 `requestHumanTakeover`
+6. 仍失败 → 退 `web_fetch` → 退 `web_search` → 调 `requestHumanTakeover`
 
 页面变化（导航 / 弹窗 / 异步渲染）后旧 elements 列表失效，**操作前重新 snapshot**。
 
@@ -115,7 +115,7 @@ browser(action="requestHumanTakeover",
 | 现象 | 处理 |
 |---|---|
 | 导航返回 `partial: true` | 部分内容已渲染，可直接用；完整需要时配合 `wait` 或 `evaluate` 等关键元素 |
-| 页面内容为空 | JS 未渲染完 → 加 `wait`；被反爬 → 换 `web.fetch` 或 `web.search` |
+| 页面内容为空 | JS 未渲染完 → 加 `wait`；被反爬 → 换 `web_fetch` 或 `web_search` |
 | `index` 返回 stale / not found | 重新 `snapshot` 对比 elements；2 次失败回落 `selector` |
 | selector 也找不到 | 检查是否在 iframe 内；用 `accessibility` 看真实结构 |
 | 登录墙 / 验证码 | `requestHumanTakeover`，长期反复访问换 `CDP` 或 `PERSISTENT` |

@@ -35,7 +35,7 @@ public final class ReactStepSerializer {
 
     /** 含工作目录的工具 ID 集合 — 成功时 output 中含 "workingDirectory" 字段。 */
     private static final Set<String> WORKDIR_TOOL_IDS = Set.of(
-            "shell.exec", "code.execute"
+            "shell.exec", "code"
     );
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -209,7 +209,7 @@ public final class ReactStepSerializer {
     static String summarizeInput(String toolId, String inputJson) {
         JsonNode root = safeParse(inputJson);
         return switch (toolId) {
-            case "web.search", "knowledge.search" -> {
+            case "web.search" -> {
                 String q = textField(root, "query");
                 yield q != null ? "搜索「" + truncate(q, 50) + "」" : "搜索";
             }
@@ -267,7 +267,7 @@ public final class ReactStepSerializer {
                 String cmd = textField(root, "command");
                 yield cmd != null ? "执行 `" + truncate(cmd, 50) + "`" : "执行命令";
             }
-            case "code.execute" -> {
+            case "code" -> {
                 String lang = textField(root, "language");
                 yield lang != null ? "执行 " + lang + " 代码" : "执行代码";
             }
@@ -280,26 +280,6 @@ public final class ReactStepSerializer {
                     "create", "创建定时任务", "list", "列出定时任务",
                     "update", "更新任务", "remove", "删除任务"
             ), "name", "taskId");
-            case "git.query" -> {
-                String action = textField(root, "action");
-                yield switch (action != null ? action : "") {
-                    case "status" -> "查看 Git 状态";
-                    case "diff" -> "查看 Git 差异";
-                    case "log" -> "查看 Git 日志";
-                    case "blame" -> "查看提交归属";
-                    default -> "Git 查询";
-                };
-            }
-            case "git.mutate" -> {
-                String action = textField(root, "action");
-                String msg = textField(root, "message");
-                yield switch (action != null ? action : "") {
-                    case "commit" -> msg != null ? "提交「" + truncate(msg, 30) + "」" : "提交";
-                    case "stash" -> "暂存更改";
-                    case "branch" -> "创建分支";
-                    default -> "Git 变更";
-                };
-            }
             case "browser" -> {
                 String action = textField(root, "action");
                 yield switch (action != null ? action : "") {
@@ -321,7 +301,7 @@ public final class ReactStepSerializer {
                     default -> action != null ? "浏览器 " + action : "浏览器操作";
                 };
             }
-            case "notify.send_message" -> {
+            case "notify" -> {
                 String title = textField(root, "title");
                 yield title != null ? "通知「" + truncate(title, 30) + "」" : "推送通知";
             }
@@ -361,7 +341,7 @@ public final class ReactStepSerializer {
         }
         JsonNode root = safeParse(output);
         return switch (toolId) {
-            case "web.search", "knowledge.search" -> {
+            case "web.search" -> {
                 int count = arrayLength(root, "results");
                 if (count >= 0) yield "找到 " + count + " 条结果";
                 yield intFieldLabel(root, "count", "共 %d 条", "搜索完成");
@@ -379,19 +359,14 @@ public final class ReactStepSerializer {
             case "file.list" -> intFieldLabel(root, "count", "%d 个条目", "列出完成");
             case "file.manage", "file.history" -> "操作成功";
             case "shell.exec" -> intFieldLabel(root, "exitCode", "退出码 %d", "执行完成");
-            case "code.execute" -> intFieldLabel(root, "exitCode", "执行完成（退出码 %d）", "执行完成");
-            case "memory" -> {
-                int count = arrayLength(root, "results");
-                yield count >= 0 ? "找到 " + count + " 条记忆" : "操作成功";
-            }
+            case "code" -> intFieldLabel(root, "exitCode", "执行完成（退出码 %d）", "执行完成");
             case "cron" -> {
                 String name = textField(root, "name");
                 yield name != null ? "任务「" + truncate(name, 30) + "」" : "操作成功";
             }
-            case "git.query" -> "查询完成";
-            case "git.mutate" -> "操作成功";
+            case "tool.search" -> "查询完成";
             case "browser" -> "操作成功";
-            case "notify.send_message" -> "通知已发送";
+            case "notify" -> "通知已发送";
             default -> "操作成功";
         };
     }

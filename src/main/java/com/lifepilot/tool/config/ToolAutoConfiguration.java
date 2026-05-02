@@ -172,6 +172,16 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public com.lifepilot.tool.search.ToolEmbeddingIndex toolEmbeddingIndex(
+            DynamicToolRegistry registry,
+            @Nullable com.lifepilot.embedding.router.EmbeddingRouter embeddingRouter) {
+        var idx = new com.lifepilot.tool.search.ToolEmbeddingIndex(registry, embeddingRouter);
+        idx.buildAll();
+        return idx;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public com.lifepilot.tool.search.ToolSearchService toolSearchService(
             org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
             DynamicToolRegistry registry,
@@ -180,10 +190,11 @@ public class ToolAutoConfiguration {
             com.lifepilot.tool.search.cache.SearchResultCache searchCache,
             com.lifepilot.tool.search.cache.SessionSearchMemo memo,
             ToolConfigProperties properties,
-            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+            io.micrometer.core.instrument.MeterRegistry meterRegistry,
+            @Nullable com.lifepilot.tool.search.ToolEmbeddingIndex embeddingIndex) {
         return new com.lifepilot.tool.search.ToolSearchService(
                 jdbcTemplate, registry, sanitizer, tier1, searchCache, memo,
-                properties.getSearch(), meterRegistry);
+                properties.getSearch(), meterRegistry, embeddingIndex);
     }
 
     @Bean
@@ -223,12 +234,6 @@ public class ToolAutoConfiguration {
     public com.lifepilot.tool.BuiltinTool toolsSearchBuiltin(
             com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
         return provider.searchTool();
-    }
-
-    @Bean
-    public com.lifepilot.tool.BuiltinTool toolsDescribeBuiltin(
-            com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
-        return provider.describeTool();
     }
 
     /**

@@ -3,9 +3,9 @@
 ## 1. URL 网页摘要（"这个链接讲了什么 / 帮我看下这篇"）
 
 ```
-web.fetch(url="<目标 URL>")                              一般文章
-web.fetch(url="<目标 URL>", selector="article")          冗余多时收窄正文
-web.fetch(url="<目标 URL>", renderJs=true)               JS 动态站
+web_fetch(url="<目标 URL>")                              一般文章
+web_fetch(url="<目标 URL>", selector="article")          冗余多时收窄正文
+web_fetch(url="<目标 URL>", renderJs=true)               JS 动态站
    ↓
 按格式输出，开头标 [<页面标题>](<URL>)
 ```
@@ -15,28 +15,28 @@ web.fetch(url="<目标 URL>", renderJs=true)               JS 动态站
 ## 2. 本地文件摘要（"这份文档 / 这份 PDF 讲了啥"）
 
 ```
-file.read(path="<绝对路径>")                          一般文档
-file.read(path="<绝对路径>", maxChars=10000)          超长文档分段
+file_read(path="<绝对路径>")                          一般文档
+file_read(path="<绝对路径>", maxChars=10000)          超长文档分段
    ↓
 按格式输出
 ```
 
-`file.read` 已自动按扩展名解析 docx / xlsx / pptx / pdf / md / csv，**不需要**额外步骤。可访问范围由工具自身约束（工作区与 skills 目录），不需要在 prompt 里硬约束路径。
+`file_read` 已自动按扩展名解析 docx / xlsx / pptx / pdf / md / csv，**不需要**额外步骤。可访问范围由工具自身约束（工作区与 skills 目录），不需要在 prompt 里硬约束路径。
 
 ## 3. 知识库摘要（"会话绑定的资料里 X 是怎么说的"）
 
 ```
-knowledge.search(query="<主题关键词>", top_k=10)      召回相关 chunk
+memory(query="<主题关键词>", top_k=10)      召回相关 chunk
    ↓
 合并 chunk 后按格式输出，每条要点带 source
 ```
 
-**注意**：knowledge.search 返回的是 chunk 片段 ≠ 整篇文档，要点必须基于实际命中内容，不要外推。命中不全时声明"基于检索到的 N 段"。
+**注意**：memory 返回的是 chunk 片段 ≠ 整篇文档，要点必须基于实际命中内容，不要外推。命中不全时声明"基于检索到的 N 段"。
 
 ## 4. 多文档对比（"对比这几份资料 / 找共识找分歧"）
 
 ```
-逐篇 file.read / web.fetch 拿到全部内容（**绝不**只读一篇就推断其他）
+逐篇 file_read / web_fetch 拿到全部内容（**绝不**只读一篇就推断其他）
    ↓
 共识 / 分歧矩阵：
   共识：所有文档都同意的点
@@ -133,20 +133,20 @@ knowledge.search(query="<主题关键词>", top_k=10)      召回相关 chunk
 
 | 工具 | 用途 |
 |---|---|
-| `web.fetch(url=..., selector=..., renderJs=...)` | 抓 URL 正文 |
-| `file.read(path=..., maxChars=..., startLine=..., endLine=...)` | 读本地文件，自动文档解析 |
-| `knowledge.search(query=..., top_k=...)` | 检索会话绑定的知识库 |
-| `file.write(path="<workspace/<name>.md>", content=...)` | 长摘要落盘 |
+| `web_fetch(url=..., selector=..., renderJs=...)` | 抓 URL 正文 |
+| `file_read(path=..., maxChars=..., startLine=..., endLine=...)` | 读本地文件，自动文档解析 |
+| `memory(query=..., top_k=...)` | 检索会话绑定的知识库 |
+| `file_write(path="<workspace/<name>.md>", content=...)` | 长摘要落盘 |
 
 ## 保存
 
-短摘要直接对话里给。长摘要 / 用户明说"存一下" → `file.write(path="<workspace/<name>.md>", content=...)`。
+短摘要直接对话里给。长摘要 / 用户明说"存一下" → `file_write(path="<workspace/<name>.md>", content=...)`。
 
 ## 常见错误处理
 
-- **`web.fetch` 正文空** → 换 selector（`main` / `.content` / `article`）；仍空加 `renderJs=true`；仍空告诉用户抓不到
-- **内容超长截断** → `file.read(maxChars=...)` 分段读 / 抓后逐段摘要，再合并成总摘要
-- **`file.read` 编码报错** → `encoding` 显式传 `GBK` / `UTF-8`，仍失败问用户文件来源
+- **`web_fetch` 正文空** → 换 selector（`main` / `.content` / `article`）；仍空加 `renderJs=true`；仍空告诉用户抓不到
+- **内容超长截断** → `file_read(maxChars=...)` 分段读 / 抓后逐段摘要，再合并成总摘要
+- **`file_read` 编码报错** → `encoding` 显式传 `GBK` / `UTF-8`，仍失败问用户文件来源
 - **PDF 解析空 / 乱码** → 多半是扫描件 / 加密 PDF，告诉用户"非文本 PDF 无法摘要"，让用户提供文本版
 - **多文档要点冲突** → 标分歧而非择一，让用户决断
 - **用户只给了一段引用片段** → 直接基于片段摘要，开头标"基于用户提供的片段（非完整原文）"

@@ -1,6 +1,6 @@
 ---
 name: github-workflow
-description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 PR、查看工作流运行、读取或更新远程仓库文件时使用。关键词：GitHub、PR、pull request、issue、CI、gh cli、代码审查、合并、工作流、Actions、远程仓库。纯本地 Git 操作直接用 git.query / git.mutate，不进本 Skill；其他平台（Gitee/GitLab）走 shell.exec 调用对应 CLI。
+description: 当用户要操作 GitHub PR / Issue / CI、代码审查、合并 PR、查看工作流运行、读取或更新远程仓库文件时使用。
 version: 2.1.0
 metadata:
   zhiwei:
@@ -14,12 +14,12 @@ metadata:
       - gh-cli
       - actions
     suggested_tools:
-      - shell.exec
-      - web.fetch
-      - git.query
-      - git.mutate
-      - file.read
-      - file.write
+      - shell_exec
+      - web_fetch
+      - shell_exec
+      - shell_exec
+      - file_read
+      - file_write
     requires:
       bins:
         - gh
@@ -41,26 +41,26 @@ metadata:
 
 ## 不适用场景
 
-- 纯本地 Git 操作（commit / branch / log）→ `git.query` / `git.mutate`
+- 纯本地 Git 操作（commit / branch / log）→ `shell_exec` / `shell_exec`
 - 代码编写本身 → code-assistant
-- 其他平台（Gitee / GitLab / Bitbucket）→ `shell.exec` 调对应 CLI 或 API
+- 其他平台（Gitee / GitLab / Bitbucket）→ `shell_exec` 调对应 CLI 或 API
 
 ## 工作流（按操作分流）
 
 | 操作 | 路径 |
 |---|---|
-| 本地 commit + push + 创 PR | `git.mutate(action="commit")` → `shell.exec("git push ...")` → `gh pr create` |
-| 仅 GitHub 侧（看 / 评论 / 合并 PR） | `shell.exec` + `gh pr ...` |
-| Issue 创建 / 查询 / 评论 | `shell.exec` + `gh issue ...` |
-| CI 状态 + 失败排查 | `shell.exec` + `gh run list / view --log-failed` |
+| 本地 commit + push + 创 PR | `shell_exec(action="commit")` → `shell_exec("git push ...")` → `gh pr create` |
+| 仅 GitHub 侧（看 / 评论 / 合并 PR） | `shell_exec` + `gh pr ...` |
+| Issue 创建 / 查询 / 评论 | `shell_exec` + `gh issue ...` |
+| CI 状态 + 失败排查 | `shell_exec` + `gh run list / view --log-failed` |
 | 代码审查（拉 diff + 留意见） | `gh pr diff` + `gh pr review` |
-| 远程文件直改（不 clone） | `shell.exec` + `gh api`（Contents API） |
-| 复杂查询（跨仓 / 批量） | `gh api graphql` 或 `web.fetch` GraphQL |
+| 远程文件直改（不 clone） | `shell_exec` + `gh api`（Contents API） |
+| 复杂查询（跨仓 / 批量） | `gh api graphql` 或 `web_fetch` GraphQL |
 
 各路径要点：
 
 - **CI 通过才合并**：合 PR 前 `gh pr checks <pr>` 看全绿
-- **git push 走 shell.exec**：`git.mutate` 只覆盖 commit / stash / branch，push / pull 用 `shell.exec` 调 git
+- **git push 走 shell_exec**：`shell_exec` 只覆盖 commit / stash / branch，push / pull 用 `shell_exec` 调 git
 - **Contents API 整体解码**：返回的 Base64 含换行，必须先去空白再整体 base64 解码；逐行解会破坏多字节 UTF-8
 - **时间窗口收窄**：`since` / `until` 限定范围；结果太多缩窗口而不是 `--paginate`
 - **token 走 env**：`GITHUB_TOKEN` 由系统注入，命令里不写明文

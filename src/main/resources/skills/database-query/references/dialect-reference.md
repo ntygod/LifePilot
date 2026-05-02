@@ -1,6 +1,6 @@
 # 数据库方言速查
 
-`shell.exec` 调对应 CLI（sqlite3 / mysql / psql）。密码走环境变量，不要明文。
+`shell_exec` 调对应 CLI（sqlite3 / mysql / psql）。密码走环境变量，不要明文。
 
 ## 列表 / 查 schema
 
@@ -15,14 +15,14 @@
 CLI 命令：
 
 ```bash
-shell.exec(command="sqlite3 <db.sqlite> '.tables'")
-shell.exec(command="sqlite3 <db.sqlite> '.schema <table>'")
+shell_exec(command="sqlite3 <db.sqlite> '.tables'")
+shell_exec(command="sqlite3 <db.sqlite> '.schema <table>'")
 
-shell.exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" -e 'SHOW TABLES;' <database>")
-shell.exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" -e 'DESCRIBE <table>;' <database>")
+shell_exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" -e 'SHOW TABLES;' <database>")
+shell_exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" -e 'DESCRIBE <table>;' <database>")
 
-shell.exec(command="psql -h <host> -U <user> -d <database> -c '\\dt'")
-shell.exec(command="psql -h <host> -U <user> -d <database> -c '\\d <table>'")
+shell_exec(command="psql -h <host> -U <user> -d <database> -c '\\dt'")
+shell_exec(command="psql -h <host> -U <user> -d <database> -c '\\d <table>'")
 ```
 
 PostgreSQL 密码用 `PGPASSWORD=$DB_PASS psql ...` 注入。
@@ -32,9 +32,9 @@ PostgreSQL 密码用 `PGPASSWORD=$DB_PASS psql ...` 注入。
 未知数据量先 LIMIT 10 验证：
 
 ```bash
-shell.exec(command="sqlite3 -header <db.sqlite> 'SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;'")
-shell.exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" -e 'SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;' <database>")
-shell.exec(command="psql -h <host> -U <user> -d <database> -c 'SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;'")
+shell_exec(command="sqlite3 -header <db.sqlite> 'SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;'")
+shell_exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" -e 'SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;' <database>")
+shell_exec(command="psql -h <host> -U <user> -d <database> -c 'SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;'")
 ```
 
 确认后再去 LIMIT 跑全量。
@@ -48,7 +48,7 @@ shell.exec(command="psql -h <host> -U <user> -d <database> -c 'SELECT <cols> FRO
 | MySQL CSV | `mysql -h <host> -u <user> -p"$DB_PASS" -B --batch -e '<select>' <db> \| sed 's/\\t/,/g' > <out.csv>` |
 | PostgreSQL CSV | `psql -h <host> -U <user> -d <db> -c "\\copy (<select>) TO '<out.csv>' WITH CSV HEADER"` |
 
-> 落盘路径：`file.write` 的允许范围由工具自身约束，调用时直接给文件名即可；CLI 重定向也尽量写到工作区下。
+> 落盘路径：`file_write` 的允许范围由工具自身约束，调用时直接给文件名即可；CLI 重定向也尽量写到工作区下。
 
 ## 写操作的影响范围预演
 
@@ -62,7 +62,7 @@ SELECT <cols> FROM <table> WHERE <cond> LIMIT 10;
 把行数 + 样例展示给用户后等确认。事务包裹示例：
 
 ```bash
-shell.exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" <database> -e 'BEGIN; UPDATE <table> SET <col>=<val> WHERE <cond>; ROLLBACK;'")
+shell_exec(command="mysql -h <host> -u <user> -p\"$DB_PASS\" <database> -e 'BEGIN; UPDATE <table> SET <col>=<val> WHERE <cond>; ROLLBACK;'")
 # 确认无误后把 ROLLBACK 改 COMMIT 重跑
 ```
 

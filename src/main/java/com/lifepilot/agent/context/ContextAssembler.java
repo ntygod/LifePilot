@@ -659,12 +659,14 @@ public class ContextAssembler {
 
     String buildReactSystemPrompt(@Nullable ReactAgentState state) {
         String roleDefinition = promptRegistry.render("agent/role-definition");
+        String contextGuide = promptRegistry.render("agent/context-guide");
         ZonedDateTime now = ZonedDateTime.now();
         String taskMode = resolveTaskMode(state);
         String systemPrompt;
         if (isTaskMode(state)) {
             systemPrompt = promptRegistry.render("agent/react-system-task", Map.of(
                     "roleDefinition", roleDefinition,
+                    "contextGuide", contextGuide,
                     "taskMode", taskMode,
                     "modeSpecificRules", buildModeSpecificRules(taskMode),
                     "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
@@ -672,7 +674,6 @@ public class ContextAssembler {
                     "locale", Locale.getDefault().toLanguageTag()
             ));
         } else {
-            String contextGuide = promptRegistry.render("agent/context-guide");
             systemPrompt = promptRegistry.render("agent/react-system", Map.of(
                     "roleDefinition", roleDefinition,
                     "contextGuide", contextGuide,
@@ -904,7 +905,7 @@ public class ContextAssembler {
         }
 
         // 追加检索提示
-        sb.append("\n    检索: 精确字段查询用 datastore(action=query)，主题/语义检索用 knowledge.search(datastoreId=%s)"
+        sb.append("\n    检索: 精确字段查询用 datastore(action=query)，主题/语义检索用 memory(datastoreId=%s)"
                 .formatted(collection.id()));
 
         return sb.toString();

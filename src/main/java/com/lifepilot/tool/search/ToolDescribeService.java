@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * {@code tools.describe} 服务：批量返回工具完整 schema。
+ * {@code tool.search} 服务：批量返回工具完整 schema。
  *
  * <p>超过批量上限时截断前 N 个并在 suggestion 字段给提示；
  * 部分 ID 找不到时同时返回 schemas 和 notFound。</p>
@@ -60,7 +60,7 @@ public class ToolDescribeService {
             return new ToolDescribeResult(
                     Map.of(),
                     List.of(),
-                    "No tool_ids provided. Pass an array of tool IDs obtained from tools.search.");
+                    "No tool_ids provided. Pass an array of tool IDs obtained from tool.search.");
         }
 
         boolean truncated = requestedIds.size() > maxBatchSize;
@@ -91,7 +91,7 @@ public class ToolDescribeService {
             suggestion = "Request exceeded batch size limit (%d). Truncated to first %d. Call describe in separate batches."
                     .formatted(maxBatchSize, maxBatchSize);
         } else if (!notFound.isEmpty()) {
-            suggestion = "Some tool_ids not found. Call tools.search to discover valid IDs.";
+            suggestion = "Some tool_ids not found. Call tool.search to discover valid IDs.";
         } else {
             suggestion = null;
         }

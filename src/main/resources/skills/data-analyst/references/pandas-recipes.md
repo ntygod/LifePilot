@@ -5,13 +5,13 @@
 大文件先采样确认列名、分隔符、编码:
 
 ```
-file.read(path="<data.csv>", maxChars=2000)
+file_read(path="<data.csv>", maxChars=2000)
 ```
 
 ## 2. 加载与探索
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 import pandas as pd
 df = pd.read_csv('<data.csv>')
 print(f'行数: {len(df)}, 列数: {len(df.columns)}')
@@ -26,7 +26,7 @@ Excel / JSON 替换为 `pd.read_excel('<x.xlsx>', sheet_name='<sheet>')` / `pd.r
 ## 3. 大文件加载(>500MB)
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 import pandas as pd
 # 选列加载
 df = pd.read_csv('<big.csv>', usecols=['<col1>', '<col2>'])
@@ -44,7 +44,7 @@ df = pd.concat(chunks, ignore_index=True)
 每步打印行数变化:
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 print(f'原 {len(df)} 行')
 df = df.dropna(subset=['<关键列>'])
 print(f'去缺失 → {len(df)} 行')
@@ -58,7 +58,7 @@ df['<数值列>'] = pd.to_numeric(df['<数值列>'], errors='coerce')
 ## 5. 统计与假设检验
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 print(df.describe())                          # 描述性统计
 print(df[['<col1>', '<col2>']].corr())        # 相关系数
 
@@ -72,7 +72,7 @@ print(f't={t:.4f}, p={p:.4f}')
 ## 6. 可视化(Agg 后端 + 中文字体)
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -93,7 +93,7 @@ print('图表已保存')
 ## 7. 导出
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 df.to_csv('<output/cleaned.csv>', index=False)
 df.to_excel('<output/cleaned.xlsx>', index=False)
 df.to_json('<output/cleaned.json>', orient='records', force_ascii=False)
@@ -103,7 +103,7 @@ df.to_json('<output/cleaned.json>', orient='records', force_ascii=False)
 ## 8. 多份对比
 
 ```python
-code.execute(language="python", kernelId="<analysis>", code="""
+code(language="python", kernelId="<analysis>", code="""
 import pandas as pd
 df_a = pd.read_csv('<a.csv>')
 df_b = pd.read_csv('<b.csv>')
@@ -121,12 +121,12 @@ print(f'共有: {merged.dropna().shape[0]}')
 多步分析共享 dataframe → 同一 `kernelId`;不传则一次性沙箱。
 
 ```
-code.kernel(action="list")                          # 看活跃 kernel
-code.kernel(action="inspect", kernelId="<id>")      # 看里面有哪些变量
-code.kernel(action="reset", kernelId="<id>")        # 状态变脏时清空重来
+code(action="list")                          # 看活跃 kernel
+code(action="inspect", kernelId="<id>")      # 看里面有哪些变量
+code(action="reset", kernelId="<id>")        # 状态变脏时清空重来
 ```
 
-`code.execute` 也支持特殊 code:`'kernel:reset'` / `'kernel:inspect'`。
+`code` 也支持特殊 code:`'kernel:reset'` / `'kernel:inspect'`。
 
 ## 错误处理表
 
@@ -135,7 +135,7 @@ code.kernel(action="reset", kernelId="<id>")        # 状态变脏时清空重�
 | `UnicodeDecodeError` | `read_csv(..., encoding='utf-8')` 或 `'gbk'` / `'gb18030'` |
 | MemoryError 加载阶段 | `chunksize=100000` 分块 + `usecols=[...]` 选列 |
 | 图表中文显示方框 | `plt.rcParams['font.sans-serif'] = ['SimHei']` 或 `WenQuanYi`;Linux 还需安装中文字体包 |
-| `ModuleNotFoundError` | `shell.exec(command="pip install openpyxl scipy seaborn")` |
+| `ModuleNotFoundError` | `shell_exec(command="pip install openpyxl scipy seaborn")` |
 | `to_excel` 失败缺引擎 | `pip install openpyxl`(.xlsx)或 `xlwt`(.xls) |
 | 相关性矩阵全 NaN | 列含字符串,先 `select_dtypes(include='number')` |
-| `kernelId` 状态混乱 | `code.kernel(action="reset", kernelId="...")` 清空重跑 |
+| `kernelId` 状态混乱 | `code(action="reset", kernelId="...")` 清空重跑 |

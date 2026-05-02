@@ -54,7 +54,10 @@ public class UiEmitToolProvider {
         return BuiltinTool.builder()
                 .id("ui.render")
                 .name("渲染交互组件")
-                .description("渲染界面组件：向前端渲染交互式 UI 组件（按钮、表单、卡片、信号灯）。纯展示用 Markdown。")
+                .description("""
+                        向前端渲染交互式 UI 组件。纯展示/说明用 Markdown 即可，不要滥用。
+                        组件类型: button(按钮) form(表单含输入框/下拉/日期选择) card(卡片含标题/内容/图片) signal(信号灯红黄绿) table(数据表格) chart(图表) progress(进度条)。
+                        components 为组件树数组，每节点含 type 和对应 properties。treeId 用于后续更新同一组件树。""")
                 .category(ToolCategory.INTERACTION)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",

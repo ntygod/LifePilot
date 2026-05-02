@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
  *   <li>命令黑名单（{@link #checkBlacklist}）— application.yml 配置的正则模式，
  *       拦截"必死"命令（rm -rf / / format C: / mkfs / shutdown / fork bomb 等），
  *       命中直接拒绝且不可配置放行</li>
- *   <li>{@link CommandGuard}（HARDLINE/DANGEROUS）— 与 code.execute 共用同一套规则集，
+ *   <li>{@link CommandGuard}（HARDLINE/DANGEROUS）— 与 code 共用同一套规则集，
  *       拦截"高风险但可配置"命令（rm -rf 子目录 / chmod -R 777 / git reset --hard / curl|sh / sudo 等），
  *       受 yolo 模式控制（DANGEROUS 可配置放行，HARDLINE 永久阻断）</li>
  *   <li>超时强制 — {@code Process.waitFor(timeout)} + {@code destroyForcibly()}</li>
@@ -122,8 +122,8 @@ public class ShellExecToolExecutor {
             return rejection;
         }
 
-        // 命令护栏检查 — 与 code.execute 统一安全模型，HARDLINE 永久阻断 / DANGEROUS 默认拒绝。
-        // 否则 AI 走 shell.exec 就能绕过 code.execute 的护栏（如 Windows PowerShell 上 rm 会被
+        // 命令护栏检查 — 与 code 统一安全模型，HARDLINE 永久阻断 / DANGEROUS 默认拒绝。
+        // 否则 AI 走 shell.exec 就能绕过 code 的护栏（如 Windows PowerShell 上 rm 会被
         // 翻译成 Remove-Item 别名直接执行）。booterType 传 null 表示非 sandbox booter，走全规则集。
         if (commandGuard != null) {
             GuardResult guardResult = commandGuard.check(command, null);
@@ -517,7 +517,7 @@ public class ShellExecToolExecutor {
     }
 
     /**
-     * 把 GuardResult 转成给 LLM/用户看的错误描述 — 复用 code.execute 同款语义。
+     * 把 GuardResult 转成给 LLM/用户看的错误描述 — 复用 code 同款语义。
      *
      * <p>HARDLINE 强调"不可恢复"，DANGEROUS 强调"危险操作"，两者都不可被 retry 解开。</p>
      */

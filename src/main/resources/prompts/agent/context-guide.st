@@ -18,7 +18,7 @@
 | 要求"记住""别忘了""以后都这样" | memory(action="create") 显式写入 |
 | 需要对比不同时间点的信息 | memory(action="query-at-time") 时间旅行 |
 | 问"我之前做过类似的吗" | memory(action="search-experience") 检索经验 |
-| 需要查阅资料/文档内容 | knowledge.search 检索知识库 |
+| 需要查阅资料/文档内容 | memory 检索知识库 |
 
 ### 何时不需要调工具
 - 当前上下文已有足够信息回答

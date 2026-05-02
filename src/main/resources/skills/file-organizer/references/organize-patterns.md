@@ -7,10 +7,10 @@
 ### 1. 了解现状
 
 ```
-file.list(action="list", path="<目标目录>", maxDepth=3)            # 看目录树
-file.list(action="list", path="<目标目录>", pattern="*.pdf")        # glob 过滤
-file.list(action="info", path="<某文件>")                           # 看大小/修改时间
-file.list(action="search", path="<目标目录>", filePattern="*.log",
+file_list(action="list", path="<目标目录>", maxDepth=3)            # 看目录树
+file_list(action="list", path="<目标目录>", pattern="*.pdf")        # glob 过滤
+file_list(action="info", path="<某文件>")                           # 看大小/修改时间
+file_list(action="search", path="<目标目录>", filePattern="*.log",
           pattern="<内容正则>")                                      # 按内容找
 ```
 
@@ -32,34 +32,34 @@ file.list(action="search", path="<目标目录>", filePattern="*.log",
 
 ### 3. 用户确认 → 执行
 
-跨平台优先 `file.manage`：
+跨平台优先 `file_manage`：
 
 ```
-file.manage(action="mkdir", path="<新建目录>")
-file.manage(action="move",
+file_manage(action="mkdir", path="<新建目录>")
+file_manage(action="move",
             source="<原路径>",
             destination="<新路径>",
             overwrite=false)
-file.manage(action="copy",
+file_manage(action="copy",
             source="<原路径>",
             destination="<备份路径>",
             recursive=true)
-file.manage(action="delete",
+file_manage(action="delete",
             path="<要删的路径>",
             recursive=true)
 ```
 
-仅当 `file.manage` 不能表达（如 robocopy 增量、xcopy 特殊参数）才用 `shell.exec`，并按平台拆分：
+仅当 `file_manage` 不能表达（如 robocopy 增量、xcopy 特殊参数）才用 `shell_exec`，并按平台拆分：
 
 ```
-shell.exec(command="<windows 命令>", shell="cmd")      # 例: dir / robocopy
-shell.exec(command="<linux/mac 命令>", shell="bash")   # 例: rsync
+shell_exec(command="<windows 命令>", shell="cmd")      # 例: dir / robocopy
+shell_exec(command="<linux/mac 命令>", shell="bash")   # 例: rsync
 ```
 
 ### 4. 验证结果
 
 ```
-file.list(action="list", path="<目标目录>", maxDepth=2)
+file_list(action="list", path="<目标目录>", maxDepth=2)
 ```
 
 跟用户口述本次实际改了多少 / 跳过多少。
@@ -81,10 +81,10 @@ file.list(action="list", path="<目标目录>", maxDepth=2)
 
 ```
 # 步骤
-1. file.list 找匹配文件 → 列出旧名
+1. file_list 找匹配文件 → 列出旧名
 2. 按规则计算新名 → 输出旧→新映射给用户对
-3. 用户确认 → 循环 file.manage(action="move") 改名
-4. file.write 落 rename-map.json 到目录内备查
+3. 用户确认 → 循环 file_manage(action="move") 改名
+4. file_write 落 rename-map.json 到目录内备查
 ```
 
 新名规则示例：序号补零 (`IMG_{0001..n}.jpg`)、加日期前缀 (`<yyyy-MM-dd>_<原名>`)、按 EXIF 拍摄日。
@@ -93,22 +93,22 @@ file.list(action="list", path="<目标目录>", maxDepth=2)
 
 ```
 # 步骤
-1. file.list(action="list", path="<目录>", maxDepth=N) → 列文件清单
-2. file.list(action="info", path=...) 拿 size，size 相同的进入下一步
-3. 用 shell.exec 算 md5/sha1：
-   shell.exec(command="certutil -hashfile <path> MD5", shell="cmd")  # Windows
-   shell.exec(command="md5sum <path>", shell="bash")                  # Linux/Mac
+1. file_list(action="list", path="<目录>", maxDepth=N) → 列文件清单
+2. file_list(action="info", path=...) 拿 size，size 相同的进入下一步
+3. 用 shell_exec 算 md5/sha1：
+   shell_exec(command="certutil -hashfile <path> MD5", shell="cmd")  # Windows
+   shell_exec(command="md5sum <path>", shell="bash")                  # Linux/Mac
 4. 同 hash 归一组 → 输出每组保留哪份的建议（最早 / 路径最规范的）
-5. 用户决定 → file.manage(action="move") 把多余的挪到 trash
+5. 用户决定 → file_manage(action="move") 把多余的挪到 trash
 ```
 
 ### 磁盘空间分析
 
 ```
 # Windows
-shell.exec(command="dir <path> /s /-c | findstr 个文件", shell="cmd")
+shell_exec(command="dir <path> /s /-c | findstr 个文件", shell="cmd")
 # Linux/Mac
-shell.exec(command="du -sh <path>/*", shell="bash")
+shell_exec(command="du -sh <path>/*", shell="bash")
 ```
 
 按大小降序输出 Top N 给用户看，再问要不要清理。
@@ -116,9 +116,9 @@ shell.exec(command="du -sh <path>/*", shell="bash")
 ### 旧文件清理（按 mtime）
 
 ```
-1. file.list(action="info", path=...) 收集 lastModified
+1. file_list(action="info", path=...) 收集 lastModified
 2. 筛 lastModified < 当前 - 30 天 的文件 → 列预览
-3. 用户确认 → file.manage(action="move") 到
+3. 用户确认 → file_manage(action="move") 到
    <操作目录>/.trash/<yyyy-MM-dd>/ （保留 7-30 天再清）
 ```
 
@@ -131,4 +131,4 @@ shell.exec(command="du -sh <path>/*", shell="bash")
 | `路径过长`（Windows MAX_PATH） | 缩短目录层级或用 `\\?\` 长路径前缀 |
 | `文件被占用` | 提示用户关闭占用程序后重试，不强删 |
 | `磁盘空间不足` | 移动操作改成同盘内 rename；跨盘换成先 copy 再 delete 不可行时停下问 |
-| 用户中途反悔 | 按 `rename-map.json` 反向 `file.manage(action="move")` 回滚 |
+| 用户中途反悔 | 按 `rename-map.json` 反向 `file_manage(action="move")` 回滚 |

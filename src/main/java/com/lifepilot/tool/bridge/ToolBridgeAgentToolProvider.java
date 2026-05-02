@@ -42,7 +42,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     /** Meta 工具 ID 集合 — 始终可见于 prompt，供 LLM 发现更多能力。 */
     private static final Set<String> META_TOOL_IDS =
-            Set.of("tools.search", "tools.describe");
+            Set.of("tool.search", "tool.search");
 
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;
@@ -187,7 +187,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
         context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
-        // 把 state 直接放进 context，供 meta 工具（tools.search/describe/list）的 executor 读取
+        // 把 state 直接放进 context，供 meta 工具（tool.search/describe/list）的 executor 读取
         context.put(ToolContextKeys.CALLER_STATE, state);
 
         ToolDefinition definition = DefaultToolDefinition.builder()
@@ -357,7 +357,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else if (result.ok()) {
             output = toJsonValue(result.data());
         } else if (hasNonEmptyData(result)) {
-            // 失败但 data 非空（如 code.execute / shell.exec 在 exitCode!=0 时带 stdout/stderr），
+            // 失败但 data 非空（如 code / shell.exec 在 exitCode!=0 时带 stdout/stderr），
             // 必须把 data 也透给 LLM，否则 AI 只看到"代码执行失败 exitCode=1"无法 debug
             output = "{\"data\":" + toJsonValue(result.data())
                     + ",\"error\":\"" + escapeJson(result.error())

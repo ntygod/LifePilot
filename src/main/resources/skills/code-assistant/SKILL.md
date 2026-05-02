@@ -1,6 +1,6 @@
 ---
 name: code-assistant
-description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini）完成多文件开发、修 bug、跨模块重构、PR 审查、并行任务分发等需要后台 Agent 执行的复杂编码任务时使用。关键词：写代码、开发功能、修 bug、修复 bug、重构、代码审查、PR 审查、后台跑、编码 Agent、并行审查、并行开发、Claude Code、Codex。单文件小改直接用 file.write/file.edit,仅读代码用 file.read,跑脚本用 shell.exec 或 code.execute。
+description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini）完成多文件开发、修 bug、跨模块重构、PR 审查、并行任务分发等需要后台 Agent 执行的复杂编码任务时使用。
 version: 2.9.0
 metadata:
   zhiwei:
@@ -14,15 +14,15 @@ metadata:
       - code-review
       - orchestration
     suggested_tools:
-      - shell.exec
-      - shell.process
-      - code.execute
-      - file.read
-      - file.write
-      - file.list
-      - file.edit
-      - git.query
-      - git.mutate
+      - shell_exec
+      - shell_process
+      - code
+      - file_read
+      - file_write
+      - file_list
+      - file_edit
+      - shell_exec
+      - shell_exec
 ---
 
 # 编码代理指南
@@ -40,9 +40,9 @@ metadata:
 
 ## 不适用场景
 
-- 单文件小改 → `file.edit`
-- 仅读代码 → `file.read`
-- 跑脚本 → `shell.exec` / `code.execute`
+- 单文件小改 → `file_edit`
+- 仅读代码 → `file_read`
+- 跑脚本 → `shell_exec` / `code`
 
 ## 工作流（按用户表达分流）
 
@@ -52,7 +52,7 @@ metadata:
 | 实现 + 审查 / 设计 + 实现 | 串行编排,前序产物喂后序 |
 | 多 issue / 多方案对比 | 并行编排,各自独立 worktree |
 | 审查→修→再审查 | 反馈环,硬上限 ≤2 轮 |
-| "上次跑到哪了" / "还在跑吗" | `shell.process(action="list")` 列既有 sessionId,定位再决定看 / 杀 |
+| "上次跑到哪了" / "还在跑吗" | `shell_process(action="list")` 列既有 sessionId,定位再决定看 / 杀 |
 
 ## 各路径决策点（本 Skill 独有）
 

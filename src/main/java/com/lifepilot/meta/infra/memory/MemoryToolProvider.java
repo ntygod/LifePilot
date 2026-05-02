@@ -48,7 +48,7 @@ import java.util.*;
 /**
  * 记忆管理工具提供者。
  *
- * <p>集中管理两个元能力工具：memory / knowledge.search。</p>
+ * <p>集中管理两个元能力工具：memory / memory。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -117,9 +117,6 @@ public class MemoryToolProvider {
                 memoryProperties
         );
         tools.add(buildMemoryTool(memoryExecutor));
-        if (documentRetriever != null && (sessionKnowledgeScopeResolver != null || sessionKbRepo != null)) {
-            tools.add(buildKnowledgeSearchTool());
-        }
         return List.copyOf(tools);
     }
 
@@ -128,7 +125,7 @@ public class MemoryToolProvider {
                 .id("memory")
                 .category(ToolCategory.ACTION)
                 .name("记忆管理")
-                .description("搜索并管理用户长期记忆。action 控制具体语义：search/recall/create/update/delete/cancel/complete/supersede/tag/query-at-time/search-experience。资料文档检索请用 knowledge.search。")
+                .description("搜索并管理用户长期记忆。action 控制具体语义：search/recall/create/update/delete/cancel/complete/supersede/tag/query-at-time/search-experience。资料文档检索请用 memory。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -161,6 +158,18 @@ public class MemoryToolProvider {
                                 Map.entry("strength", Map.of("type", "number", "description", "tag 关系强度 0.0-1.0，默认 0.5")),
                                 Map.entry("timestamp", Map.of("type", "string", "description", "query-at-time 的 ISO 8601 时间戳")),
                                 Map.entry("successOnly", Map.of("type", "boolean", "description", "search-experience 仅返回成功经验，默认 false"))
+                        ),
+                        "dependentRequired", Map.of(
+                                "search", List.of("query"),
+                                "recall", List.of("query"),
+                                "create", List.of("name", "entityType"),
+                                "update", List.of("entityId"),
+                                "delete", List.of("entityId"),
+                                "complete", List.of("entityId"),
+                                "supersede", List.of("entityId", "new_entity_id"),
+                                "tag", List.of("sourceEntityId", "targetEntityId"),
+                                "query-at-time", List.of("timestamp"),
+                                "search-experience", List.of("query")
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
@@ -173,61 +182,6 @@ public class MemoryToolProvider {
                         "memory", "recall", "remember", "search", "cancel", "create", "update", "delete"))
                 .actionMetadataFrom(executor)
                 .executor(executor)
-                .build();
-    }
-
-    private BuiltinTool buildKnowledgeSearchTool() {
-        int defaultTopK = memoryProperties != null
-                ? memoryProperties.getAgenticTool().getDocsDefaultTopK() : 5;
-        return BuiltinTool.builder()
-                .id("knowledge.search")
-                .name("检索资料")
-                .description("按语义检索当前会话绑定的资料文档。实体用 memory(action=search)，对话历史用 memory(action=recall)。")
-                .category(ToolCategory.PERCEPTION)
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("query"),
-                        "properties", Map.of(
-                                "query", Map.of("type", "string", "description", "搜索关键词或自然语言问题"),
-                                "top_k", Map.of("type", "integer", "description", "返回数量，默认 " + defaultTopK),
-                                "datastoreId", Map.of("type", "string", "description", "指定检索的数据空间 ID，不传则检索会话绑定的所有数据空间")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
-                .tags(List.of("资料", "文档", "知识库", "检索", "搜索", "rag", "knowledge", "search"))
-                .executor(input -> {
-                    try {
-                        String query = input.getParam("query", String.class);
-                        int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
-                        String datastoreId = input.getOptionalParam("datastoreId", String.class).orElse(null);
-                        String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
-                        if (sessionId == null) {
-                            return ToolResult.success(Map.of(
-                                    "message", "无法获取当前会话 ID", "results", List.of(), "count", 0));
-                        }
-                        List<KnowledgeSearchScope> scopes = resolveKnowledgeScopes(sessionId);
-                        if (scopes.isEmpty()) {
-                            return ToolResult.success(Map.of(
-                                    "message", "当前会话未绑定知识库或 datastore", "results", List.of(), "count", 0));
-                        }
-                        if (datastoreId != null && !datastoreId.isBlank()) {
-                            scopes = scopes.stream()
-                                    .filter(s -> datastoreId.equals(s.datastoreId()))
-                                    .toList();
-                            if (scopes.isEmpty()) {
-                                return ToolResult.success(Map.of("results", List.of(),
-                                        "message", "当前会话未绑定指定的数据空间: " + datastoreId));
-                            }
-                        }
-                        List<DocumentSearchResult> results = documentRetriever.retrieveByScopes(query, scopes, topK);
-                        List<Map<String, Object>> items = results.stream().map(this::docSearchResultToMap).toList();
-                        return ToolResult.success(Map.of("results", items, "count", items.size()));
-                    } catch (Exception e) {
-                        log.error("检索资料失败: {}", e.getMessage(), e);
-                        return ToolResult.error("检索资料失败: " + e.getMessage());
-                    }
-                })
                 .build();
     }
 

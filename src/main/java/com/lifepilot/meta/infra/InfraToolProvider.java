@@ -14,20 +14,16 @@ import com.lifepilot.meta.infra.browser.InteractiveElementIndexer;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.meta.infra.channel.ChannelToolProvider;
 import com.lifepilot.meta.infra.code.CodeToolProvider;
-import com.lifepilot.meta.infra.code.kernel.CodeKernelToolProvider;
 import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
-import com.lifepilot.meta.infra.git.GitCommandExecutor;
-import com.lifepilot.meta.infra.git.GitToolProvider;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.shell.ShellToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
 import com.lifepilot.meta.infra.attachment.AttachmentToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
-import com.lifepilot.meta.infra.transcript.TranscriptToolProvider;
 import com.lifepilot.meta.infra.interaction.NotifyToolProvider;
 import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
@@ -166,22 +162,6 @@ public class InfraToolProvider {
         var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, skillPathWhitelist);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
-        // Transcript 检索工具 —— 让 LLM 主动取压缩前的历史工具调用结果，避免重跑
-        if (sessionTranscriptRepository != null) {
-            var transcriptToolProvider = new TranscriptToolProvider(sessionTranscriptRepository);
-            totalTools += registerBuiltinTools(toolRegistry, transcriptToolProvider.buildTranscriptTools());
-        } else {
-            log.warn("SessionTranscriptRepository 不可用（如非 Web 上下文），跳过 transcript 工具注册");
-        }
-
-        // 附件登记工具 —— LLM 把工具产物（图片/docx/pdf）挂载为对话附件
-        if (attachmentRepository != null) {
-            var attachmentToolProvider = new AttachmentToolProvider(attachmentRepository, workspaceResolver);
-            totalTools += registerBuiltinTools(toolRegistry, attachmentToolProvider.buildAttachmentTools());
-        } else {
-            log.warn("AttachmentRepository 不可用，跳过附件登记工具注册");
-        }
-
         // 通知工具
         if (notificationService != null && notificationProperties != null) {
             var notifyToolProvider = new NotifyToolProvider(notificationService, notificationProperties);
@@ -209,18 +189,6 @@ public class InfraToolProvider {
             log.warn("渠道组件不完整，跳过通用渠道工具注册");
         }
 
-        // Git 工具
-        var gitConfig = properties.getInfra().getGit();
-        if (gitConfig.isEnabled()) {
-            var gitCmd = new GitCommandExecutor(gitConfig);
-            if (gitCmd.isGitAvailable()) {
-                var gitToolProvider = new GitToolProvider(gitCmd, gitConfig);
-                totalTools += registerBuiltinTools(toolRegistry, gitToolProvider.buildGitTools());
-            } else {
-                log.warn("git 不可用，跳过 Git 工具注册");
-            }
-        }
-
         // 提前创建 tmuxSessionManager，供 Shell 工具与代码内核共用
         TmuxSessionManager tmuxSessionManager = null;
         var shellSessionConfig = properties.getInfra().getShellSession();
@@ -239,7 +207,7 @@ public class InfraToolProvider {
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 
         // 代码执行工具 — kernel 与 sandbox 共享同一捆绑 Python 路径
-        // 仅在 PythonRuntimeManager 可用（lifepilot.sandbox.enabled=true）时注册 code.execute 与 code.kernel：
+        // 仅在 PythonRuntimeManager 可用（lifepilot.sandbox.enabled=true）时注册 code 与 code：
         // sandbox 禁用时 SandboxAutoConfiguration 不注册 PythonRuntimeManager bean，
         // 此时强行构建 PersistentKernelManager 会触发 Objects.requireNonNull NPE，
         // 让整个 Spring Context 启动失败 —— 对面向大众用户的产品不可接受。
@@ -255,14 +223,9 @@ public class InfraToolProvider {
                     kernelManager, pythonRuntimeManager, commandGuard);
             totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
 
-            // 代码内核管理工具（list / reset / inspect），仅在 kernel 启用时注册
-            if (kernelManager != null) {
-                var kernelToolProvider = new CodeKernelToolProvider(kernelManager);
-                totalTools += registerBuiltinTools(toolRegistry, kernelToolProvider.buildKernelTools());
-            }
         } else {
             log.info("Sandbox 已禁用（lifepilot.sandbox.enabled=false 或 PythonRuntimeManager bean 不可用），"
-                    + "跳过代码执行（code.execute）与内核管理（code.kernel）工具注册");
+                    + "跳过代码执行（code）与内核管理（code）工具注册");
         }
 
         log.info("基础工具注册完成: count={}", totalTools);

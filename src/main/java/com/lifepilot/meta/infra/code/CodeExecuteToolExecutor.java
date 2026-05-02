@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * {@link MetaProperties.Infra.CodeExecute#getDefaultLanguage()} 读取。
  * 集成 {@link CodeValidator} 预检和 {@link SandboxRepository} 审计持久化。</p>
  *
- * <p>当请求中包含 {@code kernelId} 参数且 {@link PersistentKernelManager} 可用时，
+ * <p>当请求中包含 {@codeId} 参数且 {@link PersistentKernelManager} 可用时，
  * 路由到持久内核执行（跨调用保持变量状态）；否则走原有沙箱路径。</p>
  *
  * <p>执行流程：参数提取 → 内核路由判断 → 会话沙箱获取 → 预检（如有 CodeValidator）→ 执行 → 审计持久化 → 返回结果。</p>

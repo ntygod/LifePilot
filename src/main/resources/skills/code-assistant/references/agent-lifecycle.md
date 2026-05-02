@@ -3,8 +3,8 @@
 ## 1. 启动前验证 CLI
 
 ```
-shell.exec(command="claude --version")
-shell.exec(command="claude /status")
+shell_exec(command="claude --version")
+shell_exec(command="claude /status")
 ```
 
 - 未安装 → 提示用户 `npm install -g @anthropic-ai/claude-code`,**不代装**
@@ -14,7 +14,7 @@ shell.exec(command="claude /status")
 ## 2. 启动单 Agent
 
 ```
-shell.exec(
+shell_exec(
   command="claude -p '<任务描述>' --output-format stream-json --permission-mode acceptEdits",
   workingDirectory="<worktree 绝对路径>",
   background=true
@@ -24,7 +24,7 @@ shell.exec(
 启动后**立即**调一次 `output` 验启动:
 
 ```
-shell.process(action="output", sessionId="<sessionId>")
+shell_process(action="output", sessionId="<sessionId>")
 ```
 
 | 看到什么 | 含义 |
@@ -36,7 +36,7 @@ shell.process(action="output", sessionId="<sessionId>")
 ## 3. 监控轮询(间隔 5-15 秒)
 
 ```
-shell.process(action="output", sessionId="<sessionId>")
+shell_process(action="output", sessionId="<sessionId>")
 ```
 
 每轮检查:
@@ -53,9 +53,9 @@ shell.process(action="output", sessionId="<sessionId>")
 |---|---|
 | `exitCode=0` | 读 `lastResult` + `git diff --stat` 给汇报 |
 | `exitCode≠0` | 读完整 output 与 stderr 排查 |
-| 连续 2-3 轮无输出增量 | 必要时 `shell.process(action="kill", sessionId=...)` 重启 |
+| 连续 2-3 轮无输出增量 | 必要时 `shell_process(action="kill", sessionId=...)` 重启 |
 | 已完成的进程 | 不需要主动 kill(后端 30 分钟自动清理) |
-| 想看全部在跑的 | `shell.process(action="list")`(无需 sessionId) |
+| 想看全部在跑的 | `shell_process(action="list")`(无需 sessionId) |
 
 ## 5. 编排三种模式
 

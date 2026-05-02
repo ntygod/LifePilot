@@ -61,7 +61,10 @@ public class WebToolProvider {
                 .id("web.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
-                .description("用关键词搜互联网，返回标题/URL/摘要。需要完整页面内容用 web.fetch。")
+                .description("""
+                        用关键词搜互联网，返回标题/URL/摘要。需要完整页面内容用 web_fetch，实时信息/新闻用 web_search 先搜再 fetch。
+                        无按时间过滤参数——时效搜索在 query 中加年份或"最新""近期"等关键词。maxResults 控制返回数，offset 分页翻页。
+                        搜不到时换英文关键词或不同表述重试。""")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),

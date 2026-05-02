@@ -3,9 +3,9 @@
 ## 依赖检查与安装提示
 
 ```
-shell.exec(command="pandoc --version")
-shell.exec(command="pdftotext -v")
-code.execute(language="python", code="import docx; print(docx.__version__)")
+shell_exec(command="pandoc --version")
+shell_exec(command="pdftotext -v")
+code(language="python", code="import docx; print(docx.__version__)")
 ```
 
 不存在时给用户对应平台命令,**不自行安装**:
@@ -22,25 +22,25 @@ code.execute(language="python", code="import docx; print(docx.__version__)")
 各种互转一行命令:
 
 ```
-shell.exec(command="pandoc <input.md> -o <output.html> --standalone")
-shell.exec(command="pandoc <input.md> -o <output.docx>")
-shell.exec(command="pandoc <input.md> -o <output.pdf> --pdf-engine=wkhtmltopdf")
-shell.exec(command="pandoc <input.html> -t markdown -o <output.md>")
-shell.exec(command="pandoc <part1.md> <part2.md> -o <combined.pdf>")  # 多输入合并
+shell_exec(command="pandoc <input.md> -o <output.html> --standalone")
+shell_exec(command="pandoc <input.md> -o <output.docx>")
+shell_exec(command="pandoc <input.md> -o <output.pdf> --pdf-engine=wkhtmltopdf")
+shell_exec(command="pandoc <input.html> -t markdown -o <output.md>")
+shell_exec(command="pandoc <part1.md> <part2.md> -o <combined.pdf>")  # 多输入合并
 ```
 
 ## PDF 处理
 
 ```
-shell.exec(command="pdftotext <input.pdf> <output.txt>")        # 文本提取
-shell.exec(command="pdfinfo <input.pdf>")                       # 元数据
-shell.exec(command="qpdf --decrypt --password=<pwd> <in.pdf> <out.pdf>")  # 解密
+shell_exec(command="pdftotext <input.pdf> <output.txt>")        # 文本提取
+shell_exec(command="pdfinfo <input.pdf>")                       # 元数据
+shell_exec(command="qpdf --decrypt --password=<pwd> <in.pdf> <out.pdf>")  # 解密
 ```
 
 Python 路径(库已装且需要更精细控制):
 
 ```python
-code.execute(language="python", code="""
+code(language="python", code="""
 from pypdf import PdfReader
 reader = PdfReader('<input.pdf>')
 for page in reader.pages:
@@ -51,7 +51,7 @@ for page in reader.pages:
 ## 生成 Word
 
 ```python
-code.execute(language="python", code="""
+code(language="python", code="""
 from docx import Document
 doc = Document()
 doc.add_heading('<标题>', 0)
@@ -66,7 +66,7 @@ doc.save('<output.docx>')
 ## 生成 Excel
 
 ```python
-code.execute(language="python", code="""
+code(language="python", code="""
 import openpyxl
 wb = openpyxl.Workbook()
 ws = wb.active
@@ -81,7 +81,7 @@ wb.save('<output.xlsx>')
 读取 Excel:
 
 ```python
-code.execute(language="python", code="""
+code(language="python", code="""
 import openpyxl
 wb = openpyxl.load_workbook('<data.xlsx>')
 ws = wb.active
@@ -93,7 +93,7 @@ for row in ws.iter_rows(values_only=True):
 ## 生成 PowerPoint
 
 ```python
-code.execute(language="python", code="""
+code(language="python", code="""
 from pptx import Presentation
 prs = Presentation()
 
@@ -119,7 +119,7 @@ prs.save('<output.pptx>')
 shell 循环单文件转换:
 
 ```
-shell.exec(command="for f in <docs>/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" --standalone; done")
+shell_exec(command="for f in <docs>/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" --standalone; done")
 ```
 
 复杂批量(分目录、改名规则)用 Python 调子进程更可控。
@@ -129,7 +129,7 @@ shell.exec(command="for f in <docs>/*.md; do pandoc \"$f\" -o \"${f%.md}.html\" 
 生成后必读取确认格式正常:
 
 ```
-file.read(path="<output.html>", maxChars=5000)
+file_read(path="<output.html>", maxChars=5000)
 ```
 
 ## 错误处理表
@@ -140,4 +140,4 @@ file.read(path="<output.html>", maxChars=5000)
 | `Cannot decode byte` 编码错 | pandoc 加 `--from markdown+utf8`,Python 读 Excel 加 `encoding='utf-8'` 或 `'gbk'` |
 | PDF 加密读取失败 | 让用户给密码,或 `qpdf --decrypt` 预处理 |
 | 复杂格式转换样式丢失 | 先转一页预览,确认可接受再批量 |
-| `exitCode=0` 但输出异常 | 库版本兼容性问题;`file.read` 抽样 + 换库版本 |
+| `exitCode=0` 但输出异常 | 库版本兼容性问题;`file_read` 抽样 + 换库版本 |

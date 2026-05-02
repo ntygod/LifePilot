@@ -14,7 +14,7 @@
 ## 定位日志文件
 
 ```
-file.list(action="list", path="<log-dir>", pattern="*.log", maxDepth=2)
+file_list(action="list", path="<log-dir>", pattern="*.log", maxDepth=2)
 ```
 
 ## 快速扫错
@@ -23,25 +23,25 @@ file.list(action="list", path="<log-dir>", pattern="*.log", maxDepth=2)
 
 ```bash
 # 尾部最近异常
-shell.exec(command="powershell -c \"Get-Content <log> -Tail 500 | Select-String 'ERROR|FATAL|Exception'\"")
+shell_exec(command="powershell -c \"Get-Content <log> -Tail 500 | Select-String 'ERROR|FATAL|Exception'\"")
 # 全文扫描（小文件 < 100MB）
-shell.exec(command="powershell -c \"Select-String -Path <log> -Pattern '<pattern>' -Context 0,5\"")
+shell_exec(command="powershell -c \"Select-String -Path <log> -Pattern '<pattern>' -Context 0,5\"")
 ```
 
 ### Linux bash
 
 ```bash
 # 全文扫描带前后 5 行上下文
-shell.exec(command="grep -nE 'ERROR|FATAL|Exception' <log> -A 5 -B 1 | head -200")
+shell_exec(command="grep -nE 'ERROR|FATAL|Exception' <log> -A 5 -B 1 | head -200")
 # 多文件一次扫
-shell.exec(command="grep -rnE 'ERROR|FATAL' <log-dir>/ -C 3")
+shell_exec(command="grep -rnE 'ERROR|FATAL' <log-dir>/ -C 3")
 ```
 
 ## 大文件按段读
 
 ```
-file.read(path="<log>", startLine=10000, endLine=10500)
-file.read(path="<log>", maxChars=30000)
+file_read(path="<log>", startLine=10000, endLine=10500)
+file_read(path="<log>", maxChars=30000)
 ```
 
 不要一次性读整个大日志文件，先 `wc -l <log>` 看行数再分段。
@@ -54,15 +54,15 @@ file.read(path="<log>", maxChars=30000)
 
 ```bash
 # 只看 4-25 14 点
-shell.exec(command="grep '^2026-04-25 14:' <log> | grep -E 'ERROR|Exception'")
+shell_exec(command="grep '^2026-04-25 14:' <log> | grep -E 'ERROR|Exception'")
 # 一段时间窗口
-shell.exec(command="awk '/^2026-04-25 14:00/,/^2026-04-25 16:00/' <log>")
+shell_exec(command="awk '/^2026-04-25 14:00/,/^2026-04-25 16:00/' <log>")
 ```
 
 ### Windows
 
 ```bash
-shell.exec(command="powershell -c \"Get-Content <log> | Select-String '^2026-04-25 14:' | Select-String 'ERROR'\"")
+shell_exec(command="powershell -c \"Get-Content <log> | Select-String '^2026-04-25 14:' | Select-String 'ERROR'\"")
 ```
 
 ## 错误频率统计（Top N）
@@ -71,15 +71,15 @@ shell.exec(command="powershell -c \"Get-Content <log> | Select-String '^2026-04-
 
 ```bash
 # 提取错误关键字段排序
-shell.exec(command="grep 'ERROR' <log> | awk -F'ERROR' '{print $2}' | awk '{print $1,$2,$3}' | sort | uniq -c | sort -rn | head -20")
+shell_exec(command="grep 'ERROR' <log> | awk -F'ERROR' '{print $2}' | awk '{print $1,$2,$3}' | sort | uniq -c | sort -rn | head -20")
 # 异常类名 Top
-shell.exec(command="grep -oE '[A-Z][a-zA-Z]+Exception' <log> | sort | uniq -c | sort -rn | head -20")
+shell_exec(command="grep -oE '[A-Z][a-zA-Z]+Exception' <log> | sort | uniq -c | sort -rn | head -20")
 ```
 
 ### Windows
 
 ```bash
-shell.exec(command="powershell -c \"Get-Content <log> | Select-String 'ERROR' | ForEach-Object { ($_.Line -split 'ERROR')[1].Substring(0,[Math]::Min(80,$_.Line.Length-($_.Line.IndexOf('ERROR')+5))) } | Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
+shell_exec(command="powershell -c \"Get-Content <log> | Select-String 'ERROR' | ForEach-Object { ($_.Line -split 'ERROR')[1].Substring(0,[Math]::Min(80,$_.Line.Length-($_.Line.IndexOf('ERROR')+5))) } | Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count,Name\"")
 ```
 
 ## 完整堆栈追踪
@@ -88,9 +88,9 @@ shell.exec(command="powershell -c \"Get-Content <log> | Select-String 'ERROR' | 
 
 ```bash
 # Linux
-shell.exec(command="grep -A 30 'Caused by' <log> | head -100")
+shell_exec(command="grep -A 30 'Caused by' <log> | head -100")
 # Windows
-shell.exec(command="powershell -c \"Select-String -Path <log> -Pattern 'Caused by' -Context 0,30\"")
+shell_exec(command="powershell -c \"Select-String -Path <log> -Pattern 'Caused by' -Context 0,30\"")
 ```
 
 ## 脱敏正则（输出前必须处理）
@@ -136,7 +136,7 @@ shell.exec(command="powershell -c \"Select-String -Path <log> -Pattern 'Caused b
 | 现象 | 应对 |
 |------|------|
 | 文件 > 1GB | `tail -10000` 取尾部，再按时间窗口缩 |
-| 编码错误（GBK / GB2312） | `file.read(encoding="GBK")` 或 `iconv -f gbk -t utf-8` |
+| 编码错误（GBK / GB2312） | `file_read(encoding="GBK")` 或 `iconv -f gbk -t utf-8` |
 | 时间格式不规范 | 先 `head -20` 采样确认前缀 |
-| 跨多文件分析（rotation） | `file.list` 先列文件，再按修改时间倒序选 |
-| 实时滚动需求 | 不在本 Skill 范围，用 cron-scheduler + shell.exec 起定时任务 |
+| 跨多文件分析（rotation） | `file_list` 先列文件，再按修改时间倒序选 |
+| 实时滚动需求 | 不在本 Skill 范围，用 cron-scheduler + shell_exec 起定时任务 |

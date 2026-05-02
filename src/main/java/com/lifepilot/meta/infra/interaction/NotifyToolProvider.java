@@ -48,10 +48,13 @@ public class NotifyToolProvider {
     /** 构建通知工具。 */
     private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("notify.send_message")
+                .id("notify")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
-                .description("推送通知：发送提醒、消息、告警到当前渠道用户。对话内回复直接说就行，不用本工具。")
+                .description("""
+                        向当前渠道用户推送通知（飞书/钉钉/企微等）。对话内的正常回复直接说就行，不要调用本工具。
+                        用于：异步任务完成通知、定时提醒、告警、长时间执行的中间进度。
+                        message 支持 Markdown。channel 参数省略时使用当前会话渠道。""")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("message"),

@@ -156,7 +156,7 @@ public final class ReflectContentBuilder {
                 }
                 case "web.search" -> "web.search(" + truncate(textField(root, "query"), 30) + ")";
                 case "web.fetch" -> "web.fetch(" + truncate(textField(root, "url"), 40) + ")";
-                case "code.execute" -> "code.execute(" + textFieldOr(root, "language", "python") + ")";
+                case "code" -> "code(" + textFieldOr(root, "language", "python") + ")";
                 case "file.write" -> "file.write(" + truncate(textField(root, "path"), 30) + ")";
                 case "file.read" -> {
                     String attachmentId = textField(root, "attachmentId");

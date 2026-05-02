@@ -7,8 +7,8 @@
 ```
 按"定义 → 类比 → 核心要点 → 简短示例"四段输出
    ↓ 概念有上下游依赖时
-knowledge.search(query="<前置概念>")             已绑知识库时优先
-web.search(query="<概念> 入门")                  无知识库时
+memory(query="<前置概念>")             已绑知识库时优先
+web_search(query="<概念> 入门")                  无知识库时
    ↓ 末尾点 1-2 个高频误区
 ```
 
@@ -21,7 +21,7 @@ web.search(query="<概念> 入门")                  无知识库时
 ```
 类比（贴日常事物）→ 拆解机制（分步骤说怎么跑的）→ 对比相近概念（X vs Y 的关键差异）
    ↓ 必要时
-code.execute(language="<lang>", code="<最小演示>")  跑出可见输出
+code(language="<lang>", code="<最小演示>")  跑出可见输出
 ```
 
 硬约束：对比 X vs Y 时，必须把"什么场景选 X / 什么场景选 Y"说清楚，不能只罗列差异。
@@ -31,7 +31,7 @@ code.execute(language="<lang>", code="<最小演示>")  跑出可见输出
 判据：用户想要可运行的、看得到输出的示例。
 
 ```
-code.execute(language="python", code="""
+code(language="python", code="""
 # 示例：<演示什么概念>
 <最小可运行代码>
 print(<可见输出>)
@@ -39,7 +39,7 @@ print(<可见输出>)
    ↓ 输出后讲解关键行
 ```
 
-硬约束：**必须**用 `code.execute` 跑，不要只贴静态代码。输出要 print 出来让用户看到结果。
+硬约束：**必须**用 `code` 跑，不要只贴静态代码。输出要 print 出来让用户看到结果。
 
 ## 4. "出几道题 / 我做做"（练习引导）
 
@@ -96,19 +96,19 @@ memory(action="update", entityId="<上面 GOAL 的 id>", description="已完成 
 
 | 工具 | 用途 |
 |---|---|
-| `code.execute(language=..., code=...)` | 跑可运行示例，输出可见 |
-| `code.execute(kernelId="lesson-<topic>", code=...)` | 同一节课跨调用保留变量（避免每次重导库） |
-| `web.search(query=...)` | 找外部学习资源（教程 / 文档） |
-| `knowledge.search(query=...)` | 已绑知识库时优先用 |
-| `file.read(path=...)` | 读用户给的代码文件 / 教材片段 |
-| `file.write(path=..., content=...)` | 长教程 / 路径文档落盘 |
+| `code(language=..., code=...)` | 跑可运行示例，输出可见 |
+| `code(kernelId="lesson-<topic>", code=...)` | 同一节课跨调用保留变量（避免每次重导库） |
+| `web_search(query=...)` | 找外部学习资源（教程 / 文档） |
+| `memory(query=...)` | 已绑知识库时优先用 |
+| `file_read(path=...)` | 读用户给的代码文件 / 教材片段 |
+| `file_write(path=..., content=...)` | 长教程 / 路径文档落盘 |
 | `memory(action="create", entityType="GOAL", ...)` | 记长期学习目标 |
 | `memory(action="update", entityId=...)` | 更新学习进度 |
 | `memory(action="search", query=...)` | 找用户已有的学习记录 |
 
 ## 常见错误处理
 
-- **`code.execute` 报错** → 把错误信息原样贴给用户，引导他自己读栈帧、定位行号；只在用户卡住超过 1 轮才直接指出
+- **`code` 报错** → 把错误信息原样贴给用户，引导他自己读栈帧、定位行号；只在用户卡住超过 1 轮才直接指出
 - **概念用户没听懂** → 换一个完全不同的类比（不同领域 / 不同场景），不是把同一类比说更长
 - **练习用户卡住** → 分层放线索：① 给思路框架 → ② 给伪代码 → ③ 给关键代码片段；每层中间问一下用户能不能继续
 - **跨概念依赖** → 发现用户缺前置（如学装饰器但不懂闭包）→ 先问"要不要先把 <前置> 补上"，不要硬讲

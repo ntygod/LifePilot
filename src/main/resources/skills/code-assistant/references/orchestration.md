@@ -8,7 +8,7 @@
 | Codex | `codex exec "<task>"` | `--json` | 命中 quota 输出 `hit your usage limit`,需停止编排 |
 | Gemini | `gemini -p "<task>"` | `--output-format json` | |
 
-**持久交互模式**:仅 Unix + tmux 可用(走 `shell.process(action="session-*")`);Windows 做不到,告诉用户换 `-p` 多次调用或 WSL。
+**持久交互模式**:仅 Unix + tmux 可用(走 `shell_process(action="session-*")`);Windows 做不到,告诉用户换 `-p` 多次调用或 WSL。
 
 ## 模型档位切换
 
@@ -48,7 +48,7 @@ worktree: `<路径>`(保留,用户决定是否清理)
 | Codex `hit your usage limit` | 配额耗尽,停止编排,建议换 claude 或等配额重置 |
 | 长时间 `RUNNING` 无输出 | 连续 2-3 轮确认后 kill 重试 |
 | `[部分输出已被覆盖]` | 轮询太慢,缩短间隔或 `--output-file` 落盘再读 |
-| `后台进程数已达上限` | `shell.process(action="list")` 找空闲 sessionId 清理 |
+| `后台进程数已达上限` | `shell_process(action="list")` 找空闲 sessionId 清理 |
 | 反馈环超 2 轮 | 停下来问用户(改不动八成是方向错了) |
 
 ## 不要做

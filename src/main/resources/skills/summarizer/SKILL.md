@@ -1,6 +1,6 @@
 ---
 name: summarizer
-description: 当用户要从 URL、文件或知识库提取关键信息、生成结构化摘要、整理会议纪要、对比多份文档要点时使用。关键词：总结、总结一下、概括、提炼要点、摘要、这个链接讲了什么、这篇说啥、帮我看下这篇、会议纪要、对比文档、长文精简、给我说说重点、抓重点。从零创作用 content-creator，数据统计报告用 data-analyst，调研多个来源用 research-assistant。
+description: 当用户要从 URL、文件或知识库提取关键信息、生成结构化摘要、整理会议纪要、对比多份文档要点时使用。
 version: 2.1.0
 metadata:
   zhiwei:
@@ -12,10 +12,10 @@ metadata:
       - condense
       - extraction
     suggested_tools:
-      - web.fetch
-      - file.read
-      - file.write
-      - knowledge.search
+      - web_fetch
+      - file_read
+      - file_write
+      - memory
 ---
 
 # 内容摘要指南
@@ -40,9 +40,9 @@ metadata:
 
 | 来源 | 取用方法 |
 |---|---|
-| URL | `web.fetch` 抓正文 |
-| 本地文件（含 docx/pdf/xlsx） | `file.read`（已自动解析结构化文档） |
-| 知识库 | `knowledge.search` |
+| URL | `web_fetch` 抓正文 |
+| 本地文件（含 docx/pdf/xlsx） | `file_read`（已自动解析结构化文档） |
+| 知识库 | `memory` |
 | 会议录音 | 用户先转写，得到文本后走文件路径 |
 
 通用要点：
@@ -51,7 +51,7 @@ metadata:
 - **抓不全要声明**：抓取空 / 不全 / 被付费墙挡时告知用户，不假装抓了全部
 - **多文档对比**：每篇逐一读取后再生成，不靠单文档外推
 - **来源标注**：URL 摘要开头 `[页面标题](URL)`；多文档版每条要点标"来自《X》"
-- **保存**：长摘要 `file.write` 落盘，短摘要直接对话给
+- **保存**：长摘要 `file_write` 落盘，短摘要直接对话给
 
 ## 详细参考
 

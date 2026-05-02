@@ -3,13 +3,13 @@
 **关键约束**：
 
 - 仅 Windows，且必须本机进程（沙箱无图形会话，跑不了 pyautogui）。
-- 用 `shell.exec(command="python <脚本>")` 走宿主 Python，**不用** `code.execute`（在沙箱里）。
-- 操作步骤写到 `<workspace>/desktop-<task>.py`，再 `shell.exec` 执行；不用 `python -c` 拼复杂多行。
+- 用 `shell_exec(command="python <脚本>")` 走宿主 Python，**不用** `code`（在沙箱里）。
+- 操作步骤写到 `<workspace>/desktop-<task>.py`，再 `shell_exec` 执行；不用 `python -c` 拼复杂多行。
 
 ## 本机依赖检查
 
 ```
-shell.exec(command="python -c \"import pyautogui, pywinauto, PIL\"")
+shell_exec(command="python -c \"import pyautogui, pywinauto, PIL\"")
 ```
 
 任一报 `ModuleNotFoundError` → 提示用户安装：
@@ -28,17 +28,17 @@ pip install pyautogui pywinauto pillow
 
 ### 1. 写脚本
 
-`file.write(path="<workspace>/desktop-<task>.py", content=...)` 写入完整脚本。
+`file_write(path="<workspace>/desktop-<task>.py", content=...)` 写入完整脚本。
 
 ### 2. 执行
 
 ```
-shell.exec(command="python <脚本路径>")
+shell_exec(command="python <脚本路径>")
 ```
 
 ### 3. 取截图
 
-脚本里 `pyautogui.screenshot().save("<workspace>/screen-<step>.png")`，再用 `file.read` 给用户看路径或直接放截图。
+脚本里 `pyautogui.screenshot().save("<workspace>/screen-<step>.png")`，再用 `file_read` 给用户看路径或直接放截图。
 
 ## 脚本片段
 
@@ -129,4 +129,4 @@ pyautogui.FAILSAFE = True   # 鼠标移到屏幕左上角立即抛 FailSafeExcep
 | 操作没生效但无报错 | 多半是窗口未聚焦，先 `dlg.set_focus()` 或 `pyautogui.click()` 激活窗口 |
 | 权限不足（系统对话框） | 提示用户用管理员模式启动 ZhiWei 后端进程，普通权限点不到 UAC / 系统提权弹窗 |
 | 分辨率 / DPI 缩放导致坐标偏 | 改用 pywinauto 控件定位；图像匹配加 `confidence` 容差 |
-| 用户中途要停 | 鼠标拖到屏幕左上角触发 FAILSAFE，或 Ctrl+C 终止 `shell.exec` |
+| 用户中途要停 | 鼠标拖到屏幕左上角触发 FAILSAFE，或 Ctrl+C 终止 `shell_exec` |
