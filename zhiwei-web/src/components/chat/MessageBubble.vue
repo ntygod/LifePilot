@@ -180,19 +180,12 @@ function extractDocumentId(url: string | undefined): string | null {
   return m ? m[1] : null
 }
 
-/** 判断附件是否为「已编辑的 docx」—— 同步返回，异步触发缓存填充，下次渲染自动切换 */
-function isEditedDocx(att: { type?: string; url?: string }): boolean {
-  if (!att.type?.includes('wordprocessingml.document')) return false
-  const docId = extractDocumentId(att.url)
-  if (!docId) return false
-  void resolveDocumentMeta(docId)
-  const meta = documentMetaCache.value[docId]
-  return !!meta && meta.latestVersion > 0
-}
-
-/** 判断附件是否为「已编辑的 xlsx」—— 与 isEditedDocx 同款机制，MIME 检查换成 spreadsheetml.sheet */
-function isEditedXlsx(att: { type?: string; url?: string }): boolean {
-  if (!att.type?.includes('spreadsheetml.sheet')) return false
+/**
+ * 判断文档附件是否已被编辑过（存在工作副本）。
+ * 不限制 MIME 类型，docx/xlsx/md/txt/pptx 等所有文档类型通用。
+ * 同步返回缓存结果，异步触发 meta 拉取，下次渲染自动生效。
+ */
+function isEditedDocument(att: { type?: string; url?: string }): boolean {
   const docId = extractDocumentId(att.url)
   if (!docId) return false
   void resolveDocumentMeta(docId)
@@ -531,21 +524,26 @@ function approvalLogTone(log: PermissionApprovalLog) {
 
           <div v-if="fileAttachments.length > 0" class="mt-md flex flex-col gap-sm">
             <template v-for="attachment in fileAttachments" :key="attachment.fileId">
-              <!-- Phase 3A：docx 被 document.edit 改过 → 挂 DiffCard；其余路径沿用原卡片 -->
-              <DocumentDiffCard
-                v-if="isEditedDocx(attachment)"
-                :document-id="extractDocumentId(attachment.url)!"
-                @committed="onDocumentCommitted"
-                @discarded="onDocumentDiscarded"
-              />
-
-              <!-- Phase 3B：xlsx 被 document.edit 改过 → 挂 XlsxDiffCard -->
-              <DocumentXlsxDiffCard
-                v-else-if="isEditedXlsx(attachment)"
-                :document-id="extractDocumentId(attachment.url)!"
-                @committed="onDocumentCommitted"
-                @discarded="onDocumentDiscarded"
-              />
+              <!-- 文档被编辑过 → 按类型选 DiffCard；无专用 DiffCard 的类型显示通用「已编辑」文件卡片 -->
+              <template v-if="isEditedDocument(attachment)">
+                <DocumentDiffCard
+                  v-if="attachment.type?.includes('wordprocessingml.document')"
+                  :document-id="extractDocumentId(attachment.url)!"
+                  @committed="onDocumentCommitted"
+                  @discarded="onDocumentDiscarded"
+                />
+                <DocumentXlsxDiffCard
+                  v-else-if="attachment.type?.includes('spreadsheetml.sheet')"
+                  :document-id="extractDocumentId(attachment.url)!"
+                  @committed="onDocumentCommitted"
+                  @discarded="onDocumentDiscarded"
+                />
+                <div v-else class="flex items-center gap-sm rounded-md border border-border bg-muted/40 p-sm">
+                  <component :is="documentIcon(attachment)" class="h-md w-md shrink-0 text-primary" />
+                  <span class="truncate text-sm">{{ attachment.filename }}</span>
+                  <span class="shrink-0 rounded-md bg-primary/10 px-xs py-xs text-xs text-primary">已编辑</span>
+                </div>
+              </template>
 
               <!-- 视频附件：保留原 list-card + <video> 播放器布局 -->
               <div

@@ -257,7 +257,7 @@ public class AgentConfigProperties {
         /** 心跳唤醒单独开关。 */
         private boolean heartbeatEnabled = true;
         /** 是否启用主动提醒引擎。 */
-        private boolean proactiveReminderEnabled = true;
+        private boolean proactiveReminderEnabled = false;
         /** 心跳间隔（秒）。 */
         private int heartbeatIntervalSeconds = 1800;
         /** 主动提醒每日上限。 */

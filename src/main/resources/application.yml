@@ -110,6 +110,7 @@ lifepilot:
       # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
       enabled: true
       heartbeat-enabled: true
+      proactive-reminder-enabled: false
       heartbeat-interval-seconds: 1800
       heartbeat-file: "${zhiwei.data-dir}/HEARTBEAT.md"
       execution-timeout-seconds: 300

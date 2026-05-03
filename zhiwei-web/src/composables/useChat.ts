@@ -588,13 +588,9 @@ export function useChat() {
 
           chatStore.upsertMessage(assistantMessage)
 
-          // B14 修复：后端 SSE done event 不含 message_attachments 表里的文档附件（docx/xlsx/pptx），
-          // 流式结束后拉一次历史接口（走 ChatSessionService.withAttachments 带完整 attachments）覆盖 store，
-          // 让 MessageBubble 的 isEditedDocx/isEditedXlsx 能拿到真实 attachment 触发 DiffCard 渲染。
-          // 同时失效 documentMetaCache：任一文档都可能刚被 patch，旧的 latestVersion 必须作废
+          // 失效 documentMetaCache：任一文档都可能刚被 patch，旧的 latestVersion 必须作废。
           if (event.sessionId) {
             invalidateAllDocumentMeta()
-            void chatStore.loadMessages(event.sessionId)
           }
 
           if (event.tokenUsage) {

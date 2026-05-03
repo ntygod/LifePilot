@@ -26,6 +26,7 @@ const RIGHT_MARGIN: f64 = 24.0;
 ///
 /// 关键三要素：`transparent + !decorations + !shadow`（v2 必须三者同时设置）。
 /// 初始隐藏，前端 mounted 后再 show，规避 WebView2 白色闪烁。
+#[allow(dead_code)]
 pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
     let (screen_width, screen_height) = get_primary_screen_size(app);
     let x = screen_width - BALL_SIZE - RIGHT_MARGIN;
@@ -53,6 +54,7 @@ pub fn create_float_window(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// 显示浮窗
+#[allow(dead_code)]
 pub fn show_float_window(app: &AppHandle) -> Result<(), String> {
     get_float(app)?
         .show()
