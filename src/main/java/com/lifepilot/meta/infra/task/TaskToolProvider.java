@@ -65,7 +65,7 @@ public class TaskToolProvider {
                 .category(ToolCategory.ACTION)
                 .name("定时任务")
                 .description("""
-                        定时任务调度。action: create(创建) list(查询，支持status过滤) update(更新，未传字段保持不变) remove(删除，同时清执行日志)。
+                        定时任务调度。action: create(创建) list(查询，支持status过滤) update(更新，未传字段保持不变) delete(删除，同时清执行日志)。
                         schedule 为 Spring 6 位 cron（秒 分 时 日 月 周），不是 Linux 5 位。* = 每个 */n = 每n个 a-b = 范围 a,b = 列举 ? = 日/周二选一。周用大写 MON-SUN。
                         示例: "0 0 8 * * *"=每天8点 "0 */30 * * * *"=每30分钟 "0 0 18 * * MON-FRI"=工作日下午6点。
                         create 时 taskId 可省略由系统生成。instruction 是触发后让 Agent 做什么的 prompt。

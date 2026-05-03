@@ -181,7 +181,7 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
                     }
                 });
 
-        register("remove",
+        register("delete",
                 RiskLevel.MEDIUM,
                 ToolExecutionSemantics.of(
                         PermissionActionType.CREATE_SCHEDULE,

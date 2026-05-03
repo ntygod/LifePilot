@@ -16,12 +16,10 @@ import com.lifepilot.conversation.artifact.SessionArtifactRepository;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
-import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.UiEmitTreeCapture;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.service.SessionTitleGenerator;
@@ -194,9 +192,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) GenerationRouter generationRouter,
             @Autowired(required = false) ContextEngine contextEngine,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-            @Autowired(required = false) SessionDatastoreRepository sessionDatastoreRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-            @Autowired(required = false) CollectionRepository collectionRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
             @Autowired(required = false) HybridRetriever hybridRetriever,
@@ -222,9 +218,7 @@ public class AgentAutoConfiguration {
                 generationRouter,
                 contextEngine,
                 sessionKnowledgeBaseRepository,
-                sessionDatastoreRepository,
                 knowledgeBaseRepository,
-                collectionRepository,
                 toolRegistry,
                 mcpConfig,
                 hybridRetriever);

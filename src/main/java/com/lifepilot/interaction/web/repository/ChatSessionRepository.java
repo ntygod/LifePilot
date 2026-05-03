@@ -112,7 +112,7 @@ public class ChatSessionRepository {
     }
 
     public void updateConfig(String id, Map<String, Object> config) {
-        sessionStoreRepository.updateConfig(id, config);
+        com.lifepilot.memory.support.SqliteBusyRetry.run(() -> sessionStoreRepository.updateConfig(id, config));
     }
 
     public Map<String, Object> getConfig(String id) {

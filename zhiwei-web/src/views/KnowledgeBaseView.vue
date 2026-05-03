@@ -38,12 +38,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { knowledgeBaseApi, modelServiceApi } from '@/api/client'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import { useDatastoreStore } from '@/stores/datastore'
 import type { ModelService } from '@/api/client'
 import type { CreateKbRequest, KnowledgeBase } from '@/types'
 
 const store = useKnowledgeBaseStore()
-const datastoreStore = useDatastoreStore()
 const router = useRouter()
 
 const showCreate = ref(false)
@@ -52,7 +50,6 @@ const createForm = ref({
   description: '',
   embeddingModel: '' as string | undefined,
   tags: [] as string[],
-  datastoreIds: [] as string[],
 })
 
 // Provider 列表（用于向量模型下拉选择）
@@ -65,7 +62,6 @@ const editingKb = ref<KnowledgeBase | null>(null)
 const editForm = ref({
   description: '',
   tags: [] as string[],
-  datastoreIds: [] as string[],
 })
 
 const deleteTarget = ref<{ type: 'kb' | 'doc'; id: string; kbId?: string; name: string } | null>(null)
@@ -138,9 +134,6 @@ const showDeleteConfirm = computed({
 
 onMounted(() => {
   void store.fetchList()
-  // Plan 3 §5.1：移除 mount 时自动拉 datastore 列表（/api/datastores 不再自动请求）；
-  // store 保持 list=[] 让模板的"当前没有可选的 Datastore"空态自然呈现。
-  // refreshDatastores 仍保留给模板里"刷新"按钮按需触发，用户主动点击时才发请求。
   modelServiceApi.listEnabledServices('EMBEDDING').then(list => { providers.value = list }).catch(() => {})
 })
 
@@ -156,10 +149,6 @@ function selectKb(kb: KnowledgeBase) {
   router.push(`/knowledge-bases/${kb.id}`)
 }
 
-function refreshDatastores() {
-  void datastoreStore.fetchList()
-}
-
 async function handleCreate() {
   if (!createForm.value.name.trim()) return
   const req: CreateKbRequest = {
@@ -167,12 +156,11 @@ async function handleCreate() {
     description: createForm.value.description,
     embeddingModel: createForm.value.embeddingModel || undefined,
     tags: createForm.value.tags,
-    datastoreIds: createForm.value.datastoreIds,
   }
   const kb = await store.create(req)
   if (kb) {
     showCreate.value = false
-    createForm.value = { name: '', description: '', embeddingModel: '', tags: [], datastoreIds: [] }
+    createForm.value = { name: '', description: '', embeddingModel: '', tags: [] }
   }
 }
 
@@ -181,7 +169,6 @@ function startEdit(kb: KnowledgeBase) {
   editForm.value = {
     description: kb.description || '',
     tags: [...(kb.tags ?? [])],
-    datastoreIds: [...(kb.datastoreIds ?? [])],
   }
 }
 
@@ -199,7 +186,6 @@ async function handleUpdate() {
     await knowledgeBaseApi.update(editingKb.value.id, {
       description: editForm.value.description || undefined,
       tags: editForm.value.tags,
-      datastoreIds: editForm.value.datastoreIds,
     })
     await store.fetchList()
     editingKb.value = null
@@ -235,34 +221,6 @@ function clearFilters() {
   timeRange.value = 'all'
 }
 
-function toggleCreateDatastore(id: string, checked: boolean | 'indeterminate') {
-  if (checked === true) {
-    if (!createForm.value.datastoreIds.includes(id)) createForm.value.datastoreIds.push(id)
-    return
-  }
-  createForm.value.datastoreIds = createForm.value.datastoreIds.filter(datastoreId => datastoreId !== id)
-}
-
-function toggleEditDatastore(id: string, checked: boolean | 'indeterminate') {
-  if (checked === true) {
-    if (!editForm.value.datastoreIds.includes(id)) editForm.value.datastoreIds.push(id)
-    return
-  }
-  editForm.value.datastoreIds = editForm.value.datastoreIds.filter(datastoreId => datastoreId !== id)
-}
-
-function resolveDatastoreNames(datastoreIds: string[] | undefined) {
-  if (!datastoreIds || datastoreIds.length === 0) {
-    return []
-  }
-  const nameMap = new Map(datastoreStore.list.map(datastore => [datastore.id, datastore.name]))
-  return datastoreIds.map(id => nameMap.get(id) ?? id)
-}
-
-function resolveOwnerDatastoreName(kb: KnowledgeBase) {
-  if (!kb.ownerDatastoreId) return null
-  return datastoreStore.list.find(d => d.id === kb.ownerDatastoreId)?.name ?? null
-}
 </script>
 
 <template>
@@ -500,27 +458,19 @@ function resolveOwnerDatastoreName(kb: KnowledgeBase) {
                       <h3 class="truncate text-base font-semibold tracking-tight text-foreground">
                         {{ kb.name }}
                       </h3>
-                      <Badge v-if="kb.systemManaged" variant="secondary" class="gap-xs text-xs">
-                        <Lock class="size-3" />
-                        内部
-                      </Badge>
                       <Badge variant="outline" class="text-xs">
                         {{ kb.documentCount }} 篇文档
                       </Badge>
                       <span class="surface-chip">更新于 {{ formatDate(kb.updatedAt) }}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 text-xs">
-                      <span v-if="kb.systemManaged && resolveOwnerDatastoreName(kb)" class="surface-chip">
-                        归属 {{ resolveOwnerDatastoreName(kb) }}
-                      </span>
                       <span class="surface-chip">向量模型 {{ kb.embeddingModel || '未配置' }}</span>
                       <span class="surface-chip">分块 {{ kb.totalChunks }}</span>
-                      <span v-if="!kb.systemManaged" class="surface-chip">Datastore {{ kb.datastoreIds?.length ?? 0 }}</span>
                     </div>
                   </div>
                 </div>
 
-                <div v-if="!kb.systemManaged" class="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div class="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                   <Button
                     type="button"
                     variant="ghost"
@@ -550,24 +500,6 @@ function resolveOwnerDatastoreName(kb: KnowledgeBase) {
                 {{ kb.description || '这个知识库还没有描述信息。' }}
               </p>
 
-              <div v-if="(kb.datastoreIds?.length ?? 0) > 0" class="mt-4 flex flex-wrap gap-2">
-                <Badge
-                  v-for="name in resolveDatastoreNames(kb.datastoreIds).slice(0, 3)"
-                  :key="`${kb.id}-${name}`"
-                  variant="outline"
-                  class="text-xs"
-                >
-                  {{ name }}
-                </Badge>
-                <Badge
-                  v-if="resolveDatastoreNames(kb.datastoreIds).length > 3"
-                  variant="outline"
-                  class="text-xs"
-                >
-                  +{{ resolveDatastoreNames(kb.datastoreIds).length - 3 }}
-                </Badge>
-              </div>
-
               <div class="mt-5 grid gap-3 sm:grid-cols-2">
                 <div class="kb-mini-stat">
                   <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
@@ -588,7 +520,7 @@ function resolveOwnerDatastoreName(kb: KnowledgeBase) {
 
               <div class="mt-5 flex items-center justify-between gap-3 text-sm">
                 <span class="text-muted-foreground">
-                  {{ kb.systemManaged ? '由 Datastore 自动维护，可查看文档和分块状态。' : '适合继续补文档、检查分块和验证检索。' }}
+                  适合继续补文档、检查分块和验证检索。
                 </span>
                 <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
                   进入知识库
@@ -648,42 +580,6 @@ function resolveOwnerDatastoreName(kb: KnowledgeBase) {
           <p class="text-xs text-muted-foreground">不选择则使用系统默认的 Embedding 模型</p>
         </div>
 
-        <div class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <Label>关联 Datastore</Label>
-            <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
-              刷新
-            </Button>
-          </div>
-          <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-            正在加载 Datastore 列表...
-          </div>
-          <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
-            Datastore 列表加载失败：{{ datastoreStore.error }}
-          </div>
-          <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
-            <label
-              v-for="datastore in datastoreStore.list"
-              :key="datastore.id"
-              class="kb-dialog-option"
-            >
-              <Checkbox
-                :model-value="createForm.datastoreIds.includes(datastore.id)"
-                @update:model-value="toggleCreateDatastore(datastore.id, $event)"
-              />
-              <div class="min-w-0">
-                <div class="text-sm text-foreground">{{ datastore.name }}</div>
-                <div v-if="datastore.description" class="text-xs text-muted-foreground">
-                  {{ datastore.description }}
-                </div>
-              </div>
-            </label>
-          </div>
-          <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-            当前没有可关联的 Datastore。知识库可以先创建，后续再补充关联。
-          </div>
-          <p class="text-xs text-muted-foreground">绑定后，datastore 结构化数据会同步到该知识库。</p>
-        </div>
       </form>
 
       <template #footer>
@@ -725,41 +621,6 @@ function resolveOwnerDatastoreName(kb: KnowledgeBase) {
           />
         </div>
 
-        <div class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <Label>关联 Datastore</Label>
-            <Button type="button" variant="ghost" size="sm" @click="refreshDatastores()">
-              刷新
-            </Button>
-          </div>
-          <div v-if="datastoreStore.loading" class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-            正在加载 Datastore 列表...
-          </div>
-          <div v-else-if="datastoreStore.error" class="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
-            Datastore 列表加载失败：{{ datastoreStore.error }}
-          </div>
-          <div v-else-if="datastoreStore.list.length > 0" class="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/55 p-2">
-            <label
-              v-for="datastore in datastoreStore.list"
-              :key="datastore.id"
-              class="kb-dialog-option"
-            >
-              <Checkbox
-                :model-value="editForm.datastoreIds.includes(datastore.id)"
-                @update:model-value="toggleEditDatastore(datastore.id, $event)"
-              />
-              <div class="min-w-0">
-                <div class="text-sm text-foreground">{{ datastore.name }}</div>
-                <div v-if="datastore.description" class="text-xs text-muted-foreground">
-                  {{ datastore.description }}
-                </div>
-              </div>
-            </label>
-          </div>
-          <div v-else class="kb-dialog-note rounded-md px-3 py-3 text-sm text-muted-foreground">
-            当前没有可关联的 Datastore。
-          </div>
-        </div>
       </form>
 
       <template #footer>

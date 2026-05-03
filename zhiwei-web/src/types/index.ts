@@ -24,7 +24,6 @@ export interface ChatSession {
 
 export interface ChatSessionDetail extends ChatSession {
   knowledgeBaseIds: string[]
-  datastoreIds: string[]
   preferredProviderId?: string
   temperature?: number
   maxSteps?: number
@@ -529,57 +528,6 @@ export interface SessionConfig {
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
-  datastoreIds?: string[]
-}
-
-// ========== 第一部分 19: Web UI 相关类型定义 ==========
-
-/** Datastore 集合 */
-export interface Datastore {
-  id: string
-  name: string
-  description?: string | null
-  timeSeries: boolean
-  fieldHintsJson?: string | null
-  defaultKnowledgeBaseId?: string | null
-  createdBy?: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-/** Datastore 创建请求 */
-export interface CreateDatastoreRequest {
-  name: string
-  description?: string | null
-  timeSeries?: boolean
-  fieldHints?: FieldHintDto[] | null
-}
-
-/** Datastore 更新请求 */
-export interface UpdateDatastoreRequest {
-  description?: string | null
-  fieldHintsJson?: string | null
-}
-
-/** 字段提示 DTO — 用于索引加速和 Agent 查询提示 */
-export interface FieldHintDto {
-  name: string
-  type: string  // TEXT / NUMBER / BOOLEAN
-  description?: string | null
-}
-
-/** Datastore 文档（存储在知识库 documents 表中） */
-export interface DatastoreDocument {
-  id: string
-  knowledgeBaseId: string
-  fileName: string
-  content?: string | null
-  metadataJson?: string | null
-  recordedAt?: string | null
-  sourceDatastoreId?: string | null
-  status: string
-  createdAt: string
-  updatedAt: string
 }
 
 /** 知识库 */
@@ -595,11 +543,6 @@ export interface KnowledgeBase {
   totalChunks: number
   createdAt: string
   updatedAt: string
-  datastoreIds: string[]
-  /** 是否由系统自动管理（Datastore 内部知识库） */
-  systemManaged?: boolean
-  /** 归属的 Datastore ID（仅系统管理的知识库） */
-  ownerDatastoreId?: string | null
 }
 
 /** 创建知识库请求 */
@@ -611,7 +554,6 @@ export interface CreateKbRequest {
   chunkingStrategy?: string
   chunkingConfig?: Record<string, unknown>
   tags?: string[]
-  datastoreIds?: string[]
 }
 
 /** 更新知识库请求 */
@@ -623,7 +565,6 @@ export interface UpdateKbRequest {
   chunkingStrategy?: string
   chunkingConfig?: Record<string, unknown>
   tags?: string[]
-  datastoreIds?: string[]
 }
 
 /** 知识库文档 */

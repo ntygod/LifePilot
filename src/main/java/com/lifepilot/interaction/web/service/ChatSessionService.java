@@ -12,7 +12,6 @@ import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.project.service.ProjectService;
 import jakarta.annotation.Nullable;
@@ -36,7 +35,6 @@ public class ChatSessionService {
 
     private final ChatSessionRepository sessionRepository;
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
-    private final SessionDatastoreRepository sessionDatastoreRepository;
     private final AttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final SessionTranscriptRepository transcriptRepository;
@@ -60,7 +58,6 @@ public class ChatSessionService {
 
     public ChatSessionService(ChatSessionRepository sessionRepository,
                               SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                              SessionDatastoreRepository sessionDatastoreRepository,
                               AttachmentRepository attachmentRepository,
                               ObjectMapper objectMapper,
                               SessionTranscriptRepository transcriptRepository,
@@ -72,7 +69,6 @@ public class ChatSessionService {
                               @Nullable ProjectService projectService) {
         this.sessionRepository = sessionRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
-        this.sessionDatastoreRepository = sessionDatastoreRepository;
         this.attachmentRepository = attachmentRepository;
         this.objectMapper = objectMapper;
         this.transcriptRepository = transcriptRepository;
@@ -272,8 +268,7 @@ public class ChatSessionService {
     public SessionDetailInfo getSessionDetail(String id) {
         ChatSession session = requireWebSession(id);
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(id);
-        List<String> datastoreIds = sessionDatastoreRepository.findDatastoreIdsBySessionId(id);
-        Map<String, Object> sessionConfig = sessionRepository.getConfig(id);
+        Map<String, Object> sessionConfig = new java.util.HashMap<>();
         SessionCompactionStatusInfo compactionStatus = buildCompactionStatus(id, sessionConfig);
 
         return new SessionDetailInfo(
@@ -288,7 +283,7 @@ public class ChatSessionService {
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_STEPS),
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS),
                 knowledgeBaseIds,
-                datastoreIds,
+                List.of(),
                 session.messageCount(),
                 0L,
                 session.summary(),
@@ -322,11 +317,6 @@ public class ChatSessionService {
             sessionKnowledgeBaseRepository.setAssociations(id, request.knowledgeBaseIds());
             log.info("更新会话知识库关联: sessionId={}, knowledgeBaseIds={}",
                     id, request.knowledgeBaseIds());
-        }
-        if (request.datastoreIds() != null) {
-            sessionDatastoreRepository.setAssociations(id, request.datastoreIds());
-            log.info("更新会话 datastore 关联: sessionId={}, datastoreIds={}",
-                    id, request.datastoreIds());
         }
     }
 
@@ -507,7 +497,6 @@ public class ChatSessionService {
         }
         attachmentRepository.copyForFork(copiedEntryIds, newSession.id());
         copyKnowledgeBaseBindings(originalSession.id(), newSession.id());
-        copyDatastoreBindings(originalSession.id(), newSession.id());
 
         log.info("\u5206\u53c9\u4f1a\u8bdd(transcript): originalSessionId={}, newSessionId={}, messageCount={}",
                 originalSession.id(), newSession.id(), messagesToCopy.size());
@@ -531,12 +520,6 @@ public class ChatSessionService {
         }
     }
 
-    private void copyDatastoreBindings(String sourceSessionId, String targetSessionId) {
-        List<String> datastoreIds = sessionDatastoreRepository.findDatastoreIdsBySessionId(sourceSessionId);
-        for (String datastoreId : datastoreIds) {
-            sessionDatastoreRepository.addAssociation(targetSessionId, datastoreId);
-        }
-    }
 
     @Nullable
     private CompletionMode parseCompletionMode(@Nullable String rawValue) {

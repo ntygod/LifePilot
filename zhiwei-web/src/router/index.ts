@@ -108,7 +108,6 @@ const router = createRouter({
 
     /**
      * Datastore 路由已于 Plan 3 Task B2 下架（spec §5.1/§5.3）。
-     * DatastoreView.vue / DatastoreDetailView.vue 组件文件保留以便后续需要时复用，
      * 但不再注册为用户可达路由；相关后端 API 也保留，仅移除前端入口。
      */
 

@@ -18,7 +18,7 @@
 | 要求"记住""别忘了""以后都这样" | memory(action="create") 显式写入 |
 | 需要对比不同时间点的信息 | memory(action="query-at-time") 时间旅行 |
 | 问"我之前做过类似的吗" | memory(action="search-experience") 检索经验 |
-| 需要查阅资料/文档内容 | memory 检索知识库 |
+| 需要查阅资料/文档内容 | memory(action="search", scope="knowledge") 检索绑定的知识库文档 |
 
 ### 何时不需要调工具
 - 当前上下文已有足够信息回答
@@ -29,4 +29,5 @@
 - 记忆中有相关偏好时直接应用，无需再次询问用户
 - 时间久远的记忆降低置信度，可向用户确认是否仍然准确
 - 优先使用自动注入的上下文，不足时再调工具补充
+- 当 <active_knowledge_bindings> 显示已绑定知识库时，用户问"我/我的 XX"等涉及个人文档内容的问题 → 优先用 memory(action="search", scope="knowledge") 检索知识库文档
 </context_guide>

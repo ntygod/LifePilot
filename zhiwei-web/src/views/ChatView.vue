@@ -89,7 +89,6 @@ const activeSessionConfig = ref<SessionConfig>({
   maxSteps: DEFAULT_SESSION_MAX_STEPS,
   maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
   knowledgeBaseIds: [],
-  datastoreIds: [],
 })
 const currentSessionDetail = ref<ChatSessionDetail | null>(null)
 
@@ -129,7 +128,6 @@ function resetActiveSessionConfig() {
     maxSteps: DEFAULT_SESSION_MAX_STEPS,
     maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
     knowledgeBaseIds: [],
-    datastoreIds: [],
   }
 }
 
@@ -151,7 +149,6 @@ async function loadActiveSessionConfig(sessionId: string | null) {
       maxSteps: detail.maxSteps ?? DEFAULT_SESSION_MAX_STEPS,
       maxDurationSeconds: detail.maxDurationSeconds ?? DEFAULT_SESSION_MAX_DURATION_SECONDS,
       knowledgeBaseIds: detail.knowledgeBaseIds ?? [],
-      datastoreIds: detail.datastoreIds ?? [],
     }
   } catch (event) {
     logger.warn('加载会话配置失败:', event)
@@ -244,7 +241,6 @@ const lastKbSources = computed(() => lastSources.value.filter(source => source.t
 const headerTitle = computed(() => currentSession.value?.title?.trim() || currentSessionDetail.value?.title?.trim() || '新对话')
 const activeContextCount = computed(() => (
   (activeSessionConfig.value.knowledgeBaseIds?.length ?? 0)
-  + (activeSessionConfig.value.datastoreIds?.length ?? 0)
 ))
 const sessionStatusText = computed(() => {
   if (isStreaming.value) {
@@ -577,7 +573,6 @@ async function handleConfigUpdate(config: SessionConfig) {
       maxSteps: config.maxSteps ?? activeSessionConfig.value.maxSteps,
       maxDurationSeconds: config.maxDurationSeconds ?? activeSessionConfig.value.maxDurationSeconds,
       knowledgeBaseIds: config.knowledgeBaseIds ?? [],
-      datastoreIds: config.datastoreIds ?? [],
     }
     uiStore.showToast('success', '配置已更新')
   } catch {
@@ -740,7 +735,6 @@ function closeTracePanel() {
                 ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
                 :knowledge-bases="kbStore.list"
-                :datastores="[]"
                 :base-session-config="activeSessionConfig"
                 @send="handleSend"
               />
@@ -819,7 +813,6 @@ function closeTracePanel() {
               :continuation-title="continuationTitle"
               :continuation-detail="continuationDetail"
               :knowledge-bases="kbStore.list"
-              :datastores="[]"
               :base-session-config="activeSessionConfig"
               @send="handleSend"
             />
@@ -899,10 +892,8 @@ function closeTracePanel() {
                   :max-steps="activeSessionConfig.maxSteps"
                   :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
                   :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
-                  :datastore-ids="activeSessionConfig.datastoreIds"
                   :providers="chatProviders"
                   :knowledge-bases="kbStore.list"
-                  :datastores="[]"
                   @close="closeMobileSidebar"
                   @update="handleConfigUpdate"
                 />
