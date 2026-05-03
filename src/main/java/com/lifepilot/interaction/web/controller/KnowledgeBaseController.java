@@ -147,8 +147,6 @@ public class KnowledgeBaseController {
         if (kb.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "知识库不存在: id=" + id);
         }
-        if (kb.get().systemManaged()) {
-        }
         kbManager.deleteKnowledgeBase(id);
         log.info("知识库删除: id={}", id);
         return ApiResponse.ok();
@@ -192,8 +190,7 @@ public class KnowledgeBaseController {
     /** 上传文档到知识库。 */
     @PostMapping("/{id}/documents")
     public ApiResponse<?> uploadDocument(@PathVariable String id,
-                                            @RequestParam("file") MultipartFile file,
-                                            @RequestParam(value = "datastoreId", required = false) String datastoreId) {
+                                            @RequestParam("file") MultipartFile file) {
         var ingester = this.documentIngester;
         if (ingester == null) {
             log.error("文档上传失败: DocumentIngester 未初始化，请检查知识库和向量索引配置");
@@ -238,9 +235,6 @@ public class KnowledgeBaseController {
         log.info("文档删除: docId={}", docId);
         return ApiResponse.ok();
     }
-
-    /** 更新文档的 datastore 归属。 */
-    @PatchMapping("/{id}/documents/{docId}")
 
     /** 获取知识库统计信息。 */
     @GetMapping("/{id}/stats")
@@ -518,14 +512,6 @@ public class KnowledgeBaseController {
     private boolean hasAllowedExtension(String fileName) {
         String lower = fileName.toLowerCase();
         return ALLOWED_EXTENSIONS.stream().anyMatch(lower::endsWith);
-    }
-
-    @Nullable
-    private String normalizeNullableId(@Nullable String rawValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return null;
-        }
-        return rawValue.strip();
     }
 
     private String buildFileSizeExceededMessage(long maxFileSize) {
