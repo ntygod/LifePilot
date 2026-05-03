@@ -1,10 +1,9 @@
 ---
 name: api-debugger
-description: 当用户要测试或调试 REST / GraphQL 接口、验证响应格式、对比接口文档与实际行为、生成 Mock 数据时使用。关键词：测试接口、调试 API、HTTP 请求、curl、Postman、接口返回、GraphQL、响应格式、接口对吗、接口怎么调、Mock。浏览器自动化测试用 browser-automation，代码级单元测试用 code-assistant，单次 curl 直接用 shell.exec。
+description: 当用户要测试或调试 REST / GraphQL 接口、验证响应格式、对比接口文档与实际行为、生成 Mock 数据时使用。
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - api
       - rest
@@ -14,10 +13,10 @@ metadata:
       - testing
       - mock
     suggested_tools:
-      - shell.exec
-      - code.execute
-      - file.read
-      - file.write
+      - shell_exec
+      - code
+      - file_read
+      - file_write
 ---
 
 # API 调试指南
@@ -37,7 +36,7 @@ metadata:
 
 - 浏览器端交互测试 → browser-automation
 - 代码级单元测试 → code-assistant
-- 简单单次 curl → 直接 `shell.exec`
+- 简单单次 curl → 直接 `shell_exec`
 
 ## 工作流（按场景分流）
 
@@ -54,7 +53,7 @@ metadata:
 - **同时看状态码 + 响应体**：单看 200 不够，body 可能是错误结构（"success":false）
 - **敏感信息走变量**：Token / API Key 用 `$TOKEN` / `${API_KEY}`，不写明文；写入文件时不带 token
 - **批量先试单个**：批量执行前先跑一个验证格式，再 shell 循环或 python 批跑
-- **结果落盘**：批量测试结果 `file.write` 写 `api-test-report.md`，含端点 / 状态 / 响应摘要 / 差异
+- **结果落盘**：批量测试结果 `file_write` 写 `api-test-report.md`，含端点 / 状态 / 响应摘要 / 差异
 - **`-k` 仅限测试环境**：跳 SSL 证书校验只在 dev / staging 用，给用户结果时注明
 
 ## 详细参考

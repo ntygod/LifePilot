@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.mcp`
-> **最后更新**：2026-04
+> **最后更新**：2026-05-03
 
 ## 1. 模块概述
 
@@ -212,8 +212,8 @@ sequenceDiagram
 ## 6. 集成点
 
 - **工具系统**（`tool`）：McpTool 注册到 DynamicToolRegistry，通过 McpToolExecutor 执行
-- **Skill 系统**（`skill`）：SkillToMcpBridge 暴露 exportable 工具。Skill 系统 v2（2026-04-24）把激活路径归一到 `skill.load(names=[...])` BuiltinTool，MCP 工具不再通过 skill 形式批量激活——改为 LLM 通过 `tools.search` 检索到对应 MCP 工具后直接调用
-- **Agent 引擎**（`agent`）：MCP 工具不会默认进入 Tier 1 常驻集合；LLM 通过 `tools.search` 发现 MCP 工具后，调用 `tools.describe` 取完整 schema 再直接调用（参见 [工具系统架构](tool-ecosystem.md)）
+- **Skill 系统**（`skill`）：SkillToMcpBridge 暴露 exportable 工具。Skill 系统 v2（2026-04-24）把激活路径归一到 `skill.load(names=[...])` BuiltinTool，MCP 工具不再通过 skill 形式批量激活——改为 LLM 通过 `tool.search` 检索到对应 MCP 工具后直接调用
+- **Agent 引擎**（`agent`）：MCP 工具不会默认进入 Tier 1 常驻集合；LLM 通过 `tool.search` 发现 MCP 工具并获取完整 schema 后直接调用（参见 [工具系统架构](tool-ecosystem.md)）
 - **A2A 协议**（`a2a`）：A2A 可通过 MCP 工具桥接实现跨系统工具调用
 - **共享调度器**（`config.threadpool`）：维护 tick 和重连任务通过 SharedScheduler.heartbeat() 调度
 

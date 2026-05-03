@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-04-16
+> **最后更新**：2026-05-03
 
 ## 1. 功能概述
 
@@ -35,7 +35,7 @@ L1 现在不再保存聊天记录，只保存跨轮但临时的任务状态：
 
 这些数据会落到 `session_workspace_items`，有 TTL 和清理任务，但不会进入长期记忆。
 
-`WorkingSetItem` 有三处主写入点：挂起/确认场景（`AgentPersistenceHandler`）、关键工具执行结果（`ToolExecutionCoordinator`，覆盖 `memory.create/update/tag`、`workflow.execute`、`code.execute`、`datastore.query`）、反思结论（`ReactAgentLoop`，反思触发后自动写入截断至 300 字符的结论摘要）。
+`WorkingSetItem` 有三处主写入点：挂起/确认场景（`AgentPersistenceHandler`）、关键工具执行结果（`ToolExecutionCoordinator`，覆盖 `memory.create/update/tag`、`code`）、反思结论（`ReactAgentLoop`，反思触发后自动写入截断至 300 字符的结论摘要）。
 
 ### 2.3 跨会话回忆改为 snippet recall
 

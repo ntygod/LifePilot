@@ -225,7 +225,6 @@ function formatSessionTime(iso: string): string {
             :disabled="submitting"
             placeholder="有什么我能帮您的吗？"
             :knowledge-bases="kbStore.list"
-            :datastores="[]"
             data-testid="project-detail-chat-input"
             @send="handleSend"
           />

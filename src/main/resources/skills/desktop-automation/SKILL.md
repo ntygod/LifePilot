@@ -1,10 +1,9 @@
 ---
 name: desktop-automation
-description: 当用户要在 Windows 桌面上做 UI 自动化——窗口管理、鼠标点击、键盘模拟、桌面截屏、弹窗处理、应用控件定位时使用。关键词：桌面自动化、操作桌面应用、鼠标点击、键盘模拟、窗口管理、截屏、桌面截图、自动操作软件、pyautogui、pywinauto。网页自动化用 browser-automation，仅 Windows 平台。
+description: 当用户要在 Windows 桌面上做 UI 自动化——窗口管理、鼠标点击、键盘模拟、桌面截屏、弹窗处理、应用控件定位时使用。
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - desktop
       - ui-automation
@@ -12,9 +11,9 @@ metadata:
       - pyautogui
       - pywinauto
     suggested_tools:
-      - shell.exec
-      - file.read
-      - file.write
+      - shell_exec
+      - file_read
+      - file_write
     requires:
       os:
         - windows
@@ -22,7 +21,7 @@ metadata:
 
 # 桌面自动化指南
 
-`pyautogui` + `pywinauto` 控制 Windows 桌面应用。**仅 Windows，且必须用 `shell.exec` 走宿主 Python 进程**（`code.execute` 是沙箱，访问不到真实屏幕和窗口）。**核心约束：操作前必须截图确认状态，不盲操作。**
+`pyautogui` + `pywinauto` 控制 Windows 桌面应用。**仅 Windows，且必须用 `shell_exec` 走宿主 Python 进程**（`code` 是沙箱，访问不到真实屏幕和窗口）。**核心约束：操作前必须截图确认状态，不盲操作。**
 
 ## 适用场景
 
@@ -36,13 +35,13 @@ metadata:
 ## 不适用场景
 
 - 网页自动化 → browser-automation
-- 命令行操作 → `shell.exec`
+- 命令行操作 → `shell_exec`
 - Linux / macOS 桌面 → 当前不支持
 
 ## 工作流
 
-1. **依赖检查**：`shell.exec(command="python -c \"import pyautogui, pywinauto\"")`，缺则提示用户 `pip install pyautogui pywinauto pillow`
-2. **写脚本到文件**：操作步骤写到 cwd 下脚本文件（路径取自工具返回的 workingDirectory），再 `shell.exec(command="python <脚本路径>")` 执行；不用 `python -c` 拼复杂多行
+1. **依赖检查**：`shell_exec(command="python -c \"import pyautogui, pywinauto\"")`，缺则提示用户 `pip install pyautogui pywinauto pillow`
+2. **写脚本到文件**：操作步骤写到 cwd 下脚本文件（路径取自工具返回的 workingDirectory），再 `shell_exec(command="python <脚本路径>")` 执行；不用 `python -c` 拼复杂多行
 3. **截图先**：操作前必须截图看到当前状态，不盲操作
 4. **优先 pywinauto 控件定位**：通过控件树拿元素（标题 / class / 自动化 ID），比坐标点击稳得多（窗口移动 / 分辨率变都不会失效）
 5. **加等待**：每个键鼠操作之间 `time.sleep(0.3-1.0)` 等 UI 响应；点完按钮等加载完再下一步

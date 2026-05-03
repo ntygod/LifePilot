@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.prompt`
-> **最后更新**：2026-03
+> **最后更新**：2026-05-03
 
 ## 1. 模块概述
 
@@ -67,7 +67,7 @@ graph TB
 
 - 职责：启动时扫描 `classpath:prompts/` 下所有 `.st` 文件并注册到 `PromptRegistry`
 - 扫描模式：`{basePath}**/*.st`（递归扫描所有子目录）
-- 键提取规则：从 Resource URL 中提取相对路径并去除 `.st` 后缀（如 `agent/understanding.st` → `agent/understanding`）
+- 键提取规则：从 Resource URL 中提取相对路径并去除 `.st` 后缀（如 `agent/react-system.st` → `agent/react-system`）
 - 条件注册：`@ConditionalOnMissingBean` 允许测试中替换
 
 ### 3.3 PromptProperties — 配置属性
@@ -98,7 +98,7 @@ sequenceDiagram
     PAC-->>Boot: PromptRegistry Bean
 
     Note over Consumer,PR: 运行时渲染
-    Consumer->>PR: render("agent/understanding", variables)
+    Consumer->>PR: render("agent/react-system", variables)
     PR->>PR: 查找缓存 → PromptTemplate.render(variables)
     PR-->>Consumer: 渲染后的提示词文本
 ```
@@ -109,7 +109,7 @@ sequenceDiagram
 |------|------|------|
 | 模板格式 | Spring AI StringTemplate（.st） | 与 Spring AI PromptTemplate 原生集成，支持变量替换 |
 | 模板组织 | 按功能域分目录 | 模板键自然映射为路径（如 `agent/understanding`），直观易维护 |
-| 加载时机 | 启动时全量扫描 | 模板数量有限（约 20 个），启动时一次性加载避免运行时 I/O |
+| 加载时机 | 启动时全量扫描 | 模板数量约 20 个，启动时一次性加载避免运行时 I/O |
 | 缓存策略 | ConcurrentHashMap 永久缓存 | 模板在运行时不变，无需过期或刷新 |
 | 模板与代码分离 | 独立 .st 文件 | 提示词可独立修改和版本管理，不需要重新编译 |
 
@@ -140,6 +140,7 @@ prompts/
 │   ├── react-user-prompt.st  # 用户侧运行时上下文
 │   ├── role-definition.st    # 角色定义
 │   ├── context-guide.st      # 上下文注入说明
+│   ├── skill-catalog.st      # Skill 目录渲染模板
 │   └── streaming-constraint.st # 流式约束
 ├── memory/                   # 记忆系统提示词
 │   ├── compression-summary.st    # 摘要压缩

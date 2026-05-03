@@ -8,7 +8,6 @@ import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.ChatTurnRecord;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.repository.ChatTurnRepository;
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.llm.LlmResponse;
@@ -55,8 +54,6 @@ public class ChatTurnService {
     @Nullable
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable
-    private final SessionDatastoreRepository sessionDatastoreRepository;
-    @Nullable
     private final ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository;
     @Nullable
     private final MemorySpaceRepository memorySpaceRepository;
@@ -72,7 +69,6 @@ public class ChatTurnService {
                            ApplicationEventPublisher eventPublisher,
                            @Nullable NotificationProperties notificationProperties,
                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                           @Nullable SessionDatastoreRepository sessionDatastoreRepository,
                            @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
                            @Nullable MemorySpaceRepository memorySpaceRepository,
                            @Nullable ChatSessionRepository chatSessionRepository,
@@ -83,7 +79,6 @@ public class ChatTurnService {
         this.eventPublisher = eventPublisher;
         this.notificationProperties = notificationProperties;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
-        this.sessionDatastoreRepository = sessionDatastoreRepository;
         this.chatTurnMemorySnapshotRepository = chatTurnMemorySnapshotRepository;
         this.memorySpaceRepository = memorySpaceRepository;
         this.chatSessionRepository = chatSessionRepository;
@@ -96,7 +91,7 @@ public class ChatTurnService {
                            ObjectMapper objectMapper,
                            ApplicationEventPublisher eventPublisher) {
         this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     /** 旧版测试构造器 — 不提供 ProjectContext 依赖时使用，保持二进制兼容。 */
@@ -106,12 +101,10 @@ public class ChatTurnService {
                            ApplicationEventPublisher eventPublisher,
                            @Nullable NotificationProperties notificationProperties,
                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                           @Nullable SessionDatastoreRepository sessionDatastoreRepository,
                            @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
                            @Nullable MemorySpaceRepository memorySpaceRepository) {
         this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                notificationProperties, sessionKnowledgeBaseRepository, sessionDatastoreRepository,
-                chatTurnMemorySnapshotRepository, memorySpaceRepository, null, null);
+                null, null, chatTurnMemorySnapshotRepository, memorySpaceRepository, null, null);
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -319,12 +312,9 @@ public class ChatTurnService {
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository != null
                 ? sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)
                 : List.of();
-        List<String> datastoreIds = sessionDatastoreRepository != null
-                ? sessionDatastoreRepository.findDatastoreIdsBySessionId(sessionId)
-                : List.of();
-        boolean knowledgeBound = !knowledgeBaseIds.isEmpty() || !datastoreIds.isEmpty();
-        List<String> domainReadSpaceIds = resolveDomainReadSpaceIds(knowledgeBaseIds, datastoreIds);
-        String domainWriteSpaceId = resolveDomainWriteSpaceId(knowledgeBaseIds, datastoreIds);
+        boolean knowledgeBound = !knowledgeBaseIds.isEmpty();
+        List<String> domainReadSpaceIds = resolveDomainReadSpaceIds(knowledgeBaseIds, List.of());
+        String domainWriteSpaceId = resolveDomainWriteSpaceId(knowledgeBaseIds, List.of());
         List<String> readSpaceIds = new ArrayList<>();
         readSpaceIds.add(personalSpace.id());
         readSpaceIds.add(experienceSpace.id());
@@ -348,7 +338,7 @@ public class ChatTurnService {
                 projectSpaceId,
                 readSpaceIds,
                 knowledgeBaseIds,
-                datastoreIds,
+                List.of(),
                 !knowledgeBound,
                 false,
                 true,

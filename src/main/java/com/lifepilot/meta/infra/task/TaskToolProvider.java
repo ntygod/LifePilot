@@ -64,18 +64,23 @@ public class TaskToolProvider {
                 .id("cron")
                 .category(ToolCategory.ACTION)
                 .name("定时任务")
-                .description("定时任务调度：创建周期任务、列出任务、更新、删除 cron 任务。")
+                .description("""
+                        定时任务调度。action: create(创建) list(查询，支持status过滤) update(更新，未传字段保持不变) delete(删除，同时清执行日志)。
+                        schedule 为 Spring 6 位 cron（秒 分 时 日 月 周），不是 Linux 5 位。* = 每个 */n = 每n个 a-b = 范围 a,b = 列举 ? = 日/周二选一。周用大写 MON-SUN。
+                        示例: "0 0 8 * * *"=每天8点 "0 */30 * * * *"=每30分钟 "0 0 18 * * MON-FRI"=工作日下午6点。
+                        create 时 taskId 可省略由系统生成。instruction 是触发后让 Agent 做什么的 prompt。
+                        taskId 找不到时先 list 拿真实 id，不要凭记忆传。""")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
                         "properties", Map.ofEntries(
                                 Map.entry("action", Map.of(
                                         "type", "string",
-                                        "enum", List.of("create", "list", "update", "remove"),
-                                        "description", "操作类型：create=创建, list=查询, update=更新（未传字段保持不变）, remove=删除")),
+                                        "enum", List.of("create", "list", "update", "delete"),
+                                        "description", "操作类型：create=创建, list=查询, update=更新（未传字段保持不变）, delete=删除")),
                                 Map.entry("taskId", Map.of(
                                         "type", "string",
-                                        "description", "任务 ID；create 时可省略由系统生成，update/remove 必填")),
+                                        "description", "任务 ID；create 时可省略由系统生成，update/delete 必填")),
                                 Map.entry("name", Map.of(
                                         "type", "string",
                                         "description", "任务名称；create 必填")),
@@ -92,6 +97,11 @@ public class TaskToolProvider {
                                         "type", "string",
                                         "enum", List.of("active", "paused", "completed"),
                                         "description", "list 时作为筛选条件，update 时作为目标状态"))
+                        ),
+                        "dependentRequired", Map.of(
+                                "create", List.of("name", "schedule", "instruction"),
+                                "update", List.of("taskId"),
+                                "delete", List.of("taskId")
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)

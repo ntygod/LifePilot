@@ -91,7 +91,7 @@ class ToolSearchService_查询过滤测试 {
         config.setBm25ConfidenceThreshold(0.1);
         searchService = new ToolSearchService(
                 jdbcTemplate, registry, new ToolSearchQuerySanitizer(),
-                tier1Service, searchCache, memo, config, new SimpleMeterRegistry());
+                tier1Service, searchCache, memo, config, new SimpleMeterRegistry(), null);
     }
 
     @AfterEach

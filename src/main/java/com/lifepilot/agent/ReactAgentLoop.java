@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -606,7 +607,59 @@ public class ReactAgentLoop implements CallbackHelper {
             }
         }
 
+        if (state.isDone() && state.completionMode() == CompletionMode.DEGRADED
+                && hasMeaningfulProgress(state)) {
+            state = buildGracefulSummary(state, request, callback, cachedToolCallbacks, traceContext, loopContext);
+        }
+
         return state;
+    }
+
+    /** 预算降级终止时，用已收集的信息做一次最终总结再返回。 */
+    private ReactAgentState buildGracefulSummary(ReactAgentState state,
+                                                  AgentRequest request,
+                                                  IterationCallback callback,
+                                                  @Nullable List<ToolCallback> toolCallbacks,
+                                                  @Nullable TraceContext traceContext,
+                                                  AgentLoopContext loopContext) {
+        try {
+            String summaryPrompt = """
+                    你的执行时间已用尽，任务提前终止。
+                    请基于当前对话中已获取的所有工具结果，给用户一个结构化的总结：
+
+                    1. 已完成的工作（列出具体成果）
+                    2. 未完成的部分（哪些还没做）
+                    3. 建议下一步（用户可以继续做什么）
+
+                    直接输出总结，不要调用工具，不要道歉。""";
+
+            var messages = List.<Message>of(
+                    new SystemMessage("你正在做一个任务的收尾总结。"),
+                    new UserMessage(summaryPrompt));
+
+            ChatResponse response = callback.callLlm(request, messages,
+                    toolCallbacks != null ? toolCallbacks : List.of(), traceContext);
+            String summary = response.getResult().getOutput().getText();
+
+            if (summary != null && !summary.isBlank()) {
+                log.info("优雅终止总结已生成: traceId={}, summaryLen={}",
+                        state.traceId(), summary.length());
+                return state.toBuilder()
+                        .finalOutput(summary.strip())
+                        .completionMode(CompletionMode.DEGRADED)
+                        .build();
+            }
+        } catch (Exception e) {
+            log.warn("优雅终止总结生成失败，使用降级消息: traceId={}, error={}",
+                    state.traceId(), e.getMessage());
+        }
+        return state;
+    }
+
+    /** 判断是否有足够进展值得做总结（至少有成功的工具调用）。 */
+    private static boolean hasMeaningfulProgress(ReactAgentState state) {
+        return state.steps().stream().anyMatch(
+                s -> s instanceof ReactStep.Observation obs && obs.success());
     }
 
     /**

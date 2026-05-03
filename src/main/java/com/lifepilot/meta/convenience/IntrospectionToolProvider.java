@@ -24,7 +24,7 @@ import java.util.Map;
 /**
  * 系统自省工具提供者 — 注册系统状态工具到 DynamicToolRegistry。
  *
- * <p>提供 {@code system.status} 工具，聚合系统状态概览，包括各注册中心计数、
+ * <p>提供 {@code status} 工具，聚合系统状态概览，包括各注册中心计数、
  * 工具层分布、运行时工作流实例和 MCP Server 连接状态。</p>
  *
  * @author zsg
@@ -64,15 +64,17 @@ public class IntrospectionToolProvider {
     }
 
     // ─────────────────────────────────────────────
-    //  system.status
+    //  status
     // ─────────────────────────────────────────────
 
     /** 构建系统状态工具。 */
     private BuiltinTool buildStatusTool() {
         return BuiltinTool.builder()
-                .id("system.status")
+                .id("status")
                 .name("查看系统状态")
-                .description("查看系统状态：查询当前运行状态、版本、运行时长、健康指标。")
+                .description("""
+                        查询系统运行状态：Skill/Tool/Agent 数量与分布、运行时工作流实例、MCP 连接状态、datastore 列表、版本与运行时长。
+                        需要确认有哪些可用 datastore、Skill、或排查工具不可见时使用。""")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
@@ -81,7 +83,7 @@ public class IntrospectionToolProvider {
                 .build();
     }
 
-    /** 执行 system.status — 聚合能力计数、工具层分布、运行时工作流实例和 MCP 连接状态。 */
+    /** 执行 status — 聚合能力计数、工具层分布、运行时工作流实例和 MCP 连接状态。 */
     private ToolResult executeStatus(ToolInput input) {
         var summary = aggregator.aggregate();
         var toolCountByLayer = toolRegistry.getToolCountByLayer();

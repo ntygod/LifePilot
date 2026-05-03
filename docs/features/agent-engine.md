@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-04-15
+> **最后更新**：2026-05-03
 
 ## 1. 功能概述
 
@@ -71,7 +71,7 @@ public class ReactAgentLoop {
 - 执行时间限制
 - 步骤数限制
 
-预算耗尽时通过 `DegradedResponseBuilder.terminateWithReason()` 生成降级响应，汇总已完成的步骤结果。
+预算耗尽时通过 `DegradedResponseBuilder.terminateWithReason()` 进入降级路径，若已有有意义的执行进展（`hasMeaningfulProgress`），优先调用 LLM 做结构化总结（`buildGracefulSummary()`）再返回；无进展时直接截断终止。工具执行失败后（`reflect-on-tool-failure`），循环自动触发反思回顾（Reflect），分析失败原因并输出调查报告，帮助 LLM 决定是否重试或调整策略。
 
 5 级渐进式预算降级策略：NORMAL → COMPRESS_HISTORY → TRIM_TOOLS → SKIP_MEMORY → TERMINATE，逐步收缩能力而非直接终止。
 
@@ -152,10 +152,12 @@ lifepilot:
       max-consecutive-failures: 3
       max-parallel-tool-calls: 4
       llm-scene: agent_react
+      reflect-on-tool-failure: true
+      stall-detection-threshold: 3
     budget:
       default-max-tokens: 20000000
       default-max-steps: 30
-      default-max-duration-seconds: 300
+      default-max-duration-seconds: 1800
     context:
       max-context-tokens: 2000000
       output-reserved-tokens: 8192
@@ -179,13 +181,15 @@ lifepilot:
 | `lifepilot.agent.loop.max-parallel-tool-calls` | 4 | 单个工具波次最大并发数 |
 | `lifepilot.agent.budget.default-max-tokens` | 20000000 | 对话总 Token 预算 |
 | `lifepilot.agent.budget.default-max-steps` | 30 | 步数预算上限 |
-| `lifepilot.agent.budget.default-max-duration-seconds` | 300 | 时间预算上限（秒） |
+| `lifepilot.agent.budget.default-max-duration-seconds` | 1800 | 时间预算上限（秒，2026-05 从 300 上调至 1800） |
+| `lifepilot.agent.loop.reflect-on-tool-failure` | `true` | 工具执行失败时触发反思回顾 |
+| `lifepilot.agent.loop.stall-detection-threshold` | 3 | 停滞检测阈值（连续重复模式判定） |
 | `lifepilot.agent.context.max-context-tokens` | 2000000 | 单次 LLM 调用最大上下文 Token 数 |
 | `lifepilot.agent.checkpoint.enabled` | `true` | 检查点功能开关 |
 | `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
 | `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词 |
 
-> 工具可见性由 `lifepilot.tool.tier1.pinned` + `activatedToolIds` + 3 个 Meta 工具共同决定，详见 [工具系统](tool-ecosystem.md)。
+> 工具可见性由 `lifepilot.tool.tier1.pinned` + `activatedToolIds` + `tool.search` 共同决定，详见 [工具系统](tool-ecosystem.md)。
 
 ## 6. 使用场景
 

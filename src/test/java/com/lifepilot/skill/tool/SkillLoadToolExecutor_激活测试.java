@@ -62,19 +62,18 @@ class SkillLoadToolExecutor_激活测试 {
     }
 
     @Test
-    void 激活单个成功应返回content与activated_tool_ids() {
+    void 激活单个成功应返回content() {
         when(repository.findByName("x")).thenReturn(Optional.of(enabled("x")));
         when(activator.activate("x")).thenReturn(
                 new SkillActivation("x", "## 指南正文\n...", List.of("tool-a")));
 
         var result = executor.execute(Map.of("names", List.of("x")));
 
-        assertThat(result).containsKeys("content", "activated_tool_ids");
+        assertThat(result).containsKey("content");
         assertThat((String) result.get("content"))
                 .contains("<skill name=\"x\">")
                 .contains("## 指南正文")
                 .contains("</skill>");
-        assertThat(toolIds(result)).containsExactly("tool-a");
     }
 
     @Test
@@ -90,8 +89,6 @@ class SkillLoadToolExecutor_激活测试 {
 
         var content = (String) result.get("content");
         assertThat(content.indexOf("AAA")).isLessThan(content.indexOf("BBB"));
-        assertThat(toolIds(result))
-                .containsExactlyInAnyOrder("t1", "t2");
     }
 
     @Test
@@ -150,18 +147,14 @@ class SkillLoadToolExecutor_激活测试 {
         when(activator.activate("a")).thenReturn(new SkillActivation("a", "A", List.of("t1", "t2")));
         when(activator.activate("b")).thenReturn(new SkillActivation("b", "B", List.of("t2", "t3")));
 
-        var result = executor.execute(Map.of("names", List.of("a", "b")));
+        executor.execute(Map.of("names", List.of("a", "b")));
 
-        assertThat(toolIds(result))
-                .containsExactlyInAnyOrder("t1", "t2", "t3");
+        // suggested_tools 不再返回 activated_tool_ids，仅验证不抛异常
     }
 
     // 辅助方法
 
     @SuppressWarnings("unchecked")
-    private static List<String> toolIds(Map<String, Object> result) {
-        return (List<String>) result.get("activated_tool_ids");
-    }
 
     private SkillInstallation enabled(String n) {
         return new SkillInstallation(n, SkillSourceType.BUILTIN, null, "/p/" + n, "1.0.0",

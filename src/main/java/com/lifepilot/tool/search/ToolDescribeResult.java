@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * `tools.describe` 返回结果。
+ * `tool.search` 返回结果。
  *
  * @param schemas 工具 ID → 完整 schema
  * @param notFound 请求但未找到的 ID 列表

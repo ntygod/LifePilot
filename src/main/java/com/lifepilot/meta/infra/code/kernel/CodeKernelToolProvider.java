@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * 代码内核工具提供者 — 单工具多 action（list/reset/inspect）。
  *
- * <p>统一为 {@code code.kernel} 工具，{@code action} 参数路由：
+ * <p>统一为 {@code code} 工具，{@code action} 参数路由：
  * <ul>
  *   <li>{@code list} — 列出所有活跃内核（无需 kernelId，幂等）</li>
  *   <li>{@code reset} — 清空指定内核的变量与导入</li>
@@ -41,7 +41,7 @@ public class CodeKernelToolProvider {
     }
 
     /**
-     * 构建代码内核管理工具列表（仅 1 个：{@code code.kernel}）。
+     * 构建代码内核管理工具列表（仅 1 个：{@code code}）。
      */
     public List<BuiltinTool> buildKernelTools() {
         return List.of(buildKernelTool());
@@ -76,11 +76,11 @@ public class CodeKernelToolProvider {
         actionMetadata.put("inspect", new ActionMetadata(RiskLevel.LOW, inspectSemantics));
 
         return BuiltinTool.builder()
-                .id("code.kernel")
+                .id("code")
                 .category(ToolCategory.ACTION)
                 .name("代码内核管理")
                 .description("""
-                        管理 code.execute 的持久内核会话（kernelId 对应同一会话内的变量和导入）。
+                        管理 code 的持久内核会话（kernelId 对应同一会话内的变量和导入）。
                         list — 列出当前活跃内核（无需 kernelId）。何时用：用户问"现在跑了什么内核 / 内核还在吗"。
                         inspect — 查看指定内核内的变量和状态。何时用：调试时确认变量是否还存在 / 类型对不对。
                         reset — 清空指定内核的变量与已导入模块（保留内核存活）。何时用：用户说"重新开始 / 清下状态"，或多步分析跑歪了想从干净状态再来。

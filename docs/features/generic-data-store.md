@@ -2,16 +2,17 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.datastore`
-> **最后更新**：2026-04-24
-> **实现状态**：✅ 后端能力保留；Plan 3（2026-04-23）LLM 工具集下线、前端用户入口下架
+> **最后更新**：2026-05-03
+> **实现状态**：后端 `DataStoreManager` 保留，LLM 工具集与 REST API 已下线
 
-## Plan 3 用户侧下架（2026-04-23）
+## Plan 3 用户侧下架（2026-04-23）+ 2026-05 完整清理
 
-自 Plan 3 起，通用数据存储不再作为用户面可见特性：
+自 Plan 3 起，通用数据存储不再作为用户面可见特性。2026-05 进一步清理：
 
 - LLM 不再获得 `datastore` 工具（`StorageToolProvider.buildStorageTools()` 返回空列表）
 - 前端不再有 `/datastores` 路由、详情页与侧栏"资料仓库"入口
-- 后端 `DataStoreManager` 与 Datastore REST API 完整保留，供内置 Skill（Todo / Schedule / Habit）的泛型 CRUD 适配器继续使用；亦供未来若出现"百万级结构化数据高频 CRUD"场景时快速复活 LLM 工具
+- **`DatastoreController` 已删除**，REST API（`/api/datastores`）不再可用
+- 后端 `DataStoreManager` 保留，供内置 Skill（Todo / Schedule / Habit）的泛型 CRUD 适配器继续使用；亦供未来若出现"百万级结构化数据高频 CRUD"场景时快速复活 LLM 工具
 
 下文的使用场景（§3）与 YAML Skill 扩展示例（§3.4）当前仅作为后端能力参考，不代表对用户直接可见。
 

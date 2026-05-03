@@ -1,10 +1,9 @@
 ---
 name: feishu
-description: 当用户要在飞书上发消息、创建任务、操作文档、管理日程或群组时使用。关键词：飞书、发飞书消息、飞书通知、飞书群、飞书任务、飞书文档、飞书日程、lark、知识库消息。钉钉操作不在本 Skill 范围，纯邮件用 shell.exec + curl，知微对话内回复用 notify.send_message。
+description: 当用户要在飞书上发消息、创建任务、操作文档、管理日程或群组时使用。
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - feishu
       - 飞书
@@ -29,10 +28,10 @@ metadata:
 
 ## 不适用场景
 
-- 邮件发送 → `shell.exec` + curl
+- 邮件发送 → `shell_exec` + curl
 - 钉钉 / 企业微信 → 对应渠道 Skill
 - 纯文档撰写不发飞书 → content-creator
-- 知微对话内通知用户 → 直接说就行（或 `notify.send_message`）
+- 知微对话内通知用户 → 直接说就行（或 `notify`）
 
 ## 工作流
 

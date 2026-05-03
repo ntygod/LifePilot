@@ -72,7 +72,6 @@ public class SkillLoadToolExecutor {
         // 激活 + 聚合
         StringBuilder content = new StringBuilder();
         // 用 LinkedHashSet 保留首次出现顺序并自动去重
-        LinkedHashSet<String> distinctToolIds = new LinkedHashSet<>();
         LinkedHashSet<String> distinctReferences = new LinkedHashSet<>();
         for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
@@ -85,13 +84,6 @@ public class SkillLoadToolExecutor {
                     .append(instructions)
                     .append("\n</skill>");
             collectReferences(instructions, distinctReferences);
-            if (activation.suggestedTools() != null) {
-                for (String toolId : activation.suggestedTools()) {
-                    if (toolId != null && !toolId.isBlank()) {
-                        distinctToolIds.add(toolId);
-                    }
-                }
-            }
         }
 
         // references 强引导：让 LLM 在收到当回合就看到具体路径，避免凭印象做事。
@@ -103,8 +95,7 @@ public class SkillLoadToolExecutor {
         }
 
         return Map.of(
-                "content", content.toString(),
-                "activated_tool_ids", List.copyOf(distinctToolIds)
+                "content", content.toString()
         );
     }
 

@@ -229,7 +229,7 @@ public class PersistentKernelManager {
      * 解析 Python 内核使用的可执行文件路径。
      *
      * <p>强制走捆绑 Python，并在创建前再做一次状态校验（防御性双层检查 — 即使
-     * CodeExecuteToolExecutor 入口已校验，直接通过 {@code code.kernel} 工具或测试调用也能尽早 fail）。</p>
+     * CodeExecuteToolExecutor 入口已校验，直接通过 {@code code} 工具或测试调用也能尽早 fail）。</p>
      */
     private String resolvePythonRuntime() {
         var status = runtimeManager.checkStatus();

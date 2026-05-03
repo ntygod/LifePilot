@@ -3,7 +3,7 @@ package com.lifepilot.tool.search;
 import java.util.List;
 
 /**
- * `tools.search` 返回结果。
+ * `tool.search` 返回结果。
  *
  * @param results top-k 命中
  * @param totalMatched FTS5 实际命中总数
@@ -28,7 +28,7 @@ public record ToolSearchResult(
                 List.of(),
                 0,
                 ToolSearchConfidence.NONE,
-                "未匹配到工具。放宽关键词重新调 tools.search，或在 skill_catalog 评估对应 skill / 用 shell.exec 兜底。"
+                "未匹配到工具。放宽关键词重新调 tool.search，或在 skill_catalog 评估对应 skill / 用 shell.exec 兜底。"
         );
     }
 }

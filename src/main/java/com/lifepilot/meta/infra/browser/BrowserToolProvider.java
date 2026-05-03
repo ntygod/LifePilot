@@ -50,7 +50,13 @@ public class BrowserToolProvider {
                 .id("browser")
                 .category(ToolCategory.ACTION)
                 .name("浏览器自动化")
-                .description("浏览器自动化：导航网页、点击、输入、网页截图、滚动、键盘、标签页（基于 Playwright）。")
+                .description("""
+                        浏览器自动化（Playwright）。所有操作带 sessionId 复用会话。
+                        action: navigate(导航) snapshot(截图+元素编号表，点击/输入前必调) click/input/hover(优先用index) scroll/wait/select/keyboard screenshot(仅截图) evaluate(执行JS) accessibility(无障碍树) tab(标签页管理) storage(Cookie/localStorage) requestHumanTakeover(挂起让用户接管登录/验证码) close(关闭会话)。
+                        元素定位 fallback: index → #id → [data-testid] → accessibility → CSS选择器。页面变化后旧元素失效，操作前重新 snapshot。
+                        人机接管触发: 登录页/验证码/密码输入框/连续2次操作无推进 → requestHumanTakeover，不要假装填密码。
+                        会话模式: LAUNCH(默认，会话内保持) CDP(复用用户Chrome) PERSISTENT(永久profile跨会话)。
+                        内容为空可能是JS未渲染→加wait；被反爬→换web_fetch。""")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
@@ -135,7 +141,8 @@ public class BrowserToolProvider {
                                         "description", "CDP 模式的调试端口 URL，如 http://localhost:9222")),
                                 Map.entry("userDataDir", Map.of("type", "string",
                                         "description", "PERSISTENT 模式的用户数据目录路径"))
-                        )
+                        ),
+                        "dependentRequired", buildBrowserDependentRequired()
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .executionSemantics(ToolExecutionSemantics.of(
@@ -147,5 +154,22 @@ public class BrowserToolProvider {
                 .actionMetadataFrom(executor)
                 .executor(executor)
                 .build();
+    }
+
+    private static Map<String, List<String>> buildBrowserDependentRequired() {
+        var deps = new java.util.LinkedHashMap<String, List<String>>();
+        deps.put("navigate", List.of("url"));
+        deps.put("click", List.of("index"));
+        deps.put("input", List.of("index", "value"));
+        deps.put("hover", List.of("index"));
+        deps.put("scroll", List.of("direction"));
+        deps.put("wait", List.of("selector"));
+        deps.put("select", List.of("selector", "value"));
+        deps.put("keyboard", List.of("type", "key"));
+        deps.put("evaluate", List.of("expression"));
+        deps.put("tab", List.of("tabAction"));
+        deps.put("storage", List.of("target", "storageAction"));
+        deps.put("requestHumanTakeover", List.of("reason"));
+        return Map.copyOf(deps);
     }
 }

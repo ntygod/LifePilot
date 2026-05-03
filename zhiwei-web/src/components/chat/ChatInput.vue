@@ -5,7 +5,6 @@ import {
   ArrowUp,
   AtSign,
   CornerDownLeft,
-  Database,
   FileAudio2,
   FileText,
   FileVideo,
@@ -27,7 +26,7 @@ import { useVoice } from '@/composables/useVoice'
 import { useWhisperDownload } from '@/composables/useWhisperDownload'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import type { ChatAttachment, Datastore, KnowledgeBase, SessionConfig } from '@/types'
+import type { ChatAttachment, KnowledgeBase, SessionConfig } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
@@ -35,7 +34,6 @@ const props = defineProps<{
   continuationTitle?: string | null
   continuationDetail?: string | null
   knowledgeBases?: KnowledgeBase[]
-  datastores?: Datastore[]
   baseSessionConfig?: SessionConfig
 }>()
 
@@ -80,7 +78,7 @@ const selectedContexts = ref<Array<{
   id: string
   name: string
   description?: string | null
-  kind: 'datastore' | 'knowledge-base'
+  kind: 'knowledge-base'
 }>>([])
 
 // 语音录音
@@ -145,12 +143,6 @@ watch(mentionQuery, (query) => {
   }
 })
 const allContextOptions = computed(() => [
-  ...(props.datastores ?? []).map(datastore => ({
-    id: datastore.id,
-    name: datastore.name,
-    description: datastore.description,
-    kind: 'datastore' as const,
-  })),
   ...(props.knowledgeBases ?? []).map(knowledgeBase => ({
     id: knowledgeBase.id,
     name: knowledgeBase.name,
@@ -172,7 +164,6 @@ const filteredContextOptions = computed(() => {
       || (option.description?.toLowerCase().includes(query) ?? false)
   })
 })
-const filteredDatastores = computed(() => filteredContextOptions.value.filter(option => option.kind === 'datastore'))
 const filteredKnowledgeBases = computed(() => filteredContextOptions.value.filter(option => option.kind === 'knowledge-base'))
 const pickerTitle = computed(() => (
   manualContextPickerOpen.value
@@ -347,7 +338,7 @@ function selectContext(option: {
   id: string
   name: string
   description?: string | null
-  kind: 'datastore' | 'knowledge-base'
+  kind: 'knowledge-base'
 }) {
   if (!selectedContexts.value.some(selected => selected.kind === option.kind && selected.id === option.id)) {
     selectedContexts.value.push(option)
@@ -359,7 +350,7 @@ function selectContext(option: {
   manualContextQuery.value = ''
 }
 
-function removeContext(kind: 'datastore' | 'knowledge-base', id: string) {
+function removeContext(kind: 'knowledge-base', id: string) {
   selectedContexts.value = selectedContexts.value.filter(option => !(option.kind === kind && option.id === id))
 }
 
@@ -380,10 +371,6 @@ function buildTemporarySessionConfig(): SessionConfig | undefined {
     props.baseSessionConfig.knowledgeBaseIds ?? [],
     selectedContexts.value.filter(option => option.kind === 'knowledge-base').map(option => option.id),
   )
-  const datastoreIds = mergeIds(
-    props.baseSessionConfig.datastoreIds ?? [],
-    selectedContexts.value.filter(option => option.kind === 'datastore').map(option => option.id),
-  )
 
   return {
     preferredProviderId: props.baseSessionConfig.preferredProviderId,
@@ -391,7 +378,6 @@ function buildTemporarySessionConfig(): SessionConfig | undefined {
     maxSteps: props.baseSessionConfig.maxSteps,
     maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
     knowledgeBaseIds,
-    datastoreIds,
   }
 }
 
@@ -406,7 +392,6 @@ function buildRestoreSessionConfig(): SessionConfig | undefined {
     maxSteps: props.baseSessionConfig.maxSteps,
     maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
     knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
-    datastoreIds: props.baseSessionConfig.datastoreIds ?? [],
   }
 }
 
@@ -426,12 +411,12 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function getContextIcon(kind: 'datastore' | 'knowledge-base') {
-  return kind === 'datastore' ? Database : LibraryBig
+function getContextIcon(_kind: 'knowledge-base') {
+  return LibraryBig
 }
 
-function getContextKindLabel(kind: 'datastore' | 'knowledge-base') {
-  return kind === 'datastore' ? 'Datastore' : '知识库'
+function getContextKindLabel(_kind: 'knowledge-base') {
+  return '知识库'
 }
 
 function getFileIcon(file: File) {
@@ -502,10 +487,7 @@ defineExpose({
           class="context-chip-card inline-flex items-center gap-2.5 px-3 py-2 text-xs"
         >
           <span
-            class="context-chip-icon"
-            :class="context.kind === 'datastore'
-              ? 'bg-sky-500/12 text-sky-600'
-              : 'bg-primary/12 text-primary'"
+            class="context-chip-icon bg-primary/12 text-primary"
           >
             <component :is="getContextIcon(context.kind)" class="size-3.5" />
           </span>
@@ -565,7 +547,7 @@ defineExpose({
               <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 v-model="manualContextQuery"
-                placeholder="搜索知识库或资料仓库..."
+                placeholder="搜索知识库..."
                 class="h-8 rounded-xl bg-background/60 pl-8 text-xs"
               />
             </div>
@@ -574,27 +556,27 @@ defineExpose({
           <!-- 列表 -->
           <div class="max-h-[240px] space-y-0.5 overflow-y-auto scrollbar-thin">
             <button
-              v-for="option in [...filteredDatastores, ...filteredKnowledgeBases]"
+              v-for="option in filteredKnowledgeBases"
               :key="`${option.kind}:${option.id}`"
               type="button"
               class="flex w-full items-center gap-sm rounded-xl px-sm py-xs text-left transition-colors hover:bg-accent/50"
               @click="selectContext(option)"
             >
               <component
-                :is="option.kind === 'datastore' ? Database : LibraryBig"
+                :is="LibraryBig"
                 class="size-4 shrink-0 text-muted-foreground"
               />
               <span class="truncate text-sm text-foreground">{{ option.name }}</span>
               <span class="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                {{ option.kind === 'datastore' ? '资料仓库' : '知识库' }}
+                知识库
               </span>
             </button>
 
             <div
-              v-if="filteredDatastores.length === 0 && filteredKnowledgeBases.length === 0"
+              v-if="filteredKnowledgeBases.length === 0"
               class="px-sm py-md text-center text-xs text-muted-foreground"
             >
-              {{ manualContextQuery ? '没有匹配结果' : '还没有知识库或资料仓库' }}
+              {{ manualContextQuery ? '没有匹配结果' : '还没有知识库' }}
             </div>
           </div>
 

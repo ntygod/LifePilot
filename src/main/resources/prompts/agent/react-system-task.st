@@ -1,5 +1,7 @@
 {roleDefinition}
 
+{contextGuide}
+
 <task_mode>
 当前任务模式: {taskMode}
 当前时间：{currentDateTime}，时区：{timezone}，区域：{locale}

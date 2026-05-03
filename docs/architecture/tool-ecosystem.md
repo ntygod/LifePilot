@@ -2,17 +2,16 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-04-25
+> **最后更新**：2026-05-03
 
 ## 1. 模块概述
 
 工具系统是知微 Agent 与外部世界交互的桥梁，定义了统一的工具契约（ToolContract），支持两种工具来源（Java 原生内置工具、MCP 外部工具），并通过执行管道提供护栏检查、幂等控制、超时重试等保障。
 
-工具对 LLM 的暴露采用**三层架构**（2026-04 重构后）：
+工具对 LLM 的暴露采用**全量常驻模式**（2026-05 精简后）：
 
-- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` 配置中列出的工具，完整 schema 始终随系统 prompt 注入
-- **Meta 层**：`tools.search` / `tools.describe` 两个内省工具始终常驻，LLM 用它们发现 Tier 2 工具
-- **Tier 2（延迟加载）**：其余所有 BuiltinTool + MCP 工具，进 FTS5 BM25 搜索索引；LLM 通过 `tools.search` 找到后用 `tools.describe` 取完整 schema，再直接调用
+- **Tier 1（全量常驻）**：全部 15 个内置工具（含 `tool.search` 内省工具）始终随 system prompt 注入，无需延迟发现
+- **MCP 工具**：通过 `tool.search` 发现，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引
 
 此外 Skill 激活会把场景化工具集合注入到 `ReactAgentState.activatedToolIds`，临时加入可见集。
 
@@ -97,7 +96,7 @@ graph TB
 - 职责：实现 `AgentToolProvider`，把 `ToolContract` 转成 Spring AI `ToolCallback` 注入到 LLM 调用链
 - 可见集合计算（`getToolCallbacks`）：
   - 多 Agent / 受限代理：按 `state.allowedToolIds()` 白名单过滤
-  - 常规：`tier1Service.getCurrentTier1Ids()` ∪ `state.activatedToolIds()` ∪ Meta 工具集合（`tools.search/describe/list`）
+  - 常规：`tier1Service.getCurrentTier1Ids()` ∪ `state.activatedToolIds()` ∪ `tool.search` 内省工具
 - 每次调用把 `ReactAgentState` 放进 context（`ToolContextKeys.CALLER_STATE`），供 meta 工具的 executor 读取
 
 ### 3.4 Tier1Service（Tier 1 只读 pinned 配置）
@@ -114,15 +113,15 @@ graph TB
 - `ToolSearchQuerySanitizer` 适配 trigram：每个 token 切成 3-gram phrase 用 `OR` 连接（短 query 也能命中）；2 字符 token 用空格前缀凑 3 字符；保留字符 `"()*` 替换为空格；`AND/OR/NOT/NEAR` 关键字转小写避免被识别为操作符
 - `bm25-confidence-threshold` 决定返回结果附带的 `confidence` 标签；低于阈值时 hint 提示 LLM 重写查询
 
-### 3.6 Meta 工具（`BuiltinToolSearchProvider`）
+### 3.6 Meta 工具 — `tool.search`
 
-三个常驻 BuiltinTool，风险 `LOW`，`PARALLEL_SAFE`，`category=INTROSPECTION`：
+一个常驻 BuiltinTool，风险 `LOW`，`PARALLEL_SAFE`，`category=INTROSPECTION`：
 
 | 工具 ID | 作用 | 关键参数 |
 |---------|------|----------|
-| `tools.search` | BM25 搜工具（trigram 索引，支持中英文关键字 substring 命中） | `query`（必填），`category`（可选过滤），`limit`（默认 5，上限 20） |
-| `tools.describe` | 批量取 schema | `tool_ids`（必填数组，批量上限 10） |
+| `tool.search` | FTS5 BM25 + 语义 RRF 融合搜索工具注册表，返回工具 ID、描述和 inputSchema（2026-05 后集成语义向量召回） | `query`（必填），`category`（可选过滤），`limit`（默认 5，上限 20） |
 
+`tools.describe` 已于 2026-05 删除——`tool.search` 直接返回 inputSchema，LLM 无需二次 describe。
 Category 维度为 `PERCEPTION / ACTION / COGNITION / STORAGE / INTERACTION / INTROSPECTION / EXTENSION`（`ToolCategory` 枚举）。
 
 ### 3.7 ToolValidator（启动期命名强校验）
@@ -133,7 +132,7 @@ Category 维度为 `PERCEPTION / ACTION / COGNITION / STORAGE / INTERACTION / IN
 - `name`：必须含中文字符
 - `description`：长度 ≥ 20 字符；允许中英混排（trigram 索引召回，无需强制英文）；未检测到中文且未含英文动词词根时 warn（软规则）
 - `tags`：数量 ≥ 3 + 非空白 + 不重复；允许中英混排
-- 豁免：`tools.search / tools.describe` 两个 meta 工具；以 `a2a_remote_` 开头的外部生态工具（A2A 远端 agent 等）
+- 豁免：`tool.search` meta 工具；以 `a2a_remote_` 开头的外部生态工具（A2A 远端 agent 等）
 
 ### 3.8 ToolExecutionPipeline
 
@@ -164,29 +163,25 @@ sequenceDiagram
     P-->>LLM: 结果回传
 ```
 
-### 4.2 LLM 发现 Tier 2 工具（search → describe → call）
+### 4.2 LLM 发现 MCP 工具（search + call）
 
 ```mermaid
 sequenceDiagram
     participant LLM as LLM
     participant BR as ToolBridge
     participant SS as ToolSearchService
-    participant DS as ToolDescribeService
     participant FTS as tool_search_index
     participant P as ToolExecutionPipeline
 
-    Note over LLM: 需要某种能力但 Tier 1 里没有
-    LLM->>BR: tools.search({"query":"按规则删除文件"})
+    Note over LLM: 需要 MCP 工具但不在常驻列表
+    LLM->>BR: tool.search({"query":"按规则删除文件"})
     BR->>SS: search(state, query, category, limit)
     SS->>SS: sanitize + 三层缓存查询
     SS->>FTS: MATCH query
     FTS-->>SS: 候选 + BM25 score
-    SS->>SS: 排除 Tier1/activated/meta/权限外
-    SS-->>LLM: [{id, description, category, confidence}]
-    LLM->>BR: tools.describe({"tool_ids":["shell.exec"]})
-    BR->>DS: describe(ids)
-    DS-->>LLM: 完整 schemas
-    LLM->>BR: shell.exec(...)
+    SS->>SS: 排除权限外工具
+    SS-->>LLM: [{id, description, inputSchema, confidence}]
+    LLM->>BR: mcp_tool(...)
     BR->>P: execute
     P-->>LLM: ToolResult
 ```
@@ -197,10 +192,10 @@ sequenceDiagram
 |------|------|------|
 | 工具抽象 | sealed interface ToolContract | 编译期穷举两种工具类型，新增类型时编译器强制处理 |
 | 层次优先级 | BuiltinTool > McpTool | 内置工具最可靠，MCP 外部工具优先级较低 |
-| 分层暴露 | Tier 1 常驻 + Tier 2 BM25 延迟加载 | 对齐 Claude Code v2.1.69+ defer_loading 模式；Tier 1 任务保持 2 轮响应低延迟，Tier 2 覆盖无限扩展 |
+| 分层暴露 | 全量常驻（Tier 1 注入全部 15 个工具） | 2026-05 精简后工具仅 15 个，全量注入上下文无压力，无需延迟加载分层 |
 | 搜索算法 | FTS5 BM25 裸跑，向量 fallback 默认关闭 | BM25 对工具元数据这种短文本召回足够，观察数据后再决定是否启 `lifepilot.tool.search.fallback.vector-enabled` |
 | Tier 1 维护 | 静态 `pinned` 配置 | 单机本地无审批角色，自动晋升机制成死代码（已下架），改为直接编辑 `application.yml` 维护名单 |
-| 命名规范 | 启动期强校验 + 豁免 meta 工具 | 硬规则违反直接阻塞启动，防止运行时才暴露格式错误；`tools.*` meta 工具因 name 等风格差异豁免 |
+| 命名规范 | 启动期强校验 + 豁免 meta 工具 | 硬规则违反直接阻塞启动，防止运行时才暴露格式错误；`tool.search` meta 工具因 name 等风格差异豁免 |
 | 语言策略 | description / tags 中英混排 + name 中文 | trigram tokenizer 双向 substring 匹配中文短语；description 主动写入"删除文件""复制目录"等高频用户短语让召回直接命中 |
 | FTS5 tokenizer | trigram | 原 unicode61 把连续 CJK 视作单 token，必须整体匹配；trigram 3 字符滑窗 substring 命中，对中文 query 友好 |
 | 执行管道 | Pipeline 模式 | 护栏、幂等、超时、重试等横切关注点解耦，可独立配置 |
@@ -209,10 +204,10 @@ sequenceDiagram
 ## 6. 集成点
 
 - **Agent 引擎**（`agent`）：通过 `ToolBridgeAgentToolProvider` 提供工具回调，`ReactAgentLoop` 在 state 中累积 `activatedToolIds`（Skill 激活）
-- **MCP 协议**（`mcp`）：`McpTool` 注册到 `DynamicToolRegistry`，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引；MCP 工具默认不进 Tier 1，通过 `tools.search` 被发现
+- **MCP 协议**（`mcp`）：`McpTool` 注册到 `DynamicToolRegistry`，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引；MCP 工具通过 `tool.search` 被发现
 - **Skill 系统**（`skill`）：通过 `skill.load(names=[...])` BuiltinTool 实现按需激活（1-3 个/次），返回的 `activated_tool_ids` 合入 `ReactAgentState.activatedToolIds`；`suggested_tools` 引用的工具可由 `ToolSearchIndexMaintainer` 补入索引
 - **护栏系统**（`guardrail` / `observability`）：执行管道中集成风险等级检查
-- **可观测性**（`observability`）：工具执行轨迹记录；`ToolSearchService` / `ToolDescribeService` 执行接入 Micrometer 指标（命中率、查询耗时、cache hit/miss）
+- **可观测性**（`observability`）：工具执行轨迹记录；`ToolSearchService` 执行接入 Micrometer 指标（命中率、查询耗时、cache hit/miss）
 
 ## 7. 配置参考
 
@@ -233,7 +228,7 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.tool.tier1.pinned` | 见 application.yml | 人工固定的 Tier 1 工具 ID 列表（当前含 `tools.search/describe/list` + `file.read/write/list` + `web.search/fetch` + `shell.exec` + `memory` + `knowledge.search`） |
+| `lifepilot.tool.tier1.pinned` | 见 application.yml | 人工固定的 Tier 1 工具 ID 列表（当前 15 个内置工具全量常驻：`memory/browser/code/shell.exec/shell.process/file.read/file.write/file.manage/web.search/web.fetch/cron/notify/status/ui.render/skill.load` + `tool.search` 内省工具） |
 
 > 历史 `tier1.promotion.*` / `tier1.demotion.*` 子键已于 2026-04-25 删除（自动晋升 / 降级机制下架）。如需扩缩 Tier 1 名单，直接编辑 `pinned` 列表后重启即可生效。
 
@@ -241,23 +236,21 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.tool.search.default-limit` | `5` | `tools.search` 未传 limit 时的默认值 |
-| `lifepilot.tool.search.max-limit` | `20` | `tools.search` 单次 limit 上限 |
+| `lifepilot.tool.search.default-limit` | `5` | `tool.search` 未传 limit 时的默认值 |
+| `lifepilot.tool.search.max-limit` | `20` | `tool.search` 单次 limit 上限 |
 | `lifepilot.tool.search.bm25-confidence-threshold` | `1.0` | BM25 分数高于此值标为 HIGH 置信度 |
 | `lifepilot.tool.search.cache.layer-a-max-size` | `500` | 查询结果 LRU 缓存条目数 |
 | `lifepilot.tool.search.cache.layer-b-max-size` | `1000` | 查询结果 TTL 缓存条目数 |
 | `lifepilot.tool.search.cache.layer-b-ttl-minutes` | `5` | 查询结果 TTL 缓存时长 |
 | `lifepilot.tool.search.fallback.vector-enabled` | `false` | 向量 fallback 总开关（BM25 低置信度时补救），观察 BM25 召回率后再决定是否开启 |
 
-### 7.4 describe 服务
+### 7.4 describe 服务（已于 2026-05 删除）
 
-| 配置键 | 默认值 | 说明 |
-|--------|--------|------|
-| `lifepilot.tool.describe.max-batch-size` | `10` | `tools.describe` 单次最大批量 |
+`tools.describe` 已随工具精简删除——`tool.search` 直接返回 inputSchema。相关配置 `lifepilot.tool.describe.max-batch-size` 已移除。
 
 ### 7.5 可观测性
 
-`tools.search` / `tools.describe` 的查询耗时、缓存命中率通过 Micrometer 暴露到 `/actuator/metrics`（`management.endpoints.web.exposure.include` 已含 `metrics`）。
+`tool.search` 的查询耗时、缓存命中率通过 Micrometer 暴露到 `/actuator/metrics`（`management.endpoints.web.exposure.include` 已含 `metrics`）。
 
 ## 8. 数据库表（V19 创建 / V29 删表 / V30 切 tokenizer）
 

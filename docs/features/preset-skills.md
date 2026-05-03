@@ -2,11 +2,11 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.meta.convenience` / `com.lifepilot.skill`
-> **最后更新**：2026-04-24
+> **最后更新**：2026-05-03
 
 ## 1. 功能概述
 
-知微随安装包自带 27 个预置 Skill（源类型 `BUILTIN`），覆盖日常管理、开发辅助、数据分析、内容创作、自动化、集成等常见场景。这些 Skill 以 `SKILL.md` 形式打包在应用 classpath 中（`src/main/resources/skills/`），首次启动时由 `SkillDiscoveryRegistrar` 走统一 `SkillInstaller` 流水线安装到用户 Skill 目录（默认 `~/.zhiwei/skills/<name>/`），同时写入 `skills` 表 `source_type = BUILTIN`，并注册到内存索引以便 Agent 发现与激活。
+知微随安装包自带 26 个预置 Skill（源类型 `BUILTIN`），覆盖日常管理、开发辅助、数据分析、内容创作、自动化、集成等常见场景。这些 Skill 以 `SKILL.md` 形式打包在应用 classpath 中（`src/main/resources/skills/`），首次启动时由 `SkillDiscoveryRegistrar` 走统一 `SkillInstaller` 流水线安装到用户 Skill 目录（默认 `~/.zhiwei/skills/<name>/`），同时写入 `skills` 表 `source_type = BUILTIN`，并注册到内存索引以便 Agent 发现与激活。
 
 前端"技能目录"中，BUILTIN 与 USER_IMPORTED / MARKETPLACE / AUTO_GENERATED 用徽章区分。用户可以直接在 UI 上切换启用状态（内部调用 `PUT /api/skills/{name}/enabled`）。
 
@@ -44,7 +44,6 @@ BUILTIN skill 安装后其 SKILL.md 文件在用户目录中。用户可以直�
 | `daily-manager` | 日常管理 | 日程安排、待办事项、日常规划 |
 | `data-analyst` | 数据分析 | 数据处理、统计分析、可视化 |
 | `database-query` | 数据库查询 | SQL 查询执行与结果分析 |
-| `datastore` | 数据存储 | 通用数据存取（Datastore CRUD）|
 | `desktop-automation` | 桌面自动化 | 桌面应用操作自动化 |
 | `doc-processor` | 文档处理 | 文档解析、转换与摘要 |
 | `document-workspace` | 文档工作副本编辑 | 已存在的 docx / xlsx / pptx 锚点增量修改 + 版本/回滚 |
@@ -67,7 +66,7 @@ BUILTIN skill 安装后其 SKILL.md 文件在用户目录中。用户可以直�
 
 **场景一：用户首次启动**
 
-用户安装知微后首次启动，`SkillDiscoveryRegistrar` 自动把 27 个预置 Skill 安装到用户目录并入 `skills` 表。Agent 在首次对话中即可发现并激活这些 Skill。
+用户安装知微后首次启动，`SkillDiscoveryRegistrar` 自动把 26 个预置 Skill 安装到用户目录并入 `skills` 表。Agent 在首次对话中即可发现并激活这些 Skill。
 
 **场景二：定制预置 Skill**
 

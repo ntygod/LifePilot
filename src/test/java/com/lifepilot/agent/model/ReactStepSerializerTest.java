@@ -191,13 +191,12 @@ class ReactStepSerializerTest {
     }
 
     @Test
-    void summarizeInput_codeExecute_提取language() {
+    void summarizeInput_code_提取language() {
         assertEquals("执行 python 代码",
-                ReactStepSerializer.summarizeInput("code.execute", "{\"code\":\"print(1)\",\"language\":\"python\"}"));
+                ReactStepSerializer.summarizeInput("code", "{\"code\":\"print(1)\",\"language\":\"python\"}"));
     }
 
-    // summarizeInput_datastore_按action分派 测试已随 datastore 工具下架（Skill v2 fixup 2026-04-24）一并删除 —
-    // LLM 不再使用 datastore 工具，summarizeInput 中的 case "datastore" 分支随之移除。
+    // git.query/git.mutate 已删除，co-locate 到 shell_exec。summarizeInput_gitQuery 测试随之移除。
 
     @Test
     void summarizeInput_memory_按action分派() {
@@ -207,14 +206,6 @@ class ReactStepSerializerTest {
         assertEquals("创建记忆「小明」",
                 ReactStepSerializer.summarizeInput("memory",
                         "{\"action\":\"create\",\"name\":\"小明\",\"entityType\":\"PERSON\"}"));
-    }
-
-    @Test
-    void summarizeInput_gitQuery_按action分派() {
-        assertEquals("查看 Git 状态",
-                ReactStepSerializer.summarizeInput("git.query", "{\"action\":\"status\"}"));
-        assertEquals("查看 Git 日志",
-                ReactStepSerializer.summarizeInput("git.query", "{\"action\":\"log\",\"count\":5}"));
     }
 
     @Test

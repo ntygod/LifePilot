@@ -1,10 +1,9 @@
 ---
 name: database-query
-description: 当用户要连接外部数据库（SQLite / MySQL / PostgreSQL）编写 SQL、查询数据、导出结果或分析库表结构时使用。关键词：查数据库、SQL、数据库结构、导出数据、MySQL、PostgreSQL、SQLite、查表、select、统计行数、看表结构。内存 CSV/Excel 分析用 data-analyst，日志分析用 log-analyzer。
+description: 当用户要连接外部数据库（SQLite / MySQL / PostgreSQL）编写 SQL、查询数据、导出结果或分析库表结构时使用。
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - database
       - sql
@@ -13,14 +12,14 @@ metadata:
       - sqlite
       - data-export
     suggested_tools:
-      - shell.exec
-      - file.write
-      - file.read
+      - shell_exec
+      - file_write
+      - file_read
 ---
 
 # 数据库查询指南
 
-通过 `shell.exec` 调 sqlite3 / mysql / psql CLI 连接外部数据库执行 SQL。**核心约束：默认只允许 SELECT；写操作必须用户确认。**
+通过 `shell_exec` 调 sqlite3 / mysql / psql CLI 连接外部数据库执行 SQL。**核心约束：默认只允许 SELECT；写操作必须用户确认。**
 
 ## 适用场景
 

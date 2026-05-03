@@ -71,15 +71,7 @@ public class SkillDefinitionValidator {
             errors.add("Instructions 长度超过限制: " + definition.instructions().length() + " > " + validationConfig.getMaxInstructionsLength());
         }
 
-        // suggestedTools 中的工具 ID 可能在后续启动阶段才注册（如 BuiltinTool 在 ApplicationReadyEvent 注册）。
-        // 启动期完全 silent 避免假警告噪音；启动完成后才 WARN（此时工具已全部注册，缺失说明是真错）。
-        if (startupComplete && definition.suggestedTools() != null) {
-            for (String toolId : definition.suggestedTools()) {
-                if (toolRegistry.resolve(toolId).isEmpty()) {
-                    log.warn("Skill '{}' 的建议工具 '{}' 未注册", definition.id(), toolId);
-                }
-            }
-        }
+        // suggested_tools 已不作为运行时工具加载依赖；工具全量常驻，此校验无意义，仅保留字段供 UI 展示。
 
         boolean valid = errors.isEmpty();
         if (!valid) {

@@ -5,11 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.datastore.model.FieldHint;
-import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.SourceKind;
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.mcp.config.McpConfigProperties;
@@ -36,7 +33,6 @@ import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.spec.SkillPriority;
 import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import com.lifepilot.skill.validation.SkillRequirementGate;
 import com.lifepilot.tool.ToolContract;
@@ -123,9 +119,7 @@ public class ContextAssembler {
     @Nullable private final GenerationRouter generationRouter;
     @Nullable private final ContextEngine contextEngine;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
-    @Nullable private final SessionDatastoreRepository sessionDatastoreRepository;
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
-    @Nullable private final CollectionRepository collectionRepository;
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private final HybridRetriever hybridRetriever;
@@ -148,8 +142,7 @@ public class ContextAssembler {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
-                null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -164,8 +157,7 @@ public class ContextAssembler {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
-                generationRouter, null, null, null, null, null,
-                null, null, null);
+                generationRouter, null, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -181,8 +173,7 @@ public class ContextAssembler {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
-                generationRouter, contextEngine, null, null, null, null,
-                null, null, null);
+                generationRouter, contextEngine, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -196,15 +187,12 @@ public class ContextAssembler {
                             @Nullable GenerationRouter generationRouter,
                             @Nullable ContextEngine contextEngine,
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
-                            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
-                            @Nullable CollectionRepository collectionRepository) {
+                            @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry,
                 generationRouter, contextEngine,
-                sessionKnowledgeBaseRepository, sessionDatastoreRepository,
-                knowledgeBaseRepository, collectionRepository,
+                sessionKnowledgeBaseRepository, knowledgeBaseRepository,
                 null, null, null);
     }
 
@@ -219,9 +207,7 @@ public class ContextAssembler {
                             @Nullable GenerationRouter generationRouter,
                             @Nullable ContextEngine contextEngine,
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
                             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
-                            @Nullable CollectionRepository collectionRepository,
                             @Nullable DynamicToolRegistry toolRegistry,
                             @Nullable McpConfigProperties mcpConfig,
                             @Nullable HybridRetriever hybridRetriever) {
@@ -237,9 +223,7 @@ public class ContextAssembler {
         this.generationRouter = generationRouter;
         this.contextEngine = contextEngine;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
-        this.sessionDatastoreRepository = sessionDatastoreRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
-        this.collectionRepository = collectionRepository;
         this.toolRegistry = toolRegistry;
         this.mcpConfig = mcpConfig;
         this.hybridRetriever = hybridRetriever;
@@ -659,12 +643,14 @@ public class ContextAssembler {
 
     String buildReactSystemPrompt(@Nullable ReactAgentState state) {
         String roleDefinition = promptRegistry.render("agent/role-definition");
+        String contextGuide = promptRegistry.render("agent/context-guide");
         ZonedDateTime now = ZonedDateTime.now();
         String taskMode = resolveTaskMode(state);
         String systemPrompt;
         if (isTaskMode(state)) {
             systemPrompt = promptRegistry.render("agent/react-system-task", Map.of(
                     "roleDefinition", roleDefinition,
+                    "contextGuide", contextGuide,
                     "taskMode", taskMode,
                     "modeSpecificRules", buildModeSpecificRules(taskMode),
                     "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
@@ -672,7 +658,6 @@ public class ContextAssembler {
                     "locale", Locale.getDefault().toLanguageTag()
             ));
         } else {
-            String contextGuide = promptRegistry.render("agent/context-guide");
             systemPrompt = promptRegistry.render("agent/react-system", Map.of(
                     "roleDefinition", roleDefinition,
                     "contextGuide", contextGuide,
@@ -831,26 +816,13 @@ public class ContextAssembler {
             }
         }
 
-        List<String> datastoreLines = new ArrayList<>();
-        if (sessionDatastoreRepository != null) {
-            for (String datastoreId : sessionDatastoreRepository.findDatastoreIdsBySessionId(sessionId)) {
-                datastoreLines.add(formatDatastoreBinding(datastoreId));
-            }
-        }
-
-        if (knowledgeBaseLines.isEmpty() && datastoreLines.isEmpty()) {
+        if (knowledgeBaseLines.isEmpty()) {
             return "";
         }
 
         StringBuilder sb = new StringBuilder("<active_knowledge_bindings>\n");
-        if (!datastoreLines.isEmpty()) {
-            sb.append("- 当前会话已绑定 Datastore：\n");
-            datastoreLines.forEach(line -> sb.append("  · ").append(line).append('\n'));
-        }
-        if (!knowledgeBaseLines.isEmpty()) {
-            sb.append("- 当前会话已绑定 Knowledge Base：\n");
-            knowledgeBaseLines.forEach(line -> sb.append("  · ").append(line).append('\n'));
-        }
+        sb.append("- 当前会话已绑定 Knowledge Base：\n");
+        knowledgeBaseLines.forEach(line -> sb.append("  · ").append(line).append('\n'));
         sb.append("</active_knowledge_bindings>");
         return sb.toString();
     }
@@ -862,52 +834,6 @@ public class ContextAssembler {
         return knowledgeBaseRepository.findById(knowledgeBaseId)
                 .map(knowledgeBase -> "%s (%s)".formatted(knowledgeBase.name(), knowledgeBase.id()))
                 .orElse(knowledgeBaseId);
-    }
-
-    private String formatDatastoreBinding(String datastoreId) {
-        if (collectionRepository == null) {
-            return datastoreId;
-        }
-        return collectionRepository.findById(datastoreId)
-                .map(this::buildDatastoreBindingSummary)
-                .orElse(datastoreId);
-    }
-
-    /**
-     * 构建 Datastore 绑定摘要 — 包含集合类型、描述和字段定义，
-     * 让 Agent 能精准判断该用结构化查询还是语义检索。
-     */
-    private String buildDatastoreBindingSummary(com.lifepilot.datastore.model.Collection collection) {
-        var sb = new StringBuilder();
-        sb.append("%s [%s] (%s)".formatted(collection.name(), collection.timeSeries() ? "TIME_SERIES" : "GENERAL", collection.id()));
-        if (collection.description() != null && !collection.description().isBlank()) {
-            sb.append(" — ").append(collection.description());
-        }
-
-        // 解析并追加字段提示，让 Agent 知道可以按哪些字段做结构化查询
-        if (collection.fieldHintsJson() != null && !collection.fieldHintsJson().isBlank()
-                && !"[]".equals(collection.fieldHintsJson().strip())) {
-            try {
-                var hints = SHARED_MAPPER.readValue(
-                        collection.fieldHintsJson(),
-                        new TypeReference<List<FieldHint>>() {});
-                if (!hints.isEmpty()) {
-                    String fieldList = hints.stream()
-                            .map(h -> "%s(%s)".formatted(h.name(), h.type()))
-                            .collect(java.util.stream.Collectors.joining(", "));
-                    sb.append("\n    字段: ").append(fieldList);
-                }
-            } catch (Exception e) {
-                log.debug("Datastore 字段提示解析失败，跳过字段摘要: collectionId={}, error={}",
-                        collection.id(), e.getMessage());
-            }
-        }
-
-        // 追加检索提示
-        sb.append("\n    检索: 精确字段查询用 datastore(action=query)，主题/语义检索用 knowledge.search(datastoreId=%s)"
-                .formatted(collection.id()));
-
-        return sb.toString();
     }
 
 
@@ -1376,14 +1302,14 @@ public class ContextAssembler {
         }
     }
 
-    /** Skill catalog 一行映射：name + description + tags + priority。 */
-    record SkillCatalogEntry(String name, String description, List<String> tags, SkillPriority priority) {}
+    /** Skill catalog 一行映射：name + description + tags。 */
+    record SkillCatalogEntry(String name, String description, List<String> tags) {}
 
     /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
     private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
         SkillZhiweiMeta meta = def.zhiweiMeta();
         String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
-        return new SkillCatalogEntry(displayName, def.description(), meta.tags(), meta.priority());
+        return new SkillCatalogEntry(displayName, def.description(), meta.tags());
     }
 
     /**
@@ -1442,7 +1368,6 @@ public class ContextAssembler {
         return all.stream()
                 .sorted(Comparator
                         .comparingInt((SkillCatalogEntry e) -> -scoreEntry(e, keywords))
-                        .thenComparingInt(e -> priorityOrder(e.priority()))
                         .thenComparing(SkillCatalogEntry::name))
                 .toList();
     }
@@ -1487,18 +1412,6 @@ public class ContextAssembler {
             return "";
         }
         return KEYWORD_LIST_PATTERN.matcher(description).replaceAll("").trim();
-    }
-
-    /** HIGH=0, NORMAL=1, LOW=2 — 排序权重。 */
-    private static int priorityOrder(SkillPriority p) {
-        if (p == null) {
-            return 1;
-        }
-        return switch (p) {
-            case HIGH -> 0;
-            case NORMAL -> 1;
-            case LOW -> 2;
-        };
     }
 
     /**

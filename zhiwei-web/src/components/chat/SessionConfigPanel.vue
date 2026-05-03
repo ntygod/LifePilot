@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
-import type { Datastore, SessionConfig, KnowledgeBase } from '@/types'
+import type { SessionConfig, KnowledgeBase } from '@/types'
 import type { ModelService } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -16,10 +16,8 @@ const props = withDefaults(defineProps<{
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
-  datastoreIds?: string[]
   providers: ModelService[]
   knowledgeBases: KnowledgeBase[]
-  datastores: Datastore[]
   showClose?: boolean
 }>(), {
   showClose: true,
@@ -38,14 +36,12 @@ const localTemperature = ref(props.temperature ?? 0.7)
 const localMaxSteps = ref(props.maxSteps ?? DEFAULT_MAX_STEPS)
 const localMaxDurationSeconds = ref(props.maxDurationSeconds ?? DEFAULT_MAX_DURATION_SECONDS)
 const localKbIds = ref<string[]>(props.knowledgeBaseIds ?? [])
-const localDatastoreIds = ref<string[]>(props.datastoreIds ?? [])
 
 watch(() => props.preferredProviderId, v => { localPreferredProviderId.value = v ?? '' })
 watch(() => props.temperature, v => { localTemperature.value = v ?? 0.7 })
 watch(() => props.maxSteps, v => { localMaxSteps.value = v ?? DEFAULT_MAX_STEPS })
 watch(() => props.maxDurationSeconds, v => { localMaxDurationSeconds.value = v ?? DEFAULT_MAX_DURATION_SECONDS })
 watch(() => props.knowledgeBaseIds, v => { localKbIds.value = v ?? [] })
-watch(() => props.datastoreIds, v => { localDatastoreIds.value = v ?? [] })
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number(value)
@@ -60,7 +56,6 @@ function emitUpdate() {
     maxSteps: clampInteger(localMaxSteps.value, DEFAULT_MAX_STEPS, 1, 500),
     maxDurationSeconds: clampInteger(localMaxDurationSeconds.value, DEFAULT_MAX_DURATION_SECONDS, 5, 86400),
     knowledgeBaseIds: localKbIds.value.length > 0 ? localKbIds.value : undefined,
-    datastoreIds: localDatastoreIds.value.length > 0 ? localDatastoreIds.value : undefined,
   })
 }
 
@@ -95,15 +90,6 @@ function toggleKb(id: string, checked: boolean | 'indeterminate') {
   emitUpdate()
 }
 
-function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
-  if (checked === true) {
-    if (!localDatastoreIds.value.includes(id)) localDatastoreIds.value.push(id)
-  } else {
-    const i = localDatastoreIds.value.indexOf(id)
-    if (i >= 0) localDatastoreIds.value.splice(i, 1)
-  }
-  emitUpdate()
-}
 </script>
 
 <template>
@@ -174,33 +160,6 @@ function toggleDatastore(id: string, checked: boolean | 'indeterminate') {
         :min="5" :max="86400" :step="5"
         @update:model-value="onMaxDurationChange"
       />
-    </section>
-
-    <section v-if="datastores.length > 0" class="space-y-2">
-      <div class="flex items-center justify-between">
-        <Label class="text-xs text-muted-foreground">Datastore</Label>
-        <span class="surface-chip">{{ localDatastoreIds.length }} / {{ datastores.length }}</span>
-      </div>
-      <div class="max-h-40 space-y-1 overflow-y-auto pr-1 scrollbar-thin">
-        <label
-          v-for="datastore in datastores" :key="datastore.id"
-          class="config-choice-row"
-        >
-          <Checkbox
-            :model-value="localDatastoreIds.includes(datastore.id)"
-            @update:model-value="toggleDatastore(datastore.id, $event)"
-          />
-          <div class="min-w-0">
-            <div class="truncate text-xs text-foreground">{{ datastore.name }}</div>
-            <div v-if="datastore.description" class="truncate text-[10px] text-muted-foreground">
-              {{ datastore.description }}
-            </div>
-          </div>
-        </label>
-      </div>
-      <p class="text-[10px] leading-4 text-muted-foreground">
-        加载 datastore 时，会自动带上它挂载的知识库，但检索仍按 datastore 领域收口。
-      </p>
     </section>
 
     <!-- 知识库 -->

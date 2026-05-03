@@ -161,11 +161,15 @@ public final class DegradedResponseBuilder {
     }
 
     private static String buildTerminalNote(String reason) {
-        return """
-                我已保留当前进度。
-                原因：%s
-                你可以点击“继续执行”从当前进度接着处理，或点击“重新开始”重新跑一遍本轮任务。
-                """.formatted(reason).trim();
+        String friendlyReason;
+        if (reason != null && reason.contains("时间预算耗尽")) {
+            friendlyReason = "任务执行时间较长，系统自动暂停以避免长时间等待。已保留当前进度。";
+        } else if (reason != null && reason.contains("步骤")) {
+            friendlyReason = "已执行较多步骤，系统自动暂停以保证响应质量。已保留当前进度。";
+        } else {
+            friendlyReason = reason;
+        }
+        return friendlyReason + "\n你可以点击继续执行接着处理，或调整任务范围后重新开始。";
     }
 
     private static String mergeNarrativeWithNote(String visibleNarrative, String note) {

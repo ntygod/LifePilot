@@ -267,7 +267,7 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
 
     private String describeToolIntent(ToolContract tool) {
         return switch (tool.id()) {
-            case "code.execute" -> "本次需要运行本地代码";
+            case "code" -> "本次需要运行本地代码";
             case "shell.exec" -> "本次需要执行本地命令";
             case "shell.process" -> "本次需要管理后台进程或会话";
             case "file.write", "file.edit", "file.manage" -> "本次需要修改文件";

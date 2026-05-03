@@ -58,10 +58,13 @@ public class GitToolProvider {
     /** 构建统一 Git 查询工具。 */
     private BuiltinTool buildGitQueryTool(GitQueryActionDispatchExecutor executor) {
         return BuiltinTool.builder()
-                .id("git.query")
+                .id("shell_exec")
                 .category(ToolCategory.PERCEPTION)
                 .name("Git 查询")
-                .description("查询 Git 仓库：查看 status 状态、diff 差异、log 提交日志、blame 行级追溯。")
+                .description("""
+                        Git 只读查询。path 为仓库路径（必填）。
+                        action: status(工作区/暂存区状态) diff(差异，staged=true看暂存区) log(提交日志，count默认10，filePath限定文件) blame(行级追溯，startLine/endLine限定范围，1-based)。
+                        commit hash 或 branch 名作 diff/log 的范围参数。""")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action", "path"),
@@ -106,10 +109,13 @@ public class GitToolProvider {
     /** 构建统一 Git 变更工具。 */
     private BuiltinTool buildGitMutateTool(GitMutateActionDispatchExecutor executor) {
         return BuiltinTool.builder()
-                .id("git.mutate")
+                .id("shell_exec")
                 .category(ToolCategory.ACTION)
                 .name("Git 变更")
-                .description("Git 写操作：提交代码 commit、暂存 stash、分支 branch 管理。")
+                .description("""
+                        Git 写操作（高风险）。path 为仓库路径（必填）。
+                        action: commit(提交，message必填，files指定文件否则全提交) stash(暂存，可带message) branch(分支管理，支持create/delete/list/switch，branchName/branchAction参数)。
+                        push 暂不支持，告知用户手动推送。""")
                 .inputSchema(JsonSchema.of(buildMutateSchema()))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)

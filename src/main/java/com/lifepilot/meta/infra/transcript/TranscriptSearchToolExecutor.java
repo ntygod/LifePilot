@@ -28,7 +28,7 @@ import java.util.Optional;
  *
  * <p>本工具暴露 transcript 表的检索能力给 LLM：底层数据从未被真正删除（只是从模型当前上下文
  * 移出），按 toolId / callId / 关键字 / 成功状态等条件检索后返回轻量 preview，LLM 决定是否
- * 调用 {@code transcript.get} 取完整原文。</p>
+ * 调用 {@code memory} 取完整原文。</p>
  *
  * <p>参数：
  * <ul>
@@ -43,7 +43,7 @@ import java.util.Optional;
  *
  * <p>返回：{@code entries[]}，每条含 entryId / callId / toolId / success / createdAt /
  * outputPreview / outputTotalChars，按时间倒序。{@code outputPreview} 超过原文总长度时
- * 自动追加 "..." 提示需要 transcript.get 取完整。</p>
+ * 自动追加 "..." 提示需要 memory 取完整。</p>
  *
  * @author zsg
  * @since 2026-04-28
@@ -81,7 +81,7 @@ public final class TranscriptSearchToolExecutor {
                     try {
                         return Optional.of(Instant.parse(s));
                     } catch (DateTimeParseException e) {
-                        log.warn("transcript.search since 参数格式错误，忽略: {}", s);
+                        log.warn("memory since 参数格式错误，忽略: {}", s);
                         return Optional.empty();
                     }
                 })
@@ -99,7 +99,7 @@ public final class TranscriptSearchToolExecutor {
         try {
             rows = transcriptRepository.findBySessionId(sessionId);
         } catch (Exception e) {
-            log.warn("transcript.search 检索失败: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("memory 检索失败: sessionId={}, error={}", sessionId, e.getMessage());
             return ToolResult.error("检索 transcript 失败: " + e.getMessage());
         }
 
@@ -151,7 +151,7 @@ public final class TranscriptSearchToolExecutor {
             int total = outputJson.length();
             entry.put("outputTotalChars", total);
             String preview = total > maxPreviewChars
-                    ? outputJson.substring(0, maxPreviewChars) + "...[更多内容请用 transcript.get 取]"
+                    ? outputJson.substring(0, maxPreviewChars) + "...[更多内容请用 memory 取]"
                     : outputJson;
             entry.put("outputPreview", preview);
         }

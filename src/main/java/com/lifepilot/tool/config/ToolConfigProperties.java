@@ -28,10 +28,10 @@ public class ToolConfigProperties {
     /** Tier 1 分层注入配置 — 高频工具常驻 prompt schema，其余进 BM25 搜索池。 */
     private Tier1 tier1 = new Tier1();
 
-    /** 搜索服务配置 — tools.search / FTS5 / 三层缓存。 */
+    /** 搜索服务配置 — tool.search / FTS5 / 三层缓存。 */
     private Search search = new Search();
 
-    /** describe 服务配置 — tools.describe 批量上限。 */
+    /** describe 服务配置 — tool.search 批量上限。 */
     private Describe describe = new Describe();
 
 

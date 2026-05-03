@@ -9,6 +9,8 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
@@ -18,21 +20,12 @@ import jakarta.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 文件工具提供者。
- *
- * <p>集中管理文件系统元能力工具：read / write / list / edit / manage。
- * 所有 Executor 共享同一个 {@link PathSecurityChecker} 实例。</p>
- *
- * <p>Phase 0 后：{@code file.read} 合并了文档解析能力，通过内部 {@link DocumentParserService}
- * 按扩展名自动路由（docx / pdf / md / txt / csv 等走文档解析，其他走 BufferedReader）。</p>
- *
- * <p>2026-04-24 重构：{@code file.read} 的 {@code skill} 参数已下线，Skill 加载改由
- * {@code skill.load} 工具承担；同时新增 {@link SkillPathWhitelist} 硬约束白名单，
- * 防 LLM 通过绝对路径读取系统敏感文件。</p>
+ * 文件工具提供者 — 3 个工具：file.read / file.write / file.manage。
  *
  * @author zsg
  * @since 2026-03-16
@@ -44,34 +37,12 @@ public class FileToolProvider {
     private final FileEditHistory editHistory;
     @Nullable
     private final LintHookExecutor lintHook;
-    /** 附件仓储 —— 用于 file.read 的 attachmentId 分支，Web 未启用时为 null。 */
     @Nullable
     private final AttachmentRepository attachmentRepository;
-    /** Skill / 工作区硬约束白名单，null 时跳过校验（仅测试场景）。 */
     @Nullable
     private final SkillPathWhitelist skillPathWhitelist;
-    /** 文档解析路由 facade —— file.read 的内部依赖，本类自装配，无需外部注入。 */
     private final DocumentParserService documentParserService;
 
-    public FileToolProvider(MetaProperties properties) {
-        this(properties, null, null, null, null);
-    }
-
-    public FileToolProvider(MetaProperties properties,
-                            @Nullable FileEditHistory editHistory,
-                            @Nullable LintHookExecutor lintHook) {
-        this(properties, editHistory, lintHook, null, null);
-    }
-
-    /**
-     * 完整构造器 —— 支持 file.read 的文档解析路由和对话附件查询。
-     *
-     * @param properties            元能力配置
-     * @param editHistory           文件编辑历史，支持 undo
-     * @param lintHook              写入后 lint 回调
-     * @param attachmentRepository  附件仓储，null 时 file.read(attachmentId=...) 会返回"附件功能未启用"
-     * @param skillPathWhitelist    Skill / 工作区白名单，null 时跳过硬约束校验（仅测试）
-     */
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
                             @Nullable LintHookExecutor lintHook,
@@ -85,257 +56,282 @@ public class FileToolProvider {
         this.documentParserService = DocumentParserService.buildDefault();
     }
 
-    /**
-     * 构建所有文件工具的 BuiltinTool 列表。
-     *
-     * @return 文件工具列表
-     */
     public List<BuiltinTool> buildFileTools() {
+        var fileAccess = properties.getInfra().getFile();
+        var securityChecker = new PathSecurityChecker(fileAccess);
+        var fileEditConfig = properties.getInfra().getFileEdit();
         var tools = new ArrayList<BuiltinTool>();
 
-        // 创建共享的 PathSecurityChecker，避免每个 Executor 重复创建
-        var fileConfig = properties.getInfra().getFile();
-        var securityChecker = new PathSecurityChecker(fileConfig);
-        var fileEditConfig = properties.getInfra().getFileEdit();
-
-        tools.add(buildFileReadTool(
-                new FileReadToolExecutor(securityChecker, fileConfig.getDefaultMaxChars(),
-                        skillPathWhitelist, attachmentRepository, documentParserService)));
-        tools.add(buildFileWriteTool(
-                new FileWriteToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
-        tools.add(buildFileListTool(new FileListActionDispatchExecutor(
-                new FileListToolExecutor(securityChecker, fileConfig.getDefaultMaxEntries()),
-                new FileSearchToolExecutor(securityChecker),
-                new FileInfoToolExecutor(securityChecker)
-        )));
-        tools.add(buildFileEditTool(
-                new FilePatchToolExecutor(securityChecker, editHistory, lintHook, fileEditConfig)));
-        tools.add(buildFileManageTool(new FileManageActionDispatchExecutor(
-                new FileMoveToolExecutor(securityChecker),
-                new FileCopyToolExecutor(securityChecker),
-                new FileDeleteToolExecutor(securityChecker),
-                new FileMkdirToolExecutor(securityChecker)
-        )));
-
+        tools.add(buildFileReadTool(securityChecker, properties.getInfra().getFile()));
+        tools.add(buildFileWriteTool(securityChecker, fileEditConfig));
+        tools.add(buildFileManageTool(securityChecker));
         return List.copyOf(tools);
     }
 
-    /** 构建文件读取工具。 */
-    private BuiltinTool buildFileReadTool(FileReadToolExecutor executor) {
+    // ──────── file.read: read + list + search + info + attach ────────
+
+    private BuiltinTool buildFileReadTool(PathSecurityChecker securityChecker,
+                                           MetaProperties.Infra.FileAccess fileAccess) {
+        var actions = new LinkedHashSet<>(List.of("read", "list", "search", "info"));
+        if (attachmentRepository != null) actions.add("attach");
+
         var props = new LinkedHashMap<String, Object>();
+        props.put("action", Map.of(
+                "type", "string",
+                "enum", List.copyOf(actions),
+                "description", "read=读取文件 list=列目录 search=递归搜内容 info=查看元数据" +
+                        (attachmentRepository != null ? " attach=处理附件" : "")));
         props.put("path", Map.of("type", "string",
-                "description", "本机文件绝对路径（与 attachmentId 二选一）。" +
-                        "支持所有文本文件；docx / xlsx / pptx / pdf / md / csv 等结构化文档按扩展名自动路由到文档解析器，其他（.java / .txt / .log / .json 等）按纯文本读取。" +
-                        "仅允许访问 Skill 目录（~/.zhiwei/skills）和工作区（~/.zhiwei/workspace）内的文件，系统敏感路径会被硬约束拒绝。"));
+                "description", "文件或目录路径。read/list/search/info 必填"));
         props.put("attachmentId", Map.of("type", "string",
-                "description", "对话附件 ID（与 path 二选一，本机文件优先用 path）。附件仓储未启用时返回错误。"));
+                "description", "action=attach 时的附件 ID"));
         props.put("encoding", Map.of("type", "string",
-                "description", "文件编码（如 UTF-8、GBK），默认 UTF-8，仅对纯文本有效"));
+                "description", "action=read 时编码，默认 UTF-8"));
         props.put("startLine", Map.of("type", "integer",
-                "description", "起始行号（1-based），可选，仅对纯文本有效，结构化文档忽略"));
+                "description", "action=read 时起始行号（1-based）"));
         props.put("endLine", Map.of("type", "integer",
-                "description", "结束行号（1-based），可选，仅对纯文本有效，结构化文档忽略"));
+                "description", "action=read 时结束行号（1-based）"));
         props.put("maxChars", Map.of("type", "integer",
-                "description", "最大返回字符数，默认 30000，超出截断"));
+                "description", "action=read 时最大字符数，默认 30000"));
+        props.put("pattern", Map.of("type", "string",
+                "description", "action=list 时 glob 过滤 / search 时正则"));
+        props.put("maxDepth", Map.of("type", "integer",
+                "description", "action=list/search 时最大深度"));
+        props.put("maxEntries", Map.of("type", "integer",
+                "description", "action=list 时最大条目，默认 200"));
+        props.put("maxResults", Map.of("type", "integer",
+                "description", "action=search 时最大结果，默认 50"));
+        props.put("contextLines", Map.of("type", "integer",
+                "description", "action=search 时上下文行数，默认 0"));
 
         return BuiltinTool.builder()
                 .id("file.read")
                 .category(ToolCategory.PERCEPTION)
-                .name("读取文件")
-                .description("读取本地文件或对话附件。docx/xlsx/pptx/pdf/md/csv 自动解析；仅可访问 skills 与 workspace 目录。激活 Skill 改用 skill.load。")
+                .name("文件操作")
+                .description("""
+                        读文件 + 目录浏览 + 附件解析。action 默认 read。
+                        read — 读取文件（docx/xlsx/pptx/pdf/md/csv 自动解析），仅可访问 skills 与 workspace 目录。
+                        list — 列出目录内容。search — 递归搜索文件内容。info — 查看元数据。""" +
+                        (attachmentRepository != null ? " attach — 处理对话附件。" : ""))
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "properties", props
-                )))
+                        "properties", props,
+                        "dependentRequired", Map.of(
+                                "read", List.of("path"),
+                                "list", List.of("path"),
+                                "search", List.of("path", "pattern"),
+                                "info", List.of("path")
+                        ))))
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("读取", "文件", "查看", "内容", "文档", "read", "file"))
-                .executor(executor::execute)
+                        PermissionActionType.READ_FILE, ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")))
+                .tags(List.of("读取", "文件", "列表", "目录", "搜索", "附件", "read", "file", "list", "search"))
+                .executor(input -> {
+                    String action = input.getOptionalParam("action", String.class).orElse("read");
+                    return switch (action) {
+                        case "read" -> new FileReadToolExecutor(securityChecker,
+                                fileAccess.getDefaultMaxChars(), skillPathWhitelist,
+                                attachmentRepository, documentParserService).execute(input);
+                        case "list" -> new FileListToolExecutor(securityChecker,
+                                fileAccess.getDefaultMaxEntries()).execute(input);
+                        case "search" -> new FileSearchToolExecutor(securityChecker).execute(input);
+                        case "info" -> new FileInfoToolExecutor(securityChecker).execute(input);
+                        case "attach" -> ToolResult.error("附件功能请直接通过 file.read 读取附件 ID");
+                        default -> ToolResult.error("不支持的 action: " + action);
+                    };
+                })
                 .build();
     }
 
-    /** 构建文件写入工具（支持 write/append 两种模式）。 */
-    private BuiltinTool buildFileWriteTool(FileWriteToolExecutor executor) {
+    // ──────── file.write: write + edit + history ────────
+
+    private BuiltinTool buildFileWriteTool(PathSecurityChecker securityChecker,
+                                            MetaProperties.Infra.FileEdit fileEditConfig) {
+        var actions = new LinkedHashSet<>(List.of("write", "insert", "replace", "delete_line", "find_replace"));
+        boolean hasHistory = editHistory != null;
+        if (hasHistory) {
+            actions.addAll(List.of("undo", "redo", "diff"));
+        }
+
+        var props = new LinkedHashMap<String, Object>();
+        props.put("action", Map.of(
+                "type", "string",
+                "enum", List.copyOf(actions),
+                "description", "write=创建/覆盖/追加 insert/replace/delete_line=行级编辑 find_replace=文本替换" +
+                        (hasHistory ? " undo=撤销 redo=重做 diff=查看差异" : "")));
+        props.put("path", Map.of("type", "string",
+                "description", "目标文件路径。所有 action 必填"));
+        props.put("content", Map.of("type", "string",
+                "description", "action=write 时文件内容; insert/replace 时操作内容"));
+        props.put("mode", Map.of("type", "string",
+                "description", "action=write 时：write（覆写，默认）或 append（追加）"));
+        props.put("line", Map.of("type", "integer",
+                "description", "action=insert/replace/delete_line 时目标行号（1-based）"));
+        props.put("endLine", Map.of("type", "integer",
+                "description", "action=replace/delete_line 时结束行号"));
+        props.put("oldText", Map.of("type", "string",
+                "description", "action=find_replace 时查找文本"));
+        props.put("newText", Map.of("type", "string",
+                "description", "action=find_replace 时替换文本"));
+
         return BuiltinTool.builder()
                 .id("file.write")
                 .category(ToolCategory.ACTION)
-                .name("写入文件")
-                .description("创建或覆盖/追加写文件。mode=write 原子覆盖（默认），mode=append 追加；父目录自动创建。")
+                .name("文件编辑")
+                .description("""
+                        写文件 + 内容编辑 + 编辑历史。action 默认 write。
+                        write — 创建/覆盖/追加文件（父目录自动创建）。
+                        insert — 行级插入。replace — 行级替换。delete_line — 行级删除。find_replace — 搜索替换。""" +
+                        (hasHistory ? " undo — 撤销最近编辑。redo — 重做。diff — 查看 unified diff。" : ""))
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("path", "content"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "目标文件路径"),
-                                "content", Map.of("type", "string",
-                                        "description", "要写入的文件内容"),
-                                "mode", Map.of("type", "string",
-                                        "description", "写入模式：write（覆写，默认）或 append（追加到末尾）"),
-                                "createDirectories", Map.of("type", "boolean",
-                                        "description", "父目录不存在时是否自动创建，默认 true")
-                        )
-                )))
+                        "properties", props,
+                        "dependentRequired", Map.of(
+                                "write", List.of("path", "content"),
+                                "insert", List.of("path", "line", "content"),
+                                "replace", List.of("path", "line"),
+                                "delete_line", List.of("path", "line"),
+                                "find_replace", List.of("path", "oldText", "newText"),
+                                "undo", List.of("path"),
+                                "redo", List.of("path"),
+                                "diff", List.of("path")
+                        ))))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("写入", "文件", "保存", "创建", "追加", "覆盖", "write", "file"))
-                .executor(executor::execute)
+                        PermissionActionType.WRITE_FILE, ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")))
+                .tags(List.of("写入", "编辑", "修改", "文件", "替换", "撤销", "重做", "write", "edit", "file"))
+                .executor(input -> {
+                    String action = input.getOptionalParam("action", String.class).orElse("write");
+                    return switch (action) {
+                        case "write" -> new FileWriteToolExecutor(securityChecker,
+                                editHistory, lintHook, fileEditConfig).execute(input);
+                        case "insert", "replace", "delete_line", "find_replace" ->
+                                new FilePatchToolExecutor(securityChecker,
+                                        editHistory, lintHook, fileEditConfig).execute(input);
+                        case "undo" -> hasHistory
+                                ? executeUndo(input, editHistory)
+                                : ToolResult.error("编辑历史未启用");
+                        case "redo" -> hasHistory
+                                ? executeRedo(input, editHistory)
+                                : ToolResult.error("编辑历史未启用");
+                        case "diff" -> hasHistory
+                                ? executeDiff(input, editHistory)
+                                : ToolResult.error("编辑历史未启用");
+                        default -> ToolResult.error("不支持的 action: " + action);
+                    };
+                })
                 .build();
     }
 
-    /** 构建统一文件查询工具。 */
-    private BuiltinTool buildFileListTool(FileListActionDispatchExecutor executor) {
-        return BuiltinTool.builder()
-                .id("file.list")
-                .category(ToolCategory.PERCEPTION)
-                .name("文件查询")
-                .description("查询文件系统：list 列目录、search 递归搜内容、info 看元数据。")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("action", "path"),
-                        "properties", Map.ofEntries(
-                                Map.entry("action", Map.of(
-                                        "type", "string",
-                                        "enum", List.of("list", "search", "info"),
-                                        "description", "文件查询动作类型")),
-                                Map.entry("path", Map.of(
-                                        "type", "string",
-                                        "description", "目标路径；三种动作都需要")),
-                                Map.entry("maxDepth", Map.of(
-                                        "type", "integer",
-                                        "description", "action=list/search 时的最大遍历深度，默认 list=3, search=无限制")),
-                                Map.entry("pattern", Map.of(
-                                        "type", "string",
-                                        "description", "action=list 时表示 glob 过滤模式；action=search 时表示内容正则表达式")),
-                                Map.entry("maxEntries", Map.of(
-                                        "type", "integer",
-                                        "description", "action=list 时最大返回条目数，默认 200")),
-                                Map.entry("filePattern", Map.of(
-                                        "type", "string",
-                                        "description", "action=search 时的文件名 glob 过滤模式（如 *.java）")),
-                                Map.entry("maxResults", Map.of(
-                                        "type", "integer",
-                                        "description", "action=search 时最大返回结果数，默认 50")),
-                                Map.entry("offset", Map.of(
-                                        "type", "integer",
-                                        "description", "action=search 时分页偏移量，默认 0")),
-                                Map.entry("contextLines", Map.of(
-                                        "type", "integer",
-                                        "description", "action=search 时匹配行前后上下文行数，默认 0"))
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.READ_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("列表", "文件", "目录", "搜索", "查找", "元数据", "list", "search", "directory"))
-                .actionMetadataFrom(executor)
-                .executor(executor)
-                .build();
+    private static ToolResult executeUndo(ToolInput input, FileEditHistory history) {
+        String path = input.getOptionalParam("path", String.class).orElse("");
+        if (path.isBlank()) return ToolResult.error("undo 需要 path 参数");
+        try {
+            var snapshot = history.undo(java.nio.file.Path.of(path));
+            return ToolResult.success(Map.of("path", path,
+                    "restored", snapshot.map(s -> "已恢复到快照").orElse("无快照可撤销")));
+        } catch (Exception e) {
+            return ToolResult.error("撤销失败: " + e.getMessage());
+        }
     }
 
-    /** 构建统一文件编辑工具（支持行级操作和文本匹配替换）。 */
-    private BuiltinTool buildFileEditTool(FilePatchToolExecutor executor) {
-        var itemProperties = new LinkedHashMap<String, Object>();
-        itemProperties.put("type", Map.of("type", "string",
-                "enum", List.of("insert", "replace", "delete", "search_replace"),
-                "description", "操作类型: insert/replace/delete（行级）或 search_replace（文本匹配）"));
-        itemProperties.put("line", Map.of("type", "integer",
-                "description", "目标行号（1-based），行级操作时必需，所有行号基于原始文件"));
-        itemProperties.put("endLine", Map.of("type", "integer",
-                "description", "结束行号（replace/delete 时可选，默认等于 line）"));
-        itemProperties.put("content", Map.of("type", "string",
-                "description", "插入或替换的内容（insert/replace 时必需）"));
-        itemProperties.put("oldText", Map.of("type", "string",
-                "description", "要查找的文本（search_replace 时必需）"));
-        itemProperties.put("newText", Map.of("type", "string",
-                "description", "替换后的文本（search_replace 时必需）"));
-
-        var itemSchema = new LinkedHashMap<String, Object>();
-        itemSchema.put("type", "object");
-        itemSchema.put("required", List.of("type"));
-        itemSchema.put("properties", itemProperties);
-
-        return BuiltinTool.builder()
-                .id("file.edit")
-                .category(ToolCategory.ACTION)
-                .name("编辑文件")
-                .description("精确编辑修改文件内容：行级 insert/replace/delete，或 search_replace 文本匹配替换。")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "operations"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "目标文件路径"),
-                                "operations", Map.of("type", "array",
-                                        "description", "编辑操作列表",
-                                        "items", itemSchema)
-                        )
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("path")
-                ))
-                .tags(List.of("编辑", "修改", "文件", "替换", "更新", "edit", "patch", "file"))
-                .executor(executor::execute)
-                .build();
+    private static ToolResult executeRedo(ToolInput input, FileEditHistory history) {
+        String path = input.getOptionalParam("path", String.class).orElse("");
+        if (path.isBlank()) return ToolResult.error("redo 需要 path 参数");
+        try {
+            var snapshot = history.redo(java.nio.file.Path.of(path));
+            return ToolResult.success(Map.of("path", path,
+                    "restored", snapshot.map(s -> "已重做").orElse("无快照可重做")));
+        } catch (Exception e) {
+            return ToolResult.error("重做失败: " + e.getMessage());
+        }
     }
 
-    /** 构建统一文件管理工具。 */
-    private BuiltinTool buildFileManageTool(FileManageActionDispatchExecutor executor) {
+    private static ToolResult executeDiff(ToolInput input, FileEditHistory history) {
+        String path = input.getOptionalParam("path", String.class).orElse("");
+        if (path.isBlank()) return ToolResult.error("diff 需要 path 参数");
+        try {
+            String diff = history.diff(java.nio.file.Path.of(path));
+            return ToolResult.success(Map.of("path", path, "diff", diff != null ? diff : ""));
+        } catch (Exception e) {
+            return ToolResult.error("获取 diff 失败: " + e.getMessage());
+        }
+    }
+
+    // ──────── file.manage: move + copy + delete + mkdir + rename ────────
+
+    private BuiltinTool buildFileManageTool(PathSecurityChecker securityChecker) {
+        var actions = List.of("move", "copy", "delete", "mkdir", "rename");
+
+        var props = new LinkedHashMap<String, Object>();
+        props.put("action", Map.of(
+                "type", "string",
+                "enum", actions,
+                "description", "move=移动 copy=复制 delete=删除 mkdir=建目录 rename=重命名"));
+        props.put("source", Map.of("type", "string",
+                "description", "action=move/copy/rename 时源路径"));
+        props.put("destination", Map.of("type", "string",
+                "description", "action=move/copy/rename 时目标路径"));
+        props.put("path", Map.of("type", "string",
+                "description", "action=delete/mkdir 时目标路径"));
+        props.put("overwrite", Map.of("type", "boolean",
+                "description", "action=move/copy 时覆盖已有"));
+        props.put("recursive", Map.of("type", "boolean",
+                "description", "action=delete 时递归删除; copy 时递归复制"));
+
         return BuiltinTool.builder()
                 .id("file.manage")
                 .category(ToolCategory.ACTION)
                 .name("文件管理")
-                .description("文件目录管理：移动文件、复制目录、删除文件、新建目录、重命名，支持批量操作。")
+                .description("文件系统操作：move/copy/delete/mkdir/rename。")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("action"),
-                        "properties", Map.ofEntries(
-                                Map.entry("action", Map.of(
-                                        "type", "string",
-                                        "enum", List.of("move", "copy", "delete", "mkdir"),
-                                        "description", "文件管理动作类型")),
-                                Map.entry("source", Map.of(
-                                        "type", "string",
-                                        "description", "源路径；action=move/copy 时必填")),
-                                Map.entry("destination", Map.of(
-                                        "type", "string",
-                                        "description", "目标路径；action=move/copy 时必填")),
-                                Map.entry("path", Map.of(
-                                        "type", "string",
-                                        "description", "目标文件或目录路径；action=delete/mkdir 时必填")),
-                                Map.entry("overwrite", Map.of(
-                                        "type", "boolean",
-                                        "description", "action=move/copy 时目标已存在是否覆盖，默认 false")),
-                                Map.entry("recursive", Map.of(
-                                        "type", "boolean",
-                                        "description", "action=delete 时递归删除目录，action=copy 时递归复制目录，默认 false"))
-                        )
-                )))
+                        "properties", props,
+                        "dependentRequired", Map.of(
+                                "move", List.of("source", "destination"),
+                                "copy", List.of("source", "destination"),
+                                "delete", List.of("path"),
+                                "mkdir", List.of("path"),
+                                "rename", List.of("source", "destination")
+                        ))))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
                 .executionSemantics(ToolExecutionSemantics.of(
-                        PermissionActionType.WRITE_FILE,
-                        ToolSchedulingMode.RESOURCE_SERIALIZED,
-                        ToolScopeResolvers.pathTrees("source", "destination", "path")
-                ))
-                .tags(List.of("管理", "移动", "复制", "删除", "重命名", "目录", "文件", "manage", "move", "copy", "delete"))
-                .actionMetadataFrom(executor)
-                .executor(executor)
+                        PermissionActionType.WRITE_FILE, ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("source", "destination", "path")))
+                .tags(List.of("管理", "移动", "复制", "删除", "重命名", "目录", "manage", "move", "copy", "delete"))
+                .executor(input -> {
+                    String action = input.getOptionalParam("action", String.class).orElse("move");
+                    return switch (action) {
+                        case "move" -> new FileMoveToolExecutor(securityChecker).execute(input);
+                        case "copy" -> new FileCopyToolExecutor(securityChecker).execute(input);
+                        case "delete" -> new FileDeleteToolExecutor(securityChecker).execute(input);
+                        case "mkdir" -> new FileMkdirToolExecutor(securityChecker).execute(input);
+                        case "rename" -> renameFile(input, securityChecker);
+                        default -> ToolResult.error("不支持的 action: " + action);
+                    };
+                })
                 .build();
+    }
+
+    private static ToolResult renameFile(ToolInput input, PathSecurityChecker securityChecker) {
+        String source = input.getOptionalParam("source", String.class).orElse("");
+        String destination = input.getOptionalParam("destination", String.class).orElse("");
+        if (source.isBlank() || destination.isBlank())
+            return ToolResult.error("rename 需要 source 和 destination 参数");
+        try {
+            var srcPath = java.nio.file.Path.of(source);
+            var dstPath = java.nio.file.Path.of(destination);
+            securityChecker.check(srcPath).ifPresent(err -> { throw new SecurityException(err); });
+            securityChecker.check(dstPath).ifPresent(err -> { throw new SecurityException(err); });
+            java.nio.file.Files.move(srcPath, dstPath);
+            return ToolResult.success(Map.of("source", source, "destination", destination));
+        } catch (Exception e) {
+            return ToolResult.error("重命名失败: " + e.getMessage());
+        }
     }
 }

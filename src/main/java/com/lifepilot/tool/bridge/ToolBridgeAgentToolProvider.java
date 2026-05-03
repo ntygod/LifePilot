@@ -40,10 +40,6 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private static final Set<String> IDEMPOTENCY_KEY_WHITELIST =
             Set.of("web.search", "web.fetch");
 
-    /** Meta 工具 ID 集合 — 始终可见于 prompt，供 LLM 发现更多能力。 */
-    private static final Set<String> META_TOOL_IDS =
-            Set.of("tools.search", "tools.describe");
-
     private final DynamicToolRegistry toolRegistry;
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
@@ -123,24 +119,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         List<ToolContract> tools;
         if (allowed != null && !allowed.isEmpty()) {
             // 多 Agent / 受限代理场景 — 严格按白名单过滤
-            int totalCount = all.size();
-            tools = all.stream()
-                    .filter(t -> allowed.contains(t.id()))
-                    .toList();
-            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", totalCount, tools.size());
+            tools = all.stream().filter(t -> allowed.contains(t.id())).toList();
+            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", all.size(), tools.size());
         } else {
-            // 统一分层 — Tier 1 ∪ activatedToolIds ∪ Meta 工具
-            Set<String> tier1 = tier1Service.getCurrentTier1Ids();
-            Set<String> activated = state.activatedToolIds() != null
-                    ? state.activatedToolIds() : Set.of();
-            Set<String> visible = new HashSet<>();
-            visible.addAll(tier1);
-            visible.addAll(activated);
-            visible.addAll(META_TOOL_IDS);
-            int totalCount = all.size();
-            tools = all.stream().filter(t -> visible.contains(t.id())).toList();
-            log.debug("ToolCallback 过滤 (统一分层): total={}, tier1={}, activated={}, meta={}, final={}",
-                    totalCount, tier1.size(), activated.size(), META_TOOL_IDS.size(), tools.size());
+            // Tier1 全量常驻 — 所有工具可见
+            tools = all;
+            log.debug("ToolCallback 全量注入: count={}", tools.size());
         }
 
         refreshToolNameMappings(tools);
@@ -187,7 +171,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
         context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
-        // 把 state 直接放进 context，供 meta 工具（tools.search/describe/list）的 executor 读取
+        // 把 state 直接放进 context，供 meta 工具（tool.search/describe/list）的 executor 读取
         context.put(ToolContextKeys.CALLER_STATE, state);
 
         ToolDefinition definition = DefaultToolDefinition.builder()
@@ -360,7 +344,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else if (result.ok()) {
             output = toJsonValue(result.data());
         } else if (hasNonEmptyData(result)) {
-            // 失败但 data 非空（如 code.execute / shell.exec 在 exitCode!=0 时带 stdout/stderr），
+            // 失败但 data 非空（如 code / shell.exec 在 exitCode!=0 时带 stdout/stderr），
             // 必须把 data 也透给 LLM，否则 AI 只看到"代码执行失败 exitCode=1"无法 debug
             output = "{\"data\":" + toJsonValue(result.data())
                     + ",\"error\":\"" + escapeJson(result.error())

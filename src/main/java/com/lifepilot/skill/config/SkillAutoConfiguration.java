@@ -236,7 +236,7 @@ public class SkillAutoConfiguration {
 
     /**
      * 终态扫描 —— 必须晚于 {@code BuiltinToolRegistrar.registerAll}（HIGHEST_PRECEDENCE+100），
-     * 否则 skill.load / code.kernel / channel.feishu 等 BuiltinTool 尚未注册会误报"未注册"。
+     * 否则 skill.load / code / channel.feishu 等 BuiltinTool 尚未注册会误报"未注册"。
      */
     @EventListener(ApplicationReadyEvent.class)
     @Order(Ordered.LOWEST_PRECEDENCE)

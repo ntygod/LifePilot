@@ -2,13 +2,13 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-04-25
+> **最后更新**：2026-05-03
 
 ## 1. 功能概述
 
 工具系统为 Agent 提供与外部世界交互的能力，支持两种工具来源：Java 内置工具（BuiltinTool）和 MCP 外部工具（McpTool）。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
 
-工具对 LLM 的暴露采用 Tier 1（常驻完整 schema）+ Tier 2（FTS5 BM25 可搜索）+ 2 个 Meta 工具（`tools.search` / `tools.describe`）的三层模型，简单任务保持 2 轮响应低延迟，长尾能力通过按需搜索无限扩展。
+工具对 LLM 的暴露采用全量常驻模式——全部 15 个内置工具（含 `tool.search` 内省工具）始终随 system prompt 注入，无需延迟发现。MCP 外部工具通过 `tool.search` 发现。
 
 > **重要变更**：
 > - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool，废弃了 `file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳以及 `generate_skill` 独立工具；Skill 自生成由 `SkillSynthesizer` 后台服务在判定能力缺口时触发，不再通过 Agent 侧工具暴露。
@@ -76,11 +76,10 @@ LLM 通过工具描述和 Schema 理解工具用途。
 
 确保内置工具行为不被外部工具意外替换。
 
-### 2.7 三层工具暴露
+### 2.7 全量常驻
 
-- **Tier 1（常驻）**：`lifepilot.tool.tier1.pinned` 配置列表中的工具，完整 schema 常驻 prompt，LLM 可直接调用
-- **Meta 层（始终可见）**：`tools.search` / `tools.describe`，LLM 用它们发现 Tier 2 工具
-- **Tier 2（延迟加载）**：其余 Java 内置工具 + MCP 工具 + Skill 动态生成的工具，进 FTS5 BM25 搜索索引
+- **Tier 1（全量常驻）**：`lifepilot.tool.tier1.pinned` 配置列表中的全部 15 个内置工具，完整 schema 常驻 prompt，LLM 可直接调用
+- **MCP 外部工具**：通过 `tool.search` 发现，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引
 
 Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`，合并进当前可见集。
 
@@ -97,7 +96,7 @@ Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`
 - `name`：必须含中文字符
 - `description`：长度 ≥ 20 字符；允许中英混排；未检测到中文且无英文动词词根时 warn
 - `tags`：数量 ≥ 3，非空白且不重复；允许中英混排
-- 硬规则违反抛 `IllegalStateException` 阻止启动；`tools.search / describe / list` 与 `a2a_remote_*` 工具豁免
+- 硬规则违反抛 `IllegalStateException` 阻止启动；`tool.search` 与 `a2a_remote_*` 工具豁免
 
 ## 3. 核心类说明
 
@@ -111,8 +110,8 @@ Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`
 | `DynamicToolRegistry` | 动态注册表 |
 | `ToolBridgeAgentToolProvider` | Tier 1 ∪ activated ∪ meta 统一过滤，生成 Spring AI ToolCallback |
 | `Tier1Service` | 只读 `pinned` 配置，提供 Tier 1 工具 ID 集合 |
-| `ToolSearchService` / `ToolDescribeService` / `ToolListService` | 搜索链路 3 服务 |
-| `BuiltinToolSearchProvider` | 注册 `tools.search/describe/list` 3 个 meta BuiltinTool |
+| `ToolSearchService` | 搜索链路服务 |
+| `BuiltinToolSearchProvider` | 注册 `tool.search` meta BuiltinTool |
 | `ToolSearchIndexBuilder` / `ToolSearchIndexMaintainer` | FTS5 索引全量 / 增量维护 |
 | `ToolValidator` | 启动期工具命名规范强校验 |
 
@@ -131,22 +130,25 @@ lifepilot:
       default-max-retries: 2
     tier1:
       pinned:
-        - tools.search
-        - tools.describe
+        - memory
+        - browser
+        - code
+        - shell.exec
+        - shell.process
         - file.read
         - file.write
-        - file.list
+        - file.manage
         - web.search
         - web.fetch
-        - shell.exec
-        - memory
-        - knowledge.search
+        - cron
+        - notify
+        - status
+        - ui.render
+        - skill.load
     search:
       default-limit: 5
       max-limit: 20
       bm25-confidence-threshold: 1.0
-    describe:
-      max-batch-size: 10
 ```
 
 关键配置键：
@@ -156,11 +158,10 @@ lifepilot:
 | `lifepilot.tool.enabled` | `true` | 工具系统总开关 |
 | `lifepilot.tool.pipeline.default-timeout-seconds` | `30` | 默认执行超时 |
 | `lifepilot.tool.pipeline.default-max-retries` | `2` | 默认最大重试次数 |
-| `lifepilot.tool.tier1.pinned` | 11 项（见上） | 人工固定的 Tier 1 工具 ID |
-| `lifepilot.tool.search.default-limit` | `5` | `tools.search` 默认 limit |
-| `lifepilot.tool.search.max-limit` | `20` | `tools.search` 单次上限 |
+| `lifepilot.tool.tier1.pinned` | 15 项（全量常驻） | 人工固定的 Tier 1 工具 ID |
+| `lifepilot.tool.search.default-limit` | `5` | `tool.search` 默认 limit |
+| `lifepilot.tool.search.max-limit` | `20` | `tool.search` 单次上限 |
 | `lifepilot.tool.search.bm25-confidence-threshold` | `1.0` | BM25 高置信度阈值 |
-| `lifepilot.tool.describe.max-batch-size` | `10` | `tools.describe` 批量上限 |
 
 完整字段见 [工具系统架构文档](../architecture/tool-ecosystem.md#7-配置参考)。
 

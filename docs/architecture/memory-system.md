@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-04-23
+> **最后更新**：2026-05-03
 
 ## 1. 模块概述
 
@@ -107,7 +107,7 @@ graph TB
 - `WorkspaceCleanupJob` 按 TTL 过期活动项，并清理终态条目
 - 主写入点有三处：
   - `AgentPersistenceHandler.saveWorkspaceForSuspend()`：用于挂起、确认等待和任务续跑
-  - `ToolExecutionCoordinator.persistToolResultToWorkspace()`：关键工具（`memory.create/update/tag`、`workflow.execute`、`code.execute`、`datastore.query`）执行成功后自动写入 `WorkingSetItem`
+  - `ToolExecutionCoordinator.persistToolResultToWorkspace()`：关键工具（`memory.create/update/tag`、`code`）执行成功后自动写入 `WorkingSetItem`
   - `ReactAgentLoop`：反思触发后将反思结论写入 `WorkingSetItem`（截断至 300 字符），增强长对话上下文保持
 
 ### 3.3 EpisodicMemory（L2 情景记忆）

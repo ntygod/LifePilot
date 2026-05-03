@@ -1,10 +1,9 @@
 ---
 name: daily-manager
-description: 当用户要做多步任务规划、优先级排序、跨 Skill 协调执行、生成日报/周报/月报或汇总多个领域信息时使用。关键词：安排一下、今天做什么、今天的事、帮我规划、任务排优先级、整理待办、列一下、生成日报、生成周报、生成月报、汇总一下、任务分解、调整一下、挪到明天、做到哪了、昨天做了啥。定时任务管理用 cron-scheduler，单一领域深度任务用对应专业 Skill，模糊持续关注记到记忆。
+description: 当用户要做多步任务规划、优先级排序、跨 Skill 协调执行、生成日报/周报/月报或汇总多个领域信息时使用。
 version: 3.0.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - planning
       - task-management
@@ -15,11 +14,11 @@ metadata:
       - coordination
     suggested_tools:
       - memory
-      - skill.load
-      - notify.send_message
-      - web.search
-      - file.read
-      - file.write
+      - skill_load
+      - notify
+      - web_search
+      - file_read
+      - file_write
 ---
 
 # 日常管理指南
@@ -55,9 +54,9 @@ metadata:
 - **拆 + 排**：列任务，按紧急-重要分四档（紧急且重要 / 重要不紧急 / 紧急不重要 / 可暂缓）；列完先跟用户对一下再写入
 - **查**：`memory(action="search")` 找事实实体，`memory(action="recall")` 取历史对话片段，组合使用更全
 - **写 / 改 / 撤**：`memory(action="create" / "update" / "delete")`；写入要带截止日、优先级、依赖
-- **跨 Skill 协调**：`skill.load(names=[...])` 一次 ≤ 3 个，按依赖串行；前序输出作为后序输入
-- **落盘**：长期产物（周报、汇总文档）`file.write` 到工作区或用户指定路径
-- **异步通知**：用户已离开会话、任务跨多轮才用 `notify.send_message`，会话内回复直接说
+- **跨 Skill 协调**：`skill_load(names=[...])` 一次 ≤ 3 个，按依赖串行；前序输出作为后序输入
+- **落盘**：长期产物（周报、汇总文档）`file_write` 到工作区或用户指定路径
+- **异步通知**：用户已离开会话、任务跨多轮才用 `notify`，会话内回复直接说
 
 ## 协作原则（仅本 Skill 强调）
 

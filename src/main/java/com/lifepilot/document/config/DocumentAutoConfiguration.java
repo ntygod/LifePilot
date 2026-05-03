@@ -31,7 +31,7 @@ import org.springframework.context.annotation.Bean;
  * 供 DocumentController（前端 docx 编辑页）和孤儿扫描器使用。
  *
  * <p>{@code document.create} / {@code document.edit} BuiltinTool 已下架（2026-04-25），
- * 工具层 Office 操作改为引导 LLM 走 {@code code.execute} + python 库
+ * 工具层 Office 操作改为引导 LLM 走 {@code code} + python 库
  * （python-docx / openpyxl / python-pptx / pypdf）。</p>
  *
  * @author zsg

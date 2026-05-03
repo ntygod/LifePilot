@@ -13,7 +13,7 @@
 
 ## 输出要求
 JSON 格式，字段：
-- scenario: 场景描述（**20 字以内**，如"通过 knowledge.search 搜索用户书单"）
+- scenario: 场景描述（**20 字以内**，如"通过 memory 搜索用户书单"）
 - strategy: 工具使用策略（**50 字以内**，聚焦工具选择和参数技巧）
 - lessons: 教训列表（数组，每条 **30 字以内**，最多 3 条，必须是具体可操作的发现）
 - applicableConditions: 适用条件（数组，最多 2 条）

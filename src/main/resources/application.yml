@@ -75,12 +75,12 @@ lifepilot:
       default-temperature: 0.7
       # reflect-after-iterations: 5    # 开始周期性回顾的迭代阈值
       # reflect-interval: 3            # 周期性回顾间隔
-      # reflect-on-tool-failure: true  # 工具失败时触发回顾
-      # stall-detection-threshold: 3   # 停滞检测阈值
+      reflect-on-tool-failure: true  # 工具失败时触发回顾
+      stall-detection-threshold: 3   # 停滞检测阈值
     budget:
       default-max-tokens: 20000000
       default-max-steps: 60
-      default-max-duration-seconds: 300
+      default-max-duration-seconds: 1800
     context:
       max-context-tokens: 2000000
       output-reserved-tokens: 8192
@@ -188,21 +188,24 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
-    # ===== Tier 1 分层注入 =====
-    # pinned：人工固定的常驻完整 schema 工具
-    # 其余工具进 BM25 搜索池，通过 tools.search 被 LLM 发现
+    # ===== Tier 1 全量常驻 =====
+    # 15 工具全部注入 LLM 上下文，无需 tool.search 发现
     tier1:
       pinned:
-        - tools.search
-        - tools.describe
+        - memory
+        - browser
+        - code
+        - shell.exec
+        - shell.process
         - file.read
         - file.write
-        - file.list
+        - file.manage
         - web.search
         - web.fetch
-        - shell.exec
-        - memory
-        - knowledge.search
+        - cron
+        - notify
+        - status
+        - ui.render
         - skill.load
     # ===== 搜索服务 =====
     search:

@@ -9,7 +9,7 @@ import java.util.Set;
  * Tier 1 工具 ID 提供服务，只读 {@code lifepilot.tool.tier1.pinned} 配置。
  *
  * <p>{@link #getCurrentTier1Ids()} 用于 ToolBridge 过滤可见集合，
- * 以及 {@code tools.search} 排除搜索池。</p>
+ * 以及 {@code tool.search} 排除搜索池。</p>
  *
  * @author zsg
  * @since 2026-04-23

@@ -1,10 +1,9 @@
 ---
 name: teaching-assistant
-description: 当用户要学习概念、让你解释原理、生成练习题、规划学习路径、通过代码演示理解知识点时使用。关键词：教我、学一下、学习、解释、这是什么意思、教程、入门、练习题、怎么理解、代码示例、跑一下试试、学习路径、从零学、为什么这样、举个例子、带我入门、不太懂。代码编写任务用 code-assistant，信息调研用 research-assistant，文档撰写用 content-creator。
+description: 当用户要学习概念、让你解释原理、生成练习题、规划学习路径、通过代码演示理解知识点时使用。
 version: 2.1.0
 metadata:
   zhiwei:
-    priority: normal
     tags:
       - teaching
       - learning
@@ -12,11 +11,10 @@ metadata:
       - explain
       - exercises
     suggested_tools:
-      - web.search
-      - code.execute
-      - file.write
-      - file.read
-      - knowledge.search
+      - web_search
+      - code
+      - file_write
+      - file_read
       - memory
 ---
 
@@ -44,14 +42,14 @@ metadata:
 |---|---|
 | "X 是什么"（首次接触） | 定义 → 类比 → 核心要点 → 简短示例 |
 | "为什么 / 怎么理解"（深入原理） | 类比 → 拆解机制 → 对比相近概念 |
-| "举个例子 / 跑一下"（代码演示） | `code.execute` 跑可运行示例，输出可见 |
+| "举个例子 / 跑一下"（代码演示） | `code` 跑可运行示例，输出可见 |
 | "出几道题 / 练一下"（练习） | 难度递进（基础模仿 → 进阶组合 → 挑战实战） |
 | "学习路径"（规划） | 评估水平 → 分阶段路径 → `memory(action="create")` 记进度 |
 
 各路径要点：
 
 - **评估水平**：开场前问基础 / 目标 / 偏好（理论优先还是实践优先），按水平调难度与用语
-- **代码演示**：用 `code.execute` 跑出可见结果，不只贴静态代码
+- **代码演示**：用 `code` 跑出可见结果，不只贴静态代码
 - **练习引导**：用户做错时引导分析原因，不直接给答案，不批评；做对时点出关键点
 - **进度记忆**：长期学习用 `memory(action="create")` 记起点 / 完成的章节 / 卡点
 - **常见误区**：每个概念讲完点出 1-2 个高频误区（教学独有价值）

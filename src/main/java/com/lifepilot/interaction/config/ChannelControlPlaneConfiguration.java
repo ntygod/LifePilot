@@ -1,37 +1,34 @@
 package com.lifepilot.interaction.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.document.repository.SessionDocumentRepository;
+import com.lifepilot.interaction.gateway.MessageGateway;
+import com.lifepilot.interaction.model.ChannelInstance;
+import com.lifepilot.interaction.model.ChannelInstanceStatus;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.interaction.repository.ChannelInstanceEventRepository;
 import com.lifepilot.interaction.repository.ChannelInstanceRepository;
 import com.lifepilot.interaction.repository.ChannelPluginRepository;
-import com.lifepilot.interaction.runtime.ConnectorManager;
-import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
-import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
-import com.lifepilot.interaction.runtime.ChannelPermissionApprovalService;
-import com.lifepilot.interaction.runtime.ChannelRuntimeIngressService;
-import com.lifepilot.interaction.runtime.ChannelUserMappingCache;
-import com.lifepilot.interaction.runtime.ConnectorRuntimeManager;
-import com.lifepilot.interaction.model.ChannelInstanceStatus;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.runtime.*;
 import com.lifepilot.interaction.service.ChannelIngressService;
 import com.lifepilot.interaction.service.ChannelInstanceEventService;
 import com.lifepilot.interaction.service.ChannelInstanceService;
-import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.marketplace.install.InstalledExtensionRepository;
-import org.springframework.boot.ApplicationRunner;
+import com.lifepilot.observability.config.ObservabilityProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
-import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 渠道控制面配置。
@@ -134,7 +131,7 @@ public class ChannelControlPlaneConfiguration {
                                                               RestClient channelControlPlaneRestClient,
                                                               ConnectorManager connectorManager,
                                                               @Nullable SseSessionManager sseSessionManager,
-                                                              @Nullable com.lifepilot.document.repository.SessionDocumentRepository documentRepository) {
+                                                              @Nullable SessionDocumentRepository documentRepository) {
         return new ChannelDeliveryDispatcher(
                 channelRegistry,
                 channelInstanceEventService,
@@ -168,7 +165,7 @@ public class ChannelControlPlaneConfiguration {
             ChannelDeliveryDispatcher channelDeliveryDispatcher,
             ChannelInstanceService channelInstanceService,
             ChannelUserMappingCache channelUserMappingCache,
-            com.lifepilot.observability.config.ObservabilityProperties observabilityProperties) {
+            ObservabilityProperties observabilityProperties) {
         long timeout = observabilityProperties.getGuardrail().getApprovalTimeoutSeconds();
         log.info("注册 ChannelPermissionApprovalService: timeout={}s", timeout);
         return new ChannelPermissionApprovalService(
@@ -233,7 +230,7 @@ public class ChannelControlPlaneConfiguration {
         };
     }
 
-    private void restoreInstance(com.lifepilot.interaction.model.ChannelInstance instance,
+    private void restoreInstance(ChannelInstance instance,
                                  ChannelInstanceService channelInstanceService,
                                  ConnectorRuntimeManager connectorRuntimeManager) {
         if (!instance.enabled()) {

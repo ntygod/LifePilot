@@ -1,7 +1,7 @@
 # 知微（ZhiWei）— 系统架构总览
 
 > **文档性质**：架构总览文档
-> **最后更新**：2026-04-24
+> **最后更新**：2026-05-03
 
 ## 1. 项目概述
 
@@ -141,7 +141,7 @@ graph TB
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `project` | 项目（领域级任务容器）CRUD、项目级 MemorySpace 联动、ProjectContext 解析、级联删除 | [架构](architecture/project.md) |
-| `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合）。**Plan 3（2026-04-23）**：LLM 工具集下线、前端 `/datastores` 路由与侧栏入口下架；后端 `DataStoreManager` 完整能力保留（供内置 Skill 与泛型 CRUD 适配器继续使用） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
+| `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合）。**2026-05-03 彻底移除**：后端 `DatastoreController` / `StorageToolProvider` 已删除，前端资料仓库管理页面、路由、类型定义全部移除。`DataStoreManager` 核心能力保留供内置数据同步与知识库链路使用，不再通过 LLM 工具或用户管理界面暴露。知识库文档检索转入 `memory(action=search, scope=knowledge)` | — |
 | `document` | 文档工作空间（docx / xlsx / pptx 新建、docx / xlsx 锚点编辑、工作副本 + 版本链 + diff + commit/rollback/discard） | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |

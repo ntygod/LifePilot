@@ -70,7 +70,6 @@ const REALITY_TYPE_LABELS: Record<string, string> = {
 const ORIGIN_TYPE_LABELS: Record<string, string> = {
   CHAT: '对话抽取',
   KNOWLEDGE_BASE_DOCUMENT: '知识库文档',
-  DATASTORE_DOCUMENT: 'Datastore 文档',
   MANUAL: '手动维护',
   TOOL: '工具写入',
   CONSOLIDATION: '记忆巩固',
@@ -80,7 +79,6 @@ const ORIGIN_TYPE_LABELS: Record<string, string> = {
 const ORIGIN_TYPE_OPTIONS = [
   { value: 'CHAT', label: '对话抽取' },
   { value: 'KNOWLEDGE_BASE_DOCUMENT', label: '知识库文档' },
-  { value: 'DATASTORE_DOCUMENT', label: 'Datastore 文档' },
   { value: 'MANUAL', label: '手动维护' },
   { value: 'TOOL', label: '工具写入' },
   { value: 'CONSOLIDATION', label: '记忆巩固' },
@@ -94,7 +92,6 @@ const filterMemoryScope = ref<string>('')
 const filterRealityType = ref<string>('')
 const filterOriginType = ref<string>('')
 const filterSourceKnowledgeBaseId = ref('')
-const filterSourceDatastoreId = ref('')
 const filterSourceDocumentId = ref('')
 const filterTimeFrom = ref('')
 const filterTimeTo = ref('')
@@ -121,7 +118,6 @@ const provenanceItems = ref<EntityProvenance[]>([])
 const provenanceLoading = ref(false)
 const provenanceOriginType = ref<string>('')
 const provenanceKnowledgeBaseId = ref('')
-const provenanceDatastoreId = ref('')
 const provenanceDocumentId = ref('')
 const loadedProvenanceKey = ref('')
 
@@ -196,7 +192,6 @@ const uiStore = useUiStore()
 const activeListSourceFilters = computed(() => [
   filterOriginType.value ? `来源类型: ${formatOriginType(filterOriginType.value)}` : null,
   filterSourceKnowledgeBaseId.value.trim() ? `知识库: ${filterSourceKnowledgeBaseId.value.trim()}` : null,
-  filterSourceDatastoreId.value.trim() ? `Datastore: ${filterSourceDatastoreId.value.trim()}` : null,
   filterSourceDocumentId.value.trim() ? `文档: ${filterSourceDocumentId.value.trim()}` : null,
 ].filter((item): item is string => Boolean(item)))
 
@@ -218,7 +213,6 @@ async function loadEntities() {
     if (filterRealityType.value) params.realityType = filterRealityType.value
     if (filterOriginType.value) params.originType = filterOriginType.value
     if (filterSourceKnowledgeBaseId.value.trim()) params.sourceKnowledgeBaseId = filterSourceKnowledgeBaseId.value.trim()
-    if (filterSourceDatastoreId.value.trim()) params.sourceDatastoreId = filterSourceDatastoreId.value.trim()
     if (filterSourceDocumentId.value.trim()) params.sourceDocumentId = filterSourceDocumentId.value.trim()
     if (filterTimeFrom.value) params.timeFrom = filterTimeFrom.value
     if (filterTimeTo.value) params.timeTo = filterTimeTo.value
@@ -260,7 +254,6 @@ function syncListFiltersFromRoute() {
   filterRealityType.value = normalizeQueryValue(route.query.realityType)
   filterOriginType.value = normalizeQueryValue(route.query.originType)
   filterSourceKnowledgeBaseId.value = normalizeQueryValue(route.query.sourceKnowledgeBaseId)
-  filterSourceDatastoreId.value = normalizeQueryValue(route.query.sourceDatastoreId)
   filterSourceDocumentId.value = normalizeQueryValue(route.query.sourceDocumentId)
   currentPage.value = 0
   syncingRouteFilters.value = false
@@ -308,7 +301,6 @@ async function openDetailById(entityId: string) {
   provenanceItems.value = []
   provenanceOriginType.value = ''
   provenanceKnowledgeBaseId.value = ''
-  provenanceDatastoreId.value = ''
   provenanceDocumentId.value = ''
   loadedProvenanceKey.value = ''
 
@@ -504,7 +496,6 @@ function buildProvenanceParams(): EntityProvenanceParams {
   const params: EntityProvenanceParams = {}
   if (provenanceOriginType.value) params.originType = provenanceOriginType.value
   if (provenanceKnowledgeBaseId.value.trim()) params.sourceKnowledgeBaseId = provenanceKnowledgeBaseId.value.trim()
-  if (provenanceDatastoreId.value.trim()) params.sourceDatastoreId = provenanceDatastoreId.value.trim()
   if (provenanceDocumentId.value.trim()) params.sourceDocumentId = provenanceDocumentId.value.trim()
   return params
 }
@@ -522,7 +513,6 @@ function applyProvenanceFilters() {
 function resetProvenanceFilters() {
   provenanceOriginType.value = ''
   provenanceKnowledgeBaseId.value = ''
-  provenanceDatastoreId.value = ''
   provenanceDocumentId.value = ''
   loadedProvenanceKey.value = ''
   void fetchProvenances(true)
@@ -550,13 +540,6 @@ function buildProvenanceDetails(item: EntityProvenance) {
     { label: 'Turn ID', value: item.sourceTurnId },
     { label: '消息 ID', value: item.sourceEntryId },
     { label: '知识库', value: buildNamedReference(item.sourceKnowledgeBaseName, item.sourceKnowledgeBaseId) },
-    { label: 'Datastore', value: buildNamedReference(item.sourceDatastoreName, item.sourceDatastoreId) },
-    {
-      label: 'Collection',
-      value: item.sourceCollectionId && item.sourceCollectionId !== item.sourceDatastoreId
-        ? buildNamedReference(item.sourceCollectionName, item.sourceCollectionId)
-        : null,
-    },
     { label: '文档', value: buildNamedReference(item.sourceDocumentName, item.sourceDocumentId) },
   ]
   return details.filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
@@ -568,14 +551,6 @@ function canOpenKnowledgeBase(item: EntityProvenance) {
 
 function canOpenDocument(item: EntityProvenance) {
   return Boolean(item.sourceKnowledgeBaseId && item.sourceDocumentId)
-}
-
-function resolveDatastoreTargetId(item: EntityProvenance) {
-  return item.sourceDatastoreId || item.sourceCollectionId || null
-}
-
-function canOpenDatastore(item: EntityProvenance) {
-  return Boolean(resolveDatastoreTargetId(item))
 }
 
 function openKnowledgeBase(item: EntityProvenance) {
@@ -597,14 +572,6 @@ function openDocument(item: EntityProvenance) {
   })
 }
 
-function openDatastore(item: EntityProvenance) {
-  const targetId = resolveDatastoreTargetId(item)
-  if (!targetId) return
-  void router.push({
-    name: 'datastoreDetail',
-    params: { id: targetId },
-  })
-}
 </script>
 
 <template>
@@ -632,7 +599,6 @@ function openDatastore(item: EntityProvenance) {
             <label class="text-xs text-muted-foreground mb-1 block">空间标识</label>
             <Input
               v-model="filterSpaceId"
-              placeholder="如 datastore:novel-workspace"
               @keydown.enter="handleSearch"
             />
           </div>
@@ -746,7 +712,6 @@ function openDatastore(item: EntityProvenance) {
           <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div class="text-xs font-medium text-foreground">来源筛选</div>
-              <p class="text-xs text-muted-foreground">按写入来源收窄实体列表，适合从 Datastore 或知识库反查被引用的记忆。</p>
             </div>
             <div v-if="activeListSourceFilters.length > 0" class="flex flex-wrap gap-2">
               <Badge
@@ -760,7 +725,7 @@ function openDatastore(item: EntityProvenance) {
             </div>
           </div>
 
-          <div class="grid gap-3 xl:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div class="grid gap-3 xl:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)]">
             <div>
               <label class="mb-1 block text-xs text-muted-foreground">来源类型</label>
               <Select
@@ -783,15 +748,6 @@ function openDatastore(item: EntityProvenance) {
               <Input
                 v-model="filterSourceKnowledgeBaseId"
                 data-test="list-source-kb-id"
-                placeholder="可选"
-                @keydown.enter="handleSearch"
-              />
-            </div>
-            <div>
-              <label class="mb-1 block text-xs text-muted-foreground">Datastore ID</label>
-              <Input
-                v-model="filterSourceDatastoreId"
-                data-test="list-source-datastore-id"
                 placeholder="可选"
                 @keydown.enter="handleSearch"
               />
@@ -996,7 +952,7 @@ function openDatastore(item: EntityProvenance) {
             <!-- 来源明细 -->
             <TabsContent value="provenance" class="mt-4">
               <div class="mb-4 rounded-md border border-border/60 p-3">
-                <div class="grid gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+                <div class="grid gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
                   <div>
                     <label class="mb-1 block text-xs text-muted-foreground">来源类型</label>
                     <Select
@@ -1019,15 +975,6 @@ function openDatastore(item: EntityProvenance) {
                     <Input
                       v-model="provenanceKnowledgeBaseId"
                       data-test="provenance-kb-id"
-                      placeholder="可选"
-                      @keydown.enter="applyProvenanceFilters"
-                    />
-                  </div>
-                  <div>
-                    <label class="mb-1 block text-xs text-muted-foreground">Datastore ID</label>
-                    <Input
-                      v-model="provenanceDatastoreId"
-                      data-test="provenance-datastore-id"
                       placeholder="可选"
                       @keydown.enter="applyProvenanceFilters"
                     />
@@ -1069,17 +1016,6 @@ function openDatastore(item: EntityProvenance) {
                       </span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
-                      <Button
-                        v-if="canOpenDatastore(item)"
-                        size="sm"
-                        variant="outline"
-                        class="h-7 px-2 text-xs"
-                        data-test="open-provenance-datastore"
-                        @click="openDatastore(item)"
-                      >
-                        <ArrowUpRight class="size-3.5" />
-                        查看 Datastore
-                      </Button>
                       <Button
                         v-if="canOpenKnowledgeBase(item)"
                         size="sm"

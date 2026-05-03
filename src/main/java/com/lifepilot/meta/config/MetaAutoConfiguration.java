@@ -10,7 +10,6 @@ import com.lifepilot.interaction.runtime.ChannelOperationDispatcher;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
-import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -25,7 +24,6 @@ import com.lifepilot.meta.convenience.IntrospectionToolProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.meta.infra.memory.MemoryToolProvider;
-import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.browser.BrowserSessionScheduler;
@@ -247,18 +245,7 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册存储工具提供者 — 注册 8 个数据存储 CRUD 工具。
-     *
-     * <p>依赖 DataStoreManager（来自 datastore 模块）。</p>
-     */
-    @Bean
-    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager,
-                                              com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
-        return new StorageToolProvider(dataStoreManager, objectMapper);
-    }
-
-    /**
-     * 注册记忆管理工具提供者 — 注册 9 个记忆管理工具。
+     * 注册记忆管理工具提供者。
      *
      * <p>仅在 HybridRetriever 和 SemanticMemory Bean 可用时注册。
      * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryProperties 为可选依赖。</p>
@@ -298,7 +285,6 @@ public class MetaAutoConfiguration {
 
         ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
         ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
-        ctx.getBean(StorageToolProvider.class).buildStorageTools().forEach(toolRegistry::registerBuiltinTool);
         if (ctx.containsBean("memoryToolProvider")) {
             ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
         }
