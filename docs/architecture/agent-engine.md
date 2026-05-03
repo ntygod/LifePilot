@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-04-15
+> **最后更新**：2026-05-03
 
 ## 1. 模块概述
 
@@ -110,7 +110,7 @@ graph TB
   2. **COMPRESS_HISTORY** — 压缩历史上下文
   3. **TRIM_TOOLS** — 裁剪可用工具集
   4. **SKIP_MEMORY** — 跳过记忆检索
-  5. **TERMINATE** — 终止执行并生成降级响应
+  5. **TERMINATE** — 终止执行（预算耗尽时优先调用 LLM 做结构化总结再返回，`DegradedResponseBuilder.terminateWithReason` → `buildGracefulSummary`）
 
 ## 4. 核心流程
 
@@ -180,7 +180,7 @@ sequenceDiagram
 | `lifepilot.agent.loop.default-temperature` | `0.7` | 默认 temperature（会话未配置时使用） |
 | `lifepilot.agent.budget.default-max-tokens` | 20000000 | 对话总 Token 预算 |
 | `lifepilot.agent.budget.default-max-steps` | 30 | 步数预算上限 |
-| `lifepilot.agent.budget.default-max-duration-seconds` | 300 | 时间预算上限（秒） |
+| `lifepilot.agent.budget.default-max-duration-seconds` | 1800 | 时间预算上限（秒，2026-05 从 300 上调至 1800） |
 | `lifepilot.agent.context.max-context-tokens` | 2000000 | 单次 LLM 调用最大上下文 Token 数 |
 | `lifepilot.agent.context.output-reserved-tokens` | 8192 | 输出预留 Token 数 |
 | `lifepilot.agent.checkpoint.enabled` | `true` | 检查点功能开关 |
@@ -192,4 +192,4 @@ sequenceDiagram
 | `lifepilot.agent.location` | `""` | 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测 |
 | `lifepilot.agent.ip-api-url` | `http://ip-api.com/json/...` | IP 地理定位 API 地址，为空时禁用自动检测 |
 
-> 工具可见性由 `lifepilot.tool.tier1.pinned`（常驻）+ `activatedToolIds`（Skill 加载）+ 3 个 Meta 工具（`tools.search` / `tools.describe` / `tools.list`）共同决定，配置详见 [工具系统架构](tool-ecosystem.md)。旧的 `lifepilot.agent.core-tool-ids` 已在 2026-04 工具暴露重构中移除。
+> 工具可见性由 `lifepilot.tool.tier1.pinned`（15 个内置工具全量常驻）+ `activatedToolIds`（Skill 加载）+ `tool.search` 内省工具共同决定，配置详见 [工具系统架构](tool-ecosystem.md)。旧的 `lifepilot.agent.core-tool-ids` 已在 2026-04 工具暴露重构中移除。

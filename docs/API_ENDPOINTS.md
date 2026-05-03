@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-04-24
+> **最后更新**：2026-05-03
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -280,7 +280,7 @@
 
 来源：`KnowledgeBaseController`，Base Path: `/api/knowledge-bases`
 
-> 列表接口返回包含系统管理的内部知识库（`systemManaged=true`），由 Datastore 自动创建。
+> 列表接口返回包含系统管理的内部知识库（`systemManaged=true`），由系统自动创建。
 > 删除接口对 `systemManaged=true` 的知识库返回 403，对不存在的知识库返回 404。
 
 | Method | Path | Handler | 备注 |
@@ -305,21 +305,7 @@
 
 ## Datastores（领域数据集）
 
-来源：`DatastoreController`，Base Path: `/api/datastores`
-
-> **Plan 3（2026-04-23）用户侧下架**：LLM 工具集已移除 datastore（`StorageToolProvider.buildStorageTools()` 返回空列表），前端 `/datastores` 路由与侧栏入口亦下架；下列 REST 端点完整保留，供内置 Skill 的泛型 CRUD 适配器、知识库同步链路以及未来可能恢复的管理面继续使用。
-
-| Method | Path | Handler | 备注 |
-|--------|------|---------|------|
-| GET | `/api/datastores` | `listDatastores` | datastore 列表（支持 `q` 关键字过滤） |
-| POST | `/api/datastores` | `createDatastore` | 创建 datastore（name/type 必填，properties/description/projectionConfigJson 可选，201） |
-| GET | `/api/datastores/{id}` | `getDatastore` | 单个 datastore 详情 |
-| PUT | `/api/datastores/{id}` | `updateDatastore` | 更新 datastore（description/metadataJson/projectionConfigJson 可选） |
-| DELETE | `/api/datastores/{id}` | `deleteDatastore` | 删除 datastore（204；404 不存在） |
-| GET | `/api/datastores/{id}/records` | `listDatastoreRecords` | 查询 Datastore 下的原始结构化文档 |
-| GET | `/api/datastores/{id}/knowledge-bases` | `listDatastoreKnowledgeBases` | 查询 Datastore 关联的知识库（含系统内部知识库） |
-| GET | `/api/datastores/{id}/documents` | `listDatastoreDomainDocuments` | 查询 Datastore 直管的领域文档（仅 FILE 类型且归属当前 Datastore） |
-| POST | `/api/datastores/{id}/documents` | `uploadDatastoreDocument` | 向 Datastore 上传领域文档（multipart，202；503 文档导入未启用） |
+> **2026-05 已移除**：`DatastoreController.java` 已删除，所有 REST 端点不再可用。前端 `/datastores` 路由与侧栏入口同步移除。知识库管理请通过 Knowledge Bases 端点操作，Agent 侧数据存储请使用 `memory(action=search, scope=knowledge)` 工具。
 
 ---
 

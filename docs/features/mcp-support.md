@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.mcp`
-> **最后更新**：2026-04
+> **最后更新**：2026-05-03
 
 ## 1. 功能概述
 
@@ -62,7 +62,7 @@ McpServerRegistry 实现 `DisposableBean`，Spring 容器关闭时自动取消�
 
 ## 3. 使用场景
 
-用户通过 `~/.zhiwei/mcp/servers.json`（推荐）或 `application.yml` 配置 MCP 服务器。系统启动后注册所有配置并从缓存加载工具桩。MCP 工具不进 Tier 1 常驻集合，也不进 system prompt 中的 skill 目录——LLM 通过 `tools.search` 语义检索找到合适的 MCP 工具，再用 `tools.describe` 取完整 schema 直接调用。长时间无调用后 Server 自动断开，下次调用时再次连接。
+用户通过 `~/.zhiwei/mcp/servers.json`（推荐）或 `application.yml` 配置 MCP 服务器。系统启动后注册所有配置并从缓存加载工具桩。MCP 工具不进 Tier 1 常驻集合，也不进 system prompt 中的 skill 目录——LLM 通过 `tool.search` 语义检索找到合适的 MCP 工具并获取完整 schema 后直接调用。长时间无调用后 Server 自动断开，下次调用时再次连接。
 
 ## 4. 配置项
 

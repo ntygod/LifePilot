@@ -2,11 +2,11 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.meta`
-> **最后更新**：2026-04
+> **最后更新**：2026-05-03
 
 ## 1. 模块概述
 
-元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 30+ 个内置工具覆盖环境感知、Web 信息获取、Shell 执行、浏览器自动化、代码执行、文件系统操作和通知推送；**便利层**（Convenience）提供系统自省和 Skill 发现能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具在 `MetaAutoConfiguration` 中通过 `ApplicationReadyEvent` 注册到 `DynamicToolRegistry`。
+元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 15 个内置工具覆盖 Web 信息获取、Shell 执行、浏览器自动化、代码执行、文件系统操作、通知推送、定时任务和状态查询；**便利层**（Convenience）提供系统自省能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具在 `MetaAutoConfiguration` 中通过 `ApplicationReadyEvent` 注册到 `DynamicToolRegistry`。
 
 ## 2. 架构图
 
@@ -22,14 +22,13 @@ graph TB
         subgraph infra["infra — 基础工具集"]
             ITP["InfraToolProvider<br/>编排器（纯委托）"]
             subgraph tools["内置工具"]
-                ENV["环境感知<br/>datetime / user-profile / system-info"]
                 WTP["WebToolProvider<br/>web.search / web.fetch"]
                 SHELL["Shell 执行<br/>shell.exec + shell.process"]
                 BROWSER["浏览器自动化<br/>browser（16 actions）"]
-                CTP["CodeToolProvider<br/>code.execute"]
-                FILE["文件系统<br/>read / write / list / edit / manage"]
+                CTP["CodeToolProvider<br/>code"]
+                FILE["文件系统<br/>read / write / manage"]
                 NTP["NotifyToolProvider<br/>notify"]
-                GIT["Git 操作<br/>git.query / git.mutate"]
+                CRP["CronToolProvider<br/>cron"]
             end
             STP["ShellToolProvider<br/>Shell 工具构建"]
             SPF["ShellProcessFactory<br/>进程创建工厂"]
@@ -82,14 +81,12 @@ graph TB
 - 子 Provider 列表（按注册顺序）：
   - `WebToolProvider` — web.search / web.fetch
   - `BrowserToolProvider` — browser（16 个 action，含 snapshot 和 requestHumanTakeover）
-  - `FileToolProvider` — file.read / file.write / file.list / file.edit / file.manage
+  - `FileToolProvider` — file.read / file.write / file.manage（2026-05 合并：file.list/file.edit 归入 file.manage）
   - `NotifyToolProvider` — notify（需 NotificationService）
-  - `WorkflowToolProvider` — 工作流管理（需 WorkflowRegistry + WorkflowCommandService）
-  - `TaskToolProvider` — 自主任务 cron（需 CronTaskRepository + CronScheduler）
+  - `TaskToolProvider` — cron 定时任务（需 CronTaskRepository + CronScheduler）
   - `ChannelToolProvider` — 渠道操作（需渠道组件完整）
-  - `GitToolProvider` — git.query / git.mutate（需 git 可用）
   - `ShellToolProvider` — shell.exec + shell.process（由 ShellExecToolExecutor 驱动）
-  - `CodeToolProvider` — code.execute（支持一次性沙箱和持久内核两种模式）
+  - `CodeToolProvider` — code（2026-05 合并：code.execute + code.kernel 合并为单一 code 工具）
 - 浏览器工具特别说明：`browser` 工具的 `action` 参数决定操作类型；支持通过 `acquisitionMode`（LAUNCH/CDP/PERSISTENT）、`cdpUrl`、`userDataDir` 三个可选参数在工具调用时动态指定浏览器获取模式，仅首次创建会话时生效，优先级高于 `application.yml` 静态配置
 - Shell 工具特别说明：`shell.exec` 支持 `env`（环境变量注入，有安全黑名单过滤）和 `shell`（Unix 解释器指定，仅 Unix 生效）两个参数；未指定 `workingDirectory` 时默认使用 `WorkspaceResolver` 解析的统一工作目录（默认 `~/.zhiwei/workspace/`）；进程创建统一通过 `ShellProcessFactory`（消除 Windows PowerShell / Unix shell 的重复构建逻辑）
 - 必需依赖：`WorkspaceResolver`（统一工作目录解析）
@@ -113,9 +110,9 @@ graph TB
 
 ### 3.4 CodeToolProvider — 代码执行工具提供者
 
-- 职责：管理 `code.execute` 工具，支持一次性沙箱和持久内核两种模式
-- 工具参数：`code`（必需）、`language`（python/javascript/shell）、`timeoutSeconds`、`kernelId`（传入后变量和导入跨调用保持）
-- 持久内核：同一 `kernelId` 共享状态，支持 `kernel:reset`（清空状态）和 `kernel:inspect`（查看变量）特殊指令
+- 职责：管理 `code` 工具，融合沙箱执行与持久内核能力。2026-05 重构将原 `code.execute`、`code.kernel.list`、`code.kernel.reset`、`code.kernel.inspect` 四个工具合并为单一 `code` 工具（通过 `kernelId` 参数区分一次性沙箱和持久内核模式）
+- 工具参数：`code`（必需）、`language`（python/javascript/shell）、`timeoutSeconds`、`kernelId`（传入后变量和导入跨调用保持）、`action`（`run`/`reset`/`inspect`）
+- 持久内核：同一 `kernelId` 共享状态，支持 `action=reset`（清空状态）和 `action=inspect`（查看变量）特殊指令
 - 依赖：`MetaProperties`、`SandboxSessionManager`（可选）、`CodeValidator`（可选）、`SandboxRepository`（可选）、`PersistentKernelManager`（可选，需 tmux）
 
 ### 3.5 BrowserSessionManager — 浏览器会话管理
@@ -143,19 +140,16 @@ graph TB
 - 事件驱动失效：监听 `SkillRegistryEvent`、`ToolRegistryEvent`、`AgentRegistryEvent`，触发防抖缓存失效（窗口 500ms）
 - 支持按类型过滤：skill / agent / tool / workflow / mcp
 
-### 3.7 IntrospectionSkillProvider — 系统自省 Skill
+### 3.7 IntrospectionToolProvider — 系统自省工具
 
-- 职责：注册 4 个自省工具，让 Agent 能够查询和了解自身能力
-- Skill ID：`builtin.introspection`
+- 职责：注册 `status` 工具，让 Agent 能够查询系统运行状态
 - 工具列表：
-  - `system.list-capabilities` — 列出所有已注册能力，支持按类型过滤
-  - `system.explain` — 按 ID 查看能力详情，支持类型路由
-  - `system.status` — 系统状态概览（各注册中心计数 + 工具层次分布 + JVM 内存）
-  - `system.suggest` — 关键词匹配 + 语义搜索推荐能力
+  - `status` — 系统状态概览（各注册中心计数 + 运行时工作流 + MCP 连接状态 + JVM 内存）
+- 2026-05 精简：`system.list-capabilities`、`system.explain`、`system.suggest` 已删除，统一由 `status` 工具提供运行信息
 
 ### 3.8 SkillDiscoveryRegistrar — BUILTIN Skill 安装器
 
-- 职责：启动时把 `classpath:skills/*/SKILL.md` 下的 27 个预置 Skill（含 `find-skills`）通过统一 `SkillInstaller` 流水线安装到用户 Skill 目录
+- 职责：启动时把 `classpath:skills/*/SKILL.md` 下的预置 Skill 通过统一 `SkillInstaller` 流水线安装到用户 Skill 目录
 - 安装路径：`<lifepilot.skills.directory>/<name>/SKILL.md`（默认 `~/.zhiwei/skills/<name>/`）
 - 数据落盘：`source_type = BUILTIN` 写入 `skills` 表（V17 迁移）；解析/校验失败只 WARN 跳过
 - 详细架构参见 `docs/architecture/preset-skills.md`
