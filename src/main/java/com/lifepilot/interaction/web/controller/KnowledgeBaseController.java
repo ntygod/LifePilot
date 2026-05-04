@@ -102,8 +102,7 @@ public class KnowledgeBaseController {
                 request.rerankerModel(),
                 request.chunkingStrategy(),
                 request.chunkingConfig(),
-                request.tags(),
-                List.of());
+                request.tags());
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
         return ApiResponse.ok(kb);
     }
@@ -129,8 +128,7 @@ public class KnowledgeBaseController {
                     request.rerankerModel(),
                     request.chunkingStrategy(),
                     request.chunkingConfig(),
-                    request.tags(),
-                    List.of()
+                    request.tags()
             );
             log.info("知识库更新成功: id={}", id);
             return ApiResponse.ok(updated);
@@ -216,7 +214,7 @@ public class KnowledgeBaseController {
             file.transferTo(Objects.requireNonNull(tempFile.toFile()));
 
             // 异步处理文档
-            ingester.ingest(id, tempFile, originalName, null);
+            ingester.ingest(id, tempFile, originalName);
             var response = new LinkedHashMap<String, Object>();
             response.put("message", "文档已提交处理");
             response.put("fileName", originalName);
@@ -361,9 +359,7 @@ public class KnowledgeBaseController {
                                 result.content(),
                                 result.score(),
                                 result.metadata(),
-                                result.sourceType().name(),
-                                result.sourceDatastoreId().orElse(null),
-                                result.sourceCollectionId().orElse(null)
+                                result.sourceType().name()
                         );
                     })
                     .collect(Collectors.toList());

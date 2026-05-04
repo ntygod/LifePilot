@@ -3,6 +3,7 @@ package com.lifepilot.tool.search;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolBudget;
@@ -65,11 +66,13 @@ class ToolSearchService_查询过滤测试 {
                 """);
 
         registry = new DynamicToolRegistry(_ -> {});
-        registerSampleTool("file.delete", "Delete a file from the specified path",
+        registerBuiltinTool("file.delete", "Delete a file from the specified path",
                 List.of("delete", "file", "remove"), ToolCategory.ACTION);
-        registerSampleTool("datastore.query_documents", "Query documents from datastore by filter",
+        registerMcpTool("mcp.fs.delete", "Delete a file from the specified path",
+                List.of("delete", "file", "remove"), ToolCategory.ACTION);
+        registerMcpTool("mcp.docs.query", "Query documents from MCP server by filter",
                 List.of("query", "documents", "database"), ToolCategory.STORAGE);
-        registerSampleTool("file.read", "Read a file content from path",
+        registerBuiltinTool("file.read", "Read a file content from path",
                 List.of("read", "file", "content"), ToolCategory.PERCEPTION);
 
         // 手工填 FTS 索引（模拟 ToolSearchIndexBuilder.build()）
@@ -102,21 +105,22 @@ class ToolSearchService_查询过滤测试 {
     }
 
     @Test
-    void 搜索结果排除Tier1工具() {
+    void 搜索结果排除核心工具且返回非核心Java原生工具() {
         ReactAgentState state = sampleState("trace-1", Set.of(), null);
-        ToolSearchResult result = searchService.search(state, "read file", null, 5);
+        ToolSearchResult result = searchService.search(state, "delete file", null, 5);
 
-        // file.read 是 Tier 1，不应出现在结果中
-        assertThat(result.results()).noneMatch(h -> h.id().equals("file.read"));
+        assertThat(result.results()).extracting(ToolSearchHit::id)
+                .contains("file.delete", "mcp.fs.delete")
+                .doesNotContain("file.read", "tool.search");
     }
 
     @Test
-    void 搜索结果排除activated工具() {
-        ReactAgentState state = sampleState("trace-1", Set.of("datastore.query_documents"), null);
+    void 搜索结果排除已发现工具() {
+        ReactAgentState state = sampleState("trace-1", Set.of("mcp.docs.query"), null);
         ToolSearchResult result = searchService.search(state, "query documents", null, 5);
 
         assertThat(result.results())
-                .noneMatch(h -> h.id().equals("datastore.query_documents"));
+                .noneMatch(h -> h.id().equals("mcp.docs.query"));
     }
 
     @Test
@@ -124,7 +128,7 @@ class ToolSearchService_查询过滤测试 {
         ReactAgentState state = sampleState("trace-1", Set.of(), null);
         ToolSearchResult result = searchService.search(state, "delete file", null, 5);
 
-        assertThat(result.results()).extracting(ToolSearchHit::id).contains("file.delete");
+        assertThat(result.results()).extracting(ToolSearchHit::id).contains("mcp.fs.delete");
         assertThat(result.confidence()).isEqualTo(ToolSearchConfidence.HIGH);
     }
 
@@ -150,14 +154,14 @@ class ToolSearchService_查询过滤测试 {
 
     @Test
     void allowedToolIds非空时_仅返回白名单内的工具() {
-        ReactAgentState state = sampleState("trace-1", Set.of(), List.of("file.delete"));
+        ReactAgentState state = sampleState("trace-1", Set.of(), List.of("mcp.fs.delete"));
         ToolSearchResult result = searchService.search(state, "delete", null, 5);
 
-        assertThat(result.results()).extracting(ToolSearchHit::id).containsOnly("file.delete");
+        assertThat(result.results()).extracting(ToolSearchHit::id).containsOnly("mcp.fs.delete");
     }
 
     /** 注册一个最小可用的 BuiltinTool 到 registry。 */
-    private void registerSampleTool(String id, String description, List<String> tags, ToolCategory cat) {
+    private void registerBuiltinTool(String id, String description, List<String> tags, ToolCategory cat) {
         registry.registerBuiltinTool(BuiltinTool.builder()
                 .id(id)
                 .name(id)
@@ -175,16 +179,35 @@ class ToolSearchService_查询过滤测试 {
                 .build());
     }
 
+    /** 注册一个最小可搜索的 MCP 工具到 registry。 */
+    private void registerMcpTool(String id, String description, List<String> tags, ToolCategory cat) {
+        registry.registerMcpTools("test-server", List.of(new McpTool(
+                id,
+                id,
+                description,
+                JsonSchema.empty(),
+                JsonSchema.empty(),
+                RiskLevel.LOW,
+                true,
+                ToolExecutionSemantics.generic(),
+                ToolBudget.DEFAULT,
+                tags,
+                "test-server",
+                id.substring(id.lastIndexOf('.') + 1),
+                "test-server"
+        )));
+    }
+
     /**
      * 构造一个最小 ReactAgentState mock。
      *
      * <p>ReactAgentState 是 record（final），但 Mockito 5.x 默认使用 inline mock maker
      * 可直接 mock final 类；比起 full AgentRequest + Budget 链路构造更干净。</p>
      */
-    private ReactAgentState sampleState(String traceId, Set<String> activated, List<String> allowed) {
+    private ReactAgentState sampleState(String traceId, Set<String> discovered, List<String> allowed) {
         ReactAgentState state = mock(ReactAgentState.class);
         when(state.traceId()).thenReturn(traceId);
-        when(state.activatedToolIds()).thenReturn(activated);
+        when(state.discoveredToolIds()).thenReturn(discovered);
         when(state.allowedToolIds()).thenReturn(allowed);
         return state;
     }

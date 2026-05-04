@@ -284,15 +284,6 @@ CREATE TABLE memory_space_knowledge_bases (
     FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
 );
 
-CREATE TABLE memory_space_datastores (
-    memory_space_id TEXT NOT NULL,
-    datastore_id    TEXT NOT NULL,
-    created_at      TEXT NOT NULL,
-    PRIMARY KEY (memory_space_id, datastore_id),
-    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
 CREATE TABLE chat_turn_memory_snapshots (
     turn_id                          TEXT PRIMARY KEY,
     session_id                       TEXT NOT NULL,
@@ -301,7 +292,6 @@ CREATE TABLE chat_turn_memory_snapshots (
     domain_write_space_id            TEXT,
     read_space_ids_json              TEXT NOT NULL DEFAULT '[]',
     effective_knowledge_base_ids_json TEXT NOT NULL DEFAULT '[]',
-    effective_datastore_ids_json     TEXT NOT NULL DEFAULT '[]',
     personal_learning_enabled        INTEGER NOT NULL DEFAULT 1,
     domain_learning_enabled          INTEGER NOT NULL DEFAULT 0,
     experience_learning_enabled      INTEGER NOT NULL DEFAULT 1,
@@ -376,8 +366,6 @@ CREATE TABLE memory_entity_provenances (
     source_entry_id          TEXT,
     source_document_id       TEXT,
     source_knowledge_base_id TEXT,
-    source_datastore_id      TEXT,
-    source_collection_id     TEXT,
     evidence_excerpt         TEXT,
     evidence_hash            TEXT,
     confidence               REAL NOT NULL DEFAULT 0.0,
@@ -439,8 +427,6 @@ CREATE TABLE memory_relation_provenances (
     source_turn_id           TEXT,
     source_document_id       TEXT,
     source_knowledge_base_id TEXT,
-    source_datastore_id      TEXT,
-    source_collection_id     TEXT,
     confidence               REAL NOT NULL DEFAULT 0.0,
     created_at               TEXT NOT NULL,
     FOREIGN KEY (relation_id) REFERENCES memory_relations(id) ON DELETE CASCADE,
@@ -733,9 +719,6 @@ CREATE TABLE knowledge_bases (
     document_count       INTEGER NOT NULL DEFAULT 0,
     total_chunks         INTEGER NOT NULL DEFAULT 0,
     tags                 TEXT DEFAULT '[]',
-    -- V6: Datastore First 工作区
-    system_managed       INTEGER NOT NULL DEFAULT 0,
-    owner_datastore_id   TEXT,
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
 );
@@ -743,11 +726,6 @@ CREATE TABLE knowledge_bases (
 CREATE INDEX idx_knowledge_bases_created_at ON knowledge_bases(created_at DESC);
 CREATE INDEX idx_knowledge_bases_name ON knowledge_bases(name);
 CREATE INDEX idx_knowledge_bases_tags ON knowledge_bases(tags);
-CREATE INDEX idx_knowledge_bases_owner_datastore
-    ON knowledge_bases(owner_datastore_id)
-    WHERE owner_datastore_id IS NOT NULL;
-CREATE INDEX idx_knowledge_bases_system_managed
-    ON knowledge_bases(system_managed);
 
 CREATE TABLE session_knowledge_bases (
     session_id        TEXT NOT NULL,
@@ -776,8 +754,6 @@ CREATE TABLE documents (
     -- V3: 来源感知文档
     source_type          TEXT NOT NULL DEFAULT 'FILE',
     source_key           TEXT NOT NULL DEFAULT '',
-    source_datastore_id  TEXT,
-    source_collection_id TEXT,
     source_ref_json      TEXT NOT NULL DEFAULT '{}',
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL,
@@ -788,7 +764,6 @@ CREATE INDEX idx_documents_kb_id ON documents(knowledge_base_id);
 CREATE INDEX idx_documents_content_hash ON documents(knowledge_base_id, content_hash);
 CREATE INDEX idx_documents_status ON documents(status);
 CREATE INDEX idx_documents_kb_source_key ON documents(knowledge_base_id, source_key);
-CREATE INDEX idx_documents_kb_source_datastore ON documents(knowledge_base_id, source_datastore_id);
 CREATE INDEX idx_documents_source_type ON documents(source_type);
 
 CREATE TABLE document_chunks (
@@ -807,8 +782,6 @@ CREATE TABLE document_chunks (
     metadata_json          TEXT NOT NULL DEFAULT '{}',
     -- V3: 来源感知分块
     source_type            TEXT NOT NULL DEFAULT 'FILE',
-    source_datastore_id    TEXT,
-    source_collection_id   TEXT,
     -- V23: Parent-Child 分块
     parent_chunk_id        TEXT,
     chunk_level            INTEGER NOT NULL DEFAULT 0,
@@ -820,7 +793,6 @@ CREATE TABLE document_chunks (
 CREATE INDEX idx_document_chunks_doc_id ON document_chunks(document_id);
 CREATE INDEX idx_document_chunks_hash ON document_chunks(content_hash);
 CREATE INDEX idx_document_chunks_kb_id ON document_chunks(knowledge_base_id);
-CREATE INDEX idx_document_chunks_source_datastore ON document_chunks(source_datastore_id);
 CREATE INDEX idx_document_chunks_source_type ON document_chunks(source_type);
 CREATE INDEX idx_document_chunks_parent ON document_chunks(parent_chunk_id);
 CREATE INDEX idx_document_chunks_level ON document_chunks(chunk_level);
@@ -846,41 +818,6 @@ CREATE TRIGGER document_chunks_ad AFTER DELETE ON document_chunks BEGIN
     VALUES ('delete', old.rowid, old.content, old.knowledge_base_id, old.document_id, old.id);
 END;
 
-CREATE TABLE knowledge_base_datastores (
-    knowledge_base_id TEXT NOT NULL,
-    datastore_id      TEXT NOT NULL,
-    created_at        TEXT NOT NULL,
-    PRIMARY KEY (knowledge_base_id, datastore_id),
-    FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_kb_datastores_datastore
-    ON knowledge_base_datastores(datastore_id);
-
-CREATE TABLE knowledge_sync_jobs (
-    id                TEXT PRIMARY KEY,
-    job_type          TEXT NOT NULL,
-    knowledge_base_id TEXT NOT NULL,
-    datastore_id      TEXT NOT NULL,
-    source_key        TEXT,
-    source_version    TEXT,
-    payload_json      TEXT NOT NULL DEFAULT '{}',
-    status            TEXT NOT NULL DEFAULT 'PENDING',
-    attempt_count     INTEGER NOT NULL DEFAULT 0,
-    last_error        TEXT,
-    available_at      TEXT NOT NULL,
-    created_at        TEXT NOT NULL,
-    updated_at        TEXT NOT NULL,
-    FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_knowledge_sync_jobs_available
-    ON knowledge_sync_jobs(status, available_at, created_at);
-CREATE INDEX idx_knowledge_sync_jobs_kb_datastore
-    ON knowledge_sync_jobs(knowledge_base_id, datastore_id);
-
 CREATE TABLE retrieval_event_log (
     id              TEXT PRIMARY KEY,
     query           TEXT NOT NULL,
@@ -898,59 +835,7 @@ CREATE TABLE retrieval_event_log (
 CREATE INDEX idx_retrieval_event_log_time ON retrieval_event_log(created_at);
 
 -- ============================================================
--- 四、Datastore（结构化数据存储）
--- ============================================================
-
-CREATE TABLE ds_collections (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL UNIQUE,
-    description     TEXT,
-    type            TEXT NOT NULL DEFAULT 'DOCUMENT',
-    properties_json TEXT,
-    metadata_json   TEXT,
-    created_by      TEXT,
-    -- V3: 投影配置
-    projection_config_json TEXT NOT NULL DEFAULT '{}',
-    -- V6: 默认知识库指针
-    default_knowledge_base_id TEXT,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
-
-CREATE TABLE ds_documents (
-    id                    TEXT PRIMARY KEY,
-    collection_id         TEXT NOT NULL REFERENCES ds_collections(id) ON DELETE CASCADE,
-    data_json             TEXT NOT NULL DEFAULT '{}',
-    recorded_at           TEXT,
-    -- V24: 文件元数据支持
-    source_type           TEXT NOT NULL DEFAULT 'DATA',
-    knowledge_document_id TEXT,
-    created_at            TEXT NOT NULL,
-    updated_at            TEXT NOT NULL
-);
-
-CREATE INDEX idx_ds_documents_collection ON ds_documents(collection_id);
-CREATE INDEX idx_ds_documents_recorded_at ON ds_documents(collection_id, recorded_at);
-CREATE INDEX idx_ds_documents_source_type ON ds_documents(source_type);
-
-CREATE VIRTUAL TABLE ds_documents_fts USING fts5(
-    document_id, content,
-    tokenize='unicode61'
-);
-
-CREATE TABLE session_datastores (
-    session_id    TEXT NOT NULL,
-    datastore_id  TEXT NOT NULL,
-    PRIMARY KEY (session_id, datastore_id),
-    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_session_datastores_session ON session_datastores(session_id);
-CREATE INDEX idx_session_datastores_datastore ON session_datastores(datastore_id);
-
--- ============================================================
--- 五、模型服务与路由
+-- 四、模型服务与路由
 -- ============================================================
 
 CREATE TABLE model_services (

@@ -34,7 +34,6 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "lifepilot.llm.enabled=true",
                 "lifepilot.memory.enabled=true",
                 "lifepilot.knowledge.enabled=true",
-                "lifepilot.datastore.enabled=true",
                 "lifepilot.tool.enabled=true",
                 "lifepilot.agent.enabled=false",
                 "lifepilot.skills.enabled=false",

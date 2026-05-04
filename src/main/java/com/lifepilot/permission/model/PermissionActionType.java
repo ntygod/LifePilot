@@ -18,6 +18,5 @@ public enum PermissionActionType {
     BROWSER_AUTOMATION,
     HTTP_REQUEST,
     WRITE_MEMORY,
-    MODIFY_DATASTORE,
     CREATE_SCHEDULE
 }

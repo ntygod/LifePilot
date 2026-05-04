@@ -365,8 +365,6 @@ public class ExperienceSummarizer {
                 null,
                 null,
                 null,
-                null,
-                null,
                 null
         );
     }

@@ -602,12 +602,10 @@ public class ToolExecutionCoordinator {
         persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
                 outcome.success(), outcome.rawOutput(), null, outcome.startedAt());
 
-        // Skill 激活合并 — 通用入口：任何工具只要在成功输出中返回
-        // activated_tool_ids（List）/ content（以 <skill 开头的 XML），
-        // 就会被合并到 state 的激活工具集和已加载 Skill 指南上。
-        // 当前由 skill.load 工具驱动，替代老 ReactAgentLoop.detectSkillToolActivation() 黑魔法。
+        // 工具状态合并 — tool.search 返回 discovered_tool_ids 后进入下一轮工具列表；
+        // skill.load 返回 content XML 后进入下一轮系统提示词。
         if (outcome.success()) {
-            state = mergeSkillActivationFromOutput(state, planned.toolId(), outcome.rawOutput());
+            state = mergeToolStateFromOutput(state, planned.toolId(), outcome.rawOutput());
         }
 
         // L4 程序记忆：异步记录意图匹配，不阻塞主链路
@@ -717,11 +715,11 @@ public class ToolExecutionCoordinator {
     }
 
     /**
-     * 从 skill.load 输出中提取 Skill 激活内容并去重合并到状态。
+     * 从工具输出中提取发现工具和 Skill 指南内容并去重合并到状态。
      */
-    private ReactAgentState mergeSkillActivationFromOutput(ReactAgentState state,
-                                                           String toolId,
-                                                           @Nullable String rawOutput) {
+    private ReactAgentState mergeToolStateFromOutput(ReactAgentState state,
+                                                     String toolId,
+                                                     @Nullable String rawOutput) {
         if (rawOutput == null || rawOutput.isBlank()) {
             return state;
         }
@@ -735,7 +733,21 @@ public class ToolExecutionCoordinator {
             return state;
         }
 
-        JsonNode contentNode = root.get("content");
+        JsonNode payload = root;
+        if (root.path("data").isObject()) {
+            payload = root.path("data");
+        }
+
+        Set<String> discoveredToolIds = parseToolIds(payload.get("discovered_tool_ids"));
+        if (!discoveredToolIds.isEmpty()) {
+            state = state.withDiscoveredToolIds(discoveredToolIds);
+            log.debug("合并发现工具: toolId={}, count={}", toolId, discoveredToolIds.size());
+        }
+
+        if (!"skill.load".equals(toolId)) {
+            return state;
+        }
+        JsonNode contentNode = payload.get("content");
         if (contentNode != null && contentNode.isTextual()) {
             String content = contentNode.asText();
             if (content != null && content.startsWith("<skill")) {
@@ -752,6 +764,23 @@ public class ToolExecutionCoordinator {
             }
         }
         return state;
+    }
+
+    private Set<String> parseToolIds(@Nullable JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return Set.of();
+        }
+        var ids = new LinkedHashSet<String>();
+        for (JsonNode item : node) {
+            if (!item.isTextual()) {
+                continue;
+            }
+            String toolId = item.asText();
+            if (toolId != null && !toolId.isBlank()) {
+                ids.add(toolId.strip());
+            }
+        }
+        return ids;
     }
 
     /** 从 {@code <skill name="X">} 中提取 name 属性。 */

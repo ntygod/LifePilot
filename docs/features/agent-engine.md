@@ -189,7 +189,7 @@ lifepilot:
 | `lifepilot.agent.execution-retry.enabled` | `true` | 主执行链路自动重试开关 |
 | `lifepilot.agent.debug.log-llm-prompts` | `false` | 是否打印完整提示词 |
 
-> 工具可见性由 `lifepilot.tool.tier1.pinned` + `activatedToolIds` + `tool.search` 共同决定，详见 [工具系统](tool-ecosystem.md)。
+> 工具可见性由 `lifepilot.tool.tier1.pinned` + `discoveredToolIds` + `tool.search` 共同决定，详见 [工具系统](tool-ecosystem.md)。
 
 ## 6. 使用场景
 

@@ -68,7 +68,7 @@ class MemoryControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         lenient().when(provenanceRepository.loadEntityMetadata(anyCollection()))
                 .thenReturn(Map.of());
-        lenient().when(provenanceRepository.findEntityIdsByProvenanceFilters(any(), any(), any(), any()))
+        lenient().when(provenanceRepository.findEntityIdsByProvenanceFilters(any(), any(), any()))
                 .thenReturn(null);
     }
 
@@ -229,8 +229,8 @@ class MemoryControllerTest {
                     testEntity("e2", "项目A", EntityType.PROJECT)));
             when(provenanceRepository.loadEntityMetadata(anyCollection()))
                     .thenReturn(Map.of(
-                            "e1", new EntityMetadata("e1", "datastore:novel", "DOMAIN_MEMORY", "FICTIONAL"),
-                            "e2", new EntityMetadata("e2", "user:default", "USER_FACT", "REAL")));
+                    "e1", new EntityMetadata("e1", "domain:knowledge-base:novel", "DOMAIN_MEMORY", "FICTIONAL"),
+                    "e2", new EntityMetadata("e2", "user:default", "USER_FACT", "REAL")));
 
             mockMvc.perform(get("/api/memories/entities")
                             .param("memoryScope", "DOMAIN_MEMORY")
@@ -238,7 +238,7 @@ class MemoryControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items", hasSize(1)))
                     .andExpect(jsonPath("$.data.items[0].id").value("e1"))
-                    .andExpect(jsonPath("$.data.items[0].spaceId").value("datastore:novel"))
+                    .andExpect(jsonPath("$.data.items[0].spaceId").value("domain:knowledge-base:novel"))
                     .andExpect(jsonPath("$.data.items[0].memoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data.items[0].realityType").value("FICTIONAL"));
         }
@@ -249,11 +249,11 @@ class MemoryControllerTest {
                     testEntity("e1", "林夜", EntityType.PERSON),
                     testEntity("e2", "项目A", EntityType.PROJECT)));
             when(provenanceRepository.findEntityIdsByProvenanceFilters(
-                    eq(null), eq(null), eq("ds-1"), eq(null)))
+                    eq(null), eq("kb-1"), eq(null)))
                     .thenReturn(Set.of("e1"));
 
             mockMvc.perform(get("/api/memories/entities")
-                            .param("sourceDatastoreId", "ds-1"))
+                            .param("sourceKnowledgeBaseId", "kb-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items", hasSize(1)))
                     .andExpect(jsonPath("$.data.items[0].id").value("e1"));
@@ -301,17 +301,13 @@ class MemoryControllerTest {
         void 实体来源明细_返回provenance列表() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "张三", EntityType.PERSON)));
-            when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null), eq(null)))
+            when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "CHAT",
                             "session-1",
                             "conv-1",
                             "session-1",
                             "turn-1",
-                            null,
-                            null,
-                            null,
-                            null,
                             null,
                             null,
                             null,
@@ -331,7 +327,7 @@ class MemoryControllerTest {
         void 实体来源明细_返回友好名称() throws Exception {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "林夜", EntityType.PERSON)));
-            when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null), eq(null)))
+            when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
                             "doc-1",
@@ -343,17 +339,11 @@ class MemoryControllerTest {
                             null,
                             "kb-1",
                             null,
-                            "ds-1",
-                            null,
-                            "collection-1",
-                            null,
                             0.93f,
                             NOW
                     )));
             when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
                     .thenReturn(Map.of("kb-1", "世界观资料库"));
-            when(provenanceRepository.loadCollectionNames(anyCollection()))
-                    .thenReturn(Map.of("ds-1", "小说素材库", "collection-1", "人物设定集合"));
             when(provenanceRepository.loadDocumentNames(anyCollection()))
                     .thenReturn(Map.of("doc-1", "人物设定.md"));
 
@@ -361,8 +351,6 @@ class MemoryControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
                     .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseName").value("世界观资料库"))
-                    .andExpect(jsonPath("$.data[0].sourceDatastoreName").value("小说素材库"))
-                    .andExpect(jsonPath("$.data[0].sourceCollectionName").value("人物设定集合"))
                     .andExpect(jsonPath("$.data[0].sourceDocumentName").value("人物设定.md"));
         }
 
@@ -371,7 +359,7 @@ class MemoryControllerTest {
             when(semanticMemory.findById("e1")).thenReturn(Optional.of(
                     testEntity("e1", "张三", EntityType.PERSON)));
             when(provenanceRepository.findEntityProvenances(
-                    eq("e1"), eq("KNOWLEDGE_BASE_DOCUMENT"), eq("kb-1"), eq("ds-1"), eq("doc-1")))
+                    eq("e1"), eq("KNOWLEDGE_BASE_DOCUMENT"), eq("kb-1"), eq("doc-1")))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
                             "人物设定集",
@@ -383,16 +371,10 @@ class MemoryControllerTest {
                             null,
                             "kb-1",
                             null,
-                            "ds-1",
-                            null,
-                            null,
-                            null,
                             0.95f,
                             NOW
                     )));
             when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
-                    .thenReturn(Map.of());
-            when(provenanceRepository.loadCollectionNames(anyCollection()))
                     .thenReturn(Map.of());
             when(provenanceRepository.loadDocumentNames(anyCollection()))
                     .thenReturn(Map.of());
@@ -400,19 +382,17 @@ class MemoryControllerTest {
             mockMvc.perform(get("/api/memories/entities/e1/provenances")
                             .param("originType", "KNOWLEDGE_BASE_DOCUMENT")
                             .param("sourceKnowledgeBaseId", "kb-1")
-                            .param("sourceDatastoreId", "ds-1")
                             .param("sourceDocumentId", "doc-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].originType").value("KNOWLEDGE_BASE_DOCUMENT"))
                     .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseId").value("kb-1"))
-                    .andExpect(jsonPath("$.data[0].sourceDatastoreId").value("ds-1"))
                     .andExpect(jsonPath("$.data[0].sourceDocumentId").value("doc-1"));
         }
 
         @Test
-        void 最近来源摘要_支持按Datastore过滤并返回友好名称() throws Exception {
+        void 最近来源摘要_返回知识库和文档友好名称() throws Exception {
             when(provenanceRepository.findRecentProvenanceSummaries(
-                    eq(null), eq(null), eq("ds-1"), eq(null), eq(5)))
+                    eq(null), eq(null), eq(null), eq(5)))
                     .thenReturn(List.of(new MemoryProvenanceSummaryDto(
                             "e1",
                             "林夜",
@@ -430,22 +410,15 @@ class MemoryControllerTest {
                             null,
                             "kb-1",
                             null,
-                            "ds-1",
-                            null,
-                            "collection-1",
-                            null,
                             0.97f,
                             NOW
                     )));
             when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
                     .thenReturn(Map.of("kb-1", "世界观资料库"));
-            when(provenanceRepository.loadCollectionNames(anyCollection()))
-                    .thenReturn(Map.of("ds-1", "小说素材库", "collection-1", "人物设定集合"));
             when(provenanceRepository.loadDocumentNames(anyCollection()))
                     .thenReturn(Map.of("doc-1", "人物设定.md"));
 
             mockMvc.perform(get("/api/memories/provenances/recent")
-                            .param("sourceDatastoreId", "ds-1")
                             .param("limit", "5"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data", hasSize(1)))
@@ -455,8 +428,6 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$.data[0].entityMemoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"))
                     .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseName").value("世界观资料库"))
-                    .andExpect(jsonPath("$.data[0].sourceDatastoreName").value("小说素材库"))
-                    .andExpect(jsonPath("$.data[0].sourceCollectionName").value("人物设定集合"))
                     .andExpect(jsonPath("$.data[0].sourceDocumentName").value("人物设定.md"));
         }
     }
@@ -538,18 +509,18 @@ class MemoryControllerTest {
                     "e2", testEntity("e2", "项目A", EntityType.PROJECT)));
             when(provenanceRepository.loadEntityMetadata(anyCollection()))
                     .thenReturn(Map.of(
-                            "e1", new EntityMetadata("e1", "domain:datastore:novel", "DOMAIN_MEMORY", "FICTIONAL"),
-                            "e2", new EntityMetadata("e2", "domain:datastore:novel", "DOMAIN_MEMORY", "FICTIONAL")));
+                            "e1", new EntityMetadata("e1", "domain:knowledge-base:novel", "DOMAIN_MEMORY", "FICTIONAL"),
+                            "e2", new EntityMetadata("e2", "domain:knowledge-base:novel", "DOMAIN_MEMORY", "FICTIONAL")));
 
             mockMvc.perform(get("/api/memories/relations"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items", hasSize(1)))
                     .andExpect(jsonPath("$.data.items[0].sourceEntityName").value("张三"))
-                    .andExpect(jsonPath("$.data.items[0].sourceEntitySpaceId").value("domain:datastore:novel"))
+                    .andExpect(jsonPath("$.data.items[0].sourceEntitySpaceId").value("domain:knowledge-base:novel"))
                     .andExpect(jsonPath("$.data.items[0].sourceEntityMemoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data.items[0].sourceEntityRealityType").value("FICTIONAL"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityName").value("项目A"))
-                    .andExpect(jsonPath("$.data.items[0].targetEntitySpaceId").value("domain:datastore:novel"))
+                    .andExpect(jsonPath("$.data.items[0].targetEntitySpaceId").value("domain:knowledge-base:novel"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityMemoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityRealityType").value("FICTIONAL"));
         }

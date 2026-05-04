@@ -30,8 +30,6 @@ public record DocumentChunk(
         int pageNumber,
         Map<String, String> metadata,
         DocumentSourceType sourceType,
-        String sourceDatastoreId,
-        String sourceCollectionId,
         Optional<String> parentChunkId,     // 父分块 ID（child 指向 parent）
         int chunkLevel                      // 分块层级：0=父块, 1=子块
 ) {
@@ -61,7 +59,7 @@ public record DocumentChunk(
     ) {
         this(id, documentId, knowledgeBaseId, content, contextPrefix, chunkIndex, startOffset,
                 endOffset, tokenCount, contentHash, headingHierarchy, pageNumber, metadata,
-                DocumentSourceType.FILE, null, null, Optional.empty(), 0);
+                DocumentSourceType.FILE, Optional.empty(), 0);
     }
 
     /**
@@ -106,19 +104,14 @@ public record DocumentChunk(
      * @param documentId        文档 ID
      * @param knowledgeBaseId   知识库 ID
      * @param sourceType        来源类型
-     * @param sourceDatastoreId 数据源 ID
-     * @param sourceCollectionId 集合 ID
      * @return 新的 DocumentChunk 实例
      */
     public DocumentChunk withDocumentContext(String documentId, String knowledgeBaseId,
-                                             DocumentSourceType sourceType,
-                                             String sourceDatastoreId,
-                                             String sourceCollectionId) {
+                                             DocumentSourceType sourceType) {
         return new DocumentChunk(id(), documentId, knowledgeBaseId, content(), contextPrefix(),
                 chunkIndex(), startOffset(), endOffset(), tokenCount(), contentHash(),
                 headingHierarchy(), pageNumber(), metadata(),
-                sourceType, sourceDatastoreId, sourceCollectionId,
-                parentChunkId(), chunkLevel());
+                sourceType, parentChunkId(), chunkLevel());
     }
 
     /**
@@ -131,8 +124,7 @@ public record DocumentChunk(
         return new DocumentChunk(id(), documentId(), knowledgeBaseId(), content(), Optional.of(prefix),
                 chunkIndex(), startOffset(), endOffset(), tokenCount(), contentHash(),
                 headingHierarchy(), pageNumber(), metadata(),
-                sourceType(), sourceDatastoreId(), sourceCollectionId(),
-                parentChunkId(), chunkLevel());
+                sourceType(), parentChunkId(), chunkLevel());
     }
 
     /**
@@ -146,7 +138,6 @@ public record DocumentChunk(
         return new DocumentChunk(id(), documentId(), knowledgeBaseId(), content(), contextPrefix(),
                 chunkIndex(), startOffset(), endOffset(), tokenCount(), contentHash(),
                 headingHierarchy(), pageNumber(), metadata(),
-                sourceType(), sourceDatastoreId(), sourceCollectionId(),
-                Optional.ofNullable(parentChunkId), chunkLevel);
+                sourceType(), Optional.ofNullable(parentChunkId), chunkLevel);
     }
 }

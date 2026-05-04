@@ -1,11 +1,5 @@
 package com.lifepilot.document.config;
 
-import com.lifepilot.document.generator.DocumentGenerator;
-import com.lifepilot.document.generator.ExcelGenerator;
-import com.lifepilot.document.generator.MarkdownToDocxGenerator;
-import com.lifepilot.document.generator.OutlineToPptxGenerator;
-import com.lifepilot.document.generator.PowerpointGenerator;
-import com.lifepilot.document.generator.StructuredDataToXlsxGenerator;
 import com.lifepilot.document.patch.docx.DocxDiffBuilder;
 import com.lifepilot.document.patch.docx.DocxPatchEngine;
 import com.lifepilot.document.patch.docx.TextAnchorLocator;
@@ -27,7 +21,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 /**
- * 文档工作空间自动配置 —— 仅装配底层服务（生成器 / patch 引擎 / 版本服务 / GC）
+ * 文档工作空间自动配置 —— 仅装配底层服务（patch 引擎 / 版本服务 / GC）
  * 供 DocumentController（前端 docx 编辑页）和孤儿扫描器使用。
  *
  * <p>{@code document.create} / {@code document.edit} BuiltinTool 已下架（2026-04-25），
@@ -43,23 +37,6 @@ import org.springframework.context.annotation.Bean;
 public class DocumentAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentAutoConfiguration.class);
-
-    // ===== 生成器 Bean（DocumentVersionService 用）=====
-
-    @Bean
-    DocumentGenerator markdownToDocxGenerator() {
-        return new MarkdownToDocxGenerator();
-    }
-
-    @Bean
-    ExcelGenerator structuredDataToXlsxGenerator() {
-        return new StructuredDataToXlsxGenerator();
-    }
-
-    @Bean
-    PowerpointGenerator outlineToPptxGenerator() {
-        return new OutlineToPptxGenerator();
-    }
 
     // ===== docx / xlsx 编辑引擎（DocumentVersionService 用）=====
 

@@ -27,8 +27,8 @@ import static org.mockito.Mockito.when;
  * Phase D 完成验证 —— 确认 classpath 下全部 BUILTIN Skill 都符合 v2 规范、
  * 经 SkillInstaller 完整流水线校验成功，不再有 skipped。
  *
- * <p>Skill v2 fixup（2026-04-24）将 {@code datastore} 与 {@code workflow-creator}
- * 两个预置 Skill 下架（LLM 工具层同步移除），预置 Skill 总数由 27 降为 25。</p>
+ * <p>Skill v2 fixup（2026-04-24）下架了一批不再面向 Agent 的预置 Skill，
+ * 这里只验证当前 classpath 中仍保留的 BUILTIN Skill 全部可安装。</p>
  *
  * @author zsg
  * @since 2026-04-24
@@ -60,7 +60,7 @@ class SkillDiscoveryRegistrar_全量迁移测试 {
         verify(repository, org.mockito.Mockito.atLeast(20)).upsert(captor.capture());
         List<SkillInstallation> installed = captor.getAllValues();
 
-        // 减法整理后：剩余 20 个 BUILTIN Skill（删除了 datastore/workflow-creator/find-skills/introspection/gitee/document-workspace/web-novel-writer）
+        // 减法整理后：剩余 20 个 BUILTIN Skill
         assertThat(installed).hasSize(20);
 
         // 检查所有预期 Skill 都在

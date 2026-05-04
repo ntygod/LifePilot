@@ -19,10 +19,6 @@ public final class MemorySpaceKeys {
         return "agent:default";
     }
 
-    public static String datastoreDomain(String datastoreId) {
-        return "domain:datastore:" + datastoreId;
-    }
-
     public static String knowledgeBaseDomain(String knowledgeBaseId) {
         return "domain:knowledge-base:" + knowledgeBaseId;
     }

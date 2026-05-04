@@ -153,7 +153,7 @@ public class RerankRouter {
                     original.content(), original.contextPrefix(), original.headingHierarchy(),
                     score.score(), "reranked", original.metadata(),
                     Optional.of(breakdown), original.expandedContent(),
-                    original.sourceType(), original.sourceDatastoreId(), original.sourceCollectionId()));
+                    original.sourceType()));
         }
         return reranked.isEmpty() ? candidates.stream().limit(topK).toList() : reranked;
     }

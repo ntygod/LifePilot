@@ -87,7 +87,7 @@ class ToolSearchMetrics_接入测试 {
     void 每次搜索_invocations计数递增() {
         var state = mock(ReactAgentState.class);
         when(state.traceId()).thenReturn("t1");
-        when(state.activatedToolIds()).thenReturn(Set.of());
+        when(state.discoveredToolIds()).thenReturn(Set.of());
         when(state.allowedToolIds()).thenReturn(List.of());
 
         searchService.search(state, "delete", null, 3);
@@ -100,7 +100,7 @@ class ToolSearchMetrics_接入测试 {
     void 命中LayerC_cache_hit计数c标签() {
         var state = mock(ReactAgentState.class);
         when(state.traceId()).thenReturn("t1");
-        when(state.activatedToolIds()).thenReturn(Set.of());
+        when(state.discoveredToolIds()).thenReturn(Set.of());
         when(state.allowedToolIds()).thenReturn(List.of());
 
         searchService.search(state, "delete", null, 3);
@@ -113,7 +113,7 @@ class ToolSearchMetrics_接入测试 {
     void 零结果_empty_results计数() {
         var state = mock(ReactAgentState.class);
         when(state.traceId()).thenReturn("t1");
-        when(state.activatedToolIds()).thenReturn(Set.of());
+        when(state.discoveredToolIds()).thenReturn(Set.of());
         when(state.allowedToolIds()).thenReturn(List.of());
 
         searchService.search(state, "zzzzzznotatool", null, 3);

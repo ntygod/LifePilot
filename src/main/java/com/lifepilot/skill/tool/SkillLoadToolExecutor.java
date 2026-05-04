@@ -20,11 +20,10 @@ import java.util.regex.Pattern;
  * <ol>
  *   <li>解析并校验 {@code names} 参数（非空且数量 ≤ {@link #MAX_SKILLS}）</li>
  *   <li>逐个校验 skill 存在且未被禁用；再委托 {@link SkillActivator#activate(String)} 完成激活</li>
- *   <li>聚合结果：将每个 activation 包裹为 {@code <skill name="X">...</skill>}，按输入顺序用空行拼接；
- *       同时对所有 activation 的 {@code suggestedTools} 按出现顺序去重合并，作为后续轮次可见的工具集</li>
+ *   <li>聚合结果：将每个 activation 包裹为 {@code <skill name="X">...</skill>}，按输入顺序用空行拼接</li>
  * </ol>
  *
- * <p>返回 {@code Map.of("content", String, "activated_tool_ids", List&lt;String&gt;)}，
+ * <p>返回 {@code Map.of("content", String)}，
  * 由外层 BuiltinTool 封装为 {@link com.lifepilot.tool.model.ToolResult}。</p>
  *
  * @author zsg
@@ -52,7 +51,7 @@ public class SkillLoadToolExecutor {
      * 执行激活。
      *
      * @param params 工具参数，必须包含 {@code names}（List&lt;String&gt;，1 ≤ size ≤ 3）
-     * @return {@code { "content": String, "activated_tool_ids": List<String> }}
+     * @return {@code { "content": String }}
      * @throws IllegalArgumentException 参数不合法、skill 不存在或已被禁用
      */
     public Map<String, Object> execute(Map<String, Object> params) {

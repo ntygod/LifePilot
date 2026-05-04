@@ -1,9 +1,7 @@
 package com.lifepilot.knowledge.retrieve;
 
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
-import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
@@ -21,18 +19,10 @@ public class SessionKnowledgeScopeResolver {
 
     @Nullable
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
-    @Nullable
-    private final SessionDatastoreRepository sessionDatastoreRepository;
-    @Nullable
-    private final KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository;
 
     public SessionKnowledgeScopeResolver(
-            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
-            @Nullable KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository) {
+            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
-        this.sessionDatastoreRepository = sessionDatastoreRepository;
-        this.knowledgeBaseDatastoreRepository = knowledgeBaseDatastoreRepository;
     }
 
     public List<KnowledgeSearchScope> resolveScopes(String sessionId) {
@@ -46,18 +36,7 @@ public class SessionKnowledgeScopeResolver {
         if (sessionKnowledgeBaseRepository != null) {
             explicitKbIds.addAll(sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId));
         }
-        explicitKbIds.forEach(kbId -> scopes.add(new KnowledgeSearchScope(kbId, null)));
-
-        if (sessionDatastoreRepository != null && knowledgeBaseDatastoreRepository != null) {
-            for (String datastoreId : sessionDatastoreRepository.findDatastoreIdsBySessionId(sessionId)) {
-                for (String kbId : knowledgeBaseDatastoreRepository.findKnowledgeBaseIdsByDatastoreId(datastoreId)) {
-                    if (explicitKbIds.contains(kbId)) {
-                        continue;
-                    }
-                    scopes.add(new KnowledgeSearchScope(kbId, datastoreId));
-                }
-            }
-        }
+        explicitKbIds.forEach(kbId -> scopes.add(new KnowledgeSearchScope(kbId)));
 
         return scopes.stream().distinct().toList();
     }

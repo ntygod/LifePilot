@@ -141,7 +141,7 @@ class SkillLoadToolExecutor_激活测试 {
     }
 
     @Test
-    void 多skill重复suggested_tools应去重() {
+    void 多skill重复suggested_tools不影响content返回() {
         when(repository.findByName("a")).thenReturn(Optional.of(enabled("a")));
         when(repository.findByName("b")).thenReturn(Optional.of(enabled("b")));
         when(activator.activate("a")).thenReturn(new SkillActivation("a", "A", List.of("t1", "t2")));
@@ -149,7 +149,7 @@ class SkillLoadToolExecutor_激活测试 {
 
         executor.execute(Map.of("names", List.of("a", "b")));
 
-        // suggested_tools 不再返回 activated_tool_ids，仅验证不抛异常
+        // suggested_tools 仅是元数据，不随 skill.load 输出注入运行时工具列表。
     }
 
     // 辅助方法

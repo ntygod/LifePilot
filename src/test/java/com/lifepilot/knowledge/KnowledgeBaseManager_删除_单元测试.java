@@ -5,7 +5,6 @@ import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
-import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +36,6 @@ class KnowledgeBaseManager_删除_单元测试 {
     @Mock KnowledgeBaseRepository kbRepository;
     @Mock DocumentRepository docRepository;
     @Mock DocumentChunkRepository chunkRepository;
-    @Mock KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository;
     @Mock VectorIndexer vectorIndexer;
 
     KnowledgeBaseManager manager;
@@ -47,8 +45,7 @@ class KnowledgeBaseManager_删除_单元测试 {
 
     @BeforeEach
     void setUp() {
-        manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                knowledgeBaseDatastoreRepository, vectorIndexer);
+        manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository, vectorIndexer);
     }
 
     // ---- 辅助方法 ----
@@ -80,8 +77,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     @Test
     void removeDocument_VectorIndexer为null时正常执行() {
         // 构造 VectorIndexer 为 null 的 manager
-        var managerNoVec = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                knowledgeBaseDatastoreRepository, null);
+        var managerNoVec = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository, null);
         var doc = 创建测试文档(DOC_ID_1, KB_ID);
         when(docRepository.findById(DOC_ID_1)).thenReturn(Optional.of(doc));
         when(docRepository.findByKnowledgeBaseId(KB_ID)).thenReturn(List.of());
@@ -133,8 +129,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     @Test
     void deleteKnowledgeBase_VectorIndexer为null时正常执行() {
         // 构造 VectorIndexer 为 null 的 manager
-        var managerNoVec = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
-                knowledgeBaseDatastoreRepository, null);
+        var managerNoVec = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository, null);
         var doc1 = 创建测试文档(DOC_ID_1, KB_ID);
         when(docRepository.findByKnowledgeBaseId(KB_ID)).thenReturn(List.of(doc1));
 

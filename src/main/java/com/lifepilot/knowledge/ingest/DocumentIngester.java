@@ -18,7 +18,6 @@ import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.model.IngestionProgress;
 import com.lifepilot.knowledge.parser.FormatDetector;
-import com.lifepilot.knowledge.parser.DocumentMetadata;
 import com.lifepilot.knowledge.parser.ParseResult;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
@@ -116,31 +115,17 @@ public class DocumentIngester {
      * @return 异步文档结果
      */
     public CompletableFuture<Document> ingest(String kbId, Path filePath, String originalFileName) {
-        return ingest(kbId, filePath, originalFileName, null);
-    }
-
-    /**
-     * 异步导入文档到指定知识库，并可选设置领域归属。
-     */
-    public CompletableFuture<Document> ingest(String kbId,
-                                              Path filePath,
-                                              String originalFileName,
-                                              @Nullable String datastoreId) {
         return CompletableFuture.supplyAsync(() -> {
             var docId = UUID.randomUUID().toString();
             var now = Instant.now();
             // 使用原始文件名而非临时文件名
             var fileName = (originalFileName != null && !originalFileName.isBlank())
                     ? originalFileName : filePath.getFileName().toString();
-            String normalizedDatastoreId = datastoreId != null && !datastoreId.isBlank()
-                    ? datastoreId.strip()
-                    : null;
             var doc = new Document(
                     docId, kbId, fileName, filePath.toString(),
                     filePath.toFile().length(), "", "", DocumentStatus.UPLOADING,
                     0, 0, null, null, Map.of(), now, now,
-                    DocumentSourceType.FILE, null, normalizedDatastoreId, null,
-                    normalizedDatastoreId != null ? Map.of("datastoreId", normalizedDatastoreId) : Map.of());
+                    DocumentSourceType.FILE, null, Map.of());
             docRepository.save(doc);
             return executeFullPipeline(doc, filePath);
         }, Executors.newVirtualThreadPerTaskExecutor());
@@ -171,48 +156,6 @@ public class DocumentIngester {
             var lastStage = doc.lastProcessedStage() != null ? doc.lastProcessedStage() : "";
             return resumeFromStage(doc, filePath, lastStage);
         }, Executors.newVirtualThreadPerTaskExecutor());
-    }
-
-    /**
-     * 直接用投影文本重建知识文档索引。
-     */
-    public Document ingestProjectedDocument(Document doc, String content) {
-        if (content == null || content.isBlank()) {
-            throw new IllegalArgumentException("投影内容不能为空");
-        }
-        try {
-            log.info("Datastore 投影文档开始索引: documentId={}, knowledgeBaseId={}, sourceDatastoreId={}, sourceKey={}, contentLength={}",
-                    doc.id(), doc.knowledgeBaseId(), doc.sourceDatastoreId(), doc.sourceKey(), content.length());
-            publishProgress(doc, DocumentStatus.CHUNKING, 40, "同步 datastore 文档分块中");
-            updateStage(doc.id(), DocumentStatus.CHUNKING);
-            var parseResult = new ParseResult(
-                    content,
-                    List.of(),
-                    DocumentMetadata.empty(),
-                    List.of()
-            );
-            var chunks = doChunkAndEnrich(doc, parseResult);
-            chunkRepository.saveAll(chunks);
-            docRepository.updateChunkCount(doc.id(), chunks.size());
-
-            publishProgress(doc, DocumentStatus.INDEXING, 70, "同步 datastore 文档索引中");
-            updateStage(doc.id(), DocumentStatus.INDEXING);
-            doIndex(chunks, doc.knowledgeBaseId());
-
-            publishProgress(doc, DocumentStatus.EXTRACTING, 85, "同步 datastore 文档知识提取中");
-            updateStage(doc.id(), DocumentStatus.EXTRACTING);
-            doExtract(doc, chunks);
-
-            docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
-            docRepository.updateLastProcessedStage(doc.id(), DocumentStatus.READY.name());
-            refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
-            log.info("Datastore 投影文档索引完成: documentId={}, knowledgeBaseId={}, sourceDatastoreId={}, chunkCount={}",
-                    doc.id(), doc.knowledgeBaseId(), doc.sourceDatastoreId(), chunks.size());
-            return docRepository.findById(doc.id()).orElse(doc);
-        } catch (Exception e) {
-            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, e.getMessage());
-            throw new RuntimeException("投影文档索引失败: " + e.getMessage(), e);
-        }
     }
 
     // ---- 管线执行 ----
@@ -359,8 +302,7 @@ public class DocumentIngester {
 
         // 填充 documentId 和 knowledgeBaseId
         return rawChunks.stream()
-                .map(c -> c.withDocumentContext(doc.id(), doc.knowledgeBaseId(),
-                        doc.sourceType(), doc.sourceDatastoreId(), doc.sourceCollectionId()))
+                .map(c -> c.withDocumentContext(doc.id(), doc.knowledgeBaseId(), doc.sourceType()))
                 .toList();
     }
 

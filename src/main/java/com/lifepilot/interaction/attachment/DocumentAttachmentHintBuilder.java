@@ -12,8 +12,8 @@ import java.util.List;
  * fileName / mimeType} 三个字段注入到消息末尾（sentinel 包裹），让 LLM 知道"本轮上下文里
  * 有哪些附件可引用"。</p>
  *
- * <p><b>只放事实，不放用法</b>：如何用 {@code attachmentId} 调 {@code file.read} 或
- * {@code document.edit} 是工具自己 schema description 的职责。这里复述工具用法会：</p>
+ * <p><b>只放事实，不放用法</b>：如何用 {@code attachmentId} 读取或处理附件是
+ * tool / skill description 的职责。这里复述工具用法会：</p>
  * <ul>
  *   <li>违反 Schema/Skill/Hint 的 separation of concerns（用法散落多处易漂移）</li>
  *   <li>变成"为了让 LLM 会用工具"的单点矫正（见 memory feedback_no_prompt_patching）</li>

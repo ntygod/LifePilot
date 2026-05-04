@@ -48,24 +48,22 @@ public class MemoryProvenanceRepository {
      * @param entityId              实体 ID
      * @param originType            来源类型，可为空
      * @param sourceKnowledgeBaseId 知识库 ID，可为空
-     * @param sourceDatastoreId     数据仓库 ID，可为空
      * @param sourceDocumentId      文档 ID，可为空
      * @return 来源明细列表（按创建时间降序）
      */
     public List<EntityProvenanceDto> findEntityProvenances(String entityId,
                                                            @Nullable String originType,
                                                            @Nullable String sourceKnowledgeBaseId,
-                                                           @Nullable String sourceDatastoreId,
                                                            @Nullable String sourceDocumentId) {
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
         conditions.add("entity_id = ?");
         params.add(entityId);
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
+        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
         String sql = """
                 SELECT origin_type, source_reference, source_conversation_id, source_session_id,
                        source_turn_id, source_entry_id, source_document_id, source_knowledge_base_id,
-                       source_datastore_id, source_collection_id, confidence, created_at
+                       confidence, created_at
                 FROM memory_entity_provenances
                 WHERE %s
                 ORDER BY created_at DESC
@@ -81,10 +79,6 @@ public class MemoryProvenanceRepository {
                 null,
                 rs.getString("source_knowledge_base_id"),
                 null,
-                rs.getString("source_datastore_id"),
-                null,
-                rs.getString("source_collection_id"),
-                null,
                 rs.getFloat("confidence"),
                 Instant.parse(rs.getString("created_at"))
         ), params.toArray());
@@ -97,19 +91,17 @@ public class MemoryProvenanceRepository {
      *
      * @param originType            来源类型，可为空
      * @param sourceKnowledgeBaseId 知识库 ID，可为空
-     * @param sourceDatastoreId     数据仓库 ID，可为空
      * @param sourceDocumentId      文档 ID，可为空
      * @param limit                 最大返回条数
      * @return 来源摘要列表（按创建时间降序）
      */
     public List<MemoryProvenanceSummaryDto> findRecentProvenanceSummaries(@Nullable String originType,
                                                                           @Nullable String sourceKnowledgeBaseId,
-                                                                          @Nullable String sourceDatastoreId,
                                                                           @Nullable String sourceDocumentId,
                                                                           int limit) {
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
+        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
         String whereClause = conditions.isEmpty() ? "" : "WHERE " + String.join(" AND ", conditions);
         params.add(limit);
         String sql = """
@@ -126,8 +118,6 @@ public class MemoryProvenanceRepository {
                        p.source_entry_id,
                        p.source_document_id,
                        p.source_knowledge_base_id,
-                       p.source_datastore_id,
-                       p.source_collection_id,
                        p.confidence,
                        p.created_at
                 FROM memory_entity_provenances p
@@ -163,10 +153,6 @@ public class MemoryProvenanceRepository {
                     null,
                     rs.getString("source_knowledge_base_id"),
                     null,
-                    rs.getString("source_datastore_id"),
-                    null,
-                    rs.getString("source_collection_id"),
-                    null,
                     rs.getFloat("confidence"),
                     Instant.parse(rs.getString("created_at"))
             );
@@ -182,18 +168,16 @@ public class MemoryProvenanceRepository {
      *
      * @param originType            来源类型，可为空
      * @param sourceKnowledgeBaseId 知识库 ID，可为空
-     * @param sourceDatastoreId     数据仓库 ID，可为空
      * @param sourceDocumentId      文档 ID，可为空
      * @return 匹配的实体 ID 集合，或 {@code null}（无过滤条件时）
      */
     @Nullable
     public Set<String> findEntityIdsByProvenanceFilters(@Nullable String originType,
                                                          @Nullable String sourceKnowledgeBaseId,
-                                                         @Nullable String sourceDatastoreId,
                                                          @Nullable String sourceDocumentId) {
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
+        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
         if (conditions.isEmpty()) {
             return null;
         }
@@ -250,16 +234,6 @@ public class MemoryProvenanceRepository {
      */
     public Map<String, String> loadKnowledgeBaseNames(Collection<String> ids) {
         return loadNames("knowledge_bases", "id", "name", ids);
-    }
-
-    /**
-     * 批量加载数据仓库集合名称。
-     *
-     * @param ids 集合 ID 列表
-     * @return ID → 名称映射
-     */
-    public Map<String, String> loadCollectionNames(Collection<String> ids) {
-        return loadNames("ds_collections", "id", "name", ids);
     }
 
     /**
@@ -379,7 +353,6 @@ public class MemoryProvenanceRepository {
                                           List<Object> params,
                                           @Nullable String originType,
                                           @Nullable String sourceKnowledgeBaseId,
-                                          @Nullable String sourceDatastoreId,
                                           @Nullable String sourceDocumentId) {
         if (originType != null && !originType.isBlank()) {
             conditions.add("origin_type = ?");
@@ -388,11 +361,6 @@ public class MemoryProvenanceRepository {
         if (sourceKnowledgeBaseId != null && !sourceKnowledgeBaseId.isBlank()) {
             conditions.add("source_knowledge_base_id = ?");
             params.add(sourceKnowledgeBaseId.trim());
-        }
-        if (sourceDatastoreId != null && !sourceDatastoreId.isBlank()) {
-            conditions.add("(source_datastore_id = ? OR source_collection_id = ?)");
-            params.add(sourceDatastoreId.trim());
-            params.add(sourceDatastoreId.trim());
         }
         if (sourceDocumentId != null && !sourceDocumentId.isBlank()) {
             conditions.add("source_document_id = ?");

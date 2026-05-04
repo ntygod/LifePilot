@@ -529,8 +529,6 @@ public class RealtimeExtractor {
                     turnId,
                     null,
                     null,
-                    null,
-                    record.effectiveDatastoreIds().isEmpty() ? null : record.effectiveDatastoreIds().getFirst(),
                     null
             );
         }
@@ -558,8 +556,6 @@ public class RealtimeExtractor {
                 sessionId,
                 sessionId,
                 turnId,
-                null,
-                null,
                 null,
                 null,
                 null

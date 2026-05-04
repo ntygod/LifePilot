@@ -45,26 +45,18 @@ public final class KnowledgeQueryUtils {
      * 构建按知识域范围过滤的 SQL WHERE 子句。
      *
      * @param kbColumn        知识库 ID 列名
-     * @param datastoreColumn 数据源 ID 列名
      * @param scopes          检索范围列表
      * @return SQL 片段和参数
      */
-    public static ScopeSql buildScopeSql(String kbColumn, String datastoreColumn,
-                                         List<KnowledgeSearchScope> scopes) {
+    public static ScopeSql buildScopeSql(String kbColumn, List<KnowledgeSearchScope> scopes) {
         var sqlParts = new ArrayList<String>();
         var params = new ArrayList<Object>();
         for (KnowledgeSearchScope scope : scopes) {
             if (scope == null || scope.knowledgeBaseId() == null || scope.knowledgeBaseId().isBlank()) {
                 continue;
             }
-            if (scope.datastoreId() == null || scope.datastoreId().isBlank()) {
-                sqlParts.add(kbColumn + " = ?");
-                params.add(scope.knowledgeBaseId());
-            } else {
-                sqlParts.add("(" + kbColumn + " = ? AND " + datastoreColumn + " = ?)");
-                params.add(scope.knowledgeBaseId());
-                params.add(scope.datastoreId());
-            }
+            sqlParts.add(kbColumn + " = ?");
+            params.add(scope.knowledgeBaseId());
         }
         return new ScopeSql(String.join(" OR ", sqlParts), params);
     }

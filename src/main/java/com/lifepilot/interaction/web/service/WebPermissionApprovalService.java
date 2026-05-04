@@ -285,7 +285,6 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
             case BROWSER_AUTOMATION -> "浏览器自动化";
             case HTTP_REQUEST -> "外部网络访问";
             case WRITE_MEMORY -> "长期记忆写入";
-            case MODIFY_DATASTORE -> "数据存储修改";
             case CREATE_SCHEDULE -> "定时任务创建或修改";
             case GENERIC_TOOL_OPERATION -> "工具操作";
         };

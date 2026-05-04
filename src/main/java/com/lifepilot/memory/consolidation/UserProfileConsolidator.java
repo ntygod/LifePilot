@@ -204,7 +204,7 @@ public class UserProfileConsolidator {
                 MemoryOriginType.CONSOLIDATION,
                 MemoryRealityType.REAL,
                 "user-profile-consolidation",
-                null, null, null, null, null, null, null, null
+                null, null, null, null, null, null
         );
 
         // 派生来源 — 本次聚合画像使用的所有 L3 源实体 id，供

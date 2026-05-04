@@ -7,6 +7,7 @@ import com.lifepilot.tool.search.cache.SearchResultCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
+import org.springframework.lang.Nullable;
 
 /**
  * 监听 ToolRegistryEvent 增量维护 tool_search_index + 失效相关缓存。
@@ -26,16 +27,20 @@ public class ToolSearchIndexMaintainer {
     private final DynamicToolRegistry registry;
     private final SchemaCache schemaCache;
     private final SearchResultCache searchCache;
+    @Nullable
+    private final ToolEmbeddingIndex embeddingIndex;
 
     public ToolSearchIndexMaintainer(
             ToolSearchIndexBuilder builder,
             DynamicToolRegistry registry,
             SchemaCache schemaCache,
-            SearchResultCache searchCache) {
+            SearchResultCache searchCache,
+            @Nullable ToolEmbeddingIndex embeddingIndex) {
         this.builder = builder;
         this.registry = registry;
         this.schemaCache = schemaCache;
         this.searchCache = searchCache;
+        this.embeddingIndex = embeddingIndex;
     }
 
     @EventListener
@@ -46,6 +51,9 @@ public class ToolSearchIndexMaintainer {
                         try {
                             builder.upsert(tool);
                             schemaCache.invalidate(toolId);
+                            if (embeddingIndex != null) {
+                                embeddingIndex.refreshOne(tool.id(), tool.description());
+                            }
                         } catch (Exception e) {
                             log.error("索引 upsert 失败: toolId={}", toolId, e);
                         }
@@ -65,6 +73,9 @@ public class ToolSearchIndexMaintainer {
             try {
                 builder.delete(toolId);
                 schemaCache.invalidate(toolId);
+                if (embeddingIndex != null) {
+                    embeddingIndex.remove(toolId);
+                }
             } catch (Exception e) {
                 log.error("索引 delete 失败: toolId={}", toolId, e);
             }

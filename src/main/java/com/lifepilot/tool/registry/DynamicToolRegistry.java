@@ -205,6 +205,16 @@ public class DynamicToolRegistry {
     }
 
     /**
+     * 查询工具所属层级。
+     *
+     * @param toolId 工具 ID
+     * @return 工具层级，不存在时为空
+     */
+    public Optional<ToolLayer> getToolLayer(String toolId) {
+        return Optional.ofNullable(toolLayers.get(toolId));
+    }
+
+    /**
      * 获取所有已注册的 MCP Server 名称。
      *
      * @return 不可变的 Server 名称集合

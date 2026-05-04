@@ -83,8 +83,6 @@ public non-sealed class ParentChildChunker implements ChunkingStrategy {
                         child.pageNumber(),
                         child.metadata(),
                         child.sourceType(),
-                        child.sourceDatastoreId(),
-                        child.sourceCollectionId(),
                         Optional.of(parentWithLevel.id()),
                         1
                 );
@@ -109,8 +107,7 @@ public non-sealed class ParentChildChunker implements ChunkingStrategy {
                 chunk.content(), chunk.contextPrefix(), index,
                 chunk.startOffset(), chunk.endOffset(), chunk.tokenCount(),
                 chunk.contentHash(), chunk.headingHierarchy(), chunk.pageNumber(),
-                chunk.metadata(), chunk.sourceType(), chunk.sourceDatastoreId(),
-                chunk.sourceCollectionId(), chunk.parentChunkId(), chunk.chunkLevel());
+                chunk.metadata(), chunk.sourceType(), chunk.parentChunkId(), chunk.chunkLevel());
     }
 
     @Override

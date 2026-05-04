@@ -547,7 +547,7 @@ export function useChat() {
           }
           isReasoningActive.value = false
           const finalContent = resolveDoneContent(event)
-          const attachments = buildStreamingAttachments(event.contents)
+          const attachments = buildStreamingAttachments(event.contents, event.attachments)
           const finalReasoningContent = reasoningBuffer.value
           const finalReasoningDurationMs = reasoningDurationMs.value
           const assistantMessage = {
@@ -891,8 +891,22 @@ export function useChat() {
     return event.content?.trim() ?? ''
   }
 
-  function buildStreamingAttachments(contents?: SseDoneEvent['contents']) {
+  function buildStreamingAttachments(
+    contents?: SseDoneEvent['contents'],
+    doneAttachments?: SseDoneEvent['attachments'],
+  ) {
     const attachments: ChatAttachment[] = []
+
+    for (const attachment of doneAttachments ?? []) {
+      attachments.push({
+        fileId: attachment.fileId,
+        url: attachment.url ?? '',
+        filename: attachment.filename,
+        size: attachment.size ?? 0,
+        type: attachment.type ?? 'application/octet-stream',
+        isImage: attachment.isImage ?? attachment.type?.startsWith('image/') ?? false,
+      })
+    }
 
     for (const item of contents ?? []) {
       if (item.type === 'AUDIO' && item.url) {

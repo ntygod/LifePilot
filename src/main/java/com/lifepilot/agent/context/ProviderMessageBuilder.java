@@ -376,11 +376,10 @@ public class ProviderMessageBuilder {
                 && !observation.output().isBlank();
     }
 
-    /** 从 skill.load 结果中提取 activated_tool_ids 和 content XML，生成简要摘要。 */
+    /** 从 skill.load 结果中提取 content XML，生成简要摘要。 */
     private String buildSkillLoadSummary(String output) {
         try {
             var data = OBJECT_MAPPER.readTree(output);
-            var ids = data.path("activated_tool_ids");
             var content = data.path("content").asText("");
             // content 形如 <skill name="x">...</skill>\n\n<skill name="y">...</skill>
             var names = new java.util.ArrayList<String>();
@@ -390,9 +389,7 @@ public class ProviderMessageBuilder {
                 names.add(matcher.group(1));
             }
             if (!names.isEmpty()) {
-                int toolCount = ids.isArray() ? ids.size() : 0;
-                return "已加载 Skill 指南: " + String.join(", ", names)
-                        + "（激活 " + toolCount + " 个工具）";
+                return "已加载 Skill 指南: " + String.join(", ", names);
             }
         } catch (Exception ignored) {}
         return "Skill 指南已加载";

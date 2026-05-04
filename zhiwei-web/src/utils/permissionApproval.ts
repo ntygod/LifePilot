@@ -8,7 +8,6 @@ const actionTypeLabels: Record<string, string> = {
   BROWSER_AUTOMATION: '执行浏览器自动化',
   HTTP_REQUEST: '访问外部网络',
   WRITE_MEMORY: '写入长期记忆',
-  MODIFY_DATASTORE: '修改数据存储',
   CREATE_SCHEDULE: '创建或修改定时任务',
   GENERIC_TOOL_OPERATION: '任务级高风险操作',
 }

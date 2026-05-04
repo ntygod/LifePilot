@@ -19,7 +19,7 @@ import java.util.Optional;
 /**
  * 附件登记工具 —— 把 workspace 内的文件挂载为对话附件。
  *
- * <p>解决 LLM 生成图片/二进制产物（如 matplotlib 画的 png、document.create_docx
+ * <p>解决 LLM 生成图片/二进制产物（如 matplotlib 画的 png、python-docx
  * 输出的 docx）后无法在 chat UI 渲染的问题。底层用 {@link AttachmentRepository}
  * 的 orphan 模式（entry_id=null 入库），AgentPersistenceHandler.persistToolMediaAttachments
  * 在 assistant message 落地时通过 {@code backfillOrphanEntryIds} 自动关联，

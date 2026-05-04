@@ -2,23 +2,23 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-04-23
+> **最后更新**：2026-05-04
 > **状态**：最终态方案已落地核心链路，持续完善中
 
-> **关联文档**：用户显式创建的"项目（Project）"容器及其记忆隔离语义（`type=PROJECT` space + ISOLATED/SHARED 模式 + `ProjectContext` 上下文）详见 [项目工作空间架构](./project.md)。本文所述的 `DOMAIN` space 与 Plan 1 新增的 `PROJECT` space 在用途上有差异：`DOMAIN` 是知识源容器（Datastore / 知识库）派生的记忆空间，`PROJECT` 是用户显式创建的领域级任务容器所关联的记忆空间。
+> **关联文档**：用户显式创建的"项目（Project）"容器及其记忆隔离语义（`type=PROJECT` space + ISOLATED/SHARED 模式 + `ProjectContext` 上下文）详见 [项目工作空间架构](./project.md)。本文所述的 `DOMAIN` space 与 `PROJECT` space 在用途上有差异：`DOMAIN` 是知识库派生的记忆空间，`PROJECT` 是用户显式创建的领域级任务容器所关联的记忆空间。
 
 ## 1. 设计目标
 
 知微的记忆系统最终态需要同时满足六个目标：
 
-- 用户真实长期记忆不能被知识库、Datastore、小说设定、角色扮演内容污染
+- 用户真实长期记忆不能被知识库、小说设定、角色扮演内容污染
 - 领域资料仍然可以被稳定检索、引用、扩展，必要时还能沉淀为项目级领域记忆
-- 单轮 `@datastore` / `@知识库` 这类临时作用域必须是硬边界，不能受会话后续恢复配置影响
+- 单轮 `@知识库` 这类临时作用域必须是硬边界，不能受会话后续恢复配置影响
 - 记忆边界必须可解释、可追踪、可删除，不能只依赖提示词“尽量别学错”
 - 知识源删除后，相关领域记忆必须能反查来源并安全清理，不能形成“知识泄露感”
 - 向量、FTS、图检索三条链路必须共用同一套边界模型，不能各自理解一套“作用域”
 
-因此，最终态不采用“当前会话挂了知识库就整体跳过记忆”的粗粒度方案，也不采用“知识库 ID / Datastore ID 直接充当记忆命名空间”的弱模型，而采用：
+因此，最终态不采用“当前会话挂了知识库就整体跳过记忆”的粗粒度方案，也不采用“知识库 ID 直接充当记忆命名空间”的弱模型，而采用：
 
 - `memory_space` 作为一等公民
 - `memory_scope` 作为记忆类型
@@ -33,7 +33,7 @@
 - `memory_relations`、`memory_relation_versions`、`memory_relation_provenances`
 - `chat_turn_memory_snapshots`
 - `ConflictDetector`、版本合并、关系建立均限制在同一 `space_id`
-- Datastore / Knowledge Base 文档写入 `DOMAIN_MEMORY`
+- Knowledge Base 文档写入 `DOMAIN_MEMORY`
 - `RealtimeExtractor`、`KnowledgeExtractionPipeline`、`HybridRetriever` 默认按 `memory_scope` / `space_id` 收口
 - `MemoryController` 已暴露 `spaceId / memoryScope / realityType / provenance` 观察接口
 
@@ -46,15 +46,14 @@
 
 ### 2.1 知识来源不等于记忆空间
 
-`knowledge base` 和 `datastore` 是**知识来源容器**，不是最终的记忆归属边界。
+`knowledge base` 是**知识来源容器**，不是最终的记忆归属边界。
 
 例如：
 
-- 一个小说项目可能同时绑定 1 个 Datastore、2 个知识库
+- 一个小说项目可能同时绑定多个知识库
 - 一个公共写作指南知识库可能被多个项目共享
-- 同一个 Datastore 可以 fan-out 到多个知识库做检索
 
-如果直接把 `knowledgeBaseId` 或 `datastoreId` 当成记忆 namespace，模型会非常脆：
+如果直接把 `knowledgeBaseId` 当成记忆 namespace，模型会非常脆：
 
 - 来源一变，记忆就要迁移
 - 一个项目使用多个来源时，记忆被切碎
@@ -72,7 +71,7 @@
 - `space = personal:default`，`scope = USER_PROFILE`
 - `space = personal:default`，`scope = USER_FACT`
 - `space = agent:default`，`scope = AGENT_EXPERIENCE`
-- `space = domain:datastore:{id}`，`scope = DOMAIN_MEMORY`
+- `space = domain:knowledge-base:{id}`，`scope = DOMAIN_MEMORY`
 
 这两者不能混成一个字段，否则后面过滤、注入、学习策略都会变脆。
 
@@ -95,7 +94,7 @@
 一条领域记忆往往会有多份来源：
 
 - 来自用户对话
-- 来自 Datastore 卡片
+- 来自知识库文档
 - 来自知识库文档
 - 来自后续巩固或人工确认
 
@@ -108,7 +107,7 @@
 
 否则：
 
-- 单轮 `@datastore` 临时切换会失真
+- 单轮 `@知识库` 临时切换会失真
 - 失败重试 / 异步抽取 / 延迟巩固会用错作用域
 - 用户改了会话配置，会污染过去 turn 的解释
 
@@ -129,14 +128,13 @@
   - 稳定唯一键，例如：
     - `personal:default`
     - `agent:default`
-    - `domain:datastore:{id}`
     - `domain:knowledge-base:{id}`
 - `space_type`
   - `PERSONAL | DOMAIN | EXPERIENCE | PROJECT`
   - `PROJECT` 为 Plan 1 引入的新类型，对应用户显式创建的"项目（Project）"容器，由 `ProjectService.createProject` 在建项目时通过 `MemorySpaceRepository.ensureProjectSpace` 自动联动创建；`space_key` 形如 `project:{projectId}`
 - `display_name`
 - `owner_type`
-  - `SYSTEM | DATASTORE | KNOWLEDGE_BASE`
+  - `SYSTEM | KNOWLEDGE_BASE`
 - `owner_id`
 - `metadata_json`
 - `created_at`
@@ -148,23 +146,23 @@
 - `AGENT_EXPERIENCE` 应写入 `EXPERIENCE` space
 - 领域创作、学习项目、小说项目应写入 `DOMAIN` space
 
-### 3.2 `memory_space_knowledge_bases` / `memory_space_datastores`
+### 3.2 `memory_space_knowledge_bases`
 
-这两张关系表用于表达“哪些知识源为这个记忆空间服务”，而不是表达记忆本体归属。
+这张关系表用于表达“哪些知识库为这个记忆空间服务”，而不是表达记忆本体归属。
 
 建议字段：
 
 - `memory_space_id`
-- `knowledge_base_id` / `datastore_id`
+- `knowledge_base_id`
 - `created_at`
 
 这样可以支持：
 
-- 一个项目空间绑定多个知识库、多个 Datastore
+- 一个项目空间绑定多个知识库
 - 一个公共知识库被多个项目空间共享为检索源
 - 来源重组时，不需要迁移既有记忆实体
 
-这比把 `knowledgeBaseId` / `datastoreId` 直接塞进 namespace 更稳。
+这比把 `knowledgeBaseId` 直接塞进 namespace 更稳。
 
 ### 3.3 `memory_entities`
 
@@ -263,14 +261,12 @@
 - `entity_id` / `relation_id`
 - `version_id`
 - `origin_type`
-  - `CHAT | KNOWLEDGE_BASE_DOCUMENT | DATASTORE_DOCUMENT | MANUAL | TOOL | CONSOLIDATION`
+  - `CHAT | KNOWLEDGE_BASE_DOCUMENT | MANUAL | TOOL | CONSOLIDATION`
 - `source_session_id`
 - `source_turn_id`
 - `source_entry_id`
 - `source_document_id`
 - `source_knowledge_base_id`
-- `source_datastore_id`
-- `source_collection_id`
 - `evidence_excerpt`
 - `evidence_hash`
 - `confidence`
@@ -278,7 +274,7 @@
 
 为什么必须单独建表：
 
-- 同一角色设定可能同时来自 Datastore 卡片和多轮创作对话
+- 同一角色设定可能同时来自知识库文档和多轮创作对话
 - 同一用户事实可能有多轮对话共同支撑
 - 删除知识库文档时，应该删除对应 provenance，而不是盲删整条实体
 - 当某实体不再有任何 provenance，且没有人工 pin 或显式保留标记时，才应该归档
@@ -298,7 +294,6 @@
 - `domain_write_space_id`
 - `read_space_ids_json`
 - `effective_knowledge_base_ids_json`
-- `effective_datastore_ids_json`
 - `personal_learning_enabled`
 - `domain_learning_enabled`
 - `experience_learning_enabled`
@@ -330,7 +325,7 @@
 绑定了 `DOMAIN` space 的小说 / 学习 / 项目创作对话：
 
 - 默认读取：
-  - 该 turn 显式绑定的知识库 / Datastore
+- 该 turn 显式绑定的知识库
   - 可选读取该 `DOMAIN` space 内已有 `DOMAIN_MEMORY`
 - 默认写入：
   - `AGENT_EXPERIENCE -> experience_space`
@@ -343,9 +338,9 @@
 - 领域记忆默认不是“自动学习”
 - 一旦开启领域学习，也只写入当前 `DOMAIN` space，不进入个人长期记忆
 
-### 4.3 知识库 / Datastore 导入
+### 4.3 知识库导入
 
-知识库文档和 Datastore 同步文档在最终态应遵循：
+知识库文档在最终态应遵循：
 
 - 默认只作为外挂知识源参与检索
 - 不自动写入 `USER_PROFILE / USER_FACT`
@@ -353,8 +348,6 @@
 - provenance 必须保留：
   - `source_document_id`
   - `source_knowledge_base_id`
-  - `source_datastore_id`
-  - `source_collection_id`
 
 所以“知识库属于外挂记忆”这句话在最终态里更准确地表达为：
 
@@ -391,9 +384,9 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 
 `DOMAIN` 与 `PROJECT` 的关系：
 
-- `DOMAIN` space 从知识源（Datastore / 知识库）派生，承载"从知识源学到的领域记忆"
+- `DOMAIN` space 从知识库派生，承载"从知识源学到的领域记忆"
 - `PROJECT` space 由用户显式创建的项目驱动，承载"项目上下文下的用户偏好、事实、经验"
-- 两者并存，不互相覆盖；`DOMAIN` 仍负责 datastore/knowledge-base 外挂检索语义，`PROJECT` 专注于项目内对话和 Agent 学习的隔离
+- 两者并存，不互相覆盖；`DOMAIN` 负责 knowledge-base 外挂检索语义，`PROJECT` 专注于项目内对话和 Agent 学习的隔离
 
 ## 5. 最终态检索模型
 
@@ -406,7 +399,6 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 - `allowedRealityTypes`
 - `allowedOriginTypes`
 - `knowledgeBaseIds`
-- `datastoreIds`
 
 只有这样，向量、FTS、图遍历才能共享同一套边界。
 
@@ -422,13 +414,13 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 - 小说人物
 - 创作剧情
 - 项目术语
-- Datastore 设定卡
+- 知识库设定资料
 
 ### 5.3 领域会话注入
 
 当当前 turn 绑定某个 `DOMAIN` space 时：
 
-- 先走知识库 / Datastore 检索链路
+- 先走知识库检索链路
 - 如该空间开启了领域记忆，再补充检索：
   - `space_id in allowedDomainSpaces`
   - `memory_scope = DOMAIN_MEMORY`
@@ -485,7 +477,7 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 
 ### 7.1 删除知识源
 
-当知识库文档或 Datastore 文档被删除时：
+当知识库文档被删除时：
 
 1. 删除对应 provenance 行
 2. 检查受影响的实体 / 关系是否还存在其他 provenance
@@ -506,7 +498,7 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 
 - 它属于哪个 `memory_space`
 - 它属于哪类 `memory_scope`
-- 它来自哪些 chat turn / 文档 / Datastore 记录
+- 它来自哪些 chat turn / 文档 / 知识库
 - 它为什么会被当前检索命中
 
 这才是真正可解释的隔离模型。
@@ -539,16 +531,14 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 - `memory_spaces`
   - `personal:default`
   - `agent:default`
-  - `domain:datastore:{novel-workspace-id}`
-- `memory_space_datastores`
-  - `domain:datastore:{novel-workspace-id} -> datastore:novel-workspace`
+  - `domain:knowledge-base:{novel-workspace-id}`
 - `memory_space_knowledge_bases`
-  - `domain:datastore:{novel-workspace-id} -> kb:知天命`
+  - `domain:knowledge-base:{novel-workspace-id} -> kb:知天命`
 - 当前 turn 通过 `@novel-workspace` 进入创作模式
 - `chat_turn_memory_snapshots`
   - `personal_learning_enabled = false`
   - `domain_learning_enabled = true`
-  - `domain_write_space_id = domain:datastore:{novel-workspace-id}`
+  - `domain_write_space_id = domain:knowledge-base:{novel-workspace-id}`
 
 如果这一轮抽取到：
 
@@ -557,11 +547,11 @@ Plan 1 仅做 space-level 合并，不做 key-level override：L3 用户偏好 /
 
 那么最终写入应是：
 
-- `memory_entities.space_id = domain:datastore:{novel-workspace-id}`
+- `memory_entities.space_id = domain:knowledge-base:{novel-workspace-id}`
 - `memory_entities.memory_scope = DOMAIN_MEMORY`
 - provenance 指向：
   - 当前 `turn_id`
-  - 相关 Datastore 文档或知识库文档
+  - 相关知识库文档
 
 它们不会进入 `personal:default`。  
 用户下一次普通闲聊时，也不会默认被注入。

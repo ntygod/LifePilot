@@ -9,8 +9,5 @@ package com.lifepilot.knowledge.model;
 public enum DocumentSourceType {
 
     /** 通过知识库上传的文件文档。 */
-    FILE,
-
-    /** 由 datastore 结构化数据同步生成的文档。 */
-    DATASTORE_DOCUMENT
+    FILE
 }

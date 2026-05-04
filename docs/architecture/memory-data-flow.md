@@ -283,7 +283,7 @@ stateDiagram-v2
 | `origin_type` | TEXT | NOT NULL DEFAULT 'UNKNOWN' |
 | `source_reference` | TEXT | — |
 | `source_conversation_id` / `source_session_id` / `source_turn_id` / `source_entry_id` | TEXT | — |
-| `source_document_id` / `source_knowledge_base_id` / `source_datastore_id` / `source_collection_id` | TEXT | — |
+| `source_document_id` / `source_knowledge_base_id` | TEXT | — |
 | `evidence_excerpt` / `evidence_hash` | TEXT | — |
 | `confidence` | REAL | NOT NULL DEFAULT 0.0 |
 | `created_at` | TEXT | NOT NULL |

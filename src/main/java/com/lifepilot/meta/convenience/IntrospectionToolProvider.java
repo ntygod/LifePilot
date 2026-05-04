@@ -73,8 +73,8 @@ public class IntrospectionToolProvider {
                 .id("status")
                 .name("查看系统状态")
                 .description("""
-                        查询系统运行状态：Skill/Tool/Agent 数量与分布、运行时工作流实例、MCP 连接状态、datastore 列表、版本与运行时长。
-                        需要确认有哪些可用 datastore、Skill、或排查工具不可见时使用。""")
+                        查询系统运行状态：Skill/Tool/Agent 数量与分布、运行时工作流实例、MCP 连接状态、版本与运行时长。
+                        需要确认有哪些可用 Skill，或排查工具不可见时使用。""")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))

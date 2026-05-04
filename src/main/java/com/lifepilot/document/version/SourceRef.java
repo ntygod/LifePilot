@@ -3,15 +3,14 @@ package com.lifepilot.document.version;
 /**
  * 文档来源引用 —— sealed interface，三种具体来源。
  *
- * <p>LLM 在 {@code document.edit} 工具里以 {@code source.type + value/id} 传入；
- * ActionDispatcher 反序列化为对应子类后传给 {@link DocumentVersionService#checkout}。</p>
+ * <p>供保留的文档工作区服务描述工作副本来源；当前不再暴露给 LLM 工具。</p>
  *
  * @author zsg
  * @since 2026-04-21
  */
 public sealed interface SourceRef permits SourceRef.PathSource, SourceRef.AttachmentSource, SourceRef.DocumentSource {
 
-    /** 本机路径源：LLM 给 D:/... 这类绝对路径。 */
+    /** 本机路径源：用户本机绝对路径。 */
     record PathSource(String path) implements SourceRef {
         public PathSource {
             if (path == null || path.isBlank()) {
@@ -29,7 +28,7 @@ public sealed interface SourceRef permits SourceRef.PathSource, SourceRef.Attach
         }
     }
 
-    /** 已在 session_documents 表的文档 ID（包括 Phase 2 AI 产物，或 P3 已 checkout 过的）。 */
+    /** 已在 session_documents 表的文档 ID。 */
     record DocumentSource(String documentId) implements SourceRef {
         public DocumentSource {
             if (documentId == null || documentId.isBlank()) {

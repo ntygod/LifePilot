@@ -21,10 +21,6 @@ public record EntityProvenanceDto(
         @Nullable String sourceDocumentName,
         @Nullable String sourceKnowledgeBaseId,
         @Nullable String sourceKnowledgeBaseName,
-        @Nullable String sourceDatastoreId,
-        @Nullable String sourceDatastoreName,
-        @Nullable String sourceCollectionId,
-        @Nullable String sourceCollectionName,
         float confidence,
         Instant createdAt
 ) {}

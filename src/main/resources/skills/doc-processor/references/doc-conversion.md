@@ -1,6 +1,6 @@
 # 文档处理参考
 
-> pandoc/python-pptx/python-docx 命令直接用 code 或 shell_exec。本文档仅含格式兼容与依赖知识。
+> pandoc/python-pptx/python-docx 命令直接用 `code` 或 `shell.exec`。本文档只放决策与配方，避免堆大段不可复用代码。
 
 ## 依赖工具
 
@@ -25,8 +25,12 @@
 
 ## 验证
 
-生成后必 file_read 确认格式正常。复杂格式转换先转一页预览，确认可接受再批量。
+生成后必须 `file.read` 抽样确认内容正常。复杂格式转换先做单文件/单页预览，确认可接受再批量。
 
 ## 可用脚本
 
-- `{skill_scripts_dir}/md2docx.py <input.md> [output.docx]` — Markdown 转 Word，支持标题层级/列表/代码块
+- `{skill_scripts_dir}/md2docx.py <input.md> [output.docx]` — Markdown 转 Word（标题/列表/代码块；不承诺复杂表格/图片）
+- `{skill_scripts_dir}/pdf_tools.py extract-text <input.pdf> [output.txt]` — PDF 提取文本（可用于验证）
+- `{skill_scripts_dir}/pdf_tools.py merge <out.pdf> <a.pdf> <b.pdf> ...` — 合并 PDF
+- `{skill_scripts_dir}/xlsx_tools.py from-csv <input.csv> <output.xlsx> [--sheet Sheet1]` — CSV 转 xlsx
+- `{skill_scripts_dir}/xlsx_tools.py to-csv <input.xlsx> <output.csv> [--sheet Sheet1]` — xlsx 导出 CSV

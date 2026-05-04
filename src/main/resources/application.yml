@@ -189,25 +189,15 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
-    # ===== Tier 1 全量常驻 =====
-    # 15 工具全部注入 LLM 上下文，无需 tool.search 发现
+    # ===== 核心工具常驻，其余工具按需发现 =====
+    # 这些工具始终注入 LLM 上下文；其他 Java 原生工具和 MCP 外部工具通过 tool.search 发现后注入。
     tier1:
       pinned:
         - memory
-        - browser
-        - code
-        - shell.exec
-        - shell.process
         - file.read
-        - file.write
-        - file.manage
-        - web.search
-        - web.fetch
-        - cron
-        - notify
         - status
-        - ui.render
         - skill.load
+        - tool.search
     # ===== 搜索服务 =====
     search:
       default-limit: 5
@@ -220,10 +210,7 @@ lifepilot:
       fallback:
         # 向量 fallback 默认关闭，观察 BM25 召回率再决定是否启用
         vector-enabled: false
-    # ===== describe 服务 =====
-    describe:
-      max-batch-size: 10
-    # 注：工具使用决策（含 tools.search/describe/list 链路、PERCEPTION/ACTION 分布提示等）
+    # 注：工具使用决策（含 tool.search 链路、PERCEPTION/ACTION 分布提示等）
     # 已全部迁移到 prompts/agent/react-system.st 的 <tool_protocol> 段，不再从 yaml 硬编码。
   memory:
     # ===== 记忆系统配置 =====
@@ -514,14 +501,6 @@ lifepilot:
       encoding: cl100k_base    # cl100k_base | o200k_base | heuristic
   datasource:
     busy-timeout: 30000
-  datastore:
-    enabled: true
-    max-collections: 100
-    max-documents-per-collection: 10000
-    max-document-size-bytes: 65536
-    default-page-size: 20
-    max-page-size: 100
-    index-threshold: 100
   gateway:
     # ===== Gateway 中间件管道配置 =====
     # 6 层中间件：Auth → RateLimit → Security → Router → Execution → Audit

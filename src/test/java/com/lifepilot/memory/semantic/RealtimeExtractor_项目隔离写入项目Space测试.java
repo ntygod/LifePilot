@@ -127,7 +127,6 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
                 projectSpaceId,
                 List.of("personal-1", "experience-1"),
                 List.of(),
-                List.of(),
                 true,  // personalLearningEnabled
                 false,
                 true,

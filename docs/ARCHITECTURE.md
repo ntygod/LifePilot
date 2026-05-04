@@ -141,7 +141,6 @@ graph TB
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `project` | 项目（领域级任务容器）CRUD、项目级 MemorySpace 联动、ProjectContext 解析、级联删除 | [架构](architecture/project.md) |
-| `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合）。**2026-05-03 彻底移除**：后端 `DatastoreController` / `StorageToolProvider` 已删除，前端资料仓库管理页面、路由、类型定义全部移除。`DataStoreManager` 核心能力保留供内置数据同步与知识库链路使用，不再通过 LLM 工具或用户管理界面暴露。知识库文档检索转入 `memory(action=search, scope=knowledge)` | — |
 | `document` | 文档工作空间（docx / xlsx / pptx 新建、docx / xlsx 锚点编辑、工作副本 + 版本链 + diff + commit/rollback/discard） | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
@@ -193,10 +192,9 @@ graph LR
     end
 
     subgraph "Flyway 迁移（V1~V30）"
-        V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库/数据存储 + 记忆 + 渠道 + 市场等）"]
+        V1["V1: 合并初始化脚本（核心表 + 通知 + 知识库 + 记忆 + 渠道 + 市场等）"]
         V2["V2: user_settings 新增 default_workspace 字段"]
         V3["V3: cron_tasks 新增 skill_ids"]
-        V4["V4: datastore document-first 改造"]
         V5["V5: proactive_queued_actions 排队动作表"]
         V6["V6: proactive_behavior_autonomy 行为自主度表"]
         V7["V7: queued_actions score 索引"]

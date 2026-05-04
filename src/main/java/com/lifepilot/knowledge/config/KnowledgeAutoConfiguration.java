@@ -18,11 +18,8 @@ import com.lifepilot.knowledge.parser.PlainTextParser;
 import com.lifepilot.knowledge.parser.WordParser;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
-import com.lifepilot.knowledge.repository.KnowledgeBaseDatastoreRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
-import com.lifepilot.knowledge.repository.KnowledgeSyncJobRepository;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.interaction.web.repository.SessionDatastoreRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -164,12 +161,6 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository(JdbcTemplate jdbcTemplate) {
-        return new KnowledgeBaseDatastoreRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public DocumentRepository documentRepository(JdbcTemplate jdbcTemplate,
                                                  ObjectMapper objectMapper) {
         return new DocumentRepository(jdbcTemplate, objectMapper);
@@ -180,13 +171,6 @@ public class KnowledgeAutoConfiguration {
     public DocumentChunkRepository documentChunkRepository(JdbcTemplate jdbcTemplate,
                                                            ObjectMapper objectMapper) {
         return new DocumentChunkRepository(jdbcTemplate, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public KnowledgeSyncJobRepository knowledgeSyncJobRepository(JdbcTemplate jdbcTemplate,
-                                                                 ObjectMapper objectMapper) {
-        return new KnowledgeSyncJobRepository(jdbcTemplate, objectMapper);
     }
 
     // ---- 索引服务 ----
@@ -208,14 +192,8 @@ public class KnowledgeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver(
-            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-            @Nullable SessionDatastoreRepository sessionDatastoreRepository,
-            @Nullable KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository) {
-        return new SessionKnowledgeScopeResolver(
-                sessionKnowledgeBaseRepository,
-                sessionDatastoreRepository,
-                knowledgeBaseDatastoreRepository
-        );
+            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
+        return new SessionKnowledgeScopeResolver(sessionKnowledgeBaseRepository);
     }
 
 }

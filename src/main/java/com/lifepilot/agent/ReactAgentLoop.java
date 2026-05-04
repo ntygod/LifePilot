@@ -498,8 +498,8 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
-                // 7b. Skill 激活前快照 — 事后检测 ToolExecutionCoordinator 是否合并了 activated_tool_ids / skillContent
-                int preExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                // 7b. 工具执行前快照 — 事后检测 ToolExecutionCoordinator 是否发现新工具或合并 Skill 指南
+                int preExecDiscoveredCount = state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0;
                 String preExecSkillContent = state.loadedSkillContent();
 
                 // 7c. 执行工具批量调用
@@ -509,9 +509,9 @@ public class ReactAgentLoop implements CallbackHelper {
                         state, toolCalls, toolCallbacks, traceContext, cancellationToken,
                         loopContext, this::appendAndPublishStep, llmReasoningContent);
 
-                // 7d. Skill 缓存失效 — 工具合并了新的 activated_tool_ids / skillContent 时重建缓存
-                int postExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
-                if (postExecActivatedCount > preExecActivatedCount) {
+                // 7d. 工具 / Skill 缓存失效 — 新发现工具或 Skill 指南变更时重建缓存
+                int postExecDiscoveredCount = state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0;
+                if (postExecDiscoveredCount > preExecDiscoveredCount) {
                     cachedToolCallbacks = null;
                 }
                 if (!Objects.equals(preExecSkillContent, state.loadedSkillContent())) {

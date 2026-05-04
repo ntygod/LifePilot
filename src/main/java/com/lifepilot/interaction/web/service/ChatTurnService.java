@@ -313,8 +313,8 @@ public class ChatTurnService {
                 ? sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)
                 : List.of();
         boolean knowledgeBound = !knowledgeBaseIds.isEmpty();
-        List<String> domainReadSpaceIds = resolveDomainReadSpaceIds(knowledgeBaseIds, List.of());
-        String domainWriteSpaceId = resolveDomainWriteSpaceId(knowledgeBaseIds, List.of());
+        List<String> domainReadSpaceIds = resolveDomainReadSpaceIds(knowledgeBaseIds);
+        String domainWriteSpaceId = resolveDomainWriteSpaceId(knowledgeBaseIds);
         List<String> readSpaceIds = new ArrayList<>();
         readSpaceIds.add(personalSpace.id());
         readSpaceIds.add(experienceSpace.id());
@@ -338,7 +338,6 @@ public class ChatTurnService {
                 projectSpaceId,
                 readSpaceIds,
                 knowledgeBaseIds,
-                List.of(),
                 !knowledgeBound,
                 false,
                 true,
@@ -377,18 +376,12 @@ public class ChatTurnService {
         }
     }
 
-    private List<String> resolveDomainReadSpaceIds(List<String> knowledgeBaseIds, List<String> datastoreIds) {
+    private List<String> resolveDomainReadSpaceIds(List<String> knowledgeBaseIds) {
         if (memorySpaceRepository == null) {
             return List.of();
         }
         List<String> readSpaceIds = new ArrayList<>();
-        if (datastoreIds != null) {
-            for (String datastoreId : datastoreIds) {
-                MemorySpace space = memorySpaceRepository.ensureDatastoreDomainSpace(datastoreId);
-                readSpaceIds.add(space.id());
-            }
-        }
-        if ((datastoreIds == null || datastoreIds.isEmpty()) && knowledgeBaseIds != null) {
+        if (knowledgeBaseIds != null) {
             for (String knowledgeBaseId : knowledgeBaseIds) {
                 MemorySpace space = memorySpaceRepository.ensureKnowledgeBaseDomainSpace(knowledgeBaseId);
                 readSpaceIds.add(space.id());
@@ -398,16 +391,11 @@ public class ChatTurnService {
     }
 
     @Nullable
-    private String resolveDomainWriteSpaceId(List<String> knowledgeBaseIds, List<String> datastoreIds) {
+    private String resolveDomainWriteSpaceId(List<String> knowledgeBaseIds) {
         if (memorySpaceRepository == null) {
             return null;
         }
-        if (datastoreIds != null && datastoreIds.size() == 1) {
-            return memorySpaceRepository.ensureDatastoreDomainSpace(datastoreIds.getFirst()).id();
-        }
-        if ((datastoreIds == null || datastoreIds.isEmpty())
-                && knowledgeBaseIds != null
-                && knowledgeBaseIds.size() == 1) {
+        if (knowledgeBaseIds != null && knowledgeBaseIds.size() == 1) {
             return memorySpaceRepository.ensureKnowledgeBaseDomainSpace(knowledgeBaseIds.getFirst()).id();
         }
         return null;

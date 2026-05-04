@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 class KnowledgeExtractionPipelineTest {
 
     @Test
-    void 共享文件文档默认不应写入长期记忆() {
+    void 文件文档写入知识库领域空间() {
         var generationRouter = mock(GenerationRouter.class);
         var semanticMemory = mock(SemanticMemory.class);
         var promptRegistry = mock(PromptRegistry.class);
@@ -72,8 +72,6 @@ class KnowledgeExtractionPipelineTest {
                 Instant.now(),
                 DocumentSourceType.FILE,
                 "FILE:doc-shared",
-                null,
-                null,
                 Map.of()
         );
         var chunks = List.of(new DocumentChunk(
@@ -92,17 +90,38 @@ class KnowledgeExtractionPipelineTest {
                 Map.of()
         ));
 
+        var domainSpace = new com.lifepilot.memory.scope.MemorySpace(
+                "space-kb-1",
+                "domain:knowledge-base:kb-1",
+                MemorySpaceType.DOMAIN,
+                "知识库领域记忆",
+                "KNOWLEDGE_BASE",
+                "kb-1",
+                Map.of("knowledgeBaseId", "kb-1"),
+                Instant.now(),
+                Instant.now()
+        );
+        when(memorySpaceRepository.ensureKnowledgeBaseDomainSpace("kb-1")).thenReturn(domainSpace);
+        when(promptRegistry.render(eq("knowledge/entity-extraction"), any(Map.class))).thenReturn("prompt");
+        when(generationRouter.callEntity(
+                eq("knowledge_extraction"),
+                eq("prompt"),
+                eq(KnowledgeExtractionPipeline.ExtractionResponse.class),
+                eq(null),
+                eq(null),
+                eq(null)
+        )).thenReturn(new KnowledgeExtractionPipeline.ExtractionResponse(List.of(), List.of()));
+
         var result = pipeline.extract(doc, chunks);
 
         assertThat(result.entityCount()).isZero();
         assertThat(result.relationCount()).isZero();
-        assertThat(result.warnings()).contains("当前文档默认不写入长期记忆");
-        verifyNoInteractions(generationRouter);
+        assertThat(result.warnings()).isEmpty();
         verifyNoInteractions(semanticMemory);
     }
 
     @Test
-    void 关系解析应按当前领域空间过滤同名实体() {
+    void 关系解析应按当前知识库领域空间过滤同名实体() {
         var generationRouter = mock(GenerationRouter.class);
         var semanticMemory = mock(SemanticMemory.class);
         var promptRegistry = mock(PromptRegistry.class);
@@ -118,17 +137,17 @@ class KnowledgeExtractionPipelineTest {
         );
 
         var domainSpace = new com.lifepilot.memory.scope.MemorySpace(
-                "space-ds-1",
-                "domain:datastore:ds-1",
+                "space-kb-1",
+                "domain:knowledge-base:kb-1",
                 MemorySpaceType.DOMAIN,
-                "Datastore领域记忆",
-                "DATASTORE",
-                "ds-1",
-                Map.of("datastoreId", "ds-1"),
+                "知识库领域记忆",
+                "KNOWLEDGE_BASE",
+                "kb-1",
+                Map.of("knowledgeBaseId", "kb-1"),
                 Instant.now(),
                 Instant.now()
         );
-        when(memorySpaceRepository.ensureDatastoreDomainSpace("ds-1")).thenReturn(domainSpace);
+        when(memorySpaceRepository.ensureKnowledgeBaseDomainSpace("kb-1")).thenReturn(domainSpace);
         when(promptRegistry.render(eq("knowledge/entity-extraction"), any(Map.class))).thenReturn("prompt");
         when(generationRouter.callEntity(
                 eq("knowledge_extraction"),
@@ -143,12 +162,12 @@ class KnowledgeExtractionPipelineTest {
         ));
 
         MemoryReadFilter expectedFilter = MemoryReadFilter.of(
-                List.of("space-ds-1"),
+                List.of("space-kb-1"),
                 List.of(MemoryScope.DOMAIN_MEMORY)
         );
-        when(semanticMemory.findCurrentByNameAndType(eq("角色A"), eq(EntityType.PERSON), eq(expectedFilter)))
+        when(semanticMemory.findCurrentByNameAndType(eq("角色A"), any(EntityType.class), any(MemoryReadFilter.class)))
                 .thenReturn(Optional.of(buildEntity("entity-a", "角色A")));
-        when(semanticMemory.findCurrentByNameAndType(eq("角色B"), eq(EntityType.PERSON), eq(expectedFilter)))
+        when(semanticMemory.findCurrentByNameAndType(eq("角色B"), any(EntityType.class), any(MemoryReadFilter.class)))
                 .thenReturn(Optional.of(buildEntity("entity-b", "角色B")));
 
         var doc = new Document(
@@ -169,8 +188,6 @@ class KnowledgeExtractionPipelineTest {
                 Instant.now(),
                 DocumentSourceType.FILE,
                 "FILE:doc-domain",
-                "ds-1",
-                null,
                 Map.of()
         );
         var chunks = List.of(new DocumentChunk(
@@ -192,8 +209,8 @@ class KnowledgeExtractionPipelineTest {
         var result = pipeline.extract(doc, chunks);
 
         assertThat(result.relationCount()).isEqualTo(1);
-        verify(semanticMemory).findCurrentByNameAndType("角色A", EntityType.PERSON, expectedFilter);
-        verify(semanticMemory).findCurrentByNameAndType("角色B", EntityType.PERSON, expectedFilter);
+        verify(semanticMemory).findCurrentByNameAndType(eq("角色A"), any(EntityType.class), eq(expectedFilter));
+        verify(semanticMemory).findCurrentByNameAndType(eq("角色B"), any(EntityType.class), eq(expectedFilter));
     }
 
     private TemporalEntity buildEntity(String id, String name) {

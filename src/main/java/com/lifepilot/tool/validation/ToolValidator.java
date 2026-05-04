@@ -26,7 +26,7 @@ public class ToolValidator {
 
     private static final Set<String> SELF_DESCRIPTIVE_NAMESPACES = Set.of(
             "memory", "knowledge", "notify", "shell", "web",
-            "file", "document", "datastore", "cron", "channel",
+            "file", "document", "cron", "channel",
             "process", "tools", "ui", "system",
             "git", "code", "workflow"
     );

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.model.Document;
-import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.util.KnowledgeQueryUtils;
 import org.slf4j.Logger;
@@ -56,10 +55,8 @@ public class DocumentRepository {
                     id, knowledge_base_id, file_name, file_path, file_size,
                     mime_type, content_hash, status, chunk_count, entity_count,
                     error_message, last_processed_stage, metadata_json,
-                    created_at, updated_at, source_type, source_key,
-                    source_datastore_id, source_collection_id, source_ref_json,
-                    content, recorded_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, updated_at, source_type, source_key, source_ref_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     knowledge_base_id = excluded.knowledge_base_id,
                     file_name = excluded.file_name,
@@ -75,11 +72,7 @@ public class DocumentRepository {
                     metadata_json = excluded.metadata_json,
                     source_type = excluded.source_type,
                     source_key = excluded.source_key,
-                    source_datastore_id = excluded.source_datastore_id,
-                    source_collection_id = excluded.source_collection_id,
                     source_ref_json = excluded.source_ref_json,
-                    content = excluded.content,
-                    recorded_at = excluded.recorded_at,
                     updated_at = excluded.updated_at
                 """,
                 doc.id(),
@@ -99,11 +92,7 @@ public class DocumentRepository {
                 doc.updatedAt().toString(),
                 doc.sourceType().name(),
                 doc.sourceKey(),
-                doc.sourceDatastoreId(),
-                doc.sourceCollectionId(),
-                serializeObjectMap(doc.sourceRef()),
-                doc.content(),
-                doc.recordedAt());
+                serializeObjectMap(doc.sourceRef()));
     }
 
     /**
@@ -139,21 +128,6 @@ public class DocumentRepository {
                 "SELECT " + ALL_COLUMNS + " FROM documents WHERE knowledge_base_id = ? AND source_key = ?",
                 rowMapper, knowledgeBaseId, sourceKey);
         return results.stream().findFirst();
-    }
-
-    /**
-     * 查询指定领域下的同步文档。
-     */
-    public List<Document> findByKnowledgeBaseIdAndSourceDatastoreIdAndSourceType(String knowledgeBaseId,
-                                                                                  String datastoreId,
-                                                                                  DocumentSourceType sourceType) {
-        return jdbcTemplate.query(
-                "SELECT " + ALL_COLUMNS +
-                " FROM documents WHERE knowledge_base_id = ? AND source_datastore_id = ? AND source_type = ?",
-                rowMapper,
-                knowledgeBaseId,
-                datastoreId,
-                sourceType.name());
     }
 
     /**
@@ -253,51 +227,6 @@ public class DocumentRepository {
                 kbId);
     }
 
-    // ---- Datastore 文档操作 ----
-
-    /** 按 source_datastore_id 查询文档（分页）。 */
-    public List<Document> findBySourceDatastoreId(String datastoreId, int offset, int limit) {
-        return jdbcTemplate.query(
-                "SELECT " + ALL_COLUMNS + " FROM documents WHERE source_datastore_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                rowMapper, datastoreId, limit, offset);
-    }
-
-    /** 按 source_datastore_id 统计文档数量。 */
-    public int countBySourceDatastoreId(String datastoreId) {
-        Integer result = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM documents WHERE source_datastore_id = ?",
-                Integer.class, datastoreId);
-        return result != null ? result : 0;
-    }
-
-    /** 更新文档正文和内容哈希 — 用于 Datastore 文档 content 变更后触发重新 ingest。 */
-    public void updateContent(String id, String content, String contentHash) {
-        jdbcTemplate.update(
-                "UPDATE documents SET content = ?, content_hash = ?, updated_at = ? WHERE id = ?",
-                content, contentHash, Instant.now().toString(), id);
-    }
-
-    /** 仅更新 metadata_json — 不触发重新 ingest。 */
-    public void updateMetadataJson(String id, String metadataJson) {
-        jdbcTemplate.update(
-                "UPDATE documents SET metadata_json = ?, updated_at = ? WHERE id = ?",
-                metadataJson, Instant.now().toString(), id);
-    }
-
-    /** 执行 QueryEngine 生成的原始 SQL 查询。 */
-    public List<Document> queryRaw(String sql, Object[] params) {
-        return jdbcTemplate.query(sql, rowMapper, params);
-    }
-
-    /** 执行 AggregationEngine 生成的原始 SQL 聚合查询。 */
-    public List<com.lifepilot.datastore.model.AggregationResult> aggregateRaw(String sql, Object[] params) {
-        return jdbcTemplate.query(sql, (rs, rowNum) ->
-                new com.lifepilot.datastore.model.AggregationResult(
-                        rs.getString("time_bucket"),
-                        rs.getDouble(2)
-                ), params);
-    }
-
     // ---- 内部方法 ----
 
     /** RowMapper：将 ResultSet 行映射为 Document record。 */
@@ -306,8 +235,7 @@ public class DocumentRepository {
             "id, knowledge_base_id, file_name, file_path, file_size, mime_type, " +
             "content_hash, status, chunk_count, entity_count, error_message, " +
             "last_processed_stage, metadata_json, created_at, updated_at, " +
-            "source_type, source_key, source_datastore_id, source_collection_id, " +
-            "source_ref_json, content, recorded_at";
+            "source_type, source_key, source_ref_json";
 
     private Document mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new Document(
@@ -328,11 +256,7 @@ public class DocumentRepository {
                 Instant.parse(rs.getString("updated_at")),
                 KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
                 rs.getString("source_key"),
-                rs.getString("source_datastore_id"),
-                rs.getString("source_collection_id"),
-                deserializeObjectMap(rs.getString("source_ref_json")),
-                rs.getString("content"),
-                rs.getString("recorded_at")
+                deserializeObjectMap(rs.getString("source_ref_json"))
         );
     }
 

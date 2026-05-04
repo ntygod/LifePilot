@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.agent`
-> **最后更新**：2026-05-03
+> **最后更新**：2026-05-04
 
 ## 1. 模块概述
 
@@ -89,7 +89,7 @@ graph TB
 - `ReactAgentState`：不可变状态快照（record），包含预算、步骤记录、响应等
   - `boolean done` — 循环是否结束
   - `boolean suspended` — 是否处于挂起状态
-  - `Set<String> activatedToolIds` — 已被 Skill 激活的工具 ID 集合，由 `skill.load` 工具返回的 `activated_tool_ids` 动态扩充
+  - `Set<String> discoveredToolIds` — 已通过 `tool.search` 发现并注入下一轮工具列表的工具 ID 集合
   - `CompletionMode` — 完成模式（NORMAL / DEGRADED / SUSPENDED）
   - `CompletionReason` — 11 种终止原因
 - `ReactStep`：7 种步骤类型（sealed interface）
@@ -192,4 +192,4 @@ sequenceDiagram
 | `lifepilot.agent.location` | `""` | 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测 |
 | `lifepilot.agent.ip-api-url` | `http://ip-api.com/json/...` | IP 地理定位 API 地址，为空时禁用自动检测 |
 
-> 工具可见性由 `lifepilot.tool.tier1.pinned`（15 个内置工具全量常驻）+ `activatedToolIds`（Skill 加载）+ `tool.search` 内省工具共同决定，配置详见 [工具系统架构](tool-ecosystem.md)。旧的 `lifepilot.agent.core-tool-ids` 已在 2026-04 工具暴露重构中移除。
+> 工具可见性由 `lifepilot.tool.tier1.pinned`（核心 pinned 工具）+ `discoveredToolIds`（`tool.search` 发现）+ `tool.search` 内省工具共同决定，配置详见 [工具系统架构](tool-ecosystem.md)。旧的 `lifepilot.agent.core-tool-ids` 已在 2026-04 工具暴露重构中移除。

@@ -228,7 +228,6 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String realityType,
             @RequestParam(required = false) @Nullable String originType,
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
-            @RequestParam(required = false) @Nullable String sourceDatastoreId,
             @RequestParam(required = false) @Nullable String sourceDocumentId,
             @RequestParam(required = false) @Nullable String timeFrom,
             @RequestParam(required = false) @Nullable String timeTo,
@@ -304,7 +303,6 @@ public class MemoryController {
         Set<String> filteredEntityIdsByProvenance = provenanceRepository.findEntityIdsByProvenanceFilters(
                 originType,
                 sourceKnowledgeBaseId,
-                sourceDatastoreId,
                 sourceDocumentId
         );
         if (filteredEntityIdsByProvenance != null) {
@@ -392,13 +390,12 @@ public class MemoryController {
             @PathVariable String id,
             @RequestParam(required = false) @Nullable String originType,
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
-            @RequestParam(required = false) @Nullable String sourceDatastoreId,
             @RequestParam(required = false) @Nullable String sourceDocumentId) {
         requireMemoryEnabled();
         semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         var rawItems = provenanceRepository.findEntityProvenances(
-                id, originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId);
+                id, originType, sourceKnowledgeBaseId, sourceDocumentId);
         return ApiResponse.ok(enrichProvenances(rawItems));
     }
 
@@ -409,7 +406,6 @@ public class MemoryController {
     public ApiResponse<List<MemoryProvenanceSummaryDto>> listRecentProvenances(
             @RequestParam(required = false) @Nullable String originType,
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
-            @RequestParam(required = false) @Nullable String sourceDatastoreId,
             @RequestParam(required = false) @Nullable String sourceDocumentId,
             @RequestParam(defaultValue = "10") int limit) {
         requireMemoryEnabled();
@@ -417,7 +413,7 @@ public class MemoryController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须大于 0");
         }
         var rawItems = provenanceRepository.findRecentProvenanceSummaries(
-                originType, sourceKnowledgeBaseId, sourceDatastoreId, sourceDocumentId, limit);
+                originType, sourceKnowledgeBaseId, sourceDocumentId, limit);
         return ApiResponse.ok(enrichMemoryProvenanceSummaries(rawItems));
     }
 
@@ -931,11 +927,6 @@ public class MemoryController {
         Map<String, String> knowledgeBaseNames = provenanceRepository.loadKnowledgeBaseNames(
                 items.stream().map(EntityProvenanceDto::sourceKnowledgeBaseId).toList()
         );
-        List<String> datastoreIds = items.stream()
-                .flatMap(item -> java.util.stream.Stream.of(item.sourceDatastoreId(), item.sourceCollectionId()))
-                .filter(Objects::nonNull)
-                .toList();
-        Map<String, String> datastoreNames = provenanceRepository.loadCollectionNames(datastoreIds);
         Map<String, String> documentNames = provenanceRepository.loadDocumentNames(
                 items.stream().map(EntityProvenanceDto::sourceDocumentId).toList()
         );
@@ -951,10 +942,6 @@ public class MemoryController {
                         lookupName(documentNames, item.sourceDocumentId()),
                         item.sourceKnowledgeBaseId(),
                         lookupName(knowledgeBaseNames, item.sourceKnowledgeBaseId()),
-                        item.sourceDatastoreId(),
-                        lookupName(datastoreNames, item.sourceDatastoreId()),
-                        item.sourceCollectionId(),
-                        lookupName(datastoreNames, item.sourceCollectionId()),
                         item.confidence(),
                         item.createdAt()
                 ))
@@ -968,11 +955,6 @@ public class MemoryController {
         Map<String, String> knowledgeBaseNames = provenanceRepository.loadKnowledgeBaseNames(
                 items.stream().map(MemoryProvenanceSummaryDto::sourceKnowledgeBaseId).toList()
         );
-        List<String> datastoreIds = items.stream()
-                .flatMap(item -> java.util.stream.Stream.of(item.sourceDatastoreId(), item.sourceCollectionId()))
-                .filter(Objects::nonNull)
-                .toList();
-        Map<String, String> datastoreNames = provenanceRepository.loadCollectionNames(datastoreIds);
         Map<String, String> documentNames = provenanceRepository.loadDocumentNames(
                 items.stream().map(MemoryProvenanceSummaryDto::sourceDocumentId).toList()
         );
@@ -994,10 +976,6 @@ public class MemoryController {
                         lookupName(documentNames, item.sourceDocumentId()),
                         item.sourceKnowledgeBaseId(),
                         lookupName(knowledgeBaseNames, item.sourceKnowledgeBaseId()),
-                        item.sourceDatastoreId(),
-                        lookupName(datastoreNames, item.sourceDatastoreId()),
-                        item.sourceCollectionId(),
-                        lookupName(datastoreNames, item.sourceCollectionId()),
                         item.confidence(),
                         item.createdAt()
                 ))

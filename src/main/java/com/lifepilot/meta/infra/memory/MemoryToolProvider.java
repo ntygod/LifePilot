@@ -208,10 +208,7 @@ public class MemoryToolProvider {
         }
         try {
             var session = chatSessionRepository.findById(sessionId);
-            if (session.isEmpty()) {
-                return null;
-            }
-            return projectContextResolver.resolve(session.get().projectId());
+            return session.map(chatSession -> projectContextResolver.resolve(chatSession.projectId())).orElse(null);
         } catch (Exception e) {
             log.debug("记忆工具解析 ProjectContext 失败, 回退默认 filter: sessionId={}, error={}",
                     sessionId, e.getMessage());
@@ -253,8 +250,6 @@ public class MemoryToolProvider {
                 sessionId,
                 sessionId,
                 sessionId,
-                null,
-                null,
                 null,
                 null,
                 null,
@@ -304,7 +299,7 @@ public class MemoryToolProvider {
                         "message", "当前会话未绑定知识库"));
             }
             List<KnowledgeSearchScope> scopes = kbIds.stream()
-                    .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                    .map(KnowledgeSearchScope::new)
                     .toList();
             List<DocumentSearchResult> results = documentRetriever.retrieveByScopes(query, scopes, topK);
             List<Map<String, Object>> items = results.stream().map(this::docSearchResultToMap).toList();
@@ -849,8 +844,6 @@ public class MemoryToolProvider {
         map.put("score", doc.score());
         if (!doc.headingHierarchy().isEmpty()) map.put("headingHierarchy", doc.headingHierarchy());
         map.put("sourceType", doc.sourceType().name());
-        doc.sourceDatastoreId().ifPresent(value -> map.put("sourceDatastoreId", value));
-        doc.sourceCollectionId().ifPresent(value -> map.put("sourceCollectionId", value));
         return Map.copyOf(map);
     }
 
@@ -862,7 +855,7 @@ public class MemoryToolProvider {
             return List.of();
         }
         return sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId).stream()
-                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .map(KnowledgeSearchScope::new)
                 .toList();
     }
 

@@ -12,8 +12,8 @@ metadata:
       - author
       - validation
     suggested_tools:
-      - file_read
-      - file_write
+      - file.read
+      - file.write
 ---
 
 # Skill 创作指南
@@ -43,7 +43,7 @@ metadata:
    - 列关键词（用户高频说法）+ 边界（不适用场景的反向引导）
 4. **body 三必需小节**：标题完全一致（`## 适用场景` / `## 不适用场景` / `## 工作流`）；body ≤5000 字符
 5. **复杂内容下沉 references**：长命令 / 详细模板 / 大量样例放 `references/<name>.md`，body 只引用
-6. **suggested_tools 必须真实存在**：调 `status` 拿当前注册工具清单核对，不能写已下架 / 不存在的工具 ID
+6. **suggested_tools 仅作元数据**：不会在 `skill.load` 后自动注入；如填写，优先写已注册 canonical Tool ID，并用 `status` / `tool.search` 核对
 7. **3 指标自检**：用词精简？职责分工（不重复 react-system / context-guide 已说的全局规则）？场景全面（按用户表达列分流路径）？
 
 ## 详细参考

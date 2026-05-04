@@ -9,7 +9,6 @@ package com.lifepilot.memory.scope;
 public enum MemoryOriginType {
     CHAT,
     KNOWLEDGE_BASE_DOCUMENT,
-    DATASTORE_DOCUMENT,
     MANUAL,
     TOOL,
     CONSOLIDATION,

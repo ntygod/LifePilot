@@ -290,9 +290,10 @@ public class AgentAutoConfiguration {
     public StreamingEventHandler streamingEventHandler(
             ObjectMapper objectMapper,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-            @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository) {
+            @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
+            @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository) {
         return new StreamingEventHandler(
-                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
+                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository, attachmentRepository);
     }
 
     @Bean

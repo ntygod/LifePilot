@@ -24,9 +24,8 @@ public record SkillDefinition(
         String version,
         SkillSource source,
         String instructions,
-        /** Skill 静态声明的配套工具 ID — 激活时会被并入会话级
-         * {@link com.lifepilot.agent.model.ReactAgentState#activatedToolIds()}，
-         * 让 LLM 在加载本 Skill 后能直接看到这些工具的完整 schema。 */
+        /** Skill 静态声明的配套工具 ID — 仅作为 UI 展示、检索和人工参考元数据；
+         * 加载 Skill 不会直接注入这些工具，缺失能力统一通过 {@code tool.search} 发现。 */
         List<String> suggestedTools,
         Map<String, String> metadata,
         SkillZhiweiMeta zhiweiMeta

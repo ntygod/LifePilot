@@ -356,7 +356,7 @@ public class AgentPersistenceHandler {
                         mediaItem.fieldName(), e.getMessage());
             }
         }
-        // Phase 2A：回填本会话内由 Tool 生成的孤儿附件（如 document.create_docx 产物）
+        // 回填本会话内由工具生成的孤儿附件（如 code / shell.exec 生成后 file.attach 的产物）
         // 这些附件在 Tool 执行时 entry_id=null 入库，assistant entry 建成后挂到当前 entry
         if (sessionId != null) {
             int backfilled = attachmentRepository.backfillOrphanEntryIds(sessionId, assistantEntryId);

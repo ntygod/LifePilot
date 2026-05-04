@@ -56,7 +56,6 @@ import org.springframework.test.context.DynamicPropertySource;
                 "lifepilot.tool.enabled=true",
                 "lifepilot.skills.enabled=false",
                 "lifepilot.knowledge.enabled=false",
-                "lifepilot.datastore.enabled=false",
                 "lifepilot.gateway.enabled=false",
                 "lifepilot.gateway.channels.web.enabled=false",
                 "lifepilot.workflow.enabled=false",

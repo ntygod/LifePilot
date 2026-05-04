@@ -12,8 +12,9 @@
 ## 工具调用
 1. **先在 skill_catalog 里评估**（详见下方 `<skill_catalog>` 段） → 命中即 `skill_load(names=[...])`
 2. skill 内部按其指南执行（references 按需 `file_read`）
-3. 所有 15 个工具已在你可见列表中 → 直接选择最合适的调用
-4. 实在找不到专用工具 → `shell_exec` / `code` 兜底
+3. 当前可见列表只包含核心工具和本轮已发现工具 → 可见则直接调用
+4. 需要当前列表里没有的任何能力（Java 原生或 MCP 外部）→ `tool_search(query=...)`，观察结果中的 `inputSchema` 后在下一轮调用对应工具
+5. 实在找不到专用工具 → 先 `tool_search(query="shell command")` 或 `tool_search(query="execute code")`，发现 `shell.exec` / `code` 后再兜底
 
 ## 历史结果优先于重跑
 - 当前任务需要前面对话/工具的某次完整结果时，先查记忆而非重跑：`memory(callId="...")` 取完整原文

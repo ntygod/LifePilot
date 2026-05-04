@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.project`
-> **最后更新**：2026-04-24
+> **最后更新**：2026-05-04
 
 ## 1. 模块概述
 
@@ -21,7 +21,6 @@
 已在后续 Plan 落地：
 
 - **Plan 2（定时任务全局入口）**：`cron_tasks.project_id` 字段（V19） + `/api/scheduled-tasks` REST + 前端 `/scheduled-tasks` 管理页。详见本文 §5.4 与 §7 集成点表。
-- **Plan 3（Datastore 用户侧下架）**：LLM 工具集下线 + 前端路由/侧栏入口下架；后端能力保留。详见 [通用数据存储架构](./generic-data-store.md)。
 
 ## 2. 数据模型
 
@@ -167,7 +166,7 @@ FK 约束决定的固定顺序（代码中编号 0–5）：
 2. **清项目记忆空间下的 `memory_relations`** —— `memory_relations` FK 到 `memory_entities` 不带 CASCADE，必须先于 `memory_entities` 删
 3. **清项目记忆空间下的 `memory_entities`** —— FK CASCADE 连带清 `memory_entity_versions` / `memory_entity_provenances`
 4. **删 `projects` 行** —— V15 的 FK 对 `memory_spaces` 是 RESTRICT，必须先删 project 再删 space
-5. **删 `memory_spaces` 行** —— `memory_space_knowledge_bases` / `memory_space_datastores` 通过 FK CASCADE 自动清理
+5. **删 `memory_spaces` 行** —— `memory_space_knowledge_bases` 通过 FK CASCADE 自动清理
 
 注意 `memory_entities` / `memory_relations` 两张表 FK 到 `memory_spaces` 的是 RESTRICT（V1 init schema），因此不能依赖 `memory_spaces` 的删除自动带走它们，必须在代码里显式清空。
 

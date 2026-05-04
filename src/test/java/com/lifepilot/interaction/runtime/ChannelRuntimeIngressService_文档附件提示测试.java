@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
  * <ul>
  *   <li>附件会落盘到 attachmentStorageDir 并 saveForEntry(entryId=null) 拿到 attachmentId</li>
  *   <li>GatewayMessage.content 的 TextMessage 文本里注入 document hint</li>
- *   <li>hint 包含 attachmentId + file.read + document.edit 引导（docx 可编辑）</li>
+ *   <li>hint 只包含 attachmentId / fileName / mimeType 三元组事实，不写工具用法</li>
  *   <li>hint 用 sentinel 包裹以便 AgentPersistenceHandler 剥离</li>
  * </ul>
  *
@@ -102,7 +102,7 @@ class ChannelRuntimeIngressService_文档附件提示测试 {
     }
 
     @Test
-    @DisplayName("docx 附件 + text 消息 → 落盘 + save repo + hint 含 document.edit 引导")
+    @DisplayName("docx 附件 + text 消息 → 落盘 + save repo + hint 只含附件事实")
     void docx附件完整链路() throws Exception {
         setupMocks();
         when(attachmentRepository.saveForEntry(isNull(), eq("session-001"),

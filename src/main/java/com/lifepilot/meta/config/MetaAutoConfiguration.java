@@ -273,7 +273,7 @@ public class MetaAutoConfiguration {
      *
      * <p>使用 {@code @Order(Ordered.HIGHEST_PRECEDENCE)} 确保在
      * SkillAutoConfiguration 的 Markdown Skill 加载之前完成工具注册，
-     * 保证用户 Skill 的 suggestedTools 校验能通过。</p>
+     * 保证 requires.tools / suggestedTools 引用的工具能被解析。</p>
      *
      * @param event 应用就绪事件
      */

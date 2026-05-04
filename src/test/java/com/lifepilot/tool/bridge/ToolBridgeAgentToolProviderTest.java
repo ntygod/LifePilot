@@ -7,6 +7,7 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
@@ -47,9 +48,9 @@ class ToolBridgeAgentToolProviderTest {
     void OpenAI兼容工具名应转换为合法别名并可反查原始ID() {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         registry.registerBuiltinTool(BuiltinTool.builder()
-                .id("datastore.query_documents")
-                .name("查询集合文档")
-                .description("查询集合文档")
+                .id("knowledge.query_documents")
+                .name("查询知识文档")
+                .description("查询知识文档")
                 .inputSchema(JsonSchema.of(Map.of("type", "object")))
                 .outputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
@@ -68,16 +69,16 @@ class ToolBridgeAgentToolProviderTest {
                 pipeline,
                 new ObjectMapper(),
                 30000,
-                tier1For("datastore.query_documents")
+                tier1For("knowledge.query_documents")
         );
 
         var callbacks = provider.getToolCallbacks(baseState(), null);
         String modelToolName = callbacks.getFirst().getToolDefinition().name();
 
-        assertThat(modelToolName).isEqualTo("datastore_query_documents");
+        assertThat(modelToolName).isEqualTo("knowledge_query_documents");
         assertThat(provider.resolveCanonicalToolId(modelToolName))
-                .isEqualTo("datastore.query_documents");
-        assertThat(provider.resolveToolDisplayName(modelToolName)).isEqualTo("查询集合文档");
+                .isEqualTo("knowledge.query_documents");
+        assertThat(provider.resolveToolDisplayName(modelToolName)).isEqualTo("查询知识文档");
         assertThat(callbacks.getFirst().call("{}")).contains("\"ok\":true");
     }
 
@@ -267,6 +268,72 @@ class ToolBridgeAgentToolProviderTest {
         assertThat(toolNames).containsExactly("foo_bar", collidedName);
         assertThat(provider.resolveCanonicalToolId("foo_bar")).isEqualTo("foo.bar");
         assertThat(provider.resolveCanonicalToolId(collidedName)).isEqualTo("foo_bar");
+    }
+
+    @Test
+    void 非核心Java和MCP工具默认隐藏_搜索发现后才注入() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("tool.search")
+                .name("搜索工具")
+                .description("搜索工具")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("工具", "搜索", "发现"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("file.delete")
+                .name("删除文件")
+                .description("删除指定路径的文件")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("file", "delete"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        registry.registerMcpTools("demo", List.of(new McpTool(
+                "mcp.demo.echo",
+                "回声工具",
+                "MCP 回声工具",
+                JsonSchema.of(Map.of("type", "object")),
+                JsonSchema.empty(),
+                RiskLevel.LOW,
+                true,
+                ToolExecutionSemantics.generic(),
+                com.lifepilot.tool.model.ToolBudget.DEFAULT,
+                List.of("echo", "mcp"),
+                "demo",
+                "echo",
+                "demo"
+        )));
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                mock(ToolExecutionPipeline.class),
+                new ObjectMapper(),
+                30000,
+                tier1For("tool.search")
+        );
+
+        var initialNames = provider.getToolCallbacks(baseState(), null).stream()
+                .map(callback -> callback.getToolDefinition().name())
+                .toList();
+        assertThat(initialNames).containsExactly("tool_search");
+
+        var discoveredState = baseState().withDiscoveredToolIds(Set.of("file.delete", "mcp.demo.echo"));
+        var discoveredNames = provider.getToolCallbacks(discoveredState, null).stream()
+                .map(callback -> callback.getToolDefinition().name())
+                .toList();
+
+        assertThat(discoveredNames).contains("tool_search", "file_delete", "mcp_demo_echo");
+        assertThat(provider.resolveCanonicalToolId("file_delete")).isEqualTo("file.delete");
+        assertThat(provider.resolveCanonicalToolId("mcp_demo_echo")).isEqualTo("mcp.demo.echo");
     }
 
     @Test

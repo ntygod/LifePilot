@@ -166,8 +166,10 @@ public class ToolAutoConfiguration {
             com.lifepilot.tool.search.ToolSearchIndexBuilder builder,
             DynamicToolRegistry registry,
             com.lifepilot.tool.search.cache.SchemaCache schemaCache,
-            com.lifepilot.tool.search.cache.SearchResultCache searchCache) {
-        return new com.lifepilot.tool.search.ToolSearchIndexMaintainer(builder, registry, schemaCache, searchCache);
+            com.lifepilot.tool.search.cache.SearchResultCache searchCache,
+            @Nullable com.lifepilot.tool.search.ToolEmbeddingIndex embeddingIndex) {
+        return new com.lifepilot.tool.search.ToolSearchIndexMaintainer(
+                builder, registry, schemaCache, searchCache, embeddingIndex);
     }
 
     @Bean
@@ -175,9 +177,7 @@ public class ToolAutoConfiguration {
     public com.lifepilot.tool.search.ToolEmbeddingIndex toolEmbeddingIndex(
             DynamicToolRegistry registry,
             @Nullable com.lifepilot.embedding.router.EmbeddingRouter embeddingRouter) {
-        var idx = new com.lifepilot.tool.search.ToolEmbeddingIndex(registry, embeddingRouter);
-        idx.buildAll();
-        return idx;
+        return new com.lifepilot.tool.search.ToolEmbeddingIndex(registry, embeddingRouter);
     }
 
     @Bean
@@ -197,16 +197,6 @@ public class ToolAutoConfiguration {
                 properties.getSearch(), meterRegistry, embeddingIndex);
     }
 
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.tool.search.ToolDescribeService toolDescribeService(
-            DynamicToolRegistry registry,
-            ToolConfigProperties properties,
-            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
-        return new com.lifepilot.tool.search.ToolDescribeService(
-                registry, properties.getDescribe().getMaxBatchSize(), meterRegistry);
-    }
-
     /**
      * 无 Actuator 环境下的 MeterRegistry 兜底。
      *
@@ -224,12 +214,15 @@ public class ToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public com.lifepilot.tool.search.BuiltinToolSearchProvider builtinToolSearchProvider(
-            com.lifepilot.tool.search.ToolSearchService search,
-            com.lifepilot.tool.search.ToolDescribeService describe) {
-        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search, describe);
+            com.lifepilot.tool.search.ToolSearchService search) {
+        return new com.lifepilot.tool.search.BuiltinToolSearchProvider(search);
     }
 
-    // tool.search 已退役 — Tier1 全量常驻后不再需要动态工具发现
+    @Bean
+    @ConditionalOnMissingBean(name = "toolSearchBuiltin")
+    public BuiltinTool toolSearchBuiltin(com.lifepilot.tool.search.BuiltinToolSearchProvider provider) {
+        return provider.searchTool();
+    }
 
     /**
      * 初始化 McpTool 的 McpToolExecutor 引用。

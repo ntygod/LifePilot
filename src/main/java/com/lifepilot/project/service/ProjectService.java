@@ -114,8 +114,7 @@ public class ProjectService {
                     null,
                     null,
                     Map.of(),
-                    List.of("project"),
-                    null
+                    List.of("project")
             );
             memorySpaceRepository.attachKnowledgeBase(space.id(), kb.id());
             log.info("项目默认知识库创建并绑定: projectId={}, kbId={}, spaceId={}",
@@ -200,8 +199,7 @@ public class ProjectService {
      *       memory_entity_versions / memory_entity_provenances；</li>
      *   <li>删 projects 行 —— V15 的 FK 对 memory_spaces 是 RESTRICT，必须先
      *       删 project 再删 space；</li>
-     *   <li>删 memory_spaces 行 —— memory_space_knowledge_bases /
-     *       memory_space_datastores 通过 FK CASCADE 自动清理。</li>
+     *   <li>删 memory_spaces 行 —— memory_space_knowledge_bases 通过 FK CASCADE 自动清理。</li>
      * </ol>
      *
      * <p>注意 memory_entities / memory_relations 两张表 FK 到 memory_spaces
@@ -251,7 +249,7 @@ public class ProjectService {
                 "DELETE FROM memory_entities WHERE space_id = ?", spaceId);
         // 4) 先删 project（V15 FK 到 memory_spaces 是 RESTRICT，顺序不能反）
         projectRepository.deleteById(id);
-        // 5) 再删 memory_space（带走 memory_space_knowledge_bases / _datastores）
+        // 5) 再删 memory_space（带走 memory_space_knowledge_bases）
         memorySpaceRepository.deleteById(spaceId);
 
         log.info("删除项目级联完成: id={}, spaceId={}, sessions={}, entities={}, relations={}, kbs={}",

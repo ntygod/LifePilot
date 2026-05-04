@@ -33,17 +33,13 @@ public record DocumentSearchResult(
         Map<String, String> metadata,
         Optional<ScoreBreakdown> scoreBreakdown,
         Optional<String> expandedContent,
-        DocumentSourceType sourceType,
-        Optional<String> sourceDatastoreId,
-        Optional<String> sourceCollectionId
+        DocumentSourceType sourceType
 ) {
 
     public DocumentSearchResult {
         if (scoreBreakdown == null) scoreBreakdown = Optional.empty();
         if (expandedContent == null) expandedContent = Optional.empty();
         if (sourceType == null) sourceType = DocumentSourceType.FILE;
-        if (sourceDatastoreId == null) sourceDatastoreId = Optional.empty();
-        if (sourceCollectionId == null) sourceCollectionId = Optional.empty();
     }
 
 }

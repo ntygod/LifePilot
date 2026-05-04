@@ -82,24 +82,17 @@ src/main/resources/skills/
 ├── daily-manager/SKILL.md
 ├── data-analyst/SKILL.md
 ├── database-query/SKILL.md
-├── datastore/SKILL.md
 ├── desktop-automation/SKILL.md
 ├── doc-processor/SKILL.md
-├── document-workspace/SKILL.md
 ├── feishu/SKILL.md
 ├── file-organizer/SKILL.md
-├── find-skills/SKILL.md
-├── gitee/SKILL.md
 ├── github-workflow/SKILL.md
 ├── healthcheck/SKILL.md
-├── introspection/SKILL.md
 ├── log-analyzer/SKILL.md
 ├── research-assistant/SKILL.md
-├── skill-creator/SKILL.md       # v2 规范自举样本
+├── skill-creator/SKILL.md
 ├── summarizer/SKILL.md
-├── teaching-assistant/SKILL.md
-├── web-novel-writer/SKILL.md
-└── workflow-creator/SKILL.md
+└── teaching-assistant/SKILL.md
 ```
 
 每个 `SKILL.md` 遵循 v2 规范（见 `docs/skill-spec.md`）：YAML frontmatter 必含 `name / description / version`（拒绝老 `id` 字段），可选 `metadata.zhiwei.{category / priority / tags / suggested_tools / requires}` + Markdown body（含 `## 适用场景` / `## 不适用场景` / `## 工作流` 三必需小节）。

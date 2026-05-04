@@ -256,9 +256,7 @@ public class GraphKnowledgeSearcher {
                 chunk.metadata(),
                 Optional.of(new ScoreBreakdown(0.0, 0.0, 0.0, 0.0, Optional.empty())),
                 Optional.empty(),
-                chunk.sourceType(),
-                Optional.ofNullable(chunk.sourceDatastoreId()),
-                Optional.ofNullable(chunk.sourceCollectionId())
+                chunk.sourceType()
         );
     }
 

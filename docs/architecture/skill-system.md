@@ -2,11 +2,11 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.skill`
-> **最后更新**：2026-05-03
+> **最后更新**：2026-05-04
 
 ## 1. 模块概述
 
-Skill 系统是知微的程序性知识管理框架，负责 Skill 的定义、安装、发现、激活与自动扩展。每个 Skill 是一个包含描述（description）、骨架正文（body）与可选资产（references/scripts/assets）的目录，激活后其 body 作为上下文指令注入 Agent，并把声明的 `suggested_tools` 合并进下一轮可见工具集。
+Skill 系统是知微的程序性知识管理框架，负责 Skill 的定义、安装、发现、激活与自动扩展。每个 Skill 是一个包含描述（description）、骨架正文（body）与可选资产（references/scripts/assets）的目录，激活后其 body 作为上下文指令注入 Agent。`suggested_tools` 仅作为 UI 展示、检索和人工参考元数据，不再直接改变下一轮可见工具集。
 
 v2 相对 v1 的核心变化：
 
@@ -175,9 +175,9 @@ JdbcTemplate 参数化查询，针对 V17 `skills` 表：`upsert`（`ON CONFLICT
 1. 解析 `names`，拒绝空列表和超过 3 个
 2. 预校验全部 skill 必须在 `skills` 表存在且 `enabled=true`（避免"激活一半失败"的半残留）
 3. 逐个 `activator.activate(name)`，结果拼为 `<skill name="X">body</skill>`，空行拼接
-4. 所有 activation 的 `suggestedTools` 按 `LinkedHashSet` 首次出现顺序去重合并
+4. 收集 references 绝对路径并在 content 末尾生成 `file.read` 强引导，避免 LLM 凭印象跳过必要参考
 
-返回 `Map.of("content", String, "activated_tool_ids", List<String>)`。
+返回 `Map.of("content", String)`。
 
 **`SkillActivator`**（`src/main/java/com/lifepilot/skill/activation/SkillActivator.java`）
 
@@ -283,10 +283,10 @@ sequenceDiagram
         Act->>Act: resolvePlaceholders(body, filePath)
         Act-->>Exec: SkillActivation(instructions, suggestedTools)
     end
-    Exec-->>Tool: { content, activated_tool_ids }
+    Exec-->>Tool: { content }
     Tool-->>Agent: ToolResult.success
     Note over Agent: loadedSkillContent 注入 userPrompt 头部
-    Note over Agent: activated_tool_ids 合入 state.activatedToolIds<br/>下一轮 ToolBridge 放行这些工具
+    Note over Agent: 如需 Skill 提到的非核心工具，下一轮按全局协议通过 tool.search 发现
 ```
 
 ### 4.2 BUILTIN Skill 启动安装流程
@@ -387,7 +387,7 @@ sequenceDiagram
 | 集成模块 | 方向 | 说明 |
 |---|---|---|
 | LLM Router（`com.lifepilot.generation`）| Skill → LLM | `SkillSynthesizer` 调 `GenerationRouter.call(LlmScene.SKILL_GENERATION, ...)` |
-| 工具系统（`com.lifepilot.tool`）| Skill → Tool | `skill.load` 注册为 BuiltinTool；`SkillValidator` 调 `DynamicToolRegistry.resolve` 校验 `suggested_tools`；激活返回的 `activated_tool_ids` 由 `ToolExecutionCoordinator` 合入 `state.activatedToolIds` |
+| 工具系统（`com.lifepilot.tool`）| Skill → Tool | `skill.load` 注册为 BuiltinTool；`suggested_tools` 仅保留为元数据，非核心工具统一通过 `tool.search` 发现 |
 | Agent 引擎（`com.lifepilot.agent`）| Agent → Skill | `ContextAssembler.buildSkillCatalog` 生成 system prompt 中 `<skill_catalog>` 段；`ToolExecutionCoordinator` 从 `skill.load` 输出提取 `content` 注入 userPrompt 头部 |
 | Prompt 管理（`com.lifepilot.prompt`）| Skill → Prompt | `SkillSynthesizer` 通过 `PromptRegistry.render("generation/skill-synthesis")` 和 `("generation/skill-fix")` |
 | Web SSE（`com.lifepilot.interaction.web`）| Skill → UI | `SkillGeneratedSseController` 广播 `SkillGeneratedEvent`；前端订阅 `/api/skills/events` |

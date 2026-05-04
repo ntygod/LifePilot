@@ -107,8 +107,6 @@ class SemanticMemory_实体版本集成测试 {
                     source_entry_id TEXT,
                     source_document_id TEXT,
                     source_knowledge_base_id TEXT,
-                    source_datastore_id TEXT,
-                    source_collection_id TEXT,
                     evidence_excerpt TEXT,
                     evidence_hash TEXT,
                     confidence REAL NOT NULL DEFAULT 0.0,

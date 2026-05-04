@@ -361,6 +361,8 @@ export interface SseDoneEvent {
     mimeType?: string
     metadata?: Record<string, any>
   }>
+  /** DONE 随带的已持久化附件 */
+  attachments?: ChatAttachment[]
   /** sources（知识库 / 工具） */
   sources?: SourceSummary[]
   /** toolsSummary */
@@ -579,9 +581,6 @@ export interface KbDocument {
   errorMessage?: string | null
   createdAt: string
   updatedAt: string
-  sourceType?: 'FILE' | 'DATASTORE_DOCUMENT'
-  sourceDatastoreId?: string | null
-  sourceCollectionId?: string | null
 }
 
 /** 文档分块 */
@@ -1733,10 +1732,6 @@ export interface EntityProvenance {
   sourceDocumentName: string | null
   sourceKnowledgeBaseId: string | null
   sourceKnowledgeBaseName: string | null
-  sourceDatastoreId: string | null
-  sourceDatastoreName: string | null
-  sourceCollectionId: string | null
-  sourceCollectionName: string | null
   confidence: number
   createdAt: string
 }
@@ -1759,10 +1754,6 @@ export interface MemoryProvenanceSummary {
   sourceDocumentName: string | null
   sourceKnowledgeBaseId: string | null
   sourceKnowledgeBaseName: string | null
-  sourceDatastoreId: string | null
-  sourceDatastoreName: string | null
-  sourceCollectionId: string | null
-  sourceCollectionName: string | null
   confidence: number
   createdAt: string
 }
@@ -1771,7 +1762,6 @@ export interface MemoryProvenanceSummary {
 export interface EntityProvenanceParams {
   originType?: string
   sourceKnowledgeBaseId?: string
-  sourceDatastoreId?: string
   sourceDocumentId?: string
 }
 
@@ -1807,7 +1797,6 @@ export interface EntityListParams {
   realityType?: string
   originType?: string
   sourceKnowledgeBaseId?: string
-  sourceDatastoreId?: string
   sourceDocumentId?: string
   timeFrom?: string
   timeTo?: string

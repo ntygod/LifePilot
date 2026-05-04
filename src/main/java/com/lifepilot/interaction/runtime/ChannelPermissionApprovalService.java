@@ -199,7 +199,6 @@ public class ChannelPermissionApprovalService implements PermissionApprovalServi
             case HTTP_REQUEST -> "访问外部网络";
             case BROWSER_AUTOMATION -> "浏览器自动化";
             case WRITE_MEMORY -> "写入长期记忆";
-            case MODIFY_DATASTORE -> "修改数据存储";
             case CREATE_SCHEDULE -> "创建定时任务";
             default -> "执行工具操作";
         };

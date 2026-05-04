@@ -43,7 +43,7 @@ public final class ToolContextKeys {
     /** 工作区 ID（{@link String}）— 涉及工作区文件的工具用于解析路径根。 */
     public static final String WORKSPACE_ID = "workspaceId";
     /** 调用方 ReactAgentState 引用（{@link com.lifepilot.agent.model.ReactAgentState}）—
-     * 供 meta 工具（{@code tool.search/describe/list}）访问 activatedToolIds 等当轮状态。 */
+     * 供 meta 工具（{@code tool.search}）访问 discoveredToolIds / allowedToolIds 等当轮状态。 */
     public static final String CALLER_STATE = "callerState";
 
     private ToolContextKeys() {

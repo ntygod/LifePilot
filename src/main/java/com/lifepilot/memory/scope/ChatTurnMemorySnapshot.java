@@ -25,7 +25,6 @@ public record ChatTurnMemorySnapshot(
         @Nullable String projectSpaceId,
         List<String> readSpaceIds,
         List<String> effectiveKnowledgeBaseIds,
-        List<String> effectiveDatastoreIds,
         boolean personalLearningEnabled,
         boolean domainLearningEnabled,
         boolean experienceLearningEnabled,
@@ -35,7 +34,6 @@ public record ChatTurnMemorySnapshot(
     public ChatTurnMemorySnapshot {
         readSpaceIds = readSpaceIds != null ? List.copyOf(readSpaceIds) : List.of();
         effectiveKnowledgeBaseIds = effectiveKnowledgeBaseIds != null ? List.copyOf(effectiveKnowledgeBaseIds) : List.of();
-        effectiveDatastoreIds = effectiveDatastoreIds != null ? List.copyOf(effectiveDatastoreIds) : List.of();
         resolutionSource = resolutionSource != null ? Map.copyOf(resolutionSource) : Map.of();
     }
 }

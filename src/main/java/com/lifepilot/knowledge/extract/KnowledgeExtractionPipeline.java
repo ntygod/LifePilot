@@ -3,7 +3,6 @@ package com.lifepilot.knowledge.extract;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.Document;
-import com.lifepilot.knowledge.model.DocumentSourceType;
 import com.lifepilot.knowledge.model.ExtractionResult;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
@@ -91,11 +90,6 @@ public class KnowledgeExtractionPipeline {
             return new ExtractionResult(0, 0, List.of("依赖组件未配置，跳过知识提取"));
         }
         MemoryWriteContext writeContext = resolveWriteContext(doc);
-        if (writeContext == null) {
-            log.debug("知识提取跳过: docId={}, sourceType={}, sourceDatastoreId={}",
-                    doc.id(), doc.sourceType(), doc.sourceDatastoreId());
-            return new ExtractionResult(0, 0, List.of("当前文档默认不写入长期记忆"));
-        }
 
         int totalEntities = 0;
         int totalRelations = 0;
@@ -152,15 +146,14 @@ public class KnowledgeExtractionPipeline {
         int relationCount = 0;
 
         // 写入实体，同时建立 name → id 映射供关系解析使用
-        // 领域数据文档不提取用户属性类型（PREFERENCE/HABIT/GOAL），这些只应从对话中产生
-        boolean isDomainDoc = doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT;
+        // 知识库文档不提取用户属性类型（PREFERENCE/HABIT/GOAL），这些只应从对话中产生。
         var entityNameToId = new HashMap<String, String>();
         if (response.entities() != null) {
             for (var entityInfo : response.entities()) {
                 try {
                     var entity = toTemporalEntity(entityInfo);
-                    if (isDomainDoc && isUserAttributeType(entity.type())) {
-                        log.debug("知识提取: 跳过领域文档中的用户属性实体, name={}, type={}", entity.name(), entity.type());
+                    if (isUserAttributeType(entity.type())) {
+                        log.debug("知识提取: 跳过知识库文档中的用户属性实体, name={}, type={}", entity.name(), entity.type());
                         continue;
                     }
                     var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext));
@@ -266,49 +259,20 @@ public class KnowledgeExtractionPipeline {
     }
 
     private MemoryWriteContext resolveWriteContext(Document doc) {
-        if (doc.sourceType() == DocumentSourceType.FILE
-                && (doc.sourceDatastoreId() == null || doc.sourceDatastoreId().isBlank())) {
-            return null;
-        }
-        if (doc.sourceDatastoreId() != null && !doc.sourceDatastoreId().isBlank()) {
-            var domainSpace = memorySpaceRepository.ensureDatastoreDomainSpace(doc.sourceDatastoreId());
-            return new MemoryWriteContext(
-                    domainSpace.id(),
-                    MemoryScope.DOMAIN_MEMORY,
-                    doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT
-                            ? MemoryOriginType.DATASTORE_DOCUMENT
-                            : MemoryOriginType.KNOWLEDGE_BASE_DOCUMENT,
-                    MemoryRealityType.UNKNOWN,
-                    doc.id(),
-                    doc.id(),
-                    null,
-                    null,
-                    null,
-                    doc.id(),
-                    doc.knowledgeBaseId(),
-                    doc.sourceDatastoreId(),
-                    doc.sourceCollectionId()
-            );
-        }
-        if (doc.sourceType() == DocumentSourceType.DATASTORE_DOCUMENT) {
-            var domainSpace = memorySpaceRepository.ensureKnowledgeBaseDomainSpace(doc.knowledgeBaseId());
-            return new MemoryWriteContext(
-                    domainSpace.id(),
-                    MemoryScope.DOMAIN_MEMORY,
-                    MemoryOriginType.DATASTORE_DOCUMENT,
-                    MemoryRealityType.UNKNOWN,
-                    doc.id(),
-                    doc.id(),
-                    null,
-                    null,
-                    null,
-                    doc.id(),
-                    doc.knowledgeBaseId(),
-                    null,
-                    doc.sourceCollectionId()
-            );
-        }
-        return null;
+        var domainSpace = memorySpaceRepository.ensureKnowledgeBaseDomainSpace(doc.knowledgeBaseId());
+        return new MemoryWriteContext(
+                domainSpace.id(),
+                MemoryScope.DOMAIN_MEMORY,
+                MemoryOriginType.KNOWLEDGE_BASE_DOCUMENT,
+                MemoryRealityType.UNKNOWN,
+                doc.id(),
+                doc.id(),
+                null,
+                null,
+                null,
+                doc.id(),
+                doc.knowledgeBaseId()
+        );
     }
 
     /**

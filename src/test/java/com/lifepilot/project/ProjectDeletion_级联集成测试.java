@@ -245,7 +245,7 @@ class ProjectDeletion_级联集成测试 {
                     FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE RESTRICT
                 )""");
 
-        // memory_space_knowledge_bases / memory_space_datastores 用来验证 FK CASCADE
+        // memory_space_knowledge_bases 用来验证 FK CASCADE
         jdbcTemplate.execute("""
                 CREATE TABLE memory_space_knowledge_bases (
                     memory_space_id TEXT NOT NULL,
@@ -506,11 +506,11 @@ class ProjectDeletion_级联集成测试 {
         KnowledgeBase projectKb = new KnowledgeBase(
                 "kb-project", "挂两个KB的项目 · 项目知识库", "自动建的默认 KB",
                 null, null, "smart", Map.of(), 0, 0,
-                List.of("project"), now, now, false, null, List.of());
+                List.of("project"), now, now);
         KnowledgeBase sharedKb = new KnowledgeBase(
                 "kb-shared", "通用资料库", "用户手动挂的",
                 null, null, "smart", Map.of(), 0, 0,
-                List.of("shared", "handbook"), now, now, false, null, List.of());
+                List.of("shared", "handbook"), now, now);
 
         when(kbManager.getKnowledgeBase("kb-project")).thenReturn(Optional.of(projectKb));
         when(kbManager.getKnowledgeBase("kb-shared")).thenReturn(Optional.of(sharedKb));

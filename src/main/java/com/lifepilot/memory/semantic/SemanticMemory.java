@@ -1174,9 +1174,9 @@ public class SemanticMemory {
                 INSERT INTO memory_entity_provenances(
                     id, entity_id, version_id, origin_type, source_reference, source_conversation_id,
                     source_session_id, source_turn_id, source_entry_id, source_document_id,
-                    source_knowledge_base_id, source_datastore_id, source_collection_id,
+                    source_knowledge_base_id,
                     confidence, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 UUID.randomUUID().toString(),
                 entity.id(),
@@ -1189,8 +1189,6 @@ public class SemanticMemory {
                 writeContext.sourceEntryId(),
                 writeContext.sourceDocumentId(),
                 writeContext.sourceKnowledgeBaseId(),
-                writeContext.sourceDatastoreId(),
-                writeContext.sourceCollectionId(),
                 entity.extractionConfidence(),
                 now.toString());
     }
@@ -1203,9 +1201,9 @@ public class SemanticMemory {
                 INSERT INTO memory_relation_provenances(
                     id, relation_id, version_id, origin_type, source_reference, source_conversation_id,
                     source_session_id, source_turn_id, source_document_id,
-                    source_knowledge_base_id, source_datastore_id, source_collection_id,
+                    source_knowledge_base_id,
                     confidence, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 UUID.randomUUID().toString(),
                 relation.id(),
@@ -1217,8 +1215,6 @@ public class SemanticMemory {
                 writeContext.sourceTurnId(),
                 writeContext.sourceDocumentId(),
                 writeContext.sourceKnowledgeBaseId(),
-                writeContext.sourceDatastoreId(),
-                writeContext.sourceCollectionId(),
                 relation.strength(),
                 now.toString());
     }
@@ -1270,9 +1266,7 @@ public class SemanticMemory {
                 writeContext.sourceTurnId(),
                 writeContext.sourceEntryId(),
                 writeContext.sourceDocumentId(),
-                writeContext.sourceKnowledgeBaseId(),
-                writeContext.sourceDatastoreId(),
-                writeContext.sourceCollectionId()
+                writeContext.sourceKnowledgeBaseId()
         );
     }
 
@@ -1284,8 +1278,6 @@ public class SemanticMemory {
                 MemoryRealityType.UNKNOWN,
                 sourceReference,
                 sourceReference,
-                null,
-                null,
                 null,
                 null,
                 null,
@@ -1306,8 +1298,6 @@ public class SemanticMemory {
                 MemoryRealityType.UNKNOWN,
                 relation.sourceConversationId(),
                 relation.sourceConversationId(),
-                null,
-                null,
                 null,
                 null,
                 null,

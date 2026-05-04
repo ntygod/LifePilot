@@ -97,7 +97,7 @@ beforeEach(() => {
       name: '林夜',
       description: '主角',
       relevanceScore: 0.91,
-      spaceId: 'datastore:novel-workspace',
+      spaceId: 'domain:knowledge-base:novel-workspace',
       memoryScope: 'DOMAIN_MEMORY',
       realityType: 'FICTIONAL',
     },
@@ -137,7 +137,7 @@ describe('MemoryView 搜索结果展示', () => {
     expect(mocks.search).toHaveBeenCalledWith('林夜')
     expect(wrapper.text()).toContain('领域记忆')
     expect(wrapper.text()).toContain('虚构')
-    expect(wrapper.text()).toContain('datastore:novel-workspace')
+    expect(wrapper.text()).toContain('domain:knowledge-base:novel-workspace')
 
     const resultCard = wrapper.find('.list-card')
     await resultCard.trigger('click')

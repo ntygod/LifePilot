@@ -6,14 +6,12 @@ import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillDefinitionValidator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import net.jqwik.api.*;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.NonNull;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,8 +37,7 @@ class SkillRegistry属性测试 {
 
         // 构建真实 SkillRegistry（使用 Stub 依赖绕过 LLM 和 DynamicToolRegistry）
         var config = new SkillConfigProperties();
-        var toolRegistry = new StubDynamicToolRegistry();
-        var validator = new SkillDefinitionValidator(toolRegistry, config);
+        var validator = new SkillDefinitionValidator(config);
         var searchIndex = new StubSkillSearchIndex();
         var eventPublisher = new NoOpEventPublisher();
         var registry = new SkillRegistry(validator, searchIndex, eventPublisher, config);
@@ -101,18 +98,6 @@ class SkillRegistry属性测试 {
     }
 
     // ── Stub 内部类 ──
-
-    /** Stub DynamicToolRegistry — resolve() 始终返回 empty（suggestedTools 校验跳过）。 */
-    private static class StubDynamicToolRegistry extends DynamicToolRegistry {
-        StubDynamicToolRegistry() {
-            super(new NoOpEventPublisher());
-        }
-
-        @Override
-        public Optional<com.lifepilot.tool.ToolContract> resolve(String toolId) {
-            return Optional.empty();
-        }
-    }
 
     /** Stub SkillSearchIndex — 空操作。 */
     private static class StubSkillSearchIndex extends SkillSearchIndex {

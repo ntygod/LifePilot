@@ -15,6 +15,5 @@ public record SessionConfigRequest(
         Double temperature,
         Integer maxSteps,
         Integer maxDurationSeconds,
-        List<String> knowledgeBaseIds,
-        List<String> datastoreIds
+        List<String> knowledgeBaseIds
 ) {}

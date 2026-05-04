@@ -78,16 +78,14 @@ metadata:
 | `name` | 是 | 正则 `^[a-z0-9][a-z0-9-]{0,62}$`，必须等于目录名 |
 | `description` | 是 | ≤1024 字符；以 "当…" / "用于…" / "Use when…" / "Use this when…" 开头；**不得含工作流词**（步骤 N / 首先 / 然后 / 接下来 / Step N / First / Then）|
 | `version` | 是 | 语义化版本，如 `1.0.0` |
-| `metadata.zhiwei.category` | 否 | 约定五类：`external-integration` / `content-creation` / `automation` / `infrastructure` / `utility`；其他值会原样渲染到 catalog 为 category 名 |
-| `metadata.zhiwei.priority` | 否 | `high` / `normal` / `low`，影响 catalog 排序 |
 | `metadata.zhiwei.tags` | 否 | `List<string>`，辅助检索 |
-| `metadata.zhiwei.suggested_tools` | 否 | `List<string>`，激活后合并进 `activatedToolIds` |
+| `metadata.zhiwei.suggested_tools` | 否 | `List<string>`，UI 展示、检索和人工参考元数据；不会自动注入工具 |
 | `metadata.zhiwei.requires.bins` | 否 | `List<string>`，运行依赖的二进制（如 `git`, `gh`）|
 | `metadata.zhiwei.requires.env` | 否 | `List<string>`，必需环境变量名（不含值）|
 | `metadata.zhiwei.requires.os` | 否 | OS 白名单 `windows` / `darwin` / `linux` |
 | `metadata.zhiwei.requires.tools` | 否 | `List<string>`，必需已注册工具 id |
 
-字段 `id:`（v1 规范）已废弃——`MarkdownSkillParser.parse` 会直接拒绝并抛 `IllegalArgumentException`。
+字段 `id:`（v1 规范）以及旧 `category` / `priority` 已废弃——`MarkdownSkillParser.parse` 会直接拒绝 `id:`。
 
 ## 5. body 约束
 
